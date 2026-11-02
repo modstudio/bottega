@@ -158,6 +158,7 @@ test('a successful move fences this process and hands off the exact fixed identi
       {
         rung: 'hosted-api',
         required: true,
+        requiredBy: 'explicit',
         reason: null,
         declaresLive: false,
       },
@@ -497,6 +498,30 @@ test('the child uses the shared absent release flag report', () => {
 
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain('not released because --release-required was absent')
+})
+
+test('the child satisfies a reach-only rung when the release flag is absent', () => {
+  const outcome = runPullRequestPostLanding(
+    childPayload({
+      releaseRequired: false,
+      rungPlans: [
+        {
+          rung: 'hosted-api',
+          required: true,
+          requiredBy: 'reach',
+          reason: null,
+          declaresLive: false,
+        },
+      ],
+    }),
+    db(),
+    childAdapter(),
+  )
+
+  expect(outcome.exitCode).toBe(0)
+  expect(outcome.output).toContain(
+    'rung hosted-api: not required; ship-to reach deploys only at production with --release-required',
+  )
 })
 
 test('a child promote throw still runs release and cleanup', () => {

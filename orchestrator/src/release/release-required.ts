@@ -58,6 +58,7 @@ export type RequiredReleaseReport = {
 export type ReleaseRungPlan = {
   rung: string
   required: boolean
+  requiredBy: 'explicit' | 'reach' | null
   reason: string | null
   declaresLive: boolean
 }
@@ -82,17 +83,26 @@ function notRequiredReason(
 
 function releaseRungPlans(
   rungs: readonly RequiredReleaseRung[],
-  required: ReadonlySet<string>,
+  explicitlyRequired: ReadonlySet<string>,
+  reached: ReadonlySet<string>,
   depth: string | undefined,
   skipped: ReadonlyMap<string, string>,
   beyondDepth: ReadonlySet<string>,
 ): ReleaseRungPlan[] {
-  return rungs.map((rung) => ({
-    rung: rung.name,
-    required: required.has(rung.name),
-    reason: required.has(rung.name) ? null : notRequiredReason(rung, depth, skipped, beyondDepth),
-    declaresLive: rung.live !== undefined,
-  }))
+  return rungs.map((rung) => {
+    const requiredBy = explicitlyRequired.has(rung.name)
+      ? 'explicit'
+      : reached.has(rung.name)
+        ? 'reach'
+        : null
+    return {
+      rung: rung.name,
+      required: requiredBy !== null,
+      requiredBy,
+      reason: requiredBy !== null ? null : notRequiredReason(rung, depth, skipped, beyondDepth),
+      declaresLive: rung.live !== undefined,
+    }
+  })
 }
 
 /** Own the required-rung policy, including a failure to inspect the landed paths. */
@@ -108,33 +118,35 @@ export function requiredRungDecision(
     const changedPaths = readChangedPaths()
     const entries = [...new Set(rungs.flatMap((rung) => rung.entryPoints ?? []))]
     const entryClosure = entries.length > 0 ? readEntryClosure(entries) : new Map()
-    const explicitlyRequired = decideRequiredRungs(rungs, changedPaths, entryClosure)
+    const explicitlyRequired = new Set(decideRequiredRungs(rungs, changedPaths, entryClosure))
     const reach = decideShipToReach('production', shipToRungs(rungs), depth, { changedPaths })
     if (!reach.allowed) throw new Error(reach.refusal)
-    const required = new Set([...explicitlyRequired, ...reach.reach])
+    const reached = new Set(reach.reach)
+    const required = new Set([...explicitlyRequired, ...reached])
     const skipped = new Map(reach.skipped.map(({ name, reason }) => [name, reason]))
     const beyondDepth = new Set(reach.remaining)
     return {
       decided: true,
       required: rungs.filter(({ name }) => required.has(name)).map(({ name }) => name),
-      rungs: releaseRungPlans(rungs, required, depth, skipped, beyondDepth),
+      rungs: releaseRungPlans(rungs, explicitlyRequired, reached, depth, skipped, beyondDepth),
       error: null,
     }
   } catch (cause) {
-    const required = new Set(
+    const explicitlyRequired = new Set(
       rungs
-        .filter(
-          (rung) =>
-            !rung.onDemand ||
-            rung.requiredWhenChanged !== undefined ||
-            rung.entryPoints !== undefined,
-        )
+        .filter((rung) => rung.requiredWhenChanged !== undefined || rung.entryPoints !== undefined)
         .map(({ name }) => name),
     )
+    const reached = new Set(
+      rungs
+        .filter((rung) => !rung.onDemand && !explicitlyRequired.has(rung.name))
+        .map(({ name }) => name),
+    )
+    const required = new Set([...explicitlyRequired, ...reached])
     return {
       decided: false,
       required: rungs.filter(({ name }) => required.has(name)).map(({ name }) => name),
-      rungs: releaseRungPlans(rungs, required, depth, new Map(), new Set()),
+      rungs: releaseRungPlans(rungs, explicitlyRequired, reached, depth, new Map(), new Set()),
       error: cause instanceof Error ? cause.message : String(cause),
     }
   }
@@ -271,7 +283,21 @@ export function failedRequiredRelease(
 }
 
 export function releaseRequiredFlagAbsent(rungs: ReleaseRungPlan[]): RequiredReleaseReport {
-  return failedRequiredRelease(rungs, 'not released because --release-required was absent')
+  const releases = rungs.map((plan): RequiredRungRelease => {
+    if (plan.requiredBy !== 'reach')
+      return failure(plan, 'not released because --release-required was absent')
+    return failure(
+      { ...plan, required: false },
+      'ship-to reach deploys only at production with --release-required',
+    )
+  })
+  return {
+    required: rungs
+      .filter(({ required, requiredBy }) => required && requiredBy !== 'reach')
+      .map(({ rung }) => rung),
+    releases,
+    satisfied: releases.every(({ satisfied }) => satisfied),
+  }
 }
 
 export function releaseRequiredRungsAfterMainMove(input: {
@@ -359,8 +385,8 @@ export function releaseRequiredRungs(input: {
       (entries) => runner.entryClosure(input.project, input.mergeCommit, entries),
       input.depth,
     )
-  if (!decision.decided) return failedRequiredRelease(decision.rungs, decision.error)
   if (!input.releaseRequired) return releaseRequiredFlagAbsent(decision.rungs)
+  if (!decision.decided) return failedRequiredRelease(decision.rungs, decision.error)
   return runRequiredReleaseRungs(input.project, input.mergeCommit, decision.rungs, runner, true)
 }
 

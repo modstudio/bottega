@@ -20,6 +20,7 @@ export type PullRequestPostLandingPayload = {
   rungPlans?: Array<{
     rung: string
     required: boolean
+    requiredBy: 'explicit' | 'reach' | null
     reason: string | null
     declaresLive: boolean
   }>
@@ -54,6 +55,7 @@ function validRungPlans(value: unknown): boolean {
       typeof plan.rung === 'string' &&
       Boolean(plan.rung) &&
       typeof plan.required === 'boolean' &&
+      (plan.requiredBy === 'explicit' || plan.requiredBy === 'reach' || plan.requiredBy === null) &&
       (plan.reason === null || typeof plan.reason === 'string') &&
       typeof plan.declaresLive === 'boolean'
     )

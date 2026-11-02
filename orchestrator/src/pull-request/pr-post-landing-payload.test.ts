@@ -28,6 +28,25 @@ test('post-landing payload round trips every fixed identity field', () => {
   )
 })
 
+test('post-landing payload carries the release plan requirement source', () => {
+  const withPlan: PullRequestPostLandingPayload = {
+    ...payload,
+    rungPlans: [
+      {
+        rung: 'hosted-api',
+        required: true,
+        requiredBy: 'reach',
+        reason: null,
+        declaresLive: false,
+      },
+    ],
+  }
+
+  expect(parsePullRequestPostLandingPayload(encodePullRequestPostLandingPayload(withPlan))).toEqual(
+    withPlan,
+  )
+})
+
 test.each(Object.keys(payload))('post-landing payload refuses missing %s', (field) => {
   const incomplete = { ...payload } as Record<string, unknown>
   delete incomplete[field]

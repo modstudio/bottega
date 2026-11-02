@@ -396,10 +396,12 @@ export function completePullRequestPostLanding(input: {
             recovery: move.recovery,
           })
         : { output: '' },
-      requiredRelease: failedRequiredRelease(
-        decision.rungs,
-        decision.decided ? `${move.detail}; recover with: ${move.recovery}` : decision.error,
-      ),
+      requiredRelease: input.releaseRequired
+        ? failedRequiredRelease(
+            decision.rungs,
+            decision.decided ? `${move.detail}; recover with: ${move.recovery}` : decision.error,
+          )
+        : releaseRequiredFlagAbsent(decision.rungs),
     })
   }
   const payload: PullRequestPostLandingPayload = {
@@ -547,21 +549,22 @@ export function runPullRequestPostLanding(
       return {
         rung: name,
         required: payload.requiredRungs.includes(name),
+        requiredBy: payload.requiredRungs.includes(name) ? 'explicit' : null,
         reason: payload.requiredRungs.includes(name) ? null : 'not required',
         declaresLive: rung?.live !== undefined,
       }
     })
-  const requiredRelease = payload.rungDecisionError
-    ? failedRequiredRelease(rungPlans, payload.rungDecisionError)
-    : checkoutFailure
-      ? failedRequiredRelease(rungPlans, checkoutFailure)
-      : payload.releaseRequired
-        ? adapter.release({
+  const requiredRelease = !payload.releaseRequired
+    ? releaseRequiredFlagAbsent(rungPlans)
+    : payload.rungDecisionError
+      ? failedRequiredRelease(rungPlans, payload.rungDecisionError)
+      : checkoutFailure
+        ? failedRequiredRelease(rungPlans, checkoutFailure)
+        : adapter.release({
             project,
             mergeCommit: payload.mergeCommit,
             rungs: rungPlans,
           })
-        : releaseRequiredFlagAbsent(rungPlans)
   return mergedOutput({
     adapter: { cleanup: adapter.cleanup },
     database,

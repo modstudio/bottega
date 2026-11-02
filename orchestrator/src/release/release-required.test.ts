@@ -364,8 +364,108 @@ describe('releaseRequiredRungs', () => {
       }),
     })
     expect(report.satisfied).toBe(false)
+    expect(report.required).toEqual(['hosted-api'])
     expect(report.releases[0]?.deployExit).toBeNull()
+    expect(report.releases[0]?.outputTail).toBe(
+      'not released because --release-required was absent',
+    )
     expect(deployed).toBe(false)
+  })
+
+  test('satisfies and explains a reach-only rung when the flag is absent', () => {
+    const reachOnlyProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [{ name: 'npm', branch: 'main', releasesWhenChanged: ['packages/**'] }],
+        },
+      },
+    } as Project
+    const report = releaseRequiredRungs({
+      project: reachOnlyProject,
+      mergeCommit: 'merge',
+      releaseRequired: false,
+      runner: runner({ changedPaths: () => ['packages/core/CHANGELOG.md'] }),
+    })
+
+    expect(report.required).toEqual([])
+    expect(report.satisfied).toBe(true)
+    expect(report.releases).toEqual([
+      expect.objectContaining({
+        rung: 'npm',
+        required: false,
+        satisfied: true,
+        outputTail: 'ship-to reach deploys only at production with --release-required',
+      }),
+    ])
+  })
+
+  test('the absent flag still satisfies a reach-only plan when path inspection failed', () => {
+    const report = releaseRequiredRungs({
+      project,
+      mergeCommit: 'merge',
+      releaseRequired: false,
+      decision: {
+        decided: false,
+        required: ['npm'],
+        rungs: [
+          {
+            rung: 'npm',
+            required: true,
+            requiredBy: 'reach',
+            reason: null,
+            declaresLive: false,
+          },
+        ],
+        error: 'changed paths unavailable',
+      },
+    })
+
+    expect(report.required).toEqual([])
+    expect(report.satisfied).toBe(true)
+    expect(report.releases[0]?.outputTail).toBe(
+      'ship-to reach deploys only at production with --release-required',
+    )
+  })
+
+  test('deploys a rung matched explicitly and by reach with the flag', () => {
+    let deployed = false
+    const bothProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [
+            {
+              name: 'npm',
+              branch: 'main',
+              requiredWhenChanged: ['packages/**'],
+              releasesWhenChanged: ['packages/**'],
+            },
+          ],
+        },
+      },
+    } as Project
+    const report = releaseRequiredRungs({
+      project: bothProject,
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        changedPaths: () => ['packages/core/CHANGELOG.md'],
+        release: () => {
+          deployed = true
+          return successfulRelease()
+        },
+      }),
+    })
+
+    expect(report.required).toEqual(['npm'])
+    expect(report.satisfied).toBe(true)
+    expect(report.releases[0]).toMatchObject({ rung: 'npm', required: true, deployed: true })
+    expect(deployed).toBe(true)
   })
 
   test('reports a dirty or wrong-branch main checkout without deploying', () => {
@@ -471,6 +571,7 @@ describe('releaseRequiredRungsAfterMainMove', () => {
         {
           rung: 'hosted-api',
           required: true,
+          requiredBy: 'explicit',
           reason: null,
           declaresLive: false,
         },
