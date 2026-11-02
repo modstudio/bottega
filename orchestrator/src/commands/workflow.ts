@@ -474,6 +474,8 @@ function registerWorkflowTreeCommands({
     .command('hydrate')
     .description('write the production workflow tree into a project worktree')
     .option('--cwd <value>', 'select the project worktree to hydrate')
+    .option('--discard <path>', 'overwrite or delete an unimported tree path', collect, [])
+    .option('--path <path>', 'limit hydration to a tree path', collect, [])
     .option('--check', 'report drift without writing files')
     .allowExcessArguments(false)
     .action((options) =>

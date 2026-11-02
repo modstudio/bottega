@@ -23,10 +23,15 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
     'node:path',
     './workflow-tree.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-tree-promotion.ts', [
+  module('orchestrator/src/workflow/workflow-tree-hydration.ts', [
+    '../../../shared/brand.ts',
     'node:util',
+    './workflow-tree.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-tree-promotion.ts', [
     './step-catalogue.ts',
     './workflow-tree.ts',
+    './workflow-tree-hydration.ts',
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-tree-store.ts', [

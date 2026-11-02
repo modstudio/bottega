@@ -353,13 +353,15 @@ fork a workflow into a new draft version
 
 ## bottega workflow hydrate
 
-**Synopsis:** `bottega workflow hydrate [--cwd <value>] [--check]`
+**Synopsis:** `bottega workflow hydrate [--cwd <value>] [--discard <path>] [--path <path>] [--check]`
 
 write the production workflow tree into a project worktree
 
 ### Options
 
 - `--cwd <value>`: select the project worktree to hydrate
+- `--discard <path>`: overwrite or delete an unimported tree path
+- `--path <path>`: limit hydration to a tree path
 - `--check`: report drift without writing files
 
 ### Related
