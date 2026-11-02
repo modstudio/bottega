@@ -61,6 +61,10 @@ extend-exclude = [
   "shared/prose/prose-gate.test.ts",
   # The vendored English word list is third-party data, not hand-authored prose.
   "shared/prose/english-words.txt",
+  # The vendored misspelling and British spelling lists are third-party data.
+  "shared/prose/misspellings.csv",
+  "shared/prose/british-spellings.csv",
+  "shared/prose/*.LICENSE",
   # CLAUDE.md files are symlinks to the AGENTS.md cards, which are checked directly.
   "**/CLAUDE.md",
 ]
