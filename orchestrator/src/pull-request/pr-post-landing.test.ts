@@ -336,6 +336,25 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   const calls: string[] = []
   const outcome = complete({
     calls,
+    depth: 'staging',
+    project: {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          mergeMethod: 'squash',
+          requiredChecks: [],
+          rungs: [
+            {
+              name: 'hosted-api',
+              branch: 'main',
+              requiredWhenChanged: ['shared/record/**'],
+            },
+            { name: 'staging', branch: 'main' },
+          ],
+        },
+      },
+    } as Project,
     movesInstallation: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
@@ -356,6 +375,9 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain(
     'required rung hosted-api: deploy exit not run; registered main checkout is dirty; clean it',
+  )
+  expect(outcome.output).toContain(
+    `recover with: ${project.path}/bin/${PLATFORM_SLUG} machine update, then ${PLATFORM_SLUG} pr merge 42 --release-required --depth staging`,
   )
   expect(outcome.output).toContain(`${project.path}/bin/${PLATFORM_SLUG} machine update`)
   expect(outcome.output).toContain(`remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`)
