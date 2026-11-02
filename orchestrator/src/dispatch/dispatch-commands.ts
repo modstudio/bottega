@@ -15,12 +15,12 @@ import {
   projectByName,
   projectRepositoryRefusal,
   projects,
-  resolveBranchRef,
   retiredProjectAt,
   retiredProjectByName,
   retiredProjectRefusal,
 } from '../project/projects.ts'
 import type { ReviewRole } from '../review/review-role.ts'
+import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
@@ -112,11 +112,11 @@ async function compose(
   requested: ReturnType<typeof job>,
   lens: string | undefined,
   cwd: string,
-  reviewRef: string | undefined,
+  explicitReviewBranch: string | null,
 ): Promise<string> {
   const earlier =
     requested.findings && project
-      ? presentation.earlierReviewRejections(project.name, cwd, explicitReviewBranch(reviewRef))
+      ? presentation.earlierReviewRejections(project.name, cwd, explicitReviewBranch)
       : { project: project?.name ?? '', branch: null, branchLineage: [], rows: [] }
   return lensPromptFor(project, requested.findings, lens, await presentation.readPrompt(), earlier)
 }
@@ -154,6 +154,13 @@ type DispatchPresentation = {
   resolveBase(cwd: string, base: string): string
   isWorktreeRelativeRef(ref: string): boolean
   implicitReviewWarning(cwd: string): string
+  resolveReviewTarget(
+    jobName: string,
+    cwd: string,
+    reviewRef?: string,
+    carry?: boolean,
+    launchKey?: string,
+  ): ResolvedReviewTarget | null
   resolveCallerCheckout(
     cwd?: string,
     repo?: string,
@@ -266,16 +273,11 @@ export function reviewMemoryBranch(
   return explicitReviewBranch ?? callerBranch
 }
 
-// Memory is advisory: a review target this cannot name as a branch (a run with no branch, an
-// unknown id) falls back to the caller's branch, and the dispatch's own target resolution
-// reports anything actually wrong with the target.
-function explicitReviewBranch(reviewRef: string | undefined): string | null {
-  if (!reviewRef) return null
-  try {
-    return resolveBranchRef(reviewRef).branch
-  } catch {
-    return null
-  }
+export function reviewDetachFields(
+  review: string | undefined,
+  resolvedReviewTarget: ResolvedReviewTarget | null,
+): Pick<DetachSpec, 'review' | 'resolvedReviewTarget'> {
+  return { review, resolvedReviewTarget: resolvedReviewTarget ?? undefined }
 }
 
 function taskBranchBypassWarningKey(
@@ -337,6 +339,52 @@ function assertDispatchableProject(
     if (refusal) throw new Error(refusal)
   }
   return explicitRepo ? projectByName(explicitRepo) : cwdProject
+}
+
+function prepareDispatchTarget(input: {
+  flags: DispatchFlags
+  presentation: Pick<
+    DispatchPresentation,
+    'resolveBase' | 'isWorktreeRelativeRef' | 'resolveReviewTarget'
+  >
+  jobName: string
+  callerCwd: string
+  explicitRepo: string | undefined
+  callerChoseCwd: boolean
+}) {
+  const { flag, has } = input.flags
+  const reviewRef = flag('review')
+  const resolvedReviewTarget = input.presentation.resolveReviewTarget(
+    input.jobName,
+    input.callerCwd,
+    reviewRef,
+    has('carry'),
+    flag('key'),
+  )
+  const base = writingBranchOptions({
+    jobName: input.jobName,
+    continueBranch: flag('continue'),
+    base: flag('base'),
+    key: flag('key'),
+    cwd: input.callerCwd,
+    presentation: input.presentation,
+  })
+  const seed = preflight(
+    input.jobName,
+    input.callerCwd,
+    flag('seed'),
+    flag('key'),
+    base,
+    false,
+    false,
+    flag('lens'),
+    resolvedReviewTarget ? undefined : reviewRef,
+    has('carry'),
+    input.explicitRepo,
+    resolvedReviewTarget !== null,
+    input.callerChoseCwd,
+  )
+  return { base, reviewRef, resolvedReviewTarget, seed }
 }
 
 function requiresExecution(
@@ -437,32 +485,14 @@ export async function dispatchCommand(
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
-  const requestedBase = flag('base'),
-    continueBranch = flag('continue')
-  const reviewRef = flag('review')
-  const base = writingBranchOptions({
-    jobName,
-    continueBranch,
-    base: requestedBase,
-    key: flag('key'),
-    cwd: callerCwd,
+  const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
+    flags,
     presentation,
-  })
-  const seed = preflight(
     jobName,
     callerCwd,
-    flag('seed'),
-    flag('key'),
-    base,
-    false,
-    false,
-    flag('lens'),
-    reviewRef,
-    has('carry'),
     explicitRepo,
-    false,
-    Boolean(requestedCwd),
-  )
+    callerChoseCwd: Boolean(requestedCwd),
+  })
   reportDefaultSeed(flag('seed'), seed, porcelain, error)
   const taskKeyWarning = await taskKeyWarningForDispatch(
     { project: dispatchProject, key: flag('key') },
@@ -494,7 +524,7 @@ export async function dispatchCommand(
     {
       porcelain,
       base,
-      continueBranch,
+      continueBranch: flag('continue'),
       writesRepo: Boolean(requested.needs.writesRepo),
       key: flag('key'),
     },
@@ -535,7 +565,14 @@ export async function dispatchCommand(
         '  pass --carry to send it with the run.',
     )
   }
-  const prompt = await compose(presentation, dispatchProject, requested, lens, callerCwd, reviewRef)
+  const prompt = await compose(
+    presentation,
+    dispatchProject,
+    requested,
+    lens,
+    callerCwd,
+    resolvedReviewTarget?.branch ?? null,
+  )
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),
@@ -587,7 +624,7 @@ export async function dispatchCommand(
       noFailover: has('no-failover'),
       noWaitCapacity: has('no-wait-capacity'),
       carry: has('carry'),
-      review: reviewRef,
+      ...reviewDetachFields(reviewRef, resolvedReviewTarget),
       cwd: callerCwd,
       launchCwd: caller.launchCwd,
       deliverables,
@@ -644,7 +681,7 @@ export async function dispatchCommand(
     ...(transportExplicit ? { transport, transportPinSource: resolved.transportPinSource } : {}),
     noFailover: has('no-failover'),
     carry: has('carry'),
-    review: reviewRef,
+    ...reviewDetachFields(reviewRef, resolvedReviewTarget),
     cwd: callerCwd,
     launchCwd: caller.launchCwd,
     deliverables,

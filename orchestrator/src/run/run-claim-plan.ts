@@ -4,6 +4,7 @@
  * lifecycle facts. Must not create trees, touch stores, or run processes.
  */
 
+import { isCommitShapedBranch } from '../project/branch-name.ts'
 import type { ResumeCreationLifecycle } from './resume-tree.ts'
 import { isSyntheticLifecycleJob } from './synthetic-lifecycle-job.ts'
 
@@ -47,7 +48,14 @@ export function claimedRunBranch(
   rootReviewBranch: string | null,
   worktreeBranch: string | null,
 ): string | null {
-  return reviewTargetBranch ?? implicitReviewBranch ?? rootReviewBranch ?? (worktreeBranch || null)
+  const branch =
+    reviewTargetBranch ?? implicitReviewBranch ?? rootReviewBranch ?? (worktreeBranch || null)
+  if (branch && isCommitShapedBranch(branch)) {
+    throw new Error(
+      `refusing to record commit-shaped branch ${branch}; dispatch with --review <branch>`,
+    )
+  }
+  return branch
 }
 
 /** Decide the claimed run's working-tree mode before performing any effects. */

@@ -54,6 +54,12 @@ test('claim branch selection records implicit, explicit, and ordinary worktree b
   expect(claimedRunBranch(null, null, null, '')).toBeNull()
 })
 
+test('claim branch selection refuses a commit-shaped branch', () => {
+  expect(() => claimedRunBranch('5c156c96b', null, null, null)).toThrow(
+    'dispatch with --review <branch>',
+  )
+})
+
 const defaultFacts = {
   resolvedTaskWorktree: null,
   forbidsRepo: false,

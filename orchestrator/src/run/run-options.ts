@@ -3,6 +3,7 @@
 import type { Pack } from '../canon/canon.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import type { ReviewRole } from '../review/review-role.ts'
+import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
 import type { RoutedSelection } from '../route/route.ts'
 import type { TransportName } from '../transport/transport.ts'
@@ -47,5 +48,5 @@ export type RunOptions = {
   deliverables?: string[]
   timeoutMinutes?: number
   keepTree?: KeepTreeExemption
-  resolvedReviewTarget?: { branch: string; commit: string; base: string }
+  resolvedReviewTarget?: ResolvedReviewTarget
 }

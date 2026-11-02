@@ -236,6 +236,29 @@ export async function detach(
   )
 }
 
+function detachedSeed(
+  jobName: string,
+  cwd: string,
+  spec: ResolvedDetachSpec,
+  firstTurn: boolean,
+): string | undefined {
+  if (!firstTurn) return spec.seed
+  return preflight(
+    jobName,
+    cwd,
+    spec.seed,
+    spec.key,
+    spec.base,
+    false,
+    false,
+    spec.lens,
+    spec.resolvedReviewTarget ? undefined : spec.review,
+    spec.carry,
+    spec.repo,
+    spec.resolvedReviewTarget !== undefined,
+  )
+}
+
 /**
  * The depth check happens HERE TOO, before a row exists.
  *
@@ -261,21 +284,7 @@ async function detachResolved(
   const detachedLinks = await detachedRunLinks(cwd, spec)
   const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName)),
     firstTurn = resumeFacts(spec.resume?.kind ?? null, '', spec.resume?.parent ?? null).isFirstTurn
-  const seed = !firstTurn
-    ? spec.seed
-    : preflight(
-        jobName,
-        cwd,
-        spec.seed,
-        spec.key,
-        spec.base,
-        false,
-        false,
-        spec.lens,
-        spec.review,
-        spec.carry,
-        spec.repo,
-      )
+  const seed = detachedSeed(jobName, cwd, spec, firstTurn)
   const mcpDispatch = { selectedAgent, mcpRequest, firstTurn }
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const startedByUserId = await signedInRecordUserId()

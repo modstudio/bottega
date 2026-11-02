@@ -63,7 +63,7 @@ import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { workflowTreeModules } from './architecture-workflow-tree-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 
-export type ArchitectureModule = { file: string; allowed: string[] }
+export type ArchitectureModule = { file: string; allowed: string[]; typeOnlyAllowed?: string[] }
 type ArchitectureInversion = { from: string; to: string }
 type ArchitectureException = { from: string; to: string; dependencyTypes: string[]; reason: string }
 type ConcernManifest = {
@@ -900,7 +900,7 @@ export function architectureRules() {
       from: { path: exactArchitecturePath(entry.file) },
       to: {
         dependencyTypes: ['local'],
-        pathNot: entry.allowed.map(exactArchitecturePath),
+        pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? [])].map(exactArchitecturePath),
       },
     })),
     ...importBoundaries.map((entry) => ({

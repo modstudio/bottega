@@ -7,7 +7,9 @@ test('every module emits its exact allowlist as a forbidden rule', () => {
     const rule = forbidden.find(
       (candidate) => candidate.from.path === exactArchitecturePath(entry.file),
     )
-    expect(rule?.to.pathNot).toEqual(entry.allowed.map(exactArchitecturePath))
+    expect(rule?.to.pathNot).toEqual(
+      [...entry.allowed, ...(entry.typeOnlyAllowed ?? [])].map(exactArchitecturePath),
+    )
   }
 })
 

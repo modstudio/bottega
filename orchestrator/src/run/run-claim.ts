@@ -40,7 +40,7 @@ import {
 } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import type { ReviewRole } from '../review/review-role.ts'
-import { attributedLaunchKey } from '../review/review-target.ts'
+import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
@@ -176,7 +176,7 @@ export type ClaimInput = {
   timeoutMinutes: number | undefined
   timeoutMs: number
   forbidsRepo: boolean
-  reviewTarget: { branch: string; commit: string; base: string } | null
+  reviewTarget: ResolvedReviewTarget | null
   implicitReview: { branch: string | null; findings: boolean }
   coverageBase: string | null
   readOnlyBase: string | null
