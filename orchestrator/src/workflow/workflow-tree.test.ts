@@ -5,10 +5,10 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decideConditionalAdvance } from './workflow-cursor-transition.ts'
 import { expandWorkflowModeSteps } from './workflow-step-sequences.ts'
-import type { WorkflowTreeStore } from './workflow-tree.ts'
+import type { WorkflowTreeHistory, WorkflowTreeStore } from './workflow-tree.ts'
 import { normalizeWorkflowYaml, parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
-import { decideWorkflowHydration, type WorkflowTreeHistory } from './workflow-tree-hydration.ts'
+import { decideWorkflowHydration } from './workflow-tree-hydration.ts'
 
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -103,7 +103,9 @@ describe('planWorkflowHydration', () => {
       sequences: new Map(),
       workflows: new Map(),
     }
-    expect(decideWorkflowHydration({ production: store, history, tree: changed })).toMatchObject({
+    expect(
+      decideWorkflowHydration({ production: store, draft: store, history, tree: changed }),
+    ).toMatchObject({
       plan: { writes: [], deletes: [] },
       protected: ['.agents/workflow-sequences/quality.md'],
     })

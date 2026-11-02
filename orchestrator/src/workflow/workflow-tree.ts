@@ -1,5 +1,6 @@
 // concern: workflow-tree
 /** Knows the pure markdown mirror for production workflows. Must not know filesystems, stores, commands, projects, or transports. */
+import { isDeepStrictEqual } from 'node:util'
 import {
   type CatalogueSequence,
   type CatalogueStep,
@@ -14,6 +15,15 @@ export type WorkflowTreeStore = {
 }
 export type WorkflowTreeFile = { path: string; body: string }
 export type WorkflowTreePlan = { writes: WorkflowTreeFile[]; deletes: string[] }
+export type VersionedWorkflowTreeValue = { n: number; value: unknown }
+export type WorkflowTreeHistory = {
+  steps: Map<string, VersionedWorkflowTreeValue[]>
+  sequences: Map<string, VersionedWorkflowTreeValue[]>
+  workflows: Map<string, VersionedWorkflowTreeValue[]>
+}
+
+export const sameWorkflowTreeValue = (left: unknown, right: unknown) =>
+  isDeepStrictEqual(left, right)
 
 export const WORKFLOW_TREE_ROOT = '.agents'
 export const WORKFLOW_TREE_FOLDERS = ['workflow-sequences', 'workflow-steps', 'workflows'] as const

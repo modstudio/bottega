@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { WorkflowTreeStore } from './workflow-tree.ts'
-import { type WorkflowTreeHistory, workflowTreeReversions } from './workflow-tree-store.ts'
+import type { WorkflowTreeHistory, WorkflowTreeStore } from './workflow-tree.ts'
+import { workflowTreeReversions } from './workflow-tree-store.ts'
 
 const step = (title: string) => ({
   slug: 'build',

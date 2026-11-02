@@ -14,6 +14,7 @@ const module = (file: string, allowed: string[]): WorkflowTreeModule => ({
 export const workflowTreeModules: WorkflowTreeModule[] = [
   module('orchestrator/src/workflow/workflow-import-output.ts', ['./workflow-tree-store.ts']),
   module('orchestrator/src/workflow/workflow-tree.ts', [
+    'node:util',
     './step-catalogue.ts',
     './workflow-step-sequences.ts',
     './workflows.ts',
@@ -25,7 +26,6 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-tree-hydration.ts', [
     '../../../shared/brand.ts',
-    'node:util',
     './workflow-tree.ts',
   ]),
   module('orchestrator/src/workflow/workflow-tree-promotion.ts', [

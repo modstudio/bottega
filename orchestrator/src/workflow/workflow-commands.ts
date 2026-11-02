@@ -86,6 +86,7 @@ import {
 } from './workflow-tree-hydration.ts'
 import {
   importWorkflowTree,
+  newestDraftWorkflowTree,
   productionHistory,
   productionWorkflowTree,
   promoteMatchingWorkflowTreeDrafts,
@@ -861,17 +862,30 @@ export function hydrateCommand(
   }
   const database = db()
   const production = productionWorkflowTree({ database, project: project?.name ?? null })
+  const draft = newestDraftWorkflowTree({ database, project: project?.name ?? null })
   const history = productionHistory(
     database,
     workflowReadSpaceFor(database, project?.name ?? null),
   ).history
   const decision = decideWorkflowHydration({
     production,
+    draft,
     history,
     tree: collectWorkflowTree(root),
     ...(flagValues(argv, 'path').length ? { paths: new Set(flagValues(argv, 'path')) } : {}),
     discard: new Set(flagValues(argv, 'discard')),
   })
+  if (decision.unknownSelectors.length) {
+    presentation.error('refusing workflow hydrate: unknown workflow-tree selectors')
+    for (const { option, path } of decision.unknownSelectors) {
+      presentation.error(
+        `${option} ${path}: names neither a collected tree path nor a path rendered by production`,
+      )
+    }
+    presentation.error('paths are relative to the tree root in the form --check prints')
+    presentation.setExitCode(1)
+    return
+  }
   const { plan } = decision
   for (const { path } of plan.writes) presentation.log(`write ${path}`)
   for (const path of plan.deletes) presentation.log(`delete ${path}`)

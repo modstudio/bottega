@@ -18,16 +18,14 @@ import {
 } from './step-catalogue.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import {
+  sameWorkflowTreeValue as same,
   treePath,
+  type VersionedWorkflowTreeValue,
   WORKFLOW_TREE_FOLDERS,
   type WorkflowTreeFolder,
+  type WorkflowTreeHistory,
   type WorkflowTreeStore,
 } from './workflow-tree.ts'
-import {
-  sameWorkflowTreeValue as same,
-  type VersionedWorkflowTreeValue,
-  type WorkflowTreeHistory,
-} from './workflow-tree-hydration.ts'
 import {
   planWorkflowTreePromotion,
   type WorkflowTreePromotion,
@@ -49,7 +47,6 @@ export type WorkflowTreeProduction = {
   catalogueVersion: number
   workflowVersions: Map<string, number>
 }
-export type { WorkflowTreeHistory } from './workflow-tree-hydration.ts'
 export type WorkflowTreeReversion = {
   kind: 'step' | 'sequence' | 'workflow'
   slug: string

@@ -4,11 +4,11 @@ import type { CatalogueStep } from './step-catalogue.ts'
 import {
   planWorkflowHydration,
   type WorkflowTreeFile,
+  type WorkflowTreeHistory,
   type WorkflowTreeStore,
 } from './workflow-tree.ts'
 import {
   decideWorkflowHydration,
-  type WorkflowTreeHistory,
   workflowHydrationProtectionLines,
 } from './workflow-tree-hydration.ts'
 
@@ -61,7 +61,7 @@ describe('decideWorkflowHydration', () => {
   test('refreshes stale files and protects unimported edits and additions with both remedies', () => {
     const tree = branchTree()
     const before = new Map(tree.map((file) => [file.path, file.body]))
-    const decision = decideWorkflowHydration({ production, history, tree })
+    const decision = decideWorkflowHydration({ production, draft: production, history, tree })
     const after = applyInMemory(tree, decision)
 
     expect(decision.plan.writes.map(({ path }) => path)).toEqual([
@@ -89,6 +89,7 @@ describe('decideWorkflowHydration', () => {
     const tree = branchTree()
     const decision = decideWorkflowHydration({
       production,
+      draft: production,
       history,
       tree,
       paths: new Set(['.agents/workflow-steps/design.md']),
@@ -108,10 +109,46 @@ describe('decideWorkflowHydration', () => {
     }).writes
     const decision = decideWorkflowHydration({
       production: { steps: [], sequences: [], workflows: [] },
+      draft: { steps: [], sequences: [], workflows: [] },
       history,
       tree,
     })
     expect(decision.plan.deletes).toEqual(['.agents/workflow-steps/acceptance.md'])
     expect(decision.protected).toEqual([])
+  })
+
+  test('refreshes stale files beside a drafted file without reporting or changing the draft', () => {
+    const tree = branchTree()
+    const designPath = '.agents/workflow-steps/design.md'
+    const draftedDesign = step('design', 'unimported design edit')
+    const before = tree.find(({ path }) => path === designPath)!.body
+    const decision = decideWorkflowHydration({
+      production,
+      draft: { ...production, steps: [production.steps[0]!, draftedDesign] },
+      history,
+      tree,
+    })
+    const after = applyInMemory(tree, decision)
+
+    expect(decision.plan.writes.map(({ path }) => path)).toEqual([
+      '.agents/workflow-steps/acceptance.md',
+    ])
+    expect(decision.protected).toEqual(['.agents/workflow-steps/branch-new.md'])
+    expect(after.get(designPath)).toBe(before)
+  })
+
+  test('reports selectors absent from both the collected and production trees', () => {
+    const decision = decideWorkflowHydration({
+      production,
+      draft: production,
+      history,
+      tree: branchTree(),
+      paths: new Set(['.agents/workflow-steps/missing.md']),
+      discard: new Set(['.agents/workflows/also-missing.md']),
+    })
+    expect(decision.unknownSelectors).toEqual([
+      { option: '--path', path: '.agents/workflow-steps/missing.md' },
+      { option: '--discard', path: '.agents/workflows/also-missing.md' },
+    ])
   })
 })

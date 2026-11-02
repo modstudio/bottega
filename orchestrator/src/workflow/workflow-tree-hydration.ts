@@ -1,34 +1,24 @@
 // concern: workflow-tree-hydration
 /** Decides safe workflow-tree hydration. Must not know filesystems, stores, commands, projects, or transports. */
-import { isDeepStrictEqual } from 'node:util'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   matchWorkflowTreePath,
   parseWorkflowTree,
   planWorkflowHydration,
+  sameWorkflowTreeValue,
+  treePath,
+  type VersionedWorkflowTreeValue,
   type WorkflowTreeFile,
+  type WorkflowTreeHistory,
   type WorkflowTreePlan,
   type WorkflowTreeStore,
 } from './workflow-tree.ts'
 
-export type VersionedWorkflowTreeValue = { n: number; value: unknown }
-export type WorkflowTreeHistory = {
-  steps: Map<string, VersionedWorkflowTreeValue[]>
-  sequences: Map<string, VersionedWorkflowTreeValue[]>
-  workflows: Map<string, VersionedWorkflowTreeValue[]>
-}
-type WorkflowTreeFileClassification = {
-  path: string
-  state: 'current' | 'stale' | 'unimported'
-}
 export type WorkflowHydrationDecision = {
   plan: WorkflowTreePlan
   protected: string[]
-  classifications: WorkflowTreeFileClassification[]
+  unknownSelectors: { option: '--path' | '--discard'; path: string }[]
 }
-
-export const sameWorkflowTreeValue = (left: unknown, right: unknown) =>
-  isDeepStrictEqual(left, right)
 
 function parsedValue(file: WorkflowTreeFile): { slug: string; value: unknown } | null {
   try {
@@ -77,20 +67,27 @@ function valuesFor(
 
 function classifyWorkflowTreeFiles(input: {
   production: WorkflowTreeStore
+  draft: WorkflowTreeStore
   history: WorkflowTreeHistory
   tree: WorkflowTreeFile[]
-}): WorkflowTreeFileClassification[] {
+}) {
   return input.tree.flatMap((file) => {
     if (!matchWorkflowTreePath(file.path)) return []
     const parsed = parsedValue(file)
     const candidates = valuesFor(input.production, input.history, file)
-    let state: WorkflowTreeFileClassification['state'] = 'unimported'
+    const draftCandidates = valuesFor(input.draft, input.history, file)
+    let state = 'unimported' as 'current' | 'drafted' | 'stale' | 'unimported'
     if (parsed && candidates) {
       if (
         candidates.current !== undefined &&
         sameWorkflowTreeValue(parsed.value, candidates.current)
       ) {
         state = 'current'
+      } else if (
+        draftCandidates?.current !== undefined &&
+        sameWorkflowTreeValue(parsed.value, draftCandidates.current)
+      ) {
+        state = 'drafted'
       } else if (candidates.older.some(({ value }) => sameWorkflowTreeValue(parsed.value, value))) {
         state = 'stale'
       }
@@ -101,6 +98,7 @@ function classifyWorkflowTreeFiles(input: {
 
 export function decideWorkflowHydration(input: {
   production: WorkflowTreeStore
+  draft: WorkflowTreeStore
   history: WorkflowTreeHistory
   tree: WorkflowTreeFile[]
   paths?: ReadonlySet<string>
@@ -110,10 +108,29 @@ export function decideWorkflowHydration(input: {
   const unimported = new Set(
     classifications.filter(({ state }) => state === 'unimported').map(({ path }) => path),
   )
+  const drafted = new Set(
+    classifications.filter(({ state }) => state === 'drafted').map(({ path }) => path),
+  )
   const selected = (path: string) => !input.paths || input.paths.has(path)
-  const allowed = (path: string) => !unimported.has(path) || input.discard?.has(path) === true
+  const allowed = (path: string) =>
+    !drafted.has(path) && (!unimported.has(path) || input.discard?.has(path) === true)
   const candidate = planWorkflowHydration({ store: input.production, tree: input.tree })
-  const actionPaths = new Set([...candidate.writes.map(({ path }) => path), ...candidate.deletes])
+  const knownPaths = new Set([
+    ...input.tree.map(({ path }) => path),
+    ...input.production.steps.map(({ slug }) => treePath('workflow-steps', slug)),
+    ...input.production.sequences.map(({ slug }) => treePath('workflow-sequences', slug)),
+    ...input.production.workflows.map(({ slug }) => treePath('workflows', slug)),
+  ])
+  const unknownSelectors = [
+    ...[...(input.paths ?? [])].map((path) => ({ option: '--path' as const, path })),
+    ...[...(input.discard ?? [])].map((path) => ({ option: '--discard' as const, path })),
+  ]
+    .filter(({ path }) => !knownPaths.has(path))
+    .sort((left, right) =>
+      left.path === right.path
+        ? left.option.localeCompare(right.option)
+        : left.path.localeCompare(right.path),
+    )
   return {
     plan: {
       writes: candidate.writes.filter(({ path }) => selected(path) && allowed(path)),
@@ -121,15 +138,11 @@ export function decideWorkflowHydration(input: {
     },
     protected: classifications
       .filter(
-        ({ path, state }) =>
-          state === 'unimported' &&
-          selected(path) &&
-          !input.discard?.has(path) &&
-          actionPaths.has(path),
+        ({ path, state }) => state === 'unimported' && selected(path) && !input.discard?.has(path),
       )
       .map(({ path }) => path)
       .sort(),
-    classifications,
+    unknownSelectors,
   }
 }
 
