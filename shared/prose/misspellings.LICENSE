@@ -1,4 +1,4 @@
-shared/prose/misspellings.csv is crates/typos-dict/assets/words.csv from crate-ci/typos
+shared/prose/misspellings.txt is crates/typos-dict/assets/words.csv from crate-ci/typos
 (https://github.com/crate-ci/typos) at commit b41eb62e9a8096c9ba6636e2365d3f56018a203c,
 vendored unchanged. Each row is a misspelling followed by one or more corrections.
 typos is dual-licensed MIT or Apache-2.0; it is used here under the MIT License.

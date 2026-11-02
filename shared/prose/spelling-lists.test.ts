@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import britishSpellingsText from './british-spellings.csv' with { type: 'text' }
-import misspellingsText from './misspellings.csv' with { type: 'text' }
+import britishSpellingsText from './british-spellings.txt' with { type: 'text' }
+import misspellingsText from './misspellings.txt' with { type: 'text' }
 
 /** The lookups binary-search the raw text, so an unsorted or duplicated key silently stops matching. */
 function unorderedKeys(text: string): string[] {
@@ -17,10 +17,11 @@ function unorderedKeys(text: string): string[] {
 }
 
 describe('vendored spelling lists', () => {
-  test.each([
-    ['misspellings.csv', misspellingsText],
-    ['british-spellings.csv', britishSpellingsText],
-  ])('%s keys are lowercase and strictly ascending', (_name, text) => {
-    expect(unorderedKeys(text).slice(0, 5)).toEqual([])
+  test('misspellings.txt keys are lowercase and strictly ascending', () => {
+    expect(unorderedKeys(misspellingsText).slice(0, 5)).toEqual([])
+  })
+
+  test('british-spellings.txt keys are lowercase and strictly ascending', () => {
+    expect(unorderedKeys(britishSpellingsText).slice(0, 5)).toEqual([])
   })
 })

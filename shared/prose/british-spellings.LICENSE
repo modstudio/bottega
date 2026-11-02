@@ -1,4 +1,4 @@
-shared/prose/british-spellings.csv is derived from crates/varcon/assets/varcon.txt in crate-ci/typos
+shared/prose/british-spellings.txt is derived from crates/varcon/assets/varcon.txt in crate-ci/typos
 (https://github.com/crate-ci/typos) at commit b41eb62e9a8096c9ba6636e2365d3f56018a203c.
 It is a MODIFIED VERSION of VARCON: it keeps only verified clusters and lists each word that
 no verified entry tags A (American) or _ (other), with the line's preferred American spelling

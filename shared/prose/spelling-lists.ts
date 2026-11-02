@@ -2,9 +2,9 @@
 /** Lazy, compact lookups over the vendored prose correction and allow lists. */
 
 import typosText from '../../typos.toml' with { type: 'text' }
-import britishSpellingsText from './british-spellings.csv' with { type: 'text' }
+import britishSpellingsText from './british-spellings.txt' with { type: 'text' }
 import dictionaryText from './dictionary.txt' with { type: 'text' }
-import misspellingsText from './misspellings.csv' with { type: 'text' }
+import misspellingsText from './misspellings.txt' with { type: 'text' }
 
 type CsvLookup = { offsets: Uint32Array; text: string }
 

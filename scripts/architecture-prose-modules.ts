@@ -49,9 +49,9 @@ export const proseModules: ProseModule[] = [
   module('shared/prose/prose-check.ts', ['./naming-rule.ts', './prose-mask.ts']),
   module('shared/prose/spelling-lists.ts', [
     '../../typos.toml',
-    './british-spellings.csv',
+    './british-spellings.txt',
     './dictionary.txt',
-    './misspellings.csv',
+    './misspellings.txt',
   ]),
   module('shared/prose/prose-gate.ts', ['./prose-check.ts', './spelling-lists.ts']),
 ]
@@ -60,7 +60,7 @@ export const proseBoundarySpecs: ProseBoundarySpec[] = [
   {
     name: 'spelling-lists-boundary',
     file: 'shared/prose/spelling-lists.ts',
-    allowed: ['typos.toml', './british-spellings.csv', './dictionary.txt', './misspellings.csv'],
+    allowed: ['typos.toml', './british-spellings.txt', './dictionary.txt', './misspellings.txt'],
     typeOnlyAllowed: [],
     reason: 'Keep embedded correction-list data access independent of prose policy and platforms.',
   },
