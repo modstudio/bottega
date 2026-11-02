@@ -10,7 +10,7 @@ This page takes a fresh machine to a first delegated change.
 
 - macOS or Linux, with `git`. Linux also requires `ripgrep`, `bubblewrap`,
   `socat`, `libsecret-1-0`, and a running, unlocked Secret Service keyring such
-  as gnome-keyring, because Bottega keeps its sign-in token and machine key only
+  as gnome-keyring, because Bottega keeps its sign-in token and machine key
   there. Linux must permit unprivileged user namespaces for the sandbox.
 - The installer requires `curl` or `wget`, `tar`, and `sha256sum` or `shasum`.
   Building from a checkout also requires Bun.

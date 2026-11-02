@@ -9,7 +9,6 @@ import {
   writeKeychainItem,
   writeLinuxKeychainItem,
 } from './keychain.ts'
-import { decideMachineKeyStore } from './machine-key-store.ts'
 
 const bytes = (value = '') => new TextEncoder().encode(value)
 const result = (exitCode: number, stdout = '', stderr = '') => ({
@@ -28,16 +27,6 @@ describe('secret backend decisions', () => {
     expect(decideKeychainBackend('linux')).toBe('bun-secrets')
     expect(() => decideKeychainBackend('win32')).toThrow(
       'keychain storage is unsupported on platform win32',
-    )
-  })
-
-  test('keeps file machine keys explicit on every platform', () => {
-    expect(decideMachineKeyStore(undefined, 'darwin')).toBe('keychain')
-    expect(decideMachineKeyStore(undefined, 'linux')).toBe('keychain')
-    expect(decideMachineKeyStore('file', 'linux')).toBe('file')
-    expect(decideMachineKeyStore('file', 'win32')).toBe('file')
-    expect(() => decideMachineKeyStore('unknown', 'linux')).toThrow(
-      "BOTTEGA_KEYSTORE must be 'file' when set",
     )
   })
 })

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
 import {
+  decideKeychainBackend,
   keychainPlatform,
   readKeychainItem,
   type SecurityRunner,
@@ -52,8 +53,12 @@ export function decideMachineKeyStore(
   if (requested !== undefined) {
     throw new Error(`${KEYSTORE_ENV} must be 'file' when set`)
   }
-  if (platform === 'darwin' || platform === 'linux') return 'keychain'
-  throw new Error(`machine key storage is unsupported on platform ${platform}`)
+  try {
+    decideKeychainBackend(platform)
+    return 'keychain'
+  } catch {
+    throw new Error(`machine key storage is unsupported on platform ${platform}`)
+  }
 }
 
 function useFile(env: ConfigEnvironment): boolean {
@@ -105,7 +110,7 @@ export function writeMachineKey(
   writeKeychainItem(SERVICE, ACCOUNT, encoded, runner)
   const stored = readMachineKey(env, runner)
   if (!stored || !Buffer.from(stored.privateKey).equals(Buffer.from(pair.privateKey))) {
-    throw new Error('security add-generic-password verification failed: stored key did not match')
+    throw new Error('machine key verification failed: the stored key did not match the written key')
   }
 }
 
