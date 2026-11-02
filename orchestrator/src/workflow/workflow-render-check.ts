@@ -3,8 +3,8 @@
 
 import { MissingWorkflowInjectionFactsError } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
+import { shipToRungs } from '../release/ship-to-reach.ts'
 import { builtInAutonomyScope, catalogueStepsForAutonomy, resolveAutonomy } from './autonomy.ts'
-import { shipToRungs } from './ship-to-reach.ts'
 import type { CatalogueStep, StepCatalogueDefinition } from './step-catalogue-definition.ts'
 import type { WorkflowDefinition, WorkflowMode } from './workflow-definition.ts'
 import {

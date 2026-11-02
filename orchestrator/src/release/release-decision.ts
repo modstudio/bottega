@@ -195,6 +195,17 @@ export function alreadyLiveReleaseDecision(facts: {
   )
 }
 
+/** Decide whether release evidence proves the merge is deployed on this rung. */
+export function releaseProofDecision(facts: {
+  declaresLive: boolean
+  exitCode: number | null
+  liveMatchesCandidate: boolean | null
+  candidateContainsMerge: boolean
+}): boolean {
+  if (facts.exitCode !== 0 || !facts.candidateContainsMerge) return false
+  return facts.declaresLive ? facts.liveMatchesCandidate === true : true
+}
+
 export function releaseLockDecision(
   holder: { session: string | null; since: string } | null,
 ): Decision {

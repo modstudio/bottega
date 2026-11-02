@@ -16,6 +16,7 @@ const payload: PullRequestPostLandingPayload = {
   requiredRungs: ['hosted-api'],
   rungDecisionError: null,
   releaseRequired: true,
+  depth: null,
   promoteWorkflowDrafts: true,
   recordingError: null,
   requeueOutput: null,

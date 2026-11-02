@@ -1,6 +1,7 @@
-// concern: workflows
+// concern: release reach
 /** Decides which release rungs a resolved ship-to level permits. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ShipToValue } from '../../../shared/ship-to.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 
@@ -21,6 +22,19 @@ export function shipToRungs(rungs: readonly (ShipToRung & { onDemand?: boolean }
   return rungs
     .filter(({ onDemand }) => !onDemand)
     .map(({ name, releasesWhenChanged }) => ({ name, releasesWhenChanged }))
+}
+
+export function shipToDepthRefusal(
+  rungs: readonly (ShipToRung & { onDemand?: boolean })[],
+  depth: string | undefined,
+  project: string,
+): string | null {
+  if (depth === undefined) return null
+  const depthRung = rungs.find(({ name }) => name === depth)
+  if (depthRung?.onDemand)
+    return `ship-to depth "${depthRung.name}" names a rung released on demand with ${PLATFORM_SLUG} release run ${project} --rung ${depthRung.name} and cannot be a ship-to depth`
+  const decision = decideShipToReach('production', shipToRungs(rungs), depth)
+  return decision.allowed ? null : decision.refusal
 }
 
 export function shipToReachNeedsMergedChange(

@@ -72,6 +72,7 @@ const satisfied: RequiredReleaseReport = {
   releases: [
     {
       rung: 'hosted-api',
+      required: true,
       deployExit: 0,
       outputTail: 'already live at release-commit',
       satisfied: true,
@@ -153,8 +154,17 @@ test('a successful move fences this process and hands off the exact fixed identi
     headCommit: 'head-commit',
     mergeCommit: 'merge-commit',
     requiredRungs: ['hosted-api'],
+    rungPlans: [
+      {
+        rung: 'hosted-api',
+        required: true,
+        reason: null,
+        declaresLive: false,
+      },
+    ],
     rungDecisionError: null,
     releaseRequired: true,
+    depth: null,
     promoteWorkflowDrafts: true,
     recordingError: null,
     requeueOutput: null,
@@ -217,7 +227,7 @@ test('a change inside a rung entry closure requires that rung and hands it off',
   })
 
   expect(asked).toEqual([{ mergeCommit: 'merge-commit', entries: ['hub/src/hosted.ts'] }])
-  expect(received[0]?.requiredRungs).toEqual(['hosted-hub'])
+  expect(received[0]?.requiredRungs).toEqual(['hosted-api', 'hosted-hub'])
 })
 
 test('the real post-landing adapter refuses before git or spawn under the test runner', () => {
@@ -419,6 +429,7 @@ const childPayload = (overrides: Partial<PullRequestPostLandingPayload> = {}) =>
   requiredRungs: ['hosted-api'],
   rungDecisionError: null,
   releaseRequired: true,
+  depth: null,
   promoteWorkflowDrafts: false,
   recordingError: null,
   requeueOutput: null,

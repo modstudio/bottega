@@ -518,7 +518,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/verdict/verdict-rules.ts',
   'orchestrator/src/workflow/probe-identifier.ts',
   'orchestrator/src/workflow/session-context-cache.ts',
-  'orchestrator/src/workflow/ship-to-reach.ts',
   'orchestrator/src/workflow/step-catalogue-definition.ts',
   'orchestrator/src/workflow/step-catalogue.ts',
   'orchestrator/src/workflow/versioned-lifecycle.ts',

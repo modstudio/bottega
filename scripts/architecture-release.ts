@@ -43,9 +43,20 @@ export const releaseModules = [
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/review/review-declared-globs.ts',
       'orchestrator/src/release/release-entry-closure.ts',
+      'orchestrator/src/release/release-decision.ts',
       'orchestrator/src/release/release-service.ts',
+      'orchestrator/src/release/ship-to-reach.ts',
     ],
     typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],
+  },
+  {
+    file: 'orchestrator/src/release/ship-to-reach.ts',
+    allowed: [
+      'shared/brand.ts',
+      'shared/ship-to.ts',
+      'orchestrator/src/review/review-declared-globs.ts',
+    ],
+    typeOnlyAllowed: ['shared/ship-to.ts'],
   },
   {
     file: 'orchestrator/src/release/release-ledger.ts',

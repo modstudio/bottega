@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project } from '../project/projects.ts'
+import { releaseProofDecision } from './release-decision.ts'
 import {
   decideRequiredRungs,
   formatRequiredReleaseReport,
@@ -156,7 +157,7 @@ describe('releaseRequiredRungs', () => {
     expect(released).toBe(true)
   })
 
-  test('does not require a rung when a changed path is outside its entry closure', () => {
+  test('reaches an unconditioned rung when a changed path is outside its entry closure', () => {
     let released = false
     const report = releaseRequiredRungs({
       project: entryPointProject,
@@ -175,8 +176,8 @@ describe('releaseRequiredRungs', () => {
       }),
     })
 
-    expect(report).toEqual({ required: [], releases: [], satisfied: true })
-    expect(released).toBe(false)
+    expect(report.required).toEqual(['hosted-api'])
+    expect(released).toBe(true)
   })
 
   test('uses a supplied empty decision without deriving it again', () => {
@@ -186,7 +187,7 @@ describe('releaseRequiredRungs', () => {
       project: entryPointProject,
       mergeCommit: 'merge',
       releaseRequired: true,
-      decision: { decided: true, required: [], error: null },
+      decision: { decided: true, required: [], rungs: [], error: null },
       runner: runner({
         changedPaths: () => {
           changedPathsRead = true
@@ -324,6 +325,7 @@ describe('releaseRequiredRungs', () => {
     expect(report.releases).toEqual([
       {
         rung: 'hosted-api',
+        required: true,
         deployExit: 0,
         outputTail: 'pending 0',
         satisfied: true,
@@ -384,7 +386,7 @@ describe('releaseRequiredRungs', () => {
     )
   })
 
-  test('skips a rung already live at a commit containing the merge', () => {
+  test('skips a no-live rung deployed at a commit containing the merge', () => {
     let deployed = false
     const report = releaseRequiredRungs({
       project,
@@ -403,7 +405,7 @@ describe('releaseRequiredRungs', () => {
     expect(report.satisfied).toBe(true)
     expect(report.releases[0]).toMatchObject({
       deployed: false,
-      outputTail: 'already live at newer',
+      outputTail: 'deployed at newer',
     })
     expect(deployed).toBe(false)
   })
@@ -465,7 +467,14 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     const report = releaseRequiredRungsAfterMainMove({
       project,
       mergeCommit: 'merge',
-      required: ['hosted-api'],
+      rungs: [
+        {
+          rung: 'hosted-api',
+          required: true,
+          reason: null,
+          declaresLive: false,
+        },
+      ],
       runner: runner({
         prepareMain: () => {
           prepared = true
@@ -480,5 +489,96 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     expect(report.satisfied).toBe(true)
     expect(released).toBe(true)
     expect(prepared).toBe(false)
+  })
+})
+
+describe('declared-rung report class guard', () => {
+  test('reports every declared rung exactly once with its outcome', () => {
+    const guardedProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [
+            { name: 'artifact-match', branch: 'main', releasesWhenChanged: ['packages/**'] },
+            { name: 'artifact-skip', branch: 'main', releasesWhenChanged: ['docs/**'] },
+            { name: 'unconditioned', branch: 'main' },
+            {
+              name: 'demand-match',
+              branch: 'main',
+              onDemand: true,
+              requiredWhenChanged: ['packages/**'],
+            },
+            {
+              name: 'demand-skip',
+              branch: 'main',
+              onDemand: true,
+              requiredWhenChanged: ['infra/**'],
+            },
+            { name: 'beyond', branch: 'main' },
+          ],
+        },
+      },
+    } as Project
+    const report = releaseRequiredRungs({
+      project: guardedProject,
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      depth: 'unconditioned',
+      runner: runner({ changedPaths: () => ['packages/core/CHANGELOG.md'] }),
+    })
+    const output = formatRequiredReleaseReport(report, '42', guardedProject.name)
+
+    for (const name of [
+      'artifact-match',
+      'artifact-skip',
+      'unconditioned',
+      'demand-match',
+      'demand-skip',
+      'beyond',
+    ]) {
+      expect(output.match(new RegExp(`rung ${name}(?=[:])`, 'g'))).toHaveLength(1)
+    }
+    expect(output).toContain('rung artifact-skip: not required; no release artifact in this change')
+    expect(output).toContain(
+      'rung demand-skip: not required; no changed path matches requiredWhenChanged',
+    )
+    expect(output).toContain('rung beyond: not required; beyond depth unconditioned')
+  })
+})
+
+describe('release proof decision', () => {
+  test('proves a no-live rung from a successful descendant release', () => {
+    expect(
+      releaseProofDecision({
+        declaresLive: false,
+        exitCode: 0,
+        liveMatchesCandidate: null,
+        candidateContainsMerge: true,
+      }),
+    ).toBe(true)
+  })
+
+  test('does not prove a live rung from a null match', () => {
+    expect(
+      releaseProofDecision({
+        declaresLive: true,
+        exitCode: 0,
+        liveMatchesCandidate: null,
+        candidateContainsMerge: true,
+      }),
+    ).toBe(false)
+  })
+
+  test('proves a live rung from a matching descendant release', () => {
+    expect(
+      releaseProofDecision({
+        declaresLive: true,
+        exitCode: 0,
+        liveMatchesCandidate: true,
+        candidateContainsMerge: true,
+      }),
+    ).toBe(true)
   })
 })

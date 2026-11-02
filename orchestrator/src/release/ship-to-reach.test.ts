@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { decideShipToReach } from './ship-to-reach.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { decideShipToReach, shipToDepthRefusal } from './ship-to-reach.ts'
 
 describe('ship-to reach', () => {
   test.each([
@@ -64,6 +65,12 @@ describe('ship-to reach', () => {
       refusal:
         'ship-to depth "preview" names no registered release rung; registered rungs: staging, production; pass a registered rung name or omit depth',
     })
+  })
+
+  test('depth validation refuses an on-demand rung with its release command', () => {
+    expect(shipToDepthRefusal([{ name: 'manual', onDemand: true }], 'manual', 'fixture')).toBe(
+      `ship-to depth "manual" names a rung released on demand with ${PLATFORM_SLUG} release run fixture --rung manual and cannot be a ship-to depth`,
+    )
   })
 
   test.each([
