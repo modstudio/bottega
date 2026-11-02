@@ -22,7 +22,7 @@ function poolParams(
   promptBytes: number,
   stack: string | null | undefined,
   lens: string | null | undefined,
-): unknown[] {
+): (string | number | null)[] {
   return [
     jobName,
     promptSizeBucket(promptBytes) === 'small' ? 1 : 0,

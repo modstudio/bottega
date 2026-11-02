@@ -325,12 +325,10 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       failure,
       coolingProbeAgent,
     )
-    const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel, EVIDENCE_WINDOW)
     const recent = aggregateEvidence(window.rows)
     const { scored, failures } = recent
     const evidence = scored + failures
-    const pooledEvidence = window.rows.filter((row) => row.pooled).length
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
     const mcpWhy = mcpIneligibility(a)
     const policy = policyEligibility(a)
@@ -386,19 +384,19 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     }
     return {
       agent: name,
-      runs: h?.runs ?? 0,
+      runs: hist.get(name)?.runs ?? 0,
       scored,
       failures,
       none: recent.none,
       evidence,
-      pooledEvidence,
+      pooledEvidence: window.rows.filter((row) => row.pooled).length,
       evidenceModel: window.evidenceModel,
       score,
       shrunk: null,
       latencyMs: median(latByAgent.get(name) ?? []),
-      tokens: h?.tokens ?? 0,
+      tokens: hist.get(name)?.tokens ?? 0,
       usage: runUsageMedians(window.rows),
-      costUsd: h?.cost ?? 0,
+      costUsd: hist.get(name)?.cost ?? 0,
       free: a.billing === 'none' || a.billing === 'free',
       eligible,
       why,
