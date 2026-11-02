@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url'
 /** Ruled bottega-api memory floor; lowering it is an operator ruling. */
 export const HOSTED_API_MEMORY_FLOOR_MB = 1024
 
+/** The tracked hosted API Fly config the floor applies to. */
+export const HOSTED_API_FLY_CONFIG = 'orchestrator/deploy/api/fly.toml'
+
 type HostedMemoryInputs = {
   path: string
   text: string
@@ -31,7 +34,7 @@ export function decideHostedMemory({ path, text, floorMb }: HostedMemoryInputs):
   try {
     parsed = Bun.TOML.parse(text) as Record<string, unknown>
   } catch (error) {
-    return [`${path}: TOML parse failed: ${String(error)}`]
+    return [`${path}: TOML parse failed: ${String(error)}; fix the TOML syntax in ${path}`]
   }
 
   if (!Array.isArray(parsed.vm) || parsed.vm.length === 0) {
@@ -51,7 +54,9 @@ export function decideHostedMemory({ path, text, floorMb }: HostedMemoryInputs):
     const value = (vm as Record<string, unknown>).memory
     const parsedMb = memoryMb(value)
     if (parsedMb === undefined) {
-      findings.push(`${path}: memory value ${namedValue(value)} does not parse`)
+      findings.push(
+        `${path}: memory value ${namedValue(value)} does not parse; write it as <digits>mb, <digits>gb or integer megabytes`,
+      )
     } else if (parsedMb < floorMb) {
       findings.push(
         `${path}: memory value ${namedValue(value)} is below the ${floorMb}mb floor; raise it to at least ${floorMb}mb; lowering the floor is an operator ruling in scripts/check-hosted-memory.ts`,
@@ -63,7 +68,7 @@ export function decideHostedMemory({ path, text, floorMb }: HostedMemoryInputs):
 
 if (import.meta.main) {
   const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
-  const path = 'orchestrator/deploy/api/fly.toml'
+  const path = HOSTED_API_FLY_CONFIG
   const text = readFileSync(resolve(root, path), 'utf8')
   const findings = decideHostedMemory({ path, text, floorMb: HOSTED_API_MEMORY_FLOOR_MB })
   if (findings.length) {
@@ -71,7 +76,5 @@ if (import.meta.main) {
     for (const finding of findings) console.error(finding)
     process.exit(1)
   }
-  const parsed = Bun.TOML.parse(text) as { vm: { memory: unknown }[] }
-  const pinnedMb = Math.min(...parsed.vm.map((vm) => memoryMb(vm.memory)!))
-  console.log(`hosted memory check passed (${pinnedMb}mb >= ${HOSTED_API_MEMORY_FLOOR_MB}mb)`)
+  console.log(`hosted memory check passed (${path} at or above ${HOSTED_API_MEMORY_FLOOR_MB}mb)`)
 }

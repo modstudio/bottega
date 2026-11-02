@@ -2,9 +2,13 @@ import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { decideHostedMemory, HOSTED_API_MEMORY_FLOOR_MB } from './check-hosted-memory.ts'
+import {
+  decideHostedMemory,
+  HOSTED_API_FLY_CONFIG,
+  HOSTED_API_MEMORY_FLOOR_MB,
+} from './check-hosted-memory.ts'
 
-const path = 'orchestrator/deploy/api/fly.toml'
+const path = HOSTED_API_FLY_CONFIG
 
 test('refuses 512mb against a 1024mb floor', () => {
   expect(decideHostedMemory({ path, text: '[[vm]]\nmemory = "512mb"', floorMb: 1024 })).toEqual([
@@ -20,6 +24,12 @@ test('accepts gigabytes and integer megabytes', () => {
 test('refuses a missing memory key', () => {
   expect(decideHostedMemory({ path, text: '[[vm]]\ncpus = 1', floorMb: 1024 })).toEqual([
     `${path}: memory is not pinned and the deploy would use Fly's default; set memory = "1024mb" under [[vm]]`,
+  ])
+})
+
+test('refuses a memory value it cannot parse, naming the accepted forms', () => {
+  expect(decideHostedMemory({ path, text: '[[vm]]\nmemory = "1.5gb"', floorMb: 1024 })).toEqual([
+    `${path}: memory value "1.5gb" does not parse; write it as <digits>mb, <digits>gb or integer megabytes`,
   ])
 })
 
