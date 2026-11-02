@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { INSTALL_HOME_ENV } from '../../../shared/install-root.ts'
 
-const ORCHESTRATOR_DATABASE_ENV = 'BOTTEGA_ORCHESTRATOR_DB'
+const MAIN_STORE_OVERRIDE_ENV = `${PLATFORM_SLUG.toUpperCase()}_ORCHESTRATOR_DB`
+const WEB_STORE_OVERRIDE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
 
 export type MainCheckoutUpdateInvocation = {
   argv: string[]
@@ -33,7 +34,8 @@ export function mainCheckoutUpdateInvocation(
 ): MainCheckoutUpdateInvocation {
   const {
     [INSTALL_HOME_ENV]: _installHome,
-    [ORCHESTRATOR_DATABASE_ENV]: _databaseOverride,
+    [MAIN_STORE_OVERRIDE_ENV]: _databaseOverride,
+    [WEB_STORE_OVERRIDE_ENV]: _hubDatabaseOverride,
     ...env
   } = parentEnvironment
   return {
@@ -41,6 +43,12 @@ export function mainCheckoutUpdateInvocation(
     cwd: projectPath,
     env,
   }
+}
+
+/** Throw the one failure presentation shared by machine-update mover consumers. */
+export function throwMainCheckoutUpdateFailure(result: MainCheckoutUpdateResult): void {
+  if (result.exitCode === 0) return
+  throw new Error(result.output || `${PLATFORM_SLUG} machine update exited ${result.exitCode}`)
 }
 
 /** Move a registered main checkout and migrate its stores under machine update's window. */

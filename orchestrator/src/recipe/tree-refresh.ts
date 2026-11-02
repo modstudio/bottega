@@ -10,6 +10,7 @@ import { isInstallationRoot } from '../../../shared/install-root.ts'
 import {
   moveRegisteredMainCheckout,
   movesRunningBottegaInstallation,
+  throwMainCheckoutUpdateFailure,
 } from '../database/machine-update-mover.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
 import { git, gitOk, repoRootOf } from '../git/git-environment.ts'
@@ -61,13 +62,16 @@ export function decideMainCheckoutBranch(
 /** Route an already-validated main checkout through its applicable mover. */
 export function moveMainCheckoutForRefresh(
   movesInstallation: boolean,
-  move: { installation(): { exitCode: number; output: string }; otherProject(): string },
+  move: {
+    refuseCollisions(): void
+    installation(): { exitCode: number; output: string }
+    otherProject(): string
+  },
 ): string[] {
+  move.refuseCollisions()
   if (!movesInstallation) return [move.otherProject()]
   const moved = move.installation()
-  if (moved.exitCode !== 0) {
-    throw new Error(moved.output || `${PLATFORM_SLUG} machine update exited ${moved.exitCode}`)
-  }
+  throwMainCheckoutUpdateFailure(moved)
   return moved.output ? moved.output.split('\n') : ['updated main checkout through machine update']
 }
 
@@ -84,15 +88,63 @@ function pathsFromGit(value: string): string[] {
   return splitNulPaths(value)
 }
 
+function refuseRefreshPathCollisions(treeRoot: string, remoteCommit: string): void {
+  const incomingAddedPaths = pathsFromGit(
+    git(
+      nulPathListArgs(['diff', '--name-only', '--diff-filter=A', 'HEAD', remoteCommit]),
+      treeRoot,
+    ),
+  )
+  const ignoredPaths = incomingAddedPaths.length
+    ? pathsFromGit(
+        git(
+          nulPathListArgs([
+            'ls-files',
+            '--others',
+            '--ignored',
+            '--exclude-standard',
+            '--',
+            ...incomingAddedPaths,
+          ]),
+          treeRoot,
+        ),
+      )
+    : []
+  const untrackedPaths = incomingAddedPaths.length
+    ? pathsFromGit(
+        git(
+          nulPathListArgs([
+            'ls-files',
+            '--others',
+            '--exclude-standard',
+            '--',
+            ...incomingAddedPaths,
+          ]),
+          treeRoot,
+        ),
+      )
+    : []
+  const collisions = collidingRefreshPaths({ incomingAddedPaths, ignoredPaths, untrackedPaths })
+  if (collisions.length) {
+    throw new Error(
+      `worktree ${treeRoot} has ignored or untracked files that incoming commits add: ${collisions.join(', ')}; move them aside (or commit them) before refreshing`,
+    )
+  }
+}
+
+function fetchRefreshRemote(treeRoot: string, trunk: string): string {
+  git(['fetch', 'origin', trunk], treeRoot)
+  return git(['rev-parse', `origin/${trunk}^{commit}`], treeRoot)
+}
+
 function fastForwardTree(
   treeRoot: string,
   trunk: string,
   branch: string,
   beforeFastForward?: (remote: string) => void,
 ): string {
-  git(['fetch', 'origin', trunk], treeRoot)
   const remote = `origin/${trunk}`
-  const remoteCommit = git(['rev-parse', `${remote}^{commit}`], treeRoot)
+  const remoteCommit = fetchRefreshRemote(treeRoot, trunk)
   const mergeBase = git(['merge-base', 'HEAD', remoteCommit], treeRoot)
   const ownCommits = countCommits(`${mergeBase}..HEAD`, treeRoot)
   const behindCommits = countCommits(`${mergeBase}..${remoteCommit}`, treeRoot)
@@ -104,51 +156,7 @@ function fastForwardTree(
   }
   if (decision.action === 'fast-forward') {
     beforeFastForward?.(remoteCommit)
-    const incomingAddedPaths = pathsFromGit(
-      git(
-        nulPathListArgs(['diff', '--name-only', '--diff-filter=A', 'HEAD', remoteCommit]),
-        treeRoot,
-      ),
-    )
-    const ignoredPaths = incomingAddedPaths.length
-      ? pathsFromGit(
-          git(
-            nulPathListArgs([
-              'ls-files',
-              '--others',
-              '--ignored',
-              '--exclude-standard',
-              '--',
-              ...incomingAddedPaths,
-            ]),
-            treeRoot,
-          ),
-        )
-      : []
-    const untrackedPaths = incomingAddedPaths.length
-      ? pathsFromGit(
-          git(
-            nulPathListArgs([
-              'ls-files',
-              '--others',
-              '--exclude-standard',
-              '--',
-              ...incomingAddedPaths,
-            ]),
-            treeRoot,
-          ),
-        )
-      : []
-    const collisions = collidingRefreshPaths({
-      incomingAddedPaths,
-      ignoredPaths,
-      untrackedPaths,
-    })
-    if (collisions.length) {
-      throw new Error(
-        `worktree ${treeRoot} has ignored or untracked files that incoming commits add: ${collisions.join(', ')}; move them aside (or commit them) before refreshing`,
-      )
-    }
+    refuseRefreshPathCollisions(treeRoot, remoteCommit)
     git(['merge', '--ff-only', remoteCommit], treeRoot)
     return `fast-forwarded ${branch} by ${behindCommits} commit(s) to ${remote}`
   }
@@ -294,6 +302,10 @@ function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>)
     isInstallationRoot(project.path),
   )
   return moveMainCheckoutForRefresh(movesInstallation, {
+    refuseCollisions() {
+      const refreshRemoteCommit = fetchRefreshRemote(treeRoot, trunk)
+      refuseRefreshPathCollisions(treeRoot, refreshRemoteCommit)
+    },
     installation: () => moveRegisteredMainCheckout(project),
     otherProject: () => fastForwardTree(treeRoot, trunk, trunk),
   })

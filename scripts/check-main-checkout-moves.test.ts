@@ -13,11 +13,14 @@ test('refuses branch-moving git calls outside the mover and named non-main call 
       "function moveNonInstallationMainCheckout() { git(['merge', '--ff-only', remote], cwd) }",
     'hub/src/unsafe.ts': "function moveMainCheckout() { git(['pull'], cwd) }",
     'shared/unsafe.ts': "function moveMainCheckout() { git(['merge', '--ff-only'], cwd) }",
+    'orchestrator/src/spawn.ts':
+      "function moveMainCheckout() { spawn(['git', '-C', cwd, 'reset', '--hard', tip]) }",
   })
 
   expect(mainCheckoutMoveViolations(findings)).toEqual([
-    'hub/src/unsafe.ts:1: pull may move a registered main checkout; route it through orchestrator/src/database/machine-update.ts',
-    'shared/unsafe.ts:1: merge --ff-only may move a registered main checkout; route it through orchestrator/src/database/machine-update.ts',
+    'hub/src/unsafe.ts:1: pull may move a registered main checkout; move the call into the orchestrator mover orchestrator/src/database/machine-update-mover.ts, or remove it',
+    'orchestrator/src/spawn.ts:1: reset --hard may move a registered main checkout; route it through moveRegisteredMainCheckout in orchestrator/src/database/machine-update-mover.ts, which runs machine update',
+    'shared/unsafe.ts:1: merge --ff-only may move a registered main checkout; move the call into the orchestrator mover orchestrator/src/database/machine-update-mover.ts, or remove it',
   ])
 })
 
@@ -28,6 +31,6 @@ test('does not exempt another move merely because it shares an admitted file', (
   })
 
   expect(mainCheckoutMoveViolations(findings)).toEqual([
-    'orchestrator/src/recipe/tree-refresh.ts:1: merge --ff-only may move a registered main checkout; route it through orchestrator/src/database/machine-update.ts',
+    'orchestrator/src/recipe/tree-refresh.ts:1: merge --ff-only may move a registered main checkout; route it through moveRegisteredMainCheckout in orchestrator/src/database/machine-update-mover.ts, which runs machine update',
   ])
 })

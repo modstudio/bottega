@@ -157,15 +157,15 @@ test('an already-merged recovery runs landings, promotion, required release, the
     cwd,
     adapter({
       view: () => ({ ...pullRequest, state: 'MERGED', mergeCommit: 'merge-commit' }),
-      recordLandings: () => calls.push('record-landings'),
-      moveMain: () => calls.push('move-main'),
+      recordLandings: () => calls.push('landings'),
+      moveMain: () => calls.push('move'),
       promoteMergedWorkflowDrafts: () => {
-        calls.push('promote-workflows')
+        calls.push('promotion')
         return 'promoted workflow drafts'
       },
       releaseRequired: (enabled) => {
         expect(enabled).toBe(true)
-        calls.push('release-required')
+        calls.push('release')
         return requiredRelease({
           releases: [
             {
@@ -188,7 +188,7 @@ test('an already-merged recovery runs landings, promotion, required release, the
     true,
   )
   expect(outcome.exitCode).toBe(21)
-  expect(calls).toContain('move-main')
+  expect(calls).toEqual(['landings', 'move', 'promotion', 'release', 'cleanup'])
   expect(outcome.output).toContain('required rung hosted-api: deploy exit 7')
 })
 

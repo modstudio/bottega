@@ -100,6 +100,7 @@ function complete(input: {
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
   calls?: string[]
+  movesInstallation?: boolean
 }) {
   return completePullRequestPostLanding({
     adapter: remaining(input.calls ?? []),
@@ -111,23 +112,32 @@ function complete(input: {
     target: '42',
     releaseRequired: input.releaseRequired ?? true,
     workflowPromotionDue: input.workflowPromotionDue ?? false,
+    ...(input.movesInstallation === undefined
+      ? {}
+      : { movesInstallation: input.movesInstallation }),
   })
 }
 
 test('a successful move fences this process and hands off the exact fixed identity', () => {
   const received: PullRequestPostLandingPayload[] = []
   const handOffProjects: string[] = []
+  const moveDecisions: boolean[] = []
+  const handOffDecisions: boolean[] = []
   const outcome = complete({
     workflowPromotionDue: true,
+    movesInstallation: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
       mainHead: () => 'main-before',
-      moveMain: () => {},
+      moveMain: (_project, _mergeCommit, movesInstallation) => {
+        moveDecisions.push(movesInstallation)
+      },
       fence: fenceStoreAfterCheckoutMove,
-      handOff: (payload, movedProject) => {
+      handOff: (payload, movedProject, movesInstallation) => {
         received.push(payload)
         handOffProjects.push(movedProject.path)
+        handOffDecisions.push(movesInstallation)
         return { output: 'child output', exitCode: 0 }
       },
     },
@@ -135,6 +145,8 @@ test('a successful move fences this process and hands off the exact fixed identi
 
   expect(outcome).toEqual({ output: 'child output', exitCode: 0 })
   expect(handOffProjects).toEqual([project.path])
+  expect(moveDecisions).toEqual([true])
+  expect(handOffDecisions).toEqual([true])
   expect(received[0]).toEqual({
     project: PLATFORM_SLUG,
     target: '42',
@@ -310,6 +322,7 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   const calls: string[] = []
   const outcome = complete({
     calls,
+    movesInstallation: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -334,6 +347,31 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   expect(outcome.output).toContain(`remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`)
   expect(calls).toEqual(['cleanup'])
   expect(writableDb()).toBeDefined()
+})
+
+test('another-project move failure reports the plain git recovery', () => {
+  const outcome = complete({
+    movesInstallation: false,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {
+        throw new Error('registered main checkout is dirty; clean it')
+      },
+      fence: () => {
+        throw new Error('fence must not run')
+      },
+      handOff: () => {
+        throw new Error('hand-off must not run')
+      },
+    },
+  })
+
+  expect(outcome.output).toContain(
+    `registered main checkout is dirty; clean it; recover with: git -C ${project.path} fetch origin, then git -C ${project.path} merge --ff-only merge-commit, then ${PLATFORM_SLUG} pr merge 42 --release-required`,
+  )
+  expect(outcome.output).not.toContain(`${project.path}/bin/${PLATFORM_SLUG} machine update`)
 })
 
 test.each([0, 20, 21])('the parent propagates child output and exit %i', (exitCode) => {

@@ -1,4 +1,4 @@
-// This guard intentionally recognizes only literal argv at production git call sites.
+// This guard recognizes literal argv at production git call sites, including git-prefixed spawns.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ import { PLATFORM_NAME } from '../shared/brand.ts'
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const SOURCE_ROOTS = ['orchestrator/src', 'hub/src', 'shared'] as const
 const MOVER_MODULE = 'orchestrator/src/database/machine-update.ts'
+const MOVER_ADAPTER = 'orchestrator/src/database/machine-update-mover.ts'
 
 type AdmittedMove = {
   file: string
@@ -89,9 +90,15 @@ function literalArgv(node: ts.CallExpression): Array<string | null> | null {
 }
 
 function branchMove(argv: readonly (string | null)[]): string | null {
-  if (argv[0] === 'pull') return 'pull'
-  if (argv[0] === 'merge' && argv.includes('--ff-only')) return 'merge --ff-only'
-  if (argv[0] === 'reset' && argv.includes('--hard')) return 'reset --hard'
+  let command = argv
+  if (command[0] === 'git') {
+    let offset = 1
+    while (command[offset] === '-C' && offset + 1 < command.length) offset += 2
+    command = command.slice(offset)
+  }
+  if (command[0] === 'pull') return 'pull'
+  if (command[0] === 'merge' && command.includes('--ff-only')) return 'merge --ff-only'
+  if (command[0] === 'reset' && command.includes('--hard')) return 'reset --hard'
   return null
 }
 
@@ -132,11 +139,13 @@ export function mainCheckoutMoveViolations(findings: readonly BranchMoveCall[]):
         entry.functionName === finding.functionName &&
         entry.command === finding.command,
     )
-    return admitted
-      ? []
-      : [
-          `${finding.file}:${finding.line}: ${finding.command} may move a registered main checkout; route it through ${MOVER_MODULE}`,
-        ]
+    if (admitted) return []
+    const remedy = finding.file.startsWith('orchestrator/src/')
+      ? `route it through moveRegisteredMainCheckout in ${MOVER_ADAPTER}, which runs machine update`
+      : `move the call into the orchestrator mover ${MOVER_ADAPTER}, or remove it`
+    return [
+      `${finding.file}:${finding.line}: ${finding.command} may move a registered main checkout; ${remedy}`,
+    ]
   })
 }
 
