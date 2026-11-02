@@ -242,7 +242,7 @@ test('notice claim runs hosted pressure only on a board-refresh tick', async () 
 })
 
 test('notice delivery survives a failing hosted-pressure check on a refresh tick', async () => {
-  const session = 'monitor-hosted-pressure-busy'
+  const session = 'monitor-hosted-pressure-malformed'
   db()
     .query(
       `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
@@ -252,21 +252,25 @@ test('notice delivery survives a failing hosted-pressure check on a refresh tick
   const local = postNotice(
     {
       audience: `session:${session}`,
-      title: 'Available during hosted pressure writer',
-      body: 'fail-fast hosted pressure body',
+      title: 'Available with unreadable hosted-pressure cache',
+      body: 'The local notice survives an unreadable hosted-pressure cache row.',
       ackRequired: false,
     },
     {},
     Date.now(),
   )
+  const seededCheckedAt = new Date(Date.now() - HOSTED_METRICS_INTERVAL_MS - 1).toISOString()
   db()
     .query(
       `INSERT INTO hosted_pressure_cache(record_id,singleton,checked_at,state,last_sample,last_error)
        VALUES (?,1,?,'{',NULL,NULL)`,
     )
-    .run(newRecordId(), new Date(Date.now() - HOSTED_METRICS_INTERVAL_MS - 1).toISOString())
+    .run(newRecordId(), seededCheckedAt)
   const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
   expect(delivery.notices.map((notice) => notice.noticeId)).toContain(`board:${local.number}`)
+  expect(
+    db().query('SELECT checked_at,state FROM hosted_pressure_cache WHERE singleton=1').get(),
+  ).toEqual({ checked_at: seededCheckedAt, state: '{' })
 }, 1_000)
 
 test('read-only notice claim defers a report reply successor with a reason', async () => {

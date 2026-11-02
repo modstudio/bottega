@@ -6,7 +6,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { withinHostedBoardRefreshBudget } from '../board/board-hosted-refresh-budget.ts'
+import {
+  BUDGET_SPENT,
+  withinHostedBoardRefreshBudget,
+} from '../board/board-hosted-refresh-budget.ts'
 import { hostedBoardPostInput } from '../board/board-operations.ts'
 import { boardActor } from '../board/board-store.ts'
 import { db, writeTransaction } from '../database/db.ts'
@@ -18,6 +21,8 @@ import {
 import {
   CLEAR_HOSTED_PRESSURE_STATE,
   decideHostedPressure,
+  HOSTED_METRICS_BUDGET_STAGE,
+  HOSTED_METRICS_TOKEN_STAGE,
   type HostedPressureDecision,
   type HostedPressureObservation,
   type HostedPressureState,
@@ -96,7 +101,7 @@ async function observeHostedMetrics(
   at: string,
   deps: Required<Pick<Dependencies, 'fetch' | 'resolveToken' | 'observeBudgetMs'>>,
 ): Promise<HostedPressureObservation> {
-  let stage: 'token' | 'queries' = 'token'
+  let stage: string = HOSTED_METRICS_TOKEN_STAGE
   try {
     return await withinHostedBoardRefreshBudget(async (signal) => {
       let token: string | undefined
@@ -105,7 +110,7 @@ async function observeHostedMetrics(
           HOSTED_FLY_METRICS_TOKEN
         ]
       } catch (error) {
-        return { kind: 'failed', query: 'token', error: String(error), at }
+        return { kind: 'failed', query: HOSTED_METRICS_TOKEN_STAGE, error: String(error), at }
       }
       if (!token) return { kind: 'unconfigured', at }
       stage = 'queries'
@@ -134,10 +139,15 @@ async function observeHostedMetrics(
       }
     }, deps.observeBudgetMs)
   } catch (error) {
+    const budgetExpired = error instanceof Error && error.message === BUDGET_SPENT
     return {
       kind: 'failed',
-      query: stage,
-      error: String(error),
+      query: budgetExpired && stage === 'queries' ? HOSTED_METRICS_BUDGET_STAGE : stage,
+      error: budgetExpired
+        ? stage === HOSTED_METRICS_TOKEN_STAGE
+          ? `token resolve exceeded ${deps.observeBudgetMs} ms`
+          : `observation exceeded ${deps.observeBudgetMs} ms`
+        : String(error),
       at,
     }
   }

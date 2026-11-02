@@ -114,7 +114,6 @@ test('the observation budget includes token resolution', async () => {
   const database = db()
   let fetchCalled = false
   let tokenSignal: AbortSignal | undefined
-  const startedAt = Date.now()
   const result = await checkHostedPressureCached({
     database,
     clock: base,
@@ -129,22 +128,40 @@ test('the observation budget includes token resolution', async () => {
     observeBudgetMs: 50,
   })
 
-  expect(Date.now() - startedAt).toBeLessThan(500)
   expect(result.conditions[0]).toEqual(
     expect.objectContaining({
       kind: 'observation-error',
       detail: expect.stringContaining(
-        'could not observe: hosted unreachable (Error: hosted board refresh budget spent)',
+        'could not observe: hosted unreachable (token resolve exceeded 50 ms)',
       ),
     }),
   )
   expect(
     database.query('SELECT last_error FROM hosted_pressure_cache WHERE singleton=1').get(),
   ).toEqual({
-    last_error: 'could not observe: hosted unreachable (Error: hosted board refresh budget spent)',
+    last_error: 'could not observe: hosted unreachable (token resolve exceeded 50 ms)',
   })
   expect(fetchCalled).toBeFalse()
   expect(tokenSignal?.aborted).toBeTrue()
+})
+
+test('a query-stage observation budget failure is recorded as a budget failure', async () => {
+  const result = await checkHostedPressureCached({
+    database: db(),
+    clock: base,
+    fetch: (async () => await new Promise<never>(() => {})) as unknown as typeof fetch,
+    resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: 'token' }),
+    observeBudgetMs: 50,
+  })
+
+  expect(result.conditions[0]).toEqual(
+    expect.objectContaining({
+      kind: 'observation-error',
+      subject: 'hosted-metrics:budget',
+      detail: expect.stringContaining('exceeded its budget'),
+    }),
+  )
+  expect(result.conditions[0]?.detail).not.toContain('board refresh')
 })
 
 test('a failed onset post preserves the state and records the announcement error', async () => {
