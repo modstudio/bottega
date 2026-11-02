@@ -36,6 +36,17 @@ const PLATFORM_KEY = Symbol.for('orch.keychain-platform')
 const SECRET_OPERATION_ENV = 'BOTTEGA_SECRET_OPERATION'
 const SECRET_SERVICE_ENV = 'BOTTEGA_SECRET_SERVICE'
 const SECRET_ACCOUNT_ENV = 'BOTTEGA_SECRET_ACCOUNT'
+const COLLECTION_LOCKED_ARGV = [
+  'busctl',
+  '--user',
+  'get-property',
+  'org.freedesktop.secrets',
+  '/org/freedesktop/secrets/aliases/default',
+  'org.freedesktop.Secret.Collection',
+  'Locked',
+]
+const UNLOCK_LOGIN_KEYRING_REMEDY =
+  'gnome-keyring-daemon --replace --unlock --components=secrets --daemonize, providing the password on stdin'
 
 const LINUX_SECRET_SCRIPT = String.raw`
 const operation = process.env.${SECRET_OPERATION_ENV};
@@ -133,6 +144,20 @@ export function classifySecretFailure(code: string, message: string): SecretFail
   return 'other'
 }
 
+export function parseCollectionLocked(result: SecurityResult): boolean | null {
+  if (result.exitCode !== 0) return null
+  const output = decoder.decode(result.stdout).trim()
+  if (output === 'b true') return true
+  if (output === 'b false') return false
+  return null
+}
+
+export function decideNullRead(locked: boolean | null): 'locked' | 'missing' | 'missing-unchecked' {
+  if (locked === true) return 'locked'
+  if (locked === false) return 'missing'
+  return 'missing-unchecked'
+}
+
 export function decideKeychainBackend(platform: string): KeychainBackend {
   if (platform === 'darwin') return 'security'
   if (platform === 'linux') return 'bun-secrets'
@@ -175,6 +200,12 @@ function parseSecretFailure(result: SecurityResult): { code: string; message: st
   }
 }
 
+function noUnlockedCollectionFailure(operation: LinuxSecretOperation): Error {
+  return new Error(
+    `Bun.secrets ${operation} refused: no unlocked login keyring is available; start and unlock it with ${UNLOCK_LOGIN_KEYRING_REMEDY}`,
+  )
+}
+
 function secretFailure(
   operation: LinuxSecretOperation,
   result: SecurityResult,
@@ -190,9 +221,7 @@ function secretFailure(
     )
   }
   if (kind === 'no-unlocked-collection') {
-    return new Error(
-      `Bun.secrets ${operation} refused: no unlocked login keyring is available; start and unlock it with gnome-keyring-daemon --replace --unlock --components=secrets --daemonize, providing the password on stdin`,
-    )
+    return noUnlockedCollectionFailure(operation)
   }
   if (kind === 'no-session-bus') {
     return new Error(
@@ -202,6 +231,52 @@ function secretFailure(
   return new Error(
     `Bun.secrets ${operation} failed with exit code ${result.exitCode}${message ? `: ${message}` : ''}`,
   )
+}
+
+type CollectionLockCheck = { locked: boolean | null; reason: string }
+
+function collectionLockCheckResult(result: SecurityResult): CollectionLockCheck {
+  const reason = decoder.decode(result.stderr).trim().split(/\r?\n/, 1)[0] ?? ''
+  return { locked: parseCollectionLocked(result), reason }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function checkCollectionLocked(runner: SecurityRunner): CollectionLockCheck {
+  try {
+    return collectionLockCheckResult(runner(COLLECTION_LOCKED_ARGV))
+  } catch (error) {
+    return { locked: null, reason: errorMessage(error) }
+  }
+}
+
+async function checkCollectionLockedAsync(
+  runner: AsyncSecurityRunner,
+  signal?: AbortSignal,
+): Promise<CollectionLockCheck> {
+  try {
+    return collectionLockCheckResult(await runner(COLLECTION_LOCKED_ARGV, undefined, signal))
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason
+    return { locked: null, reason: errorMessage(error) }
+  }
+}
+
+function uncheckedLockReason(reason: string): string {
+  return reason || 'busctl returned no readable lock state'
+}
+
+function resolveNullRead(check: CollectionLockCheck): null {
+  const decision = decideNullRead(check.locked)
+  if (decision === 'locked') throw noUnlockedCollectionFailure('get')
+  if (decision === 'missing-unchecked') {
+    console.error(
+      `keyring lock state could not be checked (${uncheckedLockReason(check.reason)}); if the login keyring is locked, unlock it with ${UNLOCK_LOGIN_KEYRING_REMEDY}`,
+    )
+  }
+  return null
 }
 
 function linuxResult(
@@ -219,10 +294,11 @@ export function readLinuxKeychainItem(
   account: string,
   runner: SecurityRunner = runSecurity,
 ): string | null {
-  return linuxResult(
+  const value = linuxResult(
     'get',
     runner(linuxArgv(), undefined, linuxEnvironment('get', service, account)),
   )
+  return value ?? resolveNullRead(checkCollectionLocked(runner))
 }
 
 async function readLinuxKeychainItemAsync(
@@ -234,10 +310,11 @@ async function readLinuxKeychainItemAsync(
   const injected = injectedRunner()
   if (injected) return readLinuxKeychainItem(service, account, injected)
   if (runner !== runSecurityAsync) {
-    return linuxResult(
+    const value = linuxResult(
       'get',
       await runner(linuxArgv(), undefined, signal, linuxEnvironment('get', service, account)),
     )
+    return value ?? resolveNullRead(await checkCollectionLockedAsync(runner, signal))
   }
   if (process.env.NODE_ENV === 'test')
     throw new Error('keychain access requires an injected security runner in tests')
@@ -247,8 +324,9 @@ async function readLinuxKeychainItemAsync(
     abort = () => reject(signal?.reason)
     signal?.addEventListener('abort', abort, { once: true })
   })
+  let value: string | null
   try {
-    return await Promise.race([Bun.secrets.get({ service, name: account }), aborted])
+    value = await Promise.race([Bun.secrets.get({ service, name: account }), aborted])
   } catch (error) {
     if (signal?.aborted) throw signal.reason
     const candidate = error as { code?: unknown; message?: unknown }
@@ -262,6 +340,7 @@ async function readLinuxKeychainItemAsync(
   } finally {
     if (abort) signal?.removeEventListener('abort', abort)
   }
+  return value ?? resolveNullRead(await checkCollectionLockedAsync(runSecurityAsync, signal))
 }
 
 export function writeLinuxKeychainItem(
