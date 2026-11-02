@@ -43,7 +43,7 @@ describe('dependency installation', () => {
     ).toEqual({ kind: 'unresolved' })
   })
 
-  test('a base ahead of origin with the same lockfile stays provisioned', () => {
+  test('a worker whose lockfile matches its recorded base stays provisioned', () => {
     const factsFromRecordedBase = {
       workerRun: true,
       nodeModulesPresent: true,
