@@ -1,6 +1,7 @@
 import { GOOSE_CONTEXT_CEILING } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import {
+  acceptedProbeReaderSuites,
   decideProbeLaunchOverrides,
   probeContextLimitEnvironment,
   readerPromptFindings,
@@ -16,15 +17,29 @@ export function prepareRunProbeLaunch(agent: Agent, opts: RunOptions, requestedJ
     agentHarness: agent.harness ?? agent.name,
     findings: Boolean(requestedJob.findings),
   })
-  if (!decision.accepted) return { refusal: decision.refusal, environment: {} }
+  if (!decision.accepted)
+    return {
+      refusal: decision.refusal,
+      environment: {},
+      contextLimit: undefined,
+      readerSuites: false,
+    }
   return {
     refusal: null,
-    environment: probeContextLimitEnvironment(opts.probeContextLimit, agent.servedContextTokens),
+    environment: probeContextLimitEnvironment(decision.contextLimit, agent.servedContextTokens),
+    contextLimit: decision.contextLimit,
+    readerSuites: decision.readerSuites,
   }
 }
 
 export function probeReaderFindings(opts: RunOptions, requestedJob: Job): boolean {
-  return readerPromptFindings(Boolean(requestedJob.findings), Boolean(opts.probeReaderSuites))
+  const findings = Boolean(requestedJob.findings)
+  const readerSuites = acceptedProbeReaderSuites({
+    probe: Boolean(opts.probe),
+    readerSuites: Boolean(opts.probeReaderSuites),
+    findings,
+  })
+  return readerPromptFindings(findings, readerSuites)
 }
 
 export function reportProbeOverrides(

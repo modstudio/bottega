@@ -17,6 +17,8 @@ test('a context override refuses a non-Goose failover launch', () => {
   expect(launch).toEqual({
     refusal: '--probe-context-limit requires the goose harness; selected harness is codex',
     environment: {},
+    contextLimit: undefined,
+    readerSuites: false,
   })
 })
 

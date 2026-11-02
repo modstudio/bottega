@@ -50,6 +50,8 @@ type CloseOptions = {
   avoid?: string[]
   distinctModels?: string[]
   carry?: boolean
+  probeContextLimit?: number | 'served'
+  probeReaderSuites?: boolean
 }
 
 type SuccessorOptions = {
@@ -60,6 +62,8 @@ type SuccessorOptions = {
   schemaPath: string | undefined
   mcp: ReturnType<typeof mcpRequestFromStored>
   probe: boolean
+  probeContextLimit: number | 'served' | undefined
+  probeReaderSuites: boolean | undefined
   label: string | undefined
   lens: string | undefined
   reviewRole: ReviewRole | undefined
@@ -438,6 +442,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           schemaPath: first.schema_path ?? undefined,
           mcp: mcpRequestFromStored(first.mcp, first.mcp_error),
           probe: !!first.probe,
+          probeContextLimit: opts.probeContextLimit,
+          probeReaderSuites: opts.probeReaderSuites,
           label: first.label ?? undefined,
           lens: first.lens ?? undefined,
           reviewRole: first.review_role ?? undefined,

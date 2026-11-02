@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import { repositoryReaderPreamble } from '../contract/contract.ts'
 import { readonlyInfrastructurePrompt } from '../run/run-readonly-infrastructure.ts'
-import { decideProbeLaunchOverrides, readerPromptFindings } from './probe-launch-overrides.ts'
+import {
+  decideProbeLaunchOverrides,
+  probeContextLimitEnvironment,
+  readerPromptFindings,
+} from './probe-launch-overrides.ts'
 
 const decide = (input: Partial<Parameters<typeof decideProbeLaunchOverrides>[0]> = {}) =>
   decideProbeLaunchOverrides({
@@ -73,4 +77,13 @@ test('reader suites switch only the findings reader preamble wording', () => {
       findings: readerPromptFindings(true, true),
     }),
   ).toContain('record what you could not run in could_not_verify')
+})
+
+test('served context overrides require and use the declared served window', () => {
+  expect(probeContextLimitEnvironment('served', 200_000)).toEqual({
+    GOOSE_CONTEXT_LIMIT: '200000',
+  })
+  expect(() => probeContextLimitEnvironment('served', null)).toThrow(
+    'requires the selected Goose agent to declare its served window',
+  )
 })

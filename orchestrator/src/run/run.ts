@@ -690,7 +690,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
       console.error(`orch: run ${claim.id} ${header}`)
     }
-    reportProbeOverrides(claim.id, probeLaunch.environment, Boolean(opts.probeReaderSuites))
+    reportProbeOverrides(claim.id, probeLaunch.environment, probeLaunch.readerSuites)
     if (mcpMode && mcpServerName) {
       const probeConfig = mcpLaunch.config[mcpServerName]
       if (probeConfig?.url || probeConfig?.command) {

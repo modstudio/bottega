@@ -15,6 +15,14 @@ function parsedContextLimit(value: string | ProbeContextLimit): ProbeContextLimi
   return null
 }
 
+export function acceptedProbeReaderSuites(input: {
+  probe: boolean
+  readerSuites: boolean
+  findings: boolean
+}): boolean {
+  return input.probe && input.readerSuites && input.findings
+}
+
 /** Decides every probe-only launch override refusal at the dispatch edge. */
 export function decideProbeLaunchOverrides(input: {
   probe: boolean
@@ -35,6 +43,8 @@ export function decideProbeLaunchOverrides(input: {
       refusal: '--probe-reader-suites is a probe-only override; add --probe or drop it',
     }
   }
+
+  const readerSuites = acceptedProbeReaderSuites(input)
 
   let contextLimit: ProbeContextLimit | undefined
   if (input.contextLimit !== undefined) {
@@ -59,13 +69,13 @@ export function decideProbeLaunchOverrides(input: {
       }
     }
   }
-  if (input.readerSuites && !input.findings) {
+  if (input.readerSuites && !readerSuites) {
     return {
       accepted: false,
       refusal: '--probe-reader-suites requires a findings job; choose a findings job or drop it',
     }
   }
-  return { accepted: true, contextLimit, readerSuites: input.readerSuites }
+  return { accepted: true, contextLimit, readerSuites }
 }
 
 export function readerPromptFindings(findings: boolean, readerSuites: boolean): boolean {
