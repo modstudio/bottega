@@ -7,7 +7,7 @@ import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 import { releaseProofDecision } from './release-decision.ts'
-import { type EntryClosure, entryClosureAtCommit } from './release-entry-closure.ts'
+import type { EntryClosure } from './release-entry-closure.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
   type ReleaseResult,
@@ -174,20 +174,12 @@ export function requiredRungDecision(
 }
 
 export type RequiredReleaseRunner = {
-  changedPaths(project: Project, mergeCommit: string): string[]
-  entryClosure(project: Project, mergeCommit: string, entries: readonly string[]): EntryClosure
-  prepareMain(project: Project): void
   newestLive(project: Project, rung: string, declaresLive: boolean): string | null
   contains(project: Project, ancestor: string, descendant: string): boolean
   release(project: Project, rung: string): ReleaseResult
 }
 
 const requiredReleaseRunner: RequiredReleaseRunner = {
-  changedPaths,
-  entryClosure: entryClosureAtCommit,
-  prepareMain(project) {
-    verifyMainCheckout(project)
-  },
   newestLive(project, rung, declaresLive) {
     return newestSuccessfulProvenReleaseCommit(project.name, rung, declaresLive)
   },
@@ -333,7 +325,7 @@ export function releaseRequiredRungsAfterMainMove(input: {
   runner?: RequiredReleaseRunner
 }): RequiredReleaseReport {
   const runner = input.runner ?? requiredReleaseRunner
-  return runRequiredReleaseRungs(input.project, input.mergeCommit, input.rungs, runner, false)
+  return runRequiredReleaseRungs(input.project, input.mergeCommit, input.rungs, runner)
 }
 
 function runRequiredReleaseRungs(
@@ -341,7 +333,6 @@ function runRequiredReleaseRungs(
   mergeCommit: string,
   plans: ReleaseRungPlan[],
   runner: RequiredReleaseRunner,
-  prepareMain: boolean,
 ): RequiredReleaseReport {
   const required = plans.filter(({ required }) => required).map(({ rung }) => rung)
   if (plans.length === 0) return { required, releases: [], satisfied: true }
@@ -350,13 +341,6 @@ function runRequiredReleaseRungs(
       required,
       releases: plans.map((plan) => failure(plan, plan.reason ?? 'not required')),
       satisfied: true,
-    }
-  }
-  if (prepareMain) {
-    try {
-      runner.prepareMain(project)
-    } catch (cause) {
-      return failedRequiredRelease(plans, cause instanceof Error ? cause.message : String(cause))
     }
   }
   const releases = plans.map((plan): RequiredRungRelease => {
@@ -392,29 +376,6 @@ function runRequiredReleaseRungs(
     }
   })
   return { required, releases, satisfied: releases.every((release) => release.satisfied) }
-}
-
-export function releaseRequiredRungs(input: {
-  project: Project
-  mergeCommit: string
-  releaseRequired: boolean
-  depth?: string
-  decision?: RequiredRungDecision
-  runner?: RequiredReleaseRunner
-}): RequiredReleaseReport {
-  const runner = input.runner ?? requiredReleaseRunner
-  const decision =
-    input.decision ??
-    requiredRungDecision(
-      input.project,
-      () => runner.changedPaths(input.project, input.mergeCommit),
-      (entries) => runner.entryClosure(input.project, input.mergeCommit, entries),
-      input.depth,
-    )
-  if (!input.releaseRequired)
-    return releaseRequiredFlagAbsent(decision.rungs, decision.decided ? null : decision.error)
-  if (!decision.decided) return failedRequiredRelease(decision.rungs, decision.error)
-  return runRequiredReleaseRungs(input.project, input.mergeCommit, decision.rungs, runner, true)
 }
 
 export function formatRequiredReleaseReport(
