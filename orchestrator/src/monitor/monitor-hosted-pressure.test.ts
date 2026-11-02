@@ -93,6 +93,39 @@ test('a failed query is stored and returned as an observation error', async () =
   ).toEqual({ last_error: 'hosted metrics query steal failed: Error: HTTP 503' })
 })
 
+test('the observation budget includes token resolution', async () => {
+  const database = db()
+  let fetchCalled = false
+  const startedAt = Date.now()
+  const result = await checkHostedPressureCached({
+    database,
+    clock: base,
+    fetch: (async () => {
+      fetchCalled = true
+      throw new Error('metrics fetch must not run without a token')
+    }) as unknown as typeof fetch,
+    resolveToken: async () => await new Promise<never>(() => {}),
+    observeBudgetMs: 50,
+  })
+
+  expect(Date.now() - startedAt).toBeLessThan(500)
+  expect(result.conditions[0]).toEqual(
+    expect.objectContaining({
+      kind: 'observation-error',
+      detail: expect.stringContaining(
+        'token failed: Error: hosted metrics observation exceeded 50ms budget',
+      ),
+    }),
+  )
+  expect(
+    database.query('SELECT last_error FROM hosted_pressure_cache WHERE singleton=1').get(),
+  ).toEqual({
+    last_error:
+      'hosted metrics query token failed: Error: hosted metrics observation exceeded 50ms budget',
+  })
+  expect(fetchCalled).toBeFalse()
+})
+
 test('a failed onset post preserves the state and records the announcement error', async () => {
   let postInput: { audience?: string; purpose?: string; expiresAt?: string } | undefined
   let stateDuringPost: string | undefined

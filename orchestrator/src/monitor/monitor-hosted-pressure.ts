@@ -45,6 +45,7 @@ type Dependencies = {
   clock?: number
   fetch?: typeof globalThis.fetch
   resolveToken?: typeof readEnvValuesWithHosted
+  observeBudgetMs?: number
   failFastStoreClaim?: boolean
   boardClient?: Pick<
     RecordApiClient,
@@ -93,18 +94,30 @@ async function queryMetric(
 
 async function observeHostedMetrics(
   at: string,
-  deps: Required<Pick<Dependencies, 'fetch' | 'resolveToken'>>,
+  deps: Required<Pick<Dependencies, 'fetch' | 'resolveToken' | 'observeBudgetMs'>>,
 ): Promise<HostedPressureObservation> {
-  let token: string | undefined
-  try {
-    token = (await deps.resolveToken([HOSTED_FLY_METRICS_TOKEN]))[HOSTED_FLY_METRICS_TOKEN]
-  } catch (error) {
-    return { kind: 'failed', query: 'token', error: String(error), at }
-  }
-  if (!token) return { kind: 'unconfigured', at }
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), HOSTED_METRICS_QUERY_BUDGET_MS)
+  const budgetError = new Error(
+    `hosted metrics observation exceeded ${deps.observeBudgetMs}ms budget`,
+  )
+  let rejectBudget: ((error: Error) => void) | undefined
+  const budgetExpired = new Promise<never>((_resolve, reject) => {
+    rejectBudget = reject
+  })
+  const timeout = setTimeout(() => {
+    controller.abort()
+    rejectBudget?.(budgetError)
+  }, deps.observeBudgetMs)
   try {
+    let token: string | undefined
+    try {
+      token = (await Promise.race([deps.resolveToken([HOSTED_FLY_METRICS_TOKEN]), budgetExpired]))[
+        HOSTED_FLY_METRICS_TOKEN
+      ]
+    } catch (error) {
+      return { kind: 'failed', query: 'token', error: String(error), at }
+    }
+    if (!token) return { kind: 'unconfigured', at }
     const entries = await Promise.all(
       (Object.keys(HOSTED_METRICS_QUERIES) as QueryName[]).map(async (name) => {
         try {
@@ -242,6 +255,7 @@ export async function checkHostedPressureCached(
   const observation = await observeHostedMetrics(at, {
     fetch: dependencies.fetch ?? globalThis.fetch,
     resolveToken: dependencies.resolveToken ?? readEnvValuesWithHosted,
+    observeBudgetMs: dependencies.observeBudgetMs ?? HOSTED_METRICS_QUERY_BUDGET_MS,
   })
   const decision = decideHostedPressure(previous, observation)
   claimTransaction(database, dependencies.failFastStoreClaim, () => {

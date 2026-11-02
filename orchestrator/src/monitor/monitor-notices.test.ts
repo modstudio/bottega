@@ -193,7 +193,7 @@ test('notice claim succeeds while another connection holds the store writer', as
   }
 })
 
-test('notice claim runs a due hosted-pressure check', async () => {
+test('notice claim runs hosted pressure only on a board-refresh tick', async () => {
   const session = 'monitor-hosted-pressure-due'
   db()
     .query(
@@ -225,6 +225,12 @@ test('notice claim runs a due hosted-pressure check', async () => {
   try {
     const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: true })
     expect(delivery.notices.map((notice) => notice.noticeId)).toContain(`board:${local.number}`)
+    expect(stealFetchCalls).toBe(0)
+    expect(
+      db().query('SELECT checked_at FROM hosted_pressure_cache WHERE singleton=1').get(),
+    ).toBeNull()
+
+    await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
     expect(stealFetchCalls).toBe(1)
     expect(
       db().query('SELECT checked_at FROM hosted_pressure_cache WHERE singleton=1').get(),

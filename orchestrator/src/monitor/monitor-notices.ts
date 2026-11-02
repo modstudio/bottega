@@ -324,13 +324,13 @@ export async function claimMonitorNoticesForCommand(
   ownerSession: string,
   input: { skipBoardRefresh: boolean },
 ): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
-  try {
-    await checkHostedPressureCached({ failFastStoreClaim: true })
-  } catch {
-    // Notice delivery is independent of an unavailable machine-local detector.
-  }
   let verificationSource: HostedVerificationSource = { source: 'stored' }
   if (!input.skipBoardRefresh) {
+    try {
+      await checkHostedPressureCached({ failFastStoreClaim: true })
+    } catch {
+      // Notice delivery is independent of an unavailable machine-local detector.
+    }
     await refreshHostedBoard({ budgetMs: BOARD_READ_REFRESH_BUDGET_MS })
     verificationSource = {
       source: 'refresh',
