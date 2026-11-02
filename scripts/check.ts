@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
-import { projectAt } from '../orchestrator/src/project/projects.ts'
 import { biomeFindings } from '../orchestrator/src/ratchet/biome-adapter.ts'
 import { classifyCaller } from '../shared/caller-classification'
 import { changeViewPlan } from '../shared/change-view.ts'
@@ -468,11 +467,18 @@ function gitOutput(cwd: string, argv: string[], failure: 'null' | 'throw' = 'nul
   return result.stdout.length ? result.stdout : null
 }
 
-function registeredLandingBranch(mainCheckout: string): string | null {
+function recordedRunBase(): string | null {
+  const runId = process.env.BOTTEGA_RUN_ID?.trim()
+  if (!runId) return null
   let database: ReturnType<typeof openReadOnlyDatabase> | null = null
   try {
     database = openReadOnlyDatabase()
-    return projectAt(mainCheckout, database)?.settings.trunk?.trim() || null
+    const row = database
+      .query<{ base_commit: string | null }, [string]>(
+        'SELECT base_commit FROM run WHERE record_id = ?',
+      )
+      .get(runId)
+    return row?.base_commit?.trim() || null
   } catch {
     return null
   } finally {
@@ -486,23 +492,11 @@ function provisionedLockfile(): Buffer | null {
   const borrowedCheckout = borrowedCheckoutOf(root) !== null
   const baseChoice = borrowedCheckout
     ? dependencyProvisioningBase({ borrowedCheckout: true })
-    : (() => {
-        const landingBranch = registeredLandingBranch(mainCheckout)
-        return dependencyProvisioningBase({
-          borrowedCheckout: false,
-          landingBranch,
-          remoteLandingRefResolved:
-            landingBranch !== null &&
-            gitOutput(root, ['rev-parse', '--verify', `origin/${landingBranch}`]) !== null,
-        })
-      })()
+    : dependencyProvisioningBase({ borrowedCheckout: false, recordedBase: recordedRunBase() })
   if (baseChoice.kind === 'unresolved') return null
   if (baseChoice.kind === 'head') return gitOutput(root, ['show', 'HEAD:bun.lock'])
-  const base = gitOutput(root, ['merge-base', 'HEAD', baseChoice.landingRef])?.toString().trim()
-  if (!base) return null
-  // The tracked writer recipe runs bun install after creating the tree at this base. Reading the
-  // base commit keeps that provisioning source stable when the main checkout advances later.
-  return gitOutput(root, ['show', `${base}:bun.lock`])
+  // The tracked writer recipe runs bun install after creating the tree at this recorded base.
+  return gitOutput(root, ['show', `${baseChoice.commit}:bun.lock`])
 }
 
 async function installDependencies() {
