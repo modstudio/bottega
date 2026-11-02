@@ -512,6 +512,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../board/board-reply-audience.ts',
       '../../../shared/prose/prose-gate.ts',
       './record-auth.ts',
+      './record-api-prose.ts',
       './record-board-contract.ts',
       './record-board-stream.ts',
       './record-board-tx.ts',

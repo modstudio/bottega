@@ -7,7 +7,7 @@ import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writableDb } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { assertOrchestratorProse } from '../prose/prose-service.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import {
   checkPushedTip,
   createPullRequest,
@@ -70,6 +70,22 @@ function githubValue(args: string[], long: string, short: string): string | unde
   return undefined
 }
 
+export function githubArgsWithStdinBody(args: readonly string[], body: string): string[] {
+  const rewritten: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!
+    if ((argument === '--body-file' || argument === '-F') && args[index + 1] === '-') {
+      rewritten.push('--body', body)
+      index += 1
+    } else if (argument === '--body-file=-') {
+      rewritten.push('--body', body)
+    } else {
+      rewritten.push(argument)
+    }
+  }
+  return rewritten
+}
+
 async function createPullRequestCommand(
   githubArgs: string[],
   options: {
@@ -95,8 +111,10 @@ async function createPullRequestCommand(
     { field: 'title', text: title ?? '', prior: null },
     { field: 'body', text: body ?? '', prior: null },
   ])
+  const forwardedArgs =
+    bodyFile === '-' ? githubArgsWithStdinBody(githubArgs, body ?? '') : githubArgs
   const result = createPullRequest(
-    githubArgs,
+    forwardedArgs,
     {
       overrideReason: options.overrideTriage,
       ceilingRuling: options.ceilingRuling,

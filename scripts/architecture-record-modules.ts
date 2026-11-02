@@ -789,8 +789,10 @@ export const recordModules: RecordModule[] = [
     'zod',
     '../board/board-reply-audience.ts',
     './record-auth.ts',
+    './record-api-prose.ts',
     './record-board-stream.ts',
     './record-board-contract.ts',
     './record-board-tx.ts',
   ]),
+  module('orchestrator/src/record/record-api-prose.ts', ['./record-auth.ts']),
 ]

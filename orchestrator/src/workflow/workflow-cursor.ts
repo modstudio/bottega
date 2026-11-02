@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
-import { assertOrchestratorProse } from '../prose/prose-service.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import {
   answerWorkflowQuestion,
@@ -927,7 +927,7 @@ function awaitWorkflowRulingImpl(
   }
 }
 
-export function ruleWorkflow(
+function recordWorkflowRuling(
   slug: string,
   project: string,
   mode: string,
@@ -999,7 +999,7 @@ export function ruleWorkflow(
   }, d)
 }
 
-export async function ruleWorkflowChecked(
+export async function ruleWorkflow(
   slug: string,
   project: string,
   mode: string,
@@ -1011,9 +1011,20 @@ export async function ruleWorkflowChecked(
   d: Database = writableDb(),
   cursor?: number,
 ): Promise<{ summary: string; questionId: number }> {
-  if (!ruling?.trim()) throw new Error('--ruling is required')
-  await assertOrchestratorProse([{ field: 'ruling text', text: ruling, prior: null }])
-  return ruleWorkflow(slug, project, mode, args, ruling, fromOperator, channel, context, d, cursor)
+  if (ruling?.trim())
+    await assertOrchestratorProse([{ field: 'ruling text', text: ruling, prior: null }])
+  return recordWorkflowRuling(
+    slug,
+    project,
+    mode,
+    args,
+    ruling,
+    fromOperator,
+    channel,
+    context,
+    d,
+    cursor,
+  )
 }
 
 export function awaitWorkflowRuling(

@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs'
 import { proseGate } from '../../../shared/prose/prose-gate.ts'
-import { proseCheckEnabled } from '../prose/prose-service.ts'
+import { proseCheckEnabled } from '../prose-service.ts'
 
 const SCISSORS = '# ------------------------ >8 ------------------------'
 

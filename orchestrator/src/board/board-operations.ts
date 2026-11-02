@@ -10,7 +10,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectByName, projectRowByName } from '../project/projects.ts'
-import { assertOrchestratorProse } from '../prose/prose-service.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,

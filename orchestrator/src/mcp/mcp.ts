@@ -44,7 +44,7 @@ import {
   type LandingBranchPorts,
   workflowComposeBranchRefusal,
 } from '../workflow/workflow-compose-branch.ts'
-import { awaitWorkflowRuling, ruleWorkflowChecked } from '../workflow/workflow-cursor.ts'
+import { awaitWorkflowRuling, ruleWorkflow } from '../workflow/workflow-cursor.ts'
 import {
   mcpWorkflowCursorContext,
   resolveMcpCursorContext,
@@ -52,7 +52,7 @@ import {
 import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
-  attachWorkflowTextByHandleChecked,
+  attachWorkflowTextByHandle,
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
 } from '../workflow/workflow-text.ts'
 import {
@@ -541,7 +541,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       }),
     },
     async ({ cursor, text: body }) =>
-      text(await attachWorkflowTextByHandleChecked(cursor, body, mcpWorkflowCursorContext())),
+      text(await attachWorkflowTextByHandle(cursor, body, mcpWorkflowCursorContext())),
   )
 
   server.registerTool(
@@ -615,7 +615,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       const workflowArgs = args ?? {}
       const context = await resolveMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
       return text(
-        await ruleWorkflowChecked(
+        await ruleWorkflow(
           slug,
           project,
           resolveLinkedWorkflowCursorMode(

@@ -29,7 +29,7 @@ import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
-  ruleWorkflowChecked,
+  ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
@@ -68,7 +68,7 @@ import {
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
-import { attachWorkflowTextChecked, workflowTextAttachmentToken } from './workflow-text.ts'
+import { attachWorkflowText, workflowTextAttachmentToken } from './workflow-text.ts'
 import {
   closeCursorWithTextCopy,
   copyWorkflowTextForCursor,
@@ -272,7 +272,7 @@ export async function attachCommand(
     undefined,
     cursor,
   )
-  const reference = await attachWorkflowTextChecked(
+  const reference = await attachWorkflowText(
     { project, workflow: slug, mode, key: workflowKeyOf(args) || undefined },
     cursor,
     body,
@@ -438,7 +438,7 @@ export async function ruleCommand(
     undefined,
     cursor,
   )
-  const result = await ruleWorkflowChecked(
+  const result = await ruleWorkflow(
     slug,
     project,
     mode,

@@ -4,7 +4,8 @@ import { posix } from 'node:path'
 import GithubSlugger from 'github-slugger'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS } from '../../../shared/canon-references.ts'
-import { lintProse, proseLines } from '../../../shared/prose/prose-lint.ts'
+import { lintProse } from '../../../shared/prose/prose-lint.ts'
+import { proseLines } from '../../../shared/prose/prose-mask.ts'
 import { type Finding, introducedFindings } from '../../../shared/ratchet.ts'
 import {
   ALWAYS_ON_TOTAL_BYTES,

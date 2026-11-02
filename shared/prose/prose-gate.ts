@@ -11,6 +11,7 @@ import {
 
 export type ProseGateField = { field: string; text: string; prior: string | null }
 export type ProseGateResult = { refusal: string | null; notices: string[] }
+export type EngineResult = Awaited<ReturnType<typeof harperFindings>>
 
 function introducedFindings(
   findings: ProseCheckFinding[],
@@ -32,15 +33,20 @@ function introducedFindings(
 
 export async function proseGate(
   fields: ProseGateField[],
-  options: { displayName: string | null; enabled: boolean },
+  options: {
+    displayName: string | null
+    enabled: boolean
+    engine?: (text: string) => Promise<EngineResult>
+  },
 ): Promise<ProseGateResult> {
   if (!options.enabled)
     return { refusal: null, notices: ['Spelling and grammar check is switched off'] }
   const refusalSections: string[] = []
   const notices: string[] = []
+  const engine = options.engine ?? harperFindings
   for (const field of fields) {
     if (!field.text.trim()) continue
-    const current = checkProse(field.text, await harperFindings(field.text), options)
+    const current = checkProse(field.text, await engine(field.text), options)
     const notice = proseCheckSkipNotice(current)
     if (notice) {
       notices.push(`${field.field}: ${notice}`)
@@ -48,7 +54,7 @@ export async function proseGate(
     }
     let findings = current.findings
     if (field.prior !== null) {
-      const prior = checkProse(field.prior, await harperFindings(field.prior), options)
+      const prior = checkProse(field.prior, await engine(field.prior), options)
       findings = introducedFindings(findings, prior.findings)
     }
     const refusal = proseCheckRefusal({ ...current, findings })

@@ -40,7 +40,7 @@ import {
   sampleProcesses,
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
-import { orchestratorProseGate } from '../prose/prose-service.ts'
+import { orchestratorProseGate } from '../prose-service.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'

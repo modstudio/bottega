@@ -1,7 +1,7 @@
 // concern: document prose gate
 /** Maps a stored document revision to the shared prose gate fields. */
 
-import { assertOrchestratorProse } from '../prose/prose-service.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import type { DocWriteInput } from './doc-article-fields.ts'
 import type { Doc } from './doc-read-store.ts'
 

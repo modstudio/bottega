@@ -80,8 +80,6 @@ function containsTaskKey(line: string): boolean {
   })
 }
 
-export { proseLines } from './prose-mask.ts'
-
 export function lintProse(text: string): ProseFinding[] {
   const findings: ProseFinding[] = []
   for (const { text: line, line: lineNumber } of proseLines(text)) {

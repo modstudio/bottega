@@ -1,13 +1,13 @@
 // concern: orchestrator prose gate
 /** Supplies machine identity and rollback policy to the shared prose gate. */
 
-import { readMachineValue } from '../../../shared/machine-config.ts'
+import { readMachineValue } from '../../shared/machine-config.ts'
 import {
   type ProseGateField,
   type ProseGateResult,
   proseGate,
-} from '../../../shared/prose/prose-gate.ts'
-import { cachedSignedInRecordUser } from '../record/record-session.ts'
+} from '../../shared/prose/prose-gate.ts'
+import { cachedSignedInRecordUser } from './record/record-session.ts'
 
 export function proseCheckEnabled(): boolean {
   return readMachineValue('prose.check') !== 'off'

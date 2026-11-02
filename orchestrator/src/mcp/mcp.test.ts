@@ -583,7 +583,7 @@ describe('orch MCP', () => {
           'SELECT session_id FROM workflow_cursor WHERE number=?',
         )
         .get(second.id)!.session_id
-      const attached = attachWorkflowTextByHandle(second.id, 'survives the failed MCP copy', {
+      const attached = await attachWorkflowTextByHandle(second.id, 'survives the failed MCP copy', {
         session: secondSession,
       })
       db()

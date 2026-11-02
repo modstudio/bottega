@@ -5,6 +5,7 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import { type ProseGateField, proseGate } from '../../../shared/prose/prose-gate.ts'
 import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
+import { hostedProseOptions } from './record-api-prose.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
@@ -234,11 +235,7 @@ async function assertHostedBoardProse(
   context: Context<ApiEnvironment>,
   fields: ProseGateField[],
 ): Promise<void> {
-  const name = context.get('identity')?.user.name
-  const checked = await proseGate(fields, {
-    displayName: typeof name === 'string' ? name : null,
-    enabled: process.env.BOTTEGA_PROSE_CHECK !== 'off',
-  })
+  const checked = await proseGate(fields, hostedProseOptions(context.get('identity')))
   // These routes have no warning channel; R8 notices are intentionally omitted from the response.
   if (checked.refusal) throw new RecordBoardError(checked.refusal, 400)
 }

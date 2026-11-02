@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { pullRequestCiCommandOutcome, register, validateGithubArguments } from './pull-request.ts'
+import {
+  githubArgsWithStdinBody,
+  pullRequestCiCommandOutcome,
+  register,
+  validateGithubArguments,
+} from './pull-request.ts'
 
 test('PR create consumes --cwd instead of forwarding it to GitHub', () => {
   const program = new Command()
@@ -37,6 +42,17 @@ test('PR admission accepts GitHub content arguments', () => {
   expect(() =>
     validateGithubArguments(['--title', 'DEV-977 title', '--body-file', '/tmp/body']),
   ).not.toThrow()
+})
+
+test('PR create forwards checked stdin text as an inline body', () => {
+  for (const args of [['--body-file', '-'], ['-F', '-'], ['--body-file=-']]) {
+    expect(githubArgsWithStdinBody(['--title', 'Title', ...args], 'Checked body.')).toEqual([
+      '--title',
+      'Title',
+      '--body',
+      'Checked body.',
+    ])
+  }
 })
 
 test('PR admission refuses caller-controlled target and output modes in every form', () => {

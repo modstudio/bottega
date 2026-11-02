@@ -121,6 +121,7 @@ export const importBoundaries: ImportBoundary[] = [
       './canon-budget.ts',
       './codex-project-doc.ts',
       '../../../shared/prose/prose-lint.ts',
+      '../../../shared/prose/prose-mask.ts',
     ],
     'Keep canon lint decisions pure and independent of filesystems, stores, commands, and processes.',
   ),

@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
-import { assertOrchestratorProse } from '../prose/prose-service.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
@@ -167,7 +167,7 @@ function attachSelectedWorkflowText(
   return workflowTextAttachmentToken(inserted.id)
 }
 
-export function attachWorkflowTextByHandle(
+function attachWorkflowTextByHandleUnchecked(
   cursor: number,
   body: string,
   context: WorkflowCursorContext,
@@ -179,7 +179,7 @@ export function attachWorkflowTextByHandle(
   }, d)
 }
 
-function attachWorkflowText(
+function attachWorkflowTextUnchecked(
   identity: { project: string; workflow: string; mode: string; key?: string },
   cursor: number | undefined,
   body: string,
@@ -199,17 +199,17 @@ function attachWorkflowText(
   }, d)
 }
 
-export async function attachWorkflowTextByHandleChecked(
+export async function attachWorkflowTextByHandle(
   cursor: number,
   body: string,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
 ): Promise<string> {
   await assertOrchestratorProse([{ field: 'text', text: body, prior: null }])
-  return attachWorkflowTextByHandle(cursor, body, context, d)
+  return attachWorkflowTextByHandleUnchecked(cursor, body, context, d)
 }
 
-export async function attachWorkflowTextChecked(
+export async function attachWorkflowText(
   identity: { project: string; workflow: string; mode: string; key?: string },
   cursor: number | undefined,
   body: string,
@@ -217,7 +217,7 @@ export async function attachWorkflowTextChecked(
   d: Database = writableDb(),
 ): Promise<string> {
   await assertOrchestratorProse([{ field: 'text', text: body, prior: null }])
-  return attachWorkflowText(identity, cursor, body, context, d)
+  return attachWorkflowTextUnchecked(identity, cursor, body, context, d)
 }
 
 export function workflowTextIdsToDelete(input: {

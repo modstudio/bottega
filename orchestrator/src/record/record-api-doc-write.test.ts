@@ -92,6 +92,36 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
 const id = '01990000-0000-7000-8000-000000000001'
 
 describe('record API doc write refusals', () => {
+  test('PUT docs refuses misspelled text without calling the hosted write', async () => {
+    let writes = 0
+    const misspelling = ['me', 'ida'].join('')
+    const app = appWith(identity, {
+      upsertDoc: async () => {
+        writes += 1
+        return { id, revisionId: id }
+      },
+    })
+    const response = await app.request('/v1/docs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'global',
+        subject: null,
+        slug: 'hosted-prose',
+        title: 'Hosted prose',
+        body: `We saw the ${misspelling} here.`,
+        delivery: 'demand',
+        reason: 'test prose refusal',
+        author: 'tester',
+      }),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: expect.stringContaining(`body:\n"${misspelling}"`),
+    })
+    expect(writes).toBe(0)
+  })
+
   test('reorder forwards the tenant-bound complete sibling order', async () => {
     let received: Record<string, unknown> | null = null
     const app = appWith(identity, {
