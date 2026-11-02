@@ -1,6 +1,32 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { classify, clusterErrorText } from './failure.ts'
+import { classify, clusterErrorText, isNonAnswer } from './failure.ts'
+
+describe('Goose provider failure classification', () => {
+  const run26637 =
+    'sandbox: host\nRan into this error: Rate limit exceeded: Provider returned error.\n\n' +
+    'Please retry if you think this is a transient or recoverable error.'
+
+  test('treats the run 26637 final message as a provider non-answer', () => {
+    expect(isNonAnswer(run26637)).toBe(true)
+    expect(classify(run26637)).toBe('provider_error')
+  })
+
+  test('keeps a reply that quotes the provider failure line as an answer', () => {
+    const reply =
+      'The reproduced vendor text is:\n' +
+      'Ran into this error: Rate limit exceeded: Provider returned error.\n' +
+      'That line explains the stored failure.'
+    expect(isNonAnswer(reply)).toBe(false)
+  })
+
+  test.each(['Rate limit exceeded', '429'])(
+    'keeps plain quota text classified as quota: %s',
+    (text) => {
+      expect(classify(text)).toBe('quota')
+    },
+  )
+})
 
 describe('stale-login classification', () => {
   /**

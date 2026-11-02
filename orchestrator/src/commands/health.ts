@@ -29,7 +29,9 @@ export function register(program: Command): void {
 
   program
     .command('reclassify-failures')
-    .description('classify stored quota and authentication failures from vendor errors')
+    .description(
+      'classify unclassified quota, billing, and authentication failures and Goose provider-error contract rows',
+    )
     .option('--dry-run', 'report reclassifications without writing them')
     .allowExcessArguments(false)
     .action((options) => {

@@ -2,16 +2,39 @@
 /** Knows failure evidence reclassification and its audit. Must not know runs, routing, transports, the CLI, or worktrees. */
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
-import { classify } from './failure.ts'
+import { classify, type FailureKind, isGooseProviderErrorNonAnswer } from './failure.ts'
 
 type FailureFlags = { has(name: string): boolean }
 type FailurePresentation = { log(...values: unknown[]): void }
 
+/** Select the narrowly audited replacement for one stored failure kind and error. */
+export function reclassifiedFailureKind(
+  failureKind: string | null,
+  error: string,
+): FailureKind | null {
+  if (!error) return null
+  const kind = classify(error)
+  if (
+    (failureKind === 'other' || failureKind === null) &&
+    (kind === 'quota' || kind === 'billing' || kind === 'auth')
+  )
+    return kind
+  if (
+    failureKind === 'contract' &&
+    isGooseProviderErrorNonAnswer(error) &&
+    kind === 'provider_error'
+  )
+    return kind
+  return null
+}
+
 /**
- * Re-run only the quota/billing/auth signatures over old, unclassified
- * failures. This is deliberately not a general reclassification: a stored
- * failure is evidence, and changing its meaning on anything less than that
- * row's own vendor error would rewrite the agent's record.
+ * Re-run quota/billing/auth signatures over old, unclassified failures, and
+ * reclassify contract failures whose own Goose final message reports an
+ * upstream provider error. This is deliberately not a general
+ * reclassification: a stored failure is evidence, and changing its meaning on
+ * anything less than that row's own vendor error would rewrite the agent's
+ * record.
  */
 export function reclassifyFailuresCommand(
   flags: FailureFlags,
@@ -38,9 +61,8 @@ export function reclassifyFailuresCommand(
     )
     .all() as FailureRow[]
   const matched = all.flatMap((row) => {
-    if ((row.failure_kind !== 'other' && row.failure_kind !== null) || !row.error) return []
-    const kind = classify(row.error)
-    return kind === 'quota' || kind === 'billing' || kind === 'auth' ? [{ row, kind }] : []
+    const kind = reclassifiedFailureKind(row.failure_kind, row.error)
+    return kind ? [{ row, kind }] : []
   })
 
   const counts = (rows: { agent: string; failure_kind: string | null }[]): CountRow[] => {
@@ -97,12 +119,12 @@ export function reclassifyFailuresCommand(
   const update = db().query(
     `UPDATE run SET failure_kind = ?
       WHERE record_id = ? AND status IN ('failed', 'stale')
-        AND (failure_kind = 'other' OR failure_kind IS NULL) AND error = ?`,
+        AND failure_kind IS ? AND error = ?`,
   )
   const apply = writeTransaction(() => {
     let changed = 0
     for (const { row, kind } of matched) {
-      const result = update.run(kind, row.record_id, row.error)
+      const result = update.run(kind, row.record_id, row.failure_kind, row.error)
       changed += result.changes
       if (result.changes) {
         auditRunMutation(
