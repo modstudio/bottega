@@ -4,6 +4,7 @@ import {
   decideKeychainBackend,
   deleteLinuxKeychainItem,
   readKeychainItem,
+  readKeychainItemAsync,
   readLinuxKeychainItem,
   type SecurityRunner,
   writeKeychainItem,
@@ -156,5 +157,11 @@ describe('public Linux backend dispatch', () => {
     expect(readKeychainItem('service', 'account', runner)).toBe('read-value')
     expect(writeKeychainItem('service', 'account', 'written-value', runner)).toBeUndefined()
     expect(operations).toEqual(['get', 'set', 'get'])
+  })
+
+  test('refuses an async read without an injected runner in tests', async () => {
+    await expect(readKeychainItemAsync('service', 'account')).rejects.toThrow(
+      'keychain access requires an injected security runner in tests',
+    )
   })
 })

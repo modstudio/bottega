@@ -239,6 +239,8 @@ async function readLinuxKeychainItemAsync(
       await runner(linuxArgv(), undefined, signal, linuxEnvironment('get', service, account)),
     )
   }
+  if (process.env.NODE_ENV === 'test')
+    throw new Error('keychain access requires an injected security runner in tests')
   if (signal?.aborted) throw signal.reason
   let abort: (() => void) | undefined
   const aborted = new Promise<never>((_, reject) => {
