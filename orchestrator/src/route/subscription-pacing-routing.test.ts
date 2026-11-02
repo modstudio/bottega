@@ -72,5 +72,5 @@ test('candidates show the no-data pacing hold', () => {
     why: expect.stringContaining('no reading in the current window and no calibration'),
     subscriptionPacingHold: { estimatePercent: null },
   })
-  expect(refusal.endsWith('agent probe codex')).toBe(true)
+  expect(refusal.endsWith('agent probe codex --fresh')).toBe(true)
 })

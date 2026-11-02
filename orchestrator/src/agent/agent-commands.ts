@@ -45,8 +45,8 @@ const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
     removeAgent(name)
     presentation.log(`removed ${name}`)
   },
-  probe: (name, _argv, presentation, dependencies) =>
-    probeCommand(name, presentation, dependencies),
+  probe: (name, argv, presentation, dependencies) =>
+    probeCommand(name, argv, presentation, dependencies),
   show: (name, _argv, presentation) => showCommand(name, presentation),
 }
 
@@ -139,12 +139,14 @@ function addCommand(name: string, argv: string[], presentation: Presentation): v
 
 async function probeCommand(
   name: string,
+  argv: string[],
   presentation: Presentation,
   dependencies: AgentCommandDependencies,
 ): Promise<void> {
   const result = await dependencies.probeAgent(name, {
     path: process.env.PATH,
     environment: process.env,
+    fresh: argv.includes('--fresh'),
   })
   if (result.ok && !result.billingHold) recordSuccessfulRegistrationProbe(name)
   presentation.log(JSON.stringify(result, null, 2))

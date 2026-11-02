@@ -173,7 +173,7 @@ export function recordSuccessfulRegistrationProbe(name: string): void {
 }
 
 /** Prove capabilities before routing spends a worktree discovering them. */
-export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment }
+export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment; fresh?: boolean }
 
 async function recordBudgetProbe(
   name: string,
@@ -221,6 +221,24 @@ export function registrationProbeCacheReusable(
       writingCapabilityPolicy(transport, previous.writing?.ok).jobSuccess &&
       (!resumableRequired || resumeCapabilityPolicy(transport, previous.resuming?.ok).jobSuccess) &&
       (!mcpRequired || previous.mcp?.verifiable === true),
+  )
+}
+
+function registrationProbeShouldUseCache(
+  fresh: boolean | undefined,
+  row: AgentRow,
+  previous: RegistrationProbeResult | null,
+  resumableRequired: boolean,
+  mcpRequired: boolean,
+): boolean {
+  if (fresh) return false
+  const priorCaps = JSON.parse(row.caps) as Caps
+  return registrationProbeCacheReusable(
+    row.transport,
+    previous,
+    priorCaps.replyFile,
+    resumableRequired,
+    mcpRequired,
   )
 }
 
@@ -321,19 +339,12 @@ export async function probeAgent(
 ): Promise<RegistrationProbeResult> {
   const row = agentRows().find((candidate) => candidate.name === name)
   if (!row) throw new Error(`unknown agent "${name}"`)
-  const priorCaps = JSON.parse(row.caps) as Caps
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const needs = registrationProbeRequirements(declared)
   const mcpProbeRequired = registrationProbeNeedsMcp(needs.mcp, declared !== null, row.harness)
   if (
-    registrationProbeCacheReusable(
-      row.transport,
-      previous,
-      priorCaps.replyFile,
-      needs.resumable,
-      mcpProbeRequired,
-    )
+    registrationProbeShouldUseCache(inputs.fresh, row, previous, needs.resumable, mcpProbeRequired)
   )
     return recordBudgetProbe(name, row, previous as RegistrationProbeResult)
   if (!HARNESSES.includes(row.harness as Harness))

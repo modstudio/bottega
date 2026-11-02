@@ -13,9 +13,10 @@ const quotaReadings = {
   quotaResetsAt: 1_800_000_000,
 }
 
-function collectedResult(): TransportResult {
+function collectedResult(status: 'ok' | 'failed' = 'ok'): TransportResult {
+  const failed = status === 'failed'
   return {
-    output: 'ok',
+    output: failed ? 'quota exhausted' : 'ok',
     stdout: '',
     stderr: '',
     raw: '',
@@ -25,26 +26,26 @@ function collectedResult(): TransportResult {
     vendorUsage: EMPTY_VENDOR_USAGE,
     quotaReadings,
     sessionId: null,
-    stopReason: 'end_turn',
-    error: null,
-    exitCode: 0,
+    stopReason: failed ? 'error' : 'end_turn',
+    error: failed ? 'quota exhausted' : null,
+    exitCode: failed ? 1 : 0,
     pid: null,
     events: [],
     asking: false,
-    failureKind: null,
-    status: 'ok',
+    failureKind: failed ? 'quota' : null,
+    status,
     questions: [],
   }
 }
 
-function probeTransport(): AgentTransport {
+function probeTransport(status: 'ok' | 'failed' = 'ok'): AgentTransport {
   const handle: TransportHandle = {
     pid: null,
     kill() {},
     prompt: async () => {},
     async *events() {},
     cancel: async () => {},
-    collect: async () => collectedResult(),
+    collect: async () => collectedResult(status),
   }
   return {
     name: 'cli',
@@ -58,28 +59,31 @@ function probeTransport(): AgentTransport {
   }
 }
 
-test('a collected probe turn persists its quota reading', async () => {
-  await runProbeTurn({
-    name: 'codex',
-    scratch: dir,
-    agent: BUILTIN_AGENTS.codex!,
-    transport: probeTransport(),
-    id: 'quota-reading',
-    prompt: 'report quota',
-  })
+test.each(['ok', 'failed'] as const)(
+  'a collected %s probe turn persists its quota reading',
+  async (status) => {
+    await runProbeTurn({
+      name: 'codex',
+      scratch: dir,
+      agent: BUILTIN_AGENTS.codex!,
+      transport: probeTransport(status),
+      id: `quota-reading-${status}`,
+      prompt: 'report quota',
+    })
 
-  expect(
-    db()
-      .query(
-        `SELECT quota_used_percent_start, quota_used_percent_end,
-                quota_window_minutes, quota_resets_at
-           FROM run WHERE job='agent-probe-quota-reading'`,
-      )
-      .get(),
-  ).toEqual({
-    quota_used_percent_start: quotaReadings.quotaUsedPercentStart,
-    quota_used_percent_end: quotaReadings.quotaUsedPercentEnd,
-    quota_window_minutes: quotaReadings.quotaWindowMinutes,
-    quota_resets_at: quotaReadings.quotaResetsAt,
-  })
-})
+    expect(
+      db()
+        .query(
+          `SELECT quota_used_percent_start, quota_used_percent_end,
+                  quota_window_minutes, quota_resets_at
+             FROM run WHERE job=?`,
+        )
+        .get(`agent-probe-quota-reading-${status}`),
+    ).toEqual({
+      quota_used_percent_start: quotaReadings.quotaUsedPercentStart,
+      quota_used_percent_end: quotaReadings.quotaUsedPercentEnd,
+      quota_window_minutes: quotaReadings.quotaWindowMinutes,
+      quota_resets_at: quotaReadings.quotaResetsAt,
+    })
+  },
+)

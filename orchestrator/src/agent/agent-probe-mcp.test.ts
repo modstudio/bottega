@@ -9,7 +9,7 @@ import {
 } from '../transport/transport.ts'
 import { registerAcpTransport } from '../transport/transport-acp.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
-import { probeAgent } from './agent-probe.ts'
+import { probeAgent, recordAgentProbe } from './agent-probe.ts'
 import { addAgent } from './agent-registry.ts'
 
 function result(events: TransportResult['events'], failed = false): TransportResult {
@@ -98,4 +98,30 @@ test('a goose probe whose MCP turn fails records no MCP capability', async () =>
   registerTransport('acp', () => fakeTransport('failed'))
   await probeAgent('goose-probe-failed', { environment: {}, path: process.env.PATH })
   expect(caps('goose-probe-failed').mcp).toBe(false)
+})
+
+test('a fresh probe runs turns even when the registration result is reusable', async () => {
+  const name = 'goose-probe-fresh'
+  register(name)
+  registerTransport('acp', () => fakeTransport('observed'))
+  const seeded = await probeAgent(name, { environment: {}, path: process.env.PATH })
+  recordAgentProbe(name, {
+    ...seeded,
+    ok: true,
+    file: { ok: true, output: '{"status":"ok"}' },
+    writing: { ok: true, output: 'created' },
+  })
+  const runCount = () =>
+    (
+      db().query('SELECT COUNT(*) AS count FROM run WHERE agent=? AND probe=1').get(name) as {
+        count: number
+      }
+    ).count
+  const seededCount = runCount()
+
+  await probeAgent(name, { environment: {}, path: process.env.PATH })
+  expect(runCount()).toBe(seededCount)
+
+  await probeAgent(name, { environment: {}, path: process.env.PATH, fresh: true })
+  expect(runCount()).toBeGreaterThan(seededCount)
 })

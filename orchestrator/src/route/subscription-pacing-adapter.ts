@@ -6,16 +6,17 @@ import type { Agent } from '../agent/agents.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import {
   decideSubscriptionPacing,
+  isNoDataHold,
   type SubscriptionPacingHold,
   subscriptionJobIsUnpaced,
 } from './subscription-pacing.ts'
 import { subscriptionPacingFacts } from './subscription-pacing-store.ts'
 
 function withNoDataRemedy(agentName: string, hold: SubscriptionPacingHold): SubscriptionPacingHold {
-  if (hold.estimatePercent !== null) return hold
+  if (!isNoDataHold(hold)) return hold
   return {
     ...hold,
-    refusal: `${hold.refusal}; record a reading with ${PLATFORM_SLUG} agent probe ${agentName}`,
+    refusal: `${hold.refusal}; record a reading with ${PLATFORM_SLUG} agent probe ${agentName} --fresh`,
   }
 }
 
