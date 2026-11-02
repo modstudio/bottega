@@ -3,7 +3,7 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
 import { weigh } from '../score/score.ts'
-import { reclassifyFailuresCommand } from './failure-commands.ts'
+import { reclassifiedFailureKind, reclassifyFailuresCommand } from './failure-commands.ts'
 
 describe('reclassify-failures', () => {
   const runCli = (...args: string[]) => {
@@ -18,6 +18,15 @@ describe('reclassify-failures', () => {
       return { exitCode: 1, stdout: new TextEncoder().encode(lines.join('\n')), error: cause }
     }
   }
+  test('selects only the contract failure carrying Goose provider-error text', () => {
+    const error =
+      'sandbox: host\nRan into this error: Rate limit exceeded: Provider returned error.\n\n' +
+      'Please retry if you think this is a transient or recoverable error.'
+    expect(reclassifiedFailureKind('contract', error)).toBe('provider_error')
+    expect(reclassifiedFailureKind('contract', 'Rate limit exceeded')).toBeNull()
+    expect(reclassifiedFailureKind('quota', error)).toBeNull()
+  })
+
   test('reclassifies only failed rows whose own error has the DEV-122 signature', () => {
     const startedAt = '2026-09-03T12:00:00.000Z'
     const quotaError =

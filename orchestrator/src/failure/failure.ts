@@ -86,6 +86,12 @@ export type FailureKind = (typeof FAILURE_KINDS)[number]
 
 const ANSI_ESCAPE_PATTERN = String.raw`\x1B\[[0-?]*[ -/]*[@-~]`
 const ANSI_ESCAPE_SEQUENCE = new RegExp(ANSI_ESCAPE_PATTERN, 'g')
+const GOOSE_PROVIDER_ERROR_NON_ANSWER = /^Ran into this error:[^\n]*Provider returned error/im
+
+/** Whether Goose's final message reports that the upstream provider failed the request. */
+export function isGooseProviderErrorNonAnswer(text: string): boolean {
+  return GOOSE_PROVIDER_ERROR_NON_ANSWER.test(text)
+}
 
 /** Remove volatile values while retaining the wording that identifies one failure shape. */
 export function clusterErrorText(value: string | null | undefined): string {
@@ -179,6 +185,10 @@ const PATTERNS: [FailureKind, RegExp][] = [
     'billing',
     /\b(?:http(?: status)?\s+402|status(?: code)?\s*[:=]?\s*402|402\s+payment required|code["']?\s*:\s*402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached)|account with your provider to add more credits)\b/i,
   ],
+  // OpenRouter's "Provider returned error" is the upstream provider's failure,
+  // not this account's plan. It is not evidence, fails over, and cools the
+  // agent through PROVIDER_ERROR_STREAK.
+  ['provider_error', GOOSE_PROVIDER_ERROR_NON_ANSWER],
   // The plan is out. Distinct from `auth` because waiting fixes it.
   [
     'quota',
@@ -264,6 +274,7 @@ const NON_ANSWER = [
   /^\[Error:/i,
   /^Error:\s*timeout waiting for response/i,
   /^Ran into this error:\s*Request failed:/i,
+  GOOSE_PROVIDER_ERROR_NON_ANSWER,
 ]
 
 export function isNonAnswer(text: string): boolean {

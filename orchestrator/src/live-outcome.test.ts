@@ -312,6 +312,22 @@ describe('final-message fallback contract composition', () => {
       },
     },
     {
+      name: 'goose provider rate limit keeps its provider classification',
+      contract: 'none' as const,
+      fallbackText:
+        'Ran into this error: Rate limit exceeded: Provider returned error.\n\n' +
+        'Please retry if you think this is a transient or recoverable error.',
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      expected: {
+        status: 'failed',
+        failureKind: 'provider_error',
+        error:
+          'Ran into this error: Rate limit exceeded: Provider returned error.\n\nPlease retry if you think this is a transient or recoverable error.',
+        failover: 'select',
+      },
+    },
+    {
       name: 'writer with no reply is a contract failure',
       contract: 'none' as const,
       fallbackText: '',
