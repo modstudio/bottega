@@ -17,6 +17,7 @@ export function inProcessPostLandingAdapter(input: {
   release(enabled: boolean): RequiredReleaseReport
   cleanup(): ShipCleanupReport
 }): PullRequestPostLandingAdapter {
+  const project = input.project()
   return {
     changedPaths: () => [],
     entryClosure: () => new Map(),
@@ -25,7 +26,7 @@ export function inProcessPostLandingAdapter(input: {
     fence: () => {},
     handOff: (payload) =>
       runPullRequestPostLanding(payload, input.database, {
-        project: input.project,
+        project: () => project,
         verify: () => {},
         promote: () => fixturePromotionResult(input.promote),
         release: () => input.release(payload.releaseRequired),

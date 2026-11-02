@@ -353,24 +353,6 @@ export function completePullRequestPostLanding(input: {
           input.depth,
         )
       : { decided: true, required: [], rungs: [], error: null }
-  const mustMove =
-    input.workflowPromotionDue || (input.releaseRequired && decision.required.length > 0)
-  if (!mustMove) {
-    return mergedOutput({
-      ...input,
-      project: input.project.name,
-      branch: input.pullRequest.headBranch,
-      prNumber: input.pullRequest.number,
-      promotion: { output: '' },
-      requiredRelease: input.adapter.release(
-        input.project,
-        input.mergeCommit,
-        input.target,
-        input.releaseRequired,
-        decision,
-      ),
-    })
-  }
   const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
   const move = moveMainForPostLanding(
     post,
@@ -394,7 +376,12 @@ export function completePullRequestPostLanding(input: {
             mergeCommit: input.mergeCommit,
             recovery: move.recovery,
           })
-        : { output: '' },
+        : input.releaseRequired
+          ? { output: '' }
+          : {
+              output: `${move.detail}; recover with: ${move.recovery}`,
+              error: move.detail,
+            },
       requiredRelease: input.releaseRequired
         ? failedRequiredRelease(
             decision.rungs,

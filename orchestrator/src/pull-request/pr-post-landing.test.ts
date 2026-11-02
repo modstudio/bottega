@@ -299,22 +299,43 @@ test('the real child adapter refuses before spawn under the test runner', () => 
   console.log(`post-landing real-child-adapter class guard: ${elapsedMs.toFixed(3)}ms`)
 })
 
-test('when no move is due all remaining work stays in process and the store stays open', () => {
-  const calls: string[] = []
-  let changedPathsCalls = 0
+test.each([
+  { name: 'no release flag and no promotion', releaseRequired: false, promotion: false },
+  { name: 'an empty required set', releaseRequired: true, promotion: false },
+  { name: 'a promotion without the release flag', releaseRequired: false, promotion: true },
+])('$name moves, fences, and hands off exactly once', ({ releaseRequired, promotion }) => {
+  const events: string[] = []
+  complete({
+    releaseRequired,
+    workflowPromotionDue: promotion,
+    post: {
+      changedPaths: () => [],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => events.push('move'),
+      fence: () => events.push('fence'),
+      handOff: () => {
+        events.push('hand-off')
+        return { output: 'child output', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(events).toEqual(['move', 'fence', 'hand-off'])
+})
+
+test('a move failure without a release flag or promotion reports recovery as residue', () => {
   const outcome = complete({
     releaseRequired: false,
-    calls,
-    releaseReport: { required: [], releases: [], satisfied: true },
+    movesInstallation: true,
     post: {
       changedPaths: () => {
-        changedPathsCalls += 1
-        return ['shared/record/schema.ts']
+        throw new Error('changed paths must not run')
       },
       entryClosure: () => new Map(),
       mainHead: () => 'main-before',
       moveMain: () => {
-        throw new Error('move must not run')
+        throw new Error('registered main checkout is dirty; clean it')
       },
       fence: () => {
         throw new Error('fence must not run')
@@ -325,11 +346,11 @@ test('when no move is due all remaining work stays in process and the store stay
     },
   })
 
-  expect(outcome.exitCode).toBe(0)
-  expect(outcome.output).not.toContain('rung hosted-api')
-  expect(changedPathsCalls).toBe(0)
-  expect(calls).toEqual(['release', 'cleanup'])
-  expect(writableDb()).toBeDefined()
+  expect(outcome.exitCode).toBe(20)
+  expect(outcome.output).toContain('registered main checkout is dirty; clean it')
+  expect(outcome.output).toContain(
+    `recover with: ${project.path}/bin/${PLATFORM_SLUG} machine update, then ${PLATFORM_SLUG} pr merge 42 --release-required`,
+  )
 })
 
 test('a move failure reports every rung and remedy, cleans up, and does not fence or hand off', () => {
@@ -530,6 +551,36 @@ test('the child uses the shared absent release flag report', () => {
 
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain('not released because --release-required was absent')
+})
+
+test('the child with no release and no promotion only verifies and cleans up', () => {
+  const calls: string[] = []
+  const outcome = runPullRequestPostLanding(
+    childPayload({
+      requiredRungs: [],
+      rungPlans: [],
+      releaseRequired: false,
+      promoteWorkflowDrafts: false,
+    }),
+    db(),
+    childAdapter({
+      verify: () => calls.push('verify'),
+      promote: () => {
+        throw new Error('promotion must not run')
+      },
+      release: () => {
+        throw new Error('release must not run')
+      },
+      cleanup: () => {
+        calls.push('cleanup')
+        return cleanReport()
+      },
+    }),
+  )
+
+  expect(outcome.exitCode).toBe(0)
+  expect(outcome.output).toContain('merge-commit')
+  expect(calls).toEqual(['verify', 'cleanup'])
 })
 
 test('the child satisfies a reach-only rung when the release flag is absent', () => {

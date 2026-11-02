@@ -372,7 +372,7 @@ test('an injected forge adapter merges all-passing checks with the method, subje
       },
     }),
   )
-  expect(commit.output).toBe('merged-oid')
+  expect(commit.output).toStartWith('merged-oid\nship cleanup')
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
 })
 
