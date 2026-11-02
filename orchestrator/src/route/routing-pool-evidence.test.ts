@@ -3,6 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import { promptBucketsForJob } from './prompt-size-bucket-store.ts'
 import { candidates, pick } from './route.ts'
 import { guideCommand, pickCommand, statsCommand } from './routing-commands.ts'
 
@@ -19,6 +20,7 @@ function addPooledRun(options: {
   quality?: string | null
   startedAt?: string
   lens?: string
+  promptBytes?: number
 }): string {
   const recordId = options.recordId ?? newRecordId()
   db()
@@ -27,7 +29,7 @@ function addPooledRun(options: {
          (record_id,space_id,agent,model,job,stack,prompt_bytes,status,failure_kind,
           executor,evidence_excluded,started_at,latency_ms,vendor_tokens,model_calls,
           peak_call_tokens,delivery,quality,fidelity,pulled_at)
-       VALUES (?,'space',?,?,?,?,10,?,NULL,'external',NULL,?,1000,100,1,100,?,?,NULL,?)`,
+       VALUES (?,'space',?,?,?,?,?,?,NULL,'external',NULL,?,1000,100,1,100,?,?,NULL,?)`,
     )
     .run(
       recordId,
@@ -35,6 +37,7 @@ function addPooledRun(options: {
       options.model === undefined ? AGENTS.codex!.model : options.model,
       options.job ?? 'craft',
       options.stack ?? null,
+      options.promptBytes ?? 10,
       options.status ?? 'ok',
       options.startedAt ?? new Date().toISOString(),
       options.delivery === undefined ? 'full' : options.delivery,
@@ -81,7 +84,7 @@ test('only registered agents on their current model enter the pooled window', ()
 test('pooled judgments affect routing and are marked on pick, guide, and stats', () => {
   addPooledRun({ agent: 'codex', job: 'verify-claim', delivery: 'full', quality: 'wrong' })
   const candidate = candidates('verify-claim').find((row) => row.agent === 'codex')!
-  expect(candidate).toMatchObject({ evidence: 1, pooledEvidence: 1, score: 0 })
+  expect(candidate).toMatchObject({ evidence: 1, pooledEvidence: 1, score: 0, latencyMs: 1000 })
 
   const pickLines: string[] = []
   pickCommand(
@@ -128,5 +131,33 @@ test('stack and lens filters apply to pooled evidence', () => {
     stack: 'typescript',
     lens: 'correctness',
   }).find((row) => row.agent === 'codex')!
-  expect(candidate).toMatchObject({ evidence: 1, pooledEvidence: 1 })
+  expect(candidate).toMatchObject({ evidence: 1, pooledEvidence: 1, latencyMs: 1000 })
+})
+
+test('pooled accepted runs do not enter cost-per-accepted evidence', () => {
+  const local = addRun({ agent: 'agy', job: 'craft' })
+  score(local, 'full', 'right')
+  db()
+    .query(
+      `UPDATE run
+          SET vendor_cost_usd = 2, vendor_cost_source = 'reported'
+        WHERE record_id = ?`,
+    )
+    .run(local)
+  addPooledRun({
+    agent: 'agy',
+    model: AGENTS.agy!.model,
+    job: 'craft',
+    delivery: 'full',
+    quality: 'right',
+  })
+
+  const candidate = candidates('craft', 0, { priceCost: true }).find((row) => row.agent === 'agy')!
+  expect(candidate.costPerAccepted).toEqual({ usd: 2 })
+})
+
+test('a pooled-only large prompt establishes the large prompt bucket', () => {
+  addPooledRun({ job: 'pooled-large-only', promptBytes: 20_000 })
+
+  expect(promptBucketsForJob('pooled-large-only')).toEqual(['large'])
 })

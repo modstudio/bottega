@@ -9,6 +9,7 @@ import { duelMatrices } from '../score/duel.ts'
 import { guide, type JobGuide } from '../state/guide.ts'
 import { promptSizeBucketLabel } from './prompt-size-bucket.ts'
 import { evidenceFor, pick, scoreboard } from './route.ts'
+import { pooledEvidenceSuffix } from './route-candidate.ts'
 import { gatherRouteCostBacktest } from './route-cost-backtest-adapter.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
 import {
@@ -22,10 +23,6 @@ type RoutingPresentation = {
   log(...values: unknown[]): void
   dur(ms: number | null | undefined): string
   subscriptionCost?: Parameters<typeof scoreboard>[1]
-}
-
-function pooledEvidenceSuffix(candidate: { pooledEvidence: number }): string {
-  return candidate.pooledEvidence > 0 ? ` (${candidate.pooledEvidence} pooled)` : ''
 }
 
 function costFigureLine(

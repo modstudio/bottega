@@ -2,9 +2,9 @@
 /** Reads only the current-model evidence window consumed by routing. */
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE, NOT_EVIDENCE_SQL } from '../failure/failure.ts'
-import { promptBucketSql, promptSizeBucket } from './prompt-size-bucket.ts'
+import { promptBucketSql } from './prompt-size-bucket.ts'
 import { weightCase } from './route-selection.ts'
-import { POOL_ROUTING_EVIDENCE_ROWS_SQL } from './routing-pool-evidence.ts'
+import { POOL_ROUTING_EVIDENCE_ROWS_SQL, poolScopeParams } from './routing-pool-evidence.ts'
 
 export type RoutingEvidenceRow = {
   record_id: string
@@ -91,12 +91,7 @@ export function boundedRoutingEvidenceRows(input: {
       jobName,
       ...(stack ? [stack] : []),
       ...(lens ? [lens] : []),
-      jobName,
-      promptSizeBucket(promptBytes) === 'small' ? 1 : 0,
-      stack ?? null,
-      stack ?? null,
-      lens ?? null,
-      lens ?? null,
+      ...poolScopeParams(jobName, promptBytes, stack, lens),
       limit,
     ) as (Omit<RoutingEvidenceRow, 'pooled'> & { pooled: number })[]
   return rows.map((row) => ({ ...row, pooled: row.pooled === 1 }))

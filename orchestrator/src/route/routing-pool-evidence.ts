@@ -2,7 +2,7 @@
 /** SQL fragments that project hosted routing evidence into local routing reads. */
 
 import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
-import { PROMPT_SIZE_BOUNDARY } from './prompt-size-bucket.ts'
+import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
 import { weightCase } from './route-selection.ts'
 
 const LOCAL_RUN_DEDUPLICATION = 'NOT EXISTS (SELECT 1 FROM run WHERE run.record_id = p.record_id)'
@@ -17,6 +17,22 @@ const POOL_SCOPE_SQL = `p.executor <> 'harness'
     SELECT 1 FROM routing_pool_lens pl
      WHERE pl.run_record_id = p.record_id AND pl.lens = ?
   ))`
+
+export function poolScopeParams(
+  jobName: string,
+  promptBytes: number,
+  stack: string | null | undefined,
+  lens: string | null | undefined,
+): (string | number | null)[] {
+  return [
+    jobName,
+    promptSizeBucket(promptBytes) === 'small' ? 1 : 0,
+    stack ?? null,
+    stack ?? null,
+    lens ?? null,
+    lens ?? null,
+  ]
+}
 
 export const POOL_CANDIDATE_ROWS_SQL = `SELECT p.agent AS agent,
               CASE WHEN p.status = 'ok' THEN 1 ELSE 0 END AS runs,

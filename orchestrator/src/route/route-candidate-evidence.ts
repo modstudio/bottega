@@ -3,9 +3,13 @@
 
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
-import { promptBucketSql, promptSizeBucket } from './prompt-size-bucket.ts'
+import { promptBucketSql } from './prompt-size-bucket.ts'
 import { weightCase } from './route-selection.ts'
-import { POOL_CANDIDATE_ROWS_SQL, POOL_LATENCY_ROWS_SQL } from './routing-pool-evidence.ts'
+import {
+  POOL_CANDIDATE_ROWS_SQL,
+  POOL_LATENCY_ROWS_SQL,
+  poolScopeParams,
+} from './routing-pool-evidence.ts'
 
 export type CandidateEvidenceSummary = {
   agent: string
@@ -15,22 +19,6 @@ export type CandidateEvidenceSummary = {
   pts: number | null
   tokens: number
   cost: number
-}
-
-function poolParams(
-  jobName: string,
-  promptBytes: number,
-  stack: string | null | undefined,
-  lens: string | null | undefined,
-): (string | number | null)[] {
-  return [
-    jobName,
-    promptSizeBucket(promptBytes) === 'small' ? 1 : 0,
-    stack ?? null,
-    stack ?? null,
-    lens ?? null,
-    lens ?? null,
-  ]
 }
 
 export function candidateEvidenceSummaries(
@@ -94,7 +82,7 @@ export function candidateEvidenceSummaries(
       jobName,
       ...(stack ? [stack] : []),
       ...(lens ? [lens] : []),
-      ...poolParams(jobName, promptBytes, stack, lens),
+      ...poolScopeParams(jobName, promptBytes, stack, lens),
     ) as CandidateEvidenceSummary[]
 }
 
@@ -122,6 +110,6 @@ export function candidateLatencyRows(
       jobName,
       ...(stack ? [stack] : []),
       ...(lens ? [lens] : []),
-      ...poolParams(jobName, promptBytes, stack, lens),
+      ...poolScopeParams(jobName, promptBytes, stack, lens),
     ) as { agent: string; latency_ms: number }[]
 }
