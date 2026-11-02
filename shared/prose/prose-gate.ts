@@ -1,6 +1,7 @@
 // concern: prose
 /** Runs the shared prose engine over named write fields and formats one refusal. */
 
+import { isEnglishWord } from './english-words.ts'
 import { harperFindings } from './harper-adapter.ts'
 import {
   checkProse,
@@ -44,9 +45,10 @@ export async function proseGate(
   const refusalSections: string[] = []
   const notices: string[] = []
   const engine = options.engine ?? harperFindings
+  const checkOptions = { displayName: options.displayName, isEnglishWord }
   for (const field of fields) {
     if (!field.text.trim()) continue
-    const current = checkProse(field.text, await engine(field.text), options)
+    const current = checkProse(field.text, await engine(field.text), checkOptions)
     const notice = proseCheckSkipNotice(current)
     if (notice) {
       notices.push(`${field.field}: ${notice}`)
@@ -54,13 +56,17 @@ export async function proseGate(
     }
     let findings = current.findings
     if (field.prior !== null) {
-      const prior = checkProse(field.prior, await engine(field.prior), options)
+      const prior = checkProse(field.prior, await engine(field.prior), checkOptions)
       const priorNotice = proseCheckSkipNotice(prior)
       if (priorNotice) {
         notices.push(`${field.field}: ${priorNotice}`)
         continue
       }
       findings = introducedFindings(findings, prior.findings)
+    }
+    for (const finding of findings.filter((finding) => !finding.blocking)) {
+      const suggestion = finding.suggestion === null ? 'none' : `"${finding.suggestion}"`
+      notices.push(`${field.field}: advisory: "${finding.text}"; suggestion: ${suggestion}`)
     }
     const refusal = proseCheckRefusal({ ...current, findings })
     if (refusal) {

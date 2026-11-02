@@ -46,6 +46,7 @@ export const proseModules: ProseModule[] = [
   module('shared/prose/prose-mask.ts', []),
   module('shared/prose/prose-lint.ts', ['./prose-mask.ts']),
   module('shared/prose/naming-rule.ts', ['./prose-mask.ts']),
+  module('shared/prose/english-words.ts', ['../../node_modules/word-list/words.txt']),
   module('shared/prose/prose-check.ts', [
     './harper-adapter.ts',
     './naming-rule.ts',
@@ -57,14 +58,25 @@ export const proseModules: ProseModule[] = [
     'harper.js',
     'harper.js/binary',
   ]),
-  module('shared/prose/prose-gate.ts', ['./harper-adapter.ts', './prose-check.ts']),
+  module('shared/prose/prose-gate.ts', [
+    './english-words.ts',
+    './harper-adapter.ts',
+    './prose-check.ts',
+  ]),
 ]
 
 export const proseBoundarySpecs: ProseBoundarySpec[] = [
   {
+    name: 'english-words-boundary',
+    file: 'shared/prose/english-words.ts',
+    allowed: ['../../node_modules/word-list/words.txt'],
+    typeOnlyAllowed: [],
+    reason: 'Keep the embedded word-list adapter independent of prose policy and platform concerns.',
+  },
+  {
     name: 'prose-gate-boundary',
     file: 'shared/prose/prose-gate.ts',
-    allowed: ['./harper-adapter.ts', './prose-check.ts'],
+    allowed: ['./english-words.ts', './harper-adapter.ts', './prose-check.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep the write gate shared while its callers own transport and persistence.',
   },
