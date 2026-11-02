@@ -77,6 +77,30 @@ class HeartbeatDecisionTest(unittest.TestCase):
         self.assertEqual(open_holds, [])
         self.assertEqual(releases[0].reason, "superseded by Load gate: open")
         self.assertEqual(releases[0].superseding_id, "new")
+    def test_withdrawn_hold_names_its_successor(self):
+        held = self.root(withdrawn_at="2026-10-30T02:30:00.000Z")
+        successor = self.root(
+            id="new", title="Load gate: wind-down", created_at="2026-10-30T02:00:00.000Z"
+        )
+        open_holds, releases = heartbeat_decision.resolve_board_holds(
+            [held, successor], [], [self.hold()], self.now,
+        )
+        self.assertEqual(open_holds, [])
+        self.assertEqual(
+            releases[0].reason, "withdrawn, superseded by Load gate: wind-down"
+        )
+        self.assertEqual(releases[0].superseding_id, "new")
+    def test_expired_hold_names_its_successor(self):
+        held = self.root(expires_at="2026-10-30T02:30:00.000Z")
+        successor = self.root(
+            id="new", title="Load gate: wind-down", created_at="2026-10-30T02:00:00.000Z"
+        )
+        open_holds, releases = heartbeat_decision.resolve_board_holds(
+            [held, successor], [], [self.hold()], self.now,
+        )
+        self.assertEqual(open_holds, [])
+        self.assertEqual(releases[0].reason, "expired, superseded by Load gate: wind-down")
+        self.assertEqual(releases[0].superseding_id, "new")
     def test_different_author_does_not_supersede_and_holder_reply_does_not_resolve(self):
         successor = self.root(
             id="new", author_session="other", title="Load gate: open",
