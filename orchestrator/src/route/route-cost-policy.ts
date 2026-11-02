@@ -214,12 +214,8 @@ export function findingsPolicyLens(findings: boolean, lens: string | undefined):
   return findings ? lens?.trim() || null : null
 }
 
-export function belowCostFloor(
-  shrunk: number | null,
-  floor: number | null,
-  noiseBand: number,
-): boolean {
-  return floor !== null && shrunk !== null && shrunk < floor - noiseBand
+export function belowCostFloor(shrunk: number | null, floor: number | null): boolean {
+  return floor !== null && shrunk !== null && shrunk < floor
 }
 
 export type CostPolicyCandidate = {
@@ -348,7 +344,7 @@ export function selectByCostPolicy<T extends CostPolicyQualityCandidate>(
   currentChoice: T,
 ): CostPolicySelection<T> {
   const floorEligible = candidates.filter(
-    (candidate) => !belowCostFloor(candidate.shrunk, rule.floor, noiseBand),
+    (candidate) => !belowCostFloor(candidate.shrunk, rule.floor),
   )
   const floorIgnored = floorEligible.length === 0
   if (floorIgnored)
