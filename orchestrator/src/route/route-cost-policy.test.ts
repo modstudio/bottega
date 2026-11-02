@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  belowCostFloor,
   type CostPolicyQualityCandidate,
   DEFAULT_ROUTE_COST_POLICY,
   parseRouteCostPolicy,
@@ -69,12 +70,21 @@ describe('cost policy selection', () => {
     ).toBe('cheap')
   })
 
-  test('the floor is strict and is ignored when all candidates miss', () => {
-    const belowFloor = candidate('below-floor', 95, 0.1, 0.85)
-    const atFloor = candidate('at-floor', 90, 1, 0.9)
-    expect(select([belowFloor, atFloor], 1, 0.9).chosen.agent).toBe('at-floor')
-    const current = candidate('quality-choice', 95, 2, 0.85)
-    const allBelow = select([current, candidate('cheap-low', 70, 0.1, 0.8)], 1, 0.9, current)
+  test('a candidate within the noise band of the floor stays eligible', () => {
+    expect(belowCostFloor(0.85, 0.9, NOISE_BAND)).toBe(false)
+    expect(belowCostFloor(0.8, 0.9, NOISE_BAND)).toBe(false)
+    expect(belowCostFloor(0.79, 0.9, NOISE_BAND)).toBe(true)
+  })
+
+  test('a cheaper candidate within the floor noise band can be selected', () => {
+    const costly = candidate('costly', 95, 2, 0.95)
+    const cheap = candidate('cheap', 85, 1, 0.85)
+    expect(select([costly, cheap], 1, 0.9, costly).chosen.agent).toBe('cheap')
+  })
+
+  test('the floor is ignored when all candidates miss', () => {
+    const current = candidate('quality-choice', 95, 2, 0.79)
+    const allBelow = select([current, candidate('cheap-low', 70, 0.1, 0.7)], 1, 0.9, current)
     expect(allBelow.floorIgnored).toBe(true)
     expect(allBelow.chosen.agent).toBe('quality-choice')
     expect(allBelow.chargedCost).toBe(2)
