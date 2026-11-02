@@ -65,7 +65,7 @@ postgres('populated routing evidence sequence backfill migration', () => {
           prompt_head,probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at
         ) VALUES (
           ${id}::uuid,${spaceId}::uuid,${MACHINE_ID}::uuid,${USER_ID}::uuid,${updatedAt}::timestamptz,
-          'agent','implement','sha',1,'head',false,'ok',1,false,false,false,
+          'agent','implement','sha',1,'head',true,'ok',1,false,false,false,
           ${updatedAt}::timestamptz,${updatedAt}::timestamptz
         )`
 

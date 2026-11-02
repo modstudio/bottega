@@ -151,7 +151,7 @@ describe.skipIf(!readerRunMigrationUrl)('populated board reader run migration', 
           (id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
            probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at)
         VALUES
-          (${READER_RUN_ID},${PLATFORM_SPACE_ID},${READER_MACHINE_ID},${AUTHOR_ID},now(),'codex','implement','sha',1,'proof',false,
+          (${READER_RUN_ID},${PLATFORM_SPACE_ID},${READER_MACHINE_ID},${AUTHOR_ID},now(),'codex','implement','sha',1,'proof',true,
            'ok',1,false,false,false,now(),now())
       `
       await sql`
