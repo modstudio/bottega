@@ -14,7 +14,7 @@ paths:
 
 **A metered agent is routed only when its row opts in, and only for jobs that do not write the repository.** Spend limits live in the provider key's own settings.
 
-Where a rule in `DEFAULT_ROUTE_COST_POLICY` (overridable through `routing.cost_policy`) is on, an agent below the rule's floor is excluded, and a pricier agent wins only when its quality gain at the rule's rate is worth its cost per accepted result. `bottega agent cost-backtest` measures a rule change before it ships.
+Where a rule in `DEFAULT_ROUTE_COST_POLICY` (overridable through `routing.cost_policy`) is on, an agent more than `NOISE_BAND` below the rule's floor is excluded, and a pricier agent wins only when its quality gain at the rule's rate is worth its cost per accepted result. `bottega agent cost-backtest` measures a rule change before it ships.
 
 A subscription agent whose transport records quota readings is paced on every job that does not write the repository; writing work always has priority. High-stakes lenses use the high-stakes mapping in `DEFAULT_ROUTE_COST_POLICY` and may consume up to the elapsed window pace, while other paced work keeps `PACE_HEADROOM_PERCENT` unused. A current reading supplies the estimate and a qualifying window under `QUOTA_MIN_WINDOW_PERCENT` supplies its token calibration; with neither, paced work is refused.
 
