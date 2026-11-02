@@ -77,7 +77,7 @@ function tokenPathRanges(text: string): MaskedRange[] {
       token.startsWith('./') ||
       token.startsWith('../') ||
       /^\//.test(token) ||
-      /\.[A-Za-z]{1,5}$/.test(token)
+      /\.[A-Za-z]{1,5}(?::\d+(?:-\d+)?)?$/.test(token)
     ) {
       ranges.push({ start: match.index + leading, end: match.index + match[0].length - trailing })
     }

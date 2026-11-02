@@ -34,6 +34,10 @@ DOUB = "DOUB"
 requir = "requir"
 # `uest` is the optional regex suffix that expands `req` to `request`.
 uest = "uest"
+# `ises`, `yse` and `tre` are British suffix patterns the prose check maps to `izes`, `yze` and `ter`.
+ises = "ises"
+yse = "yse"
+tre = "tre"
 
 [files]
 extend-exclude = [
@@ -54,6 +58,9 @@ extend-exclude = [
   # These prose-check tests hold deliberate misspellings that test the checker.
   "shared/prose/prose-check.test.ts",
   "shared/prose/harper-adapter.test.ts",
+  "shared/prose/prose-gate.test.ts",
+  # The vendored English word list is third-party data, not hand-authored prose.
+  "shared/prose/english-words.txt",
   # CLAUDE.md files are symlinks to the AGENTS.md cards, which are checked directly.
   "**/CLAUDE.md",
 ]

@@ -12,6 +12,7 @@ export type ProseCheckFinding = {
   text: string
   message: string
   suggestion: string | null
+  blocking: boolean
   correctedSentence: string
 }
 
@@ -20,6 +21,78 @@ export type ProseCheck =
   | { ran: false; reason: string; findings: ProseCheckFinding[] }
 
 type FindingWithoutCorrection = Omit<ProseCheckFinding, 'correctedSentence'>
+
+function normalizedWord(word: string): string {
+  return word.replaceAll('’', "'").replace(/'s$/i, '').toLowerCase()
+}
+
+export function americanVariant(
+  word: string,
+  isEnglishWord: (word: string) => boolean,
+): string | null {
+  const normalized = normalizedWord(word)
+  const replacements: Array<[RegExp, string]> = [
+    [/our(s|ed|ing|ite|ites|able)?$/, 'or$1'],
+    [/isations$/, 'izations'],
+    [/isation$/, 'ization'],
+    [/ising$/, 'izing'],
+    [/ises$/, 'izes'],
+    [/ised$/, 'ized'],
+    [/ise$/, 'ize'],
+    [/ysing$/, 'yzing'],
+    [/ysed$/, 'yzed'],
+    [/yse$/, 'yze'],
+    [/ogues$/, 'ogs'],
+    [/ogue$/, 'og'],
+    [/dgements$/, 'dgments'],
+    [/dgement$/, 'dgment'],
+    [/llers$/, 'lers'],
+    [/ller$/, 'ler'],
+    [/lling$/, 'ling'],
+    [/lled$/, 'led'],
+    [/ence$/, 'ense'],
+    [/tres$/, 'ters'],
+    [/tre$/, 'ter'],
+  ]
+  for (const [pattern, replacement] of replacements) {
+    const candidate = normalized.replace(pattern, replacement)
+    if (candidate !== normalized && isEnglishWord(candidate)) return candidate
+  }
+  return null
+}
+
+/** Restores the original word's leading capital and possessive to a lowercase variant. */
+function variantInPlace(original: string, variant: string): string {
+  const possessive = original.match(/['’]s$/i)?.[0] ?? ''
+  const capitalized = /^[A-Z]/.test(original)
+    ? `${variant[0]?.toUpperCase() ?? ''}${variant.slice(1)}`
+    : variant
+  return `${capitalized}${possessive}`
+}
+
+function isDetachedPossessive(text: string, finding: EngineFinding): boolean {
+  if (finding.text === 's' && /['’]/.test(text[finding.start - 1] ?? '')) return true
+  return /^\d+['’]s$/i.test(finding.text)
+}
+
+function classifiedEngineFinding(
+  text: string,
+  finding: EngineFinding,
+  isEnglishWord: (word: string) => boolean,
+): FindingWithoutCorrection | null {
+  if (finding.rule === 'SpellCheck' && isDetachedPossessive(text, finding)) return null
+  const normalized = normalizedWord(finding.text)
+  const variant = finding.rule === 'SpellCheck' ? americanVariant(normalized, isEnglishWord) : null
+  return {
+    rule: finding.rule,
+    start: finding.start,
+    end: finding.end,
+    text: finding.text,
+    message: finding.message,
+    suggestion: variant === null ? spanReplacement(finding) : variantInPlace(finding.text, variant),
+    blocking: finding.rule === 'SpellCheck' && (variant !== null || !isEnglishWord(normalized)),
+  }
+}
 
 function spanReplacement(finding: EngineFinding): string | null {
   const suggestion = finding.suggestions[0]
@@ -85,7 +158,10 @@ function correctedSentence(
   const corrections = findings
     .filter(
       (finding) =>
-        finding.suggestion !== null && finding.start >= bounds.start && finding.end <= bounds.end,
+        finding.blocking &&
+        finding.suggestion !== null &&
+        finding.start >= bounds.start &&
+        finding.end <= bounds.end,
     )
     .sort((left, right) => right.start - left.start)
   for (const finding of corrections) {
@@ -99,21 +175,16 @@ function correctedSentence(
 export function checkProse(
   text: string,
   engine: EngineResult,
-  options: { displayName: string | null },
+  options: { displayName: string | null; isEnglishWord: (word: string) => boolean },
 ): ProseCheck {
   const masks = maskedRanges(text)
   const engineFindings = engine.ran
     ? engine.findings.filter((finding) => !overlaps(finding, masks))
     : []
   const findings: FindingWithoutCorrection[] = [
-    ...engineFindings.map((finding) => ({
-      rule: finding.rule,
-      start: finding.start,
-      end: finding.end,
-      text: finding.text,
-      message: finding.message,
-      suggestion: spanReplacement(finding),
-    })),
+    ...engineFindings
+      .map((finding) => classifiedEngineFinding(text, finding, options.isEnglishWord))
+      .filter((finding): finding is FindingWithoutCorrection => finding !== null),
     ...namingFindings(text, options.displayName).map((finding) => ({
       rule: finding.rule,
       start: finding.start,
@@ -121,6 +192,7 @@ export function checkProse(
       text: finding.text,
       message: finding.message,
       suggestion: finding.suggestions[0] ?? null,
+      blocking: true,
     })),
   ].sort((left, right) => left.start - right.start || left.end - right.end)
   const completed = findings.map((finding) => ({
@@ -132,12 +204,18 @@ export function checkProse(
     : { ran: false, reason: engine.reason, findings: completed }
 }
 
+/** Renders a finding's suggestion the same way in refusals and advisory notices. */
+export function suggestionText(suggestion: string | null): string {
+  return suggestion === null ? 'none' : `"${suggestion}"`
+}
+
 export function proseCheckRefusal(check: ProseCheck): string | null {
-  if (check.findings.length === 0) return null
-  const lines = check.findings.map((finding) => {
-    const suggestion = finding.suggestion === null ? 'none' : `"${finding.suggestion}"`
-    return `"${finding.text}"; suggestion: ${suggestion}; corrected sentence: "${finding.correctedSentence}"`
-  })
+  const blocking = check.findings.filter((finding) => finding.blocking)
+  if (blocking.length === 0) return null
+  const lines = blocking.map(
+    (finding) =>
+      `"${finding.text}"; suggestion: ${suggestionText(finding.suggestion)}; corrected sentence: "${finding.correctedSentence}"`,
+  )
   return [...lines, 'Correct the text and resubmit it.'].join('\n')
 }
 

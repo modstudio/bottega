@@ -1,12 +1,14 @@
 // concern: prose
 /** Runs the shared prose engine over named write fields and formats one refusal. */
 
+import { isEnglishWord } from './english-words.ts'
 import { harperFindings } from './harper-adapter.ts'
 import {
   checkProse,
   type ProseCheckFinding,
   proseCheckRefusal,
   proseCheckSkipNotice,
+  suggestionText,
 } from './prose-check.ts'
 
 export type ProseGateField = { field: string; text: string; prior: string | null }
@@ -31,6 +33,40 @@ function introducedFindings(
   })
 }
 
+type CheckOptions = Parameters<typeof checkProse>[2]
+type FieldOutcome = { notices: string[]; refusalLines: string[] }
+
+function advisoryNotices(field: string, findings: ProseCheckFinding[]): string[] {
+  return findings
+    .filter((finding) => !finding.blocking)
+    .map(
+      (finding) =>
+        `${field}: advisory: "${finding.text}"; suggestion: ${suggestionText(finding.suggestion)}`,
+    )
+}
+
+async function checkedField(
+  field: ProseGateField,
+  engine: (text: string) => Promise<EngineResult>,
+  checkOptions: CheckOptions,
+): Promise<FieldOutcome> {
+  const current = checkProse(field.text, await engine(field.text), checkOptions)
+  const notice = proseCheckSkipNotice(current)
+  if (notice) return { notices: [`${field.field}: ${notice}`], refusalLines: [] }
+  let findings = current.findings
+  if (field.prior !== null) {
+    const prior = checkProse(field.prior, await engine(field.prior), checkOptions)
+    const priorNotice = proseCheckSkipNotice(prior)
+    if (priorNotice) return { notices: [`${field.field}: ${priorNotice}`], refusalLines: [] }
+    findings = introducedFindings(findings, prior.findings)
+  }
+  const refusal = proseCheckRefusal({ ...current, findings })
+  return {
+    notices: advisoryNotices(field.field, findings),
+    refusalLines: refusal ? [`${field.field}:`, ...refusal.split('\n').slice(0, -1)] : [],
+  }
+}
+
 export async function proseGate(
   fields: ProseGateField[],
   options: {
@@ -44,29 +80,12 @@ export async function proseGate(
   const refusalSections: string[] = []
   const notices: string[] = []
   const engine = options.engine ?? harperFindings
+  const checkOptions = { displayName: options.displayName, isEnglishWord }
   for (const field of fields) {
     if (!field.text.trim()) continue
-    const current = checkProse(field.text, await engine(field.text), options)
-    const notice = proseCheckSkipNotice(current)
-    if (notice) {
-      notices.push(`${field.field}: ${notice}`)
-      continue
-    }
-    let findings = current.findings
-    if (field.prior !== null) {
-      const prior = checkProse(field.prior, await engine(field.prior), options)
-      const priorNotice = proseCheckSkipNotice(prior)
-      if (priorNotice) {
-        notices.push(`${field.field}: ${priorNotice}`)
-        continue
-      }
-      findings = introducedFindings(findings, prior.findings)
-    }
-    const refusal = proseCheckRefusal({ ...current, findings })
-    if (refusal) {
-      const lines = refusal.split('\n')
-      refusalSections.push(`${field.field}:`, ...lines.slice(0, -1))
-    }
+    const outcome = await checkedField(field, engine, checkOptions)
+    notices.push(...outcome.notices)
+    refusalSections.push(...outcome.refusalLines)
   }
   return {
     refusal:

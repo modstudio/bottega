@@ -2,6 +2,74 @@ import { describe, expect, test } from 'bun:test'
 import { proseGate } from './prose-gate.ts'
 
 describe('proseGate', () => {
+  test.each([
+    'triages',
+    'Triages',
+    'preapproved',
+    'teardown',
+    "teardown's",
+    "routing's",
+    'unmapped',
+    'textless',
+    'collectable',
+    "DEV-1948's",
+    "6262's",
+    "step 2's",
+    'The bug is at Lot.php:78 in the model.',
+    'See LotAllocator.php:120-140 and grid.vue:12.',
+  ])('does not refuse the real-word regression %s', async (text) => {
+    const result = await proseGate([{ field: 'body', text, prior: null }], {
+      displayName: null,
+      enabled: true,
+    })
+    expect(result.refusal).toBeNull()
+  })
+
+  test.each(['sentense', 'mispelled', 'recieve', 'seperate'])(
+    'refuses the typo %s',
+    async (text) => {
+      const result = await proseGate([{ field: 'body', text, prior: null }], {
+        displayName: null,
+        enabled: true,
+      })
+      expect(result.refusal).toContain(`"${text}"`)
+    },
+  )
+
+  test.each([
+    ['behaviour', 'behavior'],
+    ['catalogue', 'catalog'],
+    ['modelled', 'modeled'],
+    ['judgement', 'judgment'],
+    ['licence', 'license'],
+    ["catalogue's", "catalog's"],
+    ['catalogue’s', 'catalog’s'],
+    ['Behaviour', 'Behavior'],
+  ])('refuses British %s and suggests %s', async (text, suggestion) => {
+    const result = await proseGate([{ field: 'body', text, prior: null }], {
+      displayName: null,
+      enabled: true,
+    })
+    expect(result.refusal).toContain(`"${text}"; suggestion: "${suggestion}"`)
+  })
+
+  test('keeps the naming rule blocking', async () => {
+    const result = await proseGate(
+      [{ field: 'body', text: 'Operator approved it.', prior: null }],
+      { displayName: null, enabled: true },
+    )
+    expect(result.refusal).toContain('Operator')
+  })
+
+  test('returns repeated words as an advisory notice without refusing', async () => {
+    const result = await proseGate([{ field: 'body', text: 'the the', prior: null }], {
+      displayName: null,
+      enabled: true,
+    })
+    expect(result.refusal).toBeNull()
+    expect(result.notices).toEqual(['body: advisory: "the the"; suggestion: "the"'])
+  })
+
   test('names the field and refuses only introduced occurrences', async () => {
     const misspelling = ['me', 'ida'].join('')
     const sentence = `The ${misspelling} stayed.`
