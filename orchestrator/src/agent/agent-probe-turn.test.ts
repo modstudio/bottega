@@ -1,9 +1,9 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import type { AgentTransport, TransportHandle, TransportResult } from '../transport/transport.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
-import { runProbeTurn } from './agent-probe-turn.ts'
+import { probeEnvironment, runProbeTurn } from './agent-probe-turn.ts'
 import { BUILTIN_AGENTS } from './agents.ts'
 
 const quotaReadings = {
@@ -12,6 +12,64 @@ const quotaReadings = {
   quotaWindowMinutes: 10_080,
   quotaResetsAt: 1_800_000_000,
 }
+
+const originalHome = process.env.HOME
+const originalCodexHome = process.env.CODEX_HOME
+
+function restoreProbeHomeEnvironment(): void {
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  if (originalCodexHome === undefined) delete process.env.CODEX_HOME
+  else process.env.CODEX_HOME = originalCodexHome
+}
+
+describe('probe environment quota rollout home', () => {
+  afterEach(restoreProbeHomeEnvironment)
+
+  describe('without an explicit CODEX_HOME', () => {
+    beforeEach(() => {
+      process.env.HOME = '/operator'
+      delete process.env.CODEX_HOME
+    })
+
+    test('defaults CODEX_HOME for a codex harness', async () => {
+      const environment = await probeEnvironment(
+        'codex',
+        { ...BUILTIN_AGENTS.codex!, harness: 'codex' },
+        dir,
+      )
+
+      expect(environment.CODEX_HOME).toBe('/operator/.codex')
+    })
+
+    test('does not add CODEX_HOME for a non-codex harness', async () => {
+      const environment = await probeEnvironment(
+        'grok',
+        { ...BUILTIN_AGENTS.grok!, harness: 'grok' },
+        dir,
+      )
+
+      expect(environment.CODEX_HOME).toBeUndefined()
+    })
+  })
+
+  describe('with an explicit CODEX_HOME', () => {
+    beforeEach(() => {
+      process.env.HOME = '/operator'
+      process.env.CODEX_HOME = '/explicit/codex'
+    })
+
+    test('keeps the explicit home for a codex harness', async () => {
+      const environment = await probeEnvironment(
+        'codex',
+        { ...BUILTIN_AGENTS.codex!, harness: 'codex' },
+        dir,
+      )
+
+      expect(environment.CODEX_HOME).toBe('/explicit/codex')
+    })
+  })
+})
 
 function collectedResult(status: 'ok' | 'failed' = 'ok'): TransportResult {
   const failed = status === 'failed'

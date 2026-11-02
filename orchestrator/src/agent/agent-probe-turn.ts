@@ -8,6 +8,7 @@ import { writableDb } from '../database/db.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
+import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import type {
   AgentTransport,
@@ -71,12 +72,12 @@ function insertProbeTurn(input: ProbeTurnInput, started: number): string {
   return row.record_id
 }
 
-async function probeEnvironment(
+export async function probeEnvironment(
   name: string,
   agent: Agent,
   scratch: string,
 ): Promise<Record<string, string>> {
-  return {
+  const environment: Record<string, string> = {
     ...Object.fromEntries(
       Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined,
@@ -88,6 +89,9 @@ async function probeEnvironment(
     })),
     BOTTEGA_SCRATCH: scratch,
   }
+  if (harnessCollectsQuotaReadings(agent.harness) && !environment.CODEX_HOME && environment.HOME)
+    environment.CODEX_HOME = join(environment.HOME, '.codex')
+  return environment
 }
 
 async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
