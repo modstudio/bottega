@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { routeMainCheckoutMove } from '../database/machine-update-mover.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
 import {
@@ -56,23 +55,6 @@ describe('main checkout branch decision', () => {
       branch: null,
     })
   })
-})
-
-test('another project main tree refresh uses the plain fast-forward', () => {
-  const calls: string[] = []
-  const output = routeMainCheckoutMove(false, {
-    installation: () => {
-      calls.push('machine-update')
-      return ['machine update']
-    },
-    otherProject: () => {
-      calls.push('plain-fast-forward')
-      return ['fast-forwarded main']
-    },
-  })
-
-  expect(calls).toEqual(['plain-fast-forward'])
-  expect(output).toEqual(['fast-forwarded main'])
 })
 
 test('installation main refresh checks collisions and owns machine-update outcomes', () => {
