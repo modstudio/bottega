@@ -71,6 +71,35 @@ def open_board_requests(
     return sorted(open_roots, key=lambda root: str(root.get("id")))
 
 
+def _superseding_root(held_root: dict, roots: list[dict], now: float) -> dict | None:
+    title = str(held_root.get("title") or "")
+    held_created_at = held_root.get("created_at")
+    if ":" not in title or not isinstance(held_created_at, str):
+        return None
+    prefix = title.split(":", 1)[0].strip()
+    candidates = []
+    for candidate in roots:
+        candidate_title = candidate.get("title")
+        candidate_expires_at = candidate.get("expires_at")
+        if (
+            candidate.get("id") != held_root.get("id")
+            and candidate.get("author_session") == held_root.get("author_session")
+            and isinstance(candidate_title, str)
+            and candidate_title.split(":", 1)[0].strip() == prefix
+            and isinstance(candidate.get("created_at"), str)
+            and _timestamp(candidate["created_at"]) > _timestamp(held_created_at)
+            and candidate.get("withdrawn_at") is None
+            and isinstance(candidate_expires_at, str)
+            and _timestamp(candidate_expires_at) > now
+        ):
+            candidates.append(candidate)
+    if not candidates:
+        return None
+    return min(
+        candidates, key=lambda candidate: (_timestamp(candidate["created_at"]), str(candidate["id"]))
+    )
+
+
 def resolve_board_holds(
     roots: list[dict], replies: list[dict], holds: list[dict], now: float
 ) -> tuple[list[dict], list[HoldResolution]]:
@@ -108,31 +137,14 @@ def resolve_board_holds(
             )
             if answered:
                 reason = "replied"
-        held_created_at = root.get("created_at")
-        if reason is None and ":" in title and isinstance(held_created_at, str):
-            prefix = title.split(":", 1)[0].strip()
-            candidates = []
-            for candidate in roots:
-                candidate_title = candidate.get("title")
-                candidate_expires_at = candidate.get("expires_at")
-                if (
-                    candidate.get("id") != message_id
-                    and candidate.get("author_session") == root.get("author_session")
-                    and isinstance(candidate_title, str)
-                    and candidate_title.split(":", 1)[0].strip() == prefix
-                    and isinstance(candidate.get("created_at"), str)
-                    and _timestamp(candidate["created_at"]) > _timestamp(held_created_at)
-                    and candidate.get("withdrawn_at") is None
-                    and isinstance(candidate_expires_at, str)
-                    and _timestamp(candidate_expires_at) > now
-                ):
-                    candidates.append(candidate)
-            if candidates:
-                superseding = min(
-                    candidates, key=lambda candidate: (_timestamp(candidate["created_at"]), str(candidate["id"]))
-                )
+        if reason is None or reason in ("withdrawn", "expired"):
+            superseding = _superseding_root(root, roots, now)
+            if superseding is not None:
                 superseding_title = str(superseding["title"])
-                reason = f"superseded by {superseding_title}"
+                if reason is None:
+                    reason = f"superseded by {superseding_title}"
+                else:
+                    reason = f"{reason}, superseded by {superseding_title}"
                 superseding_id = str(superseding["id"])
         if reason is None:
             unresolved.append(hold)
