@@ -333,6 +333,52 @@ function assertDispatchableProject(
   return explicitRepo ? projectByName(explicitRepo) : cwdProject
 }
 
+function prepareDispatchTarget(input: {
+  flags: DispatchFlags
+  presentation: Pick<
+    DispatchPresentation,
+    'resolveBase' | 'isWorktreeRelativeRef' | 'resolveReviewTarget'
+  >
+  jobName: string
+  callerCwd: string
+  explicitRepo: string | undefined
+  callerChoseCwd: boolean
+}) {
+  const { flag, has } = input.flags
+  const reviewRef = flag('review')
+  const resolvedReviewTarget = input.presentation.resolveReviewTarget(
+    input.jobName,
+    input.callerCwd,
+    reviewRef,
+    has('carry'),
+    flag('key'),
+  )
+  const base = writingBranchOptions({
+    jobName: input.jobName,
+    continueBranch: flag('continue'),
+    base: flag('base'),
+    key: flag('key'),
+    cwd: input.callerCwd,
+    presentation: input.presentation,
+  })
+  const seed = preflight(
+    input.jobName,
+    input.callerCwd,
+    flag('seed'),
+    flag('key'),
+    base,
+    false,
+    false,
+    flag('lens'),
+    resolvedReviewTarget ? undefined : reviewRef,
+    has('carry'),
+    input.explicitRepo,
+    resolvedReviewTarget !== null,
+    input.callerChoseCwd,
+  )
+  return { base, reviewRef, resolvedReviewTarget, seed }
+}
+
 function requiresExecution(
   requested: ReturnType<typeof job>,
   explicit: boolean,
@@ -408,7 +454,6 @@ export async function dispatchCommand(
     resolveTaskBranchForDispatch,
     checkoutHasUncommittedWork,
     implicitReviewWarning,
-    resolveReviewTarget,
     resolveCallerCheckout,
     resolveDispatchOptions,
     lookupTaskKey,
@@ -432,39 +477,14 @@ export async function dispatchCommand(
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
-  const requestedBase = flag('base'),
-    continueBranch = flag('continue')
-  const reviewRef = flag('review')
-  const resolvedReviewTarget = resolveReviewTarget(
-    jobName,
-    callerCwd,
-    reviewRef,
-    has('carry'),
-    flag('key'),
-  )
-  const base = writingBranchOptions({
-    jobName,
-    continueBranch,
-    base: requestedBase,
-    key: flag('key'),
-    cwd: callerCwd,
+  const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
+    flags,
     presentation,
-  })
-  const seed = preflight(
     jobName,
     callerCwd,
-    flag('seed'),
-    flag('key'),
-    base,
-    false,
-    false,
-    flag('lens'),
-    resolvedReviewTarget ? undefined : reviewRef,
-    has('carry'),
     explicitRepo,
-    resolvedReviewTarget !== null,
-    Boolean(requestedCwd),
-  )
+    callerChoseCwd: Boolean(requestedCwd),
+  })
   reportDefaultSeed(flag('seed'), seed, porcelain, error)
   const taskKeyWarning = await taskKeyWarningForDispatch(
     { project: dispatchProject, key: flag('key') },
@@ -496,7 +516,7 @@ export async function dispatchCommand(
     {
       porcelain,
       base,
-      continueBranch,
+      continueBranch: flag('continue'),
       writesRepo: Boolean(requested.needs.writesRepo),
       key: flag('key'),
     },

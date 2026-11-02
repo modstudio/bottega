@@ -136,6 +136,7 @@ const detachRouting = (spec: DetachSpec) => ({
   agentExplicit: spec.agentExplicit,
   routedAgent: spec.routedAgent,
   reviewRole: spec.reviewRole,
+  resolvedReviewTarget: spec.resolvedReviewTarget,
 })
 
 export function detachedRunOptions(

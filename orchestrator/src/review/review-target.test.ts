@@ -32,6 +32,7 @@ describe('review target', () => {
       callerBranchContainsCommit: true,
     })
     const claimed = claimedRunBranch(branch, null, null, 'DEV-2031-review-branch')
+    if (!claimed) throw new Error('expected the resolved branch to be claimed')
 
     expect(branch).toBe('DEV-2031-review-branch')
     expect(
