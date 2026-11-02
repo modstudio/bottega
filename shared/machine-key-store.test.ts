@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readMachineKey, writeMachineKey } from './machine-key-store.ts'
+import { decideMachineKeyStore, readMachineKey, writeMachineKey } from './machine-key-store.ts'
 import { generateMachineKeyPair } from './secret-envelope.ts'
 
 const roots: string[] = []
@@ -30,5 +30,17 @@ describe('file machine key store', () => {
     writeMachineKey(await generateMachineKeyPair(), env)
     chmodSync(join(env.BOTTEGA_CONFIG_HOME, 'machine-key'), 0o644)
     expect(() => readMachineKey(env)).toThrow('file permissions must be no wider than 0600')
+  })
+})
+
+describe('machine key store decisions', () => {
+  test('keeps file machine keys explicit on every platform', () => {
+    expect(decideMachineKeyStore(undefined, 'darwin')).toBe('keychain')
+    expect(decideMachineKeyStore(undefined, 'linux')).toBe('keychain')
+    expect(decideMachineKeyStore('file', 'linux')).toBe('file')
+    expect(decideMachineKeyStore('file', 'win32')).toBe('file')
+    expect(() => decideMachineKeyStore('unknown', 'linux')).toThrow(
+      "BOTTEGA_KEYSTORE must be 'file' when set",
+    )
   })
 })

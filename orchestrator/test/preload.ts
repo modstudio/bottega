@@ -108,6 +108,11 @@ const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 const originalRunId = process.env.BOTTEGA_RUN_ID
 const originalDepth = process.env.BOTTEGA_DEPTH
 const originalStateHome = process.env[STATE_HOME_ENV]
+const KEYCHAIN_PLATFORM_KEY = Symbol.for('orch.keychain-platform')
+const keychainPlatformHolder = globalThis as typeof globalThis & {
+  [KEYCHAIN_PLATFORM_KEY]?: string
+}
+const originalKeychainPlatform = keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY]
 const inheritedGitConfig: Record<string, string> = {}
 const gitConfigEnvironmentName = /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/
 const configDir = mkdtempSync(join(tmpdir(), 'orch-test-config-'))
@@ -125,6 +130,7 @@ process.env.BOTTEGA_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
 // landings refused on one lifecycle test on 2026-09-08).
 const testStateHome = join(dir, 'state')
 process.env[STATE_HOME_ENV] = testStateHome
+keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY] = 'darwin'
 mkdirSync(testStateHome, { recursive: true })
 // Routing eligibility asks which(agent.bin). The suite decides routes from the
 // registry and the evidence, never from which vendor CLIs this host has, so
@@ -327,6 +333,8 @@ function restoreEnvironment(name: string, value: string | undefined): void {
 
 afterAll(() => {
   Bun.spawnSync = originalBunSpawnSync
+  if (originalKeychainPlatform === undefined) delete keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY]
+  else keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY] = originalKeychainPlatform
   closeDatabaseForFixture()
   delete process.env.BOTTEGA_ORCHESTRATOR_DB
   delete process.env.BOTTEGA_HUB_DB

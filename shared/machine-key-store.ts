@@ -3,7 +3,13 @@ import { chmodSync, mkdirSync, readFileSync, type Stats, statSync, writeFileSync
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
-import { readKeychainItem, type SecurityRunner, writeKeychainItem } from './keychain.ts'
+import {
+  decideKeychainBackend,
+  keychainPlatform,
+  readKeychainItem,
+  type SecurityRunner,
+  writeKeychainItem,
+} from './keychain.ts'
 import { machineKeyId } from './machine-key-id.ts'
 import type { MachineKeyPair } from './secret-envelope.ts'
 
@@ -39,12 +45,24 @@ function decode(value: string): Uint8Array {
   return bytes
 }
 
-function useFile(env: ConfigEnvironment): boolean {
-  const requested = env[KEYSTORE_ENV]
-  if (requested !== undefined && requested !== 'file') {
+export function decideMachineKeyStore(
+  requested: string | undefined,
+  platform: string,
+): 'file' | 'keychain' {
+  if (requested === 'file') return 'file'
+  if (requested !== undefined) {
     throw new Error(`${KEYSTORE_ENV} must be 'file' when set`)
   }
-  return requested === 'file' || process.platform !== 'darwin'
+  try {
+    decideKeychainBackend(platform)
+    return 'keychain'
+  } catch {
+    throw new Error(`machine key storage is unsupported on platform ${platform}`)
+  }
+}
+
+function useFile(env: ConfigEnvironment): boolean {
+  return decideMachineKeyStore(env[KEYSTORE_ENV], keychainPlatform()) === 'file'
 }
 
 export function readMachineKey(
@@ -92,7 +110,7 @@ export function writeMachineKey(
   writeKeychainItem(SERVICE, ACCOUNT, encoded, runner)
   const stored = readMachineKey(env, runner)
   if (!stored || !Buffer.from(stored.privateKey).equals(Buffer.from(pair.privateKey))) {
-    throw new Error('security add-generic-password verification failed: stored key did not match')
+    throw new Error('machine key verification failed: the stored key did not match the written key')
   }
 }
 
