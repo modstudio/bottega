@@ -16,6 +16,7 @@ const module = (
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
+  module('orchestrator/src/dispatch/probe-launch-overrides.ts', []),
   module('orchestrator/src/transport/quota-readings.ts', []),
   module('orchestrator/src/transport/codex-quota.ts', ['./quota-readings.ts']),
   module('orchestrator/src/close/conversation-liveness.ts', [
@@ -51,6 +52,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-resume-kind.ts',
   ]),
   module(
+    'orchestrator/src/run/run-probe-launch.ts',
+    ['../agent/agent-registry.ts', '../dispatch/probe-launch-overrides.ts'],
+    ['../agent/agents.ts', '../jobs/jobs.ts', './run-options.ts'],
+  ),
+  module(
     'orchestrator/src/run/run-options.ts',
     [
       '../canon/canon.ts',
@@ -62,7 +68,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
       '../worktree/keep-tree-hold.ts',
       './run-resume-options.ts',
     ],
-    ['../review/review-target.ts'],
+    ['../dispatch/probe-launch-overrides.ts', '../review/review-target.ts'],
   ),
   module('orchestrator/src/run/run-resume-claim.ts', [
     '../branch/branch-ref-guard.ts',

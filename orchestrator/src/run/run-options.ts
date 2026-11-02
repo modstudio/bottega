@@ -1,6 +1,7 @@
 // concern: run-options
 /** Declares the caller-owned inputs to one run lifecycle. */
 import type { Pack } from '../canon/canon.ts'
+import type { ProbeContextLimit } from '../dispatch/probe-launch-overrides.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
@@ -20,6 +21,8 @@ export type RunOptions = {
   schemaPath?: string
   mcp?: McpRequest
   probe?: boolean
+  probeContextLimit?: ProbeContextLimit
+  probeReaderSuites?: boolean
   label?: string
   lens?: string
   reviewRole?: ReviewRole

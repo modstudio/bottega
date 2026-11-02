@@ -141,6 +141,7 @@ export function rowAgent(row: AgentRow): Agent {
         ? Number.POSITIVE_INFINITY
         : stored.contextTokens!
       : 0,
+    servedContextTokens: typeof stored.contextTokens === 'number' ? stored.contextTokens : null,
     enabled: Boolean(row.enabled),
     disabledReason: row.disabled_reason,
     probedAt: row.probed_at,

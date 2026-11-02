@@ -248,6 +248,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       './dispatch-preflight.ts',
       './execution-requirement.ts',
+      './probe-launch-overrides.ts',
       './review-lens-prompt.ts',
       '../enforcement/enforcement-resolution.ts',
       '../jobs/jobs.ts',
@@ -261,7 +262,6 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep dispatch command adapters independent of transports, routing, worktrees, the CLI, and reviews.',
     ['./review-memory.ts', '../review/review-role.ts', '../review/review-target.ts'],
   ),
-
   boundary(
     'task-key-admission-boundary',
     'orchestrator/src/dispatch/task-key-admission.ts',
@@ -444,6 +444,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../review/review-role.ts',
       '../review/review-target.ts',
       './route.ts',
+      '../dispatch/probe-launch-overrides.ts',
     ],
   ),
   boundary(

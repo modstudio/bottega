@@ -563,6 +563,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       ...transport,
       ...(await routeConstraints(argv, flag('agent'))),
       mcp: parseRequestedMcp(argv),
+      agentHarness: selected?.harness ?? null,
     }
   }
   await dispatchCommand(
