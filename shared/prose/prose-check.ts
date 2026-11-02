@@ -61,6 +61,15 @@ export function americanVariant(
   return null
 }
 
+/** Restores the original word's leading capital and possessive to a lowercase variant. */
+function variantInPlace(original: string, variant: string): string {
+  const possessive = original.match(/['’]s$/i)?.[0] ?? ''
+  const capitalized = /^[A-Z]/.test(original)
+    ? `${variant[0]?.toUpperCase() ?? ''}${variant.slice(1)}`
+    : variant
+  return `${capitalized}${possessive}`
+}
+
 function isDetachedPossessive(text: string, finding: EngineFinding): boolean {
   if (finding.text === 's' && /['’]/.test(text[finding.start - 1] ?? '')) return true
   return /^\d+['’]s$/i.test(finding.text)
@@ -80,7 +89,7 @@ function classifiedEngineFinding(
     end: finding.end,
     text: finding.text,
     message: finding.message,
-    suggestion: variant ?? spanReplacement(finding),
+    suggestion: variant === null ? spanReplacement(finding) : variantInPlace(finding.text, variant),
     blocking: finding.rule === 'SpellCheck' && (variant !== null || !isEnglishWord(normalized)),
   }
 }

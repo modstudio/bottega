@@ -42,6 +42,9 @@ describe('proseGate', () => {
     ['modelled', 'modeled'],
     ['judgement', 'judgment'],
     ['licence', 'license'],
+    ["catalogue's", "catalog's"],
+    ['catalogue’s', 'catalog’s'],
+    ['Behaviour', 'Behavior'],
   ])('refuses British %s and suggests %s', async (text, suggestion) => {
     const result = await proseGate([{ field: 'body', text, prior: null }], {
       displayName: null,
