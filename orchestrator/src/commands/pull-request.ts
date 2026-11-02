@@ -1,9 +1,13 @@
 // concern: cli
 /** Registers the pull-request admission wrapper and its read-only pre-push check. */
+
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writableDb } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import {
   checkPushedTip,
   createPullRequest,
@@ -57,7 +61,32 @@ export function pullRequestCiCommandOutcome(result: {
   }
 }
 
-function createPullRequestCommand(
+function githubValue(args: string[], long: string, short: string): string | undefined {
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!
+    if (argument === long || argument === short) return args[index + 1]
+    if (argument.startsWith(`${long}=`)) return argument.slice(long.length + 1)
+  }
+  return undefined
+}
+
+export function githubArgsWithStdinBody(args: readonly string[], body: string): string[] {
+  const rewritten: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!
+    if ((argument === '--body-file' || argument === '-F') && args[index + 1] === '-') {
+      rewritten.push('--body', body)
+      index += 1
+    } else if (argument === '--body-file=-') {
+      rewritten.push('--body', body)
+    } else {
+      rewritten.push(argument)
+    }
+  }
+  return rewritten
+}
+
+export async function createPullRequestCommand(
   githubArgs: string[],
   options: {
     cwd?: string
@@ -65,16 +94,35 @@ function createPullRequestCommand(
     ceilingRuling?: string
     fromOperator?: boolean
   },
-): void {
+  _command?: Command,
+  create: typeof createPullRequest = createPullRequest,
+): Promise<void> {
   validateGithubArguments(githubArgs)
-  const result = createPullRequest(
-    githubArgs,
+  const cwd = resolveReviewCommandCwd(options.cwd)
+  const title = githubValue(githubArgs, '--title', '-t')
+  const inlineBody = githubValue(githubArgs, '--body', '-b')
+  const bodyFile = githubValue(githubArgs, '--body-file', '-F')
+  // gh resolves a relative body file against its own cwd, so read it from there.
+  const body = bodyFile
+    ? bodyFile === '-'
+      ? await Bun.stdin.text()
+      : readFileSync(resolve(cwd, bodyFile), 'utf8')
+    : inlineBody
+  // Text derived from commits is covered by the commit-msg prose hook.
+  await assertOrchestratorProse([
+    { field: 'title', text: title ?? '', prior: null },
+    { field: 'body', text: body ?? '', prior: null },
+  ])
+  const forwardedArgs =
+    bodyFile === '-' ? githubArgsWithStdinBody(githubArgs, body ?? '') : githubArgs
+  const result = create(
+    forwardedArgs,
     {
       overrideReason: options.overrideTriage,
       ceilingRuling: options.ceilingRuling,
       fromOperator: options.fromOperator,
     },
-    resolveReviewCommandCwd(options.cwd),
+    cwd,
   )
   if (result.output) log(result.output)
   if (result.overrideId !== null) {

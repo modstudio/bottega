@@ -702,6 +702,21 @@ describe('the live ask channel always answers', () => {
     ])
   })
 
+  test('a misspelled question is recorded verbatim and returned with a refusal notice', async () => {
+    const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const misspelling = ['me', 'ida'].join('')
+    const question = `We saw the ${misspelling} here.`
+    const result = await ask({ runId: run, question, timeoutMs: 1 })
+    expect(result.notice).toContain(`question text:\n"${misspelling}"`)
+    expect(
+      db()
+        .query<{ question: string }, [string]>(
+          'SELECT question FROM question WHERE run_record_id=?',
+        )
+        .get(run),
+    ).toEqual({ question })
+  })
+
   test('missing required text instructs the worker without recording or returning an error', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const { client, close } = await askClient(run)

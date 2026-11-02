@@ -534,7 +534,7 @@ describe('workflow cursor adapter', () => {
     })
   })
 
-  test('re-ask is idempotent and rule records the answer before resuming the same step', () => {
+  test('re-ask is idempotent and rule records the answer before resuming the same step', async () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     const first = awaitWorkflowRuling(
@@ -564,7 +564,7 @@ describe('workflow cursor adapter', () => {
     })
 
     expect(
-      ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d),
+      await ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d),
     ).toMatchObject({ questionId: 1 })
     expect(d.query('SELECT state,ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       state: 'running',
@@ -583,22 +583,22 @@ describe('workflow cursor adapter', () => {
       answer_channel: 'mcp',
     })
     expect(d.query('SELECT action FROM question_mutation_audit').get()).toEqual({ action: 'rule' })
-    expect(() =>
+    await expect(
       ruleWorkflow('flow', 'fixture', 'default', args, 'Again', true, 'cli', context, d),
-    ).toThrow('is not awaiting a ruling')
+    ).rejects.toThrow('is not awaiting a ruling')
   })
 
-  test('workflow rule requires owner authority or operator override and audits the actual actor', () => {
+  test('workflow rule requires owner authority or operator override and audits the actual actor', async () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
     try {
-      expect(() =>
+      await expect(
         ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d),
-      ).toThrow('owned by session session-one')
-      ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'cli', context, d)
+      ).rejects.toThrow('owned by session session-one')
+      await ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'cli', context, d)
       expect(d.query('SELECT action,actor_session FROM question_mutation_audit').all()).toEqual([
         { action: 'rule', actor_session: 'foreign-session' },
       ])
@@ -608,7 +608,7 @@ describe('workflow cursor adapter', () => {
     }
   })
 
-  test('a plain operator may rule when the workflow owner is gone', () => {
+  test('a plain operator may rule when the workflow owner is gone', async () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
@@ -616,7 +616,7 @@ describe('workflow cursor adapter', () => {
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     delete process.env.CLAUDE_CODE_SESSION_ID
     try {
-      ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d)
+      await ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d)
       expect(d.query('SELECT answer FROM question').get()).toEqual({
         answer: 'Proceed.',
       })
@@ -629,7 +629,7 @@ describe('workflow cursor adapter', () => {
     }
   })
 
-  test("an adopted workflow rule keeps the gone owner's session", () => {
+  test("an adopted workflow rule keeps the gone owner's session", async () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
@@ -637,7 +637,7 @@ describe('workflow cursor adapter', () => {
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'adopting-session'
     try {
-      ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d)
+      await ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d)
       expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
         session_id: 'session-one',
       })

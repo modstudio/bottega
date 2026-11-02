@@ -30,7 +30,7 @@ test('operator-ruling steps refuse agent answers', () => {
   ).toBeNull()
 })
 
-test('a refused agent answer leaves an operator-ruling question open', () => {
+test('a refused agent answer leaves an operator-ruling question open', async () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const draft = setStepCatalogueLocal(
@@ -56,9 +56,9 @@ test('a refused agent answer leaves an operator-ruling question open', () => {
   composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
   awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
 
-  expect(() =>
+  await expect(
     ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d),
-  ).toThrow('--from-operator')
+  ).rejects.toThrow('--from-operator')
   expect(d.query('SELECT state,question FROM workflow_cursor').get()).toEqual({
     state: 'awaiting-ruling',
     question: 'Proceed?',
@@ -72,7 +72,7 @@ test('a refused agent answer leaves an operator-ruling question open', () => {
   expect(d.query('SELECT count(*) count FROM question_mutation_audit').get()).toEqual({ count: 0 })
 })
 
-test('a missing pinned step reports the cursor and step slug', () => {
+test('a missing pinned step reports the cursor and step slug', async () => {
   const d = database()
   composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
   awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
@@ -91,7 +91,30 @@ test('a missing pinned step reports the cursor and step slug', () => {
     pinned.record_id,
   )
 
-  expect(() =>
+  await expect(
     ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d),
-  ).toThrow('workflow flow for DEV-822 pinned step catalogue does not contain step "rebase"')
+  ).rejects.toThrow(
+    'workflow flow for DEV-822 pinned step catalogue does not contain step "rebase"',
+  )
+})
+
+test('ruleWorkflow refuses misspelled ruling text without recording it', async () => {
+  const d = database()
+  const misspelling = ['me', 'ida'].join('')
+  composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+  awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  await expect(
+    ruleWorkflow(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      `We saw the ${misspelling} here.`,
+      false,
+      'cli',
+      context,
+      d,
+    ),
+  ).rejects.toThrow(`ruling text:\n"${misspelling}"`)
+  expect(d.query('SELECT answer FROM question').get()).toEqual({ answer: null })
 })

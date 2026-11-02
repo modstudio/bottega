@@ -278,7 +278,7 @@ export async function attachCommand(
     undefined,
     cursor,
   )
-  const reference = attachWorkflowText(
+  const reference = await attachWorkflowText(
     { project, workflow: slug, mode, key: workflowKeyOf(args) || undefined },
     cursor,
     body,
@@ -444,7 +444,7 @@ export async function ruleCommand(
     undefined,
     cursor,
   )
-  const result = ruleWorkflow(
+  const result = await ruleWorkflow(
     slug,
     project,
     mode,

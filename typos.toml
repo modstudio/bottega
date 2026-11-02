@@ -2,6 +2,8 @@
 locale = "en-us"
 
 [default.extend-words]
+# Acctivate is the inventory system a registered project integrates with.
+acctivate = "acctivate"
 # Adanim's registered task-key prefix is ADN.
 adn = "adn"
 # GAM is the registered task-key prefix used by gamma fixtures.
@@ -49,6 +51,9 @@ extend-exclude = [
   "scripts/quality/*.json",
   # This folder holds deliberate misspellings that test the checker.
   "orchestrator/src/check/fixtures/spelling-samples/**",
+  # These prose-check tests hold deliberate misspellings that test the checker.
+  "shared/prose/prose-check.test.ts",
+  "shared/prose/harper-adapter.test.ts",
   # CLAUDE.md files are symlinks to the AGENTS.md cards, which are checked directly.
   "**/CLAUDE.md",
 ]

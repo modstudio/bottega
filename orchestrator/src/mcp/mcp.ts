@@ -541,7 +541,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       }),
     },
     async ({ cursor, text: body }) =>
-      text(attachWorkflowTextByHandle(cursor, body, mcpWorkflowCursorContext())),
+      text(await attachWorkflowTextByHandle(cursor, body, mcpWorkflowCursorContext())),
   )
 
   server.registerTool(
@@ -615,7 +615,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       const workflowArgs = args ?? {}
       const context = await resolveMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
       return text(
-        ruleWorkflow(
+        await ruleWorkflow(
           slug,
           project,
           resolveLinkedWorkflowCursorMode(

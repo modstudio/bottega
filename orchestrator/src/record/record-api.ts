@@ -13,6 +13,7 @@ import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payl
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
+import { hostedDocUpsert } from './record-api-doc-prose.ts'
 import {
   docWriteContextSchema,
   recordCanonImportSchema,
@@ -812,7 +813,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
     try {
-      return context.json(await deps.upsertDoc({ ...tenant, ...body.data }))
+      return context.json(await hostedDocUpsert(tenant, body.data, context.get('identity'), deps))
     } catch (error) {
       return writeError(context, error)
     }

@@ -15,6 +15,7 @@ import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { callerIdentity, db, writableDb, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -103,6 +104,19 @@ function incompleteRulingsRefusal(
     'For multiple questions, pass every --q<id> in a single command. ' +
     'A worker resumed with a question unanswered will guess, which is the ' +
     'one thing this is here to prevent.'
+  )
+}
+
+async function assertAnswersReady(
+  openCount: number,
+  answers: ReadonlyArray<{ answer: string }>,
+  input: AnswerRunInput,
+  ownersLive: boolean,
+): Promise<void> {
+  const incomplete = incompleteRulingsRefusal(openCount, answers.length, input, ownersLive)
+  if (incomplete) throw new Error(incomplete)
+  await assertOrchestratorProse(
+    answers.map((answer) => ({ field: 'answer text', text: answer.answer, prior: null })),
   )
 }
 
@@ -864,8 +878,7 @@ export async function answerRun(
       answers.push(answeredQuestion(open[0]!, rulingFrom(input.rulings), input.fromOperator))
     }
   }
-  const incomplete = incompleteRulingsRefusal(open.length, answers.length, input, ownersLive)
-  if (incomplete) throw new Error(incomplete)
+  await assertAnswersReady(open.length, answers, input, ownersLive)
 
   if (
     answerResumeUnavailable({

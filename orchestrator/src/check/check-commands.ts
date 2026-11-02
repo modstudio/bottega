@@ -309,9 +309,12 @@ export async function checkCommand(argv: string[], presentation: Presentation): 
     await enabledCommand(argv, presentation)
   } else if (kind === 'spelling') spellingCommand(argv, presentation)
   else if (kind === 'attribution') await attributionCommand(argv, presentation)
-  else if (kind === 'comments') await commentsCommand(argv, presentation)
+  else if (kind === 'prose') {
+    const { checkCommitMessageProse } = await import('./check-prose.ts')
+    presentation.setExitCode(await checkCommitMessageProse(flagValue(argv, 'message')))
+  } else if (kind === 'comments') await commentsCommand(argv, presentation)
   else
     throw new Error(
-      `unknown: ${PLATFORM_SLUG} gate check. Try --enabled | spelling | attribution | comments`,
+      `unknown: ${PLATFORM_SLUG} gate check. Try --enabled | spelling | attribution | prose | comments`,
     )
 }

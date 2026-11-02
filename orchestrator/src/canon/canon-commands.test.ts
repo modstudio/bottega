@@ -119,8 +119,8 @@ test('canon import can drop a citer and its target after deciding the complete n
       scope: 'canon',
       subject: 'canon-import-removal',
       slug: '.agents/reference/old-citer.md',
-      title: 'Old citer',
-      body: `---\ndescription: Old citer\n---\n\nRead [the target](${target}).\n`,
+      title: 'Old reference',
+      body: `---\ndescription: Old reference\n---\n\nRead [the target](${target}).\n`,
       reason: 'seed citer',
       allowCanonBootstrap: true,
     })

@@ -40,6 +40,7 @@ import {
   sampleProcesses,
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
+import { orchestratorProseGate } from '../prose-service.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
@@ -311,6 +312,34 @@ async function runAskLoopback(
 ): Promise<AskLoopback | null> {
   if (existing || sandbox !== 'srt') return existing
   return startAskLoopback(runId, token)
+}
+
+async function recordQuestionProseNotice(
+  runId: string,
+  questions: Array<{ question: string }>,
+): Promise<void> {
+  if (!questions.length) return
+  const checked = await orchestratorProseGate(
+    questions.map((question) => ({ field: 'question text', text: question.question, prior: null })),
+  )
+  const notice = checked.refusal ?? checked.notices.join('\n')
+  if (!notice) return
+  appendRunEvent(runId, {
+    ts: nowIso(),
+    type: 'text',
+    text: `prose-check notice:\n${notice}`,
+  })
+}
+
+async function acceptedQuestionsWithNotice(
+  runId: string,
+  contract: WorkerReply | null,
+  transportQuestions: ReturnType<typeof realQuestions>,
+): Promise<ReturnType<typeof realQuestions>> {
+  const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
+  const accepted = questionsControlStatus ? realQuestions(contract) : transportQuestions
+  await recordQuestionProseNotice(runId, accepted)
+  return accepted
 }
 
 export type LiveInput = {
@@ -925,8 +954,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       contract = parsed.reply as WorkerReply | null
       contractObjects = parsed.contractObjects
     }
-    const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
-    acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
+    acceptedQuestions = await acceptedQuestionsWithNotice(claim.id, contract, transportQuestions)
     const derived = deriveLiveOutcome({
       writesJob,
       contractStatus: contract?.status ?? null,

@@ -601,7 +601,11 @@ describe('settings permission', () => {
     const shown = presentation()
     await expect(
       settingsPermissionCommand(
-        shown.flags({ project: 'permission-missing', list: 'allow', rule: 'Bash(orch *)' }),
+        shown.flags({
+          project: 'permission-missing',
+          list: 'allow',
+          rule: 'Bash(orch *)',
+        }),
         'add',
       ),
     ).rejects.toThrow('--expect is required')

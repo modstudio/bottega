@@ -110,6 +110,7 @@ export const MACHINE_CONFIG = {
   'record.tunnel_local_port': { type: 'integer', default: 15432 },
   'record.tunnel_remote_port': { type: 'integer', default: 5432 },
   'routing.cost_policy': { type: 'string', default: '{}' },
+  'prose.check': { type: 'string', default: 'on', values: ['on', 'off'] },
   // The spare-hands lane: best-effort nightly jobs for free-tier agents only.
   // A task key that owns the lane's cost, so an operator can move it to a
   // standing maintenance task without a code change.

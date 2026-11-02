@@ -1,5 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { DEFAULT_COMMENT_HISTORY_PHRASES } from '../canon/prose-lint.ts'
+import { DEFAULT_COMMENT_HISTORY_PHRASES } from '../../../shared/prose/prose-lint.ts'
 export type CommentSource = {
   file: string
   line: number

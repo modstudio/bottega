@@ -111,6 +111,19 @@ test('an unadopted install keeps a post local and renders its id as a string', a
   ).toBe(1)
 })
 
+test('a local board post refuses misspelled text without writing', async () => {
+  const misspelling = ['me', 'ida'].join('')
+  await expect(
+    boardPost(
+      { audience: 'operator', title: 'Local', body: `We saw the ${misspelling} here.` },
+      { env: noRecordEnv, cwd: process.cwd() },
+    ),
+  ).rejects.toThrow(`body:\n"${misspelling}"`)
+  expect(
+    db().query<{ count: number }, []>('SELECT count(*) count FROM board_message').get()?.count,
+  ).toBe(0)
+})
+
 test('local board audience decision refuses shared-space reach with the hosted-board remedy', () => {
   expect(localBoardAudienceRefusal({ kind: 'spaces' })).toMatch(
     /requires the hosted board.*adopt.*--audience spaces/,

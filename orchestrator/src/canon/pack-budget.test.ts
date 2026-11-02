@@ -119,7 +119,7 @@ describe('canon pack budget', () => {
       subject: 'file-question',
       slug: 'pack-base',
       title: 'Pack base',
-      body: 'b'.repeat(2_000),
+      body: 'Valid content. '.repeat(150),
     })
     const old = JOBS['file-question']!.packBytes
     JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 5_000
@@ -130,7 +130,7 @@ describe('canon pack budget', () => {
           subject: 'file-question',
           slug: 'six-kib',
           title: 'Six KiB',
-          body: 'x'.repeat(6 * 1024),
+          body: 'More valid content. '.repeat(350),
         }),
       ).rejects.toThrow(
         /canon pack file-question\/[^ ]+ would be .* bytes over.*largest inject sections to demote/s,

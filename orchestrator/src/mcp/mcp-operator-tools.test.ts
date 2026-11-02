@@ -154,13 +154,13 @@ describe('operator MCP tools', () => {
 
   test('answer_questions stores flag-shaped rulings verbatim and attributes only explicit operators', async () => {
     const literals = [
-      '--file=/etc/hosts',
+      '--file=/home/operator',
       '--file',
       '--from-operator',
       '--record-only',
       '--channel',
-      '--channel=ui',
-      '--q9',
+      '--channel=user',
+      '--question=9',
     ]
     await withClient(async (client) => {
       for (const [index, ruling] of literals.entries()) {

@@ -8,6 +8,7 @@ import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
 import { gateBoundarySpecs } from './architecture-gate-modules.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
+import { proseBoundarySpecs } from './architecture-prose-modules.ts'
 import {
   recordApiBoundaries,
   recordMachineBoundaries,
@@ -56,6 +57,9 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
+  ...proseBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
+  ),
   ...gateBoundarySpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
@@ -114,15 +118,12 @@ export const importBoundaries: ImportBoundary[] = [
       'github-slugger',
       '../../../shared/canon-references.ts',
       '../../../shared/ratchet.ts',
-      ...['./canon-budget.ts', './codex-project-doc.ts', './prose-lint.ts'],
+      './canon-budget.ts',
+      './codex-project-doc.ts',
+      '../../../shared/prose/prose-lint.ts',
+      '../../../shared/prose/prose-mask.ts',
     ],
     'Keep canon lint decisions pure and independent of filesystems, stores, commands, and processes.',
-  ),
-  boundary(
-    'prose-lint-boundary',
-    'orchestrator/src/canon/prose-lint.ts',
-    [],
-    'Keep shared prose lint decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   boundary(
     'canon-write-gate-boundary',
@@ -308,8 +309,8 @@ export const importBoundaries: ImportBoundary[] = [
     [
       '../../../shared/brand.ts',
       '../../../shared/docs.ts',
+      '../../../shared/prose/prose-lint.ts',
       '../canon/canon-lint.ts',
-      '../canon/prose-lint.ts',
     ],
     'Keep document lint decisions pure and independent of filesystems, stores, commands, and processes.',
   ),

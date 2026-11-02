@@ -1,5 +1,7 @@
-// concern: canon-lint
+// concern: prose
 /** Pure prose rules shared by canon and stored documents. */
+
+import { proseLines, proseOnly, TASK_KEY_PATTERN } from './prose-mask.ts'
 
 export type ProseFinding = {
   rule: 'history' | 'issue' | 'numeral' | 'date'
@@ -10,7 +12,6 @@ export type ProseFinding = {
   issueKind?: 'task-key'
 }
 
-const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
 const TASK_KEY_EXEMPTIONS = [
   'UTF',
   'SHA',
@@ -77,33 +78,6 @@ function containsTaskKey(line: string): boolean {
     const prefix = match[0].slice(0, match[0].lastIndexOf('-'))
     return !exemptions.has(prefix)
   })
-}
-
-type ScannedLine = { text: string; line: number }
-
-export function proseLines(text: string): ScannedLine[] {
-  const lines: ScannedLine[] = []
-  const source = text.split(/\r?\n/)
-  const frontmatterEnd =
-    source[0] === '---' ? source.findIndex((line, index) => index > 0 && line === '---') : -1
-  let fence: '`' | '~' | null = null
-  for (const [index, line] of source.entries()) {
-    if (frontmatterEnd >= 0 && index <= frontmatterEnd) continue
-    const marker = line.match(/^\s*(`{3,}|~{3,})/)?.[1]?.[0] as '`' | '~' | undefined
-    if (marker) {
-      if (fence === marker) fence = null
-      else if (fence === null) fence = marker
-      continue
-    }
-    if (fence === null) lines.push({ text: line, line: index + 1 })
-  }
-  return lines
-}
-
-function proseOnly(line: string): string {
-  return line
-    .replace(/(`+)[^`\n]*?\1/g, (value) => ' '.repeat(value.length))
-    .replace(/\[[^\]]*\]\([^)]*\)/g, (value) => ' '.repeat(value.length))
 }
 
 export function lintProse(text: string): ProseFinding[] {

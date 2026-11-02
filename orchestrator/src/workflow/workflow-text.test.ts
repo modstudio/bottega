@@ -245,10 +245,10 @@ describe('workflow text decisions', () => {
 })
 
 describe('workflow text lifecycle', () => {
-  test('attach then close meets the floor, injects text, and stores only a marker in the trail', () => {
+  test('attach then close meets the floor, injects text, and stores only a marker in the trail', async () => {
     const d = database()
     const cursor = open(d)
-    const reference = attachWorkflowTextByHandle(cursor, 'research body', context, d)
+    const reference = await attachWorkflowTextByHandle(cursor, 'research body', context, d)
     expect(
       d.query<{ record_id: string }, []>('SELECT record_id FROM workflow_step_text').get()
         ?.record_id,
@@ -277,10 +277,10 @@ describe('workflow text lifecycle', () => {
     expect(closed).not.toContain('research body')
   })
 
-  test('closing a workflow-text step deletes every attachment while the cursor stays live', () => {
+  test('closing a workflow-text step deletes every attachment while the cursor stays live', async () => {
     const d = database()
     const cursor = open(d)
-    const source = attachWorkflowTextByHandle(cursor, 'source', context, d)
+    const source = await attachWorkflowTextByHandle(cursor, 'source', context, d)
     nextWorkflowStep(
       'text-fixture',
       'fixture',
@@ -293,7 +293,7 @@ describe('workflow text lifecycle', () => {
       {},
       cursor,
     )
-    const consumer = attachWorkflowTextByHandle(cursor, 'consumer copy', context, d)
+    const consumer = await attachWorkflowTextByHandle(cursor, 'consumer copy', context, d)
     nextWorkflowStep(
       'text-fixture',
       'fixture',
@@ -314,11 +314,11 @@ describe('workflow text lifecycle', () => {
     ).toBe('running')
   })
 
-  test('finish and abandon each remove cursor text', () => {
+  test('finish and abandon each remove cursor text', async () => {
     const finished = database()
     const finishedCursor = open(finished)
     for (const note of ['source', 'consumer', 'final']) {
-      const reference = attachWorkflowTextByHandle(finishedCursor, note, context, finished)
+      const reference = await attachWorkflowTextByHandle(finishedCursor, note, context, finished)
       nextWorkflowStep(
         'text-fixture',
         'fixture',
@@ -336,7 +336,7 @@ describe('workflow text lifecycle', () => {
 
     const abandoned = database()
     const abandonedCursor = open(abandoned)
-    const abandonedReference = attachWorkflowTextByHandle(
+    const abandonedReference = await attachWorkflowTextByHandle(
       abandonedCursor,
       'discard me',
       context,
@@ -349,20 +349,30 @@ describe('workflow text lifecycle', () => {
     )
   })
 
-  test('the service refuses text over either live byte bound', () => {
+  test('the service refuses text over either live byte bound', async () => {
     const d = database()
     const cursor = open(d)
-    expect(() =>
+    await expect(
       attachWorkflowTextByHandle(
         cursor,
         'x'.repeat(WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES + 1),
         context,
         d,
       ),
-    ).toThrow('WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES')
-    attachWorkflowTextByHandle(cursor, 'x'.repeat(WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES), context, d)
-    attachWorkflowTextByHandle(cursor, 'y'.repeat(WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES), context, d)
-    expect(() => attachWorkflowTextByHandle(cursor, 'z', context, d)).toThrow(
+    ).rejects.toThrow('WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES')
+    await attachWorkflowTextByHandle(
+      cursor,
+      'x'.repeat(WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES),
+      context,
+      d,
+    )
+    await attachWorkflowTextByHandle(
+      cursor,
+      'y'.repeat(WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES),
+      context,
+      d,
+    )
+    await expect(attachWorkflowTextByHandle(cursor, 'z', context, d)).rejects.toThrow(
       'WORKFLOW_TEXT_CURSOR_MAX_BYTES',
     )
   })
@@ -404,7 +414,7 @@ describe('task-linked workflow text preservation', () => {
       JSON.stringify({ key: 'DEV-1975' }),
       cursor,
     )
-    const reference = attachWorkflowTextByHandle(cursor, 'context-linked body', context, d)
+    const reference = await attachWorkflowTextByHandle(cursor, 'context-linked body', context, d)
     const fake = documentFake()
     await closeCursorWithTextCopy(
       {
@@ -435,7 +445,7 @@ describe('task-linked workflow text preservation', () => {
   test('an unlinked close deletes its text and never calls the document port', async () => {
     const d = database()
     const cursor = open(d)
-    const reference = attachWorkflowTextByHandle(cursor, 'not linked', context, d)
+    const reference = await attachWorkflowTextByHandle(cursor, 'not linked', context, d)
     const refusing: WorkflowTextDocumentPorts = {
       list: async () => {
         throw new Error('an unlinked close must not list task documents')
@@ -470,7 +480,7 @@ describe('task-linked workflow text preservation', () => {
     const nextDb = database()
     const nextCursor = open(nextDb)
     linkCursor(nextDb, nextCursor)
-    attachWorkflowTextByHandle(nextCursor, 'must not copy', context, nextDb)
+    await attachWorkflowTextByHandle(nextCursor, 'must not copy', context, nextDb)
     await expect(
       closeCursorWithTextCopy(
         {
@@ -491,7 +501,7 @@ describe('task-linked workflow text preservation', () => {
     const terminalDb = database()
     const terminalCursor = open(terminalDb)
     linkCursor(terminalDb, terminalCursor)
-    attachWorkflowTextByHandle(terminalCursor, 'terminal text', context, terminalDb)
+    await attachWorkflowTextByHandle(terminalCursor, 'terminal text', context, terminalDb)
     abandon(terminalDb, terminalCursor, 'first close')
     await expect(
       closeCursorWithTextCopy(
@@ -527,7 +537,7 @@ describe('task-linked workflow text preservation', () => {
       const d = database()
       const cursor = open(d)
       linkCursor(d, cursor)
-      attachWorkflowTextByHandle(cursor, 'copied while another session advances', context, d)
+      await attachWorkflowTextByHandle(cursor, 'copied while another session advances', context, d)
       const fake = documentFake()
       const create = fake.ports.create
       fake.ports.create = async (...args) => {
@@ -565,7 +575,12 @@ describe('task-linked workflow text preservation', () => {
       const references: string[] = []
       if (terminal === 'finish') {
         for (const note of ['source', 'consumer', 'final']) {
-          const reference = attachWorkflowTextByHandle(cursor, `${terminal} ${note}`, context, d)
+          const reference = await attachWorkflowTextByHandle(
+            cursor,
+            `${terminal} ${note}`,
+            context,
+            d,
+          )
           references.push(reference)
           await copyWorkflowTextForCursor(
             cursorForWorkflowTextCopy(cursor, d),
@@ -588,8 +603,8 @@ describe('task-linked workflow text preservation', () => {
         }
       } else {
         references.push(
-          attachWorkflowTextByHandle(cursor, `${terminal} first`, context, d),
-          attachWorkflowTextByHandle(cursor, `${terminal} second`, context, d),
+          await attachWorkflowTextByHandle(cursor, `${terminal} first`, context, d),
+          await attachWorkflowTextByHandle(cursor, `${terminal} second`, context, d),
         )
         await copyWorkflowTextForCursor(
           cursorForWorkflowTextCopy(cursor, d),
@@ -615,7 +630,7 @@ describe('task-linked workflow text preservation', () => {
     const d = database()
     const cursor = open(d)
     linkCursor(d, cursor)
-    const reference = attachWorkflowTextByHandle(cursor, 'survives failure', context, d)
+    const reference = await attachWorkflowTextByHandle(cursor, 'survives failure', context, d)
     const failing = documentFake()
     failing.ports.create = async () => {
       throw new Error('document service unavailable')
@@ -649,7 +664,7 @@ describe('task-linked workflow text preservation', () => {
     const exactDb = database()
     const exactCursor = open(exactDb)
     linkCursor(exactDb, exactCursor)
-    const exactReference = attachWorkflowTextByHandle(exactCursor, 'exact', context, exactDb)
+    const exactReference = await attachWorkflowTextByHandle(exactCursor, 'exact', context, exactDb)
     const exactId = exactReference.slice('attached-text:'.length)
     const exact = documentFake([
       { reference: 'DEV-1975/7', title: `attached-text:${exactId} original-step` },
@@ -668,7 +683,12 @@ describe('task-linked workflow text preservation', () => {
     const prefixDb = database()
     const prefixCursor = open(prefixDb)
     linkCursor(prefixDb, prefixCursor)
-    const prefixReference = attachWorkflowTextByHandle(prefixCursor, 'prefix', context, prefixDb)
+    const prefixReference = await attachWorkflowTextByHandle(
+      prefixCursor,
+      'prefix',
+      context,
+      prefixDb,
+    )
     const prefixId = prefixReference.slice('attached-text:'.length)
     const prefix = documentFake([
       { reference: 'DEV-1975/8', title: `attached-text:${prefixId}x collision` },

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { addSubject } from '../subject/subjects.ts'
 import { getDoc, listDocRevisions, readDocRevision, setDoc, setDocCheckedAgainst } from './docs.ts'
@@ -29,6 +30,46 @@ test('an addressed revision read refuses an id from another document with the hi
   expect(() => readDocRevision('global', null, 'revision-owner', id)).toThrow(
     `revision ${id} does not belong to global/_/revision-owner; run ${PLATFORM_SLUG} doc history global - revision-owner`,
   )
+})
+
+test('setDoc refuses a new misspelling but permits one already stored', async () => {
+  const misspelling = ['me', 'ida'].join('')
+  const slug = 'prose-service-edge'
+  await expect(
+    setDoc({
+      scope: 'global',
+      subject: null,
+      slug,
+      title: 'Service edge',
+      body: `We saw the ${misspelling} here.`,
+      delivery: 'demand',
+      reason: 'test prose refusal',
+    }),
+  ).rejects.toThrow(`body:\n"${misspelling}"`)
+  expect(getDoc('global', null, slug)).toBeNull()
+
+  const created = await setDoc({
+    scope: 'global',
+    subject: null,
+    slug,
+    title: 'Service edge',
+    body: 'Clean body.',
+    delivery: 'demand',
+    reason: 'create fixture',
+  })
+  const prior = `We saw the ${misspelling} here.`
+  db().query('UPDATE doc SET body=? WHERE record_id=?').run(prior, created.record_id)
+  await expect(
+    setDoc({
+      scope: 'global',
+      subject: null,
+      slug,
+      title: 'Service edge updated',
+      body: `${prior}\n\nClean addition.`,
+      delivery: 'demand',
+      reason: 'update fixture',
+    }),
+  ).resolves.toMatchObject({ body: expect.stringContaining('Clean addition.') })
 })
 
 test('an addressed revision read applies the requested audience projection', async () => {

@@ -117,6 +117,34 @@ test('board post refuses an invalid body at the route edge', async () => {
   expect(await response.json()).toEqual({ error: 'invalid board message' })
 })
 
+test('board post refuses misspelled text without calling the hosted write', async () => {
+  let writes = 0
+  const misspelling = ['me', 'ida'].join('')
+  const app = appWith(identity, {
+    postBoardMessage: async () => {
+      writes += 1
+      return { id: newRecordId() }
+    },
+  })
+  const response = await app.request('/v1/board/messages', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      id: newRecordId(),
+      kind: 'notice',
+      audience: 'operator',
+      title: 'Hosted prose',
+      body: `We saw the ${misspelling} here.`,
+      expiresAt,
+    }),
+  })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({
+    error: expect.stringContaining(`body:\n"${misspelling}"`),
+  })
+  expect(writes).toBe(0)
+})
+
 test('board post accepts every purpose, defaults a missing purpose, and refuses an unknown purpose', async () => {
   const purposes: string[] = []
   const app = appWith(identity, {
@@ -326,6 +354,27 @@ test('board reply rejects an unsupported audience at the route edge', async () =
   })
   expect(response.status).toBe(400)
   expect(await response.json()).toEqual({ error: 'invalid board reply' })
+})
+
+test('board reply refuses misspelled text without calling the hosted write', async () => {
+  let writes = 0
+  const misspelling = ['me', 'ida'].join('')
+  const app = appWith(identity, {
+    replyBoardMessage: async () => {
+      writes += 1
+      return { id: newRecordId() }
+    },
+  })
+  const response = await app.request(`/v1/board/messages/${newRecordId()}/replies`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: newRecordId(), body: `We saw the ${misspelling} here.` }),
+  })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({
+    error: expect.stringContaining(`body:\n"${misspelling}"`),
+  })
+  expect(writes).toBe(0)
 })
 
 test('a row-level security denial is a named refusal not a server error', async () => {

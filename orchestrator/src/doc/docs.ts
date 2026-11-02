@@ -45,6 +45,7 @@ import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
 import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
+import { assertDocProse } from './doc-prose.ts'
 import {
   type Doc,
   type DocRevision,
@@ -406,6 +407,7 @@ async function setDocWithOp(
   assertLocalArticleDelivery(input, delivery, kind)
   const canonWarnings = assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
+  await assertDocProse(input, prior)
   const written = await applyRecordWriteAuthority({
     local: () =>
       executeLocalDocSet({
@@ -469,8 +471,7 @@ async function setDocWithOp(
       })
     },
   })
-  const withCanonWarnings = addCanonWriteWarnings(written, canonWarnings)
-  return addSecretScanWarning(withCanonWarnings, input, secretScan)
+  return addSecretScanWarning(addCanonWriteWarnings(written, canonWarnings), input, secretScan)
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {

@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
@@ -166,7 +167,7 @@ function attachSelectedWorkflowText(
   return workflowTextAttachmentToken(inserted.id)
 }
 
-export function attachWorkflowTextByHandle(
+function attachWorkflowTextByHandleUnchecked(
   cursor: number,
   body: string,
   context: WorkflowCursorContext,
@@ -178,7 +179,7 @@ export function attachWorkflowTextByHandle(
   }, d)
 }
 
-export function attachWorkflowText(
+function attachWorkflowTextUnchecked(
   identity: { project: string; workflow: string; mode: string; key?: string },
   cursor: number | undefined,
   body: string,
@@ -196,6 +197,27 @@ export function attachWorkflowText(
     if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
     return attachSelectedWorkflowText(row, body, context, d)
   }, d)
+}
+
+export async function attachWorkflowTextByHandle(
+  cursor: number,
+  body: string,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): Promise<string> {
+  await assertOrchestratorProse([{ field: 'text', text: body, prior: null }])
+  return attachWorkflowTextByHandleUnchecked(cursor, body, context, d)
+}
+
+export async function attachWorkflowText(
+  identity: { project: string; workflow: string; mode: string; key?: string },
+  cursor: number | undefined,
+  body: string,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): Promise<string> {
+  await assertOrchestratorProse([{ field: 'text', text: body, prior: null }])
+  return attachWorkflowTextUnchecked(identity, cursor, body, context, d)
 }
 
 export function workflowTextIdsToDelete(input: {
