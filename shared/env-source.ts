@@ -21,12 +21,13 @@ export async function resolveEnvValuesWithHosted(
   names: readonly string[],
   env: ConfigEnvironment = process.env,
   hosted: typeof readHostedSecrets = readHostedSecrets,
+  signal?: AbortSignal,
 ): Promise<HostedSecretResolution> {
   const local = readEnvValues(names, env)
   const unresolved = names.filter((name) => local[name] === undefined)
   if (unresolved.length === 0) return { values: local, sealedEmpty: [] }
   try {
-    const sealed = await hosted(unresolved)
+    const sealed = await hosted(unresolved, undefined, signal)
     return { values: { ...local, ...sealed.values }, sealedEmpty: sealed.sealedEmpty }
   } catch (error) {
     if (error instanceof ConfigClientError && error.reason === 'not-configured')
@@ -40,8 +41,9 @@ export async function readEnvValuesWithHosted(
   names: readonly string[],
   env: ConfigEnvironment = process.env,
   hosted: typeof readHostedSecrets = readHostedSecrets,
+  signal?: AbortSignal,
 ): Promise<Record<string, string | undefined>> {
-  return (await resolveEnvValuesWithHosted(names, env, hosted)).values
+  return (await resolveEnvValuesWithHosted(names, env, hosted, signal)).values
 }
 
 if (import.meta.main) {

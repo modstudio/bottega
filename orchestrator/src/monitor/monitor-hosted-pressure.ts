@@ -96,51 +96,50 @@ async function observeHostedMetrics(
   at: string,
   deps: Required<Pick<Dependencies, 'fetch' | 'resolveToken' | 'observeBudgetMs'>>,
 ): Promise<HostedPressureObservation> {
-  const controller = new AbortController()
-  const budgetError = new Error(
-    `hosted metrics observation exceeded ${deps.observeBudgetMs}ms budget`,
-  )
-  let rejectBudget: ((error: Error) => void) | undefined
-  const budgetExpired = new Promise<never>((_resolve, reject) => {
-    rejectBudget = reject
-  })
-  const timeout = setTimeout(() => {
-    controller.abort()
-    rejectBudget?.(budgetError)
-  }, deps.observeBudgetMs)
+  let stage: 'token' | 'queries' = 'token'
   try {
-    let token: string | undefined
-    try {
-      token = (await Promise.race([deps.resolveToken([HOSTED_FLY_METRICS_TOKEN]), budgetExpired]))[
-        HOSTED_FLY_METRICS_TOKEN
-      ]
-    } catch (error) {
-      return { kind: 'failed', query: 'token', error: String(error), at }
-    }
-    if (!token) return { kind: 'unconfigured', at }
-    const entries = await Promise.all(
-      (Object.keys(HOSTED_METRICS_QUERIES) as QueryName[]).map(async (name) => {
-        try {
-          return [name, await queryMetric(name, token, controller.signal, deps.fetch)] as const
-        } catch (error) {
-          throw { name, error }
+    return await withinHostedBoardRefreshBudget(async (signal) => {
+      let token: string | undefined
+      try {
+        token = (await deps.resolveToken([HOSTED_FLY_METRICS_TOKEN], undefined, undefined, signal))[
+          HOSTED_FLY_METRICS_TOKEN
+        ]
+      } catch (error) {
+        return { kind: 'failed', query: 'token', error: String(error), at }
+      }
+      if (!token) return { kind: 'unconfigured', at }
+      stage = 'queries'
+      try {
+        const entries = await Promise.all(
+          (Object.keys(HOSTED_METRICS_QUERIES) as QueryName[]).map(async (name) => {
+            try {
+              return [name, await queryMetric(name, token, signal, deps.fetch)] as const
+            } catch (error) {
+              throw { name, error }
+            }
+          }),
+        )
+        const values = Object.fromEntries(entries) as Record<QueryName, number | 'absent'>
+        return {
+          kind: 'sample',
+          stealFraction: values.steal,
+          throttleFraction: values.throttle,
+          balance: values.balance,
+          apiP95Seconds: values['api-p95'],
+          at,
         }
-      }),
-    )
-    const values = Object.fromEntries(entries) as Record<QueryName, number | 'absent'>
+      } catch (failure) {
+        const item = failure as { name?: string; error?: unknown }
+        return { kind: 'failed', query: item.name ?? 'unknown', error: String(item.error), at }
+      }
+    }, deps.observeBudgetMs)
+  } catch (error) {
     return {
-      kind: 'sample',
-      stealFraction: values.steal,
-      throttleFraction: values.throttle,
-      balance: values.balance,
-      apiP95Seconds: values['api-p95'],
+      kind: 'failed',
+      query: stage,
+      error: String(error),
       at,
     }
-  } catch (failure) {
-    const item = failure as { name?: string; error?: unknown }
-    return { kind: 'failed', query: item.name ?? 'unknown', error: String(item.error), at }
-  } finally {
-    clearTimeout(timeout)
   }
 }
 

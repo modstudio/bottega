@@ -15,6 +15,7 @@ import { askQuestion, replyToThread } from '../board/board-thread-service.ts'
 import { DB_PATH, db, SESSION_LIVE_MS } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { HOSTED_METRICS_INTERVAL_MS } from './monitor-hosted-pressure.ts'
 import {
   claimMonitorNoticesForCommand,
   markMonitorNoticesDeliveredWithHosted,
@@ -240,7 +241,7 @@ test('notice claim runs hosted pressure only on a board-refresh tick', async () 
   }
 })
 
-test('notice claim fails fast when the hosted-pressure store claim is busy', async () => {
+test('notice delivery survives a failing hosted-pressure check on a refresh tick', async () => {
   const session = 'monitor-hosted-pressure-busy'
   db()
     .query(
@@ -258,15 +259,14 @@ test('notice claim fails fast when the hosted-pressure store claim is busy', asy
     {},
     Date.now(),
   )
-  const writer = new Database(DB_PATH, { readwrite: true })
-  writer.exec('BEGIN IMMEDIATE')
-  try {
-    const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: true })
-    expect(delivery.notices.map((notice) => notice.noticeId)).toContain(`board:${local.number}`)
-  } finally {
-    writer.exec('ROLLBACK')
-    writer.close()
-  }
+  db()
+    .query(
+      `INSERT INTO hosted_pressure_cache(record_id,singleton,checked_at,state,last_sample,last_error)
+       VALUES (?,1,?,'{',NULL,NULL)`,
+    )
+    .run(newRecordId(), new Date(Date.now() - HOSTED_METRICS_INTERVAL_MS - 1).toISOString())
+  const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: false })
+  expect(delivery.notices.map((notice) => notice.noticeId)).toContain(`board:${local.number}`)
 }, 1_000)
 
 test('read-only notice claim defers a report reply successor with a reason', async () => {

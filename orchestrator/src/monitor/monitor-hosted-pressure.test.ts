@@ -1,5 +1,6 @@
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { db } from '../database/db.ts'
+import { DB_PATH, db } from '../database/db.ts'
 import {
   checkHostedPressureCached,
   HOSTED_METRICS_INTERVAL_MS,
@@ -70,6 +71,22 @@ test('a fail-fast store claim restores the connection busy timeout', async () =>
   expect(database.query('PRAGMA busy_timeout').get()).toEqual({ timeout: 4321 })
 })
 
+test('a fail-fast store claim rejects promptly under a held writer and restores the busy timeout', async () => {
+  const database = db()
+  database.exec('PRAGMA busy_timeout = 4321')
+  const writer = new Database(DB_PATH, { readwrite: true })
+  writer.exec('BEGIN IMMEDIATE')
+  try {
+    await expect(
+      checkHostedPressureCached({ database, clock: base, failFastStoreClaim: true }),
+    ).rejects.toThrow()
+    expect(database.query('PRAGMA busy_timeout').get()).toEqual({ timeout: 4321 })
+  } finally {
+    writer.exec('ROLLBACK')
+    writer.close()
+  }
+}, 1_000)
+
 test('a failed query is stored and returned as an observation error', async () => {
   const result = await checkHostedPressureCached({
     database: db(),
@@ -96,6 +113,7 @@ test('a failed query is stored and returned as an observation error', async () =
 test('the observation budget includes token resolution', async () => {
   const database = db()
   let fetchCalled = false
+  let tokenSignal: AbortSignal | undefined
   const startedAt = Date.now()
   const result = await checkHostedPressureCached({
     database,
@@ -104,7 +122,10 @@ test('the observation budget includes token resolution', async () => {
       fetchCalled = true
       throw new Error('metrics fetch must not run without a token')
     }) as unknown as typeof fetch,
-    resolveToken: async () => await new Promise<never>(() => {}),
+    resolveToken: async (_names, _env, _hosted, signal) => {
+      tokenSignal = signal
+      return await new Promise<never>(() => {})
+    },
     observeBudgetMs: 50,
   })
 
@@ -113,17 +134,17 @@ test('the observation budget includes token resolution', async () => {
     expect.objectContaining({
       kind: 'observation-error',
       detail: expect.stringContaining(
-        'token failed: Error: hosted metrics observation exceeded 50ms budget',
+        'could not observe: hosted unreachable (Error: hosted board refresh budget spent)',
       ),
     }),
   )
   expect(
     database.query('SELECT last_error FROM hosted_pressure_cache WHERE singleton=1').get(),
   ).toEqual({
-    last_error:
-      'hosted metrics query token failed: Error: hosted metrics observation exceeded 50ms budget',
+    last_error: 'could not observe: hosted unreachable (Error: hosted board refresh budget spent)',
   })
   expect(fetchCalled).toBeFalse()
+  expect(tokenSignal?.aborted).toBeTrue()
 })
 
 test('a failed onset post preserves the state and records the announcement error', async () => {

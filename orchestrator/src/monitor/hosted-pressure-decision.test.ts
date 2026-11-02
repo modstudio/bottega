@@ -132,6 +132,21 @@ describe('hosted pressure decision', () => {
     ])
   })
 
+  test('a token failure reports the hosted service as unreachable', () => {
+    const result = decideHostedPressure(CLEAR_HOSTED_PRESSURE_STATE, {
+      kind: 'failed',
+      query: 'token',
+      error: 'Error: hosted board refresh budget spent',
+      at: new Date(start).toISOString(),
+    })
+    expect(result.conditions).toEqual([
+      expect.objectContaining({
+        kind: 'observation-error',
+        detail: 'could not observe: hosted unreachable (Error: hosted board refresh budget spent)',
+      }),
+    ])
+  })
+
   test('an absent required series does not complete an episode clear window', () => {
     const pressured = decideHostedPressure(
       CLEAR_HOSTED_PRESSURE_STATE,

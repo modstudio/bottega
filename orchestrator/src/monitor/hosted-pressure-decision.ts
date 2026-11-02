@@ -109,7 +109,9 @@ function failedDecision(
 ): HostedPressureDecision {
   const error = observationError(
     observation,
-    `hosted metrics query ${observation.query} failed: ${observation.error}`,
+    observation.query === 'token'
+      ? `could not observe: hosted unreachable (${observation.error})`
+      : `hosted metrics query ${observation.query} failed: ${observation.error}`,
   )
   return {
     state: previous,
