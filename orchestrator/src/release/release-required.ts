@@ -153,7 +153,8 @@ export function mainCheckoutHead(project: Project): string {
   )
 }
 
-export function moveMainCheckout(project: Project, mergeCommit?: string): void {
+/** Move a registered main checkout whose code is not the running Bottega installation. */
+export function moveNonInstallationMainCheckout(project: Project, mergeCommit?: string): void {
   verifyMainCheckout(project)
   const trunk = project.settings.trunk!
   git(

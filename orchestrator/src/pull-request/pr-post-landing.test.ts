@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, fenceStoreAfterCheckoutMove, writableDb } from '../database/db.ts'
+import { projectMovesInstallation } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
@@ -12,6 +14,7 @@ import {
   POST_LANDING_REPORTED_EXIT_CODE,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
+  postLandingHandOffInvocation,
   runPullRequestPostLanding,
 } from './pr-post-landing.ts'
 import {
@@ -95,6 +98,7 @@ function complete(input: {
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
   calls?: string[]
+  movesInstallation?: boolean
 }) {
   return completePullRequestPostLanding({
     adapter: remaining(input.calls ?? []),
@@ -106,27 +110,41 @@ function complete(input: {
     target: '42',
     releaseRequired: input.releaseRequired ?? true,
     workflowPromotionDue: input.workflowPromotionDue ?? false,
+    ...(input.movesInstallation === undefined
+      ? {}
+      : { movesInstallation: input.movesInstallation }),
   })
 }
 
 test('a successful move fences this process and hands off the exact fixed identity', () => {
   const received: PullRequestPostLandingPayload[] = []
+  const handOffProjects: string[] = []
+  const moveDecisions: boolean[] = []
+  const handOffDecisions: boolean[] = []
   const outcome = complete({
     workflowPromotionDue: true,
+    movesInstallation: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
       mainHead: () => 'main-before',
-      moveMain: () => {},
+      moveMain: (_project, _mergeCommit, movesInstallation) => {
+        moveDecisions.push(movesInstallation)
+      },
       fence: fenceStoreAfterCheckoutMove,
-      handOff: (payload) => {
+      handOff: (payload, movedProject, movesInstallation) => {
         received.push(payload)
+        handOffProjects.push(movedProject.path)
+        handOffDecisions.push(movesInstallation)
         return { output: 'child output', exitCode: 0 }
       },
     },
   })
 
   expect(outcome).toEqual({ output: 'child output', exitCode: 0 })
+  expect(handOffProjects).toEqual([project.path])
+  expect(moveDecisions).toEqual([true])
+  expect(handOffDecisions).toEqual([true])
   expect(received[0]).toEqual({
     project: PLATFORM_SLUG,
     target: '42',
@@ -144,6 +162,22 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow('orchestrator store is fenced after checkout move')
   expect(() => writableDb()).toThrow('its post-landing child owns the store')
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
+})
+
+test('another project uses the plain move and the current installation hand-off', () => {
+  const movesInstallation = projectMovesInstallation(project)
+
+  expect(movesInstallation).toBeFalse()
+  expect(postLandingHandOffInvocation(project.path, movesInstallation)).toEqual({
+    argv: bottegaEntryArgv(PLATFORM_SLUG),
+  })
+})
+
+test('the post-landing child for a moved platform checkout runs through its binary', () => {
+  expect(postLandingHandOffInvocation(project.path, true)).toEqual({
+    argv: [`${project.path}/bin/${PLATFORM_SLUG}`],
+    cwd: project.path,
+  })
 })
 
 test('a change inside a rung entry closure requires that rung and hands it off', () => {
@@ -281,6 +315,7 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   const calls: string[] = []
   const outcome = complete({
     calls,
+    movesInstallation: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -301,9 +336,63 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   expect(outcome.output).toContain(
     'required rung hosted-api: deploy exit not run; registered main checkout is dirty; clean it',
   )
+  expect(outcome.output).toContain(`${project.path}/bin/${PLATFORM_SLUG} machine update`)
   expect(outcome.output).toContain(`remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`)
   expect(calls).toEqual(['cleanup'])
   expect(writableDb()).toBeDefined()
+})
+
+test('another-project move failure reports the plain git recovery', () => {
+  const outcome = complete({
+    movesInstallation: false,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {
+        throw new Error('registered main checkout is dirty; clean it')
+      },
+      fence: () => {
+        throw new Error('fence must not run')
+      },
+      handOff: () => {
+        throw new Error('hand-off must not run')
+      },
+    },
+  })
+
+  expect(outcome.output).toContain(
+    `registered main checkout is dirty; clean it; recover with: git -C ${project.path} fetch origin, then git -C ${project.path} merge --ff-only merge-commit, then ${PLATFORM_SLUG} pr merge 42 --release-required`,
+  )
+  expect(outcome.output).not.toContain(`${project.path}/bin/${PLATFORM_SLUG} machine update`)
+})
+
+test('a promotion move failure prints its recovery exactly once', () => {
+  const recovery = `${project.path}/bin/${PLATFORM_SLUG} machine update, then ${PLATFORM_SLUG} pr merge 42 --release-required`
+  const outcome = complete({
+    workflowPromotionDue: true,
+    movesInstallation: true,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {
+        throw new Error('registered main checkout is dirty; clean it')
+      },
+      fence: () => {
+        throw new Error('fence must not run')
+      },
+      handOff: () => {
+        throw new Error('hand-off must not run')
+      },
+    },
+  })
+  const promotion = outcome.output
+    .split('\n')
+    .find((line) => line.startsWith('workflow draft promotion failed'))
+
+  expect(promotion).toContain(`clear with: ${recovery}`)
+  expect(promotion?.split(recovery)).toHaveLength(2)
 })
 
 test.each([0, 20, 21])('the parent propagates child output and exit %i', (exitCode) => {

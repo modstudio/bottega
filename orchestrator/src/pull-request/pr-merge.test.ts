@@ -73,6 +73,7 @@ function adapter(
     ) => string | null
     postMergeChange?: () => PullRequestChange
     recordLandings?: () => void
+    moveMain?: () => void
     promoteMergedWorkflowDrafts?: () => string | WorkflowPromotionResult
     recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
@@ -139,6 +140,7 @@ function adapter(
     postLanding: inProcessPostLandingAdapter({
       database: db(),
       project: () => projectByName('merge-fixture')!,
+      move: input.moveMain,
       promote: input.promoteMergedWorkflowDrafts,
       release: (enabled) =>
         input.releaseRequired?.(enabled) ?? { required: [], releases: [], satisfied: true },
@@ -155,14 +157,15 @@ test('an already-merged recovery runs landings, promotion, required release, the
     cwd,
     adapter({
       view: () => ({ ...pullRequest, state: 'MERGED', mergeCommit: 'merge-commit' }),
-      recordLandings: () => calls.push('record-landings'),
+      recordLandings: () => calls.push('landings'),
+      moveMain: () => calls.push('move'),
       promoteMergedWorkflowDrafts: () => {
-        calls.push('promote-workflows')
+        calls.push('promotion')
         return 'promoted workflow drafts'
       },
       releaseRequired: (enabled) => {
         expect(enabled).toBe(true)
-        calls.push('release-required')
+        calls.push('release')
         return requiredRelease({
           releases: [
             {
@@ -185,7 +188,7 @@ test('an already-merged recovery runs landings, promotion, required release, the
     true,
   )
   expect(outcome.exitCode).toBe(21)
-  expect(calls).toEqual(['record-landings', 'promote-workflows', 'release-required', 'cleanup'])
+  expect(calls).toEqual(['landings', 'move', 'promotion', 'release', 'cleanup'])
   expect(outcome.output).toContain('required rung hosted-api: deploy exit 7')
 })
 

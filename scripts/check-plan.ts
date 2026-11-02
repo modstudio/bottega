@@ -233,6 +233,7 @@ export const ROOT_TEST_FILES = [
   'orchestrator/src/ratchet/ratchet-plan.test.ts',
   'scripts/check-file-ceiling.test.ts',
   'scripts/check-git-environment-spawn.test.ts',
+  'scripts/check-main-checkout-moves.test.ts',
   'scripts/check-git-path-list.test.ts',
   'scripts/command-descriptions.test.ts',
   'scripts/command-reference.test.ts',

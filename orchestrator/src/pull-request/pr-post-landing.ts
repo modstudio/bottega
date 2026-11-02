@@ -6,6 +6,12 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
+import {
+  moveRegisteredMainCheckout,
+  projectMovesInstallation,
+  routeMainCheckoutMove,
+  throwMainCheckoutUpdateFailure,
+} from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
 import { type EntryClosure, entryClosureAtCommit } from '../release/release-entry-closure.ts'
@@ -14,7 +20,7 @@ import {
   failedRequiredRelease,
   formatRequiredReleaseReport,
   mainCheckoutHead,
-  moveMainCheckout,
+  moveNonInstallationMainCheckout,
   type RequiredReleaseReport,
   type RequiredRungDecision,
   releaseRequiredFlagAbsent,
@@ -53,31 +59,47 @@ export type PullRequestPostLandingAdapter = {
   changedPaths(project: Project, mergeCommit: string): string[]
   entryClosure(project: Project, mergeCommit: string, entries: readonly string[]): EntryClosure
   mainHead(project: Project): string
-  moveMain(project: Project, mergeCommit: string): void
+  moveMain(project: Project, mergeCommit: string, movesInstallation: boolean): void
   fence(reason: string): void
-  handOff(payload: PullRequestPostLandingPayload): PullRequestMergeOutcome
+  handOff(
+    payload: PullRequestPostLandingPayload,
+    project: Project,
+    movesInstallation: boolean,
+  ): PullRequestMergeOutcome
 }
 
 function moveMainForPostLanding(
   adapter: PullRequestPostLandingAdapter,
   project: Project,
   mergeCommit: string,
-): { moved: true } | { moved: false; detail: string } {
+  target: string,
+  movesInstallation: boolean,
+): { moved: true } | { moved: false; detail: string; recovery: string } {
+  const recovery = movesInstallation
+    ? `${project.path}/bin/${PLATFORM_SLUG} machine update, then ${PLATFORM_SLUG} pr merge ${target} --release-required`
+    : `git -C ${project.path} fetch origin, then git -C ${project.path} merge --ff-only ${mergeCommit}, then ${PLATFORM_SLUG} pr merge ${target} --release-required`
   let headBefore: string
   try {
     headBefore = adapter.mainHead(project)
   } catch (cause) {
-    return { moved: false, detail: cause instanceof Error ? cause.message : String(cause) }
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    return { moved: false, detail, recovery }
   }
   let failure: string | null = null
   try {
-    adapter.moveMain(project, mergeCommit)
+    adapter.moveMain(project, mergeCommit, movesInstallation)
   } catch (cause) {
     failure = cause instanceof Error ? cause.message : String(cause)
   }
   if (failure) {
     try {
-      if (adapter.mainHead(project) === headBefore) return { moved: false, detail: failure }
+      if (adapter.mainHead(project) === headBefore) {
+        return {
+          moved: false,
+          detail: failure,
+          recovery,
+        }
+      }
     } catch {
       return { moved: true }
     }
@@ -109,15 +131,15 @@ function guardRealPostLandingAdapter(
       refuseRealPostLandingAdapterInTest()
       return adapter.mainHead(project)
     },
-    moveMain(project, mergeCommit) {
+    moveMain(project, mergeCommit, movesInstallation) {
       refuseRealPostLandingAdapterInTest()
-      adapter.moveMain(project, mergeCommit)
+      adapter.moveMain(project, mergeCommit, movesInstallation)
     },
     // Fencing only changes in-process store state; it performs no git or process side effect.
     fence: adapter.fence,
-    handOff(payload) {
+    handOff(payload, project, movesInstallation) {
       refuseRealPostLandingAdapterInTest()
-      return adapter.handOff(payload)
+      return adapter.handOff(payload, project, movesInstallation)
     },
   }
 }
@@ -126,13 +148,27 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
   changedPaths,
   entryClosure: entryClosureAtCommit,
   mainHead: mainCheckoutHead,
-  moveMain: moveMainCheckout,
+  moveMain(project, mergeCommit, movesInstallation) {
+    routeMainCheckoutMove(movesInstallation, {
+      installation() {
+        verifyMainCheckout(project)
+        const result = moveRegisteredMainCheckout(project)
+        throwMainCheckoutUpdateFailure(result)
+        verifyMainCheckout(project, mergeCommit)
+      },
+      otherProject() {
+        moveNonInstallationMainCheckout(project, mergeCommit)
+      },
+    })
+  },
   fence: fenceStoreAfterCheckoutMove,
-  handOff(payload) {
+  handOff(payload, project, movesInstallation) {
     try {
+      const command = postLandingHandOffInvocation(project.path, movesInstallation)
       const result = Bun.spawnSync(
-        [...bottegaEntryArgv(PLATFORM_SLUG), 'pr', 'merge', payload.target, POST_LANDING_FLAG],
+        [...command.argv, 'pr', 'merge', payload.target, POST_LANDING_FLAG],
         {
+          cwd: command.cwd,
           env: process.env,
           stdin: Buffer.from(encodePullRequestPostLandingPayload(payload)),
           stdout: 'pipe',
@@ -149,6 +185,16 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
     }
   },
 })
+
+/** Re-enter moved Bottega code, or retain the current installation for another project. */
+export function postLandingHandOffInvocation(
+  projectPath: string,
+  movesInstallation: boolean,
+): { argv: string[]; cwd?: string } {
+  return movesInstallation
+    ? { argv: [join(projectPath, 'bin', PLATFORM_SLUG)], cwd: projectPath }
+    : { argv: bottegaEntryArgv(PLATFORM_SLUG) }
+}
 
 /**
  * Untested at the process boundary by choice, matching workflow-evidence-handoff.ts: a spawn
@@ -172,12 +218,14 @@ function promotionOutput(input: {
   project: Project
   prNumber: number
   mergeCommit: string
+  recovery?: string
 }): { output: string; error?: string } {
   if (input.result.ok) return { output: input.result.output }
   const reason = `merged PR #${input.prNumber} (${input.mergeCommit})`
   const promotion = `${PLATFORM_SLUG} workflow promote-tree --cwd ${input.project.path} --reason "${reason}"`
-  const command =
-    input.result.stage === 'fetch'
+  const command = input.recovery
+    ? input.recovery
+    : input.result.stage === 'fetch'
       ? `git -C ${input.project.path} fetch origin, then git -C ${input.project.path} merge --ff-only ${input.mergeCommit}, then ${promotion}`
       : input.result.stage === 'branch-check'
         ? `put checkout ${input.project.path} on trunk ${input.project.settings.trunk}, then git -C ${input.project.path} merge --ff-only ${input.mergeCommit}, then ${promotion}`
@@ -263,6 +311,7 @@ export function completePullRequestPostLanding(input: {
   workflowPromotionDue: boolean
   recordingError?: string
   requeueOutput?: string
+  movesInstallation?: boolean
 }): PullRequestMergeOutcome {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
   const inspect = input.workflowPromotionDue || input.releaseRequired
@@ -291,7 +340,14 @@ export function completePullRequestPostLanding(input: {
       ),
     })
   }
-  const move = moveMainForPostLanding(post, input.project, input.mergeCommit)
+  const movesInstallation = input.movesInstallation ?? projectMovesInstallation(input.project)
+  const move = moveMainForPostLanding(
+    post,
+    input.project,
+    input.mergeCommit,
+    input.target,
+    movesInstallation,
+  )
   if (!move.moved) {
     return mergedOutput({
       ...input,
@@ -304,11 +360,12 @@ export function completePullRequestPostLanding(input: {
             project: input.project,
             prNumber: input.pullRequest.number,
             mergeCommit: input.mergeCommit,
+            recovery: move.recovery,
           })
         : { output: '' },
       requiredRelease: failedRequiredRelease(
         decision.required,
-        decision.decided ? move.detail : decision.error,
+        decision.decided ? `${move.detail}; recover with: ${move.recovery}` : decision.error,
       ),
     })
   }
@@ -329,7 +386,7 @@ export function completePullRequestPostLanding(input: {
   post.fence(
     `main checkout moved to include ${input.mergeCommit}; this process moved the main checkout and its post-landing child owns the store; ${postLandingRecovery(input.target)}`,
   )
-  const handedOff = post.handOff(payload)
+  const handedOff = post.handOff(payload, input.project, movesInstallation)
   const unexpectedExit = ![
     0,
     MERGED_WITH_RESIDUE_EXIT_CODE,

@@ -7,8 +7,8 @@ import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recip
 import {
   collidingRefreshPaths,
   decideMainCheckoutBranch,
-  decideMainCheckoutMigrationRefresh,
   decideTreeRefresh,
+  refreshInstallationMainCheckout,
   refreshStepContext,
   requireRefreshSnapshot,
   snapshotlessRefreshPlaceholder,
@@ -57,119 +57,40 @@ describe('main checkout branch decision', () => {
   })
 })
 
-describe('main checkout migration refresh decision', () => {
-  test('refuses and names migration tags added by incoming journals', () => {
-    expect(
-      decideMainCheckoutMigrationRefresh({
-        currentJournals: [
-          {
-            source: 'orchestrator',
-            path: 'orchestrator/journal.json',
-            revision: 'HEAD',
-            tags: ['0000_orch'],
-          },
-          { source: 'hub', path: 'hub/journal.json', revision: 'HEAD', tags: ['0000_hub'] },
-        ],
-        incomingJournals: [
-          {
-            source: 'orchestrator',
-            path: 'orchestrator/journal.json',
-            revision: 'incoming',
-            tags: ['0000_orch', '0001_orch_next'],
-          },
-          {
-            source: 'hub',
-            path: 'hub/journal.json',
-            revision: 'incoming',
-            tags: ['0000_hub', '0001_hub_next'],
-          },
-        ],
-      }),
-    ).toEqual({
-      action: 'refuse',
-      migrationTags: ['0001_orch_next', '0001_hub_next'],
-      journalErrors: [],
-    })
-  })
+test('installation main refresh checks collisions and owns machine-update outcomes', () => {
+  const calls: string[] = []
+  expect(() =>
+    refreshInstallationMainCheckout({
+      refuseCollisions: () => {
+        calls.push('collision-check')
+        throw new Error('incoming path collision')
+      },
+      update: () => {
+        calls.push('machine-update')
+        return { exitCode: 0, output: 'must not move' }
+      },
+    }),
+  ).toThrow('incoming path collision')
+  expect(calls).toEqual(['collision-check'])
 
-  test('refreshes when the journals are equal', () => {
-    expect(
-      decideMainCheckoutMigrationRefresh({
-        currentJournals: [
-          {
-            source: 'orchestrator',
-            path: 'orchestrator/journal.json',
-            revision: 'HEAD',
-            tags: ['0000_orch'],
-          },
-        ],
-        incomingJournals: [
-          {
-            source: 'orchestrator',
-            path: 'orchestrator/journal.json',
-            revision: 'incoming',
-            tags: ['0000_orch'],
-          },
-        ],
-      }),
-    ).toEqual({ action: 'refresh' })
-  })
-
-  test('refuses when an incoming migration tag replaces a current tag', () => {
-    expect(
-      decideMainCheckoutMigrationRefresh({
-        currentJournals: [
-          {
-            source: 'orchestrator',
-            path: 'orchestrator/journal.json',
-            revision: 'HEAD',
-            tags: ['0000_orch', '0001_old'],
-          },
-        ],
-        incomingJournals: [
-          {
-            source: 'orchestrator',
-            path: 'orchestrator/journal.json',
-            revision: 'incoming',
-            tags: ['0000_orch', '0001_new'],
-          },
-        ],
-      }),
-    ).toEqual({ action: 'refuse', migrationTags: ['0001_new'], journalErrors: [] })
-  })
-
-  test('refreshes when no migration journal source applies to the checkout', () => {
-    expect(
-      decideMainCheckoutMigrationRefresh({ currentJournals: [], incomingJournals: [] }),
-    ).toEqual({ action: 'refresh' })
-  })
-
-  test('refuses when an applicable journal is unreadable at the incoming revision', () => {
-    expect(
-      decideMainCheckoutMigrationRefresh({
-        currentJournals: [
-          {
-            source: 'orchestrator',
-            path: 'orchestrator/journal.json',
-            revision: 'HEAD',
-            tags: ['0000_orch'],
-          },
-        ],
-        incomingJournals: [
-          {
-            source: 'orchestrator',
-            path: 'orchestrator/journal.json',
-            revision: 'abc123',
-            error: 'journal is absent',
-          },
-        ],
-      }),
-    ).toEqual({
-      action: 'refuse',
-      migrationTags: [],
-      journalErrors: ['orchestrator/journal.json at abc123 could not be read: journal is absent'],
-    })
-  })
+  expect(() =>
+    refreshInstallationMainCheckout({
+      refuseCollisions: () => {},
+      update: () => ({ exitCode: 1, output: 'migration drain expired' }),
+    }),
+  ).toThrow('migration drain expired')
+  expect(
+    refreshInstallationMainCheckout({
+      refuseCollisions: () => {},
+      update: () => ({ exitCode: 0, output: 'moved main\nmigrated stores' }),
+    }),
+  ).toEqual(['moved main', 'migrated stores'])
+  expect(
+    refreshInstallationMainCheckout({
+      refuseCollisions: () => {},
+      update: () => ({ exitCode: 0, output: '' }),
+    }),
+  ).toEqual(['updated main checkout through machine update'])
 })
 
 describe('tree refresh decision', () => {
