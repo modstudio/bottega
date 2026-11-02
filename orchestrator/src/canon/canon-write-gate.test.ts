@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { canonFindingsRefusal, canonFindingWarnings } from '../doc/doc-write-allowed.ts'
 import { composeCanonRows } from './canon-hydrate.ts'
 import {
   decideCanonRemoval,
@@ -159,6 +160,17 @@ describe('decideUserCanonImport', () => {
     })
     expect(decision.bootstrap).toBe(false)
     expect(decision.findings.map(({ rule }) => rule)).toContain('canon/history')
+  })
+
+  test('reports a clock time as a warning without refusing the user canon decision', () => {
+    const decision = decideUserCanonImport({
+      current: [{ slug: 'AGENTS.md', body: 'Current rule.' }],
+      next: [{ slug: 'AGENTS.md', body: 'Current rule. Run from 11 PM to 7 AM US Eastern.' }],
+    })
+    expect(canonFindingsRefusal(decision.findings)).toBeNull()
+    expect(canonFindingWarnings(decision.findings)).toContainEqual(
+      expect.stringMatching(/AGENTS\.md:1 canon\/numeral .*11/),
+    )
   })
 
   test('bootstrap reports imported findings but not pre-existing surrounding findings', () => {

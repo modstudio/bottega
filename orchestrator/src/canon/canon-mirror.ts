@@ -32,7 +32,13 @@ import { applyHydration } from './canon-apply.ts'
 import { EMPTY_PROJECT_CANON_STORE_REFUSAL } from './canon-empty-store-refusal.ts'
 import { collectCanonLintInput, collectCanonTreeAtRef } from './canon-files.ts'
 import { emptyStoreHydrationRefusal, hydrationDrift, planHydration } from './canon-hydrate.ts'
-import { introducedCanonFindings, lintCanon } from './canon-lint.ts'
+import {
+  type CanonFinding,
+  introducedCanonFindings,
+  lintCanon,
+  refusingCanonFindings,
+  warningCanonFindings,
+} from './canon-lint.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
 
 export type ChecksState = 'passed' | 'failed' | 'pending'
@@ -248,6 +254,23 @@ export function canonMirrorMergeArgs(number: number, commit: string): string[] {
 }
 
 type MirrorResult = { project: string; text: string; failed: boolean }
+
+export function canonMirrorLintDecision(findings: CanonFinding[]): {
+  refusal: string | null
+  warnings: string[]
+} {
+  const errors = refusingCanonFindings(findings)
+  return {
+    refusal: errors.length
+      ? `canon lint found ${errors.length} findings: ${errors.map((finding) => `${finding.file}:${finding.line} ${finding.message}`).join('; ')}`
+      : null,
+    warnings: warningCanonFindings(findings).map(
+      (finding) =>
+        `canon lint warning: ${finding.file}:${finding.line} ${finding.rule} ${finding.message}`,
+    ),
+  }
+}
+
 function createLifecycleRun(project: Project, key: string): string {
   writableDb()
   const prompt = `canon mirror ${project.name}`
@@ -537,11 +560,9 @@ function performMirrorPublication(input: {
     baseline,
     lintCanon(collectCanonLintInput(path)).findings,
   )
-  if (findings.length) {
-    throw new Error(
-      `canon lint found ${findings.length} findings: ${findings.map((f) => `${f.file}:${f.line} ${f.message}`).join('; ')}`,
-    )
-  }
+  const lintDecision = canonMirrorLintDecision(findings)
+  if (lintDecision.refusal) throw new Error(lintDecision.refusal)
+  const lintWarnings = lintDecision.warnings.length ? `; ${lintDecision.warnings.join('; ')}` : ''
   const changed = port.changedPaths(path)
   const commit = port.commit(
     path,
@@ -590,7 +611,7 @@ function performMirrorPublication(input: {
       return {
         project: project.name,
         failed: false,
-        text: `${existing ? 'PR updated' : 'PR opened'}, ${pr.url}; left open, ${decision.reason}`,
+        text: `${existing ? 'PR updated' : 'PR opened'}, ${pr.url}; left open, ${decision.reason}${lintWarnings}`,
       }
     }
     // Re-read immediately before merge. gh cannot bind the base SHA atomically.
@@ -598,7 +619,7 @@ function performMirrorPublication(input: {
       throw new Error('refusing merge because the landing branch moved after checks')
     port.merge(path, pr.number, commit)
     setRunTerminal(runId, started)
-    return { project: project.name, failed: false, text: `merged, ${pr.url}` }
+    return { project: project.name, failed: false, text: `merged, ${pr.url}${lintWarnings}` }
   } finally {
     rmSync(bodyDir, { recursive: true, force: true })
   }

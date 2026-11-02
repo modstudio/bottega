@@ -9,7 +9,12 @@ import {
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
-import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
+import {
+  type CanonFinding,
+  type CanonSourceText,
+  refusingCanonFindings,
+  warningCanonFindings,
+} from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
@@ -84,13 +89,32 @@ export function globalCanonWriteTargets(
 export const userCanonWriteTargets = globalCanonWriteTargets
 
 export function canonFindingsRefusal(findings: CanonFinding[]): string | null {
-  if (!findings.length) return null
+  const errors = refusingCanonFindings(findings)
+  if (!errors.length) return null
+  const warnings = canonFindingWarnings(findings)
   return (
-    `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
-    findings
+    `refusing canon write; introduced ${errors.length} finding${errors.length === 1 ? '' : 's'}:\n` +
+    errors
       .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
-      .join('\n')
+      .join('\n') +
+    (warnings.length ? `\nwarning:\n${warnings.join('\n')}` : '')
   )
+}
+
+export function canonFindingWarnings(findings: CanonFinding[]): string[] {
+  return warningCanonFindings(findings).map(
+    (finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`,
+  )
+}
+
+export function addCanonWriteWarnings<T>(
+  written: T,
+  warnings: string[],
+): T & { writeWarnings?: string[] } {
+  const prior = (written as { writeWarnings?: string[] }).writeWarnings
+  return warnings.length
+    ? { ...written, writeWarnings: [...(prior ?? []), ...warnings] }
+    : (written as T & { writeWarnings?: string[] })
 }
 
 export function canonRemovalRefusal(findings: CanonFinding[]): string | null {

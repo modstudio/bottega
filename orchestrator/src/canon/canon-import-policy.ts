@@ -6,6 +6,7 @@ import type { CanonFinding, CanonSourceText } from './canon-lint.ts'
 import {
   decideNextCanonSet,
   decideUserCanonImport,
+  hasRefusingCanonFindings,
   type WorkflowStepBody,
 } from './canon-write-gate.ts'
 import { isUserCanonSlug, userCanonHomeImportDeletionSlugs } from './user-canon-home.ts'
@@ -71,6 +72,10 @@ export function planCanonImport(input: {
     deletionSlugs,
     findings,
     refusal:
-      input.desired.length === 0 ? 'empty' : !bootstrap && findings.length ? 'findings' : null,
+      input.desired.length === 0
+        ? 'empty'
+        : !bootstrap && hasRefusingCanonFindings(findings)
+          ? 'findings'
+          : null,
   }
 }

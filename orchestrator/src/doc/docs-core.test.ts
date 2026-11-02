@@ -1015,7 +1015,7 @@ describe('scoped operator docs', () => {
     try {
       expect(exportDocs(target)).toBe(2)
       db().exec('DELETE FROM doc')
-      expect(await importDocs(target)).toBe(2)
+      expect((await importDocs(target)).count).toBe(2)
       expect(getDoc('global', null, 'quoted')).toMatchObject({
         title: 'A "title"',
         body: '# Body\n\nText\n',

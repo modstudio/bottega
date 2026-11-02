@@ -6,7 +6,7 @@ import type { Finding } from '../../../shared/ratchet.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
-import { userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
+import { canonFindingWarnings, userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { projects } from '../project/projects.ts'
 import { assertCurrentMachineHomeWriteAuthority } from '../settings/settings-machine-write-authority.ts'
@@ -152,11 +152,15 @@ export async function userCanonImportCommand(
   }
 
   const reason = 'imported from Claude home'
-  const result = await importCanon({
+  const imported = await importCanon({
     address: { kind: 'user', owner },
     rows: rows.map((row) => ({ ...row, title: row.slug })),
     reason,
   })
+  const result = {
+    ...imported,
+    writeWarnings: [...canonFindingWarnings(preview.findings), ...(imported.writeWarnings ?? [])],
+  }
   for (const warning of result.writeWarnings ?? []) presentation.log(`warning: ${warning}`)
   printFindings(result.findings, presentation.log)
   presentation.log(`imported ${result.rows.length} canon rows, removed ${result.deletions.length}`)

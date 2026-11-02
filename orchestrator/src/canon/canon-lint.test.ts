@@ -13,6 +13,7 @@ import {
   type CanonFinding,
   type CanonLintInput,
   canonFrontmatter,
+  canonRuleLevel,
   introducedCanonFindings,
   lintCanon,
 } from './canon-lint.ts'
@@ -33,6 +34,11 @@ const inputRules = (text: string, rule: string, extra: Partial<Omit<CanonLintInp
 const text = (bytes: number) => 'x'.repeat(bytes)
 const card = (extra = '') =>
   `## Purpose\n\nP\n\n## Belongs here\n\nB\n\n## Does not belong here\n\nD\n\n## May depend on\n\nM\n${extra}`
+
+test('canon rule levels make only numeral findings warnings', () => {
+  expect(canonRuleLevel('canon/numeral')).toBe('warning')
+  expect(canonRuleLevel('canon/history')).toBe('error')
+})
 const ruleDoc = (body = 'Current rule.') => `---\ndescription: A rule\nalways: true\n---\n${body}\n`
 const contextDoc = (body = 'Current context.') =>
   `---\ndescription: A context\npaths:\n  - src/**\n---\n${body}\n`

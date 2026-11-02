@@ -8,6 +8,7 @@ import {
   type CanonSourceText,
   introducedCanonFindings,
   lintCanon,
+  refusingCanonFindings,
 } from './canon-lint.ts'
 import {
   CLAUDE_COMBINED_NOTICE_CHARS,
@@ -18,6 +19,10 @@ import { mapUserCanonPath } from './user-canon-home.ts'
 
 type Row = { slug: string; body: string }
 export type WorkflowStepBody = { slug: string; body: string }
+
+export function hasRefusingCanonFindings(findings: CanonFinding[]): boolean {
+  return refusingCanonFindings(findings).length > 0
+}
 
 const SYNTHETIC_REPO = '/repo'
 const SYNTHETIC_CLAUDE_HOME = '/home/.claude'

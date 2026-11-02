@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import {
   articleFieldRefusal,
+  canonFindingsRefusal,
+  canonFindingWarnings,
   canonRemovalRefusal,
   decideDocRevisionWrite,
   docWriteProjectName,
@@ -15,6 +18,44 @@ import {
   refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+const finding = (rule: string, message: string, line = 1) => ({
+  file: 'AGENTS.md',
+  line,
+  rule,
+  message,
+})
+
+test('canon numeral findings warn while unambiguous prose findings refuse', () => {
+  const numeral = finding('canon/numeral', 'prose contains numeral 11')
+  expect(canonFindingsRefusal([numeral])).toBeNull()
+  expect(canonFindingWarnings([numeral])).toEqual([
+    'AGENTS.md:1 canon/numeral prose contains numeral 11',
+  ])
+
+  const decision = decideUserCanonImport({
+    current: [{ slug: 'AGENTS.md', body: 'Current rule.' }],
+    next: [
+      {
+        slug: 'AGENTS.md',
+        body: 'Current rule. It was renamed under DEV-1863 on 2026-11-01.',
+      },
+    ],
+  })
+  const refusal = canonFindingsRefusal(decision.findings)
+  for (const rule of ['canon/history', 'canon/issue', 'canon/date']) {
+    expect(refusal).toContain(rule)
+  }
+})
+
+test('a mixed canon refusal includes its numeral warning', () => {
+  const refusal = canonFindingsRefusal([
+    finding('canon/history', 'prose narrates history'),
+    finding('canon/numeral', 'prose contains numeral 11', 2),
+  ])
+  expect(refusal).toContain('refusing canon write; introduced 1 finding')
+  expect(refusal).toContain('warning:\nAGENTS.md:2 canon/numeral prose contains numeral 11')
+})
 
 test('reference writes require the explicit publisher marker for new and stored rows', () => {
   expect(referenceWriteRefusal({ requestedForm: 'reference' })).toContain(

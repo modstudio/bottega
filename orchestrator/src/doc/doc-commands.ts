@@ -744,12 +744,22 @@ async function handleSubjectsOrTransferDocCommand(
   const reason = flags.flag('reason')
   if (sub === 'import' && !reason?.trim())
     throw new Error(`${PLATFORM_SLUG} doc import <dir> --reason TEXT [--author NAME]`)
-  const count =
-    sub === 'export'
-      ? exportDocs(dir)
-      : await importDocs(dir, { reason: reason!, author: flags.flag('author') })
-  presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
+  const result = await transferDocs(sub, dir, {
+    reason: reason!,
+    author: flags.flag('author'),
+  })
+  presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${result.count} docs`)
+  printDocWriteWarnings(result.writeWarnings, presentation)
   return true
+}
+
+async function transferDocs(
+  sub: 'export' | 'import',
+  dir: string,
+  context: { reason: string; author?: string },
+): Promise<{ count: number; writeWarnings: string[] }> {
+  if (sub === 'export') return { count: exportDocs(dir), writeWarnings: [] }
+  return importDocs(dir, context)
 }
 
 function handleHistoryOutput(
@@ -821,10 +831,24 @@ async function handleHistoryDocCommand(
     { reason, author: flags.flag('author'), expectedRevision: flags.flag('expect') },
     owner,
   )
-  presentation.log(
-    flags.has('json') ? JSON.stringify(restored) : `restored ${scope}/${subject ?? '_'}/${slug}`,
-  )
+  printRestoreResult(restored, flags, presentation, scope, subject, slug)
   return true
+}
+
+function printRestoreResult(
+  restored: Awaited<ReturnType<typeof restoreDoc>>,
+  flags: DocFlags,
+  presentation: DocPresentation,
+  scope: string,
+  subject: string | null,
+  slug: string,
+): void {
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify(restored))
+    return
+  }
+  presentation.log(`restored ${scope}/${subject ?? '_'}/${slug}`)
+  printDocWriteWarnings(restored.writeWarnings, presentation)
 }
 
 function handleResumesDocCommand(

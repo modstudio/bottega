@@ -167,7 +167,12 @@ test('project canon import bootstraps findings and refuses findings on the next 
       ['cwd', root],
       ['reason', 'test bootstrap'],
     ])
-    const presentation = { log: () => {}, exitCode: () => {}, cwd: () => root }
+    const output: string[] = []
+    const presentation = {
+      log: (...parts: unknown[]) => output.push(parts.join(' ')),
+      exitCode: () => {},
+      cwd: () => root,
+    }
 
     await dispatchCanonCommand(
       ['canon', 'import'],
@@ -175,6 +180,7 @@ test('project canon import bootstraps findings and refuses findings on the next 
       presentation,
     )
     expect(getDoc('canon', 'canon-import-bootstrap', 'AGENTS.md')?.body).toContain('123')
+    expect(output).toContainEqual(expect.stringMatching(/^warning: AGENTS\.md:1 canon\/numeral/))
 
     writeFileSync(join(root, 'AGENTS.md'), 'Keep 123 rules.\nIt used to differ.\n')
     await expect(

@@ -9,7 +9,7 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
-import { canonFindingsRefusal } from '../doc/doc-write-allowed.ts'
+import { canonFindingsRefusal, canonFindingWarnings } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import {
   isProjectRepository,
@@ -38,7 +38,13 @@ import {
   planHydration,
 } from './canon-hydrate.ts'
 import { planCanonImport } from './canon-import-policy.ts'
-import { classifyCanonFile, introducedCanonFindings, lintCanon } from './canon-lint.ts'
+import {
+  canonRuleLevel,
+  classifyCanonFile,
+  introducedCanonFindings,
+  lintCanon,
+  refusingCanonFindings,
+} from './canon-lint.ts'
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts, gatherWorkerHarnessLoadFacts } from './canon-load-files.ts'
 import { storedRepositoryCanonRows } from './canon-stored-rows.ts'
@@ -128,7 +134,7 @@ function printFindings(findings: Finding[], log: (...values: unknown[]) => void)
   const grouped = Map.groupBy(findings, (finding) => finding.rule)
   log('findings')
   for (const [rule, rows] of [...grouped].sort(([a], [b]) => a.localeCompare(b))) {
-    log(`  ${rule} (${rows.length})`)
+    log(`  ${rule}${canonRuleLevel(rule) === 'warning' ? ' [warning]' : ''} (${rows.length})`)
     for (const finding of rows) log(`    ${finding.file}:${finding.line}  ${finding.message}`)
   }
 }
@@ -249,11 +255,15 @@ async function canonImportCommand(
   if (plan.refusal === 'empty') throw new Error('refusing canon import: desired canon set is empty')
   if (plan.refusal === 'findings') throw new Error(canonFindingsRefusal(plan.findings)!)
 
-  const result = await importCanon({
+  const imported = await importCanon({
     address: { kind: 'project', subject: project.name, projectId: project.recordId },
     rows: rows.map((row) => ({ ...row, title: row.slug })),
     reason,
   })
+  const result = {
+    ...imported,
+    writeWarnings: [...canonFindingWarnings(plan.findings), ...(imported.writeWarnings ?? [])],
+  }
   result.writeWarnings?.forEach((warning) => {
     presentation.log(`warning: ${warning}`)
   })
@@ -362,7 +372,7 @@ export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentat
     printMeasurements(result, presentation.log)
     printFindings(displayed, presentation.log)
   }
-  if (flags.has('strict') && displayed.length) presentation.exitCode(1)
+  if (flags.has('strict') && refusingCanonFindings(displayed).length) presentation.exitCode(1)
 }
 
 function canonDiffCommand(
