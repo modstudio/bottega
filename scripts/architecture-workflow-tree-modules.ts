@@ -14,6 +14,7 @@ const module = (file: string, allowed: string[]): WorkflowTreeModule => ({
 export const workflowTreeModules: WorkflowTreeModule[] = [
   module('orchestrator/src/workflow/workflow-import-output.ts', ['./workflow-tree-store.ts']),
   module('orchestrator/src/workflow/workflow-tree.ts', [
+    'node:util',
     './step-catalogue.ts',
     './workflow-step-sequences.ts',
     './workflows.ts',
@@ -21,6 +22,10 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
   module('orchestrator/src/workflow/workflow-tree-files.ts', [
     'node:fs',
     'node:path',
+    './workflow-tree.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-tree-hydration.ts', [
+    '../../../shared/brand.ts',
     './workflow-tree.ts',
   ]),
   module('orchestrator/src/workflow/workflow-tree-promotion.ts', [
@@ -32,13 +37,13 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
   module('orchestrator/src/workflow/workflow-tree-store.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',
-    'node:util',
     '../database/db.ts',
     '../record/record-write-authority.ts',
     './step-catalogue.ts',
     './workflow-read-space.ts',
     './workflow-step-sequences.ts',
     './workflow-tree.ts',
+    './workflow-tree-hydration.ts',
     './workflow-tree-promotion.ts',
     './workflows.ts',
   ]),

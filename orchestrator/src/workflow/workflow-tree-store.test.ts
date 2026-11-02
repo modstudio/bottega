@@ -580,17 +580,23 @@ describe('importWorkflowTree', () => {
       d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number }
     ).count
 
-    expect(() =>
-      importWorkflowTree(
+    let refusal: Error | undefined
+    try {
+      await importWorkflowTree(
         parseWorkflowTree(staleTree),
         'stale tree import',
         'worker',
         d,
         undefined,
         new Set(),
-      ),
-    ).toThrow(
-      'refusing stale workflow tree reversion:\n- step blast-radius: tree matches production version 1; current production version is 2',
+      )
+    } catch (error) {
+      refusal = error as Error
+    }
+    expect(refusal?.message).toBe(
+      'refusing stale workflow tree reversion:\n' +
+        '- step blast-radius: tree matches production version 1; current production version is 2\n' +
+        `remedy: run ${PLATFORM_SLUG} workflow hydrate --cwd <tree> --path .agents/workflow-steps/blast-radius.md, then commit the hydrated files`,
     )
     expect(
       (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })

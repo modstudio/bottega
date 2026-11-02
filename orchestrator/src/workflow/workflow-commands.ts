@@ -78,10 +78,16 @@ import {
   type WorkflowTextDocumentPorts,
   workflowTextCopyReport,
 } from './workflow-text-copy.ts'
-import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
+import { parseWorkflowTree } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import {
+  decideWorkflowHydration,
+  workflowHydrationProtectionLines,
+} from './workflow-tree-hydration.ts'
+import {
   importWorkflowTree,
+  newestDraftWorkflowTree,
+  productionHistory,
   productionWorkflowTree,
   promoteMatchingWorkflowTreeDrafts,
 } from './workflow-tree-store.ts'
@@ -854,19 +860,45 @@ export function hydrateCommand(
         'cleared by: pass --cwd for a worktree',
     )
   }
-  const plan = planWorkflowHydration({
-    store: productionWorkflowTree({ database: db(), project: project?.name ?? null }),
+  const database = db()
+  const production = productionWorkflowTree({ database, project: project?.name ?? null })
+  const draft = newestDraftWorkflowTree({ database, project: project?.name ?? null })
+  const history = productionHistory(
+    database,
+    workflowReadSpaceFor(database, project?.name ?? null),
+  ).history
+  const decision = decideWorkflowHydration({
+    production,
+    draft,
+    history,
     tree: collectWorkflowTree(root),
+    ...(flagValues(argv, 'path').length ? { paths: new Set(flagValues(argv, 'path')) } : {}),
+    discard: new Set(flagValues(argv, 'discard')),
   })
+  if (decision.unknownSelectors.length) {
+    presentation.error('refusing workflow hydrate: unknown workflow-tree selectors')
+    for (const { option, path } of decision.unknownSelectors) {
+      presentation.error(
+        `${option} ${path}: names neither a collected tree path nor a path rendered by production`,
+      )
+    }
+    presentation.error('paths are relative to the tree root in the form --check prints')
+    presentation.setExitCode(1)
+    return
+  }
+  const { plan } = decision
   for (const { path } of plan.writes) presentation.log(`write ${path}`)
   for (const path of plan.deletes) presentation.log(`delete ${path}`)
+  for (const line of workflowHydrationProtectionLines(decision.protected)) presentation.log(line)
   const count = plan.writes.length + plan.deletes.length
+  const reports = count + decision.protected.length
   if (argv.includes('--check')) {
-    if (count) presentation.setExitCode(1)
+    if (reports) presentation.setExitCode(1)
     return
   }
   applyWorkflowTreePlan(root, plan)
   presentation.log(`hydrated ${count} paths`)
+  if (decision.protected.length) presentation.setExitCode(1)
 }
 
 export async function importCommand(

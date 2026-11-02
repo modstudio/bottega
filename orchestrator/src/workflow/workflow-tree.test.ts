@@ -5,9 +5,10 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decideConditionalAdvance } from './workflow-cursor-transition.ts'
 import { expandWorkflowModeSteps } from './workflow-step-sequences.ts'
-import type { WorkflowTreeStore } from './workflow-tree.ts'
+import type { WorkflowTreeHistory, WorkflowTreeStore } from './workflow-tree.ts'
 import { normalizeWorkflowYaml, parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
+import { decideWorkflowHydration } from './workflow-tree-hydration.ts'
 
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -90,16 +91,24 @@ describe('planWorkflowHydration', () => {
     ).toEqual(['.agents/workflow-steps/obsolete.md'])
   })
 
-  test('reports drift in a changed sequence file', () => {
+  test('protects drift in a changed sequence file as unimported', () => {
     const rendered = planWorkflowHydration({ store, tree: [] }).writes
     const changed = rendered.map((file) =>
       file.path === '.agents/workflow-sequences/quality.md'
         ? { ...file, body: file.body.replace('title: Quality', 'title: Changed') }
         : file,
     )
-    expect(planWorkflowHydration({ store, tree: changed }).writes.map(({ path }) => path)).toEqual([
-      '.agents/workflow-sequences/quality.md',
-    ])
+    const history: WorkflowTreeHistory = {
+      steps: new Map(),
+      sequences: new Map(),
+      workflows: new Map(),
+    }
+    expect(
+      decideWorkflowHydration({ production: store, draft: store, history, tree: changed }),
+    ).toMatchObject({
+      plan: { writes: [], deletes: [] },
+      protected: ['.agents/workflow-sequences/quality.md'],
+    })
   })
 
   test('README.md in steps is neither parsed nor deleted and is refused at collection', () => {

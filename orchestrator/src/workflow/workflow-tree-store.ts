@@ -1,7 +1,6 @@
 // concern: workflow-tree-store
 /** Owns production workflow-tree reads and validated draft imports. Must not know commands, filesystems, projects, runs, or transports. */
 import type { Database } from 'bun:sqlite'
-import { isDeepStrictEqual } from 'node:util'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
@@ -19,9 +18,12 @@ import {
 } from './step-catalogue.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import {
+  sameWorkflowTreeValue as same,
   treePath,
+  type VersionedWorkflowTreeValue,
   WORKFLOW_TREE_FOLDERS,
   type WorkflowTreeFolder,
+  type WorkflowTreeHistory,
   type WorkflowTreeStore,
 } from './workflow-tree.ts'
 import {
@@ -40,16 +42,10 @@ import {
   workflowLocalLifecycle,
 } from './workflows.ts'
 
-type VersionedDefinition = { n: number; value: unknown }
 export type WorkflowTreeProduction = {
   tree: WorkflowTreeStore
   catalogueVersion: number
   workflowVersions: Map<string, number>
-}
-export type WorkflowTreeHistory = {
-  steps: Map<string, VersionedDefinition[]>
-  sequences: Map<string, VersionedDefinition[]>
-  workflows: Map<string, VersionedDefinition[]>
 }
 export type WorkflowTreeReversion = {
   kind: 'step' | 'sequence' | 'workflow'
@@ -72,7 +68,7 @@ function matchingReversions(
   kind: WorkflowTreeReversion['kind'],
   imported: { slug: string; value: unknown }[],
   production: { slug: string; value: unknown; n: number }[],
-  history: Map<string, VersionedDefinition[]>,
+  history: Map<string, VersionedWorkflowTreeValue[]>,
   branchChangedPaths: ReadonlySet<string>,
 ): WorkflowTreeReversion[] {
   const current = new Map(production.map((item) => [item.slug, item]))
@@ -266,8 +262,6 @@ export async function promoteMatchingWorkflowTreeDrafts(
   return decision
 }
 
-const same = (left: unknown, right: unknown) => isDeepStrictEqual(left, right)
-
 function orderedSteps(imported: CatalogueStep[], production: CatalogueStep[]): CatalogueStep[] {
   const importedBySlug = new Map(imported.map((step) => [step.slug, step]))
   const existing = production.flatMap((step) => {
@@ -364,14 +358,14 @@ function newestDefinitions(
 }
 
 function appendVersion(
-  target: Map<string, VersionedDefinition[]>,
+  target: Map<string, VersionedWorkflowTreeValue[]>,
   slug: string,
-  version: VersionedDefinition,
+  version: VersionedWorkflowTreeValue,
 ) {
   target.set(slug, [...(target.get(slug) ?? []), version])
 }
 
-function productionHistory(
+export function productionHistory(
   database: Database,
   spaceId: string | null,
 ): {
@@ -443,9 +437,9 @@ function staleReversionRefusal(
         ({ kind, slug, matchedVersion, productionVersion }) =>
           `- ${kind} ${slug}: tree matches production version ${matchedVersion}; current production version is ${productionVersion}`,
       )
-      .join(
-        '\n',
-      )}\nremedy: run ${PLATFORM_SLUG} workflow hydrate --cwd <tree>, then commit the hydrated files`,
+      .join('\n')}\nremedy: run ${PLATFORM_SLUG} workflow hydrate --cwd <tree> ${reversions
+      .map(({ path }) => `--path ${path}`)
+      .join(' ')}, then commit the hydrated files`,
   )
 }
 
