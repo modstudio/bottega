@@ -45,6 +45,8 @@ const COLLECTION_LOCKED_ARGV = [
   'org.freedesktop.Secret.Collection',
   'Locked',
 ]
+const UNLOCK_LOGIN_KEYRING_REMEDY =
+  'gnome-keyring-daemon --replace --unlock --components=secrets --daemonize, providing the password on stdin'
 
 const LINUX_SECRET_SCRIPT = String.raw`
 const operation = process.env.${SECRET_OPERATION_ENV};
@@ -200,7 +202,7 @@ function parseSecretFailure(result: SecurityResult): { code: string; message: st
 
 function noUnlockedCollectionFailure(operation: LinuxSecretOperation): Error {
   return new Error(
-    `Bun.secrets ${operation} refused: no unlocked login keyring is available; start and unlock it with gnome-keyring-daemon --replace --unlock --components=secrets --daemonize, providing the password on stdin`,
+    `Bun.secrets ${operation} refused: no unlocked login keyring is available; start and unlock it with ${UNLOCK_LOGIN_KEYRING_REMEDY}`,
   )
 }
 
@@ -271,7 +273,7 @@ function resolveNullRead(check: CollectionLockCheck): null {
   if (decision === 'locked') throw noUnlockedCollectionFailure('get')
   if (decision === 'missing-unchecked') {
     console.error(
-      `keyring lock state could not be checked (${uncheckedLockReason(check.reason)}); if the login keyring is locked, unlock it with gnome-keyring-daemon --replace --unlock --components=secrets --daemonize, providing the password on stdin`,
+      `keyring lock state could not be checked (${uncheckedLockReason(check.reason)}); if the login keyring is locked, unlock it with ${UNLOCK_LOGIN_KEYRING_REMEDY}`,
     )
   }
   return null
