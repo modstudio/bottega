@@ -299,6 +299,26 @@ test('the real child adapter refuses before spawn under the test runner', () => 
   console.log(`post-landing real-child-adapter class guard: ${elapsedMs.toFixed(3)}ms`)
 })
 
+// On-demand like the registered rungs, so an unmatched change leaves the required set empty.
+const onDemandProject = {
+  ...project,
+  settings: {
+    ...project.settings,
+    release: {
+      mergeMethod: 'squash',
+      requiredChecks: [],
+      rungs: [
+        {
+          name: 'hosted-api',
+          branch: 'main',
+          onDemand: true,
+          requiredWhenChanged: ['shared/record/**'],
+        },
+      ],
+    },
+  },
+} as Project
+
 test.each([
   { name: 'no release flag and no promotion', releaseRequired: false, promotion: false },
   { name: 'an empty required set', releaseRequired: true, promotion: false },
@@ -308,6 +328,7 @@ test.each([
   complete({
     releaseRequired,
     workflowPromotionDue: promotion,
+    project: onDemandProject,
     post: {
       changedPaths: () => [],
       entryClosure: () => new Map(),
