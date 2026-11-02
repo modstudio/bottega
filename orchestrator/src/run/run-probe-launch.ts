@@ -50,7 +50,7 @@ export function reportProbeOverrides(
   const lines = [
     ...(environment.GOOSE_CONTEXT_LIMIT
       ? [
-          `orch: run ${runId} probe override GOOSE_CONTEXT_LIMIT=${environment.GOOSE_CONTEXT_LIMIT} (ceiling ${GOOSE_CONTEXT_CEILING} bypassed)`,
+          `orch: run ${runId} probe override GOOSE_CONTEXT_LIMIT=${environment.GOOSE_CONTEXT_LIMIT} (replaces the ceilinged limit; ceiling ${GOOSE_CONTEXT_CEILING})`,
         ]
       : []),
     ...(readerSuites ? [`orch: run ${runId} probe override reader-suites wording`] : []),

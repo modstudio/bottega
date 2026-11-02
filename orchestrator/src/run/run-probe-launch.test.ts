@@ -28,7 +28,7 @@ test('launch logging names each probe override in effect', () => {
     reportProbeOverrides('run-42', { GOOSE_CONTEXT_LIMIT: '180000' }, true)
     expect(error).toHaveBeenNthCalledWith(
       1,
-      'orch: run run-42 probe override GOOSE_CONTEXT_LIMIT=180000 (ceiling 128000 bypassed)',
+      'orch: run run-42 probe override GOOSE_CONTEXT_LIMIT=180000 (replaces the ceilinged limit; ceiling 128000)',
     )
     expect(error).toHaveBeenNthCalledWith(
       2,
