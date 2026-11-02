@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import {
   articleFieldRefusal,
@@ -32,12 +33,18 @@ test('canon numeral findings warn while unambiguous prose findings refuse', () =
     'AGENTS.md:1 canon/numeral prose contains numeral 11',
   ])
 
-  for (const error of [
-    finding('canon/history', 'prose narrates history'),
-    finding('canon/task-key', 'prose contains a task key'),
-    finding('canon/iso-date', 'prose contains an ISO date'),
-  ]) {
-    expect(canonFindingsRefusal([error])).toContain(error.rule)
+  const decision = decideUserCanonImport({
+    current: [{ slug: 'AGENTS.md', body: 'Current rule.' }],
+    next: [
+      {
+        slug: 'AGENTS.md',
+        body: 'Current rule. It was renamed under DEV-1863 on 2026-11-01.',
+      },
+    ],
+  })
+  const refusal = canonFindingsRefusal(decision.findings)
+  for (const rule of ['canon/history', 'canon/issue', 'canon/date']) {
+    expect(refusal).toContain(rule)
   }
 })
 
