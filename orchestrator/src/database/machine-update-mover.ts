@@ -18,6 +18,14 @@ export type MainCheckoutUpdateResult = {
   output: string
 }
 
+/** Decide whether moving this checkout also moves the running Bottega installation. */
+export function movesRunningBottegaInstallation(
+  embeddedDistribution: boolean,
+  projectIsInstallationRoot: boolean,
+): boolean {
+  return !embeddedDistribution && projectIsInstallationRoot
+}
+
 /** Build the child identity without inheriting either installation or store overrides. */
 export function mainCheckoutUpdateInvocation(
   projectPath: string,

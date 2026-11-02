@@ -3,9 +3,14 @@
 
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { moveRegisteredMainCheckout } from '../database/machine-update-mover.ts'
+import { isInstallationRoot } from '../../../shared/install-root.ts'
+import {
+  moveRegisteredMainCheckout,
+  movesRunningBottegaInstallation,
+} from '../database/machine-update-mover.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
 import { git, gitOk, repoRootOf } from '../git/git-environment.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
@@ -51,6 +56,19 @@ export function decideMainCheckoutBranch(
   trunk: string,
 ): MainCheckoutBranchDecision {
   return branch === trunk ? { action: 'refresh' } : { action: 'refuse', branch }
+}
+
+/** Route an already-validated main checkout through its applicable mover. */
+export function moveMainCheckoutForRefresh(
+  movesInstallation: boolean,
+  move: { installation(): { exitCode: number; output: string }; otherProject(): string },
+): string[] {
+  if (!movesInstallation) return [move.otherProject()]
+  const moved = move.installation()
+  if (moved.exitCode !== 0) {
+    throw new Error(moved.output || `${PLATFORM_SLUG} machine update exited ${moved.exitCode}`)
+  }
+  return moved.output ? moved.output.split('\n') : ['updated main checkout through machine update']
 }
 
 function countCommits(range: string, cwd: string): number {
@@ -271,13 +289,14 @@ function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>)
     )
   }
 
-  const result = moveRegisteredMainCheckout(project)
-  if (result.exitCode !== 0) {
-    throw new Error(result.output || `${PLATFORM_SLUG} machine update exited ${result.exitCode}`)
-  }
-  return result.output
-    ? result.output.split('\n')
-    : ['updated main checkout through machine update']
+  const movesInstallation = movesRunningBottegaInstallation(
+    Boolean(embeddedDistributionManifest()),
+    isInstallationRoot(project.path),
+  )
+  return moveMainCheckoutForRefresh(movesInstallation, {
+    installation: () => moveRegisteredMainCheckout(project),
+    otherProject: () => fastForwardTree(treeRoot, trunk, trunk),
+  })
 }
 
 function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): string[] {

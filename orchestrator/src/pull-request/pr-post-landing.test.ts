@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isInstallationRoot } from '../../../shared/install-root.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, fenceStoreAfterCheckoutMove, writableDb } from '../database/db.ts'
+import { movesRunningBottegaInstallation } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
@@ -9,6 +12,7 @@ import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
+  moveMainCheckoutAfterLanding,
   POST_LANDING_REPORTED_EXIT_CODE,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
@@ -150,13 +154,23 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
 })
 
-test('the post-landing child runs from main through its binary or the embedded executable', () => {
-  expect(postLandingHandOffInvocation(project.path, false)).toEqual({
-    argv: [`${project.path}/bin/${PLATFORM_SLUG}`],
-    cwd: project.path,
+test('another project uses the plain move and the current installation hand-off', () => {
+  const movesInstallation = movesRunningBottegaInstallation(false, isInstallationRoot(project.path))
+  const calls: string[] = []
+  moveMainCheckoutAfterLanding(movesInstallation, {
+    installation: () => calls.push('machine-update'),
+    otherProject: () => calls.push('plain-fast-forward'),
   })
+
+  expect(calls).toEqual(['plain-fast-forward'])
+  expect(postLandingHandOffInvocation(project.path, movesInstallation)).toEqual({
+    argv: bottegaEntryArgv(PLATFORM_SLUG),
+  })
+})
+
+test('the post-landing child for a moved platform checkout runs through its binary', () => {
   expect(postLandingHandOffInvocation(project.path, true)).toEqual({
-    argv: [process.execPath],
+    argv: [`${project.path}/bin/${PLATFORM_SLUG}`],
     cwd: project.path,
   })
 })

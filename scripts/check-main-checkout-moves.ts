@@ -1,10 +1,12 @@
+// This guard intentionally recognizes only literal argv at production git call sites.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
+import { PLATFORM_NAME } from '../shared/brand.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const SOURCE_ROOT = 'orchestrator/src'
+const SOURCE_ROOTS = ['orchestrator/src', 'hub/src', 'shared'] as const
 const MOVER_MODULE = 'orchestrator/src/database/machine-update.ts'
 
 type AdmittedMove = {
@@ -19,7 +21,13 @@ const ADMITTED_NON_MAIN_MOVES: readonly AdmittedMove[] = [
     file: 'orchestrator/src/recipe/tree-refresh.ts',
     functionName: 'fastForwardTree',
     command: 'merge --ff-only',
-    reason: 'fastForwardTree is called only for a non-main worktree',
+    reason: `fastForwardTree moves either a non-main worktree or a registered main checkout that is not the running ${PLATFORM_NAME} installation`,
+  },
+  {
+    file: 'orchestrator/src/release/release-required.ts',
+    functionName: 'moveNonInstallationMainCheckout',
+    command: 'merge --ff-only',
+    reason: `moves a registered main checkout that is not the running ${PLATFORM_NAME} installation, which has no store to migrate`,
   },
   {
     file: 'orchestrator/src/run/run-resume-claim.ts',
@@ -49,8 +57,10 @@ function sourceFiles(): string[] {
       else if (entry.isFile()) files.push(relative(ROOT, absolute))
     }
   }
-  const source = resolve(ROOT, SOURCE_ROOT)
-  if (existsSync(source)) collect(source)
+  for (const root of SOURCE_ROOTS) {
+    const source = resolve(ROOT, root)
+    if (existsSync(source)) collect(source)
+  }
   return files.filter(productionTypeScript).sort()
 }
 

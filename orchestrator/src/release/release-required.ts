@@ -153,6 +153,25 @@ export function mainCheckoutHead(project: Project): string {
   )
 }
 
+/** Move a registered main checkout whose code is not the running Bottega installation. */
+export function moveNonInstallationMainCheckout(project: Project, mergeCommit?: string): void {
+  verifyMainCheckout(project)
+  const trunk = project.settings.trunk!
+  git(
+    ['fetch', 'origin', trunk],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during main checkout fetch',
+  )
+  git(
+    ['merge', '--ff-only', `origin/${trunk}`],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during main checkout fast-forward',
+  )
+  if (mergeCommit) verifyMainCheckout(project, mergeCommit)
+}
+
 export function changedPaths(project: Project, mergeCommit: string): string[] {
   const trunk = project.settings.trunk
   if (!trunk) throw new Error('project has no trunk; set trunk, then retry')

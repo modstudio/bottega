@@ -1,13 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isInstallationRoot } from '../../../shared/install-root.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { movesRunningBottegaInstallation } from '../database/machine-update-mover.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
 import {
   collidingRefreshPaths,
   decideMainCheckoutBranch,
   decideTreeRefresh,
+  moveMainCheckoutForRefresh,
   refreshStepContext,
   requireRefreshSnapshot,
   snapshotlessRefreshPlaceholder,
@@ -54,6 +57,27 @@ describe('main checkout branch decision', () => {
       branch: null,
     })
   })
+})
+
+test('another project main tree refresh uses the plain fast-forward', () => {
+  const movesInstallation = movesRunningBottegaInstallation(
+    false,
+    isInstallationRoot('/fixture/another-project'),
+  )
+  const calls: string[] = []
+  const output = moveMainCheckoutForRefresh(movesInstallation, {
+    installation: () => {
+      calls.push('machine-update')
+      return { exitCode: 0, output: 'machine update' }
+    },
+    otherProject: () => {
+      calls.push('plain-fast-forward')
+      return 'fast-forwarded main'
+    },
+  })
+
+  expect(calls).toEqual(['plain-fast-forward'])
+  expect(output).toEqual(['fast-forwarded main'])
 })
 
 describe('tree refresh decision', () => {

@@ -5,8 +5,13 @@ import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
+import { isInstallationRoot } from '../../../shared/install-root.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
-import { moveRegisteredMainCheckout } from '../database/machine-update-mover.ts'
+import {
+  moveRegisteredMainCheckout,
+  movesRunningBottegaInstallation,
+} from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
 import { type EntryClosure, entryClosureAtCommit } from '../release/release-entry-closure.ts'
@@ -15,6 +20,7 @@ import {
   failedRequiredRelease,
   formatRequiredReleaseReport,
   mainCheckoutHead,
+  moveNonInstallationMainCheckout,
   type RequiredReleaseReport,
   type RequiredRungDecision,
   releaseRequiredFlagAbsent,
@@ -56,6 +62,15 @@ export type PullRequestPostLandingAdapter = {
   moveMain(project: Project, mergeCommit: string): void
   fence(reason: string): void
   handOff(payload: PullRequestPostLandingPayload, project: Project): PullRequestMergeOutcome
+}
+
+/** Route a main-checkout move without coupling the decision to either side effect. */
+export function moveMainCheckoutAfterLanding(
+  movesInstallation: boolean,
+  move: { installation(): void; otherProject(): void },
+): void {
+  if (movesInstallation) move.installation()
+  else move.otherProject()
 }
 
 function moveMainForPostLanding(
@@ -135,19 +150,35 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
   entryClosure: entryClosureAtCommit,
   mainHead: mainCheckoutHead,
   moveMain(project, mergeCommit) {
-    verifyMainCheckout(project)
-    const result = moveRegisteredMainCheckout(project)
-    if (result.exitCode !== 0) {
-      throw new Error(result.output || `${PLATFORM_SLUG} machine update exited ${result.exitCode}`)
-    }
-    verifyMainCheckout(project, mergeCommit)
+    const movesInstallation = movesRunningBottegaInstallation(
+      Boolean(embeddedDistributionManifest()),
+      isInstallationRoot(project.path),
+    )
+    moveMainCheckoutAfterLanding(movesInstallation, {
+      installation() {
+        verifyMainCheckout(project)
+        const result = moveRegisteredMainCheckout(project)
+        if (result.exitCode !== 0) {
+          throw new Error(
+            result.output || `${PLATFORM_SLUG} machine update exited ${result.exitCode}`,
+          )
+        }
+        verifyMainCheckout(project, mergeCommit)
+      },
+      otherProject() {
+        moveNonInstallationMainCheckout(project, mergeCommit)
+      },
+    })
   },
   fence: fenceStoreAfterCheckoutMove,
   handOff(payload, project) {
     try {
       const command = postLandingHandOffInvocation(
         project.path,
-        Boolean(embeddedDistributionManifest()),
+        movesRunningBottegaInstallation(
+          Boolean(embeddedDistributionManifest()),
+          isInstallationRoot(project.path),
+        ),
       )
       const result = Bun.spawnSync(
         [...command.argv, 'pr', 'merge', payload.target, POST_LANDING_FLAG],
@@ -170,15 +201,14 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
   },
 })
 
-/** Name the moved checkout's binary unless this process is an embedded distribution. */
+/** Re-enter moved Bottega code, or retain the current installation for another project. */
 export function postLandingHandOffInvocation(
   projectPath: string,
-  embeddedDistribution: boolean,
-): { argv: string[]; cwd: string } {
-  return {
-    argv: [embeddedDistribution ? process.execPath : join(projectPath, 'bin', PLATFORM_SLUG)],
-    cwd: projectPath,
-  }
+  movesInstallation: boolean,
+): { argv: string[]; cwd?: string } {
+  return movesInstallation
+    ? { argv: [join(projectPath, 'bin', PLATFORM_SLUG)], cwd: projectPath }
+    : { argv: bottegaEntryArgv(PLATFORM_SLUG) }
 }
 
 /**

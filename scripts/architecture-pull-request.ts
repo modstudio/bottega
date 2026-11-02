@@ -10,6 +10,8 @@ export const pullRequestModuleSpecs = [
       'node:path',
       '../../../shared/brand.ts',
       '../../../shared/embedded-assets.ts',
+      '../../../shared/install-root.ts',
+      '../../../shared/self-spawn.ts',
       '../database/db.ts',
       '../database/machine-update-mover.ts',
       '../project/projects.ts',
