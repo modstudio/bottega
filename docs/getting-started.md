@@ -8,8 +8,10 @@ This page takes a fresh machine to a first delegated change.
 
 ## What you need
 
-- macOS or Linux, with `git`. Linux also requires `ripgrep`, `bubblewrap` and
-  `socat`, and must permit unprivileged user namespaces for the sandbox.
+- macOS or Linux, with `git`. Linux also requires `ripgrep`, `bubblewrap`,
+  `socat`, `libsecret-1-0`, and a running, unlocked Secret Service keyring such
+  as gnome-keyring, because Bottega keeps its sign-in token and machine key only
+  there. Linux must permit unprivileged user namespaces for the sandbox.
 - The installer requires `curl` or `wget`, `tar`, and `sha256sum` or `shasum`.
   Building from a checkout also requires Bun.
 - One agent CLI that Bottega can drive, installed and signed in: `codex` or

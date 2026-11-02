@@ -39,12 +39,20 @@ function decode(value: string): Uint8Array {
   return bytes
 }
 
-function useFile(env: ConfigEnvironment): boolean {
-  const requested = env[KEYSTORE_ENV]
-  if (requested !== undefined && requested !== 'file') {
+export function decideMachineKeyStore(
+  requested: string | undefined,
+  platform: string,
+): 'file' | 'keychain' {
+  if (requested === 'file') return 'file'
+  if (requested !== undefined) {
     throw new Error(`${KEYSTORE_ENV} must be 'file' when set`)
   }
-  return requested === 'file' || process.platform !== 'darwin'
+  if (platform === 'darwin' || platform === 'linux') return 'keychain'
+  throw new Error(`machine key storage is unsupported on platform ${platform}`)
+}
+
+function useFile(env: ConfigEnvironment): boolean {
+  return decideMachineKeyStore(env[KEYSTORE_ENV], process.platform) === 'file'
 }
 
 export function readMachineKey(
