@@ -749,7 +749,7 @@ function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvid
     )
     .get(id)
   if (!row) return { id, found: false }
-  const floor = floorFromObligationRow(row, row.cursor_record_id)
+  const floor = floorFromObligationRow(row)
   return {
     id,
     found: true,

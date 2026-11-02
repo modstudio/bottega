@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { floorFromObligationRow, openWorkflowObligations } from './workflow-obligation-floor.ts'
+import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 
 const CURSOR_ID = '00000000-0000-4000-8000-000000000021'
 const OBLIGATION_ID = '00000000-0000-4000-8000-000000000022'
@@ -49,21 +49,15 @@ test('open obligations round-trip every persisted floor field', () => {
   ])
 })
 
-test('an unknown obligation floor names the obligation and recovery', () => {
-  expect(() =>
-    floorFromObligationRow(
-      {
-        id: OBLIGATION_ID,
-        floor: 'future-floor',
-        require_pull_request: 0,
-        operator_ruling: 0,
-        expected_exit_code: 0,
-        expected_status: 'done',
-        floor_deferrable: 0,
-      },
-      CURSOR_ID,
-    ),
-  ).toThrow(
-    `obligation ${OBLIGATION_ID} has unknown floor kind "future-floor"; this ${PLATFORM_NAME} binary does not know that floor kind; run \`${PLATFORM_SLUG} machine update\` when a newer ${PLATFORM_NAME} recorded the obligation, otherwise abandon its cursor with \`${PLATFORM_SLUG} workflow abandon --cursor ${CURSOR_ID}\``,
+test('an unknown obligation floor names the obligation and its cursor number', () => {
+  const d = database()
+  d.query(
+    `INSERT INTO workflow_obligation
+      (record_id,cursor_record_id,step_ordinal,step_slug,floor,reason,created_at)
+     VALUES (?, ?, 1, 'acceptance', 'future-floor', 'unknown kind', '2026-11-01')`,
+  ).run(OBLIGATION_ID, CURSOR_ID)
+
+  expect(() => openWorkflowObligations(CURSOR_ID, d)).toThrow(
+    `obligation ${OBLIGATION_ID} has unknown floor kind "future-floor"; this ${PLATFORM_NAME} binary does not know that floor kind; run \`${PLATFORM_SLUG} machine update\` when a newer ${PLATFORM_NAME} recorded the obligation, otherwise abandon its cursor with \`${PLATFORM_SLUG} workflow abandon --cursor 1\``,
   )
 })

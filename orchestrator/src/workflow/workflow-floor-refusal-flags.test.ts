@@ -264,8 +264,9 @@ for (const variant of variants) {
       expected_exit_code: variant.floor.expectedExitCode,
       expected_status: variant.floor.expectedStatus,
       floor_deferrable: variant.floor.deferrable,
+      cursor_number: 1,
     }
-    const obligationFloor = floorFromObligationRow(row, ID)
+    const obligationFloor = floorFromObligationRow(row)
     const open: OpenObligation = {
       id: ID,
       stepOrdinal: 2,

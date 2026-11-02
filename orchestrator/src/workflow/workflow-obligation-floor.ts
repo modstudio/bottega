@@ -13,15 +13,16 @@ export type WorkflowObligationFloorRow = {
   expected_exit_code: number
   expected_status: string
   floor_deferrable: boolean | number
+  cursor_number: number
 }
 
 export const WORKFLOW_OBLIGATION_FLOOR_COLUMNS =
-  'record_id AS id, floor, require_pull_request, operator_ruling, expected_exit_code, expected_status, floor_deferrable'
+  'record_id AS id, floor, require_pull_request, operator_ruling, expected_exit_code, expected_status, floor_deferrable, (SELECT number FROM workflow_cursor WHERE workflow_cursor.record_id=workflow_obligation.cursor_record_id) AS cursor_number'
 
-export function floorFromObligationRow(row: WorkflowObligationFloorRow, cursorId: string): Floor {
+export function floorFromObligationRow(row: WorkflowObligationFloorRow): Floor {
   if (!isFloorKind(row.floor))
     throw new Error(
-      `obligation ${row.id} has unknown floor kind "${row.floor}"; this ${PLATFORM_NAME} binary does not know that floor kind; run \`${PLATFORM_SLUG} machine update\` when a newer ${PLATFORM_NAME} recorded the obligation, otherwise abandon its cursor with \`${PLATFORM_SLUG} workflow abandon --cursor ${cursorId}\``,
+      `obligation ${row.id} has unknown floor kind "${row.floor}"; this ${PLATFORM_NAME} binary does not know that floor kind; run \`${PLATFORM_SLUG} machine update\` when a newer ${PLATFORM_NAME} recorded the obligation, otherwise abandon its cursor with \`${PLATFORM_SLUG} workflow abandon --cursor ${row.cursor_number}\``,
     )
   return {
     kind: row.floor,
@@ -50,6 +51,6 @@ export function openWorkflowObligations(cursorId: string, d: Database): OpenObli
     id: row.id,
     stepOrdinal: row.stepOrdinal,
     stepSlug: row.stepSlug,
-    floorDefinition: floorFromObligationRow(row, cursorId),
+    floorDefinition: floorFromObligationRow(row),
   }))
 }
