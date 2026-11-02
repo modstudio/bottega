@@ -6,7 +6,6 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
-import { proseGate } from '../../../shared/prose/prose-gate.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -14,6 +13,7 @@ import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payl
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
+import { hostedDocProse } from './record-api-doc-prose.ts'
 import {
   docWriteContextSchema,
   recordCanonImportSchema,
@@ -814,22 +814,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
     try {
       const prior = body.data.id ? await deps.readDoc({ ...tenant, id: body.data.id }) : null
-      const identity = context.get('identity')
-      const checked = await proseGate(
-        [
-          { field: 'title', text: body.data.title, prior: prior?.title ?? null },
-          {
-            field: 'summary',
-            text: body.data.summary ?? '',
-            prior: prior?.summary ?? null,
-          },
-          { field: 'body', text: body.data.body, prior: prior?.body ?? null },
-        ],
-        {
-          displayName: typeof identity?.user.name === 'string' ? identity.user.name : null,
-          enabled: process.env.BOTTEGA_PROSE_CHECK !== 'off',
-        },
-      )
+      const checked = await hostedDocProse(body.data, prior, context.get('identity')?.user)
       if (checked.refusal) return context.json({ error: checked.refusal }, 400)
       const written = await deps.upsertDoc({ ...tenant, ...body.data })
       return context.json({

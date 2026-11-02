@@ -25,7 +25,6 @@ import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { assertOrchestratorProse } from '../prose/prose-service.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
@@ -46,6 +45,7 @@ import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
 import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
+import { assertDocProse } from './doc-prose.ts'
 import {
   type Doc,
   type DocRevision,
@@ -407,11 +407,7 @@ async function setDocWithOp(
   assertLocalArticleDelivery(input, delivery, kind)
   const canonWarnings = assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
-  await assertOrchestratorProse([
-    { field: 'title', text: input.title, prior: prior?.title ?? null },
-    { field: 'summary', text: input.summary ?? '', prior: prior?.summary ?? null },
-    { field: 'body', text: input.body, prior: prior?.body ?? null },
-  ])
+  await assertDocProse(input, prior)
   const written = await applyRecordWriteAuthority({
     local: () =>
       executeLocalDocSet({
@@ -475,8 +471,7 @@ async function setDocWithOp(
       })
     },
   })
-  const withCanonWarnings = addCanonWriteWarnings(written, canonWarnings)
-  return addSecretScanWarning(withCanonWarnings, input, secretScan)
+  return addSecretScanWarning(addCanonWriteWarnings(written, canonWarnings), input, secretScan)
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {

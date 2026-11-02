@@ -179,7 +179,7 @@ export function attachWorkflowTextByHandle(
   }, d)
 }
 
-export function attachWorkflowText(
+function attachWorkflowText(
   identity: { project: string; workflow: string; mode: string; key?: string },
   cursor: number | undefined,
   body: string,

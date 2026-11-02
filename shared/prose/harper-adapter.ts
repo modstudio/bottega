@@ -104,6 +104,7 @@ async function runHarperFindings(text: string): Promise<EngineResult> {
       for (const { lint } of entries) lint.free()
     }
   } catch (error) {
+    linterPromise = null
     return { ran: false, reason: errorMessage(error) }
   }
 }

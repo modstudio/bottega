@@ -18,6 +18,24 @@ const module = (file: string, allowed: string[]): ProseModule => ({
 })
 
 export const proseModules: ProseModule[] = [
+  module('orchestrator/src/check/check-prose.ts', [
+    'node:fs',
+    '../../../shared/prose/prose-gate.ts',
+    '../prose/prose-service.ts',
+  ]),
+  module('orchestrator/src/doc/doc-prose.ts', [
+    '../prose/prose-service.ts',
+    './doc-article-fields.ts',
+    './doc-read-store.ts',
+  ]),
+  module('orchestrator/src/prose/prose-service.ts', [
+    '../../../shared/machine-config.ts',
+    '../../../shared/prose/prose-gate.ts',
+    '../record/record-session.ts',
+  ]),
+  module('orchestrator/src/record/record-api-doc-prose.ts', [
+    '../../../shared/prose/prose-gate.ts',
+  ]),
   module('shared/prose/prose-mask.ts', []),
   module('shared/prose/prose-lint.ts', ['./prose-mask.ts']),
   module('shared/prose/naming-rule.ts', ['./prose-mask.ts']),

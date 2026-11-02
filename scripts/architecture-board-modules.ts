@@ -129,6 +129,7 @@ export const boardModules: BoardModule[] = [
     '../../../shared/record/schema.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    '../prose/prose-service.ts',
     '../record/machine-identity.ts',
     '../record/record-api-client.ts',
     '../record/record-board-contract.ts',

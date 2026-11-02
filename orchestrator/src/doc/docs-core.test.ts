@@ -797,7 +797,7 @@ describe('scoped operator docs', () => {
       subject: null,
       slug: 'injected',
       title: 'Injected',
-      body: 'é',
+      body: 'Text.',
     })
     await setDoc({
       scope: 'global',

@@ -314,6 +314,23 @@ async function runAskLoopback(
   return startAskLoopback(runId, token)
 }
 
+async function recordQuestionProseNotice(
+  runId: string,
+  questions: Array<{ question: string }>,
+): Promise<void> {
+  if (!questions.length) return
+  const checked = await orchestratorProseGate(
+    questions.map((question) => ({ field: 'question text', text: question.question, prior: null })),
+  )
+  const notice = checked.refusal ?? checked.notices.join('\n')
+  if (!notice) return
+  appendRunEvent(runId, {
+    ts: nowIso(),
+    type: 'text',
+    text: `prose-check notice:\n${notice}`,
+  })
+}
+
 export type LiveInput = {
   repoJob: boolean
   name: string
@@ -928,22 +945,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     }
     const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
     acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
-    if (acceptedQuestions.length) {
-      const questionProse = await orchestratorProseGate(
-        acceptedQuestions.map((question) => ({
-          field: 'question text',
-          text: question.question,
-          prior: null,
-        })),
-      )
-      const notice = questionProse.refusal ?? questionProse.notices.join('\n')
-      if (notice)
-        appendRunEvent(claim.id, {
-          ts: nowIso(),
-          type: 'text',
-          text: `prose-check notice:\n${notice}`,
-        })
-    }
+    await recordQuestionProseNotice(claim.id, acceptedQuestions)
     const derived = deriveLiveOutcome({
       writesJob,
       contractStatus: contract?.status ?? null,

@@ -784,6 +784,7 @@ export const recordModules: RecordModule[] = [
     './record-board-tx.ts',
   ]),
   module('orchestrator/src/record/record-api-board.ts', [
+    '../../../shared/prose/prose-gate.ts',
     'hono',
     'zod',
     '../board/board-reply-audience.ts',

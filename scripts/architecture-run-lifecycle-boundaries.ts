@@ -38,6 +38,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../jobs/jobs.ts',
       '../worktree/keep-tree-hold.ts',
       '../mcp/mcp-preflight.ts',
+      '../prose/prose-service.ts',
       '../outcome.ts',
       '../workflow/autonomy.ts',
       '../workflow/autonomy-scopes.ts',

@@ -20,7 +20,7 @@ export async function orchestratorProseGate(fields: ProseGateField[]): Promise<P
   })
 }
 
-export function emitProseNotices(notices: readonly string[]): void {
+function emitProseNotices(notices: readonly string[]): void {
   for (const notice of notices) console.error(notice)
 }
 

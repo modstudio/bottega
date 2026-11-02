@@ -70,7 +70,7 @@ describe('stored canon removal preflight', () => {
       subject: null,
       owner,
       slug: 'AGENTS.md',
-      title: 'Citer',
+      title: 'Reference',
       body: citation,
       allowCanonBootstrap: true,
     })

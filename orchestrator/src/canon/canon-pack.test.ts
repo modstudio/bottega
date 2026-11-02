@@ -54,7 +54,7 @@ function operatorPack(cwd: string): string {
 }
 
 async function putOperator(body: string): Promise<void> {
-  await setDoc({ scope: 'job', subject: 'understand', slug: 'operator', title: 'Operator', body })
+  await setDoc({ scope: 'job', subject: 'understand', slug: 'operator', title: 'Writer', body })
 }
 
 describe('worker pack canon', () => {
@@ -159,7 +159,7 @@ describe('worker pack canon', () => {
       path: repositoryPath,
       settings: { trunk: 'main' },
     })
-    await putOperator('operator')
+    await putOperator('writer')
     putCanon(
       'pack-canon-context',
       '.agents/contexts/api.md',
@@ -184,7 +184,7 @@ describe('worker pack canon', () => {
       path: repositoryPath,
       settings: { trunk: 'main' },
     })
-    await putOperator('operator')
+    await putOperator('writer')
     putCanon(
       'pack-canon-card',
       'hub/AGENTS.md',
@@ -204,7 +204,7 @@ describe('worker pack canon', () => {
       path: repositoryPath,
       settings: { trunk: 'main' },
     })
-    await putOperator('t')
+    await putOperator('text')
     putCanon('pack-canon-budget', 'AGENTS.md', `${'E'.repeat(400)}\n`)
     const measured = compilePack({ job: 'understand', cwd: repositoryPath })
     const old = JOBS.understand!.packBytes
