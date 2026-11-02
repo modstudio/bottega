@@ -315,6 +315,6 @@ export async function checkCommand(argv: string[], presentation: Presentation): 
   } else if (kind === 'comments') await commentsCommand(argv, presentation)
   else
     throw new Error(
-      `unknown: ${PLATFORM_SLUG} gate check. Try --enabled | spelling | attribution | comments`,
+      `unknown: ${PLATFORM_SLUG} gate check. Try --enabled | spelling | attribution | prose | comments`,
     )
 }

@@ -2,6 +2,7 @@
 /** Registers the pull-request admission wrapper and its read-only pre-push check. */
 
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writableDb } from '../database/db.ts'
@@ -79,13 +80,15 @@ async function createPullRequestCommand(
   },
 ): Promise<void> {
   validateGithubArguments(githubArgs)
+  const cwd = resolveReviewCommandCwd(options.cwd)
   const title = githubValue(githubArgs, '--title', '-t')
   const inlineBody = githubValue(githubArgs, '--body', '-b')
   const bodyFile = githubValue(githubArgs, '--body-file', '-F')
+  // gh resolves a relative body file against its own cwd, so read it from there.
   const body = bodyFile
     ? bodyFile === '-'
       ? await Bun.stdin.text()
-      : readFileSync(bodyFile, 'utf8')
+      : readFileSync(resolve(cwd, bodyFile), 'utf8')
     : inlineBody
   // Text derived from commits is covered by the commit-msg prose hook.
   await assertOrchestratorProse([
@@ -99,7 +102,7 @@ async function createPullRequestCommand(
       ceilingRuling: options.ceilingRuling,
       fromOperator: options.fromOperator,
     },
-    resolveReviewCommandCwd(options.cwd),
+    cwd,
   )
   if (result.output) log(result.output)
   if (result.overrideId !== null) {
