@@ -4,13 +4,12 @@
 import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
-import { isInstallationRoot } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
 import {
   moveRegisteredMainCheckout,
-  movesRunningBottegaInstallation,
+  projectMovesInstallation,
+  routeMainCheckoutMove,
   throwMainCheckoutUpdateFailure,
 } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
@@ -69,15 +68,6 @@ export type PullRequestPostLandingAdapter = {
   ): PullRequestMergeOutcome
 }
 
-/** Route a main-checkout move without coupling the decision to either side effect. */
-export function moveMainCheckoutAfterLanding(
-  movesInstallation: boolean,
-  move: { installation(): void; otherProject(): void },
-): void {
-  if (movesInstallation) move.installation()
-  else move.otherProject()
-}
-
 function moveMainForPostLanding(
   adapter: PullRequestPostLandingAdapter,
   project: Project,
@@ -93,7 +83,7 @@ function moveMainForPostLanding(
     headBefore = adapter.mainHead(project)
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
-    return { moved: false, detail: `${detail}; recover with: ${recovery}`, recovery }
+    return { moved: false, detail, recovery }
   }
   let failure: string | null = null
   try {
@@ -106,7 +96,7 @@ function moveMainForPostLanding(
       if (adapter.mainHead(project) === headBefore) {
         return {
           moved: false,
-          detail: `${failure}; recover with: ${recovery}`,
+          detail: failure,
           recovery,
         }
       }
@@ -159,7 +149,7 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
   entryClosure: entryClosureAtCommit,
   mainHead: mainCheckoutHead,
   moveMain(project, mergeCommit, movesInstallation) {
-    moveMainCheckoutAfterLanding(movesInstallation, {
+    routeMainCheckoutMove(movesInstallation, {
       installation() {
         verifyMainCheckout(project)
         const result = moveRegisteredMainCheckout(project)
@@ -204,13 +194,6 @@ export function postLandingHandOffInvocation(
   return movesInstallation
     ? { argv: [join(projectPath, 'bin', PLATFORM_SLUG)], cwd: projectPath }
     : { argv: bottegaEntryArgv(PLATFORM_SLUG) }
-}
-
-function projectMovesInstallation(project: Project): boolean {
-  return movesRunningBottegaInstallation(
-    Boolean(embeddedDistributionManifest()),
-    isInstallationRoot(project.path),
-  )
 }
 
 /**
@@ -382,7 +365,7 @@ export function completePullRequestPostLanding(input: {
         : { output: '' },
       requiredRelease: failedRequiredRelease(
         decision.required,
-        decision.decided ? move.detail : decision.error,
+        decision.decided ? `${move.detail}; recover with: ${move.recovery}` : decision.error,
       ),
     })
   }

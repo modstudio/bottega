@@ -1,10 +1,9 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { isInstallationRoot } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, fenceStoreAfterCheckoutMove, writableDb } from '../database/db.ts'
-import { movesRunningBottegaInstallation } from '../database/machine-update-mover.ts'
+import { projectMovesInstallation } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
@@ -12,7 +11,6 @@ import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
-  moveMainCheckoutAfterLanding,
   POST_LANDING_REPORTED_EXIT_CODE,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
@@ -167,14 +165,9 @@ test('a successful move fences this process and hands off the exact fixed identi
 })
 
 test('another project uses the plain move and the current installation hand-off', () => {
-  const movesInstallation = movesRunningBottegaInstallation(false, isInstallationRoot(project.path))
-  const calls: string[] = []
-  moveMainCheckoutAfterLanding(movesInstallation, {
-    installation: () => calls.push('machine-update'),
-    otherProject: () => calls.push('plain-fast-forward'),
-  })
+  const movesInstallation = projectMovesInstallation(project)
 
-  expect(calls).toEqual(['plain-fast-forward'])
+  expect(movesInstallation).toBeFalse()
   expect(postLandingHandOffInvocation(project.path, movesInstallation)).toEqual({
     argv: bottegaEntryArgv(PLATFORM_SLUG),
   })
@@ -372,6 +365,34 @@ test('another-project move failure reports the plain git recovery', () => {
     `registered main checkout is dirty; clean it; recover with: git -C ${project.path} fetch origin, then git -C ${project.path} merge --ff-only merge-commit, then ${PLATFORM_SLUG} pr merge 42 --release-required`,
   )
   expect(outcome.output).not.toContain(`${project.path}/bin/${PLATFORM_SLUG} machine update`)
+})
+
+test('a promotion move failure prints its recovery exactly once', () => {
+  const recovery = `${project.path}/bin/${PLATFORM_SLUG} machine update, then ${PLATFORM_SLUG} pr merge 42 --release-required`
+  const outcome = complete({
+    workflowPromotionDue: true,
+    movesInstallation: true,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {
+        throw new Error('registered main checkout is dirty; clean it')
+      },
+      fence: () => {
+        throw new Error('fence must not run')
+      },
+      handOff: () => {
+        throw new Error('hand-off must not run')
+      },
+    },
+  })
+  const promotion = outcome.output
+    .split('\n')
+    .find((line) => line.startsWith('workflow draft promotion failed'))
+
+  expect(promotion).toContain(`clear with: ${recovery}`)
+  expect(promotion?.split(recovery)).toHaveLength(2)
 })
 
 test.each([0, 20, 21])('the parent propagates child output and exit %i', (exitCode) => {

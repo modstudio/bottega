@@ -1,9 +1,13 @@
 // concern: registered main-checkout mover adapter
-/** Runs the one move-and-migrate command through the registered main checkout's own binary. */
+/**
+ * Runs the one move-and-migrate command through the registered main checkout's own binary.
+ * It strips only installation and per-store overrides; the state root remains the machine's own.
+ */
 
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { INSTALL_HOME_ENV } from '../../../shared/install-root.ts'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
+import { INSTALL_HOME_ENV, isInstallationRoot } from '../../../shared/install-root.ts'
 
 const MAIN_STORE_OVERRIDE_ENV = `${PLATFORM_SLUG.toUpperCase()}_ORCHESTRATOR_DB`
 const WEB_STORE_OVERRIDE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
@@ -25,6 +29,22 @@ export function movesRunningBottegaInstallation(
   projectIsInstallationRoot: boolean,
 ): boolean {
   return !embeddedDistribution && projectIsInstallationRoot
+}
+
+/** Derive whether moving this project's main checkout moves the running installation. */
+export function projectMovesInstallation(project: { path: string }): boolean {
+  return movesRunningBottegaInstallation(
+    Boolean(embeddedDistributionManifest()),
+    isInstallationRoot(project.path),
+  )
+}
+
+/** Route an already-validated main-checkout move through its applicable mover. */
+export function routeMainCheckoutMove<Result>(
+  movesInstallation: boolean,
+  move: { installation(): Result; otherProject(): Result },
+): Result {
+  return movesInstallation ? move.installation() : move.otherProject()
 }
 
 /** Build the child identity without inheriting either installation or store overrides. */

@@ -15,10 +15,16 @@ test('refuses branch-moving git calls outside the mover and named non-main call 
     'shared/unsafe.ts': "function moveMainCheckout() { git(['merge', '--ff-only'], cwd) }",
     'orchestrator/src/spawn.ts':
       "function moveMainCheckout() { spawn(['git', '-C', cwd, 'reset', '--hard', tip]) }",
+    'orchestrator/src/configured-spawn.ts':
+      "function moveMainCheckout() { spawn(['git', '-c', 'x=y', 'pull']) }",
+    'orchestrator/src/configured-adapter.ts':
+      "function moveMainCheckout() { git(['-c', 'x=y', 'merge', '--ff-only', remote], cwd) }",
   })
 
   expect(mainCheckoutMoveViolations(findings)).toEqual([
     'hub/src/unsafe.ts:1: pull may move a registered main checkout; move the call into the orchestrator mover orchestrator/src/database/machine-update-mover.ts, or remove it',
+    'orchestrator/src/configured-adapter.ts:1: merge --ff-only may move a registered main checkout; route it through moveRegisteredMainCheckout in orchestrator/src/database/machine-update-mover.ts, which runs machine update',
+    'orchestrator/src/configured-spawn.ts:1: pull may move a registered main checkout; route it through moveRegisteredMainCheckout in orchestrator/src/database/machine-update-mover.ts, which runs machine update',
     'orchestrator/src/spawn.ts:1: reset --hard may move a registered main checkout; route it through moveRegisteredMainCheckout in orchestrator/src/database/machine-update-mover.ts, which runs machine update',
     'shared/unsafe.ts:1: merge --ff-only may move a registered main checkout; move the call into the orchestrator mover orchestrator/src/database/machine-update-mover.ts, or remove it',
   ])

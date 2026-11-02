@@ -1,4 +1,5 @@
 // This guard recognizes literal argv at production git call sites, including git-prefixed spawns.
+// Before the subcommand it skips -C/-c pairs plus --git-dir=, --work-tree=, and --no-pager.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -90,12 +91,24 @@ function literalArgv(node: ts.CallExpression): Array<string | null> | null {
 }
 
 function branchMove(argv: readonly (string | null)[]): string | null {
-  let command = argv
-  if (command[0] === 'git') {
-    let offset = 1
-    while (command[offset] === '-C' && offset + 1 < command.length) offset += 2
-    command = command.slice(offset)
+  let offset = argv[0] === 'git' ? 1 : 0
+  while (offset < argv.length) {
+    const option = argv[offset]
+    if ((option === '-C' || option === '-c') && offset + 1 < argv.length) {
+      offset += 2
+      continue
+    }
+    if (
+      option === '--no-pager' ||
+      option?.startsWith('--git-dir=') ||
+      option?.startsWith('--work-tree=')
+    ) {
+      offset++
+      continue
+    }
+    break
   }
+  const command = argv.slice(offset)
   if (command[0] === 'pull') return 'pull'
   if (command[0] === 'merge' && command.includes('--ff-only')) return 'merge --ff-only'
   if (command[0] === 'reset' && command.includes('--hard')) return 'reset --hard'

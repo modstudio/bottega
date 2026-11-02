@@ -12,6 +12,7 @@ export const databaseModules: ArchitectureModule[] = [
   module('orchestrator/src/database/machine-update-mover.ts', [
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/embedded-assets.ts',
     '../../../shared/install-root.ts',
   ]),
   module('orchestrator/src/database/slow-statements.ts', ['bun:sqlite']),

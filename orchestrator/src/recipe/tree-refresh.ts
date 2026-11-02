@@ -3,13 +3,12 @@
 
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { isInstallationRoot } from '../../../shared/install-root.ts'
 import {
   moveRegisteredMainCheckout,
-  movesRunningBottegaInstallation,
+  projectMovesInstallation,
+  routeMainCheckoutMove,
   throwMainCheckoutUpdateFailure,
 } from '../database/machine-update-mover.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
@@ -59,18 +58,13 @@ export function decideMainCheckoutBranch(
   return branch === trunk ? { action: 'refresh' } : { action: 'refuse', branch }
 }
 
-/** Route an already-validated main checkout through its applicable mover. */
-export function moveMainCheckoutForRefresh(
-  movesInstallation: boolean,
-  move: {
-    refuseCollisions(): void
-    installation(): { exitCode: number; output: string }
-    otherProject(): string
-  },
-): string[] {
+/** Refuse path collisions before moving and present the machine-update outcome. */
+export function refreshInstallationMainCheckout(move: {
+  refuseCollisions(): void
+  update(): { exitCode: number; output: string }
+}): string[] {
   move.refuseCollisions()
-  if (!movesInstallation) return [move.otherProject()]
-  const moved = move.installation()
+  const moved = move.update()
   throwMainCheckoutUpdateFailure(moved)
   return moved.output ? moved.output.split('\n') : ['updated main checkout through machine update']
 }
@@ -297,17 +291,17 @@ function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>)
     )
   }
 
-  const movesInstallation = movesRunningBottegaInstallation(
-    Boolean(embeddedDistributionManifest()),
-    isInstallationRoot(project.path),
-  )
-  return moveMainCheckoutForRefresh(movesInstallation, {
-    refuseCollisions() {
-      const refreshRemoteCommit = fetchRefreshRemote(treeRoot, trunk)
-      refuseRefreshPathCollisions(treeRoot, refreshRemoteCommit)
+  return routeMainCheckoutMove(projectMovesInstallation(project), {
+    installation() {
+      return refreshInstallationMainCheckout({
+        refuseCollisions() {
+          const refreshRemoteCommit = fetchRefreshRemote(treeRoot, trunk)
+          refuseRefreshPathCollisions(treeRoot, refreshRemoteCommit)
+        },
+        update: () => moveRegisteredMainCheckout(project),
+      })
     },
-    installation: () => moveRegisteredMainCheckout(project),
-    otherProject: () => fastForwardTree(treeRoot, trunk, trunk),
+    otherProject: () => [fastForwardTree(treeRoot, trunk, trunk)],
   })
 }
 

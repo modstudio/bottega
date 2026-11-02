@@ -1,16 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { isInstallationRoot } from '../../../shared/install-root.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { movesRunningBottegaInstallation } from '../database/machine-update-mover.ts'
+import { routeMainCheckoutMove } from '../database/machine-update-mover.ts'
 import type { TrackedRecipe } from './recipe-schema.ts'
 import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recipe.ts'
 import {
   collidingRefreshPaths,
   decideMainCheckoutBranch,
   decideTreeRefresh,
-  moveMainCheckoutForRefresh,
+  refreshInstallationMainCheckout,
   refreshStepContext,
   requireRefreshSnapshot,
   snapshotlessRefreshPlaceholder,
@@ -60,50 +59,54 @@ describe('main checkout branch decision', () => {
 })
 
 test('another project main tree refresh uses the plain fast-forward', () => {
-  const movesInstallation = movesRunningBottegaInstallation(
-    false,
-    isInstallationRoot('/fixture/another-project'),
-  )
   const calls: string[] = []
-  const output = moveMainCheckoutForRefresh(movesInstallation, {
-    refuseCollisions: () => calls.push('collision-check'),
+  const output = routeMainCheckoutMove(false, {
     installation: () => {
       calls.push('machine-update')
-      return { exitCode: 0, output: 'machine update' }
+      return ['machine update']
     },
     otherProject: () => {
       calls.push('plain-fast-forward')
-      return 'fast-forwarded main'
+      return ['fast-forwarded main']
     },
   })
 
-  expect(calls).toEqual(['collision-check', 'plain-fast-forward'])
+  expect(calls).toEqual(['plain-fast-forward'])
   expect(output).toEqual(['fast-forwarded main'])
 })
 
 test('installation main refresh checks collisions and owns machine-update outcomes', () => {
   const calls: string[] = []
   expect(() =>
-    moveMainCheckoutForRefresh(true, {
-      refuseCollisions: () => calls.push('collision-check'),
-      installation: () => ({ exitCode: 1, output: 'migration drain expired' }),
-      otherProject: () => 'must not run',
+    refreshInstallationMainCheckout({
+      refuseCollisions: () => {
+        calls.push('collision-check')
+        throw new Error('incoming path collision')
+      },
+      update: () => {
+        calls.push('machine-update')
+        return { exitCode: 0, output: 'must not move' }
+      },
     }),
-  ).toThrow('migration drain expired')
+  ).toThrow('incoming path collision')
   expect(calls).toEqual(['collision-check'])
 
-  expect(
-    moveMainCheckoutForRefresh(true, {
+  expect(() =>
+    refreshInstallationMainCheckout({
       refuseCollisions: () => {},
-      installation: () => ({ exitCode: 0, output: 'moved main\nmigrated stores' }),
-      otherProject: () => 'must not run',
+      update: () => ({ exitCode: 1, output: 'migration drain expired' }),
+    }),
+  ).toThrow('migration drain expired')
+  expect(
+    refreshInstallationMainCheckout({
+      refuseCollisions: () => {},
+      update: () => ({ exitCode: 0, output: 'moved main\nmigrated stores' }),
     }),
   ).toEqual(['moved main', 'migrated stores'])
   expect(
-    moveMainCheckoutForRefresh(true, {
+    refreshInstallationMainCheckout({
       refuseCollisions: () => {},
-      installation: () => ({ exitCode: 0, output: '' }),
-      otherProject: () => 'must not run',
+      update: () => ({ exitCode: 0, output: '' }),
     }),
   ).toEqual(['updated main checkout through machine update'])
 })

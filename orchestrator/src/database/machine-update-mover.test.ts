@@ -5,6 +5,8 @@ import { INSTALL_HOME_ENV, isInstallationRoot } from '../../../shared/install-ro
 import {
   mainCheckoutUpdateInvocation,
   movesRunningBottegaInstallation,
+  projectMovesInstallation,
+  routeMainCheckoutMove,
   throwMainCheckoutUpdateFailure,
 } from './machine-update-mover.ts'
 
@@ -43,4 +45,27 @@ test('only a non-embedded platform checkout moves the running installation', () 
     movesRunningBottegaInstallation(false, isInstallationRoot('/not/a/platform/checkout')),
   ).toBeFalse()
   expect(movesRunningBottegaInstallation(true, isInstallationRoot(checkoutRoot))).toBeFalse()
+})
+
+test('a project moves the installation only at the real checkout root', () => {
+  const checkoutRoot = join(import.meta.dir, '../../..')
+  expect(projectMovesInstallation({ path: checkoutRoot })).toBeTrue()
+  expect(projectMovesInstallation({ path: '/not/a/platform/checkout' })).toBeFalse()
+})
+
+test('the main-checkout router selects exactly one mover', () => {
+  const calls: string[] = []
+  expect(
+    routeMainCheckoutMove(true, {
+      installation: () => (calls.push('installation'), 'updated installation'),
+      otherProject: () => (calls.push('other-project'), 'updated other project'),
+    }),
+  ).toBe('updated installation')
+  expect(
+    routeMainCheckoutMove(false, {
+      installation: () => (calls.push('installation'), 'updated installation'),
+      otherProject: () => (calls.push('other-project'), 'updated other project'),
+    }),
+  ).toBe('updated other project')
+  expect(calls).toEqual(['installation', 'other-project'])
 })
