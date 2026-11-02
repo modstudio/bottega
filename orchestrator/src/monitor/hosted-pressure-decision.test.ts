@@ -4,6 +4,8 @@ import {
   CLEAR_HOSTED_PRESSURE_STATE,
   decideHostedPressure,
   HOSTED_API_P95_THRESHOLD_SECONDS,
+  HOSTED_METRICS_BUDGET_STAGE,
+  HOSTED_METRICS_TOKEN_STAGE,
   HOSTED_PRESSURE_CLEAR_MS,
   HOSTED_STEAL_THRESHOLD,
   HOSTED_THROTTLE_THRESHOLD,
@@ -129,6 +131,38 @@ describe('hosted pressure decision', () => {
     expect(result.conditions.map(({ kind }) => kind)).toEqual([
       'hosted-pressure',
       'observation-error',
+    ])
+  })
+
+  test('a token failure reports the hosted service as unreachable', () => {
+    const result = decideHostedPressure(CLEAR_HOSTED_PRESSURE_STATE, {
+      kind: 'failed',
+      query: HOSTED_METRICS_TOKEN_STAGE,
+      error: 'token resolve exceeded 50 ms',
+      at: new Date(start).toISOString(),
+    })
+    expect(result.conditions).toEqual([
+      expect.objectContaining({
+        kind: 'observation-error',
+        detail: 'could not observe: hosted unreachable (token resolve exceeded 50 ms)',
+      }),
+    ])
+  })
+
+  test('an observation budget failure reports a non-query stage', () => {
+    const result = decideHostedPressure(CLEAR_HOSTED_PRESSURE_STATE, {
+      kind: 'failed',
+      query: HOSTED_METRICS_BUDGET_STAGE,
+      error: 'observation exceeded 50 ms',
+      at: new Date(start).toISOString(),
+    })
+    expect(result.conditions).toEqual([
+      expect.objectContaining({
+        kind: 'observation-error',
+        subject: 'hosted-metrics:budget',
+        detail:
+          'could not observe: hosted metrics observation exceeded its budget (observation exceeded 50 ms)',
+      }),
     ])
   })
 

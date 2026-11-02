@@ -63,3 +63,23 @@ test('not configured is absent while a configured failure refuses', async () => 
     }),
   ).rejects.toMatchObject({ reason: 'unreachable' })
 })
+
+test('the hosted resolver receives the caller abort signal', async () => {
+  const controller = new AbortController()
+  const root = mkdtempSync(join(tmpdir(), 'env-hosted-signal-'))
+  let receivedSignal: AbortSignal | undefined
+  await readEnvValuesWithHosted(
+    ['TOKEN'],
+    {
+      HOME: root,
+      BOTTEGA_CONFIG_HOME: join(root, 'missing-config'),
+      BOTTEGA_HARNESS_ENV_FILE: '',
+    },
+    async (_names, _injected, signal) => {
+      receivedSignal = signal
+      return { values: { TOKEN: 'hosted' }, sealedEmpty: [] }
+    },
+    controller.signal,
+  )
+  expect(receivedSignal).toBe(controller.signal)
+})

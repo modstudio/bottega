@@ -496,7 +496,7 @@ inspect machine conditions that need attention
 - `--history`: list recorded monitor passes
 - `--lock-holder`: show the process holding the orchestrator store write lock
 - `--notices`: claim undelivered monitor notices for this session
-- `--skip-board-refresh`: claim notices without refreshing the board
+- `--skip-board-refresh`: claim notices without refreshing the board or observing hosted pressure
 - `--json`: write the monitor result as JSON
 
 ### Related

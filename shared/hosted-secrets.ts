@@ -53,8 +53,8 @@ const SECRET_SCOPES = ['user', 'space'] as const
 
 type OneSecret = { value?: string; sealedEmpty: boolean }
 
-async function defaults(): Promise<Dependencies> {
-  const client = configClient()
+async function defaults(signal?: AbortSignal): Promise<Dependencies> {
+  const client = configClient(process.env, fetch, undefined, signal)
   const pair = readMachineKey()
   if (!pair) throw new HostedSecretError('*', 'machine-key-missing')
   return { client, machine: await machineKeyInfo(pair), trust: await readTrustList() }
@@ -115,10 +115,11 @@ async function one(name: string, deps: Dependencies): Promise<OneSecret> {
 export async function readHostedSecrets(
   names: readonly string[],
   injected?: Dependencies,
+  signal?: AbortSignal,
 ): Promise<HostedSecretResolution> {
   let deps: Dependencies
   try {
-    deps = injected ?? (await defaults())
+    deps = injected ?? (await defaults(signal))
   } catch (error) {
     if (error instanceof ConfigClientError) throw error
     throw new HostedSecretError(

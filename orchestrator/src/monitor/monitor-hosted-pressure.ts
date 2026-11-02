@@ -6,7 +6,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { withinHostedBoardRefreshBudget } from '../board/board-hosted-refresh-budget.ts'
+import {
+  BUDGET_SPENT,
+  withinHostedBoardRefreshBudget,
+} from '../board/board-hosted-refresh-budget.ts'
 import { hostedBoardPostInput } from '../board/board-operations.ts'
 import { boardActor } from '../board/board-store.ts'
 import { db, writeTransaction } from '../database/db.ts'
@@ -18,6 +21,8 @@ import {
 import {
   CLEAR_HOSTED_PRESSURE_STATE,
   decideHostedPressure,
+  HOSTED_METRICS_BUDGET_STAGE,
+  HOSTED_METRICS_TOKEN_STAGE,
   type HostedPressureDecision,
   type HostedPressureObservation,
   type HostedPressureState,
@@ -45,6 +50,7 @@ type Dependencies = {
   clock?: number
   fetch?: typeof globalThis.fetch
   resolveToken?: typeof readEnvValuesWithHosted
+  observeBudgetMs?: number
   failFastStoreClaim?: boolean
   boardClient?: Pick<
     RecordApiClient,
@@ -93,41 +99,57 @@ async function queryMetric(
 
 async function observeHostedMetrics(
   at: string,
-  deps: Required<Pick<Dependencies, 'fetch' | 'resolveToken'>>,
+  deps: Required<Pick<Dependencies, 'fetch' | 'resolveToken' | 'observeBudgetMs'>>,
 ): Promise<HostedPressureObservation> {
-  let token: string | undefined
+  let stage: string = HOSTED_METRICS_TOKEN_STAGE
   try {
-    token = (await deps.resolveToken([HOSTED_FLY_METRICS_TOKEN]))[HOSTED_FLY_METRICS_TOKEN]
-  } catch (error) {
-    return { kind: 'failed', query: 'token', error: String(error), at }
-  }
-  if (!token) return { kind: 'unconfigured', at }
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), HOSTED_METRICS_QUERY_BUDGET_MS)
-  try {
-    const entries = await Promise.all(
-      (Object.keys(HOSTED_METRICS_QUERIES) as QueryName[]).map(async (name) => {
-        try {
-          return [name, await queryMetric(name, token, controller.signal, deps.fetch)] as const
-        } catch (error) {
-          throw { name, error }
+    return await withinHostedBoardRefreshBudget(async (signal) => {
+      let token: string | undefined
+      try {
+        token = (await deps.resolveToken([HOSTED_FLY_METRICS_TOKEN], undefined, undefined, signal))[
+          HOSTED_FLY_METRICS_TOKEN
+        ]
+      } catch (error) {
+        return { kind: 'failed', query: HOSTED_METRICS_TOKEN_STAGE, error: String(error), at }
+      }
+      if (!token) return { kind: 'unconfigured', at }
+      stage = 'queries'
+      try {
+        const entries = await Promise.all(
+          (Object.keys(HOSTED_METRICS_QUERIES) as QueryName[]).map(async (name) => {
+            try {
+              return [name, await queryMetric(name, token, signal, deps.fetch)] as const
+            } catch (error) {
+              throw { name, error }
+            }
+          }),
+        )
+        const values = Object.fromEntries(entries) as Record<QueryName, number | 'absent'>
+        return {
+          kind: 'sample',
+          stealFraction: values.steal,
+          throttleFraction: values.throttle,
+          balance: values.balance,
+          apiP95Seconds: values['api-p95'],
+          at,
         }
-      }),
-    )
-    const values = Object.fromEntries(entries) as Record<QueryName, number | 'absent'>
+      } catch (failure) {
+        const item = failure as { name?: string; error?: unknown }
+        return { kind: 'failed', query: item.name ?? 'unknown', error: String(item.error), at }
+      }
+    }, deps.observeBudgetMs)
+  } catch (error) {
+    const budgetExpired = error instanceof Error && error.message === BUDGET_SPENT
     return {
-      kind: 'sample',
-      stealFraction: values.steal,
-      throttleFraction: values.throttle,
-      balance: values.balance,
-      apiP95Seconds: values['api-p95'],
+      kind: 'failed',
+      query: budgetExpired && stage === 'queries' ? HOSTED_METRICS_BUDGET_STAGE : stage,
+      error: budgetExpired
+        ? stage === HOSTED_METRICS_TOKEN_STAGE
+          ? `token resolve exceeded ${deps.observeBudgetMs} ms`
+          : `observation exceeded ${deps.observeBudgetMs} ms`
+        : String(error),
       at,
     }
-  } catch (failure) {
-    const item = failure as { name?: string; error?: unknown }
-    return { kind: 'failed', query: item.name ?? 'unknown', error: String(item.error), at }
-  } finally {
-    clearTimeout(timeout)
   }
 }
 
@@ -242,6 +264,7 @@ export async function checkHostedPressureCached(
   const observation = await observeHostedMetrics(at, {
     fetch: dependencies.fetch ?? globalThis.fetch,
     resolveToken: dependencies.resolveToken ?? readEnvValuesWithHosted,
+    observeBudgetMs: dependencies.observeBudgetMs ?? HOSTED_METRICS_QUERY_BUDGET_MS,
   })
   const decision = decideHostedPressure(previous, observation)
   claimTransaction(database, dependencies.failFastStoreClaim, () => {

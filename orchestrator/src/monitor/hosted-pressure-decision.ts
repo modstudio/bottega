@@ -8,6 +8,8 @@ export const HOSTED_STEAL_THRESHOLD = 0.2
 export const HOSTED_THROTTLE_THRESHOLD = 0.1
 export const HOSTED_API_P95_THRESHOLD_SECONDS = 2
 export const HOSTED_PRESSURE_CLEAR_MS = 15 * 60_000
+export const HOSTED_METRICS_TOKEN_STAGE = 'token'
+export const HOSTED_METRICS_BUDGET_STAGE = 'budget'
 
 export type HostedMeasure = 'steal' | 'throttle' | 'api-p95'
 type RequiredMeasure = Extract<HostedMeasure, 'steal' | 'api-p95'>
@@ -109,7 +111,11 @@ function failedDecision(
 ): HostedPressureDecision {
   const error = observationError(
     observation,
-    `hosted metrics query ${observation.query} failed: ${observation.error}`,
+    observation.query === HOSTED_METRICS_TOKEN_STAGE
+      ? `could not observe: hosted unreachable (${observation.error})`
+      : observation.query === HOSTED_METRICS_BUDGET_STAGE
+        ? `could not observe: hosted metrics observation exceeded its budget (${observation.error})`
+        : `hosted metrics query ${observation.query} failed: ${observation.error}`,
   )
   return {
     state: previous,

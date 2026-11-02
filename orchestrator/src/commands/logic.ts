@@ -301,7 +301,10 @@ function registerMachineAttentionCommands(program: Command): void {
     .option('--history', 'list recorded monitor passes')
     .option('--lock-holder', 'show the process holding the orchestrator store write lock')
     .option('--notices', 'claim undelivered monitor notices for this session')
-    .option('--skip-board-refresh', 'claim notices without refreshing the board')
+    .option(
+      '--skip-board-refresh',
+      'claim notices without refreshing the board or observing hosted pressure',
+    )
     .option('--json', 'write the monitor result as JSON')
     .allowExcessArguments(false)
     .action((options) =>
