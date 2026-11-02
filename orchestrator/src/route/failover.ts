@@ -10,6 +10,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import type { ReviewRole } from '../review/review-role.ts'
+import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { ContinuationMessageBinding } from '../run/continuation-message.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
@@ -69,7 +70,7 @@ export type DetachSpec = {
   noWaitCapacity?: boolean
   carry?: boolean
   review?: string
-  resolvedReviewTarget?: { branch: string; commit: string; base: string }
+  resolvedReviewTarget?: ResolvedReviewTarget
   ownerSession?: string | null
   deliverables?: string[]
   timeoutMinutes?: number

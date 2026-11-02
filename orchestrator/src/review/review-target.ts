@@ -66,6 +66,8 @@ export type ReviewTargetRefDecision =
   | { kind: 'commit'; ref: string }
   | { kind: 'refuse'; message: string }
 
+export type ResolvedReviewTarget = { branch: string; commit: string; base: string }
+
 /** Resolve a commit target to the real branch whose review history it extends. */
 export function decideCommitReviewBranch(input: {
   reviewRef: string
@@ -237,7 +239,7 @@ export function resolveReviewTarget(
   reviewRef?: string,
   carry = false,
   launchKey?: string,
-): { branch: string; commit: string; base: string } | null {
+): ResolvedReviewTarget | null {
   if (reviewRef === undefined) return null
   if (!takesReviewTarget(jobName)) {
     throw new Error('--review is only valid for review-lens, safety, and craft')

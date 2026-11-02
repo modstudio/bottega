@@ -24,6 +24,7 @@ import { reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import type { ReviewRole } from '../review/review-role.ts'
+import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import { agentsOnBillingKey } from '../route/billing-key-hold.ts'
 import {
   decideFailover,
@@ -78,7 +79,7 @@ type SuccessorOptions = {
   deliverables: string[]
   timeoutMinutes: number | undefined
   keepTree: KeepTreeExemption | undefined
-  resolvedReviewTarget: { branch: string; commit: string; base: string } | undefined
+  resolvedReviewTarget: ResolvedReviewTarget | undefined
 }
 
 export type CloseInput = {

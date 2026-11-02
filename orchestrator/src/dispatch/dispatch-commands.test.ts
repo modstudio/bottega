@@ -4,6 +4,7 @@ import { resolveLens } from '../lens/lenses.ts'
 import {
   genericLensProfileNotices,
   lensDispatchNotices,
+  reviewDetachFields,
   reviewMemoryBranch,
   reviewRoleForDispatch,
   validateContinueBranchOptions,
@@ -39,8 +40,23 @@ test('unknown catalogue lens notice is omitted for the free-form inline job', ()
 })
 
 test('explicit --review target keys memory independently of the caller checkout branch', () => {
-  expect(reviewMemoryBranch('main', 'DEV-1373-target')).toBe('DEV-1373-target')
+  const resolved = { branch: 'DEV-1373-target', commit: 'a'.repeat(40), base: 'b'.repeat(40) }
+
+  expect(reviewMemoryBranch('main', resolved.branch)).toBe('DEV-1373-target')
   expect(reviewMemoryBranch('DEV-1373-caller', null)).toBe('DEV-1373-caller')
+})
+
+test('review detach fields carry one resolved target or preserve an unresolved raw ref', () => {
+  const resolved = { branch: 'DEV-2031-target', commit: 'a'.repeat(40), base: 'b'.repeat(40) }
+
+  expect(reviewDetachFields('5c156c96b', resolved)).toEqual({
+    review: '5c156c96b',
+    resolvedReviewTarget: resolved,
+  })
+  expect(reviewDetachFields('DEV-2031-target', null)).toEqual({
+    review: 'DEV-2031-target',
+    resolvedReviewTarget: undefined,
+  })
 })
 
 test('explicit branch continuation is limited to keyed implement and fix without base', () => {

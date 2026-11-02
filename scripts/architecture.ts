@@ -63,7 +63,7 @@ import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { workflowTreeModules } from './architecture-workflow-tree-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 
-export type ArchitectureModule = { file: string; allowed: string[] }
+export type ArchitectureModule = { file: string; allowed: string[]; typeOnlyAllowed?: string[] }
 type ArchitectureInversion = { from: string; to: string }
 type ArchitectureException = { from: string; to: string; dependencyTypes: string[]; reason: string }
 type ConcernManifest = {
@@ -900,9 +900,20 @@ export function architectureRules() {
       from: { path: exactArchitecturePath(entry.file) },
       to: {
         dependencyTypes: ['local'],
-        pathNot: entry.allowed.map(exactArchitecturePath),
+        pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? [])].map(exactArchitecturePath),
       },
     })),
+    ...modules.flatMap((entry) =>
+      (entry.typeOnlyAllowed ?? []).map((target) => ({
+        name: `module-${entry.file.replace(/[^a-z0-9]+/gi, '-')}-${target.replace(/[^a-z0-9]+/gi, '-')}-is-type-only`,
+        severity: 'error' as const,
+        from: { path: exactArchitecturePath(entry.file) },
+        to: {
+          path: exactArchitecturePath(target),
+          dependencyTypesNot: ['type-only'],
+        },
+      })),
+    ),
     ...importBoundaries.map((entry) => ({
       name: `import-${entry.name}`,
       severity: 'error' as const,

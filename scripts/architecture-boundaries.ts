@@ -255,7 +255,7 @@ export const importBoundaries: ImportBoundary[] = [
       './task-key-admission.ts',
     ],
     'Keep dispatch command adapters independent of transports, routing, worktrees, the CLI, and reviews.',
-    ['./review-memory.ts', '../review/review-role.ts'],
+    ['./review-memory.ts', '../review/review-role.ts', '../review/review-target.ts'],
   ),
 
   boundary(
@@ -438,6 +438,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/continuation-message.ts',
       '../run/run-types.ts',
       '../review/review-role.ts',
+      '../review/review-target.ts',
       './route.ts',
     ],
   ),

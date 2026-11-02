@@ -526,6 +526,7 @@ export async function detachRoutedRun(
     cwd: spec.cwd ?? cwd,
     repo: spec.repo,
     key: spec.key,
+    resolvedReviewTarget: spec.resolvedReviewTarget,
   })
   return dispatchDetached(
     jobName,

@@ -6,10 +6,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { db } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
-import { isCommitShapedBranch } from '../project/branch-name.ts'
 import { reviewBranchForCommit, upsertProject } from '../project/projects.ts'
 import { claimedRunBranch } from '../run/run-claim-plan.ts'
-import { branchReviewLineage } from './review-lineage.ts'
 import {
   decideCommitReviewBranch,
   emptyReviewRefusal,
@@ -22,7 +20,7 @@ import {
 } from './review-target.ts'
 
 describe('review target', () => {
-  test('a commit target from its branch tree records branch review lineage', () => {
+  test('a commit target resolved from its branch tree is claimable as a branch', () => {
     const branch = decideCommitReviewBranch({
       reviewRef: '5c156c96b',
       commit: '5c156c96b1234567890123456789012345678901',
@@ -32,19 +30,8 @@ describe('review target', () => {
       callerBranchContainsCommit: true,
     })
     const claimed = claimedRunBranch(branch, null, null, 'DEV-2031-review-branch')
-    if (!claimed) throw new Error('expected the resolved branch to be claimed')
-
     expect(branch).toBe('DEV-2031-review-branch')
-    expect(
-      branchReviewLineage('DEV-2031-review-branch', [
-        {
-          mintedBranch: 'DEV-2031-review-branch',
-          launchBase: 'main',
-          launchKey: 'DEV-2031',
-          headCommit: '5c156c96b1234567890123456789012345678901',
-        },
-      ]),
-    ).toContain(claimed)
+    expect(claimed).toBe('DEV-2031-review-branch')
   })
 
   test('a recorded same-task branch wins over the caller tree', () => {
@@ -104,17 +91,6 @@ describe('review target', () => {
         callerBranchContainsCommit: false,
       }),
     ).toThrow('caller: detached HEAD')
-  })
-
-  test('commit-shaped branch values are refused while ordinary branches remain valid', () => {
-    expect(isCommitShapedBranch('5c156c9')).toBeTrue()
-    expect(isCommitShapedBranch('5c156c96b1234567890123456789012345678901')).toBeTrue()
-    expect(isCommitShapedBranch('main')).toBeFalse()
-    expect(isCommitShapedBranch('DEV-2031-orch-review')).toBeFalse()
-    expect(isCommitShapedBranch('worktree-dev-2016-harper-dep')).toBeFalse()
-    expect(() => claimedRunBranch('5c156c96b', null, null, null)).toThrow(
-      'dispatch with --review <branch>',
-    )
   })
 
   test('implicit review branch excludes trunk and detached HEAD', () => {

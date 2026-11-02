@@ -1,6 +1,6 @@
 import { REVIEW_SEVERITY_INSTRUCTION } from '../contract/contract.ts'
 import { resolveLens } from '../lens/lenses.ts'
-import { reviewArtifactBlock } from '../review/review-target.ts'
+import { reviewArtifactBlock, type ResolvedReviewTarget } from '../review/review-target.ts'
 
 export function operatorKnowledgeSection(pack: { markdown: string } | null): string {
   return pack?.markdown ? `WHAT THE OPERATOR WANTS YOU TO KNOW\n\n${pack.markdown}` : ''
@@ -44,7 +44,7 @@ export function bindReviewInstructions(input: {
   prompt: string
   findings: boolean
   firstTurn: boolean
-  reviewTarget: { branch: string; commit: string; base: string } | null
+  reviewTarget: ResolvedReviewTarget | null
   readsRepo: boolean
   checkoutCommit: string | null
   coverageBase: string | null

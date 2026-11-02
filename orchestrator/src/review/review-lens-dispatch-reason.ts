@@ -4,7 +4,7 @@
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
-import { resolveReviewTarget } from './review-target.ts'
+import { resolveReviewTarget, type ResolvedReviewTarget } from './review-target.ts'
 import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 const OPERATOR_ORDERED: ReviewLensSelectionReason = 'operator-ordered'
@@ -16,6 +16,7 @@ export function reviewLensSelectionReasonForDispatch(input: {
   cwd: string
   repo?: string
   key?: string
+  resolvedReviewTarget?: ResolvedReviewTarget
 }): ReviewLensSelectionReason {
   if (!input.lens) return OPERATOR_ORDERED
   if (input.jobName !== 'review-lens' || !input.review) return OPERATOR_ORDERED
@@ -32,7 +33,9 @@ function funnelReasonForLens(input: {
   const project = input.repo ? projectByName(input.repo) : projectAt(input.cwd)
   if (!project) return OPERATOR_ORDERED
   const checkout = input.repo ? project.path : input.cwd
-  const target = resolveReviewTarget('review-lens', checkout, input.review, false, input.key)
+  const target =
+    input.resolvedReviewTarget ??
+    resolveReviewTarget('review-lens', checkout, input.review, false, input.key)
   if (!target) return OPERATOR_ORDERED
   const trunk = project.settings.trunk?.trim()
   if (!trunk) return OPERATOR_ORDERED

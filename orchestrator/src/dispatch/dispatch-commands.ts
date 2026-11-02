@@ -20,6 +20,7 @@ import {
   retiredProjectRefusal,
 } from '../project/projects.ts'
 import type { ReviewRole } from '../review/review-role.ts'
+import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
@@ -159,7 +160,7 @@ type DispatchPresentation = {
     reviewRef?: string,
     carry?: boolean,
     launchKey?: string,
-  ): { branch: string; commit: string; base: string } | null
+  ): ResolvedReviewTarget | null
   resolveCallerCheckout(
     cwd?: string,
     repo?: string,
@@ -270,6 +271,13 @@ export function reviewMemoryBranch(
   explicitReviewBranch: string | null,
 ): string | null {
   return explicitReviewBranch ?? callerBranch
+}
+
+export function reviewDetachFields(
+  review: string | undefined,
+  resolvedReviewTarget: ResolvedReviewTarget | null,
+): Pick<DetachSpec, 'review' | 'resolvedReviewTarget'> {
+  return { review, resolvedReviewTarget: resolvedReviewTarget ?? undefined }
 }
 
 function taskBranchBypassWarningKey(
@@ -616,8 +624,7 @@ export async function dispatchCommand(
       noFailover: has('no-failover'),
       noWaitCapacity: has('no-wait-capacity'),
       carry: has('carry'),
-      review: reviewRef,
-      resolvedReviewTarget: resolvedReviewTarget ?? undefined,
+      ...reviewDetachFields(reviewRef, resolvedReviewTarget),
       cwd: callerCwd,
       launchCwd: caller.launchCwd,
       deliverables,
@@ -674,7 +681,7 @@ export async function dispatchCommand(
     ...(transportExplicit ? { transport, transportPinSource: resolved.transportPinSource } : {}),
     noFailover: has('no-failover'),
     carry: has('carry'),
-    review: reviewRef,
+    ...reviewDetachFields(reviewRef, resolvedReviewTarget),
     cwd: callerCwd,
     launchCwd: caller.launchCwd,
     deliverables,

@@ -1,9 +1,16 @@
 import { dirname, normalize } from 'node:path'
 import type { ArchitectureModule } from './architecture.ts'
 
-const module = (file: string, allowed: string[]): ArchitectureModule => ({
+const module = (
+  file: string,
+  allowed: string[],
+  typeOnlyAllowed: string[] = [],
+): ArchitectureModule => ({
   file,
   allowed: allowed.map((target) =>
+    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
+  ),
+  typeOnlyAllowed: typeOnlyAllowed.map((target) =>
     target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
   ),
 })
@@ -52,7 +59,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/keep-tree-hold.ts',
     './run-resume-options.ts',
-  ]),
+  ], ['../review/review-target.ts']),
   module('orchestrator/src/run/run-resume-claim.ts', [
     '../branch/branch-ref-guard.ts',
     '../git/git-environment.ts',
@@ -277,7 +284,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
-  ]),
+  ], ['../review/review-target.ts']),
   module('orchestrator/src/run/run-lease.ts', [
     '../filesystem-identity-plan.ts',
     '../database/database-location.ts',
@@ -345,7 +352,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../transport/transport-goose-ledger.ts',
     '../worktree/worktree-types.ts',
-  ]),
+  ], ['../review/review-target.ts']),
   module('orchestrator/src/transport/codex-ask-exposure.ts', [
     '../../../shared/brand.ts',
     '../contract/codex-mcp-tool.ts',
