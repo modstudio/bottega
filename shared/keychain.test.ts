@@ -1,10 +1,12 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   classifySecretFailure,
   decideKeychainBackend,
   deleteLinuxKeychainItem,
+  readKeychainItem,
   readLinuxKeychainItem,
   type SecurityRunner,
+  writeKeychainItem,
   writeLinuxKeychainItem,
 } from './keychain.ts'
 import { decideMachineKeyStore } from './machine-key-store.ts'
@@ -17,6 +19,8 @@ const result = (exitCode: number, stdout = '', stderr = '') => ({
 })
 const secretError = (code: string, message: string) =>
   result(70, '', JSON.stringify({ code, message }))
+const PLATFORM_KEY = Symbol.for('orch.keychain-platform')
+const platformHolder = globalThis as typeof globalThis & { [PLATFORM_KEY]?: string }
 
 describe('secret backend decisions', () => {
   test('selects the platform backend and refuses unsupported platforms', () => {
@@ -127,5 +131,41 @@ describe('Linux secret runner', () => {
         secretError('ERR_SECRETS_PLATFORM_ERROR', `rejected ${value}`),
       ),
     ).toThrow('rejected ***')
+  })
+})
+
+describe('public Linux backend dispatch', () => {
+  let originalPlatform: string | undefined
+
+  beforeEach(() => {
+    originalPlatform = platformHolder[PLATFORM_KEY]
+    platformHolder[PLATFORM_KEY] = 'linux'
+  })
+
+  afterEach(() => {
+    if (originalPlatform === undefined) delete platformHolder[PLATFORM_KEY]
+    else platformHolder[PLATFORM_KEY] = originalPlatform
+  })
+
+  test('routes reads and writes through the Bun child argv', () => {
+    const operations: string[] = []
+    const runner: SecurityRunner = (argv, stdin, env) => {
+      expect(argv).toEqual([process.execPath, '-e', expect.any(String)])
+      const operation = env?.BOTTEGA_SECRET_OPERATION
+      if (!operation) throw new Error('expected a Linux secret operation')
+      operations.push(operation)
+      if (operation === 'set') {
+        expect(new TextDecoder().decode(stdin)).toBe('written-value')
+        return result(0)
+      }
+      return result(
+        0,
+        operation === 'get' && operations.length === 1 ? 'read-value' : 'written-value',
+      )
+    }
+
+    expect(readKeychainItem('service', 'account', runner)).toBe('read-value')
+    expect(writeKeychainItem('service', 'account', 'written-value', runner)).toBeUndefined()
+    expect(operations).toEqual(['get', 'set', 'get'])
   })
 })

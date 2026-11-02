@@ -32,6 +32,7 @@ const SECRET_FAILURE_EXIT_CODE = 70
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()
 const RUNNER_KEY = Symbol.for('orch.security-runner')
+const PLATFORM_KEY = Symbol.for('orch.keychain-platform')
 const SECRET_OPERATION_ENV = 'BOTTEGA_SECRET_OPERATION'
 const SECRET_SERVICE_ENV = 'BOTTEGA_SECRET_SERVICE'
 const SECRET_ACCOUNT_ENV = 'BOTTEGA_SECRET_ACCOUNT'
@@ -136,6 +137,12 @@ export function decideKeychainBackend(platform: string): KeychainBackend {
   if (platform === 'darwin') return 'security'
   if (platform === 'linux') return 'bun-secrets'
   throw new Error(`keychain storage is unsupported on platform ${platform}`)
+}
+
+export function keychainPlatform(): string {
+  if (process.env.NODE_ENV !== 'test') return process.platform
+  const holder = globalThis as typeof globalThis & { [PLATFORM_KEY]?: string }
+  return holder[PLATFORM_KEY] ?? process.platform
 }
 
 function linuxEnvironment(
@@ -288,7 +295,7 @@ export function readKeychainItem(
   account: string,
   runner: SecurityRunner = runSecurity,
 ): string | null {
-  if (decideKeychainBackend(process.platform) === 'bun-secrets')
+  if (decideKeychainBackend(keychainPlatform()) === 'bun-secrets')
     return readLinuxKeychainItem(service, account, runner)
   const result = runner(['security', 'find-generic-password', '-a', account, '-s', service, '-w'])
   if (result.exitCode === MISSING_ITEM_EXIT_CODE) return null
@@ -302,7 +309,7 @@ export async function readKeychainItemAsync(
   signal?: AbortSignal,
   runner: AsyncSecurityRunner = runSecurityAsync,
 ): Promise<string | null> {
-  if (decideKeychainBackend(process.platform) === 'bun-secrets')
+  if (decideKeychainBackend(keychainPlatform()) === 'bun-secrets')
     return readLinuxKeychainItemAsync(service, account, signal, runner)
   const result = await runner(
     ['security', 'find-generic-password', '-a', account, '-s', service, '-w'],
@@ -320,7 +327,7 @@ export function writeKeychainItem(
   value: string,
   runner: SecurityRunner = runSecurity,
 ): void {
-  if (decideKeychainBackend(process.platform) === 'bun-secrets') {
+  if (decideKeychainBackend(keychainPlatform()) === 'bun-secrets') {
     writeLinuxKeychainItem(service, account, value, runner)
     return
   }
@@ -338,7 +345,7 @@ export function deleteKeychainItem(
   account: string,
   runner: SecurityRunner = runSecurity,
 ): void {
-  if (decideKeychainBackend(process.platform) === 'bun-secrets') {
+  if (decideKeychainBackend(keychainPlatform()) === 'bun-secrets') {
     deleteLinuxKeychainItem(service, account, runner)
     return
   }

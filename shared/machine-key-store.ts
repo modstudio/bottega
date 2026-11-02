@@ -3,7 +3,12 @@ import { chmodSync, mkdirSync, readFileSync, type Stats, statSync, writeFileSync
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
-import { readKeychainItem, type SecurityRunner, writeKeychainItem } from './keychain.ts'
+import {
+  keychainPlatform,
+  readKeychainItem,
+  type SecurityRunner,
+  writeKeychainItem,
+} from './keychain.ts'
 import { machineKeyId } from './machine-key-id.ts'
 import type { MachineKeyPair } from './secret-envelope.ts'
 
@@ -52,7 +57,7 @@ export function decideMachineKeyStore(
 }
 
 function useFile(env: ConfigEnvironment): boolean {
-  return decideMachineKeyStore(env[KEYSTORE_ENV], process.platform) === 'file'
+  return decideMachineKeyStore(env[KEYSTORE_ENV], keychainPlatform()) === 'file'
 }
 
 export function readMachineKey(

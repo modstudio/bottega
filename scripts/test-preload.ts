@@ -8,11 +8,17 @@ import { CONFIG_HOME_ENV } from '../shared/config-directory.ts'
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalOrchestratorDatabase = process.env.BOTTEGA_ORCHESTRATOR_DB
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+const KEYCHAIN_PLATFORM_KEY = Symbol.for('orch.keychain-platform')
+const keychainPlatformHolder = globalThis as typeof globalThis & {
+  [KEYCHAIN_PLATFORM_KEY]?: string
+}
+const originalKeychainPlatform = keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY]
 const configDir = mkdtempSync(join(tmpdir(), 'root-test-config-'))
 const databaseDir = mkdtempSync(join(tmpdir(), 'root-test-database-'))
 process.env[CONFIG_HOME_ENV] = configDir
 process.env.BOTTEGA_ORCHESTRATOR_DB = join(databaseDir, FROZEN_STATE_NAMES.orchestratorDatabase)
 delete process.env.BOTTEGA_RECORD_API_URL
+keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY] = 'darwin'
 
 afterAll(() => {
   if (originalConfigHome === undefined) delete process.env[CONFIG_HOME_ENV]
@@ -21,6 +27,8 @@ afterAll(() => {
   else process.env.BOTTEGA_ORCHESTRATOR_DB = originalOrchestratorDatabase
   if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
   else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
+  if (originalKeychainPlatform === undefined) delete keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY]
+  else keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY] = originalKeychainPlatform
   rmSync(configDir, { recursive: true, force: true })
   rmSync(databaseDir, { recursive: true, force: true })
 })
