@@ -1498,6 +1498,14 @@
       "tag": "0196_routing_pool_sequence_cursor",
       "breakpoints": true,
       "compatibility": "fenced"
+    },
+    {
+      "idx": 197,
+      "version": "6",
+      "when": 1793577600062,
+      "tag": "0197_routing_pool_route_indexes",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

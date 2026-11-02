@@ -11,6 +11,13 @@ import {
   LOCAL_SELECTION_PIN_VERSION_JOINS_SQL,
 } from '../orchestrator/src/lens/lens-profile-pin-version-sql.ts'
 import { PROJECT_REFERENCES } from '../orchestrator/src/project/project-reference-counts.ts'
+import {
+  POOL_CANDIDATE_ROWS_SQL,
+  POOL_LATENCY_ROWS_SQL,
+  POOL_PROMPT_BUCKET_ROWS_SQL,
+  POOL_ROUTING_EVIDENCE_ROWS_SQL,
+  POOL_SUCCESSFUL_RUN_SAMPLES_SQL,
+} from '../orchestrator/src/route/routing-pool-evidence.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../orchestrator/src/run/run-status.ts'
 import { SUBSCRIPTION_QUOTA_WINDOWS_SQL } from '../orchestrator/src/run/run-subscription-cost-store.ts'
 
@@ -51,6 +58,26 @@ type GlobalSubstitution = {
  * substitution would otherwise prepare SQL that file never writes.
  */
 const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
+  POOL_CANDIDATE_ROWS_SQL: {
+    values: [POOL_CANDIDATE_ROWS_SQL],
+    declaredIn: 'orchestrator/src/route/routing-pool-evidence.ts',
+  },
+  POOL_LATENCY_ROWS_SQL: {
+    values: [POOL_LATENCY_ROWS_SQL],
+    declaredIn: 'orchestrator/src/route/routing-pool-evidence.ts',
+  },
+  POOL_PROMPT_BUCKET_ROWS_SQL: {
+    values: [POOL_PROMPT_BUCKET_ROWS_SQL],
+    declaredIn: 'orchestrator/src/route/routing-pool-evidence.ts',
+  },
+  POOL_ROUTING_EVIDENCE_ROWS_SQL: {
+    values: [POOL_ROUTING_EVIDENCE_ROWS_SQL],
+    declaredIn: 'orchestrator/src/route/routing-pool-evidence.ts',
+  },
+  POOL_SUCCESSFUL_RUN_SAMPLES_SQL: {
+    values: [POOL_SUCCESSFUL_RUN_SAMPLES_SQL],
+    declaredIn: 'orchestrator/src/route/routing-pool-evidence.ts',
+  },
   LOCAL_PIN_VERSION_SQL: {
     values: [LOCAL_PIN_VERSION_SQL],
     declaredIn: 'orchestrator/src/lens/lens-profile-pin-version-sql.ts',

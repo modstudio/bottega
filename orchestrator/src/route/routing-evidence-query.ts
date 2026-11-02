@@ -2,8 +2,9 @@
 /** Reads only the current-model evidence window consumed by routing. */
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE, NOT_EVIDENCE_SQL } from '../failure/failure.ts'
-import { promptBucketSql } from './prompt-size-bucket.ts'
+import { promptBucketSql, promptSizeBucket } from './prompt-size-bucket.ts'
 import { weightCase } from './route-selection.ts'
+import { POOL_ROUTING_EVIDENCE_ROWS_SQL } from './routing-pool-evidence.ts'
 
 export type RoutingEvidenceRow = {
   record_id: string
@@ -20,6 +21,7 @@ export type RoutingEvidenceRow = {
   vendorTokens: number | null
   modelCalls: number | null
   peakCallTokens: number | null
+  pooled: boolean
 }
 
 export type RoutingEvidenceInput = {
@@ -56,14 +58,11 @@ export function boundedRoutingEvidenceRows(input: {
     .query(
       `WITH current_agent(agent, model) AS (
          SELECT key, value FROM json_each(?)
-       ), ranked AS (
+       ), evidence_rows AS (
        SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,
             r.executor, r.failure_kind AS failureKind, r.vendor_tokens AS vendorTokens,
             r.model_calls AS modelCalls, r.peak_call_tokens AS peakCallTokens,
-            s.delivery, s.quality, s.fidelity, ${weightCase()} AS pts,
-            ROW_NUMBER() OVER (
-              PARTITION BY r.agent ORDER BY r.started_at DESC, r.record_id DESC
-            ) AS evidence_rank
+            s.delivery, s.quality, s.fidelity, ${weightCase()} AS pts, 0 AS pooled
        FROM current_agent ca
        JOIN run r INDEXED BY run_routing_evidence_cover
          ON r.agent = ca.agent AND (r.model = ca.model OR r.model IS NULL)
@@ -74,9 +73,17 @@ export function boundedRoutingEvidenceRows(input: {
         AND ${promptBucketSql('r', promptBytes)}
         ${stack ? 'AND r.stack = ?' : ''}
         ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}
+       UNION ALL
+       ${POOL_ROUTING_EVIDENCE_ROWS_SQL}
+       ), ranked AS (
+       SELECT *,
+            ROW_NUMBER() OVER (
+              PARTITION BY agent ORDER BY startedAt DESC, record_id DESC
+            ) AS evidence_rank
+         FROM evidence_rows
        )
        SELECT record_id,agent,model,startedAt,status,executor,failureKind,vendorTokens,
-              modelCalls,peakCallTokens,delivery,quality,fidelity,pts
+              modelCalls,peakCallTokens,delivery,quality,fidelity,pts,pooled
          FROM ranked WHERE evidence_rank <= ?`,
     )
     .all(
@@ -84,6 +91,12 @@ export function boundedRoutingEvidenceRows(input: {
       jobName,
       ...(stack ? [stack] : []),
       ...(lens ? [lens] : []),
+      jobName,
+      promptSizeBucket(promptBytes) === 'small' ? 1 : 0,
+      stack ?? null,
+      stack ?? null,
+      lens ?? null,
+      lens ?? null,
       limit,
     ) as RoutingEvidenceRow[]
 }

@@ -1,6 +1,7 @@
 // concern: route prompt size bucket store
 import { db } from '../database/db.ts'
 import { PROMPT_SIZE_BOUNDARY, type PromptSizeBucket } from './prompt-size-bucket.ts'
+import { POOL_PROMPT_BUCKET_ROWS_SQL } from './routing-pool-evidence.ts'
 
 export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
   const rows = db()
@@ -9,9 +10,13 @@ export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
          FROM run INDEXED BY run_routing_prompt_bucket_cover
         WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
           AND evidence_excluded IS NULL AND executor <> 'harness'
-          AND parent_run_record_id IS NULL AND agent != '(pending)'`,
+          AND parent_run_record_id IS NULL AND agent != '(pending)'
+       UNION ALL
+       ${POOL_PROMPT_BUCKET_ROWS_SQL}`,
     )
-    .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
+    .all(PROMPT_SIZE_BOUNDARY, jobName, PROMPT_SIZE_BOUNDARY, jobName) as {
+    bucket: PromptSizeBucket
+  }[]
   const have = new Set(rows.map((row) => row.bucket))
   return (['small', 'large'] as const).filter((bucket) => have.has(bucket))
 }

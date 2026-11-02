@@ -9,6 +9,7 @@ import { duelMatrices } from '../score/duel.ts'
 import { guide, type JobGuide } from '../state/guide.ts'
 import { promptSizeBucketLabel } from './prompt-size-bucket.ts'
 import { evidenceFor, pick, scoreboard } from './route.ts'
+import { pooledEvidenceSuffix } from './route-candidate.ts'
 import { gatherRouteCostBacktest } from './route-cost-backtest-adapter.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
 import {
@@ -325,7 +326,7 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
             // "judged", not "scored": the percentage now includes failed runs
             // at the `unusable` weight, so labeling it with the verdict count
             // alone described a smaller denominator than the number came from.
-            `  over ${g.best.evidence} judged` +
+            `  over ${g.best.evidence} judged${pooledEvidenceSuffix(g.best)}` +
             (g.best.failures ? ` (incl. ${g.best.failures} failed)` : '') +
             (rawBest && rawBest.agent !== g.best.agent
               ? `   SHRUNK LEADER (raw: ${rawBest.agent})`
@@ -355,7 +356,9 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
       log(
         `  evidence ${cell.name}: ` +
           (cell.counts.length
-            ? cell.counts.map((row) => `${row.agent}=${row.evidence}`).join(', ')
+            ? cell.counts
+                .map((row) => `${row.agent}=${row.evidence}${pooledEvidenceSuffix(row)}`)
+                .join(', ')
             : 'no judgments'),
       )
     }
@@ -402,7 +405,9 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
       const costPerAccepted = formattedCostPerAccepted(r.costPerAccepted)
       // Failures are part of the score, so they are shown beside it rather than
       // left for someone to wonder why the percentage looks low.
-      const judged = r.failures ? `${r.evidence}(${r.failures}f)` : String(r.evidence)
+      const judged =
+        (r.failures ? `${r.evidence}(${r.failures}f)` : String(r.evidence)) +
+        pooledEvidenceSuffix(r)
       const policy = formattedCostPolicy(r)
       const metric = (value: number | null) =>
         value === null ? '—' : Math.round(value).toLocaleString()
@@ -489,7 +494,9 @@ export function pickCommand(
   const counts = (rows: typeof ev.cands) =>
     rows
       .filter((candidate) => candidate.evidence > 0)
-      .map((candidate) => `${candidate.agent}=${candidate.evidence}`)
+      .map(
+        (candidate) => `${candidate.agent}=${candidate.evidence}${pooledEvidenceSuffix(candidate)}`,
+      )
       .join(', ') || 'no judgments'
   log(
     `${jobName} -> ${p.agent}   (${p.reason})\n` +
@@ -510,7 +517,7 @@ export function pickCommand(
     log(
       `  ${c.agent.padEnd(7)} ${c.eligible ? 'eligible' : 'excluded'.padEnd(8)}` +
         ` declared=${c.declared?.join(',') ?? 'any'} preferred=${c.preferred ? 'yes' : 'no'}` +
-        ` runs=${String(c.runs).padStart(3)} judged=${String(c.evidence).padStart(3)}` +
+        ` runs=${String(c.runs).padStart(3)} judged=${String(c.evidence).padStart(3)}${pooledEvidenceSuffix(c)}` +
         ` score=${c.score === null ? '—' : (c.score * 100).toFixed(0) + '%'}` +
         ` shrunk=${c.shrunk === null ? '—' : (c.shrunk * 100).toFixed(0) + '%'}  ${c.why}${mcpNote}`,
     )

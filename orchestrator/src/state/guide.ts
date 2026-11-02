@@ -15,6 +15,7 @@ import {
 import { promptBucketsForJob } from '../route/prompt-size-bucket-store.ts'
 import { type candidates, evidenceFor, pick } from '../route/route.ts'
 import { MIN_SAMPLE } from '../route/route-selection.ts'
+import { POOL_SUCCESSFUL_RUN_SAMPLES_SQL } from '../route/routing-pool-evidence.ts'
 import { median } from './statistics.ts'
 
 type AgentOnJob = {
@@ -25,6 +26,7 @@ type AgentOnJob = {
   failures: number
   /** Verdicts plus failures: everything this is entitled to call a judgment. */
   evidence: number
+  pooledEvidence: number
   /** Mean verdict weight, or null until anything has been judged. */
   score: number | null
   /** Score pulled toward the job-wide proven-agent mean by MIN_SAMPLE judgments. */
@@ -55,7 +57,10 @@ export type JobGuide = {
   delegation: DelegationMode
   reason: string
   /** Evidence cells considered for this route, including the job-wide backoff. */
-  evidenceCells: { name: string; counts: { agent: string; evidence: number }[] }[]
+  evidenceCells: {
+    name: string
+    counts: { agent: string; evidence: number; pooledEvidence: number }[]
+  }[]
   tried: AgentOnJob[]
   /** Agents the circuit breaker or a static capability rule removed. */
   excluded: { agent: string; why: string }[]
@@ -89,9 +94,21 @@ function successfulRunSamples(): {
   return db()
     .query(
       `SELECT job, agent, latency_ms, prompt_bytes FROM run
-      WHERE status='ok' AND probe=0 AND latency_ms IS NOT NULL`,
+      WHERE status='ok' AND probe=0 AND latency_ms IS NOT NULL
+      UNION ALL
+      ${POOL_SUCCESSFUL_RUN_SAMPLES_SQL}`,
     )
     .all() as { job: string; agent: string; latency_ms: number; prompt_bytes: number }[]
+}
+
+function evidenceCounts(rows: ReturnType<typeof candidates>) {
+  return rows
+    .filter((candidate) => candidate.evidence > 0)
+    .map((candidate) => ({
+      agent: candidate.agent,
+      evidence: candidate.evidence,
+      pooledEvidence: candidate.pooledEvidence,
+    }))
 }
 
 /**
@@ -141,6 +158,7 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
             scored: c.scored,
             failures: c.failures,
             evidence: c.evidence,
+            pooledEvidence: c.pooledEvidence,
             score: c.score,
             shrunk: c.shrunk,
             latencyMs: c.latencyMs,
@@ -167,20 +185,16 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
                 .sort((a, b) => a.latencyMs! - b.latencyMs!)[0] ?? null)
             : null
         const route = guideRoute(name, bucketBytes, lens, delegationSettings)
-        const counts = (rows: ReturnType<typeof candidates>) =>
-          rows
-            .filter((candidate) => candidate.evidence > 0)
-            .map((candidate) => ({ agent: candidate.agent, evidence: candidate.evidence }))
         const evidenceCells =
           ev.scoped && ev.lens
             ? [
-                { name: `lens ${ev.lens}`, counts: counts(ev.scoped) },
-                { name: 'job-wide', counts: counts(ev.job) },
+                { name: `lens ${ev.lens}`, counts: evidenceCounts(ev.scoped) },
+                { name: 'job-wide', counts: evidenceCounts(ev.job) },
               ]
             : [
                 {
                   name: ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide',
-                  counts: counts(ev.job),
+                  counts: evidenceCounts(ev.job),
                 },
               ]
 

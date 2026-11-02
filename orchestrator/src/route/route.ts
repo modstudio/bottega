@@ -8,7 +8,6 @@ import {
 } from '../agent/model-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
-import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
 import { noEligibleAgentRefusal } from '../jobs/delegation.ts'
 import { JOBS, job, jobContextBudget, OUTPUT_RESERVE } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
@@ -34,11 +33,11 @@ import { assertExternalDelegation, harnessSelection } from './harness-delegation
 import {
   PROMPT_SIZE_BOUNDARY,
   type PromptSizeBucket,
-  promptBucketSql,
   samePromptSizeBucket,
 } from './prompt-size-bucket.ts'
 import { promptBucketsForJob } from './prompt-size-bucket-store.ts'
-import type { Candidate } from './route-candidate.ts'
+import { type Candidate, pooledEvidenceSuffix } from './route-candidate.ts'
+import { candidateEvidenceSummaries, candidateLatencyRows } from './route-candidate-evidence.ts'
 import {
   attachRouteCosts,
   type CostPerAcceptedResult,
@@ -64,7 +63,6 @@ import {
   currentPolicySelection,
   MIN_SAMPLE,
   NOISE_BAND,
-  weightCase,
 } from './route-selection.ts'
 import { aggregateEvidence, routingEvidenceWindow, runUsageMedians } from './route-statistics.ts'
 
@@ -236,65 +234,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     requiredMcp,
     projectName,
   )
-  // Probes and evidence-excluded runs do not establish agent quality.
-  const rows = db()
-    .query(
-      `SELECT r.agent AS agent,
-              SUM(CASE WHEN r.status = 'ok' THEN 1 ELSE 0 END) AS runs,
-              SUM(CASE WHEN s.delivery IS NOT NULL
-                        AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
-                       THEN 1 ELSE 0 END) AS scored,
-              -- Only failures NOBODY JUDGED. A run contributes exactly one
-              -- judgment: an explicit score if it has one, otherwise the
-              -- implicit delivery=none that failing amounts to. Counting both
-              -- made a single failed-and-scored run worth two — the weight came
-              -- out the same, but the evidence count doubled, so an agent could
-              -- cross MIN_SAMPLE on half the runs it should have needed.
-              --
-              -- An UNREACHABLE endpoint is excluded outright: a box that is
-              -- switched off never ran at all, and charging it to the model
-              -- makes an outage indistinguishable from incompetence. A
-              -- CONTENT_REFUSAL is excluded for the parallel reason that it
-              -- records vendor policy for a prompt class, not competence.
-              -- Eleven hours of a powered-down local host put two failures
-              -- against qwen36-goose on file-question, the one job it is
-              -- measurably best at.
-              --
-              -- The same list gates EXPLICIT scores. Seven codex harness
-              -- failures had been scored 'none' by hand and each counted as a
-              -- -0.5 judgment against codex on review-lens - the outage rule,
-              -- undone by whoever was tidying their pending list. A run that
-              -- is not evidence is not evidence whoever looks at it.
-              SUM(CASE WHEN r.status IN ('failed','stale') AND s.delivery IS NULL
-                        AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
-                       THEN 1 ELSE 0 END) AS failures,
-              SUM(CASE WHEN COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
-                       THEN ${weightCase()} ELSE 0 END) AS pts,
-              SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_tokens, 0) ELSE 0 END) AS tokens,
-              SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_cost_usd, 0) ELSE 0 END) AS cost
-         FROM run r INDEXED BY run_routing_evidence_cover
-         LEFT JOIN score s ON s.run_record_id = r.record_id
-        -- Child turns are excluded: a conversation is ONE piece of evidence
-        -- about an agent, and its root row carries the outcome. Counting each
-        -- turn would let an agent cross MIN_SAMPLE by asking questions.
-        WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
-          AND r.evidence_excluded IS NULL
-          AND r.executor <> 'harness'
-          AND r.parent_run_record_id IS NULL
-          AND ${promptBucketSql('r', promptBytes)}
-          ${stack ? 'AND r.stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}
-        GROUP BY r.agent`,
-    )
-    .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
-    agent: string
-    runs: number
-    scored: number
-    failures: number
-    pts: number | null
-    tokens: number
-    cost: number
-  }[]
+  const rows = candidateEvidenceSummaries(jobName, promptBytes, stack, lens)
   const hist = new Map(rows.map((r) => [r.agent, r]))
   const evidenceRows = boundedRoutingEvidenceRows({
     jobName,
@@ -306,21 +246,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     ),
     limit: EVIDENCE_WINDOW,
   })
-  const lat = db()
-    .query(
-      `SELECT agent, latency_ms FROM run INDEXED BY run_routing_latency_cover
-        -- Latency is per TURN here, deliberately: "how long does this agent
-        -- take to answer" is a question about a turn, and a chain's total is a
-        -- question about how much the architect had to be asked.
-        WHERE job = ? AND status = 'ok' AND probe = 0 AND latency_ms IS NOT NULL
-          AND ${promptBucketSql('run', promptBytes)}
-          ${stack ? 'AND stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = run.record_id AND rl.lens = ?)' : ''}`,
-    )
-    .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
-    agent: string
-    latency_ms: number
-  }[]
+  const lat = candidateLatencyRows(jobName, promptBytes, stack, lens)
   const latByAgent = new Map<string, number[]>()
   for (const r of lat) latByAgent.set(r.agent, [...(latByAgent.get(r.agent) ?? []), r.latency_ms])
 
@@ -404,6 +330,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     const recent = aggregateEvidence(window.rows)
     const { scored, failures } = recent
     const evidence = scored + failures
+    const pooledEvidence = window.rows.filter((row) => row.pooled).length
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
     const mcpWhy = mcpIneligibility(a)
     const policy = policyEligibility(a)
@@ -464,6 +391,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       failures,
       none: recent.none,
       evidence,
+      pooledEvidence,
       evidenceModel: window.evidenceModel,
       score,
       shrunk: null,
@@ -471,8 +399,6 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       tokens: h?.tokens ?? 0,
       usage: runUsageMedians(window.rows),
       costUsd: h?.cost ?? 0,
-      // A free or no-cost agent spends no metered quota, so on a genuine tie it
-      // keeps the paid subscriptions in reserve for work that needs them.
       free: a.billing === 'none' || a.billing === 'free',
       eligible,
       why,
@@ -862,7 +788,7 @@ function pickExternal(
   const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
   const evidenceCell = evidenceCellName(ev)
   const scope = (c: Candidate) =>
-    ` in ${evidenceCell}${c.evidenceModel ? ` on model ${c.evidenceModel}` : ''}`
+    `${pooledEvidenceSuffix(c)} in ${evidenceCell}${c.evidenceModel ? ` on model ${c.evidenceModel}` : ''}`
   if (override) {
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
