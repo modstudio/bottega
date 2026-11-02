@@ -53,7 +53,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module(
     'orchestrator/src/run/run-probe-launch.ts',
-    ['../agent/agent-registry.ts', '../dispatch/probe-launch-overrides.ts'],
+    [
+      '../agent/agent-registry.ts',
+      '../agent/worker-launch-env.ts',
+      '../dispatch/probe-launch-overrides.ts',
+    ],
     ['../agent/agents.ts', '../jobs/jobs.ts', './run-options.ts'],
   ),
   module(

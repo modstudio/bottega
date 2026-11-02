@@ -1,5 +1,6 @@
 import { GOOSE_CONTEXT_CEILING } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import {
   acceptedProbeReaderSuites,
   decideProbeLaunchOverrides,
@@ -14,7 +15,7 @@ export function prepareRunProbeLaunch(agent: Agent, opts: RunOptions, requestedJ
     probe: Boolean(opts.probe),
     contextLimit: opts.probeContextLimit,
     readerSuites: Boolean(opts.probeReaderSuites),
-    agentHarness: agent.harness ?? agent.name,
+    agentHarness: workerHarnessName(agent),
     findings: Boolean(requestedJob.findings),
   })
   if (!decision.accepted)
