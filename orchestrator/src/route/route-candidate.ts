@@ -15,6 +15,8 @@ export type Candidate = {
   none: number
   /** Explicit verdicts plus unjudged failures; the MIN_SAMPLE denominator. */
   evidence: number
+  /** Judgments in the current evidence window pulled from other machines. */
+  pooledEvidence: number
   evidenceModel: string | null
   /** Mean verdict weight, or null until anything has been judged. */
   score: number | null
@@ -41,4 +43,8 @@ export type Candidate = {
   runningRunIds: string[]
   routedReason?: string
   costPerAccepted?: CostPerAcceptedResult
+}
+
+export function pooledEvidenceSuffix(candidate: Pick<Candidate, 'pooledEvidence'>): string {
+  return candidate.pooledEvidence > 0 ? ` (${candidate.pooledEvidence} pooled)` : ''
 }

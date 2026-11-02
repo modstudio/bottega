@@ -45,16 +45,18 @@ export function thompsonRank<T extends ThompsonCandidate>(
   return rankThompson(candidates, draw, rng, MIN_SAMPLE, betaContribution, POSTERIOR_NOISE_BAND)
 }
 
-export function weightCase(): string {
+export function weightCase(alias = 's'): string {
   const arms: string[] = []
   for (const [delivery, row] of Object.entries(WEIGHT)) {
-    if (typeof row === 'number') arms.push(`WHEN s.delivery = '${delivery}' THEN ${row}`)
+    if (typeof row === 'number') arms.push(`WHEN ${alias}.delivery = '${delivery}' THEN ${row}`)
     else
       for (const [quality, weight] of Object.entries(row))
-        arms.push(`WHEN s.delivery = '${delivery}' AND s.quality = '${quality}' THEN ${weight}`)
+        arms.push(
+          `WHEN ${alias}.delivery = '${delivery}' AND ${alias}.quality = '${quality}' THEN ${weight}`,
+        )
   }
   const penalty = Object.entries(FIDELITY_PENALTY)
-    .map(([fidelity, weight]) => `WHEN s.fidelity = '${fidelity}' THEN ${weight}`)
+    .map(([fidelity, weight]) => `WHEN ${alias}.fidelity = '${fidelity}' THEN ${weight}`)
     .join(' ')
   return `MAX((CASE ${arms.join(' ')} ELSE 0 END) + (CASE ${penalty} ELSE 0 END), ${WEIGHT.none as number})`
 }

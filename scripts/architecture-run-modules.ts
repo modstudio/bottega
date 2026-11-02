@@ -87,7 +87,21 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/prompt-size-bucket-store.ts',
-    allowed: ['../database/db.ts', './prompt-size-bucket.ts'],
+    allowed: ['../database/db.ts', './prompt-size-bucket.ts', './routing-pool-evidence.ts'],
+  },
+  {
+    file: 'orchestrator/src/route/routing-pool-evidence.ts',
+    allowed: ['../failure/failure.ts', './prompt-size-bucket.ts', './route-selection.ts'],
+  },
+  {
+    file: 'orchestrator/src/route/route-candidate-evidence.ts',
+    allowed: [
+      '../database/db.ts',
+      '../failure/failure.ts',
+      './prompt-size-bucket.ts',
+      './route-selection.ts',
+      './routing-pool-evidence.ts',
+    ],
   },
   {
     file: 'orchestrator/src/route/subscription-pacing.ts',
@@ -176,6 +190,7 @@ export const runModuleSpecs = [
       '../failure/failure.ts',
       './prompt-size-bucket.ts',
       './route-selection.ts',
+      './routing-pool-evidence.ts',
     ],
   },
   {

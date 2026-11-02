@@ -22,6 +22,7 @@ export type CostEvidenceRoot = {
   delivery: string | null
   quality: string | null
   fidelity: string | null
+  pooled?: boolean
 }
 
 type ChainCostRow = {
@@ -181,12 +182,20 @@ export function routeCostsForCandidates<
     routingEvidenceWindow(evidenceRows, candidate.agent, candidate.evidenceModel!, evidenceWindow),
   )
   const rootRecordIds = [
-    ...new Set(windows.flatMap((window) => window.rows.map((row) => row.record_id))),
+    ...new Set(
+      windows.flatMap((window) =>
+        window.rows.filter((row) => !row.pooled).map((row) => row.record_id),
+      ),
+    ),
   ]
   const facts = routeCostFacts({ rootRecordIds, context })
   return candidates.map((candidate, index) => ({
     candidate,
-    costPerAccepted: routeCostPerAccepted(jobName, windows[index]!.rows, facts),
+    costPerAccepted: routeCostPerAccepted(
+      jobName,
+      windows[index]!.rows.filter((row) => !row.pooled),
+      facts,
+    ),
   }))
 }
 

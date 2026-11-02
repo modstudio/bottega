@@ -113,6 +113,8 @@ There is one `scoreboard()` and the views call it. A test asserts every cell mat
 
 The routing matrix and guide do not take a dashboard activity window. Their bound is `EVIDENCE_WINDOW`, the most recent judgments for a job, agent, and the agent's current model. A model swap starts a fresh posterior. Per-repo tallies report activity, not routing evidence, and take neither window. Empty-window sums are coalesced, because SQLite `SUM` over no rows is null while `COUNT` is zero.
 
+**Routing evidence is this machine's runs plus the space's pooled runs.** Every routing read unions local `run` rows with `routing_pool_run` rows that have no local run of the same record id, so a run counts once and the local row wins; the pool fragments live in `routing-pool-evidence.ts`. A new routing read joins the pool the same way or states why it stays local. The pool carries no cost and no turns: cost per accepted result skips pooled rows, and pooled latency is per root run. Cooldown, billing, capacity, reviewer precision and the backtest read local runs only.
+
 # Knowing what to use for what
 
 `bottega agent guide` names two agents per job: quality and turnaround. A leader below `MIN_SAMPLE` is **provisional**, not recommended. It lists eligible agents nobody has tried. Latency is shown beside median prompt size. The guide is deterministic and does not spend the exploration draw.
@@ -143,3 +145,4 @@ The window is a serving flag. Check concurrency at the endpoint, not the model c
 **Run Codex where it can see the repository, against a tunneled endpoint.** Bind the server to localhost on the model host and forward it. Never bind it to `0.0.0.0` on a routable interface. Do not use `--oss` / `--local-provider`. Do not name the provider `oss`.
 
 Host facts: `bottega doc show local-model-host-incidents --scope machine`.
+

@@ -1,0 +1,115 @@
+// concern: route candidate evidence
+/** Reads aggregate and latency evidence for candidate orchestration. */
+
+import { db } from '../database/db.ts'
+import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
+import { promptBucketSql } from './prompt-size-bucket.ts'
+import { weightCase } from './route-selection.ts'
+import {
+  POOL_CANDIDATE_ROWS_SQL,
+  POOL_LATENCY_ROWS_SQL,
+  poolScopeParams,
+} from './routing-pool-evidence.ts'
+
+export type CandidateEvidenceSummary = {
+  agent: string
+  runs: number
+  scored: number
+  failures: number
+  pts: number | null
+  tokens: number
+  cost: number
+}
+
+export function candidateEvidenceSummaries(
+  jobName: string,
+  promptBytes: number,
+  stack?: string | null,
+  lens?: string | null,
+): CandidateEvidenceSummary[] {
+  // Probes and evidence-excluded runs do not establish agent quality.
+  return db()
+    .query(
+      `SELECT agent, SUM(runs) AS runs, SUM(scored) AS scored,
+              SUM(failures) AS failures, SUM(pts) AS pts,
+              SUM(tokens) AS tokens, SUM(cost) AS cost
+         FROM (
+       SELECT r.agent AS agent,
+              CASE WHEN r.status = 'ok' THEN 1 ELSE 0 END AS runs,
+              CASE WHEN s.delivery IS NOT NULL
+                        AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
+                   THEN 1 ELSE 0 END AS scored,
+              -- Only failures NOBODY JUDGED. A run contributes exactly one
+              -- judgment: an explicit score if it has one, otherwise the
+              -- implicit delivery=none that failing amounts to. Counting both
+              -- made a single failed-and-scored run worth two — the weight came
+              -- out the same, but the evidence count doubled, so an agent could
+              -- cross MIN_SAMPLE on half the runs it should have needed.
+              --
+              -- An UNREACHABLE endpoint is excluded outright: a box that is
+              -- switched off never ran at all, and charging it to the model
+              -- makes an outage indistinguishable from incompetence. A
+              -- CONTENT_REFUSAL is excluded for the parallel reason that it
+              -- records vendor policy for a prompt class, not competence.
+              --
+              -- The same list gates EXPLICIT scores: a run that is not
+              -- evidence is not evidence whoever looks at it.
+              CASE WHEN r.status IN ('failed','stale') AND s.delivery IS NULL
+                        AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
+                   THEN 1 ELSE 0 END AS failures,
+              CASE WHEN COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
+                   THEN ${weightCase()} ELSE 0 END AS pts,
+              CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_tokens, 0) ELSE 0 END AS tokens,
+              CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_cost_usd, 0) ELSE 0 END AS cost
+         FROM run r INDEXED BY run_routing_evidence_cover
+         LEFT JOIN score s ON s.run_record_id = r.record_id
+        -- Child turns are excluded: a conversation is ONE piece of evidence
+        -- about an agent, and its root row carries the outcome. Counting each
+        -- turn would let an agent cross MIN_SAMPLE by asking questions.
+        WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
+          AND r.evidence_excluded IS NULL
+          AND r.executor <> 'harness'
+          AND r.parent_run_record_id IS NULL
+          AND ${promptBucketSql('r', promptBytes)}
+          ${stack ? 'AND r.stack = ?' : ''}
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}
+       UNION ALL
+       ${POOL_CANDIDATE_ROWS_SQL}
+        ) evidence_rows
+        GROUP BY agent`,
+    )
+    .all(
+      jobName,
+      ...(stack ? [stack] : []),
+      ...(lens ? [lens] : []),
+      ...poolScopeParams(jobName, promptBytes, stack, lens),
+    ) as CandidateEvidenceSummary[]
+}
+
+export function candidateLatencyRows(
+  jobName: string,
+  promptBytes: number,
+  stack?: string | null,
+  lens?: string | null,
+): { agent: string; latency_ms: number }[] {
+  return db()
+    .query(
+      `SELECT agent, latency_ms FROM run INDEXED BY run_routing_latency_cover
+        -- Latency is per TURN here, deliberately: "how long does this agent
+        -- take to answer" is a question about a turn, and a chain's total is a
+        -- question about how much the architect had to be asked. Pooled rows
+        -- are root runs only, because the pool carries no turns.
+        WHERE job = ? AND status = 'ok' AND probe = 0 AND latency_ms IS NOT NULL
+          AND ${promptBucketSql('run', promptBytes)}
+          ${stack ? 'AND stack = ?' : ''}
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = run.record_id AND rl.lens = ?)' : ''}
+       UNION ALL
+       ${POOL_LATENCY_ROWS_SQL}`,
+    )
+    .all(
+      jobName,
+      ...(stack ? [stack] : []),
+      ...(lens ? [lens] : []),
+      ...poolScopeParams(jobName, promptBytes, stack, lens),
+    ) as { agent: string; latency_ms: number }[]
+}

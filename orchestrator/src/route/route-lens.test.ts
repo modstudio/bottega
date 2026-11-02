@@ -70,15 +70,15 @@ describe('findings routing narrows to a lens only when that buys a comparison', 
       {
         name: 'lens correctness',
         counts: expect.arrayContaining([
-          { agent: 'codex', evidence: MIN_SAMPLE },
-          { agent: 'grok', evidence: MIN_SAMPLE },
+          { agent: 'codex', evidence: MIN_SAMPLE, pooledEvidence: 0 },
+          { agent: 'grok', evidence: MIN_SAMPLE, pooledEvidence: 0 },
         ]),
       },
       {
         name: 'job-wide',
         counts: expect.arrayContaining([
-          { agent: 'codex', evidence: MIN_SAMPLE },
-          { agent: 'grok', evidence: MIN_SAMPLE },
+          { agent: 'codex', evidence: MIN_SAMPLE, pooledEvidence: 0 },
+          { agent: 'grok', evidence: MIN_SAMPLE, pooledEvidence: 0 },
         ]),
       },
     ])
