@@ -62,6 +62,7 @@ import { workflowCommandModules } from './architecture-workflow-command-modules.
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { workflowTreeModules } from './architecture-workflow-tree-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
+import { REPOSITORY_ROOT_DATA_IMPORTS } from './repository-root-data-imports.ts'
 
 export type ArchitectureModule = { file: string; allowed: string[]; typeOnlyAllowed?: string[] }
 type ArchitectureInversion = { from: string; to: string }
@@ -758,6 +759,8 @@ function architectureDependencyPath(target: string) {
   ]
   if (target === 'bun') return installedPackageRoots.map((root) => `${root}@types/bun/`).join('|')
   if (target.includes(':')) return exactArchitecturePath(target)
+  if (REPOSITORY_ROOT_DATA_IMPORTS.some((file) => file === target))
+    return exactArchitecturePath(target)
   if (CONCERNS.some((root) => target.startsWith(`${root}/`)) || target.startsWith('shared/')) {
     return exactArchitecturePath(target)
   }

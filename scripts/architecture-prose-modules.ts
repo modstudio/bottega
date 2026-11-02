@@ -46,38 +46,28 @@ export const proseModules: ProseModule[] = [
   module('shared/prose/prose-mask.ts', []),
   module('shared/prose/prose-lint.ts', ['./prose-mask.ts']),
   module('shared/prose/naming-rule.ts', ['./prose-mask.ts']),
-  module('shared/prose/english-words.ts', ['./english-words.txt']),
-  module('shared/prose/prose-check.ts', [
-    './harper-adapter.ts',
-    './naming-rule.ts',
-    './prose-mask.ts',
-  ]),
-  module('shared/prose/harper-adapter.ts', [
+  module('shared/prose/prose-check.ts', ['./naming-rule.ts', './prose-mask.ts']),
+  module('shared/prose/spelling-lists.ts', [
+    '../../typos.toml',
+    './british-spellings.txt',
     './dictionary.txt',
-    './record-rules.json',
-    'harper.js',
-    'harper.js/binary',
+    './misspellings.txt',
   ]),
-  module('shared/prose/prose-gate.ts', [
-    './english-words.ts',
-    './harper-adapter.ts',
-    './prose-check.ts',
-  ]),
+  module('shared/prose/prose-gate.ts', ['./prose-check.ts', './spelling-lists.ts']),
 ]
 
 export const proseBoundarySpecs: ProseBoundarySpec[] = [
   {
-    name: 'english-words-boundary',
-    file: 'shared/prose/english-words.ts',
-    allowed: ['./english-words.txt'],
+    name: 'spelling-lists-boundary',
+    file: 'shared/prose/spelling-lists.ts',
+    allowed: ['typos.toml', './british-spellings.txt', './dictionary.txt', './misspellings.txt'],
     typeOnlyAllowed: [],
-    reason:
-      'Keep the embedded word-list adapter independent of prose policy and platform concerns.',
+    reason: 'Keep embedded correction-list data access independent of prose policy and platforms.',
   },
   {
     name: 'prose-gate-boundary',
     file: 'shared/prose/prose-gate.ts',
-    allowed: ['./english-words.ts', './harper-adapter.ts', './prose-check.ts'],
+    allowed: ['./prose-check.ts', './spelling-lists.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep the write gate shared while its callers own transport and persistence.',
   },
@@ -109,15 +99,8 @@ export const proseBoundarySpecs: ProseBoundarySpec[] = [
     name: 'prose-check-boundary',
     file: 'shared/prose/prose-check.ts',
     allowed: ['./naming-rule.ts', './prose-mask.ts'],
-    typeOnlyAllowed: ['./harper-adapter.ts'],
+    typeOnlyAllowed: [],
     reason:
       'Keep prose check composition pure and independent of filesystems, stores, commands, and processes.',
-  },
-  {
-    name: 'harper-adapter-boundary',
-    file: 'shared/prose/harper-adapter.ts',
-    allowed: ['./dictionary.txt', './record-rules.json', 'harper.js', 'harper.js/binary'],
-    typeOnlyAllowed: [],
-    reason: 'Keep Harper I/O isolated from pure prose decisions and every platform concern.',
   },
 ]
