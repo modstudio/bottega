@@ -200,12 +200,12 @@ export function registerBoardOverviewProof(input: ProofInput): void {
   })
 
   test('board overview owner title prefix is literal and excludes ended notices', async () => {
-    const prefix = 'Hosted pressure: cpu%_'
+    const prefix = 'Hosted pressure: load%_'
     const matching = post(input.tokenA(), 'notice', 'operator', 'pressure-literal', {
       title: `${prefix} steal=0.25`,
     })
     const overmatch = post(input.tokenA(), 'notice', 'operator', 'pressure-overmatch', {
-      title: 'Hosted pressure: cpuXX steal=0.25',
+      title: 'Hosted pressure: loadXX steal=0.25',
     })
     const otherOwner = post(input.tokenB(), 'notice', 'operator', 'pressure-other-owner', {
       title: `${prefix} api-p95=3s`,
