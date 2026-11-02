@@ -331,6 +331,17 @@ async function recordQuestionProseNotice(
   })
 }
 
+async function acceptedQuestionsWithNotice(
+  runId: string,
+  contract: WorkerReply | null,
+  transportQuestions: ReturnType<typeof realQuestions>,
+): Promise<ReturnType<typeof realQuestions>> {
+  const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
+  const accepted = questionsControlStatus ? realQuestions(contract) : transportQuestions
+  await recordQuestionProseNotice(runId, accepted)
+  return accepted
+}
+
 export type LiveInput = {
   repoJob: boolean
   name: string
@@ -943,9 +954,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       contract = parsed.reply as WorkerReply | null
       contractObjects = parsed.contractObjects
     }
-    const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
-    acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
-    await recordQuestionProseNotice(claim.id, acceptedQuestions)
+    acceptedQuestions = await acceptedQuestionsWithNotice(claim.id, contract, transportQuestions)
     const derived = deriveLiveOutcome({
       writesJob,
       contractStatus: contract?.status ?? null,

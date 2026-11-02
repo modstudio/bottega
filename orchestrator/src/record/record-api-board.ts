@@ -3,7 +3,7 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import { proseGate } from '../../../shared/prose/prose-gate.ts'
+import { type ProseGateField, proseGate } from '../../../shared/prose/prose-gate.ts'
 import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
@@ -230,6 +230,58 @@ async function readJson(context: Context<ApiEnvironment>): Promise<unknown> {
   return context.req.json().catch(() => null)
 }
 
+async function assertHostedBoardProse(
+  context: Context<ApiEnvironment>,
+  fields: ProseGateField[],
+): Promise<void> {
+  const name = context.get('identity')?.user.name
+  const checked = await proseGate(fields, {
+    displayName: typeof name === 'string' ? name : null,
+    enabled: process.env.BOTTEGA_PROSE_CHECK !== 'off',
+  })
+  // These routes have no warning channel; R8 notices are intentionally omitted from the response.
+  if (checked.refusal) throw new RecordBoardError(checked.refusal, 400)
+}
+
+function registerBoardWriteRoutes(
+  app: Hono<ApiEnvironment>,
+  deps: RecordBoardDeps,
+  helpers: { noSpace(context: Context<ApiEnvironment>): Response },
+  tenantOf: (context: Context<ApiEnvironment>) => ReturnType<typeof boardTenant>,
+  writeError: (context: Context<ApiEnvironment>, error: unknown) => Response | Promise<Response>,
+): void {
+  app.put('/v1/board/messages', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant) return helpers.noSpace(context)
+    const body = postSchema.safeParse(await readJson(context))
+    if (!body.success) return context.json({ error: 'invalid board message' }, 400)
+    try {
+      await assertHostedBoardProse(context, [
+        { field: 'title', text: body.data.title, prior: null },
+        { field: 'body', text: body.data.body, prior: null },
+      ])
+      return context.json(await deps.postBoardMessage({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.post('/v1/board/messages/:id/replies', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant) return helpers.noSpace(context)
+    const id = idSchema.safeParse(context.req.param('id'))
+    const body = replySchema.safeParse(await readJson(context))
+    if (!id.success || !body.success) return context.json({ error: 'invalid board reply' }, 400)
+    try {
+      await assertHostedBoardProse(context, [{ field: 'body', text: body.data.body, prior: null }])
+      return context.json(
+        await deps.replyBoardMessage({ ...tenant, ...body.data, rootId: id.data }),
+      )
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+}
+
 export function registerRecordBoardRoutes(
   app: Hono<ApiEnvironment>,
   deps: {
@@ -259,51 +311,7 @@ export function registerRecordBoardRoutes(
       return writeError(context, error)
     }
   })
-  app.put('/v1/board/messages', async (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
-    const body = postSchema.safeParse(await readJson(context))
-    if (!body.success) return context.json({ error: 'invalid board message' }, 400)
-    try {
-      const identity = context.get('identity')
-      const checked = await proseGate(
-        [
-          { field: 'title', text: body.data.title, prior: null },
-          { field: 'body', text: body.data.body, prior: null },
-        ],
-        {
-          displayName: typeof identity?.user.name === 'string' ? identity.user.name : null,
-          enabled: process.env.BOTTEGA_PROSE_CHECK !== 'off',
-        },
-      )
-      if (checked.refusal) throw new RecordBoardError(checked.refusal, 400)
-      // This route has no warning channel; R8 notices are intentionally omitted from its response.
-      return context.json(await deps.postBoardMessage({ ...tenant, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.post('/v1/board/messages/:id/replies', async (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
-    const id = idSchema.safeParse(context.req.param('id'))
-    const body = replySchema.safeParse(await readJson(context))
-    if (!id.success || !body.success) return context.json({ error: 'invalid board reply' }, 400)
-    try {
-      const identity = context.get('identity')
-      const checked = await proseGate([{ field: 'body', text: body.data.body, prior: null }], {
-        displayName: typeof identity?.user.name === 'string' ? identity.user.name : null,
-        enabled: process.env.BOTTEGA_PROSE_CHECK !== 'off',
-      })
-      if (checked.refusal) throw new RecordBoardError(checked.refusal, 400)
-      // This route has no warning channel; R8 notices are intentionally omitted from its response.
-      return context.json(
-        await deps.replyBoardMessage({ ...tenant, ...body.data, rootId: id.data }),
-      )
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
+  registerBoardWriteRoutes(app, deps, helpers, tenantOf, writeError)
   app.post('/v1/board/messages/:id/withdraw', async (context) => {
     const tenant = tenantOf(context)
     if (!tenant) return helpers.noSpace(context)

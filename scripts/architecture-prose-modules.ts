@@ -35,6 +35,7 @@ export const proseModules: ProseModule[] = [
   ]),
   module('orchestrator/src/record/record-api-doc-prose.ts', [
     '../../../shared/prose/prose-gate.ts',
+    './record-doc-errors.ts',
   ]),
   module('shared/prose/prose-mask.ts', []),
   module('shared/prose/prose-lint.ts', ['./prose-mask.ts']),

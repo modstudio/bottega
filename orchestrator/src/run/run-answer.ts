@@ -107,6 +107,19 @@ function incompleteRulingsRefusal(
   )
 }
 
+async function assertAnswersReady(
+  openCount: number,
+  answers: ReadonlyArray<{ answer: string }>,
+  input: AnswerRunInput,
+  ownersLive: boolean,
+): Promise<void> {
+  const incomplete = incompleteRulingsRefusal(openCount, answers.length, input, ownersLive)
+  if (incomplete) throw new Error(incomplete)
+  await assertOrchestratorProse(
+    answers.map((answer) => ({ field: 'answer text', text: answer.answer, prior: null })),
+  )
+}
+
 function answerResult(
   outcome: AnswerWaitingResult['outcome'],
   runId: string,
@@ -865,11 +878,7 @@ export async function answerRun(
       answers.push(answeredQuestion(open[0]!, rulingFrom(input.rulings), input.fromOperator))
     }
   }
-  const incomplete = incompleteRulingsRefusal(open.length, answers.length, input, ownersLive)
-  if (incomplete) throw new Error(incomplete)
-  await assertOrchestratorProse(
-    answers.map((answer) => ({ field: 'answer text', text: answer.answer, prior: null })),
-  )
+  await assertAnswersReady(open.length, answers, input, ownersLive)
 
   if (
     answerResumeUnavailable({

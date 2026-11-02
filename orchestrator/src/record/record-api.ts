@@ -13,7 +13,7 @@ import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payl
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
-import { hostedDocProse } from './record-api-doc-prose.ts'
+import { hostedDocUpsert } from './record-api-doc-prose.ts'
 import {
   docWriteContextSchema,
   recordCanonImportSchema,
@@ -813,16 +813,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
     try {
-      const prior = body.data.id ? await deps.readDoc({ ...tenant, id: body.data.id }) : null
-      const checked = await hostedDocProse(body.data, prior, context.get('identity')?.user)
-      if (checked.refusal) return context.json({ error: checked.refusal }, 400)
-      const written = await deps.upsertDoc({ ...tenant, ...body.data })
-      return context.json({
-        ...written,
-        ...(checked.notices.length
-          ? { writeWarnings: [...(written.writeWarnings ?? []), ...checked.notices] }
-          : {}),
-      })
+      return context.json(await hostedDocUpsert(tenant, body.data, context.get('identity'), deps))
     } catch (error) {
       return writeError(context, error)
     }

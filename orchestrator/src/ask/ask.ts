@@ -172,6 +172,11 @@ export type AskResult =
   | { answered: true; answer: string; notice?: string }
   | { answered: false; reason: string; notice?: string }
 
+function askResponseText(result: AskResult): string {
+  const response = result.answered ? result.answer : result.reason
+  return result.notice ? `${response}\n\n${result.notice}` : response
+}
+
 function checkEligibility(runId: string, token: string) {
   const row = db()
     .query(
@@ -661,8 +666,7 @@ export function createAskMcpServer(
         const result = authorized()
           ? await ask({ runId, question, options, recommendation, why, timeoutMs })
           : { answered: false as const, reason: unauthorized() }
-        const response = result.answered ? result.answer : result.reason
-        return text(result.notice ? `${response}\n\n${result.notice}` : response)
+        return text(askResponseText(result))
         // Not `isError`. A timeout is a legitimate outcome carrying an
         // instruction the worker must follow; flagged as an error, agents
         // retry it or treat the tool as broken and stop using it.
