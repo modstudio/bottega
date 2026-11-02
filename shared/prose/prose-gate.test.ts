@@ -37,4 +37,33 @@ describe('proseGate', () => {
       'summary: Spelling and grammar check did not run: engine unavailable',
     ])
   })
+
+  test('does not refuse when the prior text could not be checked', async () => {
+    const misspelling = ['me', 'ida'].join('')
+    const current = `The ${misspelling} stayed.`
+    const result = await proseGate([{ field: 'body', text: current, prior: misspelling }], {
+      displayName: null,
+      enabled: true,
+      engine: async (text) =>
+        text === misspelling
+          ? { ran: false, reason: 'prior engine unavailable' }
+          : {
+              ran: true,
+              findings: [
+                {
+                  rule: 'SpellCheck',
+                  start: 4,
+                  end: 9,
+                  text: misspelling,
+                  message: 'Did you mean media?',
+                  suggestions: [{ kind: 'replace', text: 'media' }],
+                },
+              ],
+            },
+    })
+    expect(result.refusal).toBeNull()
+    expect(result.notices).toEqual([
+      'body: Spelling and grammar check did not run: prior engine unavailable',
+    ])
+  })
 })

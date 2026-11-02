@@ -86,7 +86,7 @@ export function githubArgsWithStdinBody(args: readonly string[], body: string): 
   return rewritten
 }
 
-async function createPullRequestCommand(
+export async function createPullRequestCommand(
   githubArgs: string[],
   options: {
     cwd?: string
@@ -94,6 +94,8 @@ async function createPullRequestCommand(
     ceilingRuling?: string
     fromOperator?: boolean
   },
+  _command?: Command,
+  create: typeof createPullRequest = createPullRequest,
 ): Promise<void> {
   validateGithubArguments(githubArgs)
   const cwd = resolveReviewCommandCwd(options.cwd)
@@ -113,7 +115,7 @@ async function createPullRequestCommand(
   ])
   const forwardedArgs =
     bodyFile === '-' ? githubArgsWithStdinBody(githubArgs, body ?? '') : githubArgs
-  const result = createPullRequest(
+  const result = create(
     forwardedArgs,
     {
       overrideReason: options.overrideTriage,

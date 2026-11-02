@@ -5,11 +5,31 @@ import { join, relative } from 'node:path'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  createPullRequestCommand,
   githubArgsWithStdinBody,
   pullRequestCiCommandOutcome,
   register,
   validateGithubArguments,
 } from './pull-request.ts'
+
+test('PR create refuses a misspelled explicit title before admission', async () => {
+  let creates = 0
+  const misspelling = ['me', 'ida'].join('')
+  const create = () => {
+    creates += 1
+    return { output: '', overrideId: null }
+  }
+
+  await expect(
+    createPullRequestCommand(
+      ['--title', `DEV-2016 ${misspelling}`],
+      { cwd: process.cwd() },
+      undefined,
+      create,
+    ),
+  ).rejects.toThrow(`title:\n"${misspelling}"`)
+  expect(creates).toBe(0)
+})
 
 test('PR create consumes --cwd instead of forwarding it to GitHub', () => {
   const program = new Command()

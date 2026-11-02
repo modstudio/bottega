@@ -55,6 +55,11 @@ export async function proseGate(
     let findings = current.findings
     if (field.prior !== null) {
       const prior = checkProse(field.prior, await engine(field.prior), options)
+      const priorNotice = proseCheckSkipNotice(prior)
+      if (priorNotice) {
+        notices.push(`${field.field}: ${priorNotice}`)
+        continue
+      }
       findings = introducedFindings(findings, prior.findings)
     }
     const refusal = proseCheckRefusal({ ...current, findings })

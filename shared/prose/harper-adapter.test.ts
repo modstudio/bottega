@@ -3,7 +3,6 @@ import { PLATFORM_NAME } from '../brand.ts'
 import { harperFindings } from './harper-adapter.ts'
 
 test('loads Harper WASM, applies the dictionary, and leaves naming to the naming rule', async () => {
-  const started = performance.now()
   const misspelling = await harperFindings('We saw the meida here.')
   const dictionaryWord = await harperFindings(PLATFORM_NAME.toLowerCase())
   const name = PLATFORM_NAME.toLowerCase()
@@ -14,8 +13,6 @@ test('loads Harper WASM, applies the dictionary, and leaves naming to the naming
   const disabledRules = await harperFindings(
     'We changed history, routing and billing. Its ready for review.',
   )
-  console.log(`harper adapter test: ${Math.round(performance.now() - started)}ms`)
-
   expect(misspelling).toMatchObject({
     ran: true,
     findings: [expect.objectContaining({ rule: 'SpellCheck', text: 'meida' })],

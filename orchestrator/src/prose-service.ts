@@ -14,10 +14,18 @@ export function proseCheckEnabled(): boolean {
 }
 
 export async function orchestratorProseGate(fields: ProseGateField[]): Promise<ProseGateResult> {
-  return proseGate(fields, {
-    displayName: cachedSignedInRecordUser()?.name ?? null,
-    enabled: proseCheckEnabled(),
-  })
+  try {
+    return proseGate(fields, {
+      displayName: cachedSignedInRecordUser()?.name ?? null,
+      enabled: proseCheckEnabled(),
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return {
+      refusal: null,
+      notices: [`Spelling and grammar check did not run: ${detail}`],
+    }
+  }
 }
 
 function emitProseNotices(notices: readonly string[]): void {
