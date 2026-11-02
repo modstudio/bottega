@@ -71,7 +71,7 @@ function matchingReversions(
   kind: WorkflowTreeReversion['kind'],
   imported: { slug: string; value: unknown }[],
   production: { slug: string; value: unknown; n: number }[],
-  history: Map<string, VersionedDefinition[]>,
+  history: Map<string, VersionedWorkflowTreeValue[]>,
   branchChangedPaths: ReadonlySet<string>,
 ): WorkflowTreeReversion[] {
   const current = new Map(production.map((item) => [item.slug, item]))
