@@ -40,6 +40,14 @@ export function canonRuleLevel(rule: string): CanonRuleLevel {
   return rule === 'canon/numeral' ? 'warning' : 'error'
 }
 
+export function refusingCanonFindings(findings: CanonFinding[]): CanonFinding[] {
+  return findings.filter(({ rule }) => canonRuleLevel(rule) === 'error')
+}
+
+export function warningCanonFindings(findings: CanonFinding[]): CanonFinding[] {
+  return findings.filter(({ rule }) => canonRuleLevel(rule) === 'warning')
+}
+
 export function isCanonCodeSourcePath(path: string): boolean {
   return /\.(?:ts|tsx|js|mjs|cjs|py|sh|php|vue)$/.test(path)
 }

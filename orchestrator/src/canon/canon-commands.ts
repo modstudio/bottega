@@ -43,6 +43,7 @@ import {
   classifyCanonFile,
   introducedCanonFindings,
   lintCanon,
+  refusingCanonFindings,
 } from './canon-lint.ts'
 import { HARNESS_NAMES, type HarnessName, type LoadPlan, planHarnessLoad } from './canon-load.ts'
 import { gatherHarnessLoadFacts, gatherWorkerHarnessLoadFacts } from './canon-load-files.ts'
@@ -371,8 +372,7 @@ export function canonLintCommand(flags: CanonFlags, presentation: CanonPresentat
     printMeasurements(result, presentation.log)
     printFindings(displayed, presentation.log)
   }
-  if (flags.has('strict') && displayed.some(({ rule }) => canonRuleLevel(rule) === 'error'))
-    presentation.exitCode(1)
+  if (flags.has('strict') && refusingCanonFindings(displayed).length) presentation.exitCode(1)
 }
 
 function canonDiffCommand(

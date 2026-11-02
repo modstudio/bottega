@@ -48,7 +48,7 @@ test('a hydration that introduces a canon lint finding stops publication before 
       subject: 'canon-mirror-lint',
       slug: 'AGENTS.md',
       title: 'AGENTS.md',
-      body: 'Keep 123 rules.\n',
+      body: 'It was renamed under DEV-1002.\n',
       reason: 'fixture lint finding',
       allowCanonBootstrap: true,
     })

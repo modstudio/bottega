@@ -9,7 +9,12 @@ import {
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
-import { type CanonFinding, type CanonSourceText, canonRuleLevel } from '../canon/canon-lint.ts'
+import {
+  type CanonFinding,
+  type CanonSourceText,
+  refusingCanonFindings,
+  warningCanonFindings,
+} from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
@@ -84,7 +89,7 @@ export function globalCanonWriteTargets(
 export const userCanonWriteTargets = globalCanonWriteTargets
 
 export function canonFindingsRefusal(findings: CanonFinding[]): string | null {
-  const errors = findings.filter(({ rule }) => canonRuleLevel(rule) === 'error')
+  const errors = refusingCanonFindings(findings)
   if (!errors.length) return null
   const warnings = canonFindingWarnings(findings)
   return (
@@ -97,9 +102,17 @@ export function canonFindingsRefusal(findings: CanonFinding[]): string | null {
 }
 
 export function canonFindingWarnings(findings: CanonFinding[]): string[] {
-  return findings
-    .filter(({ rule }) => canonRuleLevel(rule) === 'warning')
-    .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
+  return warningCanonFindings(findings).map(
+    (finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`,
+  )
+}
+
+export function addCanonWriteWarnings<T>(
+  written: T,
+  warnings: string[],
+): T & { writeWarnings?: string[] } {
+  const prior = (written as { writeWarnings?: string[] }).writeWarnings
+  return warnings.length ? { ...written, writeWarnings: [...(prior ?? []), ...warnings] } : written
 }
 
 export function canonRemovalRefusal(findings: CanonFinding[]): string | null {

@@ -744,12 +744,22 @@ async function handleSubjectsOrTransferDocCommand(
   const reason = flags.flag('reason')
   if (sub === 'import' && !reason?.trim())
     throw new Error(`${PLATFORM_SLUG} doc import <dir> --reason TEXT [--author NAME]`)
-  const count =
-    sub === 'export'
-      ? exportDocs(dir)
-      : await importDocs(dir, { reason: reason!, author: flags.flag('author') })
-  presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
+  const result = await transferDocs(sub, dir, {
+    reason: reason!,
+    author: flags.flag('author'),
+  })
+  presentation.log(`${sub === 'export' ? 'exported' : 'imported'} ${result.count} docs`)
+  printDocWriteWarnings(result.writeWarnings, presentation)
   return true
+}
+
+async function transferDocs(
+  sub: 'export' | 'import',
+  dir: string,
+  context: { reason: string; author?: string },
+): Promise<{ count: number; writeWarnings: string[] }> {
+  if (sub === 'export') return { count: exportDocs(dir), writeWarnings: [] }
+  return importDocs(dir, context)
 }
 
 function handleHistoryOutput(
@@ -824,6 +834,7 @@ async function handleHistoryDocCommand(
   presentation.log(
     flags.has('json') ? JSON.stringify(restored) : `restored ${scope}/${subject ?? '_'}/${slug}`,
   )
+  if (!flags.has('json')) printDocWriteWarnings(restored.writeWarnings, presentation)
   return true
 }
 

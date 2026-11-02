@@ -130,7 +130,7 @@ test('import writes replacements before superseded documents regardless of file 
   try {
     expect(exportDocs(target)).toBe(3)
     db().exec('DELETE FROM doc')
-    expect(await importDocs(target)).toBe(3)
+    expect((await importDocs(target)).count).toBe(3)
     expect(getDoc('global', null, 'a-old')).toMatchObject({
       status: 'superseded',
       replacement_slug: 'z-middle',

@@ -106,6 +106,7 @@ import {
 } from './doc-revision-store.ts'
 import {
   type CanonWriteTree,
+  addCanonWriteWarnings,
   canonFindingsRefusal,
   canonFindingWarnings,
   consumeDocBody,
@@ -136,13 +137,16 @@ function assertSetDocAllowed(input: DocWriteInput): void {
   if (refusal) throw new Error(refusal)
 }
 
-function assertRestoredDocWriteAllowed(input: Parameters<typeof assertDocWriteAllowed>[0]): void {
-  assertDocWriteAllowed(input)
-  if (input.scope !== 'resume') return
+type DocWriteAllowedInput = Parameters<typeof assertDocWriteAllowed>[0]
+
+function assertRestoredDocWriteAllowed(input: DocWriteAllowedInput): string[] {
+  const warnings = assertDocWriteAllowed(input)
+  if (input.scope !== 'resume') return warnings
   const refusal = rw.resumeRestoreRefusal(
     rw.resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)),
   )
   if (refusal) throw new Error(refusal)
+  return warnings
 }
 
 function assertInjectSize(input: {
@@ -375,15 +379,6 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   if (skipsProseLint(prior, input)) return
   const refusal = storedDocLintRefusal(input, prior, input.canonTree)
   if (refusal) throw new Error(refusal)
-}
-
-function addCanonWriteWarnings(
-  written: Doc & { writeWarnings?: string[] },
-  warnings: string[],
-): Doc & { writeWarnings?: string[] } {
-  return warnings.length
-    ? { ...written, writeWarnings: [...(written.writeWarnings ?? []), ...warnings] }
-    : written
 }
 
 async function setDocWithOp(
@@ -822,12 +817,15 @@ export function exportDocs(dir: string): number {
   return exportDocFiles(dir, listDocs())
 }
 
-export async function importDocs(dir: string, context: DocWriteContext): Promise<number> {
+export type ImportDocsResult = { count: number; writeWarnings: string[] }
+
+export async function importDocs(dir: string, context: DocWriteContext): Promise<ImportDocsResult> {
   assertWorkerDocStoreWriteAllowed('importDocs')
   writableDb()
   resolvedDocWriteIdentity(context)
-  return importDocFiles(dir, async (doc) => {
-    await setDocWithOp(
+  const writeWarnings: string[] = []
+  const count = await importDocFiles(dir, async (doc) => {
+    const written = await setDocWithOp(
       {
         ...doc,
         ...context,
@@ -835,7 +833,9 @@ export async function importDocs(dir: string, context: DocWriteContext): Promise
       },
       'import',
     )
+    writeWarnings.push(...(written.writeWarnings ?? []))
   })
+  return { count, writeWarnings }
 }
 
 export function listDocRevisions(
@@ -883,7 +883,7 @@ export async function restoreDoc(
   revisionId: string,
   context: DocWriteContext,
   owner: string | null = null,
-): Promise<Doc> {
+): Promise<Doc & { writeWarnings?: string[] }> {
   assertWorkerDocStoreWriteAllowed('restoreDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)
@@ -904,7 +904,7 @@ export async function restoreDoc(
     expectedCurrent,
     false,
   )
-  assertRestoredDocWriteAllowed({
+  const canonWarnings = assertRestoredDocWriteAllowed({
     scope,
     subject,
     owner,
@@ -956,7 +956,7 @@ export async function restoreDoc(
     current,
   )
   assertLocalRestoreCommands(revision, tree.audiences)
-  return applyRecordWriteAuthority({
+  const restored = await applyRecordWriteAuthority({
     // A removed local document has no live row retaining its document UUID. Restore mints a
     // new document UUID while its revision history remains continuous by address.
     local: () =>
@@ -1055,6 +1055,7 @@ export async function restoreDoc(
       })
     },
   })
+  return addCanonWriteWarnings(restored, canonWarnings)
 }
 
 export function diffDocRevisions(a: string, b: string, owner: string | null = null): string {

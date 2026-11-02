@@ -7,10 +7,41 @@ import { classifyReviewTier } from '../review/review-tier-classifier.ts'
 import { applyHydration } from './canon-apply.ts'
 import {
   canonMirrorCommitBody,
+  canonMirrorLintDecision,
   canonMirrorMergeArgs,
   decideCanonMirrorMerge,
   screenCanonMirrorError,
 } from './canon-mirror.ts'
+
+const lintFinding = (rule: string, message: string) => ({
+  file: 'AGENTS.md',
+  line: 1,
+  rule,
+  message,
+})
+
+describe('canon mirror lint decision', () => {
+  test('returns a warning without refusing numeral-only findings', () => {
+    expect(
+      canonMirrorLintDecision([lintFinding('canon/numeral', 'prose contains numeral 11')]),
+    ).toEqual({
+      refusal: null,
+      warnings: ['canon lint warning: AGENTS.md:1 canon/numeral prose contains numeral 11'],
+    })
+  })
+
+  test('separates mixed error and numeral findings', () => {
+    const decision = canonMirrorLintDecision([
+      lintFinding('canon/history', 'prose narrates history'),
+      lintFinding('canon/numeral', 'prose contains numeral 11'),
+    ])
+    expect(decision.refusal).toBe('canon lint found 1 findings: AGENTS.md:1 prose narrates history')
+    expect(decision.refusal).not.toContain('numeral')
+    expect(decision.warnings).toEqual([
+      'canon lint warning: AGENTS.md:1 canon/numeral prose contains numeral 11',
+    ])
+  })
+})
 
 describe('canon mirror commit body', () => {
   test('lists each changed path with latest store revision operation and reason', () => {

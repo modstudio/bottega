@@ -6,9 +6,9 @@ import {
   type CanonFinding,
   type CanonLintInput,
   type CanonSourceText,
-  canonRuleLevel,
   introducedCanonFindings,
   lintCanon,
+  refusingCanonFindings,
 } from './canon-lint.ts'
 import {
   CLAUDE_COMBINED_NOTICE_CHARS,
@@ -21,7 +21,7 @@ type Row = { slug: string; body: string }
 export type WorkflowStepBody = { slug: string; body: string }
 
 export function hasRefusingCanonFindings(findings: CanonFinding[]): boolean {
-  return findings.some(({ rule }) => canonRuleLevel(rule) === 'error')
+  return refusingCanonFindings(findings).length > 0
 }
 
 const SYNTHETIC_REPO = '/repo'
