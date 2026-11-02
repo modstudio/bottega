@@ -39,7 +39,7 @@ import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { reviewLensSelectionReasonForDispatch } from '../review/review-lens-dispatch-reason.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
-import { implicitReviewWarning } from '../review/review-target.ts'
+import { implicitReviewWarning, resolveReviewTarget } from '../review/review-target.ts'
 import {
   REVIEW_COVERAGE,
   REVIEW_LIMITS,
@@ -586,6 +586,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       resolveBase,
       isWorktreeRelativeRef,
       implicitReviewWarning,
+      resolveReviewTarget,
       resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
       lookupTaskKey,

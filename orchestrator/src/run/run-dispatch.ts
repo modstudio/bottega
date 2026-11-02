@@ -272,9 +272,10 @@ async function detachResolved(
         false,
         false,
         spec.lens,
-        spec.review,
+        spec.resolvedReviewTarget ? undefined : spec.review,
         spec.carry,
         spec.repo,
+        spec.resolvedReviewTarget !== undefined,
       )
   const mcpDispatch = { selectedAgent, mcpRequest, firstTurn }
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)

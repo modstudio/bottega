@@ -15,7 +15,6 @@ import {
   projectByName,
   projectRepositoryRefusal,
   projects,
-  resolveBranchRef,
   retiredProjectAt,
   retiredProjectByName,
   retiredProjectRefusal,
@@ -112,11 +111,11 @@ async function compose(
   requested: ReturnType<typeof job>,
   lens: string | undefined,
   cwd: string,
-  reviewRef: string | undefined,
+  explicitReviewBranch: string | null,
 ): Promise<string> {
   const earlier =
     requested.findings && project
-      ? presentation.earlierReviewRejections(project.name, cwd, explicitReviewBranch(reviewRef))
+      ? presentation.earlierReviewRejections(project.name, cwd, explicitReviewBranch)
       : { project: project?.name ?? '', branch: null, branchLineage: [], rows: [] }
   return lensPromptFor(project, requested.findings, lens, await presentation.readPrompt(), earlier)
 }
@@ -154,6 +153,13 @@ type DispatchPresentation = {
   resolveBase(cwd: string, base: string): string
   isWorktreeRelativeRef(ref: string): boolean
   implicitReviewWarning(cwd: string): string
+  resolveReviewTarget(
+    jobName: string,
+    cwd: string,
+    reviewRef?: string,
+    carry?: boolean,
+    launchKey?: string,
+  ): { branch: string; commit: string; base: string } | null
   resolveCallerCheckout(
     cwd?: string,
     repo?: string,
@@ -264,18 +270,6 @@ export function reviewMemoryBranch(
   explicitReviewBranch: string | null,
 ): string | null {
   return explicitReviewBranch ?? callerBranch
-}
-
-// Memory is advisory: a review target this cannot name as a branch (a run with no branch, an
-// unknown id) falls back to the caller's branch, and the dispatch's own target resolution
-// reports anything actually wrong with the target.
-function explicitReviewBranch(reviewRef: string | undefined): string | null {
-  if (!reviewRef) return null
-  try {
-    return resolveBranchRef(reviewRef).branch
-  } catch {
-    return null
-  }
 }
 
 function taskBranchBypassWarningKey(
@@ -414,6 +408,7 @@ export async function dispatchCommand(
     resolveTaskBranchForDispatch,
     checkoutHasUncommittedWork,
     implicitReviewWarning,
+    resolveReviewTarget,
     resolveCallerCheckout,
     resolveDispatchOptions,
     lookupTaskKey,
@@ -440,6 +435,13 @@ export async function dispatchCommand(
   const requestedBase = flag('base'),
     continueBranch = flag('continue')
   const reviewRef = flag('review')
+  const resolvedReviewTarget = resolveReviewTarget(
+    jobName,
+    callerCwd,
+    reviewRef,
+    has('carry'),
+    flag('key'),
+  )
   const base = writingBranchOptions({
     jobName,
     continueBranch,
@@ -457,10 +459,10 @@ export async function dispatchCommand(
     false,
     false,
     flag('lens'),
-    reviewRef,
+    resolvedReviewTarget ? undefined : reviewRef,
     has('carry'),
     explicitRepo,
-    false,
+    resolvedReviewTarget !== null,
     Boolean(requestedCwd),
   )
   reportDefaultSeed(flag('seed'), seed, porcelain, error)
@@ -535,7 +537,14 @@ export async function dispatchCommand(
         '  pass --carry to send it with the run.',
     )
   }
-  const prompt = await compose(presentation, dispatchProject, requested, lens, callerCwd, reviewRef)
+  const prompt = await compose(
+    presentation,
+    dispatchProject,
+    requested,
+    lens,
+    callerCwd,
+    resolvedReviewTarget?.branch ?? null,
+  )
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),
@@ -588,6 +597,7 @@ export async function dispatchCommand(
       noWaitCapacity: has('no-wait-capacity'),
       carry: has('carry'),
       review: reviewRef,
+      resolvedReviewTarget: resolvedReviewTarget ?? undefined,
       cwd: callerCwd,
       launchCwd: caller.launchCwd,
       deliverables,

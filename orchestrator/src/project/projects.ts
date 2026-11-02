@@ -55,6 +55,7 @@ import {
   placeholders,
   validateCreate,
 } from '../worktree/worktree-template.ts'
+import { isCommitShapedBranch } from './branch-name.ts'
 import { projectAgentKeyProblems } from './project-agent-keys.ts'
 import { focusedTestsProblems } from './project-focused-tests.ts'
 import {
@@ -161,7 +162,10 @@ export function reviewBranchForCommit(
   return (
     runsNewestFirst.find(
       (run) =>
-        run.branch && run.headCommit === commit && run.launchKey?.trim().toUpperCase() === task,
+        run.branch &&
+        !isCommitShapedBranch(run.branch) &&
+        run.headCommit === commit &&
+        run.launchKey?.trim().toUpperCase() === task,
     )?.branch ?? null
   )
 }
@@ -180,7 +184,7 @@ export function recordedReviewBranch(
       `SELECT branch,head_commit AS headCommit,launch_key AS launchKey FROM run
         WHERE project_record_id=? AND head_commit=? AND branch IS NOT NULL
           AND upper(trim(launch_key))=?
-        ORDER BY number DESC LIMIT 1`,
+        ORDER BY number DESC`,
     )
     .all(projectRecordId, commit, task)
   return reviewBranchForCommit(commit, launchKey, facts)

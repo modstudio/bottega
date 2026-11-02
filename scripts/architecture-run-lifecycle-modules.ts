@@ -226,6 +226,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-host-capacity.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', [
+    '../project/branch-name.ts',
     './resume-tree.ts',
     './synthetic-lifecycle-job.ts',
   ]),

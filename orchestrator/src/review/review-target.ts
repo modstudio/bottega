@@ -66,6 +66,24 @@ export type ReviewTargetRefDecision =
   | { kind: 'commit'; ref: string }
   | { kind: 'refuse'; message: string }
 
+/** Resolve a commit target to the real branch whose review history it extends. */
+export function decideCommitReviewBranch(input: {
+  reviewRef: string
+  commit: string
+  launchKey: string | null | undefined
+  recordedBranch: string | null
+  callerBranch: string | null
+  callerBranchContainsCommit: boolean
+}): string {
+  if (input.recordedBranch) return input.recordedBranch
+  if (input.callerBranch && input.callerBranchContainsCommit) return input.callerBranch
+  throw new Error(
+    `--review ${input.reviewRef} names commit ${input.commit.slice(0, 8)}, which no recorded run ` +
+      `of ${input.launchKey?.trim() || '(no task key)'} and no branch of this tree contains ` +
+      `(caller: ${input.callerBranch ?? 'detached HEAD'}); dispatch with --review <branch>`,
+  )
+}
+
 /** Select a local branch, its fetched origin branch, or an already-present commit object. */
 export function reviewTargetRef(input: {
   reviewRef: string
@@ -250,15 +268,26 @@ export function resolveReviewTarget(
   })
   if (targetRef.kind === 'refuse') throw new Error(targetRef.message)
   const commit = resolveBase(cwd, `${targetRef.ref}^{commit}`)
-  const matchingBranch =
-    targetRef.kind === 'commit' && project
-      ? recordedReviewBranch(project.recordId, commit, launchKey)
-      : null
-  const branch = matchingBranch ?? resolved.branch
-  if (carry && branchOf(cwd) !== branch) {
+  const callerBranch = branchOf(cwd)
+  const branch =
+    targetRef.kind === 'commit'
+      ? decideCommitReviewBranch({
+          reviewRef,
+          commit,
+          launchKey,
+          recordedBranch: project
+            ? recordedReviewBranch(project.recordId, commit, launchKey)
+            : null,
+          callerBranch,
+          callerBranchContainsCommit: Boolean(
+            callerBranch && probe(['merge-base', '--is-ancestor', commit, callerBranch]),
+          ),
+        })
+      : resolved.branch
+  if (carry && callerBranch !== branch) {
     throw new Error(
       `--review ${reviewRef} resolves to branch ${branch}, but --carry was requested from ` +
-        `${branchOf(cwd) ?? '(detached HEAD)'}; run --carry from that branch's own worktree`,
+        `${callerBranch ?? '(detached HEAD)'}; run --carry from that branch's own worktree`,
     )
   }
   const trunk = project?.settings.trunk?.trim()

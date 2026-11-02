@@ -156,6 +156,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd(),
     runProjectName = opts.repo ?? repoOf(callerCwd)
+  const reviewTarget =
+    opts.resolvedReviewTarget ??
+    resolveReviewTarget(opts.job, callerCwd, opts.review, opts.carry, opts.key)
   const seed = preflight(
     opts.job,
     callerCwd,
@@ -165,14 +168,11 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     !resume.isFirstTurn,
     opts.reserveId !== undefined,
     opts.lens,
-    opts.resolvedReviewTarget ? undefined : opts.review,
+    reviewTarget ? undefined : opts.review,
     opts.carry,
     runProjectName ?? undefined,
-    opts.resolvedReviewTarget !== undefined,
+    reviewTarget !== null,
   )
-  const reviewTarget =
-    opts.resolvedReviewTarget ??
-    resolveReviewTarget(opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry, opts.key)
   const implicitReview = implicitReviewClaim(callerCwd, !!reviewTarget, !!requestedJob.findings)
   const coverageBase = reviewTarget?.base ?? implicitReview.coverageBase
   // Programmatic callers also refuse a bad ref before a run row or worktree exists.

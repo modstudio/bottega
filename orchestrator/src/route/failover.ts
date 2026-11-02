@@ -69,6 +69,7 @@ export type DetachSpec = {
   noWaitCapacity?: boolean
   carry?: boolean
   review?: string
+  resolvedReviewTarget?: { branch: string; commit: string; base: string }
   ownerSession?: string | null
   deliverables?: string[]
   timeoutMinutes?: number

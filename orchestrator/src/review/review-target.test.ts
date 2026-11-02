@@ -6,8 +6,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { db } from '../database/db.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
-import { upsertProject } from '../project/projects.ts'
+import { isCommitShapedBranch } from '../project/branch-name.ts'
+import { reviewBranchForCommit, upsertProject } from '../project/projects.ts'
+import { claimedRunBranch } from '../run/run-claim-plan.ts'
+import { branchReviewLineage } from './review-lineage.ts'
 import {
+  decideCommitReviewBranch,
   emptyReviewRefusal,
   implicitReviewBranch,
   implicitReviewBranchFrom,
@@ -18,6 +22,100 @@ import {
 } from './review-target.ts'
 
 describe('review target', () => {
+  test('a commit target from its branch tree records branch review lineage', () => {
+    const branch = decideCommitReviewBranch({
+      reviewRef: '5c156c96b',
+      commit: '5c156c96b1234567890123456789012345678901',
+      launchKey: 'DEV-2031',
+      recordedBranch: null,
+      callerBranch: 'DEV-2031-review-branch',
+      callerBranchContainsCommit: true,
+    })
+    const claimed = claimedRunBranch(branch, null, null, 'DEV-2031-review-branch')
+
+    expect(branch).toBe('DEV-2031-review-branch')
+    expect(
+      branchReviewLineage('DEV-2031-review-branch', [
+        {
+          mintedBranch: 'DEV-2031-review-branch',
+          launchBase: 'main',
+          launchKey: 'DEV-2031',
+          headCommit: '5c156c96b1234567890123456789012345678901',
+        },
+      ]),
+    ).toContain(claimed)
+  })
+
+  test('a recorded same-task branch wins over the caller tree', () => {
+    expect(
+      decideCommitReviewBranch({
+        reviewRef: '5c156c96b',
+        commit: '5c156c96b1234567890123456789012345678901',
+        launchKey: 'DEV-2031',
+        recordedBranch: 'DEV-2031-recorded',
+        callerBranch: 'DEV-2031-caller',
+        callerBranchContainsCommit: true,
+      }),
+    ).toBe('DEV-2031-recorded')
+  })
+
+  test('a commit-shaped recorded row is skipped for an older real branch', () => {
+    const commit = '5c156c96b1234567890123456789012345678901'
+    expect(
+      reviewBranchForCommit(commit, 'DEV-2031', [
+        { branch: '5c156c96b', headCommit: commit, launchKey: 'DEV-2031' },
+        { branch: 'DEV-2031-real', headCommit: commit, launchKey: 'DEV-2031' },
+      ]),
+    ).toBe('DEV-2031-real')
+  })
+
+  test('a commit outside the caller branch is refused with the branch remedy', () => {
+    expect(() =>
+      decideCommitReviewBranch({
+        reviewRef: '5c156c96b',
+        commit: '5c156c96b1234567890123456789012345678901',
+        launchKey: 'DEV-2031',
+        recordedBranch: null,
+        callerBranch: 'DEV-2031-caller',
+        callerBranchContainsCommit: false,
+      }),
+    ).toThrow('caller: DEV-2031-caller')
+    expect(() =>
+      decideCommitReviewBranch({
+        reviewRef: '5c156c96b',
+        commit: '5c156c96b1234567890123456789012345678901',
+        launchKey: 'DEV-2031',
+        recordedBranch: null,
+        callerBranch: 'DEV-2031-caller',
+        callerBranchContainsCommit: false,
+      }),
+    ).toThrow('dispatch with --review <branch>')
+  })
+
+  test('a commit target from detached HEAD is refused', () => {
+    expect(() =>
+      decideCommitReviewBranch({
+        reviewRef: '5c156c96b',
+        commit: '5c156c96b1234567890123456789012345678901',
+        launchKey: 'DEV-2031',
+        recordedBranch: null,
+        callerBranch: null,
+        callerBranchContainsCommit: false,
+      }),
+    ).toThrow('caller: detached HEAD')
+  })
+
+  test('commit-shaped branch values are refused while ordinary branches remain valid', () => {
+    expect(isCommitShapedBranch('5c156c9')).toBeTrue()
+    expect(isCommitShapedBranch('5c156c96b1234567890123456789012345678901')).toBeTrue()
+    expect(isCommitShapedBranch('main')).toBeFalse()
+    expect(isCommitShapedBranch('DEV-2031-orch-review')).toBeFalse()
+    expect(isCommitShapedBranch('worktree-dev-2016-harper-dep')).toBeFalse()
+    expect(() => claimedRunBranch('5c156c96b', null, null, null)).toThrow(
+      'dispatch with --review <branch>',
+    )
+  })
+
   test('implicit review branch excludes trunk and detached HEAD', () => {
     expect(implicitReviewBranch).toBeFunction()
     expect(implicitReviewBranchFrom('DEV-1147-branch', 'main')).toBe('DEV-1147-branch')
