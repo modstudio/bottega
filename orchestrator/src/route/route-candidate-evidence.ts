@@ -39,6 +39,7 @@ export function candidateEvidenceSummaries(
   stack?: string | null,
   lens?: string | null,
 ): CandidateEvidenceSummary[] {
+  // Probes and evidence-excluded runs do not establish agent quality.
   return db()
     .query(
       `SELECT agent, SUM(runs) AS runs, SUM(scored) AS scored,
@@ -50,6 +51,21 @@ export function candidateEvidenceSummaries(
               CASE WHEN s.delivery IS NOT NULL
                         AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
                    THEN 1 ELSE 0 END AS scored,
+              -- Only failures NOBODY JUDGED. A run contributes exactly one
+              -- judgment: an explicit score if it has one, otherwise the
+              -- implicit delivery=none that failing amounts to. Counting both
+              -- made a single failed-and-scored run worth two — the weight came
+              -- out the same, but the evidence count doubled, so an agent could
+              -- cross MIN_SAMPLE on half the runs it should have needed.
+              --
+              -- An UNREACHABLE endpoint is excluded outright: a box that is
+              -- switched off never ran at all, and charging it to the model
+              -- makes an outage indistinguishable from incompetence. A
+              -- CONTENT_REFUSAL is excluded for the parallel reason that it
+              -- records vendor policy for a prompt class, not competence.
+              --
+              -- The same list gates EXPLICIT scores: a run that is not
+              -- evidence is not evidence whoever looks at it.
               CASE WHEN r.status IN ('failed','stale') AND s.delivery IS NULL
                         AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
                    THEN 1 ELSE 0 END AS failures,
@@ -59,6 +75,9 @@ export function candidateEvidenceSummaries(
               CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_cost_usd, 0) ELSE 0 END AS cost
          FROM run r INDEXED BY run_routing_evidence_cover
          LEFT JOIN score s ON s.run_record_id = r.record_id
+        -- Child turns are excluded: a conversation is ONE piece of evidence
+        -- about an agent, and its root row carries the outcome. Counting each
+        -- turn would let an agent cross MIN_SAMPLE by asking questions.
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
           AND r.executor <> 'harness'
@@ -88,6 +107,10 @@ export function candidateLatencyRows(
   return db()
     .query(
       `SELECT agent, latency_ms FROM run INDEXED BY run_routing_latency_cover
+        -- Latency is per TURN here, deliberately: "how long does this agent
+        -- take to answer" is a question about a turn, and a chain's total is a
+        -- question about how much the architect had to be asked. Pooled rows
+        -- are root runs only, because the pool carries no turns.
         WHERE job = ? AND status = 'ok' AND probe = 0 AND latency_ms IS NOT NULL
           AND ${promptBucketSql('run', promptBytes)}
           ${stack ? 'AND stack = ?' : ''}

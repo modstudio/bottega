@@ -397,6 +397,8 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       tokens: hist.get(name)?.tokens ?? 0,
       usage: runUsageMedians(window.rows),
       costUsd: hist.get(name)?.cost ?? 0,
+      // A free or no-cost agent spends no metered quota, so on a genuine tie it
+      // keeps the paid subscriptions in reserve for work that needs them.
       free: a.billing === 'none' || a.billing === 'free',
       eligible,
       why,

@@ -54,7 +54,7 @@ export function boundedRoutingEvidenceRows(input: {
   limit: number
 }): RoutingEvidenceRow[] {
   const { jobName, promptBytes, stack, lens, currentModels, limit } = input
-  return db()
+  const rows = db()
     .query(
       `WITH current_agent(agent, model) AS (
          SELECT key, value FROM json_each(?)
@@ -98,5 +98,6 @@ export function boundedRoutingEvidenceRows(input: {
       lens ?? null,
       lens ?? null,
       limit,
-    ) as RoutingEvidenceRow[]
+    ) as (Omit<RoutingEvidenceRow, 'pooled'> & { pooled: number })[]
+  return rows.map((row) => ({ ...row, pooled: row.pooled === 1 }))
 }
