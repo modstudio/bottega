@@ -25,10 +25,11 @@ export const proseModules: ProseModule[] = [
   ]),
   module('orchestrator/src/doc/doc-prose.ts', [
     '../prose-service.ts',
-    '../settings/settings.ts',
     './doc-article-fields.ts',
+    './doc-body-prose.ts',
     './doc-read-store.ts',
   ]),
+  module('orchestrator/src/doc/doc-body-prose.ts', ['../settings/settings.ts']),
   module('orchestrator/src/prose-service.ts', [
     '../../shared/machine-config.ts',
     '../../shared/prose/prose-gate.ts',
@@ -36,6 +37,7 @@ export const proseModules: ProseModule[] = [
   ]),
   module('orchestrator/src/record/record-api-doc-prose.ts', [
     '../../../shared/prose/prose-gate.ts',
+    '../doc/doc-body-prose.ts',
     './record-api-prose.ts',
     './record-auth.ts',
     './record-doc-errors.ts',

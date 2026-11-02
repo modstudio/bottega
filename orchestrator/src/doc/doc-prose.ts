@@ -2,13 +2,9 @@
 /** Maps a stored document revision to the shared prose gate fields. */
 
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { SETTINGS_SCOPE } from '../settings/settings.ts'
 import type { DocWriteInput } from './doc-article-fields.ts'
+import { docBodyIsProse } from './doc-body-prose.ts'
 import type { Doc } from './doc-read-store.ts'
-
-export function docBodyIsProse(scope: string): boolean {
-  return scope !== SETTINGS_SCOPE
-}
 
 export async function assertDocProse(input: DocWriteInput, prior: Doc | null): Promise<void> {
   const fields = [

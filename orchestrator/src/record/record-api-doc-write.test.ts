@@ -122,6 +122,33 @@ describe('record API doc write refusals', () => {
     expect(writes).toBe(0)
   })
 
+  test('PUT docs writes a settings document without checking its structured body', async () => {
+    let writes = 0
+    const unknownToken = ['r', 'g'].join('')
+    const app = appWith(identity, {
+      upsertDoc: async () => {
+        writes += 1
+        return { id, revisionId: id }
+      },
+    })
+    const response = await app.request('/v1/docs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'settings',
+        subject: null,
+        slug: 'settings',
+        title: 'Settings',
+        body: JSON.stringify({ permissions: { allow: [`Bash(${unknownToken} *)`] } }),
+        delivery: 'demand',
+        reason: 'test structured settings body',
+        author: 'tester',
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(writes).toBe(1)
+  })
+
   test('reorder forwards the tenant-bound complete sibling order', async () => {
     let received: Record<string, unknown> | null = null
     const app = appWith(identity, {
