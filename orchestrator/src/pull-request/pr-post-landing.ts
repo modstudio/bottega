@@ -30,7 +30,6 @@ import {
   requiredRungDecision,
   verifyMainCheckout,
 } from '../release/release-required.ts'
-import { releaseDepthFlag } from '../release/ship-to-reach.ts'
 import {
   formatShipCleanup,
   type ShipCleanupReport,
@@ -43,6 +42,7 @@ import {
   POST_LANDING_FLAG,
   type PullRequestPostLandingPayload,
   postLandingRecovery,
+  requiredMergeCommand,
 } from './pr-post-landing-payload.ts'
 
 type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
@@ -71,9 +71,6 @@ export type PullRequestPostLandingAdapter = {
   ): PullRequestMergeOutcome
 }
 
-const releaseRequiredCommand = (target: string, depth?: string): string =>
-  `${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
-
 function moveMainForPostLanding(
   adapter: PullRequestPostLandingAdapter,
   project: Project,
@@ -82,7 +79,7 @@ function moveMainForPostLanding(
   movesInstallation: boolean,
   depth?: string,
 ): { moved: true } | { moved: false; detail: string; recovery: string } {
-  const retry = releaseRequiredCommand(target, depth)
+  const retry = requiredMergeCommand(target, depth)
   const recovery = movesInstallation
     ? `${project.path}/bin/${PLATFORM_SLUG} machine update, then ${retry}`
     : `git -C ${project.path} fetch origin, then git -C ${project.path} merge --ff-only ${mergeCommit}, then ${retry}`

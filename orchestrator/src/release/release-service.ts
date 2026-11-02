@@ -26,8 +26,8 @@ import {
   releaseCommandEnvironment,
   releaseLockDecision,
   releaseProcessEnvironment,
-  releaseProofDecision,
   releaseReasonDecision,
+  releaseRowProvesCandidate,
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
@@ -339,13 +339,7 @@ function alreadyLiveReleaseResult(
   const newestLive = newestSuccessfulRelease(project, rung, declaresLive)
   if (
     !newestLive ||
-    !releaseProofDecision({
-      declaresLive,
-      exitCode: newestLive.exit_code,
-      liveMatchesCandidate:
-        newestLive.live_matches_candidate === null ? null : newestLive.live_matches_candidate === 1,
-      candidateContainsMerge: newestLive.candidate_commit === deployed,
-    }) ||
+    !releaseRowProvesCandidate(newestLive, declaresLive, deployed) ||
     !alreadyLiveReleaseDecision({
       newestLive: newestLive.candidate_commit,
       candidate: deployed,

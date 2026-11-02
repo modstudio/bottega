@@ -7,8 +7,12 @@ import { releaseDepthFlag } from '../release/ship-to-reach.ts'
 
 export const POST_LANDING_FLAG = '--post-landing'
 
+export function requiredMergeCommand(target: string, depth?: string | null): string {
+  return `${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
+}
+
 export function postLandingRecovery(target: string, depth?: string | null): string {
-  return `recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
+  return `recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${requiredMergeCommand(target, depth)}`
 }
 
 export type PullRequestPostLandingPayload = {

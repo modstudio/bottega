@@ -206,6 +206,25 @@ export function releaseProofDecision(facts: {
   return facts.declaresLive ? facts.liveMatchesCandidate === true : true
 }
 
+/** Map a release ledger row to proof that its candidate is deployed. */
+export function releaseRowProvesCandidate(
+  row: {
+    exit_code: number | null
+    live_matches_candidate: number | null
+    candidate_commit: string
+  },
+  declaresLive: boolean,
+  deployed: string,
+): boolean {
+  return releaseProofDecision({
+    declaresLive,
+    exitCode: row.exit_code,
+    liveMatchesCandidate:
+      row.live_matches_candidate === null ? null : row.live_matches_candidate === 1,
+    candidateContainsMerge: row.candidate_commit === deployed,
+  })
+}
+
 export function releaseLockDecision(
   holder: { session: string | null; since: string } | null,
 ): Decision {

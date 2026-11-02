@@ -6,7 +6,6 @@ export const pullRequestModuleSpecs = [
       '../release/release-required.ts',
       '../release/ship-to-reach.ts',
     ],
-    typeOnlyAllowed: ['../release/release-required.ts'],
   },
   {
     file: 'orchestrator/src/pull-request/pr-post-landing.ts',
