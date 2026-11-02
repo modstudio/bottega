@@ -76,6 +76,12 @@ describe('cost policy selection', () => {
     expect(belowCostFloor(0.79, 0.9, NOISE_BAND)).toBe(true)
   })
 
+  test('a cheaper candidate within the floor noise band can be selected', () => {
+    const costly = candidate('costly', 95, 2, 0.95)
+    const cheap = candidate('cheap', 85, 1, 0.85)
+    expect(select([costly, cheap], 1, 0.9, costly).chosen.agent).toBe('cheap')
+  })
+
   test('the floor is ignored when all candidates miss', () => {
     const current = candidate('quality-choice', 95, 2, 0.79)
     const allBelow = select([current, candidate('cheap-low', 70, 0.1, 0.7)], 1, 0.9, current)
