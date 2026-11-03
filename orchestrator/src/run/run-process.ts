@@ -4,7 +4,6 @@
  * run events. Must not know routing, contracts, reviews, or transports.
  */
 
-import { createHash } from 'node:crypto'
 import {
   observeBoundedSubprocess,
   type PidRecordIdentity,
@@ -485,8 +484,6 @@ export function completeRunStartup(): true {
   bindSignals()
   return true
 }
-
-export const sha = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16)
 
 export function errorTail(blob: string, limit = 2000): string {
   const t = blob.trim()

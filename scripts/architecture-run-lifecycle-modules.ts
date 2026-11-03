@@ -201,6 +201,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-claim-transaction.ts',
     './question-close.ts',
     './branch-owner-guard.ts',
+    './prompt-sha.ts',
     './run-process.ts',
     './resume-tree.ts',
     '../sandbox/sandbox.ts',

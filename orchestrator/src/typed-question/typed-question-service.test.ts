@@ -1,10 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { askTypedQuestionClient } from '../../../shared/typed-question/client.ts'
-import {
-  SPEC_UNSETTLED_QUESTION,
-  type TypedQuestion,
-} from '../../../shared/typed-question/registry.ts'
+import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
+import { SPEC_UNSETTLED_QUESTION } from './spec-unsettled-question.ts'
 import type { TypedQuestionAnswerRow } from './typed-question-answer-store.ts'
 import { askTypedQuestion } from './typed-question-service.ts'
 

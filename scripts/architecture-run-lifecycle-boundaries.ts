@@ -146,7 +146,6 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     [
       '../../../shared/brand.ts',
       'node:child_process',
-      'node:crypto',
       'node:fs',
       'node:path',
       '../../../shared/record-id.ts',
@@ -170,6 +169,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-lease.ts',
       './run-mcp-main-stack.ts',
       './run-number.ts',
+      './prompt-sha.ts',
       './run-resume-kind.ts',
       './run-startup-failure.ts',
       './run-task-reference.ts',

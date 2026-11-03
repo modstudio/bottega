@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
-import { sha } from '../run/run-process.ts'
+import { sha } from '../run/prompt-sha.ts'
 import {
   composeDispatchPrompt,
   genericLensProfileNotices,
@@ -132,21 +132,18 @@ test('unsettled-spec warning stays silent on no answer', async () => {
 test.each([
   ['diagnose', false],
   ['implement', true],
-] as const)(
-  'does not ask for job=%s continuation=%p',
-  async (jobName, continuation) => {
-    let asks = 0
-    await warnForUnsettledSpec(
-      { jobName, continuation, spec: 'spec', specIdentity: 'spec-sha' },
-      async () => {
-        asks += 1
-        return { noul: 1 }
-      },
-      () => {},
-    )
-    expect(asks).toBe(0)
-  },
-)
+] as const)('does not ask for job=%s continuation=%p', async (jobName, continuation) => {
+  let asks = 0
+  await warnForUnsettledSpec(
+    { jobName, continuation, spec: 'spec', specIdentity: 'spec-sha' },
+    async () => {
+      asks += 1
+      return { noul: 1 }
+    },
+    () => {},
+  )
+  expect(asks).toBe(0)
+})
 
 test('unsettled-spec evidence uses the composed prompt identity and raw spec state', async () => {
   const rawSpec = '  Implement this behavior.  '

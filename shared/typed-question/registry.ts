@@ -1,5 +1,5 @@
 // concern: typed-question-registry
-/** Declares stable typed questions and the probability at which callers act. */
+/** Defines the shape of a typed question; each concern declares its own questions beside the code that asks them. */
 
 export type NoulQuestion = {
   id: string
@@ -19,12 +19,3 @@ export type ChoiceQuestion = {
 }
 
 export type TypedQuestion = NoulQuestion | ChoiceQuestion
-
-export const SPEC_UNSETTLED_QUESTION = {
-  id: 'spec_unsettled',
-  version: 1,
-  type: 'noul',
-  threshold: 0.85,
-  instructions:
-    'This is a task specification handed to a coding agent that must stop and ask rather than decide anything itself. Judge whether the spec leaves at least one choice between reasonable options that it does not settle, so the agent will have to ask.',
-} as const satisfies NoulQuestion

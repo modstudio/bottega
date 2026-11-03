@@ -1,12 +1,20 @@
 import { describe, expect, test } from 'bun:test'
 import { askTypedQuestionClient } from './client.ts'
-import { type ChoiceQuestion, SPEC_UNSETTLED_QUESTION } from './registry.ts'
+import type { ChoiceQuestion, NoulQuestion } from './registry.ts'
+
+const FIXTURE_QUESTION = {
+  id: 'spec_unsettled',
+  version: 1,
+  type: 'noul',
+  threshold: 0.5,
+  instructions: 'Judge whether the fixture state leaves a choice open.',
+} as const satisfies NoulQuestion
 
 const resolve = async () => ({ TYPESAFE_KEY: 'fixture-secret' })
 
 test('sends the declared noul question and parses its probability', async () => {
   let request: { url: string; init: RequestInit } | null = null
-  const result = await askTypedQuestionClient(SPEC_UNSETTLED_QUESTION, 'choose one', {
+  const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'choose one', {
     resolve,
     fetch: async (url, init) => {
       request = { url, init }
@@ -35,7 +43,7 @@ test('sends the declared noul question and parses its probability', async () => 
     questions: {
       spec_unsettled: {
         type: 'noul',
-        instructions: SPEC_UNSETTLED_QUESTION.instructions,
+        instructions: FIXTURE_QUESTION.instructions,
       },
     },
   })
@@ -97,7 +105,7 @@ test('sends criteria and parses a choice answer', async () => {
 describe('backoff response', () => {
   test('retries 429 once and then returns the failure class', async () => {
     let calls = 0
-    const result = await askTypedQuestionClient(SPEC_UNSETTLED_QUESTION, 'state', {
+    const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
       resolve,
       fetch: async () => {
         calls += 1

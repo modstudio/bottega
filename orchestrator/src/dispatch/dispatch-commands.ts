@@ -3,10 +3,7 @@
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
-import {
-  SPEC_UNSETTLED_QUESTION,
-  type TypedQuestion,
-} from '../../../shared/typed-question/registry.ts'
+import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import {
   mechanicallyEnforcedChecks,
   resolveMechanicalChecks,
@@ -27,6 +24,7 @@ import {
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { DetachSpec } from '../route/failover.ts'
+import { SPEC_UNSETTLED_QUESTION } from '../typed-question/spec-unsettled-question.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'

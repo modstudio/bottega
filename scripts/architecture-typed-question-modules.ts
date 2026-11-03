@@ -9,12 +9,16 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const typedQuestionModules = [
+  module('orchestrator/src/run/prompt-sha.ts', ['node:crypto']),
   module('shared/typed-question/registry.ts', []),
   module('shared/typed-question/client.ts', ['../env-source.ts', './registry.ts']),
   module('orchestrator/src/typed-question/typed-question-answer-store.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
     '../database/db.ts',
+  ]),
+  module('orchestrator/src/typed-question/spec-unsettled-question.ts', [
+    '../../../shared/typed-question/registry.ts',
   ]),
   module('orchestrator/src/typed-question/typed-question-service.ts', [
     'node:crypto',
