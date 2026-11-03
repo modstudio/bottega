@@ -18,7 +18,6 @@ import {
   invitationApiClient,
   registerInvitationAuthProofs,
   SIGN_UP_AUTH,
-  SIGN_UP_CLI_OUTPUT,
   signUpInvitationFixtures,
   testRecordAuth,
 } from '../../test/fixtures/record-auth-postgres.ts'

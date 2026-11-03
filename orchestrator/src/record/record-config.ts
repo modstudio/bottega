@@ -836,7 +836,9 @@ export async function createMachineKeyClaimChallenge(
 export async function claimMachineKey(
   input: ConfigTenant & { keyId: string; challengeId: string; nonce: Uint8Array },
 ): Promise<void> {
-  const nonceHash = new Uint8Array(await crypto.subtle.digest('SHA-256', input.nonce))
+  const nonceHash = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', input.nonce as Uint8Array<ArrayBuffer>),
+  )
   const result = await tenant(input, async (tx) => {
     const rows = await tx`
       DELETE FROM machine_key_claim_challenge
