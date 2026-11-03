@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { TRPCError } from '@trpc/server'
 import { createRecordClient, type RecordFetch } from './record-client.ts'
 
 const whoamiBody = {
@@ -73,6 +74,40 @@ function clientWith(fetch: RecordFetch, headers: { cookie?: string; authorizatio
 }
 
 describe('record client', () => {
+  test('runs view refuses when the hosted request does not answer before its deadline', async () => {
+    const client = createRecordClient({
+      baseUrl: 'https://api.example.test',
+      headers: {},
+      fetch: () => new Promise(() => {}),
+      requestDeadlineMs: 20,
+    })
+
+    const error = await client
+      .runsView({ hours: 24, agent: '', project: '', offset: 0, limit: 25, search: '' })
+      .catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(TRPCError)
+    expect(error.code).toBe('TIMEOUT')
+    expect(error.message).toContain('/v1/runs/window')
+  })
+
+  test('runs view refuses when the hosted response body does not finish before its deadline', async () => {
+    const client = createRecordClient({
+      baseUrl: 'https://api.example.test',
+      headers: {},
+      fetch: async () => new Response(new ReadableStream({ start() {} })),
+      requestDeadlineMs: 20,
+    })
+
+    const error = await client
+      .runsView({ hours: 24, agent: '', project: '', offset: 0, limit: 25, search: '' })
+      .catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(TRPCError)
+    expect(error.code).toBe('TIMEOUT')
+    expect(error.message).toContain('/v1/runs/window')
+  })
+
   test('projects accepts the additive adoption response', async () => {
     const response = {
       id: '01990000-0000-7000-8000-000000000041',
