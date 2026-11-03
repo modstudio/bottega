@@ -199,10 +199,11 @@ describe('data key wrapping', () => {
     const recipient = await generateMachineKeyPair()
     const senderKeyId = await machineKeyId(sender.publicKey)
     const keyId = await machineKeyId(recipient.publicKey)
+    const claimLikeWrapContext = { spaceId: wrapContext.spaceId, dekId: keyId, dekVersion: 0 }
     const dek = generateDataKey()
     const wrapped = await wrapDataKey({
       dek,
-      wrapContext,
+      wrapContext: claimLikeWrapContext,
       senderPrivateKey: sender.privateKey,
       senderPublicKey: sender.publicKey,
       recipientPublicKey: recipient.publicKey,

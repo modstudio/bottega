@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { assertActiveWrapRecipients, assertRegisteredWrapSenders } from './record-config.ts'
+import {
+  assertActiveWrapRecipients,
+  assertRegisteredWrapSenders,
+  assertWrapRecipientAccess,
+} from './record-config.ts'
 
 const wrap = (recipientKeyId: string) => ({
   recipientKeyId,
@@ -36,4 +40,14 @@ test('data-key services refuse an unregistered wrap sender and allow a registere
   expect(() =>
     assertRegisteredWrapSenders([candidate], new Set(['BBBBBBBBBBBBBBBBBBBBBB'])),
   ).not.toThrow()
+})
+
+test('data-key services require recipient ownership and config access', () => {
+  expect(() => assertWrapRecipientAccess('AAAAAAAAAAAAAAAAAAAAAA', null, false)).toThrow(
+    'has no owning user',
+  )
+  expect(() => assertWrapRecipientAccess('AAAAAAAAAAAAAAAAAAAAAA', 'user-a', false)).toThrow(
+    'without config access',
+  )
+  expect(() => assertWrapRecipientAccess('AAAAAAAAAAAAAAAAAAAAAA', 'user-a', true)).not.toThrow()
 })

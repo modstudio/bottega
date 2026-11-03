@@ -552,16 +552,7 @@ async function validateWrapKeys(
     `
     const row = rows[0]
     if (!row) continue
-    if (row.user_id == null)
-      throw new ConfigServiceError(
-        `wrap recipient ${keyId} has no owning user; ${machineClaimRemedy}`,
-        422,
-      )
-    if (row.config_access !== true)
-      throw new ConfigServiceError(
-        `wrap recipient ${keyId} belongs to a user without config access; ${configAccessRemedy}`,
-        422,
-      )
+    assertWrapRecipientAccess(keyId, row.user_id, row.config_access)
     active.add(keyId)
   }
   assertActiveWrapRecipients(input.wraps, active)
@@ -576,6 +567,23 @@ async function validateWrapKeys(
     if (rows[0]) registered.add(keyId)
   }
   assertRegisteredWrapSenders(input.wraps, registered)
+}
+
+export function assertWrapRecipientAccess(
+  keyId: string,
+  userId: unknown,
+  configAccess: unknown,
+): void {
+  if (userId == null)
+    throw new ConfigServiceError(
+      `wrap recipient ${keyId} has no owning user; ${machineClaimRemedy}`,
+      422,
+    )
+  if (configAccess !== true)
+    throw new ConfigServiceError(
+      `wrap recipient ${keyId} belongs to a user without config access; ${configAccessRemedy}`,
+      422,
+    )
 }
 
 export function assertActiveWrapRecipients(
