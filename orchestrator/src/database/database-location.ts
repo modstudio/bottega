@@ -32,7 +32,7 @@ export type DatabaseResolution = {
   mainStorePath: string
 }
 
-export const ROOT = resolveInstallRoot(import.meta.dir, process.env)
+export const ROOT = join(resolveInstallRoot(import.meta.dir, process.env), 'orchestrator')
 
 type RepositoryRoot = {
   root: string
