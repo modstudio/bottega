@@ -81,7 +81,8 @@ if (import.meta.main) {
   )
   for (const path of findings) {
     if (path.includes(': could not parse ')) console.error(path)
-    else console.error(`${dockerfilePath}: missing runtime import ${path}; add COPY ${path} ${path}`)
+    else
+      console.error(`${dockerfilePath}: missing runtime import ${path}; add COPY ${path} ${path}`)
   }
   if (findings.length) process.exit(1)
 }
