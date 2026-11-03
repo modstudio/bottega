@@ -64,6 +64,7 @@ export function releaseReasonDecision(
 export type CheckoutFacts = {
   branch: string
   requiredBranch: string
+  trunk: string
   dirty: boolean
   head: string
   remoteHead: string
@@ -72,6 +73,39 @@ export type CheckoutFacts = {
 }
 
 export type Decision = { ok: true } | { ok: false; message: string }
+
+export type ReleaseCheckoutTransitionDecision =
+  | { ok: true; switchToRung: boolean; restoreToTrunk: boolean }
+  | { ok: false; message: string }
+
+/** Decide how a release-command checkout moves from its landing branch to its rung. */
+export function releaseCheckoutTransitionDecision(facts: {
+  current: string
+  trunk: string
+  rungBranch: string
+  dirty: boolean
+}): ReleaseCheckoutTransitionDecision {
+  if (facts.rungBranch === facts.trunk) {
+    return { ok: true, switchToRung: false, restoreToTrunk: false }
+  }
+  if (facts.current !== facts.trunk && facts.current !== facts.rungBranch) {
+    return {
+      ok: false,
+      message: `registered main checkout is on ${facts.current || 'detached HEAD'}, not its landing branch ${facts.trunk}; switch it to ${facts.trunk}, then retry`,
+    }
+  }
+  if (facts.dirty) {
+    return {
+      ok: false,
+      message: 'release checkout is dirty; commit or discard its changes, then retry',
+    }
+  }
+  return {
+    ok: true,
+    switchToRung: facts.current === facts.trunk,
+    restoreToTrunk: true,
+  }
+}
 
 export type CiDeployWaitDecision = 'matched' | 'keep-waiting' | 'timed-out'
 
@@ -208,7 +242,7 @@ export function checkoutReleaseDecision(facts: CheckoutFacts): Decision {
   if (facts.branch !== facts.requiredBranch) {
     return {
       ok: false,
-      message: `release checkout is on ${facts.branch}, not ${facts.requiredBranch}; switch the registered main checkout to ${facts.requiredBranch}, then retry`,
+      message: `release checkout is on ${facts.branch || 'detached HEAD'}, not release branch ${facts.requiredBranch}; the release restored or left the registered main checkout on ${facts.trunk}; retry the release from ${facts.trunk}`,
     }
   }
   if (facts.dirty) {

@@ -25,6 +25,7 @@ import {
   postDeployLiveDecision,
   releaseAncestryFromExitCode,
   releaseCapturedText,
+  releaseCheckoutTransitionDecision,
   releaseCommandEnvironment,
   releaseLockDecision,
   releaseProcessEnvironment,
@@ -141,8 +142,7 @@ function capturedOutputTail(output: string, knownCommits: readonly string[]): st
   return boundedGateOutputTail(releaseCapturedText(output, knownCommits), GATE_OUTPUT_TAIL_BYTES)
 }
 
-function checkoutFacts(path: string, branch: string) {
-  git(['fetch', 'origin'], path)
+function checkoutFacts(path: string, branch: string, trunk: string) {
   const head = git(['rev-parse', 'HEAD'], path)
   const remoteHead = git(['rev-parse', `origin/${branch}`], path)
   const counts = git(['rev-list', '--left-right', '--count', `origin/${branch}...HEAD`], path)
@@ -151,12 +151,81 @@ function checkoutFacts(path: string, branch: string) {
   return {
     branch: git(['branch', '--show-current'], path),
     requiredBranch: branch,
+    trunk,
     dirty: git(['status', '--porcelain'], path).length > 0,
     head,
     remoteHead,
     behind: counts[0] ?? 0,
     ahead: counts[1] ?? 0,
   }
+}
+
+function releaseCheckoutRestoreWarning(path: string, trunk: string, cause: unknown): string {
+  const condition = cause instanceof Error ? cause.message : String(cause)
+  return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run git -C ${path} switch ${trunk}`
+}
+
+function fastForwardReleaseBranch(path: string, branch: string): void {
+  const head = git(['rev-parse', 'HEAD'], path)
+  const remoteHead = git(['rev-parse', `origin/${branch}`], path)
+  if (
+    head !== remoteHead &&
+    run(['git', 'merge-base', '--is-ancestor', head, `origin/${branch}`], path).exitCode === 0
+  ) {
+    git(['merge', '--ff-only', `origin/${branch}`], path)
+  }
+}
+
+function withReleaseCheckout(
+  path: string,
+  trunk: string,
+  rungBranch: string,
+  release: () => ReleaseResult,
+): ReleaseResult {
+  git(['fetch', 'origin'], path)
+  const transition = releaseCheckoutTransitionDecision({
+    current: git(['branch', '--show-current'], path),
+    trunk,
+    rungBranch,
+    dirty: git(['status', '--porcelain'], path).length > 0,
+  })
+  if (!transition.ok) throw new Error(transition.message)
+
+  let result: ReleaseResult | undefined
+  let failure: unknown
+  let failed = false
+  let restoreFailure: unknown
+  try {
+    if (transition.switchToRung) git(['switch', rungBranch], path)
+    if (rungBranch !== trunk) fastForwardReleaseBranch(path, rungBranch)
+    result = release()
+  } catch (cause) {
+    failure = cause
+    failed = true
+  } finally {
+    if (transition.restoreToTrunk) {
+      try {
+        git(['switch', trunk], path)
+      } catch (cause) {
+        restoreFailure = cause
+      }
+    }
+  }
+  if (restoreFailure !== undefined) {
+    const warning = releaseCheckoutRestoreWarning(path, trunk, restoreFailure)
+    if (failed) {
+      const message = failure instanceof Error ? failure.message : String(failure)
+      throw new Error(`${message}; ${warning}`)
+    }
+    result = {
+      ...result!,
+      warning: [result!.warning, warning]
+        .filter((value): value is string => value !== null)
+        .join('; '),
+    }
+  }
+  if (failed) throw failure
+  return result!
 }
 
 function newestSuccessfulRelease(
@@ -568,7 +637,28 @@ function releaseCommandTarget(
   redeployReason: string | undefined,
 ): ReleaseResult {
   const { project, selected, trunk } = target
-  const checkout = checkoutFacts(project.path, selected.branch)
+  return withReleaseCheckout(project.path, trunk, selected.branch, () =>
+    releaseCommandTargetAtRung(
+      target,
+      deploy,
+      projectName,
+      rollbackReason,
+      behindTrunkReason,
+      redeployReason,
+    ),
+  )
+}
+
+function releaseCommandTargetAtRung(
+  target: ReturnType<typeof releaseTarget>,
+  deploy: string,
+  projectName: string,
+  rollbackReason: string | undefined,
+  behindTrunkReason: string | undefined,
+  redeployReason: string | undefined,
+): ReleaseResult {
+  const { project, selected, trunk } = target
+  const checkout = checkoutFacts(project.path, selected.branch, trunk)
   const checkoutDecision = checkoutReleaseDecision(checkout)
   if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
   const alreadyLive = alreadyLiveReleaseResult(

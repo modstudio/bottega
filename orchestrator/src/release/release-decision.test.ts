@@ -9,6 +9,7 @@ import {
   postDeployLiveDecision,
   releaseAncestryFromExitCode,
   releaseCapturedText,
+  releaseCheckoutTransitionDecision,
   releaseCommandEnvironment,
   releaseLockDecision,
   releaseProcessEnvironment,
@@ -176,6 +177,7 @@ test('maps git ancestry exit codes to three-valued release ancestry', () => {
 const level = {
   branch: 'main',
   requiredBranch: 'main',
+  trunk: 'main',
   dirty: false,
   head: 'b'.repeat(40),
   remoteHead: 'b'.repeat(40),
@@ -215,9 +217,96 @@ describe('release checkout', () => {
       message: expect.stringContaining('dirty'),
     }))
   test('refuses another branch', () =>
-    expect(checkoutReleaseDecision({ ...level, branch: 'develop' })).toMatchObject({
+    expect(checkoutReleaseDecision({ ...level, branch: 'develop' })).toEqual({
       ok: false,
-      message: expect.stringContaining('not main'),
+      message:
+        'release checkout is on develop, not release branch main; the release restored or left the registered main checkout on main; retry the release from main',
+    }))
+})
+
+describe('release checkout transition', () => {
+  test('keeps a same-branch release on trunk without a switch or restore', () =>
+    expect(
+      releaseCheckoutTransitionDecision({
+        current: 'main',
+        trunk: 'main',
+        rungBranch: 'main',
+        dirty: false,
+      }),
+    ).toEqual({ ok: true, switchToRung: false, restoreToTrunk: false }))
+
+  test('switches a clean landing branch to the rung and restores it', () =>
+    expect(
+      releaseCheckoutTransitionDecision({
+        current: 'develop',
+        trunk: 'develop',
+        rungBranch: 'master',
+        dirty: false,
+      }),
+    ).toEqual({ ok: true, switchToRung: true, restoreToTrunk: true }))
+
+  test('heals a clean checkout already left on the rung', () =>
+    expect(
+      releaseCheckoutTransitionDecision({
+        current: 'master',
+        trunk: 'develop',
+        rungBranch: 'master',
+        dirty: false,
+      }),
+    ).toEqual({ ok: true, switchToRung: false, restoreToTrunk: true }))
+
+  test('refuses a dirty checkout when it would need switching and restoration', () =>
+    expect(
+      releaseCheckoutTransitionDecision({
+        current: 'develop',
+        trunk: 'develop',
+        rungBranch: 'master',
+        dirty: true,
+      }),
+    ).toEqual({
+      ok: false,
+      message: 'release checkout is dirty; commit or discard its changes, then retry',
+    }))
+
+  test('refuses a dirty checkout already left on the rung', () =>
+    expect(
+      releaseCheckoutTransitionDecision({
+        current: 'master',
+        trunk: 'develop',
+        rungBranch: 'master',
+        dirty: true,
+      }),
+    ).toEqual({
+      ok: false,
+      message: 'release checkout is dirty; commit or discard its changes, then retry',
+    }))
+
+  test('refuses another branch with the landing-branch remedy', () =>
+    expect(
+      releaseCheckoutTransitionDecision({
+        current: 'feature',
+        trunk: 'develop',
+        rungBranch: 'master',
+        dirty: false,
+      }),
+    ).toEqual({
+      ok: false,
+      message:
+        'registered main checkout is on feature, not its landing branch develop; switch it to develop, then retry',
+    }))
+
+  test('names detached HEAD when no current branch is reported', () =>
+    expect(
+      releaseCheckoutTransitionDecision({
+        current: '',
+        trunk: 'develop',
+        rungBranch: 'master',
+        dirty: false,
+      }),
+    ).toEqual({
+      ok: false,
+      message:
+        'registered main checkout is on detached HEAD, not its landing branch develop; switch it to develop, then retry',
     }))
 })
 
