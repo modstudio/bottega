@@ -7,7 +7,8 @@ describe('task flow state projection', () => {
     ['dropped', 'dropped'],
     ['cancelled', 'dropped'],
     ['active', 'open'],
-    [null, 'open'],
+    [null, null],
+    [undefined, null],
   ] as const)('%s maps to %s', (status, state) => expect(taskFlowState(status)).toBe(state))
 })
 

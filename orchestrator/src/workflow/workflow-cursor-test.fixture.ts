@@ -177,6 +177,7 @@ export function abandonCursor(
     callContext.session,
     d,
     callContext.taskRecordId,
+    callContext.taskStatusCategory,
   ) as WorkflowCloseCursor | null
   if (!row) throw new Error(`fixture has no ${slug} cursor to abandon`)
   return abandonSelectedWorkflowCursorForClose(row, reason, callContext, d, callArgs)

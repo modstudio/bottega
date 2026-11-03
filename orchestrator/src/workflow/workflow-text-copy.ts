@@ -204,6 +204,7 @@ export async function closeCursorWithTextCopy(
     input.context.session,
     database,
     input.context.taskRecordId,
+    input.context.taskStatusCategory,
   ) as WorkflowCloseCursor | null
   if (!row)
     throw new Error(

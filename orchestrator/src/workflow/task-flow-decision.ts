@@ -3,9 +3,10 @@
 
 export type TaskFlowState = 'open' | 'done' | 'dropped'
 
-export function taskFlowState(statusCategory: string | null | undefined): TaskFlowState {
+export function taskFlowState(statusCategory: string | null | undefined): TaskFlowState | null {
   if (statusCategory === 'done') return 'done'
   if (statusCategory === 'dropped' || statusCategory === 'cancelled') return 'dropped'
+  if (statusCategory == null) return null
   return 'open'
 }
 

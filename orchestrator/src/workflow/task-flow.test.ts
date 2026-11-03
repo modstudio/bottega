@@ -1,9 +1,7 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  catalogueVersionRecordId,
-  workflowVersionRecordId,
-} from '../../test/fixtures/workflow.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { attachTaskFlowStage, closeTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
 
@@ -48,7 +46,7 @@ test('one task flow refuses a second open stage and retains re-entry history', (
     const plan = insertStage('plan-task', flow.flowRecordId)
     attachTaskFlowStage(flow.flowRecordId, plan.record_id, d)
     expect(() => select('ship-task')).toThrow(
-      `task DEV-1 already has open stage cursor ${plan.number} plan-task default`,
+      `task DEV-1 already has open stage cursor ${plan.number} plan-task default; finish it with ${PLATFORM_SLUG} workflow next plan-task --cursor ${plan.number}, or drop it with ${PLATFORM_SLUG} workflow abandon plan-task --cursor ${plan.number}`,
     )
 
     d.query("UPDATE workflow_cursor SET state='done' WHERE record_id=?").run(plan.record_id)
@@ -64,15 +62,45 @@ test('one task flow refuses a second open stage and retains re-entry history', (
       flowRecordId: flow.flowRecordId,
       cursorRecordId: null,
     })
-    expect(d.query('SELECT state FROM task_flow WHERE record_id=?').get(flow.flowRecordId)).toEqual({
-      state: 'done',
-    })
+    expect(d.query('SELECT state FROM task_flow WHERE record_id=?').get(flow.flowRecordId)).toEqual(
+      {
+        state: 'done',
+      },
+    )
     expect(
       d.query('SELECT workflow_slug,state FROM workflow_cursor ORDER BY number').all(),
     ).toEqual([
       { workflow_slug: 'plan-task', state: 'done' },
       { workflow_slug: 'ship-task', state: 'done' },
     ])
+  } finally {
+    d.close()
+  }
+})
+
+test('an unknown task status preserves the projected flow state', () => {
+  const d = migratedTestDatabase()
+  try {
+    d.query(
+      `INSERT INTO project(record_id,name,path,canon,settings)
+       VALUES (?,'fixture','/fixture',0,'{"trunk":"main"}')`,
+    ).run(newRecordId())
+    const input = {
+      project: 'fixture',
+      taskRecordId: 'task-1',
+      taskKey: 'DEV-1',
+      workflow: 'ship-task',
+      mode: 'default',
+    }
+
+    const flow = selectTaskFlowStage({ ...input, statusCategory: 'done' }, d)
+    selectTaskFlowStage(input, d)
+
+    expect(d.query('SELECT state FROM task_flow WHERE record_id=?').get(flow.flowRecordId)).toEqual(
+      {
+        state: 'done',
+      },
+    )
   } finally {
     d.close()
   }

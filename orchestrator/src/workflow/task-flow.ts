@@ -2,6 +2,7 @@
 /** Projects task state and owns the one-open-stage relationship around workflow cursors. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import {
@@ -19,15 +20,17 @@ function projectTaskFlow(
   d: Database,
 ): TaskFlowRow {
   const at = nowIso()
+  const state = taskFlowState(statusCategory)
   return d
-    .query<TaskFlowRow, [string, string, string, string, string, string]>(
+    .query<TaskFlowRow, [string, string, string, string | null, string, string, string | null]>(
       `INSERT INTO task_flow
          (record_id,task_record_id,project_record_id,state,created_at,updated_at)
-       VALUES (?, ?, (SELECT record_id FROM project WHERE name=?), ?, ?, ?)
-       ON CONFLICT(task_record_id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at
+       VALUES (?, ?, (SELECT record_id FROM project WHERE name=?), COALESCE(?, 'open'), ?, ?)
+       ON CONFLICT(task_record_id) DO UPDATE
+         SET state=COALESCE(?,task_flow.state),updated_at=excluded.updated_at
        RETURNING record_id,open_stage_cursor_record_id`,
     )
-    .get(newRecordId(), taskRecordId, project, taskFlowState(statusCategory), at, at)!
+    .get(newRecordId(), taskRecordId, project, state, at, at, state)!
 }
 
 function openStage(flow: TaskFlowRow, d: Database): (OpenTaskStage & { recordId: string }) | null {
@@ -57,7 +60,7 @@ export function selectTaskFlowStage(
   const decision = decideTaskStageSelection(stage, input)
   if (decision.action === 'refuse')
     throw new Error(
-      `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; close it before opening ${input.workflow} ${input.mode}`,
+      `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${decision.stage.workflow} --cursor ${decision.stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${decision.stage.workflow} --cursor ${decision.stage.cursor}`,
     )
   return {
     flowRecordId: flow.record_id,
