@@ -134,20 +134,23 @@ realPostgres('project import against copied live SQLite data', () => {
         'member', 'pending', now() + interval '1 day', now()
       FROM "user" ORDER BY created_at LIMIT 1
     `
-    const signedUp = await recordAuth(
+    const auth = recordAuth(
       actorUrl!,
       process.env,
       undefined,
       undefined,
       undefined,
       noSpaceBuiltIns,
-    ).api.signUpEmail({
-      body: {
-        email: 'live-copy@example.test',
-        name: 'Live Copy',
-        password: 'correct-horse-battery-staple',
-      },
-    })
+    )
+    const signedUp = await auth.api
+      .signUpEmail({
+        body: {
+          email: 'live-copy@example.test',
+          name: 'Live Copy',
+          password: 'correct-horse-battery-staple',
+        },
+      })
+      .finally(() => auth.close())
     if (!signedUp.token) throw new Error('live-copy signup returned no bearer token')
     recordToken = signedUp.token
     recordUserId = signedUp.user.id

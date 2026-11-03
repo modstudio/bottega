@@ -62,7 +62,7 @@ export function registerStaleMembershipProof(input: {
       })
       expect(staleScopedRequest.status).toBe(409)
     } finally {
-      server.stop(true)
+      await server.stop(true)
     }
   })
 }

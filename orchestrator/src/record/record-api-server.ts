@@ -155,11 +155,12 @@ export async function stopRecordApiServer(input: {
   closeActiveConnections?: boolean
   boardWakeSource: { close(): Promise<void> }
   boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>
+  auth: { close(): Promise<void> }
 }): Promise<void> {
   input.boardStreamRegistry.closeAll()
   await input.boardWakeSource.close()
   await input.stop(input.closeActiveConnections)
-  await closeRecordPools()
+  await Promise.all([input.auth.close(), closeRecordPools()])
 }
 
 function serveRecordApi(
@@ -167,6 +168,7 @@ function serveRecordApi(
   port: number,
   boardWakeSource: Awaited<ReturnType<typeof createBoardWakeSource>>,
   boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>,
+  auth: ReturnType<typeof recordAuth>,
 ) {
   const server = Bun.serve({
     hostname: '0.0.0.0',
@@ -196,6 +198,7 @@ function serveRecordApi(
       closeActiveConnections,
       boardWakeSource,
       boardStreamRegistry,
+      auth,
     })
   }
   return server
@@ -261,9 +264,10 @@ function recordServerAuth(
   })
 }
 
-export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
-  const config = recordApiServerConfig(environment)
-  const auth = recordServerAuth(config, environment)
+async function serveRecordApiWithAuth(
+  config: ReturnType<typeof recordApiServerConfig>,
+  auth: ReturnType<typeof recordAuth>,
+) {
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const boardStreamRegistry = createBoardStreamRegistry()
   const migrations = recordMigrationCount()
@@ -343,7 +347,18 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
-  return serveRecordApi(app, config.port, boardWakeSource, boardStreamRegistry)
+  return serveRecordApi(app, config.port, boardWakeSource, boardStreamRegistry, auth)
+}
+
+export async function startRecordApiServer(environment: ServerEnvironment = process.env) {
+  const config = recordApiServerConfig(environment)
+  const auth = recordServerAuth(config, environment)
+  try {
+    return await serveRecordApiWithAuth(config, auth)
+  } catch (error) {
+    await auth.close()
+    throw error
+  }
 }
 
 function recordSettingsDependencies() {

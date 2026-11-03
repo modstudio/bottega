@@ -27,6 +27,7 @@ import {
 } from '../../test/fixtures/record-session.ts'
 import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
 import { registerConfigAccessSpaceCreationProof } from '../../test/postgres-config-access-auth-proof.ts'
+import { registerConnectionBudgetProof } from '../../test/postgres-connection-budget-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evidence-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
@@ -83,6 +84,14 @@ realPostgres('RLS proof against real Postgres', () => {
   const authProjectB = newRecordId()
   const authRunA = newRecordId()
   const authRunB = newRecordId()
+  const actorSession = async (token: string) => {
+    const auth = testRecordAuth(actorUrl!)
+    try {
+      return await auth.api.getSession({ headers: bearerHeaders(token) })
+    } finally {
+      await auth.close()
+    }
+  }
 
   beforeAll(async () => {
     installPostgresAuthEnvironment()
@@ -208,7 +217,7 @@ realPostgres('RLS proof against real Postgres', () => {
       log: (value) => cliOutput.push(value),
     })
     tokenA = storedToken()
-    const first = await testRecordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenA) })
+    const first = await actorSession(tokenA)
     if (!first?.session.activeOrganizationId) throw new Error('first signup has no active space')
     authUserA = first.user.id
     authSpaceA = first.session.activeOrganizationId
@@ -217,24 +226,27 @@ realPostgres('RLS proof against real Postgres', () => {
       log: (value) => cliOutput.push(value),
     })
     tokenB = storedToken()
-    const second = await testRecordAuth(actorUrl!).api.getSession({
-      headers: bearerHeaders(tokenB),
-    })
+    const second = await actorSession(tokenB)
     if (!second?.session.activeOrganizationId) throw new Error('second signup has no active space')
     authUserB = second.user.id
     authSpaceB = second.session.activeOrganizationId
 
-    const repair = await testRecordAuth(actorUrl!).api.signUpEmail({
-      body: SIGN_UP_AUTH.repairBody,
-    })
-    if (!repair.token) throw new Error('repair signup has no bearer token')
-    repairToken = repair.token
-    const repairSession = await testRecordAuth(actorUrl!).api.getSession({
-      headers: bearerHeaders(repair.token),
-    })
-    if (!repairSession?.session.activeOrganizationId)
-      throw new Error('repair signup has no active space')
-    repairSpace = repairSession.session.activeOrganizationId
+    const repairAuth = testRecordAuth(actorUrl!)
+    try {
+      const repair = await repairAuth.api.signUpEmail({
+        body: SIGN_UP_AUTH.repairBody,
+      })
+      if (!repair.token) throw new Error('repair signup has no bearer token')
+      repairToken = repair.token
+      const repairSession = await repairAuth.api.getSession({
+        headers: bearerHeaders(repair.token),
+      })
+      if (!repairSession?.session.activeOrganizationId)
+        throw new Error('repair signup has no active space')
+      repairSpace = repairSession.session.activeOrganizationId
+    } finally {
+      await repairAuth.close()
+    }
 
     succeeds(
       'postgres',
@@ -279,6 +291,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   afterAll(async () => {
     await apiServer?.stop(true)
+    await invitationAuth?.close()
     installRecordSessionRunner(null)
     installRecordApiClient(createMemoryRecordApiClient())
     delete process.env.BETTER_AUTH_SECRET
@@ -537,9 +550,7 @@ realPostgres('RLS proof against real Postgres', () => {
     await expect(acceptRecordInvitation(ids.ACCEPTED_INVITATION)).rejects.toThrow()
 
     expect(await acceptRecordInvitation(pendingInvitation)).toBe(authSpaceA)
-    const session = await testRecordAuth(actorUrl!).api.getSession({
-      headers: bearerHeaders(tokenB),
-    })
+    const session = await actorSession(tokenB)
     expect(session?.session.activeOrganizationId).toBe(authSpaceA)
     const joined = psql(
       RECORD_ACTOR_ROLE,
@@ -1035,4 +1046,6 @@ realPostgres('RLS proof against real Postgres', () => {
       `${ids.PROJECT_A}|task:DEV|446`,
     ])
   })
+
+  registerConnectionBudgetProof((source) => succeeds('postgres', 'postgres', source))
 })

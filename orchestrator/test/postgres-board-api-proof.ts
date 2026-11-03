@@ -130,21 +130,25 @@ export function registerBoardApiProofs(input: {
         spaceId: session.session.activeOrganizationId,
       }
     }
-    const a = await signUp(EMAIL.a, 'Board API A')
-    const b = await signUp(EMAIL.b, 'Board API B')
-    const c = await signUp(EMAIL.c, 'Board API C')
-    const d = await signUp(EMAIL.d, 'Board API D')
-    tokenA = a.token
-    tokenB = b.token
-    tokenC = c.token
-    tokenD = d.token
-    userA = a.userId
-    userB = b.userId
-    userC = c.userId
-    userD = d.userId
-    spaceA = a.spaceId
-    spaceB = b.spaceId
-    spaceC = c.spaceId
+    try {
+      const a = await signUp(EMAIL.a, 'Board API A')
+      const b = await signUp(EMAIL.b, 'Board API B')
+      const c = await signUp(EMAIL.c, 'Board API C')
+      const d = await signUp(EMAIL.d, 'Board API D')
+      tokenA = a.token
+      tokenB = b.token
+      tokenC = c.token
+      tokenD = d.token
+      userA = a.userId
+      userB = b.userId
+      userC = c.userId
+      userD = d.userId
+      spaceA = a.spaceId
+      spaceB = b.spaceId
+      spaceC = c.spaceId
+    } finally {
+      await auth.close()
+    }
     input.succeeds(
       'postgres',
       'postgres',
@@ -160,8 +164,8 @@ export function registerBoardApiProofs(input: {
     )
   })
 
-  afterAll(() => {
-    server?.stop()
+  afterAll(async () => {
+    await server?.stop(true)
   })
 
   const post = (token: string, body: Record<string, unknown>) =>

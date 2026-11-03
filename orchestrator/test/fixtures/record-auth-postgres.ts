@@ -115,20 +115,16 @@ async function proveInvitationOnlySignUp(
   password: string,
 ): Promise<void> {
   const rejectedMessage = async (email: string, candidate = password): Promise<string> => {
+    const auth = recordAuth(actorUrl, process.env, undefined, undefined, undefined, noSpaceBuiltIns)
     try {
-      await recordAuth(
-        actorUrl,
-        process.env,
-        undefined,
-        undefined,
-        undefined,
-        noSpaceBuiltIns,
-      ).api.signUpEmail({
+      await auth.api.signUpEmail({
         body: { email, name: 'Rejected sign-up', password: candidate },
       })
       return 'sign-up unexpectedly succeeded'
     } catch (error) {
       return error instanceof Error ? error.message : String(error)
+    } finally {
+      await auth.close()
     }
   }
   expect(
@@ -151,18 +147,16 @@ async function proveInvitationOnlySignUp(
          WHERE u.email='${email}');`,
     )
   expect(accountCounts(SIGN_UP_AUTH.noInvitationEmail)).toBe('0|0')
-  await expect(
-    recordAuth(
-      actorUrl,
-      process.env,
-      undefined,
-      undefined,
-      undefined,
-      noSpaceBuiltIns,
-    ).api.signUpEmail({
-      body: { email: SIGN_UP_AUTH.caseEmail, name: 'Case Match', password },
-    }),
-  ).resolves.toMatchObject({ user: { email: SIGN_UP_AUTH.caseEmail } })
+  const auth = recordAuth(actorUrl, process.env, undefined, undefined, undefined, noSpaceBuiltIns)
+  try {
+    await expect(
+      auth.api.signUpEmail({
+        body: { email: SIGN_UP_AUTH.caseEmail, name: 'Case Match', password },
+      }),
+    ).resolves.toMatchObject({ user: { email: SIGN_UP_AUTH.caseEmail } })
+  } finally {
+    await auth.close()
+  }
   expect(await rejectedMessage(SIGN_UP_AUTH.shortPasswordEmail, 'elevenchars')).toBe(
     'Password too short',
   )
@@ -198,50 +192,63 @@ function registerNewInviteeInvitationProofs(actorUrl: string, password: string):
       noMail,
       noSpaceBuiltIns,
     )
-    const owner = await auth.api.signInEmail({ body: { email: SIGN_UP_AUTH.emailA, password } })
-    if (!owner.token) throw new Error('owner sign-in has no bearer token')
-    const ownerSession = await auth.api.getSession({ headers: bearerHeaders(owner.token) })
-    if (!ownerSession?.session.activeOrganizationId) throw new Error('owner has no active space')
-    const spaceId = ownerSession.session.activeOrganizationId
-    const invitation = await auth.api.createInvitation({
-      headers: bearerHeaders(owner.token),
-      body: { email, role: 'member', organizationId: spaceId },
-    })
-    const signup = await auth.api.signUpEmail({
-      body: { email, name: `New Invitee ${email}`, password: SIGN_UP_AUTH.password },
-    })
-    if (!signup.token) throw new Error('invited signup has no bearer token')
-    expect(signup.user.emailVerified).toBe(false)
-    return { auth, invitation, headers: bearerHeaders(signup.token), spaceId }
+    try {
+      const owner = await auth.api.signInEmail({ body: { email: SIGN_UP_AUTH.emailA, password } })
+      if (!owner.token) throw new Error('owner sign-in has no bearer token')
+      const ownerSession = await auth.api.getSession({ headers: bearerHeaders(owner.token) })
+      if (!ownerSession?.session.activeOrganizationId) throw new Error('owner has no active space')
+      const spaceId = ownerSession.session.activeOrganizationId
+      const invitation = await auth.api.createInvitation({
+        headers: bearerHeaders(owner.token),
+        body: { email, role: 'member', organizationId: spaceId },
+      })
+      const signup = await auth.api.signUpEmail({
+        body: { email, name: `New Invitee ${email}`, password: SIGN_UP_AUTH.password },
+      })
+      if (!signup.token) throw new Error('invited signup has no bearer token')
+      expect(signup.user.emailVerified).toBe(false)
+      return { auth, invitation, headers: bearerHeaders(signup.token), spaceId }
+    } catch (error) {
+      await auth.close()
+      throw error
+    }
   }
 
   test('a newly signed-up unverified invitee can get and accept an invitation', async () => {
     const email = 'auth-new-accept@example.test'
     const { auth, invitation, headers, spaceId } = await createInvitee(email)
-    await expect(
-      auth.api.getInvitation({ headers, query: { id: invitation.id } }),
-    ).resolves.toMatchObject({ id: invitation.id, email })
-    await expect(
-      auth.api.acceptInvitation({
-        headers,
-        body: { invitationId: invitation.id },
-      }),
-    ).resolves.toMatchObject({
-      invitation: { id: invitation.id, status: 'accepted' },
-      member: { organizationId: spaceId, role: 'member' },
-    })
+    try {
+      await expect(
+        auth.api.getInvitation({ headers, query: { id: invitation.id } }),
+      ).resolves.toMatchObject({ id: invitation.id, email })
+      await expect(
+        auth.api.acceptInvitation({
+          headers,
+          body: { invitationId: invitation.id },
+        }),
+      ).resolves.toMatchObject({
+        invitation: { id: invitation.id, status: 'accepted' },
+        member: { organizationId: spaceId, role: 'member' },
+      })
+    } finally {
+      await auth.close()
+    }
   })
 
   test('a newly signed-up unverified invitee can reject an invitation', async () => {
     const email = 'auth-new-reject@example.test'
     const { auth, invitation, headers } = await createInvitee(email)
-    await expect(
-      auth.api.rejectInvitation({
-        headers,
-        body: { invitationId: invitation.id },
-      }),
-    ).resolves.toMatchObject({
-      invitation: { id: invitation.id, status: 'rejected' },
-    })
+    try {
+      await expect(
+        auth.api.rejectInvitation({
+          headers,
+          body: { invitationId: invitation.id },
+        }),
+      ).resolves.toMatchObject({
+        invitation: { id: invitation.id, status: 'rejected' },
+      })
+    } finally {
+      await auth.close()
+    }
   })
 }

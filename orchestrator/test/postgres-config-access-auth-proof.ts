@@ -29,30 +29,38 @@ export function registerConfigAccessSpaceCreationProof(input: {
         .split('\n'),
     ).toEqual([`${SIGN_UP_AUTH.emailA}|1|owner|write|t`, `${SIGN_UP_AUTH.emailB}|1|owner|write|t`])
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
-    expect((await auth.api.getSession({ headers: bearerHeaders(input.token()) }))?.user.id).toBe(
-      input.userId(),
-    )
-    expect(
-      (await auth.api.getSession({ headers: bearerHeaders(input.otherToken()) }))?.user.id,
-    ).toBe(input.otherUserId())
+    try {
+      expect((await auth.api.getSession({ headers: bearerHeaders(input.token()) }))?.user.id).toBe(
+        input.userId(),
+      )
+      expect(
+        (await auth.api.getSession({ headers: bearerHeaders(input.otherToken()) }))?.user.id,
+      ).toBe(input.otherUserId())
+    } finally {
+      await auth.close()
+    }
   })
 
   test('afterCreateOrganization grants config access to the creating owner', async () => {
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
-    const userId = input.userId()
-    const created = await auth.api.createOrganization({
-      headers: bearerHeaders(input.token()),
-      body: {
-        name: 'Config Access Hook',
-        slug: `config-access-hook-${userId.slice(-8)}`,
-        keepCurrentActiveOrganization: true,
-      },
-    })
-    expect(
-      input.succeeds(
-        `SELECT role, permission, config_access
-         FROM membership WHERE space_id='${created.id}' AND user_id='${userId}';`,
-      ),
-    ).toBe('owner|write|t')
+    try {
+      const userId = input.userId()
+      const created = await auth.api.createOrganization({
+        headers: bearerHeaders(input.token()),
+        body: {
+          name: 'Config Access Hook',
+          slug: `config-access-hook-${userId.slice(-8)}`,
+          keepCurrentActiveOrganization: true,
+        },
+      })
+      expect(
+        input.succeeds(
+          `SELECT role, permission, config_access
+           FROM membership WHERE space_id='${created.id}' AND user_id='${userId}';`,
+        ),
+      ).toBe('owner|write|t')
+    } finally {
+      await auth.close()
+    }
   })
 }
