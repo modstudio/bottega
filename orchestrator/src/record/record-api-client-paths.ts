@@ -75,8 +75,6 @@ export type RecordIdentityAndSpaceMethod =
   | 'listInvitations'
   | 'acceptInvitation'
   | 'inviteMember'
-  | 'listConfigAccess'
-  | 'grantConfigAccess'
 export type RecordBoardWatchMethod = 'releaseBoardTaskClaims' | 'openBoardStream'
 
 export type ProjectIdentityClient = {

@@ -662,7 +662,12 @@ test('claim current machine key covers missing, unregistered, owned, and unowned
   }
   let calls = 0
   await claimCurrentMachineKey(
-    { listMachineKeys: async () => (calls += 1, []) } as unknown as ConfigClient,
+    {
+      listMachineKeys: async () => {
+        calls += 1
+        return []
+      },
+    } as unknown as ConfigClient,
     rootFor(),
   )
   expect(calls).toBe(0)
@@ -680,10 +685,7 @@ test('claim current machine key covers missing, unregistered, owned, and unowned
     userId,
   })
 
-  await claimCurrentMachineKey(
-    { listMachineKeys: async () => [] } as unknown as ConfigClient,
-    env,
-  )
+  await claimCurrentMachineKey({ listMachineKeys: async () => [] } as unknown as ConfigClient, env)
   await claimCurrentMachineKey(
     { listMachineKeys: async () => [listed('user-a')] } as unknown as ConfigClient,
     env,
