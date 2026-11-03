@@ -57,6 +57,7 @@ import { answerCommand, continueCommand, retryCommand } from '../run/run-message
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
+import { typedQuestionCommand } from '../typed-question/typed-question-commands.ts'
 import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
@@ -421,6 +422,38 @@ function registerAgentCommands(program: Command): void {
     .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
 }
 
+function registerMetricCommands(program: Command): void {
+  describedCommand(program, 'metric [action]', 'collect or report orchestration efficiency metrics')
+    .option('--days <value>', 'collect this many days of metric inputs')
+    .option('--window <value>', 'report metrics over this many days')
+    .allowExcessArguments(false)
+    .action((action, options) =>
+      metricCommand(
+        {
+          collect: action === 'collect',
+          days: Number(options.days ?? 30),
+          window: Number(options.window ?? 14),
+        },
+        presentation,
+      ),
+    )
+  describedCommand(program, 'typed-question', 'report typed-question outcomes and operating cost')
+    .option('--question <id>', 'report one question id')
+    .option('--days <value>', 'limit answers to this many days')
+    .option('--json', 'write the report as JSON')
+    .allowExcessArguments(false)
+    .action((options) =>
+      typedQuestionCommand(
+        {
+          question: options.question,
+          days: options.days,
+          json: Boolean(options.json),
+        },
+        presentation,
+      ),
+    )
+}
+
 async function epicAction(
   key: string,
   json: boolean,
@@ -683,20 +716,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   describedCommand(program, 'pending', 'list your runs awaiting verdicts or comparisons')
     .allowExcessArguments(false)
     .action(() => pendingCommand(pairHint, presentation))
-  describedCommand(program, 'metric [action]', 'collect or report orchestration efficiency metrics')
-    .option('--days <value>', 'collect this many days of metric inputs')
-    .option('--window <value>', 'report metrics over this many days')
-    .allowExcessArguments(false)
-    .action((action, options) =>
-      metricCommand(
-        {
-          collect: action === 'collect',
-          days: Number(options.days ?? 30),
-          window: Number(options.window ?? 14),
-        },
-        presentation,
-      ),
-    )
+  registerMetricCommands(program)
   program
     .command('epic <key>')
     .option('--json', 'write the scoreboard as JSON')

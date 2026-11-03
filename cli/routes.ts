@@ -194,6 +194,7 @@ export const ROUTES = (
       'routing-backtest',
       'cost-backtest',
       'metric',
+      'typed-question',
       'pick',
       'jobs',
     ].map((name) => route(`agent ${name}`, 'orch', name)),

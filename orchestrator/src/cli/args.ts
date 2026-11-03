@@ -475,6 +475,7 @@ export const CLI_COMMANDS = new Set([
   'load',
   'mcp',
   'metric',
+  'typed-question',
   'migrate',
   'monitor',
   'peek',
