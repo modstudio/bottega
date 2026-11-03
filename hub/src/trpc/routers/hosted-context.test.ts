@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { TRPCError } from '@trpc/server'
+import { configureRecordApiUrl } from '../../../test/record-api-config.ts'
 import type { RecordClient, RecordDoc } from '../../record-client.ts'
-import { createHostedContextRouter } from './hosted-context.ts'
+import { createHostedContextRouter, hostedContextRouter } from './hosted-context.ts'
 
 const userId = '01990000-0000-7000-8000-000000000001'
 const docId = '01990000-0000-7000-8000-000000000002'
@@ -140,6 +141,24 @@ function caller(client: RecordClient) {
 }
 
 describe('hosted context router', () => {
+  test('default procedures build their client from the configured record address', async () => {
+    const clear = configureRecordApiUrl()
+    const originalFetch = globalThis.fetch
+    let requested = ''
+    try {
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        requested = String(input)
+        return Response.json([])
+      }) as typeof fetch
+
+      await expect(hostedContextRouter.createCaller({}).projects()).resolves.toEqual([])
+      expect(requested).toBe('https://configured-record.example.test/v1/projects')
+    } finally {
+      globalThis.fetch = originalFetch
+      clear()
+    }
+  })
+
   test('projects returns hosted project rows with managed context', async () => {
     await expect(caller(fakeClient()).projects()).resolves.toEqual([
       { name: 'alpha', path: null, managedContext: true, worktreeNote: null },

@@ -1,15 +1,7 @@
-import { TRPCError } from '@trpc/server'
-import { createRecordClient } from './record-client.ts'
+import { createRecordClient, requiredRecordApiUrl } from './record-client.ts'
 
 function publicRecordClient() {
-  const baseUrl = process.env.BOTTEGA_RECORD_API_URL
-  if (!baseUrl) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'BOTTEGA_RECORD_API_URL is required',
-    })
-  }
-  return createRecordClient({ baseUrl, headers: {} })
+  return createRecordClient({ baseUrl: requiredRecordApiUrl(), headers: {} })
 }
 
 export const publicDocsTree = () => publicRecordClient().publicDocs()

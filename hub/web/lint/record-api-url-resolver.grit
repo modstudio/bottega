@@ -1,0 +1,16 @@
+language js
+
+// The shared resolver merges process values with the configured environment
+// files. Reading this key from an environment object skips that configuration.
+or {
+  `$environment.BOTTEGA_RECORD_API_URL` as $read,
+  `$environment?.BOTTEGA_RECORD_API_URL` as $read,
+  `$environment['BOTTEGA_RECORD_API_URL']` as $read,
+  `$environment["BOTTEGA_RECORD_API_URL"]` as $read,
+  JsObjectBindingPatternShorthandProperty(identifier=$id) as $read where {
+    $id <: `BOTTEGA_RECORD_API_URL`
+  },
+  JsObjectBindingPatternProperty(member=$m) as $read where { $m <: `BOTTEGA_RECORD_API_URL` }
+} where {
+  register_diagnostic(span=$read, message="Resolve the record address with shared/record-api-url.ts instead of reading an environment object.")
+}

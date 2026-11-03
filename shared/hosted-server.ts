@@ -1,3 +1,5 @@
+export { resolveRecordApiUrl } from './record-api-url.ts'
+
 /**
  * Set above Fly's idle close so the proxy, not the app, ends an idle connection.
  * Bun's unset default drops requests at ten seconds.

@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   DOC_KINDS,
   DOC_STATUSES,
@@ -18,6 +19,7 @@ import {
   OrchBlockersSchema,
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
+import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
@@ -37,6 +39,17 @@ import {
 type RecordAuthHeaders = {
   cookie?: string
   authorization?: string
+}
+
+export function requiredRecordApiUrl(): string {
+  const baseUrl = resolveRecordApiUrl()
+  if (!baseUrl) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `BOTTEGA_RECORD_API_URL is required\nconfigure the address with ${PLATFORM_SLUG} record use <address>`,
+    })
+  }
+  return baseUrl
 }
 
 export type RecordFetch = (input: string, init?: RequestInit) => Promise<Response>

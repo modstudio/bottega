@@ -1,10 +1,40 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { hostedServerConfig } from './hosted.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
 describe('hosted server config', () => {
+  test('resolves the record address from configured files in the supplied environment', () => {
+    const root = mkdtempSync(join(tmpdir(), 'hosted-record-api-'))
+    try {
+      const config = join(root, 'config')
+      const harness = join(root, 'harness.env')
+      mkdirSync(config)
+      writeFileSync(harness, 'BOTTEGA_RECORD_API_URL=https://configured-record.example.test\n')
+
+      expect(
+        hostedServerConfig({
+          [CONFIG_HOME_ENV]: config,
+          [HARNESS_ENV_FILE_ENV]: harness,
+          BOTTEGA_RECORD_DATABASE_URL: 'postgres://example.test/db',
+        }).recordApiUrl,
+      ).toBe('https://configured-record.example.test')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('refuses to start without BOTTEGA_RECORD_API_URL', () => {
-    expect(() => hostedServerConfig({ PORT: '3000' })).toThrow('BOTTEGA_RECORD_API_URL is required')
+    expect(() =>
+      hostedServerConfig({
+        PORT: '3000',
+        [CONFIG_HOME_ENV]: join(tmpdir(), 'missing-platform-test-config'),
+        [HARNESS_ENV_FILE_ENV]: '',
+      }),
+    ).toThrow('BOTTEGA_RECORD_API_URL is required')
   })
 
   test('refuses to start without BOTTEGA_RECORD_DATABASE_URL', () => {

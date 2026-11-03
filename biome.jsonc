@@ -1,6 +1,20 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
-  "plugins": ["./hub/web/lint/layout-only-classname.grit"],
+  "plugins": [
+    "./hub/web/lint/layout-only-classname.grit",
+    {
+      "path": "./hub/web/lint/record-api-url-resolver.grit",
+      "includes": [
+        "**/*.{js,jsx,ts,tsx}",
+        "!**/shared/record-api-url.ts",
+        "!**/*.test.{js,jsx,ts,tsx}",
+        "!**/*.spec.{js,jsx,ts,tsx}",
+        "!**/test/**",
+        "!**/tests/**",
+        "!**/*preload*.{js,jsx,ts,tsx}"
+      ]
+    }
+  ],
   "files": {
     "includes": [
       "**",

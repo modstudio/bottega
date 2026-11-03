@@ -353,6 +353,11 @@ function RunsSummary({ data }: { data: RunsPayload['data'] }) {
   )
 }
 
+function runsSubtitle(payload: RunsPayload | undefined, pending: boolean) {
+  if (!payload) return pending ? 'Loading runs...' : undefined
+  return `${collectedTime(payload.collectedAt)} \u00b7 ${payload.activeAgents.length} agent${payload.activeAgents.length === 1 ? '' : 's'} working`
+}
+
 function RunningNow({
   phone,
   data,
@@ -514,11 +519,7 @@ function RunsList() {
     <section>
       <PageHeader
         title="Runs"
-        subtitle={
-          payload
-            ? `${collectedTime(payload.collectedAt)} \u00b7 ${payload.activeAgents.length} agent${payload.activeAgents.length === 1 ? '' : 's'} working`
-            : 'Loading runs...'
-        }
+        subtitle={runsSubtitle(payload, query.isPending)}
         subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined}
         actions={phone ? undefined : <WindowControl />}
       />

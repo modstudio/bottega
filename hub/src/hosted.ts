@@ -26,8 +26,11 @@ type HostedRouteDependencies = {
 }
 
 export function hostedServerConfig(environment: ServerEnvironment = process.env) {
-  const recordApiUrl = environment.BOTTEGA_RECORD_API_URL
-  if (!recordApiUrl) throw new Error('BOTTEGA_RECORD_API_URL is required')
+  const recordApiUrl = hostedServer.resolveRecordApiUrl(environment)
+  if (!recordApiUrl)
+    throw new Error(
+      'BOTTEGA_RECORD_API_URL is required\nset the BOTTEGA_RECORD_API_URL runtime secret on the hosted hub app, as hub/deploy/README.md describes',
+    )
   const recordDatabaseUrl = environment.BOTTEGA_RECORD_DATABASE_URL
   if (!recordDatabaseUrl) throw new Error('BOTTEGA_RECORD_DATABASE_URL is required')
   const port = Number(environment.PORT ?? '3000')
