@@ -5,6 +5,7 @@ import {
   decideNullRead,
   deleteLinuxKeychainItem,
   parseCollectionLocked,
+  quoteSecurityInputToken,
   readKeychainItem,
   readKeychainItemAsync,
   readLinuxKeychainItem,
@@ -259,5 +260,100 @@ describe('public Linux backend dispatch', () => {
     await expect(readKeychainItemAsync('service', 'account')).rejects.toThrow(
       'gnome-keyring-daemon --replace --unlock --components=secrets --daemonize',
     )
+  })
+})
+
+describe('macOS security writes', () => {
+  let originalPlatform: string | undefined
+
+  beforeEach(() => {
+    originalPlatform = platformHolder[PLATFORM_KEY]
+    platformHolder[PLATFORM_KEY] = 'darwin'
+  })
+
+  afterEach(() => {
+    if (originalPlatform === undefined) delete platformHolder[PLATFORM_KEY]
+    else platformHolder[PLATFORM_KEY] = originalPlatform
+  })
+
+  test('quotes spaces, double quotes, and backslashes for the security tokenizer', () => {
+    expect(quoteSecurityInputToken('a b"c\\d')).toBe('"a b\\"c\\\\d"')
+  })
+
+  test('refuses line-ending tokens without exposing them or calling security', () => {
+    const value = 'unsafe\nsecret'
+    let calls = 0
+    let thrown: unknown
+    try {
+      writeKeychainItem('service', 'account', value, () => {
+        calls += 1
+        return result(0)
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(Error)
+    expect((thrown as Error).message).toBe(
+      'macOS keychain values written through security cannot contain line breaks; store the value without line breaks',
+    )
+    expect((thrown as Error).message).not.toContain(value)
+    expect(calls).toBe(0)
+  })
+
+  test('writes through security interactive input and verifies the stored value', () => {
+    const value = 'a b"c\\d'
+    const calls: { argv: string[]; stdin?: Uint8Array }[] = []
+    const runner: SecurityRunner = (argv, stdin) => {
+      calls.push({ argv, stdin })
+      return argv[1] === '-i' ? result(0) : result(0, `${value}\n`)
+    }
+
+    writeKeychainItem('account service', 'account "name"', value, runner)
+
+    expect(calls[0]?.argv).toEqual(['security', '-i'])
+    expect(new TextDecoder().decode(calls[0]?.stdin)).toBe(
+      'add-generic-password -U -a "account \\"name\\"" -s "account service" -w "a b\\"c\\\\d"\n',
+    )
+    expect(calls[1]?.argv).toEqual([
+      'security',
+      'find-generic-password',
+      '-a',
+      'account "name"',
+      '-s',
+      'account service',
+      '-w',
+    ])
+  })
+
+  test('guards every keychain writer from secret argv and bare write prompts', () => {
+    const values = ['darwin-guard-secret', 'linux-guard-secret'] as const
+    let storedDarwin = ''
+    let storedLinux = ''
+    const runner: SecurityRunner = (argv, stdin, env) => {
+      for (const value of values) {
+        expect(argv.every((argument) => !argument.includes(value))).toBe(true)
+      }
+      if (argv[0] === 'security') {
+        const command = new TextDecoder().decode(stdin)
+        const storesValue =
+          argv.some((argument) => /^add-(?:generic|internet)-password$/.test(argument)) ||
+          /^add-(?:generic|internet)-password\b/.test(command)
+        if (storesValue) {
+          expect(argv.at(-1)).not.toBe('-w')
+          storedDarwin = values[0]
+          return result(0)
+        }
+        return result(0, `${storedDarwin}\n`)
+      }
+      if (env?.BOTTEGA_SECRET_OPERATION === 'set') {
+        storedLinux = new TextDecoder().decode(stdin)
+        return result(0)
+      }
+      return result(0, storedLinux)
+    }
+
+    writeKeychainItem('service', 'account', values[0], runner)
+    writeLinuxKeychainItem('service', 'account', values[1], runner)
   })
 })

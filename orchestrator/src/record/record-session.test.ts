@@ -68,7 +68,8 @@ describe('legacy record session migration', () => {
       return { exitCode: 0, stdout: new Uint8Array(), stderr: new Uint8Array() }
     }
     expect(storedRecordToken(db(), runner, true)).toBe(token)
-    expect(writes).toEqual([`${token}\n${token}\n`])
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toContain(token)
     expect(
       db().query('SELECT value FROM schema_meta WHERE key=?').get(RECORD_SESSION_KEY),
     ).toBeNull()

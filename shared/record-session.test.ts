@@ -62,25 +62,18 @@ describe('record session keychain', () => {
     const token = 'fixture-secret-token'
     const observations: { argv: string[]; stdin?: Uint8Array }[] = []
     writeRecordSessionToken(token, (argv, stdin) => {
-      if (argv[1] === 'add-generic-password') {
+      if (argv[1] === '-i') {
         observations.push({ argv, stdin })
         return result(0)
       }
       return result(0, `${token}\n`)
     })
     const observed = observations[0]
-    expect(observed?.argv).toEqual([
-      'security',
-      'add-generic-password',
-      '-U',
-      '-a',
-      'record',
-      '-s',
-      service,
-      '-w',
-    ])
+    expect(observed?.argv).toEqual(['security', '-i'])
     expect(observed?.argv).not.toContain(token)
-    expect(new TextDecoder().decode(observed?.stdin)).toBe(`${token}\n${token}\n`)
+    expect(new TextDecoder().decode(observed?.stdin)).toBe(
+      `add-generic-password -U -a "record" -s "${service}" -w "${token}"\n`,
+    )
   })
 
   test('rejects a read-back mismatch without exposing the token', () => {

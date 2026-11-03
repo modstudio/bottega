@@ -411,13 +411,19 @@ export function writeKeychainItem(
     writeLinuxKeychainItem(service, account, value, runner)
     return
   }
-  const result = runner(
-    ['security', 'add-generic-password', '-U', '-a', account, '-s', service, '-w'],
-    encoder.encode(`${value}\n${value}\n`),
-  )
+  const command = `add-generic-password -U -a ${quoteSecurityInputToken(account)} -s ${quoteSecurityInputToken(service)} -w ${quoteSecurityInputToken(value)}\n`
+  const result = runner(['security', '-i'], encoder.encode(command))
   if (result.exitCode !== 0) throw failure('add-generic-password', result, value)
   if (readKeychainItem(service, account, runner) !== value)
     throw new Error('security add-generic-password verification failed: stored value did not match')
+}
+
+export function quoteSecurityInputToken(value: string): string {
+  if (/[\r\n]/.test(value))
+    throw new Error(
+      'macOS keychain values written through security cannot contain line breaks; store the value without line breaks',
+    )
+  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
 export function deleteKeychainItem(

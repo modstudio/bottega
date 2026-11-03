@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers record authentication grammar. Must not own authentication behavior. */
 import { createInterface } from 'node:readline/promises'
+import { Writable } from 'node:stream'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
@@ -60,16 +61,29 @@ export async function promptPassword(
   if (decision.action === 'use-environment') return decision.password
   if (decision.action === 'refuse') throw new Error(decision.message)
 
-  const terminal = createInterface({ input, output })
+  let muted = false
+  const mutedOutput = new Writable({
+    write(chunk, _encoding, callback) {
+      if (!muted) output.write(chunk)
+      callback()
+    },
+  }) as Writable & { isTTY: boolean }
+  mutedOutput.isTTY = true
+  const terminal = createInterface({ input, output: mutedOutput, terminal: true })
   try {
-    return await Promise.race([
-      terminal.question('Record password: '),
+    const answer = terminal.question('Record password: ')
+    muted = true
+    const password = await Promise.race([
+      answer,
       new Promise<never>((_resolve, reject) => {
         terminal.once('close', () => {
           reject(new Error(PASSWORD_PROMPT_EOF_REFUSAL))
         })
       }),
     ])
+    muted = false
+    output.write('\n')
+    return password
   } finally {
     terminal.close()
   }
