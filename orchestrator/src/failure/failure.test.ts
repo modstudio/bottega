@@ -116,6 +116,18 @@ describe('billing classification', () => {
     )
   })
 
+  test('classifies the recorded OpenRouter key-limit refusal without matching similar prose', () => {
+    expect(
+      classify(
+        "reply.json missing; final message reply did not match the worker contract:\nRan into this error: Server error: This request requires more credits, or fewer max_tokens. You requested up to 131072 tokens, but can only afford 48389. To increase, visit https://openrouter.ai/workspaces/default/keys/<id> and adjust the key's weekly limit.",
+      ),
+    ).toBe('billing')
+    expect(classify('This request requires more credits, or fewer max_tokens.')).toBe('billing')
+    expect(classify('You can only afford 48389.')).toBe('billing')
+    expect(classify('The reviewer requires more credits for the film.')).not.toBe('billing')
+    expect(classify('She can only afford two tickets.')).not.toBe('billing')
+  })
+
   test('does not treat an unrelated 402 number as a billing status', () => {
     expect(classify('orchestrator/src/x.ts:402')).not.toBe('billing')
     expect(classify('processed 402 files')).not.toBe('billing')
