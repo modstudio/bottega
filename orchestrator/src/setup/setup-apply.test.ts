@@ -221,52 +221,67 @@ test('continues after a refused action', async () => {
   expect(results[1]?.message).toBe('service refused two')
 })
 
-test('a refused environment migration skips dependent projects but applies independent actions', async () => {
-  const attempted: string[] = []
-  const service: SetupProjectService = {
-    add: async (candidate: { name: string }) => {
-      attempted.push(candidate.name)
-    },
-    fillAbsent: async () => {},
-  }
-  const environment: SetupEnvironmentService = {
-    migrateEnvironment: async () => {
-      attempted.push('environment')
-      return { status: 'applied', message: 'migrated' }
-    },
-  }
-  const results = await applySetupActions(
-    [{ kind: 'migrate-environment' }, action('project')],
-    service,
-    undefined,
-    environment,
-  )
-  expect(attempted).toEqual(['environment', 'project'])
-  expect(results.map(({ status }) => status)).toEqual(['applied', 'applied'])
+test.each(['add', 'set'] as const)(
+  'a refused environment migration skips a dependent %s but applies independent actions',
+  async (kind) => {
+    const attempted: string[] = []
+    const service: SetupProjectService = {
+      add: async (candidate: { name: string }) => {
+        attempted.push(candidate.name)
+      },
+      fillAbsent: async (candidate) => {
+        attempted.push(candidate.name)
+      },
+    }
+    const environment: SetupEnvironmentService = {
+      migrateEnvironment: async () => {
+        attempted.push('environment')
+        return { status: 'applied', message: 'migrated' }
+      },
+    }
+    const dependent: SetupAction =
+      kind === 'add'
+        ? action('project')
+        : {
+            kind: 'set',
+            currentName: 'project',
+            path: '/repos/project',
+            fill: { settings: {} },
+            settingsDiff: {},
+          }
+    const results = await applySetupActions(
+      [{ kind: 'migrate-environment' }, dependent],
+      service,
+      undefined,
+      environment,
+    )
+    expect(attempted).toEqual(['environment', 'project'])
+    expect(results.map(({ status }) => status)).toEqual(['applied', 'applied'])
 
-  attempted.length = 0
-  environment.migrateEnvironment = async () => {
-    attempted.push('environment')
-    throw new Error('environment refused')
-  }
-  const independent: SetupAction = {
-    kind: 'mcp-unchanged',
-    harness: 'codex',
-    bin: '/bin/codex',
-    server: { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] },
-  }
-  const refused = await applySetupActions(
-    [{ kind: 'migrate-environment' }, action('project'), independent],
-    service,
-    undefined,
-    environment,
-  )
-  expect(attempted).toEqual(['environment'])
-  expect(refused.map(({ status }) => status)).toEqual(['refused', 'not-attempted', 'unchanged'])
-  expect(refused[1]?.message).toBe(
-    'not attempted: requires Migrate operator environment names, which was refused',
-  )
-})
+    attempted.length = 0
+    environment.migrateEnvironment = async () => {
+      attempted.push('environment')
+      throw new Error('environment refused')
+    }
+    const independent: SetupAction = {
+      kind: 'mcp-unchanged',
+      harness: 'codex',
+      bin: '/bin/codex',
+      server: { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] },
+    }
+    const refused = await applySetupActions(
+      [{ kind: 'migrate-environment' }, dependent, independent],
+      service,
+      undefined,
+      environment,
+    )
+    expect(attempted).toEqual(['environment'])
+    expect(refused.map(({ status }) => status)).toEqual(['refused', 'not-attempted', 'unchanged'])
+    expect(refused[1]?.message).toBe(
+      'not attempted: requires Migrate operator environment names, which was refused',
+    )
+  },
+)
 
 test('renames the injected process environment before the hosted record-write gate', async () => {
   const database = new Database(':memory:')

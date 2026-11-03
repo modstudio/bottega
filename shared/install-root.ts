@@ -157,6 +157,17 @@ export function installationIdentity(
   }
 }
 
+/** Resolve a source checkout, or refuse with the caller's resource-specific remedy. */
+export function requireCheckoutRoot(
+  fromDirectory: string,
+  env: InstallEnvironment,
+  distributionRemedy: string,
+): string {
+  const identity = installationIdentity(fromDirectory, env)
+  if (identity.kind === 'distribution') throw new Error(distributionRemedy)
+  return identity.root
+}
+
 /** Answer exactly: is this an authorized platform installation? */
 export function isAuthorizedPlatformInstallation(
   fromDirectory: string,

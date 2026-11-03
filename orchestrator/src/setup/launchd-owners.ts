@@ -8,7 +8,7 @@ import { resolveInstallRoot } from '../../../shared/install-root.ts'
 
 export type InstalledPlistOwner = { label: string; command: string }
 
-const LAUNCHD_TEMPLATE_OWNERS = [
+export const LAUNCHD_TEMPLATE_OWNERS = [
   { concern: 'hub', directory: 'launchd', command: 'hub/bin/install-launchd.sh' },
   { concern: 'ops', directory: 'launchd', command: 'ops/install.sh' },
 ] as const

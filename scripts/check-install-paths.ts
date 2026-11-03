@@ -16,6 +16,7 @@ const INSTALL_AWARE_RESOLVERS = new Set([
   'installationVersionText',
   'isAuthorizedPlatformInstallation',
   'readInstallAsset',
+  'requireCheckoutRoot',
   'resolveInstallFile',
   'resolveInstallRoot',
   'resolveInstallationPaths',
@@ -111,7 +112,7 @@ function productionSources(directory: string): string[] {
     const path = join(directory, entry.name)
     const repositoryPath = relative(root, path).split('\\').join('/')
     if (entry.isDirectory()) {
-      if (repositoryPath.split('/').includes('scripts')) continue
+      if (ignoredPath(repositoryPath)) continue
       paths.push(...productionSources(path))
     } else if (
       (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx') || entry.name.endsWith('.mts')) &&

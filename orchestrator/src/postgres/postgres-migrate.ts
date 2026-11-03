@@ -7,15 +7,20 @@ import { getMigrationsToRun } from 'drizzle-orm/migrator.utils'
 import { drizzle as drizzlePostgresJs } from 'drizzle-orm/postgres-js'
 import { migrate as migrateWithPostgresJs } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
-import { installationIdentity } from '../../../shared/install-root.ts'
+import { requireCheckoutRoot } from '../../../shared/install-root.ts'
 import { migrationSessionSettings } from '../../../shared/record/migration-session.ts'
 
 function postgresMigrationsFolder(): string {
-  const installation = installationIdentity(import.meta.dir, process.env)
-  if (installation.kind === 'distribution') {
-    throw new Error('hosted record migration requires shared/record/migrations from a checkout')
-  }
-  return join(installation.root, 'shared', 'record', 'migrations')
+  return join(
+    requireCheckoutRoot(
+      import.meta.dir,
+      process.env,
+      'hosted record migration requires shared/record/migrations from a checkout',
+    ),
+    'shared',
+    'record',
+    'migrations',
+  )
 }
 
 export const MIGRATION_NOTICE_MESSAGE_LIMIT = 500

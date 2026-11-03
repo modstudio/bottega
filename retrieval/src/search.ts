@@ -27,13 +27,9 @@ export async function search(
     includeDrafts?: boolean
   } = {},
 ): Promise<RetrievalDocSearchOutput> {
-  const installation = options.repositoryRoot
-    ? null
-    : installationIdentity(import.meta.dir, options.environment ?? process.env)
-  if (installation?.kind === 'distribution') {
-    throw new Error('document search requires its corpus from a checkout')
-  }
-  const repositoryRoot = options.repositoryRoot ?? installation!.root
+  const repositoryRoot =
+    options.repositoryRoot ??
+    installationIdentity(import.meta.dir, options.environment ?? process.env).root
   let refreshPlan: ReturnType<typeof planRefresh> | undefined
   return indexedSearch(
     query,

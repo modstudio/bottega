@@ -19,12 +19,9 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { composeCanonRows } from './canon-hydrate.ts'
 import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
 
-function canonCheckoutRoot(): string {
+function canonCheckoutRoot(): string | null {
   const installation = installationIdentity(import.meta.dir, process.env)
-  if (installation.kind === 'distribution') {
-    throw new Error(`canon repository validation requires the ${PLATFORM_NAME} source checkout`)
-  }
-  return installation.root
+  return installation.kind === 'distribution' ? null : installation.root
 }
 const PREFIXES = [
   'orchestrator/',
@@ -654,6 +651,12 @@ export function repoRootForDoc(
   return canonCheckoutRoot()
 }
 
+function uncheckedRootMessage(doc: Pick<Doc, 'scope' | 'subject'>): string {
+  return docScopeHasProjectSubject(doc.scope) && doc.subject
+    ? `unchecked: project ${doc.subject} is not registered on this machine`
+    : `unchecked: canon validation requires the ${PLATFORM_NAME} source checkout`
+}
+
 export function findingsForPack(pack: Pack): { doc: PackDoc; findings: Finding[] }[] {
   return pack.docs.map((packed) => {
     const doc = getDocForPack(packed)
@@ -665,7 +668,7 @@ export function findingsForPack(pack: Pack): { doc: PackDoc; findings: Finding[]
             kind: 'unchecked' as const,
             token: doc.subject ?? '',
             line: 0,
-            message: `unchecked: project ${doc.subject ?? '(unknown)'} is not registered on this machine`,
+            message: uncheckedRootMessage(doc),
           },
         ]
     return { doc: packed, findings }
@@ -790,7 +793,7 @@ export function allInjectChecks(): { doc: PackDoc; findings: Finding[] }[] {
                 kind: 'unchecked',
                 token: doc.subject ?? '',
                 line: 0,
-                message: `unchecked: project ${doc.subject ?? '(unknown)'} is not registered on this machine`,
+                message: uncheckedRootMessage(doc),
               },
             ],
       }

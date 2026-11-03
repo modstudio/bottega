@@ -51,6 +51,13 @@ export type SetupAction =
     }
   | { kind: 'migrate-environment' }
 
+/** Declare which planned action kinds require another action in the same plan to succeed. */
+export function setupActionPrerequisiteKinds(
+  kind: SetupAction['kind'],
+): readonly SetupAction['kind'][] {
+  return kind === 'add' || kind === 'set' ? ['migrate-environment'] : []
+}
+
 export function setupActionChangesMachine(action: SetupAction): boolean {
   switch (action.kind) {
     case 'add':

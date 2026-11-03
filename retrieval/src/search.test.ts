@@ -1,12 +1,16 @@
 import { Database } from 'bun:sqlite'
-import { expect, spyOn, test } from 'bun:test'
+import { afterEach, expect, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import { type Chunk, chunkDocument, type DocIdentity } from './corpus/chunks.ts'
 import { indexedRows, openIndexDatabase } from './index-store.ts'
 import { search } from './search.ts'
+
+afterEach(() => registerEmbeddedAssets(null))
 
 const chunk = (id: string, text = id): Chunk => ({
   id,
@@ -28,6 +32,39 @@ const addressedChunk = (
   ...chunk(id),
   path: `doc:${scope}/${subject}/${id}`,
   identity: { kind: 'doc', scope, subject, slug: id },
+})
+
+test('loads the installed document corpus from a distribution root', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-distribution-search-'))
+  registerEmbeddedAssets({
+    assets: {},
+    files: {},
+    manifest: {
+      name: PLATFORM_NAME,
+      version: '1.2.3',
+      built: '2026-11-03T00:00:00.000Z',
+      commit: 'abcdef',
+    },
+  })
+  let loadedRoot = ''
+  try {
+    const result = await search('question', 1, {
+      databasePath: join(directory, 'retrieval.db'),
+      loadChunks: async (root) => {
+        loadedRoot = root
+        return [chunk('one')]
+      },
+      clients: {
+        embed: async (_url, input) =>
+          input.map(() => [1, ...Array.from<number>({ length: 1_023 }).fill(0)]),
+        rerank: async () => [0.9],
+      },
+    })
+    expect(loadedRoot).toBe(join(process.execPath, '..'))
+    expect(result.results).toHaveLength(1)
+  } finally {
+    rmSync(directory, { recursive: true })
+  }
 })
 
 test('refuses an unreachable embedding endpoint through an injected client', async () => {

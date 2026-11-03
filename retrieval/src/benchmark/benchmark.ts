@@ -3,7 +3,7 @@
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { installationIdentity } from '../../../shared/install-root.ts'
+import { requireCheckoutRoot } from '../../../shared/install-root.ts'
 import { searchCode } from '../code-search.ts'
 import { queryDocument, RERANK_CANDIDATES } from '../contract.ts'
 import {
@@ -38,11 +38,11 @@ import {
 const EMBED_BATCH_SIZE = 64
 
 function benchmarkRepositoryRoot(): string {
-  const installation = installationIdentity(import.meta.dir, process.env)
-  if (installation.kind === 'distribution') {
-    throw new Error('retrieval benchmark requires its corpus and query fixtures from a checkout')
-  }
-  return installation.root
+  return requireCheckoutRoot(
+    import.meta.dir,
+    process.env,
+    'retrieval benchmark requires its corpus and query fixtures from a checkout',
+  )
 }
 
 function rankByEmbedding(chunks: Chunk[], vectors: number[][], queryVector: number[]): Chunk[] {

@@ -12,16 +12,6 @@ export type SourceRootAllowance = { path: string; line: number; reason: string }
 /** Checkout-root uses that are unreachable or explicitly guarded in an installed binary. */
 export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   {
-    path: 'orchestrator/src/canon/canon.ts',
-    line: 22,
-    reason: 'repository citation validation runs only against canon maintained in a checkout',
-  },
-  {
-    path: 'orchestrator/src/database/database-location.ts',
-    line: 33,
-    reason: 'defines the empty installed source root used by explicit embedded-manifest branches',
-  },
-  {
     path: 'orchestrator/src/resources/ref-guard-runtime.ts',
     line: 29,
     reason: 'the tracked hook path is selected only when no embedded manifest exists',
@@ -66,16 +56,6 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
     path: 'hub/src/db.ts',
     line: 56,
     reason: 'embedded dashboard runtime resolution skips checkout discovery and legacy paths',
-  },
-  {
-    path: 'hub/src/hosted.ts',
-    line: 72,
-    reason: 'the hosted deployment entry serves its separately built checkout web bundle',
-  },
-  {
-    path: 'hub/src/hosted.ts',
-    line: 79,
-    reason: 'the hosted deployment entry serves its separately built checkout web bundle',
   },
 ]
 

@@ -146,8 +146,9 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-mcp.ts',
       './setup-mcp-config.ts',
       './setup-legacy-path.ts',
+      './setup-planner.ts',
     ],
-    typeOnlyAllowed: ['./setup-environment.ts', './setup-planner.ts'],
+    typeOnlyAllowed: ['./setup-environment.ts'],
     reason:
       'Keep ordered application independent of project service implementation and CLI grammar.',
   },

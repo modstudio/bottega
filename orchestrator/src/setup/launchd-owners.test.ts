@@ -7,17 +7,18 @@ import {
   includesLaunchAgents,
   installationPlistOwners,
   installedPlistOwners,
+  LAUNCHD_TEMPLATE_OWNERS,
 } from './launchd-owners.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
 
 test('derives an installer for every current launchd template', () => {
   const root = join(import.meta.dir, '../../..')
-  const templates = ['hub', 'ops'].flatMap((concern) =>
-    readdirSync(join(root, concern, 'launchd'))
+  const templates = LAUNCHD_TEMPLATE_OWNERS.flatMap((owner) =>
+    readdirSync(join(root, owner.concern, owner.directory))
       .filter((name) => name.endsWith('.plist.template'))
       .map((name) => {
-        const path = join(root, concern, 'launchd', name)
+        const path = join(root, owner.concern, owner.directory, name)
         return { path, text: readFileSync(path, 'utf8') }
       }),
   )
@@ -25,7 +26,7 @@ test('derives an installer for every current launchd template', () => {
   expect(owners).toHaveLength(templates.length)
   expect(
     owners.every(({ command }) =>
-      ['hub/bin/install-launchd.sh', 'ops/install.sh'].includes(command),
+      LAUNCHD_TEMPLATE_OWNERS.some((owner) => owner.command === command),
     ),
   ).toBe(true)
 })

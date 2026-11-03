@@ -19,7 +19,7 @@ import {
   screenedMcpField,
 } from './setup-mcp.ts'
 import { migrateMcpConfigText } from './setup-mcp-config.ts'
-import type { SetupAction } from './setup-planner.ts'
+import { type SetupAction, setupActionLine, setupActionPrerequisiteKinds } from './setup-planner.ts'
 
 type AddAction = Extract<SetupAction, { kind: 'add' }>
 type SetAction = Extract<SetupAction, { kind: 'set' }>
@@ -60,15 +60,6 @@ export type SetupEnvironmentService = {
     status: SetupAppliedActionStatus
     message: string | null
   }>
-}
-
-/** Declare which planned action kinds require another action in the same plan to succeed. */
-function setupActionPrerequisiteKinds(kind: SetupAction['kind']): readonly SetupAction['kind'][] {
-  return kind === 'add' || kind === 'set' ? ['migrate-environment'] : []
-}
-
-const SETUP_ACTION_PREREQUISITE_LABELS: Partial<Record<SetupAction['kind'], string>> = {
-  'migrate-environment': 'Migrate operator environment names',
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
@@ -248,7 +239,7 @@ export async function applySetupActions(
       results.push({
         ...action,
         status: 'not-attempted',
-        message: `not attempted: requires ${SETUP_ACTION_PREREQUISITE_LABELS[refusedPrerequisite.kind] ?? refusedPrerequisite.kind}, which was refused`,
+        message: `not attempted: requires ${setupActionLine(refusedPrerequisite)}, which was refused`,
       })
       continue
     }

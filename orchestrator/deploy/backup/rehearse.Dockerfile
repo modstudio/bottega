@@ -23,6 +23,10 @@ RUN bun install --frozen-lockfile
 
 COPY shared/record/migrations shared/record/migrations
 COPY shared/record/migration-session.ts shared/record/migration-session.ts
+COPY shared/brand.ts shared/brand.ts
+COPY shared/built-commit.ts shared/built-commit.ts
+COPY shared/embedded-assets.ts shared/embedded-assets.ts
+COPY shared/install-root.ts shared/install-root.ts
 COPY orchestrator/src/postgres/postgres-migrate.ts orchestrator/src/postgres/postgres-migrate.ts
 COPY orchestrator/src/postgres/migration-failure.ts orchestrator/src/postgres/migration-failure.ts
 COPY orchestrator/src/postgres/migration-notices.ts orchestrator/src/postgres/migration-notices.ts

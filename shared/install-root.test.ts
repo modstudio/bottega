@@ -16,6 +16,7 @@ import {
   isAuthorizedPlatformInstallation,
   isInstallationRoot,
   readDistributionManifest,
+  requireCheckoutRoot,
   resolveInstallationPaths,
   resolveInstallRoot,
 } from './install-root.ts'
@@ -34,6 +35,21 @@ function scratch(): string {
 }
 
 describe('install root resolution', () => {
+  test('a checkout-only caller supplies the distribution remedy', () => {
+    registerEmbeddedAssets({
+      assets: {},
+      files: {},
+      manifest: {
+        name: PLATFORM_NAME,
+        version: '1.2.3',
+        built: '2026-11-03T00:00:00.000Z',
+        commit: 'abcdef',
+      },
+    })
+    expect(() => requireCheckoutRoot('/unused', {}, 'needs checkout fixtures')).toThrow(
+      'needs checkout fixtures',
+    )
+  })
   test('the env override wins when absolute', () => {
     expect(resolveInstallRoot('/from', { [INSTALL_HOME_ENV]: '/override/install' })).toBe(
       '/override/install',
