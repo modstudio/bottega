@@ -648,6 +648,7 @@ export function collectResult(
   writingJob: (job: string, branch: string | null, mintedBranch: string | null) => boolean = () =>
     false,
   declaredProbes: (runRecordId: string) => readonly FocusedTestExecutionObservation[] = () => [],
+  duplicateSuggestions: { lines: string[]; skipped: number } = { lines: [], skipped: 0 },
 ): void {
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
@@ -693,6 +694,10 @@ export function collectResult(
     }
   }
   presentCollectedOutput(row, output, outcome.ok, presentation)
+  for (const line of duplicateSuggestions.lines) presentation.log(line)
+  if (duplicateSuggestions.skipped) {
+    presentation.log(`${duplicateSuggestions.skipped} duplicate-finding pairs skipped at the invocation cap`)
+  }
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

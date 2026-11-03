@@ -9,6 +9,7 @@ import { focusedTestObservations } from '../run/run-test-outcome.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
+import { findingDuplicateSuggestions } from './finding-duplicate-suggestions.ts'
 
 type Presentation = {
   log(...values: unknown[]): void
@@ -27,12 +28,14 @@ export function peekCommand(
   presentation.log(options.json ? JSON.stringify(summary) : formatPeek(summary))
 }
 
-export function resultCommand(
+export async function resultCommand(
   database: Database,
   argv: string[],
   scoreSuffix: (jobName: string) => string,
   presentation: Presentation,
-): void {
+): Promise<void> {
+  const resolved = resolveFailover(database, resolveRunIdentifier(database, argv[1] ?? ''))
+  const suggestions = await findingDuplicateSuggestions(database, resolved.finalId)
   collectResult(
     database,
     argv,
@@ -42,8 +45,9 @@ export function resultCommand(
       !isSyntheticLifecycleJob(job) &&
       resolveRecordedRunJob({ job, branch, minted_branch: mintedBranch }).writesRepo,
     focusedTestObservations,
+    suggestions,
   )
-  const chain = resolveFailover(database, resolveRunIdentifier(database, argv[1] ?? ''))
+  const chain = resolved
   const row = database
     .query(
       'SELECT job, status, latency_ms, probe, output_path, branch, minted_branch FROM run WHERE record_id=?',
