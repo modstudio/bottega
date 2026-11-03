@@ -10,6 +10,7 @@ import type {
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
+import { TASK_IDENTITY_UUID_COLUMNS } from './identity-task-identity-manifest.ts'
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
@@ -881,11 +882,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'run.retry_of_record_id',
     'run.project_record_id',
     'run.started_by_user_id',
-    'run.task_record_id',
-    'workflow_cursor.task_record_id',
-    'question.workflow_task_record_id',
-    'port_ref.task_record_id',
-    'presence.current_task_record_id',
+    ...TASK_IDENTITY_UUID_COLUMNS,
     'run_carried_ruling.record_id',
     'run_carried_ruling.question_record_id',
     'run_carried_ruling.run_record_id',

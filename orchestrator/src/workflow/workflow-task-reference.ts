@@ -5,7 +5,12 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
-export type HubTaskReference = { key: string; record_id: string; project: string }
+export type HubTaskReference = {
+  key: string
+  record_id: string
+  project: string
+  status_category?: string | null
+}
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskByKeyReader = (key: string) => Promise<HubTaskReference | null>
 
@@ -29,6 +34,9 @@ function taskReference(row: unknown): HubTaskReference {
   ) {
     throw new Error('response contained an invalid task row')
   }
+  const status = (row as HubTaskReference).status_category
+  if (status !== undefined && status !== null && typeof status !== 'string')
+    throw new Error('response contained an invalid task status category')
   return row as HubTaskReference
 }
 

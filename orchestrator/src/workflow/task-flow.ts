@@ -1,0 +1,120 @@
+// concern: task flow persistence
+/** Projects task state and owns the one-open-stage relationship around workflow cursors. */
+
+import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { nowIso } from '../database/db.ts'
+import {
+  decideTaskStageSelection,
+  type OpenTaskStage,
+  taskFlowState,
+} from './task-flow-decision.ts'
+
+type TaskFlowRow = { record_id: string; open_stage_cursor_record_id: string | null }
+
+function projectTaskFlow(
+  project: string,
+  taskRecordId: string,
+  statusCategory: string | null | undefined,
+  d: Database,
+): TaskFlowRow {
+  const at = nowIso()
+  const state = taskFlowState(statusCategory)
+  return d
+    .query<TaskFlowRow, [string, string, string, string | null, string, string, string | null]>(
+      `INSERT INTO task_flow
+         (record_id,task_record_id,project_record_id,state,created_at,updated_at)
+       VALUES (?, ?, (SELECT record_id FROM project WHERE name=?), COALESCE(?, 'open'), ?, ?)
+       ON CONFLICT(task_record_id) DO UPDATE
+         SET state=COALESCE(?,task_flow.state),updated_at=excluded.updated_at
+       RETURNING record_id,open_stage_cursor_record_id`,
+    )
+    .get(newRecordId(), taskRecordId, project, state, at, at, state)!
+}
+
+function openStage(flow: TaskFlowRow, d: Database): (OpenTaskStage & { recordId: string }) | null {
+  if (!flow.open_stage_cursor_record_id) return null
+  return d
+    .query<OpenTaskStage & { recordId: string }, [string]>(
+      `SELECT number cursor,workflow_slug workflow,mode_slug mode,record_id recordId
+       FROM workflow_cursor WHERE record_id=?`,
+    )
+    .get(flow.open_stage_cursor_record_id)
+}
+
+export function selectTaskFlowStage(
+  input: {
+    project: string
+    taskRecordId: string
+    taskKey: string
+    statusCategory?: string | null
+    cursor?: number
+    workflow: string
+    mode: string
+  },
+  d: Database,
+): { flowRecordId: string; cursorRecordId: string | null } {
+  const flow = projectTaskFlow(input.project, input.taskRecordId, input.statusCategory, d)
+  const stage = openStage(flow, d)
+  const decision = decideTaskStageSelection(stage, input)
+  if (decision.action === 'refuse')
+    throw new Error(
+      `task ${input.taskKey} already has open stage cursor ${decision.stage.cursor} ${decision.stage.workflow} ${decision.stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${decision.stage.workflow} --cursor ${decision.stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${decision.stage.workflow} --cursor ${decision.stage.cursor}`,
+    )
+  return {
+    flowRecordId: flow.record_id,
+    cursorRecordId: decision.action === 'reuse' ? stage!.recordId : null,
+  }
+}
+
+export function attachTaskFlowStage(
+  flowRecordId: string,
+  cursorRecordId: string,
+  d: Database,
+): void {
+  const at = nowIso()
+  d.query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?').run(
+    flowRecordId,
+    cursorRecordId,
+  )
+  d.query('UPDATE task_flow SET open_stage_cursor_record_id=?,updated_at=? WHERE record_id=?').run(
+    cursorRecordId,
+    at,
+    flowRecordId,
+  )
+}
+
+export function attachInsertedTaskFlowStage(
+  input: {
+    project: string
+    taskRecordId?: string | null
+    taskKey: string
+    statusCategory?: string | null
+    cursor: { id: number; record_id: string; workflow_slug: string; mode_slug: string }
+  },
+  d: Database,
+): string | null {
+  if (!input.taskKey || !input.taskRecordId) return null
+  const flow = selectTaskFlowStage(
+    {
+      project: input.project,
+      taskRecordId: input.taskRecordId,
+      taskKey: input.taskKey,
+      statusCategory: input.statusCategory,
+      cursor: input.cursor.id,
+      workflow: input.cursor.workflow_slug,
+      mode: input.cursor.mode_slug,
+    },
+    d,
+  )
+  attachTaskFlowStage(flow.flowRecordId, input.cursor.record_id, d)
+  return flow.flowRecordId
+}
+
+export function closeTaskFlowStage(cursorRecordId: string, d: Database): void {
+  d.query(
+    `UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=?
+     WHERE open_stage_cursor_record_id=?`,
+  ).run(nowIso(), cursorRecordId)
+}

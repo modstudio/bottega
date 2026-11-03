@@ -13,6 +13,7 @@ import {
 import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
+import { attachInsertedTaskFlowStage, closeTaskFlowStage } from './task-flow.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -20,7 +21,7 @@ import {
 } from './workflow-compose-branch.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
-import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
+import { cursorAutonomy, storedCursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
 import {
   refuseInvalidServe,
@@ -117,6 +118,7 @@ function findCursor(
     context.session,
     d,
     context.taskRecordId,
+    context.taskStatusCategory,
   ) as CursorRow | null
 }
 
@@ -208,18 +210,7 @@ function insertCursor(
       d,
     )
   }
-  const autonomySnapshot = autonomy
-    ? {
-        ...autonomy,
-        ...(autonomy.session
-          ? {
-              session: Object.fromEntries(
-                Object.entries(autonomy.session).filter(([key]) => key !== 'shipTo'),
-              ),
-            }
-          : {}),
-      }
-    : undefined
+  const autonomySnapshot = storedCursorAutonomy(autonomy)
   const stored = d
     .query<{ record_id: string }, (string | number | null)[]>(
       `INSERT INTO workflow_cursor
@@ -258,9 +249,20 @@ function insertCursor(
       at,
       at,
     )
-  return d
+  const row = d
     .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
     .get(stored!.record_id) as CursorRow
+  row.task_flow_record_id = attachInsertedTaskFlowStage(
+    {
+      project: composition.project,
+      taskRecordId: context.taskRecordId,
+      taskKey: key,
+      statusCategory: context.taskStatusCategory,
+      cursor: row,
+    },
+    d,
+  )
+  return row
 }
 
 export type CursorSummary = {
@@ -727,6 +729,7 @@ function persistWorkflowAdvance(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
     ).run(JSON.stringify(closed), context.session ?? null, at, row.record_id)
+    closeTaskFlowStage(row.record_id, d)
     return
   }
   const next = composition.steps[advance.ordinal]!
@@ -862,6 +865,7 @@ function abandonSelectedWorkflowCursor(
     `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
      session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
   ).run(JSON.stringify(closed), context.session ?? null, at, row.record_id)
+  closeTaskFlowStage(row.record_id, d)
   return `${cursorName(slug, mode, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
 }
 

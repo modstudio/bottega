@@ -2,7 +2,8 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { db, sessionId } from '../database/db.ts'
+import { db, sessionId, writeTransaction } from '../database/db.ts'
+import { attachTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
@@ -12,7 +13,7 @@ import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 /** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
 export const LISTED_CURSOR_COLUMNS =
-  'number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement'
+  "number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,task_flow_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement,(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=workflow_cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count"
 
 export type WorkflowCursorSelector = {
   project?: string
@@ -26,6 +27,7 @@ export type WorkflowCursorContext = {
   instance?: string
   taskRecordId?: string | null
   adoptionTaskRecordId?: string | null
+  taskStatusCategory?: string | null
 }
 
 const MCP_INSTANCE = randomUUID()
@@ -46,7 +48,11 @@ export async function resolveWorkflowCursorContext(
   const key = workflowKeyOf(args)
   if (!key) return { ...context, taskRecordId: null }
   const task = await resolveHubTaskReference(project, key, reader)
-  return { ...context, taskRecordId: task?.record_id ?? null }
+  return {
+    ...context,
+    taskRecordId: task?.record_id ?? null,
+    taskStatusCategory: task?.status_category ?? null,
+  }
 }
 
 export const resolveMcpCursorContext = (
@@ -74,6 +80,7 @@ export type SelectableCursorRow = {
   mode_slug: string
   workflow_key: string
   task_record_id: string | null
+  task_flow_record_id: string | null
   instance_id: string
   session_id: string | null
   ordinal: number
@@ -148,22 +155,43 @@ export function selectWorkflowCursorForClose(
   ownerSession: string | null | undefined,
   d: Database,
   taskRecordId?: string | null,
+  taskStatusCategory?: string | null,
 ): SelectableCursorRow | null {
   if (cursor !== undefined) return selectByHandle(cursor, identity, d, true)
-  return selectWorkflowCursor(identity, cursor, ownerSession, d, taskRecordId)
+  return selectWorkflowCursor(identity, cursor, ownerSession, d, taskRecordId, taskStatusCategory)
 }
 
-export function selectWorkflowCursor(
-  identity: WorkflowCursorSelector,
+function selectKeyedTaskStage(
+  identity: Required<WorkflowCursorSelector>,
   cursor: number | undefined,
-  ownerSession: string | null | undefined,
   d: Database,
-  taskRecordId?: string | null,
+  taskRecordId: string | null | undefined,
+  taskStatusCategory: string | null | undefined,
 ): SelectableCursorRow | null {
-  if (cursor !== undefined) return selectByHandle(cursor, identity, d)
-  if (!identity.project || !identity.workflow || !identity.mode) return null
-  if (identity.key) {
-    return d
+  const handled = cursor === undefined ? null : selectByHandle(cursor, identity, d)
+  if (!taskRecordId) return handled
+  return writeTransaction(() => {
+    const selected = selectTaskFlowStage(
+      {
+        project: identity.project,
+        taskRecordId,
+        taskKey: identity.key,
+        statusCategory: taskStatusCategory,
+        workflow: identity.workflow,
+        mode: identity.mode,
+        ...(cursor === undefined ? {} : { cursor }),
+      },
+      d,
+    )
+    if (handled) return handled
+    if (selected.cursorRecordId) {
+      const row = d
+        .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`)
+        .get(selected.cursorRecordId) as SelectableCursorRow
+      return validateIdentity(row, identity)
+    }
+    // Adopt an open keyed cursor that the 0198 backfill deliberately left without a flow.
+    const fallback = d
       .query(
         `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
@@ -174,9 +202,34 @@ export function selectWorkflowCursor(
         identity.project,
         identity.workflow,
         identity.mode,
-        taskRecordId ?? null,
+        taskRecordId,
       ) as SelectableCursorRow | null
-  }
+    if (fallback && fallback.state !== 'done' && fallback.state !== 'abandoned') {
+      attachTaskFlowStage(selected.flowRecordId, fallback.record_id, d)
+      fallback.task_flow_record_id = selected.flowRecordId
+    }
+    return fallback
+  }, d)
+}
+
+export function selectWorkflowCursor(
+  identity: WorkflowCursorSelector,
+  cursor: number | undefined,
+  ownerSession: string | null | undefined,
+  d: Database,
+  taskRecordId?: string | null,
+  taskStatusCategory?: string | null,
+): SelectableCursorRow | null {
+  if (identity.key && identity.project && identity.workflow && identity.mode)
+    return selectKeyedTaskStage(
+      identity as Required<WorkflowCursorSelector>,
+      cursor,
+      d,
+      taskRecordId,
+      taskStatusCategory,
+    )
+  if (cursor !== undefined) return selectByHandle(cursor, identity, d)
+  if (!identity.project || !identity.workflow || !identity.mode) return null
   if (!ownerSession) return null
   const rows = d
     .query(
