@@ -180,11 +180,12 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // A balance or billing limit cannot recover through request pacing or a
   // capability probe. Keep these before quota because some providers report
   // billing exhaustion with HTTP 429 and an `insufficient_quota` error type.
-  // The provider-account sentence is OpenRouter's observed wording, anchored so
-  // a run that merely quotes the phrase is not read as out of credits.
+  // OpenRouter's account-balance sentence and key-limit sentence are observed
+  // wordings, anchored so prose that merely mentions credits is not read as an
+  // account failure.
   [
     'billing',
-    /\b(?:http(?: status)?\s+402|status(?: code)?\s*[:=]?\s*402|402\s+payment required|code["']?\s*:\s*402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached)|account with your provider to add more credits)\b/i,
+    /\b(?:http(?: status)?\s+402|status(?: code)?\s*[:=]?\s*402|402\s+payment required|code["']?\s*:\s*402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached)|account with your provider to add more credits|requires more credits, or fewer max_tokens|You requested up to \d+ tokens, but can only afford \d+)\b/i,
   ],
   // OpenRouter's "Provider returned error" is the upstream provider's failure,
   // not this account's plan. It is not evidence, fails over, and cools the
