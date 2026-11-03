@@ -109,7 +109,7 @@ test('a distribution on a development machine names the registered main executab
       runningFromRegisteredMainCheckout: false,
       runningCopyIsDistribution: true,
       registeredMainCheckout: '/projects/registered-main',
-      runningInstallationRoot: '/opt/bottega',
+      runningInstallationRoot: '/opt/distribution',
       binaryRepositoryRoot: null,
     }),
   ).toThrow(

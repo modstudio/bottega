@@ -86,7 +86,7 @@ export function assertMachineHomeWriteAuthority(input: {
     : `cleared by: run \`${remedyExecutable} project add ${remedyRoot}\`, then `
   throw new Error(
     `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from this machine's installed copy\n` +
-      'invariant: A secondary checkout writes harness settings only under the OS temporary directory.\n' +
+      "invariant: A copy other than this machine's installed copy writes harness settings only under the OS temporary directory.\n" +
       `${registration || 'cleared by: run '}\`${remedyExecutable} ${input.command}\``,
   )
 }
@@ -116,7 +116,7 @@ export function assertCurrentMachineHomeWriteAuthority(
       isRunningFromRegisteredMainCheckout(runningRoot, mainCheckout),
     runningCopyIsDistribution:
       overrides.runningCopyIsDistribution ??
-      installationIdentity(import.meta.dir, process.env).kind === 'distribution',
+      installationIdentity(import.meta.dir, {}).kind === 'distribution',
     registeredMainCheckout: mainCheckout,
     runningInstallationRoot: runningRoot,
     binaryRepositoryRoot:

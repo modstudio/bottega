@@ -3,6 +3,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { installationIdentity } from '../../../shared/install-root.ts'
 import {
   type MachineLevel,
   readDelegationSettings,
@@ -290,7 +291,12 @@ async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<voi
 
 async function reportInstallationStatus(log: DoctorPresentation['log']): Promise<void> {
   await reportDatabaseStatus(log)
-  for (const line of await launchAgentDoctorLines(process.platform)) log(line)
+  for (const line of await launchAgentDoctorLines(
+    process.platform,
+    undefined,
+    installationIdentity(import.meta.dir, {}).kind,
+  ))
+    log(line)
 }
 
 async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<void> {

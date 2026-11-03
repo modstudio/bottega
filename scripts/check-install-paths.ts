@@ -166,8 +166,10 @@ export function distributionUnsafeInstallPathFindings(
       node.text.includes('ops/install.sh') &&
       !isLaunchdOwnerCommand(node)
     const literalRunningBin =
-      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
-      /bin\/(?:bottega|\$\{PLATFORM_SLUG\})/.test(node.text)
+      ts.isTemplateExpression(node) &&
+      node.head.text.endsWith('bin/') &&
+      ts.isIdentifier(node.templateSpans[0]?.expression) &&
+      node.templateSpans[0].expression.text === 'PLATFORM_SLUG'
     if (
       checkoutInstaller ||
       literalRunningBin ||
