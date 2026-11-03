@@ -124,6 +124,36 @@ test('recommends the install level from signed-in harness facts unless a setting
   ).toBe('record')
 })
 
+test('plans release schedules only for a full Darwin distribution with a missing or changed agent', () => {
+  const schedule = { label: 'com.user.orch-sweep' as const, loaded: true, plistMatches: true }
+  const actionsFor = (overrides: Partial<SetupFacts>) => {
+    const plan = proposeSetup(
+      {
+        ...machine,
+        os: { platform: 'darwin', arch: 'arm64', wsl: false },
+        installationKind: 'distribution',
+        schedules: [schedule],
+        ...overrides,
+      },
+      [],
+      [],
+      [],
+    )
+    return planSetupActions(plan, recommendedAnswers(plan)).map((action) => action.kind)
+  }
+
+  expect(actionsFor({ schedules: [{ ...schedule, loaded: false }] })).toContain('install-schedules')
+  expect(actionsFor({ schedules: [{ ...schedule, plistMatches: false }] })).toContain(
+    'install-schedules',
+  )
+  expect(actionsFor({})).not.toContain('install-schedules')
+  expect(actionsFor({ os: { platform: 'linux', arch: 'x64', wsl: false } })).not.toContain(
+    'install-schedules',
+  )
+  expect(actionsFor({ installationKind: 'checkout' })).not.toContain('install-schedules')
+  expect(actionsFor({ machineLevel: 'record' })).not.toContain('install-schedules')
+})
+
 test('record plan skips the worker MCP server and still registers the main server', () => {
   const plan = proposeSetupEngine(
     resolveWorktreeLifecycle,

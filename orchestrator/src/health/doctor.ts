@@ -52,7 +52,7 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
-import { launchAgentDoctorLines } from './launch-agent-doctor.ts'
+import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
 type DoctorPresentation = {
@@ -291,6 +291,7 @@ async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<voi
 
 async function reportInstallationStatus(
   presentation: Pick<DoctorPresentation, 'log' | 'exitCode'>,
+  machineLevel: MachineLevel,
 ): Promise<void> {
   const { log, exitCode } = presentation
   await reportDatabaseStatus(log)
@@ -302,8 +303,14 @@ async function reportInstallationStatus(
     log(`installation   identity unreadable — ${message}`)
     exitCode(1)
   }
-  for (const line of await launchAgentDoctorLines(process.platform, undefined, installationKind))
-    log(line)
+  const launchAgents = await launchAgentDoctorReport(
+    process.platform,
+    undefined,
+    installationKind,
+    machineLevel,
+  )
+  for (const line of launchAgents.lines) log(line)
+  if (launchAgents.failed) exitCode(1)
 }
 
 async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<void> {
@@ -562,7 +569,7 @@ export async function doctorCommand(
   if (failingEvalSlugs.length) {
     log(`FAILING CANON EVALS: ${failingEvalSlugs.join(', ')}`)
   }
-  await reportInstallationStatus(presentation)
+  await reportInstallationStatus(presentation, machineLevel)
   const { harnessHealth } = await import('./health.ts')
   const costlyFailures = harnessHealth()
     .classes.filter((row) => row.count > 0)

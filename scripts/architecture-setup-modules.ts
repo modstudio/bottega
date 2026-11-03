@@ -148,10 +148,28 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-mcp-config.ts',
       './setup-legacy-path.ts',
       './setup-planner.ts',
+      './setup-schedules.ts',
     ],
     typeOnlyAllowed: ['../../../shared/machine-config.ts', './setup-environment.ts'],
     reason:
       'Keep ordered application independent of project service implementation and CLI grammar.',
+  },
+  {
+    name: 'setup-schedules-boundary',
+    file: 'orchestrator/src/setup/setup-schedules.ts',
+    allowed: [
+      'node:fs',
+      'node:fs/promises',
+      'node:os',
+      'node:path',
+      '../../../shared/embedded-assets.ts',
+      '../../../shared/install-root.ts',
+      '../../../shared/launch-agent-skip.ts',
+      '../../../shared/state-directory.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep maintenance schedule rendering and launchctl application independent of setup policy and presentation.',
   },
   {
     name: 'setup-repository-toolchain-boundary',

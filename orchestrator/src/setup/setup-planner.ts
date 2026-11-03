@@ -56,6 +56,7 @@ export type SetupAction =
       path: string
       target: string
     }
+  | { kind: 'install-schedules' }
   | { kind: 'migrate-environment' }
 
 /** Declare which planned action kinds require another action in the same plan to succeed. */
@@ -72,6 +73,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'register-mcp':
     case 'migrate-mcp-config':
     case 'remove-legacy-symlink':
+    case 'install-schedules':
     case 'migrate-environment':
     case 'set-machine-level':
       return true
@@ -92,6 +94,8 @@ export function setupActionLine(action: SetupAction): string {
       return `Remove leftover ${action.path} symlink`
     case 'migrate-environment':
       return 'Migrate operator environment names'
+    case 'install-schedules':
+      return 'Install scheduled sweep and record sync'
     case 'set-machine-level':
       return `Set machine install level to ${action.to}`
     case 'add':
@@ -175,6 +179,17 @@ function selectedMachineLevel(plan: SetupPlan, answers: SetupAnswers): MachineLe
   return selected
 }
 
+function plannedScheduleActions(plan: SetupPlan, selectedLevel: MachineLevel): SetupAction[] {
+  return plan.facts.machine.os?.platform === 'darwin' &&
+    plan.facts.machine.installationKind === 'distribution' &&
+    selectedLevel === 'full' &&
+    (plan.facts.machine.schedules ?? []).some(
+      (schedule) => !schedule.loaded || !schedule.plistMatches,
+    )
+    ? [{ kind: 'install-schedules' }]
+    : []
+}
+
 export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
   const selectedLevel = selectedMachineLevel(plan, answers)
   const currentLevel = plan.facts?.machine?.machineLevel
@@ -182,6 +197,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     currentLevel === undefined || currentLevel === selectedLevel
       ? null
       : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
+  const schedules = plannedScheduleActions(plan, selectedLevel)
   const registrations: SetupAction[] = plan.registrations.map((proposal) => {
     if (selectedLevel === 'record' && proposal.workerOnly) {
       return {
@@ -263,6 +279,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
   return [
     { kind: 'migrate-environment' },
     ...(machineLevel ? [machineLevel] : []),
+    ...schedules,
     ...registrations,
     ...migrations,
     ...legacySymlinks,

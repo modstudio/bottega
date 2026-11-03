@@ -87,6 +87,8 @@ function renderValue(placeholder: string, concern: string): string | null {
   switch (placeholder) {
     case '__INSTALL_ROOT__':
       return repositoryRoot
+    case '__BOTTEGA_BIN__':
+      return join(repositoryRoot, 'bin', PLATFORM_SLUG)
     case '__CONCERN__':
       return concern
     case '__HOME__':
