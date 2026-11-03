@@ -587,8 +587,9 @@ File a task for work being done now. Do not keep a speculative backlog. Plans
 live in the doc store and become tasks when implementation begins, because a
 board must show what is actually happening.
 
-A defect found during other work is still fixed or delegated in that session.
-Inbox zero forbids speculative rows, not the rule that a filer owns disposition.
+A defect is filed as a note, not fixed alone. Once its class has evidence,
+fix the architecture behind it after research and a build-or-buy evaluation,
+with a class guard. Live harm is ruled case by case.
 
 ## Suggestions are observations, not tasks
 
