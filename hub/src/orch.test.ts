@@ -664,6 +664,20 @@ describe('projectListProcessError', () => {
       }),
     ).toBe('register unavailable')
   })
+
+  test('names the command for a non-zero numeric exit without process output', () => {
+    expect(
+      projectListProcessError({
+        command: `${PLATFORM_SLUG} project list --json`,
+        exitCode: 2,
+        signalCode: null,
+        exitedDueToTimeout: false,
+        stderr: '',
+        stdout: '',
+        timeoutMs: 20_000,
+      }),
+    ).toBe(`${PLATFORM_SLUG} project list --json exited 2`)
+  })
 })
 
 describe('projectArgv', () => {

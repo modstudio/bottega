@@ -434,9 +434,7 @@ export function projectListProcessError(result: ProjectListProcessResult): strin
   }
   if (result.exitCode === 0) return null
   return (
-    result.stderr.trim() ||
-    result.stdout.trim() ||
-    `${PLATFORM_SLUG} project exited ${result.exitCode}`
+    result.stderr.trim() || result.stdout.trim() || `${result.command} exited ${result.exitCode}`
   )
 }
 
