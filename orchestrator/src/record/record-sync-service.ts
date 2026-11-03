@@ -60,6 +60,7 @@ import {
   runTaskIdentityDecision,
 } from './record-sync-run-task-identity.ts'
 import { runRecordValues } from './record-sync-run-values.ts'
+import { taskFlowRecordKinds } from './record-sync-task-flow.ts'
 import { nullableNumber, nullableRoundedBigint, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
@@ -587,6 +588,7 @@ const recordKinds = {
         await pushQuestionAudits(tx, row, values.id, values.spaceId)
       }),
   },
+  ...taskFlowRecordKinds,
   review: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review,
     push: async (

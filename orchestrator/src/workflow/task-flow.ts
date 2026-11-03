@@ -5,11 +5,14 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import {
   decideTaskStageSelection,
   type OpenTaskStage,
   taskFlowState,
 } from './task-flow-decision.ts'
+import { enqueueTaskFlowRecord } from './task-flow-outbox.ts'
+import { enqueueTaskFlowStageRecord } from './task-flow-stage-outbox.ts'
 
 type TaskFlowRow = { record_id: string; open_stage_cursor_record_id: string | null }
 
@@ -21,16 +24,25 @@ function projectTaskFlow(
 ): TaskFlowRow {
   const at = nowIso()
   const state = taskFlowState(statusCategory)
-  return d
-    .query<TaskFlowRow, [string, string, string, string | null, string, string, string | null]>(
+  const machine = machineId()
+  const flow = d
+    .query<
+      TaskFlowRow,
+      [string, string, string, string | null, string, string, string, string, string | null]
+    >(
       `INSERT INTO task_flow
-         (record_id,task_record_id,project_record_id,state,created_at,updated_at)
-       VALUES (?, ?, (SELECT record_id FROM project WHERE name=?), COALESCE(?, 'open'), ?, ?)
+         (record_id,task_record_id,project_record_id,state,created_at,updated_at,
+          opening_machine_id,updated_machine_id,revision)
+       VALUES (?, ?, (SELECT record_id FROM project WHERE name=?), COALESCE(?, 'open'), ?, ?, ?, ?, 1)
        ON CONFLICT(task_record_id) DO UPDATE
-         SET state=COALESCE(?,task_flow.state),updated_at=excluded.updated_at
+         SET state=COALESCE(?,task_flow.state),updated_at=excluded.updated_at,
+             opening_machine_id=COALESCE(task_flow.opening_machine_id,excluded.opening_machine_id),
+             updated_machine_id=excluded.updated_machine_id,revision=task_flow.revision+1
        RETURNING record_id,open_stage_cursor_record_id`,
     )
-    .get(newRecordId(), taskRecordId, project, state, at, at, state)!
+    .get(newRecordId(), taskRecordId, project, state, at, at, machine, machine, state)!
+  enqueueTaskFlowRecord(d, flow.record_id)
+  return flow
 }
 
 function openStage(flow: TaskFlowRow, d: Database): (OpenTaskStage & { recordId: string }) | null {
@@ -74,15 +86,19 @@ export function attachTaskFlowStage(
   d: Database,
 ): void {
   const at = nowIso()
-  d.query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?').run(
-    flowRecordId,
-    cursorRecordId,
-  )
-  d.query('UPDATE task_flow SET open_stage_cursor_record_id=?,updated_at=? WHERE record_id=?').run(
-    cursorRecordId,
-    at,
-    flowRecordId,
-  )
+  const machine = machineId()
+  d.query(
+    `UPDATE workflow_cursor SET task_flow_record_id=?,
+       opened_machine_id=COALESCE(opened_machine_id,?),last_advanced_machine_id=?,revision=revision+1
+     WHERE record_id=?`,
+  ).run(flowRecordId, machine, machine, cursorRecordId)
+  d.query(
+    `UPDATE task_flow SET open_stage_cursor_record_id=?,updated_at=?,
+       opening_machine_id=COALESCE(opening_machine_id,?),updated_machine_id=?,revision=revision+1
+     WHERE record_id=?`,
+  ).run(cursorRecordId, at, machine, machine, flowRecordId)
+  enqueueTaskFlowRecord(d, flowRecordId)
+  enqueueTaskFlowStageRecord(d, cursorRecordId)
 }
 
 export function attachInsertedTaskFlowStage(
@@ -113,8 +129,27 @@ export function attachInsertedTaskFlowStage(
 }
 
 export function closeTaskFlowStage(cursorRecordId: string, d: Database): void {
+  const flow = d
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM task_flow WHERE open_stage_cursor_record_id=?',
+    )
+    .get(cursorRecordId)
+  if (!flow) return
+  const machine = machineId()
   d.query(
-    `UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=?
-     WHERE open_stage_cursor_record_id=?`,
-  ).run(nowIso(), cursorRecordId)
+    `UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=?,
+       opening_machine_id=COALESCE(opening_machine_id,?),updated_machine_id=?,revision=revision+1
+     WHERE record_id=?`,
+  ).run(nowIso(), machine, machine, flow.record_id)
+  enqueueTaskFlowRecord(d, flow.record_id)
+}
+
+export function enqueueTaskFlowCursorState(cursorRecordId: string, d: Database): void {
+  if (!enqueueTaskFlowStageRecord(d, cursorRecordId)) return
+  const flow = d
+    .query<{ task_flow_record_id: string }, [string]>(
+      'SELECT task_flow_record_id FROM workflow_cursor WHERE record_id=?',
+    )
+    .get(cursorRecordId)
+  if (flow?.task_flow_record_id) enqueueTaskFlowRecord(d, flow.task_flow_record_id)
 }

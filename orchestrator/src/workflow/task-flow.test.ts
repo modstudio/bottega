@@ -17,6 +17,7 @@ import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 function installTaskFlowLifecycleWorkflow(
   d: ReturnType<typeof cursorDatabase>,
   slug: string,
+  steps: string[] = ['score'],
 ): void {
   const draft = setWorkflowLocal(
     slug,
@@ -24,7 +25,7 @@ function installTaskFlowLifecycleWorkflow(
       title: `${slug} fixture`,
       description: 'Exercises task-flow lifecycle wiring.',
       arguments: [{ name: 'key', required: true, description: 'Task key.' }],
-      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['score'] }],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps }],
     },
     'task-flow lifecycle fixture',
     'test',
@@ -89,6 +90,46 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
   expect(d.query('SELECT open_stage_cursor_record_id openStage FROM task_flow').get()).toEqual({
     openStage: null,
   })
+})
+
+test('keyed compose and advance enqueue both stage and flow while task-less compose enqueues neither', () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-outbox'
+  installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
+  const args = { key: 'DEV-OUTBOX' }
+  const context = {
+    session: 'task-flow-outbox',
+    taskRecordId: 'task-DEV-OUTBOX',
+    taskStatusCategory: 'active',
+  }
+
+  const opened = composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  const cursor = opened.cursor!.id
+  expect(
+    d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY kind").all(),
+  ).toEqual([{ kind: 'task_flow' }, { kind: 'task_flow_stage' }])
+
+  d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
+  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(cursor)
+  nextWorkflowStep(workflow, 'fixture', 'default', args, 'advance', context, d, {}, testPorts)
+  expect(
+    d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY kind").all(),
+  ).toEqual([{ kind: 'task_flow' }, { kind: 'task_flow_stage' }])
+
+  d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
+  const tasklessWorkflow = 'task-flow-taskless'
+  installTaskFlowLifecycleWorkflow(d, tasklessWorkflow)
+  composeWorkflowWithCursor(
+    tasklessWorkflow,
+    'fixture',
+    'default',
+    { key: 'DEV-TASKLESS' },
+    { session: 'task-flow-taskless' },
+    d,
+    {},
+    {},
+  )
+  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
 test('one task flow refuses a second open stage and retains re-entry history', () => {
