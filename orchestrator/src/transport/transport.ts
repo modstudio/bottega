@@ -201,6 +201,8 @@ export type TransportResult = {
   vendorUsage: VendorUsage
   quotaReadings?: QuotaReadings
   askExposure?: CodexAskExposure
+  /** Set when this turn's Codex rollout slice exceeded its read cap. */
+  rolloutOverflow?: string | null
   sessionId: string | null
   stopReason: string | null
   error: string | null

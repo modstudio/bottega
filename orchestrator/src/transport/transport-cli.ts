@@ -6,9 +6,13 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
-import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
+import { codexAskExposureFromTexts, parseCodexAskExposure } from './codex-ask-exposure.ts'
 import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
-import { codexRolloutTextsSince, confinedCodexRollouts } from './codex-rollout-files.ts'
+import {
+  codexRolloutTextsSince,
+  codexRolloutVersionHeads,
+  confinedCodexRollouts,
+} from './codex-rollout-files.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import {
@@ -32,6 +36,12 @@ function parseVendorTokens(blob: string): number | null {
   return m ? Number(m[1]!.replace(/,/g, '')) : null
 }
 
+/** Most bytes this transport keeps from one child stream, stdout or stderr. */
+export const CLI_OUTPUT_CAPTURE_BYTES = 64 * 1024 * 1024
+
+/** What one child stream kept, and whether it outgrew the capture ceiling. */
+type CliStreamCapture = { stream: 'stdout' | 'stderr'; text: string; overflow: boolean }
+
 function cliUsage(estimatedCostUsd: number | null) {
   const vendorUsage: VendorUsage =
     estimatedCostUsd === null
@@ -45,11 +55,18 @@ function codexRolloutEvidence(
   home: string | undefined,
   offsets: Map<string, number>,
 ) {
-  if (!codex) return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined }
+  if (!codex)
+    return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: null }
   const texts = codexRolloutTextsSince(home, offsets)
+  // A dropped slice has no readings to report; the overflow itself is the value.
+  if (texts.overflow)
+    return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: texts.overflow }
+  const versionHeads =
+    parseCodexAskExposure(texts.slice).cliVersion === null ? codexRolloutVersionHeads(home) : ''
   return {
     quotaReadings: parseCodexQuotaReadings(texts.slice),
-    askExposure: codexAskExposureFromTexts(texts.slice, texts.full),
+    askExposure: codexAskExposureFromTexts(texts.slice, versionHeads),
+    overflow: null,
   }
 }
 
@@ -63,14 +80,21 @@ function eventForBilling(billing: AgentBilling, event: NormalizedEvent): Normali
 }
 
 async function readStdoutLines(
-  stream: AsyncIterable<string | Uint8Array>,
+  stream: 'stdout' | 'stderr',
+  input: AsyncIterable<string | Uint8Array>,
   onLine: (line: string) => void,
-): Promise<string> {
+  captureBytes: number = CLI_OUTPUT_CAPTURE_BYTES,
+): Promise<CliStreamCapture> {
   const decoder = new TextDecoder()
   let buf = ''
   let stdout = ''
-  for await (const value of stream) {
-    buf += typeof value === 'string' ? value : decoder.decode(value, { stream: true })
+  let kept = 0
+  for await (const value of input) {
+    const chunk = typeof value === 'string' ? value : decoder.decode(value, { stream: true })
+    if (kept + Buffer.byteLength(chunk) > captureBytes)
+      return { stream, text: stdout + buf, overflow: true }
+    kept += Buffer.byteLength(chunk)
+    buf += chunk
     let nl = buf.indexOf('\n')
     while (nl >= 0) {
       const line = buf.slice(0, nl)
@@ -85,7 +109,7 @@ async function readStdoutLines(
     stdout += buf
     onLine(buf)
   }
-  return stdout
+  return { stream, text: stdout, overflow: false }
 }
 
 function codexThrottleEvent(line: string): NormalizedEvent | null {
@@ -109,6 +133,8 @@ export function startCliStreamReaders(input: {
   stderr: AsyncIterable<string | Uint8Array>
   codex: boolean
   push: (event: NormalizedEvent) => void
+  captureBytes?: number
+  onCaptureOverflow?: (stream: 'stdout' | 'stderr') => void
 }) {
   let throttleSeen = false
   const observeThrottle = (line: string) => {
@@ -118,13 +144,27 @@ export function startCliStreamReaders(input: {
     throttleSeen = true
     input.push(event)
   }
+  const capture = (
+    stream: 'stdout' | 'stderr',
+    source: AsyncIterable<string | Uint8Array>,
+    onLine: (line: string) => void,
+  ) =>
+    readStdoutLines(stream, source, onLine, input.captureBytes).then((result) => {
+      if (result.overflow) input.onCaptureOverflow?.(stream)
+      return result
+    })
   return {
-    stdoutTask: readStdoutLines(input.stdout, (line) => {
+    stdoutTask: capture('stdout', input.stdout, (line) => {
       observeThrottle(line)
       for (const event of eventsFromVendorLine(line)) input.push(event)
     }),
-    stderrTask: readStdoutLines(input.stderr, observeThrottle),
+    stderrTask: capture('stderr', input.stderr, observeThrottle),
   }
+}
+
+/** A stream that outgrew its declared capture ceiling, named with the remedy. */
+function cliCaptureOverflowError(harness: string, stream: 'stdout' | 'stderr'): string {
+  return `${harness} ${stream} exceeded CLI_OUTPUT_CAPTURE_BYTES (orchestrator/src/transport/transport-cli.ts); raise that constant if the harness legitimately prints more, then rerun`
 }
 
 function spawnCliChild(
@@ -201,11 +241,15 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     liveEvents.push(event)
     eventWaiters.shift()?.()
   }
+  const terminate = () => void terminateProcessGroup(p.pid ?? 0, { direct: p })
   const { stdoutTask, stderrTask } = startCliStreamReaders({
     stdout: p.stdout!,
     stderr: p.stderr!,
     codex,
     push: (event) => pushEvent(eventForBilling(opts.agent.billing, event)),
+    // A stream past its ceiling cannot be read to the end, so the turn stops
+    // there rather than keeping bytes for a child that must be killed anyway.
+    onCaptureOverflow: terminate,
   })
 
   const finishEvents = () => {
@@ -218,19 +262,37 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     if (collected) return collected
     collected = (async () => {
       try {
-        const [stdout, stderr, processResult] = await Promise.all([stdoutTask, stderrTask, p])
+        const [stdoutCapture, stderrCapture, processResult] = await Promise.all([
+          stdoutTask,
+          stderrTask,
+          p,
+        ])
+        const stdout = stdoutCapture.text
+        const stderr = stderrCapture.text
+        const overflowed = stdoutCapture.overflow
+          ? stdoutCapture
+          : stderrCapture.overflow
+            ? stderrCapture
+            : null
         const signal = processResult.signal ?? null
         const exitCode =
           processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)
-        const reply = opts.agent.parseReply?.(stdout)
-        const replyError = reply?.error ?? null
-        const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
+        const reply = overflowed ? null : (opts.agent.parseReply?.(stdout) ?? null)
+        const replyError = overflowed
+          ? cliCaptureOverflowError(workerHarnessName(opts.agent), overflowed.stream)
+          : (reply?.error ?? null)
+        const tokens = overflowed
+          ? null
+          : (reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout))
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
-        const { quotaReadings, askExposure } = codexRolloutEvidence(
+        const { quotaReadings, askExposure, overflow } = codexRolloutEvidence(
           codex,
           codexHome,
           rolloutOffsets,
         )
+        // Best-effort observation, reported where an operator will see it
+        // without changing what the turn did.
+        if (overflow) opts.onWarning?.(overflow.message)
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({
@@ -328,7 +390,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     },
     async cancel() {
       cancelled = true
-      void terminateProcessGroup(p.pid ?? 0, { direct: p })
+      terminate()
     },
     collect,
   }

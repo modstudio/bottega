@@ -9,7 +9,7 @@ import {
   codexAskExposureFromTexts,
   parseCodexAskExposure,
 } from './codex-ask-exposure.ts'
-import { codexRolloutTextsSince } from './codex-rollout-files.ts'
+import { codexRolloutTextsSince, codexRolloutVersionHeads } from './codex-rollout-files.ts'
 
 const meta = JSON.stringify({ type: 'session_meta', payload: { cli_version: '0.166.0' } })
 const tools = (offered: unknown[]) =>
@@ -71,7 +71,7 @@ test('turn slice ignores an earlier exposure record but retains the chain CLI ve
       root,
       new Map([[realpathSync(rollout), Buffer.byteLength(earlier)]]),
     )
-    expect(codexAskExposureFromTexts(texts.slice, texts.full)).toEqual({
+    expect(codexAskExposureFromTexts(texts.slice, codexRolloutVersionHeads(root))).toEqual({
       surface: 'unknown',
       cliVersion: '0.166.0',
     })

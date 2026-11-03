@@ -6,6 +6,7 @@ import { dir } from '../../test/fixtures/store.ts'
 import { parseCodexQuotaReadings } from './codex-quota.ts'
 import { codexRolloutTextsSince } from './codex-rollout-files.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
+import { startCliStreamReaders } from './transport-cli.ts'
 import { type TransportAgent, transportFor } from './transport.ts'
 
 async function resultLineUsage(billing: TransportAgent['billing']) {
@@ -120,6 +121,30 @@ test('Codex quota observation reads only the turn-appended part of a nested roll
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('an endless CLI stream stops at the capture ceiling and reports its overflow', async () => {
+  const captureBytes = 4096
+  async function* endless(): AsyncGenerator<string> {
+    for (;;) yield `${'y'.repeat(1024)}\n`
+  }
+  const overflows: Array<'stdout' | 'stderr'> = []
+  const readers = startCliStreamReaders({
+    stdout: endless(),
+    stderr: endless(),
+    codex: false,
+    push: () => {},
+    captureBytes,
+    onCaptureOverflow: (stream) => overflows.push(stream),
+  })
+
+  const [stdout, stderr] = await Promise.all([readers.stdoutTask, readers.stderrTask])
+
+  expect(stdout.overflow).toBe(true)
+  expect(stderr.overflow).toBe(true)
+  expect(Buffer.byteLength(stdout.text)).toBeLessThanOrEqual(captureBytes)
+  expect(Buffer.byteLength(stderr.text)).toBeLessThanOrEqual(captureBytes)
+  expect(overflows.sort()).toEqual(['stderr', 'stdout'])
 })
 
 test('Codex quota observation does not read a symlinked rollout', () => {
