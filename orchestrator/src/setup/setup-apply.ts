@@ -19,7 +19,7 @@ import {
   screenedMcpField,
 } from './setup-mcp.ts'
 import { migrateMcpConfigText } from './setup-mcp-config.ts'
-import type { SetupAction } from './setup-planner.ts'
+import { type SetupAction, setupActionLine } from './setup-planner.ts'
 
 type AddAction = Extract<SetupAction, { kind: 'add' }>
 type SetAction = Extract<SetupAction, { kind: 'set' }>
@@ -60,6 +60,13 @@ export type SetupEnvironmentService = {
     status: SetupAppliedActionStatus
     message: string | null
   }>
+}
+
+/** Declare which planned action kinds require another action in the same plan to succeed. */
+export function setupActionPrerequisiteKinds(
+  kind: SetupAction['kind'],
+): readonly SetupAction['kind'][] {
+  return kind === 'add' || kind === 'set' ? ['migrate-environment'] : []
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
@@ -231,10 +238,16 @@ export async function applySetupActions(
   preparedStateFileMigration?: PreparedStateFileMigration | null,
 ): Promise<SetupActionResult[]> {
   const results: SetupActionResult[] = []
-  let refused = false
   for (const action of actions) {
-    if (refused) {
-      results.push({ ...action, status: 'not-attempted', message: null })
+    const refusedPrerequisite = setupActionPrerequisiteKinds(action.kind)
+      .map((kind) => results.find((result) => result.kind === kind && result.status === 'refused'))
+      .find((result) => result !== undefined)
+    if (refusedPrerequisite) {
+      results.push({
+        ...action,
+        status: 'not-attempted',
+        message: `not attempted: requires ${setupActionLine(refusedPrerequisite)}, which was refused`,
+      })
       continue
     }
     try {
@@ -247,7 +260,6 @@ export async function applySetupActions(
       )
       results.push({ ...action, ...applied })
     } catch (error) {
-      refused = true
       results.push({
         ...action,
         status: 'refused',

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { installationIdentity } from '../../shared/install-root.ts'
 // concern: retrieval-search-cli
 /** Presents the stable semantic document-search contract. */
 import {
@@ -135,7 +136,11 @@ export function formatRefreshSummary(refresh: {
 
 export async function main(argv: string[]): Promise<void> {
   if (argv.length === 1 && argv[0] === '--check-doc-pins') {
-    const repositoryRoot = resolve(import.meta.dir, '../..')
+    const installation = installationIdentity(import.meta.dir, process.env)
+    if (installation.kind === 'distribution') {
+      throw new Error('document pin checking requires its benchmark fixtures from a checkout')
+    }
+    const repositoryRoot = installation.root
     const pins = checkDocPins(DOC_QUERIES, await loadDocRows(repositoryRoot))
     console.log(JSON.stringify({ pins }, null, 2))
     if (pins.some((pin) => !pin.current)) process.exitCode = 1

@@ -207,7 +207,7 @@ test('refuses a symlinked recipe directory and writes nothing outside the reposi
   expect(existsSync(join(outside, 'worktree-recipe.jsonc'))).toBe(false)
 })
 
-test('stops at the first refusal and marks remaining actions not attempted', async () => {
+test('continues after a refused action', async () => {
   const attempted: string[] = []
   const results = await applySetupActions([action('one'), action('two'), action('three')], {
     add: async (candidate) => {
@@ -216,12 +216,12 @@ test('stops at the first refusal and marks remaining actions not attempted', asy
     },
     fillAbsent: async () => {},
   })
-  expect(attempted).toEqual(['one', 'two'])
-  expect(results.map((result) => result.status)).toEqual(['applied', 'refused', 'not-attempted'])
+  expect(attempted).toEqual(['one', 'two', 'three'])
+  expect(results.map((result) => result.status)).toEqual(['applied', 'refused', 'applied'])
   expect(results[1]?.message).toBe('service refused two')
 })
 
-test('applies the required environment migration before later actions and its refusal stops setup', async () => {
+test('a refused environment migration skips dependent projects but applies independent actions', async () => {
   const attempted: string[] = []
   const service: SetupProjectService = {
     add: async (candidate: { name: string }) => {
@@ -249,14 +249,23 @@ test('applies the required environment migration before later actions and its re
     attempted.push('environment')
     throw new Error('environment refused')
   }
+  const independent: SetupAction = {
+    kind: 'mcp-unchanged',
+    harness: 'codex',
+    bin: '/bin/codex',
+    server: { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] },
+  }
   const refused = await applySetupActions(
-    [{ kind: 'migrate-environment' }, action('project')],
+    [{ kind: 'migrate-environment' }, action('project'), independent],
     service,
     undefined,
     environment,
   )
   expect(attempted).toEqual(['environment'])
-  expect(refused.map(({ status }) => status)).toEqual(['refused', 'not-attempted'])
+  expect(refused.map(({ status }) => status)).toEqual(['refused', 'not-attempted', 'unchanged'])
+  expect(refused[1]?.message).toBe(
+    'not attempted: requires Migrate operator environment names, which was refused',
+  )
 })
 
 test('renames the injected process environment before the hosted record-write gate', async () => {
@@ -445,7 +454,7 @@ test('refuses a registration that became different before add and does not add',
       error: null,
     }),
   )
-  expect(results.map((result) => result.status)).toEqual(['refused', 'not-attempted'])
+  expect(results.map((result) => result.status)).toEqual(['refused', 'applied'])
   expect(results[0]?.message).toContain('changed before add')
   expect(results[0]?.message).toContain('/wrong')
 })

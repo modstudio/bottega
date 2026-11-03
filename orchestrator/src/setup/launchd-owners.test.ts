@@ -1,7 +1,15 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { installedPlistOwners } from './launchd-owners.ts'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
+import {
+  includesLaunchAgents,
+  installedPlistOwners,
+  installationPlistOwners,
+} from './launchd-owners.ts'
+
+afterEach(() => registerEmbeddedAssets(null))
 
 test('derives an installer for every current launchd template', () => {
   const root = join(import.meta.dir, '../../..')
@@ -20,4 +28,29 @@ test('derives an installer for every current launchd template', () => {
       ['hub/bin/install-launchd.sh', 'ops/install.sh'].includes(command),
     ),
   ).toBe(true)
+})
+
+test('reads installer ownership entirely from the embedded registry', async () => {
+  registerEmbeddedAssets({
+    assets: {
+      'hub/launchd/com.example.embedded.plist.template':
+        '<plist><dict><key>Label</key><string>com.example.embedded</string></dict></plist>',
+    },
+    files: {},
+    manifest: {
+      name: PLATFORM_NAME,
+      version: '1.2.3',
+      built: '2026-11-03T00:00:00.000Z',
+      commit: 'abcdef',
+    },
+  })
+
+  expect(await installationPlistOwners()).toEqual([
+    { label: 'com.example.embedded', command: 'hub/bin/install-launchd.sh' },
+  ])
+})
+
+test('launch agents are included only on Darwin', () => {
+  expect(includesLaunchAgents('darwin')).toBe(true)
+  expect(includesLaunchAgents('linux')).toBe(false)
 })

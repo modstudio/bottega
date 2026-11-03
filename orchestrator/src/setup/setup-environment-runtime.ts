@@ -126,6 +126,7 @@ export const setupEnvironmentService: SetupEnvironmentService = {
       const notes: string[] = []
       const home = homedir()
       const report = await migrateOperatorEnvironment(home, {
+        platform: process.platform,
         backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
         migrateSecrets: async (record) => {
           const authority = currentRecordWriteDecision()

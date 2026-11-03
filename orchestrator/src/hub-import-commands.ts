@@ -16,6 +16,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { installationIdentity } from '../../shared/install-root.ts'
 import { processSignalOutcome } from '../../shared/process-identity.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
 import { type Project, projectAt } from './project/projects.ts'
@@ -293,7 +294,15 @@ export async function hubImportJudgeCommand(
 
   const { checkout, file: canonicalFile } = target
 
-  const installedRoot = resolve(import.meta.dir, '../..')
+  const installation = installationIdentity(import.meta.dir, process.env)
+  if (installation.kind === 'distribution') {
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: 'hub import judging requires the policy scripts from a development checkout',
+    }
+  }
+  const installedRoot = installation.root
   const judge = join(installedRoot, 'scripts/check-architecture-file.ts')
   const original = relative(checkout, canonicalFile).split(sep).join('/')
   const pathJudgment = await judgeOriginalPath(

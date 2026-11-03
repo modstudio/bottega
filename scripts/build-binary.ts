@@ -67,6 +67,16 @@ async function migrationAssetPaths(): Promise<string[]> {
   return paths.sort()
 }
 
+async function launchdAssetPaths(): Promise<string[]> {
+  const paths: string[] = []
+  for (const root of ['hub/launchd', 'ops/launchd']) {
+    paths.push(
+      ...(await embeddedAssetPaths(root)).filter((path) => path.endsWith('.plist.template')),
+    )
+  }
+  return paths.sort()
+}
+
 async function webAssetPaths(): Promise<string[]> {
   const root = 'hub/web/dist'
   const paths = await embeddedAssetPaths(root)
@@ -126,7 +136,11 @@ export async function buildBinary(
     writeFileSync(
       assets,
       generatedAssetModule(
-        [...(await migrationAssetPaths()), REF_GUARD_RUNTIME_ASSET.packagePath],
+        [
+          ...(await migrationAssetPaths()),
+          ...(await launchdAssetPaths()),
+          REF_GUARD_RUNTIME_ASSET.packagePath,
+        ],
         [
           ...(await webAssetPaths()),
           ...sandboxRuntimePayloadPaths(platform, arch),

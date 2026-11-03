@@ -240,6 +240,15 @@ export function readInstallAsset(relativePath: string, diskPath: string): string
   return value
 }
 
+/** List registered install assets beneath a path, or report that disk enumeration is required. */
+export function listInstallAssetPaths(prefix: string): string[] | null {
+  if (embedded === null) return null
+  const directory = prefix.endsWith('/') ? prefix : `${prefix}/`
+  return Object.keys(embedded.assets)
+    .filter((path) => path.startsWith(directory))
+    .sort()
+}
+
 /** Resolve a Bun.file-openable install asset without falling through to disk in a binary. */
 export function resolveInstallFile(relativePath: string, diskPath: string): string | undefined {
   if (embedded === null) return diskPath

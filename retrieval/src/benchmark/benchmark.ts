@@ -3,6 +3,7 @@
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { installationIdentity } from '../../../shared/install-root.ts'
 import { searchCode } from '../code-search.ts'
 import { queryDocument, RERANK_CANDIDATES } from '../contract.ts'
 import {
@@ -181,7 +182,11 @@ function reportSet(
 }
 
 async function main() {
-  const repositoryRoot = resolve(import.meta.dir, '../../..')
+  const installation = installationIdentity(import.meta.dir, process.env)
+  if (installation.kind === 'distribution') {
+    throw new Error('retrieval benchmark requires its corpus and query fixtures from a checkout')
+  }
+  const repositoryRoot = installation.root
   if (process.argv.includes('--check-doc-pins')) {
     const pins = checkDocPins(DOC_QUERIES, await loadDocRows(repositoryRoot))
     console.log(JSON.stringify({ pins }, null, 2))

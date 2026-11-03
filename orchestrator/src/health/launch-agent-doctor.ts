@@ -5,7 +5,11 @@ import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
-import { type InstalledPlistOwner, installationPlistOwners } from '../setup/launchd-owners.ts'
+import {
+  includesLaunchAgents,
+  type InstalledPlistOwner,
+  installationPlistOwners,
+} from '../setup/launchd-owners.ts'
 
 export type LaunchAgentLoadObservation =
   | { kind: 'available'; loadedLabels: ReadonlySet<string> }
@@ -62,10 +66,14 @@ function loadedLaunchAgentLabels(
 }
 
 /** Gather installer and launchd facts, returning report-only doctor lines. */
-export async function launchAgentDoctorLines(): Promise<string[]> {
+export async function launchAgentDoctorLines(
+  platform: NodeJS.Platform,
+  readOwners: () => Promise<InstalledPlistOwner[]> = installationPlistOwners,
+): Promise<string[]> {
+  if (!includesLaunchAgents(platform)) return []
   let owners: InstalledPlistOwner[]
   try {
-    owners = await installationPlistOwners()
+    owners = await readOwners()
   } catch {
     return ['launch agents', '  launchd templates unreadable — load check unavailable']
   }

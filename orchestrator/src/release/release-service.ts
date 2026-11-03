@@ -51,10 +51,12 @@ const RELEASE_CI_DEPLOY_POLL_MS = 30 * 1_000
 /** Validate a proposed tag against the version reported by this development checkout. */
 export function validateReleaseTagVersion(
   tag: string,
-  fromDirectory = import.meta.dir,
+  fromDirectory?: string,
   environment: Record<string, string | undefined> = process.env,
 ): { tag: string; reportedVersion: string } {
-  const root = resolveInstallRoot(fromDirectory, environment)
+  const root = fromDirectory
+    ? resolveInstallRoot(fromDirectory, environment)
+    : resolveInstallRoot(import.meta.dir, environment)
   const file = join(root, 'package.json')
   let value: unknown
   try {

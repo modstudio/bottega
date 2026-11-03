@@ -8,16 +8,15 @@ import { drizzle as drizzlePostgresJs } from 'drizzle-orm/postgres-js'
 import { migrate as migrateWithPostgresJs } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 import { migrationSessionSettings } from '../../../shared/record/migration-session.ts'
+import { installationIdentity } from '../../../shared/install-root.ts'
 
-const POSTGRES_MIGRATIONS_FOLDER = join(
-  import.meta.dir,
-  '..',
-  '..',
-  '..',
-  'shared',
-  'record',
-  'migrations',
-)
+function postgresMigrationsFolder(): string {
+  const installation = installationIdentity(import.meta.dir, process.env)
+  if (installation.kind === 'distribution') {
+    throw new Error('hosted record migration requires shared/record/migrations from a checkout')
+  }
+  return join(installation.root, 'shared', 'record', 'migrations')
+}
 
 export const MIGRATION_NOTICE_MESSAGE_LIMIT = 500
 
@@ -32,7 +31,7 @@ export function formatMigrationNotice(migrationName: string, message: string): s
   return `MIGRATE NOTICE ${migrationName}: ${bounded}`
 }
 
-export function recordMigrationCount(folder = POSTGRES_MIGRATIONS_FOLDER): number {
+export function recordMigrationCount(folder = postgresMigrationsFolder()): number {
   return readMigrationFiles({ migrationsFolder: folder }).length
 }
 
@@ -42,7 +41,7 @@ type MigrationJournalConnection = {
 
 export async function pendingRecordMigrationNames(
   connection: MigrationJournalConnection,
-  folder = POSTGRES_MIGRATIONS_FOLDER,
+  folder = postgresMigrationsFolder(),
 ): Promise<string[]> {
   const localMigrations = readMigrationFiles({ migrationsFolder: folder })
   const present = await connection.unsafe<{ present: boolean }>(`
@@ -95,7 +94,7 @@ export async function migratePostgres(
   url = process.env.BOTTEGA_RECORD_MIGRATE_URL,
   noticeSink: MigrationNoticeSink = console.log,
 ): Promise<void> {
-  return migratePostgresFolder(url, noticeSink, POSTGRES_MIGRATIONS_FOLDER)
+  return migratePostgresFolder(url, noticeSink, postgresMigrationsFolder())
 }
 
 type MigrationQueryTracker = {
@@ -131,7 +130,7 @@ function migrationQueryTracker(
 export async function migratePostgresFolder(
   url: string | undefined,
   noticeSink: MigrationNoticeSink = console.log,
-  folder = POSTGRES_MIGRATIONS_FOLDER,
+  folder = postgresMigrationsFolder(),
 ): Promise<void> {
   if (!url) throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required to migrate the record')
   let tracker: MigrationQueryTracker = {

@@ -11,7 +11,7 @@ import {
   legacyEnvironmentNameMatches,
   replacementEnvironmentName,
 } from './environment-name-migration.ts'
-import { installationPlistOwners } from './launchd-owners.ts'
+import { includesLaunchAgents, installationPlistOwners } from './launchd-owners.ts'
 import {
   decideStateFileMove,
   defaultStateFilePair,
@@ -223,7 +223,9 @@ async function atomicModePreservingWrite(path: string, text: string, mode: numbe
 
 async function staleInstalledPlists(
   home: string,
+  platform: NodeJS.Platform,
 ): Promise<Array<{ path: string; command: string; names: string[] }>> {
+  if (!includesLaunchAgents(platform)) return []
   const stale: Array<{ path: string; command: string; names: string[] }> = []
   for (const { label, command } of await installationPlistOwners()) {
     const path = join(home, 'Library', 'LaunchAgents', `${label}.plist`)
@@ -558,12 +560,13 @@ export async function migrateOperatorEnvironment(
     notes?: () => string[]
     processNamesRenamed?: number
     preparedStateFileMigration?: PreparedStateFileMigration | null
+    platform: NodeJS.Platform
   },
 ): Promise<EnvironmentMigrationReport> {
   const sources = await environmentSources(home)
   const filePlan = acceptedEnvironmentFilePlan(sources)
   await adapters.preflight()
-  const followUps = await staleInstalledPlists(home)
+  const followUps = await staleInstalledPlists(home, adapters.platform)
   const registerBackup = await (adapters.registerBackup?.() ?? Promise.resolve([]))
   const settingsJson = join(home, '.claude', 'settings.json')
   const backupPaths = [

@@ -2,7 +2,9 @@
 /** Inventories installer-owned launch agents from their canonical templates. */
 
 import { readdir, readFile } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { listInstallAssetPaths, readInstallAsset } from '../../../shared/embedded-assets.ts'
+import { resolveInstallRoot } from '../../../shared/install-root.ts'
 
 export type InstalledPlistOwner = { label: string; command: string }
 
@@ -31,16 +33,30 @@ export function installedPlistOwners(
     .sort((left, right) => left.label.localeCompare(right.label))
 }
 
+/** Answer whether this platform has launch agents to inspect. */
+export function includesLaunchAgents(platform: NodeJS.Platform): boolean {
+  return platform === 'darwin'
+}
+
 /** Read every installer-owned launchd template from the checkout. */
 export async function installationPlistOwners(): Promise<InstalledPlistOwner[]> {
-  const root = resolve(import.meta.dir, '../../..')
+  const root = resolveInstallRoot(import.meta.dir, process.env)
   const templates: Array<{ path: string; text: string }> = []
   for (const owner of LAUNCHD_TEMPLATE_OWNERS) {
-    const directory = join(root, owner.concern, owner.directory)
+    const prefix = `${owner.concern}/${owner.directory}`
+    const embeddedPaths = listInstallAssetPaths(prefix)
+    if (embeddedPaths) {
+      for (const path of embeddedPaths) {
+        if (!path.endsWith('.plist.template')) continue
+        templates.push({ path, text: readInstallAsset(path, '') })
+      }
+      continue
+    }
+    const directory = join(root, prefix)
     for (const name of await readdir(directory)) {
       if (!name.endsWith('.plist.template')) continue
-      const path = join(directory, name)
-      templates.push({ path, text: await readFile(path, 'utf8') })
+      const path = join(prefix, name)
+      templates.push({ path, text: await readFile(join(root, path), 'utf8') })
     }
   }
   return installedPlistOwners(templates)

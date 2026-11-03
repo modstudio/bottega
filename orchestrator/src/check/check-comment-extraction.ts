@@ -13,6 +13,7 @@ import {
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
+import { resolveInstallRoot } from '../../../shared/install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
 import {
   COMMENT_PARSER_LANGUAGES,
@@ -27,7 +28,7 @@ import {
   commentFindings,
 } from './check-comments.ts'
 
-const REPOSITORY_ROOT = resolve(import.meta.dir, '../../..')
+const REPOSITORY_ROOT = resolveInstallRoot(import.meta.dir, process.env)
 const LANGUAGE_PACKAGES = { bash, php, python }
 
 const SOURCE_GLOBS = [
