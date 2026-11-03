@@ -3,7 +3,7 @@
 import { SQL } from 'bun'
 
 const RECORD_POOL_MAX = 10
-const RECORD_POOL_IDLE_TIMEOUT_SECONDS = 30
+export const RECORD_POOL_IDLE_TIMEOUT_SECONDS = 30
 
 const pools = new Map<string, { pool: SQL; max: number }>()
 

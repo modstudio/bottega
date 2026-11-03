@@ -68,6 +68,7 @@ type MachineKey = {
   label: string
   createdAt: string
   revokedAt: string | null
+  userId: string | null
 }
 type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
 
@@ -76,6 +77,125 @@ type Transport = (
   input: Parameters<typeof fetch>[0],
   init?: Parameters<typeof fetch>[1],
 ) => ReturnType<typeof fetch>
+type Request = <T>(route: string, init?: RequestInit) => Promise<T>
+
+function configAuthorizationClient(request: Request) {
+  return {
+    createMachineKeyClaimChallenge: (keyId: string) =>
+      request<{ challengeId: string; enc: string; ciphertext: string; senderPublicKey: string }>(
+        `/v1/config/machine-keys/${keyId}/claim-challenge`,
+        { method: 'POST' },
+      ),
+    claimMachineKey: (keyId: string, challengeId: string, nonce: string) =>
+      request<{ claimed: true }>(`/v1/config/machine-keys/${keyId}/claim`, {
+        method: 'POST',
+        body: JSON.stringify({ challengeId, nonce }),
+      }),
+    revokeMachineKey: (keyId: string) =>
+      request<{ revoked: true }>(`/v1/config/machine-keys/${keyId}/revoke`, {
+        method: 'POST',
+      }),
+  }
+}
+
+type Query = (values: Record<string, string>) => string
+
+function configValueClient(request: Request, query: Query) {
+  return {
+    listEntries: (environment = 'default') =>
+      request<{ items: ConfigEntry[] }>(`/v1/config/entries${query({ environment })}`).then(
+        (x) => x.items,
+      ),
+    getEntry: (key: string, scope: ConfigScope, environment = 'default') =>
+      request<ConfigEntry>(
+        `/v1/config/entries/${encodeURIComponent(key)}${query({ scope, environment })}`,
+      ),
+    putEntry: (
+      key: string,
+      input: {
+        scope: ConfigScope
+        environment: string
+        value: string
+        expectedRowVersion: number | null
+      },
+    ) =>
+      request<ConfigEntry>(`/v1/config/entries/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    deleteEntry: (
+      key: string,
+      input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+    ) =>
+      request<{ deleted: true }>(`/v1/config/entries/${encodeURIComponent(key)}`, {
+        method: 'DELETE',
+        body: JSON.stringify(input),
+      }),
+    listSecrets: (environment = 'default') =>
+      request<{ items: ConfigSecret[] }>(`/v1/config/secrets${query({ environment })}`).then(
+        (x) => x.items,
+      ),
+    getSecret: (key: string, scope: ConfigScope, environment = 'default') =>
+      request<ConfigSecret & { envelope: string }>(
+        `/v1/config/secrets/${encodeURIComponent(key)}${query({ scope, environment })}`,
+      ),
+    putSecret: (
+      key: string,
+      input: {
+        scope: ConfigScope
+        environment: string
+        dekId: string
+        envelope: string
+        expectedRowVersion: number | null
+      },
+    ) =>
+      request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    deleteSecret: (
+      key: string,
+      input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+    ) =>
+      request<{ deleted: true }>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
+        method: 'DELETE',
+        body: JSON.stringify(input),
+      }),
+  }
+}
+
+function configKeyClient(request: Request, query: Query) {
+  return {
+    currentDataKey: (recipientKeyId: string) =>
+      request<DataKey>(`/v1/config/data-keys/current${query({ recipientKeyId })}`),
+    listDataKeys: () => request<{ items: DataKey[] }>('/v1/config/data-keys').then((x) => x.items),
+    getDataKey: (dekId: string, recipientKeyId: string) =>
+      request<DataKey>(
+        `/v1/config/data-keys/${encodeURIComponent(dekId)}${query({ recipientKeyId })}`,
+      ),
+    createDataKey: (input: { dekId: string; version: number; wraps: DataKeyWrap[] }) =>
+      request<{ id: string; version: number }>('/v1/config/data-keys', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    addWraps: (dekId: string, wraps: DataKeyWrap[]) =>
+      request<{ added: number }>(`/v1/config/data-keys/${encodeURIComponent(dekId)}/wraps`, {
+        method: 'POST',
+        body: JSON.stringify({ wraps }),
+      }),
+    retireDataKey: (dekId: string) =>
+      request<{ retired: true }>(`/v1/config/data-keys/${encodeURIComponent(dekId)}/retire`, {
+        method: 'POST',
+      }),
+    listMachineKeys: () =>
+      request<{ items: MachineKey[] }>('/v1/config/machine-keys').then((x) => x.items),
+    registerMachineKey: (keyId: string, publicKey: string, label: string) =>
+      request<MachineKey>(`/v1/config/machine-keys/${keyId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ publicKey, label }),
+      }),
+  }
+}
 
 function createConfigClient(
   baseUrl: string,
@@ -109,106 +229,10 @@ function createConfigClient(
   }
   const query = (values: Record<string, string>) => `?${new URLSearchParams(values)}`
   return {
+    ...configAuthorizationClient(request),
+    ...configValueClient(request, query),
+    ...configKeyClient(request, query),
     whoami: () => request<ConfigIdentity>('/v1/whoami'),
-    listEntries: (environment = 'default') =>
-      request<{ items: ConfigEntry[] }>(`/v1/config/entries${query({ environment })}`).then(
-        (x) => x.items,
-      ),
-    getEntry: (key: string, scope: ConfigScope, environment = 'default') =>
-      request<ConfigEntry>(
-        `/v1/config/entries/${encodeURIComponent(key)}${query({ scope, environment })}`,
-      ),
-    putEntry: (
-      key: string,
-      input: {
-        scope: ConfigScope
-        environment: string
-        value: string
-        expectedRowVersion: number | null
-      },
-    ) =>
-      request<ConfigEntry>(`/v1/config/entries/${encodeURIComponent(key)}`, {
-        method: 'PUT',
-        body: JSON.stringify(input),
-      }),
-    deleteEntry: (
-      key: string,
-      input: {
-        scope: ConfigScope
-        environment: string
-        expectedRowVersion: number
-      },
-    ) =>
-      request<{ deleted: true }>(`/v1/config/entries/${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-        body: JSON.stringify(input),
-      }),
-    listSecrets: (environment = 'default') =>
-      request<{ items: ConfigSecret[] }>(`/v1/config/secrets${query({ environment })}`).then(
-        (x) => x.items,
-      ),
-    getSecret: (key: string, scope: ConfigScope, environment = 'default') =>
-      request<ConfigSecret & { envelope: string }>(
-        `/v1/config/secrets/${encodeURIComponent(key)}${query({ scope, environment })}`,
-      ),
-    putSecret: (
-      key: string,
-      input: {
-        scope: ConfigScope
-        environment: string
-        dekId: string
-        envelope: string
-        expectedRowVersion: number | null
-      },
-    ) =>
-      request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
-        method: 'PUT',
-        body: JSON.stringify(input),
-      }),
-    deleteSecret: (
-      key: string,
-      input: {
-        scope: ConfigScope
-        environment: string
-        expectedRowVersion: number
-      },
-    ) =>
-      request<{ deleted: true }>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-        body: JSON.stringify(input),
-      }),
-    currentDataKey: (recipientKeyId: string) =>
-      request<DataKey>(`/v1/config/data-keys/current${query({ recipientKeyId })}`),
-    listDataKeys: () => request<{ items: DataKey[] }>('/v1/config/data-keys').then((x) => x.items),
-    getDataKey: (dekId: string, recipientKeyId: string) =>
-      request<DataKey>(
-        `/v1/config/data-keys/${encodeURIComponent(dekId)}${query({ recipientKeyId })}`,
-      ),
-    createDataKey: (input: { dekId: string; version: number; wraps: DataKeyWrap[] }) =>
-      request<{ id: string; version: number }>('/v1/config/data-keys', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
-    addWraps: (dekId: string, wraps: DataKeyWrap[]) =>
-      request<{ added: number }>(`/v1/config/data-keys/${encodeURIComponent(dekId)}/wraps`, {
-        method: 'POST',
-        body: JSON.stringify({ wraps }),
-      }),
-    retireDataKey: (dekId: string) =>
-      request<{ retired: true }>(`/v1/config/data-keys/${encodeURIComponent(dekId)}/retire`, {
-        method: 'POST',
-      }),
-    listMachineKeys: () =>
-      request<{ items: MachineKey[] }>('/v1/config/machine-keys').then((x) => x.items),
-    registerMachineKey: (keyId: string, publicKey: string, label: string) =>
-      request<MachineKey>(`/v1/config/machine-keys/${keyId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ publicKey, label }),
-      }),
-    revokeMachineKey: (keyId: string) =>
-      request<{ revoked: true }>(`/v1/config/machine-keys/${keyId}/revoke`, {
-        method: 'POST',
-      }),
   }
 }
 

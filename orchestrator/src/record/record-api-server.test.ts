@@ -35,6 +35,7 @@ test('stopping the server ends an open board stream before closing its wake sour
   const reader = response.body!.getReader()
   expect((await reader.read()).done).toBe(false)
   let serverStopped = false
+  let authClosed = false
   await stopRecordApiServer({
     stop() {
       expect(wakeSourceClosed).toBe(true)
@@ -42,8 +43,14 @@ test('stopping the server ends an open board stream before closing its wake sour
     },
     boardWakeSource: wakeSource,
     boardStreamRegistry: registry,
+    auth: {
+      async close() {
+        authClosed = true
+      },
+    },
   })
   expect((await reader.read()).done).toBe(true)
   expect(wakeSourceClosed).toBe(true)
   expect(serverStopped).toBe(true)
+  expect(authClosed).toBe(true)
 })

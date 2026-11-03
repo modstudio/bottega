@@ -59,6 +59,19 @@ export function recordMembershipsFromIdentity(identity: RecordIdentity): {
   }
 }
 
+export async function listRecordSpaceConfigAccess(
+  client: Pick<RecordApiClient, 'listConfigAccess'> = recordApiClient(),
+) {
+  return (await client.listConfigAccess()).items
+}
+
+export async function grantRecordSpaceConfigAccess(
+  email: string,
+  client: Pick<RecordApiClient, 'grantConfigAccess'> = recordApiClient(),
+): Promise<void> {
+  await client.grantConfigAccess(email)
+}
+
 export async function recordMemberships(
   client: Pick<RecordApiClient, 'whoami'> = recordApiClient(),
 ): Promise<{ activeSpaceId: string | null; memberships: RecordMembership[] }> {

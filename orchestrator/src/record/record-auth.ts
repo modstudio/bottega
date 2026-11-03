@@ -13,7 +13,7 @@ import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
-import { recordPool } from './record-pool.ts'
+import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 
@@ -21,6 +21,23 @@ export const RECORD_SESSION_KEY = 'record_session'
 export const RECORD_SIGN_UP_INVITATION_REQUIRED = `Record sign-up is by invitation only; ask a record space owner to run \`${PLATFORM_SLUG} record space invite --email <email>\`.`
 
 type RecordAuthEnvironment = Record<string, string | undefined>
+
+function recordAuthClients(url: string, authDatabaseUrl: string | undefined) {
+  const client = new SQL(url, { max: 1, idleTimeout: RECORD_POOL_IDLE_TIMEOUT_SECONDS })
+  const authClient = authDatabaseUrl
+    ? new SQL(authDatabaseUrl, { max: 1, idleTimeout: RECORD_POOL_IDLE_TIMEOUT_SECONDS })
+    : client
+  return { client, authClient }
+}
+
+function withRecordAuthClose<Auth extends object>(auth: Auth, client: SQL, authClient: SQL) {
+  return Object.assign(auth, {
+    close: async () => {
+      await client.close()
+      if (authClient !== client) await authClient.close()
+    },
+  })
+}
 
 export function recordAllowedOrigins(environment: RecordAuthEnvironment = process.env): string[] {
   const configured = environment.RECORD_API_ALLOWED_ORIGINS
@@ -134,10 +151,10 @@ function personalSpacePort(
           `
           if (existing[0]) {
             await tx`
-              INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+              INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at)
               VALUES (${input.membershipId}::uuid, ${String(owner.personal_space_id)}::uuid,
-                ${input.userId}::uuid, 'owner', 'write', now())
-              ON CONFLICT (space_id,user_id) DO UPDATE SET role='owner', permission='write'
+                ${input.userId}::uuid, 'owner', 'write', true, now())
+              ON CONFLICT (space_id,user_id) DO UPDATE SET role='owner', permission='write', config_access=true
             `
             return {
               id: String(existing[0].id),
@@ -153,8 +170,8 @@ function personalSpacePort(
           VALUES (${input.id}::uuid, ${String(owner.name)}, ${input.slug}, now())
         `
         await tx`
-          INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
-          VALUES (${input.membershipId}::uuid, ${input.id}::uuid, ${input.userId}::uuid, 'owner', 'write', now())
+          INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at)
+          VALUES (${input.membershipId}::uuid, ${input.id}::uuid, ${input.userId}::uuid, 'owner', 'write', true, now())
         `
         await tx`
           UPDATE "user" SET personal_space_id=${input.id}::uuid, updated_at=now()
@@ -210,6 +227,14 @@ export function rememberedSessionSpaceWrite(updated: {
     : null
 }
 
+function recordAuthPresentation(environment: RecordAuthEnvironment) {
+  return {
+    trustedOrigins: recordAllowedOrigins(environment),
+    cookieDomain: environment.RECORD_AUTH_COOKIE_DOMAIN,
+    hubUrl: environment.RECORD_HUB_URL,
+  }
+}
+
 function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof personalSpacePort>) {
   return {
     user: {
@@ -236,6 +261,22 @@ function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof pers
       },
     },
   }
+}
+
+async function markCreatedSpaceOwner(
+  client: SQL,
+  created: { id: string },
+  owner: { id: string },
+): Promise<void> {
+  const memberships = await client`
+    UPDATE membership SET role='owner', permission='write', config_access=true
+    WHERE space_id=${created.id}::uuid AND user_id=${owner.id}::uuid
+    RETURNING id
+  `
+  if (memberships.length !== 1)
+    throw new Error(
+      `creating owner's membership was not found for space ${created.id} and user ${owner.id}`,
+    )
 }
 
 type ResetPasswordSender = typeof sendPasswordResetEmail
@@ -271,15 +312,12 @@ export function recordAuth(
   sendInvitation ??= sendRecordInvitationEmail
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
-  const trustedOrigins = recordAllowedOrigins(environment)
-  const cookieDomain = environment.RECORD_AUTH_COOKIE_DOMAIN
-  const hubUrl = environment.RECORD_HUB_URL
+  const { trustedOrigins, cookieDomain, hubUrl } = recordAuthPresentation(environment)
   // Auth instances are short-lived at the CLI boundary; a one-connection pool keeps repeated
   // commands from reserving the database's entire connection budget before garbage collection.
-  const client = new SQL(url, { max: 1 })
-  const authClient = authDatabaseUrl ? new SQL(authDatabaseUrl, { max: 1 }) : client
+  const { client, authClient } = recordAuthClients(url, authDatabaseUrl)
   const personalSpaces = personalSpacePort(url, client, builtIns)
-  return betterAuth({
+  const auth = betterAuth({
     secret,
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
     database: drizzleAdapter(drizzle({ client: authClient }), {
@@ -324,6 +362,7 @@ export function recordAuth(
         requireEmailVerificationOnInvitation: false,
         organizationHooks: {
           afterCreateOrganization: async ({ organization: created, user: owner }) => {
+            await markCreatedSpaceOwner(authClient, created, owner)
             await builtIns.ensure({
               url,
               userId: owner.id,
@@ -356,6 +395,7 @@ export function recordAuth(
             fields: { organizationId: 'spaceId' },
             additionalFields: {
               permission: { type: 'string', required: true, defaultValue: 'write' },
+              configAccess: { type: 'boolean', required: true, defaultValue: false, input: false },
             },
           },
           invitation: { modelName: 'invitation', fields: { organizationId: 'spaceId' } },
@@ -366,6 +406,7 @@ export function recordAuth(
     ],
     databaseHooks: recordDatabaseHooks(client, personalSpaces),
   })
+  return withRecordAuthClose(auth, client, authClient)
 }
 
 export type RecordIdentity = {
@@ -426,22 +467,27 @@ export async function setActiveRecordSpaceForSession(
   spaceId: string,
 ): Promise<void> {
   const auth = recordAuth(url, process.env, undefined, undefined, undefined, noSpaceBuiltIns)
-  const current = await auth.api.getSession({ headers })
-  if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
-  await recordPool(url).begin(async (tx) => {
-    await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-    await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
-    const memberships = await tx`
-        SELECT 1 FROM membership WHERE user_id=${current.user.id}::uuid AND space_id=${spaceId}::uuid
-      `
-    if (memberships.length !== 1) throw new Error(`record user is not a member of space ${spaceId}`)
-    await tx`
-        UPDATE session SET active_space_id=${spaceId}::uuid, updated_at=now()
-        WHERE id=${current.session.id}::uuid
-      `
-    await tx`
-        UPDATE "user" SET last_active_space_id=${spaceId}::uuid, updated_at=now()
-        WHERE id=${current.user.id}::uuid
-      `
-  })
+  try {
+    const current = await auth.api.getSession({ headers })
+    if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
+    await recordPool(url).begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+      await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
+      const memberships = await tx`
+          SELECT 1 FROM membership WHERE user_id=${current.user.id}::uuid AND space_id=${spaceId}::uuid
+        `
+      if (memberships.length !== 1)
+        throw new Error(`record user is not a member of space ${spaceId}`)
+      await tx`
+          UPDATE session SET active_space_id=${spaceId}::uuid, updated_at=now()
+          WHERE id=${current.session.id}::uuid
+        `
+      await tx`
+          UPDATE "user" SET last_active_space_id=${spaceId}::uuid, updated_at=now()
+          WHERE id=${current.user.id}::uuid
+        `
+    })
+  } finally {
+    await auth.close()
+  }
 }

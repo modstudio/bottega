@@ -18,7 +18,6 @@ import {
   invitationApiClient,
   registerInvitationAuthProofs,
   SIGN_UP_AUTH,
-  SIGN_UP_CLI_OUTPUT,
   signUpInvitationFixtures,
   testRecordAuth,
 } from '../../test/fixtures/record-auth-postgres.ts'
@@ -27,8 +26,9 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
+import { registerConfigAccessSpaceCreationProof } from '../../test/postgres-config-access-auth-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
-import { registerCustomerAuthProof } from '../../test/postgres-customer-auth-proof.ts'
+import { registerConnectionBudgetProof } from '../../test/postgres-connection-budget-proof.ts'
 import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evidence-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
@@ -36,6 +36,7 @@ import { registerQuestionTaskRecordSyncProof } from '../../test/postgres-questio
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
+import { registerPostgresSignInProofs } from '../../test/postgres-sign-in-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import {
@@ -43,7 +44,7 @@ import {
   type recordAuth,
   setActiveRecordSpaceForSession,
 } from '../record/record-auth.ts'
-import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
+import { signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
   acceptRecordInvitation,
@@ -83,6 +84,14 @@ realPostgres('RLS proof against real Postgres', () => {
   const authProjectB = newRecordId()
   const authRunA = newRecordId()
   const authRunB = newRecordId()
+  const actorSession = async (token: string) => {
+    const auth = testRecordAuth(actorUrl!)
+    try {
+      return await auth.api.getSession({ headers: bearerHeaders(token) })
+    } finally {
+      await auth.close()
+    }
+  }
 
   beforeAll(async () => {
     installPostgresAuthEnvironment()
@@ -208,7 +217,7 @@ realPostgres('RLS proof against real Postgres', () => {
       log: (value) => cliOutput.push(value),
     })
     tokenA = storedToken()
-    const first = await testRecordAuth(actorUrl!).api.getSession({ headers: bearerHeaders(tokenA) })
+    const first = await actorSession(tokenA)
     if (!first?.session.activeOrganizationId) throw new Error('first signup has no active space')
     authUserA = first.user.id
     authSpaceA = first.session.activeOrganizationId
@@ -217,24 +226,27 @@ realPostgres('RLS proof against real Postgres', () => {
       log: (value) => cliOutput.push(value),
     })
     tokenB = storedToken()
-    const second = await testRecordAuth(actorUrl!).api.getSession({
-      headers: bearerHeaders(tokenB),
-    })
+    const second = await actorSession(tokenB)
     if (!second?.session.activeOrganizationId) throw new Error('second signup has no active space')
     authUserB = second.user.id
     authSpaceB = second.session.activeOrganizationId
 
-    const repair = await testRecordAuth(actorUrl!).api.signUpEmail({
-      body: SIGN_UP_AUTH.repairBody,
-    })
-    if (!repair.token) throw new Error('repair signup has no bearer token')
-    repairToken = repair.token
-    const repairSession = await testRecordAuth(actorUrl!).api.getSession({
-      headers: bearerHeaders(repair.token),
-    })
-    if (!repairSession?.session.activeOrganizationId)
-      throw new Error('repair signup has no active space')
-    repairSpace = repairSession.session.activeOrganizationId
+    const repairAuth = testRecordAuth(actorUrl!)
+    try {
+      const repair = await repairAuth.api.signUpEmail({
+        body: SIGN_UP_AUTH.repairBody,
+      })
+      if (!repair.token) throw new Error('repair signup has no bearer token')
+      repairToken = repair.token
+      const repairSession = await repairAuth.api.getSession({
+        headers: bearerHeaders(repair.token),
+      })
+      if (!repairSession?.session.activeOrganizationId)
+        throw new Error('repair signup has no active space')
+      repairSpace = repairSession.session.activeOrganizationId
+    } finally {
+      await repairAuth.close()
+    }
 
     succeeds(
       'postgres',
@@ -279,6 +291,7 @@ realPostgres('RLS proof against real Postgres', () => {
 
   afterAll(async () => {
     await apiServer?.stop(true)
+    await invitationAuth?.close()
     installRecordSessionRunner(null)
     installRecordApiClient(createMemoryRecordApiClient())
     delete process.env.BETTER_AUTH_SECRET
@@ -299,6 +312,16 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
   registerHostedConfigProofs(actorUrl!, ids.SPACE_A, ids.SPACE_B, ids.USER_A)
+  registerConfigAccessSpaceCreationProof({
+    actorUrl: () => actorUrl!,
+    authUrl: () => authUrl!,
+    token: () => tokenA,
+    otherToken: () => tokenB,
+    userId: () => authUserA,
+    otherUserId: () => authUserB,
+    cliOutput: () => cliOutput,
+    succeeds: (source) => succeeds('postgres', 'postgres', source),
+  })
   registerBoardRlsProofs({
     admin: (s) => succeeds('postgres', 'postgres', s),
     psql,
@@ -312,25 +335,6 @@ realPostgres('RLS proof against real Postgres', () => {
     session: () => [authUserA, tokenA, recordSession.setToken],
     admin: (statement) => succeeds('postgres', 'postgres', statement),
     psql,
-  })
-
-  test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
-    expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
-    const facts = succeeds(
-      'postgres',
-      'postgres',
-      `SELECT u.email, count(m.id), min(m.role), min(m.permission)
-       FROM "user" u JOIN membership m ON m.user_id=u.id
-       WHERE u.id IN ('${authUserA}', '${authUserB}')
-       GROUP BY u.email ORDER BY u.email;`,
-    )
-    expect(facts.split('\n')).toEqual([
-      `${SIGN_UP_AUTH.emailA}|1|owner|write`,
-      `${SIGN_UP_AUTH.emailB}|1|owner|write`,
-    ])
-    const auth = testRecordAuth(actorUrl!)
-    expect((await auth.api.getSession({ headers: bearerHeaders(tokenA) }))?.user.id).toBe(authUserA)
-    expect((await auth.api.getSession({ headers: bearerHeaders(tokenB) }))?.user.id).toBe(authUserB)
   })
 
   registerProjectSpaceProofs({
@@ -347,32 +351,15 @@ realPostgres('RLS proof against real Postgres', () => {
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   })
 
-  test('sign-in repairs a missing personal space before making it active', async () => {
-    succeeds(
-      'postgres',
-      'postgres',
-      `DELETE FROM membership WHERE space_id='${repairSpace}';
-       DELETE FROM space WHERE id='${repairSpace}';`,
-    )
-    const output: string[] = []
-    await signInCommand(SIGN_UP_AUTH.emailRepair, async () => SIGN_UP_AUTH.password, {
-      log: (value) => output.push(value),
-    })
-    expect(output).toEqual([`signed in ${SIGN_UP_AUTH.emailRepair}`])
-    const repaired = succeeds(
-      'postgres',
-      'postgres',
-      `SELECT s.id=m.space_id, m.role, m.permission
-       FROM "user" u JOIN membership m ON m.user_id=u.id JOIN space s ON s.id=m.space_id
-       WHERE u.email='${SIGN_UP_AUTH.emailRepair}';`,
-    )
-    expect(repaired).toBe('t|owner|write')
-  })
-
-  registerCustomerAuthProof({
-    email: SIGN_UP_AUTH.emailB,
-    password: SIGN_UP_AUTH.password,
-    userId: () => authUserB,
+  registerPostgresSignInProofs({
+    repairSpace: () => repairSpace,
+    succeeds: (source) => succeeds('postgres', 'postgres', source),
+    repair: { email: SIGN_UP_AUTH.emailRepair, password: SIGN_UP_AUTH.password },
+    customer: {
+      email: SIGN_UP_AUTH.emailB,
+      password: SIGN_UP_AUTH.password,
+      userId: () => authUserB,
+    },
   })
 
   test('signed-in users see their memberships and spaces but not another space records', () => {
@@ -563,9 +550,7 @@ realPostgres('RLS proof against real Postgres', () => {
     await expect(acceptRecordInvitation(ids.ACCEPTED_INVITATION)).rejects.toThrow()
 
     expect(await acceptRecordInvitation(pendingInvitation)).toBe(authSpaceA)
-    const session = await testRecordAuth(actorUrl!).api.getSession({
-      headers: bearerHeaders(tokenB),
-    })
+    const session = await actorSession(tokenB)
     expect(session?.session.activeOrganizationId).toBe(authSpaceA)
     const joined = psql(
       RECORD_ACTOR_ROLE,
@@ -1061,4 +1046,6 @@ realPostgres('RLS proof against real Postgres', () => {
       `${ids.PROJECT_A}|task:DEV|446`,
     ])
   })
+
+  registerConnectionBudgetProof((source) => succeeds('postgres', 'postgres', source))
 })

@@ -1,14 +1,18 @@
 // concern: record-config
 /** Owns tenant-bound hosted config, ciphertext, DEK, wrap, and machine-key operations. */
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import {
+  generateMachineKeyPair,
+  KEY_SIZE,
+  sealClaimChallenge,
+} from '../../../shared/secret-envelope.ts'
 import { recordPool } from './record-pool.ts'
 
 export const CONFIG_SCOPES = ['user', 'space'] as const
-export const MACHINE_KEY_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/
-
 export type ConfigScope = (typeof CONFIG_SCOPES)[number]
 export type ConfigTenant = { url: string } & TenantPrincipal
 export type ConfigWrapInput = {
@@ -48,7 +52,15 @@ export type MachineKey = {
   label: string
   createdAt: string
   revokedAt: string | null
+  userId: string | null
 }
+export type MachineKeyClaimChallenge = {
+  challengeId: string
+  enc: Uint8Array
+  ciphertext: Uint8Array
+  senderPublicKey: Uint8Array
+}
+const MACHINE_KEY_CLAIM_TTL_MS = 5 * 60 * 1000
 
 export class ConfigServiceError extends Error {
   status: 404 | 409 | 422
@@ -102,6 +114,18 @@ function wrapRow(row: Record<string, unknown>): DataKeyWrap {
     enc: bytes(row.enc),
     ciphertext: bytes(row.ciphertext),
   }
+}
+
+const configAccessRemedy = `a space owner or admin grants config access with \`${PLATFORM_SLUG} record space access grant <email>\``
+const machineClaimRemedy = `run \`${PLATFORM_SLUG} machine config machine init\` on that machine`
+
+async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> {
+  const rows = await tx`
+    SELECT config_access FROM membership
+    WHERE space_id=${input.spaceId}::uuid AND user_id=${input.userId}::uuid
+  `
+  if (rows[0]?.config_access !== true)
+    throw new ConfigServiceError(`signed-in user lacks config access; ${configAccessRemedy}`, 422)
 }
 
 function conflict(kind: 'entry' | 'secret', currentRowVersion: number): never {
@@ -441,6 +465,7 @@ export async function currentDataKey(
   input: ConfigTenant & { recipientKeyId: string },
 ): Promise<DataKey | null> {
   return tenant(input, async (tx) => {
+    await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
       WHERE space_id=${input.spaceId}::uuid AND retired_at IS NULL
@@ -470,6 +495,7 @@ export async function getDataKey(
   input: ConfigTenant & { dekId: string; recipientKeyId: string },
 ): Promise<DataKey | null> {
   return tenant(input, async (tx) => {
+    await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
       WHERE space_id=${input.spaceId}::uuid AND id=${input.dekId}::uuid
@@ -495,6 +521,7 @@ export async function getDataKey(
 
 export async function listDataKeys(input: ConfigTenant): Promise<DataKey[]> {
   return tenant(input, async (tx) => {
+    await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
       WHERE space_id=${input.spaceId}::uuid
@@ -517,11 +544,16 @@ async function validateWrapKeys(
   const active = new Set<string>()
   for (const keyId of new Set(input.wraps.map((wrap) => wrap.recipientKeyId))) {
     const rows = await tx`
-      SELECT key_id FROM machine_public_key
-      WHERE space_id=${input.spaceId}::uuid AND key_id=${keyId} AND revoked_at IS NULL
-      FOR UPDATE
+      SELECT k.key_id, k.user_id, m.config_access
+      FROM machine_public_key k
+      LEFT JOIN membership m ON m.space_id=k.space_id AND m.user_id=k.user_id
+      WHERE k.space_id=${input.spaceId}::uuid AND k.key_id=${keyId} AND k.revoked_at IS NULL
+      FOR UPDATE OF k
     `
-    if (rows[0]) active.add(keyId)
+    const row = rows[0]
+    if (!row) continue
+    assertWrapRecipientAccess(keyId, row.user_id, row.config_access)
+    active.add(keyId)
   }
   assertActiveWrapRecipients(input.wraps, active)
 
@@ -535,6 +567,23 @@ async function validateWrapKeys(
     if (rows[0]) registered.add(keyId)
   }
   assertRegisteredWrapSenders(input.wraps, registered)
+}
+
+export function assertWrapRecipientAccess(
+  keyId: string,
+  userId: unknown,
+  configAccess: unknown,
+): void {
+  if (userId == null)
+    throw new ConfigServiceError(
+      `wrap recipient ${keyId} has no owning user; ${machineClaimRemedy}`,
+      422,
+    )
+  if (configAccess !== true)
+    throw new ConfigServiceError(
+      `wrap recipient ${keyId} belongs to a user without config access; ${configAccessRemedy}`,
+      422,
+    )
 }
 
 export function assertActiveWrapRecipients(
@@ -682,7 +731,7 @@ export async function deleteDataKeyWraps(
 export async function listMachineKeys(input: ConfigTenant): Promise<MachineKey[]> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT key_id, public_key, label, created_at, revoked_at
+      SELECT key_id, public_key, label, created_at, revoked_at, user_id
       FROM machine_public_key WHERE space_id=${input.spaceId}::uuid
       ORDER BY created_at, key_id
     `
@@ -692,6 +741,7 @@ export async function listMachineKeys(input: ConfigTenant): Promise<MachineKey[]
       label: String(row.label),
       createdAt: iso(row.created_at),
       revokedAt: nullableIso(row.revoked_at),
+      userId: row.user_id == null ? null : String(row.user_id),
     }))
   })
 }
@@ -708,15 +758,15 @@ export async function registerMachineKey(
   }
   return tenant(input, async (tx) => {
     const rows = await tx`
-      INSERT INTO machine_public_key (id, space_id, key_id, public_key, label, created_at)
-      VALUES (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${input.keyId}, ${input.publicKey}, ${input.label}, now())
+      INSERT INTO machine_public_key (id, space_id, user_id, key_id, public_key, label, created_at)
+      VALUES (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${input.userId}::uuid, ${input.keyId}, ${input.publicKey}, ${input.label}, now())
       ON CONFLICT (space_id, key_id) DO NOTHING
-      RETURNING key_id, public_key, label, created_at, revoked_at
+      RETURNING key_id, public_key, label, created_at, revoked_at, user_id
     `
     const existing = rows[0]
       ? rows
       : await tx`
-          SELECT key_id, public_key, label, created_at, revoked_at
+          SELECT key_id, public_key, label, created_at, revoked_at, user_id
           FROM machine_public_key
           WHERE space_id=${input.spaceId}::uuid AND key_id=${input.keyId}
         `
@@ -726,13 +776,143 @@ export async function registerMachineKey(
         'machine key id is already registered with a different public key',
         409,
       )
+    if (row.user_id != null && String(row.user_id) !== input.userId)
+      throw new ConfigServiceError(
+        `machine key ${input.keyId} belongs to another user; register from the owning user's machine, or initialize a new key on this machine with \`${PLATFORM_SLUG} machine config machine init\``,
+        409,
+      )
     return {
       keyId: String(row.key_id),
       publicKey: bytes(row.public_key),
       label: String(row.label),
       createdAt: iso(row.created_at),
       revokedAt: nullableIso(row.revoked_at),
+      userId: row.user_id == null ? null : String(row.user_id),
     }
+  })
+}
+
+export async function createMachineKeyClaimChallenge(
+  input: ConfigTenant & { keyId: string },
+): Promise<MachineKeyClaimChallenge> {
+  const sender = await generateMachineKeyPair()
+  const nonce = crypto.getRandomValues(new Uint8Array(KEY_SIZE))
+  const nonceHash = new Uint8Array(await crypto.subtle.digest('SHA-256', nonce))
+  return tenant(input, async (tx) => {
+    const keys = await tx`
+      SELECT public_key, user_id FROM machine_public_key
+      WHERE space_id=${input.spaceId}::uuid AND key_id=${input.keyId} AND revoked_at IS NULL
+      FOR UPDATE
+    `
+    const key = keys[0]
+    if (!key)
+      throw new ConfigServiceError('machine key not found or revoked; register it, then retry', 404)
+    if (key.user_id != null)
+      throw new ConfigServiceError(
+        'machine key already has an owning user; no claim is needed',
+        409,
+      )
+    const challengeId = newRecordId()
+    const sealed = await sealClaimChallenge({
+      nonce,
+      spaceId: input.spaceId,
+      keyId: input.keyId,
+      senderPrivateKey: sender.privateKey,
+      senderPublicKey: sender.publicKey,
+      recipientPublicKey: bytes(key.public_key),
+    })
+    await tx`
+      INSERT INTO machine_key_claim_challenge
+        (id, space_id, key_id, user_id, nonce_hash, expires_at, created_at)
+      VALUES (${challengeId}::uuid, ${input.spaceId}::uuid, ${input.keyId}, ${input.userId}::uuid,
+        ${nonceHash}, now() + (${MACHINE_KEY_CLAIM_TTL_MS} * interval '1 millisecond'), now())
+    `
+    return { challengeId, ...sealed, senderPublicKey: sender.publicKey }
+  })
+}
+
+export async function claimMachineKey(
+  input: ConfigTenant & { keyId: string; challengeId: string; nonce: Uint8Array },
+): Promise<void> {
+  const nonceHash = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', input.nonce as Uint8Array<ArrayBuffer>),
+  )
+  const result = await tenant(input, async (tx) => {
+    const rows = await tx`
+      DELETE FROM machine_key_claim_challenge
+      WHERE id=${input.challengeId}::uuid
+      RETURNING space_id, key_id, user_id, nonce_hash, expires_at
+    `
+    const challenge = rows[0]
+    const matches =
+      challenge &&
+      String(challenge.space_id) === input.spaceId &&
+      String(challenge.key_id) === input.keyId &&
+      String(challenge.user_id) === input.userId &&
+      new Date(String(challenge.expires_at)).getTime() > Date.now() &&
+      Buffer.from(bytes(challenge.nonce_hash)).equals(Buffer.from(nonceHash))
+    if (!matches) return 'invalid' as const
+    const claimed = await tx`
+      UPDATE machine_public_key SET user_id=${input.userId}::uuid
+      WHERE space_id=${input.spaceId}::uuid AND key_id=${input.keyId} AND user_id IS NULL
+      RETURNING key_id
+    `
+    return claimed[0] ? ('claimed' as const) : ('owned' as const)
+  })
+  if (result === 'invalid')
+    throw new ConfigServiceError(
+      `machine key claim challenge is invalid or expired; ${machineClaimRemedy}`,
+      422,
+    )
+  if (result === 'owned')
+    throw new ConfigServiceError(
+      'machine key already has an owning user; initialize a new key',
+      409,
+    )
+}
+
+export type SpaceConfigAccessMember = {
+  email: string
+  role: string
+  permission: string
+  configAccess: boolean
+}
+
+export async function listSpaceConfigAccess(
+  input: ConfigTenant,
+): Promise<SpaceConfigAccessMember[]> {
+  return tenant(input, async (tx) => {
+    const rows = await tx`
+      SELECT u.email, m.role, m.permission, m.config_access
+      FROM membership m JOIN "user" u ON u.id=m.user_id
+      WHERE m.space_id=${input.spaceId}::uuid ORDER BY lower(u.email)
+    `
+    return rows.map((row: Record<string, unknown>) => ({
+      email: String(row.email),
+      role: String(row.role),
+      permission: String(row.permission),
+      configAccess: row.config_access === true,
+    }))
+  })
+}
+
+export async function grantSpaceConfigAccess(
+  input: ConfigTenant & { email: string },
+): Promise<void> {
+  return tenant(input, async (tx) => {
+    const rows = await tx`
+      UPDATE membership m SET config_access=true
+      FROM "user" u
+      WHERE m.space_id=${input.spaceId}::uuid AND m.user_id=u.id
+        AND lower(u.email)=lower(${input.email})
+        AND record_membership_admin(m.space_id)
+      RETURNING m.id
+    `
+    if (!rows[0])
+      throw new ConfigServiceError(
+        'config access grant requires an owner or admin and an email belonging to this space; ask a space owner or admin to retry with a listed member',
+        422,
+      )
   })
 }
 

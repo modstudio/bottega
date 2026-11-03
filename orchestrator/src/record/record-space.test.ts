@@ -22,8 +22,20 @@ describe('record space decisions', () => {
     ).toEqual({
       activeSpaceId: 'space-b',
       memberships: [
-        { spaceId: 'space-a', name: 'Alpha', slug: 'alpha', role: 'owner', permission: 'write' },
-        { spaceId: 'space-b', name: 'Beta', slug: 'beta', role: 'member', permission: 'read' },
+        {
+          spaceId: 'space-a',
+          name: 'Alpha',
+          slug: 'alpha',
+          role: 'owner',
+          permission: 'write',
+        },
+        {
+          spaceId: 'space-b',
+          name: 'Beta',
+          slug: 'beta',
+          role: 'member',
+          permission: 'read',
+        },
       ],
     })
   })

@@ -16,7 +16,11 @@ import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-write-allowed.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { recordBoardRootClient } from './record-api-client-board.ts'
-import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
+import {
+  classifyBoardStreamResponse,
+  releaseUnopenedStream,
+} from './record-api-client-board-stream.ts'
+import { recordConfigAccessClient } from './record-api-client-config-access.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
 import {
@@ -207,7 +211,8 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordSessionClient &
   RecordPortClient &
   RecordWorkflowClient &
-  RecordSettingsClient & {
+  RecordSettingsClient &
+  ReturnType<typeof recordConfigAccessClient> & {
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
     setActiveOrganization(input: {
@@ -724,6 +729,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return {
     ...recordMachineClient(request),
+    ...recordConfigAccessClient(request),
     ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
     ...recordSnapshotAndPublicDocClient(request),
@@ -1000,14 +1006,6 @@ function recordApiBoardWatchClient(): Pick<RecordApiClient, RecordBoardWatchMeth
         body: JSON.stringify(input),
       }),
     openBoardStream: (signal) => fetchBoardStream(signal),
-  }
-}
-
-function releaseUnopenedStream(response: Response, connection: AbortController): void {
-  try {
-    if (response.body) void response.body.cancel()
-  } finally {
-    connection.abort()
   }
 }
 

@@ -1,4 +1,5 @@
 const MACHINE_KEY_BYTES = 32
+export const MACHINE_KEY_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/
 
 /** Derives the stable persisted id for an X25519 public key. */
 export async function machineKeyId(publicKey: Uint8Array): Promise<string> {

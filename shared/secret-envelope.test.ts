@@ -3,8 +3,10 @@ import { machineKeyId } from './machine-key-id.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
+  openClaimChallenge,
   openValue,
   SecretEnvelopeError,
+  sealClaimChallenge,
   sealValue,
   unwrapDataKey,
   type ValueContext,
@@ -192,6 +194,53 @@ describe('secret values', () => {
 })
 
 describe('data key wrapping', () => {
+  test('claim challenges and data-key wraps are domain separated', async () => {
+    const sender = await generateMachineKeyPair()
+    const recipient = await generateMachineKeyPair()
+    const senderKeyId = await machineKeyId(sender.publicKey)
+    const keyId = await machineKeyId(recipient.publicKey)
+    const claimLikeWrapContext = { spaceId: wrapContext.spaceId, dekId: keyId, dekVersion: 0 }
+    const dek = generateDataKey()
+    const wrapped = await wrapDataKey({
+      dek,
+      wrapContext: claimLikeWrapContext,
+      senderPrivateKey: sender.privateKey,
+      senderPublicKey: sender.publicKey,
+      recipientPublicKey: recipient.publicKey,
+    })
+    await expectRejectedReason(
+      () =>
+        openClaimChallenge({
+          ...wrapped,
+          spaceId: wrapContext.spaceId,
+          keyId,
+          recipientPrivateKey: recipient.privateKey,
+          senderPublicKey: sender.publicKey,
+        }),
+      'authentication-failed',
+    )
+
+    const challenge = await sealClaimChallenge({
+      nonce: dek,
+      spaceId: wrapContext.spaceId,
+      keyId,
+      senderPrivateKey: sender.privateKey,
+      senderPublicKey: sender.publicKey,
+      recipientPublicKey: recipient.publicKey,
+    })
+    await expectRejectedReason(
+      () =>
+        unwrapDataKey({
+          ...challenge,
+          wrapContext,
+          recipientPrivateKey: recipient.privateKey,
+          senderPublicKey: sender.publicKey,
+          trustedSenderKeyIds: new Set([senderKeyId]),
+        }),
+      'authentication-failed',
+    )
+  })
+
   test('wraps and unwraps a DEK in authenticated mode', async () => {
     const sender = await generateMachineKeyPair()
     const recipient = await generateMachineKeyPair()

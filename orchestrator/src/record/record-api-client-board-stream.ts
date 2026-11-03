@@ -21,3 +21,11 @@ export function classifyBoardStreamResponse(
   if (status !== 200 || !body) return { kind: 'error', reason: `record API ${status}` }
   return { kind: 'stream', source: sourceFromBody(body), close }
 }
+
+export function releaseUnopenedStream(response: Response, connection: AbortController): void {
+  try {
+    if (response.body) void response.body.cancel()
+  } finally {
+    connection.abort()
+  }
+}

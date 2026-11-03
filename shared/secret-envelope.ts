@@ -7,12 +7,13 @@ import { machineKeyId } from './machine-key-id.ts'
 
 const FORMAT_VERSION = 1
 const ALGORITHM_ID = 1
-const KEY_SIZE = 32
+export const KEY_SIZE = 32
 const NONCE_SIZE = 24
 const TAG_SIZE = 16
 const HEADER_SIZE = 2
 const VALUE_LABEL = `${PLATFORM_SLUG}.secret-envelope.value`
 const WRAP_LABEL = `${PLATFORM_SLUG}.secret-envelope.wrap`
+const CLAIM_CHALLENGE_LABEL = `${PLATFORM_SLUG}.secret-envelope.machine-key-claim-challenge`
 
 const textEncoder = new TextEncoder()
 const hpkeSuite = new CipherSuite({
@@ -119,6 +120,79 @@ function encodeWrapContext(context: WrapContext): Uint8Array {
     context.dekId.toLowerCase(),
     unsignedDecimal(context.dekVersion),
   ])
+}
+
+function encodeClaimChallengeContext(spaceId: string, keyId: string): Uint8Array {
+  return encodeFields(CLAIM_CHALLENGE_LABEL, [spaceId.toLowerCase(), keyId])
+}
+
+export async function sealClaimChallenge({
+  nonce,
+  spaceId,
+  keyId,
+  senderPrivateKey,
+  senderPublicKey,
+  recipientPublicKey,
+}: {
+  nonce: Uint8Array
+  spaceId: string
+  keyId: string
+  senderPrivateKey: Uint8Array
+  senderPublicKey: Uint8Array
+  recipientPublicKey: Uint8Array
+}): Promise<{ enc: Uint8Array; ciphertext: Uint8Array }> {
+  requireLength(nonce, KEY_SIZE)
+  requireLength(senderPrivateKey, KEY_SIZE)
+  requireLength(senderPublicKey, KEY_SIZE)
+  requireLength(recipientPublicKey, KEY_SIZE)
+  const [privateKey, publicKey, recipientKey] = await Promise.all([
+    hpkeSuite.kem.deserializePrivateKey(senderPrivateKey),
+    hpkeSuite.kem.deserializePublicKey(senderPublicKey),
+    hpkeSuite.kem.deserializePublicKey(recipientPublicKey),
+  ])
+  const sender = await hpkeSuite.createSenderContext({
+    recipientPublicKey: recipientKey,
+    senderKey: { privateKey, publicKey },
+    info: encodeClaimChallengeContext(spaceId, keyId),
+  })
+  return { enc: new Uint8Array(sender.enc), ciphertext: new Uint8Array(await sender.seal(nonce)) }
+}
+
+export async function openClaimChallenge({
+  enc,
+  ciphertext,
+  spaceId,
+  keyId,
+  recipientPrivateKey,
+  senderPublicKey,
+}: {
+  enc: Uint8Array
+  ciphertext: Uint8Array
+  spaceId: string
+  keyId: string
+  recipientPrivateKey: Uint8Array
+  senderPublicKey: Uint8Array
+}): Promise<Uint8Array> {
+  requireLength(enc, hpkeSuite.kem.encSize)
+  requireLength(recipientPrivateKey, KEY_SIZE)
+  try {
+    const [recipientKey, senderKey] = await Promise.all([
+      hpkeSuite.kem.deserializePrivateKey(recipientPrivateKey),
+      hpkeSuite.kem.deserializePublicKey(senderPublicKey),
+    ])
+    const recipient = await hpkeSuite.createRecipientContext({
+      recipientKey,
+      senderPublicKey: senderKey,
+      enc,
+      info: encodeClaimChallengeContext(spaceId, keyId),
+    })
+    const nonce = new Uint8Array(await recipient.open(ciphertext))
+    requireLength(nonce, KEY_SIZE)
+    return nonce
+  } catch (error) {
+    if (error instanceof SecretEnvelopeError) throw error
+    throw new SecretEnvelopeError('authentication-failed')
+  }
 }
 
 /**

@@ -141,6 +141,11 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   },
   { table: 'lens_revision', kind: 'space', reason: 'space lens history' },
   {
+    table: 'machine_key_claim_challenge',
+    kind: 'space',
+    reason: 'space machine-key ownership proof',
+  },
+  {
     table: 'machine_public_key',
     kind: 'space',
     reason: 'space machine authorization',

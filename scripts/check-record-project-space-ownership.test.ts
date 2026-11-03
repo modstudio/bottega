@@ -9,19 +9,31 @@ const MOVE_FUNCTION_MARKER = 'CREATE OR REPLACE FUNCTION record_move_project_spa
 /** The newest migration redefining record_move_project_space, by directory name order. */
 function moveFunctionMigration(): string {
   const folder = fileURLToPath(new URL('../shared/record/migrations', import.meta.url))
-  const newest = readdirSync(folder, { withFileTypes: true })
+  const migrations = readdirSync(folder, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
+  const newest = migrations
     .filter((name) =>
       readFileSync(join(folder, name, 'migration.sql'), 'utf8').includes(MOVE_FUNCTION_MARKER),
     )
     .at(-1)
   if (newest === undefined) throw new Error(`no migration declares ${MOVE_FUNCTION_MARKER}`)
-  return join(folder, newest, 'migration.sql')
+  let definition = readFileSync(join(folder, newest, 'migration.sql'), 'utf8')
+  for (const name of migrations.filter((name) => name > newest)) {
+    const rewrite = readFileSync(join(folder, name, 'migration.sql'), 'utf8')
+    const previous = rewrite.match(/previous text := '((?:''|[^'])*)'/)?.[1]
+    const replacement = rewrite.match(/replacement text := '((?:''|[^'])*)'/)?.[1]
+    if (previous && replacement)
+      definition = definition.replace(
+        previous.replaceAll("''", "'"),
+        replacement.replaceAll("''", "'"),
+      )
+  }
+  return definition
 }
 
-const migration = readFileSync(moveFunctionMigration(), 'utf8')
+const migration = moveFunctionMigration()
 
 test('project-space declaration gate rejects an added contradicting classification row', () => {
   const contradicting = migration.replace(
