@@ -12,7 +12,12 @@ import {
 } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
-import { planSetupActions, recommendedAnswers, validateSetupAnswers } from './setup-planner.ts'
+import {
+  planSetupActions,
+  recommendedAnswers,
+  setupActionPrerequisiteKinds,
+  validateSetupAnswers,
+} from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
 
 const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
@@ -141,6 +146,19 @@ test('plans add, set, and unchanged from fixture facts', () => {
       trunk: { from: null, to: 'main' },
     },
   })
+})
+
+test('plans every prerequisite before its dependent action', () => {
+  const plan = proposeSetup(machine, [repository()], [], [])
+  const actions = planSetupActions(plan, recommendedAnswers(plan))
+  for (const [index, action] of actions.entries()) {
+    for (const prerequisite of setupActionPrerequisiteKinds(action.kind)) {
+      expect(
+        actions.findIndex((candidate) => candidate.kind === prerequisite),
+        `${prerequisite} must precede ${action.kind}`,
+      ).toBeLessThan(index)
+    }
+  }
 })
 
 test('preserves every configured value for an existing project', () => {

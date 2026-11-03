@@ -31,6 +31,7 @@ import {
 
 const temporary: string[] = []
 const adapters = () => ({
+  platform: 'darwin' as const,
   migrateSecrets: async () => [],
   migrateRegister: async () => [],
   migrateSettings: async () => [],

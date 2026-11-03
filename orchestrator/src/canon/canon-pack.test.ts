@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { cloneRepository } from '../../../shared/test-git-repository.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
@@ -16,6 +17,7 @@ let repositoryPath = ''
 beforeEach(() => {
   repositoryPath = cloneRepository(process.env, 'canon-pack-project-')
 })
+afterEach(() => registerEmbeddedAssets(null))
 
 function putCanon(
   subject: string | null,
@@ -58,6 +60,28 @@ async function putOperator(body: string): Promise<void> {
 }
 
 describe('worker pack canon', () => {
+  test('ignores checkout-backed stored rows in a distribution', () => {
+    registerEmbeddedAssets({
+      assets: {},
+      files: {},
+      manifest: {
+        name: PLATFORM_NAME,
+        version: '1.2.3',
+        built: '2026-11-03T00:00:00.000Z',
+        commit: 'abcdef',
+      },
+    })
+    db()
+      .query(
+        `INSERT INTO canon_pack
+         (record_id,job,project,project_record_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+         VALUES (?,?,?,?,?,?,?,?,?,0)`,
+      )
+      .run(newRecordId(), 'understand', null, null, 'global', 1, 0, '[]', AT)
+
+    expect(storedPackDrift()).toEqual([])
+  })
+
   test('draft canon is absent from a compiled pack', () => {
     upsertProject({
       recordId: newRecordId(),

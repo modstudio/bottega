@@ -190,6 +190,8 @@ export const CHECK_LEGS = [
 
 export const ROOT_TEST_FILES = [
   'scripts/check-hook-binary.test.ts',
+  'scripts/check-install-paths.test.ts',
+  'scripts/check-rehearsal-image-imports.test.ts',
   'scripts/architecture-cruise.test.ts',
   'scripts/architecture-hub-data.test.ts',
   'scripts/architecture-ui-layers.test.ts',

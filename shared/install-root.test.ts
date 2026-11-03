@@ -15,9 +15,12 @@ import {
   installRoot,
   isAuthorizedPlatformInstallation,
   isInstallationRoot,
+  optionalCheckoutRoot,
   readDistributionManifest,
+  requireCheckoutRoot,
   resolveInstallationPaths,
   resolveInstallRoot,
+  runningInstallRoot,
 } from './install-root.ts'
 
 const scratchRoots: string[] = []
@@ -34,6 +37,41 @@ function scratch(): string {
 }
 
 describe('install root resolution', () => {
+  test('the running root ignores an install-home override while the designated root honors it', () => {
+    const override = '/different/install'
+    const env = { [INSTALL_HOME_ENV]: override }
+    expect(runningInstallRoot(import.meta.dir, env)).toBe(dirname(import.meta.dir))
+    expect(resolveInstallRoot(import.meta.dir, env)).toBe(override)
+  })
+
+  test('checkout-only helpers ignore an install-home override', () => {
+    const root = scratch()
+    const nested = join(root, 'shared')
+    mkdirSync(nested)
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: PLATFORM_SLUG, version: '1.0.0' }),
+    )
+    const env = { [INSTALL_HOME_ENV]: '/different/install' }
+    expect(optionalCheckoutRoot(nested, env)).toBe(root)
+    expect(requireCheckoutRoot(nested, env, 'needs checkout fixtures')).toBe(root)
+  })
+
+  test('a checkout-only caller supplies the distribution remedy', () => {
+    registerEmbeddedAssets({
+      assets: {},
+      files: {},
+      manifest: {
+        name: PLATFORM_NAME,
+        version: '1.2.3',
+        built: '2026-11-03T00:00:00.000Z',
+        commit: 'abcdef',
+      },
+    })
+    expect(() => requireCheckoutRoot('/unused', {}, 'needs checkout fixtures')).toThrow(
+      'needs checkout fixtures',
+    )
+  })
   test('the env override wins when absolute', () => {
     expect(resolveInstallRoot('/from', { [INSTALL_HOME_ENV]: '/override/install' })).toBe(
       '/override/install',

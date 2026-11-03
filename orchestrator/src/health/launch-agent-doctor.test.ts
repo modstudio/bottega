@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { decideLaunchAgentDoctor } from './launch-agent-doctor.ts'
+import { decideLaunchAgentDoctor, launchAgentDoctorLines } from './launch-agent-doctor.ts'
 
 const owners = [
   { label: 'com.user.skipped', command: 'ops/install.sh' },
@@ -13,6 +13,17 @@ const skipReasons = {
 }
 
 describe('launch agent doctor decision', () => {
+  test('reads and reports no launch-agent facts on Linux', async () => {
+    let reads = 0
+    expect(
+      await launchAgentDoctorLines('linux', async () => {
+        reads += 1
+        return owners
+      }),
+    ).toEqual([])
+    expect(reads).toBe(0)
+  })
+
   test('reports skips and unloaded findings while omitting loaded agents', () => {
     expect(
       decideLaunchAgentDoctor({

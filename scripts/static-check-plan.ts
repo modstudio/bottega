@@ -180,6 +180,8 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-git-path-list.ts', run),
   script('scripts/check-self-spawn.ts', run),
   script('scripts/check-source-root.ts', run),
+  script('scripts/check-install-paths.ts', run),
+  script('scripts/check-rehearsal-image-imports.ts', run),
   script('scripts/check-launchd-templates.ts', run),
   script('scripts/check-hook-binary.ts', run),
   script('scripts/check-gitleaks.ts', run),

@@ -50,7 +50,7 @@ export const retrievalModules: RetrievalModule[] = [
     './indexed-search.ts',
   ]),
   module('retrieval/src/search.ts', [
-    'node:path',
+    '../../shared/install-root.ts',
     '../../shared/orch-contract.ts',
     './corpus/chunks.ts',
     './index-store.ts',
@@ -60,6 +60,7 @@ export const retrievalModules: RetrievalModule[] = [
   module('retrieval/src/search-cli.ts', [
     'node:path',
     '../../shared/brand.ts',
+    '../../shared/install-root.ts',
     '../../shared/self-spawn.ts',
     '../../shared/orch-contract.ts',
     './benchmark/doc-pins.ts',
@@ -78,6 +79,7 @@ export const retrievalModules: RetrievalModule[] = [
     'node:fs/promises',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
     '../code-search.ts',
     '../corpus/chunks.ts',
     '../contract.ts',

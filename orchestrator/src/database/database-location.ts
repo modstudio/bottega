@@ -1,11 +1,13 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'
-import { isAuthorizedPlatformInstallation } from '../../../shared/install-root.ts'
+import {
+  isAuthorizedPlatformInstallation,
+  runningInstallRoot,
+} from '../../../shared/install-root.ts'
 import {
   LEGACY_ORCHESTRATOR_DATABASE,
   legacyStoreRefusal,
@@ -30,7 +32,7 @@ export type DatabaseResolution = {
   mainStorePath: string
 }
 
-export const ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
+export const ROOT = join(runningInstallRoot(import.meta.dir, process.env), 'orchestrator')
 
 type RepositoryRoot = {
   root: string

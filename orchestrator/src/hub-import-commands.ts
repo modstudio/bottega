@@ -16,6 +16,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { optionalCheckoutRoot } from '../../shared/install-root.ts'
 import { processSignalOutcome } from '../../shared/process-identity.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
 import { type Project, projectAt } from './project/projects.ts'
@@ -41,6 +42,10 @@ type RegisteredHubTarget = {
 
 // Must leave enough of the hook's absolute deadline for candidate and directory cleanup.
 const JUDGE_CLEANUP_MARGIN_MS = 500
+
+function hubImportPolicyRoot(): string | null {
+  return optionalCheckoutRoot(import.meta.dir, process.env)
+}
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -154,6 +159,14 @@ function targetFile(payload: ToolPayload) {
   return resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), raw)
 }
 
+function parseToolPayload(text: string): ToolPayload {
+  try {
+    return JSON.parse(text) as ToolPayload
+  } catch {
+    throw new Error('input must be valid JSON')
+  }
+}
+
 async function runInstalledJudge(
   judge: string,
   args: string[],
@@ -264,14 +277,18 @@ export async function hubImportJudgeCommand(
   deadlineMs: number,
   openDatabase: () => Database = openReadOnlyDatabase,
 ): Promise<HubImportJudgment> {
-  let payload: ToolPayload
-  try {
-    payload = JSON.parse(text) as ToolPayload
-  } catch {
-    throw new Error('input must be valid JSON')
-  }
+  const payload = parseToolPayload(text)
   const file = targetFile(payload)
   if (!file) return { status: 'unchecked', findings: [], reason: 'tool input has no file path' }
+
+  const installedRoot = hubImportPolicyRoot()
+  if (!installedRoot) {
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: 'hub import judging requires the policy scripts from a development checkout',
+    }
+  }
 
   let database: Database
   try {
@@ -293,7 +310,6 @@ export async function hubImportJudgeCommand(
 
   const { checkout, file: canonicalFile } = target
 
-  const installedRoot = resolve(import.meta.dir, '../..')
   const judge = join(installedRoot, 'scripts/check-architecture-file.ts')
   const original = relative(checkout, canonicalFile).split(sep).join('/')
   const pathJudgment = await judgeOriginalPath(

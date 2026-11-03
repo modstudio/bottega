@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
-import { describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 
 // Six of these tests spawn the orch CLI and apply the whole migration journal
@@ -8,12 +9,14 @@ import { newRecordId } from '../../../shared/record-id.ts'
 // landing gate on 2026-09-07. The bound is sized to that work, like the CLI
 // leg's; it is not a hidden widening.
 setDefaultTimeout(30_000)
+afterEach(() => registerEmbeddedAssets(null))
 
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import {
   closeDatabaseForFixture,
@@ -39,6 +42,7 @@ import { upsertProject } from '../project/projects.ts'
 import { recordedCoordinatorCause } from '../run/run-coordinator-log.ts'
 import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import {
+  allInjectChecks,
   BRACE_EXPANSION_LIMIT,
   braceExpansionUpperBound,
   checkDoc,
@@ -497,6 +501,40 @@ describe('stripSqlComments feeds exec text that keeps quoted comment markers', (
 })
 
 describe('scoped operator docs', () => {
+  test('marks checkout-backed canon validation unchecked in a distribution', async () => {
+    registerEmbeddedAssets({
+      assets: {},
+      files: {},
+      manifest: {
+        name: PLATFORM_NAME,
+        version: '1.2.3',
+        built: '2026-11-03T00:00:00.000Z',
+        commit: 'abcdef',
+      },
+    })
+    await setDoc({
+      scope: 'job',
+      subject: 'understand',
+      slug: 'distribution-canon-check',
+      title: 'Distribution canon check',
+      body: '`missing/source/path.ts`',
+      delivery: 'inject',
+      audiences: ['technical'],
+    })
+
+    expect(repoRootForDoc({ scope: 'job', subject: 'understand' })).toBeNull()
+    expect(
+      allInjectChecks().find(({ doc }) => doc.slug === 'distribution-canon-check')?.findings,
+    ).toEqual([
+      {
+        kind: 'unchecked',
+        token: 'understand',
+        line: 0,
+        message: `unchecked: canon validation requires the ${PLATFORM_NAME} source checkout`,
+      },
+    ])
+  })
+
   test('project-subject document roots use the registered project and preserve canon selection', () => {
     upsertProject({
       recordId: newRecordId(),

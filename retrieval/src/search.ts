@@ -1,7 +1,7 @@
 // concern: retrieval-search
 /** Adapts the document corpus and compare-and-swap store to indexed search. */
 
-import { resolve } from 'node:path'
+import { runningInstallRoot } from '../../shared/install-root.ts'
 import type { RetrievalDocSearchOutput } from '../../shared/orch-contract.ts'
 import { type Chunk, loadDocCorpus } from './corpus/chunks.ts'
 import { applyRefresh, indexedRows, storedRows } from './index-store.ts'
@@ -27,7 +27,9 @@ export async function search(
     includeDrafts?: boolean
   } = {},
 ): Promise<RetrievalDocSearchOutput> {
-  const repositoryRoot = options.repositoryRoot ?? resolve(import.meta.dir, '../..')
+  const repositoryRoot =
+    options.repositoryRoot ??
+    runningInstallRoot(import.meta.dir, options.environment ?? process.env)
   let refreshPlan: ReturnType<typeof planRefresh> | undefined
   return indexedSearch(
     query,

@@ -3,6 +3,7 @@
 import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { requireCheckoutRoot } from '../../../shared/install-root.ts'
 import { searchCode } from '../code-search.ts'
 import { queryDocument, RERANK_CANDIDATES } from '../contract.ts'
 import {
@@ -35,6 +36,14 @@ import {
 } from './queries.ts'
 
 const EMBED_BATCH_SIZE = 64
+
+function benchmarkRepositoryRoot(): string {
+  return requireCheckoutRoot(
+    import.meta.dir,
+    process.env,
+    'retrieval benchmark requires its corpus and query fixtures from a checkout',
+  )
+}
 
 function rankByEmbedding(chunks: Chunk[], vectors: number[][], queryVector: number[]): Chunk[] {
   const byId = new Map(chunks.map((chunk) => [chunk.id, chunk]))
@@ -181,7 +190,7 @@ function reportSet(
 }
 
 async function main() {
-  const repositoryRoot = resolve(import.meta.dir, '../../..')
+  const repositoryRoot = benchmarkRepositoryRoot()
   if (process.argv.includes('--check-doc-pins')) {
     const pins = checkDocPins(DOC_QUERIES, await loadDocRows(repositoryRoot))
     console.log(JSON.stringify({ pins }, null, 2))

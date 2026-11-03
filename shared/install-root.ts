@@ -73,6 +73,16 @@ export function resolveInstallRoot(fromDirectory: string, env: InstallEnvironmen
   }
 }
 
+function runningInstallEnvironment(env: InstallEnvironment): InstallEnvironment {
+  const { [INSTALL_HOME_ENV]: _ignoredInstallHome, ...runningEnvironment } = env
+  return runningEnvironment
+}
+
+/** Resolve the running code's own distribution or checkout, ignoring a designated install. */
+export function runningInstallRoot(fromDirectory: string, env: InstallEnvironment): string {
+  return resolveInstallRoot(fromDirectory, runningInstallEnvironment(env))
+}
+
 /** Resolve every path rendered into a service definition from the same installation root. */
 export function resolveInstallationPaths(
   fromDirectory: string,
@@ -155,6 +165,26 @@ export function installationIdentity(
       `cannot read ${PLATFORM_NAME} checkout package metadata at ${path}: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
+}
+
+/** Resolve the running code's own checkout, or answer null for a distribution. */
+export function optionalCheckoutRoot(
+  fromDirectory: string,
+  env: InstallEnvironment,
+): string | null {
+  const identity = installationIdentity(fromDirectory, runningInstallEnvironment(env))
+  return identity.kind === 'distribution' ? null : identity.root
+}
+
+/** Resolve a source checkout, or refuse with the caller's resource-specific remedy. */
+export function requireCheckoutRoot(
+  fromDirectory: string,
+  env: InstallEnvironment,
+  distributionRemedy: string,
+): string {
+  const root = optionalCheckoutRoot(fromDirectory, env)
+  if (root === null) throw new Error(distributionRemedy)
+  return root
 }
 
 /** Answer exactly: is this an authorized platform installation? */

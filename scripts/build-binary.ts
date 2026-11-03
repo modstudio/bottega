@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../orchestrator/src/setup/launchd-owners.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
@@ -67,6 +68,17 @@ async function migrationAssetPaths(): Promise<string[]> {
   return paths.sort()
 }
 
+async function launchdAssetPaths(): Promise<string[]> {
+  const paths: string[] = []
+  for (const owner of LAUNCHD_TEMPLATE_OWNERS) {
+    const root = `${owner.concern}/${owner.directory}`
+    paths.push(
+      ...(await embeddedAssetPaths(root)).filter((path) => path.endsWith('.plist.template')),
+    )
+  }
+  return paths.sort()
+}
+
 async function webAssetPaths(): Promise<string[]> {
   const root = 'hub/web/dist'
   const paths = await embeddedAssetPaths(root)
@@ -126,7 +138,11 @@ export async function buildBinary(
     writeFileSync(
       assets,
       generatedAssetModule(
-        [...(await migrationAssetPaths()), REF_GUARD_RUNTIME_ASSET.packagePath],
+        [
+          ...(await migrationAssetPaths()),
+          ...(await launchdAssetPaths()),
+          REF_GUARD_RUNTIME_ASSET.packagePath,
+        ],
         [
           ...(await webAssetPaths()),
           ...sandboxRuntimePayloadPaths(platform, arch),

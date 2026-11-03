@@ -3,7 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
-import { readInstallAsset, registerEmbeddedAssets, resolveInstallFile } from './embedded-assets.ts'
+import {
+  listInstallAssetPaths,
+  readInstallAsset,
+  registerEmbeddedAssets,
+  resolveInstallFile,
+} from './embedded-assets.ts'
 
 const manifest = {
   name: PLATFORM_NAME,
@@ -46,4 +51,21 @@ test('the install file reader uses only registered paths inside a binary', () =>
   expect(resolveInstallFile('hub/web/dist/index.html', diskPath)).toBe('/$bunfs/root/index.html')
   expect(resolveInstallFile('hub/web/dist/missing.js', diskPath)).toBeUndefined()
   expect(resolveInstallFile('hub/web/dist/../../x', diskPath)).toBeUndefined()
+})
+
+test('the install asset registry lists paths under one prefix', () => {
+  expect(listInstallAssetPaths('hub/launchd')).toBeNull()
+  registerEmbeddedAssets({
+    assets: {
+      'hub/launchd/z.plist.template': 'z',
+      'hub/launchd/a.plist.template': 'a',
+      'ops/launchd/a.plist.template': 'other',
+    },
+    files: {},
+    manifest,
+  })
+  expect(listInstallAssetPaths('hub/launchd')).toEqual([
+    'hub/launchd/a.plist.template',
+    'hub/launchd/z.plist.template',
+  ])
 })

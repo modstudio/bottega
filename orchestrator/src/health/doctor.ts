@@ -286,7 +286,7 @@ async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<voi
 
 async function reportInstallationStatus(log: DoctorPresentation['log']): Promise<void> {
   await reportDatabaseStatus(log)
-  for (const line of await launchAgentDoctorLines()) log(line)
+  for (const line of await launchAgentDoctorLines(process.platform)) log(line)
 }
 
 async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<void> {

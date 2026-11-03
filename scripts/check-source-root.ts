@@ -12,16 +12,6 @@ export type SourceRootAllowance = { path: string; line: number; reason: string }
 /** Checkout-root uses that are unreachable or explicitly guarded in an installed binary. */
 export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   {
-    path: 'orchestrator/src/canon/canon.ts',
-    line: 22,
-    reason: 'repository citation validation runs only against canon maintained in a checkout',
-  },
-  {
-    path: 'orchestrator/src/database/database-location.ts',
-    line: 33,
-    reason: 'defines the empty installed source root used by explicit embedded-manifest branches',
-  },
-  {
     path: 'orchestrator/src/resources/ref-guard-runtime.ts',
     line: 29,
     reason: 'the tracked hook path is selected only when no embedded manifest exists',
@@ -40,42 +30,6 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
     path: 'orchestrator/src/sandbox/sandbox.ts',
     line: 300,
     reason: 'the source-root sandbox carveout is explicitly omitted for embedded distributions',
-  },
-  {
-    path: 'orchestrator/src/transport/transport.ts',
-    line: 391,
-    reason: 'the checkout codex-acp candidate is guarded by the embedded-manifest branch',
-  },
-  {
-    path: 'orchestrator/src/transport/transport.ts',
-    line: 447,
-    reason:
-      'ACP SDK presence is resolved for doctor; the SDK is imported by the ACP transport, not loaded as the compiled schema validator',
-  },
-  {
-    path: 'hub/src/cli-program.ts',
-    line: 230,
-    reason: 'task import is a source-checkout maintenance command and needs its registered project',
-  },
-  {
-    path: 'hub/src/cli-program.ts',
-    line: 244,
-    reason: 'task import reads checkout git history only in that source maintenance command',
-  },
-  {
-    path: 'hub/src/db.ts',
-    line: 56,
-    reason: 'embedded dashboard runtime resolution skips checkout discovery and legacy paths',
-  },
-  {
-    path: 'hub/src/hosted.ts',
-    line: 72,
-    reason: 'the hosted deployment entry serves its separately built checkout web bundle',
-  },
-  {
-    path: 'hub/src/hosted.ts',
-    line: 79,
-    reason: 'the hosted deployment entry serves its separately built checkout web bundle',
   },
 ]
 
@@ -99,45 +53,6 @@ function isImportMetaUrl(node: ts.Expression): boolean {
     ts.isMetaProperty(node.expression) &&
     node.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
     node.expression.name.text === 'meta'
-  )
-}
-
-function isLocalSourceRootInitializer(node: ts.Expression | undefined): boolean {
-  if (
-    !node ||
-    !ts.isCallExpression(node) ||
-    !ts.isIdentifier(node.expression) ||
-    node.expression.text !== 'fileURLToPath' ||
-    node.arguments.length !== 1
-  ) {
-    return false
-  }
-  const url = node.arguments[0]!
-  return (
-    ts.isNewExpression(url) &&
-    ts.isIdentifier(url.expression) &&
-    url.expression.text === 'URL' &&
-    url.arguments?.length === 2 &&
-    isImportMetaUrl(url.arguments![1]!)
-  )
-}
-
-function isDirectCheckoutUrl(node: ts.Expression): boolean {
-  if (
-    ts.isCallExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === 'fileURLToPath' &&
-    node.arguments.length === 1
-  ) {
-    const argument = node.arguments[0]!
-    return isImportMetaUrl(argument) || isDirectCheckoutUrl(argument)
-  }
-  return (
-    ts.isNewExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === 'URL' &&
-    node.arguments?.length === 2 &&
-    isImportMetaUrl(node.arguments[1]!)
   )
 }
 
@@ -165,7 +80,7 @@ function declarationScope(node: Binding): Scope | undefined {
 
 type BindingFacts = {
   bindings: Map<Scope, Map<string, Binding>>
-  direct: Set<Binding>
+  roots: Set<Binding>
   namespaces: Set<Binding>
 }
 
@@ -181,9 +96,6 @@ function gatherLexicalBinding(node: ts.Node, facts: BindingFacts): void {
   }
   const scope = declarationScope(node)
   if (scope) bind(facts, scope, node.name.text, node)
-  if (ts.isVariableDeclaration(node) && isLocalSourceRootInitializer(node.initializer)) {
-    facts.direct.add(node)
-  }
 }
 
 function gatherSourceRootImport(node: ts.Node, source: ts.SourceFile, facts: BindingFacts): void {
@@ -198,7 +110,7 @@ function gatherSourceRootImport(node: ts.Node, source: ts.SourceFile, facts: Bin
   if (imports && ts.isNamedImports(imports)) {
     for (const element of imports.elements) {
       bind(facts, source, element.name.text, element)
-      if ((element.propertyName ?? element.name).text === 'ROOT') facts.direct.add(element)
+      if ((element.propertyName ?? element.name).text === 'ROOT') facts.roots.add(element)
     }
   } else if (imports && ts.isNamespaceImport(imports)) {
     bind(facts, source, imports.name.text, imports)
@@ -334,7 +246,7 @@ export function sourceRootViolationLines(
   )
   const facts: BindingFacts = {
     bindings: new Map(),
-    direct: new Set(),
+    roots: new Set(),
     namespaces: new Set(),
   }
   gatherBindings(source, source, facts)
@@ -352,7 +264,7 @@ export function sourceRootViolationLines(
   const visit = (node: ts.Node): void => {
     if (
       ts.isIdentifier(node) &&
-      facts.direct.has(bindingFor(node, facts.bindings)!) &&
+      facts.roots.has(bindingFor(node, facts.bindings)!) &&
       !ts.isImportSpecifier(node.parent) &&
       !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)
     ) {
@@ -370,28 +282,6 @@ export function sourceRootViolationLines(
     const packageRequire = moduleRelativePackageRequireNode(node, createRequireNames, requireNames)
     if (packageRequire) {
       report(packageRequire)
-      return
-    }
-    if (
-      ts.isExpression(node) &&
-      isDirectCheckoutUrl(node) &&
-      !(
-        ts.isVariableDeclaration(node.parent) &&
-        node.parent.initializer === node &&
-        ts.isVariableDeclarationList(node.parent.parent) &&
-        ts.isVariableStatement(node.parent.parent.parent) &&
-        !node.parent.parent.parent.modifiers?.some(
-          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-        )
-      ) &&
-      !(
-        ts.isNewExpression(node) &&
-        ts.isCallExpression(node.parent) &&
-        node.parent.arguments[0] === node &&
-        isDirectCheckoutUrl(node.parent)
-      )
-    ) {
-      report(node)
       return
     }
     ts.forEachChild(node, visit)
