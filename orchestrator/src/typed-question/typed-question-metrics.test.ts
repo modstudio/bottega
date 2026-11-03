@@ -15,7 +15,7 @@ test('computes Mann-Whitney AUC with half credit for ties', () => {
   )
 })
 
-test('returns null AUC when one labelled class is empty', () => {
+test('returns null AUC when one labeled class is empty', () => {
   expect(typedQuestionMetrics([row(0.9, true), row(0.2, true)], 0.8).auc).toBeNull()
 })
 
@@ -30,7 +30,7 @@ test('excludes pending answers from AUC and base rate', () => {
     [row(0.9, true), row(0.1, false), row(1, null), row(0, null)],
     0.8,
   )
-  expect(metrics.labelled).toBe(2)
+  expect(metrics.labeled).toBe(2)
   expect(metrics.pending).toBe(2)
   expect(metrics.baseRate).toBe(0.5)
   expect(metrics.auc).toBe(1)

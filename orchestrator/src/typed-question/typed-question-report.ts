@@ -23,12 +23,12 @@ type AnswerRow = {
 
 export type TypedQuestionReportBlock = Omit<
   TypedQuestionMetrics,
-  'labelled' | 'pending' | 'precision' | 'recall' | 'warnedRate'
+  'labeled' | 'pending' | 'precision' | 'recall' | 'warnedRate'
 > & {
   questionId: string
   questionVersion: number
   threshold: number | null
-  labelled: number | null
+  labeled: number | null
   pending: number | null
   precision: number | null
   recall: number | null
@@ -65,7 +65,7 @@ export function specUnsettledLabel(database: Database, subjectRef: string): bool
   return null
 }
 
-const labellers: Readonly<
+const labelers: Readonly<
   Record<string, (database: Database, subjectRef: string) => boolean | null>
 > = { spec_unsettled: specUnsettledLabel }
 
@@ -74,7 +74,6 @@ function probability(answerJson: string | null): number | null {
   try {
     const answer = JSON.parse(answerJson) as Record<string, unknown>
     if (typeof answer.noul === 'number') return answer.noul
-    if (typeof answer.confidence === 'number') return answer.confidence
   } catch {
     return null
   }
@@ -105,10 +104,10 @@ export function typedQuestionReport(
   const groups = Map.groupBy(rows, (row) => `${row.question_id}\0${row.question_version}`)
   return [...groups.entries()].map(([key, answers]) => {
     const first = answers[0]!
-    const labeller = labellers[first.question_id]
+    const labeler = labelers[first.question_id]
     const metricRows: TypedQuestionMetricRow[] = answers.map((answer) => ({
       probability: probability(answer.answer_json),
-      label: labeller ? labeller(database, answer.subject_ref) : null,
+      label: labeler ? labeler(database, answer.subject_ref) : null,
       error: answer.error,
       latencyMs: answer.latency_ms,
       inputTokens: answer.input_tokens,
@@ -120,13 +119,13 @@ export function typedQuestionReport(
       questionVersion: first.question_version,
       threshold,
       ...metrics,
-      labelled: labeller ? metrics.labelled : null,
-      pending: labeller ? metrics.pending : null,
+      labeled: labeler ? metrics.labeled : null,
+      pending: labeler ? metrics.pending : null,
       precision: threshold === null ? null : metrics.precision,
       recall: threshold === null ? null : metrics.recall,
       warnedRate: threshold === null ? null : metrics.warnedRate,
-      baseRate: labeller ? metrics.baseRate : null,
-      auc: labeller ? metrics.auc : null,
+      baseRate: labeler ? metrics.baseRate : null,
+      auc: labeler ? metrics.auc : null,
     }
   })
 }

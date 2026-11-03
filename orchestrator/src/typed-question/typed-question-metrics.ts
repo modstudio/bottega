@@ -14,7 +14,7 @@ export type TypedQuestionMetricRow = {
 export type TypedQuestionMetrics = {
   answered: number
   errors: Record<string, number>
-  labelled: number
+  labeled: number
   pending: number
   baseRate: number | null
   auc: number | null
@@ -54,13 +54,13 @@ export function typedQuestionMetrics(
     (row): row is TypedQuestionMetricRow & { probability: number } =>
       row.error === null && row.probability !== null,
   )
-  const labelled = answered.filter(
+  const labeled = answered.filter(
     (row): row is typeof row & { label: boolean } => row.label !== null,
   )
-  const positives = labelled.filter((row) => row.label)
+  const positives = labeled.filter((row) => row.label)
   const warned = answered.filter((row) => row.probability >= threshold)
-  const warnedLabelled = labelled.filter((row) => row.probability >= threshold)
-  const truePositives = warnedLabelled.filter((row) => row.label).length
+  const warnedLabeled = labeled.filter((row) => row.probability >= threshold)
+  const truePositives = warnedLabeled.filter((row) => row.label).length
   const inputTokens = rows.reduce((total, row) => total + (row.inputTokens ?? 0), 0)
   const errors: Record<string, number> = {}
   for (const row of rows) {
@@ -69,11 +69,11 @@ export function typedQuestionMetrics(
   return {
     answered: answered.length,
     errors,
-    labelled: labelled.length,
-    pending: answered.length - labelled.length,
-    baseRate: labelled.length ? positives.length / labelled.length : null,
-    auc: auc(labelled),
-    precision: warnedLabelled.length ? truePositives / warnedLabelled.length : null,
+    labeled: labeled.length,
+    pending: answered.length - labeled.length,
+    baseRate: labeled.length ? positives.length / labeled.length : null,
+    auc: auc(labeled),
+    precision: warnedLabeled.length ? truePositives / warnedLabeled.length : null,
     recall: positives.length ? truePositives / positives.length : null,
     warnedRate: answered.length ? warned.length / answered.length : null,
     latencyP50Ms: nearestRank(
