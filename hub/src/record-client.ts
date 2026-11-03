@@ -525,29 +525,31 @@ async function request<T>(
   schema: z.ZodType<T>,
   init: RequestInit = {},
 ): Promise<T> {
-  const startedAt = Date.now()
   const deadlineMs = options.requestDeadlineMs ?? RECORD_REQUEST_DEADLINE_MS
   const controller = new AbortController()
-  let deadlinePassed = false
-  let timeout: ReturnType<typeof setTimeout> | undefined
-  const timeoutError = () =>
-    new TRPCError({
-      code: 'TIMEOUT',
-      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; retry, and if it stalls again check the hosted API health and report the path`,
-    })
-  const expired = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => {
-      deadlinePassed = true
-      reject(timeoutError())
-      controller.abort()
-    }, deadlineMs)
-  })
   const headers = new Headers(init.headers)
   if (options.headers.cookie) headers.set('Cookie', options.headers.cookie)
   if (options.headers.authorization) headers.set('Authorization', options.headers.authorization)
   const url = `${options.baseUrl.replace(/\/$/, '')}${path}`
   const fetchImpl = options.fetch ?? globalThis.fetch
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
+  const startedAt = Date.now()
+  const retryStatement =
+    !init.method || init.method.toUpperCase() === 'GET'
+      ? 'nothing was written; retry'
+      : 'the write may have been applied; check before retrying'
+  const timeoutError = () =>
+    new TRPCError({
+      code: 'TIMEOUT',
+      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; ${retryStatement}, and if it stalls again check the hosted API health and report the path`,
+    })
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(timeoutError())
+      controller.abort()
+    }, deadlineMs)
+  })
   try {
     return await Promise.race([
       (async () => {
@@ -565,12 +567,6 @@ async function request<T>(
       })(),
       expired,
     ])
-  } catch (error) {
-    if (deadlinePassed && !init.signal?.aborted) {
-      if (error instanceof TRPCError && error.code === 'TIMEOUT') throw error
-      throw timeoutError()
-    }
-    throw error
   } finally {
     if (timeout) clearTimeout(timeout)
   }
