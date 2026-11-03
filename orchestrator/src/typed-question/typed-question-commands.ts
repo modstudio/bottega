@@ -12,6 +12,7 @@ const value = (measurement: number | null, digits = 2): string =>
 function render(block: TypedQuestionReportBlock, presentation: Presentation): void {
   const lines: [string, string][] = [
     ['threshold', value(block.threshold)],
+    ['recorded', String(block.recorded)],
     ['answered', String(block.answered)],
     ['errors', JSON.stringify(block.errors)],
     ['labeled', block.labeled === null ? 'none' : String(block.labeled)],
@@ -42,8 +43,14 @@ export function typedQuestionCommand(
   }
   const report = typedQuestionReport({ question: options.question, days })
   if (!report.length) {
+    const filters = [
+      options.question ? `question ${options.question}` : null,
+      days !== undefined ? `the last ${days} day(s)` : null,
+    ].filter(Boolean)
     presentation.log(
-      `no typed-question answers recorded — record them with: ${PLATFORM_SLUG} run start implement`,
+      filters.length
+        ? `no typed-question answers recorded for ${filters.join(' in ')}; run without the filter to see every recorded question`
+        : `no typed-question answers recorded — record them with: ${PLATFORM_SLUG} run start implement`,
     )
     return
   }

@@ -23,6 +23,7 @@ export const typedQuestionModules = [
   module('orchestrator/src/typed-question/typed-question-metrics.ts', []),
   module('orchestrator/src/typed-question/typed-question-report.ts', [
     'bun:sqlite',
+    '../../../shared/typed-question/client.ts',
     '../database/db.ts',
     '../run/run-status.ts',
     './spec-unsettled-question.ts',

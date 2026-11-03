@@ -2,6 +2,7 @@
 /** Reads typed-question evidence and joins question-specific outcomes. */
 
 import type { Database } from 'bun:sqlite'
+import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SPEC_UNSETTLED_QUESTION } from './spec-unsettled-question.ts'
@@ -21,26 +22,23 @@ type AnswerRow = {
   error: string | null
 }
 
-export type TypedQuestionReportBlock = Omit<
-  TypedQuestionMetrics,
-  'labeled' | 'pending' | 'precision' | 'recall' | 'warnedRate'
-> & {
+export type TypedQuestionReportBlock = Omit<TypedQuestionMetrics, 'labeled' | 'pending'> & {
   questionId: string
   questionVersion: number
   threshold: number | null
   labeled: number | null
   pending: number | null
-  precision: number | null
-  recall: number | null
-  warnedRate: number | null
 }
 
-const thresholds = new Map([
-  [
-    `${SPEC_UNSETTLED_QUESTION.id}\0${SPEC_UNSETTLED_QUESTION.version}`,
-    SPEC_UNSETTLED_QUESTION.threshold,
-  ],
-])
+const declarations = [SPEC_UNSETTLED_QUESTION] as const
+
+/** The threshold of the current declaration for this exact version, or null. */
+function declaredThreshold(questionId: string, questionVersion: number): number | null {
+  const declared = declarations.find(
+    (question) => question.id === questionId && question.version === questionVersion,
+  )
+  return declared ? declared.threshold : null
+}
 
 export function specUnsettledLabel(database: Database, subjectRef: string): boolean | null {
   const result = database
@@ -67,17 +65,18 @@ export function specUnsettledLabel(database: Database, subjectRef: string): bool
 
 const labelers: Readonly<
   Record<string, (database: Database, subjectRef: string) => boolean | null>
-> = { spec_unsettled: specUnsettledLabel }
+> = { [SPEC_UNSETTLED_QUESTION.id]: specUnsettledLabel }
 
+/** A noul answer's probability; a choice answer or an unreadable row carries none. */
 function probability(answerJson: string | null): number | null {
   if (answerJson === null) return null
+  let answer: TypedQuestionAnswer
   try {
-    const answer = JSON.parse(answerJson) as Record<string, unknown>
-    if (typeof answer.noul === 'number') return answer.noul
+    answer = JSON.parse(answerJson) as TypedQuestionAnswer
   } catch {
     return null
   }
-  return null
+  return 'noul' in answer && typeof answer.noul === 'number' ? answer.noul : null
 }
 
 export function typedQuestionReport(
@@ -91,7 +90,7 @@ export function typedQuestionReport(
     parameters.push(options.question)
   }
   if (options.days !== undefined) {
-    clauses.push("created_at >= datetime('now', '-' || ? || ' days')")
+    clauses.push("datetime(created_at) >= datetime('now', '-' || ? || ' days')")
     parameters.push(options.days)
   }
   const rows = database
@@ -102,7 +101,7 @@ export function typedQuestionReport(
     )
     .all(...parameters) as AnswerRow[]
   const groups = Map.groupBy(rows, (row) => `${row.question_id}\0${row.question_version}`)
-  return [...groups.entries()].map(([key, answers]) => {
+  return [...groups.values()].map((answers) => {
     const first = answers[0]!
     const labeler = labelers[first.question_id]
     const metricRows: TypedQuestionMetricRow[] = answers.map((answer) => ({
@@ -112,8 +111,8 @@ export function typedQuestionReport(
       latencyMs: answer.latency_ms,
       inputTokens: answer.input_tokens,
     }))
-    const threshold = thresholds.get(key) ?? null
-    const metrics = typedQuestionMetrics(metricRows, threshold ?? 0)
+    const threshold = declaredThreshold(first.question_id, first.question_version)
+    const metrics = typedQuestionMetrics(metricRows, threshold)
     return {
       questionId: first.question_id,
       questionVersion: first.question_version,
@@ -121,9 +120,6 @@ export function typedQuestionReport(
       ...metrics,
       labeled: labeler ? metrics.labeled : null,
       pending: labeler ? metrics.pending : null,
-      precision: threshold === null ? null : metrics.precision,
-      recall: threshold === null ? null : metrics.recall,
-      warnedRate: threshold === null ? null : metrics.warnedRate,
       baseRate: labeler ? metrics.baseRate : null,
       auc: labeler ? metrics.auc : null,
     }

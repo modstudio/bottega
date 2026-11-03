@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
-import { specUnsettledLabel } from './typed-question-report.ts'
+import { SPEC_UNSETTLED_QUESTION } from './spec-unsettled-question.ts'
+import { specUnsettledLabel, typedQuestionReport } from './typed-question-report.ts'
 
 function run(input: { spec: string; status: string; job?: string; parent?: string }): string {
   const database = db()
@@ -66,4 +67,66 @@ test('ignores non-implement roots and non-root implement runs with the same spec
   const root = run({ spec: 'different', status: 'ok' })
   run({ spec: 'ignored', status: 'ok', parent: root })
   expect(specUnsettledLabel(db(), 'ignored')).toBeNull()
+})
+
+function answer(input: { question: string; version: number; subject: string; noul: number }): void {
+  db()
+    .query(
+      `INSERT INTO typed_question_answer
+       (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
+        model,input_tokens,latency_ms,error,created_at)
+       VALUES (?,?,?,'spec',?,'state',?,'jev',100,10,NULL,?)`,
+    )
+    .run(
+      newRecordId(),
+      input.question,
+      input.version,
+      input.subject,
+      JSON.stringify({ noul: input.noul }),
+      new Date().toISOString(),
+    )
+}
+
+test('reports each version on its own and joins outcomes only for a declared question', () => {
+  const current = SPEC_UNSETTLED_QUESTION.version
+  ask(run({ spec: 'report-asked', status: 'ok' }))
+  run({ spec: 'report-settled', status: 'ok' })
+  answer({
+    question: SPEC_UNSETTLED_QUESTION.id,
+    version: current,
+    subject: 'report-asked',
+    noul: 0.9,
+  })
+  answer({
+    question: SPEC_UNSETTLED_QUESTION.id,
+    version: current,
+    subject: 'report-settled',
+    noul: 0.2,
+  })
+  answer({
+    question: SPEC_UNSETTLED_QUESTION.id,
+    version: current + 1,
+    subject: 'report-asked',
+    noul: 0.9,
+  })
+  answer({ question: 'undeclared', version: 1, subject: 'report-asked', noul: 0.9 })
+
+  const report = typedQuestionReport({})
+  const declared = report.find(
+    (block) => block.questionId === SPEC_UNSETTLED_QUESTION.id && block.questionVersion === current,
+  )!
+  expect(declared).toMatchObject({
+    threshold: SPEC_UNSETTLED_QUESTION.threshold,
+    labeled: 2,
+    auc: 1,
+    precision: 1,
+    recall: 1,
+  })
+  const later = report.find(
+    (block) =>
+      block.questionId === SPEC_UNSETTLED_QUESTION.id && block.questionVersion === current + 1,
+  )!
+  expect(later).toMatchObject({ threshold: null, labeled: 1, precision: null, warnedRate: null })
+  const undeclared = report.find((block) => block.questionId === 'undeclared')!
+  expect(undeclared).toMatchObject({ recorded: 1, threshold: null, labeled: null, auc: null })
 })
