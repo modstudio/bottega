@@ -195,6 +195,48 @@ test('project relink refuses a retired hosted namesake', async () => {
   )
 })
 
+test('an already-linked project reports already-linked even when its hosted row is retired', async () => {
+  const projectId = newRecordId()
+  const name = 'already-linked-retired'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    listProjects: async () => [
+      {
+        id: projectId,
+        name,
+        spaceId: 'space-a',
+        spaceName: 'Space A',
+        keyPrefixes: [],
+        stack: null,
+        managedContext: false,
+        landingBranch: null,
+        color: null,
+        colorDark: null,
+        canon: true,
+        settings: {},
+        retiredAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  })
+  const database = relinkDatabase()
+  database.query('INSERT INTO project VALUES (?,?)').run(projectId, name)
+
+  await expect(
+    adoptHostedProjectIdentity(
+      {
+        recordId: projectId,
+        name,
+        path: `/tmp/${name}`,
+        stack: null,
+        canon: true,
+        retiredAt: null,
+        settings: {},
+      },
+      database,
+    ),
+  ).resolves.toMatchObject({ name, status: 'already-linked', oldId: projectId, newId: projectId })
+})
+
 test('record sign-in adopts a local project with a hosted namesake', async () => {
   const name = `sign-in-relink-${newRecordId()}`
   const oldId = newRecordId()
@@ -233,5 +275,61 @@ test('record sign-in adopts a local project with a hosted namesake', async () =>
   }
   expect(projectByName(name)?.recordId).toBe(hostedId)
   expect(output).toContain(`signed in a@example.test`)
+  expect(output.some((line) => line.includes(`${oldId} -> ${hostedId}`))).toBe(true)
+})
+
+test('record sign-in reports one adoption failure and continues to a later project', async () => {
+  const failedName = `aa-sign-in-fails-${newRecordId()}`
+  const name = `zz-sign-in-continues-${newRecordId()}`
+  const oldId = newRecordId()
+  const hostedId = newRecordId()
+  upsertProject({ recordId: newRecordId(), name: failedName, path: `/tmp/${failedName}` })
+  upsertProject({ recordId: oldId, name, path: `/tmp/${name}` })
+  let listings = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    listProjects: async () => {
+      listings += 1
+      if (listings === 1) throw new Error('space listing refused')
+      return [
+        {
+          id: hostedId,
+          name,
+          spaceId: 'space-a',
+          spaceName: 'Space A',
+          keyPrefixes: [],
+          stack: null,
+          managedContext: false,
+          landingBranch: null,
+          color: null,
+          colorDark: null,
+          canon: true,
+          settings: {},
+          retiredAt: null,
+        },
+      ]
+    },
+  })
+  const session = memoryRecordSession()
+  installRecordSessionRunner(session.runner)
+  const output: string[] = []
+  try {
+    await completeSignInCommand(
+      { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
+      { log: (line) => output.push(line) },
+    )
+  } finally {
+    installRecordSessionRunner(null)
+  }
+
+  expect(projectByName(name)?.recordId).toBe(hostedId)
+  expect(
+    output.some(
+      (line) =>
+        line.includes('space listing refused') &&
+        line.includes(`project relink ${failedName}`) &&
+        line.includes('failed'),
+    ),
+  ).toBe(true)
   expect(output.some((line) => line.includes(`${oldId} -> ${hostedId}`))).toBe(true)
 })

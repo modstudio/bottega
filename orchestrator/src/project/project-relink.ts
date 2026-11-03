@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
-import { retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
+import { retryOutboxRowsMatchingInWriteTransaction } from '../record/outbox-quarantine.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
@@ -22,12 +22,14 @@ export type ProjectRelinkResult = {
   retried: number
 }
 
-export type ProjectAdoptionResult =
+type ProjectAdoptionOutcome =
   | ProjectRelinkResult
   | { name: string; status: 'no-namesake' }
   | { name: string; status: 'retired-namesake'; message: string }
 
-export class HostedProjectLookupError extends Error {}
+export type ProjectAdoptionResult =
+  | ProjectAdoptionOutcome
+  | { name: string; status: 'failed'; message: string }
 
 const referenceColumns = (): Array<{ table: string; column: string }> => {
   const unique = new Map<string, { table: string; column: string }>()
@@ -108,6 +110,7 @@ export function relinkProjectIdentity(
     }
   }
   const oldId = project.recordId
+  let retried = 0
   const rewritten = writeTransaction(() => {
     database.exec('PRAGMA defer_foreign_keys = ON')
     const counts: Record<string, number> = {}
@@ -124,12 +127,12 @@ export function relinkProjectIdentity(
         `project ${project.name} changed while it was being relinked; inspect \`${PLATFORM_SLUG} project list --json\` and retry`,
       )
     counts.outbox = rewritePendingOutbox(database, oldId, hostedId)
+    retried = retryOutboxRowsMatchingInWriteTransaction(
+      `record project ${oldId} is absent from request space `,
+      database,
+    )
     return counts
   }, database)
-  const retried = retryOutboxRowsMatching(
-    `record project ${oldId} is absent from request space `,
-    database,
-  )
   return {
     name: project.name,
     oldId,
@@ -147,24 +150,18 @@ function retiredHostedProjectMessage(name: string): string {
 export async function adoptHostedProjectIdentity(
   project: Project,
   database: Database = writableDb(),
-): Promise<ProjectAdoptionResult> {
+): Promise<ProjectAdoptionOutcome> {
   const client = recordApiClient()
-  let hosted: RecordProject | undefined
-  try {
-    const destinationSpaceId = await requireProjectRecordDestination(
-      project.name,
-      project.settings,
-      client,
-    )
-    hosted = (await client.listProjects({ destinationSpaceId })).find(
-      (candidate) => candidate.name === project.name,
-    )
-  } catch (error) {
-    throw new HostedProjectLookupError(error instanceof Error ? error.message : String(error), {
-      cause: error,
-    })
-  }
+  const destinationSpaceId = await requireProjectRecordDestination(
+    project.name,
+    project.settings,
+    client,
+  )
+  const hosted: RecordProject | undefined = (
+    await client.listProjects({ destinationSpaceId })
+  ).find((candidate) => candidate.name === project.name)
   if (!hosted) return { name: project.name, status: 'no-namesake' }
+  if (project.recordId === hosted.id) return relinkProjectIdentity(project, hosted.id, database)
   if (hosted.retiredAt)
     return {
       name: project.name,
@@ -188,7 +185,17 @@ export async function relinkProjectByName(
 export async function adoptAllHostedProjectIdentities(): Promise<ProjectAdoptionResult[]> {
   const localProjects = [...projects(), ...projects({ retired: true })]
   const adopted: ProjectAdoptionResult[] = []
-  for (const project of localProjects) adopted.push(await adoptHostedProjectIdentity(project))
+  for (const project of localProjects) {
+    try {
+      adopted.push(await adoptHostedProjectIdentity(project))
+    } catch (error) {
+      adopted.push({
+        name: project.name,
+        status: 'failed',
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
   return adopted
 }
 

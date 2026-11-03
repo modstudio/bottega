@@ -510,6 +510,23 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     )
   })
 
+  test('a project with task flow history refuses removal', () => {
+    upsertProject({ recordId: newRecordId(), name: 'kept-task-flow', path: '/w/kept-task-flow' })
+    const project = projectByName('kept-task-flow')!
+    writableDb()
+    db()
+      .query(
+        `INSERT INTO task_flow
+         (record_id,task_record_id,project_record_id,state,created_at,updated_at)
+         VALUES (?,?,?,'done','t','t')`,
+      )
+      .run(newRecordId(), newRecordId(), project.recordId)
+
+    expect(() => removeProject(project.name)).toThrow(
+      'project kept-task-flow is referenced by 1 task flow(s)',
+    )
+  })
+
   test('a project with nothing referencing it still removes', () => {
     upsertProject({ recordId: newRecordId(), name: 'ephemeral', path: '/w/ephemeral' })
     expect(removeProject('ephemeral')).toBe(true)
