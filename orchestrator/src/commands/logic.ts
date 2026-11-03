@@ -536,7 +536,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         Boolean(options.config),
         verb,
         options.project,
-        bottegaEntryArgv(PLATFORM_SLUG)[0],
+        bottegaEntryArgv(PLATFORM_SLUG)[0]!,
         presentation,
       ),
     )
