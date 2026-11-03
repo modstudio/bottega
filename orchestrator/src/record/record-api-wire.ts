@@ -2,7 +2,7 @@
 /** Owns the hosted record API's shared wire encodings and identifiers. */
 
 import { z } from 'zod'
-import { MACHINE_KEY_ID_PATTERN } from './record-config.ts'
+import { MACHINE_KEY_ID_PATTERN } from '../../../shared/machine-key-id.ts'
 
 export const idSchema = z.string().uuid()
 export const keyIdSchema = z.string().regex(MACHINE_KEY_ID_PATTERN)

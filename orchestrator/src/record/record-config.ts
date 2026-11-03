@@ -13,8 +13,6 @@ import {
 import { recordPool } from './record-pool.ts'
 
 export const CONFIG_SCOPES = ['user', 'space'] as const
-export const MACHINE_KEY_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/
-
 export type ConfigScope = (typeof CONFIG_SCOPES)[number]
 export type ConfigTenant = { url: string } & TenantPrincipal
 export type ConfigWrapInput = {

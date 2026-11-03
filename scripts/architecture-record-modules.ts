@@ -721,7 +721,10 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-config.ts',
   ]),
-  module('orchestrator/src/record/record-api-wire.ts', ['zod', './record-config.ts']),
+  module('orchestrator/src/record/record-api-wire.ts', [
+    'zod',
+    '../../../shared/machine-key-id.ts',
+  ]),
   module('orchestrator/src/record/record-api-settings.ts', [
     'hono',
     'zod',
