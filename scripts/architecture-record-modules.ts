@@ -360,6 +360,7 @@ export const recordModules: RecordModule[] = [
     'drizzle-orm/bun-sql',
     '../../../shared/record/schema-task-flow.ts',
     './outbox-payload-contracts.ts',
+    './record-evidence-references.ts',
     './record-sync-contract.ts',
     './record-sync-principal.ts',
   ]),

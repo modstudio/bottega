@@ -142,6 +142,7 @@ async function assertEvidenceReferencesOwned(input: {
         id: reference.id,
         machineId: input.machineId,
         suffix: '/* owned_reference */',
+        scope: 'machine',
       })
       const rows = await tx.unsafe(lookup.text, lookup.values)
       if (rows.length === 0) throw new OutboxRowError(referenceRefusal(reference), 'row-validation')

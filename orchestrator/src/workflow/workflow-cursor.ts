@@ -194,7 +194,7 @@ function insertCursor(
         d,
       )
     : null
-  if (decideCursorStart(existing?.state ?? null) === 'retire') {
+  if (decideCursorStart(existing?.state ?? null) === 'retire')
     vacateRetiredWorkflowKeySlot(
       composition.project,
       composition.workflow.slug,
@@ -202,8 +202,6 @@ function insertCursor(
       key,
       d,
     )
-  }
-  const autonomySnapshot = storedCursorAutonomy(autonomy)
   const stored = d
     .query<{ record_id: string }, (string | number | null)[]>(
       `INSERT INTO workflow_cursor
@@ -230,7 +228,7 @@ function insertCursor(
       composition.catalogue.record_id,
       JSON.stringify(composition.arguments),
       JSON.stringify(
-        autonomySnapshot ?? {
+        storedCursorAutonomy(autonomy) ?? {
           steps: Object.fromEntries(
             composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
           ),

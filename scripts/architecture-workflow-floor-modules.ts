@@ -37,6 +37,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     '../run/question-outbox.ts',
+    './task-flow.ts',
   ]),
   module('orchestrator/src/workflow/workflow-keyless-close.ts', [
     'bun:sqlite',
