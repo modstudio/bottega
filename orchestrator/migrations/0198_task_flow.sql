@@ -1,7 +1,7 @@
 CREATE TABLE task_flow (
   record_id TEXT NOT NULL PRIMARY KEY,
   task_record_id TEXT NOT NULL UNIQUE,
-  project_record_id TEXT NOT NULL REFERENCES project(record_id),
+  project_record_id TEXT NOT NULL REFERENCES project(record_id) ON DELETE CASCADE,
   state TEXT NOT NULL CHECK (state IN ('open','done','dropped')),
   open_stage_cursor_record_id TEXT REFERENCES workflow_cursor(record_id) ON DELETE SET NULL,
   created_at TEXT NOT NULL,
@@ -14,6 +14,10 @@ ALTER TABLE workflow_cursor
 CREATE UNIQUE INDEX workflow_cursor_one_open_stage_per_flow
   ON workflow_cursor(task_flow_record_id)
   WHERE task_flow_record_id IS NOT NULL AND state NOT IN ('done','abandoned');
+--> statement-breakpoint
+CREATE INDEX task_flow_project ON task_flow(project_record_id);
+CREATE INDEX task_flow_open_stage ON task_flow(open_stage_cursor_record_id);
+CREATE INDEX workflow_cursor_task_flow ON workflow_cursor(task_flow_record_id);
 --> statement-breakpoint
 -- BACKFILL
 -- newRecordId() is the runtime minter; these are migration-only random UUID-v4 values.
