@@ -606,8 +606,9 @@ test('dashboard scoring capability is private and bound to this dashboard proces
 })
 
 describe('projectListProcessError', () => {
-  test('names the timed-out lookup and its project-selection remedy', () => {
+  test('names the timed-out lookup and its register remedy', () => {
     const error = projectListProcessError({
+      command: `${PLATFORM_SLUG} project list --json`,
       exitCode: null,
       signalCode: 'SIGTERM',
       exitedDueToTimeout: true,
@@ -617,12 +618,13 @@ describe('projectListProcessError', () => {
     })
     expect(error).toContain('project list --json')
     expect(error).toContain('timed out after 20000 ms')
-    expect(error).toContain('--project <name>')
+    expect(error).toContain('retry once the register responds')
   })
 
-  test('names a signal-only failure and its project-selection remedy', () => {
+  test('names a signal-only failure and its register remedy', () => {
     expect(
       projectListProcessError({
+        command: `${PLATFORM_SLUG} project list --json`,
         exitCode: null,
         signalCode: 'SIGKILL',
         exitedDueToTimeout: false,
@@ -631,13 +633,28 @@ describe('projectListProcessError', () => {
         timeoutMs: 20_000,
       }),
     ).toBe(
-      `${PLATFORM_SLUG} project list --json ended on signal SIGKILL; retry, or pass --project <name>`,
+      `${PLATFORM_SLUG} project list --json ended on signal SIGKILL; retry once the register responds`,
     )
+  })
+
+  test('accepts a successful exit despite a raced timeout flag', () => {
+    expect(
+      projectListProcessError({
+        command: `${PLATFORM_SLUG} project list --json`,
+        exitCode: 0,
+        signalCode: null,
+        exitedDueToTimeout: true,
+        stderr: '',
+        stdout: '[]',
+        timeoutMs: 20_000,
+      }),
+    ).toBeNull()
   })
 
   test('keeps stderr for a non-zero numeric exit', () => {
     expect(
       projectListProcessError({
+        command: `${PLATFORM_SLUG} project list --json`,
         exitCode: 2,
         signalCode: null,
         exitedDueToTimeout: false,

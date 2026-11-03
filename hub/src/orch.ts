@@ -64,7 +64,10 @@ import {
   type WorkflowCursorIdentityRow,
   WorkflowCursorIdentityRowListSchema,
 } from '../../shared/orch-contract.ts'
-import { processObservationError } from '../../shared/process-identity.ts'
+import {
+  processObservationError,
+  processObservationInterrupted,
+} from '../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -414,6 +417,7 @@ export const blockers = (days: number): Promise<OrchBlockers> =>
   json(['machine', 'blockers', '--days', String(days), '--json'], OrchBlockersSchema)
 
 type ProjectListProcessResult = {
+  command: string
   exitCode: number | null
   signalCode: string | number | null | undefined
   exitedDueToTimeout: boolean
@@ -424,16 +428,9 @@ type ProjectListProcessResult = {
 
 /** Decide the project-register error without observing or spawning its process. */
 export function projectListProcessError(result: ProjectListProcessResult): string | null {
-  if (
-    result.exitedDueToTimeout ||
-    (result.signalCode !== null && result.signalCode !== undefined)
-  ) {
-    const classified = processObservationError(
-      `${PLATFORM_SLUG} project list --json`,
-      result.timeoutMs,
-      result,
-    )
-    return `${classified}; retry, or pass --project <name>`
+  if (processObservationInterrupted(result)) {
+    const classified = processObservationError(result.command, result.timeoutMs, result)
+    return `${classified}; retry once the register responds`
   }
   if (result.exitCode === 0) return null
   return (
@@ -445,7 +442,8 @@ export function projectListProcessError(result: ProjectListProcessResult): strin
 
 export function projectList(): OrchProject[] {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
-  const proc = Bun.spawnSync([...command, 'project', 'list', '--json'], {
+  const args = ['project', 'list', '--json']
+  const proc = Bun.spawnSync([...command, ...args], {
     env: { ...process.env },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -453,6 +451,7 @@ export function projectList(): OrchProject[] {
   })
   const out = proc.stdout.toString()
   const error = projectListProcessError({
+    command: `${PLATFORM_SLUG} ${args.join(' ')}`,
     exitCode: proc.exitCode,
     signalCode: proc.signalCode,
     exitedDueToTimeout: proc.exitedDueToTimeout === true,
