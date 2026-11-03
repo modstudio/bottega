@@ -9,6 +9,11 @@ export const CONFIG_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_CONFIG_HOME`
 /** The harness-owned env-file override is derived from the one canonical slug. */
 export const HARNESS_ENV_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HARNESS_ENV_FILE`
 
+/** The owner-only file holding the machine key when file storage is selected. */
+export function machineKeyFilePath(env: ConfigEnvironment): string {
+  return join(resolveConfigRoot(env), 'machine-key')
+}
+
 /** Resolve the per-user config root using only the supplied environment. */
 export function resolveConfigRoot(env: ConfigEnvironment): string {
   const override = env[CONFIG_HOME_ENV]

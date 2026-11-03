@@ -18,6 +18,7 @@ export const confinementModules: ConfinementModule[] = [
   module('orchestrator/src/sandbox/sandbox.ts', [
     '../../../shared/brand.ts',
     '../../../shared/embedded-assets.ts',
+    '../../../shared/file-backed-secret-paths.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/config-directory.ts',
     '../../../shared/state-directory.ts',

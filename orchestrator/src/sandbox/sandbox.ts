@@ -24,10 +24,10 @@ import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthr
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
+import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
-  hubLoginTokenDirectory,
   resolveHubDatabase,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
@@ -95,7 +95,7 @@ export const READONLY_LENS_ALLOW_LOCAL_BINDING = true
 function mandatorySrtDenyRead(environment: ConfigEnvironment = process.env): string[] {
   return [
     ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
-    hubLoginTokenDirectory(environment),
+    ...fileBackedSecretPaths(environment),
   ]
 }
 

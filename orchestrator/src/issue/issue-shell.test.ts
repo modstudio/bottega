@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { hubLoginTokenDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
+import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import {
   expandHome,
@@ -21,7 +23,7 @@ import {
 describe('filed issue command confinement', () => {
   test('denies secrets without carrying the coordinator environment', () => {
     const state = mkdtempSync(join(tmpdir(), 'issue-shell-state-'))
-    const environment = { [STATE_HOME_ENV]: state }
+    const environment = { [CONFIG_HOME_ENV]: join(state, 'config'), [STATE_HOME_ENV]: state }
     try {
       const plan = filedIssueCommandPlan({
         command: 'bun run check',
@@ -41,7 +43,7 @@ describe('filed issue command confinement', () => {
       expect(plan.profile.filesystem.allowWrite).toEqual(['/trees/DEV-392', '/tmp/issue-home'])
       expect(plan.profile.filesystem.denyRead).toEqual([
         ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
-        hubLoginTokenDirectory(environment),
+        ...fileBackedSecretPaths(environment),
         ...READONLY_LENS_DENY_SOCKETS,
         '/project/.env',
         '/keys/token',

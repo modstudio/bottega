@@ -17,13 +17,19 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
+import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import { sourceBunExecutable } from '../../../shared/self-spawn.ts'
-import { hubLoginTokenDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import {
+  hubLoginTokenDirectory,
+  recordSessionPath,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
 import {
+  createSandboxRuntimeConfig,
   grokAskCommandFromConfig,
   grokAskServerCommand,
   grokSandboxConfig,
@@ -84,6 +90,31 @@ test('every SRT profile construction routes through the one mandatory-deny const
 
   expect(constructors).toEqual(['issue/issue-shell.ts', 'sandbox/sandbox.ts'])
   expect(definitions.map(([path]) => path)).toEqual(['sandbox/sandbox.ts'])
+})
+
+test('every SRT profile denies every file-backed secret path', () => {
+  const environment = {
+    [CONFIG_HOME_ENV]: '/operator/config',
+    [STATE_HOME_ENV]: '/operator/state',
+  }
+  const profile = createSandboxRuntimeConfig(
+    {
+      network: {
+        allowedDomains: [],
+        deniedDomains: [],
+        allowUnixSockets: [],
+        allowLocalBinding: false,
+      },
+      filesystem: { denyRead: [], allowWithinDeny: [], allowWrite: [], denyWrite: [] },
+    },
+    environment,
+  )
+
+  expect(profile.filesystem.denyRead).toEqual(
+    expect.arrayContaining(fileBackedSecretPaths(environment)),
+  )
+  const staging = join(recordSessionPath(environment), '..', '.session-staging')
+  expect(profile.filesystem.denyRead.some((path) => staging.startsWith(`${path}/`))).toBe(true)
 })
 
 test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
@@ -613,7 +644,7 @@ describe('readonly-lens sandbox profile', () => {
 
     expect(profile.filesystem.denyRead).toEqual([
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
-      hubLoginTokenDirectory(environment),
+      ...fileBackedSecretPaths(environment),
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
