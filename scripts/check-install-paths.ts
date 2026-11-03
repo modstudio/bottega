@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../orchestrator/src/setup/launchd-owners.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const REMEDY_BASELINE_PATH = join(root, 'scripts', 'install-path-remedy-baseline.json')
@@ -119,7 +120,10 @@ export function installPathFindings(sourceText: string, path: string): InstallPa
   return findings
 }
 
-function isLaunchdOwnerCommand(node: ts.Node): boolean {
+const CHECKOUT_ONLY_INSTALLERS = LAUNCHD_TEMPLATE_OWNERS.map(({ command }) => command)
+
+function isLaunchdOwnerCommandDeclaration(node: ts.Node, path: string): boolean {
+  if (path !== 'orchestrator/src/setup/launchd-owners.ts') return false
   for (let current: ts.Node | undefined = node; current; current = current.parent) {
     if (
       ts.isVariableDeclaration(current) &&
@@ -146,10 +150,42 @@ function isRunningRootBinJoin(node: ts.CallExpression): boolean {
   ) {
     return false
   }
-  const baseText = base.getText()
-  return /^(?:root|runningRoot|runningInstallationRoot|input\.runningInstallationRoot)$/.test(
-    baseText,
+  return true
+}
+
+function isAssetPathBinCall(node: ts.CallExpression): boolean {
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'assetPath') return false
+  const [bin, slug] = node.arguments
+  return (
+    !!bin &&
+    !!slug &&
+    ts.isStringLiteral(bin) &&
+    bin.text === 'bin' &&
+    ts.isIdentifier(slug) &&
+    slug.text === 'PLATFORM_SLUG'
   )
+}
+
+function isInstallAwareResolverFinding(node: ts.Node, path: string): boolean {
+  if (path === 'shared/self-spawn.ts') return true
+  if (path !== 'shared/install-root.ts') return false
+  for (let current: ts.Node | undefined = node; current; current = current.parent) {
+    if (ts.isFunctionDeclaration(current) && current.name?.text === 'resolveInstallationPaths') {
+      return true
+    }
+  }
+  return false
+}
+
+function templateNamesPlatformBin(node: ts.TemplateExpression): boolean {
+  return node.templateSpans.some((span, index) => {
+    const precedingText = index === 0 ? node.head.text : node.templateSpans[index - 1]!.literal.text
+    return (
+      precedingText.endsWith('bin/') &&
+      ts.isIdentifier(span.expression) &&
+      span.expression.text === 'PLATFORM_SLUG'
+    )
+  })
 }
 
 /** Return remedies that can name checkout-only paths while running from a distribution. */
@@ -161,19 +197,21 @@ export function distributionUnsafeInstallPathFindings(
   const source = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true)
   const findings: InstallPathFinding[] = []
   const visit = (node: ts.Node): void => {
+    if (isInstallAwareResolverFinding(node, path)) return
+    const literalText =
+      ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+        ? node.text
+        : ts.isTemplateExpression(node)
+          ? node.getText(source)
+          : null
     const checkoutInstaller =
-      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
-      node.text.includes('ops/install.sh') &&
-      !isLaunchdOwnerCommand(node)
-    const literalRunningBin =
-      ts.isTemplateExpression(node) &&
-      node.head.text.endsWith('bin/') &&
-      ts.isIdentifier(node.templateSpans[0]?.expression) &&
-      node.templateSpans[0].expression.text === 'PLATFORM_SLUG'
+      literalText !== null &&
+      CHECKOUT_ONLY_INSTALLERS.some((command) => literalText.includes(command)) &&
+      !isLaunchdOwnerCommandDeclaration(node, path)
     if (
       checkoutInstaller ||
-      literalRunningBin ||
-      (ts.isCallExpression(node) && isRunningRootBinJoin(node))
+      (ts.isTemplateExpression(node) && templateNamesPlatformBin(node)) ||
+      (ts.isCallExpression(node) && (isRunningRootBinJoin(node) || isAssetPathBinCall(node)))
     ) {
       findings.push({
         path,

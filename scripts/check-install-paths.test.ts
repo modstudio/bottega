@@ -80,10 +80,41 @@ test('ignores test files', () => {
   ).toEqual([])
 })
 
-test('refuses checkout-only installer remedies and running-root binary joins', () => {
+test('refuses every inventoried checkout-only installer remedy and root binary join', () => {
   expect(
     distributionUnsafeInstallPathFindings(
-      "const remedy = 'run ops/install.sh'\nconst executable = join(runningRoot, 'bin', PLATFORM_SLUG)\n",
+      "const ops = 'run ops/install.sh'\nconst hub = 'run hub/bin/install-launchd.sh'\nconst base = runningRoot\nconst executable = join(base, 'bin', PLATFORM_SLUG)\n",
+      'orchestrator/src/example.ts',
+    ),
+  ).toEqual([
+    { path: 'orchestrator/src/example.ts', line: 1 },
+    { path: 'orchestrator/src/example.ts', line: 2 },
+    { path: 'orchestrator/src/example.ts', line: 4 },
+  ])
+})
+
+test('allows the canonical owner inventory and running-copy executable resolver', () => {
+  expect(
+    distributionUnsafeInstallPathFindings(
+      "export const LAUNCHD_TEMPLATE_OWNERS = [{ command: 'ops/install.sh' }, { command: 'hub/bin/install-launchd.sh' }]\n",
+      'orchestrator/src/setup/launchd-owners.ts',
+    ),
+  ).toEqual([])
+})
+
+test('a matching inventory name in another file does not exempt checkout-only commands', () => {
+  expect(
+    distributionUnsafeInstallPathFindings(
+      "const LAUNCHD_TEMPLATE_OWNERS = [{ command: 'hub/bin/install-launchd.sh' }]\n",
+      'orchestrator/src/example.ts',
+    ),
+  ).toEqual([{ path: 'orchestrator/src/example.ts', line: 1 }])
+})
+
+test('refuses platform binary templates after head and middle spans', () => {
+  expect(
+    distributionUnsafeInstallPathFindings(
+      'const direct = `${root}/bin/${PLATFORM_SLUG}`\nconst middle = `${prefix}/${root}/bin/${PLATFORM_SLUG}`\n',
       'orchestrator/src/example.ts',
     ),
   ).toEqual([
@@ -92,11 +123,17 @@ test('refuses checkout-only installer remedies and running-root binary joins', (
   ])
 })
 
-test('allows the canonical owner inventory and running-copy executable resolver', () => {
+test('refuses assetPath platform binary resolution outside the canonical self-spawn resolver', () => {
   expect(
     distributionUnsafeInstallPathFindings(
-      "const LAUNCHD_TEMPLATE_OWNERS = [{ command: 'ops/install.sh' }]\nconst argv = bottegaEntryArgv(PLATFORM_SLUG)\n",
+      "const executable = assetPath('bin', PLATFORM_SLUG)\n",
       'orchestrator/src/example.ts',
+    ),
+  ).toEqual([{ path: 'orchestrator/src/example.ts', line: 1 }])
+  expect(
+    distributionUnsafeInstallPathFindings(
+      "const executable = assetPath('bin', PLATFORM_SLUG)\n",
+      'shared/self-spawn.ts',
     ),
   ).toEqual([])
 })

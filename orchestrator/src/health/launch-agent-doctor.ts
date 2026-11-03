@@ -1,6 +1,7 @@
 // concern: doctor
 /** Reports installer-owned launch agents without changing their launchd state. */
 
+import type { InstallationKind } from '../../../shared/install-root.ts'
 import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
@@ -16,8 +17,6 @@ export type LaunchAgentLoadObservation =
   | { kind: 'available'; loadedLabels: ReadonlySet<string> }
   | { kind: 'unavailable'; reason: 'launchctl missing' | 'gui domain unreachable' }
 
-export type LaunchAgentDoctorInstallationKind = 'checkout' | 'distribution'
-
 export type LaunchAgentDoctorDecision = {
   skipped: Array<{ label: string; reason: string }>
   findings: Array<{ label: string; command: string }>
@@ -28,7 +27,7 @@ export type LaunchAgentDoctorDecision = {
 /** Classify installer-owned labels from already-gathered skip and launchd facts. */
 export function decideLaunchAgentDoctor(input: {
   owners: readonly InstalledPlistOwner[]
-  installationKind: LaunchAgentDoctorInstallationKind
+  installationKind: InstallationKind
   skipReasons: Readonly<Record<string, string | null>>
   loadObservation: LaunchAgentLoadObservation
 }): LaunchAgentDoctorDecision {
@@ -91,7 +90,7 @@ function loadedLaunchAgentLabels(
 export async function launchAgentDoctorLines(
   platform: NodeJS.Platform,
   readOwners: () => Promise<InstalledPlistOwner[]> = installationPlistOwners,
-  installationKind: LaunchAgentDoctorInstallationKind = 'checkout',
+  installationKind: InstallationKind = 'checkout',
 ): Promise<string[]> {
   if (!includesLaunchAgents(platform)) return []
   let owners: InstalledPlistOwner[]

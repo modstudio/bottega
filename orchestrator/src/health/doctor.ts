@@ -3,7 +3,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { installationIdentity } from '../../../shared/install-root.ts'
+import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import {
   type MachineLevel,
   readDelegationSettings,
@@ -289,13 +289,20 @@ async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<voi
   log(await runTaskReferenceDoctorLine())
 }
 
-async function reportInstallationStatus(log: DoctorPresentation['log']): Promise<void> {
+async function reportInstallationStatus(
+  presentation: Pick<DoctorPresentation, 'log' | 'exitCode'>,
+): Promise<void> {
+  const { log, exitCode } = presentation
   await reportDatabaseStatus(log)
-  for (const line of await launchAgentDoctorLines(
-    process.platform,
-    undefined,
-    installationIdentity(import.meta.dir, {}).kind,
-  ))
+  let installationKind: InstallationKind = 'checkout'
+  try {
+    installationKind = installationIdentity(import.meta.dir, {}).kind
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    log(`installation   identity unreadable — ${message}`)
+    exitCode(1)
+  }
+  for (const line of await launchAgentDoctorLines(process.platform, undefined, installationKind))
     log(line)
 }
 
@@ -555,7 +562,7 @@ export async function doctorCommand(
   if (failingEvalSlugs.length) {
     log(`FAILING CANON EVALS: ${failingEvalSlugs.join(', ')}`)
   }
-  await reportInstallationStatus(log)
+  await reportInstallationStatus(presentation)
   const { harnessHealth } = await import('./health.ts')
   const costlyFailures = harnessHealth()
     .classes.filter((row) => row.count > 0)
