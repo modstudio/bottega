@@ -20,7 +20,7 @@ import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './bran
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { isProbeOnlyMint } from './branch-state.ts'
 import { branchesReport } from './branches.ts'
-import { observeTaskStatus } from './task-status-observation.ts'
+import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
 
@@ -127,8 +127,8 @@ export function composeBranchDisposalRefusal(input: {
   reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason']
   project: string
   branch: string
-  status: string | null
-  lastSeen: string | null
+  taskKey: string | null
+  taskStatus: TaskStatusObservation
 }): string {
   const { reason, project, branch } = input
   const prefix = `refusing branch disposal: ${reason}; `
@@ -136,11 +136,19 @@ export function composeBranchDisposalRefusal(input: {
     return `${prefix}cleared by: use git's own branch lifecycle; ${PLATFORM_SLUG} records disposal only for run-minted branches`
   if (reason === 'live-owner')
     return `${prefix}cleared by: finish or stop the owning run and remove its tree, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}`
+  if (reason === 'open-task' && input.taskStatus.verified)
+    return (
+      `${prefix}the task mirror reads ${input.taskStatus.detail} (last changed ${input.taskStatus.lastSeen ?? 'unknown'}); ` +
+      `cleared by: ${PLATFORM_SLUG} record pull, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}; ` +
+      'or close or drop the task; or repeat with --operator after the operator rules that its unique work may be disposed'
+    )
+  if (reason === 'open-task' && input.taskStatus.detail === 'unkeyed')
+    return `${prefix}the branch carries no task key; cleared by: repeat with --operator after the operator rules that its unique work may be disposed`
   if (reason === 'open-task')
     return (
-      `${prefix}the task mirror reads ${input.status ?? 'unknown'} (last seen ${input.lastSeen ?? 'unknown'}); ` +
-      `cleared by: ${PLATFORM_SLUG} record pull --only tasks, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}; ` +
-      'or close or drop the task; or repeat with --operator after the operator rules that its unique work may be disposed'
+      `${prefix}the task status could not be read (${input.taskStatus.detail}); ` +
+      `cleared by: run ${PLATFORM_SLUG} task show ${input.taskKey ?? '<KEY>'} --project ${project} to see why the read failed; ` +
+      'or repeat with --operator after the operator rules that its unique work may be disposed'
     )
   if (reason === 'superseded-target-missing')
     return `${prefix}cleared by: repeat with --note "superseded by <branch or PR>: <why>"`
@@ -199,8 +207,8 @@ function planBranchDisposal(input: {
         reason: decision.reason,
         project: projectName,
         branch,
-        status: taskStatus.raw ?? taskStatus.category,
-        lastSeen: taskStatus.lastSeen,
+        taskKey: keyGroup?.key ?? null,
+        taskStatus,
       }),
     )
   if (!row) throw new Error(`branch ${branch} disappeared while checking disposal eligibility`)
