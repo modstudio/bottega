@@ -5,6 +5,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { attachTaskFlowStage, closeTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
 import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
+import { vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import {
   abandonCursor,
@@ -147,16 +148,26 @@ test('one task flow refuses a second open stage and retains re-entry history', (
       flowRecordId: flow.flowRecordId,
       cursorRecordId: null,
     })
+    vacateRetiredWorkflowKeySlot('fixture', 'plan-task', 'default', 'DEV-1', d)
+    const replan = insertStage('plan-task', flow.flowRecordId)
+    attachTaskFlowStage(flow.flowRecordId, replan.record_id, d)
+    d.query("UPDATE workflow_cursor SET state='done' WHERE record_id=?").run(replan.record_id)
+    closeTaskFlowStage(replan.record_id, d)
     expect(d.query('SELECT state FROM task_flow WHERE record_id=?').get(flow.flowRecordId)).toEqual(
       {
         state: 'done',
       },
     )
     expect(
-      d.query('SELECT workflow_slug,state FROM workflow_cursor ORDER BY number').all(),
+      d
+        .query(
+          'SELECT workflow_slug,state,task_flow_record_id flow FROM workflow_cursor ORDER BY number',
+        )
+        .all(),
     ).toEqual([
-      { workflow_slug: 'plan-task', state: 'done' },
-      { workflow_slug: 'ship-task', state: 'done' },
+      { workflow_slug: 'plan-task', state: 'done', flow: flow.flowRecordId },
+      { workflow_slug: 'ship-task', state: 'done', flow: flow.flowRecordId },
+      { workflow_slug: 'plan-task', state: 'done', flow: flow.flowRecordId },
     ])
   } finally {
     d.close()
