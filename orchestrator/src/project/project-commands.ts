@@ -19,6 +19,7 @@ import { migrateCreate } from '../worktree/worktree-template.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
+import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import {
   mergeProjectSettings,
@@ -730,6 +731,18 @@ export async function projectCommand(
 
   if (sub === 'set') {
     await setProjectCommand(argv, flags, presentation)
+    return
+  }
+
+  if (sub === 'relink') {
+    const name = argv[2]
+    if (!name) throw new Error(`${PLATFORM_SLUG} project relink <name>`)
+    const result = await relinkProjectByName(name)
+    if (result.status === 'no-namesake') {
+      presentation.log(`${name}: no hosted project with this name; identity unchanged`)
+    } else {
+      presentation.log(formatProjectRelink(result))
+    }
     return
   }
 

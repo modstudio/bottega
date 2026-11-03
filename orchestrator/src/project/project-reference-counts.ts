@@ -15,6 +15,7 @@ export const PROJECT_REFERENCES = [
   ['review', 'review', 'project_record_id'],
   ['board_claim', 'board_claim', 'project_record_id'],
   ['board_message', 'board_message', 'author_project_record_id'],
+  ['branch_disposal', 'branch disposal', 'project_record_id'],
   ['branch_landing_record', 'branch_landing_record', 'project_record_id'],
   ['presence', 'presence', 'project_record_id'],
   ['worker_note_request', 'worker_note_request', 'project_record_id'],
@@ -28,6 +29,7 @@ export const PROJECT_REFERENCES = [
   ['project_lens_profile', 'project_lens_profile', 'project_record_id'],
   ['release_ledger', 'release_ledger', 'project_record_id'],
   ['subject', 'subject', 'project_record_id'],
+  ['task_flow', 'task flow', 'project_record_id'],
 ] as const
 
 type ProjectReferenceKey = (typeof PROJECT_REFERENCES)[number][0]
