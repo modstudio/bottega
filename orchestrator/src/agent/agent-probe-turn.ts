@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
+import { recordRunWarning } from '../events.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
@@ -173,6 +174,9 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
           })
         : null,
       env: environment,
+      // A best-effort rollout observation warning must reach the probe's own
+      // run row, the way a real run's warning does through run-live's warnForRun.
+      onWarning: (message: string) => recordRunWarning(recordId, message),
     })
     const draining = drainTransportEvents(handle.events())
     try {

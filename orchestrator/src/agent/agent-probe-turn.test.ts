@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
+import { readEventLog, runEventsPath } from '../events.ts'
 import type { AgentTransport, TransportHandle, TransportResult } from '../transport/transport.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
 import { probeEnvironment, runProbeTurn } from './agent-probe-turn.ts'
@@ -160,6 +161,34 @@ test.each(['ok', 'failed'] as const)(
     })
   },
 )
+
+test('a probe warning is recorded against the probe run row', async () => {
+  const base = probeTransport('ok')
+  const capturing: AgentTransport = {
+    ...base,
+    start: async (opts) => {
+      opts.onWarning?.('codex rollout slice dropped')
+      return base.start(opts)
+    },
+  }
+  await runProbeTurn({
+    name: 'grok',
+    scratch: dir,
+    agent: BUILTIN_AGENTS.grok!,
+    transport: capturing,
+    id: 'warning-sink',
+    prompt: 'probe',
+  })
+
+  const row = db()
+    .query(`SELECT record_id FROM run WHERE job=?`)
+    .get('agent-probe-warning-sink') as { record_id: string }
+  expect(
+    readEventLog(runEventsPath(row.record_id)).some(
+      (event) => event.type === 'warning' && event.text.includes('codex rollout slice dropped'),
+    ),
+  ).toBe(true)
+})
 
 test('a refused codex probe environment records a failed turn, not a running row', async () => {
   const operatorHome = join(dir, 'operator-home-refused')

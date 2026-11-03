@@ -63,6 +63,7 @@ export const agentProbeModules = [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     '../database/db.ts',
+    '../events.ts',
     '../mcp/mcp-probe.ts',
     '../project/projects.ts',
     '../run/run-mcp-launch-scope.ts',
