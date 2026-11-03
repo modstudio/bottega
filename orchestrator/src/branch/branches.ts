@@ -53,6 +53,8 @@ import {
 } from './other-branch-state.ts'
 import { taskBranchPatchEquivalent, taskBranchPullRequestCheck } from './task-branch.ts'
 
+export const UNKEYED_BRANCH_GROUP = 'unkeyed'
+
 type RunRow = BranchReportRun & {
   minted_branch: string | null
 }
@@ -308,7 +310,7 @@ function branchReportFor(
   const protectedRuns = new Map<string, RunRow[]>()
   for (const run of runs) {
     if (!run.minted_branch || !branches.has(run.minted_branch)) continue
-    const key = run.launch_key ?? 'unkeyed'
+    const key = run.launch_key ?? UNKEYED_BRANCH_GROUP
     if (!branchMatchesFilter(run.minted_branch, key, options)) continue
     if (
       decideProtectedBranch({
@@ -490,7 +492,7 @@ function otherBranchReportRow(input: OtherBranchReportInput): OtherBranchReportR
       project,
       branch,
       tip: detail.tip,
-      launchKey: taskKeyToken(branch, project.settings.keyPrefixes ?? []) ?? 'unkeyed',
+      launchKey: taskKeyToken(branch, project.settings.keyPrefixes ?? []) ?? UNKEYED_BRANCH_GROUP,
       headMatch: 'exact-head-contains-tip',
     })
   }

@@ -19,7 +19,7 @@ import {
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { isProbeOnlyMint } from './branch-state.ts'
-import { branchesReport } from './branches.ts'
+import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
 import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
@@ -182,13 +182,14 @@ function planBranchDisposal(input: {
   const keyGroup = projectReport.keys.find((group) =>
     group.branches.some((row) => row.branch === branch),
   )
+  const taskKey = keyGroup?.key === UNKEYED_BRANCH_GROUP ? null : (keyGroup?.key ?? null)
   const row = keyGroup?.branches.find((candidate) => candidate.branch === branch)
   const mintingRuns = db()
     .query('SELECT probe FROM run WHERE project_record_id=? AND minted_branch=?')
     .all(project.recordId, branch) as { probe: number }[]
   const runMinted = mintingRuns.length > 0
   const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
-  const taskStatus = observeTaskStatus(keyGroup?.key ?? null, projectName)
+  const taskStatus = observeTaskStatus(taskKey, projectName)
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,
@@ -207,7 +208,7 @@ function planBranchDisposal(input: {
         reason: decision.reason,
         project: projectName,
         branch,
-        taskKey: keyGroup?.key ?? null,
+        taskKey,
         taskStatus,
       }),
     )
@@ -227,7 +228,7 @@ function planBranchDisposal(input: {
     archiveExpiresAt,
     actor,
     project,
-    taskKey: keyGroup?.key ?? null,
+    taskKey,
     reason: input.reason,
     note: input.note.trim(),
     disposedAt,
