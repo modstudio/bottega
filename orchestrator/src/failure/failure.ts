@@ -185,7 +185,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // account failure.
   [
     'billing',
-    /\b(?:http(?: status)?\s+402|status(?: code)?\s*[:=]?\s*402|402\s+payment required|code["']?\s*:\s*402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached)|account with your provider to add more credits|requires more credits, or fewer max_tokens|can only afford \d+)\b/i,
+    /\b(?:http(?: status)?\s+402|status(?: code)?\s*[:=]?\s*402|402\s+payment required|code["']?\s*:\s*402|credit_balance_exhausted|insufficient_quota|(?:organization|project)_(?:spend|usage)_limit_exceeded|out of credit|insufficient (?:credit|credits|balance)|balance (?:exhausted|depleted)|(?:spend|billing) limit (?:exceeded|reached)|account with your provider to add more credits|requires more credits, or fewer max_tokens|You requested up to \d+ tokens, but can only afford \d+)\b/i,
   ],
   // OpenRouter's "Provider returned error" is the upstream provider's failure,
   // not this account's plan. It is not evidence, fails over, and cools the

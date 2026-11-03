@@ -123,7 +123,13 @@ describe('billing classification', () => {
       ),
     ).toBe('billing')
     expect(classify('This request requires more credits, or fewer max_tokens.')).toBe('billing')
-    expect(classify('You can only afford 48389.')).toBe('billing')
+    expect(classify('You requested up to 131072 tokens, but can only afford 48389.')).toBe(
+      'billing',
+    )
+    expect(classify('We can only afford 3 more review rounds before the deadline.')).not.toBe(
+      'billing',
+    )
+    expect(classify('You can only afford 48389.')).not.toBe('billing')
     expect(classify('The reviewer requires more credits for the film.')).not.toBe('billing')
     expect(classify('She can only afford two tickets.')).not.toBe('billing')
   })
