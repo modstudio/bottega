@@ -258,6 +258,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/doc/canon-import.ts',
       `${source}canon-import-policy.ts`,
       'orchestrator/src/project/projects.ts',
+      'orchestrator/src/run/run-process.ts',
       'orchestrator/src/settings/settings-machine-write-authority.ts',
       `${source}canon-lint.ts`,
       `${source}canon-write-gate.ts`,

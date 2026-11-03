@@ -130,6 +130,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/install-root.ts',
     '../../../shared/state-directory.ts',
     'bun:sqlite',
+    'node:fs',
     'node:os',
     'node:path',
     '../database/db.ts',

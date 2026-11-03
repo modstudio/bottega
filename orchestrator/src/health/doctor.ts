@@ -294,7 +294,7 @@ async function reportInstallationStatus(
 ): Promise<void> {
   const { log, exitCode } = presentation
   await reportDatabaseStatus(log)
-  let installationKind: InstallationKind = 'checkout'
+  let installationKind: InstallationKind | null = null
   try {
     installationKind = installationIdentity(import.meta.dir, {}).kind
   } catch (error) {

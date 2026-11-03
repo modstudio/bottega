@@ -16,10 +16,14 @@ describe('launch agent doctor decision', () => {
   test('reads and reports no launch-agent facts on Linux', async () => {
     let reads = 0
     expect(
-      await launchAgentDoctorLines('linux', async () => {
-        reads += 1
-        return owners
-      }),
+      await launchAgentDoctorLines(
+        'linux',
+        async () => {
+          reads += 1
+          return owners
+        },
+        'checkout',
+      ),
     ).toEqual([])
     expect(reads).toBe(0)
   })
@@ -45,6 +49,22 @@ describe('launch agent doctor decision', () => {
       decideLaunchAgentDoctor({
         owners,
         installationKind: 'distribution',
+        skipReasons,
+        loadObservation: { kind: 'available', loadedLabels: new Set(['com.user.loaded']) },
+      }),
+    ).toEqual({
+      skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
+      findings: [],
+      informational: [{ label: 'com.user.unloaded', reason: 'not installed by a release install' }],
+      launchctlUnavailable: null,
+    })
+  })
+
+  test('an unreadable installation identity reports checkout-only installers as informational', () => {
+    expect(
+      decideLaunchAgentDoctor({
+        owners,
+        installationKind: null,
         skipReasons,
         loadObservation: { kind: 'available', loadedLabels: new Set(['com.user.loaded']) },
       }),

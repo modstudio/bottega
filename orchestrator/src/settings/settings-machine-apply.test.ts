@@ -353,16 +353,14 @@ describe('settings apply', () => {
           local: db(),
           workerProcess: () => false,
           runningFromRegisteredMainCheckout: false,
-          registeredMainCheckout: '/projects/main',
-          binaryRepositoryRoot: '/projects/main',
+          registeredMainCheckout: root,
+          binaryRepositoryRoot: root,
           pull: async () => {
             pulls++
           },
         },
       ),
-    ).rejects.toThrow(
-      `cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``,
-    )
+    ).rejects.toThrow(`cleared by: run \`${root}/bin/${PLATFORM_SLUG} machine settings apply\``)
     expect(pulls).toBe(0)
   })
 

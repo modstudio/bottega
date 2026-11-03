@@ -1,6 +1,7 @@
 // concern: settings-machine-write-authority
 /** Guards writes to real harness homes with the registered installation identity. */
 import type { Database } from 'bun:sqlite'
+import { existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -81,13 +82,18 @@ export function assertMachineHomeWriteAuthority(input: {
   const runningRoot = input.runningInstallationRoot
   const remedyRoot = input.registeredMainCheckout ?? input.binaryRepositoryRoot ?? runningRoot
   const remedyExecutable = join(remedyRoot, 'bin', PLATFORM_SLUG)
-  const registration = input.registeredMainCheckout
-    ? ''
-    : `cleared by: run \`${remedyExecutable} project add ${remedyRoot}\`, then `
+  let remedy: string
+  if (input.registeredMainCheckout) {
+    remedy = `cleared by: run \`${remedyExecutable} ${input.command}\``
+  } else {
+    remedy =
+      `cleared by: run \`${remedyExecutable} project add ${remedyRoot}\`, then ` +
+      `\`${remedyExecutable} ${input.command}\``
+  }
   throw new Error(
     `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from this machine's installed copy\n` +
       "invariant: A copy other than this machine's installed copy writes harness settings only under the OS temporary directory.\n" +
-      `${registration || 'cleared by: run '}\`${remedyExecutable} ${input.command}\``,
+      remedy,
   )
 }
 
@@ -104,10 +110,12 @@ export function assertCurrentMachineHomeWriteAuthority(
   } = {},
 ): void {
   const runningRoot = overrides.runningInstallationRoot ?? assetPath()
-  const mainCheckout =
+  const registeredCheckout =
     overrides.registeredMainCheckout !== undefined
       ? overrides.registeredMainCheckout
       : registeredMainCheckout(database)
+  const mainCheckout =
+    registeredCheckout && existsSync(registeredCheckout) ? registeredCheckout : null
   assertMachineHomeWriteAuthority({
     command,
     targetHomes,

@@ -166,7 +166,7 @@ function isAssetPathBinCall(node: ts.CallExpression): boolean {
   )
 }
 
-function isInstallAwareResolverFinding(node: ts.Node, path: string): boolean {
+function isRemedyFindingExemption(node: ts.Node, path: string): boolean {
   if (path === 'shared/self-spawn.ts') return true
   if (path !== 'shared/install-root.ts') return false
   for (let current: ts.Node | undefined = node; current; current = current.parent) {
@@ -197,7 +197,7 @@ export function distributionUnsafeInstallPathFindings(
   const source = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true)
   const findings: InstallPathFinding[] = []
   const visit = (node: ts.Node): void => {
-    if (isInstallAwareResolverFinding(node, path)) return
+    if (isRemedyFindingExemption(node, path)) return
     const literalText =
       ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
         ? node.text
@@ -269,18 +269,21 @@ function productionSources(directory: string): string[] {
   return paths
 }
 
-function checkInstallPaths(): InstallPathFinding[] {
+function findingsInProductionSources(
+  finder: (sourceText: string, repositoryPath: string) => InstallPathFinding[],
+): InstallPathFinding[] {
   return productionSources(root).flatMap((path) => {
     const repositoryPath = relative(root, path).split('\\').join('/')
-    return installPathFindings(readFileSync(path, 'utf8'), repositoryPath)
+    return finder(readFileSync(path, 'utf8'), repositoryPath)
   })
 }
 
+function checkInstallPaths(): InstallPathFinding[] {
+  return findingsInProductionSources(installPathFindings)
+}
+
 function checkDistributionRemedies(): InstallPathFinding[] {
-  return productionSources(root).flatMap((path) => {
-    const repositoryPath = relative(root, path).split('\\').join('/')
-    return distributionUnsafeInstallPathFindings(readFileSync(path, 'utf8'), repositoryPath)
-  })
+  return findingsInProductionSources(distributionUnsafeInstallPathFindings)
 }
 
 if (import.meta.main) {

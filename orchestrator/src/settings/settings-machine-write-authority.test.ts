@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  assertCurrentMachineHomeWriteAuthority,
   assertMachineHomeWriteAuthority,
   decideMachineHomeWriteAuthority,
   machineHomesUnderTemporaryDirectory,
@@ -32,6 +33,26 @@ test('write authority allows a distribution when no registered main checkout exi
       registeredMainCheckoutExists: false,
     }),
   ).toEqual({ action: 'allow' })
+})
+
+test('write authority ignores a registered main checkout that no longer exists', () => {
+  expect(() =>
+    assertCurrentMachineHomeWriteAuthority(
+      'machine settings apply',
+      ['/operator/.claude'],
+      undefined,
+      {
+        runningCopyIsDistribution: true,
+        registeredMainCheckout: join(
+          tmpdir(),
+          `${PLATFORM_SLUG}-missing-registered-main`,
+          process.pid.toString(),
+        ),
+        runningInstallationRoot: '/opt/distribution',
+        binaryRepositoryRoot: null,
+      },
+    ),
+  ).not.toThrow()
 })
 
 test('write authority refuses a distribution when a registered main checkout exists', () => {

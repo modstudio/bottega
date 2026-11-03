@@ -27,7 +27,7 @@ export type LaunchAgentDoctorDecision = {
 /** Classify installer-owned labels from already-gathered skip and launchd facts. */
 export function decideLaunchAgentDoctor(input: {
   owners: readonly InstalledPlistOwner[]
-  installationKind: InstallationKind
+  installationKind: InstallationKind | null
   skipReasons: Readonly<Record<string, string | null>>
   loadObservation: LaunchAgentLoadObservation
 }): LaunchAgentDoctorDecision {
@@ -50,7 +50,7 @@ export function decideLaunchAgentDoctor(input: {
   const informational = unloaded
     .filter(
       ({ command }) =>
-        input.installationKind === 'distribution' && isCheckoutOnlyLaunchAgentInstaller(command),
+        input.installationKind !== 'checkout' && isCheckoutOnlyLaunchAgentInstaller(command),
     )
     .map(({ label }) => ({ label, reason: 'not installed by a release install' }) as const)
   const informationalLabels = new Set(informational.map(({ label }) => label))
@@ -90,7 +90,7 @@ function loadedLaunchAgentLabels(
 export async function launchAgentDoctorLines(
   platform: NodeJS.Platform,
   readOwners: () => Promise<InstalledPlistOwner[]> = installationPlistOwners,
-  installationKind: InstallationKind = 'checkout',
+  installationKind: InstallationKind | null,
 ): Promise<string[]> {
   if (!includesLaunchAgents(platform)) return []
   let owners: InstalledPlistOwner[]
