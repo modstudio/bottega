@@ -1,7 +1,20 @@
 import { expect, test } from 'bun:test'
+import { PassThrough } from 'node:stream'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { httpAddress, register } from './record-auth.ts'
+import { httpAddress, promptPassword, register } from './record-auth.ts'
+
+test('the password prompt refuses when a terminal reaches end of file', async () => {
+  const input = new PassThrough() as PassThrough & { isTTY: boolean }
+  input.isTTY = true
+  const output = new PassThrough()
+  const password = promptPassword(input, output, undefined)
+  input.end()
+
+  await expect(password).rejects.toThrow(
+    `record password is required: stdin is not a terminal; set ${PLATFORM_SLUG.toUpperCase()}_RECORD_PASSWORD to supply it non-interactively`,
+  )
+})
 
 test('record use accepts only an http(s) address without credentials, query, or fragment', () => {
   expect(httpAddress('https://record.example.test/api')).toBe('https://record.example.test/api')
