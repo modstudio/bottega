@@ -3,7 +3,11 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { SPEC_UNSETTLED_QUESTION } from './spec-unsettled-question.ts'
-import { specUnsettledLabel, typedQuestionReport } from './typed-question-report.ts'
+import {
+  findingDuplicateLabel,
+  specUnsettledLabel,
+  typedQuestionReport,
+} from './typed-question-report.ts'
 
 function run(input: { spec: string; status: string; job?: string; parent?: string }): string {
   const database = db()
@@ -67,6 +71,58 @@ test('ignores non-implement roots and non-root implement runs with the same spec
   const root = run({ spec: 'different', status: 'ok' })
   run({ spec: 'ignored', status: 'ok', parent: root })
   expect(specUnsettledLabel(db(), 'ignored')).toBeNull()
+})
+
+function duplicateFixture(dispositions: [string | null, string | null]): [string, string] {
+  const database = db()
+  const reviewId = newRecordId()
+  database
+    .query(
+      `INSERT INTO review (record_id,number,recorded_at) VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?)`,
+    )
+    .run(reviewId, new Date().toISOString())
+  const ids: string[] = []
+  dispositions.forEach((disposition, index) => {
+    const runId = run({ spec: `duplicate-${index}`, status: 'ok', job: 'review-lens' })
+    const lensId = newRecordId()
+    database
+      .query(
+        `INSERT INTO review_lens
+         (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]')`,
+      )
+      .run(lensId, reviewId, runId)
+    const findingId = newRecordId()
+    database
+      .query(
+        `INSERT INTO review_finding
+         (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,disposition)
+         VALUES (?,?,?,?,?,'file.ts:1','evidence','fix',?)`,
+      )
+      .run(findingId, reviewId, lensId, index + 1, 'high', disposition)
+    ids.push(findingId)
+  })
+  return ids as [string, string]
+}
+
+test('labels duplicate links positive in either direction', () => {
+  for (const direction of [0, 1] as const) {
+    const ids = duplicateFixture(['accepted', 'rejected'])
+    db()
+      .query('UPDATE review_finding SET duplicate_of_finding_record_id=? WHERE record_id=?')
+      .run(ids[1 - direction]!, ids[direction]!)
+    expect(findingDuplicateLabel(db(), ids.join(':'))).toBeTrue()
+  }
+})
+
+test('labels two triaged unlinked findings negative', () => {
+  const ids = duplicateFixture(['accepted', 'rejected'])
+  expect(findingDuplicateLabel(db(), ids.join(':'))).toBeFalse()
+})
+
+test('leaves unlinked findings pending when either is untriaged', () => {
+  const ids = duplicateFixture(['accepted', null])
+  expect(findingDuplicateLabel(db(), ids.join(':'))).toBeNull()
 })
 
 function answer(input: { question: string; version: number; subject: string; noul: number }): void {

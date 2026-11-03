@@ -9,6 +9,7 @@ import { focusedTestObservations } from '../run/run-test-outcome.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
+import { findingDuplicateSuggestions } from './finding-duplicate-suggestions.ts'
 
 type Presentation = {
   log(...values: unknown[]): void
@@ -27,12 +28,25 @@ export function peekCommand(
   presentation.log(options.json ? JSON.stringify(summary) : formatPeek(summary))
 }
 
-export function resultCommand(
+/** Runs after the result is printed, so a slow or unreachable Jev never delays it. */
+async function presentDuplicateSuggestions(
+  database: Database,
+  runRecordId: string,
+  presentation: Presentation,
+): Promise<void> {
+  const suggestions = await findingDuplicateSuggestions(database, runRecordId)
+  for (const line of suggestions.lines) presentation.log(line)
+  if (suggestions.skipped) {
+    presentation.log(`${suggestions.skipped} duplicate-finding pairs skipped at the invocation cap`)
+  }
+}
+
+export async function resultCommand(
   database: Database,
   argv: string[],
   scoreSuffix: (jobName: string) => string,
   presentation: Presentation,
-): void {
+): Promise<void> {
   collectResult(
     database,
     argv,
@@ -44,6 +58,7 @@ export function resultCommand(
     focusedTestObservations,
   )
   const chain = resolveFailover(database, resolveRunIdentifier(database, argv[1] ?? ''))
+  await presentDuplicateSuggestions(database, chain.finalId, presentation)
   const row = database
     .query(
       'SELECT job, status, latency_ms, probe, output_path, branch, minted_branch FROM run WHERE record_id=?',

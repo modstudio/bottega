@@ -2,9 +2,10 @@
 /** Reads typed-question evidence and joins question-specific outcomes. */
 
 import type { Database } from 'bun:sqlite'
-import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
+import { noulProbability } from '../../../shared/typed-question/client.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
+import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
 import { SPEC_UNSETTLED_QUESTION } from './spec-unsettled-question.ts'
 import {
   type TypedQuestionMetricRow,
@@ -30,7 +31,7 @@ export type TypedQuestionReportBlock = Omit<TypedQuestionMetrics, 'labeled' | 'p
   pending: number | null
 }
 
-const declarations = [SPEC_UNSETTLED_QUESTION] as const
+const declarations = [SPEC_UNSETTLED_QUESTION, FINDING_DUPLICATE_QUESTION] as const
 
 /** The threshold of the current declaration for this exact version, or null. */
 function declaredThreshold(questionId: string, questionVersion: number): number | null {
@@ -63,20 +64,41 @@ export function specUnsettledLabel(database: Database, subjectRef: string): bool
   return null
 }
 
+export function findingDuplicateLabel(database: Database, subjectRef: string): boolean | null {
+  const [firstId, secondId, ...rest] = subjectRef.split(':')
+  if (!firstId || !secondId || rest.length) return null
+  const findings = database
+    .query(
+      `SELECT record_id,duplicate_of_finding_record_id,disposition
+         FROM review_finding WHERE record_id IN (?,?)`,
+    )
+    .all(firstId, secondId) as {
+    record_id: string
+    duplicate_of_finding_record_id: string | null
+    disposition: string | null
+  }[]
+  if (findings.length !== 2) return null
+  if (
+    findings.some(
+      (finding) =>
+        finding.duplicate_of_finding_record_id ===
+        (finding.record_id === firstId ? secondId : firstId),
+    )
+  )
+    return true
+  return findings.every((finding) => finding.disposition !== null) ? false : null
+}
+
 const labelers: Readonly<
   Record<string, (database: Database, subjectRef: string) => boolean | null>
-> = { [SPEC_UNSETTLED_QUESTION.id]: specUnsettledLabel }
+> = {
+  [SPEC_UNSETTLED_QUESTION.id]: specUnsettledLabel,
+  [FINDING_DUPLICATE_QUESTION.id]: findingDuplicateLabel,
+}
 
-/** A noul answer's probability; a choice answer or an unreadable row carries none. */
+/** A noul answer's probability; an error row carries none. */
 function probability(answerJson: string | null): number | null {
-  if (answerJson === null) return null
-  let answer: TypedQuestionAnswer
-  try {
-    answer = JSON.parse(answerJson) as TypedQuestionAnswer
-  } catch {
-    return null
-  }
-  return 'noul' in answer && typeof answer.noul === 'number' ? answer.noul : null
+  return answerJson === null ? null : noulProbability(answerJson)
 }
 
 export function typedQuestionReport(

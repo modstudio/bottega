@@ -20,12 +20,16 @@ export const typedQuestionModules = [
   module('orchestrator/src/typed-question/spec-unsettled-question.ts', [
     '../../../shared/typed-question/registry.ts',
   ]),
+  module('orchestrator/src/typed-question/finding-duplicate-question.ts', [
+    '../../../shared/typed-question/registry.ts',
+  ]),
   module('orchestrator/src/typed-question/typed-question-metrics.ts', []),
   module('orchestrator/src/typed-question/typed-question-report.ts', [
     'bun:sqlite',
     '../../../shared/typed-question/client.ts',
     '../database/db.ts',
     '../run/run-status.ts',
+    './finding-duplicate-question.ts',
     './spec-unsettled-question.ts',
     './typed-question-metrics.ts',
   ]),
@@ -38,5 +42,12 @@ export const typedQuestionModules = [
     '../../../shared/typed-question/client.ts',
     '../../../shared/typed-question/registry.ts',
     './typed-question-answer-store.ts',
+  ]),
+  module('orchestrator/src/collect/finding-duplicate-suggestions.ts', [
+    'bun:sqlite',
+    '../../../shared/typed-question/client.ts',
+    '../jobs/jobs.ts',
+    '../typed-question/finding-duplicate-question.ts',
+    '../typed-question/typed-question-service.ts',
   ]),
 ]

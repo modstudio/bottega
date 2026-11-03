@@ -9,14 +9,14 @@ import { resultCommand } from './collection-commands.ts'
 
 const trackResidue = trackedTestResidue()
 
-test('result renders a lifecycle row without a dispatch-job lookup or thin-output warning', () => {
+test('result renders a lifecycle row without a dispatch-job lookup or thin-output warning', async () => {
   const id = addRun({ agent: '(architect)', job: 'hook-tree', status: 'ok', latency: 360_000 })
   const output = trackResidue(join(dir, `hook-tree-result-${id}.txt`))
   writeFileSync(output, 'hook lifecycle complete')
   db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
   const lines: string[] = []
 
-  resultCommand(db(), ['result', String(id)], () => '', {
+  await resultCommand(db(), ['result', String(id)], () => '', {
     log: (...values) => lines.push(values.join(' ')),
     error: (...values) => lines.push(values.join(' ')),
     exit: (code) => {
@@ -28,33 +28,36 @@ test('result renders a lifecycle row without a dispatch-job lookup or thin-outpu
   expect(lines.join('\n')).not.toContain('thin:')
 })
 
-test.each(['vendor-probe', 'not-a-job'])('result renders recorded undeclared job %s', (job) => {
-  const id = addRun({ agent: 'codex', job, status: 'ok', latency: 360_000 })
-  const output = trackResidue(join(dir, `${job}-result-${id}.txt`))
-  writeFileSync(output, `${job} complete`)
-  db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
-  const lines: string[] = []
+test.each(['vendor-probe', 'not-a-job'])(
+  'result renders recorded undeclared job %s',
+  async (job) => {
+    const id = addRun({ agent: 'codex', job, status: 'ok', latency: 360_000 })
+    const output = trackResidue(join(dir, `${job}-result-${id}.txt`))
+    writeFileSync(output, `${job} complete`)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
+    const lines: string[] = []
 
-  resultCommand(db(), ['result', String(id)], () => '', {
-    log: (...values) => lines.push(values.join(' ')),
-    error: (...values) => lines.push(values.join(' ')),
-    exit: (code) => {
-      throw new Error(`unexpected exit ${code}`)
-    },
-  })
+    await resultCommand(db(), ['result', String(id)], () => '', {
+      log: (...values) => lines.push(values.join(' ')),
+      error: (...values) => lines.push(values.join(' ')),
+      exit: (code) => {
+        throw new Error(`unexpected exit ${code}`)
+      },
+    })
 
-  expect(lines.join('\n')).toContain(`${job} complete`)
-  expect(lines.join('\n')).not.toContain('thin:')
-})
+    expect(lines.join('\n')).toContain(`${job} complete`)
+    expect(lines.join('\n')).not.toContain('thin:')
+  },
+)
 
-test('result tells the caller how to open a released writing tree', () => {
+test('result tells the caller how to open a released writing tree', async () => {
   const id = addRun({ agent: 'codex', job: 'implement' })
   db()
     .query('UPDATE run SET minted_branch=?, worktree=NULL WHERE record_id=?')
     .run('DEV-1084-work', id)
   const lines: string[] = []
 
-  resultCommand(db(), ['result', String(id)], () => '', {
+  await resultCommand(db(), ['result', String(id)], () => '', {
     log: (...values) => lines.push(values.join(' ')),
     error: (...values) => lines.push(values.join(' ')),
     exit: (code) => {
@@ -67,14 +70,14 @@ test('result tells the caller how to open a released writing tree', () => {
   )
 })
 
-test('result tells a retired recorded writing job how to open its released tree', () => {
+test('result tells a retired recorded writing job how to open its released tree', async () => {
   const id = addRun({ agent: 'codex', job: 'retired-writer' })
   db()
     .query('UPDATE run SET minted_branch=?, worktree=NULL WHERE record_id=?')
     .run('DEV-1400-retired', id)
   const lines: string[] = []
 
-  resultCommand(db(), ['result', String(id)], () => '', {
+  await resultCommand(db(), ['result', String(id)], () => '', {
     log: (...values) => lines.push(values.join(' ')),
     error: (...values) => lines.push(values.join(' ')),
     exit: (code) => {
@@ -87,7 +90,7 @@ test('result tells a retired recorded writing job how to open its released tree'
   )
 })
 
-test('result explains why a released writing branch remains and how to prune it', () => {
+test('result explains why a released writing branch remains and how to prune it', async () => {
   const id = addRun({ agent: 'codex', job: 'implement', repo: 'fixture-project' })
   db()
     .query(
@@ -96,7 +99,7 @@ test('result explains why a released writing branch remains and how to prune it'
     .run('DEV-1199-orch-1', 'DEV-1199-orch-1', 'DEV-1199', id)
   const lines: string[] = []
 
-  resultCommand(db(), ['result', String(id)], () => '', {
+  await resultCommand(db(), ['result', String(id)], () => '', {
     log: (...values) => lines.push(values.join(' ')),
     error: (...values) => lines.push(values.join(' ')),
     exit: (code) => {
