@@ -251,10 +251,15 @@ async function markCreatedSpaceOwner(
   created: { id: string },
   owner: { id: string },
 ): Promise<void> {
-  await client`
+  const memberships = await client`
     UPDATE membership SET role='owner', permission='write', config_access=true
     WHERE space_id=${created.id}::uuid AND user_id=${owner.id}::uuid
+    RETURNING id
   `
+  if (memberships.length !== 1)
+    throw new Error(
+      `creating owner's membership was not found for space ${created.id} and user ${owner.id}`,
+    )
 }
 
 type ResetPasswordSender = typeof sendPasswordResetEmail
@@ -341,7 +346,7 @@ export function recordAuth(
         requireEmailVerificationOnInvitation: false,
         organizationHooks: {
           afterCreateOrganization: async ({ organization: created, user: owner }) => {
-            await markCreatedSpaceOwner(client, created, owner)
+            await markCreatedSpaceOwner(authClient, created, owner)
             await builtIns.ensure({
               url,
               userId: owner.id,

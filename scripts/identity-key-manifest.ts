@@ -6,7 +6,6 @@ import type {
   KeyStore,
   ManifestColumn,
 } from './identity-inventory.ts'
-import { MACHINE_KEY_RULED_REFERENCES } from './identity-machine-key-manifest.ts'
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { RULED_REFERENCES } from './identity-ruled-reference-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
@@ -984,7 +983,7 @@ export const KEY_MANIFESTS: KeyManifests = {
   values: INTEGER_VALUES,
   displayLabels: DISPLAY_LABELS,
   references: UNDECLARED_REFERENCES,
-  ruledReferences: MACHINE_KEY_RULED_REFERENCES,
+  ruledReferences: RULED_REFERENCES,
   externalIdentifiers: EXTERNAL_IDENTIFIERS,
   uuids: UUID_COLUMNS,
   infrastructure: INFRASTRUCTURE_IDENTITIES,

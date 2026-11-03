@@ -42,7 +42,11 @@ export function registerConfigAccessSpaceCreationProof(input: {
     const userId = input.userId()
     const created = await auth.api.createOrganization({
       headers: bearerHeaders(input.token()),
-      body: { name: 'Config Access Hook', slug: `config-access-hook-${userId.slice(-8)}` },
+      body: {
+        name: 'Config Access Hook',
+        slug: `config-access-hook-${userId.slice(-8)}`,
+        keepCurrentActiveOrganization: true,
+      },
     })
     expect(
       input.succeeds(
