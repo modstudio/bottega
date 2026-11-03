@@ -14,6 +14,7 @@ import {
   createMachineKeyClaimChallenge,
   deleteConfigEntry,
   deleteConfigSecret,
+  getDataKey,
   grantSpaceConfigAccess,
   listConfigSecrets,
   listDataKeys,
@@ -589,6 +590,14 @@ export function registerHostedConfigProofs(
         wraps: [wrapFor('NNNNNNNNNNNNNNNNNNNNNN')],
       }),
     ).rejects.toThrow('without config access')
+  })
+
+  test('data-key reads require config access', async () => {
+    const memberTenant = { ...serviceTenant, userId: USER_B }
+    await expect(
+      getDataKey({ ...memberTenant, dekId: DEK_A, recipientKeyId: 'AAAAAAAAAAAAAAAAAAAAAA' }),
+    ).rejects.toThrow('does not have config access')
+    await expect(listDataKeys(memberTenant)).rejects.toThrow('does not have config access')
   })
 
   test('an unowned machine key is claimed only by proof of possession', async () => {

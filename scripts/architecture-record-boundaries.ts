@@ -91,6 +91,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       '../verdict/verdict-payload.ts',
       '../verdict/verdict-rules.ts',
       './record-config.ts',
+      './record-api-wire.ts',
       './record-cursor.ts',
       './record-auth.ts',
       './record-canon-import.ts',

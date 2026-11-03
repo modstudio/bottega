@@ -27,6 +27,7 @@ import {
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
 import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
+import { registerConfigAccessSpaceCreationProof } from '../../test/postgres-config-access-auth-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
 import { registerCustomerAuthProof } from '../../test/postgres-customer-auth-proof.ts'
 import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evidence-proof.ts'
@@ -299,6 +300,15 @@ realPostgres('RLS proof against real Postgres', () => {
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
   registerHostedConfigProofs(actorUrl!, ids.SPACE_A, ids.SPACE_B, ids.USER_A)
+  registerConfigAccessSpaceCreationProof({
+    actorUrl: () => actorUrl!,
+    token: () => tokenA,
+    otherToken: () => tokenB,
+    userId: () => authUserA,
+    otherUserId: () => authUserB,
+    cliOutput: () => cliOutput,
+    succeeds: (source) => succeeds('postgres', 'postgres', source),
+  })
   registerBoardRlsProofs({
     admin: (s) => succeeds('postgres', 'postgres', s),
     psql,
@@ -312,25 +322,6 @@ realPostgres('RLS proof against real Postgres', () => {
     session: () => [authUserA, tokenA, recordSession.setToken],
     admin: (statement) => succeeds('postgres', 'postgres', statement),
     psql,
-  })
-
-  test('CLI sign-up creates one owner membership and bearer identity is not interchangeable', async () => {
-    expect(cliOutput).toEqual(SIGN_UP_CLI_OUTPUT)
-    const facts = succeeds(
-      'postgres',
-      'postgres',
-      `SELECT u.email, count(m.id), min(m.role), min(m.permission)
-       FROM "user" u JOIN membership m ON m.user_id=u.id
-       WHERE u.id IN ('${authUserA}', '${authUserB}')
-       GROUP BY u.email ORDER BY u.email;`,
-    )
-    expect(facts.split('\n')).toEqual([
-      `${SIGN_UP_AUTH.emailA}|1|owner|write`,
-      `${SIGN_UP_AUTH.emailB}|1|owner|write`,
-    ])
-    const auth = testRecordAuth(actorUrl!)
-    expect((await auth.api.getSession({ headers: bearerHeaders(tokenA) }))?.user.id).toBe(authUserA)
-    expect((await auth.api.getSession({ headers: bearerHeaders(tokenB) }))?.user.id).toBe(authUserB)
   })
 
   registerProjectSpaceProofs({

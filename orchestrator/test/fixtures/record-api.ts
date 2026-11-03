@@ -30,6 +30,18 @@ function idleIdentityAndSpaceDeps(): { listInvitations: () => Promise<[]> } {
   return { listInvitations: async () => [] }
 }
 
+function idleConfigAuthorizationDeps() {
+  const unused = async () => {
+    throw new Error('hosted config authorization is unused in this fixture')
+  }
+  return {
+    createMachineKeyClaimChallenge: unused,
+    claimMachineKey: unused,
+    listSpaceConfigAccess: async () => [],
+    grantSpaceConfigAccess: unused,
+  }
+}
+
 function idleLensDeps() {
   const unused = async () => {
     throw new Error('hosted lens catalogue is unused in this fixture')
@@ -94,6 +106,7 @@ export function idleRecordApiDeps() {
       hubHostedUrl: 'https://app.example.test',
     },
     ...idleIdentityAndSpaceDeps(),
+    ...idleConfigAuthorizationDeps(),
     ...idleBoardDeps(),
     ...idleLensDeps(),
     ...idleWorkflowDeps(),

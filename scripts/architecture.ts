@@ -452,13 +452,11 @@ export const modules: ArchitectureModule[] = [
     './settings-summary.ts',
   ]),
   module('shared/config-client.ts', [
-    './config-claim-client.ts',
     './http-json.ts',
     './record-api-url.ts',
     './record-session.ts',
     './record-remedies.ts',
   ]),
-  module('shared/config-claim-client.ts', []),
   module('shared/record-api-url.ts', ['./config-directory.ts', './env-values.ts']),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', []),

@@ -497,6 +497,7 @@ export async function getDataKey(
   input: ConfigTenant & { dekId: string; recipientKeyId: string },
 ): Promise<DataKey | null> {
   return tenant(input, async (tx) => {
+    await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
       WHERE space_id=${input.spaceId}::uuid AND id=${input.dekId}::uuid
@@ -522,6 +523,7 @@ export async function getDataKey(
 
 export async function listDataKeys(input: ConfigTenant): Promise<DataKey[]> {
   return tenant(input, async (tx) => {
+    await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
       WHERE space_id=${input.spaceId}::uuid
@@ -834,9 +836,7 @@ export async function createMachineKeyClaimChallenge(
 export async function claimMachineKey(
   input: ConfigTenant & { keyId: string; challengeId: string; nonce: Uint8Array },
 ): Promise<void> {
-  const nonceHash = new Uint8Array(
-    await crypto.subtle.digest('SHA-256', input.nonce.buffer as ArrayBuffer),
-  )
+  const nonceHash = new Uint8Array(await crypto.subtle.digest('SHA-256', input.nonce))
   const result = await tenant(input, async (tx) => {
     const rows = await tx`
       DELETE FROM machine_key_claim_challenge

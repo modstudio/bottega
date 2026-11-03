@@ -374,7 +374,7 @@ export function recordAuth(
             fields: { organizationId: 'spaceId' },
             additionalFields: {
               permission: { type: 'string', required: true, defaultValue: 'write' },
-              configAccess: { type: 'boolean', required: true, defaultValue: false },
+              configAccess: { type: 'boolean', required: true, defaultValue: false, input: false },
             },
           },
           invitation: { modelName: 'invitation', fields: { organizationId: 'spaceId' } },
@@ -429,7 +429,7 @@ export async function recordIdentity(
     const users = await tx`SELECT personal_space_id FROM "user" WHERE id=${user.id}::uuid`
     const personalSpaceId = users[0]?.personal_space_id ? String(users[0].personal_space_id) : null
     const memberships = await tx`
-        SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission, m.config_access
+        SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
         FROM membership m JOIN space s ON s.id=m.space_id
         WHERE m.user_id=${user.id}::uuid ORDER BY s.slug
       `

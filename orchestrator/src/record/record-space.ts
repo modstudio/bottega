@@ -19,7 +19,6 @@ export type RecordMembership = {
   slug: string
   role: string
   permission: string
-  configAccess?: boolean
 }
 
 export function recordSpaceRole(value: string): RecordSpaceRole {
@@ -56,7 +55,6 @@ export function recordMembershipsFromIdentity(identity: RecordIdentity): {
         slug: String(row.slug),
         role: String(row.role),
         permission: String(row.permission),
-        configAccess: row.config_access === true,
       }))
       .sort((left, right) => left.slug.localeCompare(right.slug)),
   }

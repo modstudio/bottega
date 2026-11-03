@@ -224,6 +224,7 @@ function release(): void {
         DROP DATABASE IF EXISTS hub_project_identity_migration WITH (FORCE);
         DROP DATABASE IF EXISTS run_task_reference_migration WITH (FORCE);
         DROP DATABASE IF EXISTS run_owner_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS config_access_migration WITH (FORCE);
         DROP DATABASE IF EXISTS workflow_generation_migration WITH (FORCE);
         DROP DATABASE IF EXISTS routing_evidence_migration WITH (FORCE);
         DROP DATABASE IF EXISTS workflow_catalogue WITH (FORCE);
@@ -347,6 +348,7 @@ try {
     CREATE DATABASE hub_project_identity_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE run_task_reference_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE run_owner_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE config_access_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_author_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
@@ -373,6 +375,7 @@ try {
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hub_project_identity_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'run_task_reference_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'run_owner_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'config_access_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_author_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'public_role_migration')
@@ -405,6 +408,7 @@ try {
   const hubProjectIdentityMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hub_project_identity_migration`
   const runTaskReferenceMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/run_task_reference_migration`
   const runOwnerMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/run_owner_migration`
+  const configAccessMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/config_access_migration`
   const docRevisionMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_revision_migration`
   const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
   const docAuthorMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_author_migration`
@@ -561,6 +565,12 @@ try {
     { BOTTEGA_TEST_RUN_OWNER_MIGRATION_URL: runOwnerMigrationUrl },
   )
   if (runOwnerMigration !== 0) throw new EarlyExit(runOwnerMigration)
+
+  const configAccessMigration = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-config-access-backfill.test.ts'],
+    { BOTTEGA_TEST_CONFIG_ACCESS_MIGRATION_URL: configAccessMigrationUrl },
+  )
+  if (configAccessMigration !== 0) throw new EarlyExit(configAccessMigration)
 
   const docRevisionMigration = await run(
     [

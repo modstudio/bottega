@@ -31,6 +31,7 @@ import {
 } from './record-api-session-routes.ts'
 import type { RecordSettingsRouteDeps } from './record-api-settings.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
+import { base64urlSchema, decoded, encoded, idSchema, keyIdSchema } from './record-api-wire.ts'
 import {
   type RecordWorkflowRouteDeps,
   registerRecordWorkflowRoutes,
@@ -47,10 +48,8 @@ import type {
   ConfigWrapInput,
   DataKey,
   MachineKey,
-  MachineKeyClaimChallenge,
-  SpaceConfigAccessMember,
 } from './record-config.ts'
-import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './record-config.ts'
+import { CONFIG_SCOPES, ConfigServiceError } from './record-config.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -92,6 +91,7 @@ type Deps = RecordSubjectRouteDeps &
   RecordLensRouteDeps &
   RecordPortRouteDeps &
   RecordWorkflowRouteDeps &
+  Parameters<typeof registerRecordWriteRoutes>[1] &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
@@ -254,29 +254,14 @@ type RecordApiDeps = RecordSessionRouteDeps &
     registerMachineKey(
       input: Tenant & { keyId: string; publicKey: Uint8Array; label: string },
     ): Promise<MachineKey>
-    createMachineKeyClaimChallenge?(
-      input: Tenant & { keyId: string },
-    ): Promise<MachineKeyClaimChallenge>
-    claimMachineKey?(
-      input: Tenant & { keyId: string; challengeId: string; nonce: Uint8Array },
-    ): Promise<void>
     revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
-    listSpaceConfigAccess?(input: Tenant): Promise<SpaceConfigAccessMember[]>
-    grantSpaceConfigAccess?(input: Tenant & { email: string }): Promise<void>
   } & RecordBoardDeps
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
 const filterSchema = z.string().min(1).optional()
-const idSchema = z.string().uuid()
 const snapshotKindSchema = z.enum(SNAPSHOT_KINDS)
 const configScopeSchema = z.enum(CONFIG_SCOPES)
 const expectedVersionSchema = z.number().int().positive()
-const base64urlSchema = z
-  .string()
-  .min(1)
-  .regex(/^[A-Za-z0-9_-]+$/)
-  .refine((value) => Buffer.from(value, 'base64url').toString('base64url') === value)
-const keyIdSchema = z.string().regex(MACHINE_KEY_ID_PATTERN)
 const wrapSchema = z.object({
   recipientKeyId: keyIdSchema,
   senderKeyId: keyIdSchema,
@@ -293,8 +278,6 @@ const catalogueRoutes = [
   registerRecordWorkflowRoutes,
 ]
 
-const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
 const jsonWrap = (wrap: ConfigWrapInput) => ({
   ...wrap,
   enc: encoded(wrap.enc),

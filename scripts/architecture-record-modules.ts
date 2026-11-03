@@ -700,18 +700,28 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-write-routes.ts', [
     'hono',
     './record-api-board.ts',
-    './record-api-config-claim-routes.ts',
+    './record-api-config-access-routes.ts',
     './record-api-doc-order.ts',
+    './record-api-machine-key-claim-routes.ts',
     './record-api-projects.ts',
     './record-api-settings.ts',
     './record-auth.ts',
   ]),
-  module('orchestrator/src/record/record-api-config-claim-routes.ts', [
+  module('orchestrator/src/record/record-api-config-access-routes.ts', [
     'hono',
     'zod',
     './record-auth.ts',
     './record-config.ts',
   ]),
+  module('orchestrator/src/record/record-api-machine-key-claim-routes.ts', [
+    'hono',
+    'zod',
+    '../../../shared/secret-envelope.ts',
+    './record-api-wire.ts',
+    './record-auth.ts',
+    './record-config.ts',
+  ]),
+  module('orchestrator/src/record/record-api-wire.ts', ['zod', './record-config.ts']),
   module('orchestrator/src/record/record-api-settings.ts', [
     'hono',
     'zod',
