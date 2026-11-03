@@ -1,9 +1,9 @@
 import { createPrivateKey, createPublicKey } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, type Stats, statSync, writeFileSync } from 'node:fs'
-import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
+import { PLATFORM_NAME } from './brand.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
 import { machineKeyFilePath } from './file-backed-secret-paths.ts'
-import { decideKeyStore } from './key-store.ts'
+import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
 import {
   decideKeychainBackend,
   keychainPlatform,
@@ -16,7 +16,6 @@ import type { MachineKeyPair } from './secret-envelope.ts'
 
 const SERVICE = `${PLATFORM_NAME}-machine-key`
 const ACCOUNT = 'machine'
-const KEYSTORE_ENV = `${PLATFORM_SLUG.toUpperCase()}_KEYSTORE`
 const PKCS8_PREFIX = Buffer.from('302e020100300506032b656e04220420', 'hex')
 
 function publicFromPrivate(privateKey: Uint8Array): Uint8Array {

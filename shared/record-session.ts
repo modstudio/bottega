@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { chmodSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
-import { decideKeyStore } from './key-store.ts'
+import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
 import {
   deleteKeychainItem,
   keychainPlatform,
@@ -17,8 +17,7 @@ export type { SecurityRunner } from './keychain.ts'
 
 const SERVICE = `${PLATFORM_NAME}-record-session`
 const ACCOUNT = 'record'
-const KEYSTORE_ENV = 'BOTTEGA_KEYSTORE'
-const FILE_REMEDY = 'or set BOTTEGA_KEYSTORE=file to keep the record session in an owner-only file'
+const FILE_REMEDY = `or set ${KEYSTORE_ENV}=file to keep the record session in an owner-only file`
 
 function useFile(): boolean {
   return decideKeyStore(process.env[KEYSTORE_ENV]) === 'file'
@@ -36,7 +35,7 @@ function readFileToken(): string | null {
   if (!stat.isFile() || (stat.mode & 0o077) !== 0) {
     throw new Error(`refusing record session ${path}: file permissions must be no wider than 0600`)
   }
-  return readFileSync(path, 'utf8')
+  return readFileSync(path, 'utf8').trim() || null
 }
 
 function withKeychainRemedy<T>(operation: () => T): T {
