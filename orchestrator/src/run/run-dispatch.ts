@@ -4,7 +4,6 @@
  * not know transports, worktrees, routing policy, reviews, or the CLI.
  */
 import { type ChildProcess, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 /**
@@ -37,6 +36,7 @@ import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/m
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
+import { sha } from './prompt-sha.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
@@ -327,8 +327,8 @@ async function detachResolved(
         links.projectRecordId,
         links.taskRecordId,
         null,
-        createHash('sha256').update(prompt).digest('hex').slice(0, 16),
-        createHash('sha256').update(prompt).digest('hex').slice(0, 16),
+        sha(prompt),
+        sha(prompt),
         prompt.length,
         prompt.slice(0, 200).replace(/\s+/g, ' '),
         spec.label ?? null,

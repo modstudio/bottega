@@ -76,6 +76,7 @@ import {
 } from '../transport/transport.ts'
 import { resolveNewTreeBase } from '../worktree/trunk-base-choice.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
+import { sha } from './prompt-sha.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import { capacityStartupFailure, selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
@@ -115,7 +116,7 @@ import {
   probeReaderFindings,
   reportProbeOverrides,
 } from './run-probe-launch.ts'
-import { completeRunStartup, sha } from './run-process.ts'
+import { completeRunStartup } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'

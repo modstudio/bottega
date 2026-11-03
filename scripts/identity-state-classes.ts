@@ -250,6 +250,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   ),
   hosted('orchestrator', 'workflow', 'workflow', 'Local workflow catalogue write source'),
   evidence('task_flow', 'Outbox source for task flows'),
+  planned(
+    'orchestrator',
+    'typed_question_answer',
+    'DEV-2092',
+    'Typed-question answers await a hosted home',
+  ),
   evidence('workflow_cursor', 'Outbox source for task flow stages'),
   hosted('orchestrator', 'workflow_event', 'workflow_event', 'Local workflow event write source'),
   planned(

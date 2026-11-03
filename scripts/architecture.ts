@@ -30,6 +30,7 @@ import {
   hubSiteArchitectureRules,
   hubUtilArchitectureRules,
 } from './architecture-hub-packages.ts'
+import { identityModules } from './architecture-identity-modules.ts'
 import { keyStoreModules } from './architecture-key-store-modules.ts'
 import { landingTreeModules } from './architecture-landing-tree.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
@@ -57,6 +58,7 @@ import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { spareModules } from './architecture-spare-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
+import { typedQuestionModules } from './architecture-typed-question-modules.ts'
 import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-layers.ts'
 import { workflowAutonomyModules } from './architecture-workflow-autonomy-modules.ts'
 import { workflowCommandModules } from './architecture-workflow-command-modules.ts'
@@ -134,6 +136,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
+  ...identityModules,
+  ...typedQuestionModules,
   ...hubImportModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...ratchetModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...hubModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { claimRunBoardNotices } from '../board/board-delivery.ts'
 import { BOARD_DELIVERY_MAX_CHARS, BOARD_DELIVERY_MAX_MESSAGES } from '../board/board-render.ts'
 import { db } from '../database/db.ts'
-import { sha } from './run-process.ts'
+import { sha } from './prompt-sha.ts'
 
 export const BOARD_PACK_MAX_NOTICES = BOARD_DELIVERY_MAX_MESSAGES
 export const BOARD_PACK_MAX_CHARS = BOARD_DELIVERY_MAX_CHARS

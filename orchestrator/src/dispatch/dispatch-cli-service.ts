@@ -51,6 +51,7 @@ import type { DetachSpec } from '../route/failover.ts'
 import { pick, type RoutedSelection } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
+import { sha } from '../run/prompt-sha.ts'
 import { run } from '../run/run.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
@@ -68,6 +69,7 @@ import {
   selectAgentForTransport,
   type TransportName,
 } from '../transport/transport.ts'
+import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -579,6 +581,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       },
       error: presentation.error,
       readPrompt: prompt,
+      askTypedQuestion,
+      specIdentity: sha,
       validateSchema: readStrictCodexSchema,
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
       warnTaskBranchBypass: (cwd, key, base) =>

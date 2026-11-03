@@ -294,6 +294,6 @@ export const boardModules: BoardModule[] = [
     '../board/board-delivery.ts',
     '../board/board-render.ts',
     '../database/db.ts',
-    './run-process.ts',
+    './prompt-sha.ts',
   ]),
 ]
