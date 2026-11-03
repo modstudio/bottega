@@ -103,6 +103,38 @@ export function hubLoginTokenDirectory(env: StateEnvironment): string {
   return join(concernStateDirectory('hub', env), 'login-tokens')
 }
 
+/** The owner-only file holding the record session when file storage is selected. */
+export function recordSessionPath(env: StateEnvironment): string {
+  return join(resolveStateRoot(env), 'record', 'session')
+}
+
+/** Ensure the file-backed record-session directory exists and belongs to this user. */
+export function ensureRecordSessionDirectory(env: StateEnvironment): string {
+  const directory = dirname(recordSessionPath(env))
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const pathStat = lstatSync(directory)
+  if (pathStat.isSymbolicLink() || !pathStat.isDirectory()) {
+    throw new Error(`record session path is not a directory: ${directory}`)
+  }
+  const descriptor = openSync(
+    directory,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  )
+  try {
+    const descriptorStat = fstatSync(descriptor)
+    const getuid = process.getuid
+    if (!getuid) throw new Error('record session directory ownership is unavailable')
+    const uid = getuid()
+    if (!descriptorStat.isDirectory() || descriptorStat.uid !== uid) {
+      throw new Error(`record session directory is not owned by the current user: ${directory}`)
+    }
+    fchmodSync(descriptor, 0o700)
+  } finally {
+    closeSync(descriptor)
+  }
+  return directory
+}
+
 /** Ensure the sandbox-denied login-token directory exists with private permissions. */
 export function ensureHubLoginTokenDirectory(env: StateEnvironment): string {
   const directory = hubLoginTokenDirectory(env)

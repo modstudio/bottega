@@ -1,8 +1,9 @@
 import { createPrivateKey, createPublicKey } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, type Stats, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
+import { machineKeyFilePath } from './file-backed-secret-paths.ts'
+import { decideKeyStore } from './key-store.ts'
 import {
   decideKeychainBackend,
   keychainPlatform,
@@ -17,10 +18,6 @@ const SERVICE = `${PLATFORM_NAME}-machine-key`
 const ACCOUNT = 'machine'
 const KEYSTORE_ENV = `${PLATFORM_SLUG.toUpperCase()}_KEYSTORE`
 const PKCS8_PREFIX = Buffer.from('302e020100300506032b656e04220420', 'hex')
-
-function filePath(env: ConfigEnvironment): string {
-  return join(resolveConfigRoot(env), 'machine-key')
-}
 
 function publicFromPrivate(privateKey: Uint8Array): Uint8Array {
   if (privateKey.length !== 32) throw new Error('refusing machine key: private key is malformed')
@@ -49,10 +46,8 @@ export function decideMachineKeyStore(
   requested: string | undefined,
   platform: string,
 ): 'file' | 'keychain' {
-  if (requested === 'file') return 'file'
-  if (requested !== undefined) {
-    throw new Error(`${KEYSTORE_ENV} must be 'file' when set`)
-  }
+  const selected = decideKeyStore(requested)
+  if (selected === 'file') return selected
   try {
     decideKeychainBackend(platform)
     return 'keychain'
@@ -71,7 +66,7 @@ export function readMachineKey(
 ): MachineKeyPair | null {
   let privateKey: Uint8Array
   if (useFile(env)) {
-    const path = filePath(env)
+    const path = machineKeyFilePath(env)
     let stat: Stats
     try {
       stat = statSync(path)
@@ -102,7 +97,7 @@ export function writeMachineKey(
   if (useFile(env)) {
     const root = resolveConfigRoot(env)
     mkdirSync(root, { recursive: true, mode: 0o700 })
-    const path = filePath(env)
+    const path = machineKeyFilePath(env)
     writeFileSync(path, `${encoded}\n`, { mode: 0o600, flag: 'wx' })
     chmodSync(path, 0o600)
     return
