@@ -15,6 +15,7 @@ import {
   installRoot,
   isAuthorizedPlatformInstallation,
   isInstallationRoot,
+  optionalCheckoutRoot,
   readDistributionManifest,
   requireCheckoutRoot,
   resolveInstallationPaths,
@@ -35,6 +36,19 @@ function scratch(): string {
 }
 
 describe('install root resolution', () => {
+  test('checkout-only helpers ignore an install-home override', () => {
+    const root = scratch()
+    const nested = join(root, 'shared')
+    mkdirSync(nested)
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: PLATFORM_SLUG, version: '1.0.0' }),
+    )
+    const env = { [INSTALL_HOME_ENV]: '/different/install' }
+    expect(optionalCheckoutRoot(nested, env)).toBe(root)
+    expect(requireCheckoutRoot(nested, env, 'needs checkout fixtures')).toBe(root)
+  })
+
   test('a checkout-only caller supplies the distribution remedy', () => {
     registerEmbeddedAssets({
       assets: {},

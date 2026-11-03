@@ -16,7 +16,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { installationIdentity } from '../../shared/install-root.ts'
+import { optionalCheckoutRoot } from '../../shared/install-root.ts'
 import { processSignalOutcome } from '../../shared/process-identity.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
 import { type Project, projectAt } from './project/projects.ts'
@@ -44,8 +44,7 @@ type RegisteredHubTarget = {
 const JUDGE_CLEANUP_MARGIN_MS = 500
 
 function hubImportPolicyRoot(): string | null {
-  const installation = installationIdentity(import.meta.dir, process.env)
-  return installation.kind === 'distribution' ? null : installation.root
+  return optionalCheckoutRoot(import.meta.dir, process.env)
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {

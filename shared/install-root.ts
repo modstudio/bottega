@@ -157,15 +157,25 @@ export function installationIdentity(
   }
 }
 
+/** Resolve the running code's own checkout, or answer null for a distribution. */
+export function optionalCheckoutRoot(
+  fromDirectory: string,
+  env: InstallEnvironment,
+): string | null {
+  const { [INSTALL_HOME_ENV]: _ignoredInstallHome, ...checkoutEnvironment } = env
+  const identity = installationIdentity(fromDirectory, checkoutEnvironment)
+  return identity.kind === 'distribution' ? null : identity.root
+}
+
 /** Resolve a source checkout, or refuse with the caller's resource-specific remedy. */
 export function requireCheckoutRoot(
   fromDirectory: string,
   env: InstallEnvironment,
   distributionRemedy: string,
 ): string {
-  const identity = installationIdentity(fromDirectory, env)
-  if (identity.kind === 'distribution') throw new Error(distributionRemedy)
-  return identity.root
+  const root = optionalCheckoutRoot(fromDirectory, env)
+  if (root === null) throw new Error(distributionRemedy)
+  return root
 }
 
 /** Answer exactly: is this an authorized platform installation? */

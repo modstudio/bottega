@@ -33,7 +33,16 @@ export async function recordReleaseCheck(app: HostedApp): Promise<void> {
       `release check could not read drizzle.__drizzle_migrations with ${recordUrl.name}; run \`${releaseRemedy(app)}\` or \`${PLATFORM_SLUG} record migrate\`, then retry`,
     )
   }
-  const decision = decideRecordRelease(applied, recordMigrationCount())
+  let shipped: number
+  try {
+    shipped = recordMigrationCount()
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `release check could not read the shipped migration set: ${detail}; run \`${releaseRemedy(app)}\` or \`${PLATFORM_SLUG} record migrate\`, then retry`,
+    )
+  }
+  const decision = decideRecordRelease(applied, shipped)
   if (decision.status === 'refuse') {
     throw new Error(
       `release refused: applied migrations ${decision.applied}; shipped migrations ${decision.shipped}; run \`${releaseRemedy(app)}\` or \`${PLATFORM_SLUG} record migrate\`, then retry`,

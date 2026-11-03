@@ -55,6 +55,18 @@ test('an allowlisted module identity does not allow a second module URL use', ()
   ).toEqual([{ path: 'hub/src/db.ts', line: 2 }])
 })
 
+test('an allowlisted module identity cannot be widened by a wrapping path expression', () => {
+  expect(
+    installPathFindings(
+      'const first = dirname(fileURLToPath(import.meta.url))\nconst second = join(fileURLToPath(import.meta.url), "db")\n',
+      'hub/src/db.ts',
+    ),
+  ).toEqual([
+    { path: 'hub/src/db.ts', line: 1 },
+    { path: 'hub/src/db.ts', line: 2 },
+  ])
+})
+
 test('ignores test files', () => {
   expect(
     installPathFindings(

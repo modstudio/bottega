@@ -52,7 +52,11 @@ export function rehearsalImageImportFindings(
   dockerfile: string,
   readSource: (path: string) => string,
 ): string[] {
-  const pending = evalSources(script).flatMap((source) => relativeRuntimeImports(source, '.'))
+  const evals = evalSources(script)
+  if (evals.length === 0) return ['rehearse.sh: could not parse any bun --eval sources']
+  const copied = copiedSources(dockerfile)
+  if (copied.length === 0) return ['rehearse.Dockerfile: could not parse any COPY sources']
+  const pending = evals.flatMap((source) => relativeRuntimeImports(source, '.'))
   const visited = new Set<string>()
   while (pending.length) {
     const path = resolvedModule('.', pending.pop()!)
@@ -63,7 +67,6 @@ export function rehearsalImageImportFindings(
       pending.push(resolvedModule(path, specifier))
     }
   }
-  const copied = copiedSources(dockerfile)
   return [...visited].filter((path) => !isCopied(path, copied)).sort()
 }
 
@@ -77,7 +80,8 @@ if (import.meta.main) {
     readRepositorySource,
   )
   for (const path of findings) {
-    console.error(`${dockerfilePath}: missing runtime import ${path}; add COPY ${path} ${path}`)
+    if (path.includes(': could not parse ')) console.error(path)
+    else console.error(`${dockerfilePath}: missing runtime import ${path}; add COPY ${path} ${path}`)
   }
   if (findings.length) process.exit(1)
 }

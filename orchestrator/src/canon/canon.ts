@@ -6,7 +6,7 @@ import { CONCERNS, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { installationIdentity } from '../../../shared/install-root.ts'
+import { optionalCheckoutRoot } from '../../../shared/install-root.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, nowIso, storeWritesRefused, writeTransaction } from '../database/db.ts'
@@ -20,8 +20,7 @@ import { composeCanonRows } from './canon-hydrate.ts'
 import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
 
 function canonCheckoutRoot(): string | null {
-  const installation = installationIdentity(import.meta.dir, process.env)
-  return installation.kind === 'distribution' ? null : installation.root
+  return optionalCheckoutRoot(import.meta.dir, process.env)
 }
 const PREFIXES = [
   'orchestrator/',

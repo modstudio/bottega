@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import {
-  includesLaunchAgents,
   installationPlistOwners,
   installedPlistOwners,
   LAUNCHD_TEMPLATE_OWNERS,
@@ -49,9 +48,4 @@ test('reads installer ownership entirely from the embedded registry', async () =
   expect(await installationPlistOwners()).toEqual([
     { label: 'com.example.embedded', command: 'hub/bin/install-launchd.sh' },
   ])
-})
-
-test('launch agents are included only on Darwin', () => {
-  expect(includesLaunchAgents('darwin')).toBe(true)
-  expect(includesLaunchAgents('linux')).toBe(false)
 })

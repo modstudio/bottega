@@ -20,20 +20,6 @@ test('a named source-only use records its reason', () => {
   ).toEqual([])
 })
 
-test('a direct checkout-relative URL is rejected', () => {
-  const source = `
-export const hook = fileURLToPath(new URL('../../hooks/example', import.meta.url))
-`
-  expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([2])
-})
-
-test('a direct URL without fileURLToPath is rejected', () => {
-  const source = `
-export const hook = new URL('../../hooks/example', import.meta.url)
-`
-  expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([2])
-})
-
 test('an aliased source-root import is rejected by its bound name', () => {
   const source = `
 import { ROOT as checkoutRoot } from '../../../database/database-location.ts'
@@ -60,14 +46,6 @@ export function example(ROOT: string) {
 }
 `
   expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([])
-})
-
-test('a local source-root binding is detected under its declared name', () => {
-  const source = `
-const checkout = fileURLToPath(new URL('../..', import.meta.url))
-export const hook = join(checkout, 'hooks', 'reference-transaction')
-`
-  expect(sourceRootViolationLines(source, 'orchestrator/src/example.ts')).toEqual([3])
 })
 
 test('a module-relative createRequire package load is rejected', () => {

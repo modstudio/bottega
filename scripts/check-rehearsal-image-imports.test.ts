@@ -28,3 +28,16 @@ test('accepts an ancestor directory copy', () => {
     }),
   ).toEqual([])
 })
+
+test('refuses a rehearsal script without a parseable eval', () => {
+  expect(rehearsalImageImportFindings('bun run migrate', 'COPY app app\n', () => '')).toEqual([
+    'rehearse.sh: could not parse any bun --eval sources',
+  ])
+})
+
+test('refuses a rehearsal Dockerfile without a parseable copy', () => {
+  const script = `bun --eval 'import "./app/start.ts";'`
+  expect(rehearsalImageImportFindings(script, 'RUN bun app/start.ts\n', () => '')).toEqual([
+    'rehearse.Dockerfile: could not parse any COPY sources',
+  ])
+})

@@ -16,6 +16,7 @@ const INSTALL_AWARE_RESOLVERS = new Set([
   'installationVersionText',
   'isAuthorizedPlatformInstallation',
   'readInstallAsset',
+  'optionalCheckoutRoot',
   'requireCheckoutRoot',
   'resolveInstallFile',
   'resolveInstallRoot',
@@ -76,6 +77,16 @@ function isInstallAwareArgument(node: ts.Node): boolean {
 function allowanceExpression(node: ts.Node, source: ts.SourceFile): string {
   const parent = node.parent
   if (ts.isCallExpression(parent) && parent.arguments.includes(node as ts.Expression)) {
+    const wrapper = parent.parent
+    if (
+      ((ts.isCallExpression(wrapper) || ts.isNewExpression(wrapper)) &&
+        (wrapper.arguments?.includes(parent) ||
+          (ts.isCallExpression(wrapper) && wrapper.expression === parent))) ||
+      ((ts.isPropertyAccessExpression(wrapper) || ts.isElementAccessExpression(wrapper)) &&
+        wrapper.expression === parent)
+    ) {
+      return node.getText(source)
+    }
     return parent.getText(source)
   }
   return node.getText(source)
@@ -135,7 +146,7 @@ if (import.meta.main) {
   const findings = checkInstallPaths()
   for (const finding of findings) {
     console.error(
-      `${finding.path}:${finding.line}: production paths must not be built from a module location; read through readInstallAsset or an install-root resolver`,
+      `${finding.path}:${finding.line}: production paths must not be built from a module location; read through readInstallAsset or an install-root resolver, and add any new install-aware resolver to INSTALL_AWARE_RESOLVERS in scripts/check-install-paths.ts`,
     )
   }
   if (findings.length) process.exit(1)
