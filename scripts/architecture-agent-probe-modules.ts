@@ -68,6 +68,7 @@ export const agentProbeModules = [
     '../run/run-mcp-launch-scope.ts',
     '../run/run-number.ts',
     '../run/run-usage-columns.ts',
+    '../sandbox/sandbox.ts',
     '../transport/codex-quota.ts',
     '../transport/quota-readings.ts',
     '../transport/transport.ts',

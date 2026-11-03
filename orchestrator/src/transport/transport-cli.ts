@@ -55,8 +55,7 @@ function codexRolloutEvidence(
   home: string | undefined,
   offsets: Map<string, number>,
 ) {
-  if (!codex)
-    return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: null }
+  if (!codex) return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: null }
   const texts = codexRolloutTextsSince(home, offsets)
   // A dropped slice has no readings to report; the overflow itself is the value.
   if (texts.overflow)
@@ -167,6 +166,49 @@ function cliCaptureOverflowError(harness: string, stream: 'stdout' | 'stderr'): 
   return `${harness} ${stream} exceeded CLI_OUTPUT_CAPTURE_BYTES (orchestrator/src/transport/transport-cli.ts); raise that constant if the harness legitimately prints more, then rerun`
 }
 
+/** The one capture that outgrew its ceiling, if either stream did. */
+function overflowedCapture(
+  stdout: CliStreamCapture,
+  stderr: CliStreamCapture,
+): CliStreamCapture | null {
+  if (stdout.overflow) return stdout
+  if (stderr.overflow) return stderr
+  return null
+}
+
+type CliTurnReply = {
+  text: string
+  tokens: number | null
+  costUsd: number | null
+  stopReason?: string | null
+  error?: string
+}
+
+/**
+ * Read one turn from its captures. An overflowing stream has no reply to
+ * trust, so the turn reads as the failure that names the stream.
+ */
+function cliTurnReading(input: {
+  overflowed: CliStreamCapture | null
+  harness: string
+  parseReply: () => CliTurnReply | null
+  stdout: string
+  stderr: string
+}): { reply: CliTurnReply | null; replyError: string | null; tokens: number | null } {
+  if (input.overflowed)
+    return {
+      reply: null,
+      replyError: cliCaptureOverflowError(input.harness, input.overflowed.stream),
+      tokens: null,
+    }
+  const reply = input.parseReply()
+  return {
+    reply,
+    replyError: reply?.error ?? null,
+    tokens: reply?.tokens ?? parseVendorTokens(input.stderr) ?? parseVendorTokens(input.stdout),
+  }
+}
+
 function spawnCliChild(
   launchArgv: string[],
   opts: TransportStartOpts,
@@ -269,21 +311,17 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         ])
         const stdout = stdoutCapture.text
         const stderr = stderrCapture.text
-        const overflowed = stdoutCapture.overflow
-          ? stdoutCapture
-          : stderrCapture.overflow
-            ? stderrCapture
-            : null
+        const overflowed = overflowedCapture(stdoutCapture, stderrCapture)
         const signal = processResult.signal ?? null
         const exitCode =
           processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)
-        const reply = overflowed ? null : (opts.agent.parseReply?.(stdout) ?? null)
-        const replyError = overflowed
-          ? cliCaptureOverflowError(workerHarnessName(opts.agent), overflowed.stream)
-          : (reply?.error ?? null)
-        const tokens = overflowed
-          ? null
-          : (reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout))
+        const { reply, replyError, tokens } = cliTurnReading({
+          overflowed,
+          harness: workerHarnessName(opts.agent),
+          parseReply: () => opts.agent.parseReply?.(stdout) ?? null,
+          stdout,
+          stderr,
+        })
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
         const { quotaReadings, askExposure, overflow } = codexRolloutEvidence(
           codex,

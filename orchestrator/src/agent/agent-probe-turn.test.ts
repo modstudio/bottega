@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import type { AgentTransport, TransportHandle, TransportResult } from '../transport/transport.ts'
@@ -23,23 +25,36 @@ function restoreProbeHomeEnvironment(): void {
   else process.env.CODEX_HOME = originalCodexHome
 }
 
+function releaseProbeHomeFixtures(): void {
+  for (const name of ['operator-home', 'probe-scratch'])
+    rmSync(join(dir, name), { recursive: true, force: true })
+}
+
 describe('probe environment quota rollout home', () => {
-  afterEach(restoreProbeHomeEnvironment)
+  afterEach(() => {
+    restoreProbeHomeEnvironment()
+    releaseProbeHomeFixtures()
+  })
 
   describe('without an explicit CODEX_HOME', () => {
+    const operatorHome = join(dir, 'operator-home')
     beforeEach(() => {
-      process.env.HOME = '/operator'
+      mkdirSync(join(operatorHome, '.codex'), { recursive: true })
+      writeFileSync(join(operatorHome, '.codex', 'auth.json'), '{}')
+      writeFileSync(join(operatorHome, '.codex', 'config.toml'), '')
+      process.env.HOME = operatorHome
       delete process.env.CODEX_HOME
     })
 
-    test('defaults CODEX_HOME for a codex harness', async () => {
+    test('confines CODEX_HOME under the probe scratch directory for a codex harness', async () => {
+      const scratch = join(dir, 'probe-scratch')
       const environment = await probeEnvironment(
         'codex',
         { ...BUILTIN_AGENTS.codex!, harness: 'codex' },
-        dir,
+        scratch,
       )
 
-      expect(environment.CODEX_HOME).toBe('/operator/.codex')
+      expect(environment.CODEX_HOME).toBe(join(scratch, 'codex'))
     })
 
     test('does not add CODEX_HOME for a non-codex harness', async () => {

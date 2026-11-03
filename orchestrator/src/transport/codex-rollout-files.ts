@@ -22,7 +22,7 @@ export const CODEX_ROLLOUT_READ_CAP_BYTES = 64 * 1024 * 1024
 export const CODEX_ROLLOUT_HEAD_BYTES = 64 * 1024
 
 /** Why a turn's slice was dropped, reported to the caller as a value. */
-export type CodexRolloutOverflow = {
+type CodexRolloutOverflow = {
   capBytes: number
   attemptedBytes: number
   message: string
@@ -107,7 +107,8 @@ export function codexRolloutTextsSince(
     const from = Math.max(0, offsets.get(path) ?? 0)
     const length = grew(path, from)
     if (length <= 0) continue
-    if (read + length > capBytes) return { slice: '', overflow: rolloutOverflow(read + length, capBytes) }
+    if (read + length > capBytes)
+      return { slice: '', overflow: rolloutOverflow(read + length, capBytes) }
     const text = readByteRange(path, from, length)
     if (text === null) continue
     read += length

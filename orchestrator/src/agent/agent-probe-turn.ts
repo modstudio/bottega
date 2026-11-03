@@ -8,6 +8,7 @@ import { writableDb } from '../database/db.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
+import { prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import type {
@@ -89,8 +90,10 @@ export async function probeEnvironment(
     })),
     BOTTEGA_SCRATCH: scratch,
   }
-  if (harnessCollectsQuotaReadings(agent.harness) && !environment.CODEX_HOME && environment.HOME)
-    environment.CODEX_HOME = join(environment.HOME, '.codex')
+  // The probe reads this turn's own rollout, so it needs the confined Codex home
+  // a run gets rather than the operator home, whose rollout history is unbounded.
+  if (harnessCollectsQuotaReadings(agent.harness) && !environment.CODEX_HOME)
+    Object.assign(environment, prepareCodexHome(scratch, process.env))
   return environment
 }
 

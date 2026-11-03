@@ -6,8 +6,8 @@ import { dir } from '../../test/fixtures/store.ts'
 import { parseCodexQuotaReadings } from './codex-quota.ts'
 import { codexRolloutTextsSince } from './codex-rollout-files.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
-import { startCliStreamReaders } from './transport-cli.ts'
 import { type TransportAgent, transportFor } from './transport.ts'
+import { CLI_OUTPUT_CAPTURE_BYTES, startCliStreamReaders } from './transport-cli.ts'
 
 async function resultLineUsage(billing: TransportAgent['billing']) {
   const resultLine = JSON.stringify({
@@ -124,7 +124,7 @@ test('Codex quota observation reads only the turn-appended part of a nested roll
 })
 
 test('an endless CLI stream stops at the capture ceiling and reports its overflow', async () => {
-  const captureBytes = 4096
+  const captureBytes = Math.floor(CLI_OUTPUT_CAPTURE_BYTES / 16_384)
   async function* endless(): AsyncGenerator<string> {
     for (;;) yield `${'y'.repeat(1024)}\n`
   }

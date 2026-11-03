@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   CODEX_ROLLOUT_HEAD_BYTES,
+  CODEX_ROLLOUT_READ_CAP_BYTES,
   codexRolloutTextsSince,
   codexRolloutVersionHeads,
 } from './codex-rollout-files.ts'
@@ -20,6 +21,9 @@ function rolloutHome(): { root: string; sessions: string } {
   return { root, sessions }
 }
 
+/** A cap far below production, so each fixture history is large relative to it. */
+const smallCapBytes = Math.floor(CODEX_ROLLOUT_READ_CAP_BYTES / 65_536)
+
 /** Filler long enough that its byte size is the file's byte size. */
 function filler(bytes: number): string {
   return 'x'.repeat(bytes)
@@ -32,7 +36,7 @@ test('an unchanged rollout history yields no slice and reads no old bytes', () =
   writeFileSync(rollout, history)
   try {
     const offsets = new Map([[realpathSync(rollout), Buffer.byteLength(history)]])
-    const texts = codexRolloutTextsSince(root, offsets, 1024)
+    const texts = codexRolloutTextsSince(root, offsets, smallCapBytes)
 
     expect(texts.slice).toBe('')
     // The 200 KB of history never entered the cap accounting, so a cap far
@@ -48,11 +52,11 @@ test('a rollout home over the cap reports the overflow instead of text', () => {
   const rollout = join(sessions, 'rollout-grown.jsonl')
   writeFileSync(rollout, `${meta}\n${filler(4_000)}\n`)
   try {
-    const texts = codexRolloutTextsSince(root, new Map(), 1024)
+    const texts = codexRolloutTextsSince(root, new Map(), smallCapBytes)
 
     expect(texts.slice).toBe('')
-    expect(texts.overflow?.capBytes).toBe(1024)
-    expect(texts.overflow?.attemptedBytes).toBeGreaterThan(1024)
+    expect(texts.overflow?.capBytes).toBe(smallCapBytes)
+    expect(texts.overflow?.attemptedBytes).toBeGreaterThan(smallCapBytes)
     expect(texts.overflow?.message).toContain('CODEX_ROLLOUT_READ_CAP_BYTES')
     expect(texts.overflow?.message).toContain('orchestrator/src/transport/codex-rollout-files.ts')
   } finally {
