@@ -5,9 +5,11 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
+import { recordRunWarning } from '../events.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
+import { prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import type {
@@ -89,8 +91,10 @@ export async function probeEnvironment(
     })),
     BOTTEGA_SCRATCH: scratch,
   }
-  if (harnessCollectsQuotaReadings(agent.harness) && !environment.CODEX_HOME && environment.HOME)
-    environment.CODEX_HOME = join(environment.HOME, '.codex')
+  // The probe reads this turn's own rollout, so it needs the confined Codex home
+  // a run gets rather than the operator home, whose rollout history is unbounded.
+  if (harnessCollectsQuotaReadings(agent.harness) && !environment.CODEX_HOME)
+    Object.assign(environment, prepareCodexHome(scratch, process.env))
   return environment
 }
 
@@ -128,9 +132,11 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
   const recordId = insertProbeTurn(input, started)
   const cwd = probeCwd(input)
   const scratchDir = probeScratchDir(input)
-  const environment = await probeEnvironment(input.name, input.agent, scratchDir)
-  if (input.writing) environment.HOME = input.writing.workerHomeDir
   try {
+    // A refused probe environment must record a failed probe turn, not escape
+    // with the row left 'running'.
+    const environment = await probeEnvironment(input.name, input.agent, scratchDir)
+    if (input.writing) environment.HOME = input.writing.workerHomeDir
     const handle = await input.transport.start({
       agent: input.agent,
       cwd,
@@ -168,6 +174,9 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
           })
         : null,
       env: environment,
+      // A best-effort rollout observation warning must reach the probe's own
+      // run row, the way a real run's warning does through run-live's warnForRun.
+      onWarning: (message: string) => recordRunWarning(recordId, message),
     })
     const draining = drainTransportEvents(handle.events())
     try {

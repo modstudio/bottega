@@ -4,9 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { parseCodexQuotaReadings } from './codex-quota.ts'
-import { codexRolloutTextsSince } from './codex-rollout-files.ts'
+import { CODEX_ROLLOUT_READ_CAP_BYTES, codexRolloutTextsSince } from './codex-rollout-files.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import { type TransportAgent, transportFor } from './transport.ts'
+import {
+  CLI_OUTPUT_CAPTURE_BYTES,
+  codexRolloutEvidence,
+  startCliStreamReaders,
+} from './transport-cli.ts'
 
 async function resultLineUsage(billing: TransportAgent['billing']) {
   const resultLine = JSON.stringify({
@@ -122,6 +127,30 @@ test('Codex quota observation reads only the turn-appended part of a nested roll
   }
 })
 
+test('an endless CLI stream stops at the capture ceiling and reports its overflow', async () => {
+  const captureBytes = Math.floor(CLI_OUTPUT_CAPTURE_BYTES / 16_384)
+  async function* endless(): AsyncGenerator<string> {
+    for (;;) yield `${'y'.repeat(1024)}\n`
+  }
+  const overflows: Array<'stdout' | 'stderr'> = []
+  const readers = startCliStreamReaders({
+    stdout: endless(),
+    stderr: endless(),
+    codex: false,
+    push: () => {},
+    captureBytes,
+    onCaptureOverflow: (stream) => overflows.push(stream),
+  })
+
+  const [stdout, stderr] = await Promise.all([readers.stdoutTask, readers.stderrTask])
+
+  expect(stdout.overflow).toBe(true)
+  expect(stderr.overflow).toBe(true)
+  expect(Buffer.byteLength(stdout.text)).toBeLessThanOrEqual(captureBytes)
+  expect(Buffer.byteLength(stderr.text)).toBeLessThanOrEqual(captureBytes)
+  expect(overflows.sort()).toEqual(['stderr', 'stdout'])
+})
+
 test('Codex quota observation does not read a symlinked rollout', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-codex-quota-'))
   const codexHome = join(root, 'codex')
@@ -145,6 +174,69 @@ test('Codex quota observation does not read a symlinked rollout', () => {
     expect(parseCodexQuotaReadings(codexRolloutTextsSince(codexHome, new Map()).slice)).toEqual(
       EMPTY_QUOTA_READINGS,
     )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+/** A cap far below production, so a small fixture history exceeds it. */
+const evidenceCapBytes = Math.floor(CODEX_ROLLOUT_READ_CAP_BYTES / 65_536)
+
+const sessionMeta = (cliVersion: string) =>
+  JSON.stringify({ type: 'session_meta', payload: { cli_version: cliVersion } })
+
+function evidenceHome(): { root: string; sessions: string } {
+  const root = mkdtempSync(join(tmpdir(), 'orch-codex-evidence-'))
+  const sessions = join(root, 'sessions', '2026', '11', '02')
+  mkdirSync(sessions, { recursive: true })
+  return { root, sessions }
+}
+
+test('codexRolloutEvidence drops an over-cap slice and reports the overflow', () => {
+  const { root, sessions } = evidenceHome()
+  writeFileSync(
+    join(sessions, 'rollout-over.jsonl'),
+    `${sessionMeta('0.166.0')}\n${tokenCountLine(10)}\n${'x'.repeat(4_000)}\n`,
+  )
+  try {
+    const evidence = codexRolloutEvidence(true, root, new Map(), evidenceCapBytes)
+
+    expect(evidence.quotaReadings).toEqual(EMPTY_QUOTA_READINGS)
+    expect(evidence.askExposure).toBeUndefined()
+    expect(evidence.overflow?.message).toContain('CODEX_ROLLOUT_READ_CAP_BYTES')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('codexRolloutEvidence recovers a slice-missing CLI version from a bounded head', () => {
+  const { root, sessions } = evidenceHome()
+  const meta = `${sessionMeta('0.166.0')}\n`
+  const rollout = join(sessions, 'rollout-version.jsonl')
+  writeFileSync(rollout, `${meta}${tokenCountLine(10)}\n`)
+  try {
+    const offsets = new Map([[realpathSync(rollout), Buffer.byteLength(meta)]])
+    const evidence = codexRolloutEvidence(true, root, offsets)
+
+    expect(evidence.overflow).toBeNull()
+    expect(evidence.askExposure?.cliVersion).toBe('0.166.0')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('codexRolloutEvidence keeps the slice CLI version over a differing file head', () => {
+  const { root, sessions } = evidenceHome()
+  const headMeta = `${sessionMeta('0.111.0')}\n`
+  const filler = 'x'.repeat(70_000)
+  const rollout = join(sessions, 'rollout-slice-version.jsonl')
+  writeFileSync(rollout, `${headMeta}${filler}${sessionMeta('0.222.0')}\n${tokenCountLine(10)}\n`)
+  try {
+    const offsets = new Map([[realpathSync(rollout), Buffer.byteLength(`${headMeta}${filler}`)]])
+    const evidence = codexRolloutEvidence(true, root, offsets)
+
+    // The head holds 0.111.0, so a heads-derived version would differ.
+    expect(evidence.askExposure?.cliVersion).toBe('0.222.0')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -8,7 +8,11 @@ import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
 import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
-import { codexRolloutTextsSince, confinedCodexRollouts } from './codex-rollout-files.ts'
+import {
+  codexRolloutTextsSince,
+  codexRolloutVersionHeads,
+  confinedCodexRollouts,
+} from './codex-rollout-files.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import {
@@ -32,6 +36,12 @@ function parseVendorTokens(blob: string): number | null {
   return m ? Number(m[1]!.replace(/,/g, '')) : null
 }
 
+/** Most bytes this transport keeps from one child stream, stdout or stderr. */
+export const CLI_OUTPUT_CAPTURE_BYTES = 64 * 1024 * 1024
+
+/** What one child stream kept, and whether it outgrew the capture ceiling. */
+type CliStreamCapture = { stream: 'stdout' | 'stderr'; text: string; overflow: boolean }
+
 function cliUsage(estimatedCostUsd: number | null) {
   const vendorUsage: VendorUsage =
     estimatedCostUsd === null
@@ -40,16 +50,23 @@ function cliUsage(estimatedCostUsd: number | null) {
   return { costUsd: null, vendorUsage }
 }
 
-function codexRolloutEvidence(
+export function codexRolloutEvidence(
   codex: boolean,
   home: string | undefined,
   offsets: Map<string, number>,
+  capBytes?: number,
 ) {
-  if (!codex) return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined }
-  const texts = codexRolloutTextsSince(home, offsets)
+  if (!codex) return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: null }
+  const texts = codexRolloutTextsSince(home, offsets, capBytes)
+  // A dropped slice has no readings to report; the overflow itself is the value.
+  if (texts.overflow)
+    return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: texts.overflow }
   return {
     quotaReadings: parseCodexQuotaReadings(texts.slice),
-    askExposure: codexAskExposureFromTexts(texts.slice, texts.full),
+    // The version fallback reads bounded heads lazily, only when the slice
+    // carries no `cli_version`.
+    askExposure: codexAskExposureFromTexts(texts.slice, () => codexRolloutVersionHeads(home)),
+    overflow: null,
   }
 }
 
@@ -63,14 +80,21 @@ function eventForBilling(billing: AgentBilling, event: NormalizedEvent): Normali
 }
 
 async function readStdoutLines(
-  stream: AsyncIterable<string | Uint8Array>,
+  stream: 'stdout' | 'stderr',
+  input: AsyncIterable<string | Uint8Array>,
   onLine: (line: string) => void,
-): Promise<string> {
+  captureBytes: number = CLI_OUTPUT_CAPTURE_BYTES,
+): Promise<CliStreamCapture> {
   const decoder = new TextDecoder()
   let buf = ''
   let stdout = ''
-  for await (const value of stream) {
-    buf += typeof value === 'string' ? value : decoder.decode(value, { stream: true })
+  let kept = 0
+  for await (const value of input) {
+    const chunk = typeof value === 'string' ? value : decoder.decode(value, { stream: true })
+    if (kept + Buffer.byteLength(chunk) > captureBytes)
+      return { stream, text: stdout + buf, overflow: true }
+    kept += Buffer.byteLength(chunk)
+    buf += chunk
     let nl = buf.indexOf('\n')
     while (nl >= 0) {
       const line = buf.slice(0, nl)
@@ -85,7 +109,7 @@ async function readStdoutLines(
     stdout += buf
     onLine(buf)
   }
-  return stdout
+  return { stream, text: stdout, overflow: false }
 }
 
 function codexThrottleEvent(line: string): NormalizedEvent | null {
@@ -109,6 +133,8 @@ export function startCliStreamReaders(input: {
   stderr: AsyncIterable<string | Uint8Array>
   codex: boolean
   push: (event: NormalizedEvent) => void
+  captureBytes?: number
+  onCaptureOverflow?: (stream: 'stdout' | 'stderr') => void
 }) {
   let throttleSeen = false
   const observeThrottle = (line: string) => {
@@ -118,12 +144,106 @@ export function startCliStreamReaders(input: {
     throttleSeen = true
     input.push(event)
   }
+  const capture = (
+    stream: 'stdout' | 'stderr',
+    source: AsyncIterable<string | Uint8Array>,
+    onLine: (line: string) => void,
+  ) =>
+    readStdoutLines(stream, source, onLine, input.captureBytes).then((result) => {
+      if (result.overflow) input.onCaptureOverflow?.(stream)
+      return result
+    })
   return {
-    stdoutTask: readStdoutLines(input.stdout, (line) => {
+    stdoutTask: capture('stdout', input.stdout, (line) => {
       observeThrottle(line)
       for (const event of eventsFromVendorLine(line)) input.push(event)
     }),
-    stderrTask: readStdoutLines(input.stderr, observeThrottle),
+    stderrTask: capture('stderr', input.stderr, observeThrottle),
+  }
+}
+
+/** Settle a finished turn's output and leave it at the turn's out path. */
+function cliTurnOutput(
+  opts: Pick<TransportStartOpts, 'agent' | 'outPath'>,
+  turn: { replyError: string | null; replyText: string | undefined; stdout: string },
+): string {
+  if (turn.replyError) {
+    writeFileSync(opts.outPath, turn.stdout)
+    return turn.stdout
+  }
+  if (opts.agent.readsOut && existsSync(opts.outPath)) {
+    const fromFile = readFileSync(opts.outPath, 'utf8').trim()
+    if (fromFile) return fromFile
+  }
+  const output = (turn.replyText ?? turn.stdout).trim()
+  if (output) writeFileSync(opts.outPath, output)
+  return output
+}
+
+/** The events a finished CLI turn reports after its live stream. */
+function cliTerminalEvents(turn: {
+  sessionId: string | null
+  output: string
+  tokens: number | null
+  costUsd: number | null
+  error: string | null
+  stopReason: string | null
+}): NormalizedEvent[] {
+  const events: NormalizedEvent[] = []
+  if (turn.sessionId) events.push({ kind: 'session', sessionId: turn.sessionId })
+  if (turn.output) events.push({ kind: 'text', text: turn.output })
+  if (turn.tokens !== null)
+    events.push({ kind: 'usage', tokens: turn.tokens, costUsd: turn.costUsd, per: 'turn' })
+  if (turn.error) events.push({ kind: 'error', error: turn.error })
+  if (turn.stopReason) events.push({ kind: 'stop', reason: turn.stopReason })
+  return events
+}
+
+/** A stream that outgrew its declared capture ceiling, named with the remedy. */
+function cliCaptureOverflowError(harness: string, stream: 'stdout' | 'stderr'): string {
+  return `${harness} ${stream} exceeded CLI_OUTPUT_CAPTURE_BYTES (orchestrator/src/transport/transport-cli.ts); raise that constant if the harness legitimately prints more, then rerun`
+}
+
+/** The one capture that outgrew its ceiling, if either stream did. */
+function overflowedCapture(
+  stdout: CliStreamCapture,
+  stderr: CliStreamCapture,
+): CliStreamCapture | null {
+  if (stdout.overflow) return stdout
+  if (stderr.overflow) return stderr
+  return null
+}
+
+type CliTurnReply = {
+  text: string
+  tokens: number | null
+  costUsd: number | null
+  stopReason?: string | null
+  error?: string
+}
+
+/**
+ * Read one turn from its captures. An overflowing stream has no reply to
+ * trust, so the turn reads as the failure that names the stream.
+ */
+function cliTurnReading(input: {
+  overflowed: CliStreamCapture | null
+  harness: string
+  parseReply: () => CliTurnReply | null
+  stdout: string
+  stderr: string
+}): { reply: CliTurnReply | null; replyError: string | null; tokens: number | null } {
+  if (input.overflowed)
+    return {
+      reply: null,
+      replyError: cliCaptureOverflowError(input.harness, input.overflowed.stream),
+      tokens: null,
+    }
+  const reply = input.parseReply()
+  return {
+    reply,
+    replyError: reply?.error ?? null,
+    tokens: reply?.tokens ?? parseVendorTokens(input.stderr) ?? parseVendorTokens(input.stdout),
   }
 }
 
@@ -201,11 +321,15 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     liveEvents.push(event)
     eventWaiters.shift()?.()
   }
+  const terminate = () => void terminateProcessGroup(p.pid ?? 0, { direct: p })
   const { stdoutTask, stderrTask } = startCliStreamReaders({
     stdout: p.stdout!,
     stderr: p.stderr!,
     codex,
     push: (event) => pushEvent(eventForBilling(opts.agent.billing, event)),
+    // A stream past its ceiling cannot be read to the end, so the turn stops
+    // there rather than keeping bytes for a child that must be killed anyway.
+    onCaptureOverflow: terminate,
   })
 
   const finishEvents = () => {
@@ -218,19 +342,33 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     if (collected) return collected
     collected = (async () => {
       try {
-        const [stdout, stderr, processResult] = await Promise.all([stdoutTask, stderrTask, p])
+        const [stdoutCapture, stderrCapture, processResult] = await Promise.all([
+          stdoutTask,
+          stderrTask,
+          p,
+        ])
+        const stdout = stdoutCapture.text
+        const stderr = stderrCapture.text
+        const overflowed = overflowedCapture(stdoutCapture, stderrCapture)
         const signal = processResult.signal ?? null
         const exitCode =
           processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)
-        const reply = opts.agent.parseReply?.(stdout)
-        const replyError = reply?.error ?? null
-        const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
+        const { reply, replyError, tokens } = cliTurnReading({
+          overflowed,
+          harness: workerHarnessName(opts.agent),
+          parseReply: () => opts.agent.parseReply?.(stdout) ?? null,
+          stdout,
+          stderr,
+        })
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
-        const { quotaReadings, askExposure } = codexRolloutEvidence(
+        const { quotaReadings, askExposure, overflow } = codexRolloutEvidence(
           codex,
           codexHome,
           rolloutOffsets,
         )
+        // Best-effort observation, reported where an operator will see it
+        // without changing what the turn did.
+        if (overflow) opts.onWarning?.(overflow.message)
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({
@@ -241,31 +379,19 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
             home: opts.home,
           }) ??
           null
-        let output = ''
-        if (replyError) {
-          output = stdout
-          writeFileSync(opts.outPath, output)
-        } else if (opts.agent.readsOut && existsSync(opts.outPath)) {
-          output = readFileSync(opts.outPath, 'utf8').trim()
-        }
-        if (!replyError && !output) {
-          output = (reply?.text ?? stdout).trim()
-          if (output) writeFileSync(opts.outPath, output)
-        }
+        const output = cliTurnOutput(opts, { replyError, replyText: reply?.text, stdout })
         const stopReason = reply?.stopReason ?? (cancelled ? 'timeout' : null)
-        const terminalEvents: NormalizedEvent[] = []
-        if (sessionId) terminalEvents.push({ kind: 'session', sessionId })
-        if (output) terminalEvents.push({ kind: 'text', text: output })
-        if (tokens !== null)
-          terminalEvents.push({
-            kind: 'usage',
+        const events = cliResultEvents(
+          liveEvents,
+          cliTerminalEvents({
+            sessionId,
+            output,
             tokens,
             costUsd: usage.costUsd,
-            per: 'turn',
-          })
-        if (replyError) terminalEvents.push({ kind: 'error', error: replyError })
-        if (stopReason) terminalEvents.push({ kind: 'stop', reason: stopReason })
-        const events = cliResultEvents(liveEvents, terminalEvents)
+            error: replyError,
+            stopReason,
+          }),
+        )
         const folded = outcomeFromTransport({
           asking: false,
           error: replyError,
@@ -328,7 +454,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     },
     async cancel() {
       cancelled = true
-      void terminateProcessGroup(p.pid ?? 0, { direct: p })
+      terminate()
     },
     collect,
   }
