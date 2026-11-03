@@ -43,6 +43,14 @@ type RegisteredHubTarget = {
 // Must leave enough of the hook's absolute deadline for candidate and directory cleanup.
 const JUDGE_CLEANUP_MARGIN_MS = 500
 
+function hubImportPolicyRoot(): string {
+  const installation = installationIdentity(import.meta.dir, process.env)
+  if (installation.kind === 'distribution') {
+    throw new Error('hub import judging requires the policy scripts from a development checkout')
+  }
+  return installation.root
+}
+
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -294,15 +302,7 @@ export async function hubImportJudgeCommand(
 
   const { checkout, file: canonicalFile } = target
 
-  const installation = installationIdentity(import.meta.dir, process.env)
-  if (installation.kind === 'distribution') {
-    return {
-      status: 'unchecked',
-      findings: [],
-      reason: 'hub import judging requires the policy scripts from a development checkout',
-    }
-  }
-  const installedRoot = installation.root
+  const installedRoot = hubImportPolicyRoot()
   const judge = join(installedRoot, 'scripts/check-architecture-file.ts')
   const original = relative(checkout, canonicalFile).split(sep).join('/')
   const pathJudgment = await judgeOriginalPath(

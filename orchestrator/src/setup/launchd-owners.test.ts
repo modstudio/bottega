@@ -5,8 +5,8 @@ import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import {
   includesLaunchAgents,
-  installedPlistOwners,
   installationPlistOwners,
+  installedPlistOwners,
 } from './launchd-owners.ts'
 
 afterEach(() => registerEmbeddedAssets(null))

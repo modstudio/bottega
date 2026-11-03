@@ -12,8 +12,7 @@ import {
 } from '../../../shared/embedded-assets.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { installationIdentity } from '../../../shared/install-root.ts'
-import { resolveInstallRoot } from '../../../shared/install-root.ts'
+import { installationIdentity, resolveInstallRoot } from '../../../shared/install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
 import {
   COMMENT_PARSER_LANGUAGES,

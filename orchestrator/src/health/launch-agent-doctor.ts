@@ -6,8 +6,8 @@ import {
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
 import {
-  includesLaunchAgents,
   type InstalledPlistOwner,
+  includesLaunchAgents,
   installationPlistOwners,
 } from '../setup/launchd-owners.ts'
 

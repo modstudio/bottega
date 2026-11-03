@@ -37,6 +37,14 @@ import {
 
 const EMBED_BATCH_SIZE = 64
 
+function benchmarkRepositoryRoot(): string {
+  const installation = installationIdentity(import.meta.dir, process.env)
+  if (installation.kind === 'distribution') {
+    throw new Error('retrieval benchmark requires its corpus and query fixtures from a checkout')
+  }
+  return installation.root
+}
+
 function rankByEmbedding(chunks: Chunk[], vectors: number[][], queryVector: number[]): Chunk[] {
   const byId = new Map(chunks.map((chunk) => [chunk.id, chunk]))
   return cosineTopK(
@@ -182,11 +190,7 @@ function reportSet(
 }
 
 async function main() {
-  const installation = installationIdentity(import.meta.dir, process.env)
-  if (installation.kind === 'distribution') {
-    throw new Error('retrieval benchmark requires its corpus and query fixtures from a checkout')
-  }
-  const repositoryRoot = installation.root
+  const repositoryRoot = benchmarkRepositoryRoot()
   if (process.argv.includes('--check-doc-pins')) {
     const pins = checkDocPins(DOC_QUERIES, await loadDocRows(repositoryRoot))
     console.log(JSON.stringify({ pins }, null, 2))

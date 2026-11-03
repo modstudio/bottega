@@ -1,8 +1,8 @@
 // concern: retrieval-search
 /** Adapts the document corpus and compare-and-swap store to indexed search. */
 
-import type { RetrievalDocSearchOutput } from '../../shared/orch-contract.ts'
 import { installationIdentity } from '../../shared/install-root.ts'
+import type { RetrievalDocSearchOutput } from '../../shared/orch-contract.ts'
 import { type Chunk, loadDocCorpus } from './corpus/chunks.ts'
 import { applyRefresh, indexedRows, storedRows } from './index-store.ts'
 import {

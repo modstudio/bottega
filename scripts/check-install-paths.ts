@@ -26,7 +26,10 @@ function ignoredPath(path: string): boolean {
     path.endsWith('.test.ts') ||
     path.endsWith('.test.tsx') ||
     path.endsWith('.fixture.ts') ||
+    path.endsWith('.fixture.tsx') ||
     parts.includes('test') ||
+    parts.includes('tests') ||
+    parts.includes('fixtures') ||
     parts.includes('scripts')
   )
 }
@@ -78,14 +81,17 @@ function productionSources(directory: string): string[] {
     if (entry.isDirectory()) {
       if (repositoryPath.split('/').includes('scripts')) continue
       paths.push(...productionSources(path))
-    } else if ((entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) && !ignoredPath(repositoryPath)) {
+    } else if (
+      (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+      !ignoredPath(repositoryPath)
+    ) {
       paths.push(path)
     }
   }
   return paths
 }
 
-export function checkInstallPaths(): InstallPathFinding[] {
+function checkInstallPaths(): InstallPathFinding[] {
   return productionSources(root).flatMap((path) => {
     const repositoryPath = relative(root, path).split('\\').join('/')
     return installPathFindings(readFileSync(path, 'utf8'), repositoryPath)

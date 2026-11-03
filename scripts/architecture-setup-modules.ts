@@ -10,7 +10,12 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'launchd-owners-boundary',
     file: 'orchestrator/src/setup/launchd-owners.ts',
-    allowed: ['node:fs/promises', 'node:path'],
+    allowed: [
+      'node:fs/promises',
+      'node:path',
+      '../../../shared/embedded-assets.ts',
+      '../../../shared/install-root.ts',
+    ],
     typeOnlyAllowed: [],
     reason:
       'Keep launchd installer ownership independent of environment migration and health reporting.',
