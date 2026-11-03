@@ -30,6 +30,7 @@ import {
   hubSiteArchitectureRules,
   hubUtilArchitectureRules,
 } from './architecture-hub-packages.ts'
+import { keyStoreModules } from './architecture-key-store-modules.ts'
 import { landingTreeModules } from './architecture-landing-tree.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
@@ -457,6 +458,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/autonomy.ts', []),
   module('shared/caller-classification.ts', []),
   module('shared/keychain.ts', []),
+  ...keyStoreModules,
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', ['./brand.ts']),
   module('shared/settings-summary.ts', ['node:crypto', './secret-shaped.ts']),
@@ -468,16 +470,6 @@ export const modules: ArchitectureModule[] = [
     './record-remedies.ts',
     './secret-envelope.ts',
     './trust-list.ts',
-  ]),
-  module('shared/machine-key-store.ts', [
-    'node:crypto',
-    'node:fs',
-    'node:path',
-    './brand.ts',
-    './config-directory.ts',
-    './machine-key-id.ts',
-    './secret-envelope.ts',
-    './keychain.ts',
   ]),
   module('shared/trust-list.ts', [
     'node:fs',
@@ -508,7 +500,6 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/check/check-comment-parser-assets.ts', []),
   module('shared/record/schema.ts', ['../brand.ts', '../record-id.ts']),
   module('shared/record/migration-session.ts', []),
-  module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
   ...recordModules,
   ...databaseModules,
