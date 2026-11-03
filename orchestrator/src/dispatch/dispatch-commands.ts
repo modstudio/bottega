@@ -113,7 +113,7 @@ function lensPromptFor(
 }
 
 async function compose(
-  presentation: DispatchPresentation,
+  presentation: Pick<DispatchPresentation, 'earlierReviewRejections'>,
   project: Project | null,
   requested: ReturnType<typeof job>,
   lens: string | undefined,
@@ -240,8 +240,11 @@ export async function warnForUnsettledSpec(
   }
 }
 
-async function composeDispatchPrompt(input: {
-  presentation: DispatchPresentation
+export async function composeDispatchPrompt(input: {
+  presentation: Pick<
+    DispatchPresentation,
+    'readPrompt' | 'askTypedQuestion' | 'error' | 'specIdentity' | 'earlierReviewRejections'
+  >
   project: Project | null
   requested: ReturnType<typeof job>
   lens: string | undefined
@@ -252,18 +255,7 @@ async function composeDispatchPrompt(input: {
   continuation: boolean
 }): Promise<string> {
   const spec = await input.presentation.readPrompt()
-  await warnForUnsettledSpec(
-    {
-      jobName: input.jobName,
-      project: input.projectName,
-      continuation: input.continuation,
-      spec,
-      specIdentity: input.presentation.specIdentity(spec.trim()),
-    },
-    input.presentation.askTypedQuestion,
-    input.presentation.error,
-  )
-  return compose(
+  const prompt = await compose(
     input.presentation,
     input.project,
     input.requested,
@@ -272,6 +264,18 @@ async function composeDispatchPrompt(input: {
     input.reviewBranch,
     spec,
   )
+  await warnForUnsettledSpec(
+    {
+      jobName: input.jobName,
+      project: input.projectName,
+      continuation: input.continuation,
+      spec,
+      specIdentity: input.presentation.specIdentity(prompt),
+    },
+    input.presentation.askTypedQuestion,
+    input.presentation.error,
+  )
+  return prompt
 }
 
 function reportGeneralDispatchWarnings(input: {
@@ -279,7 +283,7 @@ function reportGeneralDispatchWarnings(input: {
   project: string | null
   carries: boolean
   readsRepo: boolean
-  dirty: boolean
+  checkoutHasUncommittedWork: () => boolean
   error: DispatchPresentation['error']
 }): void {
   if (!input.porcelain && !input.project) {
@@ -288,7 +292,7 @@ function reportGeneralDispatchWarnings(input: {
         `(registered: ${projectNames()})`,
     )
   }
-  if (!input.porcelain && !input.carries && input.readsRepo && input.dirty) {
+  if (!input.porcelain && !input.carries && input.readsRepo && input.checkoutHasUncommittedWork()) {
     input.error(
       '! this checkout has uncommitted work that will not be carried into the worker.\n' +
         '  pass --carry to send it with the run.',
@@ -687,11 +691,7 @@ export async function dispatchCommand(
     project: dispatchProjectName,
     carries: has('carry'),
     readsRepo: Boolean(requested.needs.readsRepo),
-    dirty:
-      !porcelain &&
-      !has('carry') &&
-      Boolean(requested.needs.readsRepo) &&
-      checkoutHasUncommittedWork(callerCwd),
+    checkoutHasUncommittedWork: () => checkoutHasUncommittedWork(callerCwd),
     error,
   })
   const prompt = await composeDispatchPrompt({

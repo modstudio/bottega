@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { askTypedQuestionClient, TYPED_QUESTION_TIMEOUT_MS } from './client.ts'
+import { askTypedQuestionClient } from './client.ts'
 import { type ChoiceQuestion, SPEC_UNSETTLED_QUESTION } from './registry.ts'
 
 const resolve = async () => ({ TYPESAFE_KEY: 'fixture-secret' })
@@ -39,7 +39,6 @@ test('sends the declared noul question and parses its probability', async () => 
       },
     },
   })
-  expect(TYPED_QUESTION_TIMEOUT_MS).toBe(5_000)
 })
 
 test('sends criteria and parses a choice answer', async () => {

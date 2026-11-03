@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
+import { sha } from '../run/run-process.ts'
 import {
+  composeDispatchPrompt,
   genericLensProfileNotices,
   lensDispatchNotices,
   reviewDetachFields,
@@ -10,6 +13,13 @@ import {
   validateContinueBranchOptions,
   warnForUnsettledSpec,
 } from './dispatch-commands.ts'
+
+const noEarlierReviewRejections = () => ({
+  project: '',
+  branch: null,
+  branchLineage: [],
+  rows: [],
+})
 
 test('findings dispatch leaves the default role to run dispatch unless explicitly supplementary', () => {
   expect(reviewRoleForDispatch(true, false)).toBeUndefined()
@@ -140,3 +150,60 @@ test.each([
     expect(asks).toBe(0)
   },
 )
+
+test('unsettled-spec evidence uses the composed prompt identity and raw spec state', async () => {
+  const rawSpec = '  Implement this behavior.  '
+  let asked:
+    | Parameters<Parameters<typeof composeDispatchPrompt>[0]['presentation']['askTypedQuestion']>[0]
+    | null = null
+  const prompt = await composeDispatchPrompt({
+    presentation: {
+      readPrompt: async () => rawSpec,
+      askTypedQuestion: async (input) => {
+        asked = input
+        return null
+      },
+      error: () => {},
+      specIdentity: sha,
+      earlierReviewRejections: noEarlierReviewRejections,
+    },
+    project: null,
+    requested: job('implement'),
+    lens: undefined,
+    cwd: '/fixture',
+    reviewBranch: null,
+    jobName: 'implement',
+    projectName: PLATFORM_NAME.toLowerCase(),
+    continuation: false,
+  })
+
+  expect(prompt).toBe('Implement this behavior.')
+  expect(asked).toMatchObject({ subjectRef: sha(prompt), state: rawSpec })
+})
+
+test('an empty implementation spec is refused before asking the typed question', async () => {
+  let asks = 0
+  await expect(
+    composeDispatchPrompt({
+      presentation: {
+        readPrompt: async () => '   ',
+        askTypedQuestion: async () => {
+          asks += 1
+          return null
+        },
+        error: () => {},
+        specIdentity: sha,
+        earlierReviewRejections: noEarlierReviewRejections,
+      },
+      project: null,
+      requested: job('implement'),
+      lens: undefined,
+      cwd: '/fixture',
+      reviewBranch: null,
+      jobName: 'implement',
+      projectName: PLATFORM_NAME.toLowerCase(),
+      continuation: false,
+    }),
+  ).rejects.toThrow('empty prompt')
+  expect(asks).toBe(0)
+})

@@ -30,6 +30,7 @@ import {
   hubSiteArchitectureRules,
   hubUtilArchitectureRules,
 } from './architecture-hub-packages.ts'
+import { identityModules } from './architecture-identity-modules.ts'
 import { keyStoreModules } from './architecture-key-store-modules.ts'
 import { landingTreeModules } from './architecture-landing-tree.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
@@ -135,6 +136,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   ...enforcementModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...testSubstanceModules.map((spec) => module(spec.file, [...spec.allowed])),
+  ...identityModules,
   ...typedQuestionModules,
   ...hubImportModules.map((spec) => module(spec.file, [...spec.allowed])),
   ...ratchetModules.map((spec) => module(spec.file, [...spec.allowed])),

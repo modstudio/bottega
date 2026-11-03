@@ -9,9 +9,6 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const typedQuestionModules = [
-  module('scripts/identity-typed-question-manifest.ts', ['./identity-inventory.ts']),
-  module('scripts/identity-ruled-reference-manifest.ts', ['./identity-inventory.ts']),
-  module('scripts/identity-undeclared-reference-manifest.ts', ['./identity-inventory.ts']),
   module('shared/typed-question/registry.ts', []),
   module('shared/typed-question/client.ts', ['../env-source.ts', './registry.ts']),
   module('orchestrator/src/typed-question/typed-question-answer-store.ts', [
