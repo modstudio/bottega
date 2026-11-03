@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import { sha } from '../run/run-process.ts'
@@ -90,7 +90,6 @@ test.each([
   await warnForUnsettledSpec(
     {
       jobName: 'implement',
-      project: PLATFORM_NAME.toLowerCase(),
       continuation: false,
       spec: 'Choose a reasonable implementation.',
       specIdentity: '0123456789abcdef',
@@ -120,7 +119,6 @@ test('unsettled-spec warning stays silent on no answer', async () => {
   await warnForUnsettledSpec(
     {
       jobName: 'implement',
-      project: PLATFORM_NAME.toLowerCase(),
       continuation: false,
       spec: 'Complete spec.',
       specIdentity: 'spec-sha',
@@ -132,15 +130,14 @@ test('unsettled-spec warning stays silent on no answer', async () => {
 })
 
 test.each([
-  ['diagnose', PLATFORM_NAME.toLowerCase(), false],
-  ['implement', 'another-project', false],
-  ['implement', PLATFORM_NAME.toLowerCase(), true],
+  ['diagnose', false],
+  ['implement', true],
 ] as const)(
-  'does not ask for job=%s project=%s continuation=%p',
-  async (jobName, project, continuation) => {
+  'does not ask for job=%s continuation=%p',
+  async (jobName, continuation) => {
     let asks = 0
     await warnForUnsettledSpec(
-      { jobName, project, continuation, spec: 'spec', specIdentity: 'spec-sha' },
+      { jobName, continuation, spec: 'spec', specIdentity: 'spec-sha' },
       async () => {
         asks += 1
         return { noul: 1 }
@@ -173,7 +170,6 @@ test('unsettled-spec evidence uses the composed prompt identity and raw spec sta
     cwd: '/fixture',
     reviewBranch: null,
     jobName: 'implement',
-    projectName: PLATFORM_NAME.toLowerCase(),
     continuation: false,
   })
 
@@ -201,7 +197,6 @@ test('an empty implementation spec is refused before asking the typed question',
       cwd: '/fixture',
       reviewBranch: null,
       jobName: 'implement',
-      projectName: PLATFORM_NAME.toLowerCase(),
       continuation: false,
     }),
   ).rejects.toThrow('empty prompt')

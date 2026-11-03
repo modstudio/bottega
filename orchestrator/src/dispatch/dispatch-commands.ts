@@ -1,7 +1,7 @@
 // concern: dispatch-commands
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
 import { existsSync } from 'node:fs'
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
 import {
   SPEC_UNSETTLED_QUESTION,
@@ -203,29 +203,20 @@ type DispatchPresentation = {
   detachedResult(id: string, json: boolean): void
 }
 
-const TYPED_QUESTION_PROJECT_ALLOWLIST = new Set([PLATFORM_NAME.toLowerCase()])
-
 type SpecWarningInput = {
   jobName: string
-  project: string | null
   continuation: boolean
   spec: string
   specIdentity: string
 }
 
-/** Ask only for explicitly allowed new implementation specs and present an advisory warning. */
+/** Ask about every new implementation spec, in every project, and present an advisory warning. */
 export async function warnForUnsettledSpec(
   input: SpecWarningInput,
   ask: DispatchPresentation['askTypedQuestion'],
   warn: DispatchPresentation['error'],
 ): Promise<void> {
-  if (
-    input.jobName !== 'implement' ||
-    input.continuation ||
-    !input.project ||
-    !TYPED_QUESTION_PROJECT_ALLOWLIST.has(input.project)
-  )
-    return
+  if (input.jobName !== 'implement' || input.continuation) return
   const answer = await ask({
     question: SPEC_UNSETTLED_QUESTION,
     subjectKind: 'spec',
@@ -251,7 +242,6 @@ export async function composeDispatchPrompt(input: {
   cwd: string
   reviewBranch: string | null
   jobName: string
-  projectName: string | null
   continuation: boolean
 }): Promise<string> {
   const spec = await input.presentation.readPrompt()
@@ -267,7 +257,6 @@ export async function composeDispatchPrompt(input: {
   await warnForUnsettledSpec(
     {
       jobName: input.jobName,
-      project: input.projectName,
       continuation: input.continuation,
       spec,
       specIdentity: input.presentation.specIdentity(prompt),
@@ -702,7 +691,6 @@ export async function dispatchCommand(
     cwd: callerCwd,
     reviewBranch: resolvedReviewTarget?.branch ?? null,
     jobName,
-    projectName: dispatchProjectName,
     continuation: Boolean(flag('continue')),
   })
   const keepTree = keepTreeExemptionFromOption(
