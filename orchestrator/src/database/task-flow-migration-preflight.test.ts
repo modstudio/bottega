@@ -1,9 +1,24 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { applyMigrations } from './migrations.ts'
 import { taskFlowBackfillReports } from './task-flow-migration-preflight.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
+
+let reports: string[] = []
+let reportSpy: ReturnType<typeof spyOn> | null = null
+
+beforeEach(() => {
+  reports = []
+  reportSpy = spyOn(console, 'error').mockImplementation((...values) => {
+    reports.push(values.join(' '))
+  })
+})
+
+afterEach(() => {
+  reportSpy?.mockRestore()
+  reportSpy = null
+})
 
 test('backfills the newest resolved stage and reports every cursor it leaves unmerged', () => {
   const d = migrationBoundaryTestDatabase('0198_task_flow')
@@ -95,6 +110,51 @@ test('refuses a resolved stage whose project identity is null instead of silentl
 
     expect(() => applyMigrations(d)).toThrow(
       'NOT NULL constraint failed: task_flow.project_record_id',
+    )
+  } finally {
+    d.close()
+  }
+})
+
+test('applying the task-flow migration reports a cursor the backfill leaves unmerged', () => {
+  const d = migrationBoundaryTestDatabase('0198_task_flow')
+  try {
+    const projectId = newRecordId()
+    d.query(
+      `INSERT INTO project(record_id,name,path,canon,settings)
+       VALUES (?,'fixture','/fixture',0,'{"trunk":"main"}')`,
+    ).run(projectId)
+    const workflowVersion = workflowVersionRecordId(d)
+    const catalogueVersion = catalogueVersionRecordId(d)
+    const insert = d.query<{ number: number }, string[]>(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+         task_record_id,instance_id,session_id,workflow_version_record_id,
+         catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
+         total_steps,created_at,updated_at,enforcement)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture',?,
+               ?,'default','DEV-1','task-1','',NULL,?,?,'{}','{}',0,'start','running','[]',
+               NULL,1,'2026-11-01','2026-11-01','floors') RETURNING number`,
+    )
+    const older = insert.get(
+      newRecordId(),
+      projectId,
+      'plan-task',
+      workflowVersion,
+      catalogueVersion,
+    )!
+    const newest = insert.get(
+      newRecordId(),
+      projectId,
+      'ship-task',
+      workflowVersion,
+      catalogueVersion,
+    )!
+
+    applyMigrations(d)
+
+    expect(reports).toContain(
+      `task flow migration: cursor ${older.number} not merged; cursor ${newest.number} is the task's stage`,
     )
   } finally {
     d.close()

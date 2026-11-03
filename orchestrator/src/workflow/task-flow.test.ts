@@ -5,6 +5,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { attachTaskFlowStage, closeTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
 import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
+import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import {
   abandonCursor,
   database as cursorDatabase,
@@ -197,6 +198,54 @@ test('an unknown task status preserves the projected flow state', () => {
         state: 'done',
       },
     )
+  } finally {
+    d.close()
+  }
+})
+
+test('keyed selection adopts an open cursor left without a flow by the backfill', () => {
+  const d = migratedTestDatabase()
+  try {
+    const projectId = newRecordId()
+    d.query(
+      `INSERT INTO project(record_id,name,path,canon,settings)
+       VALUES (?,'fixture','/fixture',0,'{"trunk":"main"}')`,
+    ).run(projectId)
+    const cursorRecordId = newRecordId()
+    d.query(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+         task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
+         catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
+         total_steps,created_at,updated_at,enforcement)
+       VALUES (?,1,'fixture',?,'plan-task','default','DEV-1','task-1',NULL,'',NULL,?,?,'{}',
+               '{}',0,'start','running','[]',NULL,1,'2026-11-01','2026-11-01','floors')`,
+    ).run(cursorRecordId, projectId, workflowVersionRecordId(d), catalogueVersionRecordId(d))
+
+    const selected = selectWorkflowCursor(
+      { project: 'fixture', workflow: 'plan-task', mode: 'default', key: 'DEV-1' },
+      undefined,
+      null,
+      d,
+      'task-1',
+      'active',
+    )!
+    const flow = d
+      .query('SELECT record_id,open_stage_cursor_record_id FROM task_flow WHERE task_record_id=?')
+      .get('task-1') as { record_id: string; open_stage_cursor_record_id: string | null }
+
+    expect(selected.task_flow_record_id).toBe(flow.record_id)
+    expect(flow.open_stage_cursor_record_id).toBe(cursorRecordId)
+    expect(() =>
+      selectWorkflowCursor(
+        { project: 'fixture', workflow: 'ship-task', mode: 'default', key: 'DEV-1' },
+        undefined,
+        null,
+        d,
+        'task-1',
+        'active',
+      ),
+    ).toThrow('task DEV-1 already has open stage cursor 1 plan-task default')
   } finally {
     d.close()
   }
