@@ -10,6 +10,7 @@ the project register
 - [bottega project list](#bottega-project-list)
 - [bottega project migrate-create](#bottega-project-migrate-create)
 - [bottega project push](#bottega-project-push)
+- [bottega project relink](#bottega-project-relink)
 - [bottega project remove](#bottega-project-remove)
 - [bottega project retire](#bottega-project-retire)
 - [bottega project select-profile](#bottega-project-select-profile)
@@ -28,6 +29,7 @@ the project register
 - [bottega project list](./project.md#bottega-project-list)
 - [bottega project migrate-create](./project.md#bottega-project-migrate-create)
 - [bottega project push](./project.md#bottega-project-push)
+- [bottega project relink](./project.md#bottega-project-relink)
 - [bottega project remove](./project.md#bottega-project-remove)
 - [bottega project retire](./project.md#bottega-project-retire)
 - [bottega project select-profile](./project.md#bottega-project-select-profile)
@@ -105,6 +107,16 @@ push projects to the hosted record
 ### Options
 
 - `--json`: print JSON output
+
+### Related
+
+- [bottega project](./project.md#bottega-project)
+
+## bottega project relink
+
+**Synopsis:** `bottega project relink [name]`
+
+adopt the hosted identity of a registered project
 
 ### Related
 

@@ -2,6 +2,7 @@
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writeRecordSessionToken } from '../../../shared/record-session.ts'
+import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { recordApiClient, recordApiSignIn, recordApiSignUp } from './record-api-client.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
@@ -53,10 +54,25 @@ export async function signInCommand(
   presentation: Presentation,
 ): Promise<void> {
   const result = await recordApiSignIn(email, await recordPassword(readPassword))
+  await completeSignInCommand(result, presentation)
+}
+
+export async function completeSignInCommand(
+  result: { token: string; user: Record<string, unknown> },
+  presentation: Presentation,
+): Promise<void> {
   writeRecordSessionToken(result.token)
   rememberSignedInRecordUser(result.user)
   rememberHostedRecord()
   presentation.log(`signed in ${result.user.email}`)
+  for (const adoption of await adoptAllHostedProjectIdentities()) {
+    if (adoption.status === 'relinked') presentation.log(formatProjectRelink(adoption))
+    else if (adoption.status === 'retired-namesake') presentation.log(adoption.message)
+    else if (adoption.status === 'failed')
+      presentation.log(
+        `${adoption.name}: project identity adoption failed: ${adoption.message}; run \`${PLATFORM_SLUG} project relink ${adoption.name}\``,
+      )
+  }
 }
 
 export async function whoamiCommand(presentation: Presentation): Promise<void> {

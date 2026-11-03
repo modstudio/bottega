@@ -62,5 +62,17 @@ export const projectModules: ProjectModule[] = [
     './project-settings.ts',
     './projects.ts',
   ]),
+  module('orchestrator/src/project/project-relink.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../../../shared/record-project-contract.ts',
+    '../database/db.ts',
+    '../record/outbox-quarantine.ts',
+    '../record/outbox-sanitize.ts',
+    '../record/record-api-client.ts',
+    '../record/record-project-destination-client.ts',
+    './project-reference-counts.ts',
+    './projects.ts',
+  ]),
   module('orchestrator/src/project/project-rename.ts', ['../database/db.ts', './projects.ts']),
 ]

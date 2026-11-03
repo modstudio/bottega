@@ -33,6 +33,22 @@ export const recordMachineBoundaries: ImportBoundary[] = [
   ),
 ]
 
+export const recordAuthCommandBoundaries: ImportBoundary[] = [
+  boundary(
+    'record-auth-command-boundary',
+    'orchestrator/src/record/record-auth-command.ts',
+    [
+      '../../../shared/brand.ts',
+      '../../../shared/record-session.ts',
+      '../project/project-relink.ts',
+      './install-binding-write.ts',
+      './record-api-client.ts',
+      './record-session.ts',
+    ],
+    'Enforce the record-auth-command concern boundary.',
+  ),
+]
+
 export const recordApiBoundaries: ImportBoundary[] = [
   boundary(
     'record-port-contract-boundary',

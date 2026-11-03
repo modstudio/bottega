@@ -221,6 +221,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'project list',
   'project migrate-create',
   'project push',
+  'project relink',
   'project remove',
   'project retire',
   'project select-profile',

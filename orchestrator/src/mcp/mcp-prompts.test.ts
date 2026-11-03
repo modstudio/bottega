@@ -228,6 +228,11 @@ describe('workflow prompts on the wire', () => {
         "DELETE FROM workflow_cursor WHERE project_record_id=(SELECT record_id FROM project WHERE name='prompt-fixture')",
       )
       .run()
+    db()
+      .query(
+        "DELETE FROM task_flow WHERE project_record_id=(SELECT record_id FROM project WHERE name='prompt-fixture')",
+      )
+      .run()
     removeProject('prompt-fixture')
   })
 

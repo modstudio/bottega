@@ -514,6 +514,7 @@ const projectSpecs: readonly Spec[] = [
   ['retire [name]', 'retire or un-retire a project', [o('--undo')]],
   ['push', 'push projects to the hosted record', json],
   ['fill-record-ids', 'fill missing hosted project identities', json],
+  ['relink [name]', 'adopt the hosted identity of a registered project', []],
 ]
 
 async function runProject(verb: string, args: string[], command: Command): Promise<void> {

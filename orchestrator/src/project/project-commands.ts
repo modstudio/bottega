@@ -19,6 +19,7 @@ import { migrateCreate } from '../worktree/worktree-template.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
+import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import {
   mergeProjectSettings,
@@ -56,6 +57,49 @@ type ProjectFlags = {
   flag(name: string): string | undefined
 }
 type ProjectPresentation = { log(...values: unknown[]): void; cwd(): string }
+
+async function relinkProjectCommand(
+  name: string | undefined,
+  presentation: ProjectPresentation,
+): Promise<void> {
+  if (!name) throw new Error(`${PLATFORM_SLUG} project relink <name>`)
+  const result = await relinkProjectByName(name)
+  presentation.log(
+    result.status === 'no-namesake'
+      ? `${name}: no hosted project with this name; identity unchanged`
+      : formatProjectRelink(result),
+  )
+}
+
+async function selectProfileCommand(
+  argv: string[],
+  flags: ProjectFlags,
+  presentation: ProjectPresentation,
+): Promise<void> {
+  const name = argv[2],
+    axis = flags.flag('axis'),
+    profile = flags.flag('name'),
+    reason = flags.flag('reason'),
+    versionText = flags.flag('version')
+  if (!name || !axis || !profile || !reason?.trim())
+    throw new Error(
+      `${PLATFORM_SLUG} project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT`,
+    )
+  const version = versionText === undefined ? undefined : Number(versionText)
+  const result = await selectProjectProfile({
+    project: name,
+    axis,
+    name: profile,
+    lensId: flags.flag('lens'),
+    version,
+    reason,
+  })
+  presentation.log(
+    flags.has('json')
+      ? JSON.stringify(result)
+      : `selected ${axis}/${profile} for ${name}${flags.flag('lens') ? ` lens ${flags.flag('lens')}` : ' all lenses'}`,
+  )
+}
 
 const enabledLensIds = (spaceId: string | null): string[] =>
   listLenses(db(), spaceId)
@@ -716,7 +760,7 @@ export async function projectCommand(
     requireSpaceMembership(space: string): Promise<unknown>
   },
 ): Promise<void> {
-  const { has, flag } = flags
+  const { has } = flags
 
   if (sub === 'list') {
     listProjectsCommand(flags, presentation)
@@ -733,30 +777,13 @@ export async function projectCommand(
     return
   }
 
+  if (sub === 'relink') {
+    await relinkProjectCommand(argv[2], presentation)
+    return
+  }
+
   if (sub === 'select-profile') {
-    const name = argv[2],
-      axis = flag('axis'),
-      profile = flag('name'),
-      reason = flag('reason'),
-      versionText = flag('version')
-    if (!name || !axis || !profile || !reason?.trim())
-      throw new Error(
-        `${PLATFORM_SLUG} project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT`,
-      )
-    const version = versionText === undefined ? undefined : Number(versionText)
-    const result = await selectProjectProfile({
-      project: name,
-      axis,
-      name: profile,
-      lensId: flag('lens'),
-      version,
-      reason,
-    })
-    presentation.log(
-      has('json')
-        ? JSON.stringify(result)
-        : `selected ${axis}/${profile} for ${name}${flag('lens') ? ` lens ${flag('lens')}` : ' all lenses'}`,
-    )
+    await selectProfileCommand(argv, flags, presentation)
     return
   }
 

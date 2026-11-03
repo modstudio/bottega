@@ -113,28 +113,30 @@ export function retryOutboxRow(
   actorSession = sessionId(),
 ): void {
   writeTransaction(() => {
-    const row = quarantinedRow(database, rowId)
-    audit(
-      database,
-      row,
-      'retry',
-      row.quarantine_reason,
-      'operator requested retry',
-      actorSession,
-      at,
-    )
-    database
-      .query(
-        `UPDATE outbox SET quarantined_at=NULL,quarantine_reason=NULL,last_error=NULL
-         WHERE id=?`,
-      )
-      .run(rowId)
+    retryOutboxRowInWriteTransaction(rowId, database, at, actorSession)
   }, database)
 }
 
-export function retryOutboxRowsMatching(
+function retryOutboxRowInWriteTransaction(
+  rowId: number,
+  database: Database,
+  at: string,
+  actorSession: string | null,
+): void {
+  const row = quarantinedRow(database, rowId)
+  audit(database, row, 'retry', row.quarantine_reason, 'operator requested retry', actorSession, at)
+  database
+    .query(
+      `UPDATE outbox SET quarantined_at=NULL,quarantine_reason=NULL,last_error=NULL
+       WHERE id=?`,
+    )
+    .run(rowId)
+}
+
+/** Retry matching rows using a write transaction already held by the caller. */
+export function retryOutboxRowsMatchingInWriteTransaction(
   matching: string,
-  database: Database = db(),
+  database: Database,
   at = nowIso(),
   actorSession = sessionId(),
 ): number {
@@ -147,8 +149,20 @@ export function retryOutboxRowsMatching(
        ORDER BY id`,
     )
     .all(matching)
-  for (const row of rows) retryOutboxRow(row.id, database, at, actorSession)
+  for (const row of rows) retryOutboxRowInWriteTransaction(row.id, database, at, actorSession)
   return rows.length
+}
+
+export function retryOutboxRowsMatching(
+  matching: string,
+  database: Database = db(),
+  at = nowIso(),
+  actorSession = sessionId(),
+): number {
+  return writeTransaction(
+    () => retryOutboxRowsMatchingInWriteTransaction(matching, database, at, actorSession),
+    database,
+  )
 }
 
 export function retireOutboxRow(
