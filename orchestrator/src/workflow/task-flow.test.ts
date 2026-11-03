@@ -4,6 +4,102 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { attachTaskFlowStage, closeTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
+import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
+import {
+  abandonCursor,
+  database as cursorDatabase,
+  testPorts,
+} from './workflow-cursor-test.fixture.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
+
+function installTaskFlowLifecycleWorkflow(
+  d: ReturnType<typeof cursorDatabase>,
+  slug: string,
+): void {
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: `${slug} fixture`,
+      description: 'Exercises task-flow lifecycle wiring.',
+      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['score'] }],
+    },
+    'task-flow lifecycle fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal(slug, draft.n, 'publish task-flow lifecycle fixture', 'test', d)
+}
+
+test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task stages', () => {
+  const d = cursorDatabase()
+  const args = { key: 'DEV-FLOW' }
+  const context = {
+    session: 'task-flow-lifecycle',
+    taskRecordId: 'task-DEV-FLOW',
+    taskStatusCategory: 'active',
+  }
+  const plan = 'task-flow-plan'
+  const ship = 'task-flow-ship'
+  installTaskFlowLifecycleWorkflow(d, plan)
+  installTaskFlowLifecycleWorkflow(d, ship)
+
+  const opened = composeWorkflowWithCursor(plan, 'fixture', 'default', args, context, d, {}, {})
+  const planCursor = opened.cursor!.id
+  const pointers = () =>
+    d
+      .query(
+        `SELECT flow.open_stage_cursor_record_id openStage,cursor.record_id cursorId,
+                cursor.task_flow_record_id cursorFlow,flow.record_id flowId
+         FROM workflow_cursor cursor JOIN task_flow flow
+           ON flow.task_record_id=cursor.task_record_id
+         WHERE cursor.number=?`,
+      )
+      .get(planCursor) as {
+      openStage: string | null
+      cursorId: string
+      cursorFlow: string | null
+      flowId: string
+    }
+  expect(pointers()).toMatchObject({
+    openStage: pointers().cursorId,
+    cursorFlow: pointers().flowId,
+  })
+  expect(() =>
+    composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {}),
+  ).toThrow(`task DEV-FLOW already has open stage cursor ${planCursor} ${plan} default`)
+
+  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(planCursor)
+  nextWorkflowStep(plan, 'fixture', 'default', args, 'plan finished', context, d, {}, testPorts)
+  expect(pointers().openStage).toBeNull()
+
+  const reentered = composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {})
+  const shipCursor = reentered.cursor!.id
+  const shipPointers = d
+    .query(
+      `SELECT flow.open_stage_cursor_record_id openStage,cursor.record_id cursorId,
+              cursor.task_flow_record_id cursorFlow,flow.record_id flowId
+       FROM workflow_cursor cursor JOIN task_flow flow
+         ON flow.task_record_id=cursor.task_record_id
+       WHERE cursor.number=?`,
+    )
+    .get(shipCursor) as {
+    openStage: string | null
+    cursorId: string
+    cursorFlow: string | null
+    flowId: string
+  }
+  expect(reentered.cursor?.opened).toBe(true)
+  expect(shipPointers).toMatchObject({
+    openStage: shipPointers.cursorId,
+    cursorFlow: shipPointers.flowId,
+  })
+
+  abandonCursor(ship, 'fixture', 'default', args, 'stage no longer needed', context, d)
+  expect(d.query('SELECT open_stage_cursor_record_id openStage FROM task_flow').get()).toEqual({
+    openStage: null,
+  })
+})
 
 test('one task flow refuses a second open stage and retains re-entry history', () => {
   const d = migratedTestDatabase()

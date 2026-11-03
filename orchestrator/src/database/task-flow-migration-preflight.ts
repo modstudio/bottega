@@ -25,11 +25,23 @@ export function taskFlowBackfillReports(d: Database): string[] {
        ) WHERE task_rank>1 ORDER BY number`,
     )
     .all()
+  const missing = d
+    .query<{ number: number }, []>(
+      `SELECT cursor.number FROM workflow_cursor cursor
+       WHERE cursor.workflow_key<>'' AND cursor.task_record_id IS NOT NULL
+         AND cursor.state NOT IN ('done','abandoned')
+         AND NOT EXISTS (
+           SELECT 1 FROM task_flow flow WHERE flow.task_record_id=cursor.task_record_id
+         )
+       ORDER BY cursor.number`,
+    )
+    .all()
   return [
     ...extras.map(
       ({ number, kept }) => `cursor ${number} not merged; cursor ${kept} is the task's stage`,
     ),
     ...unresolved.map(({ number }) => `cursor ${number} not merged; task key did not resolve`),
+    ...missing.map(({ number }) => `cursor ${number} not merged; task flow was not created`),
   ]
 }
 

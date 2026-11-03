@@ -25,10 +25,15 @@ test('backfills the newest resolved stage and reports every cursor it leaves unm
                ?,'default',?,?, '',NULL,?,?,'{}','{}',0,'start','running','[]',
                NULL,1,'2026-11-01','2026-11-01','floors') RETURNING number,record_id`,
     )
-    const add = (workflow: string, key: string, task: string | null) =>
+    const add = (
+      workflow: string,
+      key: string,
+      task: string | null,
+      cursorProjectId: string | null = projectId,
+    ) =>
       insert.get(
         newRecordId(),
-        projectId,
+        cursorProjectId,
         workflow,
         key,
         task,
@@ -43,10 +48,6 @@ test('backfills the newest resolved stage and reports every cursor it leaves unm
     const unresolved = add('ship-task', 'DEV-2', null)
     const taskless = add('ship-task', '', null)
 
-    expect(taskFlowBackfillReports(d)).toEqual([
-      `cursor ${older.number} not merged; cursor ${newest.number} is the task's stage`,
-      `cursor ${unresolved.number} not merged; task key did not resolve`,
-    ])
     applyMigrations(d)
 
     expect(
@@ -66,6 +67,35 @@ test('backfills the newest resolved stage and reports every cursor it leaves unm
       { number: unresolved.number, task_flow_record_id: null },
       { number: taskless.number, task_flow_record_id: null },
     ])
+    const missing = add('ship-task', 'DEV-3', 'task-3')
+    expect(taskFlowBackfillReports(d)).toEqual([
+      `cursor ${older.number} not merged; cursor ${newest.number} is the task's stage`,
+      `cursor ${unresolved.number} not merged; task key did not resolve`,
+      `cursor ${missing.number} not merged; task flow was not created`,
+    ])
+  } finally {
+    d.close()
+  }
+})
+
+test('refuses a resolved stage whose project identity is null instead of silently skipping it', () => {
+  const d = migrationBoundaryTestDatabase('0198_task_flow')
+  try {
+    const workflowVersion = workflowVersionRecordId(d)
+    const catalogueVersion = catalogueVersionRecordId(d)
+    d.query(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+         task_record_id,instance_id,session_id,workflow_version_record_id,
+         catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
+         total_steps,created_at,updated_at,enforcement)
+       VALUES (?,1,'fixture',NULL,'ship-task','default','DEV-4','task-4','',NULL,?,?,'{}',
+               '{}',0,'start','running','[]',NULL,1,'2026-11-01','2026-11-01','floors')`,
+    ).run(newRecordId(), workflowVersion, catalogueVersion)
+
+    expect(() => applyMigrations(d)).toThrow(
+      'NOT NULL constraint failed: task_flow.project_record_id',
+    )
   } finally {
     d.close()
   }

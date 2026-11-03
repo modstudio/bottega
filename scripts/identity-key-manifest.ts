@@ -10,7 +10,7 @@ import type {
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
-import { TASK_IDENTITY_UUID_COLUMNS } from './identity-task-flow-manifest.ts'
+import { TASK_IDENTITY_UUID_COLUMNS } from './identity-task-identity-manifest.ts'
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))

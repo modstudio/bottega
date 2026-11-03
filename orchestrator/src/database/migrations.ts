@@ -943,7 +943,6 @@ function prepareMigrationEntry(
     }
   }
   if (entry.tag === WORKFLOW_UUID_KEY_MIGRATION) prepareWorkflowUuidMigration(d)
-  if (entry.tag === '0198_task_flow') reportTaskFlowBackfill(d)
   if (entry.tag === LENS_PROFILE_PIN_CONTRACT_MIGRATION) assertLensProfilePinContract(d)
   if (entry.tag === '0160_agent_port_baseline_uuid_keys') assertAgentPortBaselineIdentities(d)
   if (entry.tag === '0161_metric_receipt_cache_uuid_keys') assertMetricIdentities(d)
@@ -975,6 +974,8 @@ function applyMigrationRange(
       )
     }
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))
+    const taskFlowMigrationPending =
+      allowed.has('0198_task_flow') && state.pending.some((entry) => entry.tag === '0198_task_flow')
     for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
       if (BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag)) {
         const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)
@@ -995,6 +996,7 @@ function applyMigrationRange(
       versions.push(entry.tag)
     }
     applyBackfills(d, compatibleBackfillEntries(d, allowedEntries), folder)
+    if (taskFlowMigrationPending) reportTaskFlowBackfill(d)
     const highestApplied = journal.reduce(
       (highest, entry) =>
         state.pending.some((pending) => pending.tag === entry.tag)

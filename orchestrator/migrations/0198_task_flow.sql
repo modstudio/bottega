@@ -21,7 +21,7 @@ CREATE INDEX workflow_cursor_task_flow ON workflow_cursor(task_flow_record_id);
 --> statement-breakpoint
 -- BACKFILL
 -- newRecordId() is the runtime minter; these are migration-only random UUID-v4 values.
-INSERT OR IGNORE INTO task_flow(
+INSERT INTO task_flow(
   record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at
 )
 SELECT
@@ -35,7 +35,8 @@ FROM (
   FROM workflow_cursor
   WHERE workflow_key<>'' AND task_record_id IS NOT NULL AND state NOT IN ('done','abandoned')
 )
-WHERE task_rank=1;
+WHERE task_rank=1
+ON CONFLICT(task_record_id) DO NOTHING;
 --> statement-breakpoint
 UPDATE workflow_cursor
 SET task_flow_record_id=(

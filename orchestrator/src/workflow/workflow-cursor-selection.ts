@@ -2,7 +2,7 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { db, sessionId } from '../database/db.ts'
+import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { attachTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
@@ -170,43 +170,46 @@ function selectKeyedTaskStage(
 ): SelectableCursorRow | null {
   const handled = cursor === undefined ? null : selectByHandle(cursor, identity, d)
   if (!taskRecordId) return handled
-  const selected = selectTaskFlowStage(
-    {
-      project: identity.project,
-      taskRecordId,
-      taskKey: identity.key,
-      statusCategory: taskStatusCategory,
-      workflow: identity.workflow,
-      mode: identity.mode,
-      ...(cursor === undefined ? {} : { cursor }),
-    },
-    d,
-  )
-  if (handled) return handled
-  if (selected.cursorRecordId) {
-    const row = d
-      .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`)
-      .get(selected.cursorRecordId) as SelectableCursorRow
-    return validateIdentity(row, identity)
-  }
-  const fallback = d
-    .query(
-      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
-       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND mode_slug=? AND task_record_id=?
-         AND instance_id='' ORDER BY number DESC LIMIT 1`,
+  return writeTransaction(() => {
+    const selected = selectTaskFlowStage(
+      {
+        project: identity.project,
+        taskRecordId,
+        taskKey: identity.key,
+        statusCategory: taskStatusCategory,
+        workflow: identity.workflow,
+        mode: identity.mode,
+        ...(cursor === undefined ? {} : { cursor }),
+      },
+      d,
     )
-    .get(
-      identity.project,
-      identity.workflow,
-      identity.mode,
-      taskRecordId,
-    ) as SelectableCursorRow | null
-  if (fallback && fallback.state !== 'done' && fallback.state !== 'abandoned') {
-    attachTaskFlowStage(selected.flowRecordId, fallback.record_id, d)
-    fallback.task_flow_record_id = selected.flowRecordId
-  }
-  return fallback
+    if (handled) return handled
+    if (selected.cursorRecordId) {
+      const row = d
+        .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE record_id=?`)
+        .get(selected.cursorRecordId) as SelectableCursorRow
+      return validateIdentity(row, identity)
+    }
+    // Adopt an open keyed cursor that the 0198 backfill deliberately left without a flow.
+    const fallback = d
+      .query(
+        `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
+         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+           AND workflow_slug=? AND mode_slug=? AND task_record_id=?
+           AND instance_id='' ORDER BY number DESC LIMIT 1`,
+      )
+      .get(
+        identity.project,
+        identity.workflow,
+        identity.mode,
+        taskRecordId,
+      ) as SelectableCursorRow | null
+    if (fallback && fallback.state !== 'done' && fallback.state !== 'abandoned') {
+      attachTaskFlowStage(selected.flowRecordId, fallback.record_id, d)
+      fallback.task_flow_record_id = selected.flowRecordId
+    }
+    return fallback
+  }, d)
 }
 
 export function selectWorkflowCursor(
