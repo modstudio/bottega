@@ -13,6 +13,15 @@ export const LAUNCHD_TEMPLATE_OWNERS = [
   { concern: 'ops', directory: 'launchd', command: 'ops/install.sh' },
 ] as const
 
+const CHECKOUT_ONLY_INSTALLERS = new Set<string>(
+  LAUNCHD_TEMPLATE_OWNERS.map(({ command }) => command),
+)
+
+/** Answer whether an owner command exists only in a source checkout. */
+export function isCheckoutOnlyLaunchAgentInstaller(command: string): boolean {
+  return CHECKOUT_ONLY_INSTALLERS.has(command)
+}
+
 /** Derive every installed label and its owning installer from template paths. */
 export function installedPlistOwners(
   templates: ReadonlyArray<{ path: string; text: string }>,

@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { installPathFindings } from './check-install-paths.ts'
+import {
+  distributionUnsafeInstallPathFindings,
+  installPathFindings,
+  installPathRemedyViolations,
+} from './check-install-paths.ts'
 
 test('refuses production paths built from a module directory', () => {
   expect(
@@ -74,4 +78,41 @@ test('ignores test files', () => {
       'orchestrator/src/example.test.ts',
     ),
   ).toEqual([])
+})
+
+test('refuses checkout-only installer remedies and running-root binary joins', () => {
+  expect(
+    distributionUnsafeInstallPathFindings(
+      "const remedy = 'run ops/install.sh'\nconst executable = join(runningRoot, 'bin', PLATFORM_SLUG)\n",
+      'orchestrator/src/example.ts',
+    ),
+  ).toEqual([
+    { path: 'orchestrator/src/example.ts', line: 1 },
+    { path: 'orchestrator/src/example.ts', line: 2 },
+  ])
+})
+
+test('allows the canonical owner inventory and running-copy executable resolver', () => {
+  expect(
+    distributionUnsafeInstallPathFindings(
+      "const LAUNCHD_TEMPLATE_OWNERS = [{ command: 'ops/install.sh' }]\nconst argv = bottegaEntryArgv(PLATFORM_SLUG)\n",
+      'orchestrator/src/example.ts',
+    ),
+  ).toEqual([])
+})
+
+test('distribution remedy baseline refuses growth and requires shrinking stale counts', () => {
+  const baseline = { files: { 'shared/install-root.ts': 1 } }
+  expect(
+    installPathRemedyViolations(
+      [
+        { path: 'shared/install-root.ts', line: 1 },
+        { path: 'new.ts', line: 2 },
+      ],
+      baseline,
+    ),
+  ).toEqual(['new.ts: distribution-unsafe install remedy count grew from 0 to 1'])
+  expect(installPathRemedyViolations([], baseline)).toEqual([
+    'shared/install-root.ts: distribution-unsafe install remedy baseline may only shrink; lower its count from 1 to 0',
+  ])
 })

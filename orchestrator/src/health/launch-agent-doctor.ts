@@ -1,6 +1,7 @@
 // concern: doctor
 /** Reports installer-owned launch agents without changing their launchd state. */
 
+import { type InstallationIdentity, installationIdentity } from '../../../shared/install-root.ts'
 import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
@@ -9,6 +10,7 @@ import {
   type InstalledPlistOwner,
   includesLaunchAgents,
   installationPlistOwners,
+  isCheckoutOnlyLaunchAgentInstaller,
 } from '../setup/launchd-owners.ts'
 
 export type LaunchAgentLoadObservation =
@@ -18,12 +20,14 @@ export type LaunchAgentLoadObservation =
 export type LaunchAgentDoctorDecision = {
   skipped: Array<{ label: string; reason: string }>
   findings: Array<{ label: string; command: string }>
+  informational: Array<{ label: string; reason: 'not installed by a release install' }>
   launchctlUnavailable: null | 'launchctl missing' | 'gui domain unreachable'
 }
 
 /** Classify installer-owned labels from already-gathered skip and launchd facts. */
 export function decideLaunchAgentDoctor(input: {
   owners: readonly InstalledPlistOwner[]
+  installationKind: InstallationIdentity['kind']
   skipReasons: Readonly<Record<string, string | null>>
   loadObservation: LaunchAgentLoadObservation
 }): LaunchAgentDoctorDecision {
@@ -32,13 +36,30 @@ export function decideLaunchAgentDoctor(input: {
     return reason ? [{ label, reason }] : []
   })
   if (input.loadObservation.kind === 'unavailable') {
-    return { skipped, findings: [], launchctlUnavailable: input.loadObservation.reason }
+    return {
+      skipped,
+      findings: [],
+      informational: [],
+      launchctlUnavailable: input.loadObservation.reason,
+    }
   }
   const { loadedLabels } = input.loadObservation
-  const findings = input.owners.filter(
+  const unloaded = input.owners.filter(
     ({ label }) => !input.skipReasons[label] && !loadedLabels.has(label),
   )
-  return { skipped, findings, launchctlUnavailable: null }
+  const informational = unloaded
+    .filter(
+      ({ command }) =>
+        input.installationKind === 'distribution' && isCheckoutOnlyLaunchAgentInstaller(command),
+    )
+    .map(({ label }) => ({ label, reason: 'not installed by a release install' }) as const)
+  const informationalLabels = new Set(informational.map(({ label }) => label))
+  return {
+    skipped,
+    findings: unloaded.filter(({ label }) => !informationalLabels.has(label)),
+    informational,
+    launchctlUnavailable: null,
+  }
 }
 
 function loadedLaunchAgentLabels(
@@ -69,6 +90,10 @@ function loadedLaunchAgentLabels(
 export async function launchAgentDoctorLines(
   platform: NodeJS.Platform,
   readOwners: () => Promise<InstalledPlistOwner[]> = installationPlistOwners,
+  installationKind: InstallationIdentity['kind'] = installationIdentity(
+    import.meta.dir,
+    process.env,
+  ).kind,
 ): Promise<string[]> {
   if (!includesLaunchAgents(platform)) return []
   let owners: InstalledPlistOwner[]
@@ -83,6 +108,7 @@ export async function launchAgentDoctorLines(
   )
   const decision = decideLaunchAgentDoctor({
     owners,
+    installationKind,
     skipReasons,
     loadObservation: loadedLaunchAgentLabels(owners, skipReasons),
   })
@@ -93,6 +119,9 @@ export async function launchAgentDoctorLines(
   if (decision.launchctlUnavailable) {
     lines.push(`  ${decision.launchctlUnavailable} — load check unavailable`)
     return lines
+  }
+  for (const { label, reason } of decision.informational) {
+    lines.push(`  ${label} — ${reason}`)
   }
   for (const { label, command } of decision.findings) {
     lines.push(

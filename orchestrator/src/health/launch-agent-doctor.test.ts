@@ -28,12 +28,30 @@ describe('launch agent doctor decision', () => {
     expect(
       decideLaunchAgentDoctor({
         owners,
+        installationKind: 'checkout',
         skipReasons,
         loadObservation: { kind: 'available', loadedLabels: new Set(['com.user.loaded']) },
       }),
     ).toEqual({
       skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
       findings: [{ label: 'com.user.unloaded', command: 'ops/install.sh' }],
+      informational: [],
+      launchctlUnavailable: null,
+    })
+  })
+
+  test('a distribution reports checkout-only installers without a nonexistent remedy', () => {
+    expect(
+      decideLaunchAgentDoctor({
+        owners,
+        installationKind: 'distribution',
+        skipReasons,
+        loadObservation: { kind: 'available', loadedLabels: new Set(['com.user.loaded']) },
+      }),
+    ).toEqual({
+      skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
+      findings: [],
+      informational: [{ label: 'com.user.unloaded', reason: 'not installed by a release install' }],
       launchctlUnavailable: null,
     })
   })
@@ -43,12 +61,14 @@ describe('launch agent doctor decision', () => {
       expect(
         decideLaunchAgentDoctor({
           owners,
+          installationKind: 'checkout',
           skipReasons,
           loadObservation: { kind: 'unavailable', reason },
         }),
       ).toEqual({
         skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
         findings: [],
+        informational: [],
         launchctlUnavailable: reason,
       })
     }

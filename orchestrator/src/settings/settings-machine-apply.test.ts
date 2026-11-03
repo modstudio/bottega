@@ -385,7 +385,7 @@ describe('settings apply', () => {
           },
         },
       ),
-    ).rejects.toThrow('real harness homes may only be written from the registered main checkout')
+    ).rejects.toThrow("real harness homes may only be written from this machine's installed copy")
     expect(pulls).toBe(0)
   })
 

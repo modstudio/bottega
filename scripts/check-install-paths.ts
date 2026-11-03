@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const REMEDY_BASELINE_PATH = join(root, 'scripts', 'install-path-remedy-baseline.json')
 
 const INSTALL_AWARE_RESOLVERS = new Set([
   'embeddedDistributionManifest',
@@ -30,6 +31,7 @@ const INSTALL_PATH_ALLOWANCES = new Map([
 ])
 
 export type InstallPathFinding = { path: string; line: number }
+export type InstallPathRemedyBaseline = { files: Record<string, number> }
 
 function ignoredPath(path: string): boolean {
   const parts = path.split('/')
@@ -117,6 +119,97 @@ export function installPathFindings(sourceText: string, path: string): InstallPa
   return findings
 }
 
+function isLaunchdOwnerCommand(node: ts.Node): boolean {
+  for (let current: ts.Node | undefined = node; current; current = current.parent) {
+    if (
+      ts.isVariableDeclaration(current) &&
+      ts.isIdentifier(current.name) &&
+      current.name.text === 'LAUNCHD_TEMPLATE_OWNERS'
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+function isRunningRootBinJoin(node: ts.CallExpression): boolean {
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'join') return false
+  const [base, bin, slug] = node.arguments
+  if (
+    !base ||
+    !bin ||
+    !slug ||
+    !ts.isStringLiteral(bin) ||
+    bin.text !== 'bin' ||
+    !ts.isIdentifier(slug) ||
+    slug.text !== 'PLATFORM_SLUG'
+  ) {
+    return false
+  }
+  const baseText = base.getText()
+  return /^(?:root|runningRoot|runningInstallationRoot|input\.runningInstallationRoot)$/.test(
+    baseText,
+  )
+}
+
+/** Return remedies that can name checkout-only paths while running from a distribution. */
+export function distributionUnsafeInstallPathFindings(
+  sourceText: string,
+  path: string,
+): InstallPathFinding[] {
+  if (ignoredPath(path)) return []
+  const source = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true)
+  const findings: InstallPathFinding[] = []
+  const visit = (node: ts.Node): void => {
+    const checkoutInstaller =
+      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      node.text.includes('ops/install.sh') &&
+      !isLaunchdOwnerCommand(node)
+    const literalRunningBin =
+      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      /bin\/(?:bottega|\$\{PLATFORM_SLUG\})/.test(node.text)
+    if (
+      checkoutInstaller ||
+      literalRunningBin ||
+      (ts.isCallExpression(node) && isRunningRootBinJoin(node))
+    ) {
+      findings.push({
+        path,
+        line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+      })
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return findings
+}
+
+export function installPathRemedyViolations(
+  findings: readonly InstallPathFinding[],
+  baseline: InstallPathRemedyBaseline,
+): string[] {
+  const counts = new Map<string, number>()
+  for (const finding of findings) counts.set(finding.path, (counts.get(finding.path) ?? 0) + 1)
+  const violations: string[] = []
+  for (const [path, count] of counts) {
+    const allowed = baseline.files[path] ?? 0
+    if (count > allowed) {
+      violations.push(
+        `${path}: distribution-unsafe install remedy count grew from ${allowed} to ${count}`,
+      )
+    }
+  }
+  for (const [path, allowed] of Object.entries(baseline.files)) {
+    const count = counts.get(path) ?? 0
+    if (count < allowed) {
+      violations.push(
+        `${path}: distribution-unsafe install remedy baseline may only shrink; lower its count from ${allowed} to ${count}`,
+      )
+    }
+  }
+  return violations
+}
+
 function productionSources(directory: string): string[] {
   const paths: string[] = []
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -143,6 +236,13 @@ function checkInstallPaths(): InstallPathFinding[] {
   })
 }
 
+function checkDistributionRemedies(): InstallPathFinding[] {
+  return productionSources(root).flatMap((path) => {
+    const repositoryPath = relative(root, path).split('\\').join('/')
+    return distributionUnsafeInstallPathFindings(readFileSync(path, 'utf8'), repositoryPath)
+  })
+}
+
 if (import.meta.main) {
   const findings = checkInstallPaths()
   for (const finding of findings) {
@@ -150,5 +250,11 @@ if (import.meta.main) {
       `${finding.path}:${finding.line}: production paths must not be built from a module location; read through readInstallAsset or an install-root resolver, and add any new install-aware resolver to INSTALL_AWARE_RESOLVERS in scripts/check-install-paths.ts`,
     )
   }
-  if (findings.length) process.exit(1)
+  const remedyFindings = checkDistributionRemedies()
+  const remedyBaseline = JSON.parse(
+    readFileSync(REMEDY_BASELINE_PATH, 'utf8'),
+  ) as InstallPathRemedyBaseline
+  const remedyViolations = installPathRemedyViolations(remedyFindings, remedyBaseline)
+  for (const violation of remedyViolations) console.error(violation)
+  if (findings.length || remedyViolations.length) process.exit(1)
 }
