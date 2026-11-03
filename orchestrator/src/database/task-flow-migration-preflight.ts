@@ -1,5 +1,5 @@
 // concern: task flow migration
-/** Reports open keyed cursors the task-flow backfill deliberately leaves unmerged. */
+/** Reports open keyed cursors the task-flow backfill leaves unmerged, whether deliberately or because no flow was created. */
 
 import type { Database } from 'bun:sqlite'
 

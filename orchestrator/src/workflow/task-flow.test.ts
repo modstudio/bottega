@@ -47,7 +47,7 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
 
   const opened = composeWorkflowWithCursor(plan, 'fixture', 'default', args, context, d, {}, {})
   const planCursor = opened.cursor!.id
-  const pointers = () =>
+  const pointers = (cursorNumber: number) =>
     d
       .query(
         `SELECT flow.open_stage_cursor_record_id openStage,cursor.record_id cursorId,
@@ -56,15 +56,16 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
            ON flow.task_record_id=cursor.task_record_id
          WHERE cursor.number=?`,
       )
-      .get(planCursor) as {
+      .get(cursorNumber) as {
       openStage: string | null
       cursorId: string
       cursorFlow: string | null
       flowId: string
     }
-  expect(pointers()).toMatchObject({
-    openStage: pointers().cursorId,
-    cursorFlow: pointers().flowId,
+  const planPointers = pointers(planCursor)
+  expect(planPointers).toMatchObject({
+    openStage: planPointers.cursorId,
+    cursorFlow: planPointers.flowId,
   })
   expect(() =>
     composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {}),
@@ -72,24 +73,11 @@ test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task
 
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(planCursor)
   nextWorkflowStep(plan, 'fixture', 'default', args, 'plan finished', context, d, {}, testPorts)
-  expect(pointers().openStage).toBeNull()
+  expect(pointers(planCursor).openStage).toBeNull()
 
   const reentered = composeWorkflowWithCursor(ship, 'fixture', 'default', args, context, d, {}, {})
   const shipCursor = reentered.cursor!.id
-  const shipPointers = d
-    .query(
-      `SELECT flow.open_stage_cursor_record_id openStage,cursor.record_id cursorId,
-              cursor.task_flow_record_id cursorFlow,flow.record_id flowId
-       FROM workflow_cursor cursor JOIN task_flow flow
-         ON flow.task_record_id=cursor.task_record_id
-       WHERE cursor.number=?`,
-    )
-    .get(shipCursor) as {
-    openStage: string | null
-    cursorId: string
-    cursorFlow: string | null
-    flowId: string
-  }
+  const shipPointers = pointers(shipCursor)
   expect(reentered.cursor?.opened).toBe(true)
   expect(shipPointers).toMatchObject({
     openStage: shipPointers.cursorId,
