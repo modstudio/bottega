@@ -132,6 +132,59 @@ test('keyed compose and advance enqueue both stage and flow while task-less comp
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
+function expectPendingFlowOutboxCleared(d: ReturnType<typeof cursorDatabase>): void {
+  const rows = d
+    .query<{ payload: string; revision: number }, []>(
+      `SELECT outbox.payload,flow.revision FROM outbox
+       JOIN task_flow flow ON flow.record_id=outbox.row_id
+       WHERE outbox.kind='task_flow' AND outbox.synced_at IS NULL
+         AND outbox.quarantined_at IS NULL AND outbox.retired_at IS NULL`,
+    )
+    .all()
+  expect(rows).toHaveLength(1)
+  expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+    openStageRecordId: null,
+    revision: rows[0]!.revision,
+  })
+}
+
+test('finishing a keyed stage enqueues the cleared task flow at its local revision', () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-finish-outbox'
+  const args = { key: 'DEV-FINISH-OUTBOX' }
+  const context = {
+    session: 'task-flow-finish-outbox',
+    taskRecordId: 'task-DEV-FINISH-OUTBOX',
+    taskStatusCategory: 'active',
+  }
+  installTaskFlowLifecycleWorkflow(d, workflow)
+
+  const opened = composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(
+    opened.cursor!.id,
+  )
+  nextWorkflowStep(workflow, 'fixture', 'default', args, 'finish', context, d, {}, testPorts)
+
+  expectPendingFlowOutboxCleared(d)
+})
+
+test('abandoning a keyed stage enqueues the cleared task flow at its local revision', () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-abandon-outbox'
+  const args = { key: 'DEV-ABANDON-OUTBOX' }
+  const context = {
+    session: 'task-flow-abandon-outbox',
+    taskRecordId: 'task-DEV-ABANDON-OUTBOX',
+    taskStatusCategory: 'active',
+  }
+  installTaskFlowLifecycleWorkflow(d, workflow)
+
+  composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  abandonCursor(workflow, 'fixture', 'default', args, 'abandon', context, d)
+
+  expectPendingFlowOutboxCleared(d)
+})
+
 test('one task flow refuses a second open stage and retains re-entry history', () => {
   const d = migratedTestDatabase()
   try {
