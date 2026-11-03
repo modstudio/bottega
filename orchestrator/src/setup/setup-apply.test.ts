@@ -24,8 +24,10 @@ import {
 } from './setup-apply.ts'
 import {
   migrateProcessEnvironment,
+  setupEnvironmentService,
   withMigratedProcessEnvironment,
 } from './setup-environment-runtime.ts'
+import { readSetupMachineLevel } from './setup-facts.ts'
 import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
 import type { SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
@@ -52,8 +54,37 @@ const action = (name: string): SetupAction => ({
 })
 
 const temporary: string[] = []
+const originalConfigHome = process.env.BOTTEGA_CONFIG_HOME
 afterEach(() => {
+  if (originalConfigHome === undefined) delete process.env.BOTTEGA_CONFIG_HOME
+  else process.env.BOTTEGA_CONFIG_HOME = originalConfigHome
   for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true })
+})
+
+test('applies the machine level through the runtime environment adapter', async () => {
+  const configHome = mkdtempSync(join(tmpdir(), 'setup-level-'))
+  temporary.push(configHome)
+  process.env.BOTTEGA_CONFIG_HOME = configHome
+
+  const results = await applySetupActions(
+    [{ kind: 'set-machine-level', from: null, to: 'record' }],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    setupEnvironmentService,
+  )
+
+  expect(results[0]?.status).toBe('applied')
+  expect(readSetupMachineLevel()).toBe('record')
+})
+
+test('refuses a machine level action when its environment writer is unavailable', async () => {
+  const results = await applySetupActions(
+    [{ kind: 'set-machine-level', from: null, to: 'record' }],
+    { add: async () => {}, fillAbsent: async () => {} },
+  )
+
+  expect(results[0]?.status).toBe('refused')
+  expect(results[0]?.message).toBe('machine-level writer is unavailable')
 })
 
 test('writes an inferred recipe before filling its absent register pointer and never overwrites', async () => {

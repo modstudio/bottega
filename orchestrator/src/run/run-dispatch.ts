@@ -21,6 +21,7 @@ import { join } from 'node:path'
  * with it, and `setsid` does not exist on macOS.
  */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -30,7 +31,11 @@ import {
   assertMigrationDispatchAllowedAndRecord,
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
-import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
+import {
+  callerCheckoutFacts,
+  installLevelDispatchDecision,
+  preflight,
+} from '../dispatch/dispatch-preflight.ts'
 import { job, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
@@ -225,6 +230,9 @@ export async function detach(
   beforeClaim: () => void = () => {},
   dispatch: RunDispatchMetadata = {},
 ): Promise<string> {
+  const level = readMachineValue('machine.level') as MachineLevel
+  const decision = installLevelDispatchDecision(level, jobName)
+  if (decision.kind === 'refuse') throw new Error(decision.message)
   assertDispatchDatabase(spec.resume !== undefined)
   return detachResolved(
     jobName,

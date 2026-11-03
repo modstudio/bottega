@@ -4,7 +4,11 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readDelegationSettings } from '../../../shared/machine-config.ts'
+import {
+  type MachineLevel,
+  readDelegationSettings,
+  readMachineValue,
+} from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
@@ -77,7 +81,7 @@ import {
   resolveBase,
 } from '../worktree/worktree-caller.ts'
 import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
-import { callerCheckoutFacts } from './dispatch-preflight.ts'
+import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-preflight.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey } from './task-key-lookup.ts'
 
@@ -542,7 +546,15 @@ export async function detachRoutedRun(
   )
 }
 
+function assertInstallLevelAllowsDispatch(jobName: string): void {
+  const level = readMachineValue('machine.level') as MachineLevel
+  const decision = installLevelDispatchDecision(level, jobName)
+  if (decision.kind === 'refuse') throw new Error(decision.message)
+}
+
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {
+  const requestedJob = argv[1]
+  if (requestedJob && JOBS[requestedJob]) assertInstallLevelAllowsDispatch(requestedJob)
   await ensureLocalHealth()
   const flag = (name: string) => flagValue(argv, name)
   const has = (name: string) =>

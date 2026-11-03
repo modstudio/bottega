@@ -1,7 +1,8 @@
 // concern: setup-engine
 /** Turns setup facts into proposals and ruling-shaped questions. Pure: no store, process, or filesystem. */
 
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
 import type { SetupFacts } from './setup-facts.ts'
@@ -67,7 +68,9 @@ type SetupRegistrationProposal = {
   questionId: string | null
   state: 'absent' | 'same' | 'stale' | 'different' | 'unreadable'
   legacyName?: LegacyMcpServerName
+  workerOnly: boolean
 }
+
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
   proposals: SetupProposal[]
@@ -76,6 +79,34 @@ export type SetupPlan = {
   notices: SetupNotice[]
   mcpConfigMigrations?: McpConfigMigration[]
   legacyPathSymlinks?: LegacyPathSymlink[]
+}
+
+export function recommendedMachineLevel(machine: SetupFacts): MachineLevel {
+  if (machine.machineLevel) return machine.machineLevel
+  return Object.values(machine.harnesses ?? {}).some((harness) => harness.auth === 'signed-in')
+    ? 'full'
+    : 'record'
+}
+
+function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
+  return {
+    id: 'machine:level',
+    question: 'Which install level should this machine use?',
+    options: [
+      {
+        id: 'record',
+        label: 'Record',
+        why: 'Provides tasks, documents, canon, the board, and workflow steps without worker jobs; it needs no worker agent command-line tool.',
+      },
+      {
+        id: 'full',
+        label: 'Full',
+        why: 'Adds external worker agents; it needs a signed-in worker agent command-line tool, plus ripgrep, bubblewrap, and socat on Linux.',
+      },
+    ],
+    recommendation: recommendedMachineLevel(machine),
+    why: 'The install level controls whether this machine can dispatch external worker agents.',
+  }
 }
 
 const questionId = (path: string, field: string) => `project:${encodeURIComponent(path)}:${field}`
@@ -207,10 +238,19 @@ function proposeHarnessRegistrations(
     })
   }
   return desired.map((server) => {
+    const workerOnly = server.name === WORKER_MCP_SERVER_NAME
     const { current, legacyName } = registrationToMigrate(facts.mcp!, server)
     const migrating = legacyName !== null
     if (!migrating && sameMcpRegistration(current, server)) {
-      return { harness, bin: facts.path!, server, current, questionId: null, state: 'same' }
+      return {
+        harness,
+        bin: facts.path!,
+        server,
+        current,
+        questionId: null,
+        state: 'same',
+        workerOnly,
+      }
     }
     if (current.status === 'absent') {
       return {
@@ -220,6 +260,7 @@ function proposeHarnessRegistrations(
         current,
         questionId: absentQuestionId,
         state: 'absent',
+        workerOnly,
       }
     }
     const replaceQuestionId = registrationQuestionId(harness, server.name)
@@ -237,6 +278,7 @@ function proposeHarnessRegistrations(
       questionId: replaceQuestionId,
       state: registrationState(current),
       ...(migrating ? { legacyName } : {}),
+      workerOnly,
     }
   })
 }
@@ -498,7 +540,7 @@ export function proposeSetup(
       .flatMap((project) => project.settings.keyPrefixes ?? [])
       .map((prefix) => prefix.toUpperCase()),
   )
-  const questions: SetupQuestion[] = []
+  const questions: SetupQuestion[] = [machineLevelQuestion(machine)]
   const notices = [
     ...machineNotices(machine),
     ...agentNotices(machine, agents),

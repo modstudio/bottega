@@ -114,6 +114,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     file: 'orchestrator/src/setup/setup-engine.ts',
     allowed: ['../../../shared/brand.ts', './setup-mcp.ts', './setup-toolchain.ts'],
     typeOnlyAllowed: [
+      '../../../shared/machine-config.ts',
       '../project/projects.ts',
       './repository-facts.ts',
       './setup-facts.ts',
@@ -126,7 +127,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-planner-boundary',
     file: 'orchestrator/src/setup/setup-planner.ts',
-    allowed: ['./setup-toolchain.ts'],
+    allowed: ['../../../shared/machine-config.ts', './setup-toolchain.ts'],
     typeOnlyAllowed: [
       '../project/projects.ts',
       './setup-engine.ts',
@@ -148,7 +149,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-legacy-path.ts',
       './setup-planner.ts',
     ],
-    typeOnlyAllowed: ['./setup-environment.ts'],
+    typeOnlyAllowed: ['../../../shared/machine-config.ts', './setup-environment.ts'],
     reason:
       'Keep ordered application independent of project service implementation and CLI grammar.',
   },

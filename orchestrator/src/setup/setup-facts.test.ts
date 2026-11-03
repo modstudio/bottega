@@ -22,6 +22,7 @@ function facts(overrides: Partial<Parameters<typeof classifySetupFacts>[0]> = {}
     ]),
   ) as Record<HarnessName, { path: string; version: CommandCapture; auth: 'unknown' }>
   return classifySetupFacts({
+    machineLevel: null,
     recordApiUrl: null,
     platform: 'linux',
     arch: 'x64',

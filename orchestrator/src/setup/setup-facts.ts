@@ -2,6 +2,7 @@
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
+import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
 import {
@@ -31,6 +32,7 @@ type SetupAuthState = 'signed-in' | 'signed-out' | 'unknown'
 export type CommandCapture = CliVersionCapture
 
 export type SetupFactsCapture = {
+  machineLevel: MachineLevel | null
   recordApiUrl: string | null
   platform: NodeJS.Platform
   arch: NodeJS.Architecture
@@ -52,6 +54,7 @@ export type SetupFactsCapture = {
 }
 
 export type SetupFacts = {
+  machineLevel: MachineLevel | null
   recordApiUrl: string | null
   os: { platform: NodeJS.Platform; arch: NodeJS.Architecture; wsl: boolean }
   bun: { path: string; version: string }
@@ -72,6 +75,7 @@ export type SetupFacts = {
 
 export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
   return {
+    machineLevel: capture.machineLevel,
     recordApiUrl: capture.recordApiUrl,
     os: {
       platform: capture.platform,
@@ -144,6 +148,11 @@ function desiredServers(harness: HarnessName) {
   return stableMcpServers().filter((server) => harnessMcpServers(harness).includes(server.name))
 }
 
+/** The install level stored in machine.toml, or null when the machine has never chosen one. */
+export function readSetupMachineLevel(): MachineLevel | null {
+  return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
+}
+
 export async function gatherSetupFacts(
   registrationRunner?: SetupCommandRunner,
 ): Promise<SetupFacts> {
@@ -175,6 +184,7 @@ export async function gatherSetupFacts(
     }),
   ) as SetupFactsCapture['harnesses']
   return classifySetupFacts({
+    machineLevel: readSetupMachineLevel(),
     recordApiUrl: resolveRecordApiUrl() ?? null,
     platform: process.platform,
     arch: process.arch,

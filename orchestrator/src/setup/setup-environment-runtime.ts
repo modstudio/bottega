@@ -3,6 +3,7 @@
 
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type MachineLevel, setMachineValue } from '../../../shared/machine-config.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import {
   migrateLegacyEnvironmentSecrets,
@@ -28,7 +29,6 @@ import {
   processEnvironmentNameMigration,
   replacementEnvironmentName,
 } from './environment-name-migration.ts'
-import type { SetupEnvironmentService } from './setup-apply.ts'
 import {
   environmentMigrationMessage,
   environmentSettingsDecision,
@@ -120,8 +120,14 @@ export async function withMigratedProcessEnvironment<T>(
   }
 }
 
-export const setupEnvironmentService: SetupEnvironmentService = {
-  migrateEnvironment: async (preparedStateFileMigration) =>
+export const setupEnvironmentService = {
+  setMachineLevel: (level: MachineLevel) => setMachineValue('machine.level', level),
+  migrateEnvironment: async (
+    preparedStateFileMigration?: PreparedStateFileMigration | null,
+  ): Promise<{
+    status: 'applied' | 'unchanged' | 'follow-up'
+    message: string | null
+  }> =>
     withMigratedProcessEnvironment(process.env, async (processNamesRenamed) => {
       const notes: string[] = []
       const home = homedir()

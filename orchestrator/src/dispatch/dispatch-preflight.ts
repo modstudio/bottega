@@ -5,6 +5,7 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import {
@@ -38,6 +39,19 @@ import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 
 const MAX_DEPTH = 1
 export const depth = () => Number(process.env.BOTTEGA_DEPTH ?? 0)
+
+export type InstallLevelDispatchDecision = { kind: 'allow' } | { kind: 'refuse'; message: string }
+
+export function installLevelDispatchDecision(
+  level: MachineLevel,
+  jobName: string,
+): InstallLevelDispatchDecision {
+  if (level === 'full') return { kind: 'allow' }
+  return {
+    kind: 'refuse',
+    message: `cannot start ${jobName}: this machine's install level is record, and starting a run needs worker agents; cleared by: ${PLATFORM_SLUG} machine setup --level full`,
+  }
+}
 
 /** Stable lens question and exclusions for a findings dispatch that named --lens. */
 export function resolvedFindingsLens(

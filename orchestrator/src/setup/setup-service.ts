@@ -59,7 +59,7 @@ export class SetupAnswersRefusedError extends Error {}
 
 export type SetupService = {
   plan(folders: string[]): Promise<SetupPlan>
-  dryRun(folders: string[]): Promise<SetupDryRun>
+  dryRun(folders: string[], answers?: Partial<SetupAnswers>): Promise<SetupDryRun>
   prepare(
     folders: string[],
   ): Promise<{ plan: SetupPlan; migration: PreparedStateFileMigration | null }>
@@ -68,8 +68,15 @@ export type SetupService = {
     actions: SetupAction[],
     migration: PreparedStateFileMigration | null,
   ): Promise<SetupActionResult[]>
-  apply(folders: string[], answers: unknown): Promise<SetupApplyOutcome>
-  applyRecommended(folders: string[]): Promise<SetupApplyOutcome>
+  apply(
+    folders: string[],
+    answers: unknown,
+    fixedAnswers?: Partial<SetupAnswers>,
+  ): Promise<SetupApplyOutcome>
+  applyRecommended(
+    folders: string[],
+    fixedAnswers?: Partial<SetupAnswers>,
+  ): Promise<SetupApplyOutcome>
 }
 
 export type SetupServiceAdapters = {
@@ -226,12 +233,18 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
 
   return {
     plan: adapters.plan,
-    async dryRun(folders) {
+    async dryRun(folders, fixedAnswers = {}) {
       const stateFileMigration = await (adapters.inspectStateFileMigration?.() ??
         Promise.resolve(null))
       if (stateFileMigration) return { stateFileMigration, diff: [stateFileMigration] }
       const plan = await adapters.plan(folders)
-      return { ...plan, diff: planSetupActions(plan, recommendedAnswers(plan)) }
+      return {
+        ...plan,
+        diff: planSetupActions(plan, {
+          ...recommendedAnswers(plan),
+          ...fixedAnswers,
+        } as SetupAnswers),
+      }
     },
     async prepare(folders) {
       const migration = await (adapters.prepareStateFileMigration?.() ?? Promise.resolve(null))
@@ -245,17 +258,27 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
     },
     cancel: reverseStoppedMigration,
     applyPreparedActions,
-    apply(folders, answerValue) {
+    apply(folders, answerValue, fixedAnswers = {}) {
       return apply(folders, (plan) => {
         try {
-          return validateSetupAnswers(plan.questions, answerValue)
+          const fixed = Object.keys(fixedAnswers).length > 0
+          const supplied =
+            answerValue && typeof answerValue === 'object' && !Array.isArray(answerValue)
+              ? { ...answerValue, ...fixedAnswers }
+              : fixed
+                ? fixedAnswers
+                : answerValue
+          return validateSetupAnswers(plan.questions, supplied)
         } catch (error) {
           throw new SetupAnswersRefusedError(error instanceof Error ? error.message : String(error))
         }
       })
     },
-    applyRecommended(folders) {
-      return apply(folders, recommendedAnswers)
+    applyRecommended(folders, fixedAnswers = {}) {
+      return apply(
+        folders,
+        (plan) => ({ ...recommendedAnswers(plan), ...fixedAnswers }) as SetupAnswers,
+      )
     },
   }
 }

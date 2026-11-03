@@ -145,6 +145,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/run/run-dispatch.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/machine-config.ts',
       'node:child_process',
       'node:fs',
       'node:path',

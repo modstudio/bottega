@@ -296,6 +296,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../worktree/worktree-template.ts',
     ],
     'Keep dispatch admission independent of transports, routing, and contracts.',
+    ['../../../shared/machine-config.ts'],
   ),
   boundary(
     'review-lens-prompt-boundary',

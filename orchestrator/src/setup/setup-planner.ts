@@ -1,5 +1,6 @@
 // concern: setup-planner
 /** Resolves setup answers into ordered project-register actions. Pure: it never applies them. */
+import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
 import type { ProjectSettings } from '../project/projects.ts'
 import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
 import type { HarnessName, LegacyMcpServerName, McpServer } from './setup-mcp.ts'
@@ -14,6 +15,11 @@ type SetupActionBase = {
   recipeFile?: { path: string; content: string }
 }
 export type SetupAction =
+  | {
+      kind: 'set-machine-level'
+      from: MachineLevel | null
+      to: MachineLevel
+    }
   | (SetupActionBase & {
       kind: 'add'
       name: string
@@ -42,6 +48,7 @@ export type SetupAction =
       harness: HarnessName
       bin: string
       server: McpServer
+      reason?: string
     }
   | ({ kind: 'migrate-mcp-config' } & McpConfigMigration)
   | {
@@ -66,6 +73,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'migrate-mcp-config':
     case 'remove-legacy-symlink':
     case 'migrate-environment':
+    case 'set-machine-level':
       return true
     case 'unchanged':
     case 'mcp-unchanged':
@@ -84,6 +92,8 @@ export function setupActionLine(action: SetupAction): string {
       return `Remove leftover ${action.path} symlink`
     case 'migrate-environment':
       return 'Migrate operator environment names'
+    case 'set-machine-level':
+      return `Set machine install level to ${action.to}`
     case 'add':
       return `Add project ${action.name} (${action.path})`
     case 'set':
@@ -157,8 +167,29 @@ function diffSettings(current: ProjectSettings | null, proposed: ProjectSettings
   return diff
 }
 
+function selectedMachineLevel(plan: SetupPlan, answers: SetupAnswers): MachineLevel {
+  const selected = (answers['machine:level'] ??
+    plan.facts?.machine?.machineLevel ??
+    'full') as MachineLevel
+  if (!MACHINE_LEVELS.includes(selected)) throw new Error('missing answer for "machine:level"')
+  return selected
+}
+
 export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
+  const selectedLevel = selectedMachineLevel(plan, answers)
+  const currentLevel = plan.facts?.machine?.machineLevel
+  const machineLevel: SetupAction | null =
+    currentLevel === undefined || currentLevel === selectedLevel
+      ? null
+      : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
   const registrations: SetupAction[] = plan.registrations.map((proposal) => {
+    if (selectedLevel === 'record' && proposal.workerOnly) {
+      return {
+        ...proposal,
+        kind: 'mcp-skipped',
+        reason: 'not needed at install level record',
+      }
+    }
     if (proposal.state === 'same') return { ...proposal, kind: 'mcp-unchanged' }
     const answer = proposal.questionId ? answers[proposal.questionId] : undefined
     const apply = proposal.state === 'absent' ? answer === 'register' : answer === 'replace'
@@ -231,6 +262,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
   }))
   return [
     { kind: 'migrate-environment' },
+    ...(machineLevel ? [machineLevel] : []),
     ...registrations,
     ...migrations,
     ...legacySymlinks,
