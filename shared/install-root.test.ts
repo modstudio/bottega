@@ -20,6 +20,7 @@ import {
   requireCheckoutRoot,
   resolveInstallationPaths,
   resolveInstallRoot,
+  runningInstallRoot,
 } from './install-root.ts'
 
 const scratchRoots: string[] = []
@@ -36,6 +37,13 @@ function scratch(): string {
 }
 
 describe('install root resolution', () => {
+  test('the running root ignores an install-home override while the designated root honors it', () => {
+    const override = '/different/install'
+    const env = { [INSTALL_HOME_ENV]: override }
+    expect(runningInstallRoot(import.meta.dir, env)).toBe(dirname(import.meta.dir))
+    expect(resolveInstallRoot(import.meta.dir, env)).toBe(override)
+  })
+
   test('checkout-only helpers ignore an install-home override', () => {
     const root = scratch()
     const nested = join(root, 'shared')

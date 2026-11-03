@@ -6,7 +6,7 @@ import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts
 import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'
 import {
   isAuthorizedPlatformInstallation,
-  resolveInstallRoot,
+  runningInstallRoot,
 } from '../../../shared/install-root.ts'
 import {
   LEGACY_ORCHESTRATOR_DATABASE,
@@ -32,7 +32,7 @@ export type DatabaseResolution = {
   mainStorePath: string
 }
 
-export const ROOT = join(resolveInstallRoot(import.meta.dir, process.env), 'orchestrator')
+export const ROOT = join(runningInstallRoot(import.meta.dir, process.env), 'orchestrator')
 
 type RepositoryRoot = {
   root: string

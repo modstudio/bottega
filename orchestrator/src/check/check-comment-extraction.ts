@@ -12,7 +12,7 @@ import {
 } from '../../../shared/embedded-assets.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { installationIdentity, resolveInstallRoot } from '../../../shared/install-root.ts'
+import { installationIdentity, runningInstallRoot } from '../../../shared/install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
 import {
   COMMENT_PARSER_LANGUAGES,
@@ -27,7 +27,7 @@ import {
   commentFindings,
 } from './check-comments.ts'
 
-const REPOSITORY_ROOT = resolveInstallRoot(import.meta.dir, process.env)
+const REPOSITORY_ROOT = runningInstallRoot(import.meta.dir, process.env)
 const LANGUAGE_PACKAGES = { bash, php, python }
 
 const SOURCE_GLOBS = [
