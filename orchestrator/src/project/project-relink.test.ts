@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -343,49 +343,52 @@ test('record sign-in reports one adoption failure and continues to a later proje
   expect(output.some((line) => line.includes(`${oldId} -> ${hostedId}`))).toBe(true)
 })
 
-test('record sign-in reports the claim failure message once and still completes', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'sign-in-machine-claim-'))
-  const previousConfigHome = process.env[CONFIG_HOME_ENV]
-  const previousKeyStore = process.env[KEYSTORE_ENV]
-  const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
-  const previousFetch = globalThis.fetch
-  const pair = await generateMachineKeyPair()
-  const keyId = await machineKeyId(pair.publicKey)
-  process.env[CONFIG_HOME_ENV] = root
-  process.env[KEYSTORE_ENV] = 'file'
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-  writeMachineKey(pair)
-  globalThis.fetch = (async (input) => {
-    const path = new URL(String(input)).pathname
-    if (path === '/v1/config/machine-keys') {
-      return Response.json({
-        items: [
-          {
-            keyId,
-            publicKey: Buffer.from(pair.publicKey).toString('base64url'),
-            label: 'fixture',
-            createdAt: '2026-11-03T00:00:00.000Z',
-            revokedAt: null,
-            userId: null,
-          },
-        ],
-      })
-    }
-    if (path === '/v1/whoami') {
-      return Response.json({ user: { id: 'user-a' }, activeSpaceId: null })
-    }
-    throw new Error(`unexpected claim request ${path}`)
-  }) as typeof fetch
-  installRecordApiClient(createMemoryRecordApiClient())
-  const session = memoryRecordSession()
-  installRecordSessionRunner(session.runner)
-  const output: string[] = []
-  try {
-    await completeSignInCommand(
-      { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
-      { log: (line) => output.push(line) },
-    )
-  } finally {
+describe('record sign-in machine key claim failure', () => {
+  let root: string
+  let previousConfigHome: string | undefined
+  let previousKeyStore: string | undefined
+  let previousRecordUrl: string | undefined
+  let previousFetch: typeof fetch
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), 'sign-in-machine-claim-'))
+    previousConfigHome = process.env[CONFIG_HOME_ENV]
+    previousKeyStore = process.env[KEYSTORE_ENV]
+    previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
+    previousFetch = globalThis.fetch
+    const pair = await generateMachineKeyPair()
+    const keyId = await machineKeyId(pair.publicKey)
+    process.env[CONFIG_HOME_ENV] = root
+    process.env[KEYSTORE_ENV] = 'file'
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    writeMachineKey(pair)
+    globalThis.fetch = (async (input) => {
+      const path = new URL(String(input)).pathname
+      if (path === '/v1/config/machine-keys') {
+        return Response.json({
+          items: [
+            {
+              keyId,
+              publicKey: Buffer.from(pair.publicKey).toString('base64url'),
+              label: 'fixture',
+              createdAt: '2026-11-03T00:00:00.000Z',
+              revokedAt: null,
+              userId: null,
+            },
+          ],
+        })
+      }
+      if (path === '/v1/whoami') {
+        return Response.json({ user: { id: 'user-a' }, activeSpaceId: null })
+      }
+      throw new Error(`unexpected claim request ${path}`)
+    }) as typeof fetch
+    installRecordApiClient(createMemoryRecordApiClient())
+    const session = memoryRecordSession()
+    installRecordSessionRunner(session.runner)
+  })
+
+  afterEach(() => {
     installRecordSessionRunner(null)
     globalThis.fetch = previousFetch
     if (previousConfigHome === undefined) delete process.env[CONFIG_HOME_ENV]
@@ -395,9 +398,17 @@ test('record sign-in reports the claim failure message once and still completes'
     if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
     rmSync(root, { recursive: true, force: true })
-  }
-  expect(output).toEqual([
-    'signed in a@example.test',
-    `machine key claim failed: ${RECORD_ACTIVE_SPACE_REMEDY}`,
-  ])
+  })
+
+  test('record sign-in reports the claim failure message once and still completes', async () => {
+    const output: string[] = []
+    await completeSignInCommand(
+      { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
+      { log: (line) => output.push(line) },
+    )
+    expect(output).toEqual([
+      'signed in a@example.test',
+      `machine key claim failed: ${RECORD_ACTIVE_SPACE_REMEDY}`,
+    ])
+  })
 })
