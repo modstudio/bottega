@@ -619,6 +619,78 @@ export function registerHostedConfigProofs(
         `SELECT user_id::text FROM machine_public_key WHERE space_id='${spaceA}' AND key_id='${keyId}';`,
       ),
     ).toBe(userA)
+    await expect(createMachineKeyClaimChallenge({ ...serviceTenant, keyId })).rejects.toThrow(
+      'already has an owning user',
+    )
+
+    const claimFixture = async (label: string) => {
+      const candidate = await generateMachineKeyPair()
+      const candidateKeyId = await machineKeyId(candidate.publicKey)
+      succeeds(
+        'postgres',
+        'postgres',
+        `INSERT INTO machine_public_key (id, space_id, key_id, public_key, label, created_at)
+         VALUES ('${newRecordId()}', '${spaceA}', '${candidateKeyId}', decode('${Buffer.from(candidate.publicKey).toString('hex')}', 'hex'), '${label}', now());`,
+      )
+      const candidateChallenge = await createMachineKeyClaimChallenge({
+        ...serviceTenant,
+        keyId: candidateKeyId,
+      })
+      const candidateNonce = await openClaimChallenge({
+        enc: candidateChallenge.enc,
+        ciphertext: candidateChallenge.ciphertext,
+        spaceId: spaceA,
+        keyId: candidateKeyId,
+        recipientPrivateKey: candidate.privateKey,
+        senderPublicKey: candidateChallenge.senderPublicKey,
+      })
+      return { keyId: candidateKeyId, challenge: candidateChallenge, nonce: candidateNonce }
+    }
+
+    const wrong = await claimFixture('wrong nonce')
+    await expect(
+      claimMachineKey({
+        ...serviceTenant,
+        keyId: wrong.keyId,
+        challengeId: wrong.challenge.challengeId,
+        nonce: new Uint8Array(32),
+      }),
+    ).rejects.toThrow('invalid or expired')
+    await expect(
+      claimMachineKey({
+        ...serviceTenant,
+        keyId: wrong.keyId,
+        challengeId: wrong.challenge.challengeId,
+        nonce: wrong.nonce,
+      }),
+    ).rejects.toThrow('invalid or expired')
+
+    const anotherUser = await claimFixture('another user')
+    await expect(
+      claimMachineKey({
+        ...serviceTenant,
+        userId: USER_B,
+        keyId: anotherUser.keyId,
+        challengeId: anotherUser.challenge.challengeId,
+        nonce: anotherUser.nonce,
+      }),
+    ).rejects.toThrow('invalid or expired')
+
+    const expired = await claimFixture('expired')
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE machine_key_claim_challenge SET expires_at=now() - interval '1 second'
+       WHERE id='${expired.challenge.challengeId}';`,
+    )
+    await expect(
+      claimMachineKey({
+        ...serviceTenant,
+        keyId: expired.keyId,
+        challengeId: expired.challenge.challengeId,
+        nonce: expired.nonce,
+      }),
+    ).rejects.toThrow('invalid or expired')
   })
 
   test('only an owner or admin grants config access', async () => {
