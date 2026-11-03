@@ -4,8 +4,9 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
-import { writeTransaction, writableDb } from '../database/db.ts'
+import { writableDb, writeTransaction } from '../database/db.ts'
 import { retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
+import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { PROJECT_REFERENCES } from './project-reference-counts.ts'
@@ -63,8 +64,8 @@ function rewritePayloadProjectIds(value: unknown, oldId: string, newId: string):
 
 function rewritePendingOutbox(database: Database, oldId: string, newId: string): number {
   const rows = database
-    .query<{ id: number; payload: string }, []>(
-      'SELECT id,payload FROM outbox WHERE synced_at IS NULL',
+    .query<{ id: number; kind: string; payload: string }, []>(
+      'SELECT id,kind,payload FROM outbox WHERE synced_at IS NULL',
     )
     .all()
   let rewritten = 0
@@ -76,9 +77,16 @@ function rewritePendingOutbox(database: Database, oldId: string, newId: string):
       continue
     }
     if (!rewritePayloadProjectIds(payload, oldId, newId)) continue
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue
     rewritten += database
       .query('UPDATE outbox SET payload=? WHERE id=? AND payload=? AND synced_at IS NULL')
-      .run(JSON.stringify(payload), row.id, row.payload).changes
+      .run(
+        stringifyOutboxPayload(row.kind, payload as Record<string, unknown>, {
+          sanitizedForRules: true,
+        }),
+        row.id,
+        row.payload,
+      ).changes
   }
   return rewritten
 }
@@ -104,9 +112,8 @@ export function relinkProjectIdentity(
     database.exec('PRAGMA defer_foreign_keys = ON')
     const counts: Record<string, number> = {}
     for (const { table, column } of referenceColumns()) {
-      const changes = database
-        .query(`UPDATE ${table} SET ${column}=? WHERE ${column}=?`)
-        .run(hostedId, oldId).changes
+      const updateProjectReference = `UPDATE ${table} SET ${column}=? WHERE ${column}=?`
+      const changes = database.query(updateProjectReference).run(hostedId, oldId).changes
       counts[table] = (counts[table] ?? 0) + changes
     }
     counts.project = database
@@ -133,7 +140,7 @@ export function relinkProjectIdentity(
   }
 }
 
-export function retiredHostedProjectMessage(name: string): string {
+function retiredHostedProjectMessage(name: string): string {
   return `hosted project ${name} is retired in the space; unretire it from a machine that holds it with ${PLATFORM_SLUG} project retire ${name} --undo, then run ${PLATFORM_SLUG} project relink ${name} here`
 }
 
@@ -167,8 +174,11 @@ export async function adoptHostedProjectIdentity(
   return relinkProjectIdentity(project, hosted.id, database)
 }
 
-export async function relinkProjectByName(name: string): Promise<ProjectAdoptionResult> {
-  const project = projectByName(name) ?? projects({ retired: true }).find((row) => row.name === name)
+export async function relinkProjectByName(
+  name: string,
+): Promise<ProjectRelinkResult | { name: string; status: 'no-namesake' }> {
+  const project =
+    projectByName(name) ?? projects({ retired: true }).find((row) => row.name === name)
   if (!project) throw new Error(`no project "${name}"`)
   const result = await adoptHostedProjectIdentity(project)
   if (result.status === 'retired-namesake') throw new Error(result.message)

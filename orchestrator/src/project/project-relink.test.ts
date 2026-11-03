@@ -9,7 +9,6 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
-import { db } from '../database/db.ts'
 import { completeSignInCommand } from '../record/record-auth-command.ts'
 import { PROJECT_REFERENCES } from './project-reference-counts.ts'
 import {
@@ -46,7 +45,9 @@ function relinkDatabase(): Database {
   for (const [table, tableColumns] of columns) {
     database.exec(
       `CREATE TABLE ${table} (${[...tableColumns]
-        .map((column) => `${column} TEXT REFERENCES project(record_id) DEFERRABLE INITIALLY DEFERRED`)
+        .map(
+          (column) => `${column} TEXT REFERENCES project(record_id) DEFERRABLE INITIALLY DEFERRED`,
+        )
         .join(',')})`,
     )
   }
@@ -126,7 +127,9 @@ test('relink rewrites every registered reference and only pending matching paylo
   expect(database.query('SELECT record_id FROM project WHERE name=?').get('local')).toEqual({
     record_id: hostedId,
   })
-  const payloads = database.query<{ payload: string }, []>('SELECT payload FROM outbox ORDER BY id').all()
+  const payloads = database
+    .query<{ payload: string }, []>('SELECT payload FROM outbox ORDER BY id')
+    .all()
   expect(JSON.parse(payloads[0]!.payload)).toEqual({
     projectId: hostedId,
     nested: { sourceProjectId: hostedId },

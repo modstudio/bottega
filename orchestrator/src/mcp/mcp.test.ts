@@ -172,6 +172,11 @@ describe('orch MCP', () => {
       expect(cursorState()).toBe('running')
     } finally {
       db().query('DELETE FROM workflow_cursor WHERE project=?').run(project)
+      db()
+        .query(
+          'DELETE FROM task_flow WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)',
+        )
+        .run(project)
       removeProject(project)
     }
   })
@@ -613,6 +618,16 @@ describe('orch MCP', () => {
       await client.close()
       await server.close()
       db().query('DELETE FROM run WHERE repo=?').run(project)
+      db()
+        .query(
+          'DELETE FROM workflow_cursor WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)',
+        )
+        .run(project)
+      db()
+        .query(
+          'DELETE FROM task_flow WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)',
+        )
+        .run(project)
       removeProject(project)
     }
   })

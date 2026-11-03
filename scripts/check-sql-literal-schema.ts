@@ -692,6 +692,10 @@ function checkSqlLiteralSchema() {
     ([key, , column, explicitTable]) =>
       `SELECT COUNT(*) AS n FROM ${explicitTable ?? key} WHERE ${column}=?`,
   )
+  const referenceUpdateStatements = PROJECT_REFERENCES.map(
+    ([key, , column, explicitTable]) =>
+      `UPDATE ${explicitTable ?? key} SET ${column}=? WHERE ${column}=?`,
+  )
   return checkSqlLiteralSchemaWith({
     concerns: [
       {
@@ -717,6 +721,9 @@ function checkSqlLiteralSchema() {
     catalogues: {
       'orchestrator/src/project/project-reference-counts.ts': {
         $statements: referenceStatements,
+      },
+      'orchestrator/src/project/project-relink.ts': {
+        updateProjectReference: referenceUpdateStatements,
       },
     },
   })

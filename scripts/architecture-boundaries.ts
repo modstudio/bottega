@@ -11,6 +11,7 @@ import { portBoundarySpecs } from './architecture-port-boundaries.ts'
 import { proseBoundarySpecs } from './architecture-prose-modules.ts'
 import {
   recordApiBoundaries,
+  recordAuthCommandBoundaries,
   recordMachineBoundaries,
   recordReadBoundariesAfterPublish,
   recordReadBoundariesBeforePublish,
@@ -634,6 +635,7 @@ export const importBoundaries: ImportBoundary[] = [
       './project-add-record.ts',
       './project-hosted-write.ts',
       './project-record-identity.ts',
+      './project-relink.ts',
       './project-rename.ts',
       './project-settings-patch.ts',
       './projects.ts',
@@ -746,18 +748,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../canon/canon-lint.ts', './record-public-docs.ts'],
   ),
   ...recordApiBoundaries.slice(1),
-  boundary(
-    'record-auth-command-boundary',
-    'orchestrator/src/record/record-auth-command.ts',
-    [
-      '../../../shared/brand.ts',
-      '../../../shared/record-session.ts',
-      './install-binding-write.ts',
-      './record-api-client.ts',
-      './record-session.ts',
-    ],
-    'Enforce the record-auth-command concern boundary.',
-  ),
+  ...recordAuthCommandBoundaries,
   boundary(
     'record-cache-boundary',
     'orchestrator/src/record/record-cache.ts',
