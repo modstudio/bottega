@@ -60,6 +60,8 @@ const OUTBOX_KIND_SOURCES: Readonly<Record<keyof typeof OUTBOX_PAYLOAD_CONTRACTS
   run: { source: 'run', reason: 'enqueued from run' },
   score: { source: 'score', reason: 'enqueued from score' },
   question: { source: 'question', reason: 'enqueued from question' },
+  task_flow: { source: 'task_flow', reason: 'enqueued from task_flow' },
+  task_flow_stage: { source: 'workflow_cursor', reason: 'enqueued from workflow_cursor' },
   review: { source: 'review', reason: 'enqueued from review' },
   review_lens: { source: 'review_lens', reason: 'enqueued from review_lens' },
   review_finding: { source: 'review_finding', reason: 'enqueued from review_finding' },

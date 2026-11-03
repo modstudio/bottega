@@ -46,6 +46,9 @@ test('hosted evidence references describe the complete kind and payload parent g
     { table: 'run', id: 'run', kind: 'contended run' },
     { table: 'landing', id: 'landing', kind: 'contended landing' },
   ])
+  expect(evidenceReferences('task_flow_stage', { flowRecordId: 'flow' })).toEqual([
+    { table: 'task_flow', id: 'flow', kind: 'stage flow' },
+  ])
 })
 
 test('hosted evidence references omit absent and empty parents', () => {

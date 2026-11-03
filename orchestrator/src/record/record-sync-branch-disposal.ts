@@ -43,7 +43,9 @@ export async function pushBranchDisposal(
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const write = branchDisposalValues(row, await projectRecordId(tx, row, principal, projectIds))
-    await existingEvidenceOwned(tx, 'branch_disposal', write.id, write.machineId, principal)
+    await existingEvidenceOwned(tx, 'branch_disposal', write.id, write.machineId, principal, {
+      scope: 'machine',
+    })
     const { id: _id, createdAt: _createdAt, ...updates } = write
     const written = await drizzle({ client: tx })
       .insert(branchDisposal)

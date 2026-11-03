@@ -76,6 +76,13 @@ const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMN
   overturnedByName: null,
 })
 
+const TASK_FLOW_RECORD_PAYLOAD_CONTRACT = contract(
+  'id spaceId projectId projectName taskId state openStageRecordId openingMachineId updatedMachineId machineId revision createdAt updatedAt',
+)
+const TASK_FLOW_STAGE_RECORD_PAYLOAD_CONTRACT = contract(
+  'id spaceId projectId projectName flowRecordId workflow mode workflowVersionId catalogueVersionId arguments activeOrdinal activeSlug state closedStepNotes totalSteps openedMachineId takenOverFromMachineId lastAdvancedMachineId machineId revision createdAt updatedAt',
+)
+
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierInsertions tierDeletions tierReasons tierReason role patchId pathSet commitMessage outdatedAt outdatedReason round withheldFields createdAt updatedAt',
   {
@@ -169,6 +176,8 @@ export const OUTBOX_PAYLOAD_CONTRACTS = {
   run: RUN_RECORD_PAYLOAD_CONTRACT,
   score: SCORE_RECORD_PAYLOAD_CONTRACT,
   question: QUESTION_RECORD_PAYLOAD_CONTRACT,
+  task_flow: TASK_FLOW_RECORD_PAYLOAD_CONTRACT,
+  task_flow_stage: TASK_FLOW_STAGE_RECORD_PAYLOAD_CONTRACT,
   review: REVIEW_RECORD_PAYLOAD_CONTRACT,
   review_lens: REVIEW_LENS_RECORD_PAYLOAD_CONTRACT,
   review_finding: REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT,

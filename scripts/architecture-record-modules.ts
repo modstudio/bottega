@@ -349,9 +349,20 @@ export const recordModules: RecordModule[] = [
     './record-sync-project-identity.ts',
     './record-sync-run-task-identity.ts',
     './record-sync-run-values.ts',
+    './record-sync-task-flow.ts',
     './record-value-conversions.ts',
     './score-sync.ts',
     './record-pool.ts',
+  ]),
+  module('orchestrator/src/record/record-sync-task-flow.ts', [
+    'bun',
+    'drizzle-orm',
+    'drizzle-orm/bun-sql',
+    '../../../shared/record/schema-task-flow.ts',
+    './outbox-payload-contracts.ts',
+    './record-evidence-references.ts',
+    './record-sync-contract.ts',
+    './record-sync-principal.ts',
   ]),
   module('orchestrator/src/record/record-question-audit.ts', [
     'bun',
@@ -383,7 +394,9 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     './outbox-failure.ts',
   ]),
-  module('orchestrator/src/record/record-sync-evidence-lookup.ts', []),
+  module('orchestrator/src/record/record-sync-evidence-lookup.ts', [
+    './record-evidence-references.ts',
+  ]),
   module('orchestrator/src/record/record-evidence-references.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-api-invitations.ts', [
     'hono',

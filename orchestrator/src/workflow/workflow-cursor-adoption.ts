@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
+import { attachTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
 
 type AdoptionCursor = {
   id: number
@@ -85,4 +86,18 @@ export function adoptWorkflowTask(
       `cursor ${row.id} cannot adopt ${key}; open cursor ${conflict.id} already holds it`,
     )
   assignWorkflowTaskKey(row, key, taskRecordId ?? null, d)
+  if (row.task_record_id) {
+    const flow = selectTaskFlowStage(
+      {
+        project: row.project,
+        taskRecordId: row.task_record_id,
+        taskKey: key,
+        cursor: row.id,
+        workflow: row.workflow_slug,
+        mode: row.mode_slug,
+      },
+      d,
+    )
+    attachTaskFlowStage(flow.flowRecordId, row.record_id, d)
+  }
 }

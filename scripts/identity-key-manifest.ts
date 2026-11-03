@@ -10,7 +10,7 @@ import type {
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
-import { TASK_IDENTITY_UUID_COLUMNS } from './identity-task-identity-manifest.ts'
+import * as taskIdentity from './identity-task-identity-manifest.ts'
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
@@ -208,6 +208,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'workflow_step_text.step_ordinal',
     'workflow.generation',
     'workflow_version.n',
+    ...taskIdentity.TASK_IDENTITY_INTEGER_COLUMNS,
     'workflow_event.version_n',
   ]),
   ...ROUTING_POOL_IDENTITY.integerValues,
@@ -268,6 +269,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'release.exit_code',
     'release.commits_behind_trunk',
     'question.revision',
+    ...taskIdentity.HOSTED_TASK_IDENTITY_INTEGER_COLUMNS,
     'run.prompt_bytes',
     'run.evidence_seq',
     'run.latency_ms',
@@ -882,7 +884,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'run.retry_of_record_id',
     'run.project_record_id',
     'run.started_by_user_id',
-    ...TASK_IDENTITY_UUID_COLUMNS,
+    ...taskIdentity.TASK_IDENTITY_UUID_COLUMNS,
     'run_carried_ruling.record_id',
     'run_carried_ruling.question_record_id',
     'run_carried_ruling.run_record_id',

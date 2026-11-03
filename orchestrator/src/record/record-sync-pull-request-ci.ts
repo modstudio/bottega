@@ -59,6 +59,7 @@ async function pushPullRequestCi(
       write.id,
       write.machineId,
       principal,
+      { scope: 'machine' },
     )
     const { id: _id, createdAt: _createdAt, ...updates } = write
     const written = await drizzle({ client: tx })

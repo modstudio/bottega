@@ -3,6 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 
+export const TASK_FLOW_MIGRATION = '0198_task_flow'
+
 export function taskFlowBackfillReports(d: Database): string[] {
   const unresolved = d
     .query<{ number: number }, []>(
