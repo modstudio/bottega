@@ -180,14 +180,30 @@ function selectedMachineLevel(plan: SetupPlan, answers: SetupAnswers): MachineLe
 }
 
 function plannedScheduleActions(plan: SetupPlan, selectedLevel: MachineLevel): SetupAction[] {
-  return plan.facts.machine.os?.platform === 'darwin' &&
-    plan.facts.machine.installationKind === 'distribution' &&
+  const machine = plan.facts?.machine
+  return machine?.os?.platform === 'darwin' &&
+    machine.installationKind === 'distribution' &&
     selectedLevel === 'full' &&
-    (plan.facts.machine.schedules ?? []).some(
-      (schedule) => !schedule.loaded || !schedule.plistMatches,
-    )
+    (machine.schedules ?? []).some((schedule) => !schedule.loaded || !schedule.plistMatches)
     ? [{ kind: 'install-schedules' }]
     : []
+}
+
+function plannedRegistrations(
+  plan: SetupPlan,
+  answers: SetupAnswers,
+  selectedLevel: MachineLevel,
+): SetupAction[] {
+  return plan.registrations.map((proposal) => {
+    if (selectedLevel === 'record' && proposal.workerOnly) {
+      return { ...proposal, kind: 'mcp-skipped', reason: 'not needed at install level record' }
+    }
+    if (proposal.state === 'same') return { ...proposal, kind: 'mcp-unchanged' }
+    const answer = proposal.questionId ? answers[proposal.questionId] : undefined
+    const apply = proposal.state === 'absent' ? answer === 'register' : answer === 'replace'
+    if (!apply) return { ...proposal, kind: 'mcp-skipped' }
+    return { ...proposal, kind: 'register-mcp', replace: proposal.state !== 'absent' }
+  })
 }
 
 export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
@@ -198,20 +214,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
       ? null
       : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
   const schedules = plannedScheduleActions(plan, selectedLevel)
-  const registrations: SetupAction[] = plan.registrations.map((proposal) => {
-    if (selectedLevel === 'record' && proposal.workerOnly) {
-      return {
-        ...proposal,
-        kind: 'mcp-skipped',
-        reason: 'not needed at install level record',
-      }
-    }
-    if (proposal.state === 'same') return { ...proposal, kind: 'mcp-unchanged' }
-    const answer = proposal.questionId ? answers[proposal.questionId] : undefined
-    const apply = proposal.state === 'absent' ? answer === 'register' : answer === 'replace'
-    if (!apply) return { ...proposal, kind: 'mcp-skipped' }
-    return { ...proposal, kind: 'register-mcp', replace: proposal.state !== 'absent' }
-  })
+  const registrations = plannedRegistrations(plan, answers, selectedLevel)
   const projects: SetupAction[] = plan.proposals.map((proposal) => {
     const settings = resolvedSettings(proposal, answers, plan.questions)
     const settingsDiff = diffSettings(proposal.current?.settings ?? null, settings)

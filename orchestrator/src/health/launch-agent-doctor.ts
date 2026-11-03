@@ -122,7 +122,7 @@ function loadedLaunchAgentLabels(
   if (domain.exitCode !== 0) return { kind: 'unavailable', reason: 'gui domain unreachable' }
   const loaded = new Set<string>()
   for (const { label } of owners) {
-    if (skipReasons[label]) continue
+    if (skipReasons[label] && !maintenanceLabels.has(label)) continue
     const child = Bun.spawnSync([launchctl, 'print', `gui/${uid}/${label}`], {
       stdout: 'ignore',
       stderr: 'ignore',
