@@ -16,6 +16,17 @@ type ChoiceAnswer = {
 }
 export type TypedQuestionAnswer = NoulAnswer | ChoiceAnswer
 
+/** A recorded answer's noul probability; a choice answer or unreadable JSON carries none. */
+export function noulProbability(answerJson: string): number | null {
+  let answer: TypedQuestionAnswer
+  try {
+    answer = JSON.parse(answerJson) as TypedQuestionAnswer
+  } catch {
+    return null
+  }
+  return 'noul' in answer && typeof answer.noul === 'number' ? answer.noul : null
+}
+
 export type TypedQuestionClientResult =
   | { kind: 'missing-key' }
   | {

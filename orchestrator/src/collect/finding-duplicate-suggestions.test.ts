@@ -93,7 +93,7 @@ test('renders a duplicate flag that the score parser accepts', () => {
   expect(parseDuplicateFinding(flag)).toEqual({ ordinal: 2, otherRunId: '42', otherOrdinal: 3 })
 })
 
-test('reuses a recorded answer but asks again after a recorded error', () => {
+test("reads only this run's pairs, and asks again after a recorded error", () => {
   const insert = (subject: string, answer: string | null, error: string | null) =>
     db()
       .query(
@@ -111,11 +111,13 @@ test('reuses a recorded answer but asks again after a recorded error', () => {
         error,
         new Date().toISOString(),
       )
-  insert('answered', JSON.stringify({ noul: 0.9 }), null)
-  insert('errored', null, 'timeout')
-  const recorded = recordedAnswers(db())
-  expect(recorded.get('answered\0state')).toBe(JSON.stringify({ noul: 0.9 }))
-  expect(recorded.has('errored\0state')).toBeFalse()
+  insert('f1:f2', JSON.stringify({ noul: 0.9 }), null)
+  insert('f1:f3', null, 'timeout')
+  insert('f8:f9', JSON.stringify({ noul: 0.9 }), null)
+  const recorded = recordedAnswers(db(), ['f1'])
+  expect(recorded.get('f1:f2\0state')).toBe(JSON.stringify({ noul: 0.9 }))
+  expect(recorded.has('f1:f3\0state')).toBeFalse()
+  expect(recorded.has('f8:f9\0state')).toBeFalse()
 })
 
 test('drops only the pairs without a probability and keeps the rest', () => {

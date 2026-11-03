@@ -2,7 +2,7 @@
 /** Reads typed-question evidence and joins question-specific outcomes. */
 
 import type { Database } from 'bun:sqlite'
-import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
+import { noulProbability } from '../../../shared/typed-question/client.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
@@ -96,16 +96,9 @@ const labelers: Readonly<
   [FINDING_DUPLICATE_QUESTION.id]: findingDuplicateLabel,
 }
 
-/** A noul answer's probability; a choice answer or an unreadable row carries none. */
+/** A noul answer's probability; an error row carries none. */
 function probability(answerJson: string | null): number | null {
-  if (answerJson === null) return null
-  let answer: TypedQuestionAnswer
-  try {
-    answer = JSON.parse(answerJson) as TypedQuestionAnswer
-  } catch {
-    return null
-  }
-  return 'noul' in answer && typeof answer.noul === 'number' ? answer.noul : null
+  return answerJson === null ? null : noulProbability(answerJson)
 }
 
 export function typedQuestionReport(

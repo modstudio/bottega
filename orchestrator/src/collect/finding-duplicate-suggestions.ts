@@ -2,10 +2,10 @@
 /** Selects, asks, and presents duplicate-finding candidates without blocking collection. */
 
 import type { Database } from 'bun:sqlite'
-import { createHash } from 'node:crypto'
+import { noulProbability } from '../../../shared/typed-question/client.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { FINDING_DUPLICATE_QUESTION } from '../typed-question/finding-duplicate-question.ts'
-import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
+import { askTypedQuestion, stateIdentity } from '../typed-question/typed-question-service.ts'
 
 const FINDING_DUPLICATE_ASK_CONCURRENCY = 8
 const FINDING_DUPLICATE_PAIR_CAP = 200
@@ -37,7 +37,7 @@ export type FindingDuplicatePair = {
   stateSha: string
   current: DuplicateFindingRow
   other: DuplicateFindingRow
-  recordedAnswerJson: string | null | undefined
+  recordedAnswerJson: string | undefined
 }
 
 function findingState(row: DuplicateFindingRow): FindingState {
@@ -49,21 +49,17 @@ function findingState(row: DuplicateFindingRow): FindingState {
   }
 }
 
-function identity(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
-}
-
 function pairFor(
   current: DuplicateFindingRow,
   other: DuplicateFindingRow,
-  recorded: ReadonlyMap<string, string | null>,
+  recorded: ReadonlyMap<string, string>,
 ): FindingDuplicatePair {
   const sorted = [current, other].sort((a, b) =>
     a.findingRecordId.localeCompare(b.findingRecordId),
   ) as [DuplicateFindingRow, DuplicateFindingRow]
   const subjectRef = sorted.map((row) => row.findingRecordId).join(':')
   const state = { findings: sorted.map(findingState) as [FindingState, FindingState] }
-  const stateSha = identity(state)
+  const stateSha = stateIdentity(state)
   return {
     subjectRef,
     state,
@@ -78,7 +74,7 @@ function pairFor(
 export function selectFindingDuplicatePairs(
   currentRunRecordId: string,
   rows: readonly DuplicateFindingRow[],
-  recorded: ReadonlyMap<string, string | null>,
+  recorded: ReadonlyMap<string, string>,
 ): FindingDuplicatePair[] {
   const current = rows.filter((row) => row.runRecordId === currentRunRecordId)
   if (!current.length) return []
@@ -101,15 +97,8 @@ export function selectFindingDuplicatePairs(
     )
 }
 
-function probability(answerJson: string | null | undefined): number | null | undefined {
-  if (answerJson === undefined) return undefined
-  if (answerJson === null) return null
-  try {
-    const value = JSON.parse(answerJson) as { noul?: unknown }
-    return typeof value.noul === 'number' ? value.noul : null
-  } catch {
-    return null
-  }
+function probability(answerJson: string | undefined): number | null | undefined {
+  return answerJson === undefined ? undefined : noulProbability(answerJson)
 }
 
 /** Exact score flag for a suggestion oriented to the run being collected. */
@@ -190,19 +179,27 @@ function findingRows(database: Database, runRecordId: string): DuplicateFindingR
     .all(runRecordId, current.head_commit) as DuplicateFindingRow[]
 }
 
-/** Answers only: an error row is not an answer, so its pair is asked again. */
-export function recordedAnswers(database: Database): Map<string, string | null> {
+/**
+ * Answers only: an error row is not an answer, so its pair is asked again. Only pairs naming one
+ * of the given findings are read, so the cost tracks the run rather than the question's history.
+ */
+export function recordedAnswers(
+  database: Database,
+  findingRecordIds: readonly string[],
+): Map<string, string> {
+  if (!findingRecordIds.length) return new Map()
   const rows = database
     .query(
       `SELECT subject_ref,state_sha,answer_json FROM typed_question_answer
         WHERE question_id=? AND question_version=? AND error IS NULL AND answer_json IS NOT NULL
+          AND (${findingRecordIds.map(() => 'instr(subject_ref, ?) > 0').join(' OR ')})
         ORDER BY created_at`,
     )
-    .all(FINDING_DUPLICATE_QUESTION.id, FINDING_DUPLICATE_QUESTION.version) as {
-    subject_ref: string
-    state_sha: string
-    answer_json: string | null
-  }[]
+    .all(
+      FINDING_DUPLICATE_QUESTION.id,
+      FINDING_DUPLICATE_QUESTION.version,
+      ...findingRecordIds,
+    ) as { subject_ref: string; state_sha: string; answer_json: string }[]
   return new Map(rows.map((row) => [`${row.subject_ref}\0${row.state_sha}`, row.answer_json]))
 }
 
@@ -212,10 +209,14 @@ export async function findingDuplicateSuggestions(
   runRecordId: string,
 ): Promise<SuggestionResult> {
   try {
+    const rows = findingRows(database, runRecordId)
+    const currentIds = rows
+      .filter((row) => row.runRecordId === runRecordId)
+      .map((row) => row.findingRecordId)
     const selected = selectFindingDuplicatePairs(
       runRecordId,
-      findingRows(database, runRecordId),
-      recordedAnswers(database),
+      rows,
+      recordedAnswers(database, currentIds),
     )
     const pairs = selected.slice(0, FINDING_DUPLICATE_PAIR_CAP)
     const unrecorded = unansweredFindingDuplicatePairs(pairs)

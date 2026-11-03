@@ -45,7 +45,7 @@ export const typedQuestionModules = [
   ]),
   module('orchestrator/src/collect/finding-duplicate-suggestions.ts', [
     'bun:sqlite',
-    'node:crypto',
+    '../../../shared/typed-question/client.ts',
     '../jobs/jobs.ts',
     '../typed-question/finding-duplicate-question.ts',
     '../typed-question/typed-question-service.ts',

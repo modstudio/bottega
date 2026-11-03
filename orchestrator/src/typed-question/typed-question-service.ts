@@ -29,7 +29,7 @@ const serviceDependencies: AskTypedQuestionDependencies = {
   record: recordTypedQuestionAnswer,
 }
 
-function stateIdentity(state: AskTypedQuestionInput['state']): string {
+export function stateIdentity(state: AskTypedQuestionInput['state']): string {
   const exact = typeof state === 'string' ? state : JSON.stringify(state)
   return createHash('sha256').update(exact).digest('hex')
 }
