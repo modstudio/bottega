@@ -10,7 +10,34 @@ import {
 } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { disposeBranch } from './branch-disposal.ts'
+import { composeBranchDisposalRefusal, disposeBranch } from './branch-disposal.ts'
+
+test('open-task refusal identifies the mirrored status and refresh remedy', () => {
+  const refusal = composeBranchDisposalRefusal({
+    reason: 'open-task',
+    project: 'example',
+    branch: 'DEV-2061-work',
+    status: 'In Progress',
+    lastSeen: '2026-11-02T12:00:00.000Z',
+  })
+
+  expect(refusal).toContain('In Progress')
+  expect(refusal).toContain('last seen 2026-11-02T12:00:00.000Z')
+  expect(refusal).toContain('record pull --only tasks')
+  expect(refusal).toContain('--operator')
+})
+
+test('open-task refusal renders an unknown mirror observation time', () => {
+  const refusal = composeBranchDisposalRefusal({
+    reason: 'open-task',
+    project: 'example',
+    branch: 'DEV-2061-work',
+    status: 'active',
+    lastSeen: null,
+  })
+
+  expect(refusal).toContain('last seen unknown')
+})
 
 test('failed settlement restores the branch and removes every disposal artifact', () => {
   const repository = gitRepository('disposal-rollback')

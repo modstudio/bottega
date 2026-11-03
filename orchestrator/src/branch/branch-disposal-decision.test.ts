@@ -51,9 +51,15 @@ test('branch disposal refuses every protected condition', () => {
 
 test('normalized active, unknown, and unverified statuses stay open', () => {
   const observations = [
-    { raw: 'In Progress', category: 'active' as const, verified: true, detail: 'In Progress' },
-    { raw: 'Mystery', category: null, verified: false, detail: 'unknown' },
-    { raw: null, category: null, verified: false, detail: 'unverified' },
+    {
+      raw: 'In Progress',
+      category: 'active' as const,
+      lastSeen: '2026-11-02T12:00:00.000Z',
+      verified: true,
+      detail: 'In Progress',
+    },
+    { raw: 'Mystery', category: null, lastSeen: null, verified: false, detail: 'unknown' },
+    { raw: null, category: null, lastSeen: null, verified: false, detail: 'unverified' },
   ]
   for (const observation of observations) {
     expect(disposalTaskState(observation)).toBe('open')

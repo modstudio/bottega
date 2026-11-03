@@ -123,20 +123,28 @@ function git(cwd: string, args: string[], input?: string): string {
   return result.stdout.toString().trim()
 }
 
-function refusalRemedy(
-  reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason'],
-  project: string,
-  branch: string,
-): string {
+export function composeBranchDisposalRefusal(input: {
+  reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason']
+  project: string
+  branch: string
+  status: string | null
+  lastSeen: string | null
+}): string {
+  const { reason, project, branch } = input
+  const prefix = `refusing branch disposal: ${reason}; `
   if (reason === 'not-run-minted')
-    return `use git's own branch lifecycle; ${PLATFORM_SLUG} records disposal only for run-minted branches`
+    return `${prefix}cleared by: use git's own branch lifecycle; ${PLATFORM_SLUG} records disposal only for run-minted branches`
   if (reason === 'live-owner')
-    return `finish or stop the owning run and remove its tree, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}`
+    return `${prefix}cleared by: finish or stop the owning run and remove its tree, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}`
   if (reason === 'open-task')
-    return `close or drop the task, or repeat with --operator after the operator rules that its unique work may be disposed`
+    return (
+      `${prefix}the task mirror reads ${input.status ?? 'unknown'} (last seen ${input.lastSeen ?? 'unknown'}); ` +
+      `cleared by: ${PLATFORM_SLUG} record pull --only tasks, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}; ` +
+      'or close or drop the task; or repeat with --operator after the operator rules that its unique work may be disposed'
+    )
   if (reason === 'superseded-target-missing')
-    return 'repeat with --note "superseded by <branch or PR>: <why>"'
-  return `${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY>`
+    return `${prefix}cleared by: repeat with --note "superseded by <branch or PR>: <why>"`
+  return `${prefix}cleared by: ${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY>`
 }
 
 function planBranchDisposal(input: {
@@ -187,7 +195,13 @@ function planBranchDisposal(input: {
   })
   if (!decision.eligible)
     throw new Error(
-      `refusing branch disposal: ${decision.reason}; cleared by: ${refusalRemedy(decision.reason, projectName, branch)}`,
+      composeBranchDisposalRefusal({
+        reason: decision.reason,
+        project: projectName,
+        branch,
+        status: taskStatus.raw ?? taskStatus.category,
+        lastSeen: taskStatus.lastSeen,
+      }),
     )
   if (!row) throw new Error(`branch ${branch} disappeared while checking disposal eligibility`)
   const recordId = newRecordId()
