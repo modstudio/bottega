@@ -1,3 +1,4 @@
+import { configClaimClient } from './config-claim-client.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
@@ -68,6 +69,7 @@ type MachineKey = {
   label: string
   createdAt: string
   revokedAt: string | null
+  userId: string | null
 }
 type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
 
@@ -109,6 +111,7 @@ function createConfigClient(
   }
   const query = (values: Record<string, string>) => `?${new URLSearchParams(values)}`
   return {
+    ...configClaimClient(request),
     whoami: () => request<ConfigIdentity>('/v1/whoami'),
     listEntries: (environment = 'default') =>
       request<{ items: ConfigEntry[] }>(`/v1/config/entries${query({ environment })}`).then(
@@ -204,10 +207,6 @@ function createConfigClient(
       request<MachineKey>(`/v1/config/machine-keys/${keyId}`, {
         method: 'PUT',
         body: JSON.stringify({ publicKey, label }),
-      }),
-    revokeMachineKey: (keyId: string) =>
-      request<{ revoked: true }>(`/v1/config/machine-keys/${keyId}/revoke`, {
-        method: 'POST',
       }),
   }
 }

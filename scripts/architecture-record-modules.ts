@@ -649,6 +649,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-space.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/config-client.ts',
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/record-space-membership.ts',
@@ -699,10 +700,17 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-write-routes.ts', [
     'hono',
     './record-api-board.ts',
+    './record-api-config-claim-routes.ts',
     './record-api-doc-order.ts',
     './record-api-projects.ts',
     './record-api-settings.ts',
     './record-auth.ts',
+  ]),
+  module('orchestrator/src/record/record-api-config-claim-routes.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-config.ts',
   ]),
   module('orchestrator/src/record/record-api-settings.ts', [
     'hono',

@@ -6,12 +6,17 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
+import { generateMachineKeyPair, openClaimChallenge } from '../../shared/secret-envelope.ts'
 import {
   addDataKeyWraps,
+  claimMachineKey,
   createDataKey,
+  createMachineKeyClaimChallenge,
   deleteConfigEntry,
   deleteConfigSecret,
+  grantSpaceConfigAccess,
   listConfigSecrets,
+  listDataKeys,
   putConfigEntry,
   putConfigSecret,
   registerMachineKey,
@@ -42,6 +47,10 @@ export function registerHostedConfigProofs(
       'postgres',
       `INSERT INTO "user" (id, email, name, created_at)
          VALUES ('${USER_B}', 'other@example.test', 'Other', now());
+       UPDATE membership SET config_access=true
+         WHERE space_id='${spaceA}' AND user_id='${userA}';
+       INSERT INTO membership (id, space_id, user_id, role, permission, config_access, created_at)
+         VALUES ('${newRecordId()}', '${spaceA}', '${USER_B}', 'member', 'write', false, now());
        INSERT INTO secret_dek (id, space_id, version, created_at) VALUES
          ('${DEK_A}', '${spaceA}', 1, now()),
          ('${DEK_B}', '${spaceB}', 1, now());
@@ -534,6 +543,97 @@ export function registerHostedConfigProofs(
     ).rejects.toMatchObject({ status: 422 })
   })
 
+  test('data-key writes require an owned recipient whose owner has config access', async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO machine_public_key (id, space_id, user_id, key_id, public_key, label, created_at) VALUES
+        ('${newRecordId()}', '${spaceA}', NULL, 'UUUUUUUUUUUUUUUUUUUUUU', decode(repeat('91', 32), 'hex'), 'unowned', now()),
+        ('${newRecordId()}', '${spaceA}', '${USER_B}', 'NNNNNNNNNNNNNNNNNNNNNN', decode(repeat('92', 32), 'hex'), 'no access', now()),
+        ('${newRecordId()}', '${spaceA}', '${userA}', 'PPPPPPPPPPPPPPPPPPPPPP', decode(repeat('93', 32), 'hex'), 'permitted', now());`,
+    )
+    const wrapFor = (recipientKeyId: string) => ({
+      recipientKeyId,
+      senderKeyId: 'CCCCCCCCCCCCCCCCCCCCCC',
+      enc: Uint8Array.of(1),
+      ciphertext: Uint8Array.of(2),
+    })
+    await expect(
+      addDataKeyWraps({
+        ...serviceTenant,
+        dekId: DEK_A,
+        wraps: [wrapFor('UUUUUUUUUUUUUUUUUUUUUU')],
+      }),
+    ).rejects.toThrow('has no owning user')
+    await expect(
+      addDataKeyWraps({
+        ...serviceTenant,
+        dekId: DEK_A,
+        wraps: [wrapFor('NNNNNNNNNNNNNNNNNNNNNN')],
+      }),
+    ).rejects.toThrow('without config access')
+    await expect(
+      addDataKeyWraps({
+        ...serviceTenant,
+        dekId: DEK_A,
+        wraps: [wrapFor('PPPPPPPPPPPPPPPPPPPPPP')],
+      }),
+    ).resolves.toBeUndefined()
+
+    const version = Math.max(...(await listDataKeys(serviceTenant)).map((key) => key.version)) + 1
+    await expect(
+      createDataKey({
+        ...serviceTenant,
+        dekId: newRecordId(),
+        version,
+        wraps: [wrapFor('NNNNNNNNNNNNNNNNNNNNNN')],
+      }),
+    ).rejects.toThrow('without config access')
+  })
+
+  test('an unowned machine key is claimed only by proof of possession', async () => {
+    const pair = await generateMachineKeyPair()
+    const keyId = await machineKeyId(pair.publicKey)
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO machine_public_key (id, space_id, key_id, public_key, label, created_at)
+       VALUES ('${newRecordId()}', '${spaceA}', '${keyId}', decode('${Buffer.from(pair.publicKey).toString('hex')}', 'hex'), 'claim proof', now());`,
+    )
+    const challenge = await createMachineKeyClaimChallenge({ ...serviceTenant, keyId })
+    const nonce = await openClaimChallenge({
+      enc: challenge.enc,
+      ciphertext: challenge.ciphertext,
+      spaceId: spaceA,
+      keyId,
+      recipientPrivateKey: pair.privateKey,
+      senderPublicKey: challenge.senderPublicKey,
+    })
+    await expect(
+      claimMachineKey({ ...serviceTenant, keyId, challengeId: challenge.challengeId, nonce }),
+    ).resolves.toBeUndefined()
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT user_id::text FROM machine_public_key WHERE space_id='${spaceA}' AND key_id='${keyId}';`,
+      ),
+    ).toBe(userA)
+  })
+
+  test('only an owner or admin grants config access', async () => {
+    await expect(
+      grantSpaceConfigAccess({
+        ...serviceTenant,
+        userId: USER_B,
+        email: 'other@example.test',
+      }),
+    ).rejects.toThrow('requires an owner or admin')
+    await expect(
+      grantSpaceConfigAccess({ ...serviceTenant, email: 'other@example.test' }),
+    ).resolves.toBeUndefined()
+  })
+
   test('config service refuses a non-consecutive data-key version', async () => {
     await expect(
       createDataKey({
@@ -574,6 +674,15 @@ export function registerHostedConfigProofs(
       publicKey,
       label: 'service machine',
     })
+    await expect(
+      registerMachineKey({
+        ...serviceTenant,
+        userId: USER_B,
+        keyId,
+        publicKey,
+        label: 'another user',
+      }),
+    ).rejects.toThrow('belongs to another user')
     const mintedId = succeeds(
       'postgres',
       'postgres',
@@ -582,6 +691,13 @@ export function registerHostedConfigProofs(
     )
     expect(mintedId[14]).toBe('7')
     expect(['8', '9', 'a', 'b']).toContain(mintedId[19]!.toLowerCase())
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT user_id::text FROM machine_public_key WHERE space_id='${spaceA}' AND key_id='${keyId}';`,
+      ),
+    ).toBe(userA)
     succeeds(
       'postgres',
       'postgres',

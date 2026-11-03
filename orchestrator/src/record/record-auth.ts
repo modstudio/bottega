@@ -134,10 +134,10 @@ function personalSpacePort(
           `
           if (existing[0]) {
             await tx`
-              INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+              INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at)
               VALUES (${input.membershipId}::uuid, ${String(owner.personal_space_id)}::uuid,
-                ${input.userId}::uuid, 'owner', 'write', now())
-              ON CONFLICT (space_id,user_id) DO UPDATE SET role='owner', permission='write'
+                ${input.userId}::uuid, 'owner', 'write', true, now())
+              ON CONFLICT (space_id,user_id) DO UPDATE SET role='owner', permission='write', config_access=true
             `
             return {
               id: String(existing[0].id),
@@ -153,8 +153,8 @@ function personalSpacePort(
           VALUES (${input.id}::uuid, ${String(owner.name)}, ${input.slug}, now())
         `
         await tx`
-          INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
-          VALUES (${input.membershipId}::uuid, ${input.id}::uuid, ${input.userId}::uuid, 'owner', 'write', now())
+          INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at)
+          VALUES (${input.membershipId}::uuid, ${input.id}::uuid, ${input.userId}::uuid, 'owner', 'write', true, now())
         `
         await tx`
           UPDATE "user" SET personal_space_id=${input.id}::uuid, updated_at=now()
@@ -210,6 +210,14 @@ export function rememberedSessionSpaceWrite(updated: {
     : null
 }
 
+function recordAuthPresentation(environment: RecordAuthEnvironment) {
+  return {
+    trustedOrigins: recordAllowedOrigins(environment),
+    cookieDomain: environment.RECORD_AUTH_COOKIE_DOMAIN,
+    hubUrl: environment.RECORD_HUB_URL,
+  }
+}
+
 function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof personalSpacePort>) {
   return {
     user: {
@@ -236,6 +244,17 @@ function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof pers
       },
     },
   }
+}
+
+async function markCreatedSpaceOwner(
+  client: SQL,
+  created: { id: string },
+  owner: { id: string },
+): Promise<void> {
+  await client`
+    UPDATE membership SET role='owner', permission='write', config_access=true
+    WHERE space_id=${created.id}::uuid AND user_id=${owner.id}::uuid
+  `
 }
 
 type ResetPasswordSender = typeof sendPasswordResetEmail
@@ -271,9 +290,7 @@ export function recordAuth(
   sendInvitation ??= sendRecordInvitationEmail
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
-  const trustedOrigins = recordAllowedOrigins(environment)
-  const cookieDomain = environment.RECORD_AUTH_COOKIE_DOMAIN
-  const hubUrl = environment.RECORD_HUB_URL
+  const { trustedOrigins, cookieDomain, hubUrl } = recordAuthPresentation(environment)
   // Auth instances are short-lived at the CLI boundary; a one-connection pool keeps repeated
   // commands from reserving the database's entire connection budget before garbage collection.
   const client = new SQL(url, { max: 1 })
@@ -324,6 +341,7 @@ export function recordAuth(
         requireEmailVerificationOnInvitation: false,
         organizationHooks: {
           afterCreateOrganization: async ({ organization: created, user: owner }) => {
+            await markCreatedSpaceOwner(client, created, owner)
             await builtIns.ensure({
               url,
               userId: owner.id,
@@ -356,6 +374,7 @@ export function recordAuth(
             fields: { organizationId: 'spaceId' },
             additionalFields: {
               permission: { type: 'string', required: true, defaultValue: 'write' },
+              configAccess: { type: 'boolean', required: true, defaultValue: false },
             },
           },
           invitation: { modelName: 'invitation', fields: { organizationId: 'spaceId' } },
@@ -410,7 +429,7 @@ export async function recordIdentity(
     const users = await tx`SELECT personal_space_id FROM "user" WHERE id=${user.id}::uuid`
     const personalSpaceId = users[0]?.personal_space_id ? String(users[0].personal_space_id) : null
     const memberships = await tx`
-        SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
+        SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission, m.config_access
         FROM membership m JOIN space s ON s.id=m.space_id
         WHERE m.user_id=${user.id}::uuid ORDER BY s.slug
       `

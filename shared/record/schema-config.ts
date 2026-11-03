@@ -183,6 +183,7 @@ export const machinePublicKey = pgTable.withRLS(
   {
     id: uuid('id').primaryKey(),
     spaceId: spaceIdentity(),
+    userId: uuid('user_id').references(() => user.id),
     keyId: text('key_id').notNull(),
     publicKey: bytea('public_key').notNull(),
     label: text().notNull(),
@@ -194,5 +195,33 @@ export const machinePublicKey = pgTable.withRLS(
     check('machine_public_key_key_id_check', keyIdCheck(table.keyId)),
     check('machine_public_key_length_check', sql`octet_length(${table.publicKey}) = 32`),
     ...tenantPolicies('machine_public_key', table.spaceId),
+  ],
+)
+
+export const machineKeyClaimChallenge = pgTable.withRLS(
+  'machine_key_claim_challenge',
+  {
+    id: uuid('id').primaryKey(),
+    spaceId: spaceIdentity(),
+    keyId: text('key_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    nonceHash: bytea('nonce_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.spaceId, table.keyId],
+      foreignColumns: [machinePublicKey.spaceId, machinePublicKey.keyId],
+      name: 'machine_key_claim_challenge_space_key_fk',
+    }),
+    check('machine_key_claim_challenge_key_id_check', keyIdCheck(table.keyId)),
+    check(
+      'machine_key_claim_challenge_hash_length_check',
+      sql`octet_length(${table.nonceHash}) = 32`,
+    ),
+    ...tenantPolicies('machine_key_claim_challenge', table.spaceId),
   ],
 )

@@ -50,6 +50,7 @@ import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed
 import {
   generateDataKey,
   generateMachineKeyPair,
+  openClaimChallenge,
   sealValue,
   unwrapDataKey,
   wrapDataKey,
@@ -205,9 +206,42 @@ export async function machineInit(
   await pinTrustedMachine(keyId, pair.publicKey, label, env)
   if (!pinned)
     writeHostedConfigIdentity({ spaceId: current.activeSpaceId, userId: current.user.id }, env)
-  await client.registerMachineKey(keyId, encoded(pair.publicKey), label)
+  const registered = await client.registerMachineKey(keyId, encoded(pair.publicKey), label)
+  if (registered.userId === null) await claimMachineKey(pair, keyId, current.activeSpaceId, client)
   if (names) await claimCurrentMachineNames(names)
   return keyId
+}
+
+async function claimMachineKey(
+  pair: { publicKey: Uint8Array; privateKey: Uint8Array },
+  keyId: string,
+  spaceId: string,
+  client: ConfigClient,
+): Promise<void> {
+  const challenge = await client.createMachineKeyClaimChallenge(keyId)
+  const nonce = await openClaimChallenge({
+    enc: bytes(challenge.enc),
+    ciphertext: bytes(challenge.ciphertext),
+    spaceId,
+    keyId,
+    recipientPrivateKey: pair.privateKey,
+    senderPublicKey: bytes(challenge.senderPublicKey),
+  })
+  await client.claimMachineKey(keyId, challenge.challengeId, encoded(nonce))
+}
+
+export async function claimCurrentMachineKey(
+  client = configClient(),
+  env: ConfigEnvironment = process.env,
+): Promise<void> {
+  const pair = readMachineKey(env)
+  if (!pair) return
+  const keyId = await machineKeyId(pair.publicKey)
+  const registered = (await client.listMachineKeys()).find((key) => key.keyId === keyId)
+  if (!registered || registered.userId !== null) return
+  const current = await client.whoami()
+  if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
+  await claimMachineKey(pair, keyId, current.activeSpaceId, client)
 }
 
 export async function machineShow() {

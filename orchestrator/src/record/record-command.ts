@@ -26,7 +26,9 @@ import {
 import {
   acceptRecordInvitation,
   createRecordSpace,
+  grantRecordSpaceConfigAccess,
   inviteToActiveRecordSpace,
+  listRecordSpaceConfigAccess,
   pendingRecordInvitations,
   recordMemberships,
   recordSpaceRole,
@@ -149,6 +151,21 @@ export async function recordSpaceListCommand(presentation: Presentation): Promis
       `${membership.spaceId === result.activeSpaceId ? '* ' : '  '}${membership.slug}\t${membership.name}\t${membership.role}\t${membership.permission}`,
     )
   }
+}
+
+export async function recordSpaceAccessListCommand(presentation: Presentation): Promise<void> {
+  for (const member of await listRecordSpaceConfigAccess())
+    presentation.log(
+      `${member.email}\t${member.role}\t${member.permission}\t${member.configAccess ? 'config' : 'no-config'}`,
+    )
+}
+
+export async function recordSpaceAccessGrantCommand(
+  email: string,
+  presentation: Presentation,
+): Promise<void> {
+  await grantRecordSpaceConfigAccess(email)
+  presentation.log(`granted config access to ${email}`)
 }
 
 export async function recordSpaceCreateCommand(

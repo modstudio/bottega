@@ -47,6 +47,8 @@ import type {
   ConfigWrapInput,
   DataKey,
   MachineKey,
+  MachineKeyClaimChallenge,
+  SpaceConfigAccessMember,
 } from './record-config.ts'
 import { CONFIG_SCOPES, ConfigServiceError, MACHINE_KEY_ID_PATTERN } from './record-config.ts'
 import {
@@ -252,7 +254,15 @@ type RecordApiDeps = RecordSessionRouteDeps &
     registerMachineKey(
       input: Tenant & { keyId: string; publicKey: Uint8Array; label: string },
     ): Promise<MachineKey>
+    createMachineKeyClaimChallenge?(
+      input: Tenant & { keyId: string },
+    ): Promise<MachineKeyClaimChallenge>
+    claimMachineKey?(
+      input: Tenant & { keyId: string; challengeId: string; nonce: Uint8Array },
+    ): Promise<void>
     revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
+    listSpaceConfigAccess?(input: Tenant): Promise<SpaceConfigAccessMember[]>
+    grantSpaceConfigAccess?(input: Tenant & { email: string }): Promise<void>
   } & RecordBoardDeps
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)

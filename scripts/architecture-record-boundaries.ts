@@ -40,6 +40,7 @@ export const recordAuthCommandBoundaries: ImportBoundary[] = [
     [
       '../../../shared/brand.ts',
       '../../../shared/record-session.ts',
+      '../config/config-service.ts',
       '../project/project-relink.ts',
       './install-binding-write.ts',
       './record-api-client.ts',
@@ -231,9 +232,11 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
     'orchestrator/src/record/record-config.ts',
     [
       'bun',
+      '../../../shared/brand.ts',
       '../../../shared/machine-key-id.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
+      '../../../shared/secret-envelope.ts',
       './record-pool.ts',
     ],
     'Enforce the hosted config service concern boundary.',

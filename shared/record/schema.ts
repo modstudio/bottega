@@ -141,6 +141,7 @@ export const membership = pgTable.withRLS(
       .references(() => user.id),
     role: text().notNull(),
     permission: text().notNull().default('write'),
+    configAccess: boolean('config_access').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => {

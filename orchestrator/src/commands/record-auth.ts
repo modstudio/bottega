@@ -25,6 +25,8 @@ import {
   recordPublicDocListCommand,
   recordRedactSyncedCommand,
   recordSpaceAcceptCommand,
+  recordSpaceAccessGrantCommand,
+  recordSpaceAccessListCommand,
   recordSpaceCreateCommand,
   recordSpaceInvitationsCommand,
   recordSpaceInviteCommand,
@@ -266,6 +268,28 @@ function registerSpaceCommands(record: Command): void {
           },
           presentation,
         ),
+      ),
+    )
+  registerSpaceAccessCommands(space)
+}
+
+function registerSpaceAccessCommands(space: Command): void {
+  const access = space.command('access').description('manage hosted config access')
+  access
+    .command('list')
+    .description('list members and config access')
+    .action(() =>
+      hostedCommand(`${PLATFORM_SLUG} record space access list`, () =>
+        recordSpaceAccessListCommand(presentation),
+      ),
+    )
+  access
+    .command('grant')
+    .description('grant config access to a member')
+    .argument('<email>')
+    .action((email) =>
+      hostedCommand(`${PLATFORM_SLUG} record space access grant`, () =>
+        recordSpaceAccessGrantCommand(String(email), presentation),
       ),
     )
 }

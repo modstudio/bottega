@@ -32,6 +32,10 @@ the hosted record and outbox
 - [bottega record sign-up](#bottega-record-sign-up)
 - [bottega record space](#bottega-record-space)
 - [bottega record space accept](#bottega-record-space-accept)
+- [bottega record space access](#bottega-record-space-access)
+- [bottega record space access grant](#bottega-record-space-access-grant)
+- [bottega record space access help](#bottega-record-space-access-help)
+- [bottega record space access list](#bottega-record-space-access-list)
 - [bottega record space create](#bottega-record-space-create)
 - [bottega record space help](#bottega-record-space-help)
 - [bottega record space invitations](#bottega-record-space-invitations)
@@ -403,6 +407,7 @@ manage hosted record spaces
 
 - [bottega record](./record.md#bottega-record)
 - [bottega record space accept](./record.md#bottega-record-space-accept)
+- [bottega record space access](./record.md#bottega-record-space-access)
 - [bottega record space create](./record.md#bottega-record-space-create)
 - [bottega record space help](./record.md#bottega-record-space-help)
 - [bottega record space invitations](./record.md#bottega-record-space-invitations)
@@ -425,6 +430,49 @@ accept an invitation to a hosted record space
 ### Related
 
 - [bottega record space](./record.md#bottega-record-space)
+
+## bottega record space access
+
+**Synopsis:** `bottega record space access`
+
+manage hosted config access
+
+### Related
+
+- [bottega record space](./record.md#bottega-record-space)
+- [bottega record space access grant](./record.md#bottega-record-space-access-grant)
+- [bottega record space access help](./record.md#bottega-record-space-access-help)
+- [bottega record space access list](./record.md#bottega-record-space-access-list)
+
+## bottega record space access grant
+
+**Synopsis:** `bottega record space access grant <email>`
+
+grant config access to a member
+
+### Related
+
+- [bottega record space access](./record.md#bottega-record-space-access)
+
+## bottega record space access help
+
+**Synopsis:** `bottega record space access help [command]`
+
+display help for command
+
+### Related
+
+- [bottega record space access](./record.md#bottega-record-space-access)
+
+## bottega record space access list
+
+**Synopsis:** `bottega record space access list`
+
+list members and config access
+
+### Related
+
+- [bottega record space access](./record.md#bottega-record-space-access)
 
 ## bottega record space create
 

@@ -3,6 +3,7 @@
 
 import type { Hono } from 'hono'
 import { registerRecordBoardRoutes } from './record-api-board.ts'
+import { registerRecordConfigClaimRoutes } from './record-api-config-claim-routes.ts'
 import { registerRecordDocOrderRoute } from './record-api-doc-order.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import { registerRecordSettingsRoutes } from './record-api-settings.ts'
@@ -12,10 +13,12 @@ type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceI
 type Deps = Parameters<typeof registerRecordProjectRoutes>[1] &
   Parameters<typeof registerRecordSettingsRoutes>[1] &
   Parameters<typeof registerRecordBoardRoutes>[1] &
+  Parameters<typeof registerRecordConfigClaimRoutes>[1] &
   Parameters<typeof registerRecordDocOrderRoute>[1]
 type Ports = Parameters<typeof registerRecordProjectRoutes>[2] &
   Parameters<typeof registerRecordSettingsRoutes>[2] &
   Parameters<typeof registerRecordBoardRoutes>[2] &
+  Parameters<typeof registerRecordConfigClaimRoutes>[2] &
   Parameters<typeof registerRecordDocOrderRoute>[2]
 
 export function registerRecordWriteRoutes(
@@ -26,5 +29,6 @@ export function registerRecordWriteRoutes(
   registerRecordProjectRoutes(app, deps, ports)
   registerRecordSettingsRoutes(app, deps, ports)
   registerRecordBoardRoutes(app, deps, ports)
+  registerRecordConfigClaimRoutes(app, deps, ports)
   registerRecordDocOrderRoute(app, deps, ports)
 }

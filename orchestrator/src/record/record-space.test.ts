@@ -22,8 +22,22 @@ describe('record space decisions', () => {
     ).toEqual({
       activeSpaceId: 'space-b',
       memberships: [
-        { spaceId: 'space-a', name: 'Alpha', slug: 'alpha', role: 'owner', permission: 'write' },
-        { spaceId: 'space-b', name: 'Beta', slug: 'beta', role: 'member', permission: 'read' },
+        {
+          spaceId: 'space-a',
+          name: 'Alpha',
+          slug: 'alpha',
+          role: 'owner',
+          permission: 'write',
+          configAccess: false,
+        },
+        {
+          spaceId: 'space-b',
+          name: 'Beta',
+          slug: 'beta',
+          role: 'member',
+          permission: 'read',
+          configAccess: false,
+        },
       ],
     })
   })
@@ -43,6 +57,7 @@ describe('record space decisions', () => {
           name: 'Team',
           role: 'owner',
           permission: 'write',
+          configAccess: false,
         },
       ]),
     ).toThrow('record space slug team already exists: 01990000-0000-7000-8000-000000000003')
@@ -106,6 +121,7 @@ describe('record space decisions', () => {
       slug: 'team',
       role: 'member',
       permission: 'write',
+      configAccess: false,
     })
     expect(calls).toEqual([{ organizationId: 'space-a' }])
   })
