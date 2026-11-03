@@ -161,6 +161,43 @@ export function startCliStreamReaders(input: {
   }
 }
 
+/** Settle a finished turn's output and leave it at the turn's out path. */
+function cliTurnOutput(
+  opts: Pick<TransportStartOpts, 'agent' | 'outPath'>,
+  turn: { replyError: string | null; replyText: string | undefined; stdout: string },
+): string {
+  if (turn.replyError) {
+    writeFileSync(opts.outPath, turn.stdout)
+    return turn.stdout
+  }
+  if (opts.agent.readsOut && existsSync(opts.outPath)) {
+    const fromFile = readFileSync(opts.outPath, 'utf8').trim()
+    if (fromFile) return fromFile
+  }
+  const output = (turn.replyText ?? turn.stdout).trim()
+  if (output) writeFileSync(opts.outPath, output)
+  return output
+}
+
+/** The events a finished CLI turn reports after its live stream. */
+function cliTerminalEvents(turn: {
+  sessionId: string | null
+  output: string
+  tokens: number | null
+  costUsd: number | null
+  error: string | null
+  stopReason: string | null
+}): NormalizedEvent[] {
+  const events: NormalizedEvent[] = []
+  if (turn.sessionId) events.push({ kind: 'session', sessionId: turn.sessionId })
+  if (turn.output) events.push({ kind: 'text', text: turn.output })
+  if (turn.tokens !== null)
+    events.push({ kind: 'usage', tokens: turn.tokens, costUsd: turn.costUsd, per: 'turn' })
+  if (turn.error) events.push({ kind: 'error', error: turn.error })
+  if (turn.stopReason) events.push({ kind: 'stop', reason: turn.stopReason })
+  return events
+}
+
 /** A stream that outgrew its declared capture ceiling, named with the remedy. */
 function cliCaptureOverflowError(harness: string, stream: 'stdout' | 'stderr'): string {
   return `${harness} ${stream} exceeded CLI_OUTPUT_CAPTURE_BYTES (orchestrator/src/transport/transport-cli.ts); raise that constant if the harness legitimately prints more, then rerun`
@@ -341,31 +378,19 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
             home: opts.home,
           }) ??
           null
-        let output = ''
-        if (replyError) {
-          output = stdout
-          writeFileSync(opts.outPath, output)
-        } else if (opts.agent.readsOut && existsSync(opts.outPath)) {
-          output = readFileSync(opts.outPath, 'utf8').trim()
-        }
-        if (!replyError && !output) {
-          output = (reply?.text ?? stdout).trim()
-          if (output) writeFileSync(opts.outPath, output)
-        }
+        const output = cliTurnOutput(opts, { replyError, replyText: reply?.text, stdout })
         const stopReason = reply?.stopReason ?? (cancelled ? 'timeout' : null)
-        const terminalEvents: NormalizedEvent[] = []
-        if (sessionId) terminalEvents.push({ kind: 'session', sessionId })
-        if (output) terminalEvents.push({ kind: 'text', text: output })
-        if (tokens !== null)
-          terminalEvents.push({
-            kind: 'usage',
+        const events = cliResultEvents(
+          liveEvents,
+          cliTerminalEvents({
+            sessionId,
+            output,
             tokens,
             costUsd: usage.costUsd,
-            per: 'turn',
-          })
-        if (replyError) terminalEvents.push({ kind: 'error', error: replyError })
-        if (stopReason) terminalEvents.push({ kind: 'stop', reason: stopReason })
-        const events = cliResultEvents(liveEvents, terminalEvents)
+            error: replyError,
+            stopReason,
+          }),
+        )
         const folded = outcomeFromTransport({
           asking: false,
           error: replyError,

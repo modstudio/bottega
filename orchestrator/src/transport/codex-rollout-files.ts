@@ -16,7 +16,7 @@ import {
 } from 'node:fs'
 import { join, sep } from 'node:path'
 
-/** Most bytes one turn's slice may materialise across every rollout file. */
+/** Most bytes one turn's slice may materialize across every rollout file. */
 export const CODEX_ROLLOUT_READ_CAP_BYTES = 64 * 1024 * 1024
 /** Most bytes read from the head of one rollout file to recover its CLI version. */
 export const CODEX_ROLLOUT_HEAD_BYTES = 64 * 1024
