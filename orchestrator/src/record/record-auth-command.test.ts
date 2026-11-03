@@ -1,6 +1,17 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { decideRecordPassword } from './record-auth-command.ts'
+import { decideRecordPassword, RECORD_PASSWORD_ENV, recordPassword } from './record-auth-command.ts'
+
+const originalRecordPassword = process.env[RECORD_PASSWORD_ENV]
+
+beforeEach(() => {
+  delete process.env[RECORD_PASSWORD_ENV]
+})
+
+afterEach(() => {
+  if (originalRecordPassword === undefined) delete process.env[RECORD_PASSWORD_ENV]
+  else process.env[RECORD_PASSWORD_ENV] = originalRecordPassword
+})
 
 test.each([false, true])(
   'an environment password takes precedence when stdin TTY is %p',
@@ -21,4 +32,8 @@ test('an unset environment password without a TTY refuses with the non-interacti
 
 test('an unset environment password with a TTY prompts', () => {
   expect(decideRecordPassword(undefined, true)).toEqual({ action: 'prompt' })
+})
+
+test('record password accepts a provided password independent of process stdin', async () => {
+  await expect(recordPassword(async () => 'provided')).resolves.toBe('provided')
 })

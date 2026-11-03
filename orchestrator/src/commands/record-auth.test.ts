@@ -12,7 +12,7 @@ test('the password prompt refuses when a terminal reaches end of file', async ()
   input.end()
 
   await expect(password).rejects.toThrow(
-    `record password is required: stdin is not a terminal; set ${PLATFORM_SLUG.toUpperCase()}_RECORD_PASSWORD to supply it non-interactively`,
+    `record password prompt ended before a password was entered; set ${PLATFORM_SLUG.toUpperCase()}_RECORD_PASSWORD to supply it non-interactively`,
   )
 })
 

@@ -9,7 +9,8 @@ import { rememberSignedInRecordUser } from './record-session.ts'
 type Presentation = { log(value: string): void }
 
 export const RECORD_PASSWORD_ENV = `${PLATFORM_SLUG.toUpperCase()}_RECORD_PASSWORD`
-export const NON_INTERACTIVE_PASSWORD_REFUSAL = `record password is required: stdin is not a terminal; set ${RECORD_PASSWORD_ENV} to supply it non-interactively`
+const NON_INTERACTIVE_PASSWORD_REFUSAL = `record password is required: stdin is not a terminal; set ${RECORD_PASSWORD_ENV} to supply it non-interactively`
+export const PASSWORD_PROMPT_EOF_REFUSAL = `record password prompt ended before a password was entered; set ${RECORD_PASSWORD_ENV} to supply it non-interactively`
 
 type RecordPasswordDecision =
   | { action: 'use-environment'; password: string }
@@ -28,12 +29,7 @@ export function decideRecordPassword(
 }
 
 export async function recordPassword(readPassword: () => Promise<string>): Promise<string> {
-  const decision = decideRecordPassword(
-    process.env[RECORD_PASSWORD_ENV],
-    process.stdin.isTTY === true,
-  )
-  if (decision.action === 'refuse') throw new Error(decision.message)
-  const password = decision.action === 'use-environment' ? decision.password : await readPassword()
+  const password = process.env[RECORD_PASSWORD_ENV] ?? (await readPassword())
   if (!password) throw new Error('record password is required')
   return password
 }

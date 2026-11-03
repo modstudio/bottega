@@ -9,7 +9,7 @@ import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts
 import { retryOutboxRow, retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
 import {
   decideRecordPassword,
-  NON_INTERACTIVE_PASSWORD_REFUSAL,
+  PASSWORD_PROMPT_EOF_REFUSAL,
   RECORD_PASSWORD_ENV,
   signInCommand,
   signUpCommand,
@@ -66,7 +66,7 @@ export async function promptPassword(
       terminal.question('Record password: '),
       new Promise<never>((_resolve, reject) => {
         terminal.once('close', () => {
-          reject(new Error(NON_INTERACTIVE_PASSWORD_REFUSAL))
+          reject(new Error(PASSWORD_PROMPT_EOF_REFUSAL))
         })
       }),
     ])
