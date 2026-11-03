@@ -30,7 +30,7 @@ function recordAuthClients(url: string, authDatabaseUrl: string | undefined) {
   return { client, authClient }
 }
 
-function withRecordAuthClose<Auth>(auth: Auth, client: SQL, authClient: SQL) {
+function withRecordAuthClose<Auth extends object>(auth: Auth, client: SQL, authClient: SQL) {
   return Object.assign(auth, {
     close: async () => {
       await client.close()
