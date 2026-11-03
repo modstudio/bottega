@@ -48,6 +48,8 @@ export async function resolveCursorLiveAutonomy(
     input.cursor,
     input.context.session,
     d,
+    input.context.taskRecordId,
+    input.context.taskStatusCategory,
   )
   let composition: ReturnType<typeof composeWorkflow>
   try {
