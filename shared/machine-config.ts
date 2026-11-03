@@ -40,6 +40,9 @@ export type MachineConfigEntry = {
   validator?: (value: string | number) => string | null
 }
 
+export const MACHINE_LEVELS = ['record', 'full'] as const
+export type MachineLevel = (typeof MACHINE_LEVELS)[number]
+
 const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function machineIdValidation(value: string | number): string | null {
@@ -80,6 +83,7 @@ export const MACHINE_CONFIG = {
   'machine.short_name': { type: 'string', default: '' },
   'machine.display_name': { type: 'string', default: '' },
   'machine.former_short_names': { type: 'string', default: '' },
+  'machine.level': { type: 'string', default: 'full', values: MACHINE_LEVELS },
   ...DELEGATION_MACHINE_CONFIG,
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',

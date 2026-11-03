@@ -141,3 +141,43 @@ test('setup restore refuses a worker-marked caller before reading the backup', a
     program.parseAsync(['node', PLATFORM_SLUG, 'setup', 'restore', '/does/not/exist']),
   ).rejects.toThrow('refusing setup restore from an orchestrator worker run')
 })
+
+test('setup commands accept level and pass it as the machine-level answer', async () => {
+  const seen: unknown[] = []
+  const service = stubSetupService({
+    dryRun: async (_folders, answers) => {
+      seen.push(answers)
+      const plan = await service.plan([])
+      return { ...plan, diff: [] }
+    },
+    applyRecommended: async (_folders, answers) => {
+      seen.push(answers)
+      return { plan: await service.plan([]), actions: [], results: [] }
+    },
+  })
+  const program = new Command().exitOverride()
+  register(program, service)
+  const setup = program.commands.find((command) => command.name() === 'setup')!
+  expect(setup.options.some((option) => option.long === '--level')).toBeTrue()
+
+  await program.parseAsync(['node', PLATFORM_SLUG, 'setup', 'plan', '--level', 'record', '--json'])
+  await program.parseAsync([
+    'node',
+    PLATFORM_SLUG,
+    'setup',
+    'apply',
+    '--yes',
+    '--level',
+    'full',
+    '--json',
+  ])
+  expect(seen).toEqual([{ 'machine:level': 'record' }, { 'machine:level': 'full' }])
+})
+
+test('setup level refuses values outside record and full', async () => {
+  const program = new Command().exitOverride()
+  register(program, stubSetupService({}))
+  await expect(
+    program.parseAsync(['node', PLATFORM_SLUG, 'setup', 'plan', '--level', 'other']),
+  ).rejects.toThrow('accepted values are record, full')
+})

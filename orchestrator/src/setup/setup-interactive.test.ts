@@ -240,11 +240,18 @@ test('reports a refused result and later not-attempted results', async () => {
   const outcome = await runInteractiveSetup(
     plan([], [proposal('first'), proposal('second')]),
     prompts,
-    async (actions): Promise<SetupActionResult[]> => [
-      { ...actions[0]!, status: 'unchanged', message: null },
-      { ...actions[1]!, status: 'refused', message: 'register refused the first project' },
-      { ...actions[2]!, status: 'not-attempted', message: null },
-    ],
+    async (actions): Promise<SetupActionResult[]> =>
+      actions.map((action) => {
+        if (action.kind !== 'add') return { ...action, status: 'unchanged', message: null }
+        if (action.name === 'first') {
+          return {
+            ...action,
+            status: 'refused',
+            message: 'register refused the first project',
+          }
+        }
+        return { ...action, status: 'not-attempted', message: null }
+      }),
   )
 
   expect(outcome.kind).toBe('applied')

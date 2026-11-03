@@ -6,9 +6,21 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { removeProject, upsertProject } from '../project/projects.ts'
 import { lensDispatchNotices } from './dispatch-commands.ts'
-import { preflight, sourceIsRegisteredMain } from './dispatch-preflight.ts'
+import {
+  installLevelDispatchDecision,
+  preflight,
+  sourceIsRegisteredMain,
+} from './dispatch-preflight.ts'
 
 const fixtures: { name: string; path: string }[] = []
+
+test('record install level refuses dispatch and full allows it', () => {
+  expect(installLevelDispatchDecision('record', 'implement')).toEqual({
+    kind: 'refuse',
+    message: `cannot start implement: this machine's install level is record, and starting a run needs worker agents; cleared by: ${PLATFORM_SLUG} machine setup --level full`,
+  })
+  expect(installLevelDispatchDecision('full', 'implement')).toEqual({ kind: 'allow' })
+})
 
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) {

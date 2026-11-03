@@ -7,6 +7,7 @@ import type { RepositoryFacts } from './repository-facts.ts'
 import {
   deriveKeyPrefix,
   proposeSetup as proposeSetupEngine,
+  recommendedMachineLevel,
   type SetupAgent,
   type SetupNotice,
 } from './setup-engine.ts'
@@ -27,7 +28,12 @@ const plannedAction = (
   answers: Parameters<typeof planSetupActions>[1],
 ) => {
   const actions = planSetupActions(plan, answers)
-  return actions.find((action) => action.kind !== 'migrate-environment')
+  return actions.find(
+    (action) =>
+      action.kind !== 'migrate-environment' &&
+      action.kind !== 'set-machine-level' &&
+      action.kind !== 'machine-level-unchanged',
+  )
 }
 
 function proposeSetup(
@@ -38,7 +44,7 @@ function proposeSetup(
   notices: SetupNotice[] = [],
   servers: Parameters<typeof proposeSetupEngine>[6] = [],
 ) {
-  return proposeSetupEngine(
+  const plan = proposeSetupEngine(
     resolveWorktreeLifecycle,
     facts,
     repositories,
@@ -47,9 +53,14 @@ function proposeSetup(
     notices,
     servers,
   )
+  return {
+    ...plan,
+    questions: plan.questions.filter((question) => question.id !== 'machine:level'),
+  }
 }
 
 const machine = {
+  machineLevel: 'full',
   recordApiUrl: 'https://api.example.test',
   git: { path: '/bin/git', version: '1' },
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
@@ -89,6 +100,71 @@ const orchServer: McpServer = {
   command: FRONT_DOOR,
   args: ['mcp'],
 }
+const workerServer: McpServer = {
+  name: WORKER_MCP_SERVER_NAME,
+  command: FRONT_DOOR,
+  args: ['mcp', 'ask-server'],
+}
+
+test('recommends the install level from signed-in harness facts unless a setting exists', () => {
+  expect(
+    recommendedMachineLevel({
+      ...machineWithHarness('codex', '/bin/codex', 'signed-in'),
+      machineLevel: null,
+    }),
+  ).toBe('full')
+  expect(
+    recommendedMachineLevel({
+      ...machineWithHarness('codex', null, 'unknown'),
+      machineLevel: null,
+    }),
+  ).toBe('record')
+  expect(
+    recommendedMachineLevel({
+      ...machineWithHarness('codex', '/bin/codex', 'signed-in'),
+      machineLevel: 'record',
+    }),
+  ).toBe('record')
+})
+
+test('record plan skips the worker MCP server and still registers the main server', () => {
+  const plan = proposeSetupEngine(
+    resolveWorktreeLifecycle,
+    {
+      ...machineWithMcp('codex', {
+        support: 'automatic',
+        registrations: {
+          [MCP_SERVER_NAME]: { status: 'absent' },
+          [WORKER_MCP_SERVER_NAME]: { status: 'absent' },
+        },
+      }),
+      machineLevel: null,
+    },
+    [],
+    [],
+    [],
+    [],
+    [orchServer, workerServer],
+  )
+  expect(plan.questions[0]?.id).toBe('machine:level')
+  const actions = planSetupActions(plan, {
+    ...recommendedAnswers(plan),
+    'machine:level': 'record',
+  })
+  expect(actions).toContainEqual(
+    expect.objectContaining({
+      kind: 'mcp-skipped',
+      server: expect.objectContaining({ name: WORKER_MCP_SERVER_NAME }),
+      reason: 'not needed at install level record',
+    }),
+  )
+  expect(actions).toContainEqual(
+    expect.objectContaining({
+      kind: 'register-mcp',
+      server: expect.objectContaining({ name: MCP_SERVER_NAME }),
+    }),
+  )
+})
 function repository(overrides: Partial<RepositoryFacts> = {}): RepositoryFacts {
   return {
     name: 'alpha-project',
@@ -550,11 +626,6 @@ test('plans absent, same, and different MCP registration read-backs', () => {
 })
 
 test('recommends renaming legacy Claude and Codex registrations to stable registrations', () => {
-  const workerServer: McpServer = {
-    name: WORKER_MCP_SERVER_NAME,
-    command: `/bin/${PLATFORM_SLUG}`,
-    args: ['mcp', 'ask-server'],
-  }
   const cases = [
     {
       harness: 'claude' as const,

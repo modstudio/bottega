@@ -39,6 +39,19 @@ import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 const MAX_DEPTH = 1
 export const depth = () => Number(process.env.BOTTEGA_DEPTH ?? 0)
 
+export type InstallLevelDispatchDecision = { kind: 'allow' } | { kind: 'refuse'; message: string }
+
+export function installLevelDispatchDecision(
+  level: 'record' | 'full',
+  jobName: string,
+): InstallLevelDispatchDecision {
+  if (level === 'full') return { kind: 'allow' }
+  return {
+    kind: 'refuse',
+    message: `cannot start ${jobName}: this machine's install level is record, and starting a run needs worker agents; cleared by: ${PLATFORM_SLUG} machine setup --level full`,
+  }
+}
+
 /** Stable lens question and exclusions for a findings dispatch that named --lens. */
 export function resolvedFindingsLens(
   findings: boolean | undefined,

@@ -955,13 +955,14 @@ restore user settings from a rendered backup
 
 ## bottega machine setup
 
-**Synopsis:** `bottega machine setup [--in <folder>]`
+**Synopsis:** `bottega machine setup [--in <folder>] [--level <record|full>]`
 
 inspect and configure this machine interactively
 
 ### Options
 
 - `--in <folder>`: folder to inspect
+- `--level <record|full>`: set the install level
 
 ### Related
 
@@ -973,7 +974,7 @@ inspect and configure this machine interactively
 
 ## bottega machine setup apply
 
-**Synopsis:** `bottega machine setup apply [--in <folder>] [--yes] [--answers <file>] [--json]`
+**Synopsis:** `bottega machine setup apply [--in <folder>] [--yes] [--answers <file>] [--json] [--level <record|full>]`
 
 apply a machine setup plan without prompts
 
@@ -983,6 +984,7 @@ apply a machine setup plan without prompts
 - `--yes`: apply every recommended setup answer
 - `--answers <file>`: JSON file containing explicit setup answers
 - `--json`: write the setup result as compact JSON
+- `--level <record|full>`: answer the install-level question
 
 ### Related
 
@@ -1004,7 +1006,7 @@ inspect machine setup facts
 
 ## bottega machine setup plan
 
-**Synopsis:** `bottega machine setup plan [--in <folder>] [--json]`
+**Synopsis:** `bottega machine setup plan [--in <folder>] [--json] [--level <record|full>]`
 
 plan recommended machine setup actions
 
@@ -1012,6 +1014,7 @@ plan recommended machine setup actions
 
 - `--in <folder>`: folder to inspect
 - `--json`: write the setup plan as compact JSON
+- `--level <record|full>`: answer the install-level question
 
 ### Related
 

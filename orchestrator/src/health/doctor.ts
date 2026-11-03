@@ -3,7 +3,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readDelegationSettings } from '../../../shared/machine-config.ts'
+import { readDelegationSettings, readMachineValue } from '../../../shared/machine-config.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
 import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
@@ -392,6 +392,18 @@ async function reportAgentsAndDelegation(
   }
 }
 
+async function reportAgentsForInstallLevel(
+  machineLevel: 'record' | 'full',
+  presentation: Pick<DoctorPresentation, 'log' | 'candidates'>,
+  agentStatus: typeof doctorAgentStatus,
+): Promise<void> {
+  if (machineLevel === 'record') {
+    presentation.log('worker agents  not needed at install level record')
+    return
+  }
+  await reportAgentsAndDelegation(presentation, agentStatus)
+}
+
 export async function doctorCommand(
   flags: DoctorFlags,
   presentation: DoctorPresentation,
@@ -399,6 +411,7 @@ export async function doctorCommand(
 ): Promise<void> {
   const { has } = flags
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
+  const machineLevel = readMachineValue('machine.level')
   // Probed BEFORE the agent list is printed, not after it. Doctor used to
   // report `qwen36-goose ready` and `reachable NO` four lines apart and mean
   // both: the roster asked whether it was configured and the probe asked
@@ -533,9 +546,9 @@ export async function doctorCommand(
         `run ${PLATFORM_SLUG} score recalibrate --n 12`,
     )
   }
-  await reportAgentsAndDelegation({ log, candidates }, agentStatus)
+  await reportAgentsForInstallLevel(machineLevel, { log, candidates }, agentStatus)
   const configuredUrl = modelHostUrl()
-  for (const row of agentRows()) {
+  for (const row of machineLevel === 'full' ? agentRows() : []) {
     if (row.operated_by !== 'self' || !row.enabled) continue
     const probe = localProbeDiagnosis(row)
     log(probe.line)
@@ -748,7 +761,7 @@ export async function doctorCommand(
       )
     }
   }
-  for (const j of jobs()) {
+  for (const j of machineLevel === 'full' ? jobs() : []) {
     try {
       const p = pick(j)
       log(`  ${j.padEnd(15)} -> ${p.agent}`)

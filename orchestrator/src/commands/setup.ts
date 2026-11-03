@@ -1,8 +1,9 @@
 // concern: cli
 /** Registers setup detection and project-register adapters. Must not own setup policy. */
 import { readFileSync } from 'node:fs'
-import type { Command } from 'commander'
+import { type Command, InvalidArgumentError } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { setupResultsRequireAttention } from '../setup/setup-apply.ts'
 import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
@@ -12,7 +13,26 @@ import { runInteractiveSetup, SETUP_CANCEL } from '../setup/setup-interactive.ts
 import { type SetupService, setupService } from '../setup/setup-service.ts'
 import { collect, log } from './support.ts'
 
-type SetupOptions = { in?: string[]; json?: boolean; yes?: boolean; answers?: string }
+type SetupOptions = {
+  in?: string[]
+  json?: boolean
+  yes?: boolean
+  answers?: string
+  level?: MachineLevel
+}
+
+function parseMachineLevel(value: string): MachineLevel {
+  if (MACHINE_LEVELS.includes(value as MachineLevel)) return value as MachineLevel
+  throw new InvalidArgumentError(`accepted values are ${MACHINE_LEVELS.join(', ')}`)
+}
+
+function levelAnswer(options: SetupOptions): Partial<Record<string, string>> {
+  return options.level ? { 'machine:level': options.level } : {}
+}
+
+function inheritedSetupOptions(options: SetupOptions, command: Command): SetupOptions {
+  return { ...(command.optsWithGlobals() as SetupOptions), ...options }
+}
 
 function inputs(options: SetupOptions): string[] {
   return options.in?.length ? options.in : [process.cwd()]
@@ -44,8 +64,8 @@ async function applyNonInteractiveSetup(
     }
   }
   const outcome = options.yes
-    ? await service.applyRecommended(folders)
-    : await service.apply(folders, answerValue)
+    ? await service.applyRecommended(folders, levelAnswer(options))
+    : await service.apply(folders, answerValue, levelAnswer(options))
   const { plan, actions, results } = outcome
   if (setupResultsRequireAttention(results)) process.exitCode = 1
   log(
@@ -98,6 +118,7 @@ async function applyInteractiveSetup(options: SetupOptions, service: SetupServic
         return service.applyPreparedActions(actions, prepared.migration)
       },
       Boolean(prepared.migration),
+      levelAnswer(options),
     )
   } catch (error) {
     if (!actionsStarted) {
@@ -119,6 +140,7 @@ export function register(program: Command, service: SetupService = setupService)
     .command('setup')
     .description('inspect and configure this machine interactively')
     .option('--in <folder>', 'folder to inspect', collect, [])
+    .option('--level <record|full>', 'set the install level', parseMachineLevel)
     .allowExcessArguments(false)
     .action((options: SetupOptions) => applyInteractiveSetup(options, service))
   setup
@@ -141,10 +163,12 @@ export function register(program: Command, service: SetupService = setupService)
     .description('plan recommended machine setup actions')
     .option('--in <folder>', 'folder to inspect', collect, [])
     .option('--json', 'write the setup plan as compact JSON')
+    .option('--level <record|full>', 'answer the install-level question', parseMachineLevel)
     .allowExcessArguments(false)
-    .action(async (options: SetupOptions) => {
-      const plan = await service.dryRun(inputs(options))
-      log(JSON.stringify(plan, null, options.json ? undefined : 2))
+    .action(async (options: SetupOptions, command: Command) => {
+      const resolved = inheritedSetupOptions(options, command)
+      const plan = await service.dryRun(inputs(resolved), levelAnswer(resolved))
+      log(JSON.stringify(plan, null, resolved.json ? undefined : 2))
     })
   setup
     .command('apply')
@@ -153,6 +177,9 @@ export function register(program: Command, service: SetupService = setupService)
     .option('--yes', 'apply every recommended setup answer')
     .option('--answers <file>', 'JSON file containing explicit setup answers')
     .option('--json', 'write the setup result as compact JSON')
+    .option('--level <record|full>', 'answer the install-level question', parseMachineLevel)
     .allowExcessArguments(false)
-    .action((options: SetupOptions) => applyNonInteractiveSetup(options, service))
+    .action((options: SetupOptions, command: Command) =>
+      applyNonInteractiveSetup(inheritedSetupOptions(options, command), service),
+    )
 }

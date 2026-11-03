@@ -66,13 +66,16 @@ export async function runInteractiveSetup(
   prompter: SetupPrompter,
   apply: SetupApply,
   changesAlreadyMade = false,
+  fixedAnswers: Record<string, string> = {},
 ): Promise<InteractiveSetupOutcome> {
   for (const notice of plan.notices) {
     prompter.note(notice.fix ? `${notice.message}\nFix: ${notice.fix}` : notice.message, 'Notice')
   }
 
-  const answers: Record<string, string> = {}
-  for (const question of plan.questions) {
+  const answers: Record<string, string> = { ...fixedAnswers }
+  for (const question of plan.questions.filter(
+    (question) => !Object.hasOwn(answers, question.id),
+  )) {
     if (question.options.length === 1) {
       const option = question.options[0]!
       answers[question.id] = option.id

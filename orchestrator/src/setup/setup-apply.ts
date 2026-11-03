@@ -5,6 +5,7 @@ import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/p
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { MachineLevel } from './setup-engine.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { removableLegacyPathTarget } from './setup-legacy-path.ts'
 import {
@@ -60,6 +61,7 @@ export type SetupEnvironmentService = {
     status: SetupAppliedActionStatus
     message: string | null
   }>
+  setMachineLevel?(level: MachineLevel): void
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
@@ -279,9 +281,18 @@ async function applySetupAction(
   if (
     action.kind === 'unchanged' ||
     action.kind === 'mcp-unchanged' ||
-    action.kind === 'mcp-skipped'
+    action.kind === 'mcp-skipped' ||
+    action.kind === 'machine-level-unchanged'
   ) {
-    return { status: 'unchanged', message: null }
+    return {
+      status: 'unchanged',
+      message: action.kind === 'mcp-skipped' ? (action.reason ?? null) : null,
+    }
+  }
+  if (action.kind === 'set-machine-level') {
+    if (!environment.setMachineLevel) throw new Error('machine-level writer is unavailable')
+    environment.setMachineLevel(action.to)
+    return { status: 'applied', message: null }
   }
   if (action.kind === 'migrate-mcp-config') {
     const current = await readFile(action.path, 'utf8')
