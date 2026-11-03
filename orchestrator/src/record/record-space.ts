@@ -2,7 +2,6 @@
 /** Owns record membership and active-space changes. Must not know CLI presentation. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { configClient } from '../../../shared/config-client.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import type { MachineNamePair } from './machine-name.ts'
@@ -60,13 +59,15 @@ export function recordMembershipsFromIdentity(identity: RecordIdentity): {
   }
 }
 
-export async function listRecordSpaceConfigAccess(client = configClient()) {
+export async function listRecordSpaceConfigAccess(
+  client: Pick<RecordApiClient, 'listConfigAccess'> = recordApiClient(),
+) {
   return (await client.listConfigAccess()).items
 }
 
 export async function grantRecordSpaceConfigAccess(
   email: string,
-  client = configClient(),
+  client: Pick<RecordApiClient, 'grantConfigAccess'> = recordApiClient(),
 ): Promise<void> {
   await client.grantConfigAccess(email)
 }

@@ -778,7 +778,7 @@ export async function registerMachineKey(
       )
     if (row.user_id != null && String(row.user_id) !== input.userId)
       throw new ConfigServiceError(
-        `machine key ${input.keyId} belongs to another user; use that user's machine key or initialize a new key with ${machineClaimRemedy}`,
+        `machine key ${input.keyId} belongs to another user; register from the owning user's machine, or initialize a new key on this machine with \`${PLATFORM_SLUG} machine config machine init\``,
         409,
       )
     return {

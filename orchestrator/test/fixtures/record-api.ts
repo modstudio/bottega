@@ -190,6 +190,8 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'listInvitations'
   | 'acceptInvitation'
   | 'inviteMember'
+  | 'listConfigAccess'
+  | 'grantConfigAccess'
 > {
   return {
     whoami: unusedIdentityAndSpace,
@@ -198,6 +200,8 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     listInvitations: unusedIdentityAndSpace,
     acceptInvitation: unusedIdentityAndSpace,
     inviteMember: unusedIdentityAndSpace,
+    listConfigAccess: unusedIdentityAndSpace,
+    grantConfigAccess: unusedIdentityAndSpace,
   }
 }
 

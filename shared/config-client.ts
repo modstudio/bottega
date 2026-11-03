@@ -81,15 +81,6 @@ type Request = <T>(route: string, init?: RequestInit) => Promise<T>
 
 function configAuthorizationClient(request: Request) {
   return {
-    listConfigAccess: () =>
-      request<{
-        items: Array<{ email: string; role: string; permission: string; configAccess: boolean }>
-      }>('/v1/config-access'),
-    grantConfigAccess: (email: string) =>
-      request<{ granted: true }>('/v1/config-access/grant', {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      }),
     createMachineKeyClaimChallenge: (keyId: string) =>
       request<{ challengeId: string; enc: string; ciphertext: string; senderPublicKey: string }>(
         `/v1/config/machine-keys/${keyId}/claim-challenge`,

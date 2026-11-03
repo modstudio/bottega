@@ -69,9 +69,7 @@ export async function completeSignInCommand(
   try {
     await claimCurrentMachineKey()
   } catch (error) {
-    presentation.log(
-      `machine key claim failed: ${error instanceof Error ? error.message : String(error)}; run \`${PLATFORM_SLUG} machine config machine init\``,
-    )
+    presentation.log(`machine key claim failed: ${error instanceof Error ? error.message : String(error)}`)
   }
   for (const adoption of await adoptAllHostedProjectIdentities()) {
     if (adoption.status === 'relinked') presentation.log(formatProjectRelink(adoption))

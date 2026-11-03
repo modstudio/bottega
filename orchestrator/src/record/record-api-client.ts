@@ -221,6 +221,10 @@ export type RecordApiClient = ProjectIdentityClient &
       role: 'member' | 'admin' | 'owner'
       organizationId: string
     }): Promise<{ id: string }>
+    listConfigAccess(): Promise<{
+      items: Array<{ email: string; role: string; permission: string; configAccess: boolean }>
+    }>
+    grantConfigAccess(email: string): Promise<{ granted: true }>
     putSnapshot(
       kind: SnapshotKind,
       input: { machineId: string; payload: unknown },
@@ -973,6 +977,12 @@ function recordIdentityAndSpaceClient(
       request('/api/auth/organization/invite-member', {
         method: 'POST',
         body: JSON.stringify(input),
+      }),
+    listConfigAccess: () => request('/v1/config-access'),
+    grantConfigAccess: (email) =>
+      request('/v1/config-access/grant', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
       }),
   }
 }

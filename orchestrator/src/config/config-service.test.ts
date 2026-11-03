@@ -6,10 +6,17 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
-import { readMachineKey } from '../../../shared/machine-key-store.ts'
+import { machineKeyId } from '../../../shared/machine-key-id.ts'
+import { readMachineKey, writeMachineKey } from '../../../shared/machine-key-store.ts'
+import {
+  generateMachineKeyPair,
+  KEY_SIZE,
+  sealClaimChallenge,
+} from '../../../shared/secret-envelope.ts'
 import { readTrustList } from '../../../shared/trust-list.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
+  claimCurrentMachineKey,
   configHome,
   deleteEntry,
   deleteMachineEntry,
@@ -597,4 +604,124 @@ test('machine init converges with an existing key, pin, space, and registration'
   await expect(machineInit('fixture', client, env)).rejects.toThrow('sign back in')
   expect(readHostedConfigIdentity(env)).toEqual({ spaceId, userId })
   expect(registrations).toEqual([first, first])
+})
+
+test('machine init proves possession exactly once only when registration is unowned', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'machine-init-claim-'))
+  roots.push(root)
+  const env = { BOTTEGA_CONFIG_HOME: root, BOTTEGA_KEYSTORE: 'file' }
+  const spaceId = '01990000-0000-7000-8000-000000000011'
+  const userId = '01990000-0000-7000-8000-000000000012'
+  const sender = await generateMachineKeyPair()
+  const nonce = crypto.getRandomValues(new Uint8Array(KEY_SIZE))
+  const calls: string[] = []
+  let registeredOwner: string | null = null
+  const client = {
+    whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
+    registerMachineKey: async () => ({ userId: registeredOwner }),
+    createMachineKeyClaimChallenge: async (keyId: string) => {
+      calls.push('challenge')
+      const recipient = readMachineKey(env)
+      if (!recipient) throw new Error('test machine key was not stored')
+      const sealed = await sealClaimChallenge({
+        nonce,
+        spaceId,
+        keyId,
+        senderPrivateKey: sender.privateKey,
+        senderPublicKey: sender.publicKey,
+        recipientPublicKey: recipient.publicKey,
+      })
+      return {
+        challengeId: 'claim-a',
+        enc: Buffer.from(sealed.enc).toString('base64url'),
+        ciphertext: Buffer.from(sealed.ciphertext).toString('base64url'),
+        senderPublicKey: Buffer.from(sender.publicKey).toString('base64url'),
+      }
+    },
+    claimMachineKey: async (_keyId: string, challengeId: string, opened: string) => {
+      calls.push('claim')
+      expect(challengeId).toBe('claim-a')
+      expect(new Uint8Array(Buffer.from(opened, 'base64url'))).toEqual(nonce)
+      return { claimed: true as const }
+    },
+  } as unknown as ConfigClient
+
+  await machineInit('unowned', client, env)
+  expect(calls).toEqual(['challenge', 'claim'])
+
+  registeredOwner = userId
+  await machineInit('owned', client, env)
+  expect(calls).toEqual(['challenge', 'claim'])
+})
+
+test('claim current machine key covers missing, unregistered, owned, and unowned registrations', async () => {
+  const rootFor = () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-current-claim-'))
+    roots.push(root)
+    return { BOTTEGA_CONFIG_HOME: root, BOTTEGA_KEYSTORE: 'file' }
+  }
+  let calls = 0
+  await claimCurrentMachineKey(
+    { listMachineKeys: async () => (calls += 1, []) } as unknown as ConfigClient,
+    rootFor(),
+  )
+  expect(calls).toBe(0)
+
+  const pair = await generateMachineKeyPair()
+  const keyId = await machineKeyId(pair.publicKey)
+  const env = rootFor()
+  writeMachineKey(pair, env)
+  const listed = (userId: string | null) => ({
+    keyId,
+    publicKey: Buffer.from(pair.publicKey).toString('base64url'),
+    label: 'fixture',
+    createdAt: '2026-11-03T00:00:00.000Z',
+    revokedAt: null,
+    userId,
+  })
+
+  await claimCurrentMachineKey(
+    { listMachineKeys: async () => [] } as unknown as ConfigClient,
+    env,
+  )
+  await claimCurrentMachineKey(
+    { listMachineKeys: async () => [listed('user-a')] } as unknown as ConfigClient,
+    env,
+  )
+
+  const spaceId = '01990000-0000-7000-8000-000000000021'
+  const sender = await generateMachineKeyPair()
+  const nonce = crypto.getRandomValues(new Uint8Array(KEY_SIZE))
+  const claimCalls: string[] = []
+  await claimCurrentMachineKey(
+    {
+      listMachineKeys: async () => [listed(null)],
+      whoami: async () => ({ user: { id: 'user-a' }, activeSpaceId: spaceId }),
+      createMachineKeyClaimChallenge: async (recipientKeyId: string) => {
+        claimCalls.push('challenge')
+        const sealed = await sealClaimChallenge({
+          nonce,
+          spaceId,
+          keyId: recipientKeyId,
+          senderPrivateKey: sender.privateKey,
+          senderPublicKey: sender.publicKey,
+          recipientPublicKey: pair.publicKey,
+        })
+        return {
+          challengeId: 'claim-b',
+          enc: Buffer.from(sealed.enc).toString('base64url'),
+          ciphertext: Buffer.from(sealed.ciphertext).toString('base64url'),
+          senderPublicKey: Buffer.from(sender.publicKey).toString('base64url'),
+        }
+      },
+      claimMachineKey: async (_keyId: string, challengeId: string, opened: string) => {
+        claimCalls.push('claim')
+        expect(challengeId).toBe('claim-b')
+        expect(new Uint8Array(Buffer.from(opened, 'base64url'))).toEqual(nonce)
+        return { claimed: true as const }
+      },
+    } as unknown as ConfigClient,
+    env,
+  )
+  expect(claimCalls).toEqual(['challenge', 'claim'])
 })

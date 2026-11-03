@@ -649,7 +649,6 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-space.ts', [
     '../../../shared/brand.ts',
-    '../../../shared/config-client.ts',
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/record-space-membership.ts',
