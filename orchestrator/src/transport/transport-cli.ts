@@ -6,7 +6,7 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
-import { codexAskExposureFromTexts, parseCodexAskExposure } from './codex-ask-exposure.ts'
+import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
 import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
 import {
   codexRolloutTextsSince,
@@ -50,21 +50,22 @@ function cliUsage(estimatedCostUsd: number | null) {
   return { costUsd: null, vendorUsage }
 }
 
-function codexRolloutEvidence(
+export function codexRolloutEvidence(
   codex: boolean,
   home: string | undefined,
   offsets: Map<string, number>,
+  capBytes?: number,
 ) {
   if (!codex) return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: null }
-  const texts = codexRolloutTextsSince(home, offsets)
+  const texts = codexRolloutTextsSince(home, offsets, capBytes)
   // A dropped slice has no readings to report; the overflow itself is the value.
   if (texts.overflow)
     return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: texts.overflow }
-  const versionHeads =
-    parseCodexAskExposure(texts.slice).cliVersion === null ? codexRolloutVersionHeads(home) : ''
   return {
     quotaReadings: parseCodexQuotaReadings(texts.slice),
-    askExposure: codexAskExposureFromTexts(texts.slice, versionHeads),
+    // The version fallback reads bounded heads lazily, only when the slice
+    // carries no `cli_version`.
+    askExposure: codexAskExposureFromTexts(texts.slice, () => codexRolloutVersionHeads(home)),
     overflow: null,
   }
 }
@@ -409,7 +410,6 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           ...usage,
           quotaReadings,
           askExposure,
-          rolloutOverflow: overflow?.message ?? null,
           sessionId,
           stopReason,
           error: replyError,

@@ -71,7 +71,7 @@ test('turn slice ignores an earlier exposure record but retains the chain CLI ve
       root,
       new Map([[realpathSync(rollout), Buffer.byteLength(earlier)]]),
     )
-    expect(codexAskExposureFromTexts(texts.slice, codexRolloutVersionHeads(root))).toEqual({
+    expect(codexAskExposureFromTexts(texts.slice, () => codexRolloutVersionHeads(root))).toEqual({
       surface: 'unknown',
       cliVersion: '0.166.0',
     })
@@ -83,10 +83,29 @@ test('turn slice ignores an earlier exposure record but retains the chain CLI ve
 test('turn slice classifies its own additional_tools record after the offset', () => {
   const earlier = `${meta}\n${tools([namespace('functions', ['wait'])])}\n`
   const current = tools([namespace('functions', ['exec'])])
-  expect(codexAskExposureFromTexts(current, `${earlier}${current}`)).toEqual({
+  expect(codexAskExposureFromTexts(current, () => `${earlier}${current}`)).toEqual({
     surface: 'code-mode',
     cliVersion: '0.166.0',
   })
+})
+
+test('the chain version fallback is consulted only when the slice lacks a CLI version', () => {
+  let consulted = 0
+  const source = () => {
+    consulted += 1
+    return meta
+  }
+
+  expect(codexAskExposureFromTexts(meta, source)).toEqual({
+    surface: 'unknown',
+    cliVersion: '0.166.0',
+  })
+  expect(consulted).toBe(0)
+
+  expect(codexAskExposureFromTexts(JSON.stringify({ type: 'different' }), source).cliVersion).toBe(
+    '0.166.0',
+  )
+  expect(consulted).toBe(1)
 })
 
 test('event builder emits Codex exposure with the prescribed note', () => {

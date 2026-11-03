@@ -89,12 +89,17 @@ export function parseCodexAskExposure(text: string | null | undefined): CodexAsk
   return { surface, cliVersion }
 }
 
-/** Classify only this turn's slice, while allowing its stable CLI version to come from the chain. */
-export function codexAskExposureFromTexts(slice: string, full: string): CodexAskExposure {
+/**
+ * Classify only this turn's slice, while allowing its stable CLI version to come
+ * from the chain. The chain's version source is a lazy thunk, consulted only
+ * when the slice yields no `cli_version`, so the caller decides what reading it
+ * is worth and this module holds the one "is the version in the slice" rule.
+ */
+export function codexAskExposureFromTexts(slice: string, full: () => string): CodexAskExposure {
   const exposure = parseCodexAskExposure(slice)
   return {
     ...exposure,
-    cliVersion: exposure.cliVersion ?? parseCodexAskExposure(full).cliVersion,
+    cliVersion: exposure.cliVersion ?? parseCodexAskExposure(full()).cliVersion,
   }
 }
 

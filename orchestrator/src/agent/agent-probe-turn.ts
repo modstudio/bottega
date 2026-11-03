@@ -131,9 +131,11 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
   const recordId = insertProbeTurn(input, started)
   const cwd = probeCwd(input)
   const scratchDir = probeScratchDir(input)
-  const environment = await probeEnvironment(input.name, input.agent, scratchDir)
-  if (input.writing) environment.HOME = input.writing.workerHomeDir
   try {
+    // A refused probe environment must record a failed probe turn, not escape
+    // with the row left 'running'.
+    const environment = await probeEnvironment(input.name, input.agent, scratchDir)
+    if (input.writing) environment.HOME = input.writing.workerHomeDir
     const handle = await input.transport.start({
       agent: input.agent,
       cwd,

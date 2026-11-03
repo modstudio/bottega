@@ -160,3 +160,33 @@ test.each(['ok', 'failed'] as const)(
     })
   },
 )
+
+test('a refused codex probe environment records a failed turn, not a running row', async () => {
+  const operatorHome = join(dir, 'operator-home-refused')
+  const scratch = join(dir, 'probe-scratch-refused')
+  mkdirSync(join(operatorHome, '.codex'), { recursive: true })
+  process.env.HOME = operatorHome
+  delete process.env.CODEX_HOME
+  try {
+    const result = await runProbeTurn({
+      name: 'codex',
+      scratch,
+      agent: { ...BUILTIN_AGENTS.codex!, harness: 'codex' },
+      transport: probeTransport('ok'),
+      id: 'refused-home',
+      prompt: 'report quota',
+    })
+
+    expect(result.status).toBe('failed')
+    const row = db()
+      .query(`SELECT status, error FROM run WHERE job=?`)
+      .get('agent-probe-refused-home') as { status: string; error: string | null }
+    expect(row.status).toBe('failed')
+    expect(row.status).not.toBe('running')
+    expect(row.error).toContain('auth.json')
+  } finally {
+    restoreProbeHomeEnvironment()
+    rmSync(operatorHome, { recursive: true, force: true })
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
