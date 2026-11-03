@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
+import { configureRecordApiUrl } from '../../../test/record-api-config.ts'
 import { recordRouter } from './record.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000000001'
@@ -30,6 +31,27 @@ function caller(permission: 'read' | 'write') {
     })) as unknown as typeof fetch
   return recordRouter.createCaller({ authorization: 'Bearer token' })
 }
+
+test('record procedures build their client from the configured record address', async () => {
+  const clear = configureRecordApiUrl()
+  let requested = ''
+  try {
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requested = String(input)
+      return Response.json({
+        user: { id: userId },
+        activeSpaceId: spaceId,
+        personalSpaceId: null,
+        memberships: [],
+      })
+    }) as typeof fetch
+
+    await recordRouter.createCaller({}).whoami()
+    expect(requested).toBe('https://configured-record.example.test/v1/whoami')
+  } finally {
+    clear()
+  }
+})
 
 test('hosted document mutations bind the destination, authenticated author, and revision', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'

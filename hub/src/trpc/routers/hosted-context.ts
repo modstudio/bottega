@@ -13,6 +13,8 @@ import {
   SHIP_TO_VALUES,
   STORED_SHIP_TO_CONFIG_ALIAS,
 } from '../../../../shared/ship-to.ts'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { resolveRecordApiUrl } from '../../../../shared/record-api-url.ts'
 import {
   createRecordClient,
   type RecordClient,
@@ -34,11 +36,11 @@ const target = z.union([
 type ClientFactory = (context: Context) => RecordClient
 
 function defaultClient(context: Context): RecordClient {
-  const baseUrl = process.env.BOTTEGA_RECORD_API_URL
+  const baseUrl = resolveRecordApiUrl()
   if (!baseUrl) {
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'BOTTEGA_RECORD_API_URL is required',
+      message: `BOTTEGA_RECORD_API_URL is required\nconfigure the address with ${PLATFORM_SLUG} record use <address>`,
     })
   }
   return createRecordClient({

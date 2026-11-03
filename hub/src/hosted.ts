@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { SQL } from 'bun'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
+import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
@@ -26,8 +28,11 @@ type HostedRouteDependencies = {
 }
 
 export function hostedServerConfig(environment: ServerEnvironment = process.env) {
-  const recordApiUrl = environment.BOTTEGA_RECORD_API_URL
-  if (!recordApiUrl) throw new Error('BOTTEGA_RECORD_API_URL is required')
+  const recordApiUrl = resolveRecordApiUrl(environment)
+  if (!recordApiUrl)
+    throw new Error(
+      `BOTTEGA_RECORD_API_URL is required\nconfigure the address with ${PLATFORM_SLUG} record use <address>`,
+    )
   const recordDatabaseUrl = environment.BOTTEGA_RECORD_DATABASE_URL
   if (!recordDatabaseUrl) throw new Error('BOTTEGA_RECORD_DATABASE_URL is required')
   const port = Number(environment.PORT ?? '3000')

@@ -11,6 +11,7 @@ import {
   normalizeDocSummary,
 } from '../../../../shared/docs.ts'
 import type { MachineRef } from '../../../../shared/machine-label.ts'
+import { resolveRecordApiUrl } from '../../../../shared/record-api-url.ts'
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
@@ -56,11 +57,11 @@ const docAudiences = z
   .transform(normalizeDocAudiences)
 
 export function recordClient(ctx: Context) {
-  const baseUrl = process.env.BOTTEGA_RECORD_API_URL
+  const baseUrl = resolveRecordApiUrl()
   if (!baseUrl) {
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'BOTTEGA_RECORD_API_URL is required',
+      message: `BOTTEGA_RECORD_API_URL is required\nconfigure the address with ${PLATFORM_SLUG} record use <address>`,
     })
   }
   return createRecordClient({

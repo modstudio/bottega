@@ -517,7 +517,9 @@ function RunsList() {
         subtitle={
           payload
             ? `${collectedTime(payload.collectedAt)} \u00b7 ${payload.activeAgents.length} agent${payload.activeAgents.length === 1 ? '' : 's'} working`
-            : 'Loading runs...'
+            : query.isPending
+              ? 'Loading runs...'
+              : undefined
         }
         subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined}
         actions={phone ? undefined : <WindowControl />}
