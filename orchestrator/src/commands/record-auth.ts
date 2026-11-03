@@ -7,7 +7,14 @@ import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
 import { retryOutboxRow, retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
-import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
+import {
+  decideRecordPassword,
+  PASSWORD_PROMPT_EOF_REFUSAL,
+  RECORD_PASSWORD_ENV,
+  signInCommand,
+  signUpCommand,
+  whoamiCommand,
+} from '../record/record-auth-command.ts'
 import {
   recordAuditSecretsCommand,
   recordDoctorCommand,
@@ -44,10 +51,25 @@ export function httpAddress(value: string): string {
   return value
 }
 
-async function promptPassword(): Promise<string> {
-  const terminal = createInterface({ input: process.stdin, output: process.stderr })
+export async function promptPassword(
+  input: NodeJS.ReadableStream & { isTTY?: boolean } = process.stdin,
+  output: NodeJS.WritableStream = process.stderr,
+  passwordFromEnvironment: string | undefined = process.env[RECORD_PASSWORD_ENV],
+): Promise<string> {
+  const decision = decideRecordPassword(passwordFromEnvironment, input.isTTY === true)
+  if (decision.action === 'use-environment') return decision.password
+  if (decision.action === 'refuse') throw new Error(decision.message)
+
+  const terminal = createInterface({ input, output })
   try {
-    return await terminal.question('Record password: ')
+    return await Promise.race([
+      terminal.question('Record password: '),
+      new Promise<never>((_resolve, reject) => {
+        terminal.once('close', () => {
+          reject(new Error(PASSWORD_PROMPT_EOF_REFUSAL))
+        })
+      }),
+    ])
   } finally {
     terminal.close()
   }

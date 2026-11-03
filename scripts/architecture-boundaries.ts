@@ -750,6 +750,7 @@ export const importBoundaries: ImportBoundary[] = [
     'record-auth-command-boundary',
     'orchestrator/src/record/record-auth-command.ts',
     [
+      '../../../shared/brand.ts',
       '../../../shared/record-session.ts',
       './install-binding-write.ts',
       './record-api-client.ts',
