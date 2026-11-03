@@ -24,10 +24,10 @@ import {
 } from './setup-apply.ts'
 import {
   migrateProcessEnvironment,
-  readSetupMachineLevel,
   setupEnvironmentService,
   withMigratedProcessEnvironment,
 } from './setup-environment-runtime.ts'
+import { readSetupMachineLevel } from './setup-facts.ts'
 import { LEGACY_MCP_TOOL_PREFIX } from './setup-mcp-config.ts'
 import type { SetupAction } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'

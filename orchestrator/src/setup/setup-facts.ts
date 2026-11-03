@@ -2,7 +2,7 @@
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
-import type { MachineLevel } from '../../../shared/machine-config.ts'
+import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
 import {
@@ -12,7 +12,6 @@ import {
 } from '../agent/cli-version.ts'
 import { localReachable } from '../agent/model-host.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
-import { readSetupMachineLevel } from './setup-environment-runtime.ts'
 import {
   captureHarnessMcpFacts,
   HARNESS_MCP_CATALOGUE,
@@ -147,6 +146,11 @@ function procVersion(): string | null {
 /** Gather bounded, read-only observations without consulting agent registration rows. */
 function desiredServers(harness: HarnessName) {
   return stableMcpServers().filter((server) => harnessMcpServers(harness).includes(server.name))
+}
+
+/** The install level stored in machine.toml, or null when the machine has never chosen one. */
+export function readSetupMachineLevel(): MachineLevel | null {
+  return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
 }
 
 export async function gatherSetupFacts(

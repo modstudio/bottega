@@ -648,7 +648,6 @@ export const modules: ArchitectureModule[] = [
     '../agent/cli-version.ts',
     '../agent/model-host.ts',
     '../sandbox/sandbox-runtime.ts',
-    './setup-environment-runtime.ts',
     './setup-mcp.ts',
   ]),
   ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),

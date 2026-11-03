@@ -3,8 +3,7 @@
 
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { MachineLevel } from '../../../shared/machine-config.ts'
-import { readMachineFileValue, setMachineValue } from '../../../shared/machine-config.ts'
+import { type MachineLevel, setMachineValue } from '../../../shared/machine-config.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import {
   migrateLegacyEnvironmentSecrets,
@@ -67,10 +66,6 @@ export async function restoreSetupEnvironment(directory: string): Promise<void> 
     checkpointAndCloseStore: checkpointAndCloseDatabase,
     authorizeStateFileRename: () => assertStateFileRenameAllowed('restore'),
   })
-}
-
-export function readSetupMachineLevel(): MachineLevel | null {
-  return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
 }
 
 export async function reverseSetupStateFileMigration(
