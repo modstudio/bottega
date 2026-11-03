@@ -64,6 +64,7 @@ import {
   type WorkflowCursorIdentityRow,
   WorkflowCursorIdentityRowListSchema,
 } from '../../shared/orch-contract.ts'
+import { processObservationError } from '../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -110,6 +111,7 @@ export type { BoardListInput, BoardPostInput } from './board-contract.ts'
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 const RUNS_DEADLINE_MS = 60_000
 const RUN_IDENTITY_MAP_DEADLINE_MS = 20_000
+const PROJECT_LIST_TIMEOUT_MS = 20_000
 
 /** Resolve the executable for every call made by a long-lived process in the hub concern. */
 export function resolveOrchExecutable(): string {
@@ -411,18 +413,54 @@ export async function fileWaitingRuling(input: FileWaitingRuling): Promise<FileR
 export const blockers = (days: number): Promise<OrchBlockers> =>
   json(['machine', 'blockers', '--days', String(days), '--json'], OrchBlockersSchema)
 
+type ProjectListProcessResult = {
+  exitCode: number | null
+  signalCode: string | number | null | undefined
+  exitedDueToTimeout: boolean
+  stderr: string
+  stdout: string
+  timeoutMs: number
+}
+
+/** Decide the project-register error without observing or spawning its process. */
+export function projectListProcessError(result: ProjectListProcessResult): string | null {
+  if (
+    result.exitedDueToTimeout ||
+    (result.signalCode !== null && result.signalCode !== undefined)
+  ) {
+    const classified = processObservationError(
+      `${PLATFORM_SLUG} project list --json`,
+      result.timeoutMs,
+      result,
+    )
+    return `${classified}; retry, or pass --project <name>`
+  }
+  if (result.exitCode === 0) return null
+  return (
+    result.stderr.trim() ||
+    result.stdout.trim() ||
+    `${PLATFORM_SLUG} project exited ${result.exitCode}`
+  )
+}
+
 export function projectList(): OrchProject[] {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const proc = Bun.spawnSync([...command, 'project', 'list', '--json'], {
     env: { ...process.env },
     stdout: 'pipe',
     stderr: 'pipe',
-    timeout: 20_000,
+    timeout: PROJECT_LIST_TIMEOUT_MS,
   })
   const out = proc.stdout.toString()
-  const err = proc.stderr.toString().trim()
-  if (proc.exitCode !== 0)
-    throw new Error(err || out.trim() || `${PLATFORM_SLUG} project exited ${proc.exitCode}`)
+  const error = projectListProcessError({
+    exitCode: proc.exitCode,
+    signalCode: proc.signalCode,
+    exitedDueToTimeout: proc.exitedDueToTimeout === true,
+    stderr: proc.stderr.toString(),
+    stdout: out,
+    timeoutMs: PROJECT_LIST_TIMEOUT_MS,
+  })
+  if (error) throw new Error(error)
   try {
     return OrchProjectListSchema.parse(JSON.parse(out))
   } catch (cause) {

@@ -38,6 +38,7 @@ import {
   machinePermissionArgv,
   machinePermissionListArgv,
   projectArgv,
+  projectListProcessError,
   settingsCheck,
   settingsCheckArgv,
   settingsPermissionArgv,
@@ -602,6 +603,50 @@ test('dashboard scoring capability is private and bound to this dashboard proces
   } finally {
     stopDashboardCapability()
   }
+})
+
+describe('projectListProcessError', () => {
+  test('names the timed-out lookup and its project-selection remedy', () => {
+    const error = projectListProcessError({
+      exitCode: null,
+      signalCode: 'SIGTERM',
+      exitedDueToTimeout: true,
+      stderr: '',
+      stdout: '',
+      timeoutMs: 20_000,
+    })
+    expect(error).toContain('project list --json')
+    expect(error).toContain('timed out after 20000 ms')
+    expect(error).toContain('--project <name>')
+  })
+
+  test('names a signal-only failure and its project-selection remedy', () => {
+    expect(
+      projectListProcessError({
+        exitCode: null,
+        signalCode: 'SIGKILL',
+        exitedDueToTimeout: false,
+        stderr: '',
+        stdout: '',
+        timeoutMs: 20_000,
+      }),
+    ).toBe(
+      `${PLATFORM_SLUG} project list --json ended on signal SIGKILL; retry, or pass --project <name>`,
+    )
+  })
+
+  test('keeps stderr for a non-zero numeric exit', () => {
+    expect(
+      projectListProcessError({
+        exitCode: 2,
+        signalCode: null,
+        exitedDueToTimeout: false,
+        stderr: 'register unavailable\n',
+        stdout: 'ignored output',
+        timeoutMs: 20_000,
+      }),
+    ).toBe('register unavailable')
+  })
 })
 
 describe('projectArgv', () => {
