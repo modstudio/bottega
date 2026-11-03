@@ -2,10 +2,9 @@
 /** Knows how a keyed local workflow cursor becomes a hosted task-flow stage mutation. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { writePendingTaskFlowOutbox } from './task-flow-outbox-write.ts'
 
 type StageRow = {
   record_id: string
@@ -47,7 +46,7 @@ export function enqueueTaskFlowStageRecord(database: Database, cursorRecordId: s
       `workflow cursor ${cursorRecordId} has no project identity and cannot be enqueued`,
     )
   const at = nowIso()
-  const payload = stringifyOutboxPayload('task_flow_stage', {
+  const payload = {
     id: row.record_id,
     spaceId: PLATFORM_SPACE_ID,
     projectId: row.project_record_id,
@@ -70,23 +69,7 @@ export function enqueueTaskFlowStageRecord(database: Database, cursorRecordId: s
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  })
-  const pending = database
-    .query<{ id: number }, [string]>(
-      `SELECT id FROM outbox WHERE kind='task_flow_stage' AND row_id=? AND synced_at IS NULL
-       AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id LIMIT 1`,
-    )
-    .get(row.record_id)
-  if (pending) {
-    database
-      .query('UPDATE outbox SET payload=?,created_at=?,attempts=0,last_error=NULL WHERE id=?')
-      .run(payload, at, pending.id)
-    return true
   }
-  database
-    .query(
-      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'task_flow_stage',?,?,?)",
-    )
-    .run(newRecordId(), row.record_id, payload, at)
+  writePendingTaskFlowOutbox(database, 'task_flow_stage', row.record_id, payload, at)
   return true
 }

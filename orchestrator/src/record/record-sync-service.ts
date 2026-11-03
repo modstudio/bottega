@@ -98,8 +98,16 @@ async function existingEvidenceOwned(
   id: string,
   machineId: string,
   principal: RecordPrincipal,
+  ownership: { scope: 'machine' | 'space-principal' },
 ): Promise<boolean> {
-  const lookup = ownedEvidenceLookup({ ...principal, table, id, machineId, suffix: 'FOR UPDATE' })
+  const lookup = ownedEvidenceLookup({
+    ...principal,
+    table,
+    id,
+    machineId,
+    suffix: 'FOR UPDATE',
+    scope: ownership.scope,
+  })
   const rows = await tx.unsafe(lookup.text, lookup.values)
   if (rows.length > 0) return true
   const collision = await tx.unsafe(`SELECT id FROM ${table} WHERE id=$1::uuid FOR UPDATE`, [id])
@@ -217,6 +225,7 @@ async function pushRun(
       String(row.id),
       String(row.machineId),
       principal,
+      { scope: 'machine' },
     )
     const resolvedTaskId = await hostedTaskIdForReference(tx, principal.spaceId, {
       id: nullableString(row.taskId),
@@ -550,6 +559,7 @@ const recordKinds = {
           values.id,
           values.machineId,
           principal,
+          { scope: 'machine' },
         )
         const {
           id: _id,
@@ -588,7 +598,7 @@ const recordKinds = {
         await pushQuestionAudits(tx, row, values.id, values.spaceId)
       }),
   },
-  ...taskFlowRecordKinds,
+  ...taskFlowRecordKinds(existingEvidenceOwned, requireOwnedUpsert),
   review: {
     ...OUTBOX_PAYLOAD_CONTRACTS.review,
     push: async (
@@ -600,7 +610,9 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewValues(row, await projectRecordId(tx, row, principal, projectIds))
-        await existingEvidenceOwned(tx, 'review', values.id, values.machineId, principal)
+        await existingEvidenceOwned(tx, 'review', values.id, values.machineId, principal, {
+          scope: 'machine',
+        })
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
           .insert(reviewRecord)
@@ -625,7 +637,9 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewLensValues(row)
-        await existingEvidenceOwned(tx, 'review_lens', values.id, values.machineId, principal)
+        await existingEvidenceOwned(tx, 'review_lens', values.id, values.machineId, principal, {
+          scope: 'machine',
+        })
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
           .insert(reviewLensRecord)
@@ -645,7 +659,9 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = reviewFindingValues(row)
-        await existingEvidenceOwned(tx, 'review_finding', values.id, values.machineId, principal)
+        await existingEvidenceOwned(tx, 'review_finding', values.id, values.machineId, principal, {
+          scope: 'machine',
+        })
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
           .insert(reviewFindingRecord)
@@ -674,7 +690,9 @@ const recordKinds = {
           await projectRecordId(tx, row, principal, projectIds),
           commonReviewRecordValues(row),
         )
-        await existingEvidenceOwned(tx, 'review_read', values.id, values.machineId, principal)
+        await existingEvidenceOwned(tx, 'review_read', values.id, values.machineId, principal, {
+          scope: 'machine',
+        })
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
           .insert(reviewReadRecord)
@@ -716,7 +734,9 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = landingValues(row, await projectRecordId(tx, row, principal, projectIds))
-        await existingEvidenceOwned(tx, 'landing', values.id, values.machineId, principal)
+        await existingEvidenceOwned(tx, 'landing', values.id, values.machineId, principal, {
+          scope: 'machine',
+        })
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
           .insert(landingRecord)
@@ -744,7 +764,16 @@ const recordKinds = {
           row,
           await projectRecordId(tx, row, principal, projectIds),
         )
-        await existingEvidenceOwned(tx, 'landing_override', values.id, values.machineId, principal)
+        await existingEvidenceOwned(
+          tx,
+          'landing_override',
+          values.id,
+          values.machineId,
+          principal,
+          {
+            scope: 'machine',
+          },
+        )
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
           .insert(landingOverrideRecord)
@@ -778,6 +807,7 @@ const recordKinds = {
           values.id,
           values.machineId,
           principal,
+          { scope: 'machine' },
         )
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
@@ -812,6 +842,7 @@ const recordKinds = {
           values.id,
           values.machineId,
           principal,
+          { scope: 'machine' },
         )
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
@@ -833,7 +864,9 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = contentionValues(row)
-        await existingEvidenceOwned(tx, 'contention', values.id, values.machineId, principal)
+        await existingEvidenceOwned(tx, 'contention', values.id, values.machineId, principal, {
+          scope: 'machine',
+        })
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
           .insert(contentionRecord)
@@ -853,7 +886,9 @@ const recordKinds = {
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
         const values = testFlakeValues(row)
-        await existingEvidenceOwned(tx, 'test_flake', values.id, values.machineId, principal)
+        await existingEvidenceOwned(tx, 'test_flake', values.id, values.machineId, principal, {
+          scope: 'machine',
+        })
         const { id: _id, createdAt: _createdAt, ...updates } = values
         const written = await drizzle({ client: tx })
           .insert(testFlakeRecord)

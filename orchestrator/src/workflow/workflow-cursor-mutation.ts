@@ -57,3 +57,18 @@ export function abandonWorkflowCursor(
   closeTaskFlowStage(row.record_id, d)
   return `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
 }
+
+export function finishWorkflowCursor(
+  row: WorkflowCloseCursor,
+  closed: CursorTrailEntry[],
+  context: WorkflowCursorContext,
+  at: string,
+  d: Database,
+): void {
+  d.query(
+    `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
+     session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+  ).run(JSON.stringify(closed), context.session ?? null, at, row.record_id)
+  recordTaskFlowCursorMutation(row.record_id, d)
+  closeTaskFlowStage(row.record_id, d)
+}

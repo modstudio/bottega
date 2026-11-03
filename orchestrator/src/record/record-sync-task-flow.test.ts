@@ -20,6 +20,9 @@ const USER = id('2102')
 const MEMBERSHIP = id('2103')
 const PROJECT = id('2104')
 const MACHINE = id('2105')
+const OTHER_MACHINE = id('2113')
+const OTHER_SPACE = id('2114')
+const OTHER_MEMBERSHIP = id('2115')
 const TASK = id('2106')
 const FLOW = id('2107')
 const STAGE = id('2108')
@@ -82,18 +85,21 @@ async function push(
   rowId: number,
   kind: 'task_flow' | 'task_flow_stage',
   value: Record<string, unknown>,
+  identity: { spaceId: string; machineId: string } = { spaceId: SPACE, machineId: MACHINE },
 ) {
   return syncHostedRecord({
     url: actorUrl!,
     postgres: actor,
     identity: {
       user: { id: USER },
-      activeSpaceId: SPACE,
-      personalSpaceId: SPACE,
-      memberships: [{ space_id: SPACE, slug: 'task-flow-sync-proof', permission: 'write' }],
+      activeSpaceId: identity.spaceId,
+      personalSpaceId: identity.spaceId,
+      memberships: [
+        { space_id: identity.spaceId, slug: 'task-flow-sync-proof', permission: 'write' },
+      ],
     },
     request: {
-      machine: { id: MACHINE, name: 'task-flow-sync-proof', seenAt: STAMP },
+      machine: { id: identity.machineId, name: 'task-flow-sync-proof', seenAt: STAMP },
       rows: [{ id: rowId, kind, payload: JSON.stringify(value), spaceHint: null }],
     },
   })
@@ -169,14 +175,20 @@ realPostgres('hosted task flow revisions', () => {
     try {
       await admin`INSERT INTO space(id,name,slug,created_at)
         VALUES (${SPACE}::uuid,'Task flow sync proof','task-flow-sync-proof',now())`
+      await admin`INSERT INTO space(id,name,slug,created_at)
+        VALUES (${OTHER_SPACE}::uuid,'Other task flow space','other-task-flow-space',now())`
       await admin`INSERT INTO "user"(id,email,name,created_at)
         VALUES (${USER}::uuid,'task-flow-sync-proof@example.test','Task flow proof',now())`
       await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
         VALUES (${MEMBERSHIP}::uuid,${SPACE}::uuid,${USER}::uuid,'member','write',now())`
+      await admin`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
+        VALUES (${OTHER_MEMBERSHIP}::uuid,${OTHER_SPACE}::uuid,${USER}::uuid,'member','write',now())`
       await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
         VALUES (${PROJECT}::uuid,${SPACE}::uuid,'task-flow-sync-proof',ARRAY['DEV'],now())`
       await admin`INSERT INTO machine(id,user_id,name,registered_at,last_seen)
         VALUES (${MACHINE}::uuid,${USER}::uuid,'task-flow-sync-proof',now(),now())`
+      await admin`INSERT INTO machine(id,user_id,name,registered_at,last_seen)
+        VALUES (${OTHER_MACHINE}::uuid,${USER}::uuid,'task-flow-sync-proof-other',now(),now())`
       await admin`INSERT INTO hub_task
         (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
          first_seen,last_seen,created_at,updated_at)
@@ -223,6 +235,31 @@ realPostgres('hosted task flow revisions', () => {
           FROM task_flow flow JOIN task_flow_stage stage ON stage.flow_record_id=flow.id
           WHERE flow.id=${FLOW}::uuid`,
       ).toEqual([{ flow_state: 'done', flow_revision: 2, stage_state: 'done', stage_revision: 2 }])
+
+      const takeover = flowPayload(3, 'open')
+      Object.assign(takeover, { updatedMachineId: OTHER_MACHINE, machineId: OTHER_MACHINE })
+      expect(
+        await push(actor, 9, 'task_flow', takeover, {
+          spaceId: SPACE,
+          machineId: OTHER_MACHINE,
+        }),
+      ).toEqual({ results: [{ id: 9, status: 'synced' }] })
+
+      const foreignSpace = flowPayload(4, 'done')
+      Object.assign(foreignSpace, {
+        spaceId: OTHER_SPACE,
+        updatedMachineId: OTHER_MACHINE,
+        machineId: OTHER_MACHINE,
+      })
+      const refused = await push(actor, 10, 'task_flow', foreignSpace, {
+        spaceId: OTHER_SPACE,
+        machineId: OTHER_MACHINE,
+      })
+      expect(refused.results[0]).toMatchObject({
+        id: 10,
+        status: 'quarantined',
+        reason: expect.stringContaining('already owned by another machine or user'),
+      })
     } finally {
       await admin`DELETE FROM task_flow_stage WHERE id=${STAGE}::uuid`
       await admin`DELETE FROM task_flow WHERE id=${FLOW}::uuid`
@@ -232,13 +269,17 @@ realPostgres('hosted task flow revisions', () => {
       await admin`DELETE FROM step_catalogue WHERE id=${CATALOGUE}::uuid`
       await admin`DELETE FROM hub_task WHERE id=${TASK}::uuid`
       await admin`DELETE FROM machine_name_claim WHERE machine_id=${MACHINE}::uuid`
+      await admin`DELETE FROM machine_name_claim WHERE machine_id=${OTHER_MACHINE}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE}::uuid`
+      await admin`DELETE FROM machine WHERE id=${OTHER_MACHINE}::uuid`
       await admin`DELETE FROM hub_change WHERE space_id=${SPACE}::uuid`
       await admin`DELETE FROM hub_change_head WHERE space_id=${SPACE}::uuid`
       await admin`DELETE FROM routing_evidence_head WHERE space_id=${SPACE}::uuid`
       await admin`DELETE FROM project WHERE id=${PROJECT}::uuid`
       await admin`DELETE FROM membership WHERE id=${MEMBERSHIP}::uuid`
+      await admin`DELETE FROM membership WHERE id=${OTHER_MEMBERSHIP}::uuid`
       await admin`DELETE FROM space WHERE id=${SPACE}::uuid`
+      await admin`DELETE FROM space WHERE id=${OTHER_SPACE}::uuid`
       await admin`DELETE FROM "user" WHERE id=${USER}::uuid`
       await Promise.all([actor.close(), admin.close()])
     }

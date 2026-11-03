@@ -17,6 +17,10 @@ export type MachineEvidenceTable =
   | 'contention'
   | 'test_flake'
   | 'branch_disposal'
+  | 'task_flow'
+  | 'task_flow_stage'
+
+type EvidenceOwnershipScope = 'machine' | 'space-principal'
 
 export type ExistingEvidenceOwned<Transaction> = (
   tx: Transaction,
@@ -24,6 +28,7 @@ export type ExistingEvidenceOwned<Transaction> = (
   id: string,
   machineId: string,
   principal: { userId: string; spaceId: string },
+  ownership: { scope: EvidenceOwnershipScope },
 ) => Promise<boolean>
 
 export type RequireOwnedUpsert = (

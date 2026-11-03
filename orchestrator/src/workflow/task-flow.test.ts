@@ -4,7 +4,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { attachTaskFlowStage, closeTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
-import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
+import {
+  awaitWorkflowRuling,
+  composeWorkflowWithCursor,
+  nextWorkflowStep,
+  ruleWorkflow,
+} from './workflow-cursor.ts'
 import { vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import {
@@ -32,6 +37,22 @@ function installTaskFlowLifecycleWorkflow(
     d,
   )
   promoteWorkflowLocal(slug, draft.n, 'publish task-flow lifecycle fixture', 'test', d)
+}
+
+function installKeylessTaskFlowWorkflow(d: ReturnType<typeof cursorDatabase>, slug: string): void {
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: `${slug} fixture`,
+      description: 'Exercises task adoption into a task flow.',
+      arguments: [{ name: 'key', required: false, description: 'Task key.' }],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['score', 'complete'] }],
+    },
+    'task-flow adoption fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal(slug, draft.n, 'publish task-flow adoption fixture', 'test', d)
 }
 
 test('cursor commands attach, refuse overlap, finish, re-enter, and abandon task stages', () => {
@@ -115,6 +136,48 @@ test('keyed compose and advance enqueue both stage and flow while task-less comp
   expect(
     d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY kind").all(),
   ).toEqual([{ kind: 'task_flow' }, { kind: 'task_flow_stage' }])
+  const stage = d
+    .query<{ payload: string; args: string; closed: string }, []>(
+      `SELECT outbox.payload,cursor.args,cursor.closed FROM outbox
+       JOIN workflow_cursor cursor ON cursor.record_id=outbox.row_id
+       WHERE outbox.kind='task_flow_stage'`,
+    )
+    .get()!
+  const cursorRow = d
+    .query<
+      {
+        record_id: string
+        task_flow_record_id: string
+        workflow_slug: string
+        mode_slug: string
+        ordinal: number
+        step_slug: string
+        state: string
+        opened_machine_id: string
+        last_advanced_machine_id: string
+        revision: number
+      },
+      []
+    >(
+      `SELECT record_id,task_flow_record_id,workflow_slug,mode_slug,ordinal,step_slug,state,
+              opened_machine_id,last_advanced_machine_id,revision
+       FROM workflow_cursor`,
+    )
+    .get()!
+  expect(JSON.parse(stage.payload)).toMatchObject({
+    id: cursorRow.record_id,
+    flowRecordId: cursorRow.task_flow_record_id,
+    workflow: cursorRow.workflow_slug,
+    mode: cursorRow.mode_slug,
+    arguments: JSON.parse(stage.args),
+    activeOrdinal: cursorRow.ordinal,
+    activeSlug: cursorRow.step_slug,
+    state: cursorRow.state,
+    closedStepNotes: JSON.parse(stage.closed),
+    openedMachineId: cursorRow.opened_machine_id,
+    lastAdvancedMachineId: cursorRow.last_advanced_machine_id,
+    revision: cursorRow.revision,
+  })
 
   d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
   const tasklessWorkflow = 'task-flow-taskless'
@@ -130,6 +193,135 @@ test('keyed compose and advance enqueue both stage and flow while task-less comp
     {},
   )
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
+})
+
+test('answering a keyed stage ruling republishes its running state and revision', async () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-ruling-outbox'
+  const args = { key: 'DEV-RULING-OUTBOX' }
+  const context = {
+    session: 'task-flow-ruling-outbox',
+    taskRecordId: 'task-DEV-RULING-OUTBOX',
+    taskStatusCategory: 'active',
+  }
+  installTaskFlowLifecycleWorkflow(d, workflow)
+  composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  awaitWorkflowRuling(workflow, 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+
+  await ruleWorkflow(workflow, 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d)
+
+  const row = d
+    .query<{ payload: string; revision: number }, []>(
+      `SELECT outbox.payload,cursor.revision FROM outbox
+       JOIN workflow_cursor cursor ON cursor.record_id=outbox.row_id
+       WHERE outbox.kind='task_flow_stage'`,
+    )
+    .get()!
+  expect(JSON.parse(row.payload)).toMatchObject({ state: 'running', revision: row.revision })
+})
+
+test('task adoption attaches a flow so a later advance publishes the stage', () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-adoption-outbox'
+  installKeylessTaskFlowWorkflow(d, workflow)
+  const opened = composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    {},
+    { session: 'task-flow-adoption-outbox' },
+    d,
+    {},
+    {},
+  )
+  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(
+    opened.cursor!.id,
+  )
+  const adoptedContext = {
+    session: 'task-flow-adoption-outbox',
+    taskRecordId: 'task-DEV-ADOPT-FLOW',
+  }
+  nextWorkflowStep(
+    workflow,
+    'fixture',
+    'default',
+    {},
+    'adopt',
+    adoptedContext,
+    d,
+    { task: 'DEV-ADOPT-FLOW' },
+    testPorts,
+    opened.cursor!.id,
+  )
+  d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
+
+  nextWorkflowStep(
+    workflow,
+    'fixture',
+    'default',
+    {},
+    'finish',
+    adoptedContext,
+    d,
+    {},
+    testPorts,
+    opened.cursor!.id,
+  )
+
+  const row = d
+    .query<{ payload: string; task_flow_record_id: string }, []>(
+      `SELECT outbox.payload,cursor.task_flow_record_id FROM outbox
+       JOIN workflow_cursor cursor ON cursor.record_id=outbox.row_id
+       WHERE outbox.kind='task_flow_stage'`,
+    )
+    .get()!
+  expect(JSON.parse(row.payload).flowRecordId).toBe(row.task_flow_record_id)
+})
+
+test('task adoption refuses when that task already has another open stage', () => {
+  const d = cursorDatabase()
+  installTaskFlowLifecycleWorkflow(d, 'task-flow-existing-stage')
+  installKeylessTaskFlowWorkflow(d, 'task-flow-adoption-conflict')
+  const context = {
+    session: 'task-flow-adoption-conflict',
+    taskRecordId: 'task-DEV-ADOPT-CONFLICT',
+  }
+  composeWorkflowWithCursor(
+    'task-flow-existing-stage',
+    'fixture',
+    'default',
+    { key: 'DEV-ADOPT-CONFLICT' },
+    context,
+    d,
+    {},
+    {},
+  )
+  const keyless = composeWorkflowWithCursor(
+    'task-flow-adoption-conflict',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    {},
+  )
+  d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
+
+  expect(() =>
+    nextWorkflowStep(
+      'task-flow-adoption-conflict',
+      'fixture',
+      'default',
+      {},
+      'adopt',
+      context,
+      d,
+      { task: 'DEV-ADOPT-CONFLICT' },
+      testPorts,
+      keyless.cursor!.id,
+    ),
+  ).toThrow('task DEV-ADOPT-CONFLICT already has open stage cursor')
 })
 
 function expectPendingFlowOutboxCleared(d: ReturnType<typeof cursorDatabase>): void {

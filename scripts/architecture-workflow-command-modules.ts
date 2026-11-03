@@ -26,17 +26,20 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/task-flow-outbox.ts', [
     'bun:sqlite',
     '../../../shared/record/schema.ts',
-    '../../../shared/record-id.ts',
     '../database/db.ts',
     '../record/machine-identity.ts',
-    '../record/outbox-sanitize.ts',
+    './task-flow-outbox-write.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-stage-outbox.ts', [
     'bun:sqlite',
     '../../../shared/record/schema.ts',
-    '../../../shared/record-id.ts',
     '../database/db.ts',
     '../record/machine-identity.ts',
+    './task-flow-outbox-write.ts',
+  ]),
+  module('orchestrator/src/workflow/task-flow-outbox-write.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
     '../record/outbox-sanitize.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-identity.ts', [

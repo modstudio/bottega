@@ -15,8 +15,8 @@ import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import {
   attachInsertedTaskFlowStage,
-  closeTaskFlowStage,
   recordTaskFlowCursorMutation,
+  stampWorkflowCursorMachine,
 } from './task-flow.ts'
 import {
   type CommitCountPort,
@@ -27,7 +27,11 @@ import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-curs
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy, storedCursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
-import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
+import {
+  abandonWorkflowCursor,
+  closeOpenWorkflowQuestion,
+  finishWorkflowCursor,
+} from './workflow-cursor-mutation.ts'
 import {
   refuseInvalidServe,
   refuseMissingAbandonReason,
@@ -209,10 +213,7 @@ function insertCursor(
      VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors',?,?,1)
      ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
-       updated_at=excluded.updated_at,
-       opened_machine_id=COALESCE(workflow_cursor.opened_machine_id,excluded.opened_machine_id),
-       last_advanced_machine_id=excluded.last_advanced_machine_id,
-       revision=workflow_cursor.revision+1
+       updated_at=excluded.updated_at
      RETURNING record_id`,
     )
     .get(
@@ -243,6 +244,7 @@ function insertCursor(
       machineId(),
       machineId(),
     )
+  stampWorkflowCursorMachine(stored!.record_id, stored!.record_id === cursorRecordId ? 0 : 1, d)
   const row = d
     .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
     .get(stored!.record_id) as CursorRow
@@ -720,12 +722,7 @@ function persistWorkflowAdvance(
   if (advance.ordinal === null || composition.steps[row.ordinal]!.needs.includes('workflow-text'))
     deleteWorkflowText(row.record_id, Boolean(row.task_record_id), d)
   if (advance.ordinal === null) {
-    d.query(
-      `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
-    ).run(JSON.stringify(closed), context.session ?? null, at, row.record_id)
-    recordTaskFlowCursorMutation(row.record_id, d)
-    closeTaskFlowStage(row.record_id, d)
+    finishWorkflowCursor(row, closed, context, at, d)
     return
   }
   const next = composition.steps[advance.ordinal]!
@@ -976,6 +973,7 @@ export async function ruleWorkflow(
         `UPDATE workflow_cursor SET state='running',question=NULL,
        session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
       ).run(adoptionReason ? null : (context.session ?? null), at, row.record_id)
+      recordTaskFlowCursorMutation(row.record_id, d)
       return {
         summary: `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
         questionId: question.number,

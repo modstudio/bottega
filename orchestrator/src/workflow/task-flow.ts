@@ -16,6 +16,26 @@ import { enqueueTaskFlowStageRecord } from './task-flow-stage-outbox.ts'
 
 type TaskFlowRow = { record_id: string; open_stage_cursor_record_id: string | null }
 
+function stampTaskFlowMachine(flowRecordId: string, d: Database): void {
+  const machine = machineId()
+  d.query(
+    `UPDATE task_flow SET opening_machine_id=COALESCE(opening_machine_id,?),
+       updated_machine_id=?,revision=revision+1 WHERE record_id=?`,
+  ).run(machine, machine, flowRecordId)
+}
+
+export function stampWorkflowCursorMachine(
+  cursorRecordId: string,
+  revisionIncrement: 0 | 1,
+  d: Database,
+): void {
+  const machine = machineId()
+  d.query(
+    `UPDATE workflow_cursor SET opened_machine_id=COALESCE(opened_machine_id,?),
+       last_advanced_machine_id=?,revision=revision+? WHERE record_id=?`,
+  ).run(machine, machine, revisionIncrement, cursorRecordId)
+}
+
 function projectTaskFlow(
   project: string,
   taskRecordId: string,
@@ -86,17 +106,17 @@ export function attachTaskFlowStage(
   d: Database,
 ): void {
   const at = nowIso()
-  const machine = machineId()
-  d.query(
-    `UPDATE workflow_cursor SET task_flow_record_id=?,
-       opened_machine_id=COALESCE(opened_machine_id,?),last_advanced_machine_id=?,revision=revision+1
-     WHERE record_id=?`,
-  ).run(flowRecordId, machine, machine, cursorRecordId)
-  d.query(
-    `UPDATE task_flow SET open_stage_cursor_record_id=?,updated_at=?,
-       opening_machine_id=COALESCE(opening_machine_id,?),updated_machine_id=?,revision=revision+1
-     WHERE record_id=?`,
-  ).run(cursorRecordId, at, machine, machine, flowRecordId)
+  d.query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?').run(
+    flowRecordId,
+    cursorRecordId,
+  )
+  stampWorkflowCursorMachine(cursorRecordId, 1, d)
+  d.query('UPDATE task_flow SET open_stage_cursor_record_id=?,updated_at=? WHERE record_id=?').run(
+    cursorRecordId,
+    at,
+    flowRecordId,
+  )
+  stampTaskFlowMachine(flowRecordId, d)
   enqueueTaskFlowRecord(d, flowRecordId)
   enqueueTaskFlowStageRecord(d, cursorRecordId)
 }
@@ -135,12 +155,10 @@ export function closeTaskFlowStage(cursorRecordId: string, d: Database): void {
     )
     .get(cursorRecordId)
   if (!flow) return
-  const machine = machineId()
   d.query(
-    `UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=?,
-       opening_machine_id=COALESCE(opening_machine_id,?),updated_machine_id=?,revision=revision+1
-     WHERE record_id=?`,
-  ).run(nowIso(), machine, machine, flow.record_id)
+    'UPDATE task_flow SET open_stage_cursor_record_id=NULL,updated_at=? WHERE record_id=?',
+  ).run(nowIso(), flow.record_id)
+  stampTaskFlowMachine(flow.record_id, d)
   enqueueTaskFlowRecord(d, flow.record_id)
 }
 
@@ -155,10 +173,6 @@ function enqueueTaskFlowCursorState(cursorRecordId: string, d: Database): void {
 }
 
 export function recordTaskFlowCursorMutation(cursorRecordId: string, d: Database): void {
-  const machine = machineId()
-  d.query(
-    `UPDATE workflow_cursor SET opened_machine_id=COALESCE(opened_machine_id,?),
-       last_advanced_machine_id=?,revision=revision+1 WHERE record_id=?`,
-  ).run(machine, machine, cursorRecordId)
+  stampWorkflowCursorMachine(cursorRecordId, 1, d)
   enqueueTaskFlowCursorState(cursorRecordId, d)
 }

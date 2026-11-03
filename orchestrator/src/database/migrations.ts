@@ -31,8 +31,7 @@ import {
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
 import { monitorReleaseClaimOrphanCounts } from './monitor-release-claim-uuid-migration-preflight.ts'
-import { reportTaskFlowBackfill } from './task-flow-migration-preflight.ts'
-import { TASK_FLOW_MIGRATION } from './task-flow-record-sync-migration.ts'
+import { reportTaskFlowBackfill, TASK_FLOW_MIGRATION } from './task-flow-migration-preflight.ts'
 import {
   prepareWorkflowUuidMigration,
   workflowUuidReferenceOrphanCounts,

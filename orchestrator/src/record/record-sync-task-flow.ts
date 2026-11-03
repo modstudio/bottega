@@ -8,6 +8,7 @@ import {
   taskFlowStage as taskFlowStageRecord,
 } from '../../../shared/record/schema-task-flow.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
+import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 
@@ -61,7 +62,7 @@ export async function applyTaskFlowValues(
   values: ReturnType<typeof taskFlowValues>,
 ) {
   const { id: _id, createdAt: _createdAt, ...updates } = values
-  await database
+  return database
     .insert(taskFlowRecord)
     .values(values)
     .onConflictDoUpdate({
@@ -69,6 +70,7 @@ export async function applyTaskFlowValues(
       set: updates,
       setWhere: drizzleSql`excluded.revision > ${taskFlowRecord.revision}`,
     })
+    .returning({ id: taskFlowRecord.id })
 }
 
 export async function applyTaskFlowStageValues(
@@ -76,7 +78,7 @@ export async function applyTaskFlowStageValues(
   values: ReturnType<typeof taskFlowStageValues>,
 ) {
   const { id: _id, createdAt: _createdAt, ...updates } = values
-  await database
+  return database
     .insert(taskFlowStageRecord)
     .values(values)
     .onConflictDoUpdate({
@@ -84,31 +86,68 @@ export async function applyTaskFlowStageValues(
       set: updates,
       setWhere: drizzleSql`excluded.revision > ${taskFlowStageRecord.revision}`,
     })
+    .returning({ id: taskFlowStageRecord.id })
 }
 
-async function pushTaskFlow(postgres: SQL, row: RecordPayload, principal: RecordPrincipal) {
+async function pushTaskFlow(
+  postgres: SQL,
+  row: RecordPayload,
+  principal: RecordPrincipal,
+  existingEvidenceOwned: ExistingEvidenceOwned<SQL>,
+  requireOwnedUpsert: RequireOwnedUpsert,
+) {
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const values = taskFlowValues(row)
-    await applyTaskFlowValues(drizzle({ client: tx }), values)
+    const existingOwned = await existingEvidenceOwned(
+      tx,
+      'task_flow',
+      values.id,
+      values.openingMachineId,
+      principal,
+      { scope: 'space-principal' },
+    )
+    const written = await applyTaskFlowValues(drizzle({ client: tx }), values)
+    requireOwnedUpsert(written, 'task_flow', values.id, existingOwned)
   })
 }
 
-async function pushTaskFlowStage(postgres: SQL, row: RecordPayload, principal: RecordPrincipal) {
+async function pushTaskFlowStage(
+  postgres: SQL,
+  row: RecordPayload,
+  principal: RecordPrincipal,
+  existingEvidenceOwned: ExistingEvidenceOwned<SQL>,
+  requireOwnedUpsert: RequireOwnedUpsert,
+) {
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const values = taskFlowStageValues(row)
-    await applyTaskFlowStageValues(drizzle({ client: tx }), values)
+    const existingOwned = await existingEvidenceOwned(
+      tx,
+      'task_flow_stage',
+      values.id,
+      values.openedMachineId,
+      principal,
+      { scope: 'space-principal' },
+    )
+    const written = await applyTaskFlowStageValues(drizzle({ client: tx }), values)
+    requireOwnedUpsert(written, 'task_flow_stage', values.id, existingOwned)
   })
 }
 
-export const taskFlowRecordKinds = {
-  task_flow: {
-    ...OUTBOX_PAYLOAD_CONTRACTS.task_flow,
-    push: pushTaskFlow,
-  },
-  task_flow_stage: {
-    ...OUTBOX_PAYLOAD_CONTRACTS.task_flow_stage,
-    push: pushTaskFlowStage,
-  },
-} as const
+export const taskFlowRecordKinds = (
+  existingEvidenceOwned: ExistingEvidenceOwned<SQL>,
+  requireOwnedUpsert: RequireOwnedUpsert,
+) =>
+  ({
+    task_flow: {
+      ...OUTBOX_PAYLOAD_CONTRACTS.task_flow,
+      push: (postgres: SQL, row: RecordPayload, principal: RecordPrincipal) =>
+        pushTaskFlow(postgres, row, principal, existingEvidenceOwned, requireOwnedUpsert),
+    },
+    task_flow_stage: {
+      ...OUTBOX_PAYLOAD_CONTRACTS.task_flow_stage,
+      push: (postgres: SQL, row: RecordPayload, principal: RecordPrincipal) =>
+        pushTaskFlowStage(postgres, row, principal, existingEvidenceOwned, requireOwnedUpsert),
+    },
+  }) as const
