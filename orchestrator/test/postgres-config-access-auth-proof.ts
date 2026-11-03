@@ -8,6 +8,7 @@ import {
 
 export function registerConfigAccessSpaceCreationProof(input: {
   actorUrl: () => string
+  authUrl: () => string
   token: () => string
   otherToken: () => string
   userId: () => string
@@ -27,7 +28,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
         )
         .split('\n'),
     ).toEqual([`${SIGN_UP_AUTH.emailA}|1|owner|write|t`, `${SIGN_UP_AUTH.emailB}|1|owner|write|t`])
-    const auth = testRecordAuth(input.actorUrl())
+    const auth = testRecordAuth(input.actorUrl(), input.authUrl())
     expect((await auth.api.getSession({ headers: bearerHeaders(input.token()) }))?.user.id).toBe(
       input.userId(),
     )
@@ -37,7 +38,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
   })
 
   test('afterCreateOrganization grants config access to the creating owner', async () => {
-    const auth = testRecordAuth(input.actorUrl())
+    const auth = testRecordAuth(input.actorUrl(), input.authUrl())
     const userId = input.userId()
     const created = await auth.api.createOrganization({
       headers: bearerHeaders(input.token()),

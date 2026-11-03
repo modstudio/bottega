@@ -28,7 +28,6 @@ import {
 import { registerBoardApiProofs, registerBoardRlsProofs } from '../../test/postgres-board-proof.ts'
 import { registerConfigAccessSpaceCreationProof } from '../../test/postgres-config-access-auth-proof.ts'
 import { registerHostedConfigProofs } from '../../test/postgres-config-proof.ts'
-import { registerCustomerAuthProof } from '../../test/postgres-customer-auth-proof.ts'
 import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evidence-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
@@ -36,6 +35,7 @@ import { registerQuestionTaskRecordSyncProof } from '../../test/postgres-questio
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
+import { registerPostgresSignInProofs } from '../../test/postgres-sign-in-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import {
@@ -43,7 +43,7 @@ import {
   type recordAuth,
   setActiveRecordSpaceForSession,
 } from '../record/record-auth.ts'
-import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
+import { signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
   acceptRecordInvitation,
@@ -301,6 +301,7 @@ realPostgres('RLS proof against real Postgres', () => {
   registerHostedConfigProofs(actorUrl!, ids.SPACE_A, ids.SPACE_B, ids.USER_A)
   registerConfigAccessSpaceCreationProof({
     actorUrl: () => actorUrl!,
+    authUrl: () => authUrl!,
     token: () => tokenA,
     otherToken: () => tokenB,
     userId: () => authUserA,
@@ -337,32 +338,15 @@ realPostgres('RLS proof against real Postgres', () => {
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   })
 
-  test('sign-in repairs a missing personal space before making it active', async () => {
-    succeeds(
-      'postgres',
-      'postgres',
-      `DELETE FROM membership WHERE space_id='${repairSpace}';
-       DELETE FROM space WHERE id='${repairSpace}';`,
-    )
-    const output: string[] = []
-    await signInCommand(SIGN_UP_AUTH.emailRepair, async () => SIGN_UP_AUTH.password, {
-      log: (value) => output.push(value),
-    })
-    expect(output).toEqual([`signed in ${SIGN_UP_AUTH.emailRepair}`])
-    const repaired = succeeds(
-      'postgres',
-      'postgres',
-      `SELECT s.id=m.space_id, m.role, m.permission
-       FROM "user" u JOIN membership m ON m.user_id=u.id JOIN space s ON s.id=m.space_id
-       WHERE u.email='${SIGN_UP_AUTH.emailRepair}';`,
-    )
-    expect(repaired).toBe('t|owner|write')
-  })
-
-  registerCustomerAuthProof({
-    email: SIGN_UP_AUTH.emailB,
-    password: SIGN_UP_AUTH.password,
-    userId: () => authUserB,
+  registerPostgresSignInProofs({
+    repairSpace: () => repairSpace,
+    succeeds: (source) => succeeds('postgres', 'postgres', source),
+    repair: { email: SIGN_UP_AUTH.emailRepair, password: SIGN_UP_AUTH.password },
+    customer: {
+      email: SIGN_UP_AUTH.emailB,
+      password: SIGN_UP_AUTH.password,
+      userId: () => authUserB,
+    },
   })
 
   test('signed-in users see their memberships and spaces but not another space records', () => {

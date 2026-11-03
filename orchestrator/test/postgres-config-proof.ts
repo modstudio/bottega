@@ -18,6 +18,7 @@ import {
   grantSpaceConfigAccess,
   listConfigSecrets,
   listDataKeys,
+  listSpaceConfigAccess,
   putConfigEntry,
   putConfigSecret,
   registerMachineKey,
@@ -710,9 +711,30 @@ export function registerHostedConfigProofs(
         email: 'other@example.test',
       }),
     ).rejects.toThrow('requires an owner or admin')
-    await expect(
-      grantSpaceConfigAccess({ ...serviceTenant, email: 'other@example.test' }),
-    ).resolves.toBeUndefined()
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE membership SET role='owner'
+       WHERE space_id='${spaceA}' AND user_id='${userA}';`,
+    )
+    try {
+      await expect(
+        grantSpaceConfigAccess({ ...serviceTenant, email: 'other@example.test' }),
+      ).resolves.toBeUndefined()
+      await expect(listSpaceConfigAccess(serviceTenant)).resolves.toContainEqual({
+        email: 'other@example.test',
+        role: 'member',
+        permission: 'write',
+        configAccess: true,
+      })
+    } finally {
+      succeeds(
+        'postgres',
+        'postgres',
+        `UPDATE membership SET role='member'
+         WHERE space_id='${spaceA}' AND user_id='${userA}';`,
+      )
+    }
   })
 
   test('config service refuses a non-consecutive data-key version', async () => {
