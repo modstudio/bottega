@@ -17,7 +17,7 @@ export type { SecurityRunner } from './keychain.ts'
 
 const SERVICE = `${PLATFORM_NAME}-record-session`
 const ACCOUNT = 'record'
-const FILE_REMEDY = `or set ${KEYSTORE_ENV}=file to keep the record session in an owner-only file`
+const FILE_REMEDY = `or set ${KEYSTORE_ENV}=file to keep the record session and the machine key in owner-only files`
 
 function useFile(): boolean {
   return decideKeyStore(process.env[KEYSTORE_ENV]) === 'file'

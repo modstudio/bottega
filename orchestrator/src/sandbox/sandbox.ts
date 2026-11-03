@@ -28,7 +28,6 @@ import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
-  hubLoginTokenDirectory,
   resolveHubDatabase,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
@@ -96,7 +95,6 @@ export const READONLY_LENS_ALLOW_LOCAL_BINDING = true
 function mandatorySrtDenyRead(environment: ConfigEnvironment = process.env): string[] {
   return [
     ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
-    hubLoginTokenDirectory(environment),
     ...fileBackedSecretPaths(environment),
   ]
 }

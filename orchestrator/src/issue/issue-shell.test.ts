@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
-import { hubLoginTokenDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import {
   expandHome,
@@ -43,7 +43,6 @@ describe('filed issue command confinement', () => {
       expect(plan.profile.filesystem.allowWrite).toEqual(['/trees/DEV-392', '/tmp/issue-home'])
       expect(plan.profile.filesystem.denyRead).toEqual([
         ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
-        hubLoginTokenDirectory(environment),
         ...fileBackedSecretPaths(environment),
         ...READONLY_LENS_DENY_SOCKETS,
         '/project/.env',

@@ -126,7 +126,7 @@ describe('record session keychain', () => {
   test('adds the file opt-in remedy to Linux keychain failures', () => {
     platformHolder[PLATFORM_KEY] = 'linux'
     expect(() => readRecordSessionToken(() => result(70, '', 'keychain unavailable'))).toThrow(
-      '; or set BOTTEGA_KEYSTORE=file to keep the record session in an owner-only file',
+      '; or set BOTTEGA_KEYSTORE=file to keep the record session and the machine key in owner-only files',
     )
   })
 })

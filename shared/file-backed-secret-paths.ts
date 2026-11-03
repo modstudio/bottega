@@ -1,12 +1,16 @@
 import { join } from 'node:path'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
-import { recordSessionDirectory } from './state-directory.ts'
+import { hubLoginTokenDirectory, recordSessionDirectory } from './state-directory.ts'
 
 export function machineKeyFilePath(environment: ConfigEnvironment): string {
   return join(resolveConfigRoot(environment), 'machine-key')
 }
 
-/** Every path that may contain a file-backed secret, including a secret's write staging. */
+/** Every path that may hold a secret in a file, staging included; every sandbox denies them all. */
 export function fileBackedSecretPaths(environment: ConfigEnvironment): string[] {
-  return [machineKeyFilePath(environment), recordSessionDirectory(environment)]
+  return [
+    hubLoginTokenDirectory(environment),
+    machineKeyFilePath(environment),
+    recordSessionDirectory(environment),
+  ]
 }

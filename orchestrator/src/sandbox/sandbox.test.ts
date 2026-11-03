@@ -644,7 +644,6 @@ describe('readonly-lens sandbox profile', () => {
 
     expect(profile.filesystem.denyRead).toEqual([
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
-      hubLoginTokenDirectory(environment),
       ...fileBackedSecretPaths(environment),
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
