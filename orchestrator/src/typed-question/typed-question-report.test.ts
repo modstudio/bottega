@@ -110,7 +110,7 @@ test('labels duplicate links positive in either direction', () => {
     const ids = duplicateFixture(['accepted', 'rejected'])
     db()
       .query('UPDATE review_finding SET duplicate_of_finding_record_id=? WHERE record_id=?')
-      .run(ids[1 - direction], ids[direction])
+      .run(ids[1 - direction]!, ids[direction]!)
     expect(findingDuplicateLabel(db(), ids.join(':'))).toBeTrue()
   }
 })

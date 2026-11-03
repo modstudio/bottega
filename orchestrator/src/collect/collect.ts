@@ -640,6 +640,16 @@ function presentCollectedOutput(
   )
 }
 
+function presentDuplicateSuggestions(
+  suggestions: { lines: string[]; skipped: number },
+  presentation: CollectResultPresentation,
+): void {
+  for (const line of suggestions.lines) presentation.log(line)
+  if (suggestions.skipped) {
+    presentation.log(`${suggestions.skipped} duplicate-finding pairs skipped at the invocation cap`)
+  }
+}
+
 export function collectResult(
   database: Database,
   argv: string[],
@@ -694,10 +704,7 @@ export function collectResult(
     }
   }
   presentCollectedOutput(row, output, outcome.ok, presentation)
-  for (const line of duplicateSuggestions.lines) presentation.log(line)
-  if (duplicateSuggestions.skipped) {
-    presentation.log(`${duplicateSuggestions.skipped} duplicate-finding pairs skipped at the invocation cap`)
-  }
+  presentDuplicateSuggestions(duplicateSuggestions, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

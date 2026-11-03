@@ -7,8 +7,8 @@ import { JOBS } from '../jobs/jobs.ts'
 import { FINDING_DUPLICATE_QUESTION } from '../typed-question/finding-duplicate-question.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
 
-export const FINDING_DUPLICATE_ASK_CONCURRENCY = 8
-export const FINDING_DUPLICATE_PAIR_CAP = 200
+const FINDING_DUPLICATE_ASK_CONCURRENCY = 8
+const FINDING_DUPLICATE_PAIR_CAP = 200
 
 export type DuplicateFindingRow = {
   findingRecordId: string
