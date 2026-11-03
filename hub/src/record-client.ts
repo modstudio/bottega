@@ -41,10 +41,13 @@ type RecordAuthHeaders = {
 
 export type RecordFetch = (input: string, init?: RequestInit) => Promise<Response>
 
+const RECORD_REQUEST_DEADLINE_MS = 30_000
+
 type RecordClientOptions = {
   baseUrl: string
   headers: RecordAuthHeaders
   fetch?: RecordFetch
+  requestDeadlineMs?: number
 }
 
 const scoreSchema = z
@@ -522,22 +525,51 @@ async function request<T>(
   schema: z.ZodType<T>,
   init: RequestInit = {},
 ): Promise<T> {
+  const deadlineMs = options.requestDeadlineMs ?? RECORD_REQUEST_DEADLINE_MS
+  const controller = new AbortController()
   const headers = new Headers(init.headers)
   if (options.headers.cookie) headers.set('Cookie', options.headers.cookie)
   if (options.headers.authorization) headers.set('Authorization', options.headers.authorization)
   const url = `${options.baseUrl.replace(/\/$/, '')}${path}`
   const fetchImpl = options.fetch ?? globalThis.fetch
-  const response = await fetchImpl(url, { ...init, headers })
-  const body = await response.json().catch(() => null)
-  if (!response.ok) throw mappedError(response.status, body, path)
-  const parsed = schema.safeParse(body)
-  if (!parsed.success) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'record API returned an invalid body',
+  const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal
+  const startedAt = Date.now()
+  const retryStatement =
+    !init.method || init.method.toUpperCase() === 'GET'
+      ? 'nothing was written; retry'
+      : 'the write may have been applied; check before retrying'
+  const timeoutError = () =>
+    new TRPCError({
+      code: 'TIMEOUT',
+      message: `the hosted record API did not answer ${path} within ${Date.now() - startedAt} ms; ${retryStatement}, and if it stalls again check the hosted API health and report the path`,
     })
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(timeoutError())
+      controller.abort()
+    }, deadlineMs)
+  })
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetchImpl(url, { ...init, headers, signal })
+        const body = await response.json().catch(() => null)
+        if (!response.ok) throw mappedError(response.status, body, path)
+        const parsed = schema.safeParse(body)
+        if (!parsed.success) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'record API returned an invalid body',
+          })
+        }
+        return parsed.data
+      })(),
+      expired,
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
   }
-  return parsed.data
 }
 
 function publicRequest<T>(

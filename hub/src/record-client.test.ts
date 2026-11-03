@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { TRPCError } from '@trpc/server'
 import { createRecordClient, type RecordFetch } from './record-client.ts'
 
 const whoamiBody = {
@@ -73,6 +74,77 @@ function clientWith(fetch: RecordFetch, headers: { cookie?: string; authorizatio
 }
 
 describe('record client', () => {
+  test('runs view refuses when the hosted request does not answer before its deadline', async () => {
+    let requestSignal: AbortSignal | null | undefined
+    const client = createRecordClient({
+      baseUrl: 'https://api.example.test',
+      headers: {},
+      fetch: (_url, init) => {
+        requestSignal = init?.signal
+        return new Promise(() => {})
+      },
+      requestDeadlineMs: 20,
+    })
+
+    const error = await client
+      .runsView({ hours: 24, agent: '', project: '', offset: 0, limit: 25, search: '' })
+      .catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(TRPCError)
+    expect(error.code).toBe('TIMEOUT')
+    expect(error.message).toContain('/v1/runs/window')
+    expect(error.message).toContain('nothing was written')
+    expect(requestSignal?.aborted).toBe(true)
+  })
+
+  test('runs view refuses when the hosted response body does not finish before its deadline', async () => {
+    const client = createRecordClient({
+      baseUrl: 'https://api.example.test',
+      headers: {},
+      fetch: async () => new Response(new ReadableStream({ start() {} })),
+      requestDeadlineMs: 20,
+    })
+
+    const error = await client
+      .runsView({ hours: 24, agent: '', project: '', offset: 0, limit: 25, search: '' })
+      .catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(TRPCError)
+    expect(error.code).toBe('TIMEOUT')
+    expect(error.message).toContain('/v1/runs/window')
+  })
+
+  test('write refusal warns that the write may have been applied', async () => {
+    const client = createRecordClient({
+      baseUrl: 'https://api.example.test',
+      headers: {},
+      fetch: () => new Promise(() => {}),
+      requestDeadlineMs: 20,
+    })
+
+    const error = await client
+      .deleteDoc(boardRootId, { reason: 'cleanup', author: 'worker' })
+      .catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(TRPCError)
+    expect(error.code).toBe('TIMEOUT')
+    expect(error.message).toContain('the write may have been applied')
+  })
+
+  test('invalid headers do not leave an armed deadline rejection', async () => {
+    const client = createRecordClient({
+      baseUrl: 'https://api.example.test',
+      headers: { cookie: 'sid=a\u0000b' },
+      fetch: () => new Promise(() => {}),
+      requestDeadlineMs: 5,
+    })
+
+    const error = await client.projects().catch((cause) => cause)
+    expect(error).toBeInstanceOf(TypeError)
+    expect(error.message).toContain('Cookie')
+    await Bun.sleep(20)
+  })
+
   test('projects accepts the additive adoption response', async () => {
     const response = {
       id: '01990000-0000-7000-8000-000000000041',
