@@ -1,7 +1,12 @@
 // concern: dispatch-commands
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
 import { existsSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
+import {
+  SPEC_UNSETTLED_QUESTION,
+  type TypedQuestion,
+} from '../../../shared/typed-question/registry.ts'
 import {
   mechanicallyEnforcedChecks,
   resolveMechanicalChecks,
@@ -114,12 +119,13 @@ async function compose(
   lens: string | undefined,
   cwd: string,
   explicitReviewBranch: string | null,
+  supplied: string,
 ): Promise<string> {
   const earlier =
     requested.findings && project
       ? presentation.earlierReviewRejections(project.name, cwd, explicitReviewBranch)
       : { project: project?.name ?? '', branch: null, branchLineage: [], rows: [] }
-  return lensPromptFor(project, requested.findings, lens, await presentation.readPrompt(), earlier)
+  return lensPromptFor(project, requested.findings, lens, supplied, earlier)
 }
 
 type DispatchOptions = {
@@ -143,6 +149,13 @@ type DispatchPresentation = {
   doUsage(): never
   error(...values: unknown[]): void
   readPrompt(): Promise<string>
+  askTypedQuestion(input: {
+    question: TypedQuestion
+    subjectKind: string
+    subjectRef: string
+    state: string
+  }): Promise<TypedQuestionAnswer | null>
+  specIdentity(state: string): string
   validateSchema(path: string): unknown
   warnCallerDrift(cwd: string, baseRef?: string): void
   warnTaskBranchBypass(cwd: string, key: string | null, base: string | undefined): void
@@ -188,6 +201,99 @@ type DispatchPresentation = {
   follow(id: string, quiet: boolean): Promise<unknown>
   runNumber(id: string): number
   detachedResult(id: string, json: boolean): void
+}
+
+const TYPED_QUESTION_PROJECT_ALLOWLIST = new Set([PLATFORM_NAME.toLowerCase()])
+
+type SpecWarningInput = {
+  jobName: string
+  project: string | null
+  continuation: boolean
+  spec: string
+  specIdentity: string
+}
+
+/** Ask only for explicitly allowed new implementation specs and present an advisory warning. */
+export async function warnForUnsettledSpec(
+  input: SpecWarningInput,
+  ask: DispatchPresentation['askTypedQuestion'],
+  warn: DispatchPresentation['error'],
+): Promise<void> {
+  if (
+    input.jobName !== 'implement' ||
+    input.continuation ||
+    !input.project ||
+    !TYPED_QUESTION_PROJECT_ALLOWLIST.has(input.project)
+  )
+    return
+  const answer = await ask({
+    question: SPEC_UNSETTLED_QUESTION,
+    subjectKind: 'spec',
+    subjectRef: input.specIdentity,
+    state: input.spec,
+  })
+  if (answer && 'noul' in answer && answer.noul >= SPEC_UNSETTLED_QUESTION.threshold) {
+    warn(
+      `! this spec likely leaves a choice unsettled (p=${answer.noul.toFixed(2)}): ` +
+        'a worker will probably stop and ask; settle it first or dispatch anyway',
+    )
+  }
+}
+
+async function composeDispatchPrompt(input: {
+  presentation: DispatchPresentation
+  project: Project | null
+  requested: ReturnType<typeof job>
+  lens: string | undefined
+  cwd: string
+  reviewBranch: string | null
+  jobName: string
+  projectName: string | null
+  continuation: boolean
+}): Promise<string> {
+  const spec = await input.presentation.readPrompt()
+  await warnForUnsettledSpec(
+    {
+      jobName: input.jobName,
+      project: input.projectName,
+      continuation: input.continuation,
+      spec,
+      specIdentity: input.presentation.specIdentity(spec),
+    },
+    input.presentation.askTypedQuestion,
+    input.presentation.error,
+  )
+  return compose(
+    input.presentation,
+    input.project,
+    input.requested,
+    input.lens,
+    input.cwd,
+    input.reviewBranch,
+    spec,
+  )
+}
+
+function reportGeneralDispatchWarnings(input: {
+  porcelain: boolean
+  project: string | null
+  carries: boolean
+  readsRepo: boolean
+  dirty: boolean
+  error: DispatchPresentation['error']
+}): void {
+  if (!input.porcelain && !input.project) {
+    input.error(
+      `! this run will not be attributed to any project; use --repo <name> ` +
+        `(registered: ${projectNames()})`,
+    )
+  }
+  if (!input.porcelain && !input.carries && input.readsRepo && input.dirty) {
+    input.error(
+      '! this checkout has uncommitted work that will not be carried into the worker.\n' +
+        '  pass --carry to send it with the run.',
+    )
+  }
 }
 
 function validateDetachedPresentation(porcelain: boolean, json: boolean, follow: boolean): void {
@@ -576,31 +682,29 @@ export async function dispatchCommand(
   if (schema && (!flag('agent') || flag('agent') === 'codex')) validateSchema(schema)
   const deliverables = validatedDeliverables(values('deliverable'), jobName)
   const timeoutMinutes = validatedTimeoutMinutes(flags, requested, jobName)
-  if (!porcelain && !dispatchProjectName) {
-    error(
-      `! this run will not be attributed to any project; use --repo <name> ` +
-        `(registered: ${projectNames()})`,
-    )
-  }
-  if (
-    !porcelain &&
-    !has('carry') &&
-    requested.needs.readsRepo &&
-    checkoutHasUncommittedWork(callerCwd)
-  ) {
-    error(
-      '! this checkout has uncommitted work that will not be carried into the worker.\n' +
-        '  pass --carry to send it with the run.',
-    )
-  }
-  const prompt = await compose(
+  reportGeneralDispatchWarnings({
+    porcelain,
+    project: dispatchProjectName,
+    carries: has('carry'),
+    readsRepo: Boolean(requested.needs.readsRepo),
+    dirty:
+      !porcelain &&
+      !has('carry') &&
+      Boolean(requested.needs.readsRepo) &&
+      checkoutHasUncommittedWork(callerCwd),
+    error,
+  })
+  const prompt = await composeDispatchPrompt({
     presentation,
-    dispatchProject,
+    project: dispatchProject,
     requested,
     lens,
-    callerCwd,
-    resolvedReviewTarget?.branch ?? null,
-  )
+    cwd: callerCwd,
+    reviewBranch: resolvedReviewTarget?.branch ?? null,
+    jobName,
+    projectName: dispatchProjectName,
+    continuation: Boolean(flag('continue')),
+  })
   const keepTree = keepTreeExemptionFromOption(
     has('keep-tree'),
     flag('keep-tree'),

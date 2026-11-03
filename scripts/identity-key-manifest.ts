@@ -5,12 +5,14 @@ import type {
   KeyManifests,
   KeyStore,
   ManifestColumn,
-  RuledReference,
 } from './identity-inventory.ts'
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
+import { RULED_REFERENCES } from './identity-ruled-reference-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
 import * as taskIdentity from './identity-task-identity-manifest.ts'
+import { TYPED_QUESTION_IDENTITY } from './identity-typed-question-manifest.ts'
+import { UNDECLARED_REFERENCES } from './identity-undeclared-reference-manifest.ts'
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
@@ -211,6 +213,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     ...taskIdentity.TASK_IDENTITY_INTEGER_COLUMNS,
     'workflow_event.version_n',
   ]),
+  ...TYPED_QUESTION_IDENTITY.integerValues,
   ...ROUTING_POOL_IDENTITY.integerValues,
   ...manifest('hub', 'boolean flag', ['install_binding.bound', 'interval.open', 'send.test']),
   ...manifest('hub', 'count, ordinal, version, handle, or measurement', [
@@ -548,20 +551,9 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'hub', table: 'install_binding', reason: 'singleton install binding' },
 ]
 
-const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
-  ...manifest('orchestrator', 'natural or encoded reference to an application row', [
-    'contention.resource_key',
-    'operator_notification.item_id',
-    'run.launch_key',
-    'workflow_cursor.instance_id',
-  ]),
-  ...manifest('hosted', 'natural or encoded reference to an application row', [
-    'contention.resource_key',
-  ]),
-]
-
 const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ...BOARD_READER_EXTERNAL_IDENTIFIERS,
+  ...TYPED_QUESTION_IDENTITY.externalIdentifiers,
   ...manifest('hosted', 'fingerprint derived from a machine public key', [
     'machine_public_key.key_id',
   ]),
@@ -691,17 +683,6 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'branch_disposal.task_key',
     'port_ref.task_key',
   ]),
-]
-
-const RULED_REFERENCES: readonly RuledReference[] = [
-  ...['secret_dek_wrap.recipient_key_id', 'secret_dek_wrap.sender_key_id'].map((column) => ({
-    store: 'hosted' as const,
-    column,
-    reason:
-      'fingerprint derived from a machine public key; enforced by composite foreign key to machine_public_key (space_id, key_id)',
-    ruling:
-      'operator ruling, board 01a1954f-2502-750d-abb8-6a41bb86dccc: machine keys keep the fingerprint plus composite foreign keys',
-  })),
 ]
 
 const UUID_COLUMNS: readonly ManifestColumn[] = [
@@ -938,6 +919,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'workflow_version.workflow_record_id',
     'workflow_version.space_id',
   ]),
+  ...TYPED_QUESTION_IDENTITY.uuids,
   ...ROUTING_POOL_IDENTITY.uuids,
   ...manifest('hub', 'owned or referenced UUID', [
     'commit_key.task_record_id',

@@ -246,6 +246,8 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/dispatch/dispatch-commands.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/typed-question/client.ts',
+      '../../../shared/typed-question/registry.ts',
       'node:fs',
       './dispatch-preflight.ts',
       './execution-requirement.ts',

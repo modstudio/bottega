@@ -1522,6 +1522,14 @@
       "tag": "0199_task_flow_record_sync",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 200,
+      "version": "6",
+      "when": 1793577600065,
+      "tag": "0200_typed_question_answer",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

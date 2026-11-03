@@ -59,6 +59,7 @@ import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { sha } from '../run/run-process.ts'
 import { routedPromptBytes, routedPromptText } from '../run/run-routing-input.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import {
@@ -68,6 +69,7 @@ import {
   selectAgentForTransport,
   type TransportName,
 } from '../transport/transport.ts'
+import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -579,6 +581,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       },
       error: presentation.error,
       readPrompt: prompt,
+      askTypedQuestion,
+      specIdentity: sha,
       validateSchema: readStrictCodexSchema,
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
       warnTaskBranchBypass: (cwd, key, base) =>

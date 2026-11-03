@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import {
   genericLensProfileNotices,
@@ -8,6 +8,7 @@ import {
   reviewMemoryBranch,
   reviewRoleForDispatch,
   validateContinueBranchOptions,
+  warnForUnsettledSpec,
 } from './dispatch-commands.ts'
 
 test('findings dispatch leaves the default role to run dispatch unless explicitly supplementary', () => {
@@ -70,3 +71,72 @@ test('explicit branch continuation is limited to keyed implement and fix without
     '--continue requires --key',
   )
 })
+
+test.each([
+  [0.85, true],
+  [0.84, false],
+] as const)('unsettled-spec warning at probability %p reports=%p', async (probability, reports) => {
+  const warnings: unknown[][] = []
+  await warnForUnsettledSpec(
+    {
+      jobName: 'implement',
+      project: PLATFORM_NAME.toLowerCase(),
+      continuation: false,
+      spec: 'Choose a reasonable implementation.',
+      specIdentity: '0123456789abcdef',
+    },
+    async (asked) => {
+      expect(asked).toMatchObject({
+        question: { id: 'spec_unsettled', version: 1 },
+        subjectKind: 'spec',
+        subjectRef: '0123456789abcdef',
+        state: 'Choose a reasonable implementation.',
+      })
+      return { noul: probability }
+    },
+    (...values) => warnings.push(values),
+  )
+
+  expect(warnings).toHaveLength(reports ? 1 : 0)
+  if (reports) {
+    expect(warnings[0]?.[0]).toBe(
+      '! this spec likely leaves a choice unsettled (p=0.85): a worker will probably stop and ask; settle it first or dispatch anyway',
+    )
+  }
+})
+
+test('unsettled-spec warning stays silent on no answer', async () => {
+  const warnings: unknown[][] = []
+  await warnForUnsettledSpec(
+    {
+      jobName: 'implement',
+      project: PLATFORM_NAME.toLowerCase(),
+      continuation: false,
+      spec: 'Complete spec.',
+      specIdentity: 'spec-sha',
+    },
+    async () => null,
+    (...values) => warnings.push(values),
+  )
+  expect(warnings).toEqual([])
+})
+
+test.each([
+  ['diagnose', PLATFORM_NAME.toLowerCase(), false],
+  ['implement', 'another-project', false],
+  ['implement', PLATFORM_NAME.toLowerCase(), true],
+] as const)(
+  'does not ask for job=%s project=%s continuation=%p',
+  async (jobName, project, continuation) => {
+    let asks = 0
+    await warnForUnsettledSpec(
+      { jobName, project, continuation, spec: 'spec', specIdentity: 'spec-sha' },
+      async () => {
+        asks += 1
+        return { noul: 1 }
+      },
+      () => {},
+    )
+    expect(asks).toBe(0)
+  },
+)
