@@ -295,7 +295,7 @@ describe('macOS security writes', () => {
 
     expect(thrown).toBeInstanceOf(Error)
     expect((thrown as Error).message).toBe(
-      'security input token must not contain a newline or carriage return',
+      'macOS keychain values written through security cannot contain line breaks; store the value without line breaks',
     )
     expect((thrown as Error).message).not.toContain(value)
     expect(calls).toBe(0)

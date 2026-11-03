@@ -420,7 +420,9 @@ export function writeKeychainItem(
 
 export function quoteSecurityInputToken(value: string): string {
   if (/[\r\n]/.test(value))
-    throw new Error('security input token must not contain a newline or carriage return')
+    throw new Error(
+      'macOS keychain values written through security cannot contain line breaks; store the value without line breaks',
+    )
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
