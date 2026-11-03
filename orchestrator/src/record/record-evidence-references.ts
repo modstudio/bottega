@@ -17,19 +17,42 @@ export type MachineEvidenceTable =
   | 'contention'
   | 'test_flake'
   | 'branch_disposal'
-  | 'task_flow'
-  | 'task_flow_stage'
 
-type EvidenceOwnershipScope = 'machine' | 'space-principal'
+export type SpacePrincipalEvidenceTable = 'task_flow' | 'task_flow_stage'
+export type EvidenceTable = MachineEvidenceTable | SpacePrincipalEvidenceTable
 
-export type ExistingEvidenceOwned<Transaction> = (
-  tx: Transaction,
-  table: MachineEvidenceTable,
-  id: string,
-  machineId: string,
-  principal: { userId: string; spaceId: string },
-  ownership: { scope: EvidenceOwnershipScope },
-) => Promise<boolean>
+export type EvidenceOwnership =
+  | { scope: 'machine'; table: MachineEvidenceTable }
+  | { scope: 'space-principal'; table: SpacePrincipalEvidenceTable }
+
+export function evidenceOwnership(table: EvidenceTable): EvidenceOwnership {
+  switch (table) {
+    case 'task_flow':
+    case 'task_flow_stage':
+      return { scope: 'space-principal', table }
+    default:
+      return { scope: 'machine', table }
+  }
+}
+
+export type ExistingEvidenceOwned<Transaction> = {
+  (
+    tx: Transaction,
+    table: MachineEvidenceTable,
+    id: string,
+    machineId: string,
+    principal: { userId: string; spaceId: string },
+    ownership: { scope: 'machine' },
+  ): Promise<boolean>
+  (
+    tx: Transaction,
+    table: SpacePrincipalEvidenceTable,
+    id: string,
+    machineId: string,
+    principal: { userId: string; spaceId: string },
+    ownership: { scope: 'space-principal' },
+  ): Promise<boolean>
+}
 
 export type RequireOwnedUpsert = (
   rows: readonly unknown[],
@@ -39,14 +62,14 @@ export type RequireOwnedUpsert = (
 ) => void
 
 export type EvidenceReference = {
-  table: MachineEvidenceTable
+  table: EvidenceTable
   id: string
   kind: string
 }
 
 export function evidenceReferences(kind: string, row: Payload): EvidenceReference[] {
   const reference = (
-    table: MachineEvidenceTable,
+    table: EvidenceTable,
     id: unknown,
     label: string = table,
   ): EvidenceReference[] =>
@@ -88,6 +111,8 @@ export function evidenceReferences(kind: string, row: Payload): EvidenceReferenc
         ...reference('run', row.runId, 'contended run'),
         ...reference('landing', row.landingId, 'contended landing'),
       ]
+    case 'task_flow_stage':
+      return reference('task_flow', row.flowRecordId, 'stage flow')
     default:
       return []
   }

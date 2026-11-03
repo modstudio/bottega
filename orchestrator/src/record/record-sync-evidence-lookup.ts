@@ -1,22 +1,36 @@
 // concern: record-sync-evidence-lookup
 /** Builds the lookup for an evidence row one machine owns. Must not run SQL. */
+import type {
+  MachineEvidenceTable,
+  SpacePrincipalEvidenceTable,
+} from './record-evidence-references.ts'
 
 export type OwnedEvidenceLookup = { text: string; values: string[] }
 
-export function ownedEvidenceLookup(input: {
-  table: string
+type OwnedEvidenceLookupBase = {
   id: string
   spaceId: string
   machineId: string
   userId: string
   suffix: string
-  scope: 'machine' | 'space-principal'
-}): OwnedEvidenceLookup {
+}
+
+type OwnedEvidenceLookupInput = OwnedEvidenceLookupBase &
+  (
+    | { scope: 'machine'; table: MachineEvidenceTable }
+    | { scope: 'space-principal'; table: SpacePrincipalEvidenceTable }
+  )
+
+const ownerColumns: Record<SpacePrincipalEvidenceTable, string> = {
+  task_flow: 'opening_machine_id',
+  task_flow_stage: 'opened_machine_id',
+}
+
+export function ownedEvidenceLookup(input: OwnedEvidenceLookupInput): OwnedEvidenceLookup {
   if (input.scope === 'space-principal') {
-    const ownerColumn = input.table === 'task_flow' ? 'opening_machine_id' : 'opened_machine_id'
     return {
       text: `SELECT evidence.id FROM ${input.table} evidence
-       JOIN machine owner_machine ON owner_machine.id=evidence.${ownerColumn}
+       JOIN machine owner_machine ON owner_machine.id=evidence.${ownerColumns[input.table]}
        WHERE evidence.id=$1::uuid AND evidence.space_id=$2::uuid
          AND owner_machine.user_id=$3::uuid ${input.suffix}`,
       values: [input.id, input.spaceId, input.userId],

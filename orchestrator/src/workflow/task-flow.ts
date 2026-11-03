@@ -163,13 +163,14 @@ export function closeTaskFlowStage(cursorRecordId: string, d: Database): void {
 }
 
 function enqueueTaskFlowCursorState(cursorRecordId: string, d: Database): void {
-  if (!enqueueTaskFlowStageRecord(d, cursorRecordId)) return
   const flow = d
     .query<{ task_flow_record_id: string }, [string]>(
       'SELECT task_flow_record_id FROM workflow_cursor WHERE record_id=?',
     )
     .get(cursorRecordId)
-  if (flow?.task_flow_record_id) enqueueTaskFlowRecord(d, flow.task_flow_record_id)
+  if (!flow?.task_flow_record_id) return
+  enqueueTaskFlowRecord(d, flow.task_flow_record_id)
+  enqueueTaskFlowStageRecord(d, cursorRecordId)
 }
 
 export function recordTaskFlowCursorMutation(cursorRecordId: string, d: Database): void {

@@ -31,7 +31,11 @@ import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './o
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
+import {
+  type EvidenceTable,
+  evidenceOwnership,
+  evidenceReferences,
+} from './record-evidence-references.ts'
 import { assertRecordPayloadColumns } from './record-payload-columns.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
@@ -94,19 +98,18 @@ function evidenceCollision(kind: string, id: string): OutboxRowError {
 
 async function existingEvidenceOwned(
   tx: SQL,
-  table: MachineEvidenceTable,
+  table: EvidenceTable,
   id: string,
   machineId: string,
   principal: RecordPrincipal,
-  ownership: { scope: 'machine' | 'space-principal' },
+  _ownership: { scope: 'machine' | 'space-principal' },
 ): Promise<boolean> {
   const lookup = ownedEvidenceLookup({
     ...principal,
-    table,
+    ...evidenceOwnership(table),
     id,
     machineId,
     suffix: 'FOR UPDATE',
-    scope: ownership.scope,
   })
   const rows = await tx.unsafe(lookup.text, lookup.values)
   if (rows.length > 0) return true
@@ -138,11 +141,10 @@ async function assertEvidenceReferencesOwned(input: {
     for (const reference of references) {
       const lookup = ownedEvidenceLookup({
         ...input.principal,
-        table: reference.table,
+        ...evidenceOwnership(reference.table),
         id: reference.id,
         machineId: input.machineId,
         suffix: '/* owned_reference */',
-        scope: 'machine',
       })
       const rows = await tx.unsafe(lookup.text, lookup.values)
       if (rows.length === 0) throw new OutboxRowError(referenceRefusal(reference), 'row-validation')

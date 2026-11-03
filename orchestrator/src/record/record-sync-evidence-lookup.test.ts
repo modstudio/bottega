@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import type { MachineEvidenceTable } from './record-evidence-references.ts'
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 
 const input = {
@@ -15,7 +16,13 @@ const placeholders = (text: string) =>
   [...new Set([...text.matchAll(/\$(\d+)/g)].map((match) => Number(match[1])))].sort()
 
 test('a lookup passes exactly the parameters its statement references', () => {
-  for (const table of ['run', 'review', 'question', 'landing', 'test_flake']) {
+  for (const table of [
+    'run',
+    'review',
+    'question',
+    'landing',
+    'test_flake',
+  ] satisfies MachineEvidenceTable[]) {
     const lookup = ownedEvidenceLookup({ ...input, table })
     expect(placeholders(lookup.text)).toEqual(lookup.values.map((_, index) => index + 1))
   }

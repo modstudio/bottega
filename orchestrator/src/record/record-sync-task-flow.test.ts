@@ -221,7 +221,18 @@ realPostgres('hosted task flow revisions', () => {
 
       await push(actor, 1, 'task_flow', flowPayload())
       await push(actor, 2, 'task_flow', flowPayload())
-      await push(actor, 3, 'task_flow_stage', stagePayload())
+      const otherMachineStage = stagePayload()
+      Object.assign(otherMachineStage, {
+        openedMachineId: OTHER_MACHINE,
+        lastAdvancedMachineId: OTHER_MACHINE,
+        machineId: OTHER_MACHINE,
+      })
+      expect(
+        await push(actor, 3, 'task_flow_stage', otherMachineStage, {
+          spaceId: SPACE,
+          machineId: OTHER_MACHINE,
+        }),
+      ).toMatchObject({ results: [{ id: 3, status: 'synced' }] })
       await push(actor, 4, 'task_flow_stage', stagePayload())
       expect(
         await admin<{ flows: number; stages: number }[]>`

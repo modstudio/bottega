@@ -394,7 +394,9 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     './outbox-failure.ts',
   ]),
-  module('orchestrator/src/record/record-sync-evidence-lookup.ts', []),
+  module('orchestrator/src/record/record-sync-evidence-lookup.ts', [
+    './record-evidence-references.ts',
+  ]),
   module('orchestrator/src/record/record-evidence-references.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-api-invitations.ts', [
     'hono',

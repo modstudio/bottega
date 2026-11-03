@@ -1,7 +1,7 @@
 // concern: workflow-cursor-mutation
 /** Persists terminal cursor mutations and their task-flow projection. */
 import type { Database } from 'bun:sqlite'
-import { sessionId } from '../database/db.ts'
+import { nowIso, sessionId } from '../database/db.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { closeTaskFlowStage, recordTaskFlowCursorMutation } from './task-flow.ts'
@@ -35,7 +35,7 @@ export function abandonWorkflowCursor(
   d: Database,
 ): string {
   refuseTerminalCursor(row)
-  const at = new Date().toISOString()
+  const at = nowIso()
   if (row.state === 'awaiting-ruling') closeOpenWorkflowQuestion(row.record_id, 'abandoned', at, d)
   const closed = JSON.parse(row.closed) as CursorTrailEntry[]
   closed.push({

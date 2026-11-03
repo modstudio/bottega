@@ -3,7 +3,12 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { attachTaskFlowStage, closeTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
+import {
+  attachTaskFlowStage,
+  closeTaskFlowStage,
+  recordTaskFlowCursorMutation,
+  selectTaskFlowStage,
+} from './task-flow.ts'
 import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
@@ -136,6 +141,14 @@ test('keyed compose and advance enqueue both stage and flow while task-less comp
   expect(
     d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY kind").all(),
   ).toEqual([{ kind: 'task_flow' }, { kind: 'task_flow_stage' }])
+  d.query("DELETE FROM outbox WHERE kind LIKE 'task_flow%'").run()
+  const cursorRecordId = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(cursor)!.record_id
+  recordTaskFlowCursorMutation(cursorRecordId, d)
+  expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%' ORDER BY id").all()).toEqual(
+    [{ kind: 'task_flow' }, { kind: 'task_flow_stage' }],
+  )
   const stage = d
     .query<{ payload: string; args: string; closed: string }, []>(
       `SELECT outbox.payload,cursor.args,cursor.closed FROM outbox
@@ -340,6 +353,21 @@ function expectPendingFlowOutboxCleared(d: ReturnType<typeof cursorDatabase>): v
   })
 }
 
+function expectPendingStageState(
+  d: ReturnType<typeof cursorDatabase>,
+  state: 'done' | 'abandoned',
+): void {
+  const row = d
+    .query<{ payload: string; revision: number }, []>(
+      `SELECT outbox.payload,cursor.revision FROM outbox
+       JOIN workflow_cursor cursor ON cursor.record_id=outbox.row_id
+       WHERE outbox.kind='task_flow_stage' AND outbox.synced_at IS NULL
+         AND outbox.quarantined_at IS NULL AND outbox.retired_at IS NULL`,
+    )
+    .get()!
+  expect(JSON.parse(row.payload)).toMatchObject({ state, revision: row.revision })
+}
+
 test('finishing a keyed stage enqueues the cleared task flow at its local revision', () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-finish-outbox'
@@ -358,6 +386,7 @@ test('finishing a keyed stage enqueues the cleared task flow at its local revisi
   nextWorkflowStep(workflow, 'fixture', 'default', args, 'finish', context, d, {}, testPorts)
 
   expectPendingFlowOutboxCleared(d)
+  expectPendingStageState(d, 'done')
 })
 
 test('abandoning a keyed stage enqueues the cleared task flow at its local revision', () => {
@@ -375,6 +404,7 @@ test('abandoning a keyed stage enqueues the cleared task flow at its local revis
   abandonCursor(workflow, 'fixture', 'default', args, 'abandon', context, d)
 
   expectPendingFlowOutboxCleared(d)
+  expectPendingStageState(d, 'abandoned')
 })
 
 test('one task flow refuses a second open stage and retains re-entry history', () => {
@@ -430,9 +460,23 @@ test('one task flow refuses a second open stage and retains re-entry history', (
     d.query("UPDATE workflow_cursor SET state='done' WHERE record_id=?").run(ship.record_id)
     closeTaskFlowStage(ship.record_id, d)
 
+    const beforeReentry = d
+      .query<{ openingMachineId: string; revision: number }, [string]>(
+        'SELECT opening_machine_id openingMachineId,revision FROM task_flow WHERE record_id=?',
+      )
+      .get(flow.flowRecordId)!
     expect(select('plan-task', 'done')).toMatchObject({
       flowRecordId: flow.flowRecordId,
       cursorRecordId: null,
+    })
+    const reentry = d
+      .query<{ payload: string }, [string]>(
+        "SELECT payload FROM outbox WHERE kind='task_flow' AND row_id=?",
+      )
+      .get(flow.flowRecordId)!
+    expect(JSON.parse(reentry.payload)).toMatchObject({
+      revision: beforeReentry.revision + 1,
+      openingMachineId: beforeReentry.openingMachineId,
     })
     vacateRetiredWorkflowKeySlot('fixture', 'plan-task', 'default', 'DEV-1', d)
     const replan = insertStage('plan-task', flow.flowRecordId)
