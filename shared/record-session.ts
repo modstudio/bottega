@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { chmodSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
+import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
 import {
   deleteKeychainItem,
@@ -24,18 +25,7 @@ function useFile(): boolean {
 }
 
 function readFileToken(): string | null {
-  const path = recordSessionPath(process.env)
-  let stat: ReturnType<typeof statSync>
-  try {
-    stat = statSync(path)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
-  if (!stat.isFile() || (stat.mode & 0o077) !== 0) {
-    throw new Error(`refusing record session ${path}: file permissions must be no wider than 0600`)
-  }
-  return readFileSync(path, 'utf8').trim() || null
+  return readOwnerOnlySecretFile(recordSessionPath(process.env), 'record session')?.trim() || null
 }
 
 function withKeychainRemedy<T>(operation: () => T): T {

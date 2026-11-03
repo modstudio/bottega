@@ -1,8 +1,12 @@
 import { createPrivateKey, createPublicKey } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, type Stats, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { PLATFORM_NAME } from './brand.ts'
-import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
-import { machineKeyFilePath } from './file-backed-secret-paths.ts'
+import {
+  type ConfigEnvironment,
+  machineKeyFilePath,
+  resolveConfigRoot,
+} from './config-directory.ts'
+import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
 import {
   decideKeychainBackend,
@@ -65,18 +69,9 @@ export function readMachineKey(
 ): MachineKeyPair | null {
   let privateKey: Uint8Array
   if (useFile(env)) {
-    const path = machineKeyFilePath(env)
-    let stat: Stats
-    try {
-      stat = statSync(path)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-      throw error
-    }
-    if (!stat.isFile() || (stat.mode & 0o077) !== 0) {
-      throw new Error(`refusing machine key ${path}: file permissions must be no wider than 0600`)
-    }
-    privateKey = decode(readFileSync(path, 'utf8'))
+    const value = readOwnerOnlySecretFile(machineKeyFilePath(env), 'machine key')
+    if (value === null) return null
+    privateKey = decode(value)
   } else {
     const value = readKeychainItem(SERVICE, ACCOUNT, runner)
     if (!value) return null
