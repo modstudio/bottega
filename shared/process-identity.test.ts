@@ -1,5 +1,16 @@
 import { expect, test } from 'bun:test'
-import { pidAlive, processSignalOutcome } from './process-identity.ts'
+import { pidAlive, processObservationError, processSignalOutcome } from './process-identity.ts'
+
+test('a successful process observation outranks a raced timeout flag', () => {
+  expect(
+    processObservationError('example command', 20_000, {
+      exitCode: 0,
+      signalCode: null,
+      exitedDueToTimeout: true,
+      stderr: '',
+    }),
+  ).toBeNull()
+})
 
 test('a process signal outcome distinguishes delivery, absence, denial, and unknown errors', () => {
   expect(processSignalOutcome()).toBe('delivered')

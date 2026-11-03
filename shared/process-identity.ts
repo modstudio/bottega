@@ -18,6 +18,14 @@ type ProcessObservationResult = {
   stderr: string
 }
 
+/** Whether a process observation was interrupted before a successful exit. */
+export function processObservationInterrupted(result: ProcessObservationResult): boolean {
+  return (
+    result.exitCode !== 0 &&
+    (result.exitedDueToTimeout || (result.signalCode !== null && result.signalCode !== undefined))
+  )
+}
+
 /** Classify a completed process-observation subprocess without observing it. */
 export function processObservationError(
   command: string,
@@ -26,10 +34,11 @@ export function processObservationError(
 ): string | null {
   const detail = result.stderr.trim()
   const suffix = detail ? `: ${detail}` : ''
-  if (result.exitedDueToTimeout) return `${command} timed out after ${timeoutMs} ms${suffix}`
-  if (result.signalCode !== null && result.signalCode !== undefined)
-    return `${command} ended on signal ${result.signalCode}${suffix}`
   if (result.exitCode === 0) return null
+  if (processObservationInterrupted(result)) {
+    if (result.exitedDueToTimeout) return `${command} timed out after ${timeoutMs} ms${suffix}`
+    return `${command} ended on signal ${result.signalCode}${suffix}`
+  }
   if (result.exitCode !== null) return `${command} exited ${result.exitCode}${suffix}`
   return `${command} ended on signal unknown${suffix}`
 }
