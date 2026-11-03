@@ -18,7 +18,7 @@ export function ownedEvidenceLookup(input: {
       text: `SELECT evidence.id FROM ${input.table} evidence
        JOIN machine owner_machine ON owner_machine.id=evidence.${ownerColumn}
        WHERE evidence.id=$1::uuid AND evidence.space_id=$2::uuid
-         AND $3::uuid IS NOT NULL ${input.suffix}`,
+         AND owner_machine.user_id=$3::uuid ${input.suffix}`,
       values: [input.id, input.spaceId, input.userId],
     }
   }
