@@ -384,6 +384,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           ...usage,
           quotaReadings,
           askExposure,
+          rolloutOverflow: overflow?.message ?? null,
           sessionId,
           stopReason,
           error: replyError,
