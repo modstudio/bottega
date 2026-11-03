@@ -11,7 +11,6 @@ import {
   normalizeDocSummary,
 } from '../../../../shared/docs.ts'
 import type { MachineRef } from '../../../../shared/machine-label.ts'
-import { resolveRecordApiUrl } from '../../../../shared/record-api-url.ts'
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
@@ -31,7 +30,7 @@ import {
   hostedTaskDetail,
 } from '../../hosted-work.ts'
 import { routingViewData } from '../../orch-transforms.ts'
-import { createRecordClient } from '../../record-client.ts'
+import { createRecordClient, requiredRecordApiUrl } from '../../record-client.ts'
 import { sendHostedReportSubscriptionTest } from '../../report-delivery-hosted.ts'
 import { duration, liveRowDisplay, runRowDisplay } from '../../run-display.ts'
 import { runListInput } from '../../run-list-input.ts'
@@ -57,15 +56,8 @@ const docAudiences = z
   .transform(normalizeDocAudiences)
 
 export function recordClient(ctx: Context) {
-  const baseUrl = resolveRecordApiUrl()
-  if (!baseUrl) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: `BOTTEGA_RECORD_API_URL is required\nconfigure the address with ${PLATFORM_SLUG} record use <address>`,
-    })
-  }
   return createRecordClient({
-    baseUrl,
+    baseUrl: requiredRecordApiUrl(),
     headers: { cookie: ctx.cookie, authorization: ctx.authorization },
   })
 }

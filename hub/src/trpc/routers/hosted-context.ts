@@ -6,8 +6,6 @@ import {
   AUTONOMY_VALUES,
   type AutonomyStage,
 } from '../../../../shared/autonomy.ts'
-import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
-import { resolveRecordApiUrl } from '../../../../shared/record-api-url.ts'
 import { type StoredSettings, summarizeSettings } from '../../../../shared/settings-summary.ts'
 import {
   readStoredShipTo,
@@ -20,6 +18,7 @@ import {
   type RecordClient,
   type RecordConfigEntry,
   type RecordDoc,
+  requiredRecordApiUrl,
 } from '../../record-client.ts'
 import type { Context } from '../context.ts'
 
@@ -36,15 +35,8 @@ const target = z.union([
 type ClientFactory = (context: Context) => RecordClient
 
 function defaultClient(context: Context): RecordClient {
-  const baseUrl = resolveRecordApiUrl()
-  if (!baseUrl) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: `BOTTEGA_RECORD_API_URL is required\nconfigure the address with ${PLATFORM_SLUG} record use <address>`,
-    })
-  }
   return createRecordClient({
-    baseUrl,
+    baseUrl: requiredRecordApiUrl(),
     headers: { cookie: context.cookie, authorization: context.authorization },
   })
 }
