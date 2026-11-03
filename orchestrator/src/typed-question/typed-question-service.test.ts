@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { askTypedQuestionClient } from '../../../shared/typed-question/client.ts'
-import { SPEC_UNSETTLED_QUESTION } from '../../../shared/typed-question/registry.ts'
+import {
+  SPEC_UNSETTLED_QUESTION,
+  type TypedQuestion,
+} from '../../../shared/typed-question/registry.ts'
 import type { TypedQuestionAnswerRow } from './typed-question-answer-store.ts'
 import { askTypedQuestion } from './typed-question-service.ts'
 
@@ -15,7 +18,7 @@ function fixture(input: {
   return {
     rows,
     dependencies: {
-      ask: (question: typeof SPEC_UNSETTLED_QUESTION, state: string | Record<string, unknown>) =>
+      ask: (question: TypedQuestion, state: string | Record<string, unknown>) =>
         askTypedQuestionClient(question, state, { resolve, fetch }),
       record: (row: TypedQuestionAnswerRow) => {
         rows.push(row)

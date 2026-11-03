@@ -258,7 +258,7 @@ async function composeDispatchPrompt(input: {
       project: input.projectName,
       continuation: input.continuation,
       spec,
-      specIdentity: input.presentation.specIdentity(spec),
+      specIdentity: input.presentation.specIdentity(spec.trim()),
     },
     input.presentation.askTypedQuestion,
     input.presentation.error,
