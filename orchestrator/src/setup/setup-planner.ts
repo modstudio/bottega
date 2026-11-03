@@ -1,13 +1,13 @@
 // concern: setup-planner
 /** Resolves setup answers into ordered project-register actions. Pure: it never applies them. */
+import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
 import type { ProjectSettings } from '../project/projects.ts'
-import type { MachineLevel, SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
+import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
 import type { HarnessName, LegacyMcpServerName, McpServer } from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
 
 export type SetupAnswers = Record<string, string>
-const MACHINE_LEVELS: readonly MachineLevel[] = ['record', 'full']
 type SettingsDiff = Record<string, { from: unknown; to: unknown }>
 type SetupActionBase = {
   path: string

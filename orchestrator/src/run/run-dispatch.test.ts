@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { setMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -11,6 +16,8 @@ import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 const originalExecPath = process.env.BOTTEGA_EXEC_PATH
 const originalDepth = process.env.BOTTEGA_DEPTH
+const originalConfigHome = process.env.BOTTEGA_CONFIG_HOME
+const temporary: string[] = []
 beforeEach(() => {
   upsertProject({ recordId: newRecordId(), name: 'dispatch-fixture', path: dir })
   upsertProject({ recordId: newRecordId(), name: 'dispatch-repo-fixture', path: import.meta.dir })
@@ -21,6 +28,30 @@ afterEach(() => {
   else process.env.BOTTEGA_EXEC_PATH = originalExecPath
   if (originalDepth === undefined) delete process.env.BOTTEGA_DEPTH
   else process.env.BOTTEGA_DEPTH = originalDepth
+  if (originalConfigHome === undefined) delete process.env.BOTTEGA_CONFIG_HOME
+  else process.env.BOTTEGA_CONFIG_HOME = originalConfigHome
+  for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true })
+})
+
+test('detach refuses at install level record before reserving or spawning', async () => {
+  const configHome = mkdtempSync(join(tmpdir(), 'dispatch-level-'))
+  temporary.push(configHome)
+  process.env.BOTTEGA_CONFIG_HOME = configHome
+  setMachineValue('machine.level', 'record')
+  let spawned = false
+  const prompt = 'record level dispatch refusal fixture'
+
+  await expect(
+    detach('implement', prompt, { cwd: dir }, undefined, (() => {
+      spawned = true
+      throw new Error('must not spawn')
+    }) as never),
+  ).rejects.toThrow(
+    `cannot start implement: this machine's install level is record, and starting a run needs worker agents; cleared by: ${PLATFORM_SLUG} machine setup --level full`,
+  )
+
+  expect(spawned).toBe(false)
+  expect(db().query('SELECT 1 FROM run WHERE prompt_head=?').get(prompt)).toBeNull()
 })
 
 test('detached MCP preflight ensures the declared project stack before probing', async () => {

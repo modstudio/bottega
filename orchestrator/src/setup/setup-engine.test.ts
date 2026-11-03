@@ -148,6 +148,7 @@ test('record plan skips the worker MCP server and still registers the main serve
     ...recommendedAnswers(plan),
     'machine:level': 'record',
   })
+  expect(actions[1]).toEqual({ kind: 'set-machine-level', from: null, to: 'record' })
   expect(actions).toContainEqual(
     expect.objectContaining({
       kind: 'mcp-skipped',

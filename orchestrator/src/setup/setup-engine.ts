@@ -2,6 +2,7 @@
 /** Turns setup facts into proposals and ruling-shaped questions. Pure: no store, process, or filesystem. */
 
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
 import type { SetupFacts } from './setup-facts.ts'
@@ -70,7 +71,6 @@ type SetupRegistrationProposal = {
   workerOnly: boolean
 }
 
-export type MachineLevel = NonNullable<SetupFacts['machineLevel']>
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
   proposals: SetupProposal[]

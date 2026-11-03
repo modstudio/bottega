@@ -5,6 +5,7 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import {
@@ -42,7 +43,7 @@ export const depth = () => Number(process.env.BOTTEGA_DEPTH ?? 0)
 export type InstallLevelDispatchDecision = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
 export function installLevelDispatchDecision(
-  level: 'record' | 'full',
+  level: MachineLevel,
   jobName: string,
 ): InstallLevelDispatchDecision {
   if (level === 'full') return { kind: 'allow' }

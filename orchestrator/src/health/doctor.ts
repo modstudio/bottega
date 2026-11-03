@@ -3,7 +3,11 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readDelegationSettings, readMachineValue } from '../../../shared/machine-config.ts'
+import {
+  type MachineLevel,
+  readDelegationSettings,
+  readMachineValue,
+} from '../../../shared/machine-config.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
 import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
@@ -393,7 +397,7 @@ async function reportAgentsAndDelegation(
 }
 
 async function reportAgentsForInstallLevel(
-  machineLevel: 'record' | 'full',
+  machineLevel: MachineLevel,
   presentation: Pick<DoctorPresentation, 'log' | 'candidates'>,
   agentStatus: typeof doctorAgentStatus,
 ): Promise<void> {
@@ -404,33 +408,39 @@ async function reportAgentsForInstallLevel(
   await reportAgentsAndDelegation(presentation, agentStatus)
 }
 
-async function workerHealthForInstallLevel(machineLevel: 'record' | 'full') {
+async function workerHealthForInstallLevel(machineLevel: MachineLevel) {
   if (machineLevel === 'record') {
     return { ok: true, detail: 'not needed at install level record', contextTokens: undefined }
   }
   return ensureLocalHealth()
 }
 
-function workerRowsForInstallLevel(machineLevel: 'record' | 'full'): AgentRow[] {
+function workerReachabilityLine(
+  machineLevel: MachineLevel,
+  health: { ok: boolean; detail: string },
+): string {
+  return machineLevel === 'record'
+    ? `reachable       ${health.detail}`
+    : `reachable       ${health.ok ? 'yes' : 'NO'} — ${health.detail}`
+}
+
+function workerRowsForInstallLevel(machineLevel: MachineLevel): AgentRow[] {
   return machineLevel === 'full' ? agentRows() : []
 }
 
-function routedJobsForInstallLevel(
-  machineLevel: 'record' | 'full',
-  jobs: () => string[],
-): string[] {
+function routedJobsForInstallLevel(machineLevel: MachineLevel, jobs: () => string[]): string[] {
   return machineLevel === 'full' ? jobs() : []
 }
 
 function hasCoolingWorker(
-  machineLevel: 'record' | 'full',
+  machineLevel: MachineLevel,
   candidates: DoctorPresentation['candidates'],
 ): boolean {
   return machineLevel === 'full' && candidates('summarize').some((candidate) => candidate.cooling)
 }
 
 function reportWorkerRuntimeForInstallLevel(
-  machineLevel: 'record' | 'full',
+  machineLevel: MachineLevel,
   log: DoctorPresentation['log'],
   isReadonlySandboxCandidate: (input: {
     agent: string
@@ -468,7 +478,7 @@ export async function doctorCommand(
 ): Promise<void> {
   const { has } = flags
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
-  const machineLevel = readMachineValue('machine.level') as 'record' | 'full'
+  const machineLevel = readMachineValue('machine.level') as MachineLevel
   // Probed BEFORE the agent list is printed, not after it. Doctor used to
   // report `qwen36-goose ready` and `reachable NO` four lines apart and mean
   // both: the roster asked whether it was configured and the probe asked
@@ -618,7 +628,7 @@ export async function doctorCommand(
     acpRuntimeGaps,
     configuredUrl,
   )
-  log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
+  log(workerReachabilityLine(machineLevel, r))
   if (!r.ok && configuredUrl) {
     // Reporting commands do not have side effects, so doctor only sends a
     // packet when asked in as many words. `bottega run start` wakes on its own; a

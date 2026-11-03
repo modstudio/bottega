@@ -20,7 +20,6 @@ import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import {
   prepareSetupStateFileMigration,
-  readSetupMachineLevel,
   reverseSetupStateFileMigration,
   setupEnvironmentService,
 } from './setup-environment-runtime.ts'
@@ -96,7 +95,6 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     gatherSetupFacts(),
     Promise.resolve(readSetupState()),
   ])
-  machine.machineLevel = readSetupMachineLevel()
   const repositories = await gatherRepositoryFactsReport(folders)
   const plan = proposeSetup(
     resolveWorktreeLifecycle,

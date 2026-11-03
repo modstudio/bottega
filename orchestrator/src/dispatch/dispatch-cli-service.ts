@@ -4,7 +4,11 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readDelegationSettings, readMachineValue } from '../../../shared/machine-config.ts'
+import {
+  type MachineLevel,
+  readDelegationSettings,
+  readMachineValue,
+} from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
@@ -505,7 +509,6 @@ export async function detachRoutedRun(
   waitForCapacityBeforeDetach = false,
   presentation: Pick<Presentation, 'cwd' | 'error'> = { cwd: () => cwd, error: () => {} },
 ): Promise<string> {
-  assertInstallLevelAllowsDispatch(jobName)
   if (delegationMode(job(jobName).needs, readDelegationSettings()) === 'harness') {
     const result = await run({
       ...spec,
@@ -544,7 +547,7 @@ export async function detachRoutedRun(
 }
 
 function assertInstallLevelAllowsDispatch(jobName: string): void {
-  const level = readMachineValue('machine.level') as 'record' | 'full'
+  const level = readMachineValue('machine.level') as MachineLevel
   const decision = installLevelDispatchDecision(level, jobName)
   if (decision.kind === 'refuse') throw new Error(decision.message)
 }

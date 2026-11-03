@@ -5,6 +5,7 @@ import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/p
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { removableLegacyPathTarget } from './setup-legacy-path.ts'
 import {
@@ -60,7 +61,7 @@ export type SetupEnvironmentService = {
     status: SetupAppliedActionStatus
     message: string | null
   }>
-  setMachineLevel?(level: 'record' | 'full'): void
+  setMachineLevel?(level: MachineLevel): void
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {

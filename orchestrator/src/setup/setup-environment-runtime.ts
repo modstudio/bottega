@@ -3,6 +3,7 @@
 
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import { readMachineFileValue, setMachineValue } from '../../../shared/machine-config.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import {
@@ -29,7 +30,6 @@ import {
   processEnvironmentNameMigration,
   replacementEnvironmentName,
 } from './environment-name-migration.ts'
-import type { SetupEnvironmentService } from './setup-apply.ts'
 import {
   environmentMigrationMessage,
   environmentSettingsDecision,
@@ -69,8 +69,8 @@ export async function restoreSetupEnvironment(directory: string): Promise<void> 
   })
 }
 
-export function readSetupMachineLevel(): 'record' | 'full' | null {
-  return (readMachineFileValue('machine.level') as 'record' | 'full' | undefined) ?? null
+export function readSetupMachineLevel(): MachineLevel | null {
+  return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
 }
 
 export async function reverseSetupStateFileMigration(
@@ -125,7 +125,7 @@ export async function withMigratedProcessEnvironment<T>(
   }
 }
 
-export const setupEnvironmentService: SetupEnvironmentService = {
+export const setupEnvironmentService = {
   setMachineLevel: (level) => setMachineValue('machine.level', level),
   migrateEnvironment: async (preparedStateFileMigration) =>
     withMigratedProcessEnvironment(process.env, async (processNamesRenamed) => {
