@@ -29,9 +29,10 @@ export function memoryRecordSession(): {
     if (operation === 'find-generic-password') {
       return stored ? result(0, `${stored}\n`) : result(44, '', 'not found')
     }
-    if (operation === 'add-generic-password') {
+    if (operation === '-i') {
       const text = stdin ? new TextDecoder().decode(stdin) : ''
-      stored = text.split('\n')[0] || null
+      const match = text.match(/ -w "((?:\\.|[^"\\])*)"\n$/)
+      stored = match?.[1]?.replaceAll(/\\(["\\])/g, '$1') ?? null
       return result(0)
     }
     if (operation === 'delete-generic-password') {

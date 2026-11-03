@@ -16,6 +16,24 @@ test('the password prompt refuses when a terminal reaches end of file', async ()
   )
 })
 
+test('the terminal password prompt shows only the prompt followed by a newline', async () => {
+  const input = new PassThrough() as PassThrough & { isTTY: boolean }
+  input.isTTY = true
+  const output = new PassThrough()
+  let rendered = ''
+  output.on('data', (chunk) => {
+    rendered += chunk.toString()
+  })
+
+  const password = promptPassword(input, output, undefined)
+  input.write('visible-secret\n')
+
+  expect(await password).toBe('visible-secret')
+  expect(rendered).toContain('Record password: ')
+  expect(rendered.endsWith('\n')).toBe(true)
+  expect(rendered).not.toContain('visible-secret')
+})
+
 test('record use accepts only an http(s) address without credentials, query, or fragment', () => {
   expect(httpAddress('https://record.example.test/api')).toBe('https://record.example.test/api')
   expect(() => httpAddress('ssh://record.example.test')).toThrow('http or https')

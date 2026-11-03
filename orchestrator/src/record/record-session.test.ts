@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
 import { RECORD_SESSION_KEY, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
@@ -68,7 +69,9 @@ describe('legacy record session migration', () => {
       return { exitCode: 0, stdout: new Uint8Array(), stderr: new Uint8Array() }
     }
     expect(storedRecordToken(db(), runner, true)).toBe(token)
-    expect(writes).toEqual([`${token}\n${token}\n`])
+    expect(writes).toEqual([
+      `add-generic-password -U -a "record" -s "${PLATFORM_NAME}-record-session" -w "${token}"\n`,
+    ])
     expect(
       db().query('SELECT value FROM schema_meta WHERE key=?').get(RECORD_SESSION_KEY),
     ).toBeNull()
