@@ -178,11 +178,13 @@ function findingRows(database: Database, runRecordId: string): DuplicateFindingR
     .all(runRecordId, current.head_commit) as DuplicateFindingRow[]
 }
 
-function recordedAnswers(database: Database): Map<string, string | null> {
+/** Answers only: an error row is not an answer, so its pair is asked again. */
+export function recordedAnswers(database: Database): Map<string, string | null> {
   const rows = database
     .query(
       `SELECT subject_ref,state_sha,answer_json FROM typed_question_answer
-        WHERE question_id=? AND question_version=? ORDER BY created_at`,
+        WHERE question_id=? AND question_version=? AND error IS NULL AND answer_json IS NOT NULL
+        ORDER BY created_at`,
     )
     .all(FINDING_DUPLICATE_QUESTION.id, FINDING_DUPLICATE_QUESTION.version) as {
     subject_ref: string

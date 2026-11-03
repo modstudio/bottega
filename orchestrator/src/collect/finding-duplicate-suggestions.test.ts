@@ -1,8 +1,12 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { db } from '../database/db.ts'
 import { parseDuplicateFinding } from '../review/review-duplicate-link.ts'
+import { FINDING_DUPLICATE_QUESTION } from '../typed-question/finding-duplicate-question.ts'
 import {
   type DuplicateFindingRow,
   duplicateSuggestionLine,
+  recordedAnswers,
   selectFindingDuplicatePairs,
   unansweredFindingDuplicatePairs,
 } from './finding-duplicate-suggestions.ts'
@@ -86,4 +90,29 @@ test('renders a duplicate flag that the score parser accepts', () => {
   const flag = line.match(/--duplicate (\S+)/)![1]!
   expect(flag).toBe('2=42#3')
   expect(parseDuplicateFinding(flag)).toEqual({ ordinal: 2, otherRunId: '42', otherOrdinal: 3 })
+})
+
+test('reuses a recorded answer but asks again after a recorded error', () => {
+  const insert = (subject: string, answer: string | null, error: string | null) =>
+    db()
+      .query(
+        `INSERT INTO typed_question_answer
+         (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
+          model,input_tokens,latency_ms,error,created_at)
+         VALUES (?,?,?,'finding-pair',?,'state',?,'jev',1,1,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        FINDING_DUPLICATE_QUESTION.id,
+        FINDING_DUPLICATE_QUESTION.version,
+        subject,
+        answer,
+        error,
+        new Date().toISOString(),
+      )
+  insert('answered', JSON.stringify({ noul: 0.9 }), null)
+  insert('errored', null, 'timeout')
+  const recorded = recordedAnswers(db())
+  expect(recorded.get('answered\0state')).toBe(JSON.stringify({ noul: 0.9 }))
+  expect(recorded.has('errored\0state')).toBeFalse()
 })
