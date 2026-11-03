@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { parseDuplicateFinding } from '../review/review-duplicate-link.ts'
 import { FINDING_DUPLICATE_QUESTION } from '../typed-question/finding-duplicate-question.ts'
+import { stateIdentity } from '../typed-question/typed-question-service.ts'
 import {
   type DuplicateFindingRow,
   duplicateSuggestionLine,
+  findingDuplicateSuggestions,
   recordedAnswers,
   selectFindingDuplicatePairs,
   suggestionLines,
@@ -134,4 +137,103 @@ test('drops only the pairs without a probability and keeps the rest', () => {
   const lines = suggestionLines(pairs, [null, 0.95, 0.5])
   expect(lines).toHaveLength(1)
   expect(lines[0]).toContain('42#3')
+})
+
+function seedReview(): string {
+  const reviewId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO review (record_id,number,recorded_at)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?)`,
+    )
+    .run(reviewId, new Date().toISOString())
+  return reviewId
+}
+
+function seedFinding(input: {
+  job: string
+  reviewId: string
+  tip: string | null
+  ordinal: number
+}) {
+  const database = db()
+  const runId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,
+        turn,project_record_id,head_commit)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex',?,'p','s',1,'p','ok',1,?,?)`,
+    )
+    .run(runId, new Date().toISOString(), input.job, fixtureProjectRecordId(database), input.tip)
+  const lensId = newRecordId()
+  database
+    .query(
+      `INSERT INTO review_lens
+       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,
+        commands_run,could_not_verify)
+       VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]')`,
+    )
+    .run(lensId, input.reviewId, runId)
+  const findingId = newRecordId()
+  database
+    .query(
+      `INSERT INTO review_finding
+       (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,
+        proposed_correction)
+       VALUES (?,?,?,?,'high','file.ts:1',?,'fix')`,
+    )
+    .run(findingId, input.reviewId, lensId, input.ordinal, `evidence ${findingId}`)
+  const number = database
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(runId)!.number
+  return { runId, findingId, number }
+}
+
+test('suggests only findings runs that share the review or the reviewed tip', async () => {
+  const shared = seedReview()
+  const current = seedFinding({ job: 'review-lens', reviewId: shared, tip: 'tip-a', ordinal: 1 })
+  const sameReview = seedFinding({ job: 'review-lens', reviewId: shared, tip: null, ordinal: 2 })
+  const sameTip = seedFinding({
+    job: 'review-lens',
+    reviewId: seedReview(),
+    tip: 'tip-a',
+    ordinal: 3,
+  })
+  const unrelated = seedFinding({
+    job: 'review-lens',
+    reviewId: seedReview(),
+    tip: 'tip-b',
+    ordinal: 4,
+  })
+  const notFindings = seedFinding({ job: 'implement', reviewId: shared, tip: 'tip-a', ordinal: 5 })
+  for (const other of [sameReview, sameTip, unrelated, notFindings]) {
+    const ids = [current.findingId, other.findingId].sort()
+    const state = {
+      findings: ids.map((id) => ({
+        location: 'file.ts:1',
+        severity: 'high',
+        evidence: `evidence ${id}`,
+        proposed_correction: 'fix',
+      })),
+    }
+    db()
+      .query(
+        `INSERT INTO typed_question_answer
+         (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
+          model,input_tokens,latency_ms,error,created_at)
+         VALUES (?,?,?,'finding-pair',?,?,'{"noul":0.95}','jev',1,1,NULL,?)`,
+      )
+      .run(
+        newRecordId(),
+        FINDING_DUPLICATE_QUESTION.id,
+        FINDING_DUPLICATE_QUESTION.version,
+        ids.join(':'),
+        stateIdentity(state),
+        new Date().toISOString(),
+      )
+  }
+  const { lines } = await findingDuplicateSuggestions(db(), current.runId)
+  const flags = lines.map((line) => line.match(/--duplicate (\S+)/)![1]).sort()
+  expect(flags).toEqual([`1=${sameReview.number}#2`, `1=${sameTip.number}#3`].sort())
 })
