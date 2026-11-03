@@ -10,7 +10,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
-import { projectByName } from './projects.ts'
+import { projectByName, upsertProject } from './projects.ts'
 
 async function runProject(
   args: string[],
@@ -95,6 +95,26 @@ test('a bound store refuses before adding a local row and names record use', asy
     ),
   )
   expect(projectByName('bound-refusal')).toBeNull()
+})
+
+test('removing from a bound store deletes only the local project', async () => {
+  const hosted: string[] = []
+  rememberHostedRecord()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    retireProject: async (id) => {
+      hosted.push(id)
+      return { name: id }
+    },
+  })
+  upsertProject({ recordId: newRecordId(), name: 'machine-only-remove', path: '/w/remove' })
+
+  expect(await runProject(['project', 'remove', 'machine-only-remove'])).toBe(
+    'removed machine-only-remove from this machine; the shared project is unchanged',
+  )
+  expect(projectByName('machine-only-remove')).toBeNull()
+  expect(hosted).toEqual([])
 })
 
 test('project push refuses rather than reporting zero projects pushed', async () => {

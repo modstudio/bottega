@@ -457,15 +457,6 @@ export function removeProject(name: string): boolean {
   return db().query('DELETE FROM project WHERE record_id = ?').run(project.recordId).changes > 0
 }
 
-export async function removeWrittenProject(name: string): Promise<boolean> {
-  const project = projectByName(name)
-  if (!project) return false
-  const refusal = projectRemovalRefusal(name, projectReferenceCounts(db(), project.recordId))
-  if (refusal) throw new Error(refusal.join('\n'))
-  await retireProjectInHostedRecord(project, project.settings)
-  return removeProject(name)
-}
-
 export function retireProject(name: string): 'retired' | 'already-retired' {
   writableDb()
   const project = projectRowByName(name)

@@ -39,7 +39,7 @@ import {
   projects,
   pushProjects,
   registerBranchCheck,
-  removeWrittenProject,
+  removeProject,
   retiredProjectByName,
   retireWrittenProject,
   sniffStack,
@@ -797,7 +797,9 @@ export async function projectCommand(
     const name = argv[2]
     if (!name) throw new Error(`${PLATFORM_SLUG} project remove <name>`)
     presentation.log(
-      (await removeWrittenProject(name)) ? `removed ${name}` : `no project "${name}"`,
+      removeProject(name)
+        ? `removed ${name} from this machine; the shared project is unchanged`
+        : `no project "${name}"`,
     )
     return
   }
