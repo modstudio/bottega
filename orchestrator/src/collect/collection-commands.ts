@@ -28,14 +28,25 @@ export function peekCommand(
   presentation.log(options.json ? JSON.stringify(summary) : formatPeek(summary))
 }
 
+/** Runs after the result is printed, so a slow or unreachable Jev never delays it. */
+async function presentDuplicateSuggestions(
+  database: Database,
+  runRecordId: string,
+  presentation: Presentation,
+): Promise<void> {
+  const suggestions = await findingDuplicateSuggestions(database, runRecordId)
+  for (const line of suggestions.lines) presentation.log(line)
+  if (suggestions.skipped) {
+    presentation.log(`${suggestions.skipped} duplicate-finding pairs skipped at the invocation cap`)
+  }
+}
+
 export async function resultCommand(
   database: Database,
   argv: string[],
   scoreSuffix: (jobName: string) => string,
   presentation: Presentation,
 ): Promise<void> {
-  const resolved = resolveFailover(database, resolveRunIdentifier(database, argv[1] ?? ''))
-  const suggestions = await findingDuplicateSuggestions(database, resolved.finalId)
   collectResult(
     database,
     argv,
@@ -45,9 +56,9 @@ export async function resultCommand(
       !isSyntheticLifecycleJob(job) &&
       resolveRecordedRunJob({ job, branch, minted_branch: mintedBranch }).writesRepo,
     focusedTestObservations,
-    suggestions,
   )
-  const chain = resolved
+  const chain = resolveFailover(database, resolveRunIdentifier(database, argv[1] ?? ''))
+  await presentDuplicateSuggestions(database, chain.finalId, presentation)
   const row = database
     .query(
       'SELECT job, status, latency_ms, probe, output_path, branch, minted_branch FROM run WHERE record_id=?',

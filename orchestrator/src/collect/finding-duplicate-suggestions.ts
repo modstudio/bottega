@@ -121,6 +121,19 @@ export function duplicateSuggestionLine(pair: FindingDuplicatePair, noul: number
   )
 }
 
+/** One line per pair at or above the threshold; a pair without a probability is left out. */
+export function suggestionLines(
+  pairs: readonly FindingDuplicatePair[],
+  scored: readonly (number | null | undefined)[],
+): string[] {
+  return pairs.flatMap((pair, index) => {
+    const noul = scored[index]
+    return typeof noul === 'number' && noul >= FINDING_DUPLICATE_QUESTION.threshold
+      ? [duplicateSuggestionLine(pair, noul)]
+      : []
+  })
+}
+
 /** Pairs whose exact subject and state have no recorded answer yet. */
 export function unansweredFindingDuplicatePairs(
   pairs: readonly FindingDuplicatePair[],
@@ -130,10 +143,10 @@ export function unansweredFindingDuplicatePairs(
 
 type SuggestionResult = { lines: string[]; skipped: number }
 
-async function askUnrecorded(pairs: FindingDuplicatePair[]): Promise<number[] | null> {
-  const values = new Array<number>(pairs.length)
+/** Each pair's probability, or null for a pair whose ask gave no noul answer. */
+async function askUnrecorded(pairs: FindingDuplicatePair[]): Promise<(number | null)[]> {
+  const values = new Array<number | null>(pairs.length).fill(null)
   let next = 0
-  let failed = false
   await Promise.all(
     Array.from({ length: Math.min(FINDING_DUPLICATE_ASK_CONCURRENCY, pairs.length) }, async () => {
       for (;;) {
@@ -146,12 +159,11 @@ async function askUnrecorded(pairs: FindingDuplicatePair[]): Promise<number[] | 
           subjectRef: pair.subjectRef,
           state: pair.state,
         })
-        if (!answer || !('noul' in answer)) failed = true
-        else values[index] = answer.noul
+        if (answer && 'noul' in answer) values[index] = answer.noul
       }
     }),
   )
-  return failed ? null : values
+  return values
 }
 
 function findingRows(database: Database, runRecordId: string): DuplicateFindingRow[] {
@@ -194,7 +206,7 @@ export function recordedAnswers(database: Database): Map<string, string | null> 
   return new Map(rows.map((row) => [`${row.subject_ref}\0${row.state_sha}`, row.answer_json]))
 }
 
-/** Fail-open result enrichment. Any unavailable answer suppresses all extra presentation. */
+/** Fail-open result enrichment: a pair without a probability is left out, and the rest still print. */
 export async function findingDuplicateSuggestions(
   database: Database,
   runRecordId: string,
@@ -208,7 +220,6 @@ export async function findingDuplicateSuggestions(
     const pairs = selected.slice(0, FINDING_DUPLICATE_PAIR_CAP)
     const unrecorded = unansweredFindingDuplicatePairs(pairs)
     const asked = await askUnrecorded(unrecorded)
-    if (asked === null) return { lines: [], skipped: 0 }
     const askedBySubject = new Map(
       unrecorded.map((pair, index) => [`${pair.subjectRef}\0${pair.stateSha}`, asked[index]!]),
     )
@@ -218,15 +229,8 @@ export async function findingDuplicateSuggestions(
         ? askedBySubject.get(`${pair.subjectRef}\0${pair.stateSha}`)
         : recorded
     })
-    if (scored.some((value) => value === null || value === undefined)) {
-      return { lines: [], skipped: 0 }
-    }
     return {
-      lines: pairs.flatMap((pair, index) =>
-        scored[index]! >= FINDING_DUPLICATE_QUESTION.threshold
-          ? [duplicateSuggestionLine(pair, scored[index]!)]
-          : [],
-      ),
+      lines: suggestionLines(pairs, scored),
       skipped: Math.max(0, selected.length - pairs.length),
     }
   } catch {

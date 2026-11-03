@@ -640,16 +640,6 @@ function presentCollectedOutput(
   )
 }
 
-function presentDuplicateSuggestions(
-  suggestions: { lines: string[]; skipped: number },
-  presentation: CollectResultPresentation,
-): void {
-  for (const line of suggestions.lines) presentation.log(line)
-  if (suggestions.skipped) {
-    presentation.log(`${suggestions.skipped} duplicate-finding pairs skipped at the invocation cap`)
-  }
-}
-
 export function collectResult(
   database: Database,
   argv: string[],
@@ -658,7 +648,6 @@ export function collectResult(
   writingJob: (job: string, branch: string | null, mintedBranch: string | null) => boolean = () =>
     false,
   declaredProbes: (runRecordId: string) => readonly FocusedTestExecutionObservation[] = () => [],
-  duplicateSuggestions: { lines: string[]; skipped: number } = { lines: [], skipped: 0 },
 ): void {
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
@@ -704,7 +693,6 @@ export function collectResult(
     }
   }
   presentCollectedOutput(row, output, outcome.ok, presentation)
-  presentDuplicateSuggestions(duplicateSuggestions, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

@@ -8,6 +8,7 @@ import {
   duplicateSuggestionLine,
   recordedAnswers,
   selectFindingDuplicatePairs,
+  suggestionLines,
   unansweredFindingDuplicatePairs,
 } from './finding-duplicate-suggestions.ts'
 
@@ -115,4 +116,20 @@ test('reuses a recorded answer but asks again after a recorded error', () => {
   const recorded = recordedAnswers(db())
   expect(recorded.get('answered\0state')).toBe(JSON.stringify({ noul: 0.9 }))
   expect(recorded.has('errored\0state')).toBeFalse()
+})
+
+test('drops only the pairs without a probability and keeps the rest', () => {
+  const pairs = selectFindingDuplicatePairs(
+    'current-run',
+    [
+      finding({ findingRecordId: '000-current', ordinal: 1, runNumber: 10 }),
+      finding({ findingRecordId: '100-a', runRecordId: 'run-a', ordinal: 2, runNumber: 41 }),
+      finding({ findingRecordId: '200-b', runRecordId: 'run-b', ordinal: 3, runNumber: 42 }),
+      finding({ findingRecordId: '300-c', runRecordId: 'run-c', ordinal: 4, runNumber: 43 }),
+    ],
+    new Map(),
+  )
+  const lines = suggestionLines(pairs, [null, 0.95, 0.5])
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toContain('42#3')
 })
