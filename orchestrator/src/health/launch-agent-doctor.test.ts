@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { decideLaunchAgentDoctor, launchAgentDoctorReport } from './launch-agent-doctor.ts'
+import {
+  decideLaunchAgentDoctor,
+  launchAgentDoctorReport,
+  scheduleLine,
+  schedulesFailed,
+} from './launch-agent-doctor.ts'
 
 const owners = [
   { label: 'com.user.skipped', command: 'ops/install.sh' },
@@ -144,7 +149,25 @@ describe('launch agent doctor decision', () => {
           remedy: null,
         },
       ])
+      expect(schedulesFailed(decision)).toBe(true)
+      expect(decision.schedules.map(scheduleLine)).toEqual([
+        `  com.user.orch-sweep NOT LOADED — last run 11/3/2026, 9:15:00 AM EST; run ${remedy}`,
+        '  com.user.orch-record-sync NOT LOADED — last run never; skipped — env files are absent',
+      ])
     }
+
+    const unavailable = decideLaunchAgentDoctor({
+      owners: scheduleOwners,
+      installationKind: 'distribution',
+      machineLevel: 'full',
+      skipReasons: {},
+      loadObservation: { kind: 'unavailable', reason: 'launchctl missing' },
+      lastRuns: {},
+    })
+    expect(schedulesFailed(unavailable)).toBe(false)
+    expect(scheduleLine(unavailable.schedules[0]!)).toBe(
+      '  com.user.orch-sweep LOAD UNAVAILABLE — last run never',
+    )
 
     const record = decideLaunchAgentDoctor({
       owners: scheduleOwners,
@@ -155,5 +178,6 @@ describe('launch agent doctor decision', () => {
       lastRuns: {},
     })
     expect(record.schedules.every((schedule) => schedule.remedy === null)).toBe(true)
+    expect(schedulesFailed(record)).toBe(false)
   })
 })

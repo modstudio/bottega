@@ -8,6 +8,11 @@ import { resolveInstallRoot } from '../../../shared/install-root.ts'
 
 export type InstalledPlistOwner = { label: string; command: string; standardOutPath?: string }
 
+/** The StandardOutPath a launchd plist or template names, if any. */
+export function plistStandardOutPath(text: string): string | undefined {
+  return /<key>StandardOutPath<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1]
+}
+
 export const LAUNCHD_TEMPLATE_OWNERS = [
   { concern: 'hub', directory: 'launchd', command: 'hub/bin/install-launchd.sh' },
   { concern: 'ops', directory: 'launchd', command: 'ops/install.sh' },
@@ -31,9 +36,7 @@ export function installedPlistOwners(
     .map(({ path, text }) => {
       const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1]
       if (!label) throw new Error(`launchd template ${path} has no Label`)
-      const standardOutPath = /<key>StandardOutPath<\/key>\s*<string>([^<]+)<\/string>/.exec(
-        text,
-      )?.[1]
+      const standardOutPath = plistStandardOutPath(text)
       const concern = basename(dirname(dirname(path)))
       const owner = LAUNCHD_TEMPLATE_OWNERS.find((candidate) => candidate.concern === concern)
       if (!owner) throw new Error(`launchd template ${path} has unknown concern ${concern}`)

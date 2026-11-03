@@ -162,7 +162,12 @@ async function lastRunByLabel(
 
 export type LaunchAgentDoctorReport = { lines: string[]; failed: boolean }
 
-function scheduleLine(schedule: LaunchAgentDoctorDecision['schedules'][number]): string {
+/** Doctor fails when any worker schedule carries a remedy. */
+export function schedulesFailed(decision: LaunchAgentDoctorDecision): boolean {
+  return decision.schedules.some((schedule) => schedule.remedy !== null)
+}
+
+export function scheduleLine(schedule: LaunchAgentDoctorDecision['schedules'][number]): string {
   const load =
     schedule.loaded === null ? 'LOAD UNAVAILABLE' : schedule.loaded ? 'loaded' : 'NOT LOADED'
   const suffix = schedule.skipReason
@@ -221,6 +226,6 @@ export async function launchAgentDoctorReport(
   }
   return {
     lines,
-    failed: decision.schedules.some((schedule) => schedule.remedy !== null),
+    failed: schedulesFailed(decision),
   }
 }

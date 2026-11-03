@@ -12,6 +12,7 @@ import {
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
 import { resolveStateRoot, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import { plistStandardOutPath } from './launchd-owners.ts'
 
 export const MAINTENANCE_SCHEDULE_LABELS = [
   'com.user.orch-sweep',
@@ -148,7 +149,7 @@ async function applyMaintenanceSchedule(
   if (reason) return { label, status: 'skipped', reason }
   const rendered = renderedSchedule(label)
   const target = join(agents, `${label}.plist`)
-  const logPath = /<key>StandardOutPath<\/key>\s*<string>([^<]+)<\/string>/.exec(rendered)?.[1]
+  const logPath = plistStandardOutPath(rendered)
   if (!logPath) throw new Error(`${label} template has no StandardOutPath`)
   await mkdir(dirname(logPath), { recursive: true })
   let current: string | null = null

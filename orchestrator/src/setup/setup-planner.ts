@@ -63,7 +63,9 @@ export type SetupAction =
 export function setupActionPrerequisiteKinds(
   kind: SetupAction['kind'],
 ): readonly SetupAction['kind'][] {
-  return kind === 'add' || kind === 'set' ? ['migrate-environment'] : []
+  if (kind === 'add' || kind === 'set') return ['migrate-environment']
+  if (kind === 'install-schedules') return ['set-machine-level']
+  return []
 }
 
 export function setupActionChangesMachine(action: SetupAction): boolean {

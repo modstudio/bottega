@@ -161,6 +161,15 @@ export function readSetupMachineLevel(): MachineLevel | null {
   return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
 }
 
+/** The running installation's kind, or null when its identity is unreadable; doctor reports why. */
+function readInstallationKind(): InstallationKind | null {
+  try {
+    return installationIdentity(import.meta.dir, {}).kind
+  } catch {
+    return null
+  }
+}
+
 export async function gatherSetupFacts(
   registrationRunner?: SetupCommandRunner,
 ): Promise<SetupFacts> {
@@ -191,7 +200,7 @@ export async function gatherSetupFacts(
       ]
     }),
   ) as SetupFactsCapture['harnesses']
-  const installationKind = installationIdentity(import.meta.dir, {}).kind
+  const installationKind = readInstallationKind()
   return classifySetupFacts({
     machineLevel: readSetupMachineLevel(),
     installationKind,
