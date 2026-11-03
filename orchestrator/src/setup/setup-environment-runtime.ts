@@ -126,8 +126,13 @@ export async function withMigratedProcessEnvironment<T>(
 }
 
 export const setupEnvironmentService = {
-  setMachineLevel: (level) => setMachineValue('machine.level', level),
-  migrateEnvironment: async (preparedStateFileMigration) =>
+  setMachineLevel: (level: MachineLevel) => setMachineValue('machine.level', level),
+  migrateEnvironment: async (
+    preparedStateFileMigration?: PreparedStateFileMigration | null,
+  ): Promise<{
+    status: 'applied' | 'unchanged' | 'follow-up'
+    message: string | null
+  }> =>
     withMigratedProcessEnvironment(process.env, async (processNamesRenamed) => {
       const notes: string[] = []
       const home = homedir()

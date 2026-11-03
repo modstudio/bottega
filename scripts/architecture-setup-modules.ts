@@ -154,23 +154,6 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       'Keep ordered application independent of project service implementation and CLI grammar.',
   },
   {
-    name: 'setup-facts-boundary',
-    file: 'orchestrator/src/setup/setup-facts.ts',
-    allowed: [
-      'bun',
-      'node:fs',
-      '../../../shared/record-api-url.ts',
-      '../agent/agent-auth.ts',
-      '../agent/cli-version.ts',
-      '../agent/model-host.ts',
-      '../sandbox/sandbox-runtime.ts',
-      './setup-environment-runtime.ts',
-      './setup-mcp.ts',
-    ],
-    typeOnlyAllowed: ['../../../shared/machine-config.ts'],
-    reason: 'Keep setup fact gathering read-only while allowing the machine-level runtime reader.',
-  },
-  {
     name: 'setup-repository-toolchain-boundary',
     file: 'orchestrator/src/setup/repository-toolchain.ts',
     allowed: [
