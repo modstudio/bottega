@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { SQL } from 'bun'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
+import { resolveInstallRoot } from '../../shared/install-root.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
@@ -44,7 +45,7 @@ export function hostedRequestHandler(
   config: HostedRouteConfig,
   dependencies: HostedRouteDependencies = {},
 ) {
-  const dist = fileURLToPath(new URL('../web/dist', import.meta.url))
+  const dist = join(resolveInstallRoot(import.meta.dir, process.env), 'hub/web/dist')
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
     const health = hostedHealthResponse(req)

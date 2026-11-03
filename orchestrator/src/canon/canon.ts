@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { $ } from 'bun'
-import { CONCERNS, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { CONCERNS, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
+import { installationIdentity } from '../../../shared/install-root.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, nowIso, storeWritesRefused, writeTransaction } from '../database/db.ts'
@@ -19,7 +19,13 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { composeCanonRows } from './canon-hydrate.ts'
 import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
 
-const ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
+function canonCheckoutRoot(): string {
+  const installation = installationIdentity(import.meta.dir, process.env)
+  if (installation.kind === 'distribution') {
+    throw new Error(`canon repository validation requires the ${PLATFORM_NAME} source checkout`)
+  }
+  return installation.root
+}
 const PREFIXES = [
   'orchestrator/',
   'ops/',
@@ -645,7 +651,7 @@ export function repoRootForDoc(
     return projectByName(doc.subject)?.path ?? null
   }
   if (doc.scope === 'project') return null
-  return ROOT
+  return canonCheckoutRoot()
 }
 
 export function findingsForPack(pack: Pack): { doc: PackDoc; findings: Finding[] }[] {
@@ -799,7 +805,7 @@ export function storedPackDrift(): PackDiff[] {
   const seen = new Set<string>()
   return rows.flatMap((row) => {
     if (!JOBS[row.job]) return []
-    const cwd = row.project ? projectByName(row.project)?.path : ROOT
+    const cwd = row.project ? projectByName(row.project)?.path : canonCheckoutRoot()
     if (!cwd) return []
     try {
       const diff = diffPack({ job: row.job, cwd })
