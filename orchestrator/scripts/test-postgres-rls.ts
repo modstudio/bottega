@@ -667,6 +667,14 @@ try {
           },
         )
         if (runTaskReference !== 0) throw new EarlyExit(runTaskReference)
+        const taskFlow = await run(
+          ['bun', 'test', '--timeout', '30000', 'src/record/record-sync-task-flow.test.ts'],
+          {
+            BOTTEGA_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
+            BOTTEGA_RECORD_URL: actorUrl,
+          },
+        )
+        if (taskFlow !== 0) throw new EarlyExit(taskFlow)
         const routingEvidence = await run(
           ['bun', 'test', '--timeout', '30000', 'src/record/record-routing-evidence.test.ts'],
           {
