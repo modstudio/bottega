@@ -31,7 +31,7 @@ describe('hosted server config', () => {
     expect(() =>
       hostedServerConfig({
         PORT: '3000',
-        [CONFIG_HOME_ENV]: '/missing-bottega-test-config',
+        [CONFIG_HOME_ENV]: join(tmpdir(), 'missing-platform-test-config'),
         [HARNESS_ENV_FILE_ENV]: '',
       }),
     ).toThrow('BOTTEGA_RECORD_API_URL is required')

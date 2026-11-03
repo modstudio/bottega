@@ -6,6 +6,8 @@ import {
   AUTONOMY_VALUES,
   type AutonomyStage,
 } from '../../../../shared/autonomy.ts'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { resolveRecordApiUrl } from '../../../../shared/record-api-url.ts'
 import { type StoredSettings, summarizeSettings } from '../../../../shared/settings-summary.ts'
 import {
   readStoredShipTo,
@@ -13,8 +15,6 @@ import {
   SHIP_TO_VALUES,
   STORED_SHIP_TO_CONFIG_ALIAS,
 } from '../../../../shared/ship-to.ts'
-import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
-import { resolveRecordApiUrl } from '../../../../shared/record-api-url.ts'
 import {
   createRecordClient,
   type RecordClient,
