@@ -205,6 +205,8 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'run',
       'score',
       'question',
+      'task_flow',
+      'workflow_cursor',
       'review',
       'review_lens',
       'review_finding',

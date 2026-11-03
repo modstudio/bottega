@@ -249,13 +249,8 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Worker note request awaits a hosted home',
   ),
   hosted('orchestrator', 'workflow', 'workflow', 'Local workflow catalogue write source'),
-  hosted('orchestrator', 'task_flow', 'task_flow', 'Local task flow write source'),
-  hosted(
-    'orchestrator',
-    'workflow_cursor',
-    'task_flow_stage',
-    'Local task flow stage write source',
-  ),
+  evidence('task_flow', 'Outbox source for task flows'),
+  evidence('workflow_cursor', 'Outbox source for task flow stages'),
   hosted('orchestrator', 'workflow_event', 'workflow_event', 'Local workflow event write source'),
   planned(
     'orchestrator',

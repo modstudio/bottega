@@ -4,7 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { closeQuestions } from '../run/question-close.ts'
+import { machineId } from '../record/machine-identity.ts'
 import {
   answerWorkflowQuestion,
   authorizeWorkflowQuestionMutation,
@@ -16,9 +16,8 @@ import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import {
   attachInsertedTaskFlowStage,
   closeTaskFlowStage,
-  enqueueTaskFlowCursorState,
+  recordTaskFlowCursorMutation,
 } from './task-flow.ts'
-import { machineId } from '../record/machine-identity.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -28,6 +27,7 @@ import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-curs
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy, storedCursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
+import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
   refuseInvalidServe,
   refuseMissingAbandonReason,
@@ -90,22 +90,6 @@ import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorRow = WorkflowCloseCursor
-
-function closeOpenWorkflowQuestion(
-  cursorId: string,
-  reason: 'advanced-without-ruling' | 'abandoned',
-  at: string,
-  d: Database,
-): void {
-  const questions = d
-    .query<{ record_id: string }, [string]>(
-      `SELECT record_id FROM question
-       WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
-    )
-    .all(cursorId)
-  const ids = questions.map((question) => question.record_id)
-  closeQuestions(d, ids, reason, sessionId(), at)
-}
 
 function findCursor(
   project: string,
@@ -216,7 +200,6 @@ function insertCursor(
     )
   }
   const autonomySnapshot = storedCursorAutonomy(autonomy)
-  const localMachine = machineId()
   const stored = d
     .query<{ record_id: string }, (string | number | null)[]>(
       `INSERT INTO workflow_cursor
@@ -257,8 +240,8 @@ function insertCursor(
       composition.steps.length,
       at,
       at,
-      localMachine,
-      localMachine,
+      machineId(),
+      machineId(),
     )
   const row = d
     .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
@@ -445,19 +428,9 @@ function getWorkflowStepWithCursorImpl(
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', nowIso(), d)
     d.query(
       `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=?,
-       opened_machine_id=COALESCE(opened_machine_id,?),last_advanced_machine_id=?,revision=revision+1
-       WHERE record_id=?`,
-    ).run(
-      decision.ordinal,
-      decision.slug,
-      context.session ?? null,
-      nowIso(),
-      machineId(),
-      machineId(),
-      row.record_id,
-    )
-    enqueueTaskFlowCursorState(row.record_id, d)
+       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+    ).run(decision.ordinal, decision.slug, context.session ?? null, nowIso(), row.record_id)
+    recordTaskFlowCursorMutation(row.record_id, d)
   }
   const served = withWorkflowTextFacts(
     getWorkflowStep(
@@ -749,38 +722,25 @@ function persistWorkflowAdvance(
   if (advance.ordinal === null) {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=?,
-       opened_machine_id=COALESCE(opened_machine_id,?),last_advanced_machine_id=?,revision=revision+1
-       WHERE record_id=?`,
-    ).run(
-      JSON.stringify(closed),
-      context.session ?? null,
-      at,
-      machineId(),
-      machineId(),
-      row.record_id,
-    )
+       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+    ).run(JSON.stringify(closed), context.session ?? null, at, row.record_id)
+    recordTaskFlowCursorMutation(row.record_id, d)
     closeTaskFlowStage(row.record_id, d)
-    enqueueTaskFlowCursorState(row.record_id, d)
     return
   }
   const next = composition.steps[advance.ordinal]!
   d.query(
     `UPDATE workflow_cursor SET ordinal=?,step_slug=?,state='running',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=?,
-     opened_machine_id=COALESCE(opened_machine_id,?),last_advanced_machine_id=?,revision=revision+1
-     WHERE record_id=?`,
+     session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
   ).run(
     advance.ordinal,
     next.slug,
     JSON.stringify(closed),
     context.session ?? null,
     at,
-    machineId(),
-    machineId(),
     row.record_id,
   )
-  enqueueTaskFlowCursorState(row.record_id, d)
+  recordTaskFlowCursorMutation(row.record_id, d)
 }
 
 function nextWorkflowStepImpl(
@@ -880,40 +840,7 @@ function abandonSelectedWorkflowCursor(
   context: WorkflowCursorContext,
   d: Database,
 ): string {
-  const slug = row.workflow_slug
-  const mode = row.mode_slug
-  refuseTerminalCursor(row)
-  const at = nowIso()
-  if (row.state === 'awaiting-ruling') closeOpenWorkflowQuestion(row.record_id, 'abandoned', at, d)
-  const closed = JSON.parse(row.closed) as CursorTrailEntry[]
-  closed.push({
-    n: row.ordinal + 1,
-    slug: row.step_slug,
-    note: `abandoned: ${reason.trim()}`,
-    at,
-  })
-  d.query(
-    `UPDATE workflow_obligation
-        SET abandoned_at=?, abandoned_reason=?
-      WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
-  ).run(at, reason.trim(), row.record_id)
-  deleteWorkflowText(row.record_id, Boolean(row.task_record_id), d)
-  d.query(
-    `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
-     session_id=COALESCE(?,session_id),updated_at=?,
-     opened_machine_id=COALESCE(opened_machine_id,?),last_advanced_machine_id=?,revision=revision+1
-     WHERE record_id=?`,
-  ).run(
-    JSON.stringify(closed),
-    context.session ?? null,
-    at,
-    machineId(),
-    machineId(),
-    row.record_id,
-  )
-  closeTaskFlowStage(row.record_id, d)
-  enqueueTaskFlowCursorState(row.record_id, d)
-  return `${cursorName(slug, mode, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
+  return abandonWorkflowCursor(row, reason, context, d)
 }
 
 /** Abandons a cursor the close service selected before copying its attached text. */
@@ -951,10 +878,9 @@ function awaitWorkflowRulingImpl(
   const at = nowIso()
   d.query(
     `UPDATE workflow_cursor SET state='awaiting-ruling',question=?,
-     session_id=COALESCE(?,session_id),updated_at=?,
-     opened_machine_id=COALESCE(opened_machine_id,?),last_advanced_machine_id=?,revision=revision+1
-     WHERE record_id=?`,
-  ).run(question.trim(), context.session ?? null, at, machineId(), machineId(), row.record_id)
+     session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+  ).run(question.trim(), context.session ?? null, at, row.record_id)
+  recordTaskFlowCursorMutation(row.record_id, d)
   const recordedQuestion = upsertWorkflowQuestion(
     {
       cursorId: row.record_id,
@@ -967,7 +893,6 @@ function awaitWorkflowRulingImpl(
     },
     d,
   )
-  enqueueTaskFlowCursorState(row.record_id, d)
   return {
     summary: {
       id: row.id,

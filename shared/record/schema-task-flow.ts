@@ -1,9 +1,9 @@
 // concern: postgres-schema-task-flow
 /** Knows the hosted task-flow and stage cursor shapes. Must not know local workflow execution. */
 import { index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 import { hubTask } from './schema-hub.ts'
 import { stepCatalogueVersion, workflowVersion } from './schema-workflow-catalogue.ts'
-import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 export const taskFlow = pgTable.withRLS(
   'task_flow',

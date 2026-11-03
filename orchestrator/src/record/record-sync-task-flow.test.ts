@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { SQL } from 'bun'
 import { PGlite } from '@electric-sql/pglite'
+import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/pglite'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncHostedRecord } from './record-sync-service.ts'

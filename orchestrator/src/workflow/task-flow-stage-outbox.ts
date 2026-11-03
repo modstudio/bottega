@@ -43,7 +43,9 @@ export function enqueueTaskFlowStageRecord(database: Database, cursorRecordId: s
     throw new Error(`workflow cursor ${cursorRecordId} does not exist and cannot be enqueued`)
   if (!row.workflow_key || !row.task_record_id || !row.task_flow_record_id) return false
   if (!row.project_record_id || !row.project_name)
-    throw new Error(`workflow cursor ${cursorRecordId} has no project identity and cannot be enqueued`)
+    throw new Error(
+      `workflow cursor ${cursorRecordId} has no project identity and cannot be enqueued`,
+    )
   const at = nowIso()
   const payload = stringifyOutboxPayload('task_flow_stage', {
     id: row.record_id,

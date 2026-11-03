@@ -242,6 +242,12 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
     reason: 'space workflow catalogue version',
   },
   { table: 'subject', kind: 'project', ownerColumns: ['project_id'] },
+  { table: 'task_flow', kind: 'project', ownerColumns: ['project_id'] },
+  {
+    table: 'task_flow_stage',
+    kind: 'parent',
+    parents: [{ table: 'task_flow', column: 'flow_record_id' }],
+  },
   { table: 'test_flake', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'workflow', kind: 'space', reason: 'space workflow catalogue' },
   { table: 'workflow_event', kind: 'space', reason: 'space workflow history' },

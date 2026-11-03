@@ -57,6 +57,14 @@ const APPLIED_MIGRATION_EXCEPTIONS: readonly MigrationException[] = [
     reasonText: `${executeKeyword}s read-only count queries over catalog-discovered run foreign keys and the NO FORCE/FORCE DDL needed for those counts to see rows; writes no rows`,
   },
   {
+    migration: '20261103130002_dev_1978_task_flow_project_move',
+    table: '*',
+    operation: 'EXECUTE',
+    reason: 'dynamic-sql-force-enabled',
+    reasonText:
+      'replaces the record_move_project_space function definition to classify the new task-flow tables; writes no rows',
+  },
+  {
     migration: '20260924180716_dev_906_doc_latest_revision',
     table: 'doc',
     operation: 'UPDATE',

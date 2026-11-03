@@ -32,6 +32,7 @@ import {
 } from './migration-compatibility.ts'
 import { monitorReleaseClaimOrphanCounts } from './monitor-release-claim-uuid-migration-preflight.ts'
 import { reportTaskFlowBackfill } from './task-flow-migration-preflight.ts'
+import { TASK_FLOW_MIGRATION } from './task-flow-record-sync-migration.ts'
 import {
   prepareWorkflowUuidMigration,
   workflowUuidReferenceOrphanCounts,
@@ -975,7 +976,8 @@ function applyMigrationRange(
     }
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))
     const taskFlowMigrationPending =
-      allowed.has('0198_task_flow') && state.pending.some((entry) => entry.tag === '0198_task_flow')
+      allowed.has(TASK_FLOW_MIGRATION) &&
+      state.pending.some((entry) => entry.tag === TASK_FLOW_MIGRATION)
     for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
       if (BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag)) {
         const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)
