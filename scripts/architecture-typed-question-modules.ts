@@ -20,6 +20,18 @@ export const typedQuestionModules = [
   module('orchestrator/src/typed-question/spec-unsettled-question.ts', [
     '../../../shared/typed-question/registry.ts',
   ]),
+  module('orchestrator/src/typed-question/typed-question-metrics.ts', []),
+  module('orchestrator/src/typed-question/typed-question-report.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../run/run-status.ts',
+    './spec-unsettled-question.ts',
+    './typed-question-metrics.ts',
+  ]),
+  module('orchestrator/src/typed-question/typed-question-commands.ts', [
+    '../../../shared/brand.ts',
+    './typed-question-report.ts',
+  ]),
   module('orchestrator/src/typed-question/typed-question-service.ts', [
     'node:crypto',
     '../../../shared/typed-question/client.ts',

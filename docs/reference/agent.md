@@ -20,6 +20,7 @@ agents, jobs, and routing
 - [bottega agent set](#bottega-agent-set)
 - [bottega agent show](#bottega-agent-show)
 - [bottega agent stats](#bottega-agent-stats)
+- [bottega agent typed-question](#bottega-agent-typed-question)
 
 ## bottega agent
 
@@ -44,6 +45,7 @@ agents, jobs, and routing
 - [bottega agent set](./agent.md#bottega-agent-set)
 - [bottega agent show](./agent.md#bottega-agent-show)
 - [bottega agent stats](./agent.md#bottega-agent-stats)
+- [bottega agent typed-question](./agent.md#bottega-agent-typed-question)
 
 ## bottega agent add
 
@@ -259,6 +261,22 @@ show routing scores, latency, cost, and agent duels
 
 - `--job <value>`: show statistics for this job
 - `--lens <value>`: show a findings job in this lens cell
+
+### Related
+
+- [bottega agent](./agent.md#bottega-agent)
+
+## bottega agent typed-question
+
+**Synopsis:** `bottega agent typed-question [--question <id>] [--days <value>] [--json]`
+
+report typed-question outcomes and operating cost
+
+### Options
+
+- `--question <id>`: report one question id
+- `--days <value>`: limit answers to this many days
+- `--json`: write the report as JSON
 
 ### Related
 

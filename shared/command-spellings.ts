@@ -16,6 +16,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'agent set',
   'agent show',
   'agent stats',
+  'agent typed-question',
   'board',
   'board accept',
   'board ack',
