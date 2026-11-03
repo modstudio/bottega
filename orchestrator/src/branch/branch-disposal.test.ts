@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   addProject,
   git,
@@ -10,7 +11,86 @@ import {
 } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { disposeBranch } from './branch-disposal.ts'
+import { composeBranchDisposalRefusal, disposeBranch } from './branch-disposal.ts'
+
+test('open-task refusal identifies the mirrored status and refresh remedy', () => {
+  const refusal = composeBranchDisposalRefusal({
+    reason: 'open-task',
+    project: 'example',
+    branch: 'DEV-2061-work',
+    taskKey: 'DEV-2061',
+    taskStatus: {
+      raw: 'In Progress',
+      category: 'active',
+      lastSeen: '2026-11-02T12:00:00.000Z',
+      verified: true,
+      detail: 'In Progress',
+    },
+  })
+
+  expect(refusal).toContain('In Progress')
+  expect(refusal).toContain('last changed 2026-11-02T12:00:00.000Z')
+  expect(refusal).toContain(`record pull, then retry ${PLATFORM_SLUG} tree branch dispose`)
+  expect(refusal).toContain('--operator')
+})
+
+test('open-task refusal renders an unknown mirror observation time', () => {
+  const refusal = composeBranchDisposalRefusal({
+    reason: 'open-task',
+    project: 'example',
+    branch: 'DEV-2061-work',
+    taskKey: 'DEV-2061',
+    taskStatus: {
+      raw: null,
+      category: 'active',
+      lastSeen: null,
+      verified: true,
+      detail: 'active',
+    },
+  })
+
+  expect(refusal).toContain('the task mirror reads active (last changed unknown)')
+})
+
+test('open-task refusal identifies a branch without a task key', () => {
+  const refusal = composeBranchDisposalRefusal({
+    reason: 'open-task',
+    project: 'example',
+    branch: 'unkeyed-work',
+    taskKey: null,
+    taskStatus: {
+      raw: null,
+      category: null,
+      lastSeen: null,
+      verified: false,
+      detail: 'unkeyed',
+    },
+  })
+
+  expect(refusal).toBe(
+    'refusing branch disposal: open-task; the branch carries no task key; cleared by: repeat with --operator after the operator rules that its unique work may be disposed',
+  )
+})
+
+test('open-task refusal identifies a failed task status read and its diagnostic command', () => {
+  const refusal = composeBranchDisposalRefusal({
+    reason: 'open-task',
+    project: 'example',
+    branch: 'DEV-2061-work',
+    taskKey: 'DEV-2061',
+    taskStatus: {
+      raw: null,
+      category: null,
+      lastSeen: null,
+      verified: false,
+      detail: 'unverified (exit 1)',
+    },
+  })
+
+  expect(refusal).toBe(
+    `refusing branch disposal: open-task; the task status could not be read (unverified (exit 1)); cleared by: run ${PLATFORM_SLUG} task show DEV-2061 --project example to see why the read failed; or repeat with --operator after the operator rules that its unique work may be disposed`,
+  )
+})
 
 test('failed settlement restores the branch and removes every disposal artifact', () => {
   const repository = gitRepository('disposal-rollback')

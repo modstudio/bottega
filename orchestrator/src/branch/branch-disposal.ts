@@ -19,8 +19,8 @@ import {
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { isProbeOnlyMint } from './branch-state.ts'
-import { branchesReport } from './branches.ts'
-import { observeTaskStatus } from './task-status-observation.ts'
+import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
+import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
 
@@ -123,20 +123,36 @@ function git(cwd: string, args: string[], input?: string): string {
   return result.stdout.toString().trim()
 }
 
-function refusalRemedy(
-  reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason'],
-  project: string,
-  branch: string,
-): string {
+export function composeBranchDisposalRefusal(input: {
+  reason: Exclude<ReturnType<typeof decideBranchDisposal>, { eligible: true }>['reason']
+  project: string
+  branch: string
+  taskKey: string | null
+  taskStatus: TaskStatusObservation
+}): string {
+  const { reason, project, branch } = input
+  const prefix = `refusing branch disposal: ${reason}; `
   if (reason === 'not-run-minted')
-    return `use git's own branch lifecycle; ${PLATFORM_SLUG} records disposal only for run-minted branches`
+    return `${prefix}cleared by: use git's own branch lifecycle; ${PLATFORM_SLUG} records disposal only for run-minted branches`
   if (reason === 'live-owner')
-    return `finish or stop the owning run and remove its tree, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}`
+    return `${prefix}cleared by: finish or stop the owning run and remove its tree, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}`
+  if (reason === 'open-task' && input.taskStatus.verified)
+    return (
+      `${prefix}the task mirror reads ${input.taskStatus.detail} (last changed ${input.taskStatus.lastSeen ?? 'unknown'}); ` +
+      `cleared by: ${PLATFORM_SLUG} record pull, then retry ${PLATFORM_SLUG} tree branch dispose ${project}:${branch}; ` +
+      'or close or drop the task; or repeat with --operator after the operator rules that its unique work may be disposed'
+    )
+  if (reason === 'open-task' && input.taskStatus.detail === 'unkeyed')
+    return `${prefix}the branch carries no task key; cleared by: repeat with --operator after the operator rules that its unique work may be disposed`
   if (reason === 'open-task')
-    return `close or drop the task, or repeat with --operator after the operator rules that its unique work may be disposed`
+    return (
+      `${prefix}the task status could not be read (${input.taskStatus.detail}); ` +
+      `cleared by: run ${PLATFORM_SLUG} task show ${input.taskKey ?? '<KEY>'} --project ${project} to see why the read failed; ` +
+      'or repeat with --operator after the operator rules that its unique work may be disposed'
+    )
   if (reason === 'superseded-target-missing')
-    return 'repeat with --note "superseded by <branch or PR>: <why>"'
-  return `${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY>`
+    return `${prefix}cleared by: repeat with --note "superseded by <branch or PR>: <why>"`
+  return `${prefix}cleared by: ${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY>`
 }
 
 function planBranchDisposal(input: {
@@ -166,13 +182,14 @@ function planBranchDisposal(input: {
   const keyGroup = projectReport.keys.find((group) =>
     group.branches.some((row) => row.branch === branch),
   )
+  const taskKey = keyGroup?.key === UNKEYED_BRANCH_GROUP ? null : (keyGroup?.key ?? null)
   const row = keyGroup?.branches.find((candidate) => candidate.branch === branch)
   const mintingRuns = db()
     .query('SELECT probe FROM run WHERE project_record_id=? AND minted_branch=?')
     .all(project.recordId, branch) as { probe: number }[]
   const runMinted = mintingRuns.length > 0
   const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
-  const taskStatus = observeTaskStatus(keyGroup?.key ?? null, projectName)
+  const taskStatus = observeTaskStatus(taskKey, projectName)
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,
@@ -187,7 +204,13 @@ function planBranchDisposal(input: {
   })
   if (!decision.eligible)
     throw new Error(
-      `refusing branch disposal: ${decision.reason}; cleared by: ${refusalRemedy(decision.reason, projectName, branch)}`,
+      composeBranchDisposalRefusal({
+        reason: decision.reason,
+        project: projectName,
+        branch,
+        taskKey,
+        taskStatus,
+      }),
     )
   if (!row) throw new Error(`branch ${branch} disappeared while checking disposal eligibility`)
   const recordId = newRecordId()
@@ -205,7 +228,7 @@ function planBranchDisposal(input: {
     archiveExpiresAt,
     actor,
     project,
-    taskKey: keyGroup?.key ?? null,
+    taskKey,
     reason: input.reason,
     note: input.note.trim(),
     disposedAt,
