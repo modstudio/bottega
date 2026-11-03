@@ -178,6 +178,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'shared/install-root.ts',
       'shared/state-directory.ts',
       'bun:sqlite',
+      'node:fs',
       'node:os',
       'node:path',
       'orchestrator/src/database/db.ts',

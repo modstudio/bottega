@@ -9,6 +9,7 @@ import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.t
 import { canonFindingWarnings, userCanonWriteTargets } from '../doc/doc-write-allowed.ts'
 import { listDocs, signedInDocOwner } from '../doc/docs.ts'
 import { projects } from '../project/projects.ts'
+import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { assertCurrentMachineHomeWriteAuthority } from '../settings/settings-machine-write-authority.ts'
 import { planCanonImport } from './canon-import-policy.ts'
 import { stripUserCanonManagedMarker } from './user-canon-home.ts'
@@ -73,6 +74,13 @@ function assertUserCanonHydrateFlags(flags: UserCanonFlags): void {
   if (flags.has('force')) {
     throw new Error(`unknown flag for ${PLATFORM_SLUG} doc canon hydrate --user: --force`)
   }
+}
+
+function assertUserCanonHydrateOperator(flags: UserCanonFlags, workerProcess: () => boolean): void {
+  if (flags.has('check') || flags.has('dry-run') || !workerProcess()) return
+  throw new Error(
+    `refusing doc canon hydrate --user from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} doc canon hydrate --user`,
+  )
 }
 
 export async function userCanonImportCommand(
@@ -174,9 +182,11 @@ export async function userCanonImportCommand(
 export async function userCanonHydrateCommand(
   flags: UserCanonFlags,
   presentation: UserCanonPresentation,
+  workerProcess = () => isOrchWorkerProcess(process.env, process.pid),
 ): Promise<void> {
   assertUserCanonHydrateFlags(flags)
   const homes = userCanonHomesFromEnvironment(process.env, resolveRunsDirectory(process.env))
+  assertUserCanonHydrateOperator(flags, workerProcess)
   assertUserCanonHydrateWriteAuthority(flags, homes)
   const owner = await signedInDocOwner()
   const overrideStatus = userCanonHomeOverridesStatus(homes)

@@ -3,30 +3,80 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  assertCurrentMachineHomeWriteAuthority,
   assertMachineHomeWriteAuthority,
   decideMachineHomeWriteAuthority,
   machineHomesUnderTemporaryDirectory,
 } from './settings-machine-write-authority.ts'
 
-test('write authority allows the main checkout and temporary homes only', () => {
+const authorityFacts = {
+  runningFromRegisteredMainCheckout: false,
+  runningCopyIsDistribution: false,
+  registeredMainCheckoutExists: true,
+  targetHomesUnderTemporaryDirectory: false,
+}
+
+test('write authority allows the registered main checkout', () => {
   expect(
     decideMachineHomeWriteAuthority({
+      ...authorityFacts,
       runningFromRegisteredMainCheckout: true,
-      targetHomesUnderTemporaryDirectory: false,
     }),
   ).toEqual({ action: 'allow' })
+})
+
+test('write authority allows a distribution when no registered main checkout exists', () => {
   expect(
     decideMachineHomeWriteAuthority({
-      runningFromRegisteredMainCheckout: false,
+      ...authorityFacts,
+      runningCopyIsDistribution: true,
+      registeredMainCheckoutExists: false,
+    }),
+  ).toEqual({ action: 'allow' })
+})
+
+test('write authority ignores a registered main checkout that no longer exists', () => {
+  expect(() =>
+    assertCurrentMachineHomeWriteAuthority(
+      'machine settings apply',
+      ['/operator/.claude'],
+      undefined,
+      {
+        runningCopyIsDistribution: true,
+        registeredMainCheckout: join(
+          tmpdir(),
+          `${PLATFORM_SLUG}-missing-registered-main`,
+          process.pid.toString(),
+        ),
+        runningInstallationRoot: '/opt/distribution',
+        binaryRepositoryRoot: null,
+      },
+    ),
+  ).not.toThrow()
+})
+
+test('write authority refuses a distribution when a registered main checkout exists', () => {
+  expect(
+    decideMachineHomeWriteAuthority({
+      ...authorityFacts,
+      runningCopyIsDistribution: true,
+    }),
+  ).toEqual({ action: 'refuse-not-registered-main' })
+})
+
+test('write authority refuses a secondary checkout', () => {
+  expect(decideMachineHomeWriteAuthority(authorityFacts)).toEqual({
+    action: 'refuse-not-registered-main',
+  })
+})
+
+test('write authority keeps the temporary-directory exemption', () => {
+  expect(
+    decideMachineHomeWriteAuthority({
+      ...authorityFacts,
       targetHomesUnderTemporaryDirectory: true,
     }),
   ).toEqual({ action: 'allow' })
-  expect(
-    decideMachineHomeWriteAuthority({
-      runningFromRegisteredMainCheckout: false,
-      targetHomesUnderTemporaryDirectory: false,
-    }),
-  ).toEqual({ action: 'refuse-not-registered-main' })
 })
 
 test('temporary authority requires every target home to be under the OS temporary directory', () => {
@@ -64,34 +114,58 @@ test('a standalone secondary clone is refused', () => {
       command: 'machine settings apply',
       targetHomes: ['/operator/.claude'],
       runningFromRegisteredMainCheckout: false,
+      runningCopyIsDistribution: false,
       registeredMainCheckout: '/projects/registered-main',
       runningInstallationRoot: '/projects/secondary-clone',
       binaryRepositoryRoot: '/projects/secondary-clone',
     }),
-  ).toThrow('real harness homes may only be written from the registered main checkout')
+  ).toThrow("real harness homes may only be written from this machine's installed copy")
 })
 
-test('a linked invocation without BOTTEGA_MAIN_CHECKOUT names the binary repository root', () => {
+test('a distribution on a development machine names the registered main executable', () => {
   expect(() =>
     assertMachineHomeWriteAuthority({
       command: 'machine settings apply',
       targetHomes: ['/operator/.claude'],
       runningFromRegisteredMainCheckout: false,
-      registeredMainCheckout: null,
-      runningInstallationRoot: '/projects/main/.claude/worktrees/fixture',
-      binaryRepositoryRoot: '/projects/main',
+      runningCopyIsDistribution: true,
+      registeredMainCheckout: '/projects/registered-main',
+      runningInstallationRoot: '/opt/distribution',
+      binaryRepositoryRoot: null,
     }),
-  ).toThrow(`cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``)
-  try {
+  ).toThrow(
+    `cleared by: run \`/projects/registered-main/bin/${PLATFORM_SLUG} machine settings apply\``,
+  )
+})
+
+test('an unregistered linked worktree names registration and rerun from its main checkout', () => {
+  expect(() =>
     assertMachineHomeWriteAuthority({
       command: 'machine settings apply',
       targetHomes: ['/operator/.claude'],
       runningFromRegisteredMainCheckout: false,
+      runningCopyIsDistribution: false,
       registeredMainCheckout: null,
       runningInstallationRoot: '/projects/main/.claude/worktrees/fixture',
       binaryRepositoryRoot: '/projects/main',
-    })
-  } catch (error) {
-    expect(String(error)).not.toContain('MAIN_CHECKOUT')
-  }
+    }),
+  ).toThrow(
+    `cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} project add /projects/main\`, then \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``,
+  )
+})
+
+test('an unregistered main checkout names registration and rerun from itself', () => {
+  expect(() =>
+    assertMachineHomeWriteAuthority({
+      command: 'machine settings apply',
+      targetHomes: ['/operator/.claude'],
+      runningFromRegisteredMainCheckout: false,
+      runningCopyIsDistribution: false,
+      registeredMainCheckout: null,
+      runningInstallationRoot: '/projects/main',
+      binaryRepositoryRoot: null,
+    }),
+  ).toThrow(
+    `cleared by: run \`/projects/main/bin/${PLATFORM_SLUG} project add /projects/main\`, then \`/projects/main/bin/${PLATFORM_SLUG} machine settings apply\``,
+  )
 })

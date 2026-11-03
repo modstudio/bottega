@@ -33,6 +33,8 @@ export type InstallationIdentity =
   | { kind: 'distribution'; root: string; manifest: DistributionManifest }
   | { kind: 'checkout'; root: string; version: string }
 
+export type InstallationKind = InstallationIdentity['kind']
+
 class InstallRootNotFoundError extends Error {}
 
 function isDistributionRoot(directory: string): boolean {

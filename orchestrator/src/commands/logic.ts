@@ -3,7 +3,7 @@
 
 import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { assetPath } from '../../../shared/install-root.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
@@ -536,7 +536,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         Boolean(options.config),
         verb,
         options.project,
-        assetPath('bin', PLATFORM_SLUG),
+        bottegaEntryArgv(PLATFORM_SLUG)[0]!,
         presentation,
       ),
     )

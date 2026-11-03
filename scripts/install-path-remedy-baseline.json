@@ -1,0 +1,16 @@
+{
+  "files": {
+    "orchestrator/src/canon/canon.ts": 1,
+    "orchestrator/src/dashboard-capability.ts": 1,
+    "hub/src/orch.ts": 1,
+    "orchestrator/src/database/machine-update-mover.ts": 1,
+    "orchestrator/src/database/machine-update.ts": 3,
+    "orchestrator/src/pull-request/pr-post-landing.ts": 3,
+    "orchestrator/src/settings/settings-lint.ts": 1,
+    "orchestrator/src/settings/settings-machine-hooks.ts": 4,
+    "orchestrator/src/settings/settings-machine-write-authority.ts": 1,
+    "orchestrator/src/workflow/workflow-built-ins.ts": 1,
+    "orchestrator/src/workflow/workflow-floor-evidence.ts": 1,
+    "retrieval/src/corpus/chunks.ts": 1
+  }
+}

@@ -360,6 +360,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       '../../../shared/brand.ts',
+      '../../../shared/install-root.ts',
       '../../../shared/machine-config.ts',
       '../agent/agent-auth.ts',
       '../agent/endpoint-api-key.ts',

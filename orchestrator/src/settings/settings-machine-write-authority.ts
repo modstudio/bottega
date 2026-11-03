@@ -1,11 +1,12 @@
 // concern: settings-machine-write-authority
 /** Guards writes to real harness homes with the registered installation identity. */
 import type { Database } from 'bun:sqlite'
+import { existsSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { mainCheckoutOf } from '../../../shared/git.ts'
-import { assetPath } from '../../../shared/install-root.ts'
+import { assetPath, installationIdentity } from '../../../shared/install-root.ts'
 import {
   realPathForPotentialPath,
   temporaryStateStoreMigrationAllowed,
@@ -19,9 +20,13 @@ export type MachineHomeWriteAuthorityDecision =
 
 export function decideMachineHomeWriteAuthority(facts: {
   runningFromRegisteredMainCheckout: boolean
+  runningCopyIsDistribution: boolean
+  registeredMainCheckoutExists: boolean
   targetHomesUnderTemporaryDirectory: boolean
 }): MachineHomeWriteAuthorityDecision {
-  return facts.runningFromRegisteredMainCheckout || facts.targetHomesUnderTemporaryDirectory
+  return facts.runningFromRegisteredMainCheckout ||
+    facts.targetHomesUnderTemporaryDirectory ||
+    (facts.runningCopyIsDistribution && !facts.registeredMainCheckoutExists)
     ? { action: 'allow' }
     : { action: 'refuse-not-registered-main' }
 }
@@ -62,21 +67,33 @@ export function assertMachineHomeWriteAuthority(input: {
   command: string
   targetHomes: readonly string[]
   runningFromRegisteredMainCheckout: boolean
-  registeredMainCheckout?: string | null
+  runningCopyIsDistribution: boolean
+  registeredMainCheckout: string | null
   runningInstallationRoot: string
   binaryRepositoryRoot: string | null
 }): void {
   const decision = decideMachineHomeWriteAuthority({
     runningFromRegisteredMainCheckout: input.runningFromRegisteredMainCheckout,
+    runningCopyIsDistribution: input.runningCopyIsDistribution,
+    registeredMainCheckoutExists: input.registeredMainCheckout !== null,
     targetHomesUnderTemporaryDirectory: machineHomesUnderTemporaryDirectory(input.targetHomes),
   })
   if (decision.action === 'allow') return
   const runningRoot = input.runningInstallationRoot
   const remedyRoot = input.registeredMainCheckout ?? input.binaryRepositoryRoot ?? runningRoot
+  const remedyExecutable = join(remedyRoot, 'bin', PLATFORM_SLUG)
+  let remedy: string
+  if (input.registeredMainCheckout) {
+    remedy = `cleared by: run \`${remedyExecutable} ${input.command}\``
+  } else {
+    remedy =
+      `cleared by: run \`${remedyExecutable} project add ${remedyRoot}\`, then ` +
+      `\`${remedyExecutable} ${input.command}\``
+  }
   throw new Error(
-    `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from the registered main checkout\n` +
-      'invariant: A secondary checkout writes harness settings only under the OS temporary directory.\n' +
-      `cleared by: run \`${join(remedyRoot, 'bin', PLATFORM_SLUG)} ${input.command}\``,
+    `refusing ${input.command} from installation ${runningRoot}: real harness homes may only be written from this machine's installed copy\n` +
+      "invariant: A copy other than this machine's installed copy writes harness settings only under the OS temporary directory.\n" +
+      remedy,
   )
 }
 
@@ -86,22 +103,28 @@ export function assertCurrentMachineHomeWriteAuthority(
   database: Database = db(),
   overrides: {
     runningFromRegisteredMainCheckout?: boolean
+    runningCopyIsDistribution?: boolean
     registeredMainCheckout?: string | null
     runningInstallationRoot?: string
     binaryRepositoryRoot?: string | null
   } = {},
 ): void {
   const runningRoot = overrides.runningInstallationRoot ?? assetPath()
-  const mainCheckout =
+  const registeredCheckout =
     overrides.registeredMainCheckout !== undefined
       ? overrides.registeredMainCheckout
       : registeredMainCheckout(database)
+  const mainCheckout =
+    registeredCheckout && existsSync(registeredCheckout) ? registeredCheckout : null
   assertMachineHomeWriteAuthority({
     command,
     targetHomes,
     runningFromRegisteredMainCheckout:
       overrides.runningFromRegisteredMainCheckout ??
       isRunningFromRegisteredMainCheckout(runningRoot, mainCheckout),
+    runningCopyIsDistribution:
+      overrides.runningCopyIsDistribution ??
+      installationIdentity(import.meta.dir, {}).kind === 'distribution',
     registeredMainCheckout: mainCheckout,
     runningInstallationRoot: runningRoot,
     binaryRepositoryRoot:

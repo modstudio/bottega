@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
@@ -12,6 +13,19 @@ import { addAgent, refreshAgents, removeAgent } from '../agent/agent-registry.ts
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { dispatchCanonCommand } from './canon-commands.ts'
+import { userCanonHydrateCommand } from './user-canon-commands.ts'
+
+test('user canon hydrate refuses writes from a worker process', async () => {
+  await expect(
+    userCanonHydrateCommand(
+      { has: () => false },
+      { log: () => {}, exitCode: () => {} },
+      () => true,
+    ),
+  ).rejects.toThrow(
+    `refusing doc canon hydrate --user from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} doc canon hydrate --user`,
+  )
+})
 
 test('user canon hydrate refuses real harness homes outside the registered main checkout', async () => {
   const priorHome = process.env.HOME
