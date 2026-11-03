@@ -2,7 +2,6 @@
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
-import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
 import {
@@ -32,7 +31,7 @@ type SetupAuthState = 'signed-in' | 'signed-out' | 'unknown'
 export type CommandCapture = CliVersionCapture
 
 export type SetupFactsCapture = {
-  machineLevel: MachineLevel | null
+  machineLevel: 'record' | 'full' | null
   recordApiUrl: string | null
   platform: NodeJS.Platform
   arch: NodeJS.Architecture
@@ -54,7 +53,7 @@ export type SetupFactsCapture = {
 }
 
 export type SetupFacts = {
-  machineLevel: MachineLevel | null
+  machineLevel: 'record' | 'full' | null
   recordApiUrl: string | null
   os: { platform: NodeJS.Platform; arch: NodeJS.Architecture; wsl: boolean }
   bun: { path: string; version: string }
@@ -179,7 +178,7 @@ export async function gatherSetupFacts(
     }),
   ) as SetupFactsCapture['harnesses']
   return classifySetupFacts({
-    machineLevel: (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null,
+    machineLevel: null,
     recordApiUrl: resolveRecordApiUrl() ?? null,
     platform: process.platform,
     arch: process.arch,

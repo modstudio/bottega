@@ -16,7 +16,7 @@ type SetupActionBase = {
 }
 export type SetupAction =
   | {
-      kind: 'set-machine-level' | 'machine-level-unchanged'
+      kind: 'set-machine-level'
       from: MachineLevel | null
       to: MachineLevel
     }
@@ -78,7 +78,6 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'unchanged':
     case 'mcp-unchanged':
     case 'mcp-skipped':
-    case 'machine-level-unchanged':
       return false
   }
 }
@@ -95,8 +94,6 @@ export function setupActionLine(action: SetupAction): string {
       return 'Migrate operator environment names'
     case 'set-machine-level':
       return `Set machine install level to ${action.to}`
-    case 'machine-level-unchanged':
-      return `Machine install level ${action.to}`
     case 'add':
       return `Add project ${action.name} (${action.path})`
     case 'set':
@@ -170,24 +167,21 @@ function diffSettings(current: ProjectSettings | null, proposed: ProjectSettings
   return diff
 }
 
-function plannedMachineLevel(plan: SetupPlan, answers: SetupAnswers): SetupAction {
+function selectedMachineLevel(plan: SetupPlan, answers: SetupAnswers): MachineLevel {
   const selected = (answers['machine:level'] ??
-    plan.facts.machine.machineLevel ??
+    plan.facts?.machine?.machineLevel ??
     'full') as MachineLevel
   if (!MACHINE_LEVELS.includes(selected)) throw new Error('missing answer for "machine:level"')
-  return {
-    kind:
-      plan.facts.machine.machineLevel === selected
-        ? 'machine-level-unchanged'
-        : 'set-machine-level',
-    from: plan.facts.machine.machineLevel,
-    to: selected,
-  }
+  return selected
 }
 
 export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
-  const machineLevel = plannedMachineLevel(plan, answers)
-  const selectedLevel = machineLevel.to
+  const selectedLevel = selectedMachineLevel(plan, answers)
+  const currentLevel = plan.facts?.machine?.machineLevel
+  const machineLevel: SetupAction | null =
+    currentLevel === undefined || currentLevel === selectedLevel
+      ? null
+      : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
   const registrations: SetupAction[] = plan.registrations.map((proposal) => {
     if (selectedLevel === 'record' && proposal.workerOnly) {
       return {
@@ -268,7 +262,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
   }))
   return [
     { kind: 'migrate-environment' },
-    machineLevel,
+    ...(machineLevel ? [machineLevel] : []),
     ...registrations,
     ...migrations,
     ...legacySymlinks,

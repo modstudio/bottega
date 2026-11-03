@@ -20,6 +20,7 @@ import { proposeSetup, type SetupAgent, type SetupPlan } from './setup-engine.ts
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import {
   prepareSetupStateFileMigration,
+  readSetupMachineLevel,
   reverseSetupStateFileMigration,
   setupEnvironmentService,
 } from './setup-environment-runtime.ts'
@@ -95,6 +96,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     gatherSetupFacts(),
     Promise.resolve(readSetupState()),
   ])
+  machine.machineLevel = readSetupMachineLevel()
   const repositories = await gatherRepositoryFactsReport(folders)
   const plan = proposeSetup(
     resolveWorktreeLifecycle,
@@ -240,7 +242,10 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
       const plan = await adapters.plan(folders)
       return {
         ...plan,
-        diff: planSetupActions(plan, { ...recommendedAnswers(plan), ...fixedAnswers }),
+        diff: planSetupActions(plan, {
+          ...recommendedAnswers(plan),
+          ...fixedAnswers,
+        } as SetupAnswers),
       }
     },
     async prepare(folders) {
@@ -258,18 +263,24 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
     apply(folders, answerValue, fixedAnswers = {}) {
       return apply(folders, (plan) => {
         try {
+          const fixed = Object.keys(fixedAnswers).length > 0
           const supplied =
             answerValue && typeof answerValue === 'object' && !Array.isArray(answerValue)
-              ? answerValue
-              : {}
-          return validateSetupAnswers(plan.questions, { ...supplied, ...fixedAnswers })
+              ? { ...answerValue, ...fixedAnswers }
+              : fixed
+                ? fixedAnswers
+                : answerValue
+          return validateSetupAnswers(plan.questions, supplied)
         } catch (error) {
           throw new SetupAnswersRefusedError(error instanceof Error ? error.message : String(error))
         }
       })
     },
     applyRecommended(folders, fixedAnswers = {}) {
-      return apply(folders, (plan) => ({ ...recommendedAnswers(plan), ...fixedAnswers }))
+      return apply(
+        folders,
+        (plan) => ({ ...recommendedAnswers(plan), ...fixedAnswers }) as SetupAnswers,
+      )
     },
   }
 }

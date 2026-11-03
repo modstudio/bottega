@@ -29,10 +29,7 @@ const plannedAction = (
 ) => {
   const actions = planSetupActions(plan, answers)
   return actions.find(
-    (action) =>
-      action.kind !== 'migrate-environment' &&
-      action.kind !== 'set-machine-level' &&
-      action.kind !== 'machine-level-unchanged',
+    (action) => action.kind !== 'migrate-environment' && action.kind !== 'set-machine-level',
   )
 }
 

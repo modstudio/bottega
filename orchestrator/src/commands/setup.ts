@@ -26,7 +26,7 @@ function parseMachineLevel(value: string): MachineLevel {
   throw new InvalidArgumentError(`accepted values are ${MACHINE_LEVELS.join(', ')}`)
 }
 
-function levelAnswer(options: SetupOptions): Partial<Record<string, string>> {
+function levelAnswer(options: SetupOptions): Record<string, string> {
   return options.level ? { 'machine:level': options.level } : {}
 }
 

@@ -40,7 +40,7 @@ import {
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { runTaskReferenceDoctorLine } from '../run/run-task-linking.ts'
-import type { RuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
+import { type RuntimeAvailability, sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -404,6 +404,63 @@ async function reportAgentsForInstallLevel(
   await reportAgentsAndDelegation(presentation, agentStatus)
 }
 
+async function workerHealthForInstallLevel(machineLevel: 'record' | 'full') {
+  if (machineLevel === 'record') {
+    return { ok: true, detail: 'not needed at install level record', contextTokens: undefined }
+  }
+  return ensureLocalHealth()
+}
+
+function workerRowsForInstallLevel(machineLevel: 'record' | 'full'): AgentRow[] {
+  return machineLevel === 'full' ? agentRows() : []
+}
+
+function routedJobsForInstallLevel(
+  machineLevel: 'record' | 'full',
+  jobs: () => string[],
+): string[] {
+  return machineLevel === 'full' ? jobs() : []
+}
+
+function hasCoolingWorker(
+  machineLevel: 'record' | 'full',
+  candidates: DoctorPresentation['candidates'],
+): boolean {
+  return machineLevel === 'full' && candidates('summarize').some((candidate) => candidate.cooling)
+}
+
+function reportWorkerRuntimeForInstallLevel(
+  machineLevel: 'record' | 'full',
+  log: DoctorPresentation['log'],
+  isReadonlySandboxCandidate: (input: {
+    agent: string
+    readsRepo: boolean
+    writesRepo: boolean
+  }) => boolean,
+  acpRuntimeGaps: DoctorPresentation['acpRuntimeGaps'],
+  configuredUrl: string,
+) {
+  if (machineLevel === 'record') {
+    log('worker runtime not needed at install level record')
+    return localRegistrationDiagnosis('', undefined)
+  }
+  const srtAgents = Object.values(AGENTS)
+    .filter((agent) =>
+      isReadonlySandboxCandidate({
+        agent: agent.name,
+        readsRepo: agent.caps.readsRepo,
+        writesRepo: false,
+      }),
+    )
+    .map((agent) => agent.name)
+  log(sandboxRuntimeDoctorLine(sandboxRuntimeAvailability()))
+  log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
+  log(`acp            ${doctorAcpStatus(acpRuntimeGaps())}`)
+  const local = localRegistrationDiagnosis(configuredUrl, modelHostModel())
+  for (const line of local.lines) log(line)
+  return local
+}
+
 export async function doctorCommand(
   flags: DoctorFlags,
   presentation: DoctorPresentation,
@@ -411,14 +468,14 @@ export async function doctorCommand(
 ): Promise<void> {
   const { has } = flags
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
-  const machineLevel = readMachineValue('machine.level')
+  const machineLevel = readMachineValue('machine.level') as 'record' | 'full'
   // Probed BEFORE the agent list is printed, not after it. Doctor used to
   // report `qwen36-goose ready` and `reachable NO` four lines apart and mean
   // both: the roster asked whether it was configured and the probe asked
   // whether it answered. Now the roster is told the answer first, so the
   // status column and the routing table below it cannot contradict
   // each other.
-  const r = await ensureLocalHealth()
+  const r = await workerHealthForInstallLevel(machineLevel)
   reportRetrievalCheck(await retrievalCheck(), presentation)
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')
   const { listDocs } = await import('../doc/docs.ts')
@@ -435,7 +492,6 @@ export async function doctorCommand(
   const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('../canon/evals.ts')
   const latestEvals = latestCanonEvals()
   const { isReadonlySandboxCandidate } = await import('../sandbox/sandbox.ts')
-  const { sandboxRuntimeAvailability } = await import('../sandbox/sandbox-runtime.ts')
   log(
     `canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes (${packHeadroom} bytes headroom; ceiling ${DEFAULT_PACK_BYTES})`,
   )
@@ -548,28 +604,20 @@ export async function doctorCommand(
   }
   await reportAgentsForInstallLevel(machineLevel, { log, candidates }, agentStatus)
   const configuredUrl = modelHostUrl()
-  for (const row of machineLevel === 'full' ? agentRows() : []) {
+  for (const row of workerRowsForInstallLevel(machineLevel)) {
     if (row.operated_by !== 'self' || !row.enabled) continue
     const probe = localProbeDiagnosis(row)
     log(probe.line)
     if (probe.failed) exitCode(1)
     for (const line of rowReachabilityDiagnosis(row, configuredUrl)) log(line)
   }
-  const srtAgents = Object.values(AGENTS)
-    .filter((agent) =>
-      isReadonlySandboxCandidate({
-        agent: agent.name,
-        readsRepo: agent.caps.readsRepo,
-        writesRepo: false,
-      }),
-    )
-    .map((agent) => agent.name)
-  log(sandboxRuntimeDoctorLine(sandboxRuntimeAvailability()))
-  log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
-  const acpGap = acpRuntimeGaps()
-  log(`acp            ${doctorAcpStatus(acpGap)}`)
-  const local = localRegistrationDiagnosis(configuredUrl, modelHostModel())
-  for (const line of local.lines) log(line)
+  const local = reportWorkerRuntimeForInstallLevel(
+    machineLevel,
+    log,
+    isReadonlySandboxCandidate,
+    acpRuntimeGaps,
+    configuredUrl,
+  )
   log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
   if (!r.ok && configuredUrl) {
     // Reporting commands do not have side effects, so doctor only sends a
@@ -606,7 +654,7 @@ export async function doctorCommand(
   // out belongs. A cooldown clears on the agent's next success, and routing
   // will not send it one while anything else can take the work — so without
   // this the only options are waiting out the hour or reading route.ts.
-  if (candidates('summarize').some((c) => c.cooling)) {
+  if (hasCoolingWorker(machineLevel, candidates)) {
     log(
       '\nan agent is cooling. If you have fixed the cause — topped up a quota,\n' +
         'logged back in — prove it and the cooldown clears immediately:\n' +
@@ -761,7 +809,7 @@ export async function doctorCommand(
       )
     }
   }
-  for (const j of machineLevel === 'full' ? jobs() : []) {
+  for (const j of routedJobsForInstallLevel(machineLevel, jobs)) {
     try {
       const p = pick(j)
       log(`  ${j.padEnd(15)} -> ${p.agent}`)

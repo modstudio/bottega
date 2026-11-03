@@ -544,7 +544,8 @@ export async function detachRoutedRun(
 }
 
 function assertInstallLevelAllowsDispatch(jobName: string): void {
-  const decision = installLevelDispatchDecision(readMachineValue('machine.level'), jobName)
+  const level = readMachineValue('machine.level') as 'record' | 'full'
+  const decision = installLevelDispatchDecision(level, jobName)
   if (decision.kind === 'refuse') throw new Error(decision.message)
 }
 
