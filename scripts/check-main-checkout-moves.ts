@@ -32,6 +32,24 @@ const ADMITTED_NON_MAIN_MOVES: readonly AdmittedMove[] = [
     reason: `moves a registered main checkout that is not the running ${PLATFORM_NAME} installation, which has no store to migrate`,
   },
   {
+    file: 'orchestrator/src/release/release-service.ts',
+    functionName: 'fastForwardReleaseBranch',
+    command: 'merge --ff-only',
+    reason: `runs under the release lock only when the rung differs from settings.trunk, and the restore wrapper returns the checkout to trunk; the running ${PLATFORM_NAME} installation has no different-branch rung`,
+  },
+  {
+    file: 'orchestrator/src/release/release-service.ts',
+    functionName: 'withReleaseCheckout',
+    command: 'switch',
+    reason: `switches to a different-branch rung under the release lock only when the rung differs from settings.trunk; the restore wrapper returns the checkout to trunk, and the running ${PLATFORM_NAME} installation has no different-branch rung`,
+  },
+  {
+    file: 'orchestrator/src/release/release-service.ts',
+    functionName: 'withReleaseCheckout',
+    command: 'switch',
+    reason: `restores the checkout to settings.trunk under the release lock after a different-branch rung; the running ${PLATFORM_NAME} installation has no different-branch rung`,
+  },
+  {
     file: 'orchestrator/src/run/run-resume-claim.ts',
     functionName: 'restoreResumeIfNeeded',
     command: 'reset --hard',
@@ -110,6 +128,7 @@ function branchMove(argv: readonly (string | null)[]): string | null {
   }
   const command = argv.slice(offset)
   if (command[0] === 'pull') return 'pull'
+  if (command[0] === 'switch') return 'switch'
   if (command[0] === 'merge' && command.includes('--ff-only')) return 'merge --ff-only'
   if (command[0] === 'reset' && command.includes('--hard')) return 'reset --hard'
   return null
@@ -144,15 +163,20 @@ export function branchMoveCalls(files: Readonly<Record<string, string>>): Branch
 }
 
 export function mainCheckoutMoveViolations(findings: readonly BranchMoveCall[]): string[] {
+  const admittedIndexes = new Set<number>()
   return findings.flatMap((finding) => {
     if (finding.file === MOVER_MODULE) return []
-    const admitted = ADMITTED_NON_MAIN_MOVES.some(
-      (entry) =>
+    const admittedIndex = ADMITTED_NON_MAIN_MOVES.findIndex(
+      (entry, index) =>
+        !admittedIndexes.has(index) &&
         entry.file === finding.file &&
         entry.functionName === finding.functionName &&
         entry.command === finding.command,
     )
-    if (admitted) return []
+    if (admittedIndex >= 0) {
+      admittedIndexes.add(admittedIndex)
+      return []
+    }
     const remedy = finding.file.startsWith('orchestrator/src/')
       ? `route it through moveRegisteredMainCheckout in ${MOVER_ADAPTER}, which runs machine update`
       : `move the call into the orchestrator mover ${MOVER_ADAPTER}, or remove it`

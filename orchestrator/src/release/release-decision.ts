@@ -62,8 +62,10 @@ export function releaseReasonDecision(
 }
 
 export type CheckoutFacts = {
+  path: string
   branch: string
   requiredBranch: string
+  trunk: string
   dirty: boolean
   head: string
   remoteHead: string
@@ -72,6 +74,67 @@ export type CheckoutFacts = {
 }
 
 export type Decision = { ok: true } | { ok: false; message: string }
+
+export type ReleaseCheckoutTransitionDecision =
+  | { ok: true; switchToRung: boolean; fastForward: boolean; restoreToTrunk: boolean }
+  | { ok: false; message: string }
+
+export const RELEASE_CHECKOUT_DIRTY_REFUSAL =
+  'release checkout is dirty; commit or discard its changes, then retry'
+
+/** Decide how a release-command checkout moves from its landing branch to its rung. */
+export function releaseCheckoutTransitionDecision(facts: {
+  current: string
+  trunk: string
+  rungBranch: string
+  dirty: boolean
+}): ReleaseCheckoutTransitionDecision {
+  if (facts.rungBranch === facts.trunk) {
+    return { ok: true, switchToRung: false, fastForward: false, restoreToTrunk: false }
+  }
+  if (facts.current !== facts.trunk && facts.current !== facts.rungBranch) {
+    return {
+      ok: false,
+      message: `registered main checkout is on ${facts.current || 'detached HEAD'}, not its landing branch ${facts.trunk}; switch it to ${facts.trunk}, then retry`,
+    }
+  }
+  if (facts.dirty) {
+    return { ok: false, message: RELEASE_CHECKOUT_DIRTY_REFUSAL }
+  }
+  return {
+    ok: true,
+    switchToRung: facts.current === facts.trunk,
+    fastForward: true,
+    restoreToTrunk: true,
+  }
+}
+
+export type ReleaseCheckoutOutcomeDecision =
+  | { ok: true; warning: string | null }
+  | { ok: false; message: string }
+
+/** Compose the release body and checkout-restoration outcomes without hiding either failure. */
+export function releaseCheckoutOutcomeDecision(facts: {
+  failure: string | null
+  warning: string | null
+  restoreWarning: string | null
+}): ReleaseCheckoutOutcomeDecision {
+  if (facts.failure !== null) {
+    return {
+      ok: false,
+      message: [facts.failure, facts.restoreWarning]
+        .filter((value): value is string => value !== null)
+        .join('; '),
+    }
+  }
+  return {
+    ok: true,
+    warning:
+      [facts.warning, facts.restoreWarning]
+        .filter((value): value is string => value !== null)
+        .join('; ') || null,
+  }
+}
 
 export type CiDeployWaitDecision = 'matched' | 'keep-waiting' | 'timed-out'
 
@@ -208,14 +271,11 @@ export function checkoutReleaseDecision(facts: CheckoutFacts): Decision {
   if (facts.branch !== facts.requiredBranch) {
     return {
       ok: false,
-      message: `release checkout is on ${facts.branch}, not ${facts.requiredBranch}; switch the registered main checkout to ${facts.requiredBranch}, then retry`,
+      message: `the release did not move the registered main checkout; it is on ${facts.branch || 'detached HEAD'}, not its landing branch ${facts.trunk}; run git -C ${facts.path} switch ${facts.trunk}, then retry`,
     }
   }
   if (facts.dirty) {
-    return {
-      ok: false,
-      message: 'release checkout is dirty; commit or discard its changes, then retry',
-    }
+    return { ok: false, message: RELEASE_CHECKOUT_DIRTY_REFUSAL }
   }
   if (facts.behind > 0 || facts.ahead > 0 || facts.head !== facts.remoteHead) {
     const position = [

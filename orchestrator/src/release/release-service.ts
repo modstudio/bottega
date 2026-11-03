@@ -25,6 +25,8 @@ import {
   postDeployLiveDecision,
   releaseAncestryFromExitCode,
   releaseCapturedText,
+  releaseCheckoutOutcomeDecision,
+  releaseCheckoutTransitionDecision,
   releaseCommandEnvironment,
   releaseLockDecision,
   releaseProcessEnvironment,
@@ -35,7 +37,11 @@ import {
   trunkFreshnessDecision,
   unprovableReleaseRungMessage,
 } from './release-decision.ts'
-import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
+import {
+  finishReleaseLedgerEntry,
+  startReleaseLedgerEntry,
+  updateReleaseLedgerWarning,
+} from './release-ledger.ts'
 
 type CommandResult = { exitCode: number; output: string }
 
@@ -141,21 +147,88 @@ function capturedOutputTail(output: string, knownCommits: readonly string[]): st
   return boundedGateOutputTail(releaseCapturedText(output, knownCommits), GATE_OUTPUT_TAIL_BYTES)
 }
 
-function checkoutFacts(path: string, branch: string) {
-  git(['fetch', 'origin'], path)
+function checkoutFacts(path: string, branch: string, trunk: string) {
   const head = git(['rev-parse', 'HEAD'], path)
   const remoteHead = git(['rev-parse', `origin/${branch}`], path)
   const counts = git(['rev-list', '--left-right', '--count', `origin/${branch}...HEAD`], path)
     .split(/\s+/)
     .map(Number)
   return {
+    path,
     branch: git(['branch', '--show-current'], path),
     requiredBranch: branch,
+    trunk,
     dirty: git(['status', '--porcelain'], path).length > 0,
     head,
     remoteHead,
     behind: counts[0] ?? 0,
     ahead: counts[1] ?? 0,
+  }
+}
+
+function releaseCheckoutRestoreWarning(path: string, trunk: string, cause: unknown): string {
+  const condition = cause instanceof Error ? cause.message : String(cause)
+  return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run git -C ${path} switch ${trunk}`
+}
+
+function fastForwardReleaseBranch(path: string, branch: string): void {
+  const head = git(['rev-parse', 'HEAD'], path)
+  const remoteHead = git(['rev-parse', `origin/${branch}`], path)
+  if (
+    head !== remoteHead &&
+    run(['git', 'merge-base', '--is-ancestor', head, `origin/${branch}`], path).exitCode === 0
+  ) {
+    git(['merge', '--ff-only', `origin/${branch}`], path)
+  }
+}
+
+function withReleaseCheckout(
+  path: string,
+  trunk: string,
+  rungBranch: string,
+  release: () => ReleaseCommandOutcome,
+): ReleaseCommandOutcome {
+  git(['fetch', 'origin'], path)
+  const transition = releaseCheckoutTransitionDecision({
+    current: git(['branch', '--show-current'], path),
+    trunk,
+    rungBranch,
+    dirty: git(['status', '--porcelain'], path).length > 0,
+  })
+  if (!transition.ok) throw new Error(transition.message)
+
+  let outcome: ReleaseCommandOutcome | undefined
+  let failure: unknown
+  let failed = false
+  let restoreWarning: string | null = null
+  try {
+    if (transition.switchToRung) git(['switch', rungBranch], path)
+    if (transition.fastForward) fastForwardReleaseBranch(path, rungBranch)
+    outcome = release()
+  } catch (cause) {
+    failure = cause
+    failed = true
+  } finally {
+    if (transition.restoreToTrunk) {
+      try {
+        git(['switch', trunk], path)
+      } catch (cause) {
+        restoreWarning = releaseCheckoutRestoreWarning(path, trunk, cause)
+      }
+    }
+  }
+  const composed = releaseCheckoutOutcomeDecision({
+    failure: failed ? (failure instanceof Error ? failure.message : String(failure)) : null,
+    warning: outcome?.result.warning ?? null,
+    restoreWarning,
+  })
+  if (!composed.ok) {
+    if (restoreWarning === null) throw failure
+    throw new Error(composed.message)
+  }
+  return {
+    ...outcome!,
+    result: { ...outcome!.result, warning: composed.warning },
   }
 }
 
@@ -357,6 +430,13 @@ export type ReleaseResult = {
   alreadyLive: boolean
 }
 
+type ReleaseCommandOutcome = {
+  result: ReleaseResult
+  ledger:
+    | { kind: 'finish'; recordId: string; deployed: CommandResult }
+    | { kind: 'warning'; recordId: string; previousWarning: string | null }
+}
+
 function alreadyLiveReleaseResult(
   project: string,
   rung: string,
@@ -366,7 +446,7 @@ function alreadyLiveReleaseResult(
   redeployReason: string | undefined,
   rollbackReason: string | undefined,
   declaresLive: boolean,
-): ReleaseResult | null {
+): { result: ReleaseResult; recordId: string } | null {
   const newestLive = newestSuccessfulRelease(project, rung, declaresLive)
   if (
     !newestLive ||
@@ -380,24 +460,27 @@ function alreadyLiveReleaseResult(
   )
     return null
   return {
-    id: newestLive.number,
-    project,
-    rung,
-    branch,
-    deployed,
-    trunk,
-    commitsBehindTrunk: newestLive.commits_behind_trunk ?? 0,
-    behindTrunkReason: newestLive.behind_trunk_reason,
-    liveBefore: newestLive.live_commit_before,
-    baseline: false,
-    rollback: Boolean(newestLive.rollback),
-    rollbackReason: newestLive.rollback_reason,
-    exitCode: 0,
-    outputTail: `rung ${rung} is already live at ${deployed}`,
-    liveAfter: newestLive.live_commit_after,
-    liveMatchesCandidate: true,
-    warning: newestLive.warning,
-    alreadyLive: true,
+    result: {
+      id: newestLive.number,
+      project,
+      rung,
+      branch,
+      deployed,
+      trunk,
+      commitsBehindTrunk: newestLive.commits_behind_trunk ?? 0,
+      behindTrunkReason: newestLive.behind_trunk_reason,
+      liveBefore: newestLive.live_commit_before,
+      baseline: false,
+      rollback: Boolean(newestLive.rollback),
+      rollbackReason: newestLive.rollback_reason,
+      exitCode: 0,
+      outputTail: `rung ${rung} is already live at ${deployed}`,
+      liveAfter: newestLive.live_commit_after,
+      liveMatchesCandidate: true,
+      warning: newestLive.warning,
+      alreadyLive: true,
+    },
+    recordId: newestLive.record_id,
   }
 }
 
@@ -470,7 +553,7 @@ function releaseCiDeployedTarget(
     undefined,
     true,
   )
-  if (alreadyLive) return alreadyLive
+  if (alreadyLive) return alreadyLive.result
 
   let live = releaseLiveCommit(liveCommand, project.path, 'CI-deployed release live', selected.name)
   const liveBefore = live
@@ -568,7 +651,42 @@ function releaseCommandTarget(
   redeployReason: string | undefined,
 ): ReleaseResult {
   const { project, selected, trunk } = target
-  const checkout = checkoutFacts(project.path, selected.branch)
+  const outcome = withReleaseCheckout(project.path, trunk, selected.branch, () =>
+    releaseCommandTargetAtRung(
+      target,
+      deploy,
+      projectName,
+      rollbackReason,
+      behindTrunkReason,
+      redeployReason,
+    ),
+  )
+  if (outcome.ledger.kind === 'finish') {
+    finishReleaseLedgerEntry(
+      writableDb(),
+      outcome.ledger.recordId,
+      outcome.ledger.deployed,
+      outcome.result.outputTail,
+      outcome.result.liveAfter,
+      outcome.result.liveMatchesCandidate,
+      outcome.result.warning,
+    )
+  } else if (outcome.result.warning !== outcome.ledger.previousWarning) {
+    updateReleaseLedgerWarning(writableDb(), outcome.ledger.recordId, outcome.result.warning!)
+  }
+  return outcome.result
+}
+
+function releaseCommandTargetAtRung(
+  target: ReturnType<typeof releaseTarget>,
+  deploy: string,
+  projectName: string,
+  rollbackReason: string | undefined,
+  behindTrunkReason: string | undefined,
+  redeployReason: string | undefined,
+): ReleaseCommandOutcome {
+  const { project, selected, trunk } = target
+  const checkout = checkoutFacts(project.path, selected.branch, trunk)
   const checkoutDecision = checkoutReleaseDecision(checkout)
   if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
   const alreadyLive = alreadyLiveReleaseResult(
@@ -581,7 +699,16 @@ function releaseCommandTarget(
     rollbackReason,
     selected.live !== undefined,
   )
-  if (alreadyLive) return alreadyLive
+  if (alreadyLive) {
+    return {
+      result: alreadyLive.result,
+      ledger: {
+        kind: 'warning',
+        recordId: alreadyLive.recordId,
+        previousWarning: alreadyLive.result.warning,
+      },
+    }
+  }
   const live = previousReleaseCommit(selected.live, project.path, projectName, selected.name)
   const freshness = releaseTrunkFacts(
     project.path,
@@ -622,34 +749,28 @@ function releaseCommandTarget(
   )
   const outputTail = capturedOutputTail(deployed.output, [checkout.head, live ?? ''])
   const warning = releaseWarning(redeployReason, checked.warning)
-  finishReleaseLedgerEntry(
-    writableDb(),
-    ledger.recordId,
-    deployed,
-    outputTail,
-    checked.liveAfter,
-    checked.liveMatchesCandidate,
-    warning,
-  )
-  return deployedReleaseResult({
-    id: ledger.number,
-    project: projectName,
-    rung: selected.name,
-    branch: selected.branch,
-    deployed: checkout.head,
-    trunk: freshness.trunk,
-    commitsBehindTrunk: freshness.commitsBehindTrunk,
-    behindTrunkReason: freshness.behindTrunkReason,
-    liveBefore: live,
-    baseline: forward.baseline,
-    rollback: forward.rollback,
-    rollbackReason: forward.reason,
-    exitCode: deployed.exitCode,
-    outputTail,
-    liveAfter: checked.liveAfter,
-    liveMatchesCandidate: checked.liveMatchesCandidate,
-    warning,
-  })
+  return {
+    result: deployedReleaseResult({
+      id: ledger.number,
+      project: projectName,
+      rung: selected.name,
+      branch: selected.branch,
+      deployed: checkout.head,
+      trunk: freshness.trunk,
+      commitsBehindTrunk: freshness.commitsBehindTrunk,
+      behindTrunkReason: freshness.behindTrunkReason,
+      liveBefore: live,
+      baseline: forward.baseline,
+      rollback: forward.rollback,
+      rollbackReason: forward.reason,
+      exitCode: deployed.exitCode,
+      outputTail,
+      liveAfter: checked.liveAfter,
+      liveMatchesCandidate: checked.liveMatchesCandidate,
+      warning,
+    }),
+    ledger: { kind: 'finish', recordId: ledger.recordId, deployed },
+  }
 }
 
 function releaseProjectUnderLock(
