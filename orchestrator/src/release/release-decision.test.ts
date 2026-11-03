@@ -7,8 +7,10 @@ import {
   ciDeployWaitOutcome,
   forwardReleaseDecision,
   postDeployLiveDecision,
+  RELEASE_CHECKOUT_DIRTY_REFUSAL,
   releaseAncestryFromExitCode,
   releaseCapturedText,
+  releaseCheckoutOutcomeDecision,
   releaseCheckoutTransitionDecision,
   releaseCommandEnvironment,
   releaseLockDecision,
@@ -175,6 +177,7 @@ test('maps git ancestry exit codes to three-valued release ancestry', () => {
 })
 
 const level = {
+  path: '/projects/example',
   branch: 'main',
   requiredBranch: 'main',
   trunk: 'main',
@@ -220,7 +223,7 @@ describe('release checkout', () => {
     expect(checkoutReleaseDecision({ ...level, branch: 'develop' })).toEqual({
       ok: false,
       message:
-        'release checkout is on develop, not release branch main; the release restored or left the registered main checkout on main; retry the release from main',
+        'the release did not move the registered main checkout; it is on develop, not its landing branch main; run git -C /projects/example switch main, then retry',
     }))
 })
 
@@ -233,7 +236,27 @@ describe('release checkout transition', () => {
         rungBranch: 'main',
         dirty: false,
       }),
-    ).toEqual({ ok: true, switchToRung: false, restoreToTrunk: false }))
+    ).toEqual({
+      ok: true,
+      switchToRung: false,
+      fastForward: false,
+      restoreToTrunk: false,
+    }))
+
+  test('does not move a same-branch release whose checkout is off trunk', () =>
+    expect(
+      releaseCheckoutTransitionDecision({
+        current: 'develop',
+        trunk: 'main',
+        rungBranch: 'main',
+        dirty: false,
+      }),
+    ).toEqual({
+      ok: true,
+      switchToRung: false,
+      fastForward: false,
+      restoreToTrunk: false,
+    }))
 
   test('switches a clean landing branch to the rung and restores it', () =>
     expect(
@@ -243,7 +266,7 @@ describe('release checkout transition', () => {
         rungBranch: 'master',
         dirty: false,
       }),
-    ).toEqual({ ok: true, switchToRung: true, restoreToTrunk: true }))
+    ).toEqual({ ok: true, switchToRung: true, fastForward: true, restoreToTrunk: true }))
 
   test('heals a clean checkout already left on the rung', () =>
     expect(
@@ -253,7 +276,7 @@ describe('release checkout transition', () => {
         rungBranch: 'master',
         dirty: false,
       }),
-    ).toEqual({ ok: true, switchToRung: false, restoreToTrunk: true }))
+    ).toEqual({ ok: true, switchToRung: false, fastForward: true, restoreToTrunk: true }))
 
   test('refuses a dirty checkout when it would need switching and restoration', () =>
     expect(
@@ -265,20 +288,7 @@ describe('release checkout transition', () => {
       }),
     ).toEqual({
       ok: false,
-      message: 'release checkout is dirty; commit or discard its changes, then retry',
-    }))
-
-  test('refuses a dirty checkout already left on the rung', () =>
-    expect(
-      releaseCheckoutTransitionDecision({
-        current: 'master',
-        trunk: 'develop',
-        rungBranch: 'master',
-        dirty: true,
-      }),
-    ).toEqual({
-      ok: false,
-      message: 'release checkout is dirty; commit or discard its changes, then retry',
+      message: RELEASE_CHECKOUT_DIRTY_REFUSAL,
     }))
 
   test('refuses another branch with the landing-branch remedy', () =>
@@ -424,6 +434,40 @@ describe('release text policy', () => {
       message: expect.stringContaining('redeploy reason must be non-empty'),
     })
   })
+})
+
+describe('release checkout outcome', () => {
+  test('keeps a clean body result unchanged', () =>
+    expect(
+      releaseCheckoutOutcomeDecision({ failure: null, warning: null, restoreWarning: null }),
+    ).toEqual({ ok: true, warning: null }))
+
+  test('keeps a body failure when restoration succeeds', () =>
+    expect(
+      releaseCheckoutOutcomeDecision({
+        failure: 'deploy failed',
+        warning: null,
+        restoreWarning: null,
+      }),
+    ).toEqual({ ok: false, message: 'deploy failed' }))
+
+  test('adds a restore failure to a successful body warning', () =>
+    expect(
+      releaseCheckoutOutcomeDecision({
+        failure: null,
+        warning: 'live probe failed',
+        restoreWarning: 'restore failed',
+      }),
+    ).toEqual({ ok: true, warning: 'live probe failed; restore failed' }))
+
+  test('adds a restore failure after the original body failure', () =>
+    expect(
+      releaseCheckoutOutcomeDecision({
+        failure: 'deploy failed',
+        warning: null,
+        restoreWarning: 'restore failed',
+      }),
+    ).toEqual({ ok: false, message: 'deploy failed; restore failed' }))
 })
 
 describe('already-live release decision', () => {

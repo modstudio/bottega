@@ -13,6 +13,7 @@ import { log } from './support.ts'
 function writeReleaseResult(result: ReleaseResult): void {
   if (result.alreadyLive) {
     log(`${result.project}/${result.rung}: already live at ${result.deployed}`)
+    if (result.warning) log(`warning: ${result.warning}`)
     return
   }
   if (result.outputTail) log(result.outputTail)

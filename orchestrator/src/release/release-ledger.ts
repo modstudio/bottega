@@ -87,3 +87,14 @@ export function finishReleaseLedgerEntry(
     enqueueReleaseRecord(database, recordId)
   }, database)
 }
+
+export function updateReleaseLedgerWarning(
+  database: Database,
+  recordId: string,
+  warning: string,
+): void {
+  writeTransaction(() => {
+    database.query('UPDATE release_ledger SET warning=? WHERE record_id=?').run(warning, recordId)
+    enqueueReleaseRecord(database, recordId)
+  }, database)
+}
