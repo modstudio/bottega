@@ -506,7 +506,11 @@ const projectSpecs: readonly Spec[] = [
     ],
   ],
   ['migrate-create [name]', 'migrate a legacy create command', [o('--apply')]],
-  ['remove [name]', 'remove a project from the register', []],
+  [
+    'remove [name]',
+    "remove a project from this machine's register; the shared project stays in the space (retire it with project retire)",
+    [],
+  ],
   ['retire [name]', 'retire or un-retire a project', [o('--undo')]],
   ['push', 'push projects to the hosted record', json],
   ['fill-record-ids', 'fill missing hosted project identities', json],

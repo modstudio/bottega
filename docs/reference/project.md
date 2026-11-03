@@ -114,7 +114,7 @@ push projects to the hosted record
 
 **Synopsis:** `bottega project remove [name]`
 
-remove a project from the register
+remove a project from this machine's register; the shared project stays in the space (retire it with project retire)
 
 ### Related
 

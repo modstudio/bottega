@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,8 +9,9 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
-import { projectByName } from './projects.ts'
+import { projectByName, upsertProject } from './projects.ts'
 
 async function runProject(
   args: string[],
@@ -95,6 +96,39 @@ test('a bound store refuses before adding a local row and names record use', asy
     ),
   )
   expect(projectByName('bound-refusal')).toBeNull()
+})
+
+function recordingClient(calls: string[]): RecordApiClient {
+  const client = createMemoryRecordApiClient()
+  return new Proxy(client, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver)
+      if (typeof value !== 'function') return value
+      return (...args: unknown[]) => {
+        calls.push(String(property))
+        return Reflect.apply(value, target, args)
+      }
+    },
+  })
+}
+
+describe('removing from a bound store', () => {
+  beforeEach(() => {
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  })
+
+  test('deletes only the local project', async () => {
+    const hostedCalls: string[] = []
+    rememberHostedRecord()
+    installRecordApiClient(recordingClient(hostedCalls))
+    upsertProject({ recordId: newRecordId(), name: 'machine-only-remove', path: '/w/remove' })
+
+    expect(await runProject(['project', 'remove', 'machine-only-remove'])).toBe(
+      'removed machine-only-remove from this machine; the shared project is unchanged',
+    )
+    expect(projectByName('machine-only-remove')).toBeNull()
+    expect(hostedCalls).toEqual([])
+  })
 })
 
 test('project push refuses rather than reporting zero projects pushed', async () => {
