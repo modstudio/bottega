@@ -4,7 +4,7 @@ import { rehearsalImageImportFindings } from './check-rehearsal-image-imports.ts
 test('reports the uncopied runtime closure of rehearsal eval imports', () => {
   const sources: Record<string, string> = {
     'app/start.ts':
-      "import { value } from './runtime.ts'\nimport type { Shape } from './types.ts'\nexport { value }\n",
+      "import { value } from './runtime.ts'\nimport type { Shape } from './types.ts'\nimport { type OtherShape } from './other-types.ts'\nexport { value }\n",
     'app/runtime.ts': "import './nested/value.ts'\nexport const value = true\n",
     'app/nested/value.ts': 'export const nested = true\n',
   }

@@ -10,6 +10,15 @@ function relativeRuntimeImports(source: string, path: string): string[] {
   const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
   return file.statements.flatMap((statement) => {
     if (!ts.isImportDeclaration(statement) || statement.importClause?.isTypeOnly) return []
+    const bindings = statement.importClause?.namedBindings
+    if (
+      bindings &&
+      ts.isNamedImports(bindings) &&
+      !statement.importClause?.name &&
+      bindings.elements.every((element) => element.isTypeOnly)
+    ) {
+      return []
+    }
     const value = statement.moduleSpecifier
     return ts.isStringLiteral(value) && value.text.startsWith('.') ? [value.text] : []
   })
