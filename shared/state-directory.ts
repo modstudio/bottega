@@ -103,14 +103,19 @@ export function hubLoginTokenDirectory(env: StateEnvironment): string {
   return join(concernStateDirectory('hub', env), 'login-tokens')
 }
 
+/** The directory holding the record session and its write staging; denied whole to sandboxes. */
+export function recordSessionDirectory(env: StateEnvironment): string {
+  return join(resolveStateRoot(env), 'record')
+}
+
 /** The owner-only file holding the record session when file storage is selected. */
 export function recordSessionPath(env: StateEnvironment): string {
-  return join(resolveStateRoot(env), 'record', 'session')
+  return join(recordSessionDirectory(env), 'session')
 }
 
 /** Ensure the file-backed record-session directory exists and belongs to this user. */
 export function ensureRecordSessionDirectory(env: StateEnvironment): string {
-  const directory = dirname(recordSessionPath(env))
+  const directory = recordSessionDirectory(env)
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   const pathStat = lstatSync(directory)
   if (pathStat.isSymbolicLink() || !pathStat.isDirectory()) {

@@ -19,7 +19,11 @@ import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../..
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import { sourceBunExecutable } from '../../../shared/self-spawn.ts'
-import { hubLoginTokenDirectory, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import {
+  hubLoginTokenDirectory,
+  recordSessionPath,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
@@ -109,6 +113,8 @@ test('every SRT profile denies every file-backed secret path', () => {
   expect(profile.filesystem.denyRead).toEqual(
     expect.arrayContaining(fileBackedSecretPaths(environment)),
   )
+  const staging = join(recordSessionPath(environment), '..', '.session-staging')
+  expect(profile.filesystem.denyRead.some((path) => staging.startsWith(`${path}/`))).toBe(true)
 })
 
 test('prepares one persistent Grok MCP home and refuses a source clamp', () => {
