@@ -40,9 +40,14 @@ the hosted record and outbox
 - [bottega record space create](#bottega-record-space-create)
 - [bottega record space help](#bottega-record-space-help)
 - [bottega record space intake](#bottega-record-space-intake)
+- [bottega record space intake block](#bottega-record-space-intake-block)
+- [bottega record space intake blocks](#bottega-record-space-intake-blocks)
 - [bottega record space intake help](#bottega-record-space-intake-help)
+- [bottega record space intake pause](#bottega-record-space-intake-pause)
+- [bottega record space intake resume](#bottega-record-space-intake-resume)
 - [bottega record space intake set](#bottega-record-space-intake-set)
 - [bottega record space intake show](#bottega-record-space-intake-show)
+- [bottega record space intake unblock](#bottega-record-space-intake-unblock)
 - [bottega record space invitations](#bottega-record-space-invitations)
 - [bottega record space invite](#bottega-record-space-invite)
 - [bottega record space list](#bottega-record-space-list)
@@ -527,9 +532,44 @@ manage the outside intake project
 ### Related
 
 - [bottega record space](./record.md#bottega-record-space)
+- [bottega record space intake block](./record.md#bottega-record-space-intake-block)
+- [bottega record space intake blocks](./record.md#bottega-record-space-intake-blocks)
 - [bottega record space intake help](./record.md#bottega-record-space-intake-help)
+- [bottega record space intake pause](./record.md#bottega-record-space-intake-pause)
+- [bottega record space intake resume](./record.md#bottega-record-space-intake-resume)
 - [bottega record space intake set](./record.md#bottega-record-space-intake-set)
 - [bottega record space intake show](./record.md#bottega-record-space-intake-show)
+- [bottega record space intake unblock](./record.md#bottega-record-space-intake-unblock)
+
+## bottega record space intake block
+
+**Synopsis:** `bottega record space intake block [--message <id>] [--note <label>] [--hours <n>]`
+
+block an outside author from the active space (owner only)
+
+### Options
+
+- `--message <id>`: identify the author by a board message
+- `--note <label>`: identify the author by a project#number note
+- `--hours <n>`: whole hours before the block ends
+
+### Related
+
+- [bottega record space intake](./record.md#bottega-record-space-intake)
+
+## bottega record space intake blocks
+
+**Synopsis:** `bottega record space intake blocks [--json]`
+
+list outside-author blocks in the active space (owner only)
+
+### Options
+
+- `--json`: write the blocks as JSON
+
+### Related
+
+- [bottega record space intake](./record.md#bottega-record-space-intake)
 
 ## bottega record space intake help
 
@@ -541,11 +581,35 @@ display help for command
 
 - [bottega record space intake](./record.md#bottega-record-space-intake)
 
+## bottega record space intake pause
+
+**Synopsis:** `bottega record space intake pause [--hours <n>]`
+
+pause outside writes to the active space (owner only)
+
+### Options
+
+- `--hours <n>`: whole hours to pause (default: 24)
+
+### Related
+
+- [bottega record space intake](./record.md#bottega-record-space-intake)
+
+## bottega record space intake resume
+
+**Synopsis:** `bottega record space intake resume`
+
+resume outside writes to the active space (owner only)
+
+### Related
+
+- [bottega record space intake](./record.md#bottega-record-space-intake)
+
 ## bottega record space intake set
 
 **Synopsis:** `bottega record space intake set <project>`
 
-set the active space outside intake project
+set the active space outside intake project (owner only)
 
 ### Related
 
@@ -556,6 +620,16 @@ set the active space outside intake project
 **Synopsis:** `bottega record space intake show`
 
 show the active space outside intake project
+
+### Related
+
+- [bottega record space intake](./record.md#bottega-record-space-intake)
+
+## bottega record space intake unblock
+
+**Synopsis:** `bottega record space intake unblock <user-id>`
+
+remove an outside-author block from the active space (owner only)
 
 ### Related
 

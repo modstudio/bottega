@@ -23,7 +23,7 @@ import {
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
-import { recordOutsideIntakeClient } from './record-api-client-outside-intake.ts'
+import { recordOutsideClient } from './record-api-client-outside.ts'
 import {
   boardClaimListPath,
   docSearchParams,
@@ -213,7 +213,7 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordPortClient &
   RecordWorkflowClient &
   RecordSettingsClient &
-  ReturnType<typeof recordOutsideIntakeClient> &
+  ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> & {
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
@@ -730,7 +730,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
   return {
     ...recordMachineClient(request),
     ...recordConfigAccessClient(request),
-    ...recordOutsideIntakeClient(request),
+    ...recordOutsideClient(request),
     ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
     ...recordSnapshotAndPublicDocClient(request),

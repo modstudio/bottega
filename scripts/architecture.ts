@@ -421,6 +421,8 @@ export const modules: ArchitectureModule[] = [
   module('shared/run-process-marker.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/command-spellings.ts', []),
+  module('shared/note-label.ts', []),
+  module('shared/record/postgres-error.ts', []),
   ...proseModules,
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', [

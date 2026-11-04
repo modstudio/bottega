@@ -43,6 +43,11 @@ function idleConfigAuthorizationDeps() {
     withdrawSpaceConfigAccess: unused,
     showOutsideIntake: async () => null,
     setOutsideIntake: unused,
+    pauseOutsideIntake: unused,
+    resumeOutsideIntake: unused,
+    listOutsideBlocks: unused,
+    blockOutsideAuthor: unused,
+    unblockOutsideAuthor: unused,
   }
 }
 
@@ -200,6 +205,11 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'withdrawConfigAccess'
   | 'showOutsideIntake'
   | 'setOutsideIntake'
+  | 'pauseOutsideIntake'
+  | 'resumeOutsideIntake'
+  | 'listOutsideBlocks'
+  | 'blockOutsideAuthor'
+  | 'unblockOutsideAuthor'
 > {
   return {
     whoami: unusedIdentityAndSpace,
@@ -213,6 +223,11 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     withdrawConfigAccess: unusedIdentityAndSpace,
     showOutsideIntake: unusedIdentityAndSpace,
     setOutsideIntake: unusedIdentityAndSpace,
+    pauseOutsideIntake: unusedIdentityAndSpace,
+    resumeOutsideIntake: unusedIdentityAndSpace,
+    listOutsideBlocks: unusedIdentityAndSpace,
+    blockOutsideAuthor: unusedIdentityAndSpace,
+    unblockOutsideAuthor: unusedIdentityAndSpace,
   }
 }
 

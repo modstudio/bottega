@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  isOutsidePauseHours,
   OUTSIDE_AREA_MAX_CHARS,
   OUTSIDE_BODY_MAX_CHARS,
   OUTSIDE_LINK_MAX,
@@ -81,4 +82,14 @@ describe('outside write decision', () => {
   ])('allows %s', (_name, changed) => {
     expect(outsideWriteDecision({ ...base, ...changed })).toEqual({ allowed: true })
   })
+})
+
+test.each([
+  [0, false],
+  [1, true],
+  [720, true],
+  [721, false],
+  [1.5, false],
+] as const)('outside pause hours %p validity is %p', (hours, valid) => {
+  expect(isOutsidePauseHours(hours)).toBe(valid)
 })

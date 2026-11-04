@@ -55,7 +55,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'hub/src/note-api.ts',
   'hub/src/note-cache.ts',
   'hub/src/note-client.ts',
-  'hub/src/note-label.ts',
   'hub/src/note-number.ts',
   'hub/src/note-promote-cli.ts',
   'hub/src/note-promotion-body.ts',

@@ -25,16 +25,21 @@ import {
 } from './record-public-doc-designation.ts'
 import {
   acceptRecordInvitation,
+  blockRecordSpaceOutsideAuthor,
   createRecordSpace,
   grantRecordSpaceConfigAccess,
   inviteToActiveRecordSpace,
   listRecordSpaceConfigAccess,
+  listRecordSpaceOutsideBlocks,
+  pauseRecordSpaceOutsideIntake,
   pendingRecordInvitations,
   recordMemberships,
   recordSpaceRole,
+  resumeRecordSpaceOutsideIntake,
   setRecordSpaceOutsideIntake,
   showRecordSpaceOutsideIntake,
   switchRecordSpace,
+  unblockRecordSpaceOutsideAuthor,
   withdrawRecordSpaceConfigAccess,
 } from './record-space.ts'
 import { ensureAllSpaceBuiltIns } from './record-space-built-ins.ts'
@@ -185,7 +190,55 @@ export async function recordSpaceAccessWithdrawCommand(
 
 export async function recordSpaceIntakeShowCommand(presentation: Presentation): Promise<void> {
   const intake = await showRecordSpaceOutsideIntake()
-  presentation.log(intake ? `${intake.project}\t${intake.projectId}` : 'no outside intake project')
+  presentation.log(
+    intake
+      ? `${intake.project}\t${intake.projectId}${intake.pausedUntil ? `\tpaused until ${intake.pausedUntil}` : ''}`
+      : 'no outside intake project',
+  )
+}
+
+export async function recordSpaceIntakePauseCommand(
+  hours: number,
+  presentation: Presentation,
+): Promise<void> {
+  const intake = await pauseRecordSpaceOutsideIntake(hours)
+  presentation.log(`outside writes paused until ${intake.pausedUntil}`)
+}
+
+export async function recordSpaceIntakeResumeCommand(presentation: Presentation): Promise<void> {
+  await resumeRecordSpaceOutsideIntake()
+  presentation.log('outside writes resumed')
+}
+
+export async function recordSpaceIntakeBlocksCommand(
+  options: { json: boolean },
+  presentation: Presentation,
+): Promise<void> {
+  const blocks = await listRecordSpaceOutsideBlocks()
+  if (options.json) {
+    presentation.log(JSON.stringify(blocks))
+    return
+  }
+  for (const block of blocks)
+    presentation.log(
+      `${block.userId}\t${block.blockedUntil ?? 'no end'}\t${block.blockedByUserId}\t${block.createdAt}`,
+    )
+}
+
+export async function recordSpaceIntakeBlockCommand(
+  input: { message?: string; note?: string; hours?: number },
+  presentation: Presentation,
+): Promise<void> {
+  const block = await blockRecordSpaceOutsideAuthor(input)
+  presentation.log(`blocked outside author ${block.userId}\t${block.blockedUntil ?? 'no end'}`)
+}
+
+export async function recordSpaceIntakeUnblockCommand(
+  userId: string,
+  presentation: Presentation,
+): Promise<void> {
+  await unblockRecordSpaceOutsideAuthor(userId)
+  presentation.log(`unblocked outside author ${userId}`)
 }
 
 export async function recordSpaceIntakeSetCommand(

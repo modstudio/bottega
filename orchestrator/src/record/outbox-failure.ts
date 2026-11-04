@@ -1,5 +1,6 @@
 // concern: outbox-failure
 /** Pure classification of one hosted-record outbox failure. */
+import { postgresErrorChain } from '../../../shared/record/postgres-error.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 
 export type OutboxFailureFacts = {
@@ -57,21 +58,9 @@ export function classifyOutboxFailure(facts: OutboxFailureFacts): OutboxFailureD
   return 'pass-fatal'
 }
 
-function errorChain(error: unknown): unknown[] {
-  const chain: unknown[] = []
-  const seen = new Set<unknown>()
-  let current: unknown = error
-  while (current !== null && typeof current === 'object' && !seen.has(current)) {
-    seen.add(current)
-    chain.push(current)
-    current = 'cause' in current ? current.cause : null
-  }
-  return chain
-}
-
 export function outboxErrorDetail(error: unknown): string {
   const details: string[] = []
-  for (const current of errorChain(error)) {
+  for (const current of postgresErrorChain(error)) {
     const message = current instanceof Error ? current.message : String(current)
     const candidate = current as { code?: unknown; errno?: unknown }
     const code = typeof candidate.code === 'string' ? candidate.code : null
@@ -116,7 +105,7 @@ function outboxErrorClass(chain: readonly unknown[]): OutboxFailureFacts['errorC
 }
 
 export function outboxFailureDisposition(error: unknown): OutboxFailureDisposition {
-  const chain = errorChain(error)
+  const chain = postgresErrorChain(error)
   return classifyOutboxFailure({
     ...postgresFailureFacts(chain),
     errorClass: outboxErrorClass(chain),

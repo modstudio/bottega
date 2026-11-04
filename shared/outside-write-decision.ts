@@ -9,6 +9,12 @@ export const OUTSIDE_WRITES_PER_DAY = 20
 export const OUTSIDE_BODY_MAX_CHARS = 2000
 export const OUTSIDE_AREA_MAX_CHARS = 200
 export const OUTSIDE_LINK_MAX = 2
+export const OUTSIDE_PAUSE_DEFAULT_HOURS = 24
+export const OUTSIDE_PAUSE_MAX_HOURS = 720
+
+export function isOutsidePauseHours(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= OUTSIDE_PAUSE_MAX_HOURS
+}
 
 export type OutsideWriteDecision =
   | { allowed: true }

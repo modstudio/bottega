@@ -9,6 +9,7 @@ import {
   outsideWriteDecisionForUser,
   resolveOutsideIntake,
 } from '../../shared/outside-write-adapter.ts'
+import { postgresServerMessage, postgresSqlState } from '../../shared/record/postgres-error.ts'
 import { newRecordId } from '../../shared/record-id.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 
@@ -84,12 +85,19 @@ export async function insertOutsideNote(
     if (!decision.allowed) throw new HostedOutsideNoteError(decision.refusal, decision.status)
 
     const id = newRecordId()
-    const inserted = rows<{ id: string; number: number }>(
-      await tx`SELECT id::text,number::int FROM public.hub_note_insert_outside(
-        ${id}::uuid,${newRecordId()}::uuid,${identity.userId}::uuid,${intake.projectId}::uuid,
-        ${input.project},${input.text},${input.area ?? null},${anchor},${createdAt}::timestamptz
-      )`,
-    )[0]!
+    let inserted: { id: string; number: number }
+    try {
+      inserted = rows<{ id: string; number: number }>(
+        await tx`SELECT id::text,number::int FROM public.hub_note_insert_outside(
+          ${id}::uuid,${newRecordId()}::uuid,${identity.userId}::uuid,${intake.projectId}::uuid,
+          ${input.project},${input.text},${input.area ?? null},${anchor},${createdAt}::timestamptz
+        )`,
+      )[0]!
+    } catch (error) {
+      if (postgresSqlState(error) === 'P0001')
+        throw new HostedOutsideNoteError(postgresServerMessage(error), 400)
+      throw error
+    }
     return { id: inserted.id, number: inserted.number, project: input.project }
   })
 }

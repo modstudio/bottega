@@ -86,7 +86,17 @@ import {
   upsertRecordLens,
   upsertRecordLensProfile,
 } from './record-lens-catalogue.ts'
-import { setOutsideIntake, showOutsideIntake } from './record-outside-intake.ts'
+import {
+  blockOutsideAuthor,
+  listOutsideBlocks,
+  unblockOutsideAuthor,
+} from './record-outside-block.ts'
+import {
+  pauseOutsideIntake,
+  resumeOutsideIntake,
+  setOutsideIntake,
+  showOutsideIntake,
+} from './record-outside-intake.ts'
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
 import { closeRecordPools } from './record-pool.ts'
 import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
@@ -274,6 +284,11 @@ function recordSpaceAccessDependencies() {
     withdrawSpaceConfigAccess,
     showOutsideIntake,
     setOutsideIntake,
+    pauseOutsideIntake,
+    resumeOutsideIntake,
+    blockOutsideAuthor,
+    listOutsideBlocks,
+    unblockOutsideAuthor,
   }
 }
 

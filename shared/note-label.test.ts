@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { PLATFORM_NAME } from './brand.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 
 const project = PLATFORM_NAME.toLowerCase()

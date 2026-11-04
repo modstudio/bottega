@@ -128,6 +128,15 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-client-config-access.ts', [
     './record-api-client-paths.ts',
   ]),
+  module('orchestrator/src/record/record-api-client-outside.ts', [
+    './record-api-client-paths.ts',
+    './record-api-client-outside-block.ts',
+    './record-api-client-outside-intake.ts',
+  ]),
+  module('orchestrator/src/record/record-api-client-outside-block.ts', [
+    './record-api-client-paths.ts',
+    './record-outside-block.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-outside-intake.ts', [
     './record-api-client-paths.ts',
     './record-outside-intake.ts',
@@ -626,7 +635,10 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
     './record-pool.ts',
   ]),
-  module('orchestrator/src/record/outbox-failure.ts', ['./record-verdicts.ts']),
+  module('orchestrator/src/record/outbox-failure.ts', [
+    '../../../shared/record/postgres-error.ts',
+    './record-verdicts.ts',
+  ]),
   module('orchestrator/src/record/outbox-held-contract.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/outbox-held.ts', ['bun:sqlite', './outbox-held-contract.ts']),
   module('orchestrator/src/record/record-payload-columns.ts', [
@@ -743,6 +755,7 @@ export const recordModules: RecordModule[] = [
     './record-api-config-access-routes.ts',
     './record-api-doc-order.ts',
     './record-api-machine-key-claim-routes.ts',
+    './record-api-outside-block-routes.ts',
     './record-api-outside-intake-routes.ts',
     './record-api-projects.ts',
     './record-api-settings.ts',
@@ -757,11 +770,30 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-outside-intake-routes.ts', [
     'hono',
     'zod',
+    '../../../shared/outside-write-decision.ts',
     './record-auth.ts',
     './record-outside-intake.ts',
   ]),
+  module('orchestrator/src/record/record-api-outside-block-routes.ts', [
+    'hono',
+    'zod',
+    '../../../shared/note-label.ts',
+    '../../../shared/outside-write-decision.ts',
+    './record-auth.ts',
+    './record-outside-block.ts',
+  ]),
+  module('orchestrator/src/record/record-outside-block.ts', [
+    'bun',
+    '../../../shared/note-label.ts',
+    '../../../shared/record-id.ts',
+    '../../../shared/record/tenant.ts',
+    './record-config-error.ts',
+    './record-outside-intake.ts',
+    './record-pool.ts',
+  ]),
   module('orchestrator/src/record/record-outside-intake.ts', [
     'bun',
+    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     '../../../shared/record/tenant.ts',
     './record-config-error.ts',
@@ -840,6 +872,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-board-tx.ts', [
     'bun',
+    '../../../shared/record/postgres-error.ts',
     '../../../shared/record/tenant.ts',
     './record-board-contract.ts',
     './record-pool.ts',

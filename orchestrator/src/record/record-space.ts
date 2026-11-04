@@ -92,6 +92,39 @@ export async function setRecordSpaceOutsideIntake(
   return (await client.setOutsideIntake(project)).intake
 }
 
+export async function pauseRecordSpaceOutsideIntake(
+  hours: number,
+  client: Pick<RecordApiClient, 'pauseOutsideIntake'> = recordApiClient(),
+) {
+  return (await client.pauseOutsideIntake(hours)).intake
+}
+
+export async function resumeRecordSpaceOutsideIntake(
+  client: Pick<RecordApiClient, 'resumeOutsideIntake'> = recordApiClient(),
+) {
+  return (await client.resumeOutsideIntake()).intake
+}
+
+export async function listRecordSpaceOutsideBlocks(
+  client: Pick<RecordApiClient, 'listOutsideBlocks'> = recordApiClient(),
+) {
+  return (await client.listOutsideBlocks()).blocks
+}
+
+export async function blockRecordSpaceOutsideAuthor(
+  input: { message?: string; note?: string; hours?: number },
+  client: Pick<RecordApiClient, 'blockOutsideAuthor'> = recordApiClient(),
+) {
+  return (await client.blockOutsideAuthor(input)).block
+}
+
+export async function unblockRecordSpaceOutsideAuthor(
+  userId: string,
+  client: Pick<RecordApiClient, 'unblockOutsideAuthor'> = recordApiClient(),
+): Promise<void> {
+  await client.unblockOutsideAuthor(userId)
+}
+
 export async function recordMemberships(
   client: Pick<RecordApiClient, 'whoami'> = recordApiClient(),
 ): Promise<{ activeSpaceId: string | null; memberships: RecordMembership[] }> {

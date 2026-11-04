@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { parseNoteAnchorWire } from '../../shared/note-anchor.ts'
+import { formatNoteLabel, parseNoteLabel } from '../../shared/note-label.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
@@ -25,7 +26,6 @@ import {
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
 } from './note-duplicate-question.ts'
-import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { createOutsideProjectNote, listOutsideProjectNotes } from './note-outside.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { notePromotionBody } from './note-promotion-body.ts'
