@@ -30,7 +30,7 @@ export async function proveSubjects(
   const third = await add('Third', 'The third subject.')
   const list = async (query = '') => {
     const response = await fetch(
-      `${origin}/v1/subjects?project=${encodeURIComponent(project)}&projectId=${projectId}${query}`,
+      `${origin}/v1/subjects?project=${encodeURIComponent(project)}${query}`,
       { headers },
     )
     expect(response.status).toBe(200)
@@ -41,6 +41,9 @@ export async function proveSubjects(
     }
   }
   expect((await list()).items.map(({ name }) => name)).toEqual(['First', 'Second', 'Third'])
+
+  const missing = await fetch(`${origin}/v1/subjects?project=missing-project`, { headers })
+  expect(missing.status).toBe(404)
 
   const renamed = await fetch(`${origin}/v1/subjects/${second.id}/rename`, {
     method: 'POST',

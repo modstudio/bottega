@@ -1,15 +1,10 @@
 /** Pure redacted presentation of stored managed settings. */
 import { createHash } from 'node:crypto'
 import { containsSecretShaped, redactSecretShaped } from './secret-shaped.ts'
+import type { OwnedSettings } from './stored-settings.ts'
 
 export const SETTINGS_PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
 export type SettingsPermissionList = (typeof SETTINGS_PERMISSION_LISTS)[number]
-
-export type StoredSettings = {
-  permissions: unknown
-  hooks: unknown
-  envKeys?: string[]
-}
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -51,7 +46,7 @@ function hasSecretCommand(value: unknown): boolean {
   )
 }
 
-export function summarizeSettings(settings: StoredSettings) {
+export function summarizeSettings(settings: OwnedSettings) {
   const lists = permissionLists(settings.permissions)
   return {
     permissions: Object.fromEntries(

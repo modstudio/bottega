@@ -1,12 +1,22 @@
 // concern: settings
-/** Pure owned Claude settings shape. Must not know filesystems, stores, commands, or transports. */
-import { z } from 'zod'
+/** Owned Claude settings policy over the shared stored shape. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
   type SettingsPermissionList,
 } from '../../../shared/settings-summary.ts'
+import {
+  AUTO_MODE_LISTS,
+  type AutoModeList,
+  ENV_NAME,
+  OWNED_AUTO_MODE_SCHEMA,
+  OWNED_SETTINGS_SCHEMA,
+  type OwnedAutoMode,
+  type OwnedSettings,
+  parseStoredSettingsRow,
+  StoredSettingsRowError,
+} from '../../../shared/stored-settings.ts'
 
 export { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 
@@ -14,25 +24,8 @@ export const SETTINGS_SLUG = 'settings'
 export const SETTINGS_SCOPE = 'settings'
 export const PERMISSION_LISTS = SETTINGS_PERMISSION_LISTS
 export type PermissionList = SettingsPermissionList
-export const AUTO_MODE_LISTS = ['allow', 'soft_deny', 'hard_deny', 'environment'] as const
-export type AutoModeList = (typeof AUTO_MODE_LISTS)[number]
-export type OwnedAutoMode = Partial<Record<AutoModeList, string[]>>
-
-const ownedAutoModeSchema = z
-  .object(
-    Object.fromEntries(AUTO_MODE_LISTS.map((name) => [name, z.array(z.string()).optional()])) as {
-      [Name in AutoModeList]: z.ZodOptional<z.ZodArray<z.ZodString>>
-    },
-  )
-  .strict()
-
-export type OwnedSettings = {
-  permissions: unknown
-  hooks: unknown
-  autoMode?: OwnedAutoMode
-  env?: Record<string, string>
-  envKeys?: string[]
-}
+export type { AutoModeList, OwnedAutoMode, OwnedSettings }
+export { AUTO_MODE_LISTS, ENV_NAME }
 
 export type SettingsEnvOperation = 'set' | 'unset'
 
@@ -41,20 +34,6 @@ export type SettingsEnvEdit = {
   changed: boolean
   message: string
 }
-
-export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
-
-const ownedSettingsSchema = z
-  .object({
-    permissions: z.unknown(),
-    hooks: z.unknown(),
-    autoMode: ownedAutoModeSchema.optional(),
-    env: z.record(z.string().regex(ENV_NAME), z.string()).default({}),
-    envKeys: z
-      .array(z.string().regex(ENV_NAME))
-      .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name)),
-  })
-  .strict()
 
 export const SETTINGS_PARSE_REFUSAL =
   'refusing settings file: cannot parse JSON\ncleared by: fix the JSON syntax in the settings file'
@@ -99,7 +78,7 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
       'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, env, and envKeys',
     )
   }
-  const result = ownedSettingsSchema.safeParse(parsed)
+  const result = OWNED_SETTINGS_SCHEMA.safeParse(parsed)
   if (!result.success) {
     throw new Error(
       'refusing settings body: unknown or missing top-level keys\n' +
@@ -111,18 +90,19 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
 }
 
 export function parseStoredOwnedSettings(body: string): OwnedSettings {
-  let parsed: unknown
   try {
-    parsed = JSON.parse(body) as unknown
-  } catch {
-    throw new Error('refusing stored settings row: cannot parse JSON')
+    const parsed = parseStoredSettingsRow(body)
+    assertValidEnvironment(parsed, 'stored settings row')
+    return parsed
+  } catch (error) {
+    if (error instanceof StoredSettingsRowError && error.reason === 'json') {
+      throw new Error('refusing stored settings row: cannot parse JSON')
+    }
+    if (error instanceof StoredSettingsRowError && error.reason === 'shape') {
+      throw new Error('refusing stored settings row: invalid owned settings shape')
+    }
+    throw error
   }
-  if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'env')) parsed.env = {}
-  if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'envKeys')) parsed.envKeys = []
-  const result = ownedSettingsSchema.safeParse(parsed)
-  if (!result.success) throw new Error('refusing stored settings row: invalid owned settings shape')
-  assertValidEnvironment(result.data, 'stored settings row')
-  return result.data
 }
 
 export function refuseSettingsBody(scope: string, body: string): string | null {
@@ -248,7 +228,7 @@ export function secretShapedPaths(owned: OwnedSettings): string[] {
 }
 
 function parseAutoMode(value: unknown): OwnedAutoMode {
-  const result = ownedAutoModeSchema.safeParse(value)
+  const result = OWNED_AUTO_MODE_SCHEMA.safeParse(value)
   if (!result.success) {
     throw new Error(
       'refusing settings file: invalid autoMode\ncleared by: use only allow, soft_deny, hard_deny, and environment arrays of strings',

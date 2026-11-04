@@ -6,13 +6,14 @@ import {
   AUTONOMY_VALUES,
   type AutonomyStage,
 } from '../../../../shared/autonomy.ts'
-import { type StoredSettings, summarizeSettings } from '../../../../shared/settings-summary.ts'
+import { summarizeSettings } from '../../../../shared/settings-summary.ts'
 import {
   readStoredShipTo,
   SHIP_TO_CONFIG_KEY,
   SHIP_TO_VALUES,
   STORED_SHIP_TO_CONFIG_ALIAS,
 } from '../../../../shared/ship-to.ts'
+import { type OwnedSettings, parseStoredSettingsRow } from '../../../../shared/stored-settings.ts'
 import {
   createRecordClient,
   type RecordClient,
@@ -166,21 +167,15 @@ async function clearHostedStageOverrides(client: RecordClient, entries: RecordCo
   }
 }
 
-function parseStoredSettings(body: string): StoredSettings {
-  let value: unknown
+function parseStoredSettings(body: string): OwnedSettings {
   try {
-    value = JSON.parse(body) as unknown
-  } catch {
-    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'stored settings are invalid' })
+    return parseStoredSettingsRow(body)
+  } catch (error) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: error instanceof Error ? error.message : String(error),
+    })
   }
-  const parsed = z
-    .object({ permissions: z.unknown(), hooks: z.unknown(), envKeys: z.array(z.string()) })
-    .strict()
-    .safeParse(value)
-  if (!parsed.success) {
-    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'stored settings are invalid' })
-  }
-  return parsed.data
 }
 
 async function settingsRow(

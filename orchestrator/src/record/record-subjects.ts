@@ -12,7 +12,10 @@ import {
 } from '../../../shared/subjects.ts'
 import { type RecordCursor, type RecordCursorRow, recordCursorAt } from './record-cursor.ts'
 import { recordPool } from './record-pool.ts'
-import { resolveRecordProjectIdentity } from './record-project-identity.ts'
+import {
+  resolveRecordProjectByName,
+  resolveRecordProjectIdentity,
+} from './record-project-identity.ts'
 
 export type RecordSubject = SubjectOutput & RecordCursorRow
 
@@ -25,6 +28,12 @@ export class RecordSubjectError extends Error {
 }
 
 type Tenant = { url: string } & TenantPrincipal
+
+const missingProject = (project: string) =>
+  new RecordSubjectError(
+    `project "${project}" is not present in this record space; cleared by: ${PLATFORM_SLUG} project list`,
+    404,
+  )
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
@@ -71,13 +80,21 @@ async function projectId(
     projectName: project,
     spaceId,
   })
-  if (resolved.status !== 'found') {
-    throw new RecordSubjectError(
-      `project "${project}" is not present in this record space; cleared by: ${PLATFORM_SLUG} project list`,
-      404,
-    )
-  }
+  if (resolved.status !== 'found') throw missingProject(project)
   return resolved.project.id
+}
+
+async function readProjectId(
+  tx: SQL,
+  input: { spaceId: string; project: string; projectId?: string | null },
+): Promise<string> {
+  if (input.projectId) return projectId(tx, input.spaceId, input.project, input.projectId)
+  const resolved = await resolveRecordProjectByName(tx, {
+    spaceId: input.spaceId,
+    projectName: input.project,
+  })
+  if (resolved.status === 'absent') throw missingProject(input.project)
+  return resolved.projectId
 }
 
 async function assertParent(
@@ -115,7 +132,11 @@ export async function listRecordSubjects(
 ): Promise<RecordSubject[]> {
   return tenant(input, async (tx) => {
     const selectedProjectId = input.project
-      ? await projectId(tx, input.spaceId, input.project, input.projectId)
+      ? await readProjectId(tx, {
+          spaceId: input.spaceId,
+          project: input.project,
+          projectId: input.projectId,
+        })
       : null
     const rows = await tx`
       SELECT s.*,p.name AS project,

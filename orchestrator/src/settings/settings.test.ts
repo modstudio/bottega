@@ -182,6 +182,17 @@ test('a stored row without auto-mode round trips without gaining ownership', () 
   expect(JSON.parse(serializeOwnedSettings(parsed))).not.toHaveProperty('autoMode')
 })
 
+test('stored-row adapters preserve their orchestrator refusal messages', () => {
+  expect(() => parseStoredOwnedSettings('{')).toThrow(
+    'refusing stored settings row: cannot parse JSON',
+  )
+  expect(() =>
+    parseStoredOwnedSettings(
+      JSON.stringify({ permissions: {}, hooks: {}, envKeys: [], undeclared: true }),
+    ),
+  ).toThrow('refusing stored settings row: invalid owned settings shape')
+})
+
 describe('editSettingsEnv', () => {
   test('set then unset sorts names and preserves other owned settings', () => {
     const original = {
