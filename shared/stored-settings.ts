@@ -26,18 +26,23 @@ export type OwnedSettings = {
   envKeys?: string[]
 }
 
+const ENV_KEYS_SCHEMA = z
+  .array(z.string().regex(ENV_NAME))
+  .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name))
+
 export const OWNED_SETTINGS_SCHEMA = z
   .object({
     permissions: z.unknown(),
     hooks: z.unknown(),
     autoMode: OWNED_AUTO_MODE_SCHEMA.optional(),
     env: z.record(z.string().regex(ENV_NAME), z.string()).default({}),
-    envKeys: z
-      .array(z.string().regex(ENV_NAME))
-      .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name))
-      .default([]),
+    envKeys: ENV_KEYS_SCHEMA,
   })
   .strict()
+
+const STORED_SETTINGS_ROW_SCHEMA = OWNED_SETTINGS_SCHEMA.extend({
+  envKeys: ENV_KEYS_SCHEMA.default([]),
+})
 
 export const STORED_SETTINGS_REMEDY =
   'cleared by: write a JSON object with permissions, hooks, optional autoMode, env string values, and sorted envKeys names'
@@ -73,7 +78,7 @@ export function parseStoredSettingsRow(body: string): OwnedSettings {
   } catch {
     throw new StoredSettingsRowError('json')
   }
-  const result = OWNED_SETTINGS_SCHEMA.safeParse(parsed)
+  const result = STORED_SETTINGS_ROW_SCHEMA.safeParse(parsed)
   if (!result.success) {
     throw new StoredSettingsRowError('shape', firstIssuePath(result.error.issues[0]!))
   }

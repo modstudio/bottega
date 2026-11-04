@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
 import {
+  OWNED_SETTINGS_SCHEMA,
   parseStoredSettingsRow,
   STORED_SETTINGS_REMEDY,
   StoredSettingsRowError,
 } from './stored-settings.ts'
 
 test('stored settings rows default legacy environment fields and name invalid keys', () => {
+  expect(OWNED_SETTINGS_SCHEMA.safeParse({ permissions: {}, hooks: {} }).success).toBeFalse()
+
   expect(parseStoredSettingsRow(JSON.stringify({ permissions: {}, hooks: {} }))).toEqual({
     permissions: {},
     hooks: {},
