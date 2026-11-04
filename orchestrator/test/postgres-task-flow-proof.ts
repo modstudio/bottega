@@ -9,13 +9,13 @@ import { newRecordId } from '../../shared/record-id.ts'
 import { migratedTestDatabase } from '../src/database/test-database.fixture.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
 import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
+import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { cacheHostedTaskFlow } from '../src/workflow/task-flow-read-through.ts'
 import { composeWorkflowWithCursor, nextWorkflowStep } from '../src/workflow/workflow-cursor.ts'
 import { testPorts } from '../src/workflow/workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from '../src/workflow/workflow-seeds.ts'
 import { installWorkflowStoreFixture } from '../src/workflow/workflow-store.fixture.ts'
-import { promoteWorkflowLocal, setWorkflowLocal } from '../src/workflow/workflows.ts'
 import { testRecordAuth } from './fixtures/record-auth-postgres.ts'
 
 type Input = {
@@ -31,7 +31,7 @@ type Input = {
 }
 
 const PROJECT = 'auth-a-project'
-const WORKFLOW = 'hosted-task-flow-proof'
+const WORKFLOW = 'fix-defect'
 const TASK_KEY = 'AA-2098'
 
 function proofDatabase(projectId: string): Database {
@@ -53,26 +53,6 @@ function proofDatabase(projectId: string): Database {
         tracker: { protocol: 'hub' },
       }),
     )
-  const draft = setWorkflowLocal(
-    WORKFLOW,
-    {
-      title: 'Hosted task-flow proof',
-      description: 'Keeps a stage open across one cross-machine advance.',
-      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
-      modes: [
-        {
-          slug: 'default',
-          title: 'Default',
-          default: true,
-          steps: ['score', 'complete'],
-        },
-      ],
-    },
-    'real Postgres task-flow proof',
-    'test',
-    database,
-  )
-  promoteWorkflowLocal(WORKFLOW, draft.n, 'publish real Postgres proof workflow', 'test', database)
   return database
 }
 
@@ -84,8 +64,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     const configRoot = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-task-flow-proof-`))
     const previousConfigRoot = process.env.BOTTEGA_CONFIG_HOME
     const databaseA = proofDatabase(input.projectId())
-    const databaseB = Database.deserialize(databaseA.serialize())
-    databaseB.exec('PRAGMA foreign_keys=ON')
+    let databaseB: Database | undefined
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
     try {
       process.env.BOTTEGA_CONFIG_HOME = configRoot
@@ -105,6 +84,13 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         bearerHeaders(input.tokenB()),
         input.spaceId(),
       )
+
+      input.setToken(input.tokenA())
+      const client = recordApiClient()
+      await client.ensureSpaceBuiltIns!({ destinationSpaceId: input.spaceId() })
+      await pullRecordCache(databaseA)
+      databaseB = Database.deserialize(databaseA.serialize())
+      databaseB.exec('PRAGMA foreign_keys=ON')
 
       setMachineValue('machine.id', machineA)
       const opened = composeWorkflowWithCursor(
@@ -137,7 +123,6 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
 
       input.setToken(input.tokenB())
-      const client = recordApiClient()
       const byTask = await client.readTaskFlow!({ taskKey: TASK_KEY })
       const byFlow = await client.readTaskFlow!({ flowRecordId: localIds.flow_id })
       for (const hosted of [byTask, byFlow]) {
@@ -153,6 +138,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
 
       cacheHostedTaskFlow(databaseB, TASK_KEY, byTask)
       setMachineValue('machine.id', machineB)
+      // The built-in diagnose step has a recorded-artifact floor; this proof exercises takeover.
       databaseB
         .query("UPDATE workflow_cursor SET enforcement='note-only' WHERE record_id=?")
         .run(localIds.stage_id)
@@ -234,7 +220,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     } finally {
       await auth.close()
       databaseA.close()
-      databaseB.close()
+      databaseB?.close()
       if (previousConfigRoot === undefined) delete process.env.BOTTEGA_CONFIG_HOME
       else process.env.BOTTEGA_CONFIG_HOME = previousConfigRoot
       rmSync(configRoot, { recursive: true, force: true })
