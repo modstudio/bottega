@@ -40,12 +40,6 @@ if [[ -f "$INSTALL_ROOT/.git" ]]; then
 fi
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
-# Provisional: today's stale runs were 16-40h old and ghost intervals 19h old,
-# so four hours catches every measured case without hourly noise. Each pass
-# records condition ages; revisit this after a week of that evidence.
-PROVISIONAL_MONITOR_BACKSTOP_SECONDS=$((4 * 60 * 60))
-FIX_DEFECT_BACKSTOP_SECONDS=$((12 * 60 * 60))
-
 LOAD_WAIT_TRIES=20
 LOAD_WAIT_SECONDS=0.25
 FAILED_LABELS=()
@@ -127,7 +121,8 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   wait_unloaded "$label"
   rm -f "$target"
 
-  # Render template -> real plist with absolute paths for this machine.
+  # Render template -> real plist with absolute paths for this machine through
+  # the same renderer doctor uses to detect installed-definition drift.
   #   __INSTALL_ROOT__ -> the resolved checkout or distribution root,
   #   __BOTTEGA_BIN__ -> this checkout's command-line executable,
   #   __CONCERN__ -> the installed template owner's directory,
@@ -135,23 +130,18 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   #   __MODEL_HOST__ -> the configured SSH alias, tunnel port placeholders,
   #   __SPARE_START_HOUR__/__SPARE_START_MINUTE__ -> the hour and minute parsed
   #     from the spare.start_time configuration value.
-  sed -e "s#__INSTALL_ROOT__#${INSTALL_ROOT}#g" -e "s#__BOTTEGA_BIN__#${PRODUCT_BIN}#g" \
-      -e "s#__CONCERN__#${CONCERN}#g" \
-      -e "s#__HOME__#${HOME}#g" \
-      -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
-      -e "s#__STATE_HOME__#${STATE_HOME}#g" \
-      -e "s#__MONITOR_BACKSTOP_SECONDS__#${PROVISIONAL_MONITOR_BACKSTOP_SECONDS}#g" \
-      -e "s#__FIX_DEFECT_BACKSTOP_SECONDS__#${FIX_DEFECT_BACKSTOP_SECONDS}#g" \
-      -e "s#__MODEL_HOST__#${MODEL_HOST}#g" \
-      -e "s#__TUNNEL_LOCAL_PORT__#${TUNNEL_LOCAL_PORT}#g" \
-      -e "s#__TUNNEL_REMOTE_PORT__#${TUNNEL_REMOTE_PORT}#g" \
-      -e "s#__FLYCTL__#${FLYCTL}#g" \
-      -e "s#__SPARE_START_HOUR__#${SPARE_START_HOUR}#g" \
-      -e "s#__SPARE_START_MINUTE__#${SPARE_START_MINUTE}#g" \
-      -e "s#__RECORD_TUNNEL_APP__#${RECORD_TUNNEL_APP}#g" \
-      -e "s#__RECORD_TUNNEL_LOCAL_PORT__#${RECORD_TUNNEL_LOCAL_PORT}#g" \
-      -e "s#__RECORD_TUNNEL_REMOTE_PORT__#${RECORD_TUNNEL_REMOTE_PORT}#g" \
-      -e "s#__HUB_HOSTED_URL__#${BOTTEGA_HOSTED_URL:-}#g" "$tmpl" > "$target"
+  bun --no-env-file "$INSTALL_ROOT/shared/launch-agent-render.ts" "$tmpl" "$target" \
+      "__INSTALL_ROOT__" "$INSTALL_ROOT" "__BOTTEGA_BIN__" "$PRODUCT_BIN" \
+      "__CONCERN__" "$CONCERN" "__HOME__" "$HOME" \
+      "__STATE_HOME_ENV__" "$STATE_HOME_ENV" "__STATE_HOME__" "$STATE_HOME" \
+      "__MODEL_HOST__" "$MODEL_HOST" "__TUNNEL_LOCAL_PORT__" "$TUNNEL_LOCAL_PORT" \
+      "__TUNNEL_REMOTE_PORT__" "$TUNNEL_REMOTE_PORT" "__FLYCTL__" "$FLYCTL" \
+      "__SPARE_START_HOUR__" "$SPARE_START_HOUR" \
+      "__SPARE_START_MINUTE__" "$SPARE_START_MINUTE" \
+      "__RECORD_TUNNEL_APP__" "$RECORD_TUNNEL_APP" \
+      "__RECORD_TUNNEL_LOCAL_PORT__" "$RECORD_TUNNEL_LOCAL_PORT" \
+      "__RECORD_TUNNEL_REMOTE_PORT__" "$RECORD_TUNNEL_REMOTE_PORT" \
+      "__HUB_HOSTED_URL__" "${BOTTEGA_HOSTED_URL:-}"
   if ! bun --no-env-file "$INSTALL_ROOT/orchestrator/src/setup/environment-name-migration.ts" check-file "$target"; then
     echo "refusing installed plist with a legacy environment name: $target" >&2
     FAILED_LABELS+=("$label")

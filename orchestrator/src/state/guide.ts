@@ -16,6 +16,7 @@ import { promptBucketsForJob } from '../route/prompt-size-bucket-store.ts'
 import { type candidates, evidenceFor, pick } from '../route/route.ts'
 import { MIN_SAMPLE } from '../route/route-selection.ts'
 import { POOL_SUCCESSFUL_RUN_SAMPLES_SQL } from '../route/routing-pool-evidence.ts'
+import { AgentCapacityError, RoutingRefusalError } from '../route/routing-refusal.ts'
 import { median } from './statistics.ts'
 
 type AgentOnJob = {
@@ -53,6 +54,8 @@ export type JobGuide = {
   untried: string[]
   /** Where a run goes by default. Exploration can still divert a share elsewhere. */
   routesTo: string | null
+  /** True when external delegation has no eligible agent for this job. */
+  unroutable: boolean
   /** Whether this machine dispatches the job externally or leaves it to the harness. */
   delegation: DelegationMode
   reason: string
@@ -66,23 +69,62 @@ export type JobGuide = {
   excluded: { agent: string; why: string }[]
 }
 
+export function guideRouteDecision(
+  delegation: DelegationMode,
+  delegationSetting: string,
+  selection:
+    | { kind: 'harness' }
+    | { kind: 'routed'; agent: string; reason: string }
+    | { kind: 'refused'; headline: string }
+    | { kind: 'capacity'; headline: string },
+): Pick<JobGuide, 'delegation' | 'routesTo' | 'unroutable' | 'reason'> {
+  if (selection.kind === 'harness')
+    return {
+      delegation,
+      routesTo: null,
+      unroutable: false,
+      reason: `handled by the harness's own sub-agent   (${delegationSetting}=harness)`,
+    }
+  if (selection.kind === 'refused')
+    return {
+      delegation,
+      routesTo: null,
+      unroutable: true,
+      reason: selection.headline,
+    }
+  if (selection.kind === 'capacity')
+    return {
+      delegation,
+      routesTo: null,
+      unroutable: false,
+      reason: selection.headline,
+    }
+  return { delegation, routesTo: selection.agent, unroutable: false, reason: selection.reason }
+}
+
 function guideRoute(
   name: string,
   promptBytes: number,
   lens: string | undefined,
   settings: DelegationSettings,
-): Pick<JobGuide, 'delegation' | 'routesTo' | 'reason'> {
+): Pick<JobGuide, 'delegation' | 'routesTo' | 'unroutable' | 'reason'> {
   const jobClass = delegationClass(JOBS[name]!.needs)
   const delegation = delegationMode(JOBS[name]!.needs, settings)
   const delegationSetting = DELEGATION_SETTING_KEYS[jobClass]
   if (delegation === 'harness')
-    return {
-      delegation,
-      routesTo: null,
-      reason: `handled by the harness's own sub-agent   (${delegationSetting}=harness)`,
-    }
-  const chosen = pick(name, undefined, promptBytes, false, null, {}, false, lens)
-  return { delegation, routesTo: chosen.agent, reason: chosen.reason }
+    return guideRouteDecision(delegation, delegationSetting, { kind: 'harness' })
+  try {
+    return guideRouteDecision(delegation, delegationSetting, {
+      kind: 'routed',
+      ...pick(name, undefined, promptBytes, false, null, {}, false, lens),
+    })
+  } catch (error) {
+    if (!(error instanceof RoutingRefusalError)) throw error
+    return guideRouteDecision(delegation, delegationSetting, {
+      kind: error instanceof AgentCapacityError ? 'capacity' : 'refused',
+      headline: error.message.split('\n', 1)[0]!,
+    })
+  }
 }
 
 function successfulRunSamples(): {

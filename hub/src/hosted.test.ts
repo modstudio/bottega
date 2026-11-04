@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
-import { hostedServerConfig } from './hosted.ts'
+import { hostedRequestHandler, hostedServerConfig } from './hosted.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
 describe('hosted server config', () => {
@@ -54,6 +54,17 @@ describe('hosted server config', () => {
 })
 
 describe('hostedRouter', () => {
+  test('hosted tRPC errors do not expose a stack', async () => {
+    const response = await hostedRequestHandler({
+      recordApiUrl: 'https://api.example.test',
+      recordDatabaseUrl: {} as never,
+    })(new Request('https://hub.example.test/trpc/notFound'))
+    const body = (await response.json()) as { error: { data: Record<string, unknown> } }
+
+    expect(response.status).toBe(404)
+    expect(body.error.data).not.toHaveProperty('stack')
+  })
+
   test('exposes the record and hosted context namespaces', () => {
     const procedures = Object.keys(hostedRouter._def.procedures).sort()
     expect(procedures).toEqual([

@@ -10,12 +10,18 @@ export const runModuleSpecs = [
   {
     file: 'orchestrator/src/health/launch-agent-doctor.ts',
     allowed: [
+      'node:fs',
       'node:fs/promises',
       'node:os',
+      'node:path',
       '../../../shared/brand.ts',
+      '../../../shared/env-values.ts',
       '../../../shared/install-root.ts',
+      '../../../shared/launch-agent-render.ts',
       '../../../shared/launch-agent-skip.ts',
       '../../../shared/machine-config.ts',
+      '../../../shared/state-directory.ts',
+      '../spare/spare-decisions.ts',
       '../setup/launchd-owners.ts',
       '../setup/setup-schedules.ts',
     ],

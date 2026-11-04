@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import {
   insertContention,
@@ -10,6 +11,41 @@ import { db } from '../database/db.ts'
 import { harnessHealth } from './health.ts'
 
 describe('harness health', () => {
+  test('ignores free-text reclassify reasons while counting cleared JSON', () => {
+    const now = new Date('2026-09-07T12:00:00.000Z')
+    const freeText = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      kind: 'escaped',
+      startedAt: '2026-09-07T10:00:00.000Z',
+    })
+    const cleared = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'failed',
+      kind: 'escaped',
+      startedAt: '2026-09-07T11:00:00.000Z',
+    })
+    const insert = db().query(
+      `INSERT INTO run_mutation_audit
+        (record_id, run_record_id, root_run_record_id, action, at, reason)
+       VALUES (?, ?, ?, 'reclassify', ?, ?)`,
+    )
+    insert.run(newRecordId(), freeText, freeText, '2026-09-07T10:30:00.000Z', 'escaped -> billing')
+    insert.run(
+      newRecordId(),
+      cleared,
+      cleared,
+      '2026-09-07T11:30:00.000Z',
+      JSON.stringify({ cleared: true }),
+    )
+
+    expect(
+      harnessHealth(1, db(), now).falseVerdicts.find(({ kind }) => kind === 'escaped'),
+    ).toMatchObject({ verdicts: 2, falseVerdicts: 1 })
+  })
+
   test('reports vendor capacity as its own operator-facing failure class', () => {
     const now = new Date('2026-09-07T12:00:00.000Z')
     const run = addRun({

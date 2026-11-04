@@ -13,7 +13,7 @@
         <string>--backstop</string>
     </array>
 
-    <!-- Provisional four-hour backstop. The installer owns the named constant
+    <!-- Provisional four-hour backstop. shared/launch-agent-render.ts owns the constant
          and its evidence; monitor_invocation and monitor_condition record the
          observations that will replace this first value. -->
     <key>StartInterval</key>

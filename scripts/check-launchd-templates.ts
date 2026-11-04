@@ -4,6 +4,11 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import {
+  FIX_DEFECT_BACKSTOP_SECONDS,
+  LAUNCH_AGENT_PLACEHOLDERS,
+  MONITOR_BACKSTOP_SECONDS,
+} from '../shared/launch-agent-render.ts'
 import { readMachineValue } from '../shared/machine-config.ts'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -41,10 +46,46 @@ export function templatePlaceholders(text: string): string[] {
   return [...new Set(text.match(/__[A-Z0-9_]+__/g) ?? [])]
 }
 
+function rendererInvocations(script: string): string[][] {
+  return script
+    .replaceAll(/\\\r?\n/g, ' ')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .map((line) =>
+      (line.match(/"(?:[^"\\]|\\.)*"|'[^']*'|\S+/g) ?? []).map((token) =>
+        /^(["']).*\1$/.test(token) ? token.slice(1, -1) : token,
+      ),
+    )
+    .filter(
+      (tokens) =>
+        tokens[0] === 'bun' &&
+        tokens[1] === '--no-env-file' &&
+        tokens[2]?.endsWith('shared/launch-agent-render.ts'),
+    )
+}
+
 /** The placeholders an installer's substitution rules cover. */
 export function installerPlaceholders(script: string): Set<string> {
-  const names = [...script.matchAll(/s#(__[A-Z0-9_]+__)#/g)].map((match) => match[1]!)
-  return new Set(names)
+  const invocations = rendererInvocations(script)
+  const rendererRules = new Set<string>()
+  for (const tokens of invocations) {
+    for (let index = 5; index + 1 < tokens.length; index += 2) {
+      const placeholder = tokens[index]!
+      if (/^__[A-Z0-9_]+__$/.test(placeholder)) rendererRules.add(placeholder)
+    }
+  }
+  return rendererRules
+}
+
+/** Explicit installer pairs plus defaults supplied by the renderer CLI itself. */
+export function installerRenderRules(script: string): Set<string> {
+  const rules = installerPlaceholders(script)
+  if (rendererInvocations(script).length > 0) {
+    rules.add('__MONITOR_BACKSTOP_SECONDS__')
+    rules.add('__FIX_DEFECT_BACKSTOP_SECONDS__')
+  }
+  return rules
 }
 
 /**
@@ -82,49 +123,30 @@ export function clockParts(value: string): { hour: number; minute: number } | nu
  * reads as a number comes from the same source the installer reads, so the lint
  * render and the install render cannot disagree.
  */
-function renderValue(placeholder: string, concern: string): string | null {
+type LaunchAgentPlaceholder = (typeof LAUNCH_AGENT_PLACEHOLDERS)[number]
+
+function lintValues(concern: string): Record<LaunchAgentPlaceholder, string | null> {
   const spare = clockParts(readMachineValue('spare.start_time'))
-  switch (placeholder) {
-    case '__INSTALL_ROOT__':
-      return repositoryRoot
-    case '__BOTTEGA_BIN__':
-      return join(repositoryRoot, 'bin', PLATFORM_SLUG)
-    case '__CONCERN__':
-      return concern
-    case '__HOME__':
-      return '/tmp'
-    case '__STATE_HOME_ENV__':
-      return `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`
-    case '__STATE_HOME__':
-      return `/tmp/${PLATFORM_SLUG}-state`
-    case '__HUB_HOSTED_URL__':
-      return 'https://hub.example'
-    case '__HUB_PORT__':
-      return '7778'
-    case '__MONITOR_BACKSTOP_SECONDS__':
-      return '14400'
-    case '__FIX_DEFECT_BACKSTOP_SECONDS__':
-      return '43200'
-    case '__MODEL_HOST__':
-      return 'example'
-    case '__TUNNEL_LOCAL_PORT__':
-      return '8010'
-    case '__TUNNEL_REMOTE_PORT__':
-      return '8000'
-    case '__FLYCTL__':
-      return '/usr/bin/true'
-    case '__RECORD_TUNNEL_APP__':
-      return 'example-record'
-    case '__RECORD_TUNNEL_LOCAL_PORT__':
-      return '15432'
-    case '__RECORD_TUNNEL_REMOTE_PORT__':
-      return '5432'
-    case '__SPARE_START_HOUR__':
-      return spare ? String(spare.hour) : null
-    case '__SPARE_START_MINUTE__':
-      return spare ? String(spare.minute) : null
-    default:
-      return null
+  return {
+    __INSTALL_ROOT__: repositoryRoot,
+    __BOTTEGA_BIN__: join(repositoryRoot, 'bin', PLATFORM_SLUG),
+    __CONCERN__: concern,
+    __HOME__: '/tmp',
+    __STATE_HOME_ENV__: `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`,
+    __STATE_HOME__: `/tmp/${PLATFORM_SLUG}-state`,
+    __MONITOR_BACKSTOP_SECONDS__: String(MONITOR_BACKSTOP_SECONDS),
+    __FIX_DEFECT_BACKSTOP_SECONDS__: String(FIX_DEFECT_BACKSTOP_SECONDS),
+    __MODEL_HOST__: 'example',
+    __TUNNEL_LOCAL_PORT__: '8010',
+    __TUNNEL_REMOTE_PORT__: '8000',
+    __FLYCTL__: '/usr/bin/true',
+    __SPARE_START_HOUR__: spare ? String(spare.hour) : null,
+    __SPARE_START_MINUTE__: spare ? String(spare.minute) : null,
+    __RECORD_TUNNEL_APP__: 'example-record',
+    __RECORD_TUNNEL_LOCAL_PORT__: '15432',
+    __RECORD_TUNNEL_REMOTE_PORT__: '5432',
+    __HUB_PORT__: '7778',
+    __HUB_HOSTED_URL__: 'https://hub.example',
   }
 }
 
@@ -188,12 +210,15 @@ function checkTemplate(input: {
       templateName: name,
       templateText: template,
       installerName: installer,
-      installRules: installerPlaceholders(readFileSync(join(repositoryRoot, installer), 'utf8')),
+      installRules: installerRenderRules(readFileSync(join(repositoryRoot, installer), 'utf8')),
     }),
   )
   let rendered = template
+  const values = lintValues(concern)
   for (const placeholder of templatePlaceholders(template)) {
-    const value = renderValue(placeholder, concern)
+    const value = LAUNCH_AGENT_PLACEHOLDERS.includes(placeholder as LaunchAgentPlaceholder)
+      ? values[placeholder as LaunchAgentPlaceholder]
+      : null
     if (value === null) {
       errors.push(`${name}: no lint value for placeholder ${placeholder}`)
       continue
