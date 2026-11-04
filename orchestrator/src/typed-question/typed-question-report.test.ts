@@ -125,18 +125,25 @@ test('leaves unlinked findings pending when either is untriaged', () => {
   expect(findingDuplicateLabel(db(), ids.join(':'))).toBeNull()
 })
 
-function answer(input: { question: string; version: number; subject: string; noul: number }): void {
+function answer(input: {
+  question: string
+  version: number
+  subject: string
+  noul: number
+  subjectKind?: string
+}): void {
   db()
     .query(
       `INSERT INTO typed_question_answer
        (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
         model,input_tokens,latency_ms,error,created_at)
-       VALUES (?,?,?,'spec',?,'state',?,'jev',100,10,NULL,?)`,
+       VALUES (?,?,?,?,?,'state',?,'jev',100,10,NULL,?)`,
     )
     .run(
       newRecordId(),
       input.question,
       input.version,
+      input.subjectKind ?? 'spec',
       input.subject,
       JSON.stringify({ noul: input.noul }),
       new Date().toISOString(),
@@ -161,7 +168,7 @@ test('reports each version on its own and joins outcomes only for a declared que
   })
   answer({
     question: SPEC_UNSETTLED_QUESTION.id,
-    version: current + 1,
+    version: current + 2,
     subject: 'report-asked',
     noul: 0.9,
   })
@@ -180,9 +187,47 @@ test('reports each version on its own and joins outcomes only for a declared que
   })
   const later = report.find(
     (block) =>
-      block.questionId === SPEC_UNSETTLED_QUESTION.id && block.questionVersion === current + 1,
+      block.questionId === SPEC_UNSETTLED_QUESTION.id && block.questionVersion === current + 2,
   )!
   expect(later).toMatchObject({ threshold: null, labeled: 1, precision: null, warnedRate: null })
   const undeclared = report.find((block) => block.questionId === 'undeclared')!
   expect(undeclared).toMatchObject({ recorded: 1, threshold: null, labeled: null, auc: null })
+})
+
+test('labels spec answers against the job in subject kind and maps legacy spec to implement', () => {
+  ask(run({ spec: 'job-specific', status: 'ok', job: 'review-lens' }))
+  run({ spec: 'job-specific', status: 'ok', job: 'implement' })
+  expect(specUnsettledLabel(db(), 'job-specific', 'spec:review-lens')).toBeTrue()
+  expect(specUnsettledLabel(db(), 'job-specific', 'spec')).toBeFalse()
+})
+
+test('groups answers separately by version and subject kind', () => {
+  answer({
+    question: SPEC_UNSETTLED_QUESTION.id,
+    version: 1,
+    subject: 'group-v1',
+    subjectKind: 'spec:implement',
+    noul: 0.1,
+  })
+  answer({
+    question: SPEC_UNSETTLED_QUESTION.id,
+    version: 2,
+    subject: 'group-v2',
+    subjectKind: 'spec:implement',
+    noul: 0.1,
+  })
+  answer({
+    question: SPEC_UNSETTLED_QUESTION.id,
+    version: 2,
+    subject: 'group-review',
+    subjectKind: 'spec:review-lens',
+    noul: 0.1,
+  })
+  const groups = typedQuestionReport({ question: SPEC_UNSETTLED_QUESTION.id }).map((block) => [
+    block.questionVersion,
+    block.subjectKind,
+  ])
+  expect(groups).toContainEqual([1, 'spec:implement'])
+  expect(groups).toContainEqual([2, 'spec:implement'])
+  expect(groups).toContainEqual([2, 'spec:review-lens'])
 })

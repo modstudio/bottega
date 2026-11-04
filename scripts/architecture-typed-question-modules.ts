@@ -27,7 +27,9 @@ export const typedQuestionModules = [
   ]),
   module('orchestrator/src/typed-question/spec-unsettled-question.ts', [
     '../../../shared/typed-question/registry.ts',
+    './cited-context.ts',
   ]),
+  module('orchestrator/src/typed-question/cited-context.ts', []),
   module('orchestrator/src/typed-question/finding-duplicate-question.ts', [
     '../../../shared/typed-question/registry.ts',
   ]),
@@ -45,6 +47,20 @@ export const typedQuestionModules = [
     '../../../shared/typed-question/typed-question-blocks.ts',
     '../../../shared/typed-question/typed-question-render.ts',
     './typed-question-report.ts',
+    './typed-question-backtest.ts',
+  ]),
+  module('orchestrator/src/typed-question/typed-question-backtest.ts', [
+    'bun:sqlite',
+    'node:fs',
+    'node:path',
+    '../../../shared/typed-question/registry.ts',
+    '../../../shared/typed-question/typed-question-render.ts',
+    '../collect/finding-duplicate-suggestions.ts',
+    '../database/db.ts',
+    '../git/git-environment.ts',
+    '../project/projects.ts',
+    './typed-question-report.ts',
+    './typed-question-service.ts',
   ]),
   module('hub/src/typed-question-service.ts', [
     'bun:sqlite',

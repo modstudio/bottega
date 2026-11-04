@@ -96,12 +96,15 @@ test.each([
     },
     async (asked) => {
       expect(asked).toMatchObject({
-        question: { id: 'spec_unsettled', version: 1 },
-        subjectKind: 'spec',
+        question: { id: 'spec_unsettled' },
+        subjectKind: 'spec:implement',
         subjectRef: '0123456789abcdef',
-        state: 'Choose a reasonable implementation.',
       })
-      return { noul: probability }
+      if (asked.question.version === 1) {
+        expect(asked.state).toBe('Choose a reasonable implementation.')
+        return { noul: probability }
+      }
+      return { noul: 1 }
     },
     (...values) => warnings.push(values),
   )
@@ -129,13 +132,10 @@ test('unsettled-spec warning stays silent on no answer', async () => {
   expect(warnings).toEqual([])
 })
 
-test.each([
-  ['diagnose', false],
-  ['implement', true],
-] as const)('does not ask for job=%s continuation=%p', async (jobName, continuation) => {
+test('a continuation does not ask', async () => {
   let asks = 0
   await warnForUnsettledSpec(
-    { jobName, continuation, spec: 'spec', specIdentity: 'spec-sha' },
+    { jobName: 'implement', continuation: true, spec: 'spec', specIdentity: 'spec-sha' },
     async () => {
       asks += 1
       return { noul: 1 }
@@ -145,16 +145,33 @@ test.each([
   expect(asks).toBe(0)
 })
 
+test('every new job asks both versions but only implement v1 warns', async () => {
+  for (const jobName of ['diagnose', 'implement']) {
+    const versions: number[] = []
+    const warnings: unknown[][] = []
+    await warnForUnsettledSpec(
+      { jobName, continuation: false, spec: 'spec', specIdentity: 'spec-sha' },
+      async ({ question }) => {
+        versions.push(question.version)
+        return { noul: 1 }
+      },
+      (...values) => warnings.push(values),
+    )
+    expect(versions.sort()).toEqual([1, 2])
+    expect(warnings).toHaveLength(jobName === 'implement' ? 1 : 0)
+  }
+})
+
 test('unsettled-spec evidence uses the composed prompt identity and raw spec state', async () => {
   const rawSpec = '  Implement this behavior.  '
-  let asked:
-    | Parameters<Parameters<typeof composeDispatchPrompt>[0]['presentation']['askTypedQuestion']>[0]
-    | null = null
+  const asked: Parameters<
+    Parameters<typeof composeDispatchPrompt>[0]['presentation']['askTypedQuestion']
+  >[0][] = []
   const prompt = await composeDispatchPrompt({
     presentation: {
       readPrompt: async () => rawSpec,
       askTypedQuestion: async (input) => {
-        asked = input
+        asked.push(input)
         return null
       },
       error: () => {},
@@ -171,7 +188,12 @@ test('unsettled-spec evidence uses the composed prompt identity and raw spec sta
   })
 
   expect(prompt).toBe('Implement this behavior.')
-  expect(asked).toMatchObject({ subjectRef: sha(prompt), state: rawSpec })
+  expect(asked).toHaveLength(2)
+  expect(asked[0]).toMatchObject({ subjectRef: sha(prompt), state: rawSpec })
+  expect(asked[1]).toMatchObject({
+    subjectRef: sha(prompt),
+    state: { spec: rawSpec, files: [] },
+  })
 })
 
 test('an empty implementation spec is refused before asking the typed question', async () => {

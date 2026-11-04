@@ -6,6 +6,7 @@ export const FINDING_DUPLICATE_QUESTION = {
   version: 1,
   type: 'noul',
   threshold: 0.8,
+  backtestSource: 'finding-pairs',
   instructions:
     'These are two findings from independent code reviews of the same change. Judge whether they report the same underlying defect, so that one fix resolves both.',
-} as const satisfies NoulQuestion
+} as const satisfies NoulQuestion & { backtestSource: 'finding-pairs' }

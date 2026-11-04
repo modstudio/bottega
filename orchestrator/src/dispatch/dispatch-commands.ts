@@ -1,6 +1,7 @@
 // concern: dispatch-commands
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
@@ -24,7 +25,10 @@ import {
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { SPEC_UNSETTLED_QUESTION } from '../typed-question/spec-unsettled-question.ts'
+import {
+  SPEC_UNSETTLED_QUESTION,
+  SPEC_UNSETTLED_QUESTION_V2,
+} from '../typed-question/spec-unsettled-question.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
@@ -151,7 +155,7 @@ type DispatchPresentation = {
     question: TypedQuestion
     subjectKind: string
     subjectRef: string
-    state: string
+    state: string | Record<string, unknown>
   }): Promise<TypedQuestionAnswer | null>
   specIdentity(state: string): string
   validateSchema(path: string): unknown
@@ -204,24 +208,71 @@ type DispatchPresentation = {
 type SpecWarningInput = {
   jobName: string
   continuation: boolean
+  cwd?: string
   spec: string
   specIdentity: string
 }
 
-/** Ask about every new implementation spec, in every project, and present an advisory warning. */
+const SPEC_QUESTION_WAIT_MS = 3_000
+
+function citedFileReader(cwd: string): (path: string) => string | null {
+  return (path) => {
+    try {
+      const root = realpathSync(cwd)
+      const candidate = realpathSync(resolve(root, path))
+      const fromRoot = relative(root, candidate)
+      if (
+        fromRoot.startsWith('..') ||
+        resolve(root, fromRoot) !== candidate ||
+        !statSync(candidate).isFile()
+      )
+        return null
+      return readFileSync(candidate, 'utf8')
+    } catch {
+      return null
+    }
+  }
+}
+
+async function waitForSpecQuestions(
+  asks: Promise<[TypedQuestionAnswer | null, TypedQuestionAnswer | null]>,
+): Promise<[TypedQuestionAnswer | null, TypedQuestionAnswer | null] | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<null>((resolveTimeout) => {
+    timer = setTimeout(() => resolveTimeout(null), SPEC_QUESTION_WAIT_MS)
+  })
+  const result = await Promise.race([asks, timeout])
+  if (timer) clearTimeout(timer)
+  return result
+}
+
+/** Ask both declared versions about every new job spec; only implement v1 can warn. */
 export async function warnForUnsettledSpec(
   input: SpecWarningInput,
   ask: DispatchPresentation['askTypedQuestion'],
   warn: DispatchPresentation['error'],
 ): Promise<void> {
-  if (input.jobName !== 'implement' || input.continuation) return
-  const answer = await ask({
-    question: SPEC_UNSETTLED_QUESTION,
-    subjectKind: 'spec',
-    subjectRef: input.specIdentity,
-    state: input.spec,
-  })
-  if (answer && 'noul' in answer && answer.noul >= SPEC_UNSETTLED_QUESTION.threshold) {
+  if (input.continuation) return
+  const common = { subjectKind: `spec:${input.jobName}`, subjectRef: input.specIdentity }
+  const answers = Promise.all([
+    ask({ question: SPEC_UNSETTLED_QUESTION, ...common, state: input.spec }),
+    ask({
+      question: SPEC_UNSETTLED_QUESTION_V2,
+      ...common,
+      state: SPEC_UNSETTLED_QUESTION_V2.contextBuilder(
+        input.spec,
+        citedFileReader(input.cwd ?? process.cwd()),
+      ),
+    }),
+  ])
+  const completed = await waitForSpecQuestions(answers)
+  const answer = completed?.[0] ?? null
+  if (
+    input.jobName === 'implement' &&
+    answer &&
+    'noul' in answer &&
+    answer.noul >= SPEC_UNSETTLED_QUESTION.threshold
+  ) {
     warn(
       `! this spec likely leaves a choice unsettled (p=${answer.noul.toFixed(2)}): ` +
         'a worker will probably stop and ask; settle it first or dispatch anyway',
@@ -256,6 +307,7 @@ export async function composeDispatchPrompt(input: {
     {
       jobName: input.jobName,
       continuation: input.continuation,
+      cwd: input.cwd,
       spec,
       specIdentity: input.presentation.specIdentity(prompt),
     },

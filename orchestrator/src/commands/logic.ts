@@ -57,7 +57,10 @@ import { answerCommand, continueCommand, retryCommand } from '../run/run-message
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
-import { typedQuestionCommand } from '../typed-question/typed-question-commands.ts'
+import {
+  typedQuestionBacktestCommand,
+  typedQuestionCommand,
+} from '../typed-question/typed-question-commands.ts'
 import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
@@ -437,21 +440,32 @@ function registerMetricCommands(program: Command): void {
         presentation,
       ),
     )
-  describedCommand(program, 'typed-question', 'report typed-question outcomes and operating cost')
-    .option('--question <id>', 'report one question id')
+  describedCommand(
+    program,
+    'typed-question [action]',
+    'report typed-question outcomes and operating cost',
+  )
+    .option('--question <id>', 'report or backtest one question id')
+    .option('--version <value>', 'select a backtest question version')
     .option('--days <value>', 'limit answers to this many days')
+    .option('--job <name>', 'select a spec subject job')
+    .option('--limit <value>', 'limit backtest subjects')
+    .option('--project <name>', 'select a registered project')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
-    .action((options) =>
-      typedQuestionCommand(
+    .action((action, options) => {
+      if (action === 'backtest') return typedQuestionBacktestCommand(options, presentation)
+      if (action) throw new Error(`unknown typed-question command ${JSON.stringify(action)}`)
+      return typedQuestionCommand(
         {
           question: options.question,
           days: options.days,
+          job: options.job,
           json: Boolean(options.json),
         },
         presentation,
-      ),
-    )
+      )
+    })
 }
 
 async function epicAction(
