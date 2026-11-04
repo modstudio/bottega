@@ -227,7 +227,8 @@ describe('settings apply', () => {
     mkdirSync(config, { recursive: true })
     writeFileSync(
       join(config, 'machine.toml'),
-      '[permissions]\nallow = ["Bash(git status)"]\n' +
+      '[machine]\nglobal_use = "off"\n' +
+        '[permissions]\nallow = ["Bash(git status)"]\n' +
         '[permissions.drop]\nallow = ["Bash(orch *)", "Bash(missing)"]\n',
     )
     writeCurrentSettings()
@@ -236,9 +237,18 @@ describe('settings apply', () => {
       outcome: 'applied',
       detail: expect.stringContaining('unmatched drop(s): allow Bash(missing)'),
     })
-    expect(
-      JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).permissions,
-    ).toEqual({ allow: ['Bash(git status)'] })
+    const applied = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'))
+    expect(applied.permissions).toEqual({ allow: ['Bash(git status)'] })
+    const productHookCommands = Object.values(
+      applied.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>,
+    )
+      .flat()
+      .flatMap((group) => group.hooks)
+      .map((hook) => hook.command)
+    expect(productHookCommands.length).toBeGreaterThan(0)
+    for (const command of productHookCommands) {
+      expect(command).toContain('BOTTEGA_GLOBAL_USE=off')
+    }
   })
 
   test('a canon planning refusal preserves the atomic batch and reports every home', async () => {
