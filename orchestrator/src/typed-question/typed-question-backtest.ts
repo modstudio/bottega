@@ -14,6 +14,8 @@ import { db } from '../database/db.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import { type CitedFileReader, checkoutFileReader } from './cited-context.ts'
+import { FINDING_PAIR_SUBJECT_KIND } from './finding-duplicate-question.ts'
+import { specQuestionState, specSubjectKind } from './spec-unsettled-question.ts'
 import { TYPED_QUESTION_DECLARATIONS, typedQuestionReport } from './typed-question-report.ts'
 import { askTypedQuestion } from './typed-question-service.ts'
 
@@ -121,7 +123,7 @@ function specState(
   const context = row.repo ? checkout(row.repo) : null
   if (!context) return null
   if (context.commit) commits.add(`${row.repo}:${context.commit}`)
-  return declaration.contextBuilder(spec, context.read)
+  return specQuestionState(declaration, spec, context.read)
 }
 
 const specRunSubjects: SubjectSource = (database, declaration, options, answered) => {
@@ -133,7 +135,7 @@ const specRunSubjects: SubjectSource = (database, declaration, options, answered
   let unreadable = 0
   for (const row of specRunRows(database, options)) {
     if (subjects.length >= options.limit) break
-    const subjectKind = `spec:${row.job}`
+    const subjectKind = specSubjectKind(row.job)
     const key = `${subjectKind}\0${row.spec_sha}`
     if (seen.has(key)) continue
     seen.add(key)
@@ -170,11 +172,15 @@ export const findingPairSubjects: SubjectSource = (database, _declaration, optio
         return { subjects, alreadyAnswered, unreadable: 0, commits: [] }
       if (seen.has(pair.subjectRef)) continue
       seen.add(pair.subjectRef)
-      if (answered('finding-pair', pair.subjectRef)) {
+      if (answered(FINDING_PAIR_SUBJECT_KIND, pair.subjectRef)) {
         alreadyAnswered += 1
         continue
       }
-      subjects.push({ subjectKind: 'finding-pair', subjectRef: pair.subjectRef, state: pair.state })
+      subjects.push({
+        subjectKind: FINDING_PAIR_SUBJECT_KIND,
+        subjectRef: pair.subjectRef,
+        state: pair.state,
+      })
     }
   }
   return { subjects, alreadyAnswered, unreadable: 0, commits: [] }

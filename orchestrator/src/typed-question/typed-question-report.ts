@@ -10,7 +10,12 @@ import type { TypedQuestionReportBlock } from '../../../shared/typed-question/ty
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
-import { SPEC_UNSETTLED_QUESTION, SPEC_UNSETTLED_QUESTION_V2 } from './spec-unsettled-question.ts'
+import {
+  SPEC_UNSETTLED_QUESTION,
+  SPEC_UNSETTLED_QUESTION_V2,
+  specSubjectKindJob,
+  specSubjectKinds,
+} from './spec-unsettled-question.ts'
 
 export const TYPED_QUESTION_DECLARATIONS = [
   SPEC_UNSETTLED_QUESTION,
@@ -29,14 +34,9 @@ function declaredThreshold(questionId: string, questionVersion: number): number 
 export function specUnsettledLabel(
   database: Database,
   subjectRef: string,
-  subjectKind = 'spec',
+  subjectKind: string,
 ): boolean | null {
-  const job =
-    subjectKind === 'spec'
-      ? 'implement'
-      : subjectKind.startsWith('spec:')
-        ? subjectKind.slice(5)
-        : null
+  const job = specSubjectKindJob(subjectKind)
   if (!job) return null
   const result = database
     .query(
@@ -86,7 +86,7 @@ export function findingDuplicateLabel(database: Database, subjectRef: string): b
 }
 
 const labelers: Readonly<
-  Record<string, (database: Database, subjectRef: string) => boolean | null>
+  Record<string, (database: Database, subjectRef: string, subjectKind: string) => boolean | null>
 > = {
   [SPEC_UNSETTLED_QUESTION.id]: specUnsettledLabel,
   [FINDING_DUPLICATE_QUESTION.id]: findingDuplicateLabel,
@@ -107,8 +107,9 @@ export function typedQuestionReport(
     parameters.push(options.days)
   }
   if (options.job) {
-    clauses.push('subject_kind=?')
-    parameters.push(`spec:${options.job}`)
+    const kinds = specSubjectKinds(options.job)
+    clauses.push(`subject_kind IN (${kinds.map(() => '?').join(',')})`)
+    parameters.push(...kinds)
   }
   const rows = database
     .query(
@@ -121,10 +122,7 @@ export function typedQuestionReport(
     const labeler = labelers[questionId]
     return {
       label: labeler
-        ? (subjectRef, subjectKind) =>
-            questionId === SPEC_UNSETTLED_QUESTION.id
-              ? specUnsettledLabel(database, subjectRef, subjectKind)
-              : labeler(database, subjectRef)
+        ? (subjectRef, subjectKind) => labeler(database, subjectRef, subjectKind)
         : null,
       threshold: declaredThreshold(questionId, questionVersion),
     }

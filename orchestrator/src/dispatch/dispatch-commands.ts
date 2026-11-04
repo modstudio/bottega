@@ -28,6 +28,8 @@ import { checkoutFileReader } from '../typed-question/cited-context.ts'
 import {
   SPEC_UNSETTLED_QUESTION,
   SPEC_UNSETTLED_QUESTION_V2,
+  specQuestionState,
+  specSubjectKind,
 } from '../typed-question/spec-unsettled-question.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
@@ -237,19 +239,12 @@ export async function warnForUnsettledSpec(
   waitMs = SPEC_QUESTION_WAIT_MS,
 ): Promise<void> {
   if (input.continuation) return
-  const common = { subjectKind: `spec:${input.jobName}`, subjectRef: input.specIdentity }
+  const common = { subjectKind: specSubjectKind(input.jobName), subjectRef: input.specIdentity }
+  const readFile = checkoutFileReader(input.cwd ?? process.cwd())
   const [answer] = await settledByDeadline(
-    [
-      ask({ question: SPEC_UNSETTLED_QUESTION, ...common, state: input.spec }),
-      ask({
-        question: SPEC_UNSETTLED_QUESTION_V2,
-        ...common,
-        state: SPEC_UNSETTLED_QUESTION_V2.contextBuilder(
-          input.spec,
-          checkoutFileReader(input.cwd ?? process.cwd()),
-        ),
-      }),
-    ],
+    [SPEC_UNSETTLED_QUESTION, SPEC_UNSETTLED_QUESTION_V2].map((question) =>
+      ask({ question, ...common, state: specQuestionState(question, input.spec, readFile) }),
+    ),
     waitMs,
   )
   if (

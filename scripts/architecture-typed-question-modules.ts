@@ -62,6 +62,8 @@ export const typedQuestionModules = [
     '../git/git-environment.ts',
     '../project/projects.ts',
     './cited-context.ts',
+    './finding-duplicate-question.ts',
+    './spec-unsettled-question.ts',
     './typed-question-report.ts',
     './typed-question-service.ts',
   ]),

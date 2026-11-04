@@ -5,7 +5,10 @@ import type { Database } from 'bun:sqlite'
 import { noulProbability } from '../../../shared/typed-question/client.ts'
 import { typedQuestionStateIdentity } from '../../../shared/typed-question/state-identity.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { FINDING_DUPLICATE_QUESTION } from '../typed-question/finding-duplicate-question.ts'
+import {
+  FINDING_DUPLICATE_QUESTION,
+  FINDING_PAIR_SUBJECT_KIND,
+} from '../typed-question/finding-duplicate-question.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
 
 export const FINDING_DUPLICATE_ASK_CONCURRENCY = 8
@@ -145,7 +148,7 @@ async function askUnrecorded(pairs: FindingDuplicatePair[]): Promise<(number | n
         const pair = pairs[index]!
         const answer = await askTypedQuestion({
           question: FINDING_DUPLICATE_QUESTION,
-          subjectKind: 'finding-pair',
+          subjectKind: FINDING_PAIR_SUBJECT_KIND,
           subjectRef: pair.subjectRef,
           state: pair.state,
         })

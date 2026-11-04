@@ -1,7 +1,7 @@
 // concern: cited-context
 /** Extracts bounded repository file context cited by a specification. */
 
-import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { closeSync, openSync, readSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 
 export const CITED_FILE_BYTES = 16 * 1024
@@ -37,7 +37,7 @@ export function citedContext(spec: string, readFile: CitedFileReader): CitedFile
   return files
 }
 
-/** Reads a regular file inside one checkout; anything outside it, or unreadable, is null. */
+/** Reads at most `CITED_FILE_BYTES` of a regular file inside one checkout; anything outside it, or unreadable, is null. */
 export function checkoutFileReader(checkout: string): CitedFileReader {
   return (path) => {
     try {
@@ -46,7 +46,15 @@ export function checkoutFileReader(checkout: string): CitedFileReader {
       const fromRoot = relative(root, candidate)
       if (fromRoot.startsWith('..') || isAbsolute(fromRoot) || !statSync(candidate).isFile())
         return null
-      return readFileSync(candidate, 'utf8')
+      const buffer = Buffer.alloc(CITED_FILE_BYTES)
+      const descriptor = openSync(candidate, 'r')
+      try {
+        return buffer
+          .subarray(0, readSync(descriptor, buffer, 0, CITED_FILE_BYTES, 0))
+          .toString('utf8')
+      } finally {
+        closeSync(descriptor)
+      }
     } catch {
       return null
     }

@@ -2,6 +2,9 @@ import type { NoulQuestion } from '../../../shared/typed-question/registry.ts'
 import type { BacktestSourceName } from './backtest-source-name.ts'
 
 /** Asks whether two independent review findings identify the same defect. */
+/** The subject kind of a pair of review findings, live and in a backtest. */
+export const FINDING_PAIR_SUBJECT_KIND = 'finding-pair'
+
 export const FINDING_DUPLICATE_QUESTION = {
   id: 'finding_duplicate',
   version: 1,

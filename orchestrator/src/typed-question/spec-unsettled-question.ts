@@ -31,3 +31,37 @@ export const SPEC_UNSETTLED_QUESTION_V2 = {
     readFile: CitedFileReader,
   ): { spec: string; files: ReturnType<typeof citedContext> }
 }
+
+type SpecQuestion = typeof SPEC_UNSETTLED_QUESTION | typeof SPEC_UNSETTLED_QUESTION_V2
+
+/** The state a spec question is asked with, live and in a backtest: its declared builder, else the spec. */
+export function specQuestionState(
+  question: SpecQuestion,
+  spec: string,
+  readFile: CitedFileReader,
+): string | Record<string, unknown> {
+  return 'contextBuilder' in question ? question.contextBuilder(spec, readFile) : spec
+}
+
+/** Answers recorded before spec subjects named their job used this kind; they were all implement. */
+const LEGACY_SPEC_SUBJECT_KIND = 'spec'
+const SPEC_SUBJECT_KIND_PREFIX = 'spec:'
+
+export function specSubjectKind(job: string): string {
+  return `${SPEC_SUBJECT_KIND_PREFIX}${job}`
+}
+
+/** The job a spec subject kind names, or null for a kind that is not a spec subject. */
+export function specSubjectKindJob(subjectKind: string): string | null {
+  if (subjectKind === LEGACY_SPEC_SUBJECT_KIND) return 'implement'
+  return subjectKind.startsWith(SPEC_SUBJECT_KIND_PREFIX)
+    ? subjectKind.slice(SPEC_SUBJECT_KIND_PREFIX.length)
+    : null
+}
+
+/** Every recorded kind that names this job, the legacy kind included for implement. */
+export function specSubjectKinds(job: string): string[] {
+  return job === 'implement'
+    ? [specSubjectKind(job), LEGACY_SPEC_SUBJECT_KIND]
+    : [specSubjectKind(job)]
+}

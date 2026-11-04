@@ -45,32 +45,32 @@ function ask(runRecordId: string): void {
 test('labels a question asked on the implement root positive', () => {
   const root = run({ spec: 'asked-root', status: 'ok' })
   ask(root)
-  expect(specUnsettledLabel(db(), 'asked-root')).toBeTrue()
+  expect(specUnsettledLabel(db(), 'asked-root', 'spec')).toBeTrue()
 })
 
 test('labels a question asked on a later turn positive', () => {
   const root = run({ spec: 'asked-turn', status: 'ok' })
   const turn = run({ spec: 'asked-turn', status: 'ok', parent: root })
   ask(turn)
-  expect(specUnsettledLabel(db(), 'asked-turn')).toBeTrue()
+  expect(specUnsettledLabel(db(), 'asked-turn', 'spec')).toBeTrue()
 })
 
 test('labels a terminal chain without a question negative', () => {
   const root = run({ spec: 'terminal', status: 'ok' })
   run({ spec: 'terminal', status: 'failed', parent: root })
-  expect(specUnsettledLabel(db(), 'terminal')).toBeFalse()
+  expect(specUnsettledLabel(db(), 'terminal', 'spec')).toBeFalse()
 })
 
 test('leaves a running chain pending', () => {
   run({ spec: 'running', status: 'running' })
-  expect(specUnsettledLabel(db(), 'running')).toBeNull()
+  expect(specUnsettledLabel(db(), 'running', 'spec')).toBeNull()
 })
 
 test('ignores non-implement roots and non-root implement runs with the same spec', () => {
   run({ spec: 'ignored', status: 'ok', job: 'file-question' })
   const root = run({ spec: 'different', status: 'ok' })
   run({ spec: 'ignored', status: 'ok', parent: root })
-  expect(specUnsettledLabel(db(), 'ignored')).toBeNull()
+  expect(specUnsettledLabel(db(), 'ignored', 'spec')).toBeNull()
 })
 
 function duplicateFixture(dispositions: [string | null, string | null]): [string, string] {
@@ -230,4 +230,14 @@ test('groups answers separately by version and subject kind', () => {
   expect(groups).toContainEqual([1, 'spec:implement'])
   expect(groups).toContainEqual([2, 'spec:implement'])
   expect(groups).toContainEqual([2, 'spec:review-lens'])
+})
+
+test('a job filter on implement keeps legacy spec answers and drops other jobs', () => {
+  const question = `legacy-filter-${newRecordId()}`
+  for (const subjectKind of ['spec', 'spec:implement', 'spec:review-lens'])
+    answer({ question, version: 1, subject: subjectKind, noul: 0.5, subjectKind })
+  const kinds = typedQuestionReport({ question, job: 'implement' }).map(
+    (block) => block.subjectKind,
+  )
+  expect(kinds.sort()).toEqual(['spec', 'spec:implement'])
 })
