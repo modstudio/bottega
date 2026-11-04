@@ -63,11 +63,20 @@ function registerQuestionIdentities(program: Command): void {
     .action(() => log(JSON.stringify(questionIdentityMap(db()))))
 }
 
-function printRulings(options: { since?: string; changedAfter?: string; kind: string }): void {
+function printRulings(options: {
+  since?: string
+  changedAfter?: string
+  kind: string
+  json?: boolean
+}): void {
   if (!['workflow', 'run', 'all'].includes(options.kind))
     throw new Error('--kind must be workflow, run, or all')
   const kind = options.kind as 'workflow' | 'run' | 'all'
-  const changedAfter = parseChangedAfter({ value: options.changedAfter, since: options.since })
+  const changedAfter = parseChangedAfter({
+    value: options.changedAfter,
+    since: options.since,
+    json: options.json,
+  })
   if (changedAfter === null) {
     log(JSON.stringify(listRulings({ since: options.since, kind })))
     return

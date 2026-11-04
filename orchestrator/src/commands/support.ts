@@ -54,8 +54,13 @@ export function parseChangedAfter(input: {
   value: string | undefined
   since?: string
   hasRequestedRuns?: boolean
+  json?: boolean
   jsonV1?: boolean
   limit?: string
+  job?: string
+  agent?: string
+  live?: boolean
+  unscored?: boolean
 }): number | null {
   const { value } = input
   if (value === undefined) return null
@@ -65,9 +70,14 @@ export function parseChangedAfter(input: {
   if (input.since) throw new Error('--since and --changed-after cannot be combined')
   if (input.hasRequestedRuns)
     throw new Error(`${PLATFORM_SLUG} run list --id and --changed-after cannot be combined`)
+  if (!input.json) throw new Error('--changed-after requires --json')
   if (input.jsonV1)
-    throw new Error('--changed-after cannot be combined with --json 1; use --json (v2)')
+    throw new Error('--changed-after cannot be combined with --json v1; use --json (v2)')
   if (input.limit !== undefined) throw new Error('--limit and --changed-after cannot be combined')
+  if (input.job !== undefined) throw new Error('--job and --changed-after cannot be combined')
+  if (input.agent !== undefined) throw new Error('--agent and --changed-after cannot be combined')
+  if (input.live) throw new Error('--live and --changed-after cannot be combined')
+  if (input.unscored) throw new Error('--unscored and --changed-after cannot be combined')
   return parsed
 }
 

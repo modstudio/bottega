@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { applyChangedAfterFilter, collectChangeCursor } from './collect-change.ts'
+import { collectChangeCursor } from './collect-change.ts'
+import { applyChangedAfterFilter } from './run-listing.ts'
 
 function changedRoots(after: number): string[] {
   const where = ['r.parent_run_record_id IS NULL']

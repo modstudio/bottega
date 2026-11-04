@@ -88,13 +88,18 @@ export function register(program: Command): void {
           }
         : flags
       const json = resolvedFlags.has('json') || options.json === 'v1'
-      const jsonV1 = options.json === 'v1' || options.json === '1'
+      const jsonV1 = options.json === 'v1'
       const changedAfter = parseChangedAfter({
         value: resolvedFlags.flag('changed-after'),
         since: resolvedFlags.flag('since'),
         hasRequestedRuns: requested.length > 0,
+        json,
         jsonV1,
         limit: resolvedFlags.flag('limit'),
+        job: resolvedFlags.flag('job'),
+        agent: resolvedFlags.flag('agent'),
+        live: resolvedFlags.has('live'),
+        unscored: resolvedFlags.has('unscored'),
       })
       await runListingCommand({ jsonV1, changedAfter }, resolvedFlags, {
         log,
