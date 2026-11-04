@@ -53,7 +53,7 @@ test('does not ask a subject already answered for that version', async () => {
     },
   )
   expect(asks).toBe(0)
-  expect(lines).toContain('asked 0; already answered 1; errors 0')
+  expect(lines).toContain('asked 0; already answered 1; unreadable 0; errors 0')
 })
 
 function seedFindingPair(): string {
@@ -156,4 +156,57 @@ test('the limit counts only unanswered subjects, so answered ones never exhaust 
     },
   )
   expect(asked).toEqual([`${job}-older`])
+})
+
+test("a declared id with an undeclared version names that id's versions", async () => {
+  await expect(
+    typedQuestionBacktest(
+      { question: 'spec_unsettled', version: 9, limit: 50 },
+      { log: () => {} },
+      db(),
+    ),
+  ).rejects.toThrow('declared versions: v1, v2')
+})
+
+test('a spec dispatched twice is asked once, and a missing prompt is counted unreadable', async () => {
+  const database = db()
+  const dir = mkdtempSync(join(tmpdir(), 'backtest-dedupe-'))
+  const job = `dedupe-job-${newRecordId()}`
+  const promptPath = join(dir, 'spec.txt')
+  writeFileSync(promptPath, 'spec')
+  const rows: [string, string][] = [
+    [`${job}-shared`, promptPath],
+    [`${job}-shared`, promptPath],
+    [`${job}-gone`, join(dir, 'missing.txt')],
+  ]
+  for (const [index, [specSha, path]] of rows.entries()) {
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,
+          turn,project_record_id,prompt_path)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex',?,'p',?,1,'p','ok',1,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        new Date(Date.now() + index).toISOString(),
+        job,
+        specSha,
+        fixtureProjectRecordId(database),
+        path,
+      )
+  }
+  const asked: string[] = []
+  const lines: string[] = []
+  await typedQuestionBacktest(
+    { question: 'spec_unsettled', version: 1, job, limit: 50 },
+    { log: (line) => lines.push(line) },
+    database,
+    async (input) => {
+      asked.push(input.subjectRef)
+      return { noul: 0 }
+    },
+  )
+  expect(asked).toEqual([`${job}-shared`])
+  expect(lines).toContain('asked 1; already answered 0; unreadable 1; errors 0')
 })

@@ -215,16 +215,18 @@ type SpecWarningInput = {
 
 const SPEC_QUESTION_WAIT_MS = 3_000
 
-async function waitForSpecQuestions(
-  asks: Promise<[TypedQuestionAnswer | null, TypedQuestionAnswer | null]>,
-): Promise<[TypedQuestionAnswer | null, TypedQuestionAnswer | null] | null> {
+/** Settle each ask on its own against one shared deadline, so a slow ask never discards a fast one. */
+async function settledByDeadline(
+  asks: readonly Promise<TypedQuestionAnswer | null>[],
+  waitMs: number,
+): Promise<(TypedQuestionAnswer | null)[]> {
   let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<null>((resolveTimeout) => {
-    timer = setTimeout(() => resolveTimeout(null), SPEC_QUESTION_WAIT_MS)
+  const deadline = new Promise<null>((resolveDeadline) => {
+    timer = setTimeout(() => resolveDeadline(null), waitMs)
   })
-  const result = await Promise.race([asks, timeout])
+  const settled = await Promise.all(asks.map((ask) => Promise.race([ask, deadline])))
   if (timer) clearTimeout(timer)
-  return result
+  return settled
 }
 
 /** Ask both declared versions about every new job spec; only implement v1 can warn. */
@@ -232,22 +234,24 @@ export async function warnForUnsettledSpec(
   input: SpecWarningInput,
   ask: DispatchPresentation['askTypedQuestion'],
   warn: DispatchPresentation['error'],
+  waitMs = SPEC_QUESTION_WAIT_MS,
 ): Promise<void> {
   if (input.continuation) return
   const common = { subjectKind: `spec:${input.jobName}`, subjectRef: input.specIdentity }
-  const answers = Promise.all([
-    ask({ question: SPEC_UNSETTLED_QUESTION, ...common, state: input.spec }),
-    ask({
-      question: SPEC_UNSETTLED_QUESTION_V2,
-      ...common,
-      state: SPEC_UNSETTLED_QUESTION_V2.contextBuilder(
-        input.spec,
-        checkoutFileReader(input.cwd ?? process.cwd()),
-      ),
-    }),
-  ])
-  const completed = await waitForSpecQuestions(answers)
-  const answer = completed?.[0] ?? null
+  const [answer] = await settledByDeadline(
+    [
+      ask({ question: SPEC_UNSETTLED_QUESTION, ...common, state: input.spec }),
+      ask({
+        question: SPEC_UNSETTLED_QUESTION_V2,
+        ...common,
+        state: SPEC_UNSETTLED_QUESTION_V2.contextBuilder(
+          input.spec,
+          checkoutFileReader(input.cwd ?? process.cwd()),
+        ),
+      }),
+    ],
+    waitMs,
+  )
   if (
     input.jobName === 'implement' &&
     answer &&

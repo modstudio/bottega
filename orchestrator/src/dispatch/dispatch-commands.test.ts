@@ -221,3 +221,15 @@ test('an empty implementation spec is refused before asking the typed question',
   ).rejects.toThrow('empty prompt')
   expect(asks).toBe(0)
 })
+
+test('a slow v2 never discards a v1 answer already in hand', async () => {
+  const warnings: unknown[][] = []
+  await warnForUnsettledSpec(
+    { jobName: 'implement', continuation: false, spec: 'spec', specIdentity: 'spec-sha' },
+    (asked) =>
+      asked.question.version === 1 ? Promise.resolve({ noul: 0.95 }) : new Promise<null>(() => {}),
+    (...values) => warnings.push(values),
+    20,
+  )
+  expect(warnings).toHaveLength(1)
+})

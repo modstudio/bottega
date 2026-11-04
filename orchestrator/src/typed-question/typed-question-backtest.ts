@@ -33,8 +33,13 @@ type BacktestOptions = {
   project?: string
 }
 
-/** Up to `limit` unanswered subjects, newest first, and how many answered ones were passed over. */
-type SourcedSubjects = { subjects: BacktestSubject[]; alreadyAnswered: number; commits: string[] }
+/** Up to `limit` distinct unanswered subjects, newest first; what was passed over, and why. */
+type SourcedSubjects = {
+  subjects: BacktestSubject[]
+  alreadyAnswered: number
+  unreadable: number
+  commits: string[]
+}
 
 type Answered = (subjectKind: string, subjectRef: string) => boolean
 
@@ -122,19 +127,25 @@ function specState(
 const specRunSubjects: SubjectSource = (database, declaration, options, answered) => {
   const checkout = checkoutContext(database)
   const commits = new Set<string>()
+  const seen = new Set<string>()
   const subjects: BacktestSubject[] = []
   let alreadyAnswered = 0
+  let unreadable = 0
   for (const row of specRunRows(database, options)) {
     if (subjects.length >= options.limit) break
     const subjectKind = `spec:${row.job}`
+    const key = `${subjectKind}\0${row.spec_sha}`
+    if (seen.has(key)) continue
+    seen.add(key)
     if (answered(subjectKind, row.spec_sha)) {
       alreadyAnswered += 1
       continue
     }
     const state = specState(row, declaration, checkout, commits)
-    if (state !== null) subjects.push({ subjectKind, subjectRef: row.spec_sha, state })
+    if (state === null) unreadable += 1
+    else subjects.push({ subjectKind, subjectRef: row.spec_sha, state })
   }
-  return { subjects, alreadyAnswered, commits: [...commits] }
+  return { subjects, alreadyAnswered, unreadable, commits: [...commits] }
 }
 
 export const findingPairSubjects: SubjectSource = (database, _declaration, options, answered) => {
@@ -155,7 +166,8 @@ export const findingPairSubjects: SubjectSource = (database, _declaration, optio
       findingRows(database, run.id),
       new Map(),
     )) {
-      if (subjects.length >= options.limit) return { subjects, alreadyAnswered, commits: [] }
+      if (subjects.length >= options.limit)
+        return { subjects, alreadyAnswered, unreadable: 0, commits: [] }
       if (seen.has(pair.subjectRef)) continue
       seen.add(pair.subjectRef)
       if (answered('finding-pair', pair.subjectRef)) {
@@ -165,12 +177,23 @@ export const findingPairSubjects: SubjectSource = (database, _declaration, optio
       subjects.push({ subjectKind: 'finding-pair', subjectRef: pair.subjectRef, state: pair.state })
     }
   }
-  return { subjects, alreadyAnswered, commits: [] }
+  return { subjects, alreadyAnswered, unreadable: 0, commits: [] }
 }
 
 const SOURCES: Record<BacktestDeclaration['backtest'], SubjectSource> = {
   'spec-runs': specRunSubjects,
   'finding-pairs': findingPairSubjects,
+}
+
+/** Names what is declared: the versions of a known id, or the ids when the id is unknown. */
+function undeclaredRefusal(question: string, version: number): string {
+  const versions = TYPED_QUESTION_DECLARATIONS.filter((candidate) => candidate.id === question).map(
+    (candidate) => `v${candidate.version}`,
+  )
+  if (versions.length)
+    return `typed question ${question} has no v${version}; declared versions: ${versions.join(', ')}`
+  const ids = [...new Set(TYPED_QUESTION_DECLARATIONS.map((candidate) => candidate.id))]
+  return `undeclared typed question ${JSON.stringify(question)}; declared ids: ${ids.join(', ')}`
 }
 
 export async function typedQuestionBacktest(
@@ -182,12 +205,7 @@ export async function typedQuestionBacktest(
   const declaration = TYPED_QUESTION_DECLARATIONS.find(
     (candidate) => candidate.id === options.question && candidate.version === options.version,
   )
-  if (!declaration) {
-    const ids = [...new Set(TYPED_QUESTION_DECLARATIONS.map((candidate) => candidate.id))]
-    throw new Error(
-      `undeclared typed question ${JSON.stringify(options.question)} v${options.version}; declared ids: ${ids.join(', ')}`,
-    )
-  }
+  if (!declaration) throw new Error(undeclaredRefusal(options.question, options.version))
   const sourced = SOURCES[declaration.backtest](
     database,
     declaration,
@@ -212,7 +230,7 @@ export async function typedQuestionBacktest(
     ),
   )
   presentation.log(
-    `asked ${pending.length}; already answered ${sourced.alreadyAnswered}; errors ${errors}`,
+    `asked ${pending.length}; already answered ${sourced.alreadyAnswered}; unreadable ${sourced.unreadable}; errors ${errors}`,
   )
   const blocks = typedQuestionReport(
     { question: declaration.id, job: options.job },
