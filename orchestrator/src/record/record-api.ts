@@ -21,7 +21,7 @@ import {
   recordDocImportSchema,
   recordDocUpsertSchema,
 } from './record-api-doc-schemas.ts'
-import { recordApiServiceError } from './record-api-errors.ts'
+import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
@@ -294,8 +294,8 @@ const configList = z.object({ environment: z.string().min(1).optional() })
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   app.onError((error, context) => {
-    const serviceError = recordApiServiceError(error)
-    if (serviceError) return context.json({ error: serviceError.message }, serviceError.status)
+    const refusal = renderRecordApiRefusal(context, error)
+    if (refusal) return refusal
     if (error instanceof HTTPException) return error.getResponse()
     console.error(error)
     return context.text('Internal Server Error', 500)
@@ -441,8 +441,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     return review ? context.json(review) : context.json({ error: 'review not found' }, 404)
   })
   const writeError = (context: Context<ApiEnvironment>, error: unknown) => {
-    const serviceError = recordApiServiceError(error)
-    if (serviceError) return context.json({ error: serviceError.message }, serviceError.status)
+    const refusal = renderRecordApiRefusal(context, error)
+    if (refusal) return refusal
     throw error
   }
   registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })

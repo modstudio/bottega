@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -28,6 +28,7 @@ import {
   getConfigEntry,
   machineInit,
   machineRevoke,
+  machineTrust,
   migrateLegacyEnvironmentSecrets,
   planRotation,
   restoreLegacyEnvironmentSecrets,
@@ -39,6 +40,7 @@ import {
   setConfigEntry,
   setEntry,
   setSecret,
+  shouldRotateAfterRevocation,
 } from './config-service.ts'
 
 const roots: string[] = []
@@ -68,6 +70,8 @@ async function rotationFixture(revokedAt: string | null) {
   const other = await generateMachineKeyPair()
   const otherKeyId = await machineKeyId(other.publicKey)
   await pinTrustedMachine(otherKeyId, other.publicKey, 'other')
+  const recipient = await generateMachineKeyPair()
+  const recipientKeyId = await machineKeyId(recipient.publicKey)
   const spaceId = '01990000-0000-7000-8000-000000000001'
   const userId = '01990000-0000-7000-8000-000000000002'
   writeHostedConfigIdentity({ spaceId, userId })
@@ -104,6 +108,13 @@ async function rotationFixture(revokedAt: string | null) {
       createdAt: '',
       revokedAt,
     },
+    {
+      keyId: recipientKeyId,
+      publicKey: encode(recipient.publicKey),
+      label: 'recipient',
+      createdAt: '',
+      revokedAt: null,
+    },
   ]
   const created: string[] = []
   const retired: string[] = []
@@ -138,12 +149,33 @@ async function rotationFixture(revokedAt: string | null) {
       throw new ConfigClientError('response', '/v1/config/secrets', 404)
     },
     putSecret: async () => ({}),
+    addWraps: async (dekId: string, wraps: typeof current.wraps) => {
+      if (dekId !== current.id) throw new Error('unknown data key')
+      for (const wrap of wraps) {
+        if (
+          current.wraps.some(
+            (item) =>
+              item.recipientKeyId === wrap.recipientKeyId && item.senderKeyId === wrap.senderKeyId,
+          )
+        )
+          throw new Error('duplicate secret_dek_wrap tuple')
+      }
+      current.wraps.push(...wraps)
+    },
     revokeMachineKey: async (id: string) => {
       const found = machines.find((item) => item.keyId === id)!
       found.revokedAt = '2026-06-01T00:00:00.000Z'
     },
   } as unknown as ConfigClient
-  return { client, created, retired, otherKeyId }
+  return {
+    client,
+    created,
+    retired,
+    otherKeyId,
+    recipientKeyId,
+    recipientPublicKey: encode(recipient.publicKey),
+    current: () => current,
+  }
 }
 
 test('the declared home chooses machine and hosted keys and refuses an unsupported scope with its remedy', () => {
@@ -416,6 +448,25 @@ test('rotation plan re-seals only rows on older DEKs and retires each old DEK on
   })
 })
 
+test('revocation rotation policy compares only revocation and data-key timestamps', () => {
+  const current = {
+    id: 'dek',
+    version: 1,
+    createdAt: '2026-06-01T00:00:00.000Z',
+    retiredAt: null,
+    wraps: [],
+  }
+  expect(shouldRotateAfterRevocation(current, [])).toBe(false)
+  expect(shouldRotateAfterRevocation(current, [{ revokedAt: null }])).toBe(false)
+  expect(shouldRotateAfterRevocation(current, [{ revokedAt: current.createdAt }])).toBe(false)
+  expect(shouldRotateAfterRevocation(current, [{ revokedAt: '2026-05-31T23:59:59.999Z' }])).toBe(
+    false,
+  )
+  expect(shouldRotateAfterRevocation(current, [{ revokedAt: '2026-06-01T00:00:00.001Z' }])).toBe(
+    true,
+  )
+})
+
 test('the next secret operation rotates once only when a machine revocation is newer', async () => {
   const newer = await rotationFixture('2026-06-01T00:00:00.000Z')
   await setSecret('TOKEN', 'first', 'space', newer.client)
@@ -434,6 +485,22 @@ test('machine revoke rotates through the shared rotation operation', async () =>
   await machineRevoke(fixture.otherKeyId, fixture.client)
   expect(fixture.created).toHaveLength(1)
   expect(fixture.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
+})
+
+test('machine trust after a newer revocation rotates once and does not duplicate its wrap', async () => {
+  const fixture = await rotationFixture('2026-06-01T00:00:00.000Z')
+  await machineTrust(
+    fixture.recipientKeyId,
+    fixture.recipientPublicKey,
+    'recipient',
+    fixture.client,
+  )
+  expect(fixture.created).toHaveLength(1)
+  expect(fixture.current().version).toBe(2)
+  expect(fixture.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
+  expect(
+    fixture.current().wraps.filter((wrap) => wrap.recipientKeyId === fixture.recipientKeyId),
+  ).toHaveLength(1)
 })
 
 test('sealed environment migration decision covers every resumable store state', () => {
@@ -704,6 +771,7 @@ test('machine init converges with an existing key, pin, space, and registration'
   let identity = { user: { id: userId }, activeSpaceId: spaceId }
   const client = {
     whoami: async () => identity,
+    listMachineKeys: async () => registrations.map((keyId) => ({ keyId, revokedAt: null })),
     registerMachineKey: async (keyId: string) => {
       registrations.push(keyId)
       return {}
@@ -732,6 +800,38 @@ test('machine init converges with an existing key, pin, space, and registration'
   expect(registrations).toEqual([first, first])
 })
 
+test('machine init backs up and replaces a revoked local identity before registering', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'machine-init-revoked-'))
+  roots.push(root)
+  const env = { BOTTEGA_CONFIG_HOME: root, BOTTEGA_KEYSTORE: 'file' }
+  const spaceId = '01990000-0000-7000-8000-000000000031'
+  const userId = '01990000-0000-7000-8000-000000000032'
+  const registrations: string[] = []
+  let revokedKeyId: string | null = null
+  const client = {
+    whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
+    listMachineKeys: async () =>
+      revokedKeyId ? [{ keyId: revokedKeyId, revokedAt: '2026-11-03T00:00:00.000Z' }] : [],
+    registerMachineKey: async (keyId: string) => {
+      registrations.push(keyId)
+      return { userId }
+    },
+  } as unknown as ConfigClient
+
+  const oldKeyId = await machineInit('fixture', client, env)
+  const oldPrivateKey = readMachineKey(env)?.privateKey
+  revokedKeyId = oldKeyId
+  const newKeyId = await machineInit('fixture', client, env)
+
+  expect(newKeyId).not.toBe(oldKeyId)
+  expect(readMachineKey(env)?.privateKey).not.toEqual(oldPrivateKey)
+  expect(readFileSync(join(root, `machine-key.revoked-${oldKeyId}`), 'utf8').trim()).toBe(
+    Buffer.from(oldPrivateKey!).toString('base64url'),
+  )
+  expect(registrations).toEqual([oldKeyId, newKeyId])
+  expect(Object.keys(await readTrustList(env))).toEqual([newKeyId])
+})
+
 test('machine init proves possession exactly once only when registration is unowned', async () => {
   const root = mkdtempSync(join(tmpdir(), 'machine-init-claim-'))
   roots.push(root)
@@ -742,9 +842,15 @@ test('machine init proves possession exactly once only when registration is unow
   const nonce = crypto.getRandomValues(new Uint8Array(KEY_SIZE))
   const calls: string[] = []
   let registeredOwner: string | null = null
+  let registeredKeyId: string | null = null
   const client = {
     whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
-    registerMachineKey: async () => ({ userId: registeredOwner }),
+    listMachineKeys: async () =>
+      registeredKeyId ? [{ keyId: registeredKeyId, revokedAt: null }] : [],
+    registerMachineKey: async (keyId: string) => {
+      registeredKeyId = keyId
+      return { userId: registeredOwner }
+    },
     createMachineKeyClaimChallenge: async (keyId: string) => {
       calls.push('challenge')
       const recipient = readMachineKey(env)

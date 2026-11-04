@@ -128,9 +128,21 @@ export function registerConfigAccessSpaceCreationProof(input: {
     expect(repeated.status).toBe(422)
     expect(await repeated.text()).toContain('does not have config access')
 
+    input.succeeds(`UPDATE membership SET config_access=true
+      WHERE space_id='${spaceId}' AND user_id='${input.otherUserId()}';`)
+    const regrantedRead = await fetch(
+      `${input.apiUrl()}/v1/config/data-keys/current?recipientKeyId=${memberKey}`,
+      {
+        headers: {
+          ...Object.fromEntries(bearerHeaders(input.otherToken())),
+          'x-record-space': spaceId,
+        },
+      },
+    )
+    expect(regrantedRead.status).toBe(422)
+    expect(await regrantedRead.text()).toContain('machine config machine init')
+
     input.succeeds(`
-      UPDATE membership SET config_access=true
-      WHERE space_id='${spaceId}' AND user_id='${input.otherUserId()}';
       UPDATE machine_public_key SET revoked_at=NULL WHERE space_id='${spaceId}' AND key_id='${memberKey}';
       INSERT INTO secret_dek_wrap (id,space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at)
       VALUES ('${newRecordId()}','${spaceId}','${dekId}','${memberKey}','${ownerKey}',decode('01','hex'),decode('02','hex'),now());`)

@@ -1,5 +1,5 @@
 import { createPrivateKey, createPublicKey } from 'node:crypto'
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { PLATFORM_NAME } from './brand.ts'
 import {
   type ConfigEnvironment,
@@ -10,6 +10,7 @@ import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
 import {
   decideKeychainBackend,
+  deleteKeychainItem,
   keychainPlatform,
   readKeychainItem,
   type SecurityRunner,
@@ -101,6 +102,26 @@ export function writeMachineKey(
   if (!stored || !Buffer.from(stored.privateKey).equals(Buffer.from(pair.privateKey))) {
     throw new Error('machine key verification failed: the stored key did not match the written key')
   }
+}
+
+/** Moves a revoked identity beside the active one and installs its replacement. */
+export function replaceRevokedMachineKey(
+  revokedKeyId: string,
+  pair: MachineKeyPair,
+  env: ConfigEnvironment = process.env,
+  runner?: SecurityRunner,
+): void {
+  const existing = readMachineKey(env, runner)
+  if (!existing) throw new Error('machine key is not initialized; refusing to replace it')
+  const encoded = Buffer.from(existing.privateKey).toString('base64url')
+  if (useFile(env)) {
+    const path = machineKeyFilePath(env)
+    renameSync(path, `${path}.revoked-${revokedKeyId}`)
+  } else {
+    writeKeychainItem(SERVICE, `${ACCOUNT}.revoked-${revokedKeyId}`, encoded, runner)
+    deleteKeychainItem(SERVICE, ACCOUNT, runner)
+  }
+  writeMachineKey(pair, env, runner)
 }
 
 export async function machineKeyInfo(pair: MachineKeyPair) {

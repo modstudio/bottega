@@ -117,7 +117,7 @@ function wrapRow(row: Record<string, unknown>): DataKeyWrap {
 }
 
 const configAccessRemedy = `a space owner or admin grants config access with \`${PLATFORM_SLUG} record space access grant <email>\``
-const withdrawnConfigAccessRemedy = `ask a space owner or admin to grant access, then run \`${PLATFORM_SLUG} machine config machine init\``
+const withdrawnConfigAccessRemedy = `ask a space owner or admin to grant config access, run \`${PLATFORM_SLUG} machine config machine init\` to replace the revoked key, then trust the new key from a machine that holds config access with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``
 const machineClaimRemedy = `run \`${PLATFORM_SLUG} machine config machine init\` on that machine`
 
 async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> {
@@ -138,6 +138,23 @@ async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> 
       422,
     )
   throw new ConfigServiceError(`signed-in user lacks config access; ${configAccessRemedy}`, 422)
+}
+
+async function refuseRevokedRecipient(
+  tx: SQL,
+  input: ConfigTenant & { recipientKeyId: string },
+): Promise<void> {
+  const revoked = await tx`
+    SELECT 1 FROM machine_public_key
+    WHERE space_id=${input.spaceId}::uuid AND key_id=${input.recipientKeyId}
+      AND revoked_at IS NOT NULL
+    LIMIT 1
+  `
+  if (revoked[0])
+    throw new ConfigServiceError(
+      `this machine's key was revoked because its owner lost config access in the space; ${withdrawnConfigAccessRemedy}`,
+      422,
+    )
 }
 
 function conflict(kind: 'entry' | 'secret', currentRowVersion: number): never {
@@ -477,6 +494,7 @@ export async function currentDataKey(
   input: ConfigTenant & { recipientKeyId: string },
 ): Promise<DataKey | null> {
   return tenant(input, async (tx) => {
+    await refuseRevokedRecipient(tx, input)
     await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
@@ -507,6 +525,7 @@ export async function getDataKey(
   input: ConfigTenant & { dekId: string; recipientKeyId: string },
 ): Promise<DataKey | null> {
   return tenant(input, async (tx) => {
+    await refuseRevokedRecipient(tx, input)
     await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
