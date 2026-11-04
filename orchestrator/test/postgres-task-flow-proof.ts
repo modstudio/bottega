@@ -80,11 +80,12 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           '${TASK_KEY}','${PROJECT}','task-flow takeover proof','active','active','local',
           now(),now(),now(),now());
       `)
-      await setActiveRecordSpaceForSession(
-        input.urls().actor,
-        bearerHeaders(input.token('b')),
-        input.spaceId(),
-      )
+      for (const user of ['a', 'b'] as const)
+        await setActiveRecordSpaceForSession(
+          input.urls().actor,
+          bearerHeaders(input.token(user)),
+          input.spaceId(),
+        )
 
       input.signIn('a')
       const client = recordApiClient()
