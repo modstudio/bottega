@@ -17,7 +17,7 @@ import {
   projectRecordDestination,
 } from '../record/record-project-destination.ts'
 import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
-import type { ProjectSettings } from './project-settings.ts'
+import { type ProjectSettings, stableSettingsJson } from './project-settings.ts'
 
 export type AddHostedProject = RecordProject
 
@@ -37,17 +37,6 @@ export type ProjectAddDecisionResult = {
   targetSpace?: { id: string; label: string }
 }
 
-function stable(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => `${JSON.stringify(key)}:${stable(child)}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(value)
-}
-
 function hostedSettingDiffs(requested: ProjectSettings, hosted: ProjectSettings): string[] {
   const hostedColumns = hostedProjectColumns(hosted, 'hosted')
   const requestedColumns = hostedProjectColumns(requested, 'requested')
@@ -58,12 +47,17 @@ function hostedSettingDiffs(requested: ProjectSettings, hosted: ProjectSettings)
       const column = PROJECT_SETTING_COLUMNS[key as keyof typeof PROJECT_SETTING_COLUMNS]
       if (key === 'mcp') {
         return (
-          stable(hostedColumns.mcpProbeTool) !== stable(requestedColumns.mcpProbeTool) ||
-          stable(hostedColumns.mcpReaderTools) !== stable(requestedColumns.mcpReaderTools) ||
-          stable(hostedColumns.mcpWriterTools) !== stable(requestedColumns.mcpWriterTools)
+          stableSettingsJson(hostedColumns.mcpProbeTool) !==
+            stableSettingsJson(requestedColumns.mcpProbeTool) ||
+          stableSettingsJson(hostedColumns.mcpReaderTools) !==
+            stableSettingsJson(requestedColumns.mcpReaderTools) ||
+          stableSettingsJson(hostedColumns.mcpWriterTools) !==
+            stableSettingsJson(requestedColumns.mcpWriterTools)
         )
       }
-      return stable(hostedColumns[column]) !== stable(requestedColumns[column])
+      return (
+        stableSettingsJson(hostedColumns[column]) !== stableSettingsJson(requestedColumns[column])
+      )
     })
 }
 

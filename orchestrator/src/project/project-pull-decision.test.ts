@@ -72,6 +72,14 @@ describe('decideProjectRegisterPull', () => {
     expect(decision).toMatchObject({ reason: expect.stringContaining('predates project settings') })
   })
 
+  test('skips renames that would converge on one local name', () => {
+    const decisions = decideProjectRegisterPull(
+      [local(), local({ recordId: 'project-b', name: 'other-name', path: '/machine/other' })],
+      [hosted({ name: 'same' }), hosted({ id: 'project-b', name: 'same' })],
+    )
+    expect(decisions.map((decision) => decision.kind)).toEqual(['skip', 'skip'])
+  })
+
   test('ignores a hosted row without a linked local identity', () => {
     expect(decideProjectRegisterPull([local()], [hosted({ id: 'hosted-only' })])).toEqual([])
   })

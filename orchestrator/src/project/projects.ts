@@ -359,7 +359,7 @@ export function storeProjectRecordId(
   }
 }
 
-function projectSettingsForStorage(
+export function projectSettingsForStorage(
   settings: ProjectSettings | undefined,
 ): StoredProjectSettings | undefined {
   if (!settings?.autonomy) return settings

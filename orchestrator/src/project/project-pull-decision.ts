@@ -3,7 +3,7 @@
 
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import { PROJECT_SETTINGS_NOT_IMPORTED } from '../record/record-project-columns.ts'
-import type { ProjectSettings } from './project-settings.ts'
+import { type ProjectSettings, stableSettingsJson } from './project-settings.ts'
 import { type Project, validateProjectSettings } from './projects.ts'
 
 export type ProjectPullDecision =
@@ -16,17 +16,6 @@ export type ProjectPullDecision =
       previousTrunk: string | null
       nextTrunk: string | null
     }
-
-function stable(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => `${JSON.stringify(key)}:${stable(child)}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(value)
-}
 
 function mergedSettings(
   local: ProjectSettings,
@@ -50,11 +39,40 @@ function sameProject(left: Project, right: Project): boolean {
     left.stack === right.stack &&
     left.canon === right.canon &&
     left.retiredAt === right.retiredAt &&
-    stable(left.settings) === stable(right.settings)
+    stableSettingsJson(left.settings) === stableSettingsJson(right.settings)
   )
 }
 
+/** Downgrades updates that would converge on one local name, which the register's unique name forbids. */
+function withoutConvergentRenames(decisions: ProjectPullDecision[]): ProjectPullDecision[] {
+  const claimants = new Map<string, string[]>()
+  for (const decision of decisions) {
+    if (decision.kind !== 'update') continue
+    claimants.set(decision.project.name, [
+      ...(claimants.get(decision.project.name) ?? []),
+      decision.previousName,
+    ])
+  }
+  return decisions.map((decision) => {
+    if (decision.kind !== 'update') return decision
+    const names = claimants.get(decision.project.name) ?? []
+    if (names.length < 2) return decision
+    return {
+      kind: 'skip',
+      project: decision.previousName,
+      reason: `projects ${names.join(' and ')} would all take hosted name ${decision.project.name}; rename one of them in the space, then retry record sync`,
+    }
+  })
+}
+
 export function decideProjectRegisterPull(
+  localRows: readonly Project[],
+  hostedRows: readonly RecordProject[],
+): ProjectPullDecision[] {
+  return withoutConvergentRenames(decideEachProject(localRows, hostedRows))
+}
+
+function decideEachProject(
   localRows: readonly Project[],
   hostedRows: readonly RecordProject[],
 ): ProjectPullDecision[] {

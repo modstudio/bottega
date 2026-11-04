@@ -250,3 +250,15 @@ export type ProjectSettings = {
 export type StoredProjectSettings = Omit<ProjectSettings, 'autonomy'> & {
   autonomy?: StoredAutonomySettings
 }
+
+/** Serialize a settings value with object keys sorted, so equal settings compare equal. */
+export function stableSettingsJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableSettingsJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableSettingsJson(child)}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value)
+}

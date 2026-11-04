@@ -4,9 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import { tryWriteContention, writeTransaction } from '../database/db.ts'
+import { mirrorProjectRegisterRow } from '../database/project-register-store.ts'
 import { decideProjectRegisterPull } from '../project/project-pull-decision.ts'
 import { applyLocalProjectRename } from '../project/project-rename.ts'
-import { projects } from '../project/projects.ts'
+import { projectSettingsForStorage, projects } from '../project/projects.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 
 export type ProjectRegisterPullResult = {
@@ -45,18 +46,14 @@ export async function pullProjectRegister(
           local,
         )
       }
-      const changed = local
-        .query(
-          'UPDATE project SET name=?,stack=?,canon=?,settings=?,retired_at=? WHERE record_id=?',
-        )
-        .run(
-          update.project.name,
-          update.project.stack,
-          update.project.canon ? 1 : 0,
-          JSON.stringify(update.project.settings),
-          update.project.retiredAt,
-          update.project.recordId,
-        ).changes
+      const changed = mirrorProjectRegisterRow(local, {
+        recordId: update.project.recordId,
+        name: update.project.name,
+        stack: update.project.stack,
+        canon: update.project.canon,
+        settings: projectSettingsForStorage(update.project.settings),
+        retiredAt: update.project.retiredAt,
+      })
       if (changed !== 1) {
         throw new Error(
           `project ${update.previousName} changed while the hosted register was being pulled; retry record sync`,
