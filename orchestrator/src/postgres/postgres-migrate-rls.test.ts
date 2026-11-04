@@ -38,6 +38,7 @@ import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerPostgresSignInProofs } from '../../test/postgres-sign-in-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
+import { registerTaskFlowReadThroughTakeoverProof } from '../../test/postgres-task-flow-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import {
   bearerHeaders,
@@ -1033,6 +1034,18 @@ realPostgres('RLS proof against real Postgres', () => {
     asSpace,
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   }))
+
+  registerTaskFlowReadThroughTakeoverProof({
+    actorUrl: () => actorUrl!,
+    authUrl: () => authUrl!,
+    spaceId: () => authSpaceA,
+    projectId: () => authProjectA,
+    userB: () => authUserB,
+    tokenA: () => tokenA,
+    tokenB: () => tokenB,
+    setToken: (token) => recordSession.setToken(token),
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
+  })
 
   test('same prefix is allowed in separate projects', () => {
     const rows = asSpace(
