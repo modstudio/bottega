@@ -9,6 +9,7 @@ import {
   NOTE_DUPLICATE_QUESTION,
   noteDuplicateLabel,
   noteDuplicateQuestionCandidates,
+  recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
 } from './note-duplicate-question.ts'
 
@@ -95,16 +96,10 @@ test('keeps the answered pairs when one ask fails', async () => {
   expect(asked.map(({ note }) => note.record_id).sort()).toEqual(['a', 'c'])
 })
 
-test('a --new filing labels only pairs whose existing note is in its project', () => {
-  const text = `repeated observation ${newRecordId()}`
+function seedPairs(text: string, notes: readonly (readonly [string, string])[]): string {
   const hash = createHash('sha256').update(text.trim()).digest('hex').slice(0, 16)
-  const here = newRecordId()
-  const elsewhere = newRecordId()
   writeTransaction((database) => {
-    for (const [recordId, project] of [
-      [here, 'project-here'],
-      [elsewhere, 'project-elsewhere'],
-    ] as const) {
+    for (const [recordId, project] of notes) {
       database
         .query(
           `INSERT INTO note (record_id,number,project,text,anchors,created_at,last_seen_at)
@@ -127,7 +122,42 @@ test('a --new filing labels only pairs whose existing note is in its project', (
         )
     }
   })
+  return hash
+}
+
+test('a --new filing labels only pairs whose existing note is in its project', () => {
+  const text = `repeated observation ${newRecordId()}`
+  const here = newRecordId()
+  const elsewhere = newRecordId()
+  const hash = seedPairs(text, [
+    [here, 'project-here'],
+    [elsewhere, 'project-elsewhere'],
+  ])
   recordNoteDuplicateOutcomes(text, 'project-here', 'new')
   expect(noteDuplicateLabel(db(), `${here}:${hash}`)).toBeFalse()
   expect(noteDuplicateLabel(db(), `${elsewhere}:${hash}`)).toBeNull()
+})
+
+test('a --same-as filing labels only the named pair as a repeat', () => {
+  const text = `repeated observation ${newRecordId()}`
+  const named = newRecordId()
+  const sibling = newRecordId()
+  const hash = seedPairs(text, [
+    [named, 'project-same'],
+    [sibling, 'project-same'],
+  ])
+  recordNoteDuplicateOutcomes(text, 'project-same', 'same-as', named)
+  expect(noteDuplicateLabel(db(), `${named}:${hash}`)).toBeTrue()
+  expect(noteDuplicateLabel(db(), `${sibling}:${hash}`)).toBeNull()
+})
+
+test('a merge labels its pair only when that pair was asked', () => {
+  const text = `merged observation ${newRecordId()}`
+  const asked = newRecordId()
+  const hash = seedPairs(text, [[asked, 'project-merge']])
+  const unasked = newRecordId()
+  recordNoteDuplicateMerge(asked, text)
+  recordNoteDuplicateMerge(unasked, text)
+  expect(noteDuplicateLabel(db(), `${asked}:${hash}`)).toBeTrue()
+  expect(noteDuplicateLabel(db(), `${unasked}:${hash}`)).toBeNull()
 })
