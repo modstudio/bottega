@@ -21,18 +21,8 @@ describe('templatePlaceholders', () => {
 })
 
 describe('installerPlaceholders', () => {
-  test('reads the placeholders an installer has a substitution rule for', () => {
-    const rules = installerPlaceholders(
-      'sed -e "s#__INSTALL_ROOT__#root#g" -e "s#__HOME__#home#g" "$tmpl" > "$target"',
-    )
-    expect([...rules].sort()).toEqual(['__HOME__', '__INSTALL_ROOT__'])
-  })
-
-  test('a comment that only mentions the renderer still uses sed rules', () => {
-    const rules = installerPlaceholders(
-      '# shared/launch-agent-render.ts is not invoked here\nsed -e "s#__HOME__#home#g" "$tmpl"',
-    )
-    expect([...rules]).toEqual(['__HOME__'])
+  test('a script with no renderer invocation has no install rules', () => {
+    expect(installerPlaceholders('sed -e "s#__HOME__#home#g" "$tmpl"')).toEqual(new Set())
   })
 
   test('an invocation of the shared renderer covers only the pairs it passes', () => {
@@ -45,7 +35,7 @@ describe('installerPlaceholders', () => {
 })
 
 describe('missingInstallRules', () => {
-  test('a template placeholder with no install rule fails the check', () => {
+  test('a template placeholder fails loudly when the installer does not invoke the renderer', () => {
     const errors = missingInstallRules({
       templateName: 'ops/launchd/com.user.example.plist.template',
       templateText: '<dict><key>Hour</key><integer>__NO_RULE__</integer></dict>',
@@ -57,13 +47,15 @@ describe('missingInstallRules', () => {
     ])
   })
 
-  test('a covered placeholder passes', () => {
+  test('a placeholder passed to the renderer is covered', () => {
     expect(
       missingInstallRules({
         templateName: 'ops/launchd/com.user.example.plist.template',
         templateText: '<integer>__SPARE_START_HOUR__</integer>',
         installerName: 'ops/install.sh',
-        installRules: installerPlaceholders('sed -e "s#__SPARE_START_HOUR__#hour#g" "$tmpl"'),
+        installRules: installerPlaceholders(
+          'bun --no-env-file shared/launch-agent-render.ts "$tmpl" "$target" "__SPARE_START_HOUR__" "$hour"',
+        ),
       }),
     ).toEqual([])
   })
