@@ -65,3 +65,9 @@ export function specSubjectKinds(job: string): string[] {
     ? [specSubjectKind(job), LEGACY_SPEC_SUBJECT_KIND]
     : [specSubjectKind(job)]
 }
+
+/**
+ * The spec question versions dispatch asks. A version joins only after its backtest beats the
+ * versions already here; `SPEC_UNSETTLED_QUESTION` is the one that warns.
+ */
+export const DISPATCH_SPEC_QUESTIONS: readonly SpecQuestion[] = [SPEC_UNSETTLED_QUESTION]
