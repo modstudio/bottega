@@ -10,7 +10,7 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import {
   RECORD_ACTIVE_SPACE_REMEDY,
   RECORD_SIGN_IN_REMEDY,
@@ -365,7 +365,7 @@ async function customerFacts(
   projects: Array<{ name: string; space: string | null }>,
   database: Database,
 ): Promise<CustomerFacts> {
-  const apiConfigured = Boolean(resolveRecordApiUrl()?.trim())
+  const apiConfigured = recordApiConfigured()
   // Doctor is observational: legacy session migration is left to sign-in and other write paths.
   const token = storedRecordToken(database, undefined, false)
   let apiReachable = false

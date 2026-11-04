@@ -58,7 +58,7 @@ export async function syncCommand(
   presentation: { log(value: string): void },
   dependencies = {
     sync: syncRecord,
-    automaticBoardAdoption: automaticallyAdoptHostedBoard,
+    boardAdoption: {} as Parameters<typeof automaticallyAdoptHostedBoard>[1],
   },
 ): Promise<void> {
   let result: Awaited<ReturnType<typeof syncRecord>>
@@ -70,7 +70,7 @@ export async function syncCommand(
     if (enhanced === message) throw error
     throw new Error(enhanced, { cause: error })
   }
-  await dependencies.automaticBoardAdoption(presentation)
+  await automaticallyAdoptHostedBoard(presentation, dependencies.boardAdoption)
   if (result.backfill) {
     presentation.log(
       `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-live ${result.backfill.skippedLive}`,

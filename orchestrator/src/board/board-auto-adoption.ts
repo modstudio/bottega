@@ -2,9 +2,9 @@
 /** Decides and attempts safe automatic adoption of an empty local board. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { readRecordSessionToken } from '../../../shared/record-session.ts'
-import { db } from '../database/db.ts'
+import { writableDb } from '../database/db.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { boardHasAdoptedHosted } from './board-mode.ts'
@@ -14,13 +14,21 @@ export type AutomaticBoardAdoptionDecision =
   | { action: 'adopt' }
   | { action: 'tell'; total: number }
 
+export function automaticBoardAdoptionSkipped(facts: {
+  adopted: boolean
+  hostedConfigured: boolean
+  signedIn: boolean
+}): boolean {
+  return facts.adopted || !facts.hostedConfigured || !facts.signedIn
+}
+
 export function decideAutomaticBoardAdoption(facts: {
   adopted: boolean
   hostedConfigured: boolean
   signedIn: boolean
   planTotal: number
 }): AutomaticBoardAdoptionDecision {
-  if (facts.adopted || !facts.hostedConfigured || !facts.signedIn) return { action: 'skip' }
+  if (automaticBoardAdoptionSkipped(facts)) return { action: 'skip' }
   if (facts.planTotal === 0) return { action: 'adopt' }
   return { action: 'tell', total: facts.planTotal }
 }
@@ -37,12 +45,11 @@ export async function automaticallyAdoptHostedBoard(
   } = {},
 ): Promise<void> {
   try {
-    const database = dependencies.database ?? db()
+    const database = dependencies.database ?? writableDb()
     const adopted = boardHasAdoptedHosted(database)
-    const hostedConfigured =
-      dependencies.hostedConfigured?.() ?? Boolean(resolveRecordApiUrl()?.trim())
+    const hostedConfigured = dependencies.hostedConfigured?.() ?? recordApiConfigured()
     const signedIn = dependencies.signedIn?.() ?? Boolean(readRecordSessionToken())
-    if (adopted || !hostedConfigured || !signedIn) return
+    if (automaticBoardAdoptionSkipped({ adopted, hostedConfigured, signedIn })) return
 
     const plan = await adoptHostedBoard({ database, client: dependencies.client })
     const decision = decideAutomaticBoardAdoption({

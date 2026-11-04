@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { db } from '../database/db.ts'
 import {
@@ -29,21 +28,20 @@ test('sync adopts a zero-candidate local board with the configured record client
           quarantined: [],
           blocked: [],
         }) as never,
-      automaticBoardAdoption: (presentation) =>
-        automaticallyAdoptHostedBoard(presentation, {
-          database: db(),
-          client: {
-            ...baseClient,
-            whoami: async () => ({}) as never,
-            listBoardChanges: async () => ({
-              userId: '01990000-0000-7000-8000-000000000001',
-              items: [],
-              highestRevision: null,
-            }),
-          },
-          hostedConfigured: () => true,
-          signedIn: () => true,
-        }),
+      boardAdoption: {
+        database: db(),
+        client: {
+          ...baseClient,
+          whoami: async () => ({}) as never,
+          listBoardChanges: async () => ({
+            userId: '01990000-0000-7000-8000-000000000001',
+            items: [],
+            highestRevision: null,
+          }),
+        },
+        hostedConfigured: () => true,
+        signedIn: () => true,
+      },
     },
   )
 
