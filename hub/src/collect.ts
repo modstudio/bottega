@@ -1,4 +1,5 @@
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
+import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
@@ -9,6 +10,7 @@ import {
 } from './hosted-change-cache.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { ingestGit } from './ingest/git.ts'
+import type { IngestReport } from './ingest/report.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
 import {
   ingestTrackers,
@@ -118,18 +120,22 @@ export type CollectLegResult =
 /** Cycle work returns the legs it ran, or nothing when it ran none. */
 type CollectCycleResult = CollectLegResult[] | undefined
 
-type CollectLegMetrics = { examined: number; written: number; unchanged: number }
+type CollectLegMetrics = {
+  examined: number
+  written: number
+  unchanged: number
+  skippedUnlinked?: number
+  unreadable?: number
+}
 
-function collectLegMetrics(value: unknown): CollectLegMetrics | undefined {
-  if (!value || typeof value !== 'object') return undefined
-  const report = value as Record<string, unknown>
-  if (
-    typeof report.examined !== 'number' ||
-    typeof report.rows !== 'number' ||
-    typeof report.skipped !== 'number'
-  )
-    return undefined
-  return { examined: report.examined, written: report.rows, unchanged: report.skipped }
+function collectLegMetrics(report: IngestReport): CollectLegMetrics {
+  return {
+    examined: report.examined,
+    written: report.rows,
+    unchanged: report.skipped,
+    ...(report.skippedUnlinked ? { skippedUnlinked: report.skippedUnlinked } : {}),
+    ...(report.unreadable ? { unreadable: report.unreadable } : {}),
+  }
 }
 
 export function formatCollectLeg(result: CollectLegResult): string {
@@ -160,10 +166,14 @@ async function settleTimedLeg<T>(
   }
 }
 
-async function settleLeg(source: string, work: () => Promise<unknown>): Promise<CollectLegResult> {
+async function settleLeg<T>(
+  source: string,
+  work: () => Promise<T>,
+  metrics?: (value: T) => CollectLegMetrics,
+): Promise<CollectLegResult> {
   return (await settleTimedLeg(source, work, (value) => ({
     ok: true,
-    metrics: collectLegMetrics(value),
+    ...(metrics ? { metrics: metrics(value) } : {}),
   })))!
 }
 
@@ -265,7 +275,7 @@ async function holdAndRenewLease(
         const metrics = leg.ok ? leg.metrics : undefined
         return `${JSON.stringify(leg.source)}=${leg.durationMs}ms${
           metrics
-            ? ` examined=${metrics.examined} written=${metrics.written} unchanged=${metrics.unchanged}`
+            ? ` examined=${metrics.examined} written=${metrics.written} unchanged=${metrics.unchanged}${metrics.unreadable ? ` unreadable=${metrics.unreadable}` : ''}`
             : ''
         }`
       })
@@ -480,18 +490,26 @@ export function runsSince(now = Date.now()): string {
  */
 export async function collectFast(
   dependencies: {
-    runs?: (since: string) => Promise<unknown>
-    transcripts?: (since: string) => Promise<unknown>
+    runs?: (since: string) => Promise<IngestReport>
+    transcripts?: (since: string) => Promise<IngestReport>
   } = {},
   guard?: LeaseGuard,
 ) {
   const results = [] as CollectLegResult[]
   guard?.assertHeld()
-  results.push(await settleLeg('runs', () => (dependencies.runs ?? ingestRunChanges)(runsSince())))
+  results.push(
+    await settleLeg(
+      'runs',
+      () => (dependencies.runs ?? ingestRunChanges)(runsSince()),
+      collectLegMetrics,
+    ),
+  )
   guard?.assertHeld('runs')
   results.push(
-    await settleLeg('transcripts', () =>
-      (dependencies.transcripts ?? ingestTranscripts)(hoursAgo(2)),
+    await settleLeg(
+      'transcripts',
+      () => (dependencies.transcripts ?? ingestTranscripts)(hoursAgo(2)),
+      collectLegMetrics,
     ),
   )
   guard?.assertHeld('transcripts')
@@ -612,14 +630,30 @@ export async function collectOnce(
   }
   if (selected('runs')) {
     guard.assertHeld(previous)
-    results.push(await settleLeg('runs', () => (dependencies.runs ?? ingestRuns)(since)))
+    results.push(
+      await settleLeg(
+        'runs',
+        () => (dependencies.runs ?? ingestRuns)(since),
+        (report) => collectLegMetrics({ examined: report.rows + report.skipped, ...report }),
+      ),
+    )
     previous = 'runs'
     guard.assertHeld(previous)
   }
   if (selected('transcripts')) {
     guard.assertHeld(previous)
     results.push(
-      await settleLeg('transcripts', () => (dependencies.transcripts ?? ingestTranscripts)(since)),
+      await settleLeg(
+        'transcripts',
+        () =>
+          (dependencies.transcripts ?? ingestTranscripts)(
+            since,
+            DEFAULT_IDLE_CAP_MS,
+            undefined,
+          { rebuild: true },
+          ),
+        collectLegMetrics,
+      ),
     )
     previous = 'transcripts'
     guard.assertHeld(previous)

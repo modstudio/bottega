@@ -46,6 +46,7 @@ import {
   OperatorWaitingItemSchema,
   type OrchBlockers,
   OrchBlockersSchema,
+  OrchChangeCursorEnvelopeSchema,
   type OrchProject,
   OrchProjectListSchema,
   OrchProjectSchema,
@@ -60,6 +61,7 @@ import {
   type QuestionIdentity,
   QuestionIdentityListSchema,
   type RulingListRow,
+  RulingChangesSchema,
   RulingListSchema,
   type WorkflowCursorIdentityRow,
   WorkflowCursorIdentityRowListSchema,
@@ -332,13 +334,7 @@ function decodeRunChangesJson(text: string): { rows: OrchRun[]; cursor: number }
     }
   })
   if (!cursorLine) throw new Error(`${PLATFORM_SLUG} run list --changed-after returned no cursor`)
-  const cursor = z
-    .object({
-      schema_version: z.literal(2),
-      kind: z.literal('cursor'),
-      data: z.object({ cursor: z.number().int().nonnegative() }),
-    })
-    .parse(JSON.parse(cursorLine)).data.cursor
+  const cursor = OrchChangeCursorEnvelopeSchema.parse(JSON.parse(cursorLine)).data.cursor
   const rows = decodeRunsJson(lines.filter((line) => line !== cursorLine).join('\n')).filter(
     (row): row is OrchRun => !('unknown' in row),
   )
@@ -388,7 +384,7 @@ export const readWorkflowRulingChanges = (
       '--changed-after',
       String(after),
     ],
-    z.object({ cursor: z.number().int().nonnegative(), rows: RulingListSchema }),
+    RulingChangesSchema,
   )
 
 export async function readRunsById(ids: (string | number)[]): Promise<OrchRunLineData[]> {

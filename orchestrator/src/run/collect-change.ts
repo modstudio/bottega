@@ -2,6 +2,7 @@
 /** Reads and validates the monotonic source cursor used by external collectors. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { OrchChangeCursorEnvelope } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
 
 export function collectChangeCursor(): number {
@@ -10,26 +11,31 @@ export function collectChangeCursor(): number {
   )
 }
 
-export function changedAfter(value: string | undefined): number | null {
+export function parseChangedAfter(input: {
+  value: string | undefined
+  since?: string
+  hasRequestedRuns?: boolean
+  jsonV1?: boolean
+}): number | null {
+  const { value } = input
   if (value === undefined) return null
   const parsed = Number(value)
   if (!Number.isSafeInteger(parsed) || parsed < 0)
     throw new Error('--changed-after must be a non-negative integer')
+  if (input.since) throw new Error('--since and --changed-after cannot be combined')
+  if (input.hasRequestedRuns)
+    throw new Error(`${PLATFORM_SLUG} run list --id and --changed-after cannot be combined`)
+  if (input.jsonV1)
+    throw new Error('--changed-after cannot be combined with --json 1; use --json (v2)')
   return parsed
 }
 
 export function applyChangedAfterFilter(
-  value: string | undefined,
-  since: string | undefined,
-  hasRequestedRuns: boolean,
+  after: number | null,
   where: string[],
   args: Array<string | number>,
 ): number | null {
-  const after = changedAfter(value)
   if (after === null) return null
-  if (since) throw new Error('--since and --changed-after cannot be combined')
-  if (hasRequestedRuns)
-    throw new Error(`${PLATFORM_SLUG} run list --id and --changed-after cannot be combined`)
   const snapshot = collectChangeCursor()
   where.push(`(
     EXISTS (
@@ -49,5 +55,10 @@ export function applyChangedAfterFilter(
 
 export function publishChangeCursor(snapshot: number | null, log: (line: string) => void): void {
   if (snapshot === null) return
-  log(JSON.stringify({ schema_version: 2, kind: 'cursor', data: { cursor: snapshot } }))
+  const envelope: OrchChangeCursorEnvelope = {
+    schema_version: 2,
+    kind: 'cursor',
+    data: { cursor: snapshot },
+  }
+  log(JSON.stringify(envelope))
 }

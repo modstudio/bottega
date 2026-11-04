@@ -37,34 +37,56 @@ test('notification delivery logs one failure and continues through the claimed b
 })
 
 describe('run ingest', () => {
-  test('an unchanged cursor pass writes no rows and runs one run cursor query', async () => {
+  test('run changes ingest rows after the stored cursor and write nothing once caught up', async () => {
     writeTransaction((conn) =>
       conn
         .query("INSERT OR REPLACE INTO setting(key,value) VALUES ('collect.runs.change_seq','5')")
         .run(),
     )
-    const commands: string[][] = []
+    const changedRun = runFixture({ id: 9911 })
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
-      commands.push(args)
       const ruling = args.includes('ruling')
+      const after = Number(args[args.indexOf('--changed-after') + 1])
       const stdout = ruling
-        ? '{"cursor":5,"rows":[]}'
-        : '{"schema_version":2,"kind":"cursor","data":{"cursor":5}}'
+        ? '{"cursor":7,"rows":[]}'
+        : [
+            ...(after < 7
+              ? [JSON.stringify({ schema_version: 2, kind: 'run', data: changedRun })]
+              : []),
+            '{"schema_version":2,"kind":"cursor","data":{"cursor":7}}',
+          ].join('\n')
       return { stdout: new Blob([stdout]), stderr: new Blob(['']), exited: Promise.resolve(0) }
     }) as unknown as typeof Bun.spawn)
     try {
-      const results = await collectFast({
+      const first = await collectFast({
         transcripts: async () => ({ examined: 0, rows: 0, skipped: 0 }),
       })
-      expect(results[0]).toMatchObject({
+      expect(first[0]).toMatchObject({
+        source: 'runs',
+        ok: true,
+        metrics: { examined: 1, written: 1, unchanged: 0 },
+      })
+      expect(
+        db()
+          .query<{ value: string }, []>(
+            "SELECT value FROM setting WHERE key='collect.runs.change_seq'",
+          )
+          .get()?.value,
+      ).toBe('7')
+
+      const second = await collectFast({
+        transcripts: async () => ({ examined: 0, rows: 0, skipped: 0 }),
+      })
+      expect(second[0]).toMatchObject({
         source: 'runs',
         ok: true,
         metrics: { examined: 0, written: 0, unchanged: 0 },
       })
-      expect(commands.filter((args) => args.includes('run') && args.includes('list'))).toHaveLength(
-        1,
-      )
-      expect(commands).toHaveLength(2)
+      expect(
+        db()
+          .query<{ count: number }, []>("SELECT COUNT(*) count FROM interval WHERE source='orch'")
+          .get()?.count,
+      ).toBe(1)
     } finally {
       spawn.mockRestore()
     }

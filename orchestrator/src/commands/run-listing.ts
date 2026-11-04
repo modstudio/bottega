@@ -13,6 +13,7 @@ import {
   resolveRunIdentifierOrNull,
 } from '../run/run-identifier.ts'
 import { runIdentityMap, runListingCommand } from '../run/run-listing.ts'
+import { parseChangedAfter } from '../run/collect-change.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { collect, duration, log, optionFlags } from './support.ts'
 
@@ -88,7 +89,14 @@ export function register(program: Command): void {
           }
         : flags
       const json = resolvedFlags.has('json') || options.json === 'v1'
-      await runListingCommand({ jsonV1: options.json === 'v1' }, resolvedFlags, {
+      const jsonV1 = options.json === 'v1' || options.json === '1'
+      const changedAfter = parseChangedAfter({
+        value: resolvedFlags.flag('changed-after'),
+        since: resolvedFlags.flag('since'),
+        hasRequestedRuns: requested.length > 0,
+        jsonV1,
+      })
+      await runListingCommand({ jsonV1, changedAfter }, resolvedFlags, {
         log,
         dur: duration,
         chainIsStranded: chainHasPendingDelivery,

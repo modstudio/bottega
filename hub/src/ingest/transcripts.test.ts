@@ -1,4 +1,8 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { DEFAULT_IDLE_CAP_MS, engagedMs } from '../../../shared/interval.ts'
 import { at, resetFixtureStore } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
@@ -6,6 +10,7 @@ import {
   replaceTranscriptWindow,
   resolveTranscriptRoot,
   spendingSpans,
+  transcriptFilesForPass,
   transcriptFingerprintChanged,
   unreadableTranscriptRootMessage,
 } from './transcripts.ts'
@@ -18,6 +23,33 @@ test('transcript fingerprints re-read growth, shrink, and replacement but skip a
   expect(transcriptFingerprintChanged(stored, { size: 101, mtimeMs: 10 })).toBe(true)
   expect(transcriptFingerprintChanged(stored, { size: 40, mtimeMs: 11 })).toBe(true)
   expect(transcriptFingerprintChanged(stored, { size: 100, mtimeMs: 12 })).toBe(true)
+})
+
+test('a fast pass skips an unchanged fingerprint while a rebuild re-reads it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bottega-transcript-'))
+  try {
+    const file = join(root, 'session.jsonl')
+    writeFileSync(file, '{"timestamp":"2026-11-03T12:00:00.000Z"}\n')
+    const stat = statSync(file)
+    writeTransaction((conn) =>
+      conn
+        .query('INSERT INTO transcript_fingerprint(record_id,path,size,mtime_ms) VALUES (?,?,?,?)')
+        .run(newRecordId(), file, stat.size, stat.mtimeMs),
+    )
+
+    expect(transcriptFilesForPass(root, '2026-11-01')).toMatchObject({
+      changed: [],
+      skipped: 1,
+      unreadable: 0,
+    })
+    expect(transcriptFilesForPass(root, '2026-11-01', true)).toMatchObject({
+      changed: [{ file }],
+      skipped: 0,
+      unreadable: 0,
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 describe('transcript root', () => {

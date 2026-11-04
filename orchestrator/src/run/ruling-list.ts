@@ -1,14 +1,18 @@
 // concern: ruling-list
 /** Reads ruling history for adapters. Must not know CLI grammar or printing. */
 
-import { type RulingListRow, RulingListSchema } from '../../../shared/orch-contract.ts'
+import {
+  type RulingChanges,
+  type RulingListRow,
+  RulingListSchema,
+} from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { changedAfter, collectChangeCursor } from './collect-change.ts'
+import { collectChangeCursor } from './collect-change.ts'
 import { questionOpenSql } from './question-open.ts'
 
 type RulingListOptions = {
   since?: string
-  changedAfter?: string
+  changedAfter?: number | null
   kind: 'workflow' | 'run' | 'all'
 }
 
@@ -17,10 +21,9 @@ export function listRulings(options: RulingListOptions): RulingListRow[] {
 }
 
 /** The rows changed after the cursor, with the snapshot the query was bounded by. */
-export function listRulingChanges(options: RulingListOptions & { changedAfter: string }): {
-  cursor: number
-  rows: RulingListRow[]
-} {
+export function listRulingChanges(
+  options: RulingListOptions & { changedAfter: number },
+): RulingChanges {
   const result = queryRulings(options)
   if (result.cursor === null) throw new Error('unreachable: a changed-after query has a cursor')
   return { cursor: result.cursor, rows: result.rows }
@@ -41,10 +44,8 @@ function queryRulings(options: RulingListOptions): {
     )
     values.push(options.since, options.since, options.since, options.since, options.since)
   }
-  const after = changedAfter(options.changedAfter)
+  const after = options.changedAfter ?? null
   const cursor = after === null ? null : collectChangeCursor()
-  if (options.since && after !== null)
-    throw new Error('--since and --changed-after cannot be combined')
   if (after !== null) {
     clauses.push('q.change_seq>? AND q.change_seq<=?')
     values.push(String(after), String(cursor))

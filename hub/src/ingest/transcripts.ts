@@ -36,10 +36,11 @@ function recordTranscriptFingerprint(
     .run(newRecordId(), file, fingerprint.size, fingerprint.mtimeMs)
 }
 
-function transcriptFilesForPass(root: string, sinceDay: string) {
+export function transcriptFilesForPass(root: string, sinceDay: string, rebuild = false) {
   const sourceFiles = transcripts(root)
   const changed: Array<{ file: string; fingerprint: TranscriptFingerprint }> = []
   let skipped = 0
+  let unreadable = 0
   for (const file of sourceFiles) {
     try {
       const stat = statSync(file)
@@ -50,23 +51,23 @@ function transcriptFilesForPass(root: string, sinceDay: string) {
         .get(file)
       const current = { size: stat.size, mtimeMs: stat.mtimeMs }
       if (
+        !rebuild &&
         !transcriptFingerprintChanged(
           existing ? { size: existing.size, mtimeMs: existing.mtime_ms } : null,
           current,
         )
       ) {
         skipped++
-      } else if (!existing && stat.mtime.toISOString().slice(0, 10) < sinceDay) {
+      } else if (!rebuild && !existing && stat.mtime.toISOString().slice(0, 10) < sinceDay) {
         writeTransaction((conn) => recordTranscriptFingerprint(conn, file, current))
-        skipped++
       } else {
         changed.push({ file, fingerprint: current })
       }
     } catch {
-      skipped++
+      unreadable++
     }
   }
-  return { sourceFiles, changed, skipped }
+  return { sourceFiles, changed, skipped, unreadable }
 }
 
 /** Decide which transcript root to use from facts gathered by the environment adapter. */
@@ -321,13 +322,15 @@ export async function ingestTranscripts(
   since: string,
   idleCapMs = DEFAULT_IDLE_CAP_MS,
   attributedUserId?: string | null,
+  options: { rebuild?: boolean } = {},
 ): Promise<{
   examined: number
   files: number
   rows: number
   source: 'read' | 'disabled'
-  skipped?: number
+  skipped: number
   skippedUnlinked?: number
+  unreadable?: number
 }> {
   refreshKeyPrefixes()
   const root = resolveTranscriptRoot(readMachineValue('hub.transcript_root'))
@@ -350,7 +353,7 @@ export async function ingestTranscripts(
   let files = 0
   let rows = 0
   let skippedUnlinked = 0
-  const selected = transcriptFilesForPass(root.path, sinceDay)
+  const selected = transcriptFilesForPass(root.path, sinceDay, options.rebuild)
   for (const { file, fingerprint } of selected.changed) {
     files++
 
@@ -448,7 +451,8 @@ export async function ingestTranscripts(
     files,
     rows,
     source: 'read',
-    skipped: selected.skipped + skippedUnlinked,
+    skipped: selected.skipped,
     ...(skippedUnlinked ? { skippedUnlinked } : {}),
+    ...(selected.unreadable ? { unreadable: selected.unreadable } : {}),
   }
 }

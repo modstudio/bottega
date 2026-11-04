@@ -11,13 +11,17 @@ ALTER TABLE run ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE question ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 --> statement-breakpoint
 -- BACKFILL
-UPDATE run SET change_seq=number;
-UPDATE question SET change_seq=(SELECT COALESCE(MAX(number),0) FROM run)+number;
+UPDATE run SET change_seq=number WHERE change_seq=0;
+UPDATE question SET change_seq=(SELECT COALESCE(MAX(number),0) FROM run)+number WHERE change_seq=0;
 UPDATE collect_change_counter SET value=
   (SELECT MAX(value) FROM (
     SELECT COALESCE(MAX(change_seq),0) value FROM run
     UNION ALL SELECT COALESCE(MAX(change_seq),0) FROM question
-  ));
+  ))
+WHERE value < (SELECT MAX(value) FROM (
+  SELECT COALESCE(MAX(change_seq),0) value FROM run
+  UNION ALL SELECT COALESCE(MAX(change_seq),0) FROM question
+));
 -- /BACKFILL
 --> statement-breakpoint
 CREATE TRIGGER run_collect_change_insert AFTER INSERT ON run BEGIN

@@ -13,6 +13,7 @@ import { db } from '../database/db.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
 import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { parseChangedAfter } from '../run/collect-change.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
 import { listRulingChanges, listRulings } from '../run/ruling-list.ts'
@@ -67,15 +68,12 @@ function printRulings(options: { since?: string; changedAfter?: string; kind: st
   if (!['workflow', 'run', 'all'].includes(options.kind))
     throw new Error('--kind must be workflow, run, or all')
   const kind = options.kind as 'workflow' | 'run' | 'all'
-  if (options.changedAfter === undefined) {
+  const changedAfter = parseChangedAfter({ value: options.changedAfter, since: options.since })
+  if (changedAfter === null) {
     log(JSON.stringify(listRulings({ since: options.since, kind })))
     return
   }
-  log(
-    JSON.stringify(
-      listRulingChanges({ since: options.since, changedAfter: options.changedAfter, kind }),
-    ),
-  )
+  log(JSON.stringify(listRulingChanges({ since: options.since, changedAfter, kind })))
 }
 
 export function register(program: Command): void {

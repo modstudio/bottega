@@ -28,6 +28,8 @@ const RUN_DETAIL_USAGE_REASON =
   'Detailed usage and quota accounting is presented through cost and health surfaces.'
 const RUN_DETAIL_ROUTING_REASON =
   'Routing and execution-policy metadata is presented through routing and review surfaces.'
+const RUN_DETAIL_COLLECTION_REASON =
+  'Collector sequence metadata is presented only through changed-after cursors.'
 const RUN_DETAIL_SECRET_REASON = 'Authentication material is never published by run show.'
 
 const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
@@ -98,6 +100,7 @@ const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
   keep_tree_reason: RUN_DETAIL_CLOSE_OUT_REASON,
   recipe_snapshot: RUN_DETAIL_CLOSE_OUT_REASON,
   started_by_user_id: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
+  change_seq: RUN_DETAIL_COLLECTION_REASON,
   task_record_id: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
   gate_requests_closed: RUN_DETAIL_CLOSE_OUT_REASON,
   resource_teardown: RUN_DETAIL_CLOSE_OUT_REASON,

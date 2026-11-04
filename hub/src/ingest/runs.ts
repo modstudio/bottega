@@ -1,5 +1,9 @@
 import type { Database } from 'bun:sqlite'
-import type { OrchRun, RulingListRow } from '../../../shared/orch-contract.ts'
+import {
+  COLLECT_CHANGE_CURSOR_PROBE,
+  type OrchRun,
+  type RulingListRow,
+} from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
 import { db, nowIso, writeTransaction } from '../db.ts'
@@ -453,11 +457,20 @@ export async function ingestRuns(
   since: string,
   options: { transaction?: IngestTransaction; batchSize?: number } = {},
 ): Promise<{ rows: number; skipped: number; skippedUnlinked?: number }> {
+  const snapshot = nowIso()
+  const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
+  return ingestRunSourceRows(runs, workflowQuestions, snapshot, options)
+}
+
+function ingestRunSourceRows(
+  runs: readonly OrchRun[],
+  workflowQuestions: readonly RulingListRow[],
+  snapshot: string,
+  options: { transaction?: IngestTransaction; batchSize?: number },
+): { rows: number; skipped: number; skippedUnlinked?: number } {
   refreshKeyPrefixes()
   // Snapshot time, not completion: anything that happens during the read is
   // re-fetched next time. Overlap is cheap; a missed answer is not.
-  const snapshot = nowIso()
-  const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
   const now = Date.now()
   const registered = projects()
   const attributed = runs.map((run) => {
@@ -505,12 +518,13 @@ export async function ingestRunChanges(
   fallbackSince: string,
   options: { transaction?: IngestTransaction; batchSize?: number } = {},
 ): Promise<{ examined: number; rows: number; skipped: number; skippedUnlinked?: number }> {
+  const snapshotAt = nowIso()
   const previous = storedChangeCursor()
   let runs: OrchRun[]
   let workflowQuestions: RulingListRow[]
   let cursor: number
   if (previous === null) {
-    const snapshot = await readRunChanges(Number.MAX_SAFE_INTEGER)
+    const snapshot = await readRunChanges(COLLECT_CHANGE_CURSOR_PROBE)
     ;[runs, workflowQuestions] = await Promise.all([
       readRuns(fallbackSince),
       readWorkflowRulings(fallbackSince),
@@ -525,27 +539,7 @@ export async function ingestRunChanges(
     workflowQuestions = rulingChanges.rows
     cursor = Math.min(runChanges.cursor, rulingChanges.cursor)
   }
-  refreshKeyPrefixes()
-  const now = Date.now()
-  const registered = projects()
-  const attributed = runs.map((run) => {
-    const attribution = attributeRun(run)
-    return {
-      run,
-      attribution: {
-        ...attribution,
-        project: intervalOwningProject(attribution.project, attribution.key, registered),
-      },
-    }
-  })
-  const result = writeRunIngestBatches(
-    attributed,
-    workflowQuestions,
-    now,
-    nowIso(),
-    options.transaction,
-    options.batchSize,
-  )
+  const result = ingestRunSourceRows(runs, workflowQuestions, snapshotAt, options)
   stampChangeCursor(cursor)
   return { examined: runs.length + workflowQuestions.length, ...result }
 }

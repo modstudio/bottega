@@ -536,7 +536,7 @@ function publishJson(
 }
 
 export async function runListingCommand(
-  options: { jsonV1: boolean },
+  options: { jsonV1: boolean; changedAfter: number | null },
   flags: RunListingFlags,
   presentation: RunListingPresentation,
 ): Promise<void> {
@@ -571,13 +571,7 @@ export async function runListingCommand(
   // turn, return that conversation rather than falsely reporting an existing run id as unknown.
   applyRequestedRunFilter(requested, sinceFlag, where, args)
   applySinceListingFilter(sinceFlag, where, args)
-  const changeSnapshot = applyChangedAfterFilter(
-    flag('changed-after'),
-    sinceFlag,
-    Boolean(requested.ids.length + requested.unknown.length),
-    where,
-    args,
-  )
+  const changeSnapshot = applyChangedAfterFilter(options.changedAfter, where, args)
   where.push(...liveListingClauses(has('live')))
   const limit = listingLimit(flag('limit'), json, has('live'))
   let rows = db()
