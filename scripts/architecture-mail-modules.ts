@@ -22,7 +22,7 @@ export const mailModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/mail/ses-mailer.ts', ['@aws-sdk/client-sesv2']),
   module('orchestrator/src/mail/invitation-mailer.ts', [
-    '@aws-sdk/client-sesv2',
     '../../../shared/brand.ts',
+    './ses-mailer.ts',
   ]),
 ]

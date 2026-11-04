@@ -235,10 +235,14 @@ export function rememberedSessionSpaceWrite(updated: {
 }
 
 function recordAuthPresentation(environment: RecordAuthEnvironment) {
+  const hubUrl = environment.RECORD_HUB_URL
+  const trustedOrigins = recordAllowedOrigins(environment)
+  if (hubUrl && !trustedOrigins.includes(new URL(hubUrl).origin))
+    trustedOrigins.push(new URL(hubUrl).origin)
   return {
-    trustedOrigins: recordAllowedOrigins(environment),
+    trustedOrigins,
     cookieDomain: environment.RECORD_AUTH_COOKIE_DOMAIN,
-    hubUrl: environment.RECORD_HUB_URL,
+    hubUrl,
   }
 }
 
@@ -345,7 +349,15 @@ function recordEmailOptions(
         url: string
         token: string
       }) => {
-        await sendVerification({ to: verificationUser.email, verifyUrl }, environment)
+        let verificationUrl = verifyUrl
+        if (hubUrl) {
+          const callbackUrl = new URL('/sign-in', hubUrl)
+          callbackUrl.searchParams.set('verified', '1')
+          const rewrittenUrl = new URL(verifyUrl)
+          rewrittenUrl.searchParams.set('callbackURL', callbackUrl.href)
+          verificationUrl = rewrittenUrl.href
+        }
+        await sendVerification({ to: verificationUser.email, verifyUrl: verificationUrl }, environment)
       },
     },
   }

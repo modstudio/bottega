@@ -15,6 +15,7 @@ import { recordLensClient } from '../orchestrator/src/record/record-api-client-l
 import { projectIdentityClient } from '../orchestrator/src/record/record-api-client-paths.ts'
 import { recordPortClient } from '../orchestrator/src/record/record-api-client-port.ts'
 import { recordWorkflowClient } from '../orchestrator/src/record/record-api-client-workflow.ts'
+import * as recordEmailVerificationClient from '../orchestrator/src/record/record-email-verification-client.ts'
 import { SNAPSHOT_KINDS } from '../orchestrator/src/record/record-snapshots.ts'
 import { configClient } from '../shared/config-client.ts'
 import { enumerateClientMethods } from './identity-client-enumeration.ts'
@@ -129,6 +130,10 @@ const methodInventory = () => [
     recordApiClient(stubRequest) as Record<string, unknown>,
   ),
   ...enumerateClientMethods('orchestrator.recordApiClientModule', recordApiClientModule),
+  ...enumerateClientMethods(
+    'orchestrator.recordEmailVerificationClient',
+    recordEmailVerificationClient,
+  ),
   ...enumerateClientMethods(
     'orchestrator.recordLensClient',
     recordLensClient(stubRequest) as Record<string, unknown>,

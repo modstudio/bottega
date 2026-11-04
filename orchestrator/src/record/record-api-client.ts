@@ -550,6 +550,8 @@ export function recordIdentityResponse(body: unknown): RecordIdentity {
     : null
   if (
     typeof user.id !== 'string' ||
+    typeof user.email !== 'string' ||
+    typeof user.emailVerified !== 'boolean' ||
     (value.activeSpaceId !== null && typeof value.activeSpaceId !== 'string') ||
     (value.personalSpaceId !== null && typeof value.personalSpaceId !== 'string') ||
     !memberships ||
