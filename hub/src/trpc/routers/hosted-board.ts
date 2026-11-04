@@ -23,7 +23,7 @@ import {
 } from '../../board-contract.ts'
 import type { RecordClient } from '../../record-client.ts'
 import type { Context } from '../context.ts'
-import { recordClient } from './record.ts'
+import { recordClient } from './record-router-client.ts'
 
 const t = initTRPC.context<Context>().create()
 

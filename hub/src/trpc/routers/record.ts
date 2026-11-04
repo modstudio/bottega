@@ -30,16 +30,17 @@ import {
   hostedTaskDetail,
 } from '../../hosted-work.ts'
 import { routingViewData } from '../../orch-transforms.ts'
-import { createRecordClient, requiredRecordApiUrl } from '../../record-client.ts'
 import { sendHostedReportSubscriptionTest } from '../../report-delivery-hosted.ts'
 import { duration, liveRowDisplay, runRowDisplay } from '../../run-display.ts'
 import { runListInput } from '../../run-list-input.ts'
 import { selectSnapshot } from '../../snapshot-selection.ts'
 import type { Context } from '../context.ts'
+import { recordConfigAccessRouter } from './record-config-access.ts'
+import { email } from './record-inputs.ts'
+import { recordClient } from './record-router-client.ts'
 
 const t = initTRPC.context<Context>().create()
 const uuid = z.string().uuid()
-const email = z.string().trim().toLowerCase().email()
 const limit = z.number().int().min(1).max(100).default(20)
 const filter = z.string().min(1).optional()
 const delivery = z.enum(['none', 'partial', 'full'])
@@ -54,13 +55,6 @@ const docAudiences = z
     'Audiences must not contain duplicates',
   )
   .transform(normalizeDocAudiences)
-
-export function recordClient(ctx: Context) {
-  return createRecordClient({
-    baseUrl: requiredRecordApiUrl(),
-    headers: { cookie: ctx.cookie, authorization: ctx.authorization },
-  })
-}
 
 function recordDatabase(ctx: Context) {
   if (!ctx.recordDatabase)
@@ -165,7 +159,7 @@ function optionalSnapshot<
   return null
 }
 
-export const recordRouter = t.router({
+const recordCoreRouter = t.router({
   whoami: t.procedure.query(({ ctx }) => recordClient(ctx).whoami()),
   setActiveSpace: t.procedure
     .input(z.object({ spaceId: uuid }))
@@ -654,3 +648,5 @@ export const recordRouter = t.router({
     }
   }),
 })
+
+export const recordRouter = t.mergeRouters(recordCoreRouter, recordConfigAccessRouter)

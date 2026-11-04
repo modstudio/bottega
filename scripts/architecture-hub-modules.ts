@@ -1,5 +1,23 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/trpc/routers/record-router-client.ts',
+    allowed: ['../../record-client.ts', '../context.ts'],
+  },
+  {
+    file: 'hub/src/trpc/routers/record-config-access.ts',
+    allowed: [
+      '@trpc/server',
+      'zod',
+      '../context.ts',
+      './record-inputs.ts',
+      './record-router-client.ts',
+    ],
+  },
+  {
+    file: 'hub/src/trpc/routers/record-inputs.ts',
+    allowed: ['zod'],
+  },
+  {
     file: 'hub/src/machine-display-name.ts',
     allowed: ['../../shared/machine-config.ts', '../../shared/machine-label.ts'],
   },
