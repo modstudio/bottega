@@ -47,6 +47,7 @@ function proofDatabase(projectId: string): Database {
       '/tmp/hosted-task-flow-proof',
       JSON.stringify({
         trunk: 'main',
+        gate: 'bun run check',
         docs: { protocol: 'orch-docs' },
         tracker: { protocol: 'hub' },
       }),
