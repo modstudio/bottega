@@ -8,6 +8,17 @@ AS $function$
   FROM config_secret s
   JOIN secret_dek d ON d.space_id=s.space_id AND d.id=s.dek_id
   WHERE s.space_id=target_space
+    AND EXISTS (
+      SELECT 1
+      FROM secret_dek_wrap w
+      JOIN machine_public_key k
+        ON k.space_id=w.space_id AND k.key_id=w.recipient_key_id
+      JOIN membership m
+        ON m.space_id=k.space_id AND m.user_id=k.user_id
+      WHERE w.space_id=s.space_id AND w.dek_id=s.dek_id
+        AND k.revoked_at IS NULL AND m.config_access
+        AND m.user_id=target_user
+    )
     AND NOT EXISTS (
       SELECT 1
       FROM secret_dek_wrap w
@@ -35,7 +46,8 @@ AS $function$
 DECLARE
   stranded_versions text;
 BEGIN
-  IF TG_OP = 'DELETE' OR (OLD.config_access AND NOT NEW.config_access) THEN
+  IF (TG_OP = 'DELETE' AND OLD.config_access)
+    OR (TG_OP = 'UPDATE' AND OLD.config_access AND NOT NEW.config_access) THEN
     SELECT string_agg(version::text, ', ' ORDER BY version)
     INTO stranded_versions
     FROM record_config_access_stranded_dek_versions(OLD.space_id, OLD.user_id);
@@ -63,5 +75,5 @@ END
 $function$;
 --> statement-breakpoint
 CREATE TRIGGER membership_revoke_config_machines
-AFTER DELETE OR UPDATE OF config_access ON membership
+BEFORE DELETE OR UPDATE OF config_access ON membership
 FOR EACH ROW EXECUTE FUNCTION record_revoke_member_config_machines();

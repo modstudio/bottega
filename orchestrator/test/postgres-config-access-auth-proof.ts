@@ -67,6 +67,35 @@ export function registerConfigAccessSpaceCreationProof(input: {
     }
   })
 
+  test('membership removal ignores a DEK held only by an unattributed key when the member held no wrap', () => {
+    const spaceId = newRecordId()
+    const membershipId = newRecordId()
+    const dekId = newRecordId()
+    const keyId = 'UNATTRIBUTED_ONLY_WRAP'
+    expect(
+      input.succeeds(`
+        INSERT INTO space (id,name,slug,created_at)
+        VALUES ('${spaceId}','Unattributed-only wrap','unattributed-only-${spaceId.slice(-8)}',now());
+        INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at) VALUES
+          ('${newRecordId()}','${spaceId}','${input.userId()}','owner','write',true,now()),
+          ('${membershipId}','${spaceId}','${input.otherUserId()}','member','write',true,now());
+        INSERT INTO secret_dek (id,space_id,version,created_at)
+        VALUES ('${dekId}','${spaceId}',1,now());
+        INSERT INTO config_secret (id,space_id,user_id,key,environment,dek_id,row_version,envelope,updated_at)
+        VALUES ('${newRecordId()}','${spaceId}',NULL,'UNATTRIBUTED_ONLY','default','${dekId}',1,decode('01','hex'),now());
+        INSERT INTO machine_public_key (id,space_id,user_id,key_id,public_key,label,created_at)
+        VALUES ('${newRecordId()}','${spaceId}',NULL,'${keyId}',decode(repeat('55',32),'hex'),'unattributed-only',now());
+        INSERT INTO secret_dek_wrap (id,space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at)
+        VALUES ('${newRecordId()}','${spaceId}','${dekId}','${keyId}','${keyId}',decode('02','hex'),decode('03','hex'),now());
+        DELETE FROM membership WHERE id='${membershipId}';
+        SELECT
+          (SELECT count(*) FROM membership WHERE id='${membershipId}'),
+          (SELECT revoked_at IS NULL FROM machine_public_key WHERE space_id='${spaceId}' AND key_id='${keyId}'),
+          (SELECT count(*) FROM secret_dek_wrap WHERE space_id='${spaceId}' AND dek_id='${dekId}');
+        DELETE FROM space WHERE id='${spaceId}';`),
+    ).toBe('0|t|1')
+  })
+
   test('withdraw endpoint revokes only the member machines, returns exposed names, and refuses owners and non-holders', async () => {
     const spaceId = input.succeeds(
       `SELECT space_id FROM membership WHERE user_id='${input.userId()}' AND role='owner' ORDER BY created_at LIMIT 1;`,
