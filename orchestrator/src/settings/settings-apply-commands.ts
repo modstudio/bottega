@@ -4,7 +4,7 @@ import { realpathSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { assetPath } from '../../../shared/install-root.ts'
-import { readMachinePermissions } from '../../../shared/machine-config.ts'
+import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
@@ -61,8 +61,12 @@ type Target = { kind: 'user' } | { kind: 'project'; name: string }
 
 function withProductHooksForTarget(target: Target, settings: OwnedSettings): OwnedSettings {
   if (target.kind === 'project') return settings
-  return withMachineProductHooks(settings, assetPath(), resolveOrchestratorDatabase(process.env))
-    .settings
+  return withMachineProductHooks(
+    settings,
+    assetPath(),
+    resolveOrchestratorDatabase(process.env),
+    readMachineValue('machine.global_use'),
+  ).settings
 }
 
 export async function settingsEnvImportCommand(

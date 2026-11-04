@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from registered_scope_decision import path_is_within
 
 from protect_main_checkout import (
     MUTATING_GIT_SUBCOMMANDS,
@@ -332,7 +333,7 @@ def project_for(path, projects):
     resolved = real(path)
     for project in projects:
         root = real(project["path"])
-        if resolved == root or resolved.startswith(root + os.sep):
+        if path_is_within(resolved, root):
             return project, root
     return None, None
 

@@ -5,7 +5,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
-import { readMachinePermissions } from '../../../shared/machine-config.ts'
+import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import {
   resolveOrchestratorDatabase,
   resolveRunsDirectory,
@@ -115,6 +115,7 @@ function applyUserSettings(
       merged.settings,
       assetPath(),
       resolveOrchestratorDatabase(deps.environment),
+      readMachineValue('machine.global_use', deps.environment),
     )
     const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)
