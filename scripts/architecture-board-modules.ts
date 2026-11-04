@@ -30,6 +30,16 @@ export const boardModules: BoardModule[] = [
     './board-store.ts',
   ]),
   module('orchestrator/src/board/board-adoption-policy.ts', []),
+  module('orchestrator/src/board/board-auto-adoption.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../../../shared/record-api-url.ts',
+    '../../../shared/record-session.ts',
+    '../database/db.ts',
+    '../record/record-api-client.ts',
+    './board-adoption.ts',
+    './board-mode.ts',
+  ]),
   module('orchestrator/src/board/board-message-identifier.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
