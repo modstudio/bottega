@@ -79,6 +79,19 @@ export async function withdrawRecordSpaceConfigAccess(
   return client.withdrawConfigAccess(email)
 }
 
+export async function showRecordSpaceOutsideIntake(
+  client: Pick<RecordApiClient, 'showOutsideIntake'> = recordApiClient(),
+) {
+  return (await client.showOutsideIntake()).intake
+}
+
+export async function setRecordSpaceOutsideIntake(
+  project: string,
+  client: Pick<RecordApiClient, 'setOutsideIntake'> = recordApiClient(),
+) {
+  return (await client.setOutsideIntake(project)).intake
+}
+
 export async function recordMemberships(
   client: Pick<RecordApiClient, 'whoami'> = recordApiClient(),
 ): Promise<{ activeSpaceId: string | null; memberships: RecordMembership[] }> {

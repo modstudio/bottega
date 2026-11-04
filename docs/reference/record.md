@@ -39,6 +39,10 @@ the hosted record and outbox
 - [bottega record space access withdraw](#bottega-record-space-access-withdraw)
 - [bottega record space create](#bottega-record-space-create)
 - [bottega record space help](#bottega-record-space-help)
+- [bottega record space intake](#bottega-record-space-intake)
+- [bottega record space intake help](#bottega-record-space-intake-help)
+- [bottega record space intake set](#bottega-record-space-intake-set)
+- [bottega record space intake show](#bottega-record-space-intake-show)
 - [bottega record space invitations](#bottega-record-space-invitations)
 - [bottega record space invite](#bottega-record-space-invite)
 - [bottega record space list](#bottega-record-space-list)
@@ -413,6 +417,7 @@ manage hosted record spaces
 - [bottega record space access](./record.md#bottega-record-space-access)
 - [bottega record space create](./record.md#bottega-record-space-create)
 - [bottega record space help](./record.md#bottega-record-space-help)
+- [bottega record space intake](./record.md#bottega-record-space-intake)
 - [bottega record space invitations](./record.md#bottega-record-space-invitations)
 - [bottega record space invite](./record.md#bottega-record-space-invite)
 - [bottega record space list](./record.md#bottega-record-space-list)
@@ -512,6 +517,49 @@ display help for command
 ### Related
 
 - [bottega record space](./record.md#bottega-record-space)
+
+## bottega record space intake
+
+**Synopsis:** `bottega record space intake`
+
+manage the outside intake project
+
+### Related
+
+- [bottega record space](./record.md#bottega-record-space)
+- [bottega record space intake help](./record.md#bottega-record-space-intake-help)
+- [bottega record space intake set](./record.md#bottega-record-space-intake-set)
+- [bottega record space intake show](./record.md#bottega-record-space-intake-show)
+
+## bottega record space intake help
+
+**Synopsis:** `bottega record space intake help [command]`
+
+display help for command
+
+### Related
+
+- [bottega record space intake](./record.md#bottega-record-space-intake)
+
+## bottega record space intake set
+
+**Synopsis:** `bottega record space intake set <project>`
+
+set the active space outside intake project
+
+### Related
+
+- [bottega record space intake](./record.md#bottega-record-space-intake)
+
+## bottega record space intake show
+
+**Synopsis:** `bottega record space intake show`
+
+show the active space outside intake project
+
+### Related
+
+- [bottega record space intake](./record.md#bottega-record-space-intake)
 
 ## bottega record space invitations
 

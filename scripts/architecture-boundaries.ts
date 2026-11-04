@@ -739,6 +739,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-api-client-settings.ts',
       './record-api-client-lens.ts',
       './record-api-client-machine.ts',
+      './record-api-client-outside-intake.ts',
       './record-api-client-session.ts',
       './record-api-client-port.ts',
       './record-api-client-routing-evidence.ts',

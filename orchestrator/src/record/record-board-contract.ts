@@ -17,15 +17,15 @@ export const BOARD_MESSAGES_PAGE_LIMIT = 100
 export const BOARD_MESSAGE_REVISION_LOCK_KEY = 968_000_002
 
 export class RecordBoardError extends Error {
-  status: 400 | 403 | 404 | 409 | 429
-  constructor(message: string, status: 400 | 403 | 404 | 409 | 429 = 400) {
+  status: 400 | 403 | 404 | 409 | 413 | 429
+  constructor(message: string, status: 400 | 403 | 404 | 409 | 413 | 429 = 400) {
     super(message)
     this.name = 'RecordBoardError'
     this.status = status
   }
 }
 
-export function asBoardError<T>(run: () => T, status: 400 | 403 | 404 | 409 | 429 = 400): T {
+export function asBoardError<T>(run: () => T, status: 400 | 403 | 404 | 409 | 413 | 429 = 400): T {
   try {
     return run()
   } catch (error) {

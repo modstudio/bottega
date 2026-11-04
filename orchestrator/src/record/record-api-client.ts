@@ -23,6 +23,7 @@ import {
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
+import { recordOutsideIntakeClient } from './record-api-client-outside-intake.ts'
 import {
   boardClaimListPath,
   docSearchParams,
@@ -212,6 +213,7 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordPortClient &
   RecordWorkflowClient &
   RecordSettingsClient &
+  ReturnType<typeof recordOutsideIntakeClient> &
   ReturnType<typeof recordConfigAccessClient> & {
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
@@ -424,9 +426,7 @@ function injectSlot(): InjectSlot {
   return created
 }
 
-function injectedClient(): RecordApiClient | null {
-  return injectSlot().current
-}
+const injectedClient = (): RecordApiClient | null => injectSlot().current
 
 export class RecordApiRequestError extends Error {
   readonly kind: 'unreachable' | 'server' | 'refused'
@@ -453,9 +453,8 @@ function recordApiUnreachable(error: unknown): Error {
   )
 }
 
-function responseRecord(body: unknown): Record<string, unknown> {
-  return body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-}
+const responseRecord = (body: unknown): Record<string, unknown> =>
+  body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
 
 function responseMessage(body: unknown, fallback: string): string {
   const record = responseRecord(body)
@@ -731,6 +730,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
   return {
     ...recordMachineClient(request),
     ...recordConfigAccessClient(request),
+    ...recordOutsideIntakeClient(request),
     ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
     ...recordSnapshotAndPublicDocClient(request),

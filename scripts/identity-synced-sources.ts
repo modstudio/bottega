@@ -89,6 +89,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'readTaskFlow',
     'searchDocs',
     'searchPublicDocs',
+    'showOutsideIntake',
     'whoami',
   ]),
   ...readEntries('orchestrator', 'recordWorkflowClient', ['readTaskFlow']),
@@ -106,6 +107,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'grantConfigAccess',
       'setActiveOrganization',
       'withdrawConfigAccess',
+      'setOutsideIntake',
     ],
   ),
   ...writeEntries(

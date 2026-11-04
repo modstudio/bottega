@@ -14,6 +14,7 @@ import { registerBoardAdoptionProof } from './postgres-board-adoption-proof.ts'
 import { notice as boardNotice, expiresAt, headers, json } from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 import { registerBoardClaimApiProof } from './postgres-board-claim-api-proof.ts'
+import { registerBoardOutsideApiProof } from './postgres-board-outside-api-proof.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
 import { registerBoardPostingProjectProof } from './postgres-board-posting-project-proof.ts'
 import { registerBoardReceiptRevisionProofs } from './postgres-board-receipt-revision-proof.ts'
@@ -160,7 +161,9 @@ export function registerBoardApiProofs(input: {
        INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
         ('${IDS.memberB}','${spaceA}','${userB}','member','write',now()),
         ('${IDS.memberA2}','${spaceB}','${userA}','member','write',now()),
-        ('${IDS.memberRead}','${spaceA}','${userD}','member','read',now());`,
+        ('${IDS.memberRead}','${spaceA}','${userD}','member','read',now());
+       INSERT INTO space_outside_intake (id,space_id,project_id,updated_at) VALUES
+        ('${newRecordId()}','${spaceA}','${IDS.adoptionProject}',now());`,
     )
   })
 
@@ -699,6 +702,19 @@ export function registerBoardApiProofs(input: {
     )
     expect(posted.status).toBe(400)
     expect(JSON.stringify(await posted.json())).toContain('row-level security')
+  })
+
+  registerBoardOutsideApiProof({
+    origin: () => origin,
+    token: () => tokenC,
+    userId: () => userC,
+    spaceId: () => spaceA,
+    intakeProject: ADOPTION_PROJECT,
+    intakeProjectId: IDS.adoptionProject,
+    otherProject: PROJECT,
+    post,
+    caseSession,
+    succeeds: input.succeeds,
   })
 
   test('the author rate cap refuses a further post for one session and accepts another session', async () => {

@@ -33,16 +33,30 @@ export function hostedProjectNameForAudience(
   audience: Audience,
   project: string | undefined,
 ): string | null {
-  if (audience.kind === 'project' || audience.kind === 'workers') return audience.value
+  if (
+    audience.kind === 'project' ||
+    audience.kind === 'workers' ||
+    (audience.kind === 'architects' && audience.value)
+  )
+    return audience.value ?? null
   if (audience.kind === 'task') return project?.trim() || null
   return null
+}
+
+export function audienceIsProjectScoped(audience: Audience): boolean {
+  return (
+    audience.kind === 'project' ||
+    audience.kind === 'workers' ||
+    audience.kind === 'task' ||
+    (audience.kind === 'architects' && Boolean(audience.value))
+  )
 }
 
 export function hostedBoardScope(
   audience: Audience,
   projectId: string | null,
 ): { scopeProjectIds: string[]; recipientUserIds: string[]; sharedSpaceReach: boolean } {
-  if (audience.kind === 'project' || audience.kind === 'workers' || audience.kind === 'task') {
+  if (audienceIsProjectScoped(audience)) {
     return {
       scopeProjectIds: projectId ? [projectId] : [],
       recipientUserIds: [],

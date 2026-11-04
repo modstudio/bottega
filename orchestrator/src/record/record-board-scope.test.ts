@@ -40,7 +40,7 @@ test('hosted post refuses machine audiences and suggestions', () => {
   expect(hostedBoardPostRefusal('notice', parseAudience('project:alpha'))).toBeNull()
 })
 
-test('scope is the one project for project, workers, and task audiences', () => {
+test('scope is the one project for project, workers, task, and named architects audiences', () => {
   const project = '03990000-0000-7000-8000-000000000001'
   expect(hostedBoardScope(parseAudience('project:alpha'), project)).toEqual({
     scopeProjectIds: [project],
@@ -57,6 +57,12 @@ test('scope is the one project for project, workers, and task audiences', () => 
     recipientUserIds: [],
     sharedSpaceReach: false,
   })
+  expect(hostedBoardScope(parseAudience('architects:alpha'), project)).toEqual({
+    scopeProjectIds: [project],
+    recipientUserIds: [],
+    sharedSpaceReach: false,
+  })
+  expect(hostedProjectNameForAudience(parseAudience('architects:alpha'), undefined)).toBe('alpha')
   expect(hostedProjectNameForAudience(parseAudience('task:DEV-1'), 'alpha')).toBe('alpha')
   expect(hostedProjectNameForAudience(parseAudience('task:DEV-1'), undefined)).toBeNull()
 })

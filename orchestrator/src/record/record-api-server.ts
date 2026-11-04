@@ -86,6 +86,7 @@ import {
   upsertRecordLens,
   upsertRecordLensProfile,
 } from './record-lens-catalogue.ts'
+import { setOutsideIntake, showOutsideIntake } from './record-outside-intake.ts'
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
 import { closeRecordPools } from './record-pool.ts'
 import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
@@ -266,6 +267,16 @@ function recordServerAuth(
   })
 }
 
+function recordSpaceAccessDependencies() {
+  return {
+    listSpaceConfigAccess,
+    grantSpaceConfigAccess,
+    withdrawSpaceConfigAccess,
+    showOutsideIntake,
+    setOutsideIntake,
+  }
+}
+
 async function serveRecordApiWithAuth(
   config: ReturnType<typeof recordApiServerConfig>,
   auth: ReturnType<typeof recordAuth>,
@@ -327,9 +338,7 @@ async function serveRecordApiWithAuth(
     createMachineKeyClaimChallenge,
     claimMachineKey,
     revokeMachineKey,
-    listSpaceConfigAccess,
-    grantSpaceConfigAccess,
-    withdrawSpaceConfigAccess,
+    ...recordSpaceAccessDependencies(),
     listBoardMessages: listHostedBoardOverview,
     postBoardMessage: postHostedBoardMessage,
     replyBoardMessage: replyHostedBoardMessage,

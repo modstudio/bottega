@@ -8,7 +8,8 @@ import {
   type HostedBoardChanges,
   RecordBoardError,
 } from './record-board-contract.ts'
-import { hostedBoardMessageView, hostedBoardTags } from './record-board-messages.ts'
+import { hostedBoardTags } from './record-board-message-tags.ts'
+import { hostedBoardMessageView } from './record-board-messages.ts'
 import { hostedBoardReceiptView } from './record-board-receipts.ts'
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
 

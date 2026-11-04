@@ -105,6 +105,43 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     admin: input.admin,
   })
 
+  test('a configured outside intake follows its project to the destination space', async () => {
+    input.setToken(input.token())
+    const source = await createRecordSpace(
+      'DEV 2087 Intake Move Source',
+      `dev-2087-intake-source-${newRecordId().slice(-8)}`,
+    )
+    const destination = await createRecordSpace(
+      'DEV 2087 Intake Move Destination',
+      `dev-2087-intake-destination-${newRecordId().slice(-8)}`,
+    )
+    const projectId = newRecordId()
+    const intakeId = newRecordId()
+    input.admin(`
+      INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+      VALUES ('${projectId}','${source.id}','intake-move-proof',ARRAY['IMP'],now());
+      INSERT INTO space_outside_intake (id,space_id,project_id,updated_at)
+      VALUES ('${intakeId}','${source.id}','${projectId}',now());`)
+
+    const dry = await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'intake-move-proof',
+      source: source.id,
+      destination: destination.slug,
+    })
+    await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'intake-move-proof',
+      source: source.id,
+      destination: destination.slug,
+      confirm: dry.total,
+    })
+
+    expect(
+      input.admin(`SELECT space_id,project_id FROM space_outside_intake WHERE id='${intakeId}';`),
+    ).toBe(`${destination.id}|${projectId}`)
+  })
+
   test('project rows move together while another source project and space aggregates stay', async () => {
     input.setToken(input.token())
     const source = (await recordMemberships()).activeSpaceId
