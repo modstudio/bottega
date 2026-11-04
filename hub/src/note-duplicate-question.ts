@@ -19,6 +19,8 @@ export const NOTE_DUPLICATE_QUESTION: NoulQuestion = {
 }
 
 export const NOTE_DUPLICATE_CANDIDATES = 20
+/** Hex characters of the new text's hash at the end of a note-pair subject ref. */
+const SUBJECT_REF_HASH_HEX = 16
 const NOTE_DUPLICATE_CONCURRENCY = 8
 
 export type DuplicateQuestionNote = {
@@ -46,7 +48,7 @@ export function noteDuplicateQuestionCandidates<T extends DuplicateQuestionNote>
 }
 
 function noteTextHash(text: string): string {
-  return createHash('sha256').update(text.trim()).digest('hex').slice(0, 16)
+  return createHash('sha256').update(text.trim()).digest('hex').slice(0, SUBJECT_REF_HASH_HEX)
 }
 
 function notePairSubjectRef(existingRecordId: string, text: string): string {
@@ -105,30 +107,34 @@ export async function askNoteDuplicateQuestions<T extends DuplicateQuestionNote>
 function recordedSubjectRefs(text: string, project: string, database: Database): string[] {
   const suffix = `:${noteTextHash(text)}`
   return database
-    .query<{ subject_ref: string }, [string, number, string, string]>(
+    .query<{ subject_ref: string }, [number, string, number, string, string]>(
       `SELECT DISTINCT answer.subject_ref FROM typed_question_answer answer
-       JOIN note ON note.record_id = substr(answer.subject_ref, 1, length(answer.subject_ref) - 17)
+       JOIN note ON note.record_id = substr(answer.subject_ref, 1, length(answer.subject_ref) - ? - 1)
        WHERE answer.question_id=? AND answer.question_version=?
          AND answer.subject_ref LIKE '%' || ? AND note.project=?`,
     )
-    .all(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, suffix, project)
+    .all(
+      SUBJECT_REF_HASH_HEX,
+      NOTE_DUPLICATE_QUESTION.id,
+      NOTE_DUPLICATE_QUESTION.version,
+      suffix,
+      project,
+    )
     .map((row) => row.subject_ref)
 }
 
-export function recordNoteDuplicateOutcomes(
-  text: string,
-  project: string,
-  source: 'same-as' | 'new',
-  existingRecordId?: string,
+type NoteDuplicateOutcomeSource = 'same-as' | 'new' | 'merge'
+
+/** The one definition of an outcome row; every recorder writes through it. */
+function insertOutcomes(
+  subjectRefs: readonly string[],
+  label: boolean,
+  source: NoteDuplicateOutcomeSource,
 ): void {
-  const database = db()
-  const refs = recordedSubjectRefs(text, project, database).filter(
-    (subjectRef) => source === 'new' || subjectRef === notePairSubjectRef(existingRecordId!, text),
-  )
-  if (!refs.length) return
+  if (!subjectRefs.length) return
   const at = nowIso()
   writeTransaction((conn) => {
-    for (const subjectRef of refs) {
+    for (const subjectRef of subjectRefs) {
       conn
         .query(
           `INSERT INTO typed_question_outcome
@@ -140,12 +146,24 @@ export function recordNoteDuplicateOutcomes(
           NOTE_DUPLICATE_QUESTION.id,
           NOTE_DUPLICATE_QUESTION.version,
           subjectRef,
-          source === 'same-as' ? 1 : 0,
+          Number(label),
           source,
           at,
         )
     }
   })
+}
+
+export function recordNoteDuplicateOutcomes(
+  text: string,
+  project: string,
+  source: 'same-as' | 'new',
+  existingRecordId?: string,
+): void {
+  const refs = recordedSubjectRefs(text, project, db()).filter(
+    (subjectRef) => source === 'new' || subjectRef === notePairSubjectRef(existingRecordId!, text),
+  )
+  insertOutcomes(refs, source === 'same-as', source)
 }
 
 export function recordNoteDuplicateMerge(targetRecordId: string, sourceText: string): void {
@@ -156,22 +174,7 @@ export function recordNoteDuplicateMerge(targetRecordId: string, sourceText: str
        AND subject_ref=?`,
     )
     .get(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, subjectRef)
-  if (!exists) return
-  writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO typed_question_outcome
-         (record_id,question_id,question_version,subject_ref,label,source,created_at)
-         VALUES (?,?,?,?,1,'merge',?)`,
-      )
-      .run(
-        newRecordId(),
-        NOTE_DUPLICATE_QUESTION.id,
-        NOTE_DUPLICATE_QUESTION.version,
-        subjectRef,
-        nowIso(),
-      )
-  })
+  if (exists) insertOutcomes([subjectRef], true, 'merge')
 }
 
 export function noteDuplicateLabel(database: Database, subjectRef: string): boolean | null {

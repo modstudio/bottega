@@ -1,12 +1,12 @@
 // concern: typed-question-service
 /** Asks a declared question and records its success or failure as evidence. */
 
-import { createHash } from 'node:crypto'
 import {
   askTypedQuestionClient,
   type TypedQuestionAnswer,
 } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
+import { typedQuestionStateIdentity } from '../../../shared/typed-question/state-identity.ts'
 import {
   recordTypedQuestionAnswer,
   type TypedQuestionAnswerRow,
@@ -29,11 +29,6 @@ const serviceDependencies: AskTypedQuestionDependencies = {
   record: recordTypedQuestionAnswer,
 }
 
-export function stateIdentity(state: AskTypedQuestionInput['state']): string {
-  const exact = typeof state === 'string' ? state : JSON.stringify(state)
-  return createHash('sha256').update(exact).digest('hex')
-}
-
 /** Fail open for every client or recording failure; an absent key is not evidence. */
 export async function askTypedQuestion(
   input: AskTypedQuestionInput,
@@ -47,7 +42,7 @@ export async function askTypedQuestion(
       questionVersion: input.question.version,
       subjectKind: input.subjectKind,
       subjectRef: input.subjectRef,
-      stateSha: stateIdentity(input.state),
+      stateSha: typedQuestionStateIdentity(input.state),
       latencyMs: result.latencyMs,
     }
     if (result.kind === 'error') {

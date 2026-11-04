@@ -13,6 +13,7 @@ export const typedQuestionModules = [
   module('shared/typed-question/registry.ts', []),
   module('shared/typed-question/client.ts', ['../env-source.ts', './registry.ts']),
   module('shared/typed-question/typed-question-metrics.ts', []),
+  module('shared/typed-question/state-identity.ts', ['node:crypto']),
   module('shared/typed-question/typed-question-render.ts', ['./typed-question-metrics.ts']),
   module('orchestrator/src/typed-question/typed-question-answer-store.ts', [
     'bun:sqlite',
@@ -42,10 +43,10 @@ export const typedQuestionModules = [
   ]),
   module('hub/src/typed-question-service.ts', [
     'bun:sqlite',
-    'node:crypto',
     '../../shared/record-id.ts',
     '../../shared/typed-question/client.ts',
     '../../shared/typed-question/registry.ts',
+    '../../shared/typed-question/state-identity.ts',
     './db.ts',
   ]),
   module('hub/src/note-duplicate-question.ts', [
@@ -72,14 +73,15 @@ export const typedQuestionModules = [
     './typed-question-report.ts',
   ]),
   module('orchestrator/src/typed-question/typed-question-service.ts', [
-    'node:crypto',
     '../../../shared/typed-question/client.ts',
     '../../../shared/typed-question/registry.ts',
+    '../../../shared/typed-question/state-identity.ts',
     './typed-question-answer-store.ts',
   ]),
   module('orchestrator/src/collect/finding-duplicate-suggestions.ts', [
     'bun:sqlite',
     '../../../shared/typed-question/client.ts',
+    '../../../shared/typed-question/state-identity.ts',
     '../jobs/jobs.ts',
     '../typed-question/finding-duplicate-question.ts',
     '../typed-question/typed-question-service.ts',

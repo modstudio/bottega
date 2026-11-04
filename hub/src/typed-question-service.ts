@@ -2,13 +2,13 @@
 /** Asks and records hub-owned typed questions without exposing failures to callers. */
 
 import type { Database } from 'bun:sqlite'
-import { createHash } from 'node:crypto'
 import { newRecordId } from '../../shared/record-id.ts'
 import {
   askTypedQuestionClient,
   type TypedQuestionAnswer,
 } from '../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../shared/typed-question/registry.ts'
+import { typedQuestionStateIdentity } from '../../shared/typed-question/state-identity.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 
 export type HubTypedQuestionInput = {
@@ -22,12 +22,6 @@ type Dependencies = {
   ask: typeof askTypedQuestionClient
   database(): Database
   record(database: Database, values: readonly (string | number | null)[]): void
-}
-
-function typedQuestionStateIdentity(state: HubTypedQuestionInput['state']): string {
-  return createHash('sha256')
-    .update(typeof state === 'string' ? state : JSON.stringify(state))
-    .digest('hex')
 }
 
 const dependencies: Dependencies = {
