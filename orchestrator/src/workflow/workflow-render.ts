@@ -234,7 +234,7 @@ export function cursorAutonomyLines(value: CursorAutonomyNotice): string[] {
   ]
 }
 
-export function renderWorkflowStep(step: WorkflowStep): string {
+export function renderWorkflowStep(step: WorkflowStep, autonomyNote?: string): string {
   const autonomy = autonomyInstruction(step)
   const close = closeContract(step)
   const guidance = step.floor.map(
@@ -247,6 +247,7 @@ export function renderWorkflowStep(step: WorkflowStep): string {
   )
   const notice = step.notice ? `${step.notice}\n` : ''
   const autonomyLines = cursorAutonomyLines(step)
-  const liveNotice = autonomyLines.length ? `${autonomyLines.join('\n')}\n` : ''
+  const liveLines = [...(autonomyNote ? [autonomyNote] : []), ...autonomyLines]
+  const liveNotice = liveLines.length ? `${liveLines.join('\n')}\n` : ''
   return `${notice}${liveNotice}${flowSoFar(step)}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${nextPointer(step, close)}`
 }

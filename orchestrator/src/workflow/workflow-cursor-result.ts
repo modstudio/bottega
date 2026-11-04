@@ -127,29 +127,32 @@ export function renderWorkflowAdvanceResult(input: {
   }
   const next = composition.steps[advance.ordinal]!
   const flow = closed.filter(isClosedStep)
-  const rendered = renderWorkflowStep({
-    ...withWorkflowTextFacts(
-      getWorkflowStep(
-        slug,
-        project,
-        next.slug,
-        JSON.parse(row.args),
+  const rendered = renderWorkflowStep(
+    {
+      ...withWorkflowTextFacts(
+        getWorkflowStep(
+          slug,
+          project,
+          next.slug,
+          JSON.parse(row.args),
+          d,
+          {
+            mode,
+            version: row.workflow_version,
+            versionRecordId: row.workflow_version_record_id,
+            catalogueVersion: row.catalogue_version,
+            catalogueVersionRecordId: row.catalogue_version_record_id,
+          },
+          cursorAutonomy(row, live),
+        ),
+        row.record_id,
         d,
-        {
-          mode,
-          version: row.workflow_version,
-          versionRecordId: row.workflow_version_record_id,
-          catalogueVersion: row.catalogue_version,
-          catalogueVersionRecordId: row.catalogue_version_record_id,
-        },
-        cursorAutonomy(row, live),
       ),
-      row.record_id,
-      d,
-    ),
-    cursor: row.id,
-    flow,
-    pass: stepPass(flow, composition.steps, advance.ordinal),
-  })
+      cursor: row.id,
+      flow,
+      pass: stepPass(flow, composition.steps, advance.ordinal),
+    },
+    live?.resolution?.note,
+  )
   return withSelfRuling(rendered, selfRuling)
 }

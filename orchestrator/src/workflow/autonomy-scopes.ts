@@ -26,7 +26,11 @@ import {
   staleHostedAutonomyWinner,
   staleHostedScope,
 } from './autonomy.ts'
-import { type CachedSessionContext, readSessionContextCache } from './session-context-cache.ts'
+import {
+  type CachedSessionContext,
+  readSessionContextCache,
+  writeSessionContextCache,
+} from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
 import { combineCursorRulings } from './workflow-cursor-autonomy.ts'
 
@@ -89,6 +93,37 @@ async function readHosted(
   }
 }
 
+function refreshHostedCache(
+  project: string,
+  hosted: Extract<HostedRead, { status: 'available' }>,
+  env: ConfigEnvironment,
+  now: () => Date,
+): string | null {
+  try {
+    writeSessionContextCache(
+      {
+        version: 1,
+        resolvedAt: now().toISOString(),
+        project,
+        hosted: { user: hosted.user, space: hosted.space },
+      },
+      env,
+    )
+    return null
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    return `warning: could not refresh hosted autonomy cache: ${reason}`
+  }
+}
+
+function withHostedWarnings(
+  resolved: AutonomyResolution,
+  hostedWarnings: string[],
+): AutonomyResolution {
+  const warnings = [...(resolved.warnings ?? []), ...hostedWarnings]
+  return { ...resolved, ...(warnings.length ? { warnings } : {}) }
+}
+
 export async function resolveProjectAutonomy(
   project: string,
   workflow: string | undefined,
@@ -135,17 +170,16 @@ export async function resolveProjectAutonomy(
     workflow,
     stages,
   )
-  const warnings = [...(resolved.warnings ?? []), ...hosted.warnings]
-  const resolution = {
-    ...resolved,
-    ...(warnings.length ? { warnings } : {}),
-  }
-  if (hosted.status === 'available')
+  const resolution = withHostedWarnings(resolved, hosted.warnings)
+  if (hosted.status === 'available') {
+    const cacheWarning = refreshHostedCache(project, hosted, env, now)
     return {
       ...resolution,
+      ...(cacheWarning ? { warnings: [...(resolution.warnings ?? []), cacheWarning] } : {}),
       hosted: { status: hosted.status, user: hosted.user, space: hosted.space },
       session,
     }
+  }
   if (hosted.status === 'not-configured')
     return {
       ...resolution,
@@ -195,7 +229,7 @@ export async function resolveProjectAutonomy(
       unavailableReason: hosted.reason,
     },
     hosted: { status: hosted.status, reason: hosted.reason },
-    note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes`,
+    note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes, then built-in because no cache exists`,
     session,
   }
 }

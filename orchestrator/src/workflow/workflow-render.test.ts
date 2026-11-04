@@ -57,6 +57,18 @@ describe('workflow rendering', () => {
     )
   })
 
+  test('renders the hosted fallback reason before a resolved step autonomy line', () => {
+    const step = getWorkflowStep('flow', 'fixture', 'rebase', args, database(), {
+      mode: 'default',
+    })
+    const reason =
+      'hosted autonomy settings unavailable: offline; resolved from local and project scopes, then built-in because no cache exists'
+
+    expect(renderWorkflowStep(step, reason)).toContain(
+      `${reason}\nfacts: ${JSON.stringify(step.facts)}\nAutonomy: auto (built-in)`,
+    )
+  })
+
   test('renders conditional composition entries and a step close outcome contract', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition

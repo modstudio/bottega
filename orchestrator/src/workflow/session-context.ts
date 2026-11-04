@@ -5,7 +5,11 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import type { StateEnvironment } from '../../../shared/state-directory.ts'
+import {
+  resolveStateRoot,
+  STATE_HOME_ENV,
+  type StateEnvironment,
+} from '../../../shared/state-directory.ts'
 import { projectAt } from '../project/projects.ts'
 import {
   type AutonomyStage,
@@ -19,7 +23,7 @@ import {
   staleHostedScope,
 } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
-import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
+import { readSessionContextCache } from './session-context-cache.ts'
 import { showResolvedStepCatalogue } from './step-catalogue.ts'
 
 const AUTONOMY_SETTER = `${PLATFORM_SLUG} machine config set`
@@ -189,6 +193,10 @@ async function architectSessionContext(
     showResolvedStepCatalogue(project.name, undefined, dependencies.database).definition.steps,
   )
   const stateEnvironment = dependencies.stateEnvironment ?? process.env
+  const resolutionEnvironment = {
+    ...(dependencies.configEnvironment ?? process.env),
+    [STATE_HOME_ENV]: resolveStateRoot(stateEnvironment),
+  }
   const cached = readSessionContextCache(project.name, stateEnvironment)
   const resolution = await resolveProjectAutonomy(
     project.name,
@@ -198,7 +206,7 @@ async function architectSessionContext(
     {},
     dependencies.clientFactory,
     dependencies.database,
-    dependencies.configEnvironment,
+    resolutionEnvironment,
     undefined,
     autonomyStages,
     cached ?? undefined,
@@ -240,19 +248,6 @@ async function architectSessionContext(
       slice,
       cached.resolvedAt,
       resolution.hosted.reason ?? 'hosted read failed',
-    )
-  if (resolution.hosted?.status !== 'unavailable')
-    writeSessionContextCache(
-      {
-        version: 1,
-        resolvedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
-        project: project.name,
-        hosted: {
-          user: resolution.hosted?.user ?? {},
-          space: resolution.hosted?.space ?? {},
-        },
-      },
-      stateEnvironment,
     )
   return slice
 }
