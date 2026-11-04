@@ -6,6 +6,7 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(__file__))
 from board_hook_common import (
     marker_path,
     pending,

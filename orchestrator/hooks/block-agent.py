@@ -56,6 +56,7 @@ decision and has no prompt to judge, so it is audit-only.
 """
 import json, os, re, sqlite3, subprocess, sys, time, uuid
 
+sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 
 ALLOW = {"claude-code-guide"}

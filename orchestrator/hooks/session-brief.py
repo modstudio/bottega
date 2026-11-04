@@ -12,6 +12,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(__file__))
 from inbox_question_decision import decide_parsed_inbox_questions, parse_inbox_questions
 from notice_transport import (
     acknowledgement_refusals,

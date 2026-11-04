@@ -2,9 +2,11 @@
 """PreToolUse hook: refuse commands that clear Bun's shared package cache."""
 
 import json
+import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 
 

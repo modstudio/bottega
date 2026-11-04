@@ -14,6 +14,7 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 
 MARKER_FILE = Path(__file__).resolve().parents[2] / "shared" / "attribution-markers.json"

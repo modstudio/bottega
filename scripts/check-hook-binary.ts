@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FROZEN_ENV_NAMES, PLATFORM_SLUG } from '../shared/brand.ts'
+import { FROZEN_ENV_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 
 const binaryPath = `bin/${PLATFORM_SLUG}`
 const mainCheckoutVariable = 'main_checkout'
@@ -13,8 +13,7 @@ const mainCheckoutOverride = `${mainCheckoutVariable}=\${${FROZEN_ENV_NAMES.main
 const mainCheckoutFromCommonDirectory = `${mainCheckoutVariable}=$(dirname "$common_dir")`
 const rule =
   "a hook that runs the binary names the main checkout's copy, because a tree's binary can carry a journal ahead of the operator store"
-const registeredScopeRule =
-  'a product hook imports and calls should_hook_act(payload) before applying Bottega behavior'
+const registeredScopeRule = `a product hook imports and calls should_hook_act(payload) before applying ${PLATFORM_NAME} behavior`
 
 function lineIncludesEvery(line: string, fragments: string[]): boolean {
   return fragments.every((fragment) => line.includes(fragment))
@@ -51,9 +50,7 @@ export function productHookScopeViolations(
   settingsSource: string,
   hookSources: Record<string, string>,
 ): string[] {
-  const declaration = settingsSource.match(
-    /const PRODUCT_HOOKS:[\s\S]*?= \[([\s\S]*?)\n\]/,
-  )?.[1]
+  const declaration = settingsSource.match(/const PRODUCT_HOOKS:[\s\S]*?= \[([\s\S]*?)\n\]/)?.[1]
   if (declaration === undefined) {
     return [`orchestrator/src/settings/settings-machine-hooks.ts: ${registeredScopeRule}`]
   }
@@ -107,7 +104,10 @@ function main(): void {
   const productHooks = Object.fromEntries(
     readdirSync(orchestratorHooksDirectory, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith('.py'))
-      .map((entry) => [entry.name, readFileSync(join(orchestratorHooksDirectory, entry.name), 'utf8')]),
+      .map((entry) => [
+        entry.name,
+        readFileSync(join(orchestratorHooksDirectory, entry.name), 'utf8'),
+      ]),
   )
   violations.push(...productHookScopeViolations(settingsSource, productHooks))
 

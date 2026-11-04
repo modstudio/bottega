@@ -11,6 +11,7 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
+sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 
 from board_hook_common import marker_path, read_marker, write_marker

@@ -11,6 +11,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 
 from board_hook_common import (

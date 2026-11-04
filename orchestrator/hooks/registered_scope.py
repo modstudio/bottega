@@ -1,4 +1,4 @@
-"""Decide whether a Bottega product hook should act for this invocation."""
+"""Decide whether a product hook should act for this invocation."""
 from __future__ import annotations
 
 import os
@@ -9,6 +9,7 @@ import tomllib
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+PLATFORM_SLUG = "BOTTEGA_CONFIG_HOME".removesuffix("_CONFIG_HOME").lower()
 
 
 def _config_root() -> str:
@@ -20,11 +21,11 @@ def _config_root() -> str:
         return override
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg and os.path.isabs(xdg):
-        return os.path.join(xdg, "bottega")
+        return os.path.join(xdg, PLATFORM_SLUG)
     home = os.environ.get("HOME")
     if not home:
         raise ValueError("HOME is required")
-    return os.path.join(home, ".config", "bottega")
+    return os.path.join(home, ".config", PLATFORM_SLUG)
 
 
 def _global_use_is_off() -> bool:
@@ -72,14 +73,14 @@ def _contains(project_path: str, directory: str) -> bool:
 
 
 def should_hook_act(payload: dict) -> bool:
-    """Answer whether a Bottega hook should act for this parsed payload."""
+    """Answer whether a product hook should act for this parsed payload."""
     if not _global_use_is_off():
         return True
 
     try:
         path = _store_path()
     except Exception as error:
-        print(f"bottega: registered scope store could not be resolved: {error}", file=sys.stderr)
+        print(f"{PLATFORM_SLUG}: registered scope store could not be resolved: {error}", file=sys.stderr)
         return False
 
     directory = os.path.realpath(_invocation_directory(payload))
@@ -90,6 +91,6 @@ def should_hook_act(payload: dict) -> bool:
         finally:
             database.close()
     except Exception as error:
-        print(f"bottega: registered scope store could not be read at {path}: {error}", file=sys.stderr)
+        print(f"{PLATFORM_SLUG}: registered scope store could not be read at {path}: {error}", file=sys.stderr)
         return False
     return any(isinstance(row[0], str) and _contains(row[0], directory) for row in rows)

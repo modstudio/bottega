@@ -78,7 +78,7 @@ describe('productHookScopeViolations', () => {
 
   test('names a product hook that does not call the predicate', () => {
     expect(productHookScopeViolations(settings, { 'guard.py': 'def main(): pass\n' })).toEqual([
-      'orchestrator/hooks/guard.py: a product hook imports and calls should_hook_act(payload) before applying Bottega behavior',
+      `orchestrator/hooks/guard.py: a product hook imports and calls should_hook_act(payload) before applying ${PLATFORM_NAME} behavior`,
     ])
   })
 })

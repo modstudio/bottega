@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 
 
