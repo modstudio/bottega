@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path'
 import { dir } from '../../test/preload.ts'
 
 const sourceHook = resolve(import.meta.dir, '../../hooks/no-attribution.py')
+const sourceRegisteredScope = resolve(import.meta.dir, '../../hooks/registered_scope.py')
 const sourceMarkers = resolve(import.meta.dir, '../../../shared/attribution-markers.json')
 const fixturePath = join(import.meta.dir, 'fixtures/attribution-cases.json')
 const fixtureRunner = resolve(import.meta.dir, '../../test/no-attribution-fixture.py')
@@ -39,6 +40,7 @@ function layout(marker: 'valid' | 'absent' | 'unreadable' | 'malformed' = 'valid
   mkdirSync(join(hook, '..'), { recursive: true })
   mkdirSync(join(markerFile, '..'), { recursive: true })
   copyFileSync(sourceHook, hook)
+  copyFileSync(sourceRegisteredScope, join(hook, '..', 'registered_scope.py'))
   chmodSync(hook, 0o755)
   if (marker === 'valid') copyFileSync(sourceMarkers, markerFile)
   else if (marker === 'unreadable') mkdirSync(markerFile)

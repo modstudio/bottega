@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 import { gitHookBinaryViolations, productHookScopeViolations } from './check-hook-binary.ts'
 
 const assignment = `common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
