@@ -63,6 +63,7 @@ const cachedFixture: CachedSessionContext = {
 const resolvedFixture = {
   registered: true as const,
   project: cachedFixture.project,
+  layers: [],
   rulings: { value: 'agent' as const, scope: 'hosted user' },
   stages: [
     { stage: 'plan', agreed: true, value: 'auto', scope: 'hosted user', steps: 2 },

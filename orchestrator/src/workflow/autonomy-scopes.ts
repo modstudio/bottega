@@ -13,6 +13,7 @@ import { readMachineAutonomy } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import {
+  type AutonomyLayer,
   type AutonomyPreset,
   type AutonomyResolution,
   type AutonomySettings,
@@ -132,6 +133,21 @@ function validateSessionAutonomy(session: AutonomySettings): void {
   )
 }
 
+function staleAutonomyLayer(layer: AutonomyLayer): AutonomyLayer {
+  const scope = staleHostedScope(layer.scope)
+  if (scope === layer.scope) return layer
+  return {
+    ...layer,
+    scope,
+    stages: Object.fromEntries(
+      Object.entries(layer.stages).map(([stage, value]) => [
+        stage,
+        value === null ? null : staleHostedAutonomyWinner({ value, scope: layer.scope }).value,
+      ]),
+    ) as AutonomyLayer['stages'],
+  }
+}
+
 export async function resolveProjectAutonomy(
   project: string,
   workflow: string | undefined,
@@ -201,6 +217,7 @@ export async function resolveProjectAutonomy(
     const ageMs = Math.max(0, now().getTime() - Date.parse(cached.resolvedAt))
     return {
       ...resolution,
+      layers: resolution.layers.map(staleAutonomyLayer),
       steps: Object.fromEntries(
         Object.entries(resolution.steps).map(([slug, winner]) => [
           slug,

@@ -717,6 +717,24 @@ const ContextSchema = z.discriminatedUnion('registered', [
   z.object({
     registered: z.literal(true),
     project: z.string(),
+    layers: z
+      .array(
+        z.object({
+          scope: z.string(),
+          preset: z.enum(['manual', 'guided', 'autonomous']).nullable(),
+          rulings: z.enum(['agent', 'user']).nullable(),
+          shipTo: z.enum(SHIP_TO_VALUES).nullable(),
+          stages: z.object({
+            plan: z.enum(['ask', 'review', 'auto', 'per step']).nullable(),
+            implement: z.enum(['ask', 'review', 'auto', 'per step']).nullable(),
+            review: z.enum(['ask', 'review', 'auto', 'per step']).nullable(),
+            docs: z.enum(['ask', 'review', 'auto', 'per step']).nullable(),
+            canon: z.enum(['ask', 'review', 'auto', 'per step']).nullable(),
+            ship: z.enum(['ask', 'review', 'auto', 'per step']).nullable(),
+          }),
+        }),
+      )
+      .optional(),
     rulings: z.object({ value: z.enum(['agent', 'user']), scope: z.string() }),
     shipTo: z.object({
       value: z.enum(SHIP_TO_VALUES),

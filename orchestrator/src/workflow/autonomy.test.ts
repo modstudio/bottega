@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   answerRulingRefusal,
+  autonomyStages,
+  builtInAutonomyScope,
   parseAutonomy,
   parseStoredAutonomy,
   resolveAutonomy,
@@ -90,6 +92,44 @@ describe('autonomy resolution', () => {
       design: { value: 'review', scope: 'project' },
       verify: { value: 'review', scope: 'session' },
     })
+  })
+
+  test('layers preserve the scope waterfall and every winner is its first non-null value', () => {
+    const cases = [
+      [
+        { name: 'session', settings: { stages: { plan: 'review' as const } } },
+        { name: 'empty middle', settings: {} },
+        { name: 'project', settings: { preset: 'manual' as const, shipTo: 'branch' as const } },
+        builtInAutonomyScope(),
+      ],
+      [
+        { name: 'local project', settings: { rulings: 'user' as const } },
+        { name: 'hosted user (stale)', settings: { preset: 'autonomous' as const } },
+        { name: 'hosted space (stale)', settings: { shipTo: 'production' as const } },
+        builtInAutonomyScope(),
+      ],
+      [
+        { name: 'session', settings: { stages: { ship: 'ask' as const } } },
+        { name: 'local user', settings: { preset: 'guided' as const, rulings: 'agent' as const } },
+        builtInAutonomyScope('autonomous'),
+      ],
+    ]
+
+    for (const scopes of cases) {
+      const result = resolveAutonomy(steps, scopes, undefined, autonomyStages)
+      expect(result.layers.map(({ scope }) => scope)).toEqual(scopes.map(({ name }) => name))
+      for (const stage of autonomyStages) {
+        const first = result.layers.find((layer) => layer.stages[stage] !== null)
+        expect(result.stages?.[stage]).toEqual({
+          value: first?.stages[stage],
+          scope: first?.scope,
+        })
+      }
+      const firstRuling = result.layers.find((layer) => layer.rulings !== null)
+      expect(result.rulings).toEqual({ value: firstRuling?.rulings, scope: firstRuling?.scope })
+      const firstShipTo = result.layers.find((layer) => layer.shipTo !== null)
+      expect(result.shipTo).toEqual({ value: firstShipTo?.shipTo, scope: firstShipTo?.scope })
+    }
   })
 
   test('workflow settings beat general settings only within their scope', () => {
