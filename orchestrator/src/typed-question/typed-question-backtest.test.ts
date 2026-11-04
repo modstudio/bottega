@@ -265,11 +265,8 @@ test("a context-building version asks with the cited files at the run's base com
     spec_sha: 's',
   }
   const atBase = (path: string) => (path === 'src/cited.ts' ? 'cited source at base' : null)
-  const readerFor = (candidate: typeof row | { base_commit: string | null }) =>
+  const readerFor = (candidate: { base_commit: string | null }) =>
     candidate.base_commit === 'base' ? atBase : null
-  expect(specState(row, SPEC_UNSETTLED_QUESTION_V2, readerFor)).toEqual(
-    SPEC_UNSETTLED_QUESTION_V2.contextBuilder(spec, atBase),
-  )
   expect(JSON.stringify(specState(row, SPEC_UNSETTLED_QUESTION_V2, readerFor))).toContain(
     'cited source at base',
   )

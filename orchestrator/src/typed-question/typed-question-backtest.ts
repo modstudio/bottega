@@ -96,7 +96,7 @@ type SpecRunRow = {
 }
 
 /** The cited-file reader for one run's context, or null when it cannot be rebuilt. */
-export type ReaderFor = (row: SpecRunRow) => CitedFileReader | null
+type ReaderFor = (row: SpecRunRow) => CitedFileReader | null
 
 /** Root runs that carry a caller spec, newest first, narrowed by job and project. */
 function specRunRows(database: Database, options: BacktestOptions): Iterable<SpecRunRow> {
