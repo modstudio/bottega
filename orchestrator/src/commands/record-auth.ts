@@ -5,11 +5,18 @@ import { Writable } from 'node:stream'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  isModerationHideReason,
+  MODERATION_HIDE_REASONS,
+  type ModerationHideReason,
+} from '../../../shared/moderation-hide-reason.ts'
+import { parseNoteLabel } from '../../../shared/note-label.ts'
+import {
   isOutsidePauseHours,
   OUTSIDE_PAUSE_DEFAULT_HOURS,
   OUTSIDE_PAUSE_MAX_HOURS,
 } from '../../../shared/outside-write-decision.ts'
 import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
 import { retryOutboxRow, retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
@@ -35,6 +42,8 @@ import {
   recordSpaceAccessListCommand,
   recordSpaceAccessWithdrawCommand,
   recordSpaceCreateCommand,
+  recordSpaceHiddenCommand,
+  recordSpaceHideCommand,
   recordSpaceIntakeBlockCommand,
   recordSpaceIntakeBlocksCommand,
   recordSpaceIntakePauseCommand,
@@ -47,6 +56,7 @@ import {
   recordSpaceListCommand,
   recordSpaceMoveProjectCommand,
   recordSpaceSwitchCommand,
+  recordSpaceUnhideCommand,
 } from '../record/record-command.ts'
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
@@ -292,6 +302,49 @@ function registerSpaceCommands(record: Command): void {
     )
   registerSpaceAccessCommands(space)
   registerSpaceIntakeCommands(space)
+  registerSpaceModerationCommands(space)
+}
+
+function moderationTarget(value: string): { message: string } | { note: string } {
+  if (hasRecordIdShape(value)) return { message: value }
+  parseNoteLabel(value)
+  return { note: value }
+}
+
+function moderationReason(value: string): ModerationHideReason {
+  if (!isModerationHideReason(value))
+    throw new Error(`reason must be one of: ${MODERATION_HIDE_REASONS.join(', ')}`)
+  return value
+}
+
+function registerSpaceModerationCommands(space: Command): void {
+  space
+    .command('hide')
+    .description('hide a board message or note; shared-space notices cannot be hidden (owner only)')
+    .argument('<message-id|project#number>')
+    .requiredOption('--reason <reason>', 'moderation reason', moderationReason)
+    .action((value, options) =>
+      hostedCommand(`${PLATFORM_SLUG} record space hide`, () =>
+        recordSpaceHideCommand(moderationTarget(String(value)), options.reason, presentation),
+      ),
+    )
+  space
+    .command('unhide')
+    .description('unhide a board message or note (owner only)')
+    .argument('<message-id|project#number>')
+    .action((value) =>
+      hostedCommand(`${PLATFORM_SLUG} record space unhide`, () =>
+        recordSpaceUnhideCommand(moderationTarget(String(value)), presentation),
+      ),
+    )
+  space
+    .command('hidden')
+    .description('list hidden board messages and notes (owner only)')
+    .action(() =>
+      hostedCommand(`${PLATFORM_SLUG} record space hidden`, () =>
+        recordSpaceHiddenCommand(presentation),
+      ),
+    )
 }
 
 function registerSpaceIntakeCommands(space: Command): void {

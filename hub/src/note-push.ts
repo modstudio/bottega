@@ -31,8 +31,34 @@ function acknowledgementsFor(
     }))
 }
 
-export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean } = {}) {
-  const notes = db()
+async function pushDestination(input: {
+  notes: Record<string, unknown>[]
+  acknowledgements: Record<string, unknown>[]
+  counters: Array<{ project: string; projectId: string; next: number }>
+  options: NoteClientOptions
+}) {
+  let skippedNotes = 0
+  let skippedAcknowledgements = 0
+  for (const batch of chunks(input.notes))
+    skippedNotes += (await hostedMirrorNotes({ notes: batch }, input.options)).skippedHidden.length
+  for (const batch of chunks(input.acknowledgements))
+    skippedAcknowledgements += (
+      await hostedMirrorNotes({ notes: [], acknowledgements: batch }, input.options)
+    ).skippedHidden.length
+  await hostedMirrorNotes({ notes: [], raiseProjects: input.counters }, input.options)
+  const counts = await hostedNoteCounts(input.options)
+  return {
+    counts,
+    skippedNotes,
+    skippedAcknowledgements,
+    match:
+      counts.note === input.notes.length - skippedNotes &&
+      counts.note_acknowledgement === input.acknowledgements.length - skippedAcknowledgements,
+  }
+}
+
+function localNotes() {
+  return db()
     .query<Record<string, unknown>, []>('SELECT * FROM note ORDER BY record_id')
     .all()
     .map((row) => ({
@@ -54,6 +80,10 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
       updated_at: row.last_seen_at as string,
       deleted_at: null,
     }))
+}
+
+export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean } = {}) {
+  const notes = localNotes()
   const acknowledgementRows = db()
     .query<Record<string, unknown>, []>(
       'SELECT * FROM note_acknowledgement ORDER BY note_record_id,session_id',
@@ -82,6 +112,7 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
     refusals.set(project, `${project}: ${refusal.reason}`)
   const failures = [...refusals.values()]
   const hosted = { note: 0, note_acknowledgement: 0 }
+  const skippedHidden = { note: 0, note_acknowledgement: 0 }
   let match = true
   const noteById = new Map(notes.map((note) => [note.id, note]))
 
@@ -98,20 +129,32 @@ export async function pushNotes(options: NoteClientOptions & { dryRun?: boolean 
     )
     const targeted = { ...requestOptions, recordSpace: spaceId }
     try {
-      for (const batch of chunks(selectedNotes)) await hostedMirrorNotes({ notes: batch }, targeted)
-      for (const batch of chunks(acknowledgements))
-        await hostedMirrorNotes({ notes: [], acknowledgements: batch }, targeted)
-      await hostedMirrorNotes({ notes: [], raiseProjects: selectedCounters }, targeted)
-      const counts = await hostedNoteCounts(targeted)
-      hosted.note += counts.note
-      hosted.note_acknowledgement += counts.note_acknowledgement
-      match &&=
-        counts.note === selectedNotes.length &&
-        counts.note_acknowledgement === acknowledgements.length
+      const result = await pushDestination({
+        notes: selectedNotes,
+        acknowledgements,
+        counters: selectedCounters,
+        options: targeted,
+      })
+      skippedHidden.note += result.skippedNotes
+      skippedHidden.note_acknowledgement += result.skippedAcknowledgements
+      hosted.note += result.counts.note
+      hosted.note_acknowledgement += result.counts.note_acknowledgement
+      match &&= result.match
     } catch (cause) {
       failures.push(`${spaceId}: ${cause instanceof Error ? cause.message : String(cause)}`)
     }
   }
   if (failures.length) throw new Error(`hosted note pushes failed: ${failures.join('; ')}`)
-  return { local, hosted, match }
+  const skipped = skippedHidden.note + skippedHidden.note_acknowledgement
+  return {
+    local,
+    hosted,
+    match,
+    skippedHidden,
+    ...(skipped
+      ? {
+          notice: `${skipped} note push rows were skipped because they are hidden by a space owner`,
+        }
+      : {}),
+  }
 }

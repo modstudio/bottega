@@ -54,7 +54,7 @@ test('note push sends each space only that space projects notes', async () => {
     const body = JSON.parse(String(init?.body)) as { notes?: Array<{ project: string }> }
     if (body.notes?.length)
       mirrors.push({ space, projects: body.notes.map((note) => note.project) })
-    return Response.json({ upserted: body.notes?.length ?? 0, noteIds: [] })
+    return Response.json({ upserted: body.notes?.length ?? 0, noteIds: [], skippedHidden: [] })
   }
 
   await expect(
@@ -94,7 +94,7 @@ test('note push sends a project counter when the project has no notes', async ()
         space: new Headers(init?.headers).get('x-record-space'),
         counters: body.raiseProjects,
       })
-    return Response.json({ upserted: 0, noteIds: [] })
+    return Response.json({ upserted: 0, noteIds: [], skippedHidden: [] })
   }
 
   await expect(
@@ -112,4 +112,42 @@ test('note push sends a project counter when the project has no notes', async ()
       ],
     },
   ])
+})
+
+test('note push matches when a note hidden by a space owner is skipped', async () => {
+  const noteId = '01990000-0000-7000-8000-000000000507'
+  const at = '2026-10-09T12:00:00.000Z'
+  writeTransaction((conn) => {
+    conn
+      .query(`INSERT INTO note
+        (record_id,number,project,project_record_id,text,anchors,sightings,created_at,last_seen_at)
+        VALUES (?,?,?,?,?,'[]',1,?,?)`)
+      .run(noteId, 1, 'workshop', '01990000-0000-7000-8000-000000000075', 'hidden note', at, at)
+  })
+  const fetch = async (input: string, init?: RequestInit) => {
+    const url = new URL(input)
+    if (url.pathname === '/v1/tasks/identity')
+      return Response.json({
+        userId: 'user-1',
+        activeSpaceId: 'space-a',
+        memberships: [{ spaceId: 'space-a', slug: 'active' }],
+        capabilities: { projectNoteCounters: true, targetSpaceNotes: true },
+      })
+    if (url.pathname === '/v1/notes/counts')
+      return Response.json({ note: 0, note_acknowledgement: 0 })
+    const body = JSON.parse(String(init?.body)) as { notes?: Array<{ id: string }> }
+    return Response.json({
+      upserted: 0,
+      noteIds: [],
+      skippedHidden: body.notes?.some((note) => note.id === noteId) ? [noteId] : [],
+    })
+  }
+
+  await expect(
+    pushNotes({ baseUrl: 'https://hub.example.test', token: 'session', fetch }),
+  ).resolves.toMatchObject({
+    match: true,
+    skippedHidden: { note: 1, note_acknowledgement: 0 },
+    notice: '1 note push rows were skipped because they are hidden by a space owner',
+  })
 })

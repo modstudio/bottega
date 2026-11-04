@@ -86,6 +86,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listSnapshots',
     'listWorkflowCatalogue',
     'listOutsideBlocks',
+    'listHidden',
     'openBoardStream',
     'readTaskFlow',
     'searchDocs',
@@ -113,6 +114,8 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'resumeOutsideIntake',
       'blockOutsideAuthor',
       'unblockOutsideAuthor',
+      'hideRow',
+      'unhideRow',
     ],
   ),
   ...writeEntries(

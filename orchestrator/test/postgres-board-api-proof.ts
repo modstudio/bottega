@@ -709,6 +709,7 @@ export function registerBoardApiProofs(input: {
     token: () => tokenC,
     ownerToken: () => tokenA,
     nonOwnerToken: () => tokenB,
+    nonOwnerUserId: () => userB,
     readMemberToken: () => tokenD,
     memberToken: () => tokenA,
     userId: () => userC,
@@ -719,6 +720,7 @@ export function registerBoardApiProofs(input: {
     post,
     caseSession,
     succeeds: input.succeeds,
+    actorUrl: input.actorUrl,
   })
 
   test('the author rate cap refuses a further post for one session and accepts another session', async () => {

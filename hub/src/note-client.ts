@@ -125,13 +125,11 @@ export async function hostedNoteChanges(cursor: string | null, options?: Options
 }
 export const hostedMirrorNotes = async (body: unknown, options?: Options) => {
   await assertNoteCapabilities(options)
-  return request<{ upserted: number; noteIds: Array<{ number: number; id: string }> }>(
-    '/v1/notes/mirror',
-    'PUT',
-    body,
-    options,
-    'idempotent',
-  )
+  return request<{
+    upserted: number
+    noteIds: Array<{ number: number; id: string }>
+    skippedHidden: string[]
+  }>('/v1/notes/mirror', 'PUT', body, options, 'idempotent')
 }
 export const hostedNoteCounts = (options?: Options) =>
   request<{ note: number; note_acknowledgement: number }>(

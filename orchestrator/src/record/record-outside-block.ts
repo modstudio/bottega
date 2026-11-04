@@ -8,6 +8,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { requireOwner } from './record-outside-intake.ts'
 import { recordPool } from './record-pool.ts'
+import type { RecordRowTarget } from './record-row-target.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 export type OutsideBlock = {
@@ -16,9 +17,6 @@ export type OutsideBlock = {
   blockedByUserId: string
   createdAt: string
 }
-export type OutsideBlockTarget =
-  | { message: string; note?: never }
-  | { note: NoteLabel; message?: never }
 
 async function tenant<T>(input: Tenant, run: (tx: SQL) => Promise<T>): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
@@ -65,7 +63,7 @@ async function noteAuthor(tx: SQL, spaceId: string, note: NoteLabel): Promise<st
 }
 
 export async function blockOutsideAuthor(
-  input: Tenant & OutsideBlockTarget & { hours?: number },
+  input: Tenant & RecordRowTarget & { hours?: number },
 ): Promise<OutsideBlock> {
   return tenant(input, async (tx) => {
     await requireOwner(tx, input, 'blocking an outside author')

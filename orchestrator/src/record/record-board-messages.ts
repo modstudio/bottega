@@ -154,6 +154,9 @@ export function hostedBoardMessageView(
     authorSession: row.author_session == null ? null : String(row.author_session),
     ackRequired: Boolean(row.ack_required),
     ackDeadline: iso(row.ack_deadline),
+    hiddenAt: iso(row.hidden_at),
+    hiddenByUserId: row.hidden_by_user_id == null ? null : String(row.hidden_by_user_id),
+    hiddenReason: row.hidden_reason == null ? null : String(row.hidden_reason),
   }
 }
 

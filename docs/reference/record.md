@@ -39,6 +39,8 @@ the hosted record and outbox
 - [bottega record space access withdraw](#bottega-record-space-access-withdraw)
 - [bottega record space create](#bottega-record-space-create)
 - [bottega record space help](#bottega-record-space-help)
+- [bottega record space hidden](#bottega-record-space-hidden)
+- [bottega record space hide](#bottega-record-space-hide)
 - [bottega record space intake](#bottega-record-space-intake)
 - [bottega record space intake block](#bottega-record-space-intake-block)
 - [bottega record space intake blocks](#bottega-record-space-intake-blocks)
@@ -53,6 +55,7 @@ the hosted record and outbox
 - [bottega record space list](#bottega-record-space-list)
 - [bottega record space move-project](#bottega-record-space-move-project)
 - [bottega record space switch](#bottega-record-space-switch)
+- [bottega record space unhide](#bottega-record-space-unhide)
 - [bottega record sync](#bottega-record-sync)
 - [bottega record use](#bottega-record-use)
 - [bottega record verify-email](#bottega-record-verify-email)
@@ -422,12 +425,15 @@ manage hosted record spaces
 - [bottega record space access](./record.md#bottega-record-space-access)
 - [bottega record space create](./record.md#bottega-record-space-create)
 - [bottega record space help](./record.md#bottega-record-space-help)
+- [bottega record space hidden](./record.md#bottega-record-space-hidden)
+- [bottega record space hide](./record.md#bottega-record-space-hide)
 - [bottega record space intake](./record.md#bottega-record-space-intake)
 - [bottega record space invitations](./record.md#bottega-record-space-invitations)
 - [bottega record space invite](./record.md#bottega-record-space-invite)
 - [bottega record space list](./record.md#bottega-record-space-list)
 - [bottega record space move-project](./record.md#bottega-record-space-move-project)
 - [bottega record space switch](./record.md#bottega-record-space-switch)
+- [bottega record space unhide](./record.md#bottega-record-space-unhide)
 
 ## bottega record space accept
 
@@ -518,6 +524,30 @@ create a hosted record space
 **Synopsis:** `bottega record space help [command]`
 
 display help for command
+
+### Related
+
+- [bottega record space](./record.md#bottega-record-space)
+
+## bottega record space hidden
+
+**Synopsis:** `bottega record space hidden`
+
+list hidden board messages and notes (owner only)
+
+### Related
+
+- [bottega record space](./record.md#bottega-record-space)
+
+## bottega record space hide
+
+**Synopsis:** `bottega record space hide <message-id|project#number> [--reason <reason>]`
+
+hide a board message or note; shared-space notices cannot be hidden (owner only)
+
+### Options
+
+- `--reason <reason>`: moderation reason
 
 ### Related
 
@@ -696,6 +726,16 @@ select the active hosted record space
 
 - `--short-name <name>`: short machine name
 - `--display-name <name>`: display machine name
+
+### Related
+
+- [bottega record space](./record.md#bottega-record-space)
+
+## bottega record space unhide
+
+**Synopsis:** `bottega record space unhide <message-id|project#number>`
+
+unhide a board message or note (owner only)
 
 ### Related
 

@@ -86,6 +86,7 @@ import {
   upsertRecordLens,
   upsertRecordLensProfile,
 } from './record-lens-catalogue.ts'
+import { hideRow, listHidden, unhideRow } from './record-moderation-hide.ts'
 import {
   blockOutsideAuthor,
   listOutsideBlocks,
@@ -289,6 +290,9 @@ function recordSpaceAccessDependencies() {
     blockOutsideAuthor,
     listOutsideBlocks,
     unblockOutsideAuthor,
+    hideRow,
+    unhideRow,
+    listHidden,
   }
 }
 

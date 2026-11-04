@@ -200,7 +200,9 @@ export async function readHostedChangesInTransaction(
     if (superseded.has(`${entry.table_name}:${entry.row_id}`)) return []
     if (entry.op === 'delete') return [base]
     const row = currentRows.get(`${entry.table_name}:${entry.row_id}`)
-    return row ? [{ ...base, row }] : []
+    if (row) return [{ ...base, row }]
+    // hub_note_hidden_select makes an unreadable note upsert a delete for this reader.
+    return entry.table_name === 'hub_note' ? [{ ...base, op: 'delete' as const }] : []
   })
   return {
     head,

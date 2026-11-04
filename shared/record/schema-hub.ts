@@ -19,9 +19,12 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import { MODERATION_HIDE_REASONS } from '../moderation-hide-reason.ts'
 import {
   machine,
+  membership,
   project,
+  RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   space,
   spaceIdentity,
@@ -285,6 +288,9 @@ export const hubNote = pgTable.withRLS(
     }),
     updatedAt: updatedAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    hiddenAt: timestamp('hidden_at', { withTimezone: true }),
+    hiddenByUserId: uuid('hidden_by_user_id').references(() => user.id),
+    hiddenReason: text('hidden_reason'),
   },
   (table) => [
     unique('hub_note_space_project_number_unique').on(
@@ -294,7 +300,28 @@ export const hubNote = pgTable.withRLS(
     ),
     index('hub_note_promoted_task_id_idx').on(table.promotedTaskId),
     check('hub_note_sightings_check', sql`${table.sightings} > 0`),
+    check(
+      'hub_note_hidden_shape_check',
+      sql`(${table.hiddenAt} IS NULL AND ${table.hiddenByUserId} IS NULL AND ${table.hiddenReason} IS NULL) OR
+        (${table.hiddenAt} IS NOT NULL AND ${table.hiddenByUserId} IS NOT NULL AND ${table.hiddenReason} IS NOT NULL)`,
+    ),
+    check(
+      'hub_note_hidden_reason_check',
+      sql`${table.hiddenReason} IS NULL OR ${table.hiddenReason} IN ${MODERATION_HIDE_REASONS}`,
+    ),
     ...tenantPolicies('hub_note', table.spaceId),
+    pgPolicy('hub_note_hidden_select', {
+      as: 'restrictive',
+      for: 'select',
+      to: RECORD_ACTOR_ROLE,
+      using: sql`${table.hiddenAt} IS NULL OR
+        ${table.authorUserId} = nullif(current_setting('app.user_id', true), '')::uuid OR EXISTS (
+          SELECT 1 FROM ${membership} m
+          WHERE m.space_id = ${table.spaceId}
+            AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+            AND m.role = 'owner'
+        )`,
+    }),
   ],
 )
 

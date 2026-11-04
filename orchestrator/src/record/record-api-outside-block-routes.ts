@@ -3,50 +3,23 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import { type NoteLabel, parseNoteLabel } from '../../../shared/note-label.ts'
 import {
   isOutsidePauseHours,
   OUTSIDE_PAUSE_MAX_HOURS,
 } from '../../../shared/outside-write-decision.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import type { OutsideBlock, OutsideBlockTarget } from './record-outside-block.ts'
+import type { OutsideBlock } from './record-outside-block.ts'
+import { parseRecordRowTarget, type RecordRowTarget } from './record-row-target.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 
-function noteLabelRefusal(value: unknown): string {
-  return `invalid note label '${String(value)}': expected project#number`
-}
-
-type ParsedBlockBody = { target: OutsideBlockTarget; hours?: number } | { error: string }
-
-function parseBlockNote(value: unknown): { note: NoteLabel } | { error: string } {
-  if (typeof value !== 'string') return { error: noteLabelRefusal(value) }
-  try {
-    return { note: parseNoteLabel(value) }
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : noteLabelRefusal(value) }
-  }
-}
+type ParsedBlockBody = { target: RecordRowTarget; hours?: number } | { error: string }
 
 function parseBlockBody(value: unknown): ParsedBlockBody {
-  const body =
-    value !== null && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {}
-  const hasMessage = body.message !== undefined
-  const hasNote = body.note !== undefined
-  if (hasMessage === hasNote) return { error: 'exactly one of message or note is required' }
-  let target: OutsideBlockTarget
-  if (hasMessage) {
-    if (!z.string().uuid().safeParse(body.message).success)
-      return { error: 'message must be a board message id' }
-    target = { message: String(body.message) }
-  } else {
-    const parsed = parseBlockNote(body.note)
-    if ('error' in parsed) return parsed
-    target = parsed
-  }
+  const parsed = parseRecordRowTarget(value)
+  if ('error' in parsed) return parsed
+  const { body, target } = parsed
   if (
     body.hours !== undefined &&
     (typeof body.hours !== 'number' || !isOutsidePauseHours(body.hours))
@@ -58,9 +31,7 @@ function parseBlockBody(value: unknown): ParsedBlockBody {
 export function registerRecordOutsideBlockRoutes(
   app: Hono<ApiEnvironment>,
   deps: {
-    blockOutsideAuthor(
-      input: Tenant & OutsideBlockTarget & { hours?: number },
-    ): Promise<OutsideBlock>
+    blockOutsideAuthor(input: Tenant & RecordRowTarget & { hours?: number }): Promise<OutsideBlock>
     listOutsideBlocks(input: Tenant): Promise<OutsideBlock[]>
     unblockOutsideAuthor(input: Tenant & { blockedUserId: string }): Promise<void>
   },

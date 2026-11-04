@@ -125,6 +125,7 @@ export const recordModules: RecordModule[] = [
     './record-api-client-paths.ts',
     './record-board-contract.ts',
   ]),
+  module('orchestrator/src/record/record-api-client-response.ts', []),
   module('orchestrator/src/record/record-api-client-config-access.ts', [
     './record-api-client-paths.ts',
   ]),
@@ -132,6 +133,11 @@ export const recordModules: RecordModule[] = [
     './record-api-client-paths.ts',
     './record-api-client-outside-block.ts',
     './record-api-client-outside-intake.ts',
+  ]),
+  module('orchestrator/src/record/record-api-client-moderation.ts', [
+    '../../../shared/moderation-hide-reason.ts',
+    './record-api-client-paths.ts',
+    './record-moderation-hide.ts',
   ]),
   module('orchestrator/src/record/record-api-client-outside-block.ts', [
     './record-api-client-paths.ts',
@@ -581,6 +587,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-command.ts', [
     '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/moderation-hide-reason.ts',
     '../database/db.ts',
     '../postgres/postgres-migrate.ts',
     '../project/projects.ts',
@@ -681,6 +688,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-space.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/moderation-hide-reason.ts',
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/record-space-membership.ts',
@@ -688,6 +696,7 @@ export const recordModules: RecordModule[] = [
     './machine-name.ts',
     './record-api-client.ts',
     './record-auth.ts',
+    './record-moderation-hide.ts',
     './record-session.ts',
   ]),
   module('orchestrator/src/record/record-invitation.ts', []),
@@ -755,6 +764,7 @@ export const recordModules: RecordModule[] = [
     './record-api-config-access-routes.ts',
     './record-api-doc-order.ts',
     './record-api-machine-key-claim-routes.ts',
+    './record-api-moderation-routes.ts',
     './record-api-outside-block-routes.ts',
     './record-api-outside-intake-routes.ts',
     './record-api-projects.ts',
@@ -777,10 +787,27 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-outside-block-routes.ts', [
     'hono',
     'zod',
-    '../../../shared/note-label.ts',
     '../../../shared/outside-write-decision.ts',
     './record-auth.ts',
     './record-outside-block.ts',
+    './record-row-target.ts',
+  ]),
+  module('orchestrator/src/record/record-api-moderation-routes.ts', [
+    'hono',
+    '../../../shared/moderation-hide-reason.ts',
+    './record-auth.ts',
+    './record-moderation-hide.ts',
+    './record-row-target.ts',
+  ]),
+  module('orchestrator/src/record/record-moderation-hide.ts', [
+    'bun',
+    '../../../shared/moderation-hide-reason.ts',
+    '../../../shared/note-label.ts',
+    '../../../shared/record/tenant.ts',
+    './record-config-error.ts',
+    './record-outside-intake.ts',
+    './record-pool.ts',
+    './record-row-target.ts',
   ]),
   module('orchestrator/src/record/record-outside-block.ts', [
     'bun',
@@ -790,7 +817,9 @@ export const recordModules: RecordModule[] = [
     './record-config-error.ts',
     './record-outside-intake.ts',
     './record-pool.ts',
+    './record-row-target.ts',
   ]),
+  module('orchestrator/src/record/record-row-target.ts', ['zod', '../../../shared/note-label.ts']),
   module('orchestrator/src/record/record-outside-intake.ts', [
     'bun',
     '../../../shared/brand.ts',

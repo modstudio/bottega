@@ -19,6 +19,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import { REPLY_AUDIENCE_OPTIONS } from '../board-reply-audience-options.ts'
+import { MODERATION_HIDE_REASONS } from '../moderation-hide-reason.ts'
 import {
   machine,
   membership,
@@ -58,6 +59,41 @@ function writesEveryScopedProject(scopeProjectIds: AnyPgColumn) {
 
 function sharesAnyAuthorSpace(authorUserId: AnyPgColumn) {
   return sql`record_board_author_shares_space(${authorUserId})`
+}
+
+function ownsAnyScopedProject(scopeProjectIds: AnyPgColumn) {
+  return sql`EXISTS (
+      SELECT 1 FROM unnest(${scopeProjectIds}) scoped(project_id)
+      JOIN ${project} p ON p.id = scoped.project_id
+      JOIN ${membership} m ON m.space_id = p.space_id
+      WHERE m.user_id = ${currentUser} AND m.role = 'owner'
+    )`
+}
+
+function hiddenBoardRowRules(table: {
+  hiddenAt: AnyPgColumn
+  hiddenByUserId: AnyPgColumn
+  hiddenReason: AnyPgColumn
+  authorUserId: AnyPgColumn
+  scopeProjectIds: AnyPgColumn
+}) {
+  return [
+    check(
+      'board_message_hidden_shape_check',
+      sql`(${table.hiddenAt} IS NULL AND ${table.hiddenByUserId} IS NULL AND ${table.hiddenReason} IS NULL) OR
+          (${table.hiddenAt} IS NOT NULL AND ${table.hiddenByUserId} IS NOT NULL AND ${table.hiddenReason} IS NOT NULL)`,
+    ),
+    check(
+      'board_message_hidden_reason_check',
+      sql`${table.hiddenReason} IS NULL OR ${table.hiddenReason} IN ${MODERATION_HIDE_REASONS}`,
+    ),
+    pgPolicy('board_message_hidden_select', {
+      as: 'restrictive',
+      for: 'select',
+      to: RECORD_ACTOR_ROLE,
+      using: sql`${table.hiddenAt} IS NULL OR ${table.authorUserId} = ${currentUser} OR ${ownsAnyScopedProject(table.scopeProjectIds)}`,
+    }),
+  ]
 }
 
 export const boardMessageRevision = pgSequence('board_message_revision')
@@ -189,6 +225,9 @@ export const boardMessage = pgTable.withRLS(
     revision: bigint({ mode: 'bigint' })
       .notNull()
       .default(sql`nextval('public.board_message_revision'::regclass)`),
+    hiddenAt: timestamp('hidden_at', { withTimezone: true }),
+    hiddenByUserId: uuid('hidden_by_user_id').references(() => user.id),
+    hiddenReason: text('hidden_reason'),
   },
   (table) => {
     const readsScope = readsEveryScopedProject(table.scopeProjectIds)
@@ -251,6 +290,7 @@ export const boardMessage = pgTable.withRLS(
         sql`${table.kind} = 'question' OR (${table.noteId} IS NULL
           AND ${table.notePendingError} IS NULL AND ${table.noteFilingStartedAt} IS NULL)`,
       ),
+      ...hiddenBoardRowRules(table),
       pgPolicy('board_message_actor_select', {
         for: 'select',
         to: RECORD_ACTOR_ROLE,
