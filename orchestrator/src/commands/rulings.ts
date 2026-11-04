@@ -15,7 +15,7 @@ import { fileNote } from '../mcp/hub-notes.ts'
 import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
-import { listRulings, rulingChangeCursor } from '../run/ruling-list.ts'
+import { listRulingChanges, listRulings } from '../run/ruling-list.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
 import { log } from './support.ts'
 
@@ -66,14 +66,14 @@ function registerQuestionIdentities(program: Command): void {
 function printRulings(options: { since?: string; changedAfter?: string; kind: string }): void {
   if (!['workflow', 'run', 'all'].includes(options.kind))
     throw new Error('--kind must be workflow, run, or all')
-  const rows = listRulings({
-    since: options.since,
-    changedAfter: options.changedAfter,
-    kind: options.kind as 'workflow' | 'run' | 'all',
-  })
+  const kind = options.kind as 'workflow' | 'run' | 'all'
+  if (options.changedAfter === undefined) {
+    log(JSON.stringify(listRulings({ since: options.since, kind })))
+    return
+  }
   log(
     JSON.stringify(
-      options.changedAfter === undefined ? rows : { cursor: rulingChangeCursor(), rows },
+      listRulingChanges({ since: options.since, changedAfter: options.changedAfter, kind }),
     ),
   )
 }

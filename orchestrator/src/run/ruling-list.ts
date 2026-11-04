@@ -6,11 +6,30 @@ import { db } from '../database/db.ts'
 import { changedAfter, collectChangeCursor } from './collect-change.ts'
 import { questionOpenSql } from './question-open.ts'
 
-export function listRulings(options: {
+type RulingListOptions = {
   since?: string
   changedAfter?: string
   kind: 'workflow' | 'run' | 'all'
-}): RulingListRow[] {
+}
+
+export function listRulings(options: RulingListOptions): RulingListRow[] {
+  return queryRulings(options).rows
+}
+
+/** The rows changed after the cursor, with the snapshot the query was bounded by. */
+export function listRulingChanges(options: RulingListOptions & { changedAfter: string }): {
+  cursor: number
+  rows: RulingListRow[]
+} {
+  const result = queryRulings(options)
+  if (result.cursor === null) throw new Error('unreachable: a changed-after query has a cursor')
+  return { cursor: result.cursor, rows: result.rows }
+}
+
+function queryRulings(options: RulingListOptions): {
+  cursor: number | null
+  rows: RulingListRow[]
+} {
   const clauses: string[] = []
   const values: string[] = []
   if (options.kind === 'workflow') clauses.push('q.workflow_cursor_record_id IS NOT NULL')
@@ -53,9 +72,5 @@ export function listRulings(options: {
       ...row,
     })),
   )
-  return parsed
-}
-
-export function rulingChangeCursor(): number {
-  return collectChangeCursor()
+  return { cursor, rows: parsed }
 }
