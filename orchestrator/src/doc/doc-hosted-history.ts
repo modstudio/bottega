@@ -4,17 +4,21 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
-import { decideHostedRevisionRead } from './doc-history-source.ts'
+import {
+  type DocHistoryPresentation,
+  decideHostedRevisionRead,
+  docDiffPair,
+} from './doc-history-source.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 import { diffDocRevisionValues } from './doc-revision-store.ts'
 
 export type HostedDocRevision = RecordDocRevision
-export type HostedDocRevisionRead = {
-  revisions: Array<DocRevisionMetadata & { authorName?: string | null }>
-  diff(a: string | undefined, b: string | undefined): string
-}
-
 type NumberedHostedRevision = DocRevision & { authorName: string | null }
+
+export type HostedDocRevisionRead = DocHistoryPresentation<
+  DocRevisionMetadata & { authorName?: string | null },
+  NumberedHostedRevision
+>
 
 export function mapHostedDocRevisions(
   revisions: readonly HostedDocRevision[],
@@ -98,21 +102,30 @@ function hostedRevisionByIdentifier(
   return revision
 }
 
+function hostedRevisionId(revisions: readonly NumberedHostedRevision[], input: string): string {
+  if (!/^[0-9]+$/.test(input)) return input.toLowerCase()
+  return hostedRevisionByIdentifier(revisions, input).record_id
+}
+
 export function hostedDocRevisionRead(
   revisions: readonly HostedDocRevision[],
 ): HostedDocRevisionRead {
   const numbered = mapHostedDocRevisions(revisions)
   return {
     revisions: hostedRevisionMetadata(numbered),
+    resolve(identifier) {
+      return hostedRevisionId(numbered, identifier)
+    },
+    revision(identifier) {
+      return hostedRevisionByIdentifier(numbered, identifier)
+    },
     diff(a, b) {
-      const leftId = a ?? numbered[1]?.record_id
-      const rightId = b ?? numbered[0]?.record_id
-      if (!leftId || !rightId)
-        throw new Error('doc diff needs two revisions; this address has fewer than two')
-      return diffDocRevisionValues(
-        hostedRevisionByIdentifier(numbered, leftId),
-        hostedRevisionByIdentifier(numbered, rightId),
+      const [left, right] = docDiffPair(
+        numbered,
+        a ? hostedRevisionByIdentifier(numbered, a) : undefined,
+        b ? hostedRevisionByIdentifier(numbered, b) : undefined,
       )
+      return diffDocRevisionValues(left, right)
     },
   }
 }

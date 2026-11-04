@@ -24,6 +24,7 @@ import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
+import { type DocHistoryPresentation, docDiffPair } from './doc-history-source.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
@@ -69,6 +70,10 @@ type DocPresentation = {
   cwd(): string
   exitCode?(code: number): void
 }
+type DocHistory = DocHistoryPresentation<
+  ReturnType<typeof listDocRevisions>[number] & { authorName?: string | null },
+  ReturnType<typeof readDocRevision> & { authorName?: string | null }
+>
 type DocCommandPorts = {
   selectDocWriteTree(input: {
     scope: string
@@ -82,10 +87,7 @@ type DocCommandPorts = {
     subject: string | null
     slug: string
     recordId: string
-  }): Promise<{
-    revisions: Array<ReturnType<typeof listDocRevisions>[number] & { authorName?: string | null }>
-    diff(a: string | undefined, b: string | undefined): string
-  } | null>
+  }): Promise<DocHistory | null>
 }
 
 function revisionAuthorName(author: string, user: ReturnType<typeof cachedSignedInRecordUser>) {
@@ -632,13 +634,14 @@ async function handleStatusDocCommand(
   return true
 }
 
-function handledRevisionDocCommand(
+async function handledRevisionDocCommand(
   sub: string,
   argv: string[],
   flags: DocFlags,
   presentation: DocPresentation,
   owner: string | null,
-): boolean {
+  ports: Pick<DocCommandPorts, 'revisionHistory'>,
+): Promise<boolean> {
   if (sub !== 'revision') return false
   const scope = argv[2]
   const rawSubject = argv[3]
@@ -650,18 +653,24 @@ function handledRevisionDocCommand(
   if (flags.has('user') && (scope !== 'canon' || subject !== null)) {
     throw new Error('--user history address must be canon -')
   }
-  const revision = readDocRevision(
-    scope,
-    subject,
-    slug,
-    resolveDocRevisionIdentifier(db(), revisionIdentifier),
-    owner,
-    docReadAudience(flags.flag('audience')),
-  )
+  const hosted = await selectedDocHistory({ scope, subject, slug }, owner, ports)
+  const revision: ReturnType<DocHistory['revision']> = hosted
+    ? hosted.revision(revisionIdentifier)
+    : readDocRevision(
+        scope,
+        subject,
+        slug,
+        resolveDocRevisionIdentifier(db(), revisionIdentifier),
+        owner,
+        docReadAudience(flags.flag('audience')),
+      )
   if (flags.has('json')) {
     const user = cachedSignedInRecordUser()
     presentation.log(
-      JSON.stringify({ ...revision, authorName: revisionAuthorName(revision.author, user) }),
+      JSON.stringify({
+        ...revision,
+        authorName: revision.authorName ?? revisionAuthorName(revision.author, user),
+      }),
     )
   } else presentation.log(revision.body)
   return true
@@ -673,10 +682,11 @@ async function handledReadOrRevisionDocCommand(
   flags: DocFlags,
   presentation: DocPresentation,
   address: { scope: string | undefined; subject: string | null; owner: string | null },
+  ports: Pick<DocCommandPorts, 'revisionHistory'>,
 ): Promise<boolean> {
   return (
     handledReadDocCommand(sub, argv, flags, presentation, address) ||
-    handledRevisionDocCommand(sub, argv, flags, presentation, address.owner)
+    (await handledRevisionDocCommand(sub, argv, flags, presentation, address.owner, ports))
   )
 }
 
@@ -773,7 +783,7 @@ async function transferDocs(
 
 function handleHistoryOutput(
   sub: string,
-  revisions: Array<ReturnType<typeof listDocRevisions>[number] & { authorName?: string | null }>,
+  revisions: DocHistory['revisions'],
   flags: DocFlags,
   presentation: DocPresentation,
 ): boolean {
@@ -798,25 +808,51 @@ function handleHistoryOutput(
 
 type DocAddress = { scope: string; subject: string | null; slug: string }
 
+async function selectedDocHistory(
+  address: DocAddress,
+  owner: string | null,
+  ports: Pick<DocCommandPorts, 'revisionHistory'>,
+): Promise<DocHistory | null> {
+  const doc = getDoc(address.scope, address.subject, address.slug, owner)
+  return doc ? ports.revisionHistory({ ...address, recordId: doc.record_id }) : null
+}
+
 async function restoreDocCommand(
   argv: string[],
   flags: DocFlags,
   presentation: DocPresentation,
   owner: string | null,
-  { scope, subject, slug }: DocAddress,
+  address: DocAddress,
+  hosted: DocHistory | null,
+  localRevisions: ReturnType<typeof listDocRevisions>,
 ): Promise<void> {
+  const { scope, subject, slug } = address
   const revision = argv[5]
   const reason = flags.flag('reason')
   if (!revision || !reason?.trim())
     throw new Error(
       `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
     )
+  const revisionId = hosted
+    ? hosted.resolve(revision)
+    : resolveDocRevisionIdentifier(db(), revision)
+  if (hosted && !localRevisions.some((candidate) => candidate.record_id === revisionId))
+    throw new Error(
+      `revision ${revision} exists only in the hosted record; run ${PLATFORM_SLUG} record sync and retry, or restore it on the machine that wrote it`,
+    )
+  const expected = flags.flag('expect')
   const restored = await restoreDoc(
     scope,
     subject,
     slug,
-    resolveDocRevisionIdentifier(db(), revision),
-    { reason, author: flags.flag('author'), expectedRevision: flags.flag('expect') },
+    revisionId,
+    {
+      reason,
+      author: flags.flag('author'),
+      expectedRevision: expected
+        ? (hosted?.resolve(expected) ?? resolveDocRevisionIdentifier(db(), expected))
+        : undefined,
+    },
     owner,
   )
   printRestoreResult(restored, flags, presentation, scope, subject, slug)
@@ -828,10 +864,13 @@ function localDocDiff(
   owner: string | null,
   { scope, subject, slug }: DocAddress,
 ): string {
-  const a = argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : revisions[1]?.record_id
-  const b = argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : revisions[0]?.record_id
-  if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
-  const ids = new Set(revisions.map((revision) => revision.record_id))
+  const ordered = revisions.map(({ record_id }) => record_id)
+  const [a, b] = docDiffPair(
+    ordered,
+    argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : undefined,
+    argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : undefined,
+  )
+  const ids = new Set(ordered)
   if (!ids.has(a) || !ids.has(b))
     throw new Error(`doc diff revisions must belong to ${scope}/${subject ?? '_'}/${slug}`)
   return diffDocRevisions(a, b, owner)
@@ -856,15 +895,13 @@ async function handleHistoryDocCommand(
   const subject = rawSubject === '-' ? null : rawSubject
   if (flags.has('user') && (scope !== 'canon' || subject !== null))
     throw new Error('--user history address must be canon -')
+  const address = { scope, subject, slug }
+  const revisions = listDocRevisions(scope, subject, slug, owner)
+  const selectedHistory = await selectedDocHistory(address, owner, ports)
   if (sub === 'restore') {
-    await restoreDocCommand(argv, flags, presentation, owner, { scope, subject, slug })
+    await restoreDocCommand(argv, flags, presentation, owner, address, selectedHistory, revisions)
     return true
   }
-  const revisions = listDocRevisions(scope, subject, slug, owner)
-  const doc = getDoc(scope, subject, slug, owner)
-  const selectedHistory = doc
-    ? await ports.revisionHistory({ scope, subject, slug, recordId: doc.record_id })
-    : null
   const selected = selectedHistory?.revisions ?? revisions
   if (handleHistoryOutput(sub, selected, flags, presentation)) return true
   if (sub === 'diff') {
@@ -925,7 +962,7 @@ export async function docCommand(
   const owner = has('user') ? await signedInDocOwner() : null
   const address = { scope, subject, owner }
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
-  if (await handledReadOrRevisionDocCommand(sub, argv, flags, presentation, address)) return
+  if (await handledReadOrRevisionDocCommand(sub, argv, flags, presentation, address, ports)) return
   if (await handledWriteDocCommand(sub, argv, flags, presentation, address, ports)) return
   if (
     await handleDocConsumeCommand({

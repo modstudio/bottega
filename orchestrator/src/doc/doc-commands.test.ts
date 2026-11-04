@@ -36,6 +36,7 @@ import {
   docSubjects,
   getDoc,
   listDocRevisions,
+  readDocRevision,
   restoreDoc,
   setDoc as writeDoc,
 } from './docs.ts'
@@ -686,6 +687,7 @@ describe('scoped operator docs', () => {
       reason: 'local revision',
     })
     const local = listDocRevisions('global', null, 'injected-history')[0]!
+    const localRevision = readDocRevision('global', null, 'injected-history', local.record_id)
     const revisionHistory: RevisionHistoryPort = async (input) => {
       expect(input).toEqual({
         scope: 'global',
@@ -695,6 +697,13 @@ describe('scoped operator docs', () => {
       })
       return {
         revisions: [{ ...local, number: 7, reason: 'hosted revision', authorName: 'Hosted User' }],
+        resolve: (identifier) => (identifier === '7' ? local.record_id : identifier),
+        revision: () => ({
+          ...localRevision,
+          number: 7,
+          reason: 'hosted revision',
+          authorName: 'Hosted User',
+        }),
         diff: (a, b) => `hosted diff ${a} ${b}\n`,
       }
     }
@@ -715,6 +724,145 @@ describe('scoped operator docs', () => {
         )
       ).out,
     ).toBe('hosted diff 2 7\n')
+  })
+
+  test(`${PLATFORM_SLUG} doc history and diff use local revisions when hosted history is unavailable`, async () => {
+    await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'local-fallback-history',
+      title: 'Local fallback',
+      body: 'first\n',
+      delivery: 'demand',
+      reason: 'first local revision',
+    })
+    await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'local-fallback-history',
+      title: 'Local fallback',
+      body: 'second\n',
+      delivery: 'demand',
+      reason: 'second local revision',
+    })
+    const history = await command([
+      'doc',
+      'history',
+      'global',
+      '-',
+      'local-fallback-history',
+      '--json',
+    ])
+    expect(JSON.parse(history.out).map(({ reason }: { reason: string }) => reason)).toEqual([
+      'second local revision',
+      'first local revision',
+    ])
+    const diff = await command(['doc', 'diff', 'global', '-', 'local-fallback-history'])
+    expect(diff.out).toContain('-first\n+second')
+  })
+
+  test(`${PLATFORM_SLUG} doc revision resolves a hosted-derived number`, async () => {
+    const doc = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'hosted-numbered-revision',
+      title: 'Hosted number',
+      body: 'local body\n',
+      delivery: 'demand',
+      reason: 'local revision',
+    })
+    const local = readDocRevision('global', null, 'hosted-numbered-revision', doc.revision!)
+    const result = await command(
+      ['doc', 'revision', 'global', '-', 'hosted-numbered-revision', '7'],
+      '',
+      async () => ({
+        revisions: [],
+        resolve: () => doc.revision!,
+        revision: (identifier) => ({
+          ...local,
+          number: Number(identifier),
+          body: 'hosted body\n',
+        }),
+        diff: () => '',
+      }),
+    )
+    expect(result.out).toBe('hosted body\n')
+  })
+
+  test(`${PLATFORM_SLUG} doc restore refuses a hosted-only revision`, async () => {
+    const doc = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'hosted-only-restore',
+      title: 'Hosted only',
+      body: 'local body\n',
+      delivery: 'demand',
+      reason: 'local revision',
+    })
+    const local = readDocRevision('global', null, 'hosted-only-restore', doc.revision!)
+    const hostedId = newRecordId()
+    const result = await command(
+      ['doc', 'restore', 'global', '-', 'hosted-only-restore', '7', '--reason', 'restore'],
+      '',
+      async () => ({
+        revisions: [],
+        resolve: (identifier) => (identifier === '7' ? hostedId : identifier),
+        revision: () => ({ ...local, record_id: hostedId, number: 7 }),
+        diff: () => '',
+      }),
+    )
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('revision 7 exists only in the hosted record')
+    expect(result.err).toContain(`${PLATFORM_SLUG} record sync`)
+  })
+
+  test(`${PLATFORM_SLUG} doc restore resolves hosted target and expectation numbers to local record ids`, async () => {
+    const first = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'hosted-local-restore',
+      title: 'Hosted local',
+      body: 'first\n',
+      delivery: 'demand',
+      reason: 'first revision',
+    })
+    const second = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'hosted-local-restore',
+      title: 'Hosted local',
+      body: 'second\n',
+      delivery: 'demand',
+      reason: 'second revision',
+    })
+    const local = readDocRevision('global', null, 'hosted-local-restore', first.revision!)
+    const result = await command(
+      [
+        'doc',
+        'restore',
+        'global',
+        '-',
+        'hosted-local-restore',
+        '41',
+        '--expect',
+        '42',
+        '--reason',
+        'restore first',
+      ],
+      '',
+      async () => ({
+        revisions: [],
+        resolve: (identifier) => {
+          if (identifier === '41') return first.revision!
+          if (identifier === '42') return second.revision!
+          return identifier
+        },
+        revision: () => local,
+        diff: () => '',
+      }),
+    )
+    expect(result.code).toBe(0)
+    expect(getDoc('global', null, 'hosted-local-restore')?.body).toBe('first\n')
   })
 
   test(`${PLATFORM_SLUG} doc history refuses when the injected authoritative read fails`, async () => {
