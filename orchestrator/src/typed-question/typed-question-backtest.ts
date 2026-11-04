@@ -77,7 +77,10 @@ function checkoutContext(database: Database): (repo: string) => Checkout | null 
   }
 }
 
-export const specRunSubjects: SubjectSource = (database, declaration, options, answered) => {
+type SpecRunRow = { job: string; repo: string | null; prompt_path: string; spec_sha: string }
+
+/** Root runs that carry a caller spec, newest first, narrowed by job and project. */
+function specRunRows(database: Database, options: BacktestOptions): Iterable<SpecRunRow> {
   const clauses = [
     'parent_run_record_id IS NULL',
     'prompt_path IS NOT NULL',
@@ -92,34 +95,44 @@ export const specRunSubjects: SubjectSource = (database, declaration, options, a
     clauses.push('repo=?')
     parameters.push(options.project)
   }
-  const rows = database
-    .query<{ job: string; repo: string | null; prompt_path: string; spec_sha: string }, string[]>(
+  return database
+    .query<SpecRunRow, string[]>(
       `SELECT job,repo,prompt_path,spec_sha FROM run WHERE ${clauses.join(' AND ')}
        ORDER BY started_at DESC`,
     )
     .iterate(...parameters)
-  const builder = 'contextBuilder' in declaration ? declaration.contextBuilder : null
+}
+
+/** The state live asking would use for this run's spec, or null when it cannot be rebuilt. */
+function specState(
+  row: SpecRunRow,
+  declaration: BacktestDeclaration,
+  checkout: (repo: string) => Checkout | null,
+  commits: Set<string>,
+): BacktestSubject['state'] | null {
+  if (!existsSync(row.prompt_path)) return null
+  const spec = readFileSync(row.prompt_path, 'utf8')
+  if (!('contextBuilder' in declaration)) return spec
+  const context = row.repo ? checkout(row.repo) : null
+  if (!context) return null
+  if (context.commit) commits.add(`${row.repo}:${context.commit}`)
+  return declaration.contextBuilder(spec, context.read)
+}
+
+const specRunSubjects: SubjectSource = (database, declaration, options, answered) => {
   const checkout = checkoutContext(database)
   const commits = new Set<string>()
   const subjects: BacktestSubject[] = []
   let alreadyAnswered = 0
-  for (const row of rows) {
+  for (const row of specRunRows(database, options)) {
     if (subjects.length >= options.limit) break
     const subjectKind = `spec:${row.job}`
     if (answered(subjectKind, row.spec_sha)) {
       alreadyAnswered += 1
       continue
     }
-    if (!existsSync(row.prompt_path)) continue
-    const spec = readFileSync(row.prompt_path, 'utf8')
-    let state: BacktestSubject['state'] = spec
-    if (builder) {
-      const context = row.repo ? checkout(row.repo) : null
-      if (!context) continue
-      if (context.commit) commits.add(`${row.repo}:${context.commit}`)
-      state = builder(spec, context.read)
-    }
-    subjects.push({ subjectKind, subjectRef: row.spec_sha, state })
+    const state = specState(row, declaration, checkout, commits)
+    if (state !== null) subjects.push({ subjectKind, subjectRef: row.spec_sha, state })
   }
   return { subjects, alreadyAnswered, commits: [...commits] }
 }
