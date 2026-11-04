@@ -1036,14 +1036,12 @@ realPostgres('RLS proof against real Postgres', () => {
   }))
 
   registerTaskFlowReadThroughTakeoverProof({
-    actorUrl: () => actorUrl!,
-    authUrl: () => authUrl!,
+    urls: () => ({ actor: actorUrl!, auth: authUrl! }),
     spaceId: () => authSpaceA,
     projectId: () => authProjectA,
     userB: () => authUserB,
-    tokenA: () => tokenA,
-    tokenB: () => tokenB,
-    setToken: (token) => recordSession.setToken(token),
+    token: (user) => (user === 'a' ? tokenA : tokenB),
+    signIn: (user) => recordSession.setToken(user === 'a' ? tokenA : tokenB),
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   })
 

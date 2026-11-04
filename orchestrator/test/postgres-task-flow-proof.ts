@@ -19,14 +19,12 @@ import { installWorkflowStoreFixture } from '../src/workflow/workflow-store.fixt
 import { testRecordAuth } from './fixtures/record-auth-postgres.ts'
 
 type Input = {
-  actorUrl(): string
-  authUrl(): string
+  urls(): { actor: string; auth: string }
   spaceId(): string
   projectId(): string
   userB(): string
-  tokenA(): string
-  tokenB(): string
-  setToken(token: string): void
+  token(user: 'a' | 'b'): string
+  signIn(user: 'a' | 'b'): void
   admin(statement: string): string
 }
 
@@ -65,7 +63,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     const previousConfigRoot = process.env.BOTTEGA_CONFIG_HOME
     const databaseA = proofDatabase(input.projectId())
     let databaseB: Database | undefined
-    const auth = testRecordAuth(input.actorUrl(), input.authUrl())
+    const auth = testRecordAuth(input.urls().actor, input.urls().auth)
     try {
       process.env.BOTTEGA_CONFIG_HOME = configRoot
       input.admin(`
@@ -80,12 +78,12 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           now(),now(),now(),now());
       `)
       await setActiveRecordSpaceForSession(
-        input.actorUrl(),
-        bearerHeaders(input.tokenB()),
+        input.urls().actor,
+        bearerHeaders(input.token('b')),
         input.spaceId(),
       )
 
-      input.setToken(input.tokenA())
+      input.signIn('a')
       const client = recordApiClient()
       await client.ensureSpaceBuiltIns!({ destinationSpaceId: input.spaceId() })
       await pullRecordCache(databaseA)
@@ -113,7 +111,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
              ON cursor.record_id=flow.open_stage_cursor_record_id`)
         .get()!
 
-      input.setToken(input.tokenA())
+      input.signIn('a')
       expect(
         await syncRecord({
           local: databaseA,
@@ -122,7 +120,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         }),
       ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
 
-      input.setToken(input.tokenB())
+      input.signIn('b')
       const byTask = await client.readTaskFlow!({ taskKey: TASK_KEY })
       const byFlow = await client.readTaskFlow!({ flowRecordId: localIds.flow_id })
       for (const hosted of [byTask, byFlow]) {
@@ -190,7 +188,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
       expect(hostedStage()).toBe(afterTakeover)
 
-      input.setToken(input.tokenA())
+      input.signIn('a')
       expect(await client.readTaskFlow!({ taskKey: TASK_KEY })).toMatchObject({
         stage: {
           id: localIds.stage_id,
@@ -201,7 +199,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       })
 
       const otherSpace = await auth.api.createOrganization({
-        headers: bearerHeaders(input.tokenA()),
+        headers: bearerHeaders(input.token('a')),
         body: {
           name: 'Task Flow Isolation Proof',
           slug: `task-flow-isolation-${taskId.slice(-8)}`,
