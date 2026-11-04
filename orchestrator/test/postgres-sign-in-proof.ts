@@ -44,7 +44,9 @@ export function registerPostgresSignInProofs(input: {
       await signInCommand(input.repair.email, async () => input.repair.password, {
         log: (value) => output.push(value),
       })
-      expect(output).toEqual([`signed in ${input.repair.email}`])
+      expect(output.filter((line) => line !== 'board now uses the hosted record')).toEqual([
+        `signed in ${input.repair.email}`,
+      ])
       expect(
         input.succeeds(
           `SELECT s.id=m.space_id, m.role, m.permission

@@ -19,14 +19,15 @@ export function registerCustomerAuthProof(input: {
       await signInCommand(input.email, async () => input.password, {
         log: (value) => output.push(value),
       })
-      await whoamiCommand({ log: (value) => output.push(value) })
+      const identity: string[] = []
+      await whoamiCommand({ log: (value) => identity.push(value) })
       await recordSpaceListCommand({ log: (value) => output.push(value) })
       const listed = await recordMemberships()
       const selected = listed.memberships[0]
       if (!selected) throw new Error('hosted customer proof has no membership')
       await recordSpaceSwitchCommand(selected.slug, { log: (value) => output.push(value) })
       expect(output[0]).toBe(`signed in ${input.email}`)
-      expect(JSON.parse(output[1]!) as { user: { id: string } }).toHaveProperty(
+      expect(JSON.parse(identity[0]!) as { user: { id: string } }).toHaveProperty(
         'user.id',
         input.userId(),
       )

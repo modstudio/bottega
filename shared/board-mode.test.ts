@@ -57,8 +57,7 @@ test('UUID ids select hosted only after adoption with configuration', () => {
   })
   expect(decideBoardIdMode({ id, adopted: false, hostedConfigured: true })).toEqual({
     mode: 'refused',
-    reason:
-      'board id is a UUID for a hosted board row, but this install has not adopted the hosted board; retry from an install that has adopted the hosted board',
+    reason: `board id is a UUID for a hosted board row, but this install has not adopted the hosted board; run ${PLATFORM_SLUG} board adopt`,
   })
   expect(decideBoardIdMode({ id, adopted: true, hostedConfigured: false })).toEqual({
     mode: 'refused',

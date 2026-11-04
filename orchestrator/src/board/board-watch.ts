@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { installationBuildId } from '../../../shared/install-root.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { enableSchemaReload } from '../database/db.ts'
 import { type RecordBoardStreamOpen, recordApiClient } from '../record/record-api-client.ts'
@@ -479,7 +479,7 @@ export async function watchHostedBoard(): Promise<number> {
       readCursor: () => hostedBoardCursor(),
       readBuild: () => installationBuildId(import.meta.dir, process.env),
       startedBuild,
-      configured: Boolean(resolveRecordApiUrl()?.trim()),
+      configured: recordApiConfigured(),
       random: Math.random,
       log: (line) => console.log(line),
       signal: controller.signal,

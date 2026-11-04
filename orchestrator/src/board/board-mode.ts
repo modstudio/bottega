@@ -6,7 +6,7 @@ import {
   decideBoardIdMode,
   decideBoardMode,
 } from '../../../shared/board-mode.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { db } from '../database/db.ts'
 
 export const BOARD_HOSTED_ADOPTED_KEY = 'board_hosted_adopted'
@@ -26,7 +26,7 @@ export function boardMode(
 ): 'local' | 'hosted' {
   const decision = decideBoardMode({
     adopted: boardHasAdoptedHosted(database),
-    hostedConfigured: () => Boolean(resolveRecordApiUrl(environment)?.trim()),
+    hostedConfigured: () => recordApiConfigured(environment),
     locality,
   })
   if (decision.mode === 'refused') throw new Error(decision.reason)
@@ -43,7 +43,7 @@ export function boardModeForId(
     id,
     noun,
     adopted: boardHasAdoptedHosted(database),
-    hostedConfigured: () => Boolean(resolveRecordApiUrl(environment)?.trim()),
+    hostedConfigured: () => recordApiConfigured(environment),
   })
   if (decision.mode === 'refused') throw new Error(decision.reason)
   return decision.mode

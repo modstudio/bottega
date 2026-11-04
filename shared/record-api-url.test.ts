@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
-import { resolveRecordApiUrl } from './record-api-url.ts'
+import { recordApiConfigured, resolveRecordApiUrl } from './record-api-url.ts'
 
 test('the process record endpoint wins over configured files', () => {
   const root = mkdtempSync(join(tmpdir(), 'record-api-url-process-'))
@@ -56,4 +56,9 @@ test('the record endpoint is undefined when no source provides it', () => {
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('the record API is configured only for a non-empty endpoint', () => {
+  expect(recordApiConfigured({ BOTTEGA_RECORD_API_URL: 'https://record.example.test' })).toBe(true)
+  expect(recordApiConfigured({ BOTTEGA_RECORD_API_URL: '  ' })).toBe(false)
 })

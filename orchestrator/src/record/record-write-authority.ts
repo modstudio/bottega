@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { db } from '../database/db.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
@@ -17,7 +17,7 @@ export function currentRecordWriteDecision(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): RecordWriteDecision {
   return decideRecordWrite({
-    recordApiUrlSet: Boolean(resolveRecordApiUrl(environment)?.trim()),
+    recordApiUrlSet: recordApiConfigured(environment),
     installBound: readRecordInstallBinding(database).bound,
   })
 }

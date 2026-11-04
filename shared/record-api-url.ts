@@ -5,3 +5,8 @@ import { readEnvValues } from './env-values.ts'
 export function resolveRecordApiUrl(env: ConfigEnvironment = process.env): string | undefined {
   return readEnvValues(['BOTTEGA_RECORD_API_URL'], env).BOTTEGA_RECORD_API_URL
 }
+
+/** Whether a non-empty hosted record endpoint is configured. */
+export function recordApiConfigured(env: ConfigEnvironment = process.env): boolean {
+  return Boolean(resolveRecordApiUrl(env)?.trim())
+}

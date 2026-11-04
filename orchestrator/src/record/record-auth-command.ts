@@ -2,6 +2,7 @@
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writeRecordSessionToken } from '../../../shared/record-session.ts'
+import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { claimCurrentMachineKey } from '../config/config-service.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
@@ -86,6 +87,7 @@ export async function completeSignInCommand(
         `${adoption.name}: project identity adoption failed: ${adoption.message}; run \`${PLATFORM_SLUG} project relink ${adoption.name}\``,
       )
   }
+  await automaticallyAdoptHostedBoard(presentation, { signedIn: () => true })
 }
 
 export async function whoamiCommand(presentation: Presentation): Promise<void> {
