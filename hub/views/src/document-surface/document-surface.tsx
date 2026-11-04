@@ -1,4 +1,5 @@
 import { Button } from '@bottega/hub-ui/button'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { type ReactNode, type Ref, useCallback, useEffect, useState } from 'react'
 import { documentSurfaceStyles } from './document-surface.styles.ts'
@@ -51,6 +52,7 @@ export function DocumentSurface({
   body,
   footer,
   error,
+  errorSubject,
   pending = false,
 }: {
   crumbs: { key: string; label: ReactNode }[]
@@ -64,18 +66,16 @@ export function DocumentSurface({
   body: ReactNode
   footer?: ReactNode
   error?: string | null
+  errorSubject?: string
   pending?: boolean
 }) {
   const [headingElement, setHeadingElement] = useState<HTMLElement | null>(null)
   const headingRef = useCallback((element: HTMLElement | null) => setHeadingElement(element), [])
   const titleGone = useScrolledPast(headingElement)
+  const loadSubject = errorSubject?.trim() || title.trim().toLowerCase() || 'this page'
   return (
     <main className={documentSurfaceStyles().main()} data-doc-wide={wide ? '' : undefined}>
-      {error ? (
-        <p data-tone="error" className={documentSurfaceStyles().error()}>
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorState title={`Could not load ${loadSubject}`} message={error} /> : null}
       {pending ? null : (
         <>
           <div className={documentSurfaceStyles({ titleGone }).top()}>

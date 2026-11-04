@@ -1,5 +1,7 @@
 import { Badge } from '@bottega/hub-ui/badge'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { FolderGit2 } from 'lucide-react'
 import { type ProjectColors, ProjectMark } from '../project-colors/project-colors.tsx'
@@ -72,12 +74,8 @@ export function HostedProjects({
   return (
     <section>
       <PageHeader title="Projects" subtitle={`${projects.length} in this space`} />
-      {pending ? <p className={projectsStyles().loading()}>Loading projects...</p> : null}
-      {error ? (
-        <p data-tone="error" className={projectsStyles().error()}>
-          {error}
-        </p>
-      ) : null}
+      {pending ? <EmptyState title="Loading projects..." /> : null}
+      {error ? <ErrorState title="Could not load projects" message={error} /> : null}
       {loaded ? (
         <Collection
           title="Projects"

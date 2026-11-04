@@ -4,6 +4,8 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Companion } from '@bottega/hub-ui/companion'
 import { Dialog } from '@bottega/hub-ui/dialog'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Textarea } from '@bottega/hub-ui/field/textarea'
 import { DisplayRow, FieldSection } from '@bottega/hub-ui/form-layout'
 import { sendTimestamp } from '@bottega/hub-util/format'
@@ -192,16 +194,14 @@ function LocalMessageDetail() {
   if (thread.isPending || status.isPending) {
     return (
       <Companion onClose={close} title="Message" subtitle="Loading message...">
-        <p className="text-text-muted">Loading...</p>
+        <EmptyState title="Loading message..." />
       </Companion>
     )
   }
   if (error) {
     return (
       <Companion onClose={close} title="Message">
-        <p data-tone="error" className="text-status-text">
-          Could not load this message. {error.message}
-        </p>
+        <ErrorState title="Could not load the message" message={error.message} />
       </Companion>
     )
   }

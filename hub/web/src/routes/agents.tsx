@@ -2,6 +2,8 @@ import { type AgentRow, trpc } from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Companion } from '@bottega/hub-ui/companion'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { DisplayRow } from '@bottega/hub-ui/form-layout'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { SnapshotEmpty, SnapshotHeader } from '@bottega/hub-views/snapshot'
@@ -99,11 +101,7 @@ function AgentsView({
   return (
     <section>
       {header ?? <PageHeader title="Agents" subtitle="Code-declared runners and their limits" />}
-      {error ? (
-        <p data-tone="error" className="text-status-text">
-          {error.message}
-        </p>
-      ) : null}
+      {error ? <ErrorState title="Could not load agents" message={error.message} /> : null}
       <Collection
         title="Agents"
         count={rows.length}
@@ -130,9 +128,7 @@ function AgentsView({
                   <DisplayRow label="Timeout" value={`${selected.timeoutMs / 60_000} minutes`} />
                 </>
               ) : (
-                <p data-tone="error" className="text-status-text">
-                  Unknown agent.
-                </p>
+                <EmptyState title="Unknown agent." />
               )}
             </Companion>
           ) : undefined

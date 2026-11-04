@@ -1,5 +1,7 @@
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Button } from '@bottega/hub-ui/button'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
@@ -44,7 +46,9 @@ function UnsubscribePage({ spaceId, token }: { spaceId: string; token: string })
       setPending(false)
     }
   }
-  if (details.isPending) return <p>Loading subscription…</p>
+  if (details.isPending) return <EmptyState title="Loading subscription..." />
+  if (details.error)
+    return <ErrorState title="Could not load the subscription" message={details.error.message} />
   if (!details.data || done)
     return (
       <section>

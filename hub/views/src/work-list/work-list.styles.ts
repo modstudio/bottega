@@ -4,7 +4,6 @@ export const workListStyles = variant({
   slots: {
     muted: 'text-text-muted',
     primary: 'text-text-primary',
-    status: 'text-status-text',
     strong: 'font-semibold',
     truncate: 'block truncate',
     block: 'block',

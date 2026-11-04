@@ -6,7 +6,6 @@ export const insightStyles = variant({
     muted: 'text-text-muted',
     strong: 'font-semibold',
     primary: 'text-text-primary',
-    status: 'text-status-text',
     intro: 'mb-3 text-text-muted',
     note: 'mt-5 max-w-4xl text-text-muted',
     measure: 'max-w-[72ch] text-text-muted',

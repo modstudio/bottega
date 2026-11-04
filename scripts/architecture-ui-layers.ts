@@ -44,6 +44,7 @@ const uiLayers: { name: string; folders: string[] }[] = [
       'tabs',
       'segmented',
       'empty-state',
+      'error-state',
       'callout',
       'stat',
       'table',

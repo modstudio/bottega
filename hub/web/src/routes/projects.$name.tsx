@@ -1,6 +1,8 @@
 import { type ProjectRow, queryClient, trpc } from '@bottega/hub-data/client'
 import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Textarea } from '@bottega/hub-ui/field/textarea'
 import { FieldSection, SettingBlock } from '@bottega/hub-ui/form-layout'
@@ -49,23 +51,19 @@ function ProjectEditPage() {
   if (projects.isPending)
     return (
       <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}>
-        <p className="text-text-muted">Loading register...</p>
+        <EmptyState title="Loading project..." />
       </Sheet>
     )
   if (projects.error)
     return (
       <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}>
-        <p data-tone="error" className="text-status-text">
-          {projects.error.message}
-        </p>
+        <ErrorState title="Could not load the project" message={projects.error.message} />
       </Sheet>
     )
   if (!project)
     return (
       <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}>
-        <p data-tone="error" className="text-status-text">
-          No project &quot;{name}&quot;
-        </p>
+        <EmptyState title={`No project “${name}”.`} />
       </Sheet>
     )
   return <ProjectForm key={project.record_id} project={project} />

@@ -6,6 +6,7 @@ import { Checkbox } from '@bottega/hub-ui/checkbox'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Dialog } from '@bottega/hub-ui/dialog'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Textarea } from '@bottega/hub-ui/field/textarea'
 import { SettingBlock } from '@bottega/hub-ui/form-layout'
@@ -238,9 +239,7 @@ export function MessagesContent({
     <section>
       <PageHeader title="Messages" subtitle="Operator messages, questions, and receipts" />
       {query.error ? (
-        <p data-tone="error" className="mb-3 text-status-text">
-          {query.error.message}
-        </p>
+        <ErrorState title="Could not load messages" message={query.error.message} />
       ) : null}
       <MessagesList
         rows={rows}

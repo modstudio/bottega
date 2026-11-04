@@ -2,6 +2,8 @@ import { type JobRow, trpc } from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Companion } from '@bottega/hub-ui/companion'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { DisplayRow } from '@bottega/hub-ui/form-layout'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { SnapshotEmpty, SnapshotHeader } from '@bottega/hub-views/snapshot'
@@ -91,11 +93,7 @@ function JobsView({
       {header ?? (
         <PageHeader title="Jobs" subtitle="Code-declared work the orchestrator can route" />
       )}
-      {error ? (
-        <p data-tone="error" className="text-status-text">
-          {error.message}
-        </p>
-      ) : null}
+      {error ? <ErrorState title="Could not load jobs" message={error.message} /> : null}
       <Collection
         title="Job types"
         count={rows.length}
@@ -136,9 +134,7 @@ function JobsView({
                   <DisplayRow label="Findings" value={selected.findings ? 'yes' : 'no'} />
                 </>
               ) : (
-                <p data-tone="error" className="text-status-text">
-                  Unknown job.
-                </p>
+                <EmptyState title="Unknown job." />
               )}
             </Companion>
           ) : undefined

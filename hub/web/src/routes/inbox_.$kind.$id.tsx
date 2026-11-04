@@ -1,6 +1,8 @@
 import { type OperatorWaitingItem, queryClient, trpc } from '@bottega/hub-data/client'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Textarea } from '@bottega/hub-ui/field/textarea'
 import { DisplayRow } from '@bottega/hub-ui/form-layout'
 import { PageHeader } from '@bottega/hub-ui/page-header'
@@ -18,13 +20,9 @@ function InboxDetailPage() {
     trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
   )
   const item = waiting.data?.find((row) => row.kind === kind && row.id === Number(id))
-  if (waiting.isPending) return <p className="text-text-muted">Loading question...</p>
+  if (waiting.isPending) return <EmptyState title="Loading question..." />
   if (waiting.error)
-    return (
-      <p data-tone="error" className="text-status-text">
-        Could not load this item: {waiting.error.message}
-      </p>
-    )
+    return <ErrorState title="Could not load the question" message={waiting.error.message} />
   if (!item && !answeredQuestions)
     return (
       <section>

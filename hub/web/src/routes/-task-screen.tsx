@@ -1,6 +1,7 @@
 import { Badge } from '@bottega/hub-ui/badge'
 import { IconButton } from '@bottega/hub-ui/button'
 import { Dialog } from '@bottega/hub-ui/dialog'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { relativeTime } from '@bottega/hub-util/format'
 import { DocumentSurface } from '@bottega/hub-views/document-surface'
@@ -253,7 +254,8 @@ export function TaskScreen({
             </IconButton>
           }
           error={result.error?.message ?? null}
-          body={result.error ? null : <p className="text-md text-text-muted">Loading task…</p>}
+          errorSubject="the task"
+          body={result.error ? null : <EmptyState title="Loading task..." />}
         />
       )}
     </Dialog>

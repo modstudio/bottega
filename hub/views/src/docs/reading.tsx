@@ -1,3 +1,4 @@
+import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { CalendarDays } from 'lucide-react'
 import { type ReactNode, type Ref, type RefObject, useMemo } from 'react'
 import { DocumentSurface, DocumentTitle } from '../document-surface/document-surface.tsx'
@@ -302,9 +303,10 @@ export function DocsReading({
           crumbs={[]}
           title=""
           heading={() => null}
-          body={<p className={readingStyles().empty()}>No document to show.</p>}
+          body={<EmptyState title="No document to show." />}
           pending={pending}
           error={error}
+          errorSubject="the document"
         />
       )}
     </MarkdownFenceRenderers.Provider>

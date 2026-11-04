@@ -8,6 +8,8 @@ import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { useNow } from '@bottega/hub-ui/dom/clock'
 import { useDebounced } from '@bottega/hub-ui/dom/use-debounced'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { PAGE_SIZES, type PageSize } from '@bottega/hub-ui/pagination'
@@ -523,11 +525,9 @@ function RunsList() {
         subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined}
         actions={phone ? undefined : <WindowControl />}
       />
-      {query.isPending ? <p className="text-text-muted">Loading runs...</p> : null}
+      {query.isPending ? <EmptyState title="Loading runs..." /> : null}
       {query.error ? (
-        <p data-tone="error" className="text-status-text">
-          could not load: {query.error.message}
-        </p>
+        <ErrorState title="Could not load runs" message={query.error.message} />
       ) : null}
       {payload && data ? (
         <>

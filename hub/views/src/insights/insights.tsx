@@ -1,5 +1,7 @@
 import { Badge } from '@bottega/hub-ui/badge'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
 import {
@@ -762,6 +764,7 @@ export function HealthView({ data }: { data: HealthData }) {
 
 export function InsightView({
   name,
+  title,
   response,
   pending,
   error,
@@ -769,24 +772,22 @@ export function InsightView({
   onCountsChange,
 }: {
   name: InsightName
+  title?: string
   response: InsightResponse | undefined
   pending: boolean
   error: string | null
   windowControl: ReactNode
   onCountsChange(counts: Strip['counts']): void
 }) {
-  if (pending) return <p className={insightStyles().muted()}>Loading {name}...</p>
+  const shownTitle = title ?? name.charAt(0).toUpperCase() + name.slice(1)
+  if (pending) return <EmptyState title={`Loading ${shownTitle.toLowerCase()}...`} />
   if (error)
-    return (
-      <p data-tone="error" className={insightStyles().status()}>
-        could not load: {error}
-      </p>
-    )
+    return <ErrorState title={`Could not load ${shownTitle.toLowerCase()}`} message={error} />
   if (!response) return null
   return (
     <section>
       <InsightChrome
-        title={name.charAt(0).toUpperCase() + name.slice(1)}
+        title={shownTitle}
         response={response}
         windowControl={windowControl}
         onCountsChange={onCountsChange}

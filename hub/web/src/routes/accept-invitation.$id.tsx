@@ -10,6 +10,8 @@ import {
 } from '@bottega/hub-data/hosted-organization'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Button } from '@bottega/hub-ui/button'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { useQuery } from '@tanstack/react-query'
@@ -34,7 +36,7 @@ function InvitationPage({ id }: { id: string }) {
     retry: false,
   })
   const [version, setVersion] = useState(0)
-  if (session.isPending) return <p>Checking your invitation…</p>
+  if (session.isPending) return <EmptyState title="Checking your invitation..." />
   if (!session.data)
     return (
       <SignedOutInvitation
@@ -143,7 +145,7 @@ function SignedInInvitation({ id, email }: { id: string; email: string }) {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [declined, setDeclined] = useState(false)
-  if (invitation.isPending) return <p>Loading invitation…</p>
+  if (invitation.isPending) return <EmptyState title="Loading invitation..." />
   if (invitation.error) {
     const mismatch =
       invitation.error instanceof OrganizationRequestError &&
@@ -152,19 +154,20 @@ function SignedInInvitation({ id, email }: { id: string; email: string }) {
       <section>
         <PageHeader title="Accept invitation" />
         {mismatch ? (
-          <>
-            <p>
-              This invitation was sent to a different email address. You are signed in as {email}.
-            </p>
-            <Button
-              className="mt-4"
-              onClick={() => void signOutFromRecord().then(() => window.location.reload())}
-            >
-              Sign out
-            </Button>
-          </>
+          <ErrorState
+            title="Could not load the invitation"
+            message={`This invitation was sent to a different email address. You are signed in as ${email}.`}
+            action={
+              <Button onClick={() => void signOutFromRecord().then(() => window.location.reload())}>
+                Sign out
+              </Button>
+            }
+          />
         ) : (
-          <p>{invitation.error.message || invalidMessage}</p>
+          <ErrorState
+            title="Could not load the invitation"
+            message={invitation.error.message || invalidMessage}
+          />
         )}
       </section>
     )

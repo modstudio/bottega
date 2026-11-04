@@ -7,6 +7,8 @@ import { Checkbox } from '@bottega/hub-ui/checkbox'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Dialog } from '@bottega/hub-ui/dialog'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { toast } from '@bottega/hub-ui/toast'
@@ -165,11 +167,9 @@ function ProjectsPage() {
         subtitle={`${projects.data?.length ?? 0} registered`}
         actions={phone ? undefined : addProjectAction}
       />
-      {projects.isPending ? <p className="text-text-muted">Loading register...</p> : null}
+      {projects.isPending ? <EmptyState title="Loading projects..." /> : null}
       {projects.error ? (
-        <p data-tone="error" className="text-status-text">
-          {projects.error.message}
-        </p>
+        <ErrorState title="Could not load projects" message={projects.error.message} />
       ) : null}
       {projects.data ? (
         <Collection

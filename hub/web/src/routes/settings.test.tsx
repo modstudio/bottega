@@ -63,7 +63,7 @@ function renderSettings(recipients = [member]) {
 
 test('settings render subscriptions and send history without retired SMTP controls', () => {
   const settings = renderSettings()
-  expect(settings).toContain('Report subscriptions')
+  expect(settings).toContain('Report email')
   expect(settings).toContain('Send history')
   expect(settings).toContain('reader@example.test')
   expect(settings).toContain('Create subscription')

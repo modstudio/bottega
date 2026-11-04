@@ -2,6 +2,8 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { Button } from '@bottega/hub-ui/button'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Companion } from '@bottega/hub-ui/companion'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { DisplayRow } from '@bottega/hub-ui/form-layout'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { runEasternTime } from '@bottega/hub-util/format'
@@ -85,9 +87,7 @@ export function HostedReviews({
         subtitle={pending && !rows.length ? 'Loading reviews...' : `${rows.length} loaded`}
       />
       {loadMore.error ? (
-        <p data-tone="error" className="text-status-text">
-          could not load: {loadMore.error}
-        </p>
+        <ErrorState title="Could not load reviews" message={loadMore.error} />
       ) : null}
       <Collection
         panel={panel}
@@ -140,16 +140,14 @@ export function HostedReviewDetail({
   if (pending) {
     return (
       <Companion onClose={close} title={`Review ${id}`} subtitle="Loading review...">
-        <p className="text-text-muted">Loading...</p>
+        <EmptyState title="Loading review..." />
       </Companion>
     )
   }
   if (error || !review) {
     return (
       <Companion onClose={close} title={`Review ${id}`}>
-        <p data-tone="error" className="text-status-text">
-          Could not load this review. {error ?? 'Not found'}
-        </p>
+        <ErrorState title="Could not load the review" message={error ?? 'Not found'} />
       </Companion>
     )
   }

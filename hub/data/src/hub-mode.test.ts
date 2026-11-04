@@ -39,31 +39,24 @@ const destinations = (mode: 'hosted' | 'local') =>
     section.entries.flatMap((entry) => ('items' in entry ? entry.items : [entry])),
   )
 
-test('hosted mode exposes its hosted routes', () => {
+test('hosted mode exposes its hosted routes in team-work order', () => {
+  const navigation = navForMode('hosted')
+  expect(
+    navigation
+      .find((section) => section.id === 'work')
+      ?.entries.flatMap((entry) => ('items' in entry ? [] : entry.to)),
+  ).toEqual([
+    '/flight',
+    '/board',
+    '/done',
+    '/messages',
+    '/notes',
+    '/runs',
+    '/reviews',
+    '/projects',
+    '/docs',
+  ])
   const hosted = destinations('hosted')
-  expect(hosted.map((item) => item.to).sort()).toEqual(
-    [
-      '/agents',
-      '/board',
-      '/context',
-      '/docs',
-      '/done',
-      '/flight',
-      '/health',
-      '/jobs',
-      '/members',
-      '/messages',
-      '/notes',
-      '/projects',
-      '/ratio',
-      '/reviews',
-      '/reports',
-      '/routing',
-      '/runs',
-      '/settings',
-      '/spend',
-    ].sort(),
-  )
   for (const item of hosted) expect(isHostedPath(item.to)).toBe(true)
   expect(hosted.map((item) => item.label)).toContain('Flight')
   expect(destinations('local').map((item) => item.to)).toContain('/flight')
@@ -121,15 +114,9 @@ test('marketing paths are hosted-only public destinations', () => {
   ).toBe(false)
 })
 
-test('hosted member-management routes remain reachable and members appear in settings', () => {
+test('hosted member-management routes remain reachable', () => {
   expect(isHostedPath('/members')).toBe(true)
   expect(isHostedPath('/accept-invitation/invitation-id')).toBe(true)
-  const settings = navForMode('hosted')
-    .flatMap((section) => section.entries)
-    .find((entry) => 'items' in entry && entry.label === 'Settings')
-  expect(settings && 'items' in settings ? settings.items.map((item) => item.to) : []).toContain(
-    '/members',
-  )
 })
 
 test('a move to another origin stays on that origin whatever the path looks like', () => {

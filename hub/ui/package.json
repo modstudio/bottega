@@ -50,6 +50,8 @@
     "./drawer/drawer.styles": "./src/drawer/drawer.styles.ts",
     "./empty-state": "./src/empty-state/empty-state.tsx",
     "./empty-state/empty-state.styles": "./src/empty-state/empty-state.styles.ts",
+    "./error-state": "./src/error-state/error-state.tsx",
+    "./error-state/error-state.styles": "./src/error-state/error-state.styles.ts",
     "./field/control": "./src/field/control.ts",
     "./field/input": "./src/field/input.tsx",
     "./field/input.styles": "./src/field/input.styles.ts",

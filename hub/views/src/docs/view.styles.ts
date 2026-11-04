@@ -18,8 +18,6 @@ export const viewStyles = variant({
     // The scroll box reaches into the rail's padding so the reorder handles, which sit in the
     // gutter left of each title, are not clipped; the titles keep their place.
     railBody: 'min-h-0 flex-1 -ml-4 overflow-y-auto pl-4',
-    loading: 'text-md text-text-muted',
-    empty: 'mt-4 text-md text-text-muted',
     content: 'px-4 md:px-8',
   },
   variants: {
