@@ -7,7 +7,6 @@ import { attachTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
 import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
-import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
@@ -50,7 +49,7 @@ export function findWorkflowCursor(
   context: WorkflowCursorContext,
   database: Database,
   cursor?: number,
-): WorkflowCloseCursor | null {
+): SelectableCursorRow | null {
   const key = workflowKeyOf(args)
   return selectWorkflowCursor(
     { project, workflow, mode, ...(key ? { key } : {}) },
@@ -59,7 +58,7 @@ export function findWorkflowCursor(
     database,
     context.taskRecordId,
     context.taskStatusCategory,
-  ) as WorkflowCloseCursor | null
+  )
 }
 
 export async function resolveWorkflowCursorContext(

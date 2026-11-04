@@ -5,8 +5,10 @@ import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { writeTransaction } from '../database/db.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
-import { RECORD_TASK_FLOW_NOT_FOUND_MESSAGE } from '../record/record-task-flow.ts'
-import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
+import {
+  type HostedTaskFlow,
+  RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+} from '../record/record-task-flow-contract.ts'
 import { insertWorkflowCursorRow } from './task-flow.ts'
 import {
   decideTaskFlowReadStatus,

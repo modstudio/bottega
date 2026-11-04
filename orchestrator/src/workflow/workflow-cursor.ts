@@ -43,7 +43,7 @@ import {
 } from './workflow-cursor-result.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
-  findWorkflowCursor as findCursor,
+  findWorkflowCursor,
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursorForClose,
@@ -96,6 +96,8 @@ import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorRow = WorkflowCloseCursor
+const findCursor = (...args: Parameters<typeof findWorkflowCursor>): CursorRow | null =>
+  findWorkflowCursor(...args) as CursorRow | null
 
 /** Re-reads, inside the close transaction, a cursor selected before its text copy. */
 function reselectCursor(

@@ -20,6 +20,8 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../database/db.ts',
     '../record/record-api-client.ts',
     '../record/record-task-flow-contract.ts',
+    './task-flow-decision.ts',
+    './task-flow.ts',
   ]),
   module('orchestrator/src/workflow/task-flow.ts', [
     'bun:sqlite',

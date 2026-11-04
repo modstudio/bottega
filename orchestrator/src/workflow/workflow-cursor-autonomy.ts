@@ -25,7 +25,7 @@ export type CursorAutonomyRow = {
 
 type ResolutionEntry = { value: string; scope: string }
 
-export function storedCursorAutonomy(
+function storedCursorAutonomy(
   autonomy: AutonomyResolution | undefined,
 ): AutonomyResolution | undefined {
   if (!autonomy) return undefined

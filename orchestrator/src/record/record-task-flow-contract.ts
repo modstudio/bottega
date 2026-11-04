@@ -2,6 +2,8 @@
 /** Validates the tenant-bound flow and open-stage read used by keyed workflow selection. */
 import { z } from 'zod'
 
+export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
+
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
 

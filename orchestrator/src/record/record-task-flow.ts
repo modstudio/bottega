@@ -2,14 +2,16 @@
 /** Reads one tenant-bound flow and its open stage without exposing record storage to callers. */
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
-import type { HostedTaskFlow } from './record-task-flow-contract.ts'
+import {
+  type HostedTaskFlow,
+  RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+} from './record-task-flow-contract.ts'
 
 export class RecordTaskFlowError extends Error {
   readonly status = 404
   readonly code = RECORD_TASK_FLOW_NOT_FOUND_CODE
 }
 const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
-export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
 
 export async function readRecordTaskFlow(
   input: TenantPrincipal & { url: string; taskKey?: string; flowRecordId?: string },

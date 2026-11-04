@@ -6,8 +6,10 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
-import { RECORD_TASK_FLOW_NOT_FOUND_MESSAGE } from '../record/record-task-flow.ts'
-import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
+import {
+  type HostedTaskFlow,
+  RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+} from '../record/record-task-flow-contract.ts'
 import { cacheHostedTaskFlow, readThroughTaskFlow } from './task-flow-read-through.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 
