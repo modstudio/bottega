@@ -168,7 +168,8 @@ async function currentOrCreate(client: ConfigClient) {
   const machine = await localMachine()
   try {
     const key = await client.currentDataKey(machine.keyId)
-    return { key, dek: await unwrap(client, key, machine) }
+    const rotated = await rotateAfterLatestRevocation(client, machine, key)
+    return { key: rotated.key, dek: rotated.dek }
   } catch (error) {
     if (!isNotFound(error)) throw error
     await unpinServerRevoked(client)
@@ -269,8 +270,8 @@ export async function machineTrust(
   const recipient = trust[keyId]
   if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
   try {
-    const current = await client.currentDataKey(machine.keyId)
-    const dek = await unwrap(client, current, machine)
+    const before = await client.currentDataKey(machine.keyId)
+    const { key: current, dek } = await rotateAfterLatestRevocation(client, machine, before)
     const who = await identity(client)
     const wrapped = await wrapDataKey({
       dek,
@@ -308,6 +309,77 @@ async function rowPlaintext(
     trust: await readTrustList(),
     expected: { key: row.key, scope: row.scope, environment: row.environment },
   })
+}
+
+async function rotateDataKey(
+  client: ConfigClient,
+  machine: Awaited<ReturnType<typeof localMachine>>,
+  currentBefore: DataKey,
+  trust: TrustList,
+  rotate: boolean,
+): Promise<{ key: DataKey; dek: Uint8Array; completed: string[] }> {
+  let current = currentBefore
+  if (!rotate)
+    return { key: current, dek: await unwrap(client, current, machine, trust), completed: [] }
+  const dek = generateDataKey()
+  const dekId = crypto.randomUUID()
+  const version = current.version + 1
+  await client.createDataKey({
+    dekId,
+    version,
+    wraps: await wrapsFor(dek, dekId, version, trust, client),
+  })
+  current = await client.getDataKey(dekId, machine.keyId)
+  const rows = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
+  const plan = planRotation(rows, current, await client.listDataKeys())
+  const completed: string[] = []
+  try {
+    const who = await identity(client)
+    for (const row of plan.reseal) {
+      const plaintext = await rowPlaintext(client, row, machine)
+      const envelope = sealValue({
+        dek,
+        plaintext,
+        valueContext: {
+          spaceId: who.spaceId,
+          userId: row.scope === 'user' ? who.userId : null,
+          keyName: row.key,
+          environment: row.environment,
+          dekId: current.id,
+          rowVersion: row.rowVersion + 1,
+        },
+      })
+      await client.putSecret(row.key, {
+        scope: row.scope,
+        environment: row.environment,
+        dekId: current.id,
+        envelope: encoded(envelope),
+        expectedRowVersion: row.rowVersion,
+      })
+      completed.push(`${row.scope}:${row.environment}:${row.key}`)
+    }
+    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId)
+    return { key: current, dek, completed }
+  } catch (error) {
+    throw new Error(
+      `rotation stopped after re-sealing rows [${completed.join(', ')}]: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+async function rotateAfterLatestRevocation(
+  client: ConfigClient,
+  machine: Awaited<ReturnType<typeof localMachine>>,
+  current: DataKey,
+) {
+  const remote = await unpinServerRevoked(client)
+  const latest = remote.reduce<number | null>((value, key) => {
+    if (!key.revokedAt) return value
+    const at = new Date(key.revokedAt).getTime()
+    return value === null || at > value ? at : value
+  }, null)
+  const rotate = latest !== null && latest > new Date(current.createdAt).getTime()
+  return rotateDataKey(client, machine, current, await readTrustList(), rotate)
 }
 
 async function revokeIfNeeded(
@@ -359,57 +431,10 @@ export async function machineRevoke(keyId: string, client = configClient()): Pro
   const remote = await unpinServerRevoked(client)
   let revokedAt = remote.find((item) => item.keyId === keyId)?.revokedAt
   revokedAt = await revokeIfNeeded(keyId, revokedAt, machine, client)
-  const trust = await readTrustList()
-  let current = await client.currentDataKey(machine.keyId)
-  const rows = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
-  const alreadyRotating = Boolean(revokedAt && new Date(current.createdAt) >= new Date(revokedAt))
-  let dek: Uint8Array
-  if (alreadyRotating) dek = await unwrap(client, current, machine, trust)
-  else {
-    dek = generateDataKey()
-    const dekId = crypto.randomUUID()
-    const version = current.version + 1
-    await client.createDataKey({
-      dekId,
-      version,
-      wraps: await wrapsFor(dek, dekId, version, trust, client),
-    })
-    current = await client.getDataKey(dekId, machine.keyId)
-  }
-  const plan = planRotation(rows, current, await client.listDataKeys())
-  const completed: string[] = []
-  try {
-    const who = await identity(client)
-    for (const row of plan.reseal) {
-      const plaintext = await rowPlaintext(client, row, machine)
-      const envelope = sealValue({
-        dek,
-        plaintext,
-        valueContext: {
-          spaceId: who.spaceId,
-          userId: row.scope === 'user' ? who.userId : null,
-          keyName: row.key,
-          environment: row.environment,
-          dekId: current.id,
-          rowVersion: row.rowVersion + 1,
-        },
-      })
-      await client.putSecret(row.key, {
-        scope: row.scope,
-        environment: row.environment,
-        dekId: current.id,
-        envelope: encoded(envelope),
-        expectedRowVersion: row.rowVersion,
-      })
-      completed.push(`${row.scope}:${row.environment}:${row.key}`)
-    }
-    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId)
-    return completed
-  } catch (error) {
-    throw new Error(
-      `rotation stopped after re-sealing rows [${completed.join(', ')}]: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
+  const current = await client.currentDataKey(machine.keyId)
+  const rotate = Boolean(revokedAt && new Date(revokedAt) > new Date(current.createdAt))
+  const result = await rotateDataKey(client, machine, current, await readTrustList(), rotate)
+  return result.completed
 }
 
 /** The scope flag one `machine config secret` repair carries: the verbs declare only `--space`. */

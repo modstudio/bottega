@@ -1,19 +1,24 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
-import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
+import {
+  readHostedConfigIdentity,
+  writeHostedConfigIdentity,
+} from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey, writeMachineKey } from '../../../shared/machine-key-store.ts'
 import {
+  generateDataKey,
   generateMachineKeyPair,
   KEY_SIZE,
   sealClaimChallenge,
+  wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
-import { readTrustList } from '../../../shared/trust-list.ts'
+import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
   claimCurrentMachineKey,
@@ -22,6 +27,7 @@ import {
   deleteMachineEntry,
   getConfigEntry,
   machineInit,
+  machineRevoke,
   migrateLegacyEnvironmentSecrets,
   planRotation,
   restoreLegacyEnvironmentSecrets,
@@ -36,9 +42,109 @@ import {
 } from './config-service.ts'
 
 const roots: string[] = []
+let previousConfigHome: string | undefined
+let previousKeystore: string | undefined
+beforeEach(() => {
+  previousConfigHome = process.env.BOTTEGA_CONFIG_HOME
+  previousKeystore = process.env.BOTTEGA_KEYSTORE
+})
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  if (previousConfigHome === undefined) delete process.env.BOTTEGA_CONFIG_HOME
+  else process.env.BOTTEGA_CONFIG_HOME = previousConfigHome
+  if (previousKeystore === undefined) delete process.env.BOTTEGA_KEYSTORE
+  else process.env.BOTTEGA_KEYSTORE = previousKeystore
 })
+
+async function rotationFixture(revokedAt: string | null) {
+  const root = mkdtempSync(join(tmpdir(), 'config-rotation-'))
+  roots.push(root)
+  process.env.BOTTEGA_CONFIG_HOME = root
+  process.env.BOTTEGA_KEYSTORE = 'file'
+  const pair = await generateMachineKeyPair()
+  writeMachineKey(pair)
+  const keyId = await machineKeyId(pair.publicKey)
+  await pinTrustedMachine(keyId, pair.publicKey, 'current')
+  const other = await generateMachineKeyPair()
+  const otherKeyId = await machineKeyId(other.publicKey)
+  await pinTrustedMachine(otherKeyId, other.publicKey, 'other')
+  const spaceId = '01990000-0000-7000-8000-000000000001'
+  const userId = '01990000-0000-7000-8000-000000000002'
+  writeHostedConfigIdentity({ spaceId, userId })
+  const oldId = '01990000-0000-7000-8000-000000000003'
+  const oldDek = generateDataKey()
+  const wrapped = await wrapDataKey({
+    dek: oldDek,
+    wrapContext: { spaceId, dekId: oldId, dekVersion: 1 },
+    senderPrivateKey: pair.privateKey,
+    senderPublicKey: pair.publicKey,
+    recipientPublicKey: pair.publicKey,
+  })
+  const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
+  let current = {
+    id: oldId,
+    version: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    retiredAt: null,
+    wraps: [
+      {
+        recipientKeyId: keyId,
+        senderKeyId: keyId,
+        enc: encode(wrapped.enc),
+        ciphertext: encode(wrapped.ciphertext),
+      },
+    ],
+  }
+  const machines = [
+    { keyId, publicKey: encode(pair.publicKey), label: 'current', createdAt: '', revokedAt: null },
+    {
+      keyId: otherKeyId,
+      publicKey: encode(other.publicKey),
+      label: 'other',
+      createdAt: '',
+      revokedAt,
+    },
+  ]
+  const created: string[] = []
+  const retired: string[] = []
+  const client = {
+    whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
+    currentDataKey: async () => current,
+    listMachineKeys: async () => machines,
+    createDataKey: async (input: {
+      dekId: string
+      version: number
+      wraps: typeof current.wraps
+    }) => {
+      created.push(input.dekId)
+      current = {
+        id: input.dekId,
+        version: input.version,
+        createdAt: '2027-01-01T00:00:00.000Z',
+        retiredAt: null,
+        wraps: input.wraps,
+      }
+    },
+    getDataKey: async () => current,
+    listSecrets: async () => [],
+    listDataKeys: async () => [
+      { ...current, id: oldId, version: 1, createdAt: '2026-01-01T00:00:00.000Z' },
+      current,
+    ],
+    retireDataKey: async (id: string) => {
+      retired.push(id)
+    },
+    getSecret: async () => {
+      throw new ConfigClientError('response', '/v1/config/secrets', 404)
+    },
+    putSecret: async () => ({}),
+    revokeMachineKey: async (id: string) => {
+      const found = machines.find((item) => item.keyId === id)!
+      found.revokedAt = '2026-06-01T00:00:00.000Z'
+    },
+  } as unknown as ConfigClient
+  return { client, created, retired, otherKeyId }
+}
 
 test('the declared home chooses machine and hosted keys and refuses an unsupported scope with its remedy', () => {
   expect(configHome('routing.cost_policy')).toBe('machine')
@@ -308,6 +414,26 @@ test('rotation plan re-seals only rows on older DEKs and retires each old DEK on
     reseal: [row('a', 'old-b'), row('c', 'old-a'), row('d', 'old-b')],
     retireDekIds: ['old-a', 'old-b'],
   })
+})
+
+test('the next secret operation rotates once only when a machine revocation is newer', async () => {
+  const newer = await rotationFixture('2026-06-01T00:00:00.000Z')
+  await setSecret('TOKEN', 'first', 'space', newer.client)
+  await setSecret('TOKEN', 'second', 'space', newer.client)
+  expect(newer.created).toHaveLength(1)
+  expect(newer.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
+
+  const older = await rotationFixture('2025-06-01T00:00:00.000Z')
+  await setSecret('TOKEN', 'unchanged', 'space', older.client)
+  expect(older.created).toEqual([])
+  expect(older.retired).toEqual([])
+})
+
+test('machine revoke rotates through the shared rotation operation', async () => {
+  const fixture = await rotationFixture(null)
+  await machineRevoke(fixture.otherKeyId, fixture.client)
+  expect(fixture.created).toHaveLength(1)
+  expect(fixture.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
 })
 
 test('sealed environment migration decision covers every resumable store state', () => {

@@ -33,6 +33,7 @@ import {
   recordMemberships,
   recordSpaceRole,
   switchRecordSpace,
+  withdrawRecordSpaceConfigAccess,
 } from './record-space.ts'
 import { ensureAllSpaceBuiltIns } from './record-space-built-ins.ts'
 import { moveRecordProjectSpace } from './record-space-move.ts'
@@ -166,6 +167,18 @@ export async function recordSpaceAccessGrantCommand(
 ): Promise<void> {
   await grantRecordSpaceConfigAccess(email)
   presentation.log(`granted config access to ${email}`)
+}
+
+export async function recordSpaceAccessWithdrawCommand(
+  email: string,
+  presentation: Presentation,
+): Promise<void> {
+  const result = await withdrawRecordSpaceConfigAccess(email)
+  for (const keyId of result.revokedMachineKeyIds) presentation.log(`revoked machine\t${keyId}`)
+  for (const key of result.readableSecretKeys) presentation.log(`replace development key\t${key}`)
+  presentation.log(
+    `withdrew config access from ${email}; replace the listed development keys because ${PLATFORM_SLUG} cannot replace them`,
+  )
 }
 
 export async function recordSpaceCreateCommand(

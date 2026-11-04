@@ -65,6 +65,7 @@ import {
   registerMachineKey,
   retireDataKey,
   revokeMachineKey,
+  withdrawSpaceConfigAccess,
 } from './record-config.ts'
 import {
   consumeRecordDoc,
@@ -326,6 +327,7 @@ async function serveRecordApiWithAuth(
     revokeMachineKey,
     listSpaceConfigAccess,
     grantSpaceConfigAccess,
+    withdrawSpaceConfigAccess,
     listBoardMessages: listHostedBoardOverview,
     postBoardMessage: postHostedBoardMessage,
     replyBoardMessage: replyHostedBoardMessage,

@@ -321,6 +321,7 @@ realPostgres('RLS proof against real Postgres', () => {
     otherUserId: () => authUserB,
     cliOutput: () => cliOutput,
     succeeds: (source) => succeeds('postgres', 'postgres', source),
+    apiUrl: () => `http://127.0.0.1:${apiServer.port}`,
   })
   registerBoardRlsProofs({
     admin: (s) => succeeds('postgres', 'postgres', s),

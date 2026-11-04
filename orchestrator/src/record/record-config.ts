@@ -117,6 +117,7 @@ function wrapRow(row: Record<string, unknown>): DataKeyWrap {
 }
 
 const configAccessRemedy = `a space owner or admin grants config access with \`${PLATFORM_SLUG} record space access grant <email>\``
+const withdrawnConfigAccessRemedy = `ask a space owner or admin to grant access, then run \`${PLATFORM_SLUG} machine config machine init\``
 const machineClaimRemedy = `run \`${PLATFORM_SLUG} machine config machine init\` on that machine`
 
 async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> {
@@ -125,7 +126,10 @@ async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> 
     WHERE space_id=${input.spaceId}::uuid AND user_id=${input.userId}::uuid
   `
   if (rows[0]?.config_access !== true)
-    throw new ConfigServiceError(`signed-in user lacks config access; ${configAccessRemedy}`, 422)
+    throw new ConfigServiceError(
+      `this machine's key was revoked because its owner lost config access in the space; ${withdrawnConfigAccessRemedy}`,
+      422,
+    )
 }
 
 function conflict(kind: 'entry' | 'secret', currentRowVersion: number): never {
@@ -913,6 +917,59 @@ export async function grantSpaceConfigAccess(
         'config access grant requires an owner or admin and an email belonging to this space; ask a space owner or admin to retry with a listed member',
         422,
       )
+  })
+}
+
+export type WithdrawSpaceConfigAccessResult = {
+  revokedMachineKeyIds: string[]
+  readableSecretKeys: string[]
+}
+
+export async function withdrawSpaceConfigAccess(
+  input: ConfigTenant & { email: string },
+): Promise<WithdrawSpaceConfigAccessResult> {
+  return tenant(input, async (tx) => {
+    const members = await tx`
+      SELECT m.id, m.user_id, m.role, m.config_access
+      FROM membership m JOIN "user" u ON u.id=m.user_id
+      WHERE m.space_id=${input.spaceId}::uuid
+        AND lower(u.email)=lower(${input.email})
+        AND record_membership_admin(m.space_id)
+      FOR UPDATE OF m
+    `
+    const member = members[0]
+    if (!member)
+      throw new ConfigServiceError(
+        'config access withdrawal requires an owner or admin and an email belonging to this space; ask a space owner or admin to retry with a listed member',
+        422,
+      )
+    if (String(member.role) === 'owner')
+      throw new ConfigServiceError(
+        'cannot withdraw config access from an owner because owners hold config access; change their role first',
+        422,
+      )
+    if (member.config_access !== true)
+      throw new ConfigServiceError(
+        `member ${input.email} does not have config access; list space access and choose a current holder`,
+        422,
+      )
+    const machines = await tx`
+      SELECT key_id FROM machine_public_key
+      WHERE space_id=${input.spaceId}::uuid
+        AND user_id=${String(member.user_id)}::uuid
+        AND revoked_at IS NULL
+      ORDER BY key_id
+    `
+    const secrets = await tx`
+      SELECT DISTINCT key FROM config_secret
+      WHERE space_id=${input.spaceId}::uuid AND user_id IS NULL
+      ORDER BY key
+    `
+    await tx`UPDATE membership SET config_access=false WHERE id=${String(member.id)}::uuid`
+    return {
+      revokedMachineKeyIds: machines.map((row: Record<string, unknown>) => String(row.key_id)),
+      readableSecretKeys: secrets.map((row: Record<string, unknown>) => String(row.key)),
+    }
   })
 }
 

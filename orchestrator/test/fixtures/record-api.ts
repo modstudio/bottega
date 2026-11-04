@@ -202,6 +202,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     inviteMember: unusedIdentityAndSpace,
     listConfigAccess: unusedIdentityAndSpace,
     grantConfigAccess: unusedIdentityAndSpace,
+    withdrawConfigAccess: unusedIdentityAndSpace,
   }
 }
 

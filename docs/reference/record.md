@@ -36,6 +36,7 @@ the hosted record and outbox
 - [bottega record space access grant](#bottega-record-space-access-grant)
 - [bottega record space access help](#bottega-record-space-access-help)
 - [bottega record space access list](#bottega-record-space-access-list)
+- [bottega record space access withdraw](#bottega-record-space-access-withdraw)
 - [bottega record space create](#bottega-record-space-create)
 - [bottega record space help](#bottega-record-space-help)
 - [bottega record space invitations](#bottega-record-space-invitations)
@@ -445,6 +446,7 @@ manage hosted config access
 - [bottega record space access grant](./record.md#bottega-record-space-access-grant)
 - [bottega record space access help](./record.md#bottega-record-space-access-help)
 - [bottega record space access list](./record.md#bottega-record-space-access-list)
+- [bottega record space access withdraw](./record.md#bottega-record-space-access-withdraw)
 
 ## bottega record space access grant
 
@@ -471,6 +473,16 @@ display help for command
 **Synopsis:** `bottega record space access list`
 
 list members and config access
+
+### Related
+
+- [bottega record space access](./record.md#bottega-record-space-access)
+
+## bottega record space access withdraw
+
+**Synopsis:** `bottega record space access withdraw <email>`
+
+withdraw config access from a member
 
 ### Related
 

@@ -272,6 +272,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'record space access grant',
   'record space access help',
   'record space access list',
+  'record space access withdraw',
   'record space create',
   'record space help',
   'record space invitations',
