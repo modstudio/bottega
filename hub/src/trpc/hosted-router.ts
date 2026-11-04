@@ -5,7 +5,7 @@ import { hostedContextRouter } from './routers/hosted-context.ts'
 import { publicDocsRouter } from './routers/public-docs.ts'
 import { recordRouter } from './routers/record.ts'
 
-const t = initTRPC.context<Context>().create()
+const t = initTRPC.context<Context>().create({ isDev: false })
 
 export const hostedRouter = t.router({
   board: hostedBoardRouter,

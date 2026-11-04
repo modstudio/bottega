@@ -1,16 +1,24 @@
 // concern: doctor
 /** Reports installer-owned launch agents without changing their launchd state. */
 
+import { existsSync, readFileSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { InstallationKind } from '../../../shared/install-root.ts'
+import { type InstallationKind, resolveInstallationPaths } from '../../../shared/install-root.ts'
+import {
+  type LaunchAgentRenderValues,
+  launchAgentProgramPath,
+  renderLaunchAgentTemplate,
+} from '../../../shared/launch-agent-render.ts'
 import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
-import type { MachineLevel } from '../../../shared/machine-config.ts'
+import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
+import { resolveStateRoot, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
@@ -27,6 +35,12 @@ export type LaunchAgentDoctorDecision = {
   skipped: Array<{ label: string; reason: string }>
   findings: Array<{ label: string; command: string }>
   informational: Array<{ label: string; reason: 'not installed by a release install' }>
+  definitionFindings: Array<{
+    label: string
+    reason: 'program missing' | 'definition drifted'
+    detail: string
+    command: string
+  }>
   schedules: Array<{
     label: string
     loaded: boolean | null
@@ -39,6 +53,12 @@ export type LaunchAgentDoctorDecision = {
 
 const maintenanceLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
 
+export type LaunchAgentDefinitionObservation = {
+  programPath: string | null
+  programExists: boolean
+  plistMatches: boolean
+}
+
 /** Classify installer-owned labels from already-gathered skip and launchd facts. */
 export function decideLaunchAgentDoctor(input: {
   owners: readonly InstalledPlistOwner[]
@@ -47,6 +67,7 @@ export function decideLaunchAgentDoctor(input: {
   skipReasons: Readonly<Record<string, string | null>>
   loadObservation: LaunchAgentLoadObservation
   lastRuns: Readonly<Record<string, string>>
+  definitions?: Readonly<Record<string, LaunchAgentDefinitionObservation>>
 }): LaunchAgentDoctorDecision {
   const skipped = input.owners.flatMap(({ label }) => {
     if (maintenanceLabels.has(label)) return []
@@ -61,6 +82,31 @@ export function decideLaunchAgentDoctor(input: {
         : null
   const observedLoadedLabels =
     input.loadObservation.kind === 'available' ? input.loadObservation.loadedLabels : null
+  const definitionFindings = input.owners.flatMap(({ label, command }) => {
+    const observation = input.definitions?.[label]
+    if (!observation) return []
+    const remedy =
+      input.installationKind === 'distribution' ? `${PLATFORM_SLUG} machine setup apply` : command
+    if (observation.programPath && !observation.programExists)
+      return [
+        {
+          label,
+          reason: 'program missing' as const,
+          detail: observation.programPath,
+          command: remedy,
+        },
+      ]
+    if (!observation.plistMatches)
+      return [
+        {
+          label,
+          reason: 'definition drifted' as const,
+          detail: 'installed plist differs from the current template',
+          command: remedy,
+        },
+      ]
+    return []
+  })
   const schedules = input.owners
     .filter(({ label }) => maintenanceLabels.has(label))
     .map(({ label }) => {
@@ -80,6 +126,7 @@ export function decideLaunchAgentDoctor(input: {
       skipped,
       findings: [],
       informational: [],
+      definitionFindings,
       schedules,
       launchctlUnavailable: input.loadObservation.reason,
     }
@@ -103,9 +150,62 @@ export function decideLaunchAgentDoctor(input: {
       ({ label }) => !maintenanceLabels.has(label) && !informationalLabels.has(label),
     ),
     informational,
+    definitionFindings,
     schedules,
     launchctlUnavailable: null,
   }
+}
+
+function currentRenderValues(owner: InstalledPlistOwner): LaunchAgentRenderValues {
+  const paths = resolveInstallationPaths(import.meta.dir, process.env)
+  const home = homedir()
+  const start = String(readMachineValue('spare.start_time'))
+  const match = /^(\d{1,2}):(\d{2})$/.exec(start)
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59)
+    throw new Error(`spare.start_time is not HH:MM (got '${start}')`)
+  const concern = owner.templatePath?.startsWith('hub/') ? paths.hubAssets : paths.ops
+  return {
+    __INSTALL_ROOT__: paths.root,
+    __BOTTEGA_BIN__: paths.executable,
+    __CONCERN__: concern,
+    __HOME__: home,
+    __STATE_HOME_ENV__: STATE_HOME_ENV,
+    __STATE_HOME__: resolveStateRoot(process.env),
+    __MONITOR_BACKSTOP_SECONDS__: String(4 * 60 * 60),
+    __FIX_DEFECT_BACKSTOP_SECONDS__: String(12 * 60 * 60),
+    __MODEL_HOST__: String(readMachineValue('model_host.ssh_alias')),
+    __TUNNEL_LOCAL_PORT__: String(readMachineValue('model_host.tunnel_local_port')),
+    __TUNNEL_REMOTE_PORT__: String(readMachineValue('model_host.tunnel_remote_port')),
+    __FLYCTL__: Bun.which('flyctl') ?? '',
+    __SPARE_START_HOUR__: String(Number(match[1])),
+    __SPARE_START_MINUTE__: String(Number(match[2])),
+    __RECORD_TUNNEL_APP__: String(readMachineValue('record.tunnel_app')),
+    __RECORD_TUNNEL_LOCAL_PORT__: String(readMachineValue('record.tunnel_local_port')),
+    __RECORD_TUNNEL_REMOTE_PORT__: String(readMachineValue('record.tunnel_remote_port')),
+    __HUB_PORT__: String(readMachineValue('hub.port')),
+    __HUB_HOSTED_URL__: process.env.BOTTEGA_HOSTED_URL ?? '',
+  }
+}
+
+function installedDefinitionObservations(
+  owners: readonly InstalledPlistOwner[],
+): Record<string, LaunchAgentDefinitionObservation> {
+  const agents = join(homedir(), 'Library', 'LaunchAgents')
+  const observations: Record<string, LaunchAgentDefinitionObservation> = {}
+  for (const owner of owners) {
+    if (!owner.template) continue
+    const target = join(agents, `${owner.label}.plist`)
+    if (!existsSync(target)) continue
+    const installed = readFileSync(target, 'utf8')
+    const programPath = launchAgentProgramPath(installed)
+    observations[owner.label] = {
+      programPath,
+      programExists: programPath !== null && existsSync(programPath),
+      plistMatches:
+        installed === renderLaunchAgentTemplate(owner.template, currentRenderValues(owner)),
+    }
+  }
+  return observations
 }
 
 function loadedLaunchAgentLabels(
@@ -206,15 +306,19 @@ export async function launchAgentDoctorReport(
     skipReasons,
     loadObservation: loadedLaunchAgentLabels(owners, skipReasons),
     lastRuns: await lastRunByLabel(owners),
+    definitions: installedDefinitionObservations(owners),
   })
   const lines = ['launch agents']
   for (const { label, reason } of decision.skipped) {
     lines.push(`  ${label} skipped — ${reason}`)
   }
   for (const schedule of decision.schedules) lines.push(scheduleLine(schedule))
+  for (const { label, reason, detail, command } of decision.definitionFindings) {
+    lines.push(`  ${label} ${reason.toUpperCase()} — ${detail}; run ${command}`)
+  }
   if (decision.launchctlUnavailable) {
     lines.push(`  ${decision.launchctlUnavailable} — load check unavailable`)
-    return { lines, failed: false }
+    return { lines, failed: decision.definitionFindings.length > 0 }
   }
   for (const { label, reason } of decision.informational) {
     lines.push(`  ${label} — ${reason}`)
@@ -226,6 +330,6 @@ export async function launchAgentDoctorReport(
   }
   return {
     lines,
-    failed: schedulesFailed(decision),
+    failed: schedulesFailed(decision) || decision.definitionFindings.length > 0,
   }
 }

@@ -39,13 +39,18 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
   LABEL="$(basename "$tmpl" .plist.template)"
   TARGET="$AGENTS_DIR/$LABEL.plist"
   unload "$LABEL"
-  # Render the resolved checkout or distribution root and its hub assets.
-  sed -e "s#__INSTALL_ROOT__#${INSTALL_ROOT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
-      -e "s#__HOME__#${HOME}#g" \
-      -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
-      -e "s#__STATE_HOME__#${STATE_HOME}#g" \
-      -e "s#__HUB_PORT__#${BOTTEGA_HUB_PORT}#g" \
-      -e "s#__HUB_HOSTED_URL__#${BOTTEGA_HOSTED_URL:-}#g" "$tmpl" > "$TARGET"
+  # Render the resolved checkout or distribution root and its hub assets through
+  # the same renderer doctor uses to detect installed-definition drift.
+  bun --no-env-file "$INSTALL_ROOT/shared/launch-agent-render.ts" "$tmpl" "$TARGET" \
+      "__INSTALL_ROOT__" "$INSTALL_ROOT" "__BOTTEGA_BIN__" "" \
+      "__CONCERN__" "$CONCERN" "__HOME__" "$HOME" \
+      "__STATE_HOME_ENV__" "$STATE_HOME_ENV" "__STATE_HOME__" "$STATE_HOME" \
+      "__MONITOR_BACKSTOP_SECONDS__" "" "__FIX_DEFECT_BACKSTOP_SECONDS__" "" \
+      "__MODEL_HOST__" "" "__TUNNEL_LOCAL_PORT__" "" "__TUNNEL_REMOTE_PORT__" "" \
+      "__FLYCTL__" "" "__SPARE_START_HOUR__" "" "__SPARE_START_MINUTE__" "" \
+      "__RECORD_TUNNEL_APP__" "" "__RECORD_TUNNEL_LOCAL_PORT__" "" \
+      "__RECORD_TUNNEL_REMOTE_PORT__" "" "__HUB_PORT__" "$BOTTEGA_HUB_PORT" \
+      "__HUB_HOSTED_URL__" "${BOTTEGA_HOSTED_URL:-}"
   if ! bun --no-env-file "$INSTALL_ROOT/orchestrator/src/setup/environment-name-migration.ts" check-file "$TARGET"; then
     echo "refusing installed plist with a legacy environment name: $TARGET" >&2
     failed=1

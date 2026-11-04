@@ -6,7 +6,13 @@ import { basename, dirname, join } from 'node:path'
 import { listInstallAssetPaths, readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { resolveInstallRoot } from '../../../shared/install-root.ts'
 
-export type InstalledPlistOwner = { label: string; command: string; standardOutPath?: string }
+export type InstalledPlistOwner = {
+  label: string
+  command: string
+  templatePath?: string
+  template?: string
+  standardOutPath?: string
+}
 
 /** The StandardOutPath a launchd plist or template names, if any. */
 export function plistStandardOutPath(text: string): string | undefined {
@@ -43,6 +49,8 @@ export function installedPlistOwners(
       return {
         label,
         command: owner.command,
+        templatePath: path,
+        template: text,
         ...(standardOutPath ? { standardOutPath } : {}),
       }
     })

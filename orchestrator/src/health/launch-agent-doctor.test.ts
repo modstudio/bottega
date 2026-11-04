@@ -49,6 +49,7 @@ describe('launch agent doctor decision', () => {
       skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
       findings: [{ label: 'com.user.unloaded', command: 'ops/install.sh' }],
       informational: [],
+      definitionFindings: [],
       schedules: [],
       launchctlUnavailable: null,
     })
@@ -68,6 +69,7 @@ describe('launch agent doctor decision', () => {
       skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
       findings: [],
       informational: [{ label: 'com.user.unloaded', reason: 'not installed by a release install' }],
+      definitionFindings: [],
       schedules: [],
       launchctlUnavailable: null,
     })
@@ -87,6 +89,7 @@ describe('launch agent doctor decision', () => {
       skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
       findings: [],
       informational: [{ label: 'com.user.unloaded', reason: 'not installed by a release install' }],
+      definitionFindings: [],
       schedules: [],
       launchctlUnavailable: null,
     })
@@ -107,6 +110,7 @@ describe('launch agent doctor decision', () => {
         skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
         findings: [],
         informational: [],
+        definitionFindings: [],
         schedules: [],
         launchctlUnavailable: reason,
       })
@@ -179,5 +183,50 @@ describe('launch agent doctor decision', () => {
     })
     expect(record.schedules.every((schedule) => schedule.remedy === null)).toBe(true)
     expect(schedulesFailed(record)).toBe(false)
+  })
+
+  test('flags a missing program and a drifted installed definition with owning remedies', () => {
+    const definitionOwners = [
+      { label: 'com.user.ops', command: 'ops/install.sh' },
+      { label: 'com.user.hub', command: 'hub/bin/install-launchd.sh' },
+    ]
+    const decision = decideLaunchAgentDoctor({
+      owners: definitionOwners,
+      installationKind: 'checkout',
+      machineLevel: 'full',
+      skipReasons: {},
+      loadObservation: {
+        kind: 'available',
+        loadedLabels: new Set(definitionOwners.map(({ label }) => label)),
+      },
+      lastRuns: {},
+      definitions: {
+        'com.user.ops': {
+          programPath: '/missing/program',
+          programExists: false,
+          plistMatches: true,
+        },
+        'com.user.hub': {
+          programPath: '/usr/bin/true',
+          programExists: true,
+          plistMatches: false,
+        },
+      },
+    })
+
+    expect(decision.definitionFindings).toEqual([
+      {
+        label: 'com.user.ops',
+        reason: 'program missing',
+        detail: '/missing/program',
+        command: 'ops/install.sh',
+      },
+      {
+        label: 'com.user.hub',
+        reason: 'definition drifted',
+        detail: 'installed plist differs from the current template',
+        command: 'hub/bin/install-launchd.sh',
+      },
+    ])
   })
 })
