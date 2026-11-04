@@ -2,7 +2,7 @@
 /** Registers documentation and register adapters. Must not own their behavior. */
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { docCommand } from '../doc/doc-commands.ts'
@@ -156,7 +156,7 @@ async function runDoc(verb: string, args: string[], command: Command): Promise<v
       consumeResumeHandoff: resumeBriefHandoff,
       revisionHistory: async ({ scope, subject, slug, recordId }) => {
         const source = decideDocHistorySource({
-          hostedConfigured: Boolean(resolveRecordApiUrl()?.trim()),
+          hostedConfigured: recordApiConfigured(),
           signedIn: cachedSignedInRecordUser() !== null,
         })
         if (source === 'local') return null

@@ -61,7 +61,7 @@ export function mapHostedDocRevisions(
     .reverse()
 }
 
-export function hostedRevisionMetadata(
+function hostedRevisionMetadata(
   revisions: readonly NumberedHostedRevision[],
 ): Array<DocRevisionMetadata & { authorName?: string | null }> {
   return revisions.map((revision) => ({
@@ -121,10 +121,9 @@ export async function readHostedDocRevisions(input: {
   address: string
   listRevisions(): Promise<HostedDocRevision[]>
 }): Promise<HostedDocRevisionRead | null> {
+  let revisions: HostedDocRevision[]
   try {
-    const revisions = await input.listRevisions()
-    if (decideHostedRevisionRead('revisions') === 'print-hosted')
-      return hostedDocRevisionRead(revisions)
+    revisions = await input.listRevisions()
   } catch (error) {
     const outcome =
       error instanceof RecordApiRequestError && error.status === 404 ? 'not-found' : 'failed'
@@ -135,5 +134,5 @@ export async function readHostedDocRevisions(input: {
       `could not read hosted revisions for ${input.address}: ${cause}; run ${PLATFORM_SLUG} record whoami to verify sign-in, or retry when the hosted record is reachable`,
     )
   }
-  throw new Error('hosted revision read reached an invalid outcome')
+  return hostedDocRevisionRead(revisions)
 }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
@@ -99,7 +100,7 @@ describe('hosted document history', () => {
         },
       }),
     ).rejects.toThrow(
-      'could not read hosted revisions for global/_/hosted-history: server unavailable; run bottega record whoami to verify sign-in, or retry',
+      `could not read hosted revisions for global/_/hosted-history: server unavailable; run ${PLATFORM_SLUG} record whoami to verify sign-in, or retry`,
     )
   })
 

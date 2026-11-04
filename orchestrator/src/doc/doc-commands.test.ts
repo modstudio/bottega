@@ -731,12 +731,12 @@ describe('scoped operator docs', () => {
       ['doc', 'history', 'global', '-', 'failed-history'],
       '',
       async () => {
-        throw new Error('hosted read failed; run bottega record whoami, or retry')
+        throw new Error(`hosted read failed; run ${PLATFORM_SLUG} record whoami, or retry`)
       },
     )
     expect(result.code).toBe(1)
     expect(result.out).toBe('')
-    expect(result.err).toContain('hosted read failed; run bottega record whoami, or retry')
+    expect(result.err).toContain(`hosted read failed; run ${PLATFORM_SLUG} record whoami, or retry`)
   })
 
   test(`${PLATFORM_SLUG} doc consume stamps the session and preserves the document outside its fields`, async () => {

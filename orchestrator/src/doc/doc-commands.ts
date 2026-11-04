@@ -796,6 +796,47 @@ function handleHistoryOutput(
   return true
 }
 
+type DocAddress = { scope: string; subject: string | null; slug: string }
+
+async function restoreDocCommand(
+  argv: string[],
+  flags: DocFlags,
+  presentation: DocPresentation,
+  owner: string | null,
+  { scope, subject, slug }: DocAddress,
+): Promise<void> {
+  const revision = argv[5]
+  const reason = flags.flag('reason')
+  if (!revision || !reason?.trim())
+    throw new Error(
+      `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
+    )
+  const restored = await restoreDoc(
+    scope,
+    subject,
+    slug,
+    resolveDocRevisionIdentifier(db(), revision),
+    { reason, author: flags.flag('author'), expectedRevision: flags.flag('expect') },
+    owner,
+  )
+  printRestoreResult(restored, flags, presentation, scope, subject, slug)
+}
+
+function localDocDiff(
+  argv: string[],
+  revisions: ReturnType<typeof listDocRevisions>,
+  owner: string | null,
+  { scope, subject, slug }: DocAddress,
+): string {
+  const a = argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : revisions[1]?.record_id
+  const b = argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : revisions[0]?.record_id
+  if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
+  const ids = new Set(revisions.map((revision) => revision.record_id))
+  if (!ids.has(a) || !ids.has(b))
+    throw new Error(`doc diff revisions must belong to ${scope}/${subject ?? '_'}/${slug}`)
+  return diffDocRevisions(a, b, owner)
+}
+
 async function handleHistoryDocCommand(
   sub: string,
   argv: string[],
@@ -816,21 +857,7 @@ async function handleHistoryDocCommand(
   if (flags.has('user') && (scope !== 'canon' || subject !== null))
     throw new Error('--user history address must be canon -')
   if (sub === 'restore') {
-    const revision = argv[5]
-    const reason = flags.flag('reason')
-    if (!revision || !reason?.trim())
-      throw new Error(
-        `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
-      )
-    const restored = await restoreDoc(
-      scope,
-      subject,
-      slug,
-      resolveDocRevisionIdentifier(db(), revision),
-      { reason, author: flags.flag('author'), expectedRevision: flags.flag('expect') },
-      owner,
-    )
-    printRestoreResult(restored, flags, presentation, scope, subject, slug)
+    await restoreDocCommand(argv, flags, presentation, owner, { scope, subject, slug })
     return true
   }
   const revisions = listDocRevisions(scope, subject, slug, owner)
@@ -845,13 +872,7 @@ async function handleHistoryDocCommand(
       presentation.write(selectedHistory.diff(argv[5], argv[6]))
       return true
     }
-    const a = argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : revisions[1]?.record_id
-    const b = argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : revisions[0]?.record_id
-    if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
-    const ids = new Set(revisions.map((revision) => revision.record_id))
-    if (!ids.has(a) || !ids.has(b))
-      throw new Error(`doc diff revisions must belong to ${scope}/${subject ?? '_'}/${slug}`)
-    presentation.write(diffDocRevisions(a, b, owner))
+    presentation.write(localDocDiff(argv, revisions, owner, { scope, subject, slug }))
     return true
   }
   return false
