@@ -253,26 +253,26 @@ test('an implement spec answered under the legacy spec kind is not asked again',
   expect(asked).not.toContain(specSha)
 })
 
-test('a context-building version asks with the cited files and records the checkout commit', () => {
+test("a context-building version asks with the cited files at the run's base commit", () => {
   const promptPath = join(mkdtempSync(join(tmpdir(), 'typed-backtest-v2-')), 'prompt.txt')
-  writeFileSync(promptPath, 'Change `src/cited.ts` only.')
-  const row = { job: 'implement', repo: 'fixture', prompt_path: promptPath, spec_sha: 's' }
-  const checkout = () => ({
-    read: (path: string) => (path === 'src/cited.ts' ? 'cited source' : null),
-    commit: 'abc123',
-  })
-  const commits = new Set<string>()
-  expect(specState(row, SPEC_UNSETTLED_QUESTION_V2, checkout, commits)).toEqual(
-    SPEC_UNSETTLED_QUESTION_V2.contextBuilder('Change `src/cited.ts` only.', checkout().read),
+  const spec = 'Change `src/cited.ts` only.'
+  writeFileSync(promptPath, spec)
+  const row = {
+    job: 'implement',
+    repo: 'fixture',
+    base_commit: 'base',
+    prompt_path: promptPath,
+    spec_sha: 's',
+  }
+  const atBase = (path: string) => (path === 'src/cited.ts' ? 'cited source at base' : null)
+  const readerFor = (candidate: typeof row | { base_commit: string | null }) =>
+    candidate.base_commit === 'base' ? atBase : null
+  expect(specState(row, SPEC_UNSETTLED_QUESTION_V2, readerFor)).toEqual(
+    SPEC_UNSETTLED_QUESTION_V2.contextBuilder(spec, atBase),
   )
-  expect(JSON.stringify(specState(row, SPEC_UNSETTLED_QUESTION_V2, checkout, commits))).toContain(
-    'cited source',
+  expect(JSON.stringify(specState(row, SPEC_UNSETTLED_QUESTION_V2, readerFor))).toContain(
+    'cited source at base',
   )
-  expect([...commits]).toEqual(['fixture:abc123'])
-  expect(
-    specState({ ...row, repo: null }, SPEC_UNSETTLED_QUESTION_V2, checkout, commits),
-  ).toBeNull()
-  expect(specState(row, SPEC_UNSETTLED_QUESTION, checkout, commits)).toBe(
-    'Change `src/cited.ts` only.',
-  )
+  expect(specState({ ...row, base_commit: null }, SPEC_UNSETTLED_QUESTION_V2, readerFor)).toBeNull()
+  expect(specState(row, SPEC_UNSETTLED_QUESTION, readerFor)).toBe(spec)
 })

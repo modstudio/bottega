@@ -10,9 +10,9 @@ import {
   selectFindingDuplicatePairs,
 } from '../collect/finding-duplicate-suggestions.ts'
 import { db } from '../database/db.ts'
-import { gitContext } from '../git/git-environment.ts'
+import { gitBlobPrefix } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
-import { type CitedFileReader, checkoutFileReader } from './cited-context.ts'
+import { CITED_FILE_BYTES, type CitedFileReader } from './cited-context.ts'
 import { FINDING_PAIR_SUBJECT_KIND } from './finding-duplicate-question.ts'
 import { specQuestionState, specSubjectKind, specSubjectKinds } from './spec-unsettled-question.ts'
 import { TYPED_QUESTION_DECLARATIONS, typedQuestionReport } from './typed-question-report.ts'
@@ -42,7 +42,6 @@ type SourcedSubjects = {
   subjects: BacktestSubject[]
   alreadyAnswered: number
   unreadable: number
-  commits: string[]
 }
 
 type Answered = (subjectKind: string, subjectRef: string) => boolean
@@ -64,29 +63,29 @@ function answeredFor(database: Database, question: TypedQuestion): Answered {
     Boolean(statement.get(question.id, question.version, subjectKind, subjectRef))
 }
 
-export type Checkout = { read: CitedFileReader; commit: string | null }
-
-/** Reads cited files from each project's main checkout, resolving it and its commit once. */
-function checkoutContext(database: Database): (repo: string) => Checkout | null {
-  const checkouts = new Map<string, Checkout | null>()
-  return (repo) => {
-    if (!checkouts.has(repo)) {
-      const project = projectByName(repo, database)
-      checkouts.set(
-        repo,
-        project
-          ? {
-              read: checkoutFileReader(project.path),
-              commit: gitContext(project.path, 'rev-parse', '--verify', 'HEAD^{commit}'),
-            }
-          : null,
-      )
-    }
-    return checkouts.get(repo) ?? null
+/** Reads cited files as they were at the commit each run started from, in that project's checkout. */
+function readerAtBase(database: Database): ReaderFor {
+  const checkouts = new Map<string, string | null>()
+  return (row) => {
+    if (!row.repo || !row.base_commit) return null
+    if (!checkouts.has(row.repo))
+      checkouts.set(row.repo, projectByName(row.repo, database)?.path ?? null)
+    const checkout = checkouts.get(row.repo)
+    const commit = row.base_commit
+    return checkout ? (path) => gitBlobPrefix(checkout, commit, path, CITED_FILE_BYTES) : null
   }
 }
 
-type SpecRunRow = { job: string; repo: string | null; prompt_path: string; spec_sha: string }
+type SpecRunRow = {
+  job: string
+  repo: string | null
+  base_commit: string | null
+  prompt_path: string
+  spec_sha: string
+}
+
+/** The cited-file reader for one run's context, or null when it cannot be rebuilt. */
+export type ReaderFor = (row: SpecRunRow) => CitedFileReader | null
 
 /** Root runs that carry a caller spec, newest first, narrowed by job and project. */
 function specRunRows(database: Database, options: BacktestOptions): Iterable<SpecRunRow> {
@@ -106,7 +105,7 @@ function specRunRows(database: Database, options: BacktestOptions): Iterable<Spe
   }
   return database
     .query<SpecRunRow, string[]>(
-      `SELECT job,repo,prompt_path,spec_sha FROM run WHERE ${clauses.join(' AND ')}
+      `SELECT job,repo,base_commit,prompt_path,spec_sha FROM run WHERE ${clauses.join(' AND ')}
        ORDER BY started_at DESC`,
     )
     .iterate(...parameters)
@@ -116,21 +115,17 @@ function specRunRows(database: Database, options: BacktestOptions): Iterable<Spe
 export function specState(
   row: SpecRunRow,
   declaration: BacktestDeclaration,
-  checkout: (repo: string) => Checkout | null,
-  commits: Set<string>,
+  readerFor: ReaderFor,
 ): BacktestSubject['state'] | null {
   if (!existsSync(row.prompt_path)) return null
   const spec = readFileSync(row.prompt_path, 'utf8')
   if (!('contextBuilder' in declaration)) return spec
-  const context = row.repo ? checkout(row.repo) : null
-  if (!context) return null
-  if (context.commit) commits.add(`${row.repo}:${context.commit}`)
-  return specQuestionState(declaration, spec, context.read)
+  const read = readerFor(row)
+  return read ? specQuestionState(declaration, spec, read) : null
 }
 
 const specRunSubjects: SubjectSource = (database, declaration, options, answered) => {
-  const checkout = checkoutContext(database)
-  const commits = new Set<string>()
+  const readerFor = readerAtBase(database)
   const seen = new Set<string>()
   const subjects: BacktestSubject[] = []
   let alreadyAnswered = 0
@@ -145,11 +140,11 @@ const specRunSubjects: SubjectSource = (database, declaration, options, answered
       alreadyAnswered += 1
       continue
     }
-    const state = specState(row, declaration, checkout, commits)
+    const state = specState(row, declaration, readerFor)
     if (state === null) unreadable += 1
     else subjects.push({ subjectKind, subjectRef: row.spec_sha, state })
   }
-  return { subjects, alreadyAnswered, unreadable, commits: [...commits] }
+  return { subjects, alreadyAnswered, unreadable }
 }
 
 export const findingPairSubjects: SubjectSource = (database, _declaration, options, answered) => {
@@ -170,8 +165,7 @@ export const findingPairSubjects: SubjectSource = (database, _declaration, optio
       findingRows(database, run.id),
       new Map(),
     )) {
-      if (subjects.length >= options.limit)
-        return { subjects, alreadyAnswered, unreadable: 0, commits: [] }
+      if (subjects.length >= options.limit) return { subjects, alreadyAnswered, unreadable: 0 }
       if (seen.has(pair.subjectRef)) continue
       seen.add(pair.subjectRef)
       if (answered(FINDING_PAIR_SUBJECT_KIND, pair.subjectRef)) {
@@ -185,7 +179,7 @@ export const findingPairSubjects: SubjectSource = (database, _declaration, optio
       })
     }
   }
-  return { subjects, alreadyAnswered, unreadable: 0, commits: [] }
+  return { subjects, alreadyAnswered, unreadable: 0 }
 }
 
 const SOURCES: Record<BacktestDeclaration['backtest'], SubjectSource> = {
@@ -220,7 +214,6 @@ export async function typedQuestionBacktest(
     options,
     answeredFor(database, declaration),
   )
-  for (const commit of sourced.commits) presentation.log(`context commit ${commit}`)
   const pending = sourced.subjects
   let next = 0
   let errors = 0
