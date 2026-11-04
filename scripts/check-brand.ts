@@ -57,7 +57,6 @@ const ALLOWED = new Set([
   'local-stack/bin/gx10-install.sh',
   'ops/bin/projects-morning-refresh.sh',
   'ops/bin/hub-note-maintenance.sh',
-  'ops/bin/orch-record-sync.sh',
   'ops/bin/orch-canon-audit.sh',
   'ops/bin/orch-canon-mirror.sh',
   'ops/bin/orch-spare.sh',

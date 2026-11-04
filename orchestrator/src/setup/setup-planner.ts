@@ -56,13 +56,16 @@ export type SetupAction =
       path: string
       target: string
     }
+  | { kind: 'install-schedules' }
   | { kind: 'migrate-environment' }
 
 /** Declare which planned action kinds require another action in the same plan to succeed. */
 export function setupActionPrerequisiteKinds(
   kind: SetupAction['kind'],
 ): readonly SetupAction['kind'][] {
-  return kind === 'add' || kind === 'set' ? ['migrate-environment'] : []
+  if (kind === 'add' || kind === 'set') return ['migrate-environment']
+  if (kind === 'install-schedules') return ['set-machine-level']
+  return []
 }
 
 export function setupActionChangesMachine(action: SetupAction): boolean {
@@ -72,6 +75,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'register-mcp':
     case 'migrate-mcp-config':
     case 'remove-legacy-symlink':
+    case 'install-schedules':
     case 'migrate-environment':
     case 'set-machine-level':
       return true
@@ -92,6 +96,8 @@ export function setupActionLine(action: SetupAction): string {
       return `Remove leftover ${action.path} symlink`
     case 'migrate-environment':
       return 'Migrate operator environment names'
+    case 'install-schedules':
+      return 'Install scheduled sweep and record sync'
     case 'set-machine-level':
       return `Set machine install level to ${action.to}`
     case 'add':
@@ -175,20 +181,24 @@ function selectedMachineLevel(plan: SetupPlan, answers: SetupAnswers): MachineLe
   return selected
 }
 
-export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
-  const selectedLevel = selectedMachineLevel(plan, answers)
-  const currentLevel = plan.facts?.machine?.machineLevel
-  const machineLevel: SetupAction | null =
-    currentLevel === undefined || currentLevel === selectedLevel
-      ? null
-      : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
-  const registrations: SetupAction[] = plan.registrations.map((proposal) => {
+function plannedScheduleActions(plan: SetupPlan, selectedLevel: MachineLevel): SetupAction[] {
+  const machine = plan.facts?.machine
+  return machine?.os?.platform === 'darwin' &&
+    machine.installationKind === 'distribution' &&
+    selectedLevel === 'full' &&
+    (machine.schedules ?? []).some((schedule) => !schedule.loaded || !schedule.plistMatches)
+    ? [{ kind: 'install-schedules' }]
+    : []
+}
+
+function plannedRegistrations(
+  plan: SetupPlan,
+  answers: SetupAnswers,
+  selectedLevel: MachineLevel,
+): SetupAction[] {
+  return plan.registrations.map((proposal) => {
     if (selectedLevel === 'record' && proposal.workerOnly) {
-      return {
-        ...proposal,
-        kind: 'mcp-skipped',
-        reason: 'not needed at install level record',
-      }
+      return { ...proposal, kind: 'mcp-skipped', reason: 'not needed at install level record' }
     }
     if (proposal.state === 'same') return { ...proposal, kind: 'mcp-unchanged' }
     const answer = proposal.questionId ? answers[proposal.questionId] : undefined
@@ -196,6 +206,17 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     if (!apply) return { ...proposal, kind: 'mcp-skipped' }
     return { ...proposal, kind: 'register-mcp', replace: proposal.state !== 'absent' }
   })
+}
+
+export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
+  const selectedLevel = selectedMachineLevel(plan, answers)
+  const currentLevel = plan.facts?.machine?.machineLevel
+  const machineLevel: SetupAction | null =
+    currentLevel === undefined || currentLevel === selectedLevel
+      ? null
+      : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
+  const schedules = plannedScheduleActions(plan, selectedLevel)
+  const registrations = plannedRegistrations(plan, answers, selectedLevel)
   const projects: SetupAction[] = plan.proposals.map((proposal) => {
     const settings = resolvedSettings(proposal, answers, plan.questions)
     const settingsDiff = diffSettings(proposal.current?.settings ?? null, settings)
@@ -263,6 +284,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
   return [
     { kind: 'migrate-environment' },
     ...(machineLevel ? [machineLevel] : []),
+    ...schedules,
     ...registrations,
     ...migrations,
     ...legacySymlinks,

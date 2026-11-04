@@ -1,17 +1,23 @@
 // concern: doctor
 /** Reports installer-owned launch agents without changing their launchd state. */
 
+import { stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { InstallationKind } from '../../../shared/install-root.ts'
 import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
   installationPlistOwners,
   isCheckoutOnlyLaunchAgentInstaller,
 } from '../setup/launchd-owners.ts'
+import { MAINTENANCE_SCHEDULE_LABELS } from '../setup/setup-schedules.ts'
 
 export type LaunchAgentLoadObservation =
   | { kind: 'available'; loadedLabels: ReadonlySet<string> }
@@ -21,25 +27,60 @@ export type LaunchAgentDoctorDecision = {
   skipped: Array<{ label: string; reason: string }>
   findings: Array<{ label: string; command: string }>
   informational: Array<{ label: string; reason: 'not installed by a release install' }>
+  schedules: Array<{
+    label: string
+    loaded: boolean | null
+    lastRun: string
+    skipReason: string | null
+    remedy: string | null
+  }>
   launchctlUnavailable: null | 'launchctl missing' | 'gui domain unreachable'
 }
+
+const maintenanceLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
 
 /** Classify installer-owned labels from already-gathered skip and launchd facts. */
 export function decideLaunchAgentDoctor(input: {
   owners: readonly InstalledPlistOwner[]
   installationKind: InstallationKind | null
+  machineLevel: MachineLevel
   skipReasons: Readonly<Record<string, string | null>>
   loadObservation: LaunchAgentLoadObservation
+  lastRuns: Readonly<Record<string, string>>
 }): LaunchAgentDoctorDecision {
   const skipped = input.owners.flatMap(({ label }) => {
+    if (maintenanceLabels.has(label)) return []
     const reason = input.skipReasons[label]
     return reason ? [{ label, reason }] : []
   })
+  const scheduleRemedy =
+    input.installationKind === 'distribution'
+      ? `${PLATFORM_SLUG} machine setup apply`
+      : input.installationKind === 'checkout'
+        ? (input.owners.find(({ label }) => maintenanceLabels.has(label))?.command ?? null)
+        : null
+  const observedLoadedLabels =
+    input.loadObservation.kind === 'available' ? input.loadObservation.loadedLabels : null
+  const schedules = input.owners
+    .filter(({ label }) => maintenanceLabels.has(label))
+    .map(({ label }) => {
+      const loaded = observedLoadedLabels?.has(label) ?? null
+      const skipReason = input.skipReasons[label] ?? null
+      return {
+        label,
+        loaded,
+        lastRun: input.lastRuns[label] ?? 'never',
+        skipReason,
+        remedy:
+          input.machineLevel === 'full' && loaded === false && !skipReason ? scheduleRemedy : null,
+      }
+    })
   if (input.loadObservation.kind === 'unavailable') {
     return {
       skipped,
       findings: [],
       informational: [],
+      schedules,
       launchctlUnavailable: input.loadObservation.reason,
     }
   }
@@ -49,15 +90,20 @@ export function decideLaunchAgentDoctor(input: {
   )
   const informational = unloaded
     .filter(
-      ({ command }) =>
-        input.installationKind !== 'checkout' && isCheckoutOnlyLaunchAgentInstaller(command),
+      ({ label, command }) =>
+        !maintenanceLabels.has(label) &&
+        input.installationKind !== 'checkout' &&
+        isCheckoutOnlyLaunchAgentInstaller(command),
     )
     .map(({ label }) => ({ label, reason: 'not installed by a release install' }) as const)
   const informationalLabels = new Set(informational.map(({ label }) => label))
   return {
     skipped,
-    findings: unloaded.filter(({ label }) => !informationalLabels.has(label)),
+    findings: unloaded.filter(
+      ({ label }) => !maintenanceLabels.has(label) && !informationalLabels.has(label),
+    ),
     informational,
+    schedules,
     launchctlUnavailable: null,
   }
 }
@@ -76,7 +122,7 @@ function loadedLaunchAgentLabels(
   if (domain.exitCode !== 0) return { kind: 'unavailable', reason: 'gui domain unreachable' }
   const loaded = new Set<string>()
   for (const { label } of owners) {
-    if (skipReasons[label]) continue
+    if (skipReasons[label] && !maintenanceLabels.has(label)) continue
     const child = Bun.spawnSync([launchctl, 'print', `gui/${uid}/${label}`], {
       stdout: 'ignore',
       stderr: 'ignore',
@@ -86,18 +132,68 @@ function loadedLaunchAgentLabels(
   return { kind: 'available', loadedLabels: loaded }
 }
 
-/** Gather installer and launchd facts, returning report-only doctor lines. */
-export async function launchAgentDoctorLines(
+async function lastRunByLabel(
+  owners: readonly InstalledPlistOwner[],
+): Promise<Record<string, string>> {
+  const result: Record<string, string> = {}
+  for (const owner of owners) {
+    if (!maintenanceLabels.has(owner.label) || !owner.standardOutPath) continue
+    const path = owner.standardOutPath.replaceAll('__HOME__', homedir())
+    try {
+      const modified = (await stat(path)).mtime
+      result[owner.label] = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZoneName: 'short',
+      }).format(modified)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      result[owner.label] = 'never'
+    }
+  }
+  return result
+}
+
+export type LaunchAgentDoctorReport = { lines: string[]; failed: boolean }
+
+/** Doctor fails when any worker schedule carries a remedy. */
+export function schedulesFailed(decision: LaunchAgentDoctorDecision): boolean {
+  return decision.schedules.some((schedule) => schedule.remedy !== null)
+}
+
+export function scheduleLine(schedule: LaunchAgentDoctorDecision['schedules'][number]): string {
+  const load =
+    schedule.loaded === null ? 'LOAD UNAVAILABLE' : schedule.loaded ? 'loaded' : 'NOT LOADED'
+  const suffix = schedule.skipReason
+    ? `; skipped — ${schedule.skipReason}`
+    : schedule.remedy
+      ? `; run ${schedule.remedy}`
+      : ''
+  return `  ${schedule.label} ${load} — last run ${schedule.lastRun}${suffix}`
+}
+
+/** Gather installer and launchd facts, returning doctor measurements and refusal state. */
+export async function launchAgentDoctorReport(
   platform: NodeJS.Platform,
   readOwners: () => Promise<InstalledPlistOwner[]> = installationPlistOwners,
   installationKind: InstallationKind | null,
-): Promise<string[]> {
-  if (!includesLaunchAgents(platform)) return []
+  machineLevel: MachineLevel,
+): Promise<LaunchAgentDoctorReport> {
+  if (!includesLaunchAgents(platform)) return { lines: [], failed: false }
   let owners: InstalledPlistOwner[]
   try {
     owners = await readOwners()
   } catch {
-    return ['launch agents', '  launchd templates unreadable — load check unavailable']
+    return {
+      lines: ['launch agents', '  launchd templates unreadable — load check unavailable'],
+      failed: false,
+    }
   }
   const facts = gatherLaunchAgentSkipFacts()
   const skipReasons = Object.fromEntries(
@@ -106,16 +202,19 @@ export async function launchAgentDoctorLines(
   const decision = decideLaunchAgentDoctor({
     owners,
     installationKind,
+    machineLevel,
     skipReasons,
     loadObservation: loadedLaunchAgentLabels(owners, skipReasons),
+    lastRuns: await lastRunByLabel(owners),
   })
   const lines = ['launch agents']
   for (const { label, reason } of decision.skipped) {
     lines.push(`  ${label} skipped — ${reason}`)
   }
+  for (const schedule of decision.schedules) lines.push(scheduleLine(schedule))
   if (decision.launchctlUnavailable) {
     lines.push(`  ${decision.launchctlUnavailable} — load check unavailable`)
-    return lines
+    return { lines, failed: false }
   }
   for (const { label, reason } of decision.informational) {
     lines.push(`  ${label} — ${reason}`)
@@ -125,5 +224,8 @@ export async function launchAgentDoctorLines(
       `  ${label} NOT LOADED — installer ${command}; run ${command} from the main checkout`,
     )
   }
-  return lines
+  return {
+    lines,
+    failed: schedulesFailed(decision),
+  }
 }

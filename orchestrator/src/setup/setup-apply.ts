@@ -21,6 +21,7 @@ import {
 } from './setup-mcp.ts'
 import { migrateMcpConfigText } from './setup-mcp-config.ts'
 import { type SetupAction, setupActionLine, setupActionPrerequisiteKinds } from './setup-planner.ts'
+import { applyMaintenanceSchedules } from './setup-schedules.ts'
 
 type AddAction = Extract<SetupAction, { kind: 'add' }>
 type SetAction = Extract<SetupAction, { kind: 'set' }>
@@ -246,13 +247,10 @@ export async function applySetupActions(
       continue
     }
     try {
-      const applied = await applySetupAction(
-        action,
-        service,
-        environment,
-        runner,
-        preparedStateFileMigration,
-      )
+      const applied =
+        action.kind === 'install-schedules'
+          ? await applyScheduleAction()
+          : await applySetupAction(action, service, environment, runner, preparedStateFileMigration)
       results.push({ ...action, ...applied })
     } catch (error) {
       results.push({
@@ -263,6 +261,21 @@ export async function applySetupActions(
     }
   }
   return results
+}
+
+async function applyScheduleAction(): Promise<{
+  status: SetupAppliedActionStatus
+  message: string | null
+}> {
+  const results = await applyMaintenanceSchedules()
+  const applied = results.some((result) => result.status === 'applied')
+  const skipped = results.filter((result) => result.status === 'skipped')
+  return {
+    status: applied ? 'applied' : 'unchanged',
+    message: skipped.length
+      ? skipped.map((result) => `${result.label} skipped — ${result.reason}`).join('; ')
+      : null,
+  }
 }
 
 async function applySetupAction(

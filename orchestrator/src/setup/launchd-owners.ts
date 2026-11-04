@@ -6,7 +6,12 @@ import { basename, dirname, join } from 'node:path'
 import { listInstallAssetPaths, readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { resolveInstallRoot } from '../../../shared/install-root.ts'
 
-export type InstalledPlistOwner = { label: string; command: string }
+export type InstalledPlistOwner = { label: string; command: string; standardOutPath?: string }
+
+/** The StandardOutPath a launchd plist or template names, if any. */
+export function plistStandardOutPath(text: string): string | undefined {
+  return /<key>StandardOutPath<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1]
+}
 
 export const LAUNCHD_TEMPLATE_OWNERS = [
   { concern: 'hub', directory: 'launchd', command: 'hub/bin/install-launchd.sh' },
@@ -31,12 +36,14 @@ export function installedPlistOwners(
     .map(({ path, text }) => {
       const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1]
       if (!label) throw new Error(`launchd template ${path} has no Label`)
+      const standardOutPath = plistStandardOutPath(text)
       const concern = basename(dirname(dirname(path)))
       const owner = LAUNCHD_TEMPLATE_OWNERS.find((candidate) => candidate.concern === concern)
       if (!owner) throw new Error(`launchd template ${path} has unknown concern ${concern}`)
       return {
         label,
         command: owner.command,
+        ...(standardOutPath ? { standardOutPath } : {}),
       }
     })
     .sort((left, right) => left.label.localeCompare(right.label))

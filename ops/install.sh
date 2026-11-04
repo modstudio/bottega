@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_CONCERN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_ROOT="$(cd "$SCRIPT_CONCERN/.." && pwd)"
 INSTALL_ROOT="$(bun --no-env-file "$SCRIPT_ROOT/shared/install-root.ts" root "$SCRIPT_CONCERN")"
+PRODUCT_BIN="$INSTALL_ROOT/bin/$(bun --no-env-file -e 'console.log(require(process.argv[1]).name)' "$INSTALL_ROOT/package.json")"
 CONCERN="$INSTALL_ROOT/ops"
 STATE_HOME_ENV="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" environment)"
 STATE_HOME="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" root)"
@@ -128,12 +129,14 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
 
   # Render template -> real plist with absolute paths for this machine.
   #   __INSTALL_ROOT__ -> the resolved checkout or distribution root,
+  #   __BOTTEGA_BIN__ -> this checkout's command-line executable,
   #   __CONCERN__ -> the installed template owner's directory,
   #   __HOME__ -> this user's home,
   #   __MODEL_HOST__ -> the configured SSH alias, tunnel port placeholders,
   #   __SPARE_START_HOUR__/__SPARE_START_MINUTE__ -> the hour and minute parsed
   #     from the spare.start_time configuration value.
-  sed -e "s#__INSTALL_ROOT__#${INSTALL_ROOT}#g" -e "s#__CONCERN__#${CONCERN}#g" \
+  sed -e "s#__INSTALL_ROOT__#${INSTALL_ROOT}#g" -e "s#__BOTTEGA_BIN__#${PRODUCT_BIN}#g" \
+      -e "s#__CONCERN__#${CONCERN}#g" \
       -e "s#__HOME__#${HOME}#g" \
       -e "s#__STATE_HOME_ENV__#${STATE_HOME_ENV}#g" \
       -e "s#__STATE_HOME__#${STATE_HOME}#g" \

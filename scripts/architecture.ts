@@ -642,6 +642,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/setup/setup-facts.ts', [
     'node:fs',
     'bun',
+    '../../../shared/install-root.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/record-api-url.ts',
     '../agent/agent-auth.ts',
@@ -649,6 +650,7 @@ export const modules: ArchitectureModule[] = [
     '../agent/model-host.ts',
     '../sandbox/sandbox-runtime.ts',
     './setup-mcp.ts',
+    './setup-schedules.ts',
   ]),
   ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),
   ...spareModules,

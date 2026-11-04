@@ -2,6 +2,7 @@
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
+import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
@@ -21,6 +22,7 @@ import {
   type SetupCommandRunner,
   stableMcpServers,
 } from './setup-mcp.ts'
+import { gatherScheduleSetupFacts, type ScheduleSetupFact } from './setup-schedules.ts'
 
 const COMMAND_TIMEOUT_MS = 3_000
 
@@ -33,6 +35,8 @@ export type CommandCapture = CliVersionCapture
 
 export type SetupFactsCapture = {
   machineLevel: MachineLevel | null
+  installationKind?: InstallationKind | null
+  schedules?: ScheduleSetupFact[]
   recordApiUrl: string | null
   platform: NodeJS.Platform
   arch: NodeJS.Architecture
@@ -55,6 +59,8 @@ export type SetupFactsCapture = {
 
 export type SetupFacts = {
   machineLevel: MachineLevel | null
+  installationKind: InstallationKind | null
+  schedules: ScheduleSetupFact[]
   recordApiUrl: string | null
   os: { platform: NodeJS.Platform; arch: NodeJS.Architecture; wsl: boolean }
   bun: { path: string; version: string }
@@ -76,6 +82,8 @@ export type SetupFacts = {
 export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
   return {
     machineLevel: capture.machineLevel,
+    installationKind: capture.installationKind ?? null,
+    schedules: capture.schedules ?? [],
     recordApiUrl: capture.recordApiUrl,
     os: {
       platform: capture.platform,
@@ -153,6 +161,15 @@ export function readSetupMachineLevel(): MachineLevel | null {
   return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
 }
 
+/** The running installation's kind, or null when its identity is unreadable; doctor reports why. */
+function readInstallationKind(): InstallationKind | null {
+  try {
+    return installationIdentity(import.meta.dir, {}).kind
+  } catch {
+    return null
+  }
+}
+
 export async function gatherSetupFacts(
   registrationRunner?: SetupCommandRunner,
 ): Promise<SetupFacts> {
@@ -183,8 +200,11 @@ export async function gatherSetupFacts(
       ]
     }),
   ) as SetupFactsCapture['harnesses']
+  const installationKind = readInstallationKind()
   return classifySetupFacts({
     machineLevel: readSetupMachineLevel(),
+    installationKind,
+    schedules: installationKind === 'distribution' ? gatherScheduleSetupFacts() : [],
     recordApiUrl: resolveRecordApiUrl() ?? null,
     platform: process.platform,
     arch: process.arch,
