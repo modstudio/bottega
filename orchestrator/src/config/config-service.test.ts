@@ -825,7 +825,7 @@ test('machine init backs up and replaces a revoked local identity before registe
 
   expect(newKeyId).not.toBe(oldKeyId)
   expect(readMachineKey(env)?.privateKey).not.toEqual(oldPrivateKey)
-  expect(readFileSync(join(root, `machine-key.revoked-${oldKeyId}`), 'utf8').trim()).toBe(
+  expect(readFileSync(join(root, 'machine-key-revoked', oldKeyId), 'utf8').trim()).toBe(
     Buffer.from(oldPrivateKey!).toString('base64url'),
   )
   expect(registrations).toEqual([oldKeyId, newKeyId])

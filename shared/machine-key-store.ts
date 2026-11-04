@@ -1,10 +1,12 @@
 import { createPrivateKey, createPublicKey } from 'node:crypto'
 import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
 import {
   type ConfigEnvironment,
   machineKeyFilePath,
   resolveConfigRoot,
+  revokedMachineKeyDirectory,
 } from './config-directory.ts'
 import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
@@ -104,7 +106,7 @@ export function writeMachineKey(
   }
 }
 
-/** Moves a revoked identity beside the active one and installs its replacement. */
+/** Moves a revoked identity into the backup directory and installs its replacement. */
 export function replaceRevokedMachineKey(
   revokedKeyId: string,
   pair: MachineKeyPair,
@@ -116,7 +118,12 @@ export function replaceRevokedMachineKey(
   const encoded = Buffer.from(existing.privateKey).toString('base64url')
   if (useFile(env)) {
     const path = machineKeyFilePath(env)
-    renameSync(path, `${path}.revoked-${revokedKeyId}`)
+    const backupDirectory = revokedMachineKeyDirectory(env)
+    mkdirSync(backupDirectory, { recursive: true, mode: 0o700 })
+    chmodSync(backupDirectory, 0o700)
+    const backupPath = join(backupDirectory, revokedKeyId)
+    renameSync(path, backupPath)
+    chmodSync(backupPath, 0o600)
   } else {
     writeKeychainItem(SERVICE, `${ACCOUNT}.revoked-${revokedKeyId}`, encoded, runner)
     deleteKeychainItem(SERVICE, ACCOUNT, runner)
