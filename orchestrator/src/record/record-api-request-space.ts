@@ -59,6 +59,7 @@ export function registerRecordRequestSpace(app: Hono<ApiEnvironment>): void {
   app.use('/v1/lens-catalogue/*', requestedSpace)
   app.use('/v1/workflow-catalogue', requestedSpace)
   app.use('/v1/workflow-catalogue/*', requestedSpace)
+  app.use('/v1/task-flow', requestedSpace)
   app.use('/v1/port-catalogue', requestedSpace)
   app.use('/v1/port-catalogue/*', requestedSpace)
   app.use('/v1/settings/permission', requestedSpace)

@@ -86,10 +86,12 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listSnapshots',
     'listWorkflowCatalogue',
     'openBoardStream',
+    'readTaskFlow',
     'searchDocs',
     'searchPublicDocs',
     'whoami',
   ]),
+  ...readEntries('orchestrator', 'recordWorkflowClient', ['readTaskFlow']),
   ...writeEntries(
     'orchestrator',
     'recordApiClient',

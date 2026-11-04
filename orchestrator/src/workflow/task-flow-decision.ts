@@ -27,3 +27,27 @@ export function decideTaskStageSelection(
     : requested.workflow === openStage.workflow && requested.mode === openStage.mode
   return same ? { action: 'reuse', stage: openStage } : { action: 'refuse', stage: openStage }
 }
+
+export type TakeoverDecision =
+  | { action: 'same-machine' }
+  | { action: 'take-over'; fromMachineId: string }
+  | { action: 'refuse'; fromMachineId: string; remedy: string }
+
+export function decideWorkflowTakeover(input: {
+  currentMachineId: string
+  holderMachineId: string
+  recordReachable: boolean
+  recordRemedy?: string
+}): TakeoverDecision {
+  if (input.currentMachineId === input.holderMachineId) return { action: 'same-machine' }
+  if (!input.recordReachable)
+    return {
+      action: 'refuse',
+      fromMachineId: input.holderMachineId,
+      remedy: input.recordRemedy ?? 'restore the hosted record connection and retry',
+    }
+  return { action: 'take-over', fromMachineId: input.holderMachineId }
+}
+
+export const workflowTakeoverNotice = (displayName: string) =>
+  `Took over this workflow stage from ${displayName}.`

@@ -56,6 +56,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-trail.ts',
     './workflow-cursor-transition.ts',
     './task-flow.ts',
+    './task-flow-read-through.ts',
     './workflow-task-reference.ts',
     './workflows.ts',
   ]),
@@ -307,6 +308,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-task-linking.ts',
     './workflow-text.ts',
     './task-flow.ts',
+    './task-flow-decision.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-mutation.ts', [
     'bun:sqlite',

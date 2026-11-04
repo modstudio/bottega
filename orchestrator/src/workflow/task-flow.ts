@@ -177,3 +177,14 @@ export function recordTaskFlowCursorMutation(cursorRecordId: string, d: Database
   stampWorkflowCursorMachine(cursorRecordId, 1, d)
   enqueueTaskFlowCursorState(cursorRecordId, d)
 }
+
+export function markWorkflowCursorTakeover(
+  cursorRecordId: string,
+  fromMachineId: string,
+  d: Database,
+): void {
+  d.query('UPDATE workflow_cursor SET taken_over_from_machine_id=? WHERE record_id=?').run(
+    fromMachineId,
+    cursorRecordId,
+  )
+}

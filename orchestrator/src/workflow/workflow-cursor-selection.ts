@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { attachTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
+import { readThroughTaskFlow, type TaskFlowReadStatus } from './task-flow-read-through.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
@@ -13,7 +14,7 @@ import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 /** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
 export const LISTED_CURSOR_COLUMNS =
-  "number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,task_flow_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement,(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=workflow_cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count"
+  "number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,task_flow_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement,opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision,(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=workflow_cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count"
 
 export type WorkflowCursorSelector = {
   project?: string
@@ -28,6 +29,7 @@ export type WorkflowCursorContext = {
   taskRecordId?: string | null
   adoptionTaskRecordId?: string | null
   taskStatusCategory?: string | null
+  taskFlowRead?: TaskFlowReadStatus
 }
 
 const MCP_INSTANCE = randomUUID()
@@ -48,10 +50,14 @@ export async function resolveWorkflowCursorContext(
   const key = workflowKeyOf(args)
   if (!key) return { ...context, taskRecordId: null }
   const task = await resolveHubTaskReference(project, key, reader)
+  const taskFlowRead = task?.record_id
+    ? await readThroughTaskFlow(db(), { taskKey: key, taskRecordId: task.record_id })
+    : undefined
   return {
     ...context,
     taskRecordId: task?.record_id ?? null,
     taskStatusCategory: task?.status_category ?? null,
+    taskFlowRead,
   }
 }
 
@@ -92,6 +98,10 @@ export type SelectableCursorRow = {
   catalogue_version: number
   args: string
   autonomy: string | null
+  opened_machine_id: string | null
+  taken_over_from_machine_id: string | null
+  last_advanced_machine_id: string | null
+  revision: number
 }
 
 const mismatch = (

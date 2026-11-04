@@ -113,6 +113,7 @@ import {
   retireRecordSubject,
 } from './record-subjects.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
+import { readRecordTaskFlow } from './record-task-flow.ts'
 import {
   countRecordScores,
   listRecordScores,
@@ -281,6 +282,7 @@ async function serveRecordApiWithAuth(
     readReleases: listRecordReleases,
     readLatestReleases: readLatestRecordReleases,
     readProjects: listRecordProjects,
+    readTaskFlow: readRecordTaskFlow,
     upsertProject: upsertRecordProject,
     retireProject: retireRecordProject,
     ...recordLensDependencies(),

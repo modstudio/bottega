@@ -15,9 +15,11 @@ import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import {
   attachInsertedTaskFlowStage,
+  markWorkflowCursorTakeover,
   recordTaskFlowCursorMutation,
   stampWorkflowCursorMachine,
 } from './task-flow.ts'
+import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -753,6 +755,22 @@ function nextWorkflowStepImpl(
   const slug = row.workflow_slug
   const project = row.project
   const mode = row.mode_slug
+  let takeoverNotice: string | null = null
+  if (row.task_flow_record_id && row.last_advanced_machine_id) {
+    const decision = decideWorkflowTakeover({
+      currentMachineId: machineId(),
+      holderMachineId: row.last_advanced_machine_id,
+      recordReachable: context.taskFlowRead?.reachable ?? false,
+      recordRemedy: context.taskFlowRead?.remedy,
+    })
+    const holderName = context.taskFlowRead?.holder?.displayName ?? row.last_advanced_machine_id
+    if (decision.action === 'refuse')
+      throw new Error(`workflow stage is held by ${holderName}; ${decision.remedy}`)
+    if (decision.action === 'take-over') {
+      markWorkflowCursorTakeover(row.record_id, decision.fromMachineId, d)
+      takeoverNotice = workflowTakeoverNotice(holderName)
+    }
+  }
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
   refuseKeylessStepClose(row, evidence.task, d, live)
@@ -773,7 +791,7 @@ function nextWorkflowStepImpl(
     context,
     d,
   )
-  return renderWorkflowAdvanceResult({
+  const rendered = renderWorkflowAdvanceResult({
     row,
     composition,
     closed: close.closed,
@@ -785,6 +803,7 @@ function nextWorkflowStepImpl(
     d,
     live,
   })
+  return takeoverNotice ? `${takeoverNotice}\n${rendered}` : rendered
 }
 
 export function nextWorkflowStep(

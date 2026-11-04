@@ -13,6 +13,14 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/task-flow-decision.ts', []),
+  module('orchestrator/src/workflow/task-flow-read-through.ts', [
+    'bun:sqlite',
+    '../../../shared/record-api-url.ts',
+    '../../../shared/record-remedies.ts',
+    '../database/db.ts',
+    '../record/record-api-client.ts',
+    '../record/record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/workflow/task-flow.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
