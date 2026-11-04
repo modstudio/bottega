@@ -74,6 +74,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
     const keyId = 'UNATTRIBUTED_ONLY_WRAP'
     expect(
       input.succeeds(`
+        BEGIN;
         INSERT INTO space (id,name,slug,created_at)
         VALUES ('${spaceId}','Unattributed-only wrap','unattributed-only-${spaceId.slice(-8)}',now());
         INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at) VALUES
@@ -92,7 +93,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
           (SELECT count(*) FROM membership WHERE id='${membershipId}'),
           (SELECT revoked_at IS NULL FROM machine_public_key WHERE space_id='${spaceId}' AND key_id='${keyId}'),
           (SELECT count(*) FROM secret_dek_wrap WHERE space_id='${spaceId}' AND dek_id='${dekId}');
-        DELETE FROM space WHERE id='${spaceId}';`),
+        ROLLBACK;`),
     ).toBe('0|t|1')
   })
 
