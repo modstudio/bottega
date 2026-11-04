@@ -27,12 +27,12 @@ const PROJECT_NAME_ONLY_COLUMNS = [
   ['workflow_cursor', 'project'],
 ] as const
 
-function applyLocalProjectRename(
+export function applyLocalProjectRename(
   current: { recordId: string },
   currentName: string,
   nextName: string,
+  database: Database = db(),
 ): void {
-  const database = db()
   for (const [table, column] of PROJECT_ID_NAME_COLUMNS) {
     if (table === 'doc' || table === 'doc_revision') {
       database

@@ -550,6 +550,7 @@ function completedSyncResult(input: {
   backfill: RecordSyncResult['backfill']
   machineNameRefusal?: string
   routingPool?: RecordSyncResult['routingPool']
+  projectRegister?: RecordSyncResult['projectRegister']
 }): RecordSyncResult {
   return {
     pushed: input.pushed,
@@ -557,6 +558,7 @@ function completedSyncResult(input: {
     pending: pendingCount(input.local),
     configured: true,
     ...(input.routingPool ? { routingPool: input.routingPool } : {}),
+    ...(input.projectRegister ? { projectRegister: input.projectRegister } : {}),
     quarantined: quarantinedOutboxRows(input.local),
     blocked: input.blocked,
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
@@ -588,6 +590,15 @@ function cacheFirstSyncedMachineNames(
   )
     return
   writeMachineNames({ shortName: identity.shortName, displayName: identity.displayName })
+}
+
+async function pullAfterSync(
+  options: RecordSyncOptions,
+  local: Database,
+): Promise<Pick<RecordSyncResult, 'routingPool' | 'projectRegister'>> {
+  if (options.client) return {}
+  const pull = await pullRecordCache(local)
+  return { routingPool: pull.routingPool, projectRegister: pull.projectRegister }
 }
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
@@ -664,8 +675,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     if (!batch.request.rows.length) break
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
-  let routingPool: RecordSyncResult['routingPool']
-  if (!options.client) routingPool = (await pullRecordCache(writableLocal)).routingPool
+  const { routingPool, projectRegister } = await pullAfterSync(options, writableLocal)
   rememberHostedRecord(writableLocal)
   return completedSyncResult({
     pushed,
@@ -678,5 +688,6 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     backfill,
     machineNameRefusal,
     routingPool,
+    projectRegister,
   })
 }

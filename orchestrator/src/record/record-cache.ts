@@ -20,6 +20,7 @@ import {
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import { pullPortCatalogue } from './record-cache-port.ts'
+import { type ProjectRegisterPullResult, pullProjectRegister } from './record-cache-projects.ts'
 import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
@@ -38,7 +39,10 @@ function deleteCursor(local: Database, key: string): void {
   local.query('DELETE FROM schema_meta WHERE key=?').run(key)
 }
 
-function recordCacheSpaces(identity: RecordIdentity): {
+function recordCacheSpaces(
+  identity: RecordIdentity,
+  local: Database,
+): {
   spaces: string[]
   projectSpaces: Map<string, string | null>
 } {
@@ -46,7 +50,7 @@ function recordCacheSpaces(identity: RecordIdentity): {
   const memberships = parseRecordSpaceMemberships(identity.memberships)
   const spaces = new Set([identity.activeSpaceId])
   const projectSpaces = new Map<string, string | null>()
-  for (const project of [...projects(), ...projects({ retired: true })]) {
+  for (const project of [...projects(undefined, local), ...projects({ retired: true }, local)]) {
     const destination = projectRecordDestination(
       project.name,
       declaredRecordSpace(project.settings),
@@ -189,6 +193,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   lensCatalogue: number
   workflowCatalogue: number
   portCatalogue: number
+  projectRegister: ProjectRegisterPullResult
   routingPool: RoutingPoolPullResult
 }> {
   const hasMeta = local
@@ -206,6 +211,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
       lensCatalogue: 0,
       workflowCatalogue: 0,
       portCatalogue: 0,
+      projectRegister: { updated: 0, retired: 0, unretired: 0, skipped: 0, warnings: [] },
       routingPool: { added: 0, updated: 0, caughtUp: true },
     }
   const client = recordApiClient()
@@ -213,7 +219,9 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   rememberSignedInRecordUser(identity.user, local)
   rememberActiveRecordSpace(local, identity.activeSpaceId)
-  const cache = recordCacheSpaces(identity)
+  let cache = recordCacheSpaces(identity, local)
+  const projectRegister = await pullProjectRegister(local, cache.spaces, client)
+  cache = recordCacheSpaces(identity, local)
   const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
   const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
   const lensCatalogue = await pullLensCatalogue(local, cache.spaces)
@@ -248,6 +256,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     lensCatalogue,
     workflowCatalogue: workflowPull.count,
     portCatalogue: portPull.count,
+    projectRegister,
     routingPool,
   }
 }

@@ -27,6 +27,7 @@ export const projectModules: ProjectModule[] = [
     '../record/record-project-columns.ts',
     '../record/record-project-destination.ts',
     './project-settings.ts',
+    './project-retired-hosted.ts',
   ]),
   module('orchestrator/src/project/project-add-record.ts', [
     '../../../shared/record-space-membership.ts',
@@ -72,7 +73,15 @@ export const projectModules: ProjectModule[] = [
     '../record/record-api-client.ts',
     '../record/record-project-destination-client.ts',
     './project-reference-counts.ts',
+    './project-retired-hosted.ts',
+    './projects.ts',
+  ]),
+  module('orchestrator/src/project/project-pull-decision.ts', [
+    '../../../shared/record-project-contract.ts',
+    '../record/record-project-columns.ts',
+    './project-settings.ts',
     './projects.ts',
   ]),
   module('orchestrator/src/project/project-rename.ts', ['../database/db.ts', './projects.ts']),
+  module('orchestrator/src/project/project-retired-hosted.ts', ['../../../shared/brand.ts']),
 ]

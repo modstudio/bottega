@@ -16,6 +16,7 @@ import {
   noActiveRecordSpaceRefusal,
   projectRecordDestination,
 } from '../record/record-project-destination.ts'
+import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 export type AddHostedProject = RecordProject
@@ -84,6 +85,9 @@ function decideHostedAdoption(input: {
   memberships: readonly RecordSpaceMembership[]
 }): Exclude<AddProjectDecision, { kind: 'mint' }> {
   const { hosted } = input
+  if (hosted.retiredAt) {
+    return { kind: 'refuse', reason: retiredHostedProjectMessage(input.name) }
+  }
   if (!hosted.settings) {
     return {
       kind: 'refuse',
