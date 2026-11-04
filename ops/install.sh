@@ -40,12 +40,6 @@ if [[ -f "$INSTALL_ROOT/.git" ]]; then
 fi
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
-# Provisional: today's stale runs were 16-40h old and ghost intervals 19h old,
-# so four hours catches every measured case without hourly noise. Each pass
-# records condition ages; revisit this after a week of that evidence.
-PROVISIONAL_MONITOR_BACKSTOP_SECONDS=$((4 * 60 * 60))
-FIX_DEFECT_BACKSTOP_SECONDS=$((12 * 60 * 60))
-
 LOAD_WAIT_TRIES=20
 LOAD_WAIT_SECONDS=0.25
 FAILED_LABELS=()
@@ -140,8 +134,6 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       "__INSTALL_ROOT__" "$INSTALL_ROOT" "__BOTTEGA_BIN__" "$PRODUCT_BIN" \
       "__CONCERN__" "$CONCERN" "__HOME__" "$HOME" \
       "__STATE_HOME_ENV__" "$STATE_HOME_ENV" "__STATE_HOME__" "$STATE_HOME" \
-      "__MONITOR_BACKSTOP_SECONDS__" "$PROVISIONAL_MONITOR_BACKSTOP_SECONDS" \
-      "__FIX_DEFECT_BACKSTOP_SECONDS__" "$FIX_DEFECT_BACKSTOP_SECONDS" \
       "__MODEL_HOST__" "$MODEL_HOST" "__TUNNEL_LOCAL_PORT__" "$TUNNEL_LOCAL_PORT" \
       "__TUNNEL_REMOTE_PORT__" "$TUNNEL_REMOTE_PORT" "__FLYCTL__" "$FLYCTL" \
       "__SPARE_START_HOUR__" "$SPARE_START_HOUR" \

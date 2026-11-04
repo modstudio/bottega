@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { guide, guideRouteDecision } from './guide.ts'
 import { state } from './serve.ts'
 
@@ -44,5 +45,20 @@ test('the unroutable guide decision is pure over a refusal headline', () => {
     routesTo: null,
     unroutable: true,
     reason: 'no eligible agent for job "diagnose"',
+  })
+})
+
+test('the pure guide decision reports capacity as a wait instead of unroutable', () => {
+  const refusal = new AgentCapacityError('agent codex is at capacity\nretry later', { codex: 2 })
+  expect(
+    guideRouteDecision('external', 'delegation.review', {
+      kind: 'capacity',
+      headline: refusal.message.split('\n', 1)[0]!,
+    }),
+  ).toEqual({
+    delegation: 'external',
+    routesTo: null,
+    unroutable: false,
+    reason: 'agent codex is at capacity',
   })
 })

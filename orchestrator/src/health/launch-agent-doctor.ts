@@ -7,14 +7,17 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readEnvValues } from '../../../shared/env-values.ts'
 import {
   gitCommonDir,
   type InstallationKind,
   resolveInstallationPaths,
 } from '../../../shared/install-root.ts'
 import {
+  FIX_DEFECT_BACKSTOP_SECONDS,
   type LaunchAgentRenderValues,
   launchAgentProgramPath,
+  MONITOR_BACKSTOP_SECONDS,
   renderLaunchAgentTemplate,
 } from '../../../shared/launch-agent-render.ts'
 import {
@@ -30,6 +33,7 @@ import {
   isCheckoutOnlyLaunchAgentInstaller,
 } from '../setup/launchd-owners.ts'
 import { MAINTENANCE_SCHEDULE_LABELS } from '../setup/setup-schedules.ts'
+import { minutesOfDay } from '../spare/spare-decisions.ts'
 
 export type LaunchAgentLoadObservation =
   | { kind: 'available'; loadedLabels: ReadonlySet<string> }
@@ -44,6 +48,11 @@ export type LaunchAgentDoctorDecision = {
     reason: 'program missing' | 'definition drifted'
     detail: string
     command: string
+  }>
+  definitionUnverified: Array<{
+    label: string
+    detail: string
+    command: string | null
   }>
   schedules: Array<{
     label: string
@@ -60,7 +69,9 @@ const maintenanceLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
 export type LaunchAgentDefinitionObservation = {
   programPath: string | null
   programExists: boolean
-  plistMatches: boolean
+  comparison:
+    | { kind: 'compared'; plistMatches: boolean }
+    | { kind: 'unavailable'; detail: string; command: string | null }
 }
 
 /** Classify installer-owned labels from already-gathered skip and launchd facts. */
@@ -87,6 +98,7 @@ export function decideLaunchAgentDoctor(input: {
   const observedLoadedLabels =
     input.loadObservation.kind === 'available' ? input.loadObservation.loadedLabels : null
   const definitionFindings: LaunchAgentDoctorDecision['definitionFindings'] = []
+  const definitionUnverified: LaunchAgentDoctorDecision['definitionUnverified'] = []
   for (const { label, command } of input.owners) {
     const observation = input.definitions?.[label]
     if (!observation) continue
@@ -99,7 +111,13 @@ export function decideLaunchAgentDoctor(input: {
         detail: observation.programPath,
         command: remedy,
       })
-    } else if (!observation.plistMatches) {
+    } else if (observation.comparison.kind === 'unavailable') {
+      definitionUnverified.push({
+        label,
+        detail: observation.comparison.detail,
+        command: observation.comparison.command,
+      })
+    } else if (!observation.comparison.plistMatches) {
       definitionFindings.push({
         label,
         reason: 'definition drifted',
@@ -128,6 +146,7 @@ export function decideLaunchAgentDoctor(input: {
       findings: [],
       informational: [],
       definitionFindings,
+      definitionUnverified,
       schedules,
       launchctlUnavailable: input.loadObservation.reason,
     }
@@ -152,6 +171,7 @@ export function decideLaunchAgentDoctor(input: {
     ),
     informational,
     definitionFindings,
+    definitionUnverified,
     schedules,
     launchctlUnavailable: null,
   }
@@ -167,28 +187,58 @@ export function launchAgentOwningRoot(input: {
   return input.configuredMainCheckout ?? input.discoveredMainCheckout ?? input.runningRoot
 }
 
+/** Resolve both reproducible-definition inputs from one owning installation. */
+export function launchAgentDefinitionSource(
+  input: Parameters<typeof launchAgentOwningRoot>[0] & { templatePath?: string },
+): { root: string; templatePath: string | null } {
+  const root = launchAgentOwningRoot(input)
+  return { root, templatePath: input.templatePath ? join(root, input.templatePath) : null }
+}
+
+export function launchAgentComparisonAvailability(input: {
+  template: string
+  flyctl: string | null
+  hostedUrl: string | undefined
+  spareStartTime: string
+}):
+  | { kind: 'available'; spareStartMinutes: number }
+  | {
+      kind: 'unavailable'
+      detail: string
+      command: string | null
+    } {
+  const details: string[] = []
+  let command: string | null = null
+  let spareStartMinutes = 0
+  if (input.template.includes('__FLYCTL__') && !input.flyctl)
+    details.push('flyctl is not installed')
+  if (input.template.includes('__HUB_HOSTED_URL__') && !input.hostedUrl)
+    details.push('BOTTEGA_HOSTED_URL does not resolve')
+  try {
+    spareStartMinutes = minutesOfDay(input.spareStartTime)
+  } catch {
+    if (
+      input.template.includes('__SPARE_START_HOUR__') ||
+      input.template.includes('__SPARE_START_MINUTE__')
+    ) {
+      details.push(`spare.start_time is not HH:MM (got '${input.spareStartTime}')`)
+      command = `${PLATFORM_SLUG} machine config set spare.start_time HH:MM`
+    }
+  }
+  return details.length > 0
+    ? { kind: 'unavailable', detail: details.join('; '), command }
+    : { kind: 'available', spareStartMinutes }
+}
+
 function currentRenderValues(
   owner: InstalledPlistOwner,
-  installationKind: InstallationKind | null,
+  sourceRoot: string,
+  spareStartMinutes: number,
+  flyctl: string,
+  hostedUrl: string,
 ): LaunchAgentRenderValues {
-  const runningPaths = resolveInstallationPaths(import.meta.dir, process.env)
-  const discoveredMainCheckout =
-    installationKind === 'checkout' && !process.env.BOTTEGA_MAIN_CHECKOUT
-      ? gitCommonDir(runningPaths.root)
-      : null
-  const owningRoot = launchAgentOwningRoot({
-    installationKind,
-    runningRoot: runningPaths.root,
-    configuredMainCheckout: process.env.BOTTEGA_MAIN_CHECKOUT,
-    discoveredMainCheckout: discoveredMainCheckout ? dirname(discoveredMainCheckout) : undefined,
-  })
-  const paths =
-    owningRoot === runningPaths.root ? runningPaths : resolveInstallationPaths(owningRoot, {})
+  const paths = resolveInstallationPaths(sourceRoot, {})
   const home = homedir()
-  const start = String(readMachineValue('spare.start_time'))
-  const match = /^(\d{1,2}):(\d{2})$/.exec(start)
-  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59)
-    throw new Error(`spare.start_time is not HH:MM (got '${start}')`)
   const concern = owner.templatePath?.startsWith('hub/') ? paths.hubAssets : paths.ops
   return {
     __INSTALL_ROOT__: paths.root,
@@ -197,19 +247,19 @@ function currentRenderValues(
     __HOME__: home,
     __STATE_HOME_ENV__: STATE_HOME_ENV,
     __STATE_HOME__: resolveStateRoot(process.env),
-    __MONITOR_BACKSTOP_SECONDS__: String(4 * 60 * 60),
-    __FIX_DEFECT_BACKSTOP_SECONDS__: String(12 * 60 * 60),
+    __MONITOR_BACKSTOP_SECONDS__: String(MONITOR_BACKSTOP_SECONDS),
+    __FIX_DEFECT_BACKSTOP_SECONDS__: String(FIX_DEFECT_BACKSTOP_SECONDS),
     __MODEL_HOST__: String(readMachineValue('model_host.ssh_alias')),
     __TUNNEL_LOCAL_PORT__: String(readMachineValue('model_host.tunnel_local_port')),
     __TUNNEL_REMOTE_PORT__: String(readMachineValue('model_host.tunnel_remote_port')),
-    __FLYCTL__: Bun.which('flyctl') ?? '',
-    __SPARE_START_HOUR__: String(Number(match[1])),
-    __SPARE_START_MINUTE__: String(Number(match[2])),
+    __FLYCTL__: flyctl,
+    __SPARE_START_HOUR__: String(Math.floor(spareStartMinutes / 60)),
+    __SPARE_START_MINUTE__: String(spareStartMinutes % 60),
     __RECORD_TUNNEL_APP__: String(readMachineValue('record.tunnel_app')),
     __RECORD_TUNNEL_LOCAL_PORT__: String(readMachineValue('record.tunnel_local_port')),
     __RECORD_TUNNEL_REMOTE_PORT__: String(readMachineValue('record.tunnel_remote_port')),
     __HUB_PORT__: String(readMachineValue('hub.port')),
-    __HUB_HOSTED_URL__: process.env.BOTTEGA_HOSTED_URL ?? '',
+    __HUB_HOSTED_URL__: hostedUrl,
   }
 }
 
@@ -219,18 +269,58 @@ function installedDefinitionObservations(
 ): Record<string, LaunchAgentDefinitionObservation> {
   const agents = join(homedir(), 'Library', 'LaunchAgents')
   const observations: Record<string, LaunchAgentDefinitionObservation> = {}
+  const runningPaths = resolveInstallationPaths(import.meta.dir, process.env)
+  const discoveredMainCheckout =
+    installationKind === 'checkout' && !process.env.BOTTEGA_MAIN_CHECKOUT
+      ? gitCommonDir(runningPaths.root)
+      : null
+  const sourceInput = {
+    installationKind,
+    runningRoot: runningPaths.root,
+    configuredMainCheckout: process.env.BOTTEGA_MAIN_CHECKOUT,
+    discoveredMainCheckout: discoveredMainCheckout ? dirname(discoveredMainCheckout) : undefined,
+  }
+  const flyctl = Bun.which('flyctl')
+  const hostedUrl = readEnvValues(['BOTTEGA_HOSTED_URL'], process.env).BOTTEGA_HOSTED_URL
+  const spareStartTime = String(readMachineValue('spare.start_time'))
   for (const owner of owners) {
     if (!owner.template) continue
     const target = join(agents, `${owner.label}.plist`)
     if (!existsSync(target)) continue
     const installed = readFileSync(target, 'utf8')
     const programPath = launchAgentProgramPath(installed)
+    const source = launchAgentDefinitionSource({ ...sourceInput, templatePath: owner.templatePath })
+    const template =
+      installationKind === 'checkout' && source.templatePath
+        ? readFileSync(source.templatePath, 'utf8')
+        : owner.template
+    const availability = launchAgentComparisonAvailability({
+      template,
+      flyctl,
+      hostedUrl,
+      spareStartTime,
+    })
     observations[owner.label] = {
       programPath,
       programExists: programPath !== null && existsSync(programPath),
-      plistMatches:
-        installed ===
-        renderLaunchAgentTemplate(owner.template, currentRenderValues(owner, installationKind)),
+      comparison:
+        availability.kind === 'unavailable'
+          ? availability
+          : {
+              kind: 'compared',
+              plistMatches:
+                installed ===
+                renderLaunchAgentTemplate(
+                  template,
+                  currentRenderValues(
+                    owner,
+                    source.root,
+                    availability.spareStartMinutes,
+                    flyctl ?? '',
+                    hostedUrl ?? '',
+                  ),
+                ),
+            },
     }
   }
   return observations
@@ -343,6 +433,9 @@ export async function launchAgentDoctorReport(
   for (const schedule of decision.schedules) lines.push(scheduleLine(schedule))
   for (const { label, reason, detail, command } of decision.definitionFindings) {
     lines.push(`  ${label} ${reason.toUpperCase()} — ${detail}; run ${command}`)
+  }
+  for (const { label, detail, command } of decision.definitionUnverified) {
+    lines.push(`  ${label} CANNOT COMPARE — ${detail}${command ? `; run ${command}` : ''}`)
   }
   if (decision.launchctlUnavailable) {
     lines.push(`  ${decision.launchctlUnavailable} — load check unavailable`)

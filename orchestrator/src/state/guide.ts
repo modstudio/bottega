@@ -16,7 +16,7 @@ import { promptBucketsForJob } from '../route/prompt-size-bucket-store.ts'
 import { type candidates, evidenceFor, pick } from '../route/route.ts'
 import { MIN_SAMPLE } from '../route/route-selection.ts'
 import { POOL_SUCCESSFUL_RUN_SAMPLES_SQL } from '../route/routing-pool-evidence.ts'
-import { RoutingRefusalError } from '../route/routing-refusal.ts'
+import { AgentCapacityError, RoutingRefusalError } from '../route/routing-refusal.ts'
 import { median } from './statistics.ts'
 
 type AgentOnJob = {
@@ -74,7 +74,8 @@ export function guideRouteDecision(
   delegationSetting: string,
   selection:
     | { kind: 'routed'; agent: string; reason: string }
-    | { kind: 'refused'; headline: string },
+    | { kind: 'refused'; headline: string }
+    | { kind: 'capacity'; headline: string },
 ): Pick<JobGuide, 'delegation' | 'routesTo' | 'unroutable' | 'reason'> {
   if (delegation === 'harness')
     return {
@@ -88,6 +89,13 @@ export function guideRouteDecision(
       delegation,
       routesTo: null,
       unroutable: true,
+      reason: selection.headline,
+    }
+  if (selection.kind === 'capacity')
+    return {
+      delegation,
+      routesTo: null,
+      unroutable: false,
       reason: selection.headline,
     }
   return { delegation, routesTo: selection.agent, unroutable: false, reason: selection.reason }
@@ -116,7 +124,7 @@ function guideRoute(
   } catch (error) {
     if (!(error instanceof RoutingRefusalError)) throw error
     return guideRouteDecision(delegation, delegationSetting, {
-      kind: 'refused',
+      kind: error instanceof AgentCapacityError ? 'capacity' : 'refused',
       headline: error.message.split('\n', 1)[0]!,
     })
   }

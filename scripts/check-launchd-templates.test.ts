@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { LAUNCH_AGENT_PLACEHOLDERS } from '../shared/launch-agent-render.ts'
 import {
   clockParts,
   installerPlaceholders,
@@ -25,6 +26,20 @@ describe('installerPlaceholders', () => {
       'sed -e "s#__INSTALL_ROOT__#root#g" -e "s#__HOME__#home#g" "$tmpl" > "$target"',
     )
     expect([...rules].sort()).toEqual(['__HOME__', '__INSTALL_ROOT__'])
+  })
+
+  test('a comment that only mentions the renderer still uses sed rules', () => {
+    const rules = installerPlaceholders(
+      '# shared/launch-agent-render.ts is not invoked here\nsed -e "s#__HOME__#home#g" "$tmpl"',
+    )
+    expect([...rules]).toEqual(['__HOME__'])
+  })
+
+  test('an invocation of the shared renderer covers its full vocabulary', () => {
+    const rules = installerPlaceholders(
+      'bun --no-env-file "$INSTALL_ROOT/shared/launch-agent-render.ts" "$tmpl" "$target"',
+    )
+    expect(rules).toEqual(new Set(LAUNCH_AGENT_PLACEHOLDERS))
   })
 })
 

@@ -4,7 +4,11 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { LAUNCH_AGENT_PLACEHOLDERS } from '../shared/launch-agent-render.ts'
+import {
+  FIX_DEFECT_BACKSTOP_SECONDS,
+  LAUNCH_AGENT_PLACEHOLDERS,
+  MONITOR_BACKSTOP_SECONDS,
+} from '../shared/launch-agent-render.ts'
 import { readMachineValue } from '../shared/machine-config.ts'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -44,7 +48,14 @@ export function templatePlaceholders(text: string): string[] {
 
 /** The placeholders an installer's substitution rules cover. */
 export function installerPlaceholders(script: string): Set<string> {
-  if (script.includes('shared/launch-agent-render.ts')) return new Set(LAUNCH_AGENT_PLACEHOLDERS)
+  const invokesRenderer = script.split('\n').some((line) => {
+    const command = line.trim()
+    if (!command || command.startsWith('#')) return false
+    return /^bun\s+--no-env-file\s+(?:"[^"]*shared\/launch-agent-render\.ts"|'[^']*shared\/launch-agent-render\.ts'|\S*shared\/launch-agent-render\.ts)(?:\s|$)/.test(
+      command,
+    )
+  })
+  if (invokesRenderer) return new Set(LAUNCH_AGENT_PLACEHOLDERS)
   const names = [...script.matchAll(/s#(__[A-Z0-9_]+__)#/g)].map((match) => match[1]!)
   return new Set(names)
 }
@@ -104,9 +115,9 @@ function renderValue(placeholder: string, concern: string): string | null {
     case '__HUB_PORT__':
       return '7778'
     case '__MONITOR_BACKSTOP_SECONDS__':
-      return '14400'
+      return String(MONITOR_BACKSTOP_SECONDS)
     case '__FIX_DEFECT_BACKSTOP_SECONDS__':
-      return '43200'
+      return String(FIX_DEFECT_BACKSTOP_SECONDS)
     case '__MODEL_HOST__':
       return 'example'
     case '__TUNNEL_LOCAL_PORT__':

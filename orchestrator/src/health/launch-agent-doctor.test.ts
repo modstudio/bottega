@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideLaunchAgentDoctor,
+  launchAgentComparisonAvailability,
+  launchAgentDefinitionSource,
   launchAgentDoctorReport,
   launchAgentOwningRoot,
   scheduleLine,
@@ -28,6 +30,17 @@ describe('launch agent doctor decision', () => {
         discoveredMainCheckout: '/projects/platform',
       }),
     ).toBe('/projects/platform')
+    expect(
+      launchAgentDefinitionSource({
+        installationKind: 'checkout',
+        runningRoot: '/projects/platform/.claude/worktrees/DEV-2103',
+        discoveredMainCheckout: '/projects/platform',
+        templatePath: 'ops/launchd/com.user.example.plist.template',
+      }),
+    ).toEqual({
+      root: '/projects/platform',
+      templatePath: '/projects/platform/ops/launchd/com.user.example.plist.template',
+    })
   })
 
   test('reads and reports no launch-agent facts on Linux', async () => {
@@ -61,6 +74,7 @@ describe('launch agent doctor decision', () => {
       findings: [{ label: 'com.user.unloaded', command: 'ops/install.sh' }],
       informational: [],
       definitionFindings: [],
+      definitionUnverified: [],
       schedules: [],
       launchctlUnavailable: null,
     })
@@ -81,6 +95,7 @@ describe('launch agent doctor decision', () => {
       findings: [],
       informational: [{ label: 'com.user.unloaded', reason: 'not installed by a release install' }],
       definitionFindings: [],
+      definitionUnverified: [],
       schedules: [],
       launchctlUnavailable: null,
     })
@@ -101,6 +116,7 @@ describe('launch agent doctor decision', () => {
       findings: [],
       informational: [{ label: 'com.user.unloaded', reason: 'not installed by a release install' }],
       definitionFindings: [],
+      definitionUnverified: [],
       schedules: [],
       launchctlUnavailable: null,
     })
@@ -122,6 +138,7 @@ describe('launch agent doctor decision', () => {
         findings: [],
         informational: [],
         definitionFindings: [],
+        definitionUnverified: [],
         schedules: [],
         launchctlUnavailable: reason,
       })
@@ -215,12 +232,12 @@ describe('launch agent doctor decision', () => {
         'com.user.ops': {
           programPath: '/missing/program',
           programExists: false,
-          plistMatches: true,
+          comparison: { kind: 'compared', plistMatches: true },
         },
         'com.user.hub': {
           programPath: '/usr/bin/true',
           programExists: true,
-          plistMatches: false,
+          comparison: { kind: 'compared', plistMatches: false },
         },
       },
     })
@@ -237,6 +254,71 @@ describe('launch agent doctor decision', () => {
         reason: 'definition drifted',
         detail: 'installed plist differs from the current template',
         command: 'hub/bin/install-launchd.sh',
+      },
+    ])
+  })
+
+  test('missing installer inputs and malformed spare time make only affected definitions unverified', () => {
+    expect(
+      launchAgentComparisonAvailability({
+        template: '__FLYCTL__ __HUB_HOSTED_URL__',
+        flyctl: null,
+        hostedUrl: undefined,
+        spareStartTime: '22:00',
+      }),
+    ).toEqual({
+      kind: 'unavailable',
+      detail: 'flyctl is not installed; BOTTEGA_HOSTED_URL does not resolve',
+      command: null,
+    })
+    expect(
+      launchAgentComparisonAvailability({
+        template: '__SPARE_START_HOUR__:__SPARE_START_MINUTE__',
+        flyctl: '/usr/local/bin/flyctl',
+        hostedUrl: 'https://hub.example.test',
+        spareStartTime: '5pm',
+      }),
+    ).toEqual({
+      kind: 'unavailable',
+      detail: "spare.start_time is not HH:MM (got '5pm')",
+      command: `${PLATFORM_SLUG} machine config set spare.start_time HH:MM`,
+    })
+    expect(
+      launchAgentComparisonAvailability({
+        template: '<plist/>',
+        flyctl: null,
+        hostedUrl: undefined,
+        spareStartTime: '5pm',
+      }),
+    ).toEqual({ kind: 'available', spareStartMinutes: 0 })
+  })
+
+  test('an unavailable definition comparison is informational and does not become drift', () => {
+    const decision = decideLaunchAgentDoctor({
+      owners: [{ label: 'com.user.spare', command: 'ops/install.sh' }],
+      installationKind: 'checkout',
+      machineLevel: 'full',
+      skipReasons: {},
+      loadObservation: { kind: 'available', loadedLabels: new Set(['com.user.spare']) },
+      lastRuns: {},
+      definitions: {
+        'com.user.spare': {
+          programPath: '/usr/bin/true',
+          programExists: true,
+          comparison: {
+            kind: 'unavailable',
+            detail: "spare.start_time is not HH:MM (got '5pm')",
+            command: `${PLATFORM_SLUG} machine config set spare.start_time HH:MM`,
+          },
+        },
+      },
+    })
+    expect(decision.definitionFindings).toEqual([])
+    expect(decision.definitionUnverified).toEqual([
+      {
+        label: 'com.user.spare',
+        detail: "spare.start_time is not HH:MM (got '5pm')",
+        command: `${PLATFORM_SLUG} machine config set spare.start_time HH:MM`,
       },
     ])
   })

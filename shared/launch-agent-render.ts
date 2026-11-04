@@ -25,6 +25,14 @@ export const LAUNCH_AGENT_PLACEHOLDERS = [
 type LaunchAgentPlaceholder = (typeof LAUNCH_AGENT_PLACEHOLDERS)[number]
 export type LaunchAgentRenderValues = Readonly<Record<LaunchAgentPlaceholder, string>>
 
+/**
+ * Provisional: stale runs were 16-40h old and ghost intervals 19h old when this
+ * backstop was introduced, so four hours caught every measured case without
+ * hourly noise. Each pass records condition ages; revisit after enough evidence.
+ */
+export const MONITOR_BACKSTOP_SECONDS = 4 * 60 * 60
+export const FIX_DEFECT_BACKSTOP_SECONDS = 12 * 60 * 60
+
 /** Render the placeholder vocabulary shared by both launch-agent installers. */
 export function renderLaunchAgentTemplate(
   template: string,
@@ -53,7 +61,7 @@ export function launchAgentProgramPath(plist: string): string | null {
   )
 }
 
-function commandValues(args: string[]): LaunchAgentRenderValues {
+export function launchAgentRenderCommandValues(args: string[]): LaunchAgentRenderValues {
   const values = Object.fromEntries(
     LAUNCH_AGENT_PLACEHOLDERS.map((placeholder) => [placeholder, '']),
   ) as Record<LaunchAgentPlaceholder, string>
@@ -67,6 +75,10 @@ function commandValues(args: string[]): LaunchAgentRenderValues {
       throw new Error(`invalid launch-agent render argument ${placeholder ?? '(missing)'}`)
     values[placeholder as LaunchAgentPlaceholder] = value
   }
+  if (!args.includes('__MONITOR_BACKSTOP_SECONDS__'))
+    values.__MONITOR_BACKSTOP_SECONDS__ = String(MONITOR_BACKSTOP_SECONDS)
+  if (!args.includes('__FIX_DEFECT_BACKSTOP_SECONDS__'))
+    values.__FIX_DEFECT_BACKSTOP_SECONDS__ = String(FIX_DEFECT_BACKSTOP_SECONDS)
   return values
 }
 
@@ -77,7 +89,10 @@ if (import.meta.main) {
   }
   writeFileSync(
     targetPath,
-    renderLaunchAgentTemplate(readFileSync(templatePath, 'utf8'), commandValues(args)),
+    renderLaunchAgentTemplate(
+      readFileSync(templatePath, 'utf8'),
+      launchAgentRenderCommandValues(args),
+    ),
     'utf8',
   )
 }

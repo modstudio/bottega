@@ -3,8 +3,11 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  FIX_DEFECT_BACKSTOP_SECONDS,
   LAUNCH_AGENT_PLACEHOLDERS,
   launchAgentProgramPath,
+  launchAgentRenderCommandValues,
+  MONITOR_BACKSTOP_SECONDS,
   renderLaunchAgentTemplate,
 } from './launch-agent-render.ts'
 
@@ -72,5 +75,14 @@ describe('launch-agent renderer', () => {
         '<key>ProgramArguments</key><array><string>/missing/program</string></array>',
       ),
     ).toBe('/missing/program')
+  })
+
+  test('the renderer CLI supplies the shared backstop defaults when callers omit them', () => {
+    const values = launchAgentRenderCommandValues([])
+    expect(values.__MONITOR_BACKSTOP_SECONDS__).toBe(String(MONITOR_BACKSTOP_SECONDS))
+    expect(values.__FIX_DEFECT_BACKSTOP_SECONDS__).toBe(String(FIX_DEFECT_BACKSTOP_SECONDS))
+
+    const overridden = launchAgentRenderCommandValues(['__MONITOR_BACKSTOP_SECONDS__', '60'])
+    expect(overridden.__MONITOR_BACKSTOP_SECONDS__).toBe('60')
   })
 })
