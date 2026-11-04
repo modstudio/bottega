@@ -22,17 +22,18 @@ export const LAUNCH_AGENT_PLACEHOLDERS = [
   '__HUB_HOSTED_URL__',
 ] as const
 
-export type LaunchAgentPlaceholder = (typeof LAUNCH_AGENT_PLACEHOLDERS)[number]
+type LaunchAgentPlaceholder = (typeof LAUNCH_AGENT_PLACEHOLDERS)[number]
 export type LaunchAgentRenderValues = Readonly<Record<LaunchAgentPlaceholder, string>>
 
 /** Render the placeholder vocabulary shared by both launch-agent installers. */
 export function renderLaunchAgentTemplate(
   template: string,
-  values: LaunchAgentRenderValues,
+  values: Readonly<Partial<LaunchAgentRenderValues>>,
 ): string {
   let rendered = template
   for (const placeholder of LAUNCH_AGENT_PLACEHOLDERS) {
-    rendered = rendered.replaceAll(placeholder, values[placeholder])
+    const value = values[placeholder]
+    if (value !== undefined) rendered = rendered.replaceAll(placeholder, value)
   }
   const unresolved = rendered.match(/__[A-Z0-9_]+__/g)
   if (unresolved) {

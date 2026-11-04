@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
+import { renderLaunchAgentTemplate } from '../../../shared/launch-agent-render.ts'
 import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
@@ -44,11 +45,12 @@ const templatePath = (label: MaintenanceScheduleLabel): string =>
 
 /** Replace the complete placeholder vocabulary shared by the two maintenance templates. */
 export function renderMaintenanceSchedule(template: string, values: ScheduleRenderValues): string {
-  return template
-    .replaceAll('__BOTTEGA_BIN__', values.bottegaBin)
-    .replaceAll('__HOME__', values.home)
-    .replaceAll('__STATE_HOME_ENV__', values.stateHomeEnvironment)
-    .replaceAll('__STATE_HOME__', values.stateHome)
+  return renderLaunchAgentTemplate(template, {
+    __BOTTEGA_BIN__: values.bottegaBin,
+    __HOME__: values.home,
+    __STATE_HOME_ENV__: values.stateHomeEnvironment,
+    __STATE_HOME__: values.stateHome,
+  })
 }
 
 function scheduleValues(): ScheduleRenderValues {

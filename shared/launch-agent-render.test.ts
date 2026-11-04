@@ -62,7 +62,7 @@ describe('launch-agent renderer', () => {
     expect(templates.sort()).toEqual(Object.keys(LEGACY_SED_HASHES).sort())
     for (const path of templates) {
       const rendered = renderLaunchAgentTemplate(readFileSync(join(root, path), 'utf8'), values)
-      expect(createHash('sha256').update(rendered).digest('hex')).toBe(LEGACY_SED_HASHES[path])
+      expect(createHash('sha256').update(rendered).digest('hex')).toBe(LEGACY_SED_HASHES[path]!)
     }
   })
 

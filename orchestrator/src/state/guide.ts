@@ -14,9 +14,9 @@ import {
 } from '../route/prompt-size-bucket.ts'
 import { promptBucketsForJob } from '../route/prompt-size-bucket-store.ts'
 import { type candidates, evidenceFor, pick } from '../route/route.ts'
-import { RoutingRefusalError } from '../route/routing-refusal.ts'
 import { MIN_SAMPLE } from '../route/route-selection.ts'
 import { POOL_SUCCESSFUL_RUN_SAMPLES_SQL } from '../route/routing-pool-evidence.ts'
+import { RoutingRefusalError } from '../route/routing-refusal.ts'
 import { median } from './statistics.ts'
 
 type AgentOnJob = {
@@ -98,7 +98,7 @@ function guideRoute(
   promptBytes: number,
   lens: string | undefined,
   settings: DelegationSettings,
-): Pick<JobGuide, 'delegation' | 'routesTo' | 'reason'> {
+): Pick<JobGuide, 'delegation' | 'routesTo' | 'unroutable' | 'reason'> {
   const jobClass = delegationClass(JOBS[name]!.needs)
   const delegation = delegationMode(JOBS[name]!.needs, settings)
   const delegationSetting = DELEGATION_SETTING_KEYS[jobClass]

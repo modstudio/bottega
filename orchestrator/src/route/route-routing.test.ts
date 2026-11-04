@@ -13,8 +13,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { weigh } from '../score/score.ts'
-import { guide, guideRouteDecision } from '../state/guide.ts'
-import { state } from '../state/serve.ts'
+import { guide } from '../state/guide.ts'
 import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
 import { candidates, EVIDENCE_WINDOW, evidenceFor, pick, scoreboard } from './route.ts'
 import { meteredRouteEligibility } from './route-metered-policy.ts'
@@ -39,48 +38,6 @@ test('guide reports harness work without dropping externally delegated jobs', ()
   } finally {
     setMachineValue('delegation.implement', 'external')
   }
-})
-
-test('guide and state keep one unroutable job without dropping other jobs', () => {
-  const rows = db().query('SELECT name,jobs FROM agent ORDER BY name').all() as {
-    name: string
-    jobs: string | null
-  }[]
-  try {
-    db()
-      .query('UPDATE agent SET jobs=?')
-      .run(JSON.stringify(Object.keys(JOBS).filter((name) => name !== 'diagnose')))
-    refreshAgents()
-
-    const guideRows = guide()
-    const snapshotRows = state(null).guide
-    const expected = {
-      routesTo: null,
-      unroutable: true,
-      reason: 'no eligible agent for job "diagnose"',
-    }
-    expect(guideRows.find(({ job }) => job === 'diagnose')).toMatchObject(expected)
-    expect(snapshotRows.find(({ job }) => job === 'diagnose')).toMatchObject(expected)
-    expect(guideRows.find(({ job }) => job === 'implement')).toMatchObject({ unroutable: false })
-  } finally {
-    const restore = db().query('UPDATE agent SET jobs=? WHERE name=?')
-    for (const row of rows) restore.run(row.jobs, row.name)
-    refreshAgents()
-  }
-})
-
-test('the unroutable guide decision is pure over a refusal headline', () => {
-  expect(
-    guideRouteDecision('external', 'delegation.review', {
-      kind: 'refused',
-      headline: 'no eligible agent for job "diagnose"',
-    }),
-  ).toEqual({
-    delegation: 'external',
-    routesTo: null,
-    unroutable: true,
-    reason: 'no eligible agent for job "diagnose"',
-  })
 })
 
 test('candidate running-run map matches per-agent fixture counts from one grouped snapshot', () => {

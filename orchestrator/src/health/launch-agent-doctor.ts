@@ -82,31 +82,28 @@ export function decideLaunchAgentDoctor(input: {
         : null
   const observedLoadedLabels =
     input.loadObservation.kind === 'available' ? input.loadObservation.loadedLabels : null
-  const definitionFindings = input.owners.flatMap(({ label, command }) => {
+  const definitionFindings: LaunchAgentDoctorDecision['definitionFindings'] = []
+  for (const { label, command } of input.owners) {
     const observation = input.definitions?.[label]
-    if (!observation) return []
+    if (!observation) continue
     const remedy =
       input.installationKind === 'distribution' ? `${PLATFORM_SLUG} machine setup apply` : command
-    if (observation.programPath && !observation.programExists)
-      return [
-        {
-          label,
-          reason: 'program missing' as const,
-          detail: observation.programPath,
-          command: remedy,
-        },
-      ]
-    if (!observation.plistMatches)
-      return [
-        {
-          label,
-          reason: 'definition drifted' as const,
-          detail: 'installed plist differs from the current template',
-          command: remedy,
-        },
-      ]
-    return []
-  })
+    if (observation.programPath && !observation.programExists) {
+      definitionFindings.push({
+        label,
+        reason: 'program missing',
+        detail: observation.programPath,
+        command: remedy,
+      })
+    } else if (!observation.plistMatches) {
+      definitionFindings.push({
+        label,
+        reason: 'definition drifted',
+        detail: 'installed plist differs from the current template',
+        command: remedy,
+      })
+    }
+  }
   const schedules = input.owners
     .filter(({ label }) => maintenanceLabels.has(label))
     .map(({ label }) => {

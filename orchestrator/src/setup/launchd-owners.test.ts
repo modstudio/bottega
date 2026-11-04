@@ -50,8 +50,7 @@ test('reads installer ownership entirely from the embedded registry', async () =
       label: 'com.example.embedded',
       command: 'hub/bin/install-launchd.sh',
       templatePath: 'hub/launchd/com.example.embedded.plist.template',
-      template:
-        '<plist><dict><key>Label</key><string>com.example.embedded</string></dict></plist>',
+      template: '<plist><dict><key>Label</key><string>com.example.embedded</string></dict></plist>',
     },
   ])
 })

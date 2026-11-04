@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { LAUNCH_AGENT_PLACEHOLDERS } from '../shared/launch-agent-render.ts'
 import { readMachineValue } from '../shared/machine-config.ts'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -43,6 +44,7 @@ export function templatePlaceholders(text: string): string[] {
 
 /** The placeholders an installer's substitution rules cover. */
 export function installerPlaceholders(script: string): Set<string> {
+  if (script.includes('shared/launch-agent-render.ts')) return new Set(LAUNCH_AGENT_PLACEHOLDERS)
   const names = [...script.matchAll(/s#(__[A-Z0-9_]+__)#/g)].map((match) => match[1]!)
   return new Set(names)
 }
