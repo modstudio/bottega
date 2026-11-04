@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import subprocess
 import sys
 import tomllib
 
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 PLATFORM_SLUG = "BOTTEGA_CONFIG_HOME".removesuffix("_CONFIG_HOME").lower()
 
 
@@ -38,20 +36,25 @@ def _global_use_is_off() -> bool:
 
 
 def _store_path() -> str:
+    """Mirror shared/state-directory.ts:resolveStateRoot and resolveStatePaths."""
     configured = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
     if configured:
         return os.path.abspath(configured)
-    return subprocess.check_output(
-        [
-            "bun",
-            "--no-env-file",
-            os.path.join(ROOT, "shared", "state-directory.ts"),
-            "orchestrator",
-            "database",
-        ],
-        text=True,
-        stderr=subprocess.DEVNULL,
-    ).strip()
+    state_home = os.environ.get("BOTTEGA_STATE_HOME")
+    if state_home:
+        if not os.path.isabs(state_home):
+            raise ValueError("BOTTEGA_STATE_HOME must be absolute")
+        root = state_home
+    else:
+        xdg = os.environ.get("XDG_STATE_HOME")
+        if xdg and os.path.isabs(xdg):
+            root = os.path.join(xdg, PLATFORM_SLUG)
+        else:
+            home = os.environ.get("HOME")
+            if not home:
+                raise ValueError("HOME is required")
+            root = os.path.join(home, ".local", "state", PLATFORM_SLUG)
+    return os.path.join(root, "orchestrator", "orchestrator.db")
 
 
 def _invocation_directory(payload: dict) -> str:
@@ -84,6 +87,9 @@ def should_hook_act(payload: dict) -> bool:
         return False
 
     directory = os.path.realpath(_invocation_directory(payload))
+    if not os.path.exists(path):
+        print(f"{PLATFORM_SLUG}: registered scope store could not be read at {path}: file does not exist", file=sys.stderr)
+        return False
     try:
         database = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from registered_scope import should_hook_act
+from registered_scope import PLATFORM_SLUG, _store_path, should_hook_act
 
 
 class RegisteredScopeTest(unittest.TestCase):
@@ -76,6 +76,63 @@ class RegisteredScopeTest(unittest.TestCase):
         with contextlib.redirect_stderr(stderr):
             self.assertFalse(should_hook_act({"cwd": self.root}))
         self.assertIn(unreadable, stderr.getvalue())
+
+    def test_store_variable_wins(self):
+        configured = os.path.join(self.root, "configured.db")
+        os.environ.update(
+            {
+                "BOTTEGA_ORCHESTRATOR_DB": configured,
+                "BOTTEGA_STATE_HOME": os.path.join(self.root, "state"),
+                "XDG_STATE_HOME": os.path.join(self.root, "xdg"),
+                "HOME": os.path.join(self.root, "home"),
+            }
+        )
+        self.assertEqual(_store_path(), configured)
+
+    def test_state_home_wins_over_xdg_and_home(self):
+        state_home = os.path.join(self.root, "state")
+        os.environ.pop("BOTTEGA_ORCHESTRATOR_DB")
+        os.environ.update(
+            {
+                "BOTTEGA_STATE_HOME": state_home,
+                "XDG_STATE_HOME": os.path.join(self.root, "xdg"),
+                "HOME": os.path.join(self.root, "home"),
+            }
+        )
+        self.assertEqual(
+            _store_path(), os.path.join(state_home, "orchestrator", "orchestrator.db")
+        )
+
+    def test_xdg_state_home_wins_over_home(self):
+        xdg = os.path.join(self.root, "xdg")
+        os.environ.pop("BOTTEGA_ORCHESTRATOR_DB")
+        os.environ.update(
+            {
+                "XDG_STATE_HOME": xdg,
+                "HOME": os.path.join(self.root, "home"),
+            }
+        )
+        self.assertEqual(
+            _store_path(),
+            os.path.join(xdg, PLATFORM_SLUG, "orchestrator", "orchestrator.db"),
+        )
+
+    def test_home_is_the_final_state_root_fallback(self):
+        home = os.path.join(self.root, "home")
+        os.environ.pop("BOTTEGA_ORCHESTRATOR_DB")
+        os.environ["HOME"] = home
+        self.assertEqual(
+            _store_path(),
+            os.path.join(
+                home, ".local", "state", PLATFORM_SLUG, "orchestrator", "orchestrator.db"
+            ),
+        )
+
+    def test_relative_state_home_is_unresolvable(self):
+        os.environ.pop("BOTTEGA_ORCHESTRATOR_DB")
+        os.environ["BOTTEGA_STATE_HOME"] = "relative/state"
+        with self.assertRaisesRegex(ValueError, "BOTTEGA_STATE_HOME must be absolute"):
+            _store_path()
 
 
 if __name__ == "__main__":
