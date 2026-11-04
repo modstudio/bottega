@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import { sha } from '../run/prompt-sha.ts'
-import { DISPATCH_SPEC_QUESTIONS } from '../typed-question/spec-unsettled-question.ts'
+import { SPEC_UNSETTLED_QUESTION } from '../typed-question/spec-unsettled-question.ts'
 import {
   composeDispatchPrompt,
   genericLensProfileNotices,
@@ -146,7 +146,7 @@ test('a continuation does not ask', async () => {
   expect(asks).toBe(0)
 })
 
-test('every new job asks the dispatch versions but only implement v1 warns', async () => {
+test('every new job asks only v1 and only implement warns', async () => {
   for (const jobName of ['diagnose', 'implement']) {
     const versions: number[] = []
     const warnings: unknown[][] = []
@@ -158,7 +158,7 @@ test('every new job asks the dispatch versions but only implement v1 warns', asy
       },
       (...values) => warnings.push(values),
     )
-    expect(versions).toEqual(DISPATCH_SPEC_QUESTIONS.map((question) => question.version))
+    expect(versions).toEqual([SPEC_UNSETTLED_QUESTION.version])
     expect(warnings).toHaveLength(jobName === 'implement' ? 1 : 0)
   }
 })

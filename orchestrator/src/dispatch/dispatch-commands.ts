@@ -215,7 +215,7 @@ type SpecWarningInput = {
   specIdentity: string
 }
 
-/** Bounds the wait for answers only; building the states first reads each cited file up to `CITED_FILE_BYTES`, until `CITED_TOTAL_BYTES` is kept. */
+/** Bounds the wait for answers only; a dispatch version with cited context reads its files before this wait starts. */
 const SPEC_QUESTION_WAIT_MS = 3_000
 
 /** Settle each ask on its own against one shared deadline, so a slow ask never discards a fast one. */
@@ -232,7 +232,7 @@ async function settledByDeadline(
   return settled
 }
 
-/** Ask both declared versions about every new job spec; only implement v1 can warn. */
+/** Ask each dispatch version about every new job spec; only implement warns, from v1's answer. */
 export async function warnForUnsettledSpec(
   input: SpecWarningInput,
   ask: DispatchPresentation['askTypedQuestion'],
