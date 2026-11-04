@@ -2,11 +2,11 @@
 /** Reads and presents hosted revisions without copying them into the local revision store. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
-import { diffDocRevisionValues } from './doc-revision-store.ts'
-import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
+import type { RecordDocRevision } from '../record/record-doc-mapping.ts'
 import { decideHostedRevisionRead } from './doc-history-source.ts'
+import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
+import { diffDocRevisionValues } from './doc-revision-store.ts'
 
 export type HostedDocRevision = RecordDocRevision
 export type HostedDocRevisionRead = {

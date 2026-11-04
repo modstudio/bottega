@@ -2,12 +2,17 @@
 /** Registers documentation and register adapters. Must not own their behavior. */
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { docCommand } from '../doc/doc-commands.ts'
+import { decideDocHistorySource } from '../doc/doc-history-source.ts'
+import { hostedDocClient } from '../doc/doc-hosted-client.ts'
+import { type HostedDocRevision, readHostedDocRevisions } from '../doc/doc-hosted-history.ts'
 import { selectDocWriteTree } from '../doc/doc-write-tree.ts'
 import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
+import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
@@ -149,6 +154,20 @@ async function runDoc(verb: string, args: string[], command: Command): Promise<v
       selectDocWriteTree,
       collectCanonLintInput,
       consumeResumeHandoff: resumeBriefHandoff,
+      revisionHistory: async ({ scope, subject, slug, recordId }) => {
+        const source = decideDocHistorySource({
+          hostedConfigured: Boolean(resolveRecordApiUrl()?.trim()),
+          signedIn: cachedSignedInRecordUser() !== null,
+        })
+        if (source === 'local') return null
+        return readHostedDocRevisions({
+          address: `${scope}/${subject ?? '_'}/${slug}`,
+          listRevisions: async () =>
+            (await hostedDocClient(scope, subject)).listRevisions(recordId) as Promise<
+              HostedDocRevision[]
+            >,
+        })
+      },
     },
   )
 }

@@ -5,7 +5,6 @@
  */
 import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -26,9 +25,6 @@ import { db } from '../database/db.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
-import { decideDocHistorySource } from './doc-history-source.ts'
-import { type HostedDocRevision, readHostedDocRevisions } from './doc-hosted-history.ts'
-import { hostedDocClient } from './doc-hosted-client.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
@@ -81,6 +77,15 @@ type DocCommandPorts = {
   }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
   consumeResumeHandoff: ConsumeDocHandoff
+  revisionHistory(input: {
+    scope: string
+    subject: string | null
+    slug: string
+    recordId: string
+  }): Promise<{
+    revisions: Array<ReturnType<typeof listDocRevisions>[number] & { authorName?: string | null }>
+    diff(a: string | undefined, b: string | undefined): string
+  } | null>
 }
 
 function revisionAuthorName(author: string, user: ReturnType<typeof cachedSignedInRecordUser>) {
@@ -797,6 +802,7 @@ async function handleHistoryDocCommand(
   flags: DocFlags,
   presentation: DocPresentation,
   owner: string | null,
+  ports: Pick<DocCommandPorts, 'revisionHistory'>,
 ): Promise<boolean> {
   if (!['history', 'diff', 'restore'].includes(sub)) return false
   const scope = argv[2]
@@ -829,25 +835,14 @@ async function handleHistoryDocCommand(
   }
   const revisions = listDocRevisions(scope, subject, slug, owner)
   const doc = getDoc(scope, subject, slug, owner)
-  const source = decideDocHistorySource({
-    hostedConfigured: Boolean(resolveRecordApiUrl()?.trim()),
-    signedIn: cachedSignedInRecordUser() !== null,
-  })
-  const hosted =
-    source === 'hosted' && doc
-      ? await readHostedDocRevisions({
-          address: `${scope}/${subject ?? '_'}/${slug}`,
-          listRevisions: async () =>
-            (await hostedDocClient(scope, subject)).listRevisions(doc.record_id) as Promise<
-              HostedDocRevision[]
-            >,
-        })
-      : null
-  const selected = hosted?.revisions ?? revisions
+  const selectedHistory = doc
+    ? await ports.revisionHistory({ scope, subject, slug, recordId: doc.record_id })
+    : null
+  const selected = selectedHistory?.revisions ?? revisions
   if (handleHistoryOutput(sub, selected, flags, presentation)) return true
   if (sub === 'diff') {
-    if (hosted) {
-      presentation.write(hosted.diff(argv[5], argv[6]))
+    if (selectedHistory) {
+      presentation.write(selectedHistory.diff(argv[5], argv[6]))
       return true
     }
     const a = argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : revisions[1]?.record_id
@@ -925,7 +920,7 @@ export async function docCommand(
     return
   if (await handleRemoveDocCommand(sub, argv, flags, presentation, address, ports)) return
   if (await handleSubjectsOrTransferDocCommand(sub, argv, flags, presentation)) return
-  if (await handleHistoryDocCommand(sub, argv, flags, presentation, owner)) return
+  if (await handleHistoryDocCommand(sub, argv, flags, presentation, owner, ports)) return
   if (handleResumesDocCommand(sub, flags, presentation)) return
   throw new Error(
     `unknown: ${PLATFORM_SLUG} doc ${sub}. Try list | get | show | search | set | reorder | lint | warnings | consume | rm | history | revision | diff | restore | subjects | export | import | resumes`,

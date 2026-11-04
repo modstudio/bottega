@@ -70,7 +70,13 @@ test(`${PLATFORM_SLUG} doc search refuses an invalid scope with the store messag
   expect(result.err).toContain('unknown doc scope "invented"; valid scopes:')
 })
 
-async function command(args: string[], stdin = '') {
+type RevisionHistoryPort = Parameters<typeof docCommand>[4]['revisionHistory']
+
+async function command(
+  args: string[],
+  stdin = '',
+  revisionHistory: RevisionHistoryPort = async () => null,
+) {
   const values = new Map<string, string>()
   const present = new Set<string>()
   for (let i = 0; i < args.length; i++)
@@ -109,6 +115,7 @@ async function command(args: string[], stdin = '') {
         selectDocWriteTree,
         collectCanonLintInput,
         consumeResumeHandoff: resumeBriefHandoff,
+        revisionHistory,
       })
     else if (args[0] === 'port')
       await portCommand(args[1], args[2], args, flags, {
@@ -667,6 +674,70 @@ describe('scoped operator docs', () => {
     expect(getDoc('global', null, 'cli-history')?.body).toBe('one\n')
     expect(listDocRevisions('global', null, 'cli-history')[0]?.op).toBe('restore')
   }, 20_000)
+
+  test(`${PLATFORM_SLUG} doc history and diff print the injected revision history`, async () => {
+    const doc = await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'injected-history',
+      title: 'Injected',
+      body: 'local\n',
+      delivery: 'demand',
+      reason: 'local revision',
+    })
+    const local = listDocRevisions('global', null, 'injected-history')[0]!
+    const revisionHistory: RevisionHistoryPort = async (input) => {
+      expect(input).toEqual({
+        scope: 'global',
+        subject: null,
+        slug: 'injected-history',
+        recordId: doc.record_id,
+      })
+      return {
+        revisions: [{ ...local, number: 7, reason: 'hosted revision', authorName: 'Hosted User' }],
+        diff: (a, b) => `hosted diff ${a} ${b}\n`,
+      }
+    }
+    const history = await command(
+      ['doc', 'history', 'global', '-', 'injected-history', '--json'],
+      '',
+      revisionHistory,
+    )
+    expect(JSON.parse(history.out)).toEqual([
+      expect.objectContaining({ number: 7, reason: 'hosted revision', authorName: 'Hosted User' }),
+    ])
+    expect(
+      (
+        await command(
+          ['doc', 'diff', 'global', '-', 'injected-history', '2', '7'],
+          '',
+          revisionHistory,
+        )
+      ).out,
+    ).toBe('hosted diff 2 7\n')
+  })
+
+  test(`${PLATFORM_SLUG} doc history refuses when the injected authoritative read fails`, async () => {
+    await writeDoc({
+      scope: 'global',
+      subject: null,
+      slug: 'failed-history',
+      title: 'Failed',
+      body: 'local\n',
+      delivery: 'demand',
+      reason: 'local revision',
+    })
+    const result = await command(
+      ['doc', 'history', 'global', '-', 'failed-history'],
+      '',
+      async () => {
+        throw new Error('hosted read failed; run bottega record whoami, or retry')
+      },
+    )
+    expect(result.code).toBe(1)
+    expect(result.out).toBe('')
+    expect(result.err).toContain('hosted read failed; run bottega record whoami, or retry')
+  })
 
   test(`${PLATFORM_SLUG} doc consume stamps the session and preserves the document outside its fields`, async () => {
     const body =

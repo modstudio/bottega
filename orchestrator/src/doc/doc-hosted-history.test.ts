@@ -63,6 +63,8 @@ describe('hosted document history', () => {
         articleSubject: expect.objectContaining({ name: 'Revision history' }),
         relatedSubjects: expect.any(Array),
         sourceFiles: expect.any(Array),
+        checkedAgainstCommit: 'abc123',
+        summary: 'Every field.',
         status: 'superseded',
         replacement_slug: 'replacement',
         author: expect.any(String),
