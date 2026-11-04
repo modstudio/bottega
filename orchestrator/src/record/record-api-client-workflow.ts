@@ -1,6 +1,7 @@
 // concern: record-api-client
 /** Implements decoded workflow catalogue requests outside the main client file ceiling. */
 import { type RecordRequestDestination, workflowCataloguePath } from './record-api-client-paths.ts'
+import { type RecordTaskFlowClient, recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
   type RecordWorkflowDraftInput,
   type RecordWorkflowImportInput,
@@ -43,7 +44,7 @@ async function importWorkflowCatalogue(
     throw error
   }
 }
-export type RecordWorkflowClient = {
+export type RecordWorkflowClient = RecordTaskFlowClient & {
   listWorkflowCatalogue?(
     table: RecordWorkflowTable,
     query: { limit?: number; cursor?: string },
@@ -71,6 +72,7 @@ export type RecordWorkflowClient = {
   ): Promise<RecordWorkflowImportResult>
 }
 export const recordWorkflowClient = (request: Request): RecordWorkflowClient => ({
+  ...recordTaskFlowClient(request),
   listWorkflowCatalogue: (table, query, destination) =>
     request(workflowCataloguePath(table, query), {
       ...destination,

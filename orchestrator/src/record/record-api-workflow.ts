@@ -10,6 +10,7 @@ import {
   type RecordListCursorRow,
   recordCursorOf,
 } from './record-cursor.ts'
+import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
@@ -25,6 +26,7 @@ import {
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
+  readTaskFlow?(input: Tenant & { taskKey?: string; flowRecordId?: string }): Promise<unknown>
   listWorkflowCatalogue(
     input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
   ): Promise<(Record<string, unknown> & RecordListCursorRow)[]>
@@ -50,6 +52,25 @@ export function registerRecordWorkflowRoutes(
       : (() => {
           throw error
         })()
+  app.get('/v1/task-flow', async (context) => {
+    if (!deps.readTaskFlow)
+      return context.json({ error: 'hosted task flow read is unavailable' }, 503)
+    const active = ports.scope(context)
+    if (!active) return ports.noSpace(context)
+    const query = z
+      .object({ taskKey: z.string().min(1).optional(), flowRecordId: z.string().uuid().optional() })
+      .refine((value) => Number(Boolean(value.taskKey)) + Number(Boolean(value.flowRecordId)) === 1)
+      .safeParse(context.req.query())
+    if (!query.success)
+      return context.json({ error: 'pass exactly one taskKey or flowRecordId' }, 400)
+    try {
+      return context.json(await deps.readTaskFlow({ ...active, ...query.data }))
+    } catch (error) {
+      if (error instanceof RecordTaskFlowError)
+        return context.json({ error: error.message, code: error.code }, 404)
+      throw error
+    }
+  })
   app.get('/v1/workflow-catalogue/:table', async (context) => {
     const active = ports.scope(context)
     if (!active) return ports.noSpace(context)

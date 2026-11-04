@@ -25,7 +25,7 @@ export type CursorAutonomyRow = {
 
 type ResolutionEntry = { value: string; scope: string }
 
-export function storedCursorAutonomy(
+function storedCursorAutonomy(
   autonomy: AutonomyResolution | undefined,
 ): AutonomyResolution | undefined {
   if (!autonomy) return undefined
@@ -39,6 +39,13 @@ export function storedCursorAutonomy(
         }
       : {}),
   }
+}
+
+export function storedCursorAutonomyJson(
+  autonomy: AutonomyResolution | undefined,
+  fallback: { steps: Record<string, unknown>; rulings: unknown },
+): string {
+  return JSON.stringify(storedCursorAutonomy(autonomy) ?? fallback)
 }
 
 function stricterEntry<T extends ResolutionEntry>(

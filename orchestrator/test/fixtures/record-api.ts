@@ -6,11 +6,12 @@ import {
   refuseDocWrite,
 } from '../../src/doc/doc-write-allowed.ts'
 import type { RecordBoardDeps } from '../../src/record/record-api-board.ts'
-import type {
-  RecordApiClient,
-  RecordCanonImportInput,
-  RecordDocImportInput,
-  RecordDocUpsertInput,
+import {
+  type RecordApiClient,
+  RecordApiRequestError,
+  type RecordCanonImportInput,
+  type RecordDocImportInput,
+  type RecordDocUpsertInput,
 } from '../../src/record/record-api-client.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
@@ -59,6 +60,7 @@ function idleWorkflowDeps() {
     throw new Error('hosted workflow catalogue is unused in this fixture')
   }
   return {
+    readTaskFlow: unused,
     listWorkflowCatalogue: async () => [],
     draftWorkflow: unused,
     promoteWorkflow: unused,
@@ -340,6 +342,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     },
     async listWorkflowCatalogue() {
       return { items: [], nextCursor: null }
+    },
+    async readTaskFlow() {
+      throw new RecordApiRequestError('hosted task flow not found', 'refused', 404)
     },
     async draftWorkflow() {
       throw new Error('hosted workflow catalogue is unused in this fixture')
