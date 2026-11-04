@@ -22,3 +22,6 @@ export const Variants: StoryObj<typeof meta> = {
 export const Disabled: StoryObj<typeof meta> = {
   args: { 'aria-label': 'Disabled notes', disabled: true, value: 'Unavailable' },
 }
+export const WithHint: StoryObj<typeof meta> = {
+  args: { 'aria-label': 'Instructions', hint: "Added to every agent's instructions." },
+}

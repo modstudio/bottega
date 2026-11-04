@@ -13,13 +13,14 @@ import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { Segmented } from '@bottega/hub-ui/segmented'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
+import { permissionListLabel } from '@bottega/hub-util/format'
 import { MachineOverride } from '@bottega/hub-views/machine-permissions/machine-override'
 import { MachinePermissionEditor } from '@bottega/hub-views/machine-permissions/machine-permission-editor'
 import { Markdown } from '@bottega/hub-views/markdown'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Save, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import {
   AUTONOMY_PRESETS,
   AUTONOMY_VALUES,
@@ -37,8 +38,6 @@ export const Route = createFileRoute('/context')({ component: ManagedContextPage
  */
 const hosted = isHostedMode()
 
-const APPLY_NOTE = `Each machine applies these at session start (${PLATFORM_SLUG} machine settings apply).`
-
 const capitalized = (value: string) => `${value[0]!.toUpperCase()}${value.slice(1)}`
 
 const presetOptions = AUTONOMY_PRESETS.map((value) => ({ value, label: capitalized(value) }))
@@ -54,12 +53,14 @@ const rulingsValues = (['agent', 'user'] as const).map((value) => ({
   label: capitalized(value),
 }))
 
-function ErrorText({ message }: { message: string }) {
-  return (
-    <p data-tone="error" className="whitespace-pre-wrap text-status-text">
-      {message}
-    </p>
-  )
+function ErrorText({
+  message,
+  title = 'Could not update agent settings',
+}: {
+  message: string
+  title?: string
+}) {
+  return <ErrorState title={title} message={message} />
 }
 
 function LoadError({ title, error }: { title: string; error: { message: string } | null }) {
@@ -87,6 +88,50 @@ function RemoveCanonButton({
   )
 }
 
+function InstructionsEditor({ body, onChange }: { body: string; onChange(value: string): void }) {
+  return (
+    <div className="grid grid-cols-2 divide-x divide-border border border-border-default">
+      <Textarea
+        aria-label="Instructions"
+        code
+        bare
+        className="h-[32rem]"
+        value={body}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <div className="h-[32rem] overflow-auto p-3">
+        <Markdown content={body} />
+      </div>
+    </div>
+  )
+}
+
+function ShipToSetting({
+  detail,
+  value,
+  onChange,
+}: {
+  detail: ReactNode
+  value: string
+  onChange(value: string): void
+}) {
+  return (
+    <SettingBlock
+      label="Ship to"
+      hint={detail}
+      control={
+        <Select
+          label="Ship to"
+          hint="Chooses where completed work is sent, for every project."
+          value={value}
+          options={shipToValues}
+          onChange={onChange}
+        />
+      }
+    />
+  )
+}
+
 export function ManagedContextPage() {
   const phone = useMediaQuery(PHONE_QUERY)
   const localProjects = useQuery({ ...trpc.context.projects.queryOptions(), enabled: !hosted })
@@ -110,7 +155,7 @@ export function ManagedContextPage() {
     label: project.name,
   }))
   const settingsOptions = [
-    { value: 'user', label: 'User' },
+    { value: 'user', label: 'Your account' },
     ...managedProjects.map((project) => ({ value: project.name, label: project.name })),
   ]
 
@@ -118,7 +163,7 @@ export function ManagedContextPage() {
     <div className="mx-auto max-w-5xl space-y-8 px-5 pb-12">
       <PageHeader
         title="Agent settings"
-        subtitle="Autonomy, user canon and permissions, the same on every machine"
+        subtitle="These settings belong to your account and follow you to every machine you sign in on. A row marked as overridden applies on this machine only."
         actions={
           phone ? (
             <ToolbarBand
@@ -126,12 +171,14 @@ export function ManagedContextPage() {
                 <>
                   <Select
                     label="Project"
+                    hint="Chooses the project whose autonomy values are shown."
                     value={selectedProject}
                     options={projectOptions}
                     onChange={setProjectChoice}
                   />
                   <Select
                     label="Settings target"
+                    hint="Chooses whether the shown permissions belong to your account or a project."
                     value={settingsChoice}
                     options={settingsOptions}
                     onChange={setSettingsChoice}
@@ -262,10 +309,15 @@ export function UserCanonSection({
   }
 
   return (
-    <FieldSection title="User canon" description="Canon owned by the signed-in operator.">
-      {pending ? <EmptyState title="Loading user canon..." /> : null}
-      {error ? <ErrorState title="Could not load user canon" message={error} /> : null}
-      {!pending && !error && rows?.length === 0 ? <EmptyState title="No user canon." /> : null}
+    <FieldSection
+      title="Your instructions"
+      description="Added to every agent's instructions in every project, ahead of the project's own."
+    >
+      {pending ? <EmptyState title="Loading your instructions..." /> : null}
+      {error ? <ErrorState title="Could not load your instructions" message={error} /> : null}
+      {!pending && !error && rows?.length === 0 ? (
+        <EmptyState title="No instructions yet." />
+      ) : null}
       {!error ? (
         <div className="grid gap-5 md:grid-cols-[15rem_minmax(0,1fr)]">
           <div className="space-y-2">
@@ -282,14 +334,15 @@ export function UserCanonSection({
               </Button>
             ))}
             <Button variant="secondary" onClick={beginCreate}>
-              <Plus size={14} /> Create row
+              <Plus size={14} /> Create instructions
             </Button>
           </div>
           {creating || detail.data ? (
             <div className="space-y-3">
               <Input
-                aria-label="Slug"
-                placeholder="Slug"
+                aria-label="Name"
+                placeholder="Name"
+                hint="Names this set of instructions and cannot change after it is created."
                 value={slug}
                 disabled={!creating}
                 onChange={(event) => setSlug(event.target.value)}
@@ -297,25 +350,15 @@ export function UserCanonSection({
               <Input
                 aria-label="Title"
                 placeholder="Title"
+                hint="Gives this set of instructions a readable title."
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
               />
-              <div className="grid grid-cols-2 divide-x divide-border border border-border-default">
-                <Textarea
-                  aria-label="Canon markdown"
-                  code
-                  bare
-                  className="h-[32rem]"
-                  value={body}
-                  onChange={(event) => setBody(event.target.value)}
-                />
-                <div className="h-[32rem] overflow-auto p-3">
-                  <Markdown content={body} />
-                </div>
-              </div>
+              <InstructionsEditor body={body} onChange={setBody} />
               <Input
-                aria-label="Canon reason"
+                aria-label="Change reason"
                 placeholder="Reason (required)"
+                hint="Records why these instructions are changing."
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
               />
@@ -368,6 +411,7 @@ function ProjectChooser(props: AutonomySectionProps) {
   return props.showChooser ? (
     <Select
       label="Project"
+      hint="Chooses the project whose autonomy values are shown."
       value={props.project}
       options={props.options}
       onChange={props.onProject}
@@ -419,7 +463,7 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
   return (
     <FieldSection
       title="Autonomy"
-      description="How much each workflow stage runs on its own, resolved for this machine. Your preset and overrides live in your hosted profile; a row can also be overridden on this machine alone."
+      description="Values resolve for the selected project. An Overridden badge means the value applies on this machine only."
     >
       <ProjectChooser {...{ project, options, onProject, showChooser }} />
       <LoadError title="autonomy settings" error={autonomy.error} />
@@ -430,7 +474,9 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
       {setMachine.error ? <ErrorText message={setMachine.error.message} /> : null}
       {clearMachine.error ? <ErrorText message={clearMachine.error.message} /> : null}
       {autonomy.data?.registered
-        ? autonomy.data.warnings?.map((warning) => <ErrorText key={warning} message={warning} />)
+        ? autonomy.data.warnings?.map((warning) => (
+            <ErrorText key={warning} title="Check this setting" message={warning} />
+          ))
         : null}
       {autonomy.data?.registered ? (
         <div className="space-y-3">
@@ -438,8 +484,8 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
             label="Preset"
             hint={
               userPreset === undefined
-                ? 'Unknown until you sign in. A stricter setting applies to workflows already running; a looser one applies to workflows composed afterwards.'
-                : 'Choosing a preset clears your stage overrides, so every stage follows it. A stricter setting applies to workflows already running; a looser one applies to workflows composed afterwards.'
+                ? 'Available after you sign in.'
+                : 'Sets the default independence for every workflow stage and clears stage-specific choices. A stricter preset applies to workflows already running; a looser one applies only to workflows started afterwards.'
             }
             control={
               <Segmented
@@ -461,7 +507,7 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
               <span className="flex flex-col gap-1.5">
                 <span>{`${autonomy.data.rulings.value} · ${autonomy.data.rulings.scope}`}</span>
                 <MachineOverride
-                  label="rulings"
+                  label="Rulings"
                   value={autonomy.data.rulings.machineValue}
                   options={rulingsValues}
                   pending={machinePending}
@@ -473,13 +519,12 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
               </span>
             }
           />
-          <SettingBlock
-            label="ship to"
-            hint={
+          <ShipToSetting
+            detail={
               <span className="flex flex-col gap-1.5">
                 <span>{shipToLine ?? `ship to: ${autonomy.data.shipTo.value}`}</span>
                 <MachineOverride
-                  label="ship to"
+                  label="Ship to"
                   value={autonomy.data.shipTo.machineValue}
                   options={shipToValues}
                   pending={machinePending}
@@ -492,16 +537,10 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
                 />
               </span>
             }
-            control={
-              <Select
-                label="ship to"
-                value={autonomy.data.shipTo.value}
-                options={shipToValues}
-                onChange={(next) => {
-                  if (isShipToValue(next)) updateShipTo.mutate({ project, value: next })
-                }}
-              />
-            }
+            value={autonomy.data.shipTo.value}
+            onChange={(next) => {
+              if (isShipToValue(next)) updateShipTo.mutate({ project, value: next })
+            }}
           />
           {autonomy.data.stages.map((stage) => {
             const value = stage.agreed ? stage.value : (stage.values[0]?.value ?? 'ask')
@@ -513,14 +552,14 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
             return (
               <SettingBlock
                 key={stage.stage}
-                label={stage.stage}
+                label={capitalized(stage.stage)}
                 hint={
                   <span className="flex flex-col gap-1.5">
                     <span className="flex flex-wrap items-center gap-2">
                       <span>Resolved: {resolved}</span>
                       {stage.overridden ? (
                         <>
-                          <Badge tone="warning">overridden</Badge>
+                          <Badge tone="warning">Custom</Badge>
                           <TextButton
                             disabled={clearStage.isPending}
                             onClick={() => clearStage.mutate({ project, stage: stage.stage })}
@@ -531,7 +570,7 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
                       ) : null}
                     </span>
                     <MachineOverride
-                      label={stage.stage}
+                      label={capitalized(stage.stage)}
                       value={stage.machineValue}
                       options={stageValues}
                       pending={machinePending}
@@ -551,7 +590,8 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
                 }
                 control={
                   <Select
-                    label={`${stage.stage} autonomy`}
+                    label={`${capitalized(stage.stage)} autonomy`}
+                    hint={`Sets how independently agents run the ${capitalized(stage.stage)} stage for this project.`}
                     value={value}
                     options={stageValues}
                     onChange={(next) =>
@@ -590,7 +630,7 @@ function HostedAutonomySection({ project, options, onProject, showChooser }: Aut
   return (
     <FieldSection
       title="Autonomy"
-      description="How much each workflow stage runs on its own. These values are your profile and apply on every machine you sign in from."
+      description="Values resolve for the selected project. An Overridden badge means the value applies on one machine only."
     >
       <ProjectChooser {...{ project, options, onProject, showChooser }} />
       <LoadError title="autonomy settings" error={autonomy.error} />
@@ -599,7 +639,7 @@ function HostedAutonomySection({ project, options, onProject, showChooser }: Aut
         <div className="space-y-3">
           <SettingBlock
             label="Preset"
-            hint="Choosing a preset clears your stage overrides, so every stage follows it. A stricter setting applies to workflows already running; a looser one applies to workflows composed afterwards."
+            hint="Sets the default independence for every workflow stage and clears stage-specific choices. A stricter preset applies to workflows already running; a looser one applies only to workflows started afterwards."
             control={
               <Segmented
                 label="Autonomy preset"
@@ -619,36 +659,31 @@ function HostedAutonomySection({ project, options, onProject, showChooser }: Aut
             label="Rulings"
             value={user.rulings?.value ?? space?.rulings?.value ?? 'not set'}
           />
-          <SettingBlock
-            label="ship to"
-            hint={user.shipTo ? 'Set in your profile.' : 'Not set; each machine uses its default.'}
-            control={
-              <Select
-                label="ship to"
-                value={user.shipTo?.value ?? ''}
-                options={shipToValues}
-                onChange={(next) => {
-                  if (isShipToValue(next)) {
-                    updateShipTo.mutate({
-                      project,
-                      value: next,
-                      expectedRowVersion: user.shipTo?.rowVersion ?? null,
-                    })
-                  }
-                }}
-              />
+          <ShipToSetting
+            detail={
+              user.shipTo ? 'Set in your profile.' : 'Not set; each machine uses its default.'
             }
+            value={user.shipTo?.value ?? ''}
+            onChange={(next) => {
+              if (isShipToValue(next)) {
+                updateShipTo.mutate({
+                  project,
+                  value: next,
+                  expectedRowVersion: user.shipTo?.rowVersion ?? null,
+                })
+              }
+            }}
           />
           {autonomy.data?.stages.map((stage) => {
             const leaf = user.stages[stage]
             return (
               <SettingBlock
                 key={stage}
-                label={stage}
+                label={capitalized(stage)}
                 hint={
                   leaf ? (
                     <span className="flex flex-wrap items-center gap-2">
-                      <Badge tone="warning">overridden</Badge>
+                      <Badge tone="warning">Custom</Badge>
                       <TextButton
                         disabled={clearStage.isPending}
                         onClick={() =>
@@ -668,7 +703,8 @@ function HostedAutonomySection({ project, options, onProject, showChooser }: Aut
                 }
                 control={
                   <Select
-                    label={`${stage} autonomy`}
+                    label={`${capitalized(stage)} autonomy`}
+                    hint={`Sets how independently agents run the ${capitalized(stage)} stage for this project.`}
                     value={leaf?.value ?? ''}
                     options={leaf ? stageValues : [FROM_PRESET, ...stageValues]}
                     onChange={(next) =>
@@ -718,36 +754,47 @@ function ManagedSettingsSection({
   const settings = hosted ? hostedSettings : localSettings
   return (
     <FieldSection
-      title="Managed settings"
-      description={`Stored permissions, hook fingerprints and environment names. ${APPLY_NOTE}`}
+      title="Agent permissions"
+      description="What agents may run without asking. Applied to each harness on your machines when a session starts."
     >
       {showChooser ? (
-        <Select label="Settings target" value={target} options={options} onChange={onTarget} />
+        <Select
+          label="Settings target"
+          hint="Chooses whether the shown permissions belong to your account or a project."
+          value={target}
+          options={options}
+          onChange={onTarget}
+        />
       ) : null}
       <LoadError title="managed settings" error={settings.error} />
       {settings.data ? (
         <div className="space-y-5">
           {hosted ? null : (
             <DisplayRow
-              label="File"
-              value={`${settings.data.file.exists ? 'exists' : 'missing'} · ${settings.data.file.path}`}
+              label="Available on this machine"
+              value={settings.data.file.exists ? 'Yes' : 'Not yet'}
             />
           )}
           {(['allow', 'ask', 'deny'] as const).map((name) => (
             <DisplayRow
               key={name}
-              label={`${name} (${settings.data.settings.permissions[name].length})`}
+              label={`${permissionListLabel(name)} (${settings.data.settings.permissions[name].length})`}
               value={<Lines>{settings.data.settings.permissions[name].join('\n') || '—'}</Lines>}
             />
           ))}
           <DisplayRow
             label={`Hooks (${settings.data.settings.hooks.length})`}
             value={
-              <Lines>
-                {settings.data.settings.hooks
-                  .map((hook) => `${hook.event} · ${hook.matcher} · ${hook.fingerprint}`)
-                  .join('\n') || '—'}
-              </Lines>
+              <span className="flex flex-col gap-1.5">
+                <span className="text-sm text-text-muted">
+                  A hook runs an automatic check or action when an agent reaches a matching event.
+                </span>
+                <Lines>
+                  {settings.data.settings.hooks
+                    .map((hook) => `${hook.event} · ${hook.matcher} · ${hook.fingerprint}`)
+                    .join('\n') || '—'}
+                </Lines>
+              </span>
             }
           />
           <DisplayRow
@@ -755,11 +802,15 @@ function ManagedSettingsSection({
             value={settings.data.settings.envKeys.join(', ') || '—'}
           />
           {settings.data.drift ? (
-            <DisplayRow label="Drift" value={<Lines>{driftText(settings.data.drift)}</Lines>} />
+            <DisplayRow
+              label="Differs on this machine"
+              value={<Lines>{driftText(settings.data.drift)}</Lines>}
+            />
           ) : null}
           {settings.data.findings?.map((finding) => (
             <ErrorText
               key={`${finding.rule}-${finding.message}`}
+              title="Check these permissions"
               message={`${finding.rule}: ${finding.message}`}
             />
           ))}
@@ -823,24 +874,27 @@ function PermissionEditor({
       <div className="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)]">
         <Select
           label="Permission list"
+          hint="Chooses whether the rule is allowed, asks first, or is blocked."
           value={list}
           options={[
-            { value: 'allow', label: 'Allow' },
-            { value: 'ask', label: 'Ask' },
-            { value: 'deny', label: 'Deny' },
+            { value: 'allow', label: permissionListLabel('allow') },
+            { value: 'ask', label: permissionListLabel('ask') },
+            { value: 'deny', label: permissionListLabel('deny') },
           ]}
           onChange={(value) => setList(value as typeof list)}
         />
         <Input
           aria-label="Permission rule"
           placeholder="Permission rule"
+          hint="Names the command or action this permission matches."
           value={rule}
           onChange={(event) => setRule(event.target.value)}
         />
       </div>
       <Input
-        aria-label="Settings reason"
+        aria-label="Change reason"
         placeholder="Reason (required)"
+        hint="Records why this permission is changing."
         value={reason}
         onChange={(event) => setReason(event.target.value)}
       />
@@ -893,8 +947,14 @@ function driftText(drift: {
 }) {
   const lines: string[] = []
   for (const name of ['allow', 'ask', 'deny'] as const) {
-    lines.push(...drift.rules[name].added.map((rule) => `added ${name}: ${rule}`))
-    lines.push(...drift.rules[name].removed.map((rule) => `removed ${name}: ${rule}`))
+    lines.push(
+      ...drift.rules[name].added.map((rule) => `Added to ${permissionListLabel(name)}: ${rule}`),
+    )
+    lines.push(
+      ...drift.rules[name].removed.map(
+        (rule) => `Removed from ${permissionListLabel(name)}: ${rule}`,
+      ),
+    )
   }
   lines.push(
     ...drift.hooks.added.map(

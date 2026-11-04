@@ -7,9 +7,11 @@ import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Dialog } from '@bottega/hub-ui/dialog'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { ErrorState } from '@bottega/hub-ui/error-state'
+import { FieldGroup } from '@bottega/hub-ui/field/field-group'
 import { Input } from '@bottega/hub-ui/field/input'
+import { FieldSection } from '@bottega/hub-ui/form-layout'
 import { Select } from '@bottega/hub-ui/listbox/select'
-import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
+import { PageHeader } from '@bottega/hub-ui/page-header'
 import { hourOfDayLabel, sendTimestamp } from '@bottega/hub-util/format'
 import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@bottega/hub-util/report-arrival'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -50,14 +52,15 @@ function OperatorEmailSettings() {
   if (isHostedMode() || !query.data) return null
   const delay = value ?? query.data.delayMinutes
   return (
-    <div className="mb-8">
-      <SectionTitle>Operator email</SectionTitle>
+    <FieldSection
+      title="Waiting-question email on this machine"
+      description="This setting applies to this machine only."
+    >
       <div className="grid gap-2">
-        <label htmlFor="operator-email-delay" className="text-sm text-text-muted">
-          Delay in minutes (zero disables email)
-        </label>
         <Input
           id="operator-email-delay"
+          aria-label="Waiting-question email delay in minutes"
+          hint="Emails you when a worker question or a workflow ruling has waited this many minutes; zero turns this email off."
           type="number"
           min={0}
           max={43_200}
@@ -71,7 +74,7 @@ function OperatorEmailSettings() {
           Save email delay
         </Button>
       </div>
-    </div>
+    </FieldSection>
   )
 }
 
@@ -148,8 +151,7 @@ function SpaceProjectChecks({
       })),
   ]
   return (
-    <div className="grid gap-2">
-      <span className="text-sm text-text-muted">Project</span>
+    <FieldGroup legend="Project" hint="Chooses which project work appears in the report.">
       {options.map((project) => (
         <label
           key={project.id}
@@ -171,7 +173,7 @@ function SpaceProjectChecks({
           {project.note ? ` (${project.note})` : ''}
         </label>
       ))}
-    </div>
+    </FieldGroup>
   )
 }
 
@@ -201,8 +203,10 @@ function ProjectsAcrossSpaces({
       })),
   ]
   return (
-    <div className="grid gap-2">
-      <span className="text-sm text-text-muted">Projects across spaces</span>
+    <FieldGroup
+      legend="Projects across spaces"
+      hint="Chooses which projects from your personal spaces appear in the report."
+    >
       {[...new Set(options.map((project) => project.space_name))].map((spaceName) => (
         <div key={spaceName} className="grid gap-1">
           <span className="text-sm">{spaceName}</span>
@@ -231,7 +235,7 @@ function ProjectsAcrossSpaces({
             ))}
         </div>
       ))}
-    </div>
+    </FieldGroup>
   )
 }
 
@@ -241,6 +245,119 @@ const subscriptionCannotSave = (draft: Draft, pending: boolean) =>
   (draft.scope === 'members' && !draft.memberUserIds.length) ||
   (draft.scope === 'project' && !draft.projectIds.length) ||
   (draft.scope === 'projects' && !draft.projectIds.length)
+
+function EmailAddressRecipients({
+  draft,
+  canManage,
+  change,
+}: {
+  draft: Draft
+  canManage: boolean
+  change(patch: Partial<Draft>): void
+}) {
+  const [email, setEmail] = useState('')
+  return (
+    <FieldGroup legend="Email addresses" hint="Adds recipients who are not members of this space.">
+      {canManage ? (
+        <div className="flex gap-2">
+          <Input
+            type="email"
+            aria-label="Add email address"
+            hint="Enter one email address at a time."
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <Button
+            variant="secondary"
+            disabled={!email.trim()}
+            onClick={() => {
+              const normalized = email.trim().toLowerCase()
+              if (normalized && !draft.recipientEmails.includes(normalized))
+                change({ recipientEmails: [...draft.recipientEmails, normalized] })
+              setEmail('')
+            }}
+          >
+            Add
+          </Button>
+        </div>
+      ) : null}
+      {draft.recipientEmails.map((address) => (
+        <div key={address} className="flex items-center gap-2 text-sm">
+          <span>{address}</span>
+          {canManage ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                change({
+                  recipientEmails: draft.recipientEmails.filter((value) => value !== address),
+                })
+              }
+            >
+              Remove
+            </Button>
+          ) : null}
+        </div>
+      ))}
+    </FieldGroup>
+  )
+}
+
+function DeliveryFields({ draft, change }: { draft: Draft; change(patch: Partial<Draft>): void }) {
+  return (
+    <>
+      <Select
+        label="Cadence"
+        hint="Sets whether the report is sent every day or once a week."
+        value={draft.cadence}
+        options={[
+          { value: 'daily', label: 'Daily' },
+          { value: 'weekly', label: 'Weekly' },
+        ]}
+        onChange={(cadence) => change({ cadence: cadence as Draft['cadence'] })}
+      />
+      {draft.cadence === 'weekly' ? (
+        <Select
+          label="Weekday"
+          hint="Sets the day the weekly report is sent."
+          value={draft.weekday}
+          options={WEEKDAYS.map((day) => ({ value: day, label: day }))}
+          onChange={(weekday) => change({ weekday: weekday as Weekday })}
+        />
+      ) : null}
+      <Select
+        label="Hour"
+        hint="Sets the local hour when delivery starts."
+        value={String(draft.hour)}
+        options={Array.from({ length: 24 }, (_, hour) => ({
+          value: String(hour),
+          label: hourOfDayLabel(hour),
+        }))}
+        onChange={(hour) => change({ hour: Number(hour) })}
+      />
+      <Select
+        label="Time zone"
+        hint="Sets the time zone used for the delivery hour."
+        value={draft.zone}
+        options={TIME_ZONES.map((zone) => ({ value: zone, label: zone }))}
+        onChange={(zone) => change({ zone })}
+      />
+      <FieldGroup
+        legend="Enabled"
+        hint="Turns scheduled delivery on or off without deleting the subscription."
+      >
+        <label htmlFor="subscription-enabled" className="flex items-center gap-2 text-sm">
+          <Checkbox
+            id="subscription-enabled"
+            checked={draft.enabled}
+            onChange={(event) => change({ enabled: event.target.checked })}
+          />
+          Send on this schedule
+        </label>
+      </FieldGroup>
+    </>
+  )
+}
 
 function SubscriptionDialog({
   row,
@@ -262,7 +379,6 @@ function SubscriptionDialog({
   onClose: () => void
 }) {
   const [draft, setDraft] = useState<Draft>(() => initialDraft(row, isPersonalSpace, spaceId))
-  const [email, setEmail] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [testMessage, setTestMessage] = useState('')
   const create = useMutation({
@@ -366,9 +482,12 @@ function SubscriptionDialog({
       }
     >
       <div className="grid gap-4">
-        {failure ? <p className="text-sm text-status-text">{failure.message}</p> : null}
+        {failure ? (
+          <ErrorState title="Could not save subscription" message={failure.message} />
+        ) : null}
         <Select
           label="Report covers"
+          hint="Chooses whether the report covers this space, selected projects, or selected members."
           value={draft.scope}
           options={[
             { value: 'space', label: 'Space' },
@@ -404,6 +523,7 @@ function SubscriptionDialog({
         {draft.scope === 'members' ? (
           <MemberChecks
             label="Members"
+            hint="Chooses which members' work appears in the report."
             prefix="scope-member"
             members={members}
             selected={draft.memberUserIds}
@@ -420,94 +540,14 @@ function SubscriptionDialog({
         ) : null}
         <MemberChecks
           label="Recipients"
+          hint="Chooses which space members receive the report."
           prefix="recipient"
           members={members}
           selected={draft.recipientUserIds}
           onChange={(recipientUserIds) => change({ recipientUserIds })}
         />
-        <div className="grid gap-2">
-          <span className="text-sm text-text-muted">Email addresses</span>
-          {canManageEmails ? (
-            <div className="flex gap-2">
-              <Input
-                type="email"
-                aria-label="Add email address"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-              <Button
-                variant="secondary"
-                disabled={!email.trim()}
-                onClick={() => {
-                  const normalized = email.trim().toLowerCase()
-                  if (normalized && !draft.recipientEmails.includes(normalized))
-                    change({ recipientEmails: [...draft.recipientEmails, normalized] })
-                  setEmail('')
-                }}
-              >
-                Add
-              </Button>
-            </div>
-          ) : null}
-          {draft.recipientEmails.map((address) => (
-            <div key={address} className="flex items-center gap-2 text-sm">
-              <span>{address}</span>
-              {canManageEmails ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    change({
-                      recipientEmails: draft.recipientEmails.filter((value) => value !== address),
-                    })
-                  }
-                >
-                  Remove
-                </Button>
-              ) : null}
-            </div>
-          ))}
-        </div>
-        <Select
-          label="Cadence"
-          value={draft.cadence}
-          options={[
-            { value: 'daily', label: 'Daily' },
-            { value: 'weekly', label: 'Weekly' },
-          ]}
-          onChange={(cadence) => change({ cadence: cadence as Draft['cadence'] })}
-        />
-        {draft.cadence === 'weekly' ? (
-          <Select
-            label="Weekday"
-            value={draft.weekday}
-            options={WEEKDAYS.map((day) => ({ value: day, label: day }))}
-            onChange={(weekday) => change({ weekday: weekday as Weekday })}
-          />
-        ) : null}
-        <Select
-          label="Hour"
-          value={String(draft.hour)}
-          options={Array.from({ length: 24 }, (_, hour) => ({
-            value: String(hour),
-            label: hourOfDayLabel(hour),
-          }))}
-          onChange={(hour) => change({ hour: Number(hour) })}
-        />
-        <Select
-          label="Time zone"
-          value={draft.zone}
-          options={TIME_ZONES.map((zone) => ({ value: zone, label: zone }))}
-          onChange={(zone) => change({ zone })}
-        />
-        <label htmlFor="subscription-enabled" className="flex items-center gap-2 text-sm">
-          <Checkbox
-            id="subscription-enabled"
-            checked={draft.enabled}
-            onChange={(event) => change({ enabled: event.target.checked })}
-          />
-          Enabled
-        </label>
+        <EmailAddressRecipients draft={draft} canManage={canManageEmails} change={change} />
+        <DeliveryFields draft={draft} change={change} />
       </div>
     </Dialog>
   )
@@ -515,20 +555,21 @@ function SubscriptionDialog({
 
 function MemberChecks({
   label,
+  hint,
   prefix,
   members,
   selected,
   onChange,
 }: {
   label: string
+  hint: string
   prefix: string
   members: Member[]
   selected: string[]
   onChange: (ids: string[]) => void
 }) {
   return (
-    <div className="grid gap-2">
-      <span className="text-sm text-text-muted">{label}</span>
+    <FieldGroup legend={label} hint={hint}>
       {members.map((member) => (
         <label
           key={member.user_id}
@@ -549,7 +590,7 @@ function MemberChecks({
           {member.name} ({member.email})
         </label>
       ))}
-    </div>
+    </FieldGroup>
   )
 }
 
@@ -667,13 +708,21 @@ export function SettingsPage() {
   ]
   return (
     <section>
-      <PageHeader title="Report email" subtitle="Schedules and delivery history" />
+      <PageHeader
+        title="Report email"
+        subtitle="Send a summary of this space's work by email, daily or weekly, to the members and addresses you choose."
+      />
       <OperatorEmailSettings />
       {query.error ? (
         <ErrorState title="Could not load report email settings" message={query.error.message} />
       ) : null}
       {data ? (
         <>
+          <p className="mb-4 text-sm text-text-secondary">
+            Each report summarizes engaged time, project activity, completed and active work, and
+            agent token use. Every recipient gets an unsubscribe link, and every send is recorded
+            under Send history.
+          </p>
           <Collection
             title="Subscriptions"
             count={data.subscriptions.length}

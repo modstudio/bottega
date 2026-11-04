@@ -50,3 +50,7 @@ export const Keyboard: StoryObj<typeof meta> = {
     await expect(select).toHaveAttribute('aria-activedescendant')
   },
 }
+export const WithHint: StoryObj<typeof meta> = {
+  render: Controlled,
+  args: { hint: 'Chooses which worker handles this task.' },
+}

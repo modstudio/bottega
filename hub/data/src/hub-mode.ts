@@ -125,7 +125,7 @@ const LOCAL_NAV: NavSection[] = [
         icon: Settings,
         items: [
           { to: '/context', label: 'Agent settings', icon: SlidersHorizontal },
-          { to: '/settings', label: 'Hub settings', icon: Settings },
+          { to: '/settings', label: 'Report email', icon: Settings },
         ],
       },
     ],

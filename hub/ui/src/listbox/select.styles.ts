@@ -4,6 +4,7 @@ import { variant } from '../text/variant.ts'
 
 export const selectStyles = variant({
   slots: {
+    root: 'inline-flex min-w-0 flex-col gap-1.5',
     trigger: [controlClasses, 'inline-flex min-w-40 items-center justify-between gap-2 text-left'],
     panel: [placementClasses('bottom', 'start'), panelClasses, 'max-h-80 overflow-y-auto py-1'],
     option: 'flex min-h-control-md cursor-pointer items-center gap-2 px-3 py-1.5',

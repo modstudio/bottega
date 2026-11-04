@@ -130,7 +130,7 @@ test('a machine override shows only on the row that has one', () => {
   seedBase()
   const absent = render()
   expect(absent).toContain('Override on this machine')
-  expect(absent).not.toContain('review on this machine')
+  expect(absent).not.toContain('Review on this machine')
 
   const options = trpc.context.autonomy.get.queryOptions({ project: 'alpha' })
   const seeded = queryClient.getQueryData(options.queryKey)!
@@ -140,9 +140,9 @@ test('a machine override shows only on the row that has one', () => {
     stages: seeded.stages.map((stage) => ({ ...stage, machineValue: 'ask' as const })),
   } as typeof seeded)
   const present = render()
-  expect(present).toContain('review on this machine')
-  expect(present).not.toContain('release on this machine')
-  expect(present).not.toContain('rulings on this machine')
+  expect(present).toContain('Review on this machine')
+  expect(present).not.toContain('Release on this machine')
+  expect(present).not.toContain('Rulings on this machine')
 })
 
 test('user canon shows the signed-in refusal instead of an empty state', () => {

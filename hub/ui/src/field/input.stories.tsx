@@ -27,3 +27,6 @@ export const States: StoryObj<typeof meta> = {
     </>
   ),
 }
+export const WithHint: StoryObj<typeof meta> = {
+  args: { 'aria-label': 'Email address', hint: 'Adds another report recipient.' },
+}

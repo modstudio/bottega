@@ -48,9 +48,10 @@ export function MachineOverride({
     <MachineOptIn active={value !== undefined}>
       {(close) => (
         <span className={machineOverrideStyles().controls()}>
-          <Badge tone="info">This machine</Badge>
+          <Badge tone="info">Overridden</Badge>
           <Select
             label={`${label} on this machine`}
+            hint="Sets this value on this machine only."
             size="sm"
             value={value ?? ''}
             options={options}

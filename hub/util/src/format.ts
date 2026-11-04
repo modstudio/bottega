@@ -39,6 +39,10 @@ export function hourOfDayLabel(hour: number) {
   return `${hour % 12 || 12}:00 ${period}`
 }
 
+export function permissionListLabel(value: 'allow' | 'ask' | 'deny') {
+  return { allow: 'Allowed', ask: 'Asks first', deny: 'Blocked' }[value]
+}
+
 export function sendTimestamp(value: string | number | Date) {
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
