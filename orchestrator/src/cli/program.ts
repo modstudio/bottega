@@ -122,6 +122,10 @@ const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
 const isTypedQuestionBacktest = (argv: readonly string[]): boolean =>
   argv[0] === 'typed-question' && argv[1] === 'backtest'
 
+const settingsInvocationSkipsStamp = (argv: readonly string[]): boolean =>
+  (argv[1] === 'render' && argv.includes('--check')) ||
+  (argv[1] === 'import' && argv.includes('--dry-run'))
+
 export function invocationSkipsSessionStamp(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
     review: ['coverage-audit', 'scope-proposal', 'yield'],
@@ -137,10 +141,7 @@ export function invocationSkipsSessionStamp(argv: string[]): boolean {
   if (argv[0] === 'port') return argv[1] === 'import' && argv.includes('--dry-run')
   if (argv[0] === 'canon') return argv[1] === 'audit' && argv.includes('--dry-run')
   if (readOnlySubcommands[argv[0]!]?.includes(argv[1] ?? '')) return true
-  if (argv[0] === 'settings') {
-    if (argv[1] === 'render' && argv.includes('--check')) return true
-    if (argv[1] === 'import' && argv.includes('--dry-run')) return true
-  }
+  if (argv[0] === 'settings') return settingsInvocationSkipsStamp(argv)
   return false
 }
 
