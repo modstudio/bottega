@@ -30,10 +30,10 @@ function recordTranscriptFingerprint(
 ) {
   conn
     .query(
-      `INSERT INTO transcript_fingerprint(path,size,mtime_ms) VALUES (?,?,?)
+      `INSERT INTO transcript_fingerprint(record_id,path,size,mtime_ms) VALUES (?,?,?,?)
        ON CONFLICT(path) DO UPDATE SET size=excluded.size,mtime_ms=excluded.mtime_ms`,
     )
-    .run(file, fingerprint.size, fingerprint.mtimeMs)
+    .run(newRecordId(), file, fingerprint.size, fingerprint.mtimeMs)
 }
 
 function transcriptFilesForPass(root: string, sinceDay: string) {

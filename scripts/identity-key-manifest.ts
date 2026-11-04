@@ -462,6 +462,11 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
 ]
 
 const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
+  {
+    store: 'orchestrator',
+    table: 'collect_change_counter',
+    reason: 'singleton local collector sequence',
+  },
   { store: 'orchestrator', table: 'orch_migrations', reason: 'migration journal bookkeeping' },
   {
     store: 'orchestrator',
@@ -693,6 +698,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
 
 const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'owned or referenced UUID', [
+    'collect_change_counter.record_id',
     'agent.record_id',
     'blocker.record_id',
     'blocker.run_record_id',
@@ -928,6 +934,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...TYPED_QUESTION_IDENTITY.uuids,
   ...ROUTING_POOL_IDENTITY.uuids,
   ...manifest('hub', 'owned or referenced UUID', [
+    'transcript_fingerprint.record_id',
     'commit_key.task_record_id',
     'operator_waiting_email.item_id',
     'question.workflow_cursor_id',
