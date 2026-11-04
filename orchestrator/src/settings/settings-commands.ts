@@ -356,7 +356,7 @@ function effectiveStoredSettings(
     merged,
     assetPath(),
     resolveOrchestratorDatabase(process.env),
-    readMachineValue('machine.global_use'),
+    readMachineValue('machine.global_use') as 'on' | 'off',
   ).settings
 }
 

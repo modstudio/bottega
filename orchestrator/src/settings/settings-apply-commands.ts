@@ -65,7 +65,7 @@ function withProductHooksForTarget(target: Target, settings: OwnedSettings): Own
     settings,
     assetPath(),
     resolveOrchestratorDatabase(process.env),
-    readMachineValue('machine.global_use'),
+    readMachineValue('machine.global_use') as 'on' | 'off',
   ).settings
 }
 

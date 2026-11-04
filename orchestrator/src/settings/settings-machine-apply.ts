@@ -115,7 +115,7 @@ function applyUserSettings(
       merged.settings,
       assetPath(),
       resolveOrchestratorDatabase(deps.environment),
-      readMachineValue('machine.global_use', deps.environment),
+      readMachineValue('machine.global_use', deps.environment) as 'on' | 'off',
     )
     const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)
