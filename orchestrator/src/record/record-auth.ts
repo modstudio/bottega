@@ -357,7 +357,10 @@ function recordEmailOptions(
           rewrittenUrl.searchParams.set('callbackURL', callbackUrl.href)
           verificationUrl = rewrittenUrl.href
         }
-        await sendVerification({ to: verificationUser.email, verifyUrl: verificationUrl }, environment)
+        await sendVerification(
+          { to: verificationUser.email, verifyUrl: verificationUrl },
+          environment,
+        )
       },
     },
   }

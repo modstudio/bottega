@@ -549,8 +549,7 @@ export function recordIdentityResponse(body: unknown): RecordIdentity {
     ? value.memberships.map((membership) => responseRecord(membership))
     : null
   if (
-    typeof user.id !== 'string' ||
-    typeof user.email !== 'string' ||
+    !['id', 'email'].every((field) => typeof user[field] === 'string') ||
     typeof user.emailVerified !== 'boolean' ||
     (value.activeSpaceId !== null && typeof value.activeSpaceId !== 'string') ||
     (value.personalSpaceId !== null && typeof value.personalSpaceId !== 'string') ||
