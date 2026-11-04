@@ -209,6 +209,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'note push',
   'note same',
   'note stale',
+  'note typed-question',
   'pr',
   'pr check',
   'pr ci-record',

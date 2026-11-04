@@ -3,15 +3,15 @@
 
 import type { Database } from 'bun:sqlite'
 import { noulProbability } from '../../../shared/typed-question/client.ts'
+import {
+  type TypedQuestionMetricRow,
+  typedQuestionMetrics,
+} from '../../../shared/typed-question/typed-question-metrics.ts'
+import type { TypedQuestionReportBlock } from '../../../shared/typed-question/typed-question-render.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
 import { SPEC_UNSETTLED_QUESTION } from './spec-unsettled-question.ts'
-import {
-  type TypedQuestionMetricRow,
-  type TypedQuestionMetrics,
-  typedQuestionMetrics,
-} from './typed-question-metrics.ts'
 
 type AnswerRow = {
   question_id: string
@@ -21,14 +21,6 @@ type AnswerRow = {
   input_tokens: number | null
   latency_ms: number
   error: string | null
-}
-
-export type TypedQuestionReportBlock = Omit<TypedQuestionMetrics, 'labeled' | 'pending'> & {
-  questionId: string
-  questionVersion: number
-  threshold: number | null
-  labeled: number | null
-  pending: number | null
 }
 
 const declarations = [SPEC_UNSETTLED_QUESTION, FINDING_DUPLICATE_QUESTION] as const

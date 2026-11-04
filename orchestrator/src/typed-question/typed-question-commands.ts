@@ -2,34 +2,10 @@
 /** Presents typed-question measurements. Must not know CLI grammar. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type TypedQuestionReportBlock, typedQuestionReport } from './typed-question-report.ts'
+import { renderTypedQuestionBlock } from '../../../shared/typed-question/typed-question-render.ts'
+import { typedQuestionReport } from './typed-question-report.ts'
 
 type Presentation = { log(value: string): void }
-
-const value = (measurement: number | null, digits = 2): string =>
-  measurement === null ? 'none' : measurement.toFixed(digits)
-
-function render(block: TypedQuestionReportBlock, presentation: Presentation): void {
-  const lines: [string, string][] = [
-    ['threshold', value(block.threshold)],
-    ['recorded', String(block.recorded)],
-    ['answered', String(block.answered)],
-    ['errors', JSON.stringify(block.errors)],
-    ['labeled', block.labeled === null ? 'none' : String(block.labeled)],
-    ['pending', block.pending === null ? 'none' : String(block.pending)],
-    ['baseRate', value(block.baseRate)],
-    ['auc', value(block.auc)],
-    ['precision', value(block.precision)],
-    ['recall', value(block.recall)],
-    ['warnedRate', value(block.warnedRate)],
-    ['latencyP50Ms', String(block.latencyP50Ms)],
-    ['latencyP95Ms', String(block.latencyP95Ms)],
-    ['inputTokens', String(block.inputTokens)],
-    ['costUsd', value(block.costUsd, 6)],
-  ]
-  presentation.log(`\n${block.questionId} v${block.questionVersion}`)
-  for (const [name, shown] of lines) presentation.log(`  ${name.padEnd(16)}${shown}`)
-}
 
 export function typedQuestionCommand(
   options: { question?: string; days?: string; json: boolean },
@@ -58,5 +34,5 @@ export function typedQuestionCommand(
     presentation.log(JSON.stringify(report, null, 2))
     return
   }
-  for (const block of report) render(block, presentation)
+  for (const block of report) renderTypedQuestionBlock(block, presentation)
 }
