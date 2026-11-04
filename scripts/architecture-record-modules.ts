@@ -676,11 +676,17 @@ export const recordModules: RecordModule[] = [
     './record-verdicts.ts',
   ]),
   module('orchestrator/src/record/record-config-error.ts', []),
+  module('orchestrator/src/record/record-migration-requirement.ts', [
+    'bun',
+    '../../../shared/brand.ts',
+    '../postgres/postgres-migrate.ts',
+  ]),
   module('orchestrator/src/record/record-config-access-removal.ts', [
     'bun',
     '../../../shared/brand.ts',
     '../../../shared/record/tenant.ts',
     './record-config-error.ts',
+    './record-migration-requirement.ts',
     './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-api-public-docs.ts', [
@@ -764,7 +770,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/brand.ts',
     'bun',
     '../../../shared/record-space-membership.ts',
-    '../postgres/postgres-migrate.ts',
+    './record-migration-requirement.ts',
     './record-session.ts',
     './record-space.ts',
     './record-pool.ts',

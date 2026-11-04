@@ -53,6 +53,7 @@ BEGIN
     FROM record_config_access_stranded_dek_versions(OLD.space_id, OLD.user_id);
 
     IF stranded_versions IS NOT NULL THEN
+      -- Keep this refusal and remedy in sync with orchestrator/src/record/record-config-access-removal.ts.
       RAISE EXCEPTION 'cannot remove config access because it would strand data key versions: %; from one of the member''s machines, trust a machine of a remaining config-access holder with `bottega machine config machine trust <keyId> <publicKey>` so the data key is wrapped for it, then retry', stranded_versions;
     END IF;
 

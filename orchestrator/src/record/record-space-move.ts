@@ -4,7 +4,7 @@
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
-import { recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { assertRecordMigrationsCurrent } from './record-migration-requirement.ts'
 import { recordPool } from './record-pool.ts'
 import { currentRecordUserSession } from './record-session.ts'
 import type { RecordMembership } from './record-space.ts'
@@ -87,21 +87,7 @@ export async function moveRecordProjectSpace(input: {
     return await client.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
       await tx`SELECT set_config('app.space_id', ${source}, true)`
-      const available = await tx`
-          SELECT to_regprocedure('record_applied_migration_count()') IS NOT NULL AS available
-        `
-      if (!available[0]?.available) {
-        throw new Error(
-          `record migrations are behind this command; run \`${PLATFORM_SLUG} record migrate\`, then retry`,
-        )
-      }
-      const applied = await tx`SELECT record_applied_migration_count() AS count`
-      const shipped = recordMigrationCount()
-      if (Number(applied[0]?.count ?? 0) !== shipped) {
-        throw new Error(
-          `record migrations are behind this command (applied ${Number(applied[0]?.count ?? 0)}, shipped ${shipped}); run \`${PLATFORM_SLUG} record migrate\`, then retry`,
-        )
-      }
+      await assertRecordMigrationsCurrent(tx)
       const rows = await tx`
           SELECT * FROM record_move_project_space(
             ${source}, ${input.project}, ${destination.spaceId}, ${input.confirm ?? null}::bigint

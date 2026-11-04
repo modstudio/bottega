@@ -4,6 +4,7 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { ConfigServiceError } from './record-config-error.ts'
+import { assertRecordMigrationsCurrent } from './record-migration-requirement.ts'
 import { recordPool } from './record-pool.ts'
 
 const claimOrRevokeRemedy = `run \`${PLATFORM_SLUG} machine config machine init\` on each machine to claim it, or revoke it with \`${PLATFORM_SLUG} machine config machine revoke <keyId>\`, then retry`
@@ -14,6 +15,8 @@ export async function assertConfigAccessRemovalSafe(
   spaceId: string,
   userId: string,
 ): Promise<void> {
+  await assertRecordMigrationsCurrent(tx)
+
   const unattributed = await tx`
     SELECT DISTINCT k.key_id
     FROM machine_public_key k JOIN secret_dek_wrap w
@@ -32,6 +35,7 @@ export async function assertConfigAccessRemovalSafe(
     ORDER BY version
   `
   if (stranded.length)
+    // Keep this refusal and remedy in sync with 20261103210000_dev_2097_config_access_revocation/migration.sql.
     throw new ConfigServiceError(
       `cannot remove config access because it would strand data key versions: ${stranded.map((row: Record<string, unknown>) => String(row.version)).join(', ')}; ${preserveDekRemedy}`,
       409,
