@@ -15,7 +15,7 @@ import { gitContext } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import { type CitedFileReader, checkoutFileReader } from './cited-context.ts'
 import { FINDING_PAIR_SUBJECT_KIND } from './finding-duplicate-question.ts'
-import { specQuestionState, specSubjectKind } from './spec-unsettled-question.ts'
+import { specQuestionState, specSubjectKind, specSubjectKinds } from './spec-unsettled-question.ts'
 import { TYPED_QUESTION_DECLARATIONS, typedQuestionReport } from './typed-question-report.ts'
 import { askTypedQuestion } from './typed-question-service.ts'
 
@@ -62,7 +62,7 @@ function answeredFor(database: Database, question: TypedQuestion): Answered {
     Boolean(statement.get(question.id, question.version, subjectKind, subjectRef))
 }
 
-type Checkout = { read: CitedFileReader; commit: string | null }
+export type Checkout = { read: CitedFileReader; commit: string | null }
 
 /** Reads cited files from each project's main checkout, resolving it and its commit once. */
 function checkoutContext(database: Database): (repo: string) => Checkout | null {
@@ -111,7 +111,7 @@ function specRunRows(database: Database, options: BacktestOptions): Iterable<Spe
 }
 
 /** The state live asking would use for this run's spec, or null when it cannot be rebuilt. */
-function specState(
+export function specState(
   row: SpecRunRow,
   declaration: BacktestDeclaration,
   checkout: (repo: string) => Checkout | null,
@@ -139,7 +139,7 @@ const specRunSubjects: SubjectSource = (database, declaration, options, answered
     const key = `${subjectKind}\0${row.spec_sha}`
     if (seen.has(key)) continue
     seen.add(key)
-    if (answered(subjectKind, row.spec_sha)) {
+    if (specSubjectKinds(row.job).some((kind) => answered(kind, row.spec_sha))) {
       alreadyAnswered += 1
       continue
     }

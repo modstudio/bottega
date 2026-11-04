@@ -10,7 +10,8 @@ import {
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
-import { findingPairSubjects, typedQuestionBacktest } from './typed-question-backtest.ts'
+import { SPEC_UNSETTLED_QUESTION, SPEC_UNSETTLED_QUESTION_V2 } from './spec-unsettled-question.ts'
+import { findingPairSubjects, specState, typedQuestionBacktest } from './typed-question-backtest.ts'
 
 test('refuses an undeclared question and names the declared ids', async () => {
   await expect(
@@ -209,4 +210,69 @@ test('a spec dispatched twice is asked once, and a missing prompt is counted unr
   )
   expect(asked).toEqual([`${job}-shared`])
   expect(lines).toContain('asked 1; already answered 0; unreadable 1; errors 0')
+})
+
+test('an implement spec answered under the legacy spec kind is not asked again', async () => {
+  const database = db()
+  const specSha = `legacy-${newRecordId()}`
+  const promptPath = join(mkdtempSync(join(tmpdir(), 'typed-backtest-legacy-')), 'prompt.txt')
+  writeFileSync(promptPath, 'caller spec')
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,
+        turn,project_record_id,prompt_path)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','p',?,1,'p','ok',
+               1,?,?)`,
+    )
+    .run(
+      newRecordId(),
+      new Date().toISOString(),
+      specSha,
+      fixtureProjectRecordId(database),
+      promptPath,
+    )
+  database
+    .query(
+      `INSERT INTO typed_question_answer
+       (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
+        model,input_tokens,latency_ms,error,created_at)
+       VALUES (?,'spec_unsettled',1,'spec',?,'state','{"noul":0.1}','jev',1,1,NULL,?)`,
+    )
+    .run(newRecordId(), specSha, new Date().toISOString())
+  const asked: string[] = []
+  await typedQuestionBacktest(
+    { question: 'spec_unsettled', version: 1, job: 'implement', limit: 500 },
+    { log: () => {} },
+    database,
+    async (input) => {
+      asked.push(input.subjectRef)
+      return { noul: 0 }
+    },
+  )
+  expect(asked).not.toContain(specSha)
+})
+
+test('a context-building version asks with the cited files and records the checkout commit', () => {
+  const promptPath = join(mkdtempSync(join(tmpdir(), 'typed-backtest-v2-')), 'prompt.txt')
+  writeFileSync(promptPath, 'Change `src/cited.ts` only.')
+  const row = { job: 'implement', repo: 'fixture', prompt_path: promptPath, spec_sha: 's' }
+  const checkout = () => ({
+    read: (path: string) => (path === 'src/cited.ts' ? 'cited source' : null),
+    commit: 'abc123',
+  })
+  const commits = new Set<string>()
+  expect(specState(row, SPEC_UNSETTLED_QUESTION_V2, checkout, commits)).toEqual(
+    SPEC_UNSETTLED_QUESTION_V2.contextBuilder('Change `src/cited.ts` only.', checkout().read),
+  )
+  expect(JSON.stringify(specState(row, SPEC_UNSETTLED_QUESTION_V2, checkout, commits))).toContain(
+    'cited source',
+  )
+  expect([...commits]).toEqual(['fixture:abc123'])
+  expect(
+    specState({ ...row, repo: null }, SPEC_UNSETTLED_QUESTION_V2, checkout, commits),
+  ).toBeNull()
+  expect(specState(row, SPEC_UNSETTLED_QUESTION, checkout, commits)).toBe(
+    'Change `src/cited.ts` only.',
+  )
 })
