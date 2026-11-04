@@ -61,10 +61,10 @@ export function launchAgentProgramPath(plist: string): string | null {
   )
 }
 
-export function launchAgentRenderCommandValues(args: string[]): LaunchAgentRenderValues {
-  const values = Object.fromEntries(
-    LAUNCH_AGENT_PLACEHOLDERS.map((placeholder) => [placeholder, '']),
-  ) as Record<LaunchAgentPlaceholder, string>
+export function launchAgentRenderCommandValues(
+  args: string[],
+): Readonly<Partial<LaunchAgentRenderValues>> {
+  const values: Partial<Record<LaunchAgentPlaceholder, string>> = {}
   for (let index = 0; index < args.length; index += 2) {
     const placeholder = args[index]
     const value = args[index + 1]

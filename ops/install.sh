@@ -141,7 +141,7 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       "__RECORD_TUNNEL_APP__" "$RECORD_TUNNEL_APP" \
       "__RECORD_TUNNEL_LOCAL_PORT__" "$RECORD_TUNNEL_LOCAL_PORT" \
       "__RECORD_TUNNEL_REMOTE_PORT__" "$RECORD_TUNNEL_REMOTE_PORT" \
-      "__HUB_PORT__" "" "__HUB_HOSTED_URL__" "${BOTTEGA_HOSTED_URL:-}"
+      "__HUB_HOSTED_URL__" "${BOTTEGA_HOSTED_URL:-}"
   if ! bun --no-env-file "$INSTALL_ROOT/orchestrator/src/setup/environment-name-migration.ts" check-file "$target"; then
     echo "refusing installed plist with a legacy environment name: $target" >&2
     FAILED_LABELS+=("$label")

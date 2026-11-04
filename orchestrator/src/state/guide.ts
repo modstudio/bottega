@@ -73,11 +73,12 @@ export function guideRouteDecision(
   delegation: DelegationMode,
   delegationSetting: string,
   selection:
+    | { kind: 'harness' }
     | { kind: 'routed'; agent: string; reason: string }
     | { kind: 'refused'; headline: string }
     | { kind: 'capacity'; headline: string },
 ): Pick<JobGuide, 'delegation' | 'routesTo' | 'unroutable' | 'reason'> {
-  if (delegation === 'harness')
+  if (selection.kind === 'harness')
     return {
       delegation,
       routesTo: null,
@@ -111,11 +112,7 @@ function guideRoute(
   const delegation = delegationMode(JOBS[name]!.needs, settings)
   const delegationSetting = DELEGATION_SETTING_KEYS[jobClass]
   if (delegation === 'harness')
-    return guideRouteDecision(delegation, delegationSetting, {
-      kind: 'routed',
-      agent: '',
-      reason: '',
-    })
+    return guideRouteDecision(delegation, delegationSetting, { kind: 'harness' })
   try {
     return guideRouteDecision(delegation, delegationSetting, {
       kind: 'routed',

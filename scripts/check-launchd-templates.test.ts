@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { LAUNCH_AGENT_PLACEHOLDERS } from '../shared/launch-agent-render.ts'
 import {
   clockParts,
   installerPlaceholders,
+  installerRenderRules,
   missingInstallRules,
   templatePlaceholders,
 } from './check-launchd-templates.ts'
@@ -35,11 +35,12 @@ describe('installerPlaceholders', () => {
     expect([...rules]).toEqual(['__HOME__'])
   })
 
-  test('an invocation of the shared renderer covers its full vocabulary', () => {
+  test('an invocation of the shared renderer covers only the pairs it passes', () => {
     const rules = installerPlaceholders(
-      'bun --no-env-file "$INSTALL_ROOT/shared/launch-agent-render.ts" "$tmpl" "$target"',
+      `bun --no-env-file "$INSTALL_ROOT/shared/launch-agent-render.ts" "$tmpl" "$target" \\
+        "__HOME__" "$HOME" "__INSTALL_ROOT__" "$INSTALL_ROOT"`,
     )
-    expect(rules).toEqual(new Set(LAUNCH_AGENT_PLACEHOLDERS))
+    expect(rules).toEqual(new Set(['__HOME__', '__INSTALL_ROOT__']))
   })
 })
 
@@ -75,7 +76,7 @@ describe('the checked-in templates', () => {
       { directory: 'hub/launchd', installer: 'hub/bin/install-launchd.sh' },
     ]
     for (const { directory, installer } of concerns) {
-      const installRules = installerPlaceholders(
+      const installRules = installerRenderRules(
         readFileSync(join(repositoryRoot, installer), 'utf8'),
       )
       const names = readdirSync(join(repositoryRoot, directory)).filter((name) =>

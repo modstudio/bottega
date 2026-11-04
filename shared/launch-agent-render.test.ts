@@ -33,7 +33,7 @@ const LEGACY_SED_HASHES: Record<string, string> = {
   'ops/launchd/com.user.orch-load-sample.plist.template':
     '7ed8c13f6fd667a99708308993c9f0fae60df993013f018ffc4e137ba63c2d22',
   'ops/launchd/com.user.orch-monitor.plist.template':
-    '12a78a616cbf290690c7004d488bd7ff78e10c5fad1f64efaf5163a2292883f5',
+    'cf7d9680587e6c162a2dfa16015e7323f6d04ac8f18cdc236a7566ce4ef33674',
   'ops/launchd/com.user.orch-record-sync.plist.template':
     '4f07b88c070f2863dd742cb72fdae3c59954ebd0ba5acafcddfceaae855590ec',
   'ops/launchd/com.user.orch-spare.plist.template':
@@ -84,5 +84,13 @@ describe('launch-agent renderer', () => {
 
     const overridden = launchAgentRenderCommandValues(['__MONITOR_BACKSTOP_SECONDS__', '60'])
     expect(overridden.__MONITOR_BACKSTOP_SECONDS__).toBe('60')
+  })
+
+  test('the renderer CLI leaves unpassed placeholders unresolved', () => {
+    const values = launchAgentRenderCommandValues(['__HOME__', '/Users/example'])
+    expect(values.__INSTALL_ROOT__).toBeUndefined()
+    expect(() => renderLaunchAgentTemplate('__HOME__ __INSTALL_ROOT__', values)).toThrow(
+      'unresolved launch-agent placeholder(s): __INSTALL_ROOT__',
+    )
   })
 })

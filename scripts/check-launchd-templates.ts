@@ -6,7 +6,6 @@ import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   FIX_DEFECT_BACKSTOP_SECONDS,
-  LAUNCH_AGENT_PLACEHOLDERS,
   MONITOR_BACKSTOP_SECONDS,
 } from '../shared/launch-agent-render.ts'
 import { readMachineValue } from '../shared/machine-config.ts'
@@ -46,18 +45,48 @@ export function templatePlaceholders(text: string): string[] {
   return [...new Set(text.match(/__[A-Z0-9_]+__/g) ?? [])]
 }
 
+function rendererInvocations(script: string): string[][] {
+  return script
+    .replaceAll(/\\\r?\n/g, ' ')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .map((line) =>
+      (line.match(/"(?:[^"\\]|\\.)*"|'[^']*'|\S+/g) ?? []).map((token) =>
+        /^(["']).*\1$/.test(token) ? token.slice(1, -1) : token,
+      ),
+    )
+    .filter(
+      (tokens) =>
+        tokens[0] === 'bun' &&
+        tokens[1] === '--no-env-file' &&
+        tokens[2]?.endsWith('shared/launch-agent-render.ts'),
+    )
+}
+
 /** The placeholders an installer's substitution rules cover. */
 export function installerPlaceholders(script: string): Set<string> {
-  const invokesRenderer = script.split('\n').some((line) => {
-    const command = line.trim()
-    if (!command || command.startsWith('#')) return false
-    return /^bun\s+--no-env-file\s+(?:"[^"]*shared\/launch-agent-render\.ts"|'[^']*shared\/launch-agent-render\.ts'|\S*shared\/launch-agent-render\.ts)(?:\s|$)/.test(
-      command,
-    )
-  })
-  if (invokesRenderer) return new Set(LAUNCH_AGENT_PLACEHOLDERS)
+  const invocations = rendererInvocations(script)
+  const rendererRules = new Set<string>()
+  for (const tokens of invocations) {
+    for (let index = 5; index + 1 < tokens.length; index += 2) {
+      const placeholder = tokens[index]!
+      if (/^__[A-Z0-9_]+__$/.test(placeholder)) rendererRules.add(placeholder)
+    }
+  }
+  if (invocations.length > 0) return rendererRules
   const names = [...script.matchAll(/s#(__[A-Z0-9_]+__)#/g)].map((match) => match[1]!)
   return new Set(names)
+}
+
+/** Explicit installer pairs plus defaults supplied by the renderer CLI itself. */
+export function installerRenderRules(script: string): Set<string> {
+  const rules = installerPlaceholders(script)
+  if (rendererInvocations(script).length > 0) {
+    rules.add('__MONITOR_BACKSTOP_SECONDS__')
+    rules.add('__FIX_DEFECT_BACKSTOP_SECONDS__')
+  }
+  return rules
 }
 
 /**
@@ -201,7 +230,7 @@ function checkTemplate(input: {
       templateName: name,
       templateText: template,
       installerName: installer,
-      installRules: installerPlaceholders(readFileSync(join(repositoryRoot, installer), 'utf8')),
+      installRules: installerRenderRules(readFileSync(join(repositoryRoot, installer), 'utf8')),
     }),
   )
   let rendered = template

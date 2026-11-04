@@ -66,6 +66,15 @@ export type LaunchAgentDoctorDecision = {
 
 const maintenanceLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
 
+function installerRemedy(
+  installationKind: InstallationKind | null,
+  ownerCommand: string | null,
+): string | null {
+  if (installationKind === 'distribution') return `${PLATFORM_SLUG} machine setup apply`
+  if (installationKind === 'checkout') return ownerCommand
+  return null
+}
+
 export type LaunchAgentDefinitionObservation = {
   programPath: string | null
   programExists: boolean
@@ -89,12 +98,10 @@ export function decideLaunchAgentDoctor(input: {
     const reason = input.skipReasons[label]
     return reason ? [{ label, reason }] : []
   })
-  const scheduleRemedy =
-    input.installationKind === 'distribution'
-      ? `${PLATFORM_SLUG} machine setup apply`
-      : input.installationKind === 'checkout'
-        ? (input.owners.find(({ label }) => maintenanceLabels.has(label))?.command ?? null)
-        : null
+  const scheduleRemedy = installerRemedy(
+    input.installationKind,
+    input.owners.find(({ label }) => maintenanceLabels.has(label))?.command ?? null,
+  )
   const observedLoadedLabels =
     input.loadObservation.kind === 'available' ? input.loadObservation.loadedLabels : null
   const definitionFindings: LaunchAgentDoctorDecision['definitionFindings'] = []
@@ -102,8 +109,7 @@ export function decideLaunchAgentDoctor(input: {
   for (const { label, command } of input.owners) {
     const observation = input.definitions?.[label]
     if (!observation) continue
-    const remedy =
-      input.installationKind === 'distribution' ? `${PLATFORM_SLUG} machine setup apply` : command
+    const remedy = installerRemedy(input.installationKind, command) ?? command
     if (observation.programPath && !observation.programExists) {
       definitionFindings.push({
         label,
