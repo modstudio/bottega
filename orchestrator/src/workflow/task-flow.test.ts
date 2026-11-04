@@ -579,3 +579,131 @@ test('keyed selection adopts an open cursor left without a flow by the backfill'
     d.close()
   }
 })
+
+test('unreachable takeover refuses without changing takeover or revision', () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-unreachable-takeover'
+  const args = { key: 'DEV-UNREACHABLE' }
+  const baseContext = {
+    session: 'task-flow-unreachable',
+    taskRecordId: 'task-DEV-UNREACHABLE',
+    taskStatusCategory: 'active',
+  }
+  installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
+  const opened = composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    baseContext,
+    d,
+    {},
+    {},
+  )
+  const holder = newRecordId()
+  d.query('UPDATE workflow_cursor SET last_advanced_machine_id=? WHERE number=?').run(
+    holder,
+    opened.cursor!.id,
+  )
+  const before = d
+    .query('SELECT taken_over_from_machine_id,revision FROM workflow_cursor WHERE number=?')
+    .get(opened.cursor!.id)
+
+  expect(() =>
+    nextWorkflowStep(
+      workflow,
+      'fixture',
+      'default',
+      args,
+      'advance',
+      {
+        ...baseContext,
+        taskFlowRead: { status: 'unreachable', remedy: 'sign in to the record' },
+      },
+      d,
+      {},
+      testPorts,
+    ),
+  ).toThrow(`workflow stage is held by ${holder}; sign in to the record`)
+  expect(
+    d
+      .query('SELECT taken_over_from_machine_id,revision FROM workflow_cursor WHERE number=?')
+      .get(opened.cursor!.id),
+  ).toEqual(before)
+})
+
+test('takeover without a keyed record read refuses with the --key remedy', () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-not-attempted-takeover'
+  const args = { key: 'DEV-NOT-ATTEMPTED' }
+  const context = {
+    session: 'task-flow-not-attempted',
+    taskRecordId: 'task-DEV-NOT-ATTEMPTED',
+    taskStatusCategory: 'active',
+  }
+  installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
+  const opened = composeWorkflowWithCursor(workflow, 'fixture', 'default', args, context, d, {}, {})
+  const holder = newRecordId()
+  d.query('UPDATE workflow_cursor SET last_advanced_machine_id=? WHERE number=?').run(
+    holder,
+    opened.cursor!.id,
+  )
+
+  expect(() =>
+    nextWorkflowStep(workflow, 'fixture', 'default', args, 'advance', context, d, {}, testPorts),
+  ).toThrow(
+    `workflow stage is held by ${holder}; the stage was last advanced by this holder and was not read from the record; re-run with --key DEV-NOT-ATTEMPTED`,
+  )
+})
+
+test('a takeover refused for a missing close note leaves the cursor untouched', () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-takeover-missing-note'
+  const args = { key: 'DEV-MISSING-NOTE' }
+  const baseContext = {
+    session: 'task-flow-missing-note',
+    taskRecordId: 'task-DEV-MISSING-NOTE',
+    taskStatusCategory: 'active',
+  }
+  installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
+  const opened = composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    baseContext,
+    d,
+    {},
+    {},
+  )
+  const holder = newRecordId()
+  d.query('UPDATE workflow_cursor SET last_advanced_machine_id=? WHERE number=?').run(
+    holder,
+    opened.cursor!.id,
+  )
+  const before = d
+    .query('SELECT taken_over_from_machine_id,revision FROM workflow_cursor WHERE number=?')
+    .get(opened.cursor!.id)
+
+  expect(() =>
+    nextWorkflowStep(
+      workflow,
+      'fixture',
+      'default',
+      args,
+      undefined,
+      {
+        ...baseContext,
+        taskFlowRead: { status: 'reachable', holder: { id: holder, displayName: 'Machine B' } },
+      },
+      d,
+      {},
+      testPorts,
+    ),
+  ).toThrow('--note is required')
+  expect(
+    d
+      .query('SELECT taken_over_from_machine_id,revision FROM workflow_cursor WHERE number=?')
+      .get(opened.cursor!.id),
+  ).toEqual(before)
+})

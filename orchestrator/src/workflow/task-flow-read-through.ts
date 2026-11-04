@@ -5,23 +5,16 @@ import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { writeTransaction } from '../database/db.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
+import { RECORD_TASK_FLOW_NOT_FOUND_MESSAGE } from '../record/record-task-flow.ts'
 import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
+import { insertWorkflowCursorRow } from './task-flow.ts'
+import {
+  decideTaskFlowReadStatus,
+  decideTaskFlowReadThrough,
+  type TaskFlowReadStatus,
+} from './task-flow-decision.ts'
 
-export type TaskFlowReadDecision = 'local' | 'hosted' | 'refresh'
-export function decideTaskFlowReadThrough(input: {
-  localStageRevision: number | null
-  hostedStageRevision: number | null
-}): TaskFlowReadDecision {
-  if (input.hostedStageRevision == null) return 'local'
-  if (input.localStageRevision == null) return 'hosted'
-  return input.hostedStageRevision > input.localStageRevision ? 'refresh' : 'local'
-}
-
-export type TaskFlowReadStatus = {
-  reachable: boolean
-  remedy?: string
-  holder?: { id: string; displayName: string }
-}
+export type { TaskFlowReadStatus } from './task-flow-decision.ts'
 
 export function cacheHostedTaskFlow(
   database: Database,
@@ -54,45 +47,42 @@ export function cacheHostedTaskFlow(
         flow.revision,
       )
     if (stage) {
-      database
-        .query(
-          `INSERT INTO workflow_cursor
-         (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
-          task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
-          args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
-          opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),
-          (SELECT name FROM project WHERE record_id=?),?,?,?,?,?,?,'',NULL,?,?,?,NULL,?,?,?, ?,NULL,?,?,?,'floors',?,?,?,?)
-         ON CONFLICT(record_id) DO UPDATE SET task_flow_record_id=excluded.task_flow_record_id,
-          ordinal=excluded.ordinal,step_slug=excluded.step_slug,state=excluded.state,closed=excluded.closed,
-          total_steps=excluded.total_steps,updated_at=excluded.updated_at,
-          taken_over_from_machine_id=excluded.taken_over_from_machine_id,
-          last_advanced_machine_id=excluded.last_advanced_machine_id,revision=excluded.revision`,
-        )
-        .run(
-          stage.id,
-          flow.projectId,
-          flow.projectId,
-          stage.workflow,
-          stage.mode,
-          taskKey,
-          flow.taskId,
-          flow.id,
-          stage.workflowVersionId,
-          stage.catalogueVersionId,
-          JSON.stringify(stage.arguments),
-          stage.activeOrdinal,
-          stage.activeSlug,
-          stage.state,
-          JSON.stringify(stage.closedStepNotes),
-          stage.totalSteps,
-          stage.createdAt,
-          stage.updatedAt,
-          stage.openedMachineId,
-          stage.takenOverFromMachineId,
-          stage.lastAdvancedMachineId,
-          stage.revision,
-        )
+      const project = database
+        .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+        .get(flow.projectId)!
+      insertWorkflowCursorRow(
+        database,
+        {
+          recordId: stage.id,
+          projectRecordId: flow.projectId,
+          project: project.name,
+          workflow: stage.workflow,
+          mode: stage.mode,
+          workflowKey: taskKey,
+          taskRecordId: flow.taskId,
+          taskFlowRecordId: flow.id,
+          instanceId: '',
+          sessionId: null,
+          workflowVersionRecordId: stage.workflowVersionId,
+          catalogueVersionRecordId: stage.catalogueVersionId,
+          args: JSON.stringify(stage.arguments),
+          autonomy: null,
+          ordinal: stage.activeOrdinal,
+          stepSlug: stage.activeSlug,
+          state: stage.state,
+          closed: JSON.stringify(stage.closedStepNotes),
+          question: null,
+          totalSteps: stage.totalSteps,
+          createdAt: stage.createdAt,
+          updatedAt: stage.updatedAt,
+          enforcement: 'floors',
+          openedMachineId: stage.openedMachineId,
+          takenOverFromMachineId: stage.takenOverFromMachineId,
+          lastAdvancedMachineId: stage.lastAdvancedMachineId,
+          revision: stage.revision,
+        },
+        'hosted-record',
+      )
       database
         .query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?')
         .run(stage.id, flow.id)
@@ -108,27 +98,28 @@ export async function readThroughTaskFlow(
   try {
     const hosted = await recordApiClient().readTaskFlow!({ taskKey: input.taskKey })
     const local = database
-      .query<{ revision: number }, [string]>(
+      .query<{ revision: number | null }, [string]>(
         `SELECT cursor.revision FROM task_flow flow LEFT JOIN workflow_cursor cursor
        ON cursor.record_id=flow.open_stage_cursor_record_id WHERE flow.task_record_id=?`,
       )
       .get(input.taskRecordId)
     const decision = decideTaskFlowReadThrough({
+      localFlowExists: Boolean(local),
       localStageRevision: local?.revision ?? null,
       hostedStageRevision: hosted.stage?.revision ?? null,
     })
     if (decision !== 'local') cacheHostedTaskFlow(database, input.taskKey, hosted)
-    return { reachable: true, ...(hosted.stage ? { holder: hosted.stage.holder } : {}) }
+    return { status: 'reachable', ...(hosted.stage ? { holder: hosted.stage.holder } : {}) }
   } catch (error) {
-    if (error instanceof RecordApiRequestError && error.status === 404) return { reachable: true }
     if (!(error instanceof RecordApiRequestError)) throw error
-    return {
-      reachable: false,
-      remedy: configured
-        ? error instanceof Error
-          ? error.message
-          : String(error)
+    return decideTaskFlowReadStatus({
+      status: error.status,
+      recognizedNotFound:
+        error.status === 404 && error.message === RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+      configured,
+      errorRemedy: configured
+        ? error.message
         : `hosted record is not configured; ${RECORD_SIGN_IN_REMEDY}`,
-    }
+    })
   }
 }

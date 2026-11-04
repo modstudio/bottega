@@ -14,6 +14,99 @@ import {
 import { enqueueTaskFlowRecord } from './task-flow-outbox.ts'
 import { enqueueTaskFlowStageRecord } from './task-flow-stage-outbox.ts'
 
+export type WorkflowCursorInsert = {
+  recordId: string
+  projectRecordId?: string
+  project: string
+  workflow: string
+  mode: string
+  workflowKey: string
+  taskRecordId: string | null
+  taskFlowRecordId: string | null
+  instanceId: string
+  sessionId: string | null
+  workflowVersionRecordId: string
+  catalogueVersionRecordId: string
+  args: string
+  autonomy: string | null
+  ordinal: number
+  stepSlug: string
+  state: string
+  closed: string
+  question: string | null
+  totalSteps: number
+  createdAt: string
+  updatedAt: string
+  enforcement: string
+  openedMachineId: string | null
+  takenOverFromMachineId: string | null
+  lastAdvancedMachineId: string | null
+  revision: number
+}
+
+/** Owns the complete persisted workflow-cursor row shape for local and hosted inserts. */
+export function insertWorkflowCursorRow(
+  database: Database,
+  row: WorkflowCursorInsert,
+  conflict: 'local-identity' | 'hosted-record',
+): string {
+  const projectRecordId =
+    row.projectRecordId ??
+    database
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
+      .get(row.project)!.record_id
+  const conflictSql =
+    conflict === 'local-identity'
+      ? `ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
+           session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
+           updated_at=excluded.updated_at`
+      : `ON CONFLICT(record_id) DO UPDATE SET task_flow_record_id=excluded.task_flow_record_id,
+           ordinal=excluded.ordinal,step_slug=excluded.step_slug,state=excluded.state,closed=excluded.closed,
+           total_steps=excluded.total_steps,updated_at=excluded.updated_at,
+           taken_over_from_machine_id=excluded.taken_over_from_machine_id,
+           last_advanced_machine_id=excluded.last_advanced_machine_id,revision=excluded.revision`
+  return database
+    .query<{ record_id: string }, (string | number | null)[]>(
+      `INSERT INTO workflow_cursor
+       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
+        task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
+        args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
+        opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ${conflictSql}
+       RETURNING record_id`,
+    )
+    .get(
+      row.recordId,
+      row.project,
+      projectRecordId,
+      row.workflow,
+      row.mode,
+      row.workflowKey,
+      row.taskRecordId,
+      row.taskFlowRecordId,
+      row.instanceId,
+      row.sessionId,
+      row.workflowVersionRecordId,
+      row.catalogueVersionRecordId,
+      row.args,
+      row.autonomy,
+      row.ordinal,
+      row.stepSlug,
+      row.state,
+      row.closed,
+      row.question,
+      row.totalSteps,
+      row.createdAt,
+      row.updatedAt,
+      row.enforcement,
+      row.openedMachineId,
+      row.takenOverFromMachineId,
+      row.lastAdvancedMachineId,
+      row.revision,
+    )!.record_id
+}
+
 type TaskFlowRow = { record_id: string; open_stage_cursor_record_id: string | null }
 
 function stampTaskFlowMachine(flowRecordId: string, d: Database): void {
@@ -176,15 +269,4 @@ function enqueueTaskFlowCursorState(cursorRecordId: string, d: Database): void {
 export function recordTaskFlowCursorMutation(cursorRecordId: string, d: Database): void {
   stampWorkflowCursorMachine(cursorRecordId, 1, d)
   enqueueTaskFlowCursorState(cursorRecordId, d)
-}
-
-export function markWorkflowCursorTakeover(
-  cursorRecordId: string,
-  fromMachineId: string,
-  d: Database,
-): void {
-  d.query('UPDATE workflow_cursor SET taken_over_from_machine_id=? WHERE record_id=?').run(
-    fromMachineId,
-    cursorRecordId,
-  )
 }

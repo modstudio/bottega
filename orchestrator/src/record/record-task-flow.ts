@@ -6,7 +6,10 @@ import type { HostedTaskFlow } from './record-task-flow-contract.ts'
 
 export class RecordTaskFlowError extends Error {
   readonly status = 404
+  readonly code = RECORD_TASK_FLOW_NOT_FOUND_CODE
 }
+const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
+export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not found'
 
 export async function readRecordTaskFlow(
   input: TenantPrincipal & { url: string; taskKey?: string; flowRecordId?: string },
@@ -30,9 +33,10 @@ export async function readRecordTaskFlow(
       WHERE f.space_id=${input.spaceId}::uuid
         AND (${input.flowRecordId ?? null}::uuid IS NULL OR f.id=${input.flowRecordId ?? null}::uuid)
         AND (${input.taskKey ?? null}::text IS NULL OR t.key=${input.taskKey ?? null})
+      ORDER BY f.open_stage_record_id IS NULL, f.revision DESC, f.updated_at DESC, f.id
       LIMIT 1`
     const row = rows[0]
-    if (!row) throw new RecordTaskFlowError('hosted task flow was not found')
+    if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
     const iso = (value: unknown) => new Date(String(value)).toISOString()
     return {
       flow: {

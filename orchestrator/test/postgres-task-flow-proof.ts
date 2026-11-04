@@ -153,7 +153,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           session: 'machine-b',
           taskRecordId: taskId,
           taskStatusCategory: 'active',
-          taskFlowRead: { reachable: true, holder: byTask.stage!.holder },
+          taskFlowRead: { status: 'reachable', holder: byTask.stage!.holder },
         },
         databaseB,
         {},

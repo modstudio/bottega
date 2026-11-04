@@ -66,7 +66,8 @@ export function registerRecordWorkflowRoutes(
     try {
       return context.json(await deps.readTaskFlow({ ...active, ...query.data }))
     } catch (error) {
-      if (error instanceof RecordTaskFlowError) return context.json({ error: error.message }, 404)
+      if (error instanceof RecordTaskFlowError)
+        return context.json({ error: error.message, code: error.code }, 404)
       throw error
     }
   })

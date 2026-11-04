@@ -15,7 +15,7 @@ import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import {
   attachInsertedTaskFlowStage,
-  markWorkflowCursorTakeover,
+  insertWorkflowCursorRow,
   recordTaskFlowCursorMutation,
   stampWorkflowCursorMachine,
 } from './task-flow.ts'
@@ -27,7 +27,7 @@ import {
 } from './workflow-compose-branch.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
-import { cursorAutonomy, storedCursorAutonomy } from './workflow-cursor-autonomy.ts'
+import { cursorAutonomy, storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
 import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
 import {
   abandonWorkflowCursor,
@@ -43,9 +43,9 @@ import {
 } from './workflow-cursor-result.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
+  findWorkflowCursor as findCursor,
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
-  selectWorkflowCursor,
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
@@ -97,26 +97,6 @@ import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorRow = WorkflowCloseCursor
 
-function findCursor(
-  project: string,
-  workflow: string,
-  mode: string,
-  args: Record<string, string>,
-  context: WorkflowCursorContext,
-  d: Database,
-  cursor?: number,
-): CursorRow | null {
-  const key = keyOf(args)
-  return selectWorkflowCursor(
-    { project, workflow, mode, ...(key ? { key } : {}) },
-    cursor,
-    context.session,
-    d,
-    context.taskRecordId,
-    context.taskStatusCategory,
-  ) as CursorRow | null
-}
-
 /** Re-reads, inside the close transaction, a cursor selected before its text copy. */
 function reselectCursor(
   selected: WorkflowCloseCursor,
@@ -151,6 +131,24 @@ function adoptLinkedTask(
 
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
+
+function attachCompositionTaskFlowStage(
+  row: CursorRow,
+  composition: ReturnType<typeof composeWorkflow>,
+  context: WorkflowCursorContext,
+  database: Database,
+): string | null {
+  return attachInsertedTaskFlowStage(
+    {
+      project: composition.project,
+      taskRecordId: context.taskRecordId,
+      taskKey: keyOf(composition.arguments),
+      statusCategory: context.taskStatusCategory,
+      cursor: row,
+    },
+    database,
+  )
+}
 
 /**
  * Create, or resume, the cursor a composition opens.
@@ -204,60 +202,48 @@ function insertCursor(
       key,
       d,
     )
-  const stored = d
-    .query<{ record_id: string }, (string | number | null)[]>(
-      `INSERT INTO workflow_cursor
-      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,instance_id,session_id,
-       workflow_version_record_id,catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
-       total_steps,created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision)
-     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors',?,?,1)
-     ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
-       session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
-       updated_at=excluded.updated_at
-     RETURNING record_id`,
-    )
-    .get(
-      cursorRecordId,
-      composition.project,
-      composition.project,
-      composition.workflow.slug,
-      composition.mode!.slug,
-      key,
-      context.taskRecordId ?? null,
-      instance,
-      context.session ?? null,
-      composition.workflow.record_id,
-      composition.catalogue.record_id,
-      JSON.stringify(composition.arguments),
-      JSON.stringify(
-        storedCursorAutonomy(autonomy) ?? {
-          steps: Object.fromEntries(
-            composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
-          ),
-          rulings: composition.rulings,
-        },
-      ),
-      composition.steps[0]!.slug,
-      composition.steps.length,
-      at,
-      at,
-      machineId(),
-      machineId(),
-    )
-  stampWorkflowCursorMachine(stored!.record_id, stored!.record_id === cursorRecordId ? 0 : 1, d)
+  const storedRecordId = insertWorkflowCursorRow(
+    d,
+    {
+      recordId: cursorRecordId,
+      project: composition.project,
+      workflow: composition.workflow.slug,
+      mode: composition.mode!.slug,
+      workflowKey: key,
+      taskRecordId: context.taskRecordId ?? null,
+      taskFlowRecordId: null,
+      instanceId: instance,
+      sessionId: context.session ?? null,
+      workflowVersionRecordId: composition.workflow.record_id,
+      catalogueVersionRecordId: composition.catalogue.record_id,
+      args: JSON.stringify(composition.arguments),
+      autonomy: storedCursorAutonomyJson(autonomy, {
+        steps: Object.fromEntries(
+          composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
+        ),
+        rulings: composition.rulings,
+      }),
+      ordinal: 0,
+      stepSlug: composition.steps[0]!.slug,
+      state: 'running',
+      closed: '[]',
+      question: null,
+      totalSteps: composition.steps.length,
+      createdAt: at,
+      updatedAt: at,
+      enforcement: 'floors',
+      openedMachineId: machineId(),
+      takenOverFromMachineId: null,
+      lastAdvancedMachineId: machineId(),
+      revision: 1,
+    },
+    'local-identity',
+  )
+  stampWorkflowCursorMachine(storedRecordId, storedRecordId === cursorRecordId ? 0 : 1, d)
   const row = d
     .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-    .get(stored!.record_id) as CursorRow
-  row.task_flow_record_id = attachInsertedTaskFlowStage(
-    {
-      project: composition.project,
-      taskRecordId: context.taskRecordId,
-      taskKey: key,
-      statusCategory: context.taskStatusCategory,
-      cursor: row,
-    },
-    d,
-  )
+    .get(storedRecordId) as CursorRow
+  row.task_flow_record_id = attachCompositionTaskFlowStage(row, composition, context, d)
   return row
 }
 
@@ -702,6 +688,7 @@ function persistWorkflowAdvance(
   advance: ReturnType<typeof decideConditionalAdvance>,
   context: WorkflowCursorContext,
   d: Database,
+  takeoverFromMachineId: string | null,
 ): void {
   const at = nowIso()
   if (row.state === 'awaiting-ruling')
@@ -719,6 +706,11 @@ function persistWorkflowAdvance(
     at,
     d,
   )
+  if (takeoverFromMachineId)
+    d.query('UPDATE workflow_cursor SET taken_over_from_machine_id=? WHERE record_id=?').run(
+      takeoverFromMachineId,
+      row.record_id,
+    )
   if (advance.ordinal === null || composition.steps[row.ordinal]!.needs.includes('workflow-text'))
     deleteWorkflowText(row.record_id, Boolean(row.task_record_id), d)
   if (advance.ordinal === null) {
@@ -756,18 +748,24 @@ function nextWorkflowStepImpl(
   const project = row.project
   const mode = row.mode_slug
   let takeoverNotice: string | null = null
+  let takeoverFromMachineId: string | null = null
   if (row.task_flow_record_id && row.last_advanced_machine_id) {
     const decision = decideWorkflowTakeover({
       currentMachineId: machineId(),
       holderMachineId: row.last_advanced_machine_id,
-      recordReachable: context.taskFlowRead?.reachable ?? false,
-      recordRemedy: context.taskFlowRead?.remedy,
+      recordRead: context.taskFlowRead?.status ?? 'not-attempted',
+      recordRemedy:
+        context.taskFlowRead?.status === 'unreachable' ? context.taskFlowRead.remedy : undefined,
+      workflowKey: row.workflow_key,
     })
-    const holderName = context.taskFlowRead?.holder?.displayName ?? row.last_advanced_machine_id
+    const holderName =
+      context.taskFlowRead?.status === 'reachable' && context.taskFlowRead.holder
+        ? context.taskFlowRead.holder.displayName
+        : row.last_advanced_machine_id
     if (decision.action === 'refuse')
       throw new Error(`workflow stage is held by ${holderName}; ${decision.remedy}`)
     if (decision.action === 'take-over') {
-      markWorkflowCursorTakeover(row.record_id, decision.fromMachineId, d)
+      takeoverFromMachineId = decision.fromMachineId
       takeoverNotice = workflowTakeoverNotice(holderName)
     }
   }
@@ -790,6 +788,7 @@ function nextWorkflowStepImpl(
     close.advance,
     context,
     d,
+    takeoverFromMachineId,
   )
   const rendered = renderWorkflowAdvanceResult({
     row,

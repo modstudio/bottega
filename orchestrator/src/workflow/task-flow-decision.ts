@@ -36,17 +36,54 @@ export type TakeoverDecision =
 export function decideWorkflowTakeover(input: {
   currentMachineId: string
   holderMachineId: string
-  recordReachable: boolean
+  recordRead: 'reachable' | 'unreachable' | 'not-attempted'
   recordRemedy?: string
+  workflowKey?: string
 }): TakeoverDecision {
   if (input.currentMachineId === input.holderMachineId) return { action: 'same-machine' }
-  if (!input.recordReachable)
+  if (input.recordRead !== 'reachable')
     return {
       action: 'refuse',
       fromMachineId: input.holderMachineId,
-      remedy: input.recordRemedy ?? 'restore the hosted record connection and retry',
+      remedy:
+        input.recordRead === 'not-attempted'
+          ? `the stage was last advanced by this holder and was not read from the record; re-run with --key ${input.workflowKey || '<task key>'}`
+          : (input.recordRemedy ?? 'restore the hosted record connection and retry'),
     }
   return { action: 'take-over', fromMachineId: input.holderMachineId }
+}
+
+export type TaskFlowReadDecision = 'local' | 'hosted' | 'refresh'
+export function decideTaskFlowReadThrough(input: {
+  localFlowExists: boolean
+  localStageRevision: number | null
+  hostedStageRevision: number | null
+}): TaskFlowReadDecision {
+  if (!input.localFlowExists) return 'hosted'
+  if (input.hostedStageRevision == null) return 'local'
+  if (input.localStageRevision == null) return 'hosted'
+  return input.hostedStageRevision > input.localStageRevision ? 'refresh' : 'local'
+}
+
+const TASK_FLOW_ROUTE_RELEASE_REMEDY =
+  'record API predates task-flow read; release hosted-api, then retry'
+
+export type TaskFlowReadStatus =
+  | { status: 'reachable'; holder?: { id: string; displayName: string } }
+  | { status: 'unreachable'; remedy: string }
+  | { status: 'not-attempted' }
+
+export function decideTaskFlowReadStatus(input: {
+  status: number | null
+  recognizedNotFound: boolean
+  configured: boolean
+  errorRemedy: string
+}): TaskFlowReadStatus {
+  if (input.status === 404 && input.recognizedNotFound) return { status: 'reachable' }
+  if (input.status === 404 || input.status === 405)
+    return { status: 'unreachable', remedy: TASK_FLOW_ROUTE_RELEASE_REMEDY }
+  if (!input.configured) return { status: 'unreachable', remedy: input.errorRemedy }
+  return { status: 'unreachable', remedy: input.errorRemedy }
 }
 
 export const workflowTakeoverNotice = (displayName: string) =>
