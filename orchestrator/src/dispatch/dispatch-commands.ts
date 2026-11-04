@@ -215,6 +215,7 @@ type SpecWarningInput = {
   specIdentity: string
 }
 
+/** Bounds the wait for answers only; building the states first reads each cited file up to `CITED_FILE_BYTES`, until `CITED_TOTAL_BYTES` is kept. */
 const SPEC_QUESTION_WAIT_MS = 3_000
 
 /** Settle each ask on its own against one shared deadline, so a slow ask never discards a fast one. */
