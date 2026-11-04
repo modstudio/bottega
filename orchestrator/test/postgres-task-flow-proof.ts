@@ -24,9 +24,8 @@ type Input = {
   urls(): { actor: string; auth: string }
   spaceId(): string
   projectId(): string
-  userB(): string
-  token(user: 'a' | 'b'): string
-  signIn(user: 'a' | 'b'): void
+  token(): string
+  signIn(): void
   admin(statement: string): string
 }
 
@@ -70,9 +69,6 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     try {
       process.env.BOTTEGA_CONFIG_HOME = configRoot
       input.admin(`
-        INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
-        VALUES ('${newRecordId()}','${input.spaceId()}','${input.userB()}','member','write',now())
-        ON CONFLICT (space_id,user_id) DO UPDATE SET permission='write';
         INSERT INTO hub_task
           (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
            first_seen,last_seen,created_at,updated_at)
@@ -80,14 +76,13 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           '${TASK_KEY}','${PROJECT}','task-flow takeover proof','active','active','local',
           now(),now(),now(),now());
       `)
-      for (const user of ['a', 'b'] as const)
-        await setActiveRecordSpaceForSession(
-          input.urls().actor,
-          bearerHeaders(input.token(user)),
-          input.spaceId(),
-        )
+      await setActiveRecordSpaceForSession(
+        input.urls().actor,
+        bearerHeaders(input.token()),
+        input.spaceId(),
+      )
 
-      input.signIn('a')
+      input.signIn()
       const client = recordApiClient()
       rememberHostedRecord(databaseA)
       rememberProjectSpace(databaseA, PROJECT, input.spaceId())
@@ -117,7 +112,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
              ON cursor.record_id=flow.open_stage_cursor_record_id`)
         .get()!
 
-      input.signIn('a')
+      input.signIn()
       expect(
         await syncRecord({
           local: databaseA,
@@ -126,7 +121,9 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         }),
       ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
 
-      input.signIn('b')
+      // Machine B is the same user's second machine: the DEV-1978 takeover ruling is cross-machine, and a
+      // flow belongs to its user within the space, so another member's push is refused by design.
+      input.signIn()
       const byTask = await client.readTaskFlow!({ taskKey: TASK_KEY })
       const byFlow = await client.readTaskFlow!({ flowRecordId: localIds.flow_id })
       for (const hosted of [byTask, byFlow]) {
@@ -194,7 +191,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
       expect(hostedStage()).toBe(afterTakeover)
 
-      input.signIn('a')
+      input.signIn()
       expect(await client.readTaskFlow!({ taskKey: TASK_KEY })).toMatchObject({
         stage: {
           id: localIds.stage_id,
@@ -205,7 +202,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       })
 
       const otherSpace = await auth.api.createOrganization({
-        headers: bearerHeaders(input.token('a')),
+        headers: bearerHeaders(input.token()),
         body: {
           name: 'Task Flow Isolation Proof',
           slug: `task-flow-isolation-${taskId.slice(-8)}`,

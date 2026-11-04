@@ -1039,9 +1039,8 @@ realPostgres('RLS proof against real Postgres', () => {
     urls: () => ({ actor: actorUrl!, auth: authUrl! }),
     spaceId: () => authSpaceA,
     projectId: () => authProjectA,
-    userB: () => authUserB,
-    token: (user) => (user === 'a' ? tokenA : tokenB),
-    signIn: (user) => recordSession.setToken(user === 'a' ? tokenA : tokenB),
+    token: () => tokenA,
+    signIn: () => recordSession.setToken(tokenA),
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   })
 
