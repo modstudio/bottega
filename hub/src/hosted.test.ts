@@ -81,6 +81,7 @@ describe('hostedRouter', () => {
       'publicDocs.tree',
       'record.agents',
       'record.board',
+      'record.configAccess',
       'record.createReportSubscription',
       'record.deleteDoc',
       'record.doc',
@@ -89,6 +90,7 @@ describe('hostedRouter', () => {
       'record.docs',
       'record.done',
       'record.flight',
+      'record.grantConfigAccess',
       'record.health',
       'record.jobs',
       'record.measurePeople',
@@ -116,6 +118,7 @@ describe('hostedRouter', () => {
       'record.updateReportSubscription',
       'record.void',
       'record.whoami',
+      'record.withdrawConfigAccess',
     ])
     expect(procedures).not.toContain('context.autonomy.setMachine')
     expect(procedures).not.toContain('context.autonomy.clearMachine')

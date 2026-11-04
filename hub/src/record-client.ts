@@ -85,6 +85,21 @@ const scoreInputSchema = z.object({
 })
 const voidInputSchema = z.object({ reason: z.string().min(1) })
 const verdictResponseSchema = z.object({ ok: z.literal(true) })
+const configAccessListSchema = z.object({
+  items: z.array(
+    z.object({
+      email: z.string(),
+      role: z.string(),
+      permission: z.string(),
+      configAccess: z.boolean(),
+    }),
+  ),
+})
+const configAccessGrantSchema = z.object({ granted: z.literal(true) })
+const configAccessWithdrawSchema = z.object({
+  revokedMachineKeyIds: z.array(z.string()),
+  readableSecretKeys: z.array(z.string()),
+})
 
 const machineRefSchema: z.ZodType<MachineRef> = z.object({
   id: z.string().uuid(),
@@ -729,13 +744,37 @@ function recordSettingsClient(options: RecordClientOptions) {
   }
 }
 
-export function createRecordClient(options: RecordClientOptions) {
+function recordConfigAccessClient(options: RecordClientOptions) {
+  return {
+    configAccess: () => request(options, '/v1/config-access', configAccessListSchema),
+    grantConfigAccess: (email: string) =>
+      request(options, '/v1/config-access/grant', configAccessGrantSchema, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }),
+    withdrawConfigAccess: (email: string) =>
+      request(options, '/v1/config-access/withdraw', configAccessWithdrawSchema, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }),
+  }
+}
+
+function recordPublicDocsClient(options: RecordClientOptions) {
   return {
     publicDocs: () => publicRequest(options, '/public/v1/docs', publicDocsSchema),
     publicDoc: (id: string) =>
       publicRequest(options, `/public/v1/docs/${encodeURIComponent(id)}`, publicDocSchema),
     publicDocSearch: (search: string) =>
       publicRequest(options, query('/public/v1/docs/search', { q: search }), hostedDocSearchSchema),
+  }
+}
+
+export function createRecordClient(options: RecordClientOptions) {
+  return {
+    ...recordPublicDocsClient(options),
     whoami: () => request(options, '/v1/whoami', whoamiSchema),
     setActiveSpace: (spaceId: string) =>
       request(options, '/v1/active-space', z.object({ activeSpaceId: z.string() }), {
@@ -924,6 +963,7 @@ export function createRecordClient(options: RecordClientOptions) {
         },
       ),
     ...recordSettingsClient(options),
+    ...recordConfigAccessClient(options),
   }
 }
 

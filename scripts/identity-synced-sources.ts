@@ -296,6 +296,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'boardStatus',
     'boardThread',
     'configEntries',
+    'configAccess',
     'doc',
     'docRevisions',
     'docSearch',
@@ -325,6 +326,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'boardWithdraw',
       'deleteConfigEntry',
       'deleteDoc',
+      'grantConfigAccess',
       'putConfigEntry',
       'putDoc',
       'reorderDocs',
@@ -333,6 +335,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'settingsAutoMode',
       'settingsPermission',
       'void',
+      'withdrawConfigAccess',
     ],
   ),
   ...readEntries('hub', 'configClient', [
