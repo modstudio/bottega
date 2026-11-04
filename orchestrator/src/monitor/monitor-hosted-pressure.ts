@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   BUDGET_SPENT,
@@ -193,7 +193,7 @@ async function announceHostedPressureTransition(
   clock: number,
 ): Promise<void> {
   const env = dependencies.env ?? process.env
-  if (!resolveRecordApiUrl(env)?.trim()) return
+  if (!recordApiConfigured(env)) return
   const client = dependencies.boardClient ?? recordApiClient()
   await withinHostedBoardRefreshBudget(async (signal) => {
     const overview = await client.listBoardMessages(

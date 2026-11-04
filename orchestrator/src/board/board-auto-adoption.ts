@@ -14,20 +14,19 @@ export type AutomaticBoardAdoptionDecision =
   | { action: 'adopt' }
   | { action: 'tell'; total: number }
 
-export function automaticBoardAdoptionSkipped(facts: {
+export type AutomaticBoardAdoptionFacts = {
   adopted: boolean
   hostedConfigured: boolean
   signedIn: boolean
-}): boolean {
+}
+
+export function automaticBoardAdoptionSkipped(facts: AutomaticBoardAdoptionFacts): boolean {
   return facts.adopted || !facts.hostedConfigured || !facts.signedIn
 }
 
-export function decideAutomaticBoardAdoption(facts: {
-  adopted: boolean
-  hostedConfigured: boolean
-  signedIn: boolean
-  planTotal: number
-}): AutomaticBoardAdoptionDecision {
+export function decideAutomaticBoardAdoption(
+  facts: AutomaticBoardAdoptionFacts & { planTotal: number },
+): AutomaticBoardAdoptionDecision {
   if (automaticBoardAdoptionSkipped(facts)) return { action: 'skip' }
   if (facts.planTotal === 0) return { action: 'adopt' }
   return { action: 'tell', total: facts.planTotal }
