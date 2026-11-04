@@ -2,7 +2,7 @@
 
 # machine
 
-upkeep of this machine
+set up and maintain this machine
 
 - [bottega machine](#bottega-machine)
 - [bottega machine blockers](#bottega-machine-blockers)
@@ -80,7 +80,7 @@ upkeep of this machine
 
 **Synopsis:** `bottega machine`
 
-upkeep of this machine
+set up and maintain this machine
 
 ### Related
 
