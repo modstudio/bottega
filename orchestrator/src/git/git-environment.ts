@@ -438,6 +438,26 @@ export function gitContext(cwd: string, ...args: string[]): string | null {
   }
 }
 
+/** The first `maxBytes` of a file as it was at one commit, or null when it was not a file there. */
+export function gitBlobPrefix(
+  cwd: string,
+  commit: string,
+  path: string,
+  maxBytes: number,
+): string | null {
+  try {
+    const p = Bun.spawnSync(['git', '-C', cwd, 'cat-file', 'blob', `${commit}:${path}`], {
+      env: targetGitEnvironment(cwd),
+      stdout: 'pipe',
+      stderr: 'ignore',
+    })
+    if (p.exitCode !== 0) return null
+    return Buffer.from(p.stdout).subarray(0, maxBytes).toString('utf8')
+  } catch {
+    return null
+  }
+}
+
 export function branchOf(cwd: string): string | null {
   const branch = gitContext(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')
   return branch && branch !== 'HEAD' ? branch : null
