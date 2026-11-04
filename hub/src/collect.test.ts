@@ -61,7 +61,9 @@ describe('run ingest', () => {
         ok: true,
         metrics: { examined: 0, written: 0, unchanged: 0 },
       })
-      expect(commands.filter((args) => args.includes('run') && args.includes('list'))).toHaveLength(1)
+      expect(commands.filter((args) => args.includes('run') && args.includes('list'))).toHaveLength(
+        1,
+      )
       expect(commands).toHaveLength(2)
     } finally {
       spawn.mockRestore()

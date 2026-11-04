@@ -118,7 +118,7 @@ export type CollectLegResult =
 /** Cycle work returns the legs it ran, or nothing when it ran none. */
 type CollectCycleResult = CollectLegResult[] | undefined
 
-export type CollectLegMetrics = { examined: number; written: number; unchanged: number }
+type CollectLegMetrics = { examined: number; written: number; unchanged: number }
 
 function collectLegMetrics(value: unknown): CollectLegMetrics | undefined {
   if (!value || typeof value !== 'object') return undefined

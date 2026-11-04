@@ -6,10 +6,19 @@ import {
   replaceTranscriptWindow,
   resolveTranscriptRoot,
   spendingSpans,
+  transcriptFingerprintChanged,
   unreadableTranscriptRootMessage,
 } from './transcripts.ts'
 
 beforeAll(resetFixtureStore)
+
+test('transcript fingerprints re-read growth, shrink, and replacement but skip an exact match', () => {
+  const stored = { size: 100, mtimeMs: 10 }
+  expect(transcriptFingerprintChanged(stored, stored)).toBe(false)
+  expect(transcriptFingerprintChanged(stored, { size: 101, mtimeMs: 10 })).toBe(true)
+  expect(transcriptFingerprintChanged(stored, { size: 40, mtimeMs: 11 })).toBe(true)
+  expect(transcriptFingerprintChanged(stored, { size: 100, mtimeMs: 12 })).toBe(true)
+})
 
 describe('transcript root', () => {
   test('a resolved path enables ingest and an empty value disables it', () => {

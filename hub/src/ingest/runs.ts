@@ -452,7 +452,7 @@ function writeRunIngestBatches(
 export async function ingestRuns(
   since: string,
   options: { transaction?: IngestTransaction; batchSize?: number } = {},
-): Promise<{ examined: number; rows: number; skipped: number; skippedUnlinked?: number }> {
+): Promise<{ rows: number; skipped: number; skippedUnlinked?: number }> {
   refreshKeyPrefixes()
   // Snapshot time, not completion: anything that happens during the read is
   // re-fetched next time. Overlap is cheap; a missed answer is not.
@@ -470,7 +470,7 @@ export async function ingestRuns(
       },
     }
   })
-  const result = writeRunIngestBatches(
+  return writeRunIngestBatches(
     attributed,
     workflowQuestions,
     now,
@@ -478,7 +478,6 @@ export async function ingestRuns(
     options.transaction,
     options.batchSize,
   )
-  return { examined: runs.length + workflowQuestions.length, ...result }
 }
 
 function storedChangeCursor(): number | null {

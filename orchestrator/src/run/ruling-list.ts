@@ -3,8 +3,8 @@
 
 import { type RulingListRow, RulingListSchema } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { questionOpenSql } from './question-open.ts'
 import { changedAfter, collectChangeCursor } from './collect-change.ts'
+import { questionOpenSql } from './question-open.ts'
 
 export function listRulings(options: {
   since?: string
@@ -24,7 +24,8 @@ export function listRulings(options: {
   }
   const after = changedAfter(options.changedAfter)
   const cursor = after === null ? null : collectChangeCursor()
-  if (options.since && after !== null) throw new Error('--since and --changed-after cannot be combined')
+  if (options.since && after !== null)
+    throw new Error('--since and --changed-after cannot be combined')
   if (after !== null) {
     clauses.push('q.change_seq>? AND q.change_seq<=?')
     values.push(String(after), String(cursor))

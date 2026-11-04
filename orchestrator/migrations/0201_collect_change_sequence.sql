@@ -1,9 +1,10 @@
 CREATE TABLE collect_change_counter (
-  id INTEGER NOT NULL PRIMARY KEY CHECK (id=1),
+  record_id TEXT NOT NULL PRIMARY KEY,
   value INTEGER NOT NULL
 );
 --> statement-breakpoint
-INSERT INTO collect_change_counter(id,value) VALUES (1,0);
+INSERT INTO collect_change_counter(record_id,value)
+VALUES ('01990000-0000-7000-8000-000000002099',0);
 --> statement-breakpoint
 ALTER TABLE run ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 --> statement-breakpoint
@@ -20,28 +21,28 @@ UPDATE collect_change_counter SET value=
 -- /BACKFILL
 --> statement-breakpoint
 CREATE TRIGGER run_collect_change_insert AFTER INSERT ON run BEGIN
-  UPDATE collect_change_counter SET value=value+1 WHERE id=1;
-  UPDATE run SET change_seq=(SELECT value FROM collect_change_counter WHERE id=1)
+  UPDATE collect_change_counter SET value=value+1;
+  UPDATE run SET change_seq=(SELECT value FROM collect_change_counter)
     WHERE record_id=NEW.record_id;
 END;
 --> statement-breakpoint
 CREATE TRIGGER run_collect_change_update AFTER UPDATE ON run
 WHEN NEW.change_seq=OLD.change_seq BEGIN
-  UPDATE collect_change_counter SET value=value+1 WHERE id=1;
-  UPDATE run SET change_seq=(SELECT value FROM collect_change_counter WHERE id=1)
+  UPDATE collect_change_counter SET value=value+1;
+  UPDATE run SET change_seq=(SELECT value FROM collect_change_counter)
     WHERE record_id=NEW.record_id;
 END;
 --> statement-breakpoint
 CREATE TRIGGER question_collect_change_insert AFTER INSERT ON question BEGIN
-  UPDATE collect_change_counter SET value=value+1 WHERE id=1;
-  UPDATE question SET change_seq=(SELECT value FROM collect_change_counter WHERE id=1)
+  UPDATE collect_change_counter SET value=value+1;
+  UPDATE question SET change_seq=(SELECT value FROM collect_change_counter)
     WHERE record_id=NEW.record_id;
 END;
 --> statement-breakpoint
 CREATE TRIGGER question_collect_change_update AFTER UPDATE ON question
 WHEN NEW.change_seq=OLD.change_seq BEGIN
-  UPDATE collect_change_counter SET value=value+1 WHERE id=1;
-  UPDATE question SET change_seq=(SELECT value FROM collect_change_counter WHERE id=1)
+  UPDATE collect_change_counter SET value=value+1;
+  UPDATE question SET change_seq=(SELECT value FROM collect_change_counter)
     WHERE record_id=NEW.record_id;
 END;
 --> statement-breakpoint

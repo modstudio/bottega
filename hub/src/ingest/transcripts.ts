@@ -14,6 +14,60 @@ import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
+type TranscriptFingerprint = { size: number; mtimeMs: number }
+
+export function transcriptFingerprintChanged(
+  existing: TranscriptFingerprint | null,
+  current: TranscriptFingerprint,
+): boolean {
+  return existing === null || existing.size !== current.size || existing.mtimeMs !== current.mtimeMs
+}
+
+function recordTranscriptFingerprint(
+  conn: Database,
+  file: string,
+  fingerprint: TranscriptFingerprint,
+) {
+  conn
+    .query(
+      `INSERT INTO transcript_fingerprint(path,size,mtime_ms) VALUES (?,?,?)
+       ON CONFLICT(path) DO UPDATE SET size=excluded.size,mtime_ms=excluded.mtime_ms`,
+    )
+    .run(file, fingerprint.size, fingerprint.mtimeMs)
+}
+
+function transcriptFilesForPass(root: string, sinceDay: string) {
+  const sourceFiles = transcripts(root)
+  const changed: Array<{ file: string; fingerprint: TranscriptFingerprint }> = []
+  let skipped = 0
+  for (const file of sourceFiles) {
+    try {
+      const stat = statSync(file)
+      const existing = db()
+        .query<{ size: number; mtime_ms: number }, [string]>(
+          'SELECT size,mtime_ms FROM transcript_fingerprint WHERE path=?',
+        )
+        .get(file)
+      const current = { size: stat.size, mtimeMs: stat.mtimeMs }
+      if (
+        !transcriptFingerprintChanged(
+          existing ? { size: existing.size, mtimeMs: existing.mtime_ms } : null,
+          current,
+        )
+      ) {
+        skipped++
+      } else if (!existing && stat.mtime.toISOString().slice(0, 10) < sinceDay) {
+        writeTransaction((conn) => recordTranscriptFingerprint(conn, file, current))
+        skipped++
+      } else {
+        changed.push({ file, fingerprint: current })
+      }
+    } catch {
+      skipped++
+    }
+  }
+  return { sourceFiles, changed, skipped }
+}
 
 /** Decide which transcript root to use from facts gathered by the environment adapter. */
 export function resolveTranscriptRoot(resolved: string): TranscriptRoot {
@@ -296,51 +350,8 @@ export async function ingestTranscripts(
   let files = 0
   let rows = 0
   let skippedUnlinked = 0
-  let skippedUnchanged = 0
-
-  const sourceFiles = transcripts(root.path)
-  for (const file of sourceFiles) {
-    let fingerprint: { size: number; mtimeMs: number; old: boolean }
-    try {
-      const stat = statSync(file)
-      const existing = db()
-        .query<{ size: number; mtime_ms: number }, [string]>(
-          'SELECT size,mtime_ms FROM transcript_fingerprint WHERE path=?',
-        )
-        .get(file)
-      if (existing?.size === stat.size && existing.mtime_ms === stat.mtimeMs) {
-        skippedUnchanged++
-        continue
-      }
-      fingerprint = {
-        size: stat.size,
-        mtimeMs: stat.mtimeMs,
-        old: stat.mtime.toISOString().slice(0, 10) < sinceDay,
-      }
-    } catch {
-      continue
-    }
-    const recordFingerprint = (conn: Database) =>
-      conn
-        .query(
-          `INSERT INTO transcript_fingerprint(path,size,mtime_ms) VALUES (?,?,?)
-           ON CONFLICT(path) DO UPDATE SET size=excluded.size,mtime_ms=excluded.mtime_ms`,
-        )
-        .run(file, fingerprint.size, fingerprint.mtimeMs)
-    // On the initial windowed pass, remember old files without parsing them.
-    // Once known, every fingerprint change is parsed, including shrink/replacement.
-    if (fingerprint.old) {
-      const known = db()
-        .query<{ found: number }, [string]>(
-          'SELECT 1 found FROM transcript_fingerprint WHERE path=?',
-        )
-        .get(file)
-      if (!known) {
-        writeTransaction(recordFingerprint)
-        skippedUnchanged++
-        continue
-      }
-    }
+  const selected = transcriptFilesForPass(root.path, sinceDay)
+  for (const { file, fingerprint } of selected.changed) {
     files++
 
     const ref = file.startsWith(`${root.path}/`) ? file.slice(root.path.length + 1) : file
@@ -349,7 +360,7 @@ export async function ingestTranscripts(
       // project it never touched.
       .filter((l) => projectOf(l.cwd))
     if (!legs.length) {
-      writeTransaction(recordFingerprint)
+      writeTransaction((conn) => recordTranscriptFingerprint(conn, file, fingerprint))
       continue
     }
 
@@ -422,7 +433,7 @@ export async function ingestTranscripts(
       )
       rows += result.rows
       skippedUnlinked += result.skippedUnlinked
-      recordFingerprint(conn)
+      recordTranscriptFingerprint(conn, file, fingerprint)
     })
   }
 
@@ -433,11 +444,11 @@ export async function ingestTranscripts(
       .run(JSON.stringify(nowIso())),
   )
   return {
-    examined: sourceFiles.length,
+    examined: selected.sourceFiles.length,
     files,
     rows,
     source: 'read',
-    skipped: skippedUnchanged + skippedUnlinked,
+    skipped: selected.skipped + skippedUnlinked,
     ...(skippedUnlinked ? { skippedUnlinked } : {}),
   }
 }

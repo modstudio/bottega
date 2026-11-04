@@ -333,11 +333,15 @@ function decodeRunChangesJson(text: string): { rows: OrchRun[]; cursor: number }
   })
   if (!cursorLine) throw new Error(`${PLATFORM_SLUG} run list --changed-after returned no cursor`)
   const cursor = z
-    .object({ schema_version: z.literal(2), kind: z.literal('cursor'), data: z.object({ cursor: z.number().int().nonnegative() }) })
+    .object({
+      schema_version: z.literal(2),
+      kind: z.literal('cursor'),
+      data: z.object({ cursor: z.number().int().nonnegative() }),
+    })
     .parse(JSON.parse(cursorLine)).data.cursor
-  const rows = decodeRunsJson(
-    lines.filter((line) => line !== cursorLine).join('\n'),
-  ).filter((row): row is OrchRun => !('unknown' in row))
+  const rows = decodeRunsJson(lines.filter((line) => line !== cursorLine).join('\n')).filter(
+    (row): row is OrchRun => !('unknown' in row),
+  )
   return { rows, cursor }
 }
 
@@ -374,7 +378,16 @@ export const readWorkflowRulingChanges = (
   after: number,
 ): Promise<{ rows: RulingListRow[]; cursor: number }> =>
   json(
-    ['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--changed-after', String(after)],
+    [
+      'question',
+      'ruling',
+      'list',
+      '--json',
+      '--kind',
+      'workflow',
+      '--changed-after',
+      String(after),
+    ],
     z.object({ cursor: z.number().int().nonnegative(), rows: RulingListSchema }),
   )
 

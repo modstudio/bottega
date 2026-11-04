@@ -132,13 +132,14 @@ display help for command
 
 ## bottega question ruling list
 
-**Synopsis:** `bottega question ruling list [--since <ISO>] [--kind <kind>] [--json]`
+**Synopsis:** `bottega question ruling list [--since <ISO>] [--changed-after <sequence>] [--kind <kind>] [--json]`
 
 list recorded run and workflow rulings
 
 ### Options
 
 - `--since <ISO>`: include ruling activity since this instant
+- `--changed-after <sequence>`: include source rows changed after this cursor
 - `--kind <kind>`: workflow, run, or all (default: all)
 - `--json`: write the rulings as JSON
 

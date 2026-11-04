@@ -63,6 +63,21 @@ function registerQuestionIdentities(program: Command): void {
     .action(() => log(JSON.stringify(questionIdentityMap(db()))))
 }
 
+function printRulings(options: { since?: string; changedAfter?: string; kind: string }): void {
+  if (!['workflow', 'run', 'all'].includes(options.kind))
+    throw new Error('--kind must be workflow, run, or all')
+  const rows = listRulings({
+    since: options.since,
+    changedAfter: options.changedAfter,
+    kind: options.kind as 'workflow' | 'run' | 'all',
+  })
+  log(
+    JSON.stringify(
+      options.changedAfter === undefined ? rows : { cursor: rulingChangeCursor(), rows },
+    ),
+  )
+}
+
 export function register(program: Command): void {
   registerQuestionIdentities(program)
   const question = program.command('question').description('manage worker questions')
@@ -86,22 +101,7 @@ export function register(program: Command): void {
     .option('--kind <kind>', 'workflow, run, or all', 'all')
     .option('--json', 'write the rulings as JSON')
     .allowExcessArguments(false)
-    .action((options) => {
-      if (!['workflow', 'run', 'all'].includes(options.kind))
-        throw new Error('--kind must be workflow, run, or all')
-      const rows = listRulings({
-        since: options.since,
-        changedAfter: options.changedAfter,
-        kind: options.kind,
-      })
-      log(
-        JSON.stringify(
-          options.changedAfter === undefined
-            ? rows
-            : { cursor: rulingChangeCursor(), rows },
-        ),
-      )
-    })
+    .action(printRulings)
   ruling
     .command('overturn <question-id>')
     .description('overturn a recorded ruling')
