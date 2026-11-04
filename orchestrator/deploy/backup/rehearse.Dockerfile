@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.3-alpine AS bun-runtime
+FROM oven/bun:1.4.4-alpine AS bun-runtime
 
 FROM postgres:18-alpine3.23
 

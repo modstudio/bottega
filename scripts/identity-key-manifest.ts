@@ -18,6 +18,7 @@ const manifest = (store: KeyStore, reason: string, columns: readonly string[]): 
   columns.map((column) => ({ store, column, reason }))
 
 const INTEGER_VALUES: readonly ManifestColumn[] = [
+  ...manifest('hub', 'file size measurement', ['transcript_fingerprint.size']),
   ...manifest('orchestrator', 'host capacity measurement', ['host_pressure_sample.ncpu']),
   ...manifest('orchestrator', 'display snapshot of a project name', [
     'board_claim.project',
@@ -86,6 +87,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'workflow_obligation.operator_ruling',
   ]),
   ...manifest('orchestrator', 'count, ordinal, version, handle, or measurement', [
+    'collect_change_counter.value',
     'agent.max_concurrent',
     'board_claim.duration_ms',
     'branch_landing_record.pr_number',
@@ -148,6 +150,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'probe.number',
     'question.revision',
     'question.number',
+    'question.change_seq',
     'board_message.number',
     'question.workflow_step_ordinal',
     'release_ledger.exit_code',
@@ -169,6 +172,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.exit_code',
     'run.output_bytes',
     'run.vendor_tokens',
+    'run.change_seq',
     'run.model_calls',
     'run.peak_call_tokens',
     'run.quota_window_minutes',
@@ -458,6 +462,11 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
 ]
 
 const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
+  {
+    store: 'orchestrator',
+    table: 'collect_change_counter',
+    reason: 'singleton local collector sequence',
+  },
   { store: 'orchestrator', table: 'orch_migrations', reason: 'migration journal bookkeeping' },
   {
     store: 'orchestrator',
@@ -689,6 +698,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
 
 const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'owned or referenced UUID', [
+    'collect_change_counter.record_id',
     'agent.record_id',
     'blocker.record_id',
     'blocker.run_record_id',
@@ -924,6 +934,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
   ...TYPED_QUESTION_IDENTITY.uuids,
   ...ROUTING_POOL_IDENTITY.uuids,
   ...manifest('hub', 'owned or referenced UUID', [
+    'transcript_fingerprint.record_id',
     'commit_key.task_record_id',
     'operator_waiting_email.item_id',
     'question.workflow_cursor_id',

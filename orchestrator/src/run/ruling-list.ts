@@ -1,14 +1,38 @@
 // concern: ruling-list
 /** Reads ruling history for adapters. Must not know CLI grammar or printing. */
 
-import { type RulingListRow, RulingListSchema } from '../../../shared/orch-contract.ts'
+import {
+  type RulingChanges,
+  type RulingListRow,
+  RulingListSchema,
+} from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
+import { collectChangeCursor } from './collect-change.ts'
 import { questionOpenSql } from './question-open.ts'
 
-export function listRulings(options: {
+type RulingListOptions = {
   since?: string
+  changedAfter?: number | null
   kind: 'workflow' | 'run' | 'all'
-}): RulingListRow[] {
+}
+
+export function listRulings(options: RulingListOptions): RulingListRow[] {
+  return queryRulings(options).rows
+}
+
+/** The rows changed after the cursor, with the snapshot the query was bounded by. */
+export function listRulingChanges(
+  options: RulingListOptions & { changedAfter: number },
+): RulingChanges {
+  const result = queryRulings(options)
+  if (result.cursor === null) throw new Error('unreachable: a changed-after query has a cursor')
+  return { cursor: result.cursor, rows: result.rows }
+}
+
+function queryRulings(options: RulingListOptions): {
+  cursor: number | null
+  rows: RulingListRow[]
+} {
   const clauses: string[] = []
   const values: string[] = []
   if (options.kind === 'workflow') clauses.push('q.workflow_cursor_record_id IS NOT NULL')
@@ -19,6 +43,12 @@ export function listRulings(options: {
       `(${questionOpenSql('q')} OR q.asked_at>=? OR q.answered_at>=? OR q.closed_at>=? OR q.overturned_at>=? OR q.filed_at>=?)`,
     )
     values.push(options.since, options.since, options.since, options.since, options.since)
+  }
+  const after = options.changedAfter ?? null
+  const cursor = after === null ? null : collectChangeCursor()
+  if (after !== null) {
+    clauses.push('q.change_seq>? AND q.change_seq<=?')
+    values.push(String(after), String(cursor))
   }
   const rows = db()
     .query(
@@ -37,10 +67,11 @@ export function listRulings(options: {
         ORDER BY q.number`,
     )
     .all(...values)
-  return RulingListSchema.parse(
+  const parsed = RulingListSchema.parse(
     (rows as Array<Record<string, unknown> & { number: number }>).map(({ number, ...row }) => ({
       id: number,
       ...row,
     })),
   )
+  return { cursor, rows: parsed }
 }

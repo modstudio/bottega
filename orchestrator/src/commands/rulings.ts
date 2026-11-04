@@ -15,9 +15,9 @@ import { fileNote } from '../mcp/hub-notes.ts'
 import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
-import { listRulings } from '../run/ruling-list.ts'
+import { listRulingChanges, listRulings } from '../run/ruling-list.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
-import { log } from './support.ts'
+import { log, parseChangedAfter } from './support.ts'
 
 function requiredText(value: string, label: string): string {
   if (!value.trim()) throw new Error(`${label} must not be empty`)
@@ -63,6 +63,27 @@ function registerQuestionIdentities(program: Command): void {
     .action(() => log(JSON.stringify(questionIdentityMap(db()))))
 }
 
+function printRulings(options: {
+  since?: string
+  changedAfter?: string
+  kind: string
+  json?: boolean
+}): void {
+  if (!['workflow', 'run', 'all'].includes(options.kind))
+    throw new Error('--kind must be workflow, run, or all')
+  const kind = options.kind as 'workflow' | 'run' | 'all'
+  const changedAfter = parseChangedAfter({
+    value: options.changedAfter,
+    since: options.since,
+    json: options.json,
+  })
+  if (changedAfter === null) {
+    log(JSON.stringify(listRulings({ since: options.since, kind })))
+    return
+  }
+  log(JSON.stringify(listRulingChanges({ since: options.since, changedAfter, kind })))
+}
+
 export function register(program: Command): void {
   registerQuestionIdentities(program)
   const question = program.command('question').description('manage worker questions')
@@ -82,14 +103,11 @@ export function register(program: Command): void {
     .command('list')
     .description('list recorded run and workflow rulings')
     .option('--since <ISO>', 'include ruling activity since this instant')
+    .option('--changed-after <sequence>', 'include source rows changed after this cursor')
     .option('--kind <kind>', 'workflow, run, or all', 'all')
     .option('--json', 'write the rulings as JSON')
     .allowExcessArguments(false)
-    .action((options) => {
-      if (!['workflow', 'run', 'all'].includes(options.kind))
-        throw new Error('--kind must be workflow, run, or all')
-      log(JSON.stringify(listRulings({ since: options.since, kind: options.kind })))
-    })
+    .action(printRulings)
   ruling
     .command('overturn <question-id>')
     .description('overturn a recorded ruling')

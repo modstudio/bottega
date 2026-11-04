@@ -1,10 +1,19 @@
 import type { Database } from 'bun:sqlite'
-import type { OrchRun, RulingListRow } from '../../../shared/orch-contract.ts'
+import {
+  COLLECT_CHANGE_CURSOR_PROBE,
+  type OrchRun,
+  type RulingListRow,
+} from '../../../shared/orch-contract.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { attributeRun, refreshKeyPrefixes } from '../attribute.ts'
-import { nowIso, writeTransaction } from '../db.ts'
+import { db, nowIso, writeTransaction } from '../db.ts'
 import { intervalOwningProject } from '../interval-project-correction.ts'
-import { readRuns, readWorkflowRulings } from '../orch.ts'
+import {
+  readRunChanges,
+  readRuns,
+  readWorkflowRulingChanges,
+  readWorkflowRulings,
+} from '../orch.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
@@ -448,11 +457,20 @@ export async function ingestRuns(
   since: string,
   options: { transaction?: IngestTransaction; batchSize?: number } = {},
 ): Promise<{ rows: number; skipped: number; skippedUnlinked?: number }> {
+  const snapshot = nowIso()
+  const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
+  return ingestRunSourceRows(runs, workflowQuestions, snapshot, options)
+}
+
+function ingestRunSourceRows(
+  runs: readonly OrchRun[],
+  workflowQuestions: readonly RulingListRow[],
+  snapshot: string,
+  options: { transaction?: IngestTransaction; batchSize?: number },
+): { rows: number; skipped: number; skippedUnlinked?: number } {
   refreshKeyPrefixes()
   // Snapshot time, not completion: anything that happens during the read is
   // re-fetched next time. Overlap is cheap; a missed answer is not.
-  const snapshot = nowIso()
-  const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
   const now = Date.now()
   const registered = projects()
   const attributed = runs.map((run) => {
@@ -473,4 +491,57 @@ export async function ingestRuns(
     options.transaction,
     options.batchSize,
   )
+}
+
+export const RUN_CHANGE_CURSOR_SETTING = 'collect.runs.change_seq'
+
+function storedChangeCursor(): number | null {
+  const value = db()
+    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+    .get(RUN_CHANGE_CURSOR_SETTING)?.value
+  if (value === undefined) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+function stampChangeCursor(cursor: number): void {
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO setting(key,value) VALUES (?,?)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(RUN_CHANGE_CURSOR_SETTING, String(cursor)),
+  )
+}
+
+/** Read exactly the source changes after the last successful fast pass. */
+export async function ingestRunChanges(
+  fallbackSince: string,
+  options: { transaction?: IngestTransaction; batchSize?: number } = {},
+): Promise<{ examined: number; rows: number; skipped: number; skippedUnlinked?: number }> {
+  const snapshotAt = nowIso()
+  const previous = storedChangeCursor()
+  let runs: OrchRun[]
+  let workflowQuestions: RulingListRow[]
+  let cursor: number
+  if (previous === null) {
+    const snapshot = await readRunChanges(COLLECT_CHANGE_CURSOR_PROBE)
+    ;[runs, workflowQuestions] = await Promise.all([
+      readRuns(fallbackSince),
+      readWorkflowRulings(fallbackSince),
+    ])
+    cursor = snapshot.cursor
+  } else {
+    const [runChanges, rulingChanges] = await Promise.all([
+      readRunChanges(previous),
+      readWorkflowRulingChanges(previous),
+    ])
+    runs = runChanges.rows
+    workflowQuestions = rulingChanges.rows
+    cursor = Math.min(runChanges.cursor, rulingChanges.cursor)
+  }
+  const result = ingestRunSourceRows(runs, workflowQuestions, snapshotAt, options)
+  stampChangeCursor(cursor)
+  return { examined: runs.length + workflowQuestions.length, ...result }
 }

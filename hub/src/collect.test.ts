@@ -8,7 +8,7 @@ import {
 import { collectFast, deliverOperatorNotifications, runsSince } from './collect.ts'
 import * as dbMod from './db.ts'
 import { db, writeTransaction } from './db.ts'
-import { ingestRuns } from './ingest/runs.ts'
+import { ingestRuns, RUN_CHANGE_CURSOR_SETTING } from './ingest/runs.ts'
 import type { claimWaitingNotifications } from './orch.ts'
 import { listOpenRulings } from './rulings.ts'
 import { clearOrchCache } from './serve.ts'
@@ -37,6 +37,58 @@ test('notification delivery logs one failure and continues through the claimed b
 })
 
 describe('run ingest', () => {
+  test('run changes ingest rows after the stored cursor and write nothing once caught up', async () => {
+    writeTransaction((conn) =>
+      conn
+        .query('INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)')
+        .run(RUN_CHANGE_CURSOR_SETTING, '5'),
+    )
+    const changedRun = runFixture({ id: 9911 })
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
+      const ruling = args.includes('ruling')
+      const after = Number(args[args.indexOf('--changed-after') + 1])
+      const stdout = ruling
+        ? '{"cursor":7,"rows":[]}'
+        : [
+            ...(after < 7
+              ? [JSON.stringify({ schema_version: 2, kind: 'run', data: changedRun })]
+              : []),
+            '{"schema_version":2,"kind":"cursor","data":{"cursor":7}}',
+          ].join('\n')
+      return { stdout: new Blob([stdout]), stderr: new Blob(['']), exited: Promise.resolve(0) }
+    }) as unknown as typeof Bun.spawn)
+    try {
+      const first = await collectFast({
+        transcripts: async () => ({ examined: 0, rows: 0, skipped: 0 }),
+      })
+      expect(first[0]).toMatchObject({
+        source: 'runs',
+        ok: true,
+        metrics: { examined: 1, written: 1, unchanged: 0 },
+      })
+      expect(
+        db()
+          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+          .get(RUN_CHANGE_CURSOR_SETTING)?.value,
+      ).toBe('7')
+
+      const second = await collectFast({
+        transcripts: async () => ({ examined: 0, rows: 0, skipped: 0 }),
+      })
+      expect(second[0]).toMatchObject({
+        source: 'runs',
+        ok: true,
+        metrics: { examined: 0, written: 0, unchanged: 0 },
+      })
+      expect(
+        db()
+          .query<{ count: number }, []>("SELECT COUNT(*) count FROM interval WHERE source='orch'")
+          .get()?.count,
+      ).toBe(1)
+    } finally {
+      spawn.mockRestore()
+    }
+  })
   test('a failing transcripts leg does not stop the runs watermark advancing', async () => {
     const watermark = '2026-09-24T16:00:00.000Z'
     const results = await collectFast({
@@ -47,7 +99,7 @@ describe('run ingest', () => {
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
             .run(JSON.stringify(watermark)),
         )
-        return { rows: 0, skipped: 0 }
+        return { examined: 0, rows: 0, skipped: 0 }
       },
       transcripts: async () => {
         throw new Error('identity returned HTML')

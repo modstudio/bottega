@@ -26,7 +26,7 @@ function command(
   const values = (name: string) => (Array.isArray(args[name]) ? (args[name] as string[]) : [])
   const flag = (name: string) => values(name)[0]
   return runListingCommand(
-    { jsonV1: false },
+    { jsonV1: false, changedAfter: null },
     {
       has: (name) => args[name] === true || values(name).length > 0,
       flag,

@@ -172,7 +172,7 @@ derive missing run task and project links from recorded facts
 
 ## bottega run list
 
-**Synopsis:** `bottega run list [--id <value>] [--job <value>] [--agent <value>] [--limit <value>] [--since <value>] [--live] [--json [version]] [--unscored]`
+**Synopsis:** `bottega run list [--id <value>] [--job <value>] [--agent <value>] [--limit <value>] [--since <value>] [--changed-after <sequence>] [--live] [--json [version]] [--unscored]`
 
 list recorded run conversations
 
@@ -183,6 +183,7 @@ list recorded run conversations
 - `--agent <value>`: limit runs to this agent
 - `--limit <value>`: limit the number of runs
 - `--since <value>`: include activity since this ISO instant
+- `--changed-after <sequence>`: include source rows changed after this cursor
 - `--live`: list only conversations whose latest turn is live
 - `--json [version]`: write runs as JSON in the selected version
 - `--unscored`: list only runs awaiting a verdict

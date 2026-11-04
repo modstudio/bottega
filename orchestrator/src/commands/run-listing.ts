@@ -14,7 +14,7 @@ import {
 } from '../run/run-identifier.ts'
 import { runIdentityMap, runListingCommand } from '../run/run-listing.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
-import { collect, duration, log, optionFlags } from './support.ts'
+import { collect, duration, log, optionFlags, parseChangedAfter } from './support.ts'
 
 function chainHasPendingDelivery(rootId: string): boolean {
   return Boolean(
@@ -65,6 +65,7 @@ export function register(program: Command): void {
     .option('--agent <value>', 'limit runs to this agent')
     .option('--limit <value>', 'limit the number of runs')
     .option('--since <value>', 'include activity since this ISO instant')
+    .option('--changed-after <sequence>', 'include source rows changed after this cursor')
     .option('--live', 'list only conversations whose latest turn is live')
     .option('--json [version]', 'write runs as JSON in the selected version')
     .option('--unscored', 'list only runs awaiting a verdict')
@@ -87,7 +88,20 @@ export function register(program: Command): void {
           }
         : flags
       const json = resolvedFlags.has('json') || options.json === 'v1'
-      await runListingCommand({ jsonV1: options.json === 'v1' }, resolvedFlags, {
+      const jsonV1 = options.json === 'v1'
+      const changedAfter = parseChangedAfter({
+        value: resolvedFlags.flag('changed-after'),
+        since: resolvedFlags.flag('since'),
+        hasRequestedRuns: requested.length > 0,
+        json,
+        jsonV1,
+        limit: resolvedFlags.flag('limit'),
+        job: resolvedFlags.flag('job'),
+        agent: resolvedFlags.flag('agent'),
+        live: resolvedFlags.has('live'),
+        unscored: resolvedFlags.has('unscored'),
+      })
+      await runListingCommand({ jsonV1, changedAfter }, resolvedFlags, {
         log,
         dur: duration,
         chainIsStranded: chainHasPendingDelivery,

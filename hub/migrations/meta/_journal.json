@@ -309,6 +309,13 @@
       "when": 1793311736000,
       "tag": "0043_typed_question_evidence",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793311796000,
+      "tag": "0044_transcript_fingerprint",
+      "breakpoints": true
     }
   ]
 }

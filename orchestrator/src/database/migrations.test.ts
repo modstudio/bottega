@@ -298,3 +298,168 @@ test('document audience vocabulary migration converts local docs and revisions w
     database.close()
   }
 })
+
+test('collect change triggers advance once for arbitrary run updates', () => {
+  const database = migratedTestDatabase()
+  try {
+    expect(database.query('PRAGMA recursive_triggers').get()).toEqual({ recursive_triggers: 0 })
+    const before = database
+      .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+      .get()!.value
+    database
+      .query(
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe)
+         VALUES ('01990000-0000-7000-8000-000000009901',9901,'2026-11-03','codex','implement','sha',1,'head','running',1)`,
+      )
+      .run()
+    const inserted = database
+      .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9901')
+      .get()!.change_seq
+    expect(inserted).toBe(before + 1)
+    database
+      .query("UPDATE run SET status='ok',vendor_tokens=12,vendor_cost_usd=0.5 WHERE number=9901")
+      .run()
+    expect(
+      database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9901')
+        .get()!.change_seq,
+    ).toBe(inserted + 1)
+  } finally {
+    database.close()
+  }
+})
+
+test("changes must exclude trigger writes because migration 0201's triggers write", () => {
+  const database = migratedTestDatabase()
+  try {
+    database
+      .query(
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe)
+         VALUES ('01990000-0000-7000-8000-000000009905',9905,'2026-11-03','codex','implement','sha',1,'head','running',1)`,
+      )
+      .run()
+    const before = database
+      .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9905')
+      .get()!.change_seq
+
+    const result = database.query("UPDATE run SET status='ok' WHERE number=9905").run()
+
+    expect(result.changes).toBe(1)
+    expect(
+      database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9905')
+        .get()!.change_seq,
+    ).toBeGreaterThan(before)
+  } finally {
+    database.close()
+  }
+})
+
+test('collect change counter exists before earlier pending backfills write run rows', () => {
+  const database = migrationBoundaryTestDatabase('0192_run_outside_worktree_writes_nul')
+  try {
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe,outside_worktree_writes)
+         VALUES ('01990000-0000-7000-8000-000000009906',9906,'2026-11-03','codex','implement','sha',1,'head','ok',1,?)`,
+      )
+      .run(
+        JSON.stringify([
+          {
+            project: 'sample',
+            path: '/tmp/sample',
+            before: ' M tracked.txt\0',
+            after: ' M tracked.txt\0?? new.txt\0',
+          },
+        ]),
+      )
+
+    expect(() => applyMigrations(database)).not.toThrow()
+    expect(database.query('SELECT 1 FROM run WHERE change_seq IS NULL').get()).toBeNull()
+    const counter = database
+      .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+      .get()!.value
+    const highest = database
+      .query<{ value: number }, []>(
+        `SELECT MAX(value) AS value FROM (
+           SELECT COALESCE(MAX(change_seq),0) AS value FROM run
+           UNION ALL SELECT COALESCE(MAX(change_seq),0) FROM question
+         )`,
+      )
+      .get()!.value
+    expect(counter).toBeGreaterThanOrEqual(highest)
+  } finally {
+    database.close()
+  }
+})
+
+test('collect change backfill never lowers row sequences or the counter when migrations rerun', () => {
+  const database = migratedTestDatabase()
+  try {
+    database
+      .query(
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe)
+         VALUES ('01990000-0000-7000-8000-000000009902',9902,'2026-11-03','codex','implement','sha',1,'head','running',1)`,
+      )
+      .run()
+    database
+      .query(
+        `INSERT INTO question(number,record_id,run_record_id,asked_at,question)
+         VALUES (9902,'01990000-0000-7000-8000-000000009903','01990000-0000-7000-8000-000000009902','2026-11-03','Continue?')`,
+      )
+      .run()
+    database.query("UPDATE run SET status='ok' WHERE number=9902").run()
+    database
+      .query("UPDATE question SET answer='Yes',answered_at='2026-11-03' WHERE number=9902")
+      .run()
+    const before = {
+      run: database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9902')
+        .get()!.change_seq,
+      question: database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM question WHERE number=9902')
+        .get()!.change_seq,
+      counter: database
+        .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+        .get()!.value,
+    }
+
+    expect(applyMigrations(database)).toEqual([])
+
+    expect(
+      database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9902')
+        .get()!.change_seq,
+    ).toBe(before.run)
+    expect(
+      database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM question WHERE number=9902')
+        .get()!.change_seq,
+    ).toBe(before.question)
+    expect(
+      database.query<{ value: number }, []>('SELECT value FROM collect_change_counter').get()!
+        .value,
+    ).toBe(before.counter)
+
+    database.query('DELETE FROM collect_change_counter').run()
+    expect(applyMigrations(database)).toEqual([])
+    const restored = database
+      .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+      .get()
+    expect(restored?.value).toBe(Math.max(before.run, before.question))
+    database
+      .query(
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe)
+         VALUES ('01990000-0000-7000-8000-000000009904',9903,'2026-11-03','codex','implement','sha',1,'head','running',1)`,
+      )
+      .run()
+    expect(
+      database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9903')
+        .get()!.change_seq,
+    ).toBe(restored!.value + 1)
+  } finally {
+    database.close()
+  }
+})

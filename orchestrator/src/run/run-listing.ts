@@ -14,6 +14,7 @@ import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '..
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
+import { collectChangeCursor, publishChangeCursor } from './collect-change.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
 import { questionOpenSql } from './question-open.ts'
 import type {
@@ -390,6 +391,49 @@ function applyRequestedRunFilter(
   args.push(...requested.ids, ...requested.ids)
 }
 
+function applySinceListingFilter(
+  since: string | undefined,
+  where: string[],
+  args: Array<string | number>,
+): void {
+  if (!since) return
+  where.push(`(
+    EXISTS (
+      SELECT 1 FROM run turn
+       WHERE (turn.record_id = r.record_id OR turn.parent_run_record_id = r.record_id)
+         AND turn.started_at >= ?
+    ) OR EXISTS (
+      SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
+       WHERE (owner.record_id = r.record_id OR owner.parent_run_record_id = r.record_id)
+         AND (${questionOpenSql('q')} OR q.asked_at >= ? OR q.answered_at >= ? OR q.closed_at >= ?)
+    )
+  )`)
+  args.push(since, since, since, since)
+}
+
+export function applyChangedAfterFilter(
+  after: number | null,
+  where: string[],
+  args: Array<string | number>,
+): number | null {
+  if (after === null) return null
+  const snapshot = collectChangeCursor()
+  where.push(`(
+    EXISTS (
+      SELECT 1 FROM run changed_run
+       WHERE (changed_run.record_id=r.record_id OR changed_run.parent_run_record_id=r.record_id)
+         AND changed_run.change_seq>? AND changed_run.change_seq<=?
+    ) OR EXISTS (
+      SELECT 1 FROM question changed_question
+      JOIN run changed_owner ON changed_owner.record_id=changed_question.run_record_id
+      WHERE (changed_owner.record_id=r.record_id OR changed_owner.parent_run_record_id=r.record_id)
+        AND changed_question.change_seq>? AND changed_question.change_seq<=?
+    )
+  )`)
+  args.push(after, snapshot, after, snapshot)
+  return snapshot
+}
+
 function liveStatusSql(): string {
   return RUN_LIVE_STATUSES.map((status) => `'${status}'`).join(',')
 }
@@ -416,7 +460,13 @@ function listingMemberJoin(rootAlias: string, live: boolean): string {
   )`
 }
 
-function listingLimit(value: string | undefined, json: boolean, live: boolean): number | null {
+function listingLimit(
+  value: string | undefined,
+  json: boolean,
+  live: boolean,
+  changedAfter: number | null,
+): number | null {
+  if (changedAfter !== null) return null
   if (value === undefined && live) return null
   return Number(value ?? (json ? 100000 : 20))
 }
@@ -491,12 +541,36 @@ function publishUnknownRuns(input: {
   }
 }
 
+function publishJson(
+  json: boolean,
+  jsonV1: boolean,
+  rows: Array<Record<string, unknown>>,
+  unknownIds: string[],
+  unknownRecordIds: string[],
+  changeSnapshot: number | null,
+  log: (...values: unknown[]) => void,
+): boolean {
+  if (!json) return false
+  const publish = (data: unknown) =>
+    JSON.stringify(jsonV1 ? data : { schema_version: 2, kind: 'run', data })
+  for (const row of rows) log(publish(row))
+  publishUnknownRuns({
+    ids: unknownIds,
+    recordIds: unknownRecordIds,
+    publish,
+    log,
+  })
+  publishChangeCursor(changeSnapshot, log)
+  return true
+}
+
 export async function runListingCommand(
-  options: { jsonV1: boolean },
+  options: { jsonV1: boolean; changedAfter: number | null },
   flags: RunListingFlags,
   presentation: RunListingPresentation,
 ): Promise<void> {
-  const { has, flag, values } = flags
+  const { has, flag, values } = flags,
+    { jsonV1 } = options
   const {
     log,
     dur,
@@ -513,8 +587,7 @@ export async function runListingCommand(
   const costContext = listingCostContext(json, subscriptionCost)
   const where: string[] = ['r.parent_run_record_id IS NULL']
   if (!json) where.push('r.automatic_failover = 0')
-  // Typed as the bindings SQLite actually accepts: `unknown[]` does not
-  // satisfy the query signature, which is why this file never typechecked.
+  // Typed as the string/number bindings SQLite accepts.
   const args: (string | number)[] = []
   addExactFilter(where, args, 'r.job = ?', flag('job'))
   addExactFilter(where, args, 'r.agent = ?', flag('agent'))
@@ -526,25 +599,10 @@ export async function runListingCommand(
   // Runs normally presents one canonical row per resumed conversation. If a caller names a child
   // turn, return that conversation rather than falsely reporting an existing run id as unknown.
   applyRequestedRunFilter(requested, sinceFlag, where, args)
-  if (sinceFlag) {
-    // A chain belongs in the window when any turn started there, any
-    // question was asked, answered, or closed there, or any question is
-    // still unanswered — an open ruling is current whatever its age.
-    where.push(`(
-      EXISTS (
-        SELECT 1 FROM run turn
-         WHERE (turn.record_id = r.record_id OR turn.parent_run_record_id = r.record_id)
-           AND turn.started_at >= ?
-      ) OR EXISTS (
-        SELECT 1 FROM question q JOIN run owner ON owner.record_id = q.run_record_id
-         WHERE (owner.record_id = r.record_id OR owner.parent_run_record_id = r.record_id)
-           AND (${questionOpenSql('q')} OR q.asked_at >= ? OR q.answered_at >= ? OR q.closed_at >= ?)
-      )
-    )`)
-    args.push(sinceFlag, sinceFlag, sinceFlag, sinceFlag)
-  }
+  applySinceListingFilter(sinceFlag, where, args)
+  const changeSnapshot = applyChangedAfterFilter(options.changedAfter, where, args)
   where.push(...liveListingClauses(has('live')))
-  const limit = listingLimit(flag('limit'), json, has('live'))
+  const limit = listingLimit(flag('limit'), json, has('live'), options.changedAfter)
   let rows = db()
     .query(
       `${unscoredCte}
@@ -573,7 +631,7 @@ export async function runListingCommand(
        ${unscoredJoin}
        ${listingMemberJoin('r', has('live'))}
        LEFT JOIN score s ON s.run_record_id = r.record_id
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+            ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY r.number DESC${listingLimitSql(limit)}`,
     )
     .all(...args, ...listingLimitBindings(limit)) as Record<string, unknown>[]
@@ -685,17 +743,7 @@ export async function runListingCommand(
     }
   })
 
-  // JSON Lines, so a consumer can stream it and a truncated read loses only
-  // the last record. This is a published interface: `hub` reads it rather
-  // than opening orchestrator.db, because a database shared between two concerns is
-  // how two concerns quietly become one.
-  if (json) {
-    const publish = (data: unknown) =>
-      JSON.stringify(options.jsonV1 ? data : { schema_version: 2, kind: 'run', data })
-    for (const r of rows) log(publish(r))
-    publishUnknownRuns({ ids: unknownIds, recordIds: unknownRecordIds, publish, log })
-    return
-  }
+  if (publishJson(json, jsonV1, rows, unknownIds, unknownRecordIds, changeSnapshot, log)) return
 
   if (!rows.length && !unknownIds.length && !unknownRecordIds.length) {
     log('no runs')
