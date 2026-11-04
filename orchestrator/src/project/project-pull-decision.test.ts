@@ -66,6 +66,12 @@ describe('decideProjectRegisterPull', () => {
     ])
   })
 
+  test('skips a hosted row without settings rather than clearing local settings', () => {
+    const [decision] = decideProjectRegisterPull([local()], [hosted({ settings: undefined })])
+    expect(decision?.kind).toBe('skip')
+    expect(decision).toMatchObject({ reason: expect.stringContaining('predates project settings') })
+  })
+
   test('ignores a hosted row without a linked local identity', () => {
     expect(decideProjectRegisterPull([local()], [hosted({ id: 'hosted-only' })])).toEqual([])
   })

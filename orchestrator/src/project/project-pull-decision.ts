@@ -28,11 +28,14 @@ function stable(value: unknown): string {
   return JSON.stringify(value)
 }
 
-function mergedSettings(local: ProjectSettings, hosted: RecordProject): ProjectSettings {
+function mergedSettings(
+  local: ProjectSettings,
+  hosted: NonNullable<RecordProject['settings']>,
+): ProjectSettings {
   const localOnly = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
   return Object.fromEntries([
     ...Object.entries(local).filter(([key]) => localOnly.has(key)),
-    ...Object.entries(hosted.settings ?? {}).filter(([key]) => !localOnly.has(key)),
+    ...Object.entries(hosted).filter(([key]) => !localOnly.has(key)),
   ]) as ProjectSettings
 }
 
@@ -71,7 +74,16 @@ export function decideProjectRegisterPull(
         },
       ]
     }
-    const settings = mergedSettings(local.settings, hosted)
+    if (!hosted.settings) {
+      return [
+        {
+          kind: 'skip',
+          project: local.name,
+          reason: `hosted project ${hosted.name} came from a record server that predates project settings; release the record API, then retry record sync`,
+        },
+      ]
+    }
+    const settings = mergedSettings(local.settings, hosted.settings)
     const candidate: Project = {
       ...local,
       name: hosted.name,
