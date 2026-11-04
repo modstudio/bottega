@@ -23,6 +23,7 @@ import {
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
+import { recordModerationClient } from './record-api-client-moderation.ts'
 import { recordOutsideClient } from './record-api-client-outside.ts'
 import {
   boardClaimListPath,
@@ -44,6 +45,7 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
+import { responseMessage, responseRecord } from './record-api-client-response.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -213,6 +215,7 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordPortClient &
   RecordWorkflowClient &
   RecordSettingsClient &
+  ReturnType<typeof recordModerationClient> &
   ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> & {
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
@@ -450,20 +453,6 @@ function recordApiUnreachable(error: unknown): Error {
   return new RecordApiRequestError(
     `record API is unreachable: ${detail}\n${RECORD_WRITE_REMEDY}`,
     'unreachable',
-  )
-}
-
-const responseRecord = (body: unknown): Record<string, unknown> =>
-  body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
-
-function responseMessage(body: unknown, fallback: string): string {
-  const record = responseRecord(body)
-  const nested = responseRecord(record.error)
-  return (
-    (typeof record.error === 'string' && record.error) ||
-    (typeof record.message === 'string' && record.message) ||
-    (typeof nested.message === 'string' && nested.message) ||
-    fallback
   )
 }
 
@@ -730,6 +719,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
   return {
     ...recordMachineClient(request),
     ...recordConfigAccessClient(request),
+    ...recordModerationClient(request),
     ...recordOutsideClient(request),
     ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),

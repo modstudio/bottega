@@ -2,12 +2,14 @@
 /** Owns record membership and active-space changes. Must not know CLI presentation. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import type { MachineNamePair } from './machine-name.ts'
 import { claimCurrentMachineNames } from './machine-name-command.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import type { HiddenRow } from './record-moderation-hide.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
@@ -123,6 +125,26 @@ export async function unblockRecordSpaceOutsideAuthor(
   client: Pick<RecordApiClient, 'unblockOutsideAuthor'> = recordApiClient(),
 ): Promise<void> {
   await client.unblockOutsideAuthor(userId)
+}
+
+export async function hideRecordSpaceRow(
+  input: { message?: string; note?: string; reason: ModerationHideReason },
+  client: Pick<RecordApiClient, 'hideRow'> = recordApiClient(),
+): Promise<HiddenRow> {
+  return (await client.hideRow(input)).hidden
+}
+
+export async function unhideRecordSpaceRow(
+  input: { message?: string; note?: string },
+  client: Pick<RecordApiClient, 'unhideRow'> = recordApiClient(),
+): Promise<void> {
+  await client.unhideRow(input)
+}
+
+export async function listRecordSpaceHiddenRows(
+  client: Pick<RecordApiClient, 'listHidden'> = recordApiClient(),
+): Promise<HiddenRow[]> {
+  return (await client.listHidden()).hidden
 }
 
 export async function recordMemberships(

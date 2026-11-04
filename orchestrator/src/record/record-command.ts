@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
 import { openReadOnlyDatabase } from '../database/db.ts'
 import {
   appliedRecordMigrationCount,
@@ -28,8 +29,10 @@ import {
   blockRecordSpaceOutsideAuthor,
   createRecordSpace,
   grantRecordSpaceConfigAccess,
+  hideRecordSpaceRow,
   inviteToActiveRecordSpace,
   listRecordSpaceConfigAccess,
+  listRecordSpaceHiddenRows,
   listRecordSpaceOutsideBlocks,
   pauseRecordSpaceOutsideIntake,
   pendingRecordInvitations,
@@ -40,6 +43,7 @@ import {
   showRecordSpaceOutsideIntake,
   switchRecordSpace,
   unblockRecordSpaceOutsideAuthor,
+  unhideRecordSpaceRow,
   withdrawRecordSpaceConfigAccess,
 } from './record-space.ts'
 import { ensureAllSpaceBuiltIns } from './record-space-built-ins.ts'
@@ -239,6 +243,30 @@ export async function recordSpaceIntakeUnblockCommand(
 ): Promise<void> {
   await unblockRecordSpaceOutsideAuthor(userId)
   presentation.log(`unblocked outside author ${userId}`)
+}
+
+export async function recordSpaceHideCommand(
+  target: { message?: string; note?: string },
+  reason: ModerationHideReason,
+  presentation: Presentation,
+): Promise<void> {
+  const hidden = await hideRecordSpaceRow({ ...target, reason })
+  presentation.log(`hidden ${hidden.kind} ${hidden.kind === 'note' ? hidden.label : hidden.id}`)
+}
+
+export async function recordSpaceUnhideCommand(
+  target: { message?: string; note?: string },
+  presentation: Presentation,
+): Promise<void> {
+  await unhideRecordSpaceRow(target)
+  presentation.log(`unhidden ${target.note ?? target.message}`)
+}
+
+export async function recordSpaceHiddenCommand(presentation: Presentation): Promise<void> {
+  for (const hidden of await listRecordSpaceHiddenRows())
+    presentation.log(
+      `${hidden.kind}\t${hidden.kind === 'note' ? hidden.label : hidden.id}\t${hidden.authorUserId ?? ''}\t${hidden.hiddenByUserId}\t${hidden.reason}\t${hidden.hiddenAt}`,
+    )
 }
 
 export async function recordSpaceIntakeSetCommand(

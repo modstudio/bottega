@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
+import { SQL } from 'bun'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { bindTenant } from '../../shared/record/tenant.ts'
 import { headers, json, notice } from './postgres-board-api-values.ts'
 
 const SEEDED_SUBJECTS = [
@@ -14,6 +16,7 @@ export function registerBoardOutsideApiProof(input: {
   token: () => string
   ownerToken: () => string
   nonOwnerToken: () => string
+  nonOwnerUserId: () => string
   readMemberToken: () => string
   memberToken: () => string
   userId: () => string
@@ -24,6 +27,7 @@ export function registerBoardOutsideApiProof(input: {
   post: (token: string, body: Record<string, unknown>) => Promise<Response>
   caseSession: (label: string) => string
   succeeds: (user: string, password: string, source: string) => string
+  actorUrl: string
 }): void {
   const makeOutsideAuthorEligible = () => {
     const userId = input.userId()
@@ -519,6 +523,204 @@ export function registerBoardOutsideApiProof(input: {
       )
     } finally {
       input.succeeds('postgres', 'postgres', `DELETE FROM board_message WHERE id='${messageId}';`)
+    }
+  })
+
+  test('an owner hides and unhides an outside board message', async () => {
+    const messageId = newRecordId()
+    const restoreUser = makeOutsideAuthorEligible()
+    try {
+      const authored = await input.post(input.token(), {
+        ...notice(messageId, `project:${input.intakeProject}`, input.caseSession('outside-hide')),
+        project: input.intakeProject,
+        projectId: input.intakeProjectId,
+      })
+      expect(authored.status).toBe(200)
+      const hidden = await fetch(`${input.origin()}/v1/moderation/hide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ message: messageId, reason: 'spam' }),
+      })
+      expect(hidden.status).toBe(200)
+      const hiddenRow = (await json(hidden)).hidden as Record<string, unknown>
+      expect(hiddenRow).toMatchObject({ id: messageId, reason: 'spam' })
+
+      const read = (token: string) =>
+        fetch(`${input.origin()}/v1/board/messages/${messageId}/status`, {
+          headers: headers(token),
+        })
+      expect((await read(input.nonOwnerToken())).status).toBe(404)
+      const authorRead = await read(input.token())
+      expect(authorRead.status).toBe(200)
+      expect((await json(authorRead)).message).toMatchObject({
+        id: messageId,
+        hiddenReason: 'spam',
+        hiddenAt: hiddenRow.hiddenAt,
+        hiddenByUserId: hiddenRow.hiddenByUserId,
+      })
+      expect((await read(input.ownerToken())).status).toBe(200)
+      const listed = await fetch(`${input.origin()}/v1/moderation/hidden`, {
+        headers: headers(input.ownerToken()),
+      })
+      expect(listed.status).toBe(200)
+      expect((await json(listed)).hidden).toContainEqual(hiddenRow)
+
+      const unhidden = await fetch(`${input.origin()}/v1/moderation/unhide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ message: messageId }),
+      })
+      expect(unhidden.status).toBe(200)
+      expect((await read(input.nonOwnerToken())).status).toBe(200)
+    } finally {
+      input.succeeds(
+        'postgres',
+        'postgres',
+        `DELETE FROM space_outside_write WHERE subject_id='${messageId}';
+         DELETE FROM board_message WHERE id='${messageId}';`,
+      )
+      restoreUser()
+    }
+  })
+
+  test('moderation hide refuses non-owners, unknown reasons, and missing notes', async () => {
+    const messageId = newRecordId()
+    const missingNumber = 9_999_999
+    const restoreUser = makeOutsideAuthorEligible()
+    try {
+      const authored = await input.post(input.token(), {
+        ...notice(
+          messageId,
+          `project:${input.intakeProject}`,
+          input.caseSession('outside-hide-refusal'),
+        ),
+        project: input.intakeProject,
+        projectId: input.intakeProjectId,
+      })
+      expect(authored.status).toBe(200)
+      const nonOwner = await fetch(`${input.origin()}/v1/moderation/hide`, {
+        method: 'POST',
+        headers: headers(input.nonOwnerToken()),
+        body: JSON.stringify({ message: messageId, reason: 'spam' }),
+      })
+      expect(nonOwner.status).toBe(403)
+      expect(JSON.stringify(await nonOwner.json())).toContain(
+        'hiding a row requires the active space owner',
+      )
+      const invalid = await fetch(`${input.origin()}/v1/moderation/hide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ message: messageId, reason: 'rude' }),
+      })
+      expect(invalid.status).toBe(400)
+      expect(JSON.stringify(await invalid.json())).toContain(
+        'spam, abuse, off-topic, personal-data, duplicate',
+      )
+      const missing = await fetch(`${input.origin()}/v1/moderation/hide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ note: `${input.intakeProject}#${missingNumber}`, reason: 'spam' }),
+      })
+      expect(missing.status).toBe(404)
+      expect(JSON.stringify(await missing.json())).toContain(
+        `no note ${input.intakeProject}#${missingNumber} in the active space`,
+      )
+    } finally {
+      input.succeeds(
+        'postgres',
+        'postgres',
+        `DELETE FROM space_outside_write WHERE subject_id='${messageId}';
+         DELETE FROM board_message WHERE id='${messageId}';`,
+      )
+      restoreUser()
+    }
+  })
+
+  test('owner moderation protects hidden columns and refuses shared-space notices', async () => {
+    const messageId = newRecordId()
+    const sharedMessageId = newRecordId()
+    const noteId = newRecordId()
+    const noteNumber = 9_999_998
+    const actor = new SQL(input.actorUrl)
+    try {
+      const memberMessage = await input.post(input.nonOwnerToken(), {
+        ...notice(
+          messageId,
+          `project:${input.intakeProject}`,
+          input.caseSession('member-hidden-guard'),
+        ),
+        project: input.intakeProject,
+        projectId: input.intakeProjectId,
+      })
+      expect(memberMessage.status).toBe(200)
+      const hiddenMessage = await fetch(`${input.origin()}/v1/moderation/hide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ message: messageId, reason: 'abuse' }),
+      })
+      expect(hiddenMessage.status).toBe(200)
+      await expect(
+        actor.begin(async (tx) => {
+          await bindTenant(tx, {
+            userId: input.nonOwnerUserId(),
+            spaceId: input.spaceId(),
+            spaceIds: [input.spaceId()],
+          })
+          await tx`UPDATE board_message SET hidden_at=NULL,hidden_by_user_id=NULL,
+            hidden_reason=NULL WHERE id=${messageId}::uuid`
+        }),
+      ).rejects.toThrow('hidden fields may only be changed through owner moderation')
+      const unhiddenMessage = await fetch(`${input.origin()}/v1/moderation/unhide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ message: messageId }),
+      })
+      expect(unhiddenMessage.status).toBe(200)
+
+      input.succeeds(
+        'postgres',
+        'postgres',
+        `INSERT INTO hub_note
+          (id,space_id,project_name,project_id,author_user_id,number,project,text,anchors,
+           sightings,created_at,last_seen_at,updated_at)
+         VALUES ('${noteId}','${input.spaceId()}','${input.intakeProject}',
+          '${input.intakeProjectId}','${input.nonOwnerUserId()}',${noteNumber},
+          '${input.intakeProject}','moderation note','[]',1,now(),now(),now());`,
+      )
+      const hiddenNote = await fetch(`${input.origin()}/v1/moderation/hide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ note: `${input.intakeProject}#${noteNumber}`, reason: 'spam' }),
+      })
+      expect(hiddenNote.status).toBe(200)
+      const unhiddenNote = await fetch(`${input.origin()}/v1/moderation/unhide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ note: `${input.intakeProject}#${noteNumber}` }),
+      })
+      expect(unhiddenNote.status).toBe(200)
+
+      const shared = await input.post(input.ownerToken(), {
+        ...notice(sharedMessageId, 'spaces', input.caseSession('shared-space-hide-refusal')),
+      })
+      expect(shared.status).toBe(200)
+      const sharedHide = await fetch(`${input.origin()}/v1/moderation/hide`, {
+        method: 'POST',
+        headers: headers(input.ownerToken()),
+        body: JSON.stringify({ message: sharedMessageId, reason: 'spam' }),
+      })
+      expect(sharedHide.status).toBe(400)
+      expect(JSON.stringify(await sharedHide.json())).toContain(
+        'a notice that reaches shared spaces cannot be hidden',
+      )
+    } finally {
+      await actor.close()
+      input.succeeds(
+        'postgres',
+        'postgres',
+        `DELETE FROM hub_note WHERE id='${noteId}';
+         DELETE FROM board_message WHERE id IN ('${messageId}','${sharedMessageId}');`,
+      )
     }
   })
 

@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { listHostedChanges } from '../src/hosted-changes.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import { listHostedNotes } from '../src/hosted-note-list.ts'
@@ -63,6 +64,7 @@ const SECOND_USER = '01990000-0000-7000-8000-000000000651'
 const READ_USER = '01990000-0000-7000-8000-000000000652'
 const OUTSIDE_USER = '01990000-0000-7000-8000-000000000653'
 const OTHER_OUTSIDE_USER = '01990000-0000-7000-8000-000000000654'
+const OWNER_USER = '01990000-0000-7000-8000-000000000655'
 const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
 const SPACE_C = '01990000-0000-7000-8000-00000000066b'
@@ -180,7 +182,8 @@ try {
       (${SECOND_USER}::uuid,'hub-second@example.test','Hub Second',true,now(),now()),
       (${READ_USER}::uuid,'hub-read@example.test','Hub Read',true,now(),now()),
       (${OUTSIDE_USER}::uuid,'hub-outside@example.test','Hub Outside',true,now()-interval '2 days',now()),
-      (${OTHER_OUTSIDE_USER}::uuid,'hub-other-outside@example.test','Hub Other Outside',true,now()-interval '2 days',now())`
+      (${OTHER_OUTSIDE_USER}::uuid,'hub-other-outside@example.test','Hub Other Outside',true,now()-interval '2 days',now()),
+      (${OWNER_USER}::uuid,'hub-owner@example.test','Hub Owner',true,now(),now())`
   await admin`INSERT INTO space (id,name,slug,created_at) VALUES
     (${SPACE_A}::uuid,'Evidence A','evidence-a',now()),
     (${SPACE_B}::uuid,'Evidence B','evidence-b',now()),
@@ -195,7 +198,8 @@ try {
       (${newRecordId()}::uuid,${SPACE_B}::uuid,${USER}::uuid,'member','write',now()),
       (${newRecordId()}::uuid,${SPACE_C}::uuid,${USER}::uuid,'owner','write',now()),
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${SECOND_USER}::uuid,'member','write',now()),
-      (${newRecordId()}::uuid,${SPACE_A}::uuid,${READ_USER}::uuid,'member','read',now())`
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${READ_USER}::uuid,'member','read',now()),
+      (${newRecordId()}::uuid,${SPACE_A}::uuid,${OWNER_USER}::uuid,'owner','write',now())`
   await admin`INSERT INTO machine(id,user_id,name,registered_at,last_seen)
     VALUES (${MACHINE}::uuid,${USER}::uuid,'evidence-machine',now(),now())`
 
@@ -230,6 +234,7 @@ try {
       { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: actorUrl },
       { fetch: outsideFetch },
     )
+  const d2NoteIds: string[] = []
   try {
     await admin`INSERT INTO space_outside_intake(id,space_id,project_id,updated_at)
       VALUES (${intakeId}::uuid,${SPACE_A}::uuid,${PROJECT_A}::uuid,now())`
@@ -284,6 +289,217 @@ try {
       secondBody.number !== Number(firstBody.number) + 1
     )
       throw new Error('outside note route did not allocate consecutive project note numbers')
+
+    await actorUrl.begin(async (tx) => {
+      await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+      const note = await tx<{ id: string }[]>`SELECT id::text FROM hub_note
+        WHERE space_id=${SPACE_A}::uuid AND project_name=${PLATFORM_SLUG}
+          AND number=${firstBody.number!}`
+      await tx`SELECT public.hub_note_set_hidden(${note[0]!.id}::uuid,'spam',${OWNER_USER}::uuid)`
+    })
+    const memberAfterHide = await listHostedNotes(actorUrl, { userId: USER, spaceId: SPACE_A }, {})
+    const authorAfterHide = await listHostedNotes(
+      actorUrl,
+      { userId: OUTSIDE_USER, spaceId: SPACE_A },
+      {},
+    )
+    const ownerAfterHide = await listHostedNotes(
+      actorUrl,
+      { userId: OWNER_USER, spaceId: SPACE_A },
+      {},
+    )
+    if (memberAfterHide.notes.some((row) => row.text === 'first outside note'))
+      throw new Error('a member observed an owner-hidden outside note')
+    if (!authorAfterHide.notes.some((row) => row.text === 'first outside note'))
+      throw new Error('an outside author could not observe their owner-hidden note')
+    if (!ownerAfterHide.notes.some((row) => row.text === 'first outside note'))
+      throw new Error('the space owner could not observe an owner-hidden note')
+
+    const memberNote = await createHostedNote(
+      actorUrl,
+      { userId: USER, spaceId: SPACE_A },
+      {
+        project: PLATFORM_SLUG,
+        projectId: PROJECT_A,
+        text: 'D2 evidence member-authored note',
+        anchor,
+      },
+    )
+    if (!memberNote) throw new Error('member-authored moderation evidence note was not created')
+    d2NoteIds.push(memberNote.id)
+    const crossSpaceAuthorRead = await listHostedNotes(
+      actorUrl,
+      { userId: USER, spaceId: SPACE_B },
+      {},
+    )
+    if (crossSpaceAuthorRead.notes.some((row) => row.id === memberNote.id))
+      throw new Error('a member read their SPACE_A note through cross-space author access')
+    let directNoteUpdateRefused = false
+    try {
+      await actorUrl.begin(async (tx) => {
+        await bindTenant(tx, { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+        await tx`UPDATE hub_note SET hidden_at=now(),hidden_by_user_id=${USER}::uuid,
+          hidden_reason='spam' WHERE id=${memberNote.id}::uuid`
+      })
+    } catch (error) {
+      directNoteUpdateRefused = String(error).includes(
+        'hidden fields may only be changed through owner moderation',
+      )
+    }
+    if (!directNoteUpdateRefused)
+      throw new Error('a write member changed note hidden fields without owner moderation')
+    const directInsertId = newRecordId()
+    let directHiddenInsertRefused = false
+    try {
+      await actorUrl.begin(async (tx) => {
+        await bindTenant(tx, { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+        await tx`INSERT INTO hub_note
+          (id,space_id,project_name,project_id,author_user_id,number,project,text,anchors,
+           sightings,created_at,last_seen_at,updated_at,hidden_at,hidden_by_user_id,hidden_reason)
+          VALUES (${directInsertId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${PROJECT_A}::uuid,
+          ${USER}::uuid,900001,${PLATFORM_SLUG},'direct hidden insert','[]',1,now(),now(),now(),
+          now(),${OWNER_USER}::uuid,'spam')`
+      })
+    } catch (error) {
+      directHiddenInsertRefused = String(error).includes(
+        'hidden fields may only be changed through owner moderation',
+      )
+    }
+    if (!directHiddenInsertRefused)
+      throw new Error('a write member inserted a note with hidden fields')
+    await actorUrl.begin(async (tx) => {
+      await bindTenant(tx, { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+      await tx`INSERT INTO hub_note
+        (id,space_id,project_name,project_id,author_user_id,number,project,text,anchors,
+         sightings,created_at,last_seen_at,updated_at)
+        VALUES (${directInsertId}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${PROJECT_A}::uuid,
+        ${USER}::uuid,900001,${PLATFORM_SLUG},'ordinary direct insert','[]',1,now(),now(),now())`
+    })
+    d2NoteIds.push(directInsertId)
+    let naturalKeyConflictRefused = false
+    try {
+      await mirrorHostedNotes(
+        actorUrl,
+        { userId: USER, spaceId: SPACE_A },
+        {
+          notes: [
+            {
+              ...memberNote,
+              id: newRecordId(),
+              number: 900001,
+              projectId: PROJECT_A_OTHER,
+              text: 'must not report a natural-key conflict as hidden',
+            },
+          ],
+          acknowledgements: [],
+        },
+      )
+    } catch (error) {
+      naturalKeyConflictRefused = String(error).includes('hub_note_space_project_number_unique')
+    }
+    if (!naturalKeyConflictRefused)
+      throw new Error('a note natural-key conflict was reported as a hidden-row skip')
+    await actorUrl.begin(async (tx) => {
+      await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+      await tx`SELECT public.hub_note_set_hidden(${memberNote.id}::uuid,'abuse',${OWNER_USER}::uuid)`
+    })
+    if (!(await getHostedNote(actorUrl, { userId: USER, spaceId: SPACE_A }, memberNote.id)))
+      throw new Error('a hub-collected note author lost sight of their hidden note')
+    if (await getHostedNote(actorUrl, { userId: SECOND_USER, spaceId: SPACE_A }, memberNote.id))
+      throw new Error('a non-author member observed a hidden hub-collected note')
+    await actorUrl.begin(async (tx) => {
+      await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+      await tx`SELECT public.hub_note_set_hidden(${memberNote.id}::uuid,NULL,${OWNER_USER}::uuid)`
+    })
+
+    const mirroredNote = await createHostedNote(
+      actorUrl,
+      { userId: SECOND_USER, spaceId: SPACE_A },
+      {
+        project: PLATFORM_SLUG,
+        projectId: PROJECT_A,
+        text: 'D2 evidence mirror source',
+        anchor,
+      },
+    )
+    if (!mirroredNote) throw new Error('hidden mirror evidence note was not created')
+    d2NoteIds.push(mirroredNote.id)
+    const beforeHide = await listHostedChanges(
+      actorUrl,
+      { userId: USER, spaceId: SPACE_A },
+      {
+        after: 0,
+        limit: 500,
+        tables: ['hub_note'],
+      },
+    )
+    await actorUrl.begin(async (tx) => {
+      await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+      await tx`SELECT public.hub_note_set_hidden(${mirroredNote.id}::uuid,'duplicate',${OWNER_USER}::uuid)`
+    })
+    const hiddenChanges = await listHostedChanges(
+      actorUrl,
+      { userId: USER, spaceId: SPACE_A },
+      { after: beforeHide.head, limit: 500, tables: ['hub_note'] },
+    )
+    if (
+      !hiddenChanges.changes.some(
+        (change) => change.id === mirroredNote.id && change.op === 'delete',
+      )
+    )
+      throw new Error('a hidden note did not leave a non-author member cache as a delete')
+    const acknowledgementId = newRecordId()
+    const mirror = await mirrorHostedNotes(
+      actorUrl,
+      { userId: USER, spaceId: SPACE_A },
+      {
+        notes: [{ ...mirroredNote, projectId: PROJECT_A, text: 'must not overwrite hidden text' }],
+        acknowledgements: [
+          {
+            id: acknowledgementId,
+            note_id: mirroredNote.id,
+            project_name: PLATFORM_SLUG,
+            projectId: PROJECT_A,
+            session_id: 'hidden-note-acknowledgement',
+            acknowledged_at: new Date().toISOString(),
+            sightings: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            deleted_at: null,
+          },
+        ],
+      },
+    )
+    if (
+      mirror.upserted !== 0 ||
+      !mirror.skippedHidden.includes(mirroredNote.id) ||
+      !mirror.skippedHidden.includes(acknowledgementId)
+    )
+      throw new Error('a hidden note mirror did not report its note and acknowledgement skipped')
+    const unchanged = await admin<
+      { text: string; hidden_reason: string; hidden_by_user_id: string }[]
+    >`SELECT text,hidden_reason,hidden_by_user_id::text FROM hub_note WHERE id=${mirroredNote.id}::uuid`
+    if (
+      unchanged[0]?.text !== 'D2 evidence mirror source' ||
+      unchanged[0]?.hidden_reason !== 'duplicate' ||
+      unchanged[0]?.hidden_by_user_id !== OWNER_USER
+    )
+      throw new Error('a skipped hidden note mirror changed the hosted row')
+    await actorUrl.begin(async (tx) => {
+      await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+      await tx`SELECT public.hub_note_set_hidden(${mirroredNote.id}::uuid,NULL,${OWNER_USER}::uuid)`
+    })
+    const unhiddenChanges = await listHostedChanges(
+      actorUrl,
+      { userId: USER, spaceId: SPACE_A },
+      { after: hiddenChanges.next, limit: 500, tables: ['hub_note'] },
+    )
+    if (
+      !unhiddenChanges.changes.some(
+        (change) => change.id === mirroredNote.id && change.op === 'upsert' && 'row' in change,
+      )
+    )
+      throw new Error('an unhidden note did not return to a member cache as an upsert')
     const successfulOutsideWrites = await admin<{ writes: string }[]>`
       SELECT count(*)::text AS writes FROM space_outside_write
       WHERE user_id=${OUTSIDE_USER}::uuid AND kind='note'`
@@ -372,6 +588,8 @@ try {
       AND user_id IN (${OUTSIDE_USER}::uuid,${OTHER_OUTSIDE_USER}::uuid)`
     await admin`DELETE FROM hub_note WHERE space_id=${SPACE_A}::uuid
       AND author_user_id IN (${OUTSIDE_USER}::uuid,${OTHER_OUTSIDE_USER}::uuid)`
+    for (const id of d2NoteIds)
+      await admin`DELETE FROM hub_note WHERE space_id=${SPACE_A}::uuid AND id=${id}::uuid`
     await admin`DELETE FROM seq WHERE space_id=${SPACE_A}::uuid AND project_id=${PROJECT_A}::uuid
       AND name='note'`
     await admin`DELETE FROM space_outside_intake WHERE id=${intakeId}::uuid`
@@ -1693,7 +1911,8 @@ try {
       // Two sends of this space's subscription, plus the projects-scope skipped and partial test sends.
       pageSettings.sends.length !== 4 ||
       pageSettings.sends.filter((send) => Number(send.test) === 1).length !== 3 ||
-      pageSettings.members.length !== 2 ||
+      // USER, SECOND_USER and the D2 moderation owner remain members of SPACE_A here.
+      pageSettings.members.length !== 3 ||
       pageSettings.subscriptions.length !== 1
     )
       throw new Error('hosted settings adapter did not return members, sends and subscriptions')
@@ -2036,6 +2255,6 @@ try {
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM machine WHERE id=${MACHINE}::uuid`
   await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid, ${READ_USER}::uuid,
-    ${OUTSIDE_USER}::uuid, ${OTHER_OUTSIDE_USER}::uuid)`
+    ${OUTSIDE_USER}::uuid, ${OTHER_OUTSIDE_USER}::uuid, ${OWNER_USER}::uuid)`
   await admin.close()
 }

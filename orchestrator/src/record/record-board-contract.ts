@@ -76,6 +76,9 @@ export type HostedBoardMessage = {
   authorSession: string | null
   ackRequired: boolean
   ackDeadline: string | null
+  hiddenAt?: string | null
+  hiddenByUserId?: string | null
+  hiddenReason?: string | null
 }
 
 export type HostedBoardReply = {

@@ -38,6 +38,10 @@ export type HostedNote = {
   promoted_task_id?: string | null
   updated_at: string
   deleted_at: string | null
+  author_user_id?: string | null
+  hidden_at?: string | null
+  hidden_by_user_id?: string | null
+  hidden_reason?: string | null
 }
 export type HostedAcknowledgement = {
   id: string
@@ -168,8 +172,8 @@ export async function createHostedNote(
       ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
     return rows<HostedNote>(
       await tx`INSERT INTO hub_note
-      (id,space_id,project_name,project_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,updated_at)
-      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.project},${project.id}::uuid,${number},${input.project},
+      (id,space_id,project_name,project_id,author_user_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,updated_at)
+      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${input.project},${project.id}::uuid,${identity.userId}::uuid,${number},${input.project},
       ${input.text},${input.area ?? null},${`[${input.anchor}]`},1,now(),now(),now()) RETURNING *,number::int number`,
     )[0]!
   })
@@ -413,14 +417,15 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
     collision.action === 'insert'
       ? rows<{ number: number; id: string }>(
           await tx`INSERT INTO hub_note
-      (id,space_id,project_name,project_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,
+      (id,space_id,project_name,project_id,author_user_id,number,project,text,area,anchors,sightings,created_at,last_seen_at,
        stale_at,stale_reason,promoted_task,promoted_task_id,updated_at,deleted_at)
       VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},
        ${await storedHubProjectId(tx, identity.spaceId, { projectId: row.projectId, projectName: row.project_name })}::uuid,
-       ${row.number},${row.project},
+       ${identity.userId}::uuid,${row.number},${row.project},
        ${row.text},${row.area},${row.anchors},${row.sightings},${row.created_at}::timestamptz,
        ${row.last_seen_at}::timestamptz,${row.stale_at}::timestamptz,${row.stale_reason},${row.promoted_task},${promotedTaskId}::uuid,
        ${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)
+      ON CONFLICT (id) DO NOTHING
       RETURNING number::int number,id`,
         )[0]
       : rows<{ number: number; id: string }>(
@@ -435,7 +440,10 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
        WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid
        RETURNING number::int number,id`,
         )[0]
-  if (!written) throw new Error(`hosted note ${row.number} mirror wrote nothing`)
+  if (!written) {
+    if (collision.action === 'insert') return null
+    throw new Error(`hosted note ${row.number} mirror wrote nothing`)
+  }
   const project = rows<{ id: string }>(
     await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND id=${projectId}::uuid`,
   )[0]
@@ -459,13 +467,21 @@ export async function mirrorHostedNotes(
     throw new Error('mirror accepts at most 500 rows')
   return withHostedTenant(url, identity, async (tx) => {
     const noteIds: Array<{ number: number; id: string }> = []
-    for (const row of body.notes) noteIds.push(await mirrorOneHostedNote(tx, identity, row))
+    const skippedHidden: string[] = []
+    for (const row of body.notes) {
+      const written = await mirrorOneHostedNote(tx, identity, row)
+      if (written) noteIds.push(written)
+      else skippedHidden.push(row.id)
+    }
+    let acknowledgementCount = 0
     for (const row of body.acknowledgements ?? []) {
       const parent = rows<{ project_id: string }>(
         await tx`SELECT project_id FROM hub_note WHERE id=${row.note_id}::uuid`,
       )[0]
-      if (!parent)
-        throw new Error(`hosted note acknowledgement ${row.id} has no parent note ${row.note_id}`)
+      if (!parent) {
+        skippedHidden.push(row.id)
+        continue
+      }
       await tx`INSERT INTO hub_note_acknowledgement
       (id,space_id,project_name,project_id,note_id,session_id,acknowledged_at,sightings,created_at,updated_at,deleted_at)
       VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},
@@ -476,6 +492,7 @@ export async function mirrorHostedNotes(
       ON CONFLICT(space_id,note_id,session_id) DO UPDATE SET project_name=excluded.project_name,
        project_id=excluded.project_id,acknowledged_at=excluded.acknowledged_at,
        sightings=excluded.sightings,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at`
+      acknowledgementCount += 1
     }
     for (const item of body.raiseProjects ?? []) {
       if (!item.projectId)
@@ -496,7 +513,11 @@ export async function mirrorHostedNotes(
         ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
       }
     }
-    return { upserted: body.notes.length + (body.acknowledgements?.length ?? 0), noteIds }
+    return {
+      upserted: noteIds.length + acknowledgementCount,
+      noteIds,
+      skippedHidden,
+    }
   })
 }
 

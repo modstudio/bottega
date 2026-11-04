@@ -48,6 +48,9 @@ function idleConfigAuthorizationDeps() {
     listOutsideBlocks: unused,
     blockOutsideAuthor: unused,
     unblockOutsideAuthor: unused,
+    hideRow: unused,
+    unhideRow: unused,
+    listHidden: unused,
   }
 }
 
@@ -210,6 +213,9 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'listOutsideBlocks'
   | 'blockOutsideAuthor'
   | 'unblockOutsideAuthor'
+  | 'hideRow'
+  | 'unhideRow'
+  | 'listHidden'
 > {
   return {
     whoami: unusedIdentityAndSpace,
@@ -228,6 +234,9 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     listOutsideBlocks: unusedIdentityAndSpace,
     blockOutsideAuthor: unusedIdentityAndSpace,
     unblockOutsideAuthor: unusedIdentityAndSpace,
+    hideRow: unusedIdentityAndSpace,
+    unhideRow: unusedIdentityAndSpace,
+    listHidden: unusedIdentityAndSpace,
   }
 }
 

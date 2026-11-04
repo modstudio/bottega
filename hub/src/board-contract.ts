@@ -74,6 +74,9 @@ const BoardMessageSchema = z.object({
   authorSession: z.string().nullable(),
   ackRequired: z.boolean().nullable(),
   ackDeadline: z.string().nullable(),
+  hiddenAt: z.string().nullable().optional(),
+  hiddenByUserId: z.string().nullable().optional(),
+  hiddenReason: z.string().nullable().optional(),
   text: z.string().nullable(),
 })
 const BoardOverviewBaseSchema = z.object({
