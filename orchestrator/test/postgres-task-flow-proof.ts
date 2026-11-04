@@ -7,6 +7,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { setMachineValue } from '../../shared/machine-config.ts'
 import { newRecordId } from '../../shared/record-id.ts'
 import { migratedTestDatabase } from '../src/database/test-database.fixture.ts'
+import { rememberProjectSpace } from '../src/project-space.ts'
 import { rememberHostedRecord } from '../src/record/install-binding-write.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
 import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
@@ -88,6 +89,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       input.signIn('a')
       const client = recordApiClient()
       rememberHostedRecord(databaseA)
+      rememberProjectSpace(databaseA, PROJECT, input.spaceId())
       await client.ensureSpaceBuiltIns!({ destinationSpaceId: input.spaceId() })
       await pullRecordCache(databaseA)
       databaseB = Database.deserialize(databaseA.serialize())
