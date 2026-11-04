@@ -22,7 +22,7 @@ export function hubTypedQuestionCommand(
     presentation.log(
       days !== undefined
         ? `no typed-question answers recorded for the last ${days} day(s); run without the filter to see every recorded question`
-        : `no typed-question answers recorded — record them with: ${PLATFORM_SLUG} note new`,
+        : `no typed-question answers recorded — record them with: ${PLATFORM_SLUG} run start implement`,
     )
     return
   }

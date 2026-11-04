@@ -181,4 +181,3 @@ export function noteDuplicateLabel(database: Database, subjectRef: string): bool
     .get(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, subjectRef)
   return row ? Boolean(row.label) : null
 }
-
