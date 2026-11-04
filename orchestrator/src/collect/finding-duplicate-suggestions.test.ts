@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { typedQuestionStateIdentity } from '../../../shared/typed-question/state-identity.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { parseDuplicateFinding } from '../review/review-duplicate-link.ts'
 import { FINDING_DUPLICATE_QUESTION } from '../typed-question/finding-duplicate-question.ts'
-import { stateIdentity } from '../typed-question/typed-question-service.ts'
 import {
   type DuplicateFindingRow,
   duplicateSuggestionLine,
@@ -229,7 +229,7 @@ test('suggests only findings runs that share the review or the reviewed tip', as
         FINDING_DUPLICATE_QUESTION.id,
         FINDING_DUPLICATE_QUESTION.version,
         ids.join(':'),
-        stateIdentity(state),
+        typedQuestionStateIdentity(state),
         new Date().toISOString(),
       )
   }

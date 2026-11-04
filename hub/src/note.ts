@@ -19,6 +19,12 @@ import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
 import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './note-client.ts'
+import {
+  askNoteDuplicateQuestions,
+  jevOnlyDuplicateCandidates,
+  recordNoteDuplicateMerge,
+  recordNoteDuplicateOutcomes,
+} from './note-duplicate-question.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { notePromotionBody } from './note-promotion-body.ts'
@@ -112,6 +118,7 @@ export type NoteCandidate = {
   project: string
   text: string
   score: number
+  probability?: number
 }
 export type NoteAcknowledgement = { note: NoteRow; alreadyAcknowledged: boolean }
 
@@ -495,7 +502,9 @@ export async function mergeNote(
         .run(JSON.stringify(merged.anchors), merged.sightings, lastSeen, current.record_id)
       conn.query('DELETE FROM note WHERE record_id=?').run(source.record_id)
     })
-    return getNote(targetRecordId)
+    const merged = getNote(targetRecordId)
+    recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
+    return merged
   }
   const queuedAt = nowIso()
   writeTransaction((conn) => {
@@ -520,7 +529,43 @@ export async function mergeNote(
       .run(target.project, projectRecordIdFor(target.project), HOSTED_NOTE_TABLE, sourceRecordId)
   })
   await drainHostedEditOutbox(queuedAt, options.hosted)
-  return getNote(targetRecordId)
+  const merged = getNote(targetRecordId)
+  recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
+  return merged
+}
+
+function completedNoteCreation(
+  note: NoteRow,
+  candidates: NoteCandidate[],
+  input: { text: string; sameAs?: string; forceNew?: boolean },
+  project: string,
+): { note: NoteRow; candidates: NoteCandidate[] } {
+  if (input.sameAs) recordNoteDuplicateOutcomes(input.text, project, 'same-as', input.sameAs)
+  else if (input.forceNew) recordNoteDuplicateOutcomes(input.text, project, 'new')
+  else recordNoteDuplicateOutcomes(input.text, project, 'filed')
+  return { note, candidates }
+}
+
+async function duplicateCandidatesForNewNote(
+  text: string,
+  project: string,
+  sameAs: string | undefined,
+): Promise<NoteCandidate[]> {
+  const lexicalCandidates = noteCandidates(text, project)
+  if (sameAs) return lexicalCandidates
+  const asked = await askNoteDuplicateQuestions(listNotes(), project, text)
+  return [
+    ...lexicalCandidates,
+    ...jevOnlyDuplicateCandidates(lexicalCandidates, asked).map(({ probability, ...note }) => ({
+      record_id: note.record_id,
+      number: note.number,
+      label: note.label,
+      project: note.project,
+      text: note.text,
+      score: note.score,
+      probability,
+    })),
+  ]
 }
 
 export async function createNote(
@@ -541,7 +586,7 @@ export async function createNote(
   const anchor = identifiedAnchor(input.anchor ?? deriveNoteAnchor(text, input.cwd))
   const targetProject = input.project ?? anchor.project
   const registered = registeredProject(targetProject)
-  const candidates = noteCandidates(text, targetProject)
+  const candidates = await duplicateCandidatesForNewNote(text, targetProject, input.sameAs)
   const mode = writeMode(targetProject, options.hosted)
   if (input.sameAs) {
     const existing = getNote(input.sameAs)
@@ -559,7 +604,7 @@ export async function createNote(
           )
           .run(JSON.stringify([...row.anchors, anchor]), at, row.record_id)
       })
-      return { note: getNote(existing.record_id), candidates }
+      return completedNoteCreation(getNote(existing.record_id), candidates, input, targetProject)
     }
     const queuedAt = nowIso()
     writeTransaction((conn) => {
@@ -576,7 +621,7 @@ export async function createNote(
       ])
     })
     await drainHostedEditOutbox(queuedAt, options.hosted)
-    return { note: getNote(existing.record_id), candidates }
+    return completedNoteCreation(getNote(existing.record_id), candidates, input, targetProject)
   }
   if (candidates.length && !input.forceNew) return { note: null as never, candidates }
   if (mode === 'local-authoritative') {
@@ -602,7 +647,7 @@ export async function createNote(
         )
       return recordId
     })
-    return { note: getNote(recordId), candidates }
+    return completedNoteCreation(getNote(recordId), candidates, input, targetProject)
   }
   const hostedOptions = await noteDestinationOptions(targetProject, options.hosted)
   const hosted = await hostedCreateNote(
@@ -619,7 +664,8 @@ export async function createNote(
     `${formatNoteLabel(hosted.project, hosted.number)} was created in the hosted record; its local copy will arrive on the next record pull`,
     () => writeTransaction((conn) => applyHostedNote(conn, hosted)),
   )
-  return { note: applied ? getNote(hosted.id) : noteRowFromHosted(hosted), candidates }
+  const created = applied ? getNote(hosted.id) : noteRowFromHosted(hosted)
+  return completedNoteCreation(created, candidates, input, targetProject)
 }
 
 /** The refusal every creating promotion carries, so no surface can create a task titled by a note. */

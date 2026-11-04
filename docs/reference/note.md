@@ -15,6 +15,7 @@ observations and their lifecycle
 - [bottega note push](#bottega-note-push)
 - [bottega note same](#bottega-note-same)
 - [bottega note stale](#bottega-note-stale)
+- [bottega note typed-question](#bottega-note-typed-question)
 
 ## bottega note
 
@@ -34,6 +35,7 @@ observations and their lifecycle
 - [bottega note push](./note.md#bottega-note-push)
 - [bottega note same](./note.md#bottega-note-same)
 - [bottega note stale](./note.md#bottega-note-stale)
+- [bottega note typed-question](./note.md#bottega-note-typed-question)
 
 ## bottega note curate
 
@@ -181,6 +183,21 @@ merge another sighting into an existing note
 **Synopsis:** `bottega note stale`
 
 mark vanished anchors and reap eligible notes
+
+### Related
+
+- [bottega note](./note.md#bottega-note)
+
+## bottega note typed-question
+
+**Synopsis:** `bottega note typed-question [--days <value>] [--json]`
+
+report typed-question outcomes and operating cost
+
+### Options
+
+- `--days <value>`: limit answers to this many days
+- `--json`: write the report as JSON
 
 ### Related
 

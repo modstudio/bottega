@@ -256,6 +256,13 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'DEV-2092',
     'Typed-question answers await a hosted home',
   ),
+  planned('hub', 'typed_question_answer', 'DEV-2092', 'Typed-question answers await a hosted home'),
+  planned(
+    'hub',
+    'typed_question_outcome',
+    'DEV-2092',
+    'Typed-question outcomes await a hosted home',
+  ),
   evidence('workflow_cursor', 'Outbox source for task flow stages'),
   hosted('orchestrator', 'workflow_event', 'workflow_event', 'Local workflow event write source'),
   planned(

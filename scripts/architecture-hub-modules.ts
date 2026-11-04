@@ -166,6 +166,7 @@ export const hubModuleSpecs = [
       './projects.ts',
       './task.ts',
       './tracker-new.ts',
+      './typed-question-cli.ts',
     ],
   },
   {

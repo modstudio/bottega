@@ -22,6 +22,7 @@ import { pushNotes } from './note-push.ts'
 import { projects } from './projects.ts'
 import { showTask } from './task.ts'
 import { taskCreationDestination } from './tracker-new.ts'
+import { hubTypedQuestionCommand } from './typed-question-cli.ts'
 
 type NoteOptions = {
   actionable?: boolean
@@ -41,6 +42,7 @@ type NoteOptions = {
   stale?: boolean
   task?: string
   title?: string
+  days?: string
 }
 
 const repeat = (value: string, previous: string[] = []) => [...previous, value]
@@ -225,6 +227,18 @@ function registerNoteReferenceCommands(note: Command): void {
 
 function registerNoteMaintenanceCommands(note: Command): void {
   note
+    .command('typed-question')
+    .description('report typed-question outcomes and operating cost')
+    .option('--days <value>', 'limit answers to this many days')
+    .option('--json', 'write the report as JSON')
+    .action((options: NoteOptions) => {
+      open()
+      hubTypedQuestionCommand(
+        { days: options.days, json: Boolean(options.json) },
+        { log: (value) => console.log(value) },
+      )
+    })
+  note
     .command('stale')
     .description('mark vanished anchors and reap eligible notes')
     .action(async () => {
@@ -337,8 +351,15 @@ export const noteDropLine = (note: { label: string; stale_reason: string | null 
   `note ${note.label} dropped: ${note.stale_reason}`
 export const noteStaleLine = (note: { label: string; reason: string }) =>
   `note ${note.label}: ${note.reason}`
-export const noteCandidateLine = (note: { label: string; score: number; text: string }) =>
-  `${note.label} score ${note.score.toFixed(3)}  ${note.text}`
+export const noteCandidateLine = (note: {
+  label: string
+  score: number
+  text: string
+  probability?: number
+}) =>
+  note.probability === undefined
+    ? `${note.label} score ${note.score.toFixed(3)}  ${note.text}`
+    : `${note.label} probability ${note.probability.toFixed(2)}  ${note.text}`
 
 export function noteFiledJson(
   note: {
@@ -353,6 +374,7 @@ export function noteFiledJson(
     label: string
     text: string
     score: number
+    probability?: number
   }[],
 ) {
   return {

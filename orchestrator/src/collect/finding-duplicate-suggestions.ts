@@ -3,9 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { noulProbability } from '../../../shared/typed-question/client.ts'
+import { typedQuestionStateIdentity } from '../../../shared/typed-question/state-identity.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { FINDING_DUPLICATE_QUESTION } from '../typed-question/finding-duplicate-question.ts'
-import { askTypedQuestion, stateIdentity } from '../typed-question/typed-question-service.ts'
+import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
 
 const FINDING_DUPLICATE_ASK_CONCURRENCY = 8
 const FINDING_DUPLICATE_PAIR_CAP = 200
@@ -59,7 +60,7 @@ function pairFor(
   ) as [DuplicateFindingRow, DuplicateFindingRow]
   const subjectRef = sorted.map((row) => row.findingRecordId).join(':')
   const state = { findings: sorted.map(findingState) as [FindingState, FindingState] }
-  const stateSha = stateIdentity(state)
+  const stateSha = typedQuestionStateIdentity(state)
   return {
     subjectRef,
     state,
