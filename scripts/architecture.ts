@@ -33,6 +33,7 @@ import {
 import { identityModules } from './architecture-identity-modules.ts'
 import { keyStoreModules } from './architecture-key-store-modules.ts'
 import { landingTreeModules } from './architecture-landing-tree.ts'
+import { mailModules } from './architecture-mail-modules.ts'
 import { mcpModules } from './architecture-mcp-modules.ts'
 import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
@@ -396,14 +397,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/stalled-run.ts', []),
   module('orchestrator/src/no-follow-file.ts', ['node:fs']),
-  module('orchestrator/src/mail/password-reset-mailer.ts', [
-    '@aws-sdk/client-sesv2',
-    '../../../shared/brand.ts',
-  ]),
-  module('orchestrator/src/mail/invitation-mailer.ts', [
-    '@aws-sdk/client-sesv2',
-    '../../../shared/brand.ts',
-  ]),
+  ...mailModules,
   module('hub/src/report-renderer.ts', ['../../shared/compact-number.ts', './measures.ts']),
   module('hub/src/report-delivery.ts', ['./measures.ts', './report-renderer.ts']),
   module('hub/src/report-delivery-hosted.ts', [

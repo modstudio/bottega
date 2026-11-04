@@ -83,7 +83,7 @@ describe('record HTTP authentication responses', () => {
 
   test('validates and maps whoami identity at the HTTP edge', () => {
     const mapped = recordIdentityResponse({
-      user: { id: 'user-a', email: 'a@example.test' },
+      user: { id: 'user-a', email: 'a@example.test', emailVerified: false },
       activeSpaceId: 'space-b',
       personalSpaceId: 'space-a',
       memberships: [
@@ -98,6 +98,14 @@ describe('record HTTP authentication responses', () => {
     })
     expect(mapped.memberships.map((row) => row.space_id)).toEqual(['space-b'])
     expect(() => recordIdentityResponse({ user: {}, memberships: [] })).toThrow('invalid identity')
+    expect(() =>
+      recordIdentityResponse({
+        user: { id: 'user-a', email: 'a@example.test' },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [],
+      }),
+    ).toThrow(`record API is unreachable: record API returned an invalid identity\ncleared by:`)
   })
 
   test('validates the invitation fields printed by the command', () => {

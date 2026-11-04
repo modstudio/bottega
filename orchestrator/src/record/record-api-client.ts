@@ -549,7 +549,8 @@ export function recordIdentityResponse(body: unknown): RecordIdentity {
     ? value.memberships.map((membership) => responseRecord(membership))
     : null
   if (
-    typeof user.id !== 'string' ||
+    !['id', 'email'].every((field) => typeof user[field] === 'string') ||
+    typeof user.emailVerified !== 'boolean' ||
     (value.activeSpaceId !== null && typeof value.activeSpaceId !== 'string') ||
     (value.personalSpaceId !== null && typeof value.personalSpaceId !== 'string') ||
     !memberships ||
@@ -583,7 +584,7 @@ export function recordApiBaseUrl(
   return url.replace(/\/$/, '')
 }
 
-async function recordApiRequest<T>(
+export async function recordApiRequest<T>(
   path: string,
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
   authentication?: RecordApiAuthentication,

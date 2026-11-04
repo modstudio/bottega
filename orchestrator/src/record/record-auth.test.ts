@@ -41,11 +41,98 @@ test('auth instance builds without connecting to a database', () => {
   expect(api.requestPasswordReset).toBeFunction()
   expect(api.resetPassword).toBeFunction()
   expect(auth.options.emailAndPassword?.minPasswordLength).toBe(12)
-  expect(auth.options.rateLimit).toMatchObject({ enabled: true, window: 10, max: 100 })
+  expect(auth.options.rateLimit).toMatchObject({
+    enabled: true,
+    window: 10,
+    max: 100,
+    storage: 'database',
+  })
   expect(auth.options.rateLimit?.customRules?.['/request-password-reset']).toEqual({
     window: 60 * 60,
     max: 5,
   })
+})
+
+test('email verification sends on sign-up through the injected sender', async () => {
+  let sent: { to: string; verifyUrl: string } | undefined
+  const auth = recordAuth(
+    'postgres://record.invalid/database',
+    {
+      BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters',
+      RECORD_HUB_URL: 'https://hub.example.test',
+    },
+    undefined,
+    async () => {},
+    undefined,
+    noSpaceBuiltIns,
+    async (input) => {
+      sent = input
+    },
+  )
+  expect(auth.options.emailVerification?.sendOnSignUp).toBe(true)
+  await auth.options.emailVerification?.sendVerificationEmail?.({
+    user: { email: 'reader@example.test' } as never,
+    url: 'https://api.example.test/api/auth/verify-email?token=one&callbackURL=%2F',
+    token: 'one',
+  })
+  expect(sent).toEqual({
+    to: 'reader@example.test',
+    verifyUrl:
+      'https://api.example.test/api/auth/verify-email?token=one&callbackURL=https%3A%2F%2Fhub.example.test%2Fsign-in%3Fverified%3D1',
+  })
+})
+
+test('email verification preserves the Better Auth URL when the hub is not configured', async () => {
+  let sent: { to: string; verifyUrl: string } | undefined
+  const auth = recordAuth(
+    'postgres://record.invalid/database',
+    { BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters' },
+    undefined,
+    async () => {},
+    undefined,
+    noSpaceBuiltIns,
+    async (input) => {
+      sent = input
+    },
+  )
+  const verifyUrl = 'https://api.example.test/api/auth/verify-email?callbackURL=%2F&token=one'
+  await auth.options.emailVerification?.sendVerificationEmail?.({
+    user: { email: 'reader@example.test' } as never,
+    url: verifyUrl,
+    token: 'one',
+  })
+  expect(sent?.verifyUrl).toBe(verifyUrl)
+})
+
+test('the configured hub origin is trusted without duplicate allowed-origin configuration', () => {
+  const auth = recordAuth(
+    'postgres://record.invalid/database',
+    {
+      BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters',
+      RECORD_HUB_URL: 'https://hub.example.test/path',
+    },
+    undefined,
+    async () => {},
+    undefined,
+    noSpaceBuiltIns,
+  )
+  expect(auth.options.trustedOrigins).toEqual(['https://hub.example.test'])
+})
+
+test('the configured hub origin is not duplicated in trusted origins', () => {
+  const auth = recordAuth(
+    'postgres://record.invalid/database',
+    {
+      BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters',
+      RECORD_HUB_URL: 'https://hub.example.test',
+      RECORD_API_ALLOWED_ORIGINS: 'https://hub.example.test',
+    },
+    undefined,
+    async () => {},
+    undefined,
+    noSpaceBuiltIns,
+  )
+  expect(auth.options.trustedOrigins).toEqual(['https://hub.example.test'])
 })
 
 test('password reset links use the configured hosted hub and the injected sender', async () => {

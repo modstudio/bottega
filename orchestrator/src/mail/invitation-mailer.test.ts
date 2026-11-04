@@ -67,6 +67,6 @@ describe('record invitation mailer', () => {
         },
         environment,
       ),
-    ).rejects.toThrow('invitation mailer refuses a real SES client under the test runner')
+    ).rejects.toThrow('SES mail transport refuses a real client under the test runner')
   })
 })

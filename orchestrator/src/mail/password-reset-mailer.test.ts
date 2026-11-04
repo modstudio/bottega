@@ -46,6 +46,6 @@ describe('password reset mailer', () => {
         { to: 'reader@example.test', resetUrl: 'https://example.test' },
         environment,
       ),
-    ).rejects.toThrow('password reset mailer refuses a real SES client under the test runner')
+    ).rejects.toThrow('SES mail transport refuses a real client under the test runner')
   })
 })

@@ -1,7 +1,16 @@
 // concern: postgres-schema-auth
 /** Better Auth-owned record tables. Must not know local execution state or run phases. */
 import { sql } from 'drizzle-orm'
-import { index, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import {
+  bigint,
+  index,
+  integer,
+  pgPolicy,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core'
 import {
   inviteePolicies,
   RECORD_AUTH_ROLE,
@@ -60,6 +69,13 @@ export const verification = pgTable('verification', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }),
+})
+
+export const rateLimit = pgTable('rate_limit', {
+  id: identity(),
+  key: text().notNull().unique(),
+  count: integer().notNull(),
+  lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
 })
 
 export const invitation = pgTable.withRLS(

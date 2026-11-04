@@ -175,6 +175,7 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-sync-contract.ts',
   ]),
+  module('orchestrator/src/record/record-email-verification-client.ts', ['./record-api-client.ts']),
   module('orchestrator/src/record/record-cache-lens.ts', [
     'bun:sqlite',
     '../database/db.ts',
