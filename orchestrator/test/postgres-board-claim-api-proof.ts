@@ -63,6 +63,16 @@ export function registerBoardClaimApiProof(input: {
       body: JSON.stringify({ holderSession: 'holder-b' }),
     })
     expect(foreignRelease.status).toBe(403)
+    expect(JSON.stringify(await foreignRelease.json())).toContain('session:holder-a')
+    const foreignUserSameSession = await fetch(
+      `${input.origin()}/v1/board/claims/${liveId}/renew`,
+      {
+        method: 'POST',
+        headers: headers(input.tokenB()),
+        body: JSON.stringify({ holderSession: 'holder-a' }),
+      },
+    )
+    expect(foreignUserSameSession.status).toBe(403)
     const renewed = await fetch(`${input.origin()}/v1/board/claims/${liveId}/renew`, {
       method: 'POST',
       headers: headers(input.tokenA()),

@@ -184,6 +184,12 @@ function sameHostedClaimHolder(row: ClaimRow, userId: string, session: string | 
   )
 }
 
+function claimHolderRemedy(row: ClaimRow): string {
+  if (row.holder_session == null) return ` (held by operator user ${String(row.holder_user_id)})`
+  const session = String(row.holder_session)
+  return ` (held by user ${String(row.holder_user_id)} session ${session}; ask with ${PLATFORM_SLUG} board ask --audience session:${session}, or wait for lapse)`
+}
+
 function liveClaimRefusal(rows: ClaimRow[]): string {
   const details = rows.map((row) => {
     const holder =
@@ -518,7 +524,10 @@ export async function renewHostedBoardClaim(
       throw new RecordBoardError(`claim ${input.id} is no longer live; take the subject again`, 400)
     }
     if (!sameHostedClaimHolder(row, input.userId, session)) {
-      throw new RecordBoardError(`only the claim holder may renew claim ${input.id}`, 403)
+      throw new RecordBoardError(
+        `only the claim holder may renew claim ${input.id}${claimHolderRemedy(row)}`,
+        403,
+      )
     }
     const at = new Date(clock).toISOString()
     await tx`
@@ -543,7 +552,10 @@ export async function releaseHostedBoardClaim(
     if (!hostedLive(row, clock))
       throw new RecordBoardError(`claim ${input.id} is no longer live`, 400)
     if (!sameHostedClaimHolder(row, input.userId, session)) {
-      throw new RecordBoardError(`only the claim holder may release claim ${input.id}`, 403)
+      throw new RecordBoardError(
+        `only the claim holder may release claim ${input.id}${claimHolderRemedy(row)}`,
+        403,
+      )
     }
     await tx`
       UPDATE board_claim
