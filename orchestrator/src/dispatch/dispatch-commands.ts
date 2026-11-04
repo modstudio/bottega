@@ -26,8 +26,8 @@ import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { checkoutFileReader } from '../typed-question/cited-context.ts'
 import {
+  DISPATCH_SPEC_QUESTIONS,
   SPEC_UNSETTLED_QUESTION,
-  SPEC_UNSETTLED_QUESTION_V2,
   specQuestionState,
   specSubjectKind,
 } from '../typed-question/spec-unsettled-question.ts'
@@ -242,12 +242,13 @@ export async function warnForUnsettledSpec(
   if (input.continuation) return
   const common = { subjectKind: specSubjectKind(input.jobName), subjectRef: input.specIdentity }
   const readFile = checkoutFileReader(input.cwd ?? process.cwd())
-  const [answer] = await settledByDeadline(
-    [SPEC_UNSETTLED_QUESTION, SPEC_UNSETTLED_QUESTION_V2].map((question) =>
+  const answers = await settledByDeadline(
+    DISPATCH_SPEC_QUESTIONS.map((question) =>
       ask({ question, ...common, state: specQuestionState(question, input.spec, readFile) }),
     ),
     waitMs,
   )
+  const answer = answers[DISPATCH_SPEC_QUESTIONS.indexOf(SPEC_UNSETTLED_QUESTION)]
   if (
     input.jobName === 'implement' &&
     answer &&

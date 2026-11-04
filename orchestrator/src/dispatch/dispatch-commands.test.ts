@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import { sha } from '../run/prompt-sha.ts'
+import { DISPATCH_SPEC_QUESTIONS } from '../typed-question/spec-unsettled-question.ts'
 import {
   composeDispatchPrompt,
   genericLensProfileNotices,
@@ -145,7 +146,7 @@ test('a continuation does not ask', async () => {
   expect(asks).toBe(0)
 })
 
-test('every new job asks both versions but only implement v1 warns', async () => {
+test('every new job asks the dispatch versions but only implement v1 warns', async () => {
   for (const jobName of ['diagnose', 'implement']) {
     const versions: number[] = []
     const warnings: unknown[][] = []
@@ -157,7 +158,7 @@ test('every new job asks both versions but only implement v1 warns', async () =>
       },
       (...values) => warnings.push(values),
     )
-    expect(versions.sort()).toEqual([1, 2])
+    expect(versions).toEqual(DISPATCH_SPEC_QUESTIONS.map((question) => question.version))
     expect(warnings).toHaveLength(jobName === 'implement' ? 1 : 0)
   }
 })
@@ -188,12 +189,8 @@ test('unsettled-spec evidence uses the composed prompt identity and raw spec sta
   })
 
   expect(prompt).toBe('Implement this behavior.')
-  expect(asked).toHaveLength(2)
+  expect(asked).toHaveLength(1)
   expect(asked[0]).toMatchObject({ subjectRef: sha(prompt), state: rawSpec })
-  expect(asked[1]).toMatchObject({
-    subjectRef: sha(prompt),
-    state: { spec: rawSpec, files: [] },
-  })
 })
 
 test('an empty implementation spec is refused before asking the typed question', async () => {
@@ -222,14 +219,13 @@ test('an empty implementation spec is refused before asking the typed question',
   expect(asks).toBe(0)
 })
 
-test('a slow v2 never discards a v1 answer already in hand', async () => {
+test('dispatch stops waiting for an answer at the deadline and does not warn', async () => {
   const warnings: unknown[][] = []
   await warnForUnsettledSpec(
     { jobName: 'implement', continuation: false, spec: 'spec', specIdentity: 'spec-sha' },
-    (asked) =>
-      asked.question.version === 1 ? Promise.resolve({ noul: 0.95 }) : new Promise<null>(() => {}),
+    () => new Promise<null>(() => {}),
     (...values) => warnings.push(values),
     20,
   )
-  expect(warnings).toHaveLength(1)
+  expect(warnings).toHaveLength(0)
 })
