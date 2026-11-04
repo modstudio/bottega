@@ -100,6 +100,7 @@ export const hubModuleSpecs = [
       '../../shared/note-anchor.ts',
       '../../shared/outside-write-adapter.ts',
       '../../shared/record-id.ts',
+      '../../shared/record/postgres-error.ts',
       './hosted-tenant.ts',
     ],
   },
@@ -203,8 +204,8 @@ export const hubModuleSpecs = [
     file: 'hub/src/note-outside.ts',
     allowed: [
       '../../shared/note-anchor.ts',
+      '../../shared/note-label.ts',
       './note-client.ts',
-      './note-label.ts',
       './note-row.ts',
     ],
   },

@@ -163,6 +163,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-snapshots.ts',
       './record-settings.ts',
       './record-outside-intake.ts',
+      './record-outside-block.ts',
       './record-verdicts.ts',
       './record-board-messages.ts',
       './record-board-changes.ts',
@@ -442,7 +443,13 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-board-tx-boundary',
     'orchestrator/src/record/record-board-tx.ts',
-    ['bun', '../../../shared/record/tenant.ts', './record-board-contract.ts', './record-pool.ts'],
+    [
+      'bun',
+      '../../../shared/record/postgres-error.ts',
+      '../../../shared/record/tenant.ts',
+      './record-board-contract.ts',
+      './record-pool.ts',
+    ],
     'Keep hosted board transactions independent of HTTP and local stores.',
   ),
   boundary(

@@ -360,7 +360,7 @@ try {
       anchor,
     })
     if (
-      blocked?.status !== 409 ||
+      blocked?.status !== 400 ||
       ((await blocked.json()) as { error?: string }).error !==
         'this space is not accepting outside posts right now'
     )

@@ -1,11 +1,11 @@
 import type { SQL } from 'bun'
 import { z } from 'zod'
 import { engagedMs, human } from '../../shared/interval.ts'
+import { formatNoteLabel } from '../../shared/note-label.ts'
 import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
-import { formatNoteLabel } from './note-label.ts'
 import {
   type HostedTaskDetailRows,
   hostedTaskDetailFromRows,

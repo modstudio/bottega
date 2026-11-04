@@ -85,6 +85,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listScores',
     'listSnapshots',
     'listWorkflowCatalogue',
+    'listOutsideBlocks',
     'openBoardStream',
     'readTaskFlow',
     'searchDocs',
@@ -108,6 +109,10 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'setActiveOrganization',
       'withdrawConfigAccess',
       'setOutsideIntake',
+      'pauseOutsideIntake',
+      'resumeOutsideIntake',
+      'blockOutsideAuthor',
+      'unblockOutsideAuthor',
     ],
   ),
   ...writeEntries(

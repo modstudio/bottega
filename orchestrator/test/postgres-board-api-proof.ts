@@ -707,6 +707,8 @@ export function registerBoardApiProofs(input: {
   registerBoardOutsideApiProof({
     origin: () => origin,
     token: () => tokenC,
+    ownerToken: () => tokenA,
+    nonOwnerToken: () => tokenB,
     readMemberToken: () => tokenD,
     memberToken: () => tokenA,
     userId: () => userC,

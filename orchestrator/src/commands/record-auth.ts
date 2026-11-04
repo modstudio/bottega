@@ -4,6 +4,11 @@ import { createInterface } from 'node:readline/promises'
 import { Writable } from 'node:stream'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  isOutsidePauseHours,
+  OUTSIDE_PAUSE_DEFAULT_HOURS,
+  OUTSIDE_PAUSE_MAX_HOURS,
+} from '../../../shared/outside-write-decision.ts'
 import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
@@ -30,8 +35,13 @@ import {
   recordSpaceAccessListCommand,
   recordSpaceAccessWithdrawCommand,
   recordSpaceCreateCommand,
+  recordSpaceIntakeBlockCommand,
+  recordSpaceIntakeBlocksCommand,
+  recordSpaceIntakePauseCommand,
+  recordSpaceIntakeResumeCommand,
   recordSpaceIntakeSetCommand,
   recordSpaceIntakeShowCommand,
+  recordSpaceIntakeUnblockCommand,
   recordSpaceInvitationsCommand,
   recordSpaceInviteCommand,
   recordSpaceListCommand,
@@ -296,13 +306,77 @@ function registerSpaceIntakeCommands(space: Command): void {
     )
   intake
     .command('set')
-    .description('set the active space outside intake project')
+    .description('set the active space outside intake project (owner only)')
     .argument('<project>')
     .action((project) =>
       hostedCommand(`${PLATFORM_SLUG} record space intake set`, () =>
         recordSpaceIntakeSetCommand(String(project), presentation),
       ),
     )
+  intake
+    .command('pause')
+    .description('pause outside writes to the active space (owner only)')
+    .option('--hours <n>', 'whole hours to pause', parseOutsideHours, OUTSIDE_PAUSE_DEFAULT_HOURS)
+    .action((options) =>
+      hostedCommand(`${PLATFORM_SLUG} record space intake pause`, () =>
+        recordSpaceIntakePauseCommand(Number(options.hours), presentation),
+      ),
+    )
+  intake
+    .command('resume')
+    .description('resume outside writes to the active space (owner only)')
+    .action(() =>
+      hostedCommand(`${PLATFORM_SLUG} record space intake resume`, () =>
+        recordSpaceIntakeResumeCommand(presentation),
+      ),
+    )
+  intake
+    .command('blocks')
+    .description('list outside-author blocks in the active space (owner only)')
+    .option('--json', 'write the blocks as JSON')
+    .action((options) =>
+      hostedCommand(`${PLATFORM_SLUG} record space intake blocks`, () =>
+        recordSpaceIntakeBlocksCommand({ json: Boolean(options.json) }, presentation),
+      ),
+    )
+  intake
+    .command('block')
+    .description('block an outside author from the active space (owner only)')
+    .option('--message <id>', 'identify the author by a board message')
+    .option('--note <label>', 'identify the author by a project#number note')
+    .option('--hours <n>', 'whole hours before the block ends', parseOutsideHours)
+    .action((options) => {
+      const message = options.message === undefined ? undefined : String(options.message)
+      const note = options.note === undefined ? undefined : String(options.note)
+      if ((message === undefined) === (note === undefined))
+        throw new Error('exactly one of --message or --note is required')
+      return hostedCommand(`${PLATFORM_SLUG} record space intake block`, () =>
+        recordSpaceIntakeBlockCommand(
+          {
+            ...(message === undefined ? {} : { message }),
+            ...(note === undefined ? {} : { note }),
+            ...(options.hours === undefined ? {} : { hours: Number(options.hours) }),
+          },
+          presentation,
+        ),
+      )
+    })
+  intake
+    .command('unblock')
+    .description('remove an outside-author block from the active space (owner only)')
+    .argument('<user-id>')
+    .action((userId) =>
+      hostedCommand(`${PLATFORM_SLUG} record space intake unblock`, () =>
+        recordSpaceIntakeUnblockCommand(String(userId), presentation),
+      ),
+    )
+}
+
+function parseOutsideHours(value: string): number {
+  const hours = Number(value)
+  if (!isOutsidePauseHours(hours))
+    throw new Error(`hours must be a whole number from 1 through ${OUTSIDE_PAUSE_MAX_HOURS}`)
+  return hours
 }
 
 function registerSpaceAccessCommands(space: Command): void {

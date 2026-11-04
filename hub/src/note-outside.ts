@@ -2,12 +2,12 @@
 /** Adapts hosted outside notes to the CLI's note row shape without caching them. */
 
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
+import { formatNoteLabel } from '../../shared/note-label.ts'
 import {
   hostedCreateOutsideNote,
   hostedListOutsideNotes,
   type NoteClientOptions,
 } from './note-client.ts'
-import { formatNoteLabel } from './note-label.ts'
 import type { NoteRow } from './note-row.ts'
 
 export type OutsideNoteRow = NoteRow<NoteAnchorWire>
