@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import type { SubjectOutput } from '../../../shared/subjects.ts'
 import { registerRecordSubjectRoutes } from './record-api-subjects.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { RecordSubjectError } from './record-subjects.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 
@@ -21,6 +22,36 @@ const row = (definition: string): SubjectOutput => ({
 })
 
 describe('record subject API', () => {
+  test('maps a subject-list refusal to its declared status and message', async () => {
+    const app = new Hono<Environment>()
+    registerRecordSubjectRoutes(
+      app,
+      {
+        listSubjects: async () => {
+          throw new RecordSubjectError('project is absent', 404)
+        },
+        addSubject: async () => row('One subject.'),
+        defineSubject: async () => row('One subject.'),
+        renameSubject: async () => row('One subject.'),
+        reorderSubjects: async () => [],
+        retireSubject: async () => row('One subject.'),
+      },
+      {
+        scope: () => ({
+          url: 'postgres://unused.invalid/record',
+          userId: '01990000-0000-7000-8000-000000000002',
+          spaceId: '01990000-0000-7000-8000-000000000003',
+          spaceIds: ['01990000-0000-7000-8000-000000000003'],
+        }),
+        noSpace: () => new Response(null, { status: 409 }),
+      },
+    )
+
+    const response = await app.request('/v1/subjects?project=missing')
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ error: 'project is absent' })
+  })
+
   test('passes a trimmed definition and names the one-line rule for an interior break', async () => {
     const definitions: string[] = []
     const app = new Hono<Environment>()

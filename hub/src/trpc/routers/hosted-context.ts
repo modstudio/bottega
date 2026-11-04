@@ -173,8 +173,22 @@ function parseStoredSettings(body: string): StoredSettings {
   } catch {
     throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'stored settings are invalid' })
   }
+  const autoMode = z
+    .object({
+      allow: z.array(z.string()).optional(),
+      soft_deny: z.array(z.string()).optional(),
+      hard_deny: z.array(z.string()).optional(),
+      environment: z.array(z.string()).optional(),
+    })
+    .strict()
   const parsed = z
-    .object({ permissions: z.unknown(), hooks: z.unknown(), envKeys: z.array(z.string()) })
+    .object({
+      permissions: z.unknown(),
+      hooks: z.unknown(),
+      autoMode: autoMode.optional(),
+      env: z.record(z.string(), z.string()).optional(),
+      envKeys: z.array(z.string()),
+    })
     .strict()
     .safeParse(value)
   if (!parsed.success) {

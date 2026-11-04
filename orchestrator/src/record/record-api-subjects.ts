@@ -104,16 +104,20 @@ export function registerRecordSubjectRoutes(
     } catch {
       return context.json({ error: 'invalid cursor' }, 400)
     }
-    const rows = await deps.listSubjects({
-      ...bound.tenant,
-      project: query.data.project,
-      projectId: query.data.projectId,
-      includeRetired: query.data.includeRetired === 'true',
-      order: query.data.order,
-      cursor,
-      limit: query.data.limit + 1,
-    })
-    return context.json(pageRecordItems(rows, query.data.limit, recordCursorOf, true))
+    try {
+      const rows = await deps.listSubjects({
+        ...bound.tenant,
+        project: query.data.project,
+        projectId: query.data.projectId,
+        includeRetired: query.data.includeRetired === 'true',
+        order: query.data.order,
+        cursor,
+        limit: query.data.limit + 1,
+      })
+      return context.json(pageRecordItems(rows, query.data.limit, recordCursorOf, true))
+    } catch (error) {
+      return failed(context, error)
+    }
   })
   app.put('/v1/subjects', async (context) => {
     const bound = active(context)

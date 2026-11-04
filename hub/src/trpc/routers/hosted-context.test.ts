@@ -419,6 +419,44 @@ describe('hosted context router', () => {
     expect(result.settings.hooks[0]?.matcher).toBe('secret-shaped')
   })
 
+  test('settings.get accepts the owned settings shape but refuses undeclared keys', async () => {
+    const ownedSettings = {
+      permissions: { allow: ['Bash(git status)'] },
+      hooks: {},
+      autoMode: { allow: ['Bash(git status)'], environment: ['development'] },
+      env: { PUBLIC_SETTING: 'visible only to the server' },
+      envKeys: ['API_TOKEN'],
+    }
+    const client = fakeClient({
+      docs: mock(async () => ({
+        items: [{ ...settingsDoc, body: JSON.stringify(ownedSettings) }],
+        nextCursor: null,
+      })) as never,
+    })
+
+    const result = await caller(client).settings.get({ user: true })
+    expect(result.settings).toMatchObject({
+      permissions: { allow: ['Bash(git status)'] },
+      hooks: [],
+      envKeys: ['API_TOKEN'],
+    })
+    expect(JSON.stringify(result)).not.toContain('PUBLIC_SETTING')
+    expect(JSON.stringify(result)).not.toContain('visible only to the server')
+
+    const extraKeyClient = fakeClient({
+      docs: mock(async () => ({
+        items: [
+          { ...settingsDoc, body: JSON.stringify({ ...ownedSettings, undeclared: true }) },
+        ],
+        nextCursor: null,
+      })) as never,
+    })
+    await expect(caller(extraKeyClient).settings.get({ user: true })).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'stored settings are invalid',
+    })
+  })
+
   test('settings.get withholds a secret-shaped hook matcher from stored rows', async () => {
     const secret = 'Authorization: Bearer sk-proj-stored-before-screening'
     const client = fakeClient({

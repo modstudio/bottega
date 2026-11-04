@@ -71,7 +71,9 @@ function memberColumns(
       label: 'Role',
       phone: 'aside',
       render: (member) =>
-        canEditMember(member) ? (
+        !roles.includes(member.role) ? (
+          member.role
+        ) : canEditMember(member) ? (
           <Select
             label={`Role for ${member.user.name}`}
             size="sm"

@@ -26,6 +26,12 @@ export class RecordSubjectError extends Error {
 
 type Tenant = { url: string } & TenantPrincipal
 
+const missingProject = (project: string) =>
+  new RecordSubjectError(
+    `project "${project}" is not present in this record space; cleared by: ${PLATFORM_SLUG} project list`,
+    404,
+  )
+
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
@@ -71,13 +77,21 @@ async function projectId(
     projectName: project,
     spaceId,
   })
-  if (resolved.status !== 'found') {
-    throw new RecordSubjectError(
-      `project "${project}" is not present in this record space; cleared by: ${PLATFORM_SLUG} project list`,
-      404,
-    )
-  }
+  if (resolved.status !== 'found') throw missingProject(project)
   return resolved.project.id
+}
+
+async function readProjectId(
+  tx: SQL,
+  input: { spaceId: string; project: string; projectId?: string | null },
+): Promise<string> {
+  if (input.projectId) return projectId(tx, input.spaceId, input.project, input.projectId)
+  const rows = await tx`
+    SELECT id FROM project
+    WHERE space_id=${input.spaceId}::uuid AND name=${input.project}
+  `
+  if (!rows.length) throw missingProject(input.project)
+  return String(rows[0]!.id)
 }
 
 async function assertParent(
@@ -115,7 +129,11 @@ export async function listRecordSubjects(
 ): Promise<RecordSubject[]> {
   return tenant(input, async (tx) => {
     const selectedProjectId = input.project
-      ? await projectId(tx, input.spaceId, input.project, input.projectId)
+      ? await readProjectId(tx, {
+          spaceId: input.spaceId,
+          project: input.project,
+          projectId: input.projectId,
+        })
       : null
     const rows = await tx`
       SELECT s.*,p.name AS project,

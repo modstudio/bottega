@@ -4,10 +4,15 @@ import { containsSecretShaped, redactSecretShaped } from './secret-shaped.ts'
 
 export const SETTINGS_PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
 export type SettingsPermissionList = (typeof SETTINGS_PERMISSION_LISTS)[number]
+export type StoredAutoMode = Partial<
+  Record<'allow' | 'soft_deny' | 'hard_deny' | 'environment', string[]>
+>
 
 export type StoredSettings = {
   permissions: unknown
   hooks: unknown
+  autoMode?: StoredAutoMode
+  env?: Record<string, string>
   envKeys?: string[]
 }
 
