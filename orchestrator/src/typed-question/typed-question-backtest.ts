@@ -6,7 +6,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import { renderTypedQuestionBlock } from '../../../shared/typed-question/typed-question-render.ts'
 import {
-  FINDING_DUPLICATE_ASK_CONCURRENCY,
   findingRows,
   selectFindingDuplicatePairs,
 } from '../collect/finding-duplicate-suggestions.ts'
@@ -18,6 +17,9 @@ import { FINDING_PAIR_SUBJECT_KIND } from './finding-duplicate-question.ts'
 import { specQuestionState, specSubjectKind, specSubjectKinds } from './spec-unsettled-question.ts'
 import { TYPED_QUESTION_DECLARATIONS, typedQuestionReport } from './typed-question-report.ts'
 import { askTypedQuestion } from './typed-question-service.ts'
+
+/** Asks in flight at once while replaying a question over history. */
+const BACKTEST_ASK_CONCURRENCY = 8
 
 type BacktestDeclaration = (typeof TYPED_QUESTION_DECLARATIONS)[number]
 
@@ -223,17 +225,14 @@ export async function typedQuestionBacktest(
   let next = 0
   let errors = 0
   await Promise.all(
-    Array.from(
-      { length: Math.min(FINDING_DUPLICATE_ASK_CONCURRENCY, pending.length) },
-      async () => {
-        for (;;) {
-          const subject = pending[next++]
-          if (!subject) return
-          const answer = await ask({ question: declaration, ...subject })
-          if (!answer) errors += 1
-        }
-      },
-    ),
+    Array.from({ length: Math.min(BACKTEST_ASK_CONCURRENCY, pending.length) }, async () => {
+      for (;;) {
+        const subject = pending[next++]
+        if (!subject) return
+        const answer = await ask({ question: declaration, ...subject })
+        if (!answer) errors += 1
+      }
+    }),
   )
   presentation.log(
     `asked ${pending.length}; already answered ${sourced.alreadyAnswered}; unreadable ${sourced.unreadable}; errors ${errors}`,
