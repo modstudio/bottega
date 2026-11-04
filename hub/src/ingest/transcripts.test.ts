@@ -2,8 +2,8 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { newRecordId } from '../../../shared/record/schema.ts'
 import { DEFAULT_IDLE_CAP_MS, engagedMs } from '../../../shared/interval.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { at, resetFixtureStore } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
 import {
@@ -26,7 +26,7 @@ test('transcript fingerprints re-read growth, shrink, and replacement but skip a
 })
 
 test('a fast pass skips an unchanged fingerprint while a rebuild re-reads it', () => {
-  const root = mkdtempSync(join(tmpdir(), 'bottega-transcript-'))
+  const root = mkdtempSync(join(tmpdir(), 'transcript-fixture-'))
   try {
     const file = join(root, 'session.jsonl')
     writeFileSync(file, '{"timestamp":"2026-11-03T12:00:00.000Z"}\n')

@@ -1,5 +1,5 @@
-import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
+import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
@@ -9,8 +9,8 @@ import {
   pullHostedTaskChanges,
 } from './hosted-change-cache.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
+import type { IngestReport } from './ingest/batches.ts'
 import { ingestGit } from './ingest/git.ts'
-import type { IngestReport } from './ingest/report.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
 import {
   ingestTrackers,
@@ -646,12 +646,9 @@ export async function collectOnce(
       await settleLeg(
         'transcripts',
         () =>
-          (dependencies.transcripts ?? ingestTranscripts)(
-            since,
-            DEFAULT_IDLE_CAP_MS,
-            undefined,
-          { rebuild: true },
-          ),
+          (dependencies.transcripts ?? ingestTranscripts)(since, DEFAULT_IDLE_CAP_MS, undefined, {
+            rebuild: true,
+          }),
         collectLegMetrics,
       ),
     )

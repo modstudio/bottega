@@ -101,7 +101,7 @@ describe('run ingest', () => {
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
             .run(JSON.stringify(watermark)),
         )
-        return { rows: 0, skipped: 0 }
+        return { examined: 0, rows: 0, skipped: 0 }
       },
       transcripts: async () => {
         throw new Error('identity returned HTML')
