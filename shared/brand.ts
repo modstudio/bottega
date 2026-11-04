@@ -40,6 +40,10 @@ export const PLATFORM_NAME = 'Bottega'
 /** Machine form: the directory, the package name, anything a path needs. */
 export const PLATFORM_SLUG = 'bottega'
 
+/** Public documentation addresses follow the platform's rename boundary. */
+const PUBLIC_SITE_ORIGIN = `https://${PLATFORM_SLUG}.run`
+export const INSTALL_GUIDE_URL = `${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/install`
+
 /** Stable MCP identities derived from the platform name. */
 export const MCP_SERVER_NAME = PLATFORM_SLUG
 export const WORKER_MCP_SERVER_NAME = `${PLATFORM_SLUG}-ask`

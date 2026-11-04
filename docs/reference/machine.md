@@ -2,7 +2,7 @@
 
 # machine
 
-upkeep of this machine
+set up and maintain this machine
 
 - [bottega machine](#bottega-machine)
 - [bottega machine blockers](#bottega-machine-blockers)
@@ -80,7 +80,7 @@ upkeep of this machine
 
 **Synopsis:** `bottega machine`
 
-upkeep of this machine
+set up and maintain this machine
 
 ### Related
 
@@ -957,7 +957,7 @@ restore user settings from a rendered backup
 
 **Synopsis:** `bottega machine setup [--in <folder>] [--level <record|full>]`
 
-inspect and configure this machine interactively
+set up this machine: level and projects
 
 ### Options
 

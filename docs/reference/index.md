@@ -23,5 +23,5 @@ Every command accepts `--help`.
 - [record](./record.md) — the hosted record and outbox
 - [agent](./agent.md) — agents, jobs, and routing
 - [dashboard](./dashboard.md) — the local dashboard
-- [machine](./machine.md) — upkeep of this machine
+- [machine](./machine.md) — set up and maintain this machine
 - [mcp](./mcp.md) — model-context-protocol services

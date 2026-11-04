@@ -41,7 +41,7 @@ export const GROUPS = [
   ['record', 'the hosted record and outbox'],
   ['agent', 'agents, jobs, and routing'],
   ['dashboard', 'the local dashboard'],
-  ['machine', 'upkeep of this machine'],
+  ['machine', 'set up and maintain this machine'],
   ['mcp', 'model-context-protocol services'],
 ] as const
 
@@ -258,11 +258,11 @@ export const ROUTES = (
       'retire',
       'config',
       'settings',
-      'setup',
       'setup-ask',
       'reclassify-failures',
       'spare',
     ].map((name) => route(`machine ${name}`, 'orch', name)),
+    route('machine setup', 'orch', 'setup', 'set up this machine: level and projects'),
     route('machine reclaim-fixture-questions', 'hub', 'reclaim-fixture-questions'),
     { command: ['machine', 'init-db'], owner: 'orch', argv: ['init-db'], hidden: true },
     {

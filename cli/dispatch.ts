@@ -1,4 +1,4 @@
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { INSTALL_GUIDE_URL, PLATFORM_SLUG } from '../shared/brand.ts'
 import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { reportLegacyCalls } from './legacy-calls.ts'
@@ -134,9 +134,14 @@ function invocationFor(
 }
 
 function topHelp(): void {
+  const machineSetup = ROUTES.find((route) => route.command.join(' ') === 'machine setup')
+  if (!machineSetup?.description) throw new Error('machine setup route must have a description')
   console.log(`usage: ${PLATFORM_SLUG} <group> [command] [arguments]\n`)
   console.log('Groups:')
   for (const [name, description] of GROUPS) console.log(`  ${name.padEnd(12)} ${description}`)
+  console.log(`\nStart here:
+  ${PLATFORM_SLUG} machine setup  ${machineSetup.description}
+  ${INSTALL_GUIDE_URL}  install guide`)
 }
 
 async function groupHelp(group: string, entries: BinaryEntries): Promise<number> {
