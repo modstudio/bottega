@@ -1,4 +1,4 @@
-export const RELEASE_BUN_VERSION = '1.4.3'
+export const RELEASE_BUN_VERSION = '1.4.4'
 
 export function requireReleaseBun(version = Bun.version): void {
   if (version !== RELEASE_BUN_VERSION) {

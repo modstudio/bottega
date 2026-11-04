@@ -329,6 +329,32 @@ test('collect change triggers advance once for arbitrary run updates', () => {
   }
 })
 
+test("changes must exclude trigger writes because migration 0201's triggers write", () => {
+  const database = migratedTestDatabase()
+  try {
+    database
+      .query(
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe)
+         VALUES ('01990000-0000-7000-8000-000000009905',9905,'2026-11-03','codex','implement','sha',1,'head','running',1)`,
+      )
+      .run()
+    const before = database
+      .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9905')
+      .get()!.change_seq
+
+    const result = database.query("UPDATE run SET status='ok' WHERE number=9905").run()
+
+    expect(result.changes).toBe(1)
+    expect(
+      database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9905')
+        .get()!.change_seq,
+    ).toBeGreaterThan(before)
+  } finally {
+    database.close()
+  }
+})
+
 test('collect change backfill never lowers row sequences or the counter when migrations rerun', () => {
   const database = migratedTestDatabase()
   try {

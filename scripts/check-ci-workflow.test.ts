@@ -78,7 +78,7 @@ test('pins the real-Postgres leg', () => {
   ).toThrow(`must use Bun ${RELEASE_BUN_VERSION}`)
   expect(() =>
     checkCiWorkflow(
-      workflow.replace(`bun-version: ${RELEASE_BUN_VERSION}`, `bun-version-pinned: 1.4.3`),
+      workflow.replace(`bun-version: ${RELEASE_BUN_VERSION}`, `bun-version-pinned: 1.4.2`),
     ),
   ).toThrow(`CI workflow must pin Bun ${RELEASE_BUN_VERSION}`)
   expect(() =>
