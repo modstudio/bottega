@@ -405,11 +405,12 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ),
   ...readEntries('hub', 'noteClient', [
     'hostedGetNote',
+    'hostedListOutsideNotes',
     'hostedNoteChanges',
     'hostedNoteCounts',
     'isMissingHostedNote',
   ]),
-  ...writeEntries('hub', 'noteClient', [], ['hostedCreateNote']),
+  ...writeEntries('hub', 'noteClient', [], ['hostedCreateNote', 'hostedCreateOutsideNote']),
   ...writeEntries('hub', 'noteClient', ['note'], ['hostedPromoteNote', 'hostedReapNotes']),
   ...writeEntries(
     'hub',

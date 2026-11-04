@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  OUTSIDE_AREA_MAX_CHARS,
   OUTSIDE_BODY_MAX_CHARS,
   OUTSIDE_LINK_MAX,
   OUTSIDE_MIN_ACCOUNT_AGE_MS,
   OUTSIDE_WRITES_PER_DAY,
   OUTSIDE_WRITES_PER_HOUR,
   outsideWriteDecision,
-} from './record-outside-write-decision.ts'
+} from './outside-write-decision.ts'
 
 const now = new Date('2026-11-04T12:00:00.000Z')
 const base = {
@@ -14,6 +15,8 @@ const base = {
   createdAt: new Date(now.getTime() - OUTSIDE_MIN_ACCOUNT_AGE_MS),
   emailVerified: true,
   body: 'hello',
+  area: null,
+  anchorLength: 0,
   writesLastHour: 0,
   writesLastDay: 0,
   oldestWriteLastHour: null,
@@ -30,6 +33,8 @@ describe('outside write decision', () => {
       '2026-11-04T12:00:00.001Z',
     ],
     ['long body', { body: 'x'.repeat(OUTSIDE_BODY_MAX_CHARS + 1) }, 413, '2000 characters'],
+    ['long area', { area: 'x'.repeat(OUTSIDE_AREA_MAX_CHARS + 1) }, 413, '200 characters'],
+    ['long anchor', { anchorLength: OUTSIDE_BODY_MAX_CHARS + 1 }, 413, '2000 characters'],
     [
       'too many links',
       {
@@ -68,6 +73,8 @@ describe('outside write decision', () => {
   test.each([
     ['age boundary', {}],
     ['body boundary', { body: 'x'.repeat(OUTSIDE_BODY_MAX_CHARS) }],
+    ['area boundary', { area: 'x'.repeat(OUTSIDE_AREA_MAX_CHARS) }],
+    ['anchor boundary', { anchorLength: OUTSIDE_BODY_MAX_CHARS }],
     ['link boundary', { body: 'http://a.test https://b.test' }],
     ['hour below limit', { writesLastHour: OUTSIDE_WRITES_PER_HOUR - 1 }],
     ['day below limit', { writesLastDay: OUTSIDE_WRITES_PER_DAY - 1 }],

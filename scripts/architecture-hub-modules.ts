@@ -93,6 +93,17 @@ export const hubModuleSpecs = [
   },
   { file: 'hub/src/hosted-refusal.ts', allowed: [] },
   {
+    file: 'hub/src/hosted-outside-notes.ts',
+    allowed: [
+      'bun',
+      '../../shared/brand.ts',
+      '../../shared/note-anchor.ts',
+      '../../shared/outside-write-adapter.ts',
+      '../../shared/record-id.ts',
+      './hosted-tenant.ts',
+    ],
+  },
+  {
     file: 'hub/src/hosted-changes.ts',
     allowed: [
       'bun',
@@ -179,6 +190,7 @@ export const hubModuleSpecs = [
       './attribute.ts',
       './db.ts',
       './note.ts',
+      './note-outside.ts',
       './note-promote-cli.ts',
       './note-push.ts',
       './projects.ts',
@@ -187,6 +199,16 @@ export const hubModuleSpecs = [
       './typed-question-cli.ts',
     ],
   },
+  {
+    file: 'hub/src/note-outside.ts',
+    allowed: [
+      '../../shared/note-anchor.ts',
+      './note-client.ts',
+      './note-label.ts',
+      './note-row.ts',
+    ],
+  },
+  { file: 'hub/src/note-row.ts', allowed: ['../../shared/note-anchor.ts'] },
   {
     file: 'hub/src/cli.ts',
     allowed: [

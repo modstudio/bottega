@@ -8,8 +8,7 @@ import {
   curateNotes,
   curatorEnabled,
   dropNote,
-  listActionableNotes,
-  listNotes,
+  listProjectNotes,
   mergeNote,
   noteSessionId,
   parseExplicitNoteAnchor,
@@ -54,28 +53,29 @@ function explicitNoteAnchor(value: string | undefined): Parameters<typeof create
   return value ? parseExplicitNoteAnchor(JSON.parse(value)) : undefined
 }
 
-function listNoteCommand(text: string | undefined, options: NoteOptions): void {
-  if (options.actionable && options.kept)
-    throw new Error('--actionable and --kept are mutually exclusive')
+async function listNoteCommand(text: string | undefined, options: NoteOptions): Promise<void> {
   const sessions = [...(options.session ?? [])]
   if (options.kept && !sessions.length && noteSessionId()) sessions.push(noteSessionId()!)
-  if (options.kept && !sessions.length)
-    throw new Error(
-      `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,
-    )
   const session = sessions.length ? sessions : undefined
-  const rows = options.actionable
-    ? listActionableNotes({ project: options.project, session, text })
-    : listNotes({
-        project: options.project,
-        stale: Boolean(options.stale),
-        session,
-        kept: Boolean(options.kept),
-        text,
-      })
+  const rows = await noteListRows(text, options, session)
   if (options.json) console.log(JSON.stringify(rows))
   else if (!rows.length) console.log('no notes')
   else for (const row of rows) console.log(noteListLine(row))
+}
+
+async function noteListRows(
+  text: string | undefined,
+  options: NoteOptions,
+  session: string[] | undefined,
+) {
+  return listProjectNotes({
+    project: options.project,
+    stale: Boolean(options.stale),
+    session,
+    kept: Boolean(options.kept),
+    actionable: Boolean(options.actionable),
+    text,
+  })
 }
 
 async function keepNoteCommand(ids: string[], project?: string): Promise<void> {
@@ -124,10 +124,29 @@ async function newNoteCommand(text: string, options: NoteOptions): Promise<void>
   })
   if (!result.note) result = await resolveDuplicateNote(text, options, result)
   if (!result.note) return
+  if (result.outside) return writeOutsideNoteResult(result.note, result.candidates, options.json)
   if (options.json) console.log(JSON.stringify(noteFiledJson(result.note, result.candidates)))
   else {
     for (const candidate of result.candidates) console.log(`near ${noteCandidateLine(candidate)}`)
     for (const line of noteFiledOutput(result.note)) console.log(line)
+  }
+}
+
+function writeOutsideNoteResult(
+  note: {
+    record_id: string
+    number: number
+    label: string
+    sightings: number
+    project: string
+  },
+  candidates: Parameters<typeof noteFiledJson>[1],
+  json: boolean | undefined,
+): void {
+  if (json) console.log(JSON.stringify(noteFiledJson(note, candidates)))
+  else {
+    for (const line of noteFiledOutput(note)) console.log(line)
+    console.log(`filed ${note.project}#${note.number} as an outside note`)
   }
 }
 
@@ -302,10 +321,10 @@ export function registerNoteCommands(program: Command): void {
     .option('--kept', 'list notes acknowledged by the selected sessions')
     .option('--json', 'write the note rows as JSON')
     .option('--new', 'treat list as note text and show the filing remedy')
-    .action((text: string | undefined, options: NoteOptions) => {
+    .action(async (text: string | undefined, options: NoteOptions) => {
       if (options.new) throw listAsTextHint()
       open()
-      listNoteCommand(text, options)
+      await listNoteCommand(text, options)
     })
   registerNoteReferenceCommands(note)
   registerNoteMaintenanceCommands(note)

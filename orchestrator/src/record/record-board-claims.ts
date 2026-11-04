@@ -24,10 +24,8 @@ import {
   type HostedBoardTakeClaimInput,
   RecordBoardError,
 } from './record-board-contract.ts'
-import {
-  postHostedBoardNoticeInTransaction,
-  resolveVisibleProjectId,
-} from './record-board-messages.ts'
+import { postHostedBoardNoticeInTransaction } from './record-board-messages.ts'
+import { resolveVisibleProjectId } from './record-board-project-resolution.ts'
 import { hostedBoardActor } from './record-board-scope.ts'
 import {
   type BoardTenant,

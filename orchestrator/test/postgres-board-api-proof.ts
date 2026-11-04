@@ -707,6 +707,8 @@ export function registerBoardApiProofs(input: {
   registerBoardOutsideApiProof({
     origin: () => origin,
     token: () => tokenC,
+    readMemberToken: () => tokenD,
+    memberToken: () => tokenA,
     userId: () => userC,
     spaceId: () => spaceA,
     intakeProject: ADOPTION_PROJECT,

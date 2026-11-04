@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
@@ -37,6 +38,7 @@ import {
   hostedTaskDetail,
 } from '../src/hosted-work.ts'
 import { computeMeasures } from '../src/measures.ts'
+import { noteApi } from '../src/note-api.ts'
 import type { OperatorWaitingEmailInput } from '../src/operator-waiting-email-contract.ts'
 import {
   OPERATOR_EMAIL_HOURLY_BUDGET,
@@ -59,6 +61,8 @@ const actorUrl = new SQL(actorDatabaseUrl)
 const USER = '01990000-0000-7000-8000-000000000650'
 const SECOND_USER = '01990000-0000-7000-8000-000000000651'
 const READ_USER = '01990000-0000-7000-8000-000000000652'
+const OUTSIDE_USER = '01990000-0000-7000-8000-000000000653'
+const OTHER_OUTSIDE_USER = '01990000-0000-7000-8000-000000000654'
 const SPACE_A = '01990000-0000-7000-8000-00000000065a'
 const SPACE_B = '01990000-0000-7000-8000-00000000065b'
 const SPACE_C = '01990000-0000-7000-8000-00000000066b'
@@ -174,7 +178,9 @@ try {
   await admin`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
     VALUES (${USER}::uuid,'hub-evidence@example.test','Hub Evidence',true,now(),now()),
       (${SECOND_USER}::uuid,'hub-second@example.test','Hub Second',true,now(),now()),
-      (${READ_USER}::uuid,'hub-read@example.test','Hub Read',true,now(),now())`
+      (${READ_USER}::uuid,'hub-read@example.test','Hub Read',true,now(),now()),
+      (${OUTSIDE_USER}::uuid,'hub-outside@example.test','Hub Outside',true,now()-interval '2 days',now()),
+      (${OTHER_OUTSIDE_USER}::uuid,'hub-other-outside@example.test','Hub Other Outside',true,now()-interval '2 days',now())`
   await admin`INSERT INTO space (id,name,slug,created_at) VALUES
     (${SPACE_A}::uuid,'Evidence A','evidence-a',now()),
     (${SPACE_B}::uuid,'Evidence B','evidence-b',now()),
@@ -192,6 +198,184 @@ try {
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${READ_USER}::uuid,'member','read',now())`
   await admin`INSERT INTO machine(id,user_id,name,registered_at,last_seen)
     VALUES (${MACHINE}::uuid,${USER}::uuid,'evidence-machine',now(),now())`
+
+  const intakeId = newRecordId()
+  const outsideTokens = new Map([
+    ['outside-token', OUTSIDE_USER],
+    ['other-outside-token', OTHER_OUTSIDE_USER],
+    ['member-token', USER],
+    ['read-member-token', READ_USER],
+  ])
+  const outsideFetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    const token = new Headers(init?.headers).get('authorization')?.replace(/^Bearer /, '') ?? ''
+    const userId = outsideTokens.get(token)
+    if (!userId) return Response.json({ error: 'unauthorized' }, { status: 401 })
+    const membershipRows = await admin<
+      { space_id: string; slug: string; permission: 'read' | 'write' }[]
+    >`SELECT m.space_id::text,s.slug,m.permission FROM membership m JOIN space s ON s.id=m.space_id
+      WHERE m.user_id=${userId}::uuid`
+    return Response.json({
+      user: { id: userId },
+      activeSpaceId: SPACE_C,
+      memberships: [...membershipRows],
+    })
+  }) as typeof fetch
+  const outsideRequest = (token: string, method: 'GET' | 'POST', path: string, body?: unknown) =>
+    noteApi(
+      new Request(`https://hub.example.test${path}`, {
+        method,
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+      { recordApiUrl: 'https://record.example.test', recordDatabaseUrl: actorUrl },
+      { fetch: outsideFetch },
+    )
+  try {
+    await admin`INSERT INTO space_outside_intake(id,space_id,project_id,updated_at)
+      VALUES (${intakeId}::uuid,${SPACE_A}::uuid,${PROJECT_A}::uuid,now())`
+    const anchor = JSON.stringify({
+      cwd: '/tmp',
+      project: PLATFORM_SLUG,
+      files: [],
+      run_record_id: null,
+      branch: null,
+      commit: null,
+      session_id: null,
+    })
+    const malformed = await outsideRequest('outside-token', 'POST', '/v1/notes/outside', {
+      project: PLATFORM_SLUG,
+      text: 'malformed anchor outside note',
+      anchor: 'not json',
+    })
+    const malformedCounts = await admin<{ notes: string; writes: string }[]>`
+      SELECT
+        (SELECT count(*) FROM hub_note WHERE author_user_id=${OUTSIDE_USER}::uuid
+          AND text='malformed anchor outside note')::text AS notes,
+        (SELECT count(*) FROM space_outside_write WHERE user_id=${OUTSIDE_USER}::uuid)::text AS writes`
+    if (
+      malformed?.status !== 400 ||
+      malformedCounts[0]?.notes !== '0' ||
+      malformedCounts[0]?.writes !== '0'
+    )
+      throw new Error('malformed outside note anchor wrote a note or outside-write ledger row')
+
+    const first = await outsideRequest('outside-token', 'POST', '/v1/notes/outside', {
+      project: PLATFORM_SLUG,
+      text: 'first outside note',
+      area: 'hub',
+      anchor,
+    })
+    const second = await outsideRequest('outside-token', 'POST', '/v1/notes/outside', {
+      project: PLATFORM_SLUG,
+      text: 'second outside note',
+      anchor,
+    })
+    const other = await outsideRequest('other-outside-token', 'POST', '/v1/notes/outside', {
+      project: PLATFORM_SLUG,
+      text: 'another author note',
+      anchor,
+    })
+    const firstBody = (await first?.json()) as { number?: number }
+    const secondBody = (await second?.json()) as { number?: number }
+    if (
+      first?.status !== 201 ||
+      second?.status !== 201 ||
+      other?.status !== 201 ||
+      secondBody.number !== Number(firstBody.number) + 1
+    )
+      throw new Error('outside note route did not allocate consecutive project note numbers')
+    const successfulOutsideWrites = await admin<{ writes: string }[]>`
+      SELECT count(*)::text AS writes FROM space_outside_write
+      WHERE user_id=${OUTSIDE_USER}::uuid AND kind='note'`
+    if (successfulOutsideWrites[0]?.writes !== '2')
+      throw new Error('outside note route did not record one ledger row per successful note')
+
+    const member = await outsideRequest('member-token', 'POST', '/v1/notes/outside', {
+      project: PLATFORM_SLUG,
+      text: 'member outside note',
+      anchor,
+    })
+    if (
+      member?.status !== 409 ||
+      !String(((await member.json()) as { error?: string }).error).includes('register the project')
+    )
+      throw new Error('outside note route admitted a write member of the intake space')
+
+    const readMember = await outsideRequest('read-member-token', 'POST', '/v1/notes/outside', {
+      project: PLATFORM_SLUG,
+      text: 'read member outside note',
+      anchor,
+    })
+    const readMemberBody = (await readMember?.json()) as { error?: string; remedy?: string }
+    if (
+      readMember?.status !== 403 ||
+      !readMemberBody.error?.includes('membership is read-only') ||
+      !readMemberBody.remedy?.includes('space owner or admin')
+    )
+      throw new Error('outside note route admitted a read member of the intake space')
+
+    const listed = await outsideRequest(
+      'outside-token',
+      'GET',
+      `/v1/notes/outside?project=${encodeURIComponent(PLATFORM_SLUG)}`,
+    )
+    const listedBody = (await listed?.json()) as Array<{
+      text: string
+      area: string | null
+      anchors: unknown[]
+    }>
+    const listedFirst = listedBody.find((row) => row.text === 'first outside note')
+    if (
+      listed?.status !== 200 ||
+      listedFirst?.area !== 'hub' ||
+      listedFirst.anchors.length !== 1 ||
+      listedBody.some((row) => row.text === 'another author note')
+    )
+      throw new Error('outside note read-back did not isolate the caller author')
+
+    const seededSubjects = Array.from({ length: OUTSIDE_WRITES_PER_HOUR - 2 }, () => newRecordId())
+    for (const subjectId of seededSubjects)
+      await admin`INSERT INTO space_outside_write
+        (id,space_id,user_id,kind,subject_id,created_at)
+        VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${OUTSIDE_USER}::uuid,'note',${subjectId}::uuid,now())`
+    const limited = await outsideRequest('outside-token', 'POST', '/v1/notes/outside', {
+      project: PLATFORM_SLUG,
+      text: 'rate-limited outside note',
+      anchor,
+    })
+    const limitedNotes = await admin<{ notes: string }[]>`
+      SELECT count(*)::text AS notes FROM hub_note
+      WHERE author_user_id=${OUTSIDE_USER}::uuid AND text='rate-limited outside note'`
+    if (limited?.status !== 429 || limitedNotes[0]?.notes !== '0')
+      throw new Error('outside note route did not enforce the hourly write limit before insert')
+    for (const subjectId of seededSubjects)
+      await admin`DELETE FROM space_outside_write WHERE subject_id=${subjectId}::uuid`
+
+    await admin`INSERT INTO space_posting_block
+      (id,space_id,user_id,blocked_by_user_id,created_at)
+      VALUES (${newRecordId()}::uuid,${SPACE_A}::uuid,${OUTSIDE_USER}::uuid,${USER}::uuid,now())`
+    const blocked = await outsideRequest('outside-token', 'POST', '/v1/notes/outside', {
+      project: PLATFORM_SLUG,
+      text: 'blocked outside note',
+      anchor,
+    })
+    if (
+      blocked?.status !== 409 ||
+      ((await blocked.json()) as { error?: string }).error !==
+        'this space is not accepting outside posts right now'
+    )
+      throw new Error('outside note route did not preserve the blocked-caller refusal')
+  } finally {
+    await admin`DELETE FROM space_posting_block WHERE space_id=${SPACE_A}::uuid
+      AND user_id IN (${OUTSIDE_USER}::uuid,${OTHER_OUTSIDE_USER}::uuid)`
+    await admin`DELETE FROM space_outside_write WHERE space_id=${SPACE_A}::uuid
+      AND user_id IN (${OUTSIDE_USER}::uuid,${OTHER_OUTSIDE_USER}::uuid)`
+    await admin`DELETE FROM hub_note WHERE space_id=${SPACE_A}::uuid
+      AND author_user_id IN (${OUTSIDE_USER}::uuid,${OTHER_OUTSIDE_USER}::uuid)`
+    await admin`DELETE FROM seq WHERE space_id=${SPACE_A}::uuid AND project_id=${PROJECT_A}::uuid
+      AND name='note'`
+    await admin`DELETE FROM space_outside_intake WHERE id=${intakeId}::uuid`
+  }
 
   const changeHead = async () => {
     const rows = await admin<{ head: string }[]>`
@@ -1851,6 +2035,7 @@ try {
   await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM machine WHERE id=${MACHINE}::uuid`
-  await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid, ${READ_USER}::uuid)`
+  await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid, ${READ_USER}::uuid,
+    ${OUTSIDE_USER}::uuid, ${OTHER_OUTSIDE_USER}::uuid)`
   await admin.close()
 }

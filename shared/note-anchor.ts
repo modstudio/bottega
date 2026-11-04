@@ -20,3 +20,7 @@ export const noteAnchorWireSchema = z.object({
 })
 
 export type NoteAnchorWire = z.input<typeof noteAnchorWireSchema>
+
+export function parseNoteAnchorWire(value: unknown): NoteAnchorWire {
+  return noteAnchorWireSchema.parse(value)
+}
