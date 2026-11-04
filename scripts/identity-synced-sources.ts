@@ -49,6 +49,13 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     ['recordApiSignIn', 'recordApiSignUp'],
     'no local table; authentication inputs come from the user',
   ),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClientModule',
+    [],
+    ['recordApiRequest'],
+    'no local table; the transport request body comes from its caller',
+  ),
   ...readEntries('orchestrator', 'recordApiClient', [
     'counts',
     'getBoardStatus',

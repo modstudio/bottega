@@ -45,6 +45,7 @@ the hosted record and outbox
 - [bottega record space switch](#bottega-record-space-switch)
 - [bottega record sync](#bottega-record-sync)
 - [bottega record use](#bottega-record-use)
+- [bottega record verify-email](#bottega-record-verify-email)
 - [bottega record whoami](#bottega-record-whoami)
 
 ## bottega record
@@ -73,6 +74,7 @@ the hosted record and outbox
 - [bottega record space](./record.md#bottega-record-space)
 - [bottega record sync](./record.md#bottega-record-sync)
 - [bottega record use](./record.md#bottega-record-use)
+- [bottega record verify-email](./record.md#bottega-record-verify-email)
 - [bottega record whoami](./record.md#bottega-record-whoami)
 
 ## bottega record audit-secrets
@@ -586,6 +588,16 @@ synchronize both concern records
 **Synopsis:** `bottega record use <address>`
 
 bind this machine to a hosted record
+
+### Related
+
+- [bottega record](./record.md#bottega-record)
+
+## bottega record verify-email
+
+**Synopsis:** `bottega record verify-email`
+
+send verification mail to the signed-in account
 
 ### Related
 

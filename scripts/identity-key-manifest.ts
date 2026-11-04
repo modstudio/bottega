@@ -257,6 +257,8 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'doc_revision.position',
     'hub_change.sequence',
     'routing_evidence_head.sequence',
+    'rate_limit.count',
+    'rate_limit.last_request',
     'seq.next',
     'config_entry.row_version',
     'secret_dek.version',

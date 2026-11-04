@@ -6,6 +6,7 @@ import { claimCurrentMachineKey } from '../config/config-service.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { recordApiClient, recordApiSignIn, recordApiSignUp } from './record-api-client.ts'
+import { recordApiSendVerificationEmail } from './record-email-verification-client.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 
 type Presentation = { log(value: string): void }
@@ -105,7 +106,7 @@ export async function verifyEmailCommand(
   presentation: Presentation,
   dependencies = {
     identity: () => recordApiClient().whoami(),
-    send: (email: string) => recordApiClient().sendVerificationEmail(email),
+    send: recordApiSendVerificationEmail,
   },
 ): Promise<void> {
   const decision = verificationEmailAction((await dependencies.identity()).user)

@@ -213,7 +213,6 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordWorkflowClient &
   RecordSettingsClient &
   ReturnType<typeof recordConfigAccessClient> & {
-    sendVerificationEmail(email: string): Promise<{ status: boolean }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
     setActiveOrganization(input: {
@@ -584,7 +583,7 @@ export function recordApiBaseUrl(
   return url.replace(/\/$/, '')
 }
 
-async function recordApiRequest<T>(
+export async function recordApiRequest<T>(
   path: string,
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
   authentication?: RecordApiAuthentication,
@@ -729,11 +728,6 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return {
-    sendVerificationEmail: (email) =>
-      request('/api/auth/send-verification-email', {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      }),
     ...recordMachineClient(request),
     ...recordConfigAccessClient(request),
     ...recordSessionClient(request, recordIdentityResponse),

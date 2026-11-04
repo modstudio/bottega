@@ -324,6 +324,7 @@ function recordEmailOptions(
       }: {
         user: { email: string }
         token: string
+        url: string
       }) => {
         if (!hubUrl)
           throw new Error(
@@ -342,6 +343,7 @@ function recordEmailOptions(
       }: {
         user: { email: string }
         url: string
+        token: string
       }) => {
         await sendVerification({ to: verificationUser.email, verifyUrl }, environment)
       },
