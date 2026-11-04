@@ -73,7 +73,7 @@ export async function askNoteDuplicateQuestions<T extends DuplicateQuestionNote>
   project: string,
   text: string,
   ask = askHubTypedQuestion,
-): Promise<AskedNote<RankedDuplicateQuestionNote<T>>[] | null> {
+): Promise<AskedNote<RankedDuplicateQuestionNote<T>>[]> {
   const candidates = noteDuplicateQuestionCandidates(notes, project, text)
   const results: Array<AskedNote<RankedDuplicateQuestionNote<T>> | null> = new Array(
     candidates.length,
@@ -96,30 +96,33 @@ export async function askNoteDuplicateQuestions<T extends DuplicateQuestionNote>
   await Promise.all(
     Array.from({ length: Math.min(NOTE_DUPLICATE_CONCURRENCY, candidates.length) }, worker),
   )
-  return results.some((result) => result === null)
-    ? null
-    : (results as AskedNote<RankedDuplicateQuestionNote<T>>[])
+  return results.filter((result): result is AskedNote<RankedDuplicateQuestionNote<T>> =>
+    Boolean(result),
+  )
 }
 
-function recordedSubjectRefs(text: string, database: Database): string[] {
+/** Pairs asked for this text whose existing note is in the filing's project. */
+function recordedSubjectRefs(text: string, project: string, database: Database): string[] {
   const suffix = `:${noteTextHash(text)}`
   return database
-    .query<{ subject_ref: string }, [string, number, string]>(
-      `SELECT DISTINCT subject_ref FROM typed_question_answer
-       WHERE question_id=? AND question_version=? AND subject_ref LIKE '%' || ?
-       `,
+    .query<{ subject_ref: string }, [string, number, string, string]>(
+      `SELECT DISTINCT answer.subject_ref FROM typed_question_answer answer
+       JOIN note ON note.record_id = substr(answer.subject_ref, 1, length(answer.subject_ref) - 17)
+       WHERE answer.question_id=? AND answer.question_version=?
+         AND answer.subject_ref LIKE '%' || ? AND note.project=?`,
     )
-    .all(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, suffix)
+    .all(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, suffix, project)
     .map((row) => row.subject_ref)
 }
 
 export function recordNoteDuplicateOutcomes(
   text: string,
+  project: string,
   source: 'same-as' | 'new',
   existingRecordId?: string,
 ): void {
   const database = db()
-  const refs = recordedSubjectRefs(text, database).filter(
+  const refs = recordedSubjectRefs(text, project, database).filter(
     (subjectRef) => source === 'new' || subjectRef === notePairSubjectRef(existingRecordId!, text),
   )
   if (!refs.length) return

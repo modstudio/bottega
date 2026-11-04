@@ -538,9 +538,10 @@ function completedNoteCreation(
   note: NoteRow,
   candidates: NoteCandidate[],
   input: { text: string; sameAs?: string; forceNew?: boolean },
+  project: string,
 ): { note: NoteRow; candidates: NoteCandidate[] } {
-  if (input.sameAs) recordNoteDuplicateOutcomes(input.text, 'same-as', input.sameAs)
-  else if (input.forceNew) recordNoteDuplicateOutcomes(input.text, 'new')
+  if (input.sameAs) recordNoteDuplicateOutcomes(input.text, project, 'same-as', input.sameAs)
+  else if (input.forceNew) recordNoteDuplicateOutcomes(input.text, project, 'new')
   return { note, candidates }
 }
 
@@ -552,7 +553,6 @@ async function duplicateCandidatesForNewNote(
   const lexicalCandidates = noteCandidates(text, project)
   if (sameAs) return lexicalCandidates
   const asked = await askNoteDuplicateQuestions(listNotes(), project, text)
-  if (!asked) return lexicalCandidates
   return [
     ...lexicalCandidates,
     ...jevOnlyDuplicateCandidates(lexicalCandidates, asked).map(({ probability, ...note }) => ({
@@ -603,7 +603,7 @@ export async function createNote(
           )
           .run(JSON.stringify([...row.anchors, anchor]), at, row.record_id)
       })
-      return completedNoteCreation(getNote(existing.record_id), candidates, input)
+      return completedNoteCreation(getNote(existing.record_id), candidates, input, targetProject)
     }
     const queuedAt = nowIso()
     writeTransaction((conn) => {
@@ -620,7 +620,7 @@ export async function createNote(
       ])
     })
     await drainHostedEditOutbox(queuedAt, options.hosted)
-    return completedNoteCreation(getNote(existing.record_id), candidates, input)
+    return completedNoteCreation(getNote(existing.record_id), candidates, input, targetProject)
   }
   if (candidates.length && !input.forceNew) return { note: null as never, candidates }
   if (mode === 'local-authoritative') {
@@ -646,7 +646,7 @@ export async function createNote(
         )
       return recordId
     })
-    return completedNoteCreation(getNote(recordId), candidates, input)
+    return completedNoteCreation(getNote(recordId), candidates, input, targetProject)
   }
   const hostedOptions = await noteDestinationOptions(targetProject, options.hosted)
   const hosted = await hostedCreateNote(
@@ -663,11 +663,8 @@ export async function createNote(
     `${formatNoteLabel(hosted.project, hosted.number)} was created in the hosted record; its local copy will arrive on the next record pull`,
     () => writeTransaction((conn) => applyHostedNote(conn, hosted)),
   )
-  return completedNoteCreation(
-    applied ? getNote(hosted.id) : noteRowFromHosted(hosted),
-    candidates,
-    input,
-  )
+  const created = applied ? getNote(hosted.id) : noteRowFromHosted(hosted)
+  return completedNoteCreation(created, candidates, input, targetProject)
 }
 
 /** The refusal every creating promotion carries, so no surface can create a task titled by a note. */

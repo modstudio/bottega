@@ -1,12 +1,15 @@
 import { expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { newRecordId } from '../../shared/record-id.ts'
 import { db, writeTransaction } from './db.ts'
 import {
+  askNoteDuplicateQuestions,
   jevOnlyDuplicateCandidates,
   NOTE_DUPLICATE_CANDIDATES,
   NOTE_DUPLICATE_QUESTION,
   noteDuplicateLabel,
   noteDuplicateQuestionCandidates,
+  recordNoteDuplicateOutcomes,
 } from './note-duplicate-question.ts'
 
 const note = (recordId: string, project: string, text: string, staleAt: string | null = null) => ({
@@ -82,4 +85,49 @@ test('labels from the latest outcome when no merge exists and returns null witho
   outcome(subject, false, 'new', '2026-01-02T00:00:00Z')
   expect(noteDuplicateLabel(db(), subject)).toBeFalse()
   expect(noteDuplicateLabel(db(), newRecordId())).toBeNull()
+})
+
+test('keeps the answered pairs when one ask fails', async () => {
+  const notes = [note('a', 'p', 'alpha'), note('b', 'p', 'beta'), note('c', 'p', 'gamma')]
+  const asked = await askNoteDuplicateQuestions(notes, 'p', 'alpha beta', async (input) =>
+    input.subjectRef.startsWith('b:') ? null : { noul: 0.9 },
+  )
+  expect(asked.map(({ note }) => note.record_id).sort()).toEqual(['a', 'c'])
+})
+
+test('a --new filing labels only pairs whose existing note is in its project', () => {
+  const text = `repeated observation ${newRecordId()}`
+  const hash = createHash('sha256').update(text.trim()).digest('hex').slice(0, 16)
+  const here = newRecordId()
+  const elsewhere = newRecordId()
+  writeTransaction((database) => {
+    for (const [recordId, project] of [
+      [here, 'project-here'],
+      [elsewhere, 'project-elsewhere'],
+    ] as const) {
+      database
+        .query(
+          `INSERT INTO note (record_id,number,project,text,anchors,created_at,last_seen_at)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM note WHERE project=?),?,?,'[]',?,?)`,
+        )
+        .run(recordId, project, project, 'existing', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+      database
+        .query(
+          `INSERT INTO typed_question_answer
+           (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
+            model,input_tokens,latency_ms,error,created_at)
+           VALUES (?,?,?,'note-pair',?,'state','{"noul":0.9}','jev',1,1,NULL,?)`,
+        )
+        .run(
+          newRecordId(),
+          NOTE_DUPLICATE_QUESTION.id,
+          NOTE_DUPLICATE_QUESTION.version,
+          `${recordId}:${hash}`,
+          '2026-01-01T00:00:00Z',
+        )
+    }
+  })
+  recordNoteDuplicateOutcomes(text, 'project-here', 'new')
+  expect(noteDuplicateLabel(db(), `${here}:${hash}`)).toBeFalse()
+  expect(noteDuplicateLabel(db(), `${elsewhere}:${hash}`)).toBeNull()
 })
