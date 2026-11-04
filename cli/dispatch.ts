@@ -134,11 +134,13 @@ function invocationFor(
 }
 
 function topHelp(): void {
+  const machineSetup = ROUTES.find((route) => route.command.join(' ') === 'machine setup')
+  if (!machineSetup?.description) throw new Error('machine setup route must have a description')
   console.log(`usage: ${PLATFORM_SLUG} <group> [command] [arguments]\n`)
   console.log('Groups:')
   for (const [name, description] of GROUPS) console.log(`  ${name.padEnd(12)} ${description}`)
   console.log(`\nStart here:
-  ${PLATFORM_SLUG} machine setup  set up this machine
+  ${PLATFORM_SLUG} machine setup  ${machineSetup.description}
   ${INSTALL_GUIDE_URL}  install guide`)
 }
 

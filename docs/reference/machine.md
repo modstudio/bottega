@@ -957,7 +957,7 @@ restore user settings from a rendered backup
 
 **Synopsis:** `bottega machine setup [--in <folder>] [--level <record|full>]`
 
-inspect and configure this machine interactively
+set up this machine: sign-in, level and projects
 
 ### Options
 
