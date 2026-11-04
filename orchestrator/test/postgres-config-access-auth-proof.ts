@@ -113,6 +113,17 @@ export function registerConfigAccessSpaceCreationProof(input: {
          SELECT count(*) FROM secret_dek_wrap WHERE recipient_key_id='${memberKey}';`,
       ),
     ).toBe(`${memberKey}|t\n${ownerKey}|f\n${otherSpaceKey}|f\n0`)
+    const revokedRead = await fetch(
+      `${input.apiUrl()}/v1/config/data-keys/current?recipientKeyId=${memberKey}`,
+      {
+        headers: {
+          ...Object.fromEntries(bearerHeaders(input.otherToken())),
+          'x-record-space': spaceId,
+        },
+      },
+    )
+    expect(revokedRead.status).toBe(422)
+    expect(await revokedRead.text()).toContain('revoked because its owner lost config access')
     const repeated = await request(SIGN_UP_AUTH.emailB)
     expect(repeated.status).toBe(422)
     expect(await repeated.text()).toContain('does not have config access')

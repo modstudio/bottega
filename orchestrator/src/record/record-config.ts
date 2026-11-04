@@ -125,11 +125,19 @@ async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> 
     SELECT config_access FROM membership
     WHERE space_id=${input.spaceId}::uuid AND user_id=${input.userId}::uuid
   `
-  if (rows[0]?.config_access !== true)
+  if (rows[0]?.config_access === true) return
+  const revoked = await tx`
+    SELECT 1 FROM machine_public_key
+    WHERE space_id=${input.spaceId}::uuid AND user_id=${input.userId}::uuid
+      AND revoked_at IS NOT NULL
+    LIMIT 1
+  `
+  if (revoked[0])
     throw new ConfigServiceError(
       `this machine's key was revoked because its owner lost config access in the space; ${withdrawnConfigAccessRemedy}`,
       422,
     )
+  throw new ConfigServiceError(`signed-in user lacks config access; ${configAccessRemedy}`, 422)
 }
 
 function conflict(kind: 'entry' | 'secret', currentRowVersion: number): never {
