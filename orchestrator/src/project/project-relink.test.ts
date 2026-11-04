@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
@@ -409,6 +410,7 @@ describe('record sign-in machine key claim failure', () => {
     expect(output).toEqual([
       'signed in a@example.test',
       `machine key claim failed: ${RECORD_ACTIVE_SPACE_REMEDY}`,
+      `automatic board adoption failed: hosted board is unused in this fixture; run ${PLATFORM_SLUG} board adopt`,
     ])
   })
 })

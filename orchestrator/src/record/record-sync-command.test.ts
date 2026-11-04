@@ -1,12 +1,59 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
+import { db } from '../database/db.ts'
 import {
   blockedOutboxLines,
   quarantinedOutboxLines,
   quarantinedParentHeldLines,
   readOnlyDeferredLines,
   routingPoolLine,
+  syncCommand,
 } from './record-sync-command.ts'
+
+test('sync adopts a zero-candidate local board with the configured record client', async () => {
+  const output: string[] = []
+  const baseClient = createMemoryRecordApiClient()
+  await syncCommand(
+    { backfill: false },
+    { log: (line) => output.push(line) },
+    {
+      sync: async () =>
+        ({
+          configured: true,
+          pushed: 0,
+          failed: 0,
+          pending: 0,
+          quarantined: [],
+          blocked: [],
+        }) as never,
+      automaticBoardAdoption: (presentation) =>
+        automaticallyAdoptHostedBoard(presentation, {
+          database: db(),
+          client: {
+            ...baseClient,
+            whoami: async () => ({}) as never,
+            listBoardChanges: async () => ({
+              userId: '01990000-0000-7000-8000-000000000001',
+              items: [],
+              highestRevision: null,
+            }),
+          },
+          hostedConfigured: () => true,
+          signedIn: () => true,
+        }),
+    },
+  )
+
+  expect(
+    db()
+      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+      .get(BOARD_HOSTED_ADOPTED_KEY),
+  ).toEqual({ value: '1' })
+  expect(output).toContain('board now uses the hosted record')
+})
 
 test('sync presentation names each quarantined row with its kind and error', () => {
   expect(

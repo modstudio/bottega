@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { syncRecord } from './record-sync.ts'
 import { recordTunnelFailure } from './record-tunnel-error.ts'
 
@@ -55,16 +56,21 @@ function quarantinedParentRemedy(id: number): string {
 export async function syncCommand(
   options: { backfill: boolean },
   presentation: { log(value: string): void },
+  dependencies = {
+    sync: syncRecord,
+    automaticBoardAdoption: automaticallyAdoptHostedBoard,
+  },
 ): Promise<void> {
   let result: Awaited<ReturnType<typeof syncRecord>>
   try {
-    result = await syncRecord({ backfill: options.backfill })
+    result = await dependencies.sync({ backfill: options.backfill })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const enhanced = recordTunnelFailure(message, readMachineValue('record.tunnel_app'))
     if (enhanced === message) throw error
     throw new Error(enhanced, { cause: error })
   }
+  await dependencies.automaticBoardAdoption(presentation)
   if (result.backfill) {
     presentation.log(
       `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-live ${result.backfill.skippedLive}`,

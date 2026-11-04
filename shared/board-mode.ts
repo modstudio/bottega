@@ -58,7 +58,7 @@ export function decideBoardIdMode(facts: {
   if (!facts.adopted)
     return {
       mode: 'refused',
-      reason: `${noun} is a UUID for a hosted board row, but this install has not adopted the hosted board; retry from an install that has adopted the hosted board`,
+      reason: `${noun} is a UUID for a hosted board row, but this install has not adopted the hosted board; run ${PLATFORM_SLUG} board adopt`,
     }
   if (!isHostedConfigured(facts.hostedConfigured))
     return { mode: 'refused', reason: missingHostedConfiguration }
