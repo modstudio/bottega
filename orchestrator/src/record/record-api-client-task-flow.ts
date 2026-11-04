@@ -7,7 +7,7 @@ type Request = <T>(
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
 export type RecordTaskFlowClient = {
-  readTaskFlow(
+  readTaskFlow?(
     selector: { taskKey?: string; flowRecordId?: string },
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlow>

@@ -208,6 +208,7 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-cursor.ts',
     './record-workflow-contract.ts',
+    './record-task-flow.ts',
   ]),
   module('orchestrator/src/record/record-api-client-workflow.ts', [
     './record-api-client-paths.ts',
@@ -220,12 +221,6 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/tenant.ts',
     './record-pool.ts',
     './record-task-flow-contract.ts',
-  ]),
-  module('orchestrator/src/record/record-api-task-flow.ts', [
-    'hono',
-    'zod',
-    './record-auth.ts',
-    './record-task-flow.ts',
   ]),
   module('orchestrator/src/record/record-api-client-task-flow.ts', [
     './record-api-client-paths.ts',

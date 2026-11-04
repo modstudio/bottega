@@ -33,10 +33,6 @@ import {
 } from './record-api-session-routes.ts'
 import type { RecordSettingsRouteDeps } from './record-api-settings.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
-import {
-  type RecordTaskFlowRouteDeps,
-  registerRecordTaskFlowRoutes,
-} from './record-api-task-flow.ts'
 import { base64urlSchema, decoded, encoded, idSchema, keyIdSchema } from './record-api-wire.ts'
 import {
   type RecordWorkflowRouteDeps,
@@ -95,7 +91,6 @@ type Deps = RecordSubjectRouteDeps &
   RecordLensRouteDeps &
   RecordPortRouteDeps &
   RecordWorkflowRouteDeps &
-  RecordTaskFlowRouteDeps &
   Parameters<typeof registerRecordWriteRoutes>[1] &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
@@ -280,7 +275,6 @@ const noSpace = (context: Context<ApiEnvironment>) =>
 const catalogueRoutes = [
   registerRecordLensRoutes,
   registerRecordPortRoutes,
-  registerRecordTaskFlowRoutes,
   registerRecordWorkflowRoutes,
 ]
 

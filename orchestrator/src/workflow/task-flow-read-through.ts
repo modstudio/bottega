@@ -106,7 +106,7 @@ export async function readThroughTaskFlow(
 ): Promise<TaskFlowReadStatus> {
   const configured = Boolean(resolveRecordApiUrl(process.env))
   try {
-    const hosted = await recordApiClient().readTaskFlow({ taskKey: input.taskKey })
+    const hosted = await recordApiClient().readTaskFlow!({ taskKey: input.taskKey })
     const local = database
       .query<{ revision: number }, [string]>(
         `SELECT cursor.revision FROM task_flow flow LEFT JOIN workflow_cursor cursor

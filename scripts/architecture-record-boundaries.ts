@@ -109,7 +109,6 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-lens.ts',
       './record-api-port.ts',
       './record-api-workflow.ts',
-      './record-api-task-flow.ts',
       './record-api-projects.ts',
       './record-api-releases.ts',
       './record-api-public-docs.ts',
