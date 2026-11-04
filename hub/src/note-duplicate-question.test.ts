@@ -161,3 +161,17 @@ test('a merge labels its pair only when that pair was asked', () => {
   expect(noteDuplicateLabel(db(), `${asked}:${hash}`)).toBeTrue()
   expect(noteDuplicateLabel(db(), `${unasked}:${hash}`)).toBeNull()
 })
+
+test('a filing with no refusal labels its asked pairs as not repeats until a merge says otherwise', () => {
+  const text = `fresh observation ${newRecordId()}`
+  const first = newRecordId()
+  const second = newRecordId()
+  const hash = seedPairs(text, [
+    [first, 'project-filed'],
+    [second, 'project-filed'],
+  ])
+  recordNoteDuplicateOutcomes(text, 'project-filed', 'filed')
+  recordNoteDuplicateMerge(second, text)
+  expect(noteDuplicateLabel(db(), `${first}:${hash}`)).toBeFalse()
+  expect(noteDuplicateLabel(db(), `${second}:${hash}`)).toBeTrue()
+})

@@ -542,6 +542,7 @@ function completedNoteCreation(
 ): { note: NoteRow; candidates: NoteCandidate[] } {
   if (input.sameAs) recordNoteDuplicateOutcomes(input.text, project, 'same-as', input.sameAs)
   else if (input.forceNew) recordNoteDuplicateOutcomes(input.text, project, 'new')
+  else recordNoteDuplicateOutcomes(input.text, project, 'filed')
   return { note, candidates }
 }
 

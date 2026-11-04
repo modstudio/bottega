@@ -123,7 +123,7 @@ function recordedSubjectRefs(text: string, project: string, database: Database):
     .map((row) => row.subject_ref)
 }
 
-type NoteDuplicateOutcomeSource = 'same-as' | 'new' | 'merge'
+type NoteDuplicateOutcomeSource = 'same-as' | 'new' | 'filed' | 'merge'
 
 /** The one definition of an outcome row; every recorder writes through it. */
 function insertOutcomes(
@@ -157,11 +157,12 @@ function insertOutcomes(
 export function recordNoteDuplicateOutcomes(
   text: string,
   project: string,
-  source: 'same-as' | 'new',
+  source: 'same-as' | 'new' | 'filed',
   existingRecordId?: string,
 ): void {
   const refs = recordedSubjectRefs(text, project, db()).filter(
-    (subjectRef) => source === 'new' || subjectRef === notePairSubjectRef(existingRecordId!, text),
+    (subjectRef) =>
+      source !== 'same-as' || subjectRef === notePairSubjectRef(existingRecordId!, text),
   )
   insertOutcomes(refs, source === 'same-as', source)
 }
