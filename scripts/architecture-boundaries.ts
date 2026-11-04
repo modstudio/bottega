@@ -250,6 +250,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/typed-question/registry.ts',
       '../typed-question/spec-unsettled-question.ts',
       'node:fs',
+      'node:path',
       './dispatch-preflight.ts',
       './execution-requirement.ts',
       './probe-launch-overrides.ts',

@@ -3,7 +3,10 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { selectFindingDuplicatePairs, findingRows } from '../collect/finding-duplicate-suggestions.ts'
+import {
+  findingRows,
+  selectFindingDuplicatePairs,
+} from '../collect/finding-duplicate-suggestions.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
@@ -11,11 +14,7 @@ import { findingBacktestSubjects, typedQuestionBacktest } from './typed-question
 
 test('refuses an undeclared question and names the declared ids', async () => {
   await expect(
-    typedQuestionBacktest(
-      { question: 'unknown', version: 1, limit: 50 },
-      { log: () => {} },
-      db(),
-    ),
+    typedQuestionBacktest({ question: 'unknown', version: 1, limit: 50 }, { log: () => {} }, db()),
   ).rejects.toThrow('declared ids: spec_unsettled, finding_duplicate')
 })
 
@@ -102,15 +101,11 @@ function seedFindingPair(): string {
 test('finding backtest source returns the same pairs as live selection', () => {
   const database = db()
   const currentRun = seedFindingPair()
-  const live = selectFindingDuplicatePairs(
-    currentRun,
-    findingRows(database, currentRun),
-    new Map(),
-  )
+  const live = selectFindingDuplicatePairs(currentRun, findingRows(database, currentRun), new Map())
   const backtest = findingBacktestSubjects(database)
   expect(backtest.map((subject) => subject.subjectRef)).toContain(live[0]!.subjectRef)
   expect(backtest.find((subject) => subject.subjectRef === live[0]!.subjectRef)?.state).toEqual(
     live[0]!.state,
   )
-  expect(FINDING_DUPLICATE_QUESTION.backtestSource).toBe('finding-pairs')
+  expect(FINDING_DUPLICATE_QUESTION.backtestSource).toBeFunction()
 })

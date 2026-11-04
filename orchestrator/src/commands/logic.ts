@@ -440,23 +440,18 @@ function registerMetricCommands(program: Command): void {
         presentation,
       ),
     )
-  describedCommand(
+  const typedQuestion = describedCommand(
     program,
-    'typed-question [action]',
+    'typed-question',
     'report typed-question outcomes and operating cost',
   )
     .option('--question <id>', 'report or backtest one question id')
-    .option('--version <value>', 'select a backtest question version')
     .option('--days <value>', 'limit answers to this many days')
     .option('--job <name>', 'select a spec subject job')
-    .option('--limit <value>', 'limit backtest subjects')
-    .option('--project <name>', 'select a registered project')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
-    .action((action, options) => {
-      if (action === 'backtest') return typedQuestionBacktestCommand(options, presentation)
-      if (action) throw new Error(`unknown typed-question command ${JSON.stringify(action)}`)
-      return typedQuestionCommand(
+    .action((options) =>
+      typedQuestionCommand(
         {
           question: options.question,
           days: options.days,
@@ -464,8 +459,18 @@ function registerMetricCommands(program: Command): void {
           json: Boolean(options.json),
         },
         presentation,
-      )
-    })
+      ),
+    )
+  typedQuestion
+    .command('backtest')
+    .description('ask a declared typed question about unanswered historical subjects')
+    .requiredOption('--question <id>', 'select a declared question id')
+    .requiredOption('--version <value>', 'select a declared question version')
+    .option('--job <name>', 'select a spec subject job')
+    .option('--limit <value>', 'limit backtest subjects')
+    .option('--project <name>', 'select a registered project')
+    .allowExcessArguments(false)
+    .action((options) => typedQuestionBacktestCommand(options, presentation))
 }
 
 async function epicAction(

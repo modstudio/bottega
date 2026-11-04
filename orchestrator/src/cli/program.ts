@@ -119,13 +119,16 @@ const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
  * because its broker declaration must be the process's FIRST store open: a stamp opens the
  * store read-only first, and a handle opened read-only can never be written through afterwards.
  */
+const isTypedQuestionBacktest = (argv: readonly string[]): boolean =>
+  argv[0] === 'typed-question' && argv[1] === 'backtest'
+
 export function invocationSkipsSessionStamp(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
     review: ['coverage-audit', 'scope-proposal', 'yield'],
     pr: ['check'],
     setup: ['facts', 'plan'],
   }
-  if (argv[0] === 'typed-question' && argv[1] === 'backtest') return false
+  if (isTypedQuestionBacktest(argv)) return false
   if (INVOCATIONS_WITHOUT_SESSION_STAMP.has(argv[0]!)) return true
   // Monitor owns its writable open so it can diagnose that open when the store is locked.
   // The lock-holder-only path never opens SQLite writable at all.
@@ -144,7 +147,7 @@ export function invocationSkipsSessionStamp(argv: string[]): boolean {
 export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
   const command = argv[0] as (typeof READ_ONLY_STORE_COMMANDS)[number]
   if (!READ_ONLY_STORE_COMMANDS.includes(command)) return false
-  if (command === 'typed-question') return argv[1] !== 'backtest'
+  if (command === 'typed-question') return !isTypedQuestionBacktest(argv)
   if (command === 'gate-facts') return true
   if (command === 'runs') return true
   // Every option these verbs take is a boolean flag, so the first non-flag token is the run id.

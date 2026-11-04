@@ -18,7 +18,10 @@ import { TYPED_QUESTION_DECLARATIONS, typedQuestionReport } from './typed-questi
 import { askTypedQuestion } from './typed-question-service.ts'
 
 type BacktestDeclaration = TypedQuestion & {
-  backtestSource: 'spec-runs' | 'finding-pairs'
+  backtestSource(sources: {
+    specRuns(): Promise<unknown>
+    findingPairs(): Promise<unknown>
+  }): Promise<unknown>
   contextBuilder?: (
     spec: string,
     readFile: (path: string) => string | null,
@@ -159,10 +162,10 @@ export async function typedQuestionBacktest(
       `undeclared typed question ${JSON.stringify(options.question)}; declared ids: ${ids}`,
     )
   }
-  const loaded =
-    declaration.backtestSource === 'spec-runs'
-      ? specSubjects(database, declaration, options)
-      : { subjects: findingBacktestSubjects(database), commits: [] }
+  const loaded = (await declaration.backtestSource({
+    specRuns: async () => specSubjects(database, declaration, options),
+    findingPairs: async () => ({ subjects: findingBacktestSubjects(database), commits: [] }),
+  })) as { subjects: BacktestSubject[]; commits: string[] }
   for (const commit of loaded.commits) presentation.log(`context commit ${commit}`)
   const candidates = loaded.subjects.slice(0, options.limit)
   const unanswered = candidates.filter((subject) => !hasAnswer(database, declaration, subject))
@@ -184,12 +187,11 @@ export async function typedQuestionBacktest(
   presentation.log(
     `asked ${unanswered.length}; already answered ${candidates.length - unanswered.length}; errors ${errors}`,
   )
-  const block = typedQuestionReport({ question: declaration.id, job: options.job }, database).find(
-    (candidate) =>
-      candidate.questionVersion === declaration.version &&
-      (!options.job || candidate.subjectKind === `spec:${options.job}`),
-  )
-  if (block) {
+  const blocks = typedQuestionReport(
+    { question: declaration.id, job: options.job },
+    database,
+  ).filter((candidate) => candidate.questionVersion === declaration.version)
+  for (const block of blocks) {
     renderTypedQuestionBlock(block, presentation)
   }
 }
