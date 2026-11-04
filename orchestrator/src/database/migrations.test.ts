@@ -355,6 +355,45 @@ test("changes must exclude trigger writes because migration 0201's triggers writ
   }
 })
 
+test('collect change counter exists before earlier pending backfills write run rows', () => {
+  const database = migrationBoundaryTestDatabase('0192_run_outside_worktree_writes_nul')
+  try {
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe,outside_worktree_writes)
+         VALUES ('01990000-0000-7000-8000-000000009906',9906,'2026-11-03','codex','implement','sha',1,'head','ok',1,?)`,
+      )
+      .run(
+        JSON.stringify([
+          {
+            project: 'sample',
+            path: '/tmp/sample',
+            before: ' M tracked.txt\0',
+            after: ' M tracked.txt\0?? new.txt\0',
+          },
+        ]),
+      )
+
+    expect(() => applyMigrations(database)).not.toThrow()
+    expect(database.query('SELECT 1 FROM run WHERE change_seq IS NULL').get()).toBeNull()
+    const counter = database
+      .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+      .get()!.value
+    const highest = database
+      .query<{ value: number }, []>(
+        `SELECT MAX(value) AS value FROM (
+           SELECT COALESCE(MAX(change_seq),0) AS value FROM run
+           UNION ALL SELECT COALESCE(MAX(change_seq),0) FROM question
+         )`,
+      )
+      .get()!.value
+    expect(counter).toBeGreaterThanOrEqual(highest)
+  } finally {
+    database.close()
+  }
+})
+
 test('collect change backfill never lowers row sequences or the counter when migrations rerun', () => {
   const database = migratedTestDatabase()
   try {

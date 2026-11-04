@@ -3,6 +3,9 @@ CREATE TABLE collect_change_counter (
   value INTEGER NOT NULL
 );
 --> statement-breakpoint
+INSERT OR IGNORE INTO collect_change_counter(record_id,value)
+VALUES ('01990000-0000-7000-8000-000000002099',0);
+--> statement-breakpoint
 ALTER TABLE run ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 --> statement-breakpoint
 ALTER TABLE question ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
