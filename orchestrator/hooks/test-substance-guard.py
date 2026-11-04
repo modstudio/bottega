@@ -7,6 +7,8 @@ import re
 import subprocess
 import sys
 
+from registered_scope import should_hook_act
+
 
 JUDGE_TIMEOUT_SECONDS = 2
 EDITOR_TOOLS = {"Write", "Edit", "MultiEdit"}
@@ -74,6 +76,8 @@ def main():
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError) as error:
         return unchecked("<unknown test file>", f"invalid hook input ({error})")
+    if not should_hook_act(payload):
+        return 0
 
     path = target_path(payload)
     if path is not None:

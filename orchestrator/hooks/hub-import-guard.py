@@ -7,6 +7,8 @@ import subprocess
 import sys
 import time
 
+from registered_scope import should_hook_act
+
 
 JUDGE_TIMEOUT_SECONDS = 8
 EDITOR_TOOLS = {"Write", "Edit", "MultiEdit"}
@@ -71,11 +73,13 @@ def deny(findings):
 
 
 def main():
-    deadline_ms = int((time.time() + JUDGE_TIMEOUT_SECONDS) * 1000)
     try:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError) as error:
         return unchecked("<unknown hub file>", f"invalid hook input ({error})")
+    if not should_hook_act(payload):
+        return 0
+    deadline_ms = int((time.time() + JUDGE_TIMEOUT_SECONDS) * 1000)
     path = target_path(payload)
     if path is None or "/hub/" not in path.replace(os.sep, "/"):
         return 0

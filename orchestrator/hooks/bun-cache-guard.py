@@ -5,6 +5,8 @@ import json
 import re
 import sys
 
+from registered_scope import should_hook_act
+
 
 BUN_CACHE_COMMAND = re.compile(
     r"(?<![\w-])bun\s+pm\s+cache\s+(?:rm|clean)(?![\w-])"
@@ -27,6 +29,8 @@ REASON = (
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
+        if not should_hook_act(payload):
+            return 0
         if payload.get("tool_name") != "Bash":
             return 0
         command = payload.get("tool_input", {}).get("command", "")

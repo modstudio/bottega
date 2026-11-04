@@ -15,6 +15,8 @@ import sqlite3
 import subprocess
 import sys
 
+from registered_scope import should_hook_act
+
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 WORKTREE_DIRECTORY = os.path.join(".claude", "worktrees")
@@ -499,6 +501,8 @@ def is_throwaway_worktree(directory, worktree_root):
 def main():
     try:
         payload = json.load(sys.stdin)
+        if not should_hook_act(payload):
+            return 0
         if not isinstance(payload, dict) or payload.get("tool_name") != "Bash":
             return 0
         invocation = git_invocation(payload)

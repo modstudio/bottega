@@ -15,6 +15,8 @@ import sqlite3
 import subprocess
 import sys
 
+from registered_scope import should_hook_act
+
 from protect_main_checkout import (
     MUTATING_GIT_SUBCOMMANDS,
     decision_for_mutations,
@@ -430,6 +432,8 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except Exception:
         return fail_open()
+    if not should_hook_act(payload):
+        return 0
     tool_name = payload.get("tool_name")
     if tool_name == "Bash":
         inp = payload.get("tool_input") or {}

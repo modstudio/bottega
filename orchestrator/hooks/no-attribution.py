@@ -14,6 +14,8 @@ import re
 import sys
 from pathlib import Path
 
+from registered_scope import should_hook_act
+
 MARKER_FILE = Path(__file__).resolve().parents[2] / "shared" / "attribution-markers.json"
 WRITES = re.compile(
     r"\bgit\s+(commit|merge|tag|rebase|cherry-pick|notes)\b"
@@ -49,6 +51,8 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except Exception:
+        return 0
+    if not should_hook_act(payload):
         return 0
     if payload.get("tool_name") != "Bash":
         return 0

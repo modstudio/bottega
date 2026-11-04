@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +10,7 @@ import { hubImportJudgeCommand, registeredHubCheckout } from './hub-import-comma
 afterEach(() => registerEmbeddedAssets(null))
 
 describe('hub import judge applicability', () => {
-  test('returns unchecked when a distribution has no development policy scripts', async () => {
+  test('returns ok in a distribution when the file is outside a registered checkout', async () => {
     registerEmbeddedAssets({
       assets: {},
       files: {},
@@ -20,21 +21,16 @@ describe('hub import judge applicability', () => {
         commit: 'abcdef',
       },
     })
-    let opened = false
+    const database = new Database(':memory:')
+    database.run(
+      'CREATE TABLE project (record_id TEXT PRIMARY KEY, name TEXT, path TEXT, stack TEXT, canon INTEGER, settings TEXT, retired_at TEXT)',
+    )
     const result = await hubImportJudgeCommand(
       JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '/tmp/hub/example.ts' } }),
       Date.now() + 1_000,
-      () => {
-        opened = true
-        throw new Error('must not open the register')
-      },
+      () => database,
     )
-    expect(opened).toBe(false)
-    expect(result).toEqual({
-      status: 'unchecked',
-      findings: [],
-      reason: 'hub import judging requires the policy scripts from a development checkout',
-    })
+    expect(result).toEqual({ status: 'ok', findings: [] })
   })
   test('does not judge a matching path outside the registered checkout', () => {
     const project = { name: PLATFORM_SLUG, path: '/registered/workshop' }

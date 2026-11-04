@@ -18,6 +18,7 @@ from notice_transport import (
     refused_notice_name,
     transportable_notice_id,
 )
+from registered_scope import should_hook_act
 
 
 def _start(bottega, *args, env=None, cwd=None):
@@ -495,6 +496,12 @@ def orch_worker_session(env=None):
 
 
 def main() -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not should_hook_act(payload):
+        return 0
     if orch_worker_session():
         return 0
     session_started_at = datetime.now(timezone.utc).isoformat(
@@ -521,7 +528,6 @@ def main() -> int:
     acknowledgement_timeout = 1.0
     notice_deadline = None
     try:
-        payload = json.load(sys.stdin)
         cwd = payload.get("cwd")
         if not cwd:
             return 0
