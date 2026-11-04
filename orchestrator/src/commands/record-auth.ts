@@ -14,6 +14,7 @@ import {
   RECORD_PASSWORD_ENV,
   signInCommand,
   signUpCommand,
+  verifyEmailCommand,
   whoamiCommand,
 } from '../record/record-auth-command.ts'
 import {
@@ -133,6 +134,12 @@ function registerIdentityCommands(record: Command): void {
     .command('whoami')
     .description('show the signed-in hosted record identity')
     .action(() => hostedCommand(`${PLATFORM_SLUG} record whoami`, () => whoamiCommand({ log })))
+  record
+    .command('verify-email')
+    .description('send verification mail to the signed-in account')
+    .action(() =>
+      hostedCommand(`${PLATFORM_SLUG} record verify-email`, () => verifyEmailCommand({ log })),
+    )
   record
     .command('migrate')
     .description('apply pending hosted record migrations')

@@ -41,10 +41,40 @@ test('auth instance builds without connecting to a database', () => {
   expect(api.requestPasswordReset).toBeFunction()
   expect(api.resetPassword).toBeFunction()
   expect(auth.options.emailAndPassword?.minPasswordLength).toBe(12)
-  expect(auth.options.rateLimit).toMatchObject({ enabled: true, window: 10, max: 100 })
+  expect(auth.options.rateLimit).toMatchObject({
+    enabled: true,
+    window: 10,
+    max: 100,
+    storage: 'database',
+  })
   expect(auth.options.rateLimit?.customRules?.['/request-password-reset']).toEqual({
     window: 60 * 60,
     max: 5,
+  })
+})
+
+test('email verification sends on sign-up through the injected sender', async () => {
+  let sent: { to: string; verifyUrl: string } | undefined
+  const auth = recordAuth(
+    'postgres://record.invalid/database',
+    { BETTER_AUTH_SECRET: 'test-secret-at-least-thirty-two-characters' },
+    undefined,
+    async () => {},
+    undefined,
+    noSpaceBuiltIns,
+    async (input) => {
+      sent = input
+    },
+  )
+  expect(auth.options.emailVerification?.sendOnSignUp).toBe(true)
+  await auth.options.emailVerification?.sendVerificationEmail?.({
+    user: { email: 'reader@example.test' } as never,
+    url: 'https://api.example.test/api/auth/verify-email?token=one',
+    token: 'one',
+  })
+  expect(sent).toEqual({
+    to: 'reader@example.test',
+    verifyUrl: 'https://api.example.test/api/auth/verify-email?token=one',
   })
 })
 

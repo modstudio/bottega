@@ -8,8 +8,15 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { membership, newRecordId, space, user } from '../../../shared/record/schema.ts'
-import { account, invitation, session, verification } from '../../../shared/record/schema-auth.ts'
+import {
+  account,
+  invitation,
+  rateLimit,
+  session,
+  verification,
+} from '../../../shared/record/schema-auth.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { sendEmailVerificationEmail } from '../mail/email-verification-mailer.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
@@ -280,6 +287,7 @@ async function markCreatedSpaceOwner(
 }
 
 type ResetPasswordSender = typeof sendPasswordResetEmail
+type EmailVerificationSender = typeof sendEmailVerificationEmail
 type InvitationSender = typeof sendRecordInvitationEmail
 
 function invitationOnlySignUp(client: SQL) {
@@ -300,6 +308,47 @@ function invitationOnlySignUp(client: SQL) {
   )
 }
 
+function recordEmailOptions(
+  hubUrl: string | undefined,
+  environment: RecordAuthEnvironment,
+  sendReset: ResetPasswordSender,
+  sendVerification: EmailVerificationSender,
+) {
+  return {
+    emailAndPassword: {
+      enabled: true,
+      minPasswordLength: 12,
+      sendResetPassword: async ({
+        user: resetUser,
+        token,
+      }: {
+        user: { email: string }
+        token: string
+      }) => {
+        if (!hubUrl)
+          throw new Error(
+            'RECORD_HUB_URL is required for password reset links; set it to the hosted hub origin',
+          )
+        const resetUrl = new URL('/reset-password', hubUrl)
+        resetUrl.searchParams.set('token', token)
+        await sendReset({ to: resetUser.email, resetUrl: resetUrl.href }, environment)
+      },
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendVerificationEmail: async ({
+        user: verificationUser,
+        url: verifyUrl,
+      }: {
+        user: { email: string }
+        url: string
+      }) => {
+        await sendVerification({ to: verificationUser.email, verifyUrl }, environment)
+      },
+    },
+  }
+}
+
 export function recordAuth(
   url: string,
   environment: RecordAuthEnvironment,
@@ -307,9 +356,11 @@ export function recordAuth(
   sendReset: ResetPasswordSender | undefined,
   sendInvitation: InvitationSender | undefined,
   builtIns: SpaceBuiltInsPort,
+  sendVerification?: EmailVerificationSender,
 ) {
   sendReset ??= sendPasswordResetEmail
   sendInvitation ??= sendRecordInvitationEmail
+  sendVerification ??= sendEmailVerificationEmail
   const secret = environment.BETTER_AUTH_SECRET
   if (!secret) throw new Error('BETTER_AUTH_SECRET is required for record authentication')
   const { trustedOrigins, cookieDomain, hubUrl } = recordAuthPresentation(environment)
@@ -322,26 +373,17 @@ export function recordAuth(
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
     database: drizzleAdapter(drizzle({ client: authClient }), {
       provider: 'pg',
-      schema: { user, session, account, verification, space, membership, invitation },
+      schema: { user, session, account, verification, rateLimit, space, membership, invitation },
     }),
-    emailAndPassword: {
-      enabled: true,
-      minPasswordLength: 12,
-      sendResetPassword: async ({ user: resetUser, token }) => {
-        if (!hubUrl)
-          throw new Error(
-            'RECORD_HUB_URL is required for password reset links; set it to the hosted hub origin',
-          )
-        const resetUrl = new URL('/reset-password', hubUrl)
-        resetUrl.searchParams.set('token', token)
-        await sendReset({ to: resetUser.email, resetUrl: resetUrl.href }, environment)
-      },
-    },
+    ...recordEmailOptions(hubUrl, environment, sendReset, sendVerification),
     rateLimit: {
       enabled: true,
       window: 10,
       max: 100,
+      storage: 'database',
       customRules: { '/request-password-reset': { window: 60 * 60, max: 5 } },
+      modelName: 'rateLimit',
+      fields: { key: 'key', count: 'count', lastRequest: 'lastRequest' },
     },
     hooks: { before: invitationOnlySignUp(client) },
     user: { modelName: 'user' },

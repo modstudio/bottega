@@ -10,6 +10,10 @@ import { rememberSignedInRecordUser } from './record-session.ts'
 
 type Presentation = { log(value: string): void }
 
+type VerificationEmailAction =
+  | { action: 'already-verified'; email: string }
+  | { action: 'send'; email: string }
+
 export const RECORD_PASSWORD_ENV = `${PLATFORM_SLUG.toUpperCase()}_RECORD_PASSWORD`
 const NON_INTERACTIVE_PASSWORD_REFUSAL = `record password is required: stdin is not a terminal; set ${RECORD_PASSWORD_ENV} to supply it non-interactively`
 export const PASSWORD_PROMPT_EOF_REFUSAL = `record password prompt ended before a password was entered; set ${RECORD_PASSWORD_ENV} to supply it non-interactively`
@@ -87,4 +91,28 @@ export async function whoamiCommand(presentation: Presentation): Promise<void> {
   const identity = await recordApiClient().whoami()
   rememberSignedInRecordUser(identity.user)
   presentation.log(JSON.stringify(identity))
+}
+
+export function verificationEmailAction(user: Record<string, unknown>): VerificationEmailAction {
+  if (typeof user.email !== 'string' || typeof user.emailVerified !== 'boolean')
+    throw new Error('record API returned an invalid identity')
+  return user.emailVerified
+    ? { action: 'already-verified', email: user.email }
+    : { action: 'send', email: user.email }
+}
+
+export async function verifyEmailCommand(
+  presentation: Presentation,
+  dependencies = {
+    identity: () => recordApiClient().whoami(),
+    send: (email: string) => recordApiClient().sendVerificationEmail(email),
+  },
+): Promise<void> {
+  const decision = verificationEmailAction((await dependencies.identity()).user)
+  if (decision.action === 'already-verified') {
+    presentation.log(`${decision.email} is already verified`)
+    return
+  }
+  await dependencies.send(decision.email)
+  presentation.log(`verification mail sent to ${decision.email}`)
 }
