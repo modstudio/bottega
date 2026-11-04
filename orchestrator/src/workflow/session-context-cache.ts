@@ -1,5 +1,5 @@
 // concern: workflows
-/** Persists the hosted autonomy inputs from the last successful architect-session read. */
+/** Persists the hosted autonomy inputs from the last successful hosted read by any resolver call. */
 
 import { randomUUID } from 'node:crypto'
 import {
@@ -15,6 +15,9 @@ import {
 } from 'node:fs'
 import { basename, join } from 'node:path'
 import { concernStateDirectory, type StateEnvironment } from '../../../shared/state-directory.ts'
+
+export type { StateEnvironment } from '../../../shared/state-directory.ts'
+
 import {
   type AutonomySettings,
   autonomySettingsForStorage,

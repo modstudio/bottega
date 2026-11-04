@@ -13,7 +13,7 @@ import {
   resolveAnswerRulings,
   resolveProjectAutonomy,
 } from './autonomy-scopes.ts'
-import { writeSessionContextCache } from './session-context-cache.ts'
+import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 
 const steps = [
@@ -57,8 +57,9 @@ test('hosted failures are visible and leave rulings incomplete without a higher 
     missingConfig,
   )
   expect(result.note).toBe(
-    'hosted autonomy settings unavailable: offline; resolved from local and project scopes',
+    'hosted autonomy settings unavailable: offline; resolved from local and project scopes, then built-in because no cache exists',
   )
+  expect(result.hosted).toEqual({ status: 'unavailable', reason: 'offline' })
   expect(result.rulings).toMatchObject({ complete: false, unavailableReason: 'offline' })
   expect(result.shipTo).toMatchObject({ complete: false, unavailableReason: 'offline' })
 })
@@ -142,8 +143,85 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
     10,
   )
   expect(result.note).toBe(
-    'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes',
+    'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes, then built-in because no cache exists',
   )
+})
+
+test('an available hosted read refreshes the cache used by the following unavailable read', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'autonomy-refresh-state-'))
+  const environment = { ...missingConfig, BOTTEGA_STATE_HOME: state }
+  const d = database()
+  const now = () => new Date('2026-11-04T12:00:00.000Z')
+  const available = await resolveProjectAutonomy(
+    'fixture',
+    undefined,
+    'guided',
+    steps,
+    {},
+    () =>
+      ({
+        listEntries: async () => [{ scope: 'user', key: 'autonomy.preset', value: 'autonomous' }],
+      }) as never,
+    d,
+    environment,
+    undefined,
+    [],
+    undefined,
+    now,
+  )
+  expect(available.steps.design).toEqual({ value: 'auto', scope: 'hosted user' })
+  expect(readSessionContextCache('fixture', environment)).toEqual({
+    version: 1,
+    resolvedAt: '2026-11-04T12:00:00.000Z',
+    project: 'fixture',
+    hosted: { user: { preset: 'autonomous' }, space: {} },
+  })
+
+  const stale = await resolveProjectAutonomy(
+    'fixture',
+    undefined,
+    'guided',
+    steps,
+    {},
+    () =>
+      ({
+        listEntries: async () => {
+          throw new Error('offline after refresh')
+        },
+      }) as never,
+    d,
+    environment,
+    undefined,
+    [],
+    undefined,
+    () => new Date('2026-11-04T12:00:05.000Z'),
+  )
+  expect(stale.steps.design).toEqual({ value: 'review', scope: 'hosted user (stale)' })
+  expect(stale.note).toContain('resolved from cached hosted autonomy settings')
+  expect(stale.note).toContain('cache age 5000 ms')
+})
+
+test('a cache write failure preserves an available resolution and adds a warning', async () => {
+  const stateFile = join(mkdtempSync(join(tmpdir(), 'autonomy-cache-failure-')), 'state-file')
+  writeFileSync(stateFile, 'not a directory')
+  const result = await resolveProjectAutonomy(
+    'fixture',
+    undefined,
+    'guided',
+    steps,
+    {},
+    () =>
+      ({
+        listEntries: async () => [{ scope: 'user', key: 'autonomy.preset', value: 'autonomous' }],
+      }) as never,
+    database(),
+    { ...missingConfig, BOTTEGA_STATE_HOME: stateFile },
+  )
+
+  expect(result.steps.design).toEqual({ value: 'auto', scope: 'hosted user' })
+  expect(result.hosted?.status).toBe('available')
+  expect(result.warnings).toHaveLength(1)
+  expect(result.warnings?.[0]).toStartWith('warning: could not refresh hosted autonomy cache:')
 })
 
 test('a timed-out hosted read resolves from the cached hosted copy and names its age', async () => {

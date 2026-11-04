@@ -75,7 +75,9 @@ async function workflowStep(
         commitCount,
       )
     : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode }, live.resolution)
-  return { content: [{ type: 'text' as const, text: renderWorkflowStep(result) }] }
+  return {
+    content: [{ type: 'text' as const, text: renderWorkflowStep(result) }],
+  }
 }
 
 export function registerWorkflowStepTool(

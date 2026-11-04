@@ -26,7 +26,12 @@ import {
   staleHostedAutonomyWinner,
   staleHostedScope,
 } from './autonomy.ts'
-import { type CachedSessionContext, readSessionContextCache } from './session-context-cache.ts'
+import {
+  type CachedSessionContext,
+  readSessionContextCache,
+  type StateEnvironment,
+  writeSessionContextCache,
+} from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
 import { combineCursorRulings } from './workflow-cursor-autonomy.ts'
 
@@ -89,6 +94,44 @@ async function readHosted(
   }
 }
 
+function refreshHostedCache(
+  project: string,
+  hosted: Extract<HostedRead, { status: 'available' }>,
+  stateEnvironment: StateEnvironment,
+  now: () => Date,
+): string | null {
+  try {
+    writeSessionContextCache(
+      {
+        version: 1,
+        resolvedAt: now().toISOString(),
+        project,
+        hosted: { user: hosted.user, space: hosted.space },
+      },
+      stateEnvironment,
+    )
+    return null
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    return `warning: could not refresh hosted autonomy cache: ${reason}`
+  }
+}
+
+function withHostedWarnings(
+  resolved: AutonomyResolution,
+  hostedWarnings: string[],
+): AutonomyResolution {
+  const warnings = [...(resolved.warnings ?? []), ...hostedWarnings]
+  return { ...resolved, ...(warnings.length ? { warnings } : {}) }
+}
+
+function validateSessionAutonomy(session: AutonomySettings): void {
+  if (session.shipTo === undefined) return
+  throw new Error(
+    `ship to is operator-owned and cannot be set at session scope; use ${PLATFORM_SLUG} machine config set autonomy.ship-to <value>`,
+  )
+}
+
 export async function resolveProjectAutonomy(
   project: string,
   workflow: string | undefined,
@@ -103,19 +146,16 @@ export async function resolveProjectAutonomy(
   stages: readonly AutonomyStage[] = [],
   hostedFallback?: CachedSessionContext,
   now: () => Date = () => new Date(),
+  stateEnvironment: StateEnvironment = env,
 ): Promise<AutonomyResolution> {
-  if (session.shipTo !== undefined) {
-    throw new Error(
-      `ship to is operator-owned and cannot be set at session scope; use ${PLATFORM_SLUG} machine config set autonomy.ship-to <value>`,
-    )
-  }
+  validateSessionAutonomy(session)
   const registered = projectByName(project, d)
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
   const cached =
     hosted.status === 'unavailable'
-      ? (hostedFallback ?? readSessionContextCache(project, env))
+      ? (hostedFallback ?? readSessionContextCache(project, stateEnvironment))
       : null
   const hostedSettings =
     hosted.status === 'unavailable' && cached
@@ -135,17 +175,21 @@ export async function resolveProjectAutonomy(
     workflow,
     stages,
   )
-  const warnings = [...(resolved.warnings ?? []), ...hosted.warnings]
-  const resolution = {
-    ...resolved,
-    ...(warnings.length ? { warnings } : {}),
-  }
-  if (hosted.status === 'available')
+  const cacheWarning =
+    hosted.status === 'available'
+      ? refreshHostedCache(project, hosted, stateEnvironment, now)
+      : null
+  const resolution = withHostedWarnings(resolved, [
+    ...hosted.warnings,
+    ...(cacheWarning ? [cacheWarning] : []),
+  ])
+  if (hosted.status === 'available') {
     return {
       ...resolution,
       hosted: { status: hosted.status, user: hosted.user, space: hosted.space },
       session,
     }
+  }
   if (hosted.status === 'not-configured')
     return {
       ...resolution,
@@ -195,7 +239,7 @@ export async function resolveProjectAutonomy(
       unavailableReason: hosted.reason,
     },
     hosted: { status: hosted.status, reason: hosted.reason },
-    note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes`,
+    note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes, then built-in because no cache exists`,
     session,
   }
 }

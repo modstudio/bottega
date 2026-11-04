@@ -19,7 +19,7 @@ import {
   staleHostedScope,
 } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
-import { readSessionContextCache, writeSessionContextCache } from './session-context-cache.ts'
+import { readSessionContextCache } from './session-context-cache.ts'
 import { showResolvedStepCatalogue } from './step-catalogue.ts'
 
 const AUTONOMY_SETTER = `${PLATFORM_SLUG} machine config set`
@@ -203,6 +203,7 @@ async function architectSessionContext(
     autonomyStages,
     cached ?? undefined,
     dependencies.now,
+    stateEnvironment,
   )
   const byStage = new Map<AutonomyStage, { value: AutonomyValue; scope: string }[]>()
   for (const step of steps) {
@@ -240,19 +241,6 @@ async function architectSessionContext(
       slice,
       cached.resolvedAt,
       resolution.hosted.reason ?? 'hosted read failed',
-    )
-  if (resolution.hosted?.status !== 'unavailable')
-    writeSessionContextCache(
-      {
-        version: 1,
-        resolvedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
-        project: project.name,
-        hosted: {
-          user: resolution.hosted?.user ?? {},
-          space: resolution.hosted?.space ?? {},
-        },
-      },
-      stateEnvironment,
     )
   return slice
 }

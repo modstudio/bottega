@@ -870,7 +870,6 @@ export function composeWorkflow(
     facts,
     needs,
     rulings: effectiveAutonomy.rulings,
-    autonomyNote: autonomy?.note,
     ...cursorAutonomyOutput(autonomy),
   }
 }

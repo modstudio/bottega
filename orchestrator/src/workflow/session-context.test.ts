@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { ConfigClientError } from '../../../shared/config-client.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
@@ -615,4 +616,50 @@ test('a degraded resolution does not overwrite the successful cache', async () =
   expect(stale.stale).toBe(true)
   expect(stale.resolvedAt).toBe(resolvedAt.toISOString())
   expect(stale.resolvedAt).not.toBe(degradedAt.toISOString())
+})
+
+test('a not-configured read does not overwrite the successful cache', async () => {
+  const name = 'session-context-not-configured-preserves-cache'
+  const path = repository(name)
+  upsertProject({
+    recordId: newRecordId(),
+    name,
+    path,
+    stack: 'bun',
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+    },
+  })
+  const resolvedAt = new Date('2026-09-28T19:00:00.000Z')
+  await contextJson(path, {
+    clientFactory: () =>
+      ({
+        listEntries: async () => [{ scope: 'user', key: 'autonomy.stage.plan', value: 'auto' }],
+      }) as never,
+    now: () => resolvedAt,
+  })
+  await contextJson(path, {
+    clientFactory: () =>
+      ({
+        listEntries: async () => {
+          throw new ConfigClientError('not-configured', '/v1/config')
+        },
+      }) as never,
+    now: () => new Date('2026-09-28T19:30:00.000Z'),
+  })
+
+  const stale = await contextJson(path, {
+    clientFactory: () =>
+      ({
+        listEntries: async () => {
+          throw new Error('record is offline')
+        },
+      }) as never,
+    now: () => new Date('2026-09-28T20:00:00.000Z'),
+  })
+
+  expect(stale.stale).toBe(true)
+  expect(stale.resolvedAt).toBe(resolvedAt.toISOString())
 })
