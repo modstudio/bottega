@@ -298,3 +298,30 @@ test('document audience vocabulary migration converts local docs and revisions w
     database.close()
   }
 })
+
+test('collect change triggers advance once for arbitrary run updates', () => {
+  const database = migratedTestDatabase()
+  try {
+    expect(database.query('PRAGMA recursive_triggers').get()).toEqual({ recursive_triggers: 0 })
+    const before = database
+      .query<{ value: number }, []>('SELECT value FROM collect_change_counter WHERE id=1')
+      .get()!.value
+    database
+      .query(
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         VALUES ('01990000-0000-7000-8000-000000009901',9901,'2026-11-03','codex','implement','sha',1,'head','running')`,
+      )
+      .run()
+    const inserted = database
+      .query<{ change_seq: number }, []>("SELECT change_seq FROM run WHERE number=9901")
+      .get()!.change_seq
+    expect(inserted).toBe(before + 1)
+    database.query("UPDATE run SET status='ok',vendor_tokens=12,vendor_cost_usd=0.5 WHERE number=9901").run()
+    expect(
+      database.query<{ change_seq: number }, []>("SELECT change_seq FROM run WHERE number=9901").get()!
+        .change_seq,
+    ).toBe(inserted + 1)
+  } finally {
+    database.close()
+  }
+})

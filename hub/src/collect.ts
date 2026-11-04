@@ -9,7 +9,7 @@ import {
 } from './hosted-change-cache.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { ingestGit } from './ingest/git.ts'
-import { ingestRuns } from './ingest/runs.ts'
+import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
 import {
   ingestTrackers,
   type TrackerResult,
@@ -109,6 +109,7 @@ export type CollectLegResult =
       source: string
       ok: true
       durationMs: number
+      metrics?: CollectLegMetrics
       hostedChanges?: HostedChangeLegReport
       hostedOutbox?: HostedOutboxReport
     }
@@ -116,6 +117,20 @@ export type CollectLegResult =
 
 /** Cycle work returns the legs it ran, or nothing when it ran none. */
 type CollectCycleResult = CollectLegResult[] | undefined
+
+export type CollectLegMetrics = { examined: number; written: number; unchanged: number }
+
+function collectLegMetrics(value: unknown): CollectLegMetrics | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const report = value as Record<string, unknown>
+  if (
+    typeof report.examined !== 'number' ||
+    typeof report.rows !== 'number' ||
+    typeof report.skipped !== 'number'
+  )
+    return undefined
+  return { examined: report.examined, written: report.rows, unchanged: report.skipped }
+}
 
 export function formatCollectLeg(result: CollectLegResult): string {
   const separator = result.source.length >= 18 ? ' ' : ''
@@ -146,7 +161,10 @@ async function settleTimedLeg<T>(
 }
 
 async function settleLeg(source: string, work: () => Promise<unknown>): Promise<CollectLegResult> {
-  return (await settleTimedLeg(source, work, () => ({ ok: true })))!
+  return (await settleTimedLeg(source, work, (value) => ({
+    ok: true,
+    metrics: collectLegMetrics(value),
+  })))!
 }
 
 type HostedCollectDependencies = {
@@ -243,7 +261,14 @@ async function holdAndRenewLease(
     return result
   } finally {
     const legDurations = legs
-      .map((leg) => `${JSON.stringify(leg.source)}=${leg.durationMs}ms`)
+      .map((leg) => {
+        const metrics = leg.ok ? leg.metrics : undefined
+        return `${JSON.stringify(leg.source)}=${leg.durationMs}ms${
+          metrics
+            ? ` examined=${metrics.examined} written=${metrics.written} unchanged=${metrics.unchanged}`
+            : ''
+        }`
+      })
       .join(' ')
     console.error(
       `hub: collect lease hold holder=${JSON.stringify(holder)} held_ms=${Date.now() - startedAt}${legDurations ? ` legs ${legDurations}` : ''}`,
@@ -454,12 +479,15 @@ export function runsSince(now = Date.now()): string {
  * not skipped.
  */
 export async function collectFast(
-  dependencies: { runs?: typeof ingestRuns; transcripts?: typeof ingestTranscripts } = {},
+  dependencies: {
+    runs?: (since: string) => Promise<unknown>
+    transcripts?: (since: string) => Promise<unknown>
+  } = {},
   guard?: LeaseGuard,
 ) {
   const results = [] as CollectLegResult[]
   guard?.assertHeld()
-  results.push(await settleLeg('runs', () => (dependencies.runs ?? ingestRuns)(runsSince())))
+  results.push(await settleLeg('runs', () => (dependencies.runs ?? ingestRunChanges)(runsSince())))
   guard?.assertHeld('runs')
   results.push(
     await settleLeg('transcripts', () =>

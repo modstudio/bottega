@@ -322,6 +322,34 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
   return rows.filter((row): row is OrchRun => !('unknown' in row))
 }
 
+function decodeRunChangesJson(text: string): { rows: OrchRun[]; cursor: number } {
+  const lines = text.split('\n').filter((line) => line.trim())
+  const cursorLine = lines.find((line) => {
+    try {
+      return (JSON.parse(line) as { kind?: string }).kind === 'cursor'
+    } catch {
+      return false
+    }
+  })
+  if (!cursorLine) throw new Error(`${PLATFORM_SLUG} run list --changed-after returned no cursor`)
+  const cursor = z
+    .object({ schema_version: z.literal(2), kind: z.literal('cursor'), data: z.object({ cursor: z.number().int().nonnegative() }) })
+    .parse(JSON.parse(cursorLine)).data.cursor
+  const rows = decodeRunsJson(
+    lines.filter((line) => line !== cursorLine).join('\n'),
+  ).filter((row): row is OrchRun => !('unknown' in row))
+  return { rows, cursor }
+}
+
+export async function readRunChanges(after: number): Promise<{ rows: OrchRun[]; cursor: number }> {
+  return decodeRunChangesJson(
+    await orchProcess(
+      ['run', 'list', '--json', '--changed-after', String(after)],
+      RUNS_DEADLINE_MS,
+    ),
+  )
+}
+
 export async function readQuestionIdentityMap(): Promise<QuestionIdentity[]> {
   return QuestionIdentityListSchema.parse(
     JSON.parse(await orchProcess(['question', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
@@ -340,6 +368,14 @@ export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
   json(
     ['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--since', since],
     RulingListSchema,
+  )
+
+export const readWorkflowRulingChanges = (
+  after: number,
+): Promise<{ rows: RulingListRow[]; cursor: number }> =>
+  json(
+    ['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--changed-after', String(after)],
+    z.object({ cursor: z.number().int().nonnegative(), rows: RulingListSchema }),
   )
 
 export async function readRunsById(ids: (string | number)[]): Promise<OrchRunLineData[]> {

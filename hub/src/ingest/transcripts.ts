@@ -7,7 +7,7 @@ import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { attribute, isInjected, projectOf, refreshKeyPrefixes } from '../attribute.ts'
-import { nowIso, writeTransaction } from '../db.ts'
+import { db, nowIso, writeTransaction } from '../db.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { hostedSignedInUserId } from '../task-client.ts'
 import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
@@ -268,6 +268,7 @@ export async function ingestTranscripts(
   idleCapMs = DEFAULT_IDLE_CAP_MS,
   attributedUserId?: string | null,
 ): Promise<{
+  examined: number
   files: number
   rows: number
   source: 'read' | 'disabled'
@@ -276,7 +277,8 @@ export async function ingestTranscripts(
 }> {
   refreshKeyPrefixes()
   const root = resolveTranscriptRoot(readMachineValue('hub.transcript_root'))
-  if (root.source === 'disabled') return { files: 0, rows: 0, source: 'disabled' }
+  if (root.source === 'disabled')
+    return { examined: 0, files: 0, rows: 0, skipped: 0, source: 'disabled' }
 
   try {
     readdirSync(root.path)
@@ -294,14 +296,50 @@ export async function ingestTranscripts(
   let files = 0
   let rows = 0
   let skippedUnlinked = 0
+  let skippedUnchanged = 0
 
-  for (const file of transcripts(root.path)) {
-    // The cheap 90%: a file untouched since the window opened cannot contain a
-    // message inside it.
+  const sourceFiles = transcripts(root.path)
+  for (const file of sourceFiles) {
+    let fingerprint: { size: number; mtimeMs: number; old: boolean }
     try {
-      if (statSync(file).mtime.toISOString().slice(0, 10) < sinceDay) continue
+      const stat = statSync(file)
+      const existing = db()
+        .query<{ size: number; mtime_ms: number }, [string]>(
+          'SELECT size,mtime_ms FROM transcript_fingerprint WHERE path=?',
+        )
+        .get(file)
+      if (existing?.size === stat.size && existing.mtime_ms === stat.mtimeMs) {
+        skippedUnchanged++
+        continue
+      }
+      fingerprint = {
+        size: stat.size,
+        mtimeMs: stat.mtimeMs,
+        old: stat.mtime.toISOString().slice(0, 10) < sinceDay,
+      }
     } catch {
       continue
+    }
+    const recordFingerprint = (conn: Database) =>
+      conn
+        .query(
+          `INSERT INTO transcript_fingerprint(path,size,mtime_ms) VALUES (?,?,?)
+           ON CONFLICT(path) DO UPDATE SET size=excluded.size,mtime_ms=excluded.mtime_ms`,
+        )
+        .run(file, fingerprint.size, fingerprint.mtimeMs)
+    // On the initial windowed pass, remember old files without parsing them.
+    // Once known, every fingerprint change is parsed, including shrink/replacement.
+    if (fingerprint.old) {
+      const known = db()
+        .query<{ found: number }, [string]>(
+          'SELECT 1 found FROM transcript_fingerprint WHERE path=?',
+        )
+        .get(file)
+      if (!known) {
+        writeTransaction(recordFingerprint)
+        skippedUnchanged++
+        continue
+      }
     }
     files++
 
@@ -310,7 +348,10 @@ export async function ingestTranscripts(
       // Work outside registered projects is left out rather than charged to a
       // project it never touched.
       .filter((l) => projectOf(l.cwd))
-    if (!legs.length) continue
+    if (!legs.length) {
+      writeTransaction(recordFingerprint)
+      continue
+    }
 
     writeTransaction((conn) => {
       // The leg ordinal is part of the ref. Without it two legs of one session
@@ -381,6 +422,7 @@ export async function ingestTranscripts(
       )
       rows += result.rows
       skippedUnlinked += result.skippedUnlinked
+      recordFingerprint(conn)
     })
   }
 
@@ -391,9 +433,11 @@ export async function ingestTranscripts(
       .run(JSON.stringify(nowIso())),
   )
   return {
+    examined: sourceFiles.length,
     files,
     rows,
     source: 'read',
-    ...(skippedUnlinked ? { skipped: skippedUnlinked, skippedUnlinked } : {}),
+    skipped: skippedUnchanged + skippedUnlinked,
+    ...(skippedUnlinked ? { skippedUnlinked } : {}),
   }
 }

@@ -43,6 +43,12 @@ const local = (
 ): StateClassDeclaration => ({ store, table, class: 'machine-only', reason, ruling })
 
 export const STATE_CLASSES: readonly StateClassDeclaration[] = [
+  local(
+    'orchestrator',
+    'collect_change_counter',
+    "This machine's collector change cursor",
+    PORTABLE_RULING,
+  ),
   planned('orchestrator', 'agent', 'DEV-1214', 'Agent routing state awaits a hosted home'),
   planned('orchestrator', 'blocker', 'DEV-1214', 'Run blocker state awaits a hosted home'),
   hosted('orchestrator', 'board_claim', 'board_claim', 'Local board claim mirror'),
@@ -319,6 +325,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   hosted('hub', 'task', 'hub_task', 'Local task write source'),
   hosted('hub', 'task_comment', 'hub_task_comment', 'Local task comment write source'),
   hosted('hub', 'task_document', 'hub_task_document', 'Local task document write source'),
+  local('hub', 'transcript_fingerprint', 'Local transcript collection cursor', PORTABLE_RULING),
   local('hub', 'task_identity_claim', 'Local task identity cache', PORTABLE_RULING),
   local(
     'hub',

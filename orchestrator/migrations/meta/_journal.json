@@ -1530,6 +1530,14 @@
       "tag": "0200_typed_question_answer",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 201,
+      "version": "6",
+      "when": 1793664000000,
+      "tag": "0201_collect_change_sequence",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

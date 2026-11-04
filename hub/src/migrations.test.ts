@@ -596,8 +596,9 @@ describe('hub migration journal', () => {
       fakeOrch,
       `#!/usr/bin/env bun\n` +
         `if (process.argv.includes('project')) console.log('[]')\n` +
-        `else if (process.argv.includes('ruling')) console.log('[]')\n` +
+        `else if (process.argv.includes('ruling')) console.log(process.argv.includes('--changed-after') ? '{"cursor":1,"rows":[]}' : '[]')\n` +
         `else if (process.argv.includes('identity-map')) console.log(${JSON.stringify(JSON.stringify([{ number: run.number, record_id: run.record_id }]))})\n` +
+        `else if (process.argv.includes('--changed-after')) console.log('{"schema_version":2,"kind":"cursor","data":{"cursor":1}}')\n` +
         `else { const i=process.argv.indexOf('--since'); if (process.argv[i+1] <= ${JSON.stringify(askedAt)}) console.log(${JSON.stringify(JSON.stringify(run))}) }\n`,
     )
     chmodSync(fakeOrch, 0o755)

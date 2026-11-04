@@ -15,7 +15,7 @@ import { fileNote } from '../mcp/hub-notes.ts'
 import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
-import { listRulings } from '../run/ruling-list.ts'
+import { listRulings, rulingChangeCursor } from '../run/ruling-list.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
 import { log } from './support.ts'
 
@@ -82,13 +82,25 @@ export function register(program: Command): void {
     .command('list')
     .description('list recorded run and workflow rulings')
     .option('--since <ISO>', 'include ruling activity since this instant')
+    .option('--changed-after <sequence>', 'include source rows changed after this cursor')
     .option('--kind <kind>', 'workflow, run, or all', 'all')
     .option('--json', 'write the rulings as JSON')
     .allowExcessArguments(false)
     .action((options) => {
       if (!['workflow', 'run', 'all'].includes(options.kind))
         throw new Error('--kind must be workflow, run, or all')
-      log(JSON.stringify(listRulings({ since: options.since, kind: options.kind })))
+      const rows = listRulings({
+        since: options.since,
+        changedAfter: options.changedAfter,
+        kind: options.kind,
+      })
+      log(
+        JSON.stringify(
+          options.changedAfter === undefined
+            ? rows
+            : { cursor: rulingChangeCursor(), rows },
+        ),
+      )
     })
   ruling
     .command('overturn <question-id>')

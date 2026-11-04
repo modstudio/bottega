@@ -64,6 +64,22 @@ function runNumber(recordId: string): number {
 }
 
 describe('run listing', () => {
+  test('changed-after selects a mutation once and returns the source cursor', async () => {
+    const id = insert('running')
+    const cursor = db()
+      .query<{ value: number }, []>('SELECT value FROM collect_change_counter WHERE id=1')
+      .get()!.value
+    expect(await command({ json: true, 'changed-after': [String(cursor)] })).toEqual([
+      JSON.stringify({ schema_version: 2, kind: 'cursor', data: { cursor } }),
+    ])
+    db().query('UPDATE run SET vendor_tokens=17 WHERE record_id=?').run(id)
+    const lines = await command({ json: true, 'changed-after': [String(cursor)] })
+    expect(lines.map((line) => JSON.parse(line)).some((row) => row.data?.record_id === id)).toBe(true)
+    const next = JSON.parse(lines.at(-1)!).data.cursor as number
+    expect(await command({ json: true, 'changed-after': [String(next)] })).toEqual([
+      JSON.stringify({ schema_version: 2, kind: 'cursor', data: { cursor: next } }),
+    ])
+  })
   test('run identity mapping includes roots and turns', () => {
     const root = insert('asking')
     const turn = insert('running')

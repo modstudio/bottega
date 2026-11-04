@@ -37,6 +37,36 @@ test('notification delivery logs one failure and continues through the claimed b
 })
 
 describe('run ingest', () => {
+  test('an unchanged cursor pass writes no rows and runs one run cursor query', async () => {
+    writeTransaction((conn) =>
+      conn
+        .query("INSERT OR REPLACE INTO setting(key,value) VALUES ('collect.runs.change_seq','5')")
+        .run(),
+    )
+    const commands: string[][] = []
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
+      commands.push(args)
+      const ruling = args.includes('ruling')
+      const stdout = ruling
+        ? '{"cursor":5,"rows":[]}'
+        : '{"schema_version":2,"kind":"cursor","data":{"cursor":5}}'
+      return { stdout: new Blob([stdout]), stderr: new Blob(['']), exited: Promise.resolve(0) }
+    }) as unknown as typeof Bun.spawn)
+    try {
+      const results = await collectFast({
+        transcripts: async () => ({ examined: 0, rows: 0, skipped: 0 }),
+      })
+      expect(results[0]).toMatchObject({
+        source: 'runs',
+        ok: true,
+        metrics: { examined: 0, written: 0, unchanged: 0 },
+      })
+      expect(commands.filter((args) => args.includes('run') && args.includes('list'))).toHaveLength(1)
+      expect(commands).toHaveLength(2)
+    } finally {
+      spawn.mockRestore()
+    }
+  })
   test('a failing transcripts leg does not stop the runs watermark advancing', async () => {
     const watermark = '2026-09-24T16:00:00.000Z'
     const results = await collectFast({

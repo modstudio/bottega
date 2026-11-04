@@ -4,9 +4,11 @@
 import { type RulingListRow, RulingListSchema } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
 import { questionOpenSql } from './question-open.ts'
+import { changedAfter, collectChangeCursor } from './collect-change.ts'
 
 export function listRulings(options: {
   since?: string
+  changedAfter?: string
   kind: 'workflow' | 'run' | 'all'
 }): RulingListRow[] {
   const clauses: string[] = []
@@ -19,6 +21,13 @@ export function listRulings(options: {
       `(${questionOpenSql('q')} OR q.asked_at>=? OR q.answered_at>=? OR q.closed_at>=? OR q.overturned_at>=? OR q.filed_at>=?)`,
     )
     values.push(options.since, options.since, options.since, options.since, options.since)
+  }
+  const after = changedAfter(options.changedAfter)
+  const cursor = after === null ? null : collectChangeCursor()
+  if (options.since && after !== null) throw new Error('--since and --changed-after cannot be combined')
+  if (after !== null) {
+    clauses.push('q.change_seq>? AND q.change_seq<=?')
+    values.push(String(after), String(cursor))
   }
   const rows = db()
     .query(
@@ -37,10 +46,15 @@ export function listRulings(options: {
         ORDER BY q.number`,
     )
     .all(...values)
-  return RulingListSchema.parse(
+  const parsed = RulingListSchema.parse(
     (rows as Array<Record<string, unknown> & { number: number }>).map(({ number, ...row }) => ({
       id: number,
       ...row,
     })),
   )
+  return parsed
+}
+
+export function rulingChangeCursor(): number {
+  return collectChangeCursor()
 }

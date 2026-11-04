@@ -25,6 +25,7 @@ import type {
 } from './question-vocabulary.ts'
 import { isFreshRunHostWait, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
+import { changedAfter, collectChangeCursor } from './collect-change.ts'
 import { type SubscriptionCostContext, withReportedCost } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 import { agentWorkValue } from './synthetic-lifecycle-job.ts'
@@ -521,11 +522,17 @@ export async function runListingCommand(
   const onlyUnscored = has('unscored')
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
   const sinceFlag = flag('since')
+  const changedAfterValue = changedAfter(flag('changed-after'))
+  const changeSnapshot = changedAfterValue === null ? null : collectChangeCursor()
+  if (sinceFlag && changedAfterValue !== null)
+    throw new Error('--since and --changed-after cannot be combined')
   const requested = resolveRequestedRunIds(values('id'))
   const { ids: requestedIds, unknown: unknownRecordIds } = requested
   // Runs normally presents one canonical row per resumed conversation. If a caller names a child
   // turn, return that conversation rather than falsely reporting an existing run id as unknown.
   applyRequestedRunFilter(requested, sinceFlag, where, args)
+  if ((requested.ids.length || requested.unknown.length) && changedAfterValue !== null)
+    throw new Error(`${PLATFORM_SLUG} run list --id and --changed-after cannot be combined`)
   if (sinceFlag) {
     // A chain belongs in the window when any turn started there, any
     // question was asked, answered, or closed there, or any question is
@@ -542,6 +549,21 @@ export async function runListingCommand(
       )
     )`)
     args.push(sinceFlag, sinceFlag, sinceFlag, sinceFlag)
+  }
+  if (changedAfterValue !== null) {
+    where.push(`(
+      EXISTS (
+        SELECT 1 FROM run changed_run
+         WHERE (changed_run.record_id=r.record_id OR changed_run.parent_run_record_id=r.record_id)
+           AND changed_run.change_seq>? AND changed_run.change_seq<=?
+      ) OR EXISTS (
+        SELECT 1 FROM question changed_question
+        JOIN run changed_owner ON changed_owner.record_id=changed_question.run_record_id
+        WHERE (changed_owner.record_id=r.record_id OR changed_owner.parent_run_record_id=r.record_id)
+          AND changed_question.change_seq>? AND changed_question.change_seq<=?
+      )
+    )`)
+    args.push(changedAfterValue, changeSnapshot!, changedAfterValue, changeSnapshot!)
   }
   where.push(...liveListingClauses(has('live')))
   const limit = listingLimit(flag('limit'), json, has('live'))
@@ -694,6 +716,8 @@ export async function runListingCommand(
       JSON.stringify(options.jsonV1 ? data : { schema_version: 2, kind: 'run', data })
     for (const r of rows) log(publish(r))
     publishUnknownRuns({ ids: unknownIds, recordIds: unknownRecordIds, publish, log })
+    if (changeSnapshot !== null)
+      log(JSON.stringify({ schema_version: 2, kind: 'cursor', data: { cursor: changeSnapshot } }))
     return
   }
 
