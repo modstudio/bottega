@@ -445,9 +445,7 @@ describe('hosted context router', () => {
 
     const extraKeyClient = fakeClient({
       docs: mock(async () => ({
-        items: [
-          { ...settingsDoc, body: JSON.stringify({ ...ownedSettings, undeclared: true }) },
-        ],
+        items: [{ ...settingsDoc, body: JSON.stringify({ ...ownedSettings, undeclared: true }) }],
         nextCursor: null,
       })) as never,
     })
