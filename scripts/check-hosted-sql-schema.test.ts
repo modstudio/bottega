@@ -165,7 +165,7 @@ describe('hosted SQL schema guard', () => {
       extracted.sites.some(
         (site) =>
           site.file === 'orchestrator/test/postgres-board-proof.ts' &&
-          site.line === 372 &&
+          site.line === 478 &&
           site.sql.includes('FROM board_message'),
       ),
     ).toBe(true)

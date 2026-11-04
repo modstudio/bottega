@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bearerHeaders } from '../src/record/record-auth.ts'
+import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
 import {
   SIGN_UP_AUTH,
   SIGN_UP_CLI_OUTPUT,
@@ -64,6 +64,53 @@ export function registerConfigAccessSpaceCreationProof(input: {
       ).toBe('owner|write|t')
     } finally {
       await auth.close()
+    }
+  })
+
+  test('a non-owner member setting the outside intake receives the owner remedy', async () => {
+    const spaceId = newRecordId()
+    const projectId = newRecordId()
+    const headers = bearerHeaders(input.otherToken())
+    const auth = testRecordAuth(input.actorUrl(), input.authUrl())
+    const previous = await auth.api.getSession({ headers })
+    const previousSpaceId = previous?.session.activeOrganizationId
+    if (!previousSpaceId) throw new Error('outside intake proof user has no active space')
+    try {
+      input.succeeds(`
+        INSERT INTO space (id,name,slug,created_at)
+        VALUES ('${spaceId}','Outside intake owner proof','outside-intake-${spaceId.slice(-8)}',now());
+        INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+          ('${newRecordId()}','${spaceId}','${input.userId()}','owner','write',now()),
+          ('${newRecordId()}','${spaceId}','${input.otherUserId()}','member','write',now());
+        INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+        VALUES ('${projectId}','${spaceId}','outside-intake-proof',ARRAY['OIP'],now());`)
+      await setActiveRecordSpaceForSession(input.actorUrl(), headers, spaceId)
+      const response = await fetch(`${input.apiUrl()}/v1/outside-intake`, {
+        method: 'POST',
+        headers: {
+          ...Object.fromEntries(headers),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ project: 'outside-intake-proof' }),
+      })
+      expect(response.status).toBe(403)
+      expect(await response.text()).toContain(
+        'setting the outside intake requires the active space owner; switch to an owned space and retry',
+      )
+      expect(
+        input.succeeds(`SELECT count(*) FROM space_outside_intake WHERE space_id='${spaceId}';`),
+      ).toBe('0')
+    } finally {
+      try {
+        await setActiveRecordSpaceForSession(input.actorUrl(), headers, previousSpaceId)
+      } finally {
+        input.succeeds(`
+          DELETE FROM space_outside_intake WHERE space_id='${spaceId}';
+          DELETE FROM project WHERE id='${projectId}';
+          DELETE FROM membership WHERE space_id='${spaceId}';
+          DELETE FROM space WHERE id='${spaceId}';`)
+        await auth.close()
+      }
     }
   })
 

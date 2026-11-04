@@ -16,6 +16,7 @@ import {
   parseClaimSubject,
 } from '../board/board-claim-policy.ts'
 import { requireRealSession } from '../board/board-policy.ts'
+import { requireOwnedHostedRunAndMachine } from './record-board-author.ts'
 import {
   asBoardError,
   type HostedBoardClaim,
@@ -25,7 +26,6 @@ import {
 } from './record-board-contract.ts'
 import {
   postHostedBoardNoticeInTransaction,
-  requireOwnedHostedRunAndMachine,
   resolveVisibleProjectId,
 } from './record-board-messages.ts'
 import { hostedBoardActor } from './record-board-scope.ts'

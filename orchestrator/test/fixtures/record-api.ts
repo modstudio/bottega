@@ -40,6 +40,8 @@ function idleConfigAuthorizationDeps() {
     listSpaceConfigAccess: async () => [],
     grantSpaceConfigAccess: unused,
     withdrawSpaceConfigAccess: unused,
+    showOutsideIntake: async () => null,
+    setOutsideIntake: unused,
   }
 }
 
@@ -194,6 +196,8 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'listConfigAccess'
   | 'grantConfigAccess'
   | 'withdrawConfigAccess'
+  | 'showOutsideIntake'
+  | 'setOutsideIntake'
 > {
   return {
     whoami: unusedIdentityAndSpace,
@@ -205,6 +209,8 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     listConfigAccess: unusedIdentityAndSpace,
     grantConfigAccess: unusedIdentityAndSpace,
     withdrawConfigAccess: unusedIdentityAndSpace,
+    showOutsideIntake: unusedIdentityAndSpace,
+    setOutsideIntake: unusedIdentityAndSpace,
   }
 }
 

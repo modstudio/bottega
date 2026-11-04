@@ -29,6 +29,15 @@ function moveFunctionMigration(): string {
         previous.replaceAll("''", "'"),
         replacement.replaceAll("''", "'"),
       )
+    for (const match of rewrite.matchAll(
+      /previous_(\w+) text := \$anchor\$([\s\S]*?)\$anchor\$;/g,
+    )) {
+      const replacementAnchor = new RegExp(
+        `replacement_${match[1]} text := \\$anchor\\$([\\s\\S]*?)\\$anchor\\$;`,
+      ).exec(rewrite)?.[1]
+      if (replacementAnchor !== undefined)
+        definition = definition.replace(match[2]!, replacementAnchor)
+    }
   }
   return definition
 }

@@ -88,6 +88,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'openBoardStream',
     'searchDocs',
     'searchPublicDocs',
+    'showOutsideIntake',
     'whoami',
   ]),
   ...writeEntries(
@@ -104,6 +105,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'grantConfigAccess',
       'setActiveOrganization',
       'withdrawConfigAccess',
+      'setOutsideIntake',
     ],
   ),
   ...writeEntries(

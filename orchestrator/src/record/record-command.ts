@@ -32,6 +32,8 @@ import {
   pendingRecordInvitations,
   recordMemberships,
   recordSpaceRole,
+  setRecordSpaceOutsideIntake,
+  showRecordSpaceOutsideIntake,
   switchRecordSpace,
   withdrawRecordSpaceConfigAccess,
 } from './record-space.ts'
@@ -179,6 +181,19 @@ export async function recordSpaceAccessWithdrawCommand(
   presentation.log(
     `withdrew config access from ${email}; replace the listed development keys because ${PLATFORM_SLUG} cannot replace them`,
   )
+}
+
+export async function recordSpaceIntakeShowCommand(presentation: Presentation): Promise<void> {
+  const intake = await showRecordSpaceOutsideIntake()
+  presentation.log(intake ? `${intake.project}\t${intake.projectId}` : 'no outside intake project')
+}
+
+export async function recordSpaceIntakeSetCommand(
+  project: string,
+  presentation: Presentation,
+): Promise<void> {
+  const intake = await setRecordSpaceOutsideIntake(project)
+  presentation.log(`outside intake project ${intake.project}\t${intake.projectId}`)
 }
 
 export async function recordSpaceCreateCommand(

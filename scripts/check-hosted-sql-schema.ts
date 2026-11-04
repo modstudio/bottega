@@ -108,11 +108,16 @@ const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
     fingerprint,
     reason: 'JSONB proof interpolates UUID values from the revisions created earlier in the test',
   })),
-  ...['1cb20671c474a7d6', '699e03b5f4b6d87f', '33db9bcc8aa8f7c7'].map((fingerprint) => ({
+  ...['76944de31057488c', '699e03b5f4b6d87f', '33db9bcc8aa8f7c7'].map((fingerprint) => ({
     file: 'orchestrator/test/postgres-board-proof.ts',
     fingerprint,
     reason: 'board proof inserts rows composed by the closed messageValues fixture helper',
   })),
+  {
+    file: 'orchestrator/test/postgres-board-proof.ts',
+    fingerprint: 'f4fa758cb5df0cda',
+    reason: 'outside-board proof composes fixed definer arguments from its closed fixture input',
+  },
   {
     file: 'orchestrator/test/postgres-score-proof.ts',
     fingerprint: '7b4a9fb4a8d252f5',

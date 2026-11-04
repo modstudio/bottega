@@ -30,6 +30,8 @@ import {
   recordSpaceAccessListCommand,
   recordSpaceAccessWithdrawCommand,
   recordSpaceCreateCommand,
+  recordSpaceIntakeSetCommand,
+  recordSpaceIntakeShowCommand,
   recordSpaceInvitationsCommand,
   recordSpaceInviteCommand,
   recordSpaceListCommand,
@@ -279,6 +281,28 @@ function registerSpaceCommands(record: Command): void {
       ),
     )
   registerSpaceAccessCommands(space)
+  registerSpaceIntakeCommands(space)
+}
+
+function registerSpaceIntakeCommands(space: Command): void {
+  const intake = space.command('intake').description('manage the outside intake project')
+  intake
+    .command('show')
+    .description('show the active space outside intake project')
+    .action(() =>
+      hostedCommand(`${PLATFORM_SLUG} record space intake show`, () =>
+        recordSpaceIntakeShowCommand(presentation),
+      ),
+    )
+  intake
+    .command('set')
+    .description('set the active space outside intake project')
+    .argument('<project>')
+    .action((project) =>
+      hostedCommand(`${PLATFORM_SLUG} record space intake set`, () =>
+        recordSpaceIntakeSetCommand(String(project), presentation),
+      ),
+    )
 }
 
 function registerSpaceAccessCommands(space: Command): void {

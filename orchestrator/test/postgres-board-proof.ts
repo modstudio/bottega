@@ -60,6 +60,9 @@ const IDS = {
   mismatchedReply: '02990000-0000-7000-8000-000000000044',
   shadowedRootReply: '02990000-0000-7000-8000-000000000045',
   widenedReply: '02990000-0000-7000-8000-000000000047',
+  outsideRoot: '02990000-0000-7000-8000-000000000051',
+  outsideReply: '02990000-0000-7000-8000-000000000052',
+  outsideOther: '02990000-0000-7000-8000-000000000053',
 } as const
 
 function actor(
@@ -99,6 +102,22 @@ function messageValues(
     ARRAY[${recipients.map((id) => `'${id}'::uuid`).join(',')}]::uuid[],${sharedSpaceReach})`
 }
 
+function outsideCall(input: {
+  id: string
+  ledgerId: string
+  userId: string
+  projectId: string
+  kind?: 'notice' | 'reply'
+  rootId?: string
+}): string {
+  const reply = input.kind === 'reply'
+  return `SELECT board_message_insert_outside(
+    '${input.id}','${input.ledgerId}','${input.userId}',NULL,NULL,NULL,NULL,NULL,
+    '${input.kind ?? 'notice'}',NULL,${input.rootId ? `'${input.rootId}'` : 'NULL'},
+    ${reply ? 'NULL,NULL' : "'architects:board-alpha','outside'"},'outside body',false,NULL,
+    ${reply ? 'NULL' : "now() + interval '1 hour'"},now(),'${input.projectId}');`
+}
+
 export function registerBoardRlsProofs(input: BoardProofInput): void {
   beforeAll(() => {
     input.admin(`
@@ -125,6 +144,8 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
         ('${IDS.projectA}','${IDS.spaceA}','board-alpha',ARRAY['BOARD'],now()),
         ('${IDS.projectA2}','${IDS.spaceA}','board-alpha-two',ARRAY['BOARD2'],now()),
         ('${IDS.projectB}','${IDS.spaceB}','board-beta',ARRAY['BOARD'],now());
+      INSERT INTO space_outside_intake (id,space_id,project_id,updated_at)
+        VALUES ('${newRecordId()}','${IDS.spaceA}','${IDS.projectA}',now());
       INSERT INTO board_message
         (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
          scope_project_ids,recipient_user_ids,shared_space_reach)
@@ -163,6 +184,91 @@ export function registerBoardRlsProofs(input: BoardProofInput): void {
   test('a board author sees their own message whatever its scope', () => {
     expect(visibleCount(input, IDS.userA, IDS.scopedBoth)).toBe('1')
     expect(visibleCount(input, IDS.userA, IDS.authorOnly)).toBe('1')
+  })
+
+  test('outside authors read their whole thread without leaking other intake posts or moderation rows', () => {
+    const posted = actor(
+      input,
+      IDS.userF,
+      [],
+      outsideCall({
+        id: IDS.outsideRoot,
+        ledgerId: newRecordId(),
+        userId: IDS.userF,
+        projectId: IDS.projectA,
+      }),
+    )
+    expect(posted.code, posted.stderr).toBe(0)
+    expect(
+      actor(
+        input,
+        IDS.userF,
+        [],
+        `SELECT kind,user_id,subject_id FROM space_outside_write
+         WHERE user_id='${IDS.userF}' AND subject_id='${IDS.outsideRoot}';`,
+      ).stdout,
+    ).toBe(`post|${IDS.userF}|${IDS.outsideRoot}`)
+    input.admin(`
+      INSERT INTO board_message
+        (id,author_user_id,kind,thread_root_id,body,ack_required,created_at,
+         scope_project_ids,recipient_user_ids,shared_space_reach)
+      VALUES ('${IDS.outsideReply}','${IDS.userB}','reply','${IDS.outsideRoot}','member reply',false,
+        now(),ARRAY['${IDS.projectA}'::uuid],ARRAY[]::uuid[],false);
+      INSERT INTO board_message
+        (id,author_user_id,kind,audience,title,body,ack_required,expires_at,created_at,
+         scope_project_ids,recipient_user_ids,shared_space_reach)
+      VALUES ${messageValues(IDS.outsideOther, IDS.userE, [IDS.projectA])};
+      INSERT INTO space_outside_write (id,space_id,user_id,kind,subject_id,created_at)
+      VALUES ('${newRecordId()}','${IDS.spaceA}','${IDS.userE}','post','${IDS.outsideOther}',now());
+      INSERT INTO space_posting_block
+        (id,space_id,user_id,blocked_by_user_id,created_at)
+      VALUES ('${newRecordId()}','${IDS.spaceA}','${IDS.userE}','${IDS.userA}',now());
+    `)
+    expect(visibleCount(input, IDS.userF, IDS.outsideRoot)).toBe('1')
+    expect(visibleCount(input, IDS.userF, IDS.outsideReply)).toBe('1')
+    expect(visibleCount(input, IDS.userF, IDS.outsideOther)).toBe('0')
+    expect(visibleCount(input, IDS.userB, IDS.outsideRoot)).toBe('1')
+    expect(visibleCount(input, IDS.userE, IDS.outsideRoot)).toBe('0')
+    const privateRows = actor(
+      input,
+      IDS.userF,
+      [],
+      `SELECT
+        (SELECT count(*) FROM space_outside_intake),
+        (SELECT count(*) FROM space_posting_block),
+        (SELECT count(*) FROM space_outside_write WHERE user_id <> '${IDS.userF}');`,
+    )
+    expect(privateRows.stdout).toBe('0|0|0')
+  })
+
+  test('outside definer gives blocks and pauses one refusal and rejects other threads and scopes', () => {
+    const attempt = (id: string, projectId: string = IDS.projectA, rootId?: string) =>
+      actor(
+        input,
+        IDS.userF,
+        [],
+        outsideCall({
+          id,
+          ledgerId: newRecordId(),
+          userId: IDS.userF,
+          projectId,
+          ...(rootId ? { kind: 'reply' as const, rootId } : {}),
+        }),
+      )
+    input.admin(`INSERT INTO space_posting_block
+      (id,space_id,user_id,blocked_by_user_id,created_at)
+      VALUES ('${newRecordId()}','${IDS.spaceA}','${IDS.userF}','${IDS.userA}',now());`)
+    const blocked = attempt(newRecordId())
+    expect(blocked.stderr).toContain('this space is not accepting outside posts right now')
+    input.admin(`DELETE FROM space_posting_block WHERE user_id='${IDS.userF}';
+      UPDATE space_outside_intake SET paused_until=now() + interval '1 hour';`)
+    const paused = attempt(newRecordId())
+    expect(paused.stderr).toContain('this space is not accepting outside posts right now')
+    input.admin('UPDATE space_outside_intake SET paused_until=NULL;')
+    expect(attempt(newRecordId(), IDS.projectA, IDS.scopedA).stderr).toContain(
+      "caller's own threads",
+    )
+    expect(attempt(newRecordId(), IDS.projectB).stderr).toContain('not a space intake project')
   })
 
   test("a one-project board message is visible to that project's space members only", () => {

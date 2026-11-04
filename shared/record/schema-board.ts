@@ -7,6 +7,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   pgPolicy,
   pgSequence,
@@ -24,6 +25,7 @@ import {
   project,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
+  space,
   user,
 } from './schema.ts'
 import { run } from './schema-run.ts'
@@ -192,6 +194,7 @@ export const boardMessage = pgTable.withRLS(
     const readsScope = readsEveryScopedProject(table.scopeProjectIds)
     const writesScope = writesEveryScopedProject(table.scopeProjectIds)
     const visible = sql`${table.authorUserId} = ${currentUser} OR
+      ${table.threadRootAuthorUserId} = ${currentUser} OR
       (${table.sharedSpaceReach} AND ${sharesAnyAuthorSpace(table.threadRootAuthorUserId)}) OR
       (cardinality(${table.scopeProjectIds}) > 0 AND ${readsScope}) OR
       (${currentUser} = ANY(${table.recipientUserIds}) AND ${readsScope})`
@@ -279,6 +282,11 @@ export const boardMessage = pgTable.withRLS(
         to: RECORD_OWNER_ROLE,
         using: sql`true`,
       }),
+      pgPolicy('board_message_owner_insert', {
+        for: 'insert',
+        to: RECORD_OWNER_ROLE,
+        withCheck: sql`true`,
+      }),
       pgPolicy('board_message_owner_update', {
         for: 'update',
         to: RECORD_OWNER_ROLE,
@@ -287,6 +295,148 @@ export const boardMessage = pgTable.withRLS(
       }),
     ]
   },
+)
+
+const spaceOwner = (spaceId: AnyPgColumn) => sql`EXISTS (
+  SELECT 1 FROM ${membership} m
+  WHERE m.space_id = ${spaceId} AND m.user_id = ${currentUser} AND m.role = 'owner'
+)`
+const spaceMember = (spaceId: AnyPgColumn) => sql`EXISTS (
+  SELECT 1 FROM ${membership} m
+  WHERE m.space_id = ${spaceId} AND m.user_id = ${currentUser}
+)`
+
+export const spaceOutsideIntake = pgTable.withRLS(
+  'space_outside_intake',
+  {
+    id: uuid().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => space.id),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => project.id),
+    pausedUntil: timestamp('paused_until', { withTimezone: true }),
+    pausedByUserId: uuid('paused_by_user_id').references(() => user.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (table) => {
+    const owner = spaceOwner(table.spaceId)
+    return [
+      unique('space_outside_intake_space_unique').on(table.spaceId),
+      foreignKey({
+        columns: [table.spaceId, table.projectId],
+        foreignColumns: [project.spaceId, project.id],
+        name: 'space_outside_intake_space_project_fk',
+      }).onUpdate('cascade'),
+      pgPolicy('space_outside_intake_actor_select', {
+        for: 'select',
+        to: RECORD_ACTOR_ROLE,
+        using: spaceMember(table.spaceId),
+      }),
+      pgPolicy('space_outside_intake_actor_insert', {
+        for: 'insert',
+        to: RECORD_ACTOR_ROLE,
+        withCheck: owner,
+      }),
+      pgPolicy('space_outside_intake_actor_update', {
+        for: 'update',
+        to: RECORD_ACTOR_ROLE,
+        using: owner,
+        withCheck: owner,
+      }),
+      pgPolicy('space_outside_intake_actor_delete', {
+        for: 'delete',
+        to: RECORD_ACTOR_ROLE,
+        using: owner,
+      }),
+      pgPolicy('space_outside_intake_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
+    ]
+  },
+)
+
+export const spacePostingBlock = pgTable.withRLS(
+  'space_posting_block',
+  {
+    id: uuid().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => space.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    blockedUntil: timestamp('blocked_until', { withTimezone: true }),
+    blockedByUserId: uuid('blocked_by_user_id')
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => {
+    const owner = spaceOwner(table.spaceId)
+    return [
+      unique('space_posting_block_space_user_unique').on(table.spaceId, table.userId),
+      pgPolicy('space_posting_block_actor_select', {
+        for: 'select',
+        to: RECORD_ACTOR_ROLE,
+        using: owner,
+      }),
+      pgPolicy('space_posting_block_actor_insert', {
+        for: 'insert',
+        to: RECORD_ACTOR_ROLE,
+        withCheck: owner,
+      }),
+      pgPolicy('space_posting_block_actor_update', {
+        for: 'update',
+        to: RECORD_ACTOR_ROLE,
+        using: owner,
+        withCheck: owner,
+      }),
+      pgPolicy('space_posting_block_actor_delete', {
+        for: 'delete',
+        to: RECORD_ACTOR_ROLE,
+        using: owner,
+      }),
+      pgPolicy('space_posting_block_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
+    ]
+  },
+)
+
+export const spaceOutsideWrite = pgTable.withRLS(
+  'space_outside_write',
+  {
+    id: uuid().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => space.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    kind: text().notNull(),
+    subjectId: uuid('subject_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('space_outside_write_user_created_idx').on(table.userId, table.createdAt),
+    check('space_outside_write_kind_check', sql`${table.kind} IN ('post','reply','note')`),
+    pgPolicy('space_outside_write_actor_select', {
+      for: 'select',
+      to: RECORD_ACTOR_ROLE,
+      using: sql`${table.userId} = ${currentUser}`,
+    }),
+    pgPolicy('space_outside_write_owner_insert', {
+      for: 'insert',
+      to: RECORD_OWNER_ROLE,
+      withCheck: sql`true`,
+    }),
+  ],
 )
 
 export const boardMessageTag = pgTable.withRLS(

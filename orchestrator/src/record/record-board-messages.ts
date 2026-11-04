@@ -9,7 +9,6 @@ import {
   parseBoardPurpose,
 } from '../../../shared/board-purpose.ts'
 import { replyAudienceValue } from '../../../shared/board-reply-audience-options.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
 import {
   type Audience,
@@ -38,6 +37,7 @@ import {
   noteFilingLeaseDecision,
   replyRefusal,
 } from '../board/board-thread-policy.ts'
+import { requireOwnedHostedRunAndMachine } from './record-board-author.ts'
 import {
   asBoardError,
   type HostedBoardCreateContent,
@@ -49,6 +49,12 @@ import {
   type HostedBoardThread,
   RecordBoardError,
 } from './record-board-contract.ts'
+import { insertBoardMessageTags, readBoardMessageTags } from './record-board-message-tags.ts'
+import {
+  type OutsidePostInput,
+  postOutsidePath,
+  replyOutsidePath,
+} from './record-board-outside-path.ts'
 import {
   hostedBoardActor,
   hostedBoardPostRefusal,
@@ -83,14 +89,6 @@ const iso = (value: unknown) => {
   if (value == null) return null
   if (value instanceof Date) return value.toISOString()
   return new Date(String(value)).toISOString()
-}
-
-export function hostedBoardTags(rows: Record<string, unknown>[]): BoardTag[] {
-  return rows.map((row) => ({
-    kind: String(row.kind) as BoardTag['kind'],
-    value: String(row.value),
-    origin: String(row.origin) as BoardTag['origin'],
-  }))
 }
 
 function hostedBoardOrigin(row: Record<string, unknown>): HostedBoardMessage['origin'] {
@@ -186,14 +184,6 @@ function createContent(row: Record<string, unknown>, tags: BoardTag[]): HostedBo
   }
 }
 
-async function messageTags(tx: SQL, id: string): Promise<BoardTag[]> {
-  const rows = await tx`
-    SELECT kind, value, origin FROM board_message_tag
-    WHERE message_id=${id}::uuid ORDER BY kind, value, origin
-  `
-  return hostedBoardTags(rows as Record<string, unknown>[])
-}
-
 export async function loadHostedBoardMessage(
   tx: SQL,
   id: string,
@@ -204,7 +194,7 @@ export async function loadHostedBoardMessage(
     WHERE board_message.id=${id}::uuid
   `
   if (!rows[0]) return null
-  return { row: rows[0] as Record<string, unknown>, tags: await messageTags(tx, id) }
+  return { row: rows[0] as Record<string, unknown>, tags: await readBoardMessageTags(tx, id) }
 }
 
 async function viewById(tx: SQL, id: string, clock: number): Promise<HostedBoardMessage> {
@@ -257,37 +247,6 @@ function sessionOrNull(value: string | null | undefined): string | null {
   if (actor.kind === 'architect')
     asBoardError(() => requireRealSession(actor.session, 'hosted board'))
   return actor.session
-}
-
-export async function requireOwnedHostedRunAndMachine(
-  tx: SQL,
-  userId: string,
-  input: {
-    runId?: string | null
-    machineId?: string | null
-    runField: string
-    machineField?: string
-  },
-): Promise<void> {
-  if (input.runId) {
-    const rows = await tx`SELECT started_by_user_id FROM run WHERE id=${input.runId}::uuid`
-    if (!rows[0] || String(rows[0].started_by_user_id) !== userId) {
-      throw new RecordBoardError(
-        `board ${input.runField} is missing, invisible, or not started by this user`,
-        400,
-      )
-    }
-  }
-  if (input.machineId) {
-    const field = input.machineField ?? 'authorMachineId'
-    const rows = await tx`SELECT user_id FROM machine WHERE id=${input.machineId}::uuid`
-    if (!rows[0] || String(rows[0].user_id) !== userId) {
-      throw new RecordBoardError(
-        `board ${field} is missing, invisible, or not owned by this user`,
-        400,
-      )
-    }
-  }
 }
 
 async function authorWindow(
@@ -347,16 +306,6 @@ async function duplicateRootId(
   return null
 }
 
-async function insertTags(tx: SQL, messageId: string, tags: BoardTag[]): Promise<void> {
-  for (const tag of tags) {
-    await tx`
-      INSERT INTO board_message_tag (id, message_id, kind, value, origin)
-      VALUES (${newRecordId()}::uuid, ${messageId}::uuid, ${tag.kind}, ${tag.value}, ${tag.origin})
-      ON CONFLICT DO NOTHING
-    `
-  }
-}
-
 async function insertRoot(
   tx: SQL,
   input: HostedBoardPostInput,
@@ -389,7 +338,7 @@ async function insertRoot(
       COALESCE(${boardUuidArray(tx, prepared.recipientUserIds)}, ARRAY[]::uuid[]), ${prepared.sharedSpaceReach}
     )
   `
-  await insertTags(tx, input.id, tags)
+  await insertBoardMessageTags(tx, input.id, tags)
   return input.id
 }
 
@@ -438,6 +387,66 @@ function purposeRefusal(
   if (refusal) throw new RecordBoardError(refusal, 400)
 }
 
+async function postMember(tx: SQL, values: OutsidePostInput): Promise<HostedBoardMessage> {
+  const { input } = values
+  const prepared = await prepareHostedPost(tx, values.audience, input.project, input.projectId)
+  const requested: HostedBoardCreateContent = {
+    kind: input.kind,
+    purpose: values.purpose,
+    audience: input.audience,
+    title: input.title,
+    body: input.body,
+    ackRequired: values.ackRequired,
+    ackDeadline: values.ackDeadline,
+    expiresAt: values.expiresAt,
+    threadRootId: null,
+    ...prepared,
+    senderTags: values.senderTags.map(({ kind, value }) => ({ kind, value })),
+  }
+  const sameId = await existingOrConflict(tx, input.id, requested)
+  if (sameId) return sameId
+  const duplicateId = await duplicateRootId(
+    tx,
+    {
+      kind: input.kind,
+      purpose: values.purpose,
+      userId: input.userId,
+      session: values.session,
+      audience: input.audience,
+      title: input.title,
+      body: input.body,
+      authorProjectId: prepared.authorProjectId,
+    },
+    values.senderTags,
+    values.clock,
+  )
+  const decision = await authorWindow(
+    tx,
+    input.userId,
+    values.session,
+    values.clock,
+    duplicateId !== null,
+  )
+  if (decision === 'drop-duplicate' && duplicateId) return viewById(tx, duplicateId, values.clock)
+  if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
+  await insertRoot(
+    tx,
+    {
+      ...input,
+      ackRequired: values.ackRequired,
+      ackDeadline: values.ackDeadline,
+      expiresAt: values.expiresAt,
+      authorSession: values.session,
+    },
+    input.userId,
+    values.session,
+    values.tags,
+    values.clock,
+    prepared,
+  )
+  return viewById(tx, input.id, values.clock)
+}
+
 export async function postHostedBoardMessage(
   input: BoardTenant & HostedBoardPostInput,
 ): Promise<HostedBoardMessage> {
@@ -477,52 +486,28 @@ export async function postHostedBoardMessage(
     ...inferredBoardTags(input.body, senderTags, input.currentTaskKey ?? null),
   ]
   const clock = Date.now()
-  return withBoardTenant(input, true, async (tx) => {
-    const prepared = await prepareHostedPost(tx, audience, input.project, input.projectId)
-    const requested: HostedBoardCreateContent = {
-      kind: input.kind,
-      purpose,
-      audience: input.audience,
-      title: input.title,
-      body: input.body,
-      ackRequired,
-      ackDeadline,
-      expiresAt,
-      threadRootId: null,
-      ...prepared,
-      senderTags: senderTags.map(({ kind, value }) => ({ kind, value })),
-    }
-    const sameId = await existingOrConflict(tx, input.id, requested)
-    if (sameId) return sameId
-    const duplicateId = await duplicateRootId(
-      tx,
-      {
-        kind: input.kind,
-        purpose,
-        userId: input.userId,
-        session,
-        audience: input.audience,
-        title: input.title,
-        body: input.body,
-        authorProjectId: prepared.authorProjectId,
-      },
-      senderTags,
-      clock,
-    )
-    const decision = await authorWindow(tx, input.userId, session, clock, duplicateId !== null)
-    if (decision === 'drop-duplicate' && duplicateId) return viewById(tx, duplicateId, clock)
-    if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
-    await insertRoot(
-      tx,
-      { ...input, ackRequired, ackDeadline, expiresAt, authorSession: session },
-      input.userId,
-      session,
-      tags,
-      clock,
-      prepared,
-    )
-    return viewById(tx, input.id, clock)
-  })
+  const values = {
+    input,
+    audience,
+    purpose,
+    ackRequired,
+    ackDeadline,
+    expiresAt,
+    session,
+    senderTags,
+    tags,
+    clock,
+  }
+  return withBoardTenant(
+    input,
+    true,
+    async (tx) =>
+      (await postOutsidePath(tx, values, {
+        existing: existingOrConflict,
+        insertTags: insertBoardMessageTags,
+        view: viewById,
+      })) ?? postMember(tx, values),
+  )
 }
 
 async function prepareHostedPost(
@@ -720,6 +705,99 @@ async function insertReplyCopyingRoot(
   return viewById(tx, input.id, clock)
 }
 
+async function replyMember(
+  tx: SQL,
+  input: BoardTenant & HostedBoardReplyInput & { rootId: string },
+  root: Record<string, unknown>,
+  authorProjectId: string | null,
+  session: string | null,
+  audience: string | null,
+  clock: number,
+): Promise<HostedBoardMessage> {
+  const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
+  const duplicate = (await tx`
+    SELECT id FROM board_message
+    WHERE kind='reply' AND author_user_id=${input.userId}::uuid
+      AND author_session IS NOT DISTINCT FROM ${session}
+      AND thread_root_id=${String(root.id)}::uuid AND body=${input.body}
+      AND audience IS NOT DISTINCT FROM ${audience}
+      AND created_at>=${duplicateSince}::timestamptz
+    ORDER BY created_at DESC LIMIT 1
+  `) as { id: string }[]
+  const decision = await authorWindow(tx, input.userId, session, clock, duplicate.length > 0)
+  if (decision === 'drop-duplicate' && duplicate[0])
+    return viewById(tx, String(duplicate[0].id), clock)
+  if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
+  const computedExpiry = extendedBoardThreadExpiry(
+    iso(root.expires_at),
+    clock,
+    root.purpose == null ? null : parseBoardPurpose(String(root.purpose)),
+  )
+  return insertReplyCopyingRoot(
+    tx,
+    input,
+    session,
+    String(root.id),
+    new Date(clock).toISOString(),
+    clock,
+    authorProjectId,
+    audience,
+    computedExpiry,
+  )
+}
+
+async function replyHostedBoardMessageTx(
+  tx: SQL,
+  input: BoardTenant & HostedBoardReplyInput & { rootId: string },
+  requested: HostedBoardCreateContent,
+  actor: ReturnType<typeof hostedBoardActor>,
+  session: string | null,
+  audience: string | null,
+  clock: number,
+): Promise<HostedBoardMessage> {
+  const loaded = await loadThreadRoot(tx, input.rootId)
+  if (!loaded) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
+  const root = loaded.row
+  requested.scopeProjectIds = hostedUuidList(root.scope_project_ids)
+  requested.threadRootId = String(root.id)
+  requested.recipientUserIds = hostedUuidList(root.recipient_user_ids)
+  requested.sharedSpaceReach = Boolean(root.shared_space_reach)
+  const authorProjectId = input.project
+    ? await resolvePostingProjectId(tx, input.project, input.projectId)
+    : null
+  requested.authorProjectId = authorProjectId
+  const sameId = await existingOrConflict(tx, input.id, requested)
+  if (sameId) return sameId
+  const audienceKind = root.audience ? parseHostedAudience(String(root.audience)).kind : 'operator'
+  const refusal = replyRefusal({
+    actor: { kind: actor.kind, reader: input.userId },
+    root: {
+      id: String(root.id),
+      kind: String(root.kind),
+      authorReader: String(root.author_user_id),
+      audienceKind,
+      live: liveRoot(root, clock),
+      accepted: root.accepted_reply_id != null,
+    },
+    addressed: true,
+    hasReceipt: false,
+  })
+  if (refusal) throw new RecordBoardError(refusal, 400)
+  return (
+    (await replyOutsidePath(
+      tx,
+      input,
+      root,
+      requested.scopeProjectIds,
+      authorProjectId,
+      session,
+      audience,
+      clock,
+      viewById,
+    )) ?? replyMember(tx, input, root, authorProjectId, session, audience, clock)
+  )
+}
+
 export async function replyHostedBoardMessage(
   input: BoardTenant & HostedBoardReplyInput & { rootId: string },
 ): Promise<HostedBoardMessage> {
@@ -747,67 +825,9 @@ export async function replyHostedBoardMessage(
     senderTags: [],
     authorProjectId: null,
   }
-  return withBoardTenant(input, true, async (tx) => {
-    const rootRow = await loadThreadRoot(tx, input.rootId)
-    if (!rootRow) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
-    requested.scopeProjectIds = hostedUuidList(rootRow.row.scope_project_ids)
-    requested.threadRootId = String(rootRow.row.id)
-    requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)
-    requested.sharedSpaceReach = Boolean(rootRow.row.shared_space_reach)
-    const authorProjectId = input.project
-      ? await resolvePostingProjectId(tx, input.project, input.projectId)
-      : null
-    requested.authorProjectId = authorProjectId
-    const sameId = await existingOrConflict(tx, input.id, requested)
-    if (sameId) return sameId
-    const audienceKind = rootRow.row.audience
-      ? parseHostedAudience(String(rootRow.row.audience)).kind
-      : 'operator'
-    const refusal = replyRefusal({
-      actor: { kind: actor.kind, reader: input.userId },
-      root: {
-        id: String(rootRow.row.id),
-        kind: String(rootRow.row.kind),
-        authorReader: String(rootRow.row.author_user_id),
-        audienceKind,
-        live: liveRoot(rootRow.row, clock),
-        accepted: rootRow.row.accepted_reply_id != null,
-      },
-      addressed: true,
-      hasReceipt: false,
-    })
-    if (refusal) throw new RecordBoardError(refusal, 400)
-    const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
-    const duplicate = (await tx`
-      SELECT id FROM board_message
-      WHERE kind='reply' AND author_user_id=${input.userId}::uuid
-        AND author_session IS NOT DISTINCT FROM ${session}
-        AND thread_root_id=${String(rootRow.row.id)}::uuid AND body=${input.body}
-        AND audience IS NOT DISTINCT FROM ${audience}
-        AND created_at>=${duplicateSince}::timestamptz
-      ORDER BY created_at DESC LIMIT 1
-    `) as { id: string }[]
-    const decision = await authorWindow(tx, input.userId, session, clock, duplicate.length > 0)
-    if (decision === 'drop-duplicate' && duplicate[0])
-      return viewById(tx, String(duplicate[0].id), clock)
-    if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
-    const computedExpiry = extendedBoardThreadExpiry(
-      iso(rootRow.row.expires_at),
-      clock,
-      rootRow.row.purpose == null ? null : parseBoardPurpose(String(rootRow.row.purpose)),
-    )
-    return insertReplyCopyingRoot(
-      tx,
-      input,
-      session,
-      String(rootRow.row.id),
-      new Date(clock).toISOString(),
-      clock,
-      authorProjectId,
-      audience,
-      computedExpiry,
-    )
-  })
+  return withBoardTenant(input, true, (tx) =>
+    replyHostedBoardMessageTx(tx, input, requested, actor, session, audience, clock),
+  )
 }
 
 export async function withdrawHostedBoardMessage(
