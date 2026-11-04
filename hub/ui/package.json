@@ -53,6 +53,8 @@
     "./error-state": "./src/error-state/error-state.tsx",
     "./error-state/error-state.styles": "./src/error-state/error-state.styles.ts",
     "./field/control": "./src/field/control.ts",
+    "./field/field-group": "./src/field/field-group.tsx",
+    "./field/field-group.styles": "./src/field/field-group.styles.ts",
     "./field/input": "./src/field/input.tsx",
     "./field/input.styles": "./src/field/input.styles.ts",
     "./field/textarea": "./src/field/textarea.tsx",

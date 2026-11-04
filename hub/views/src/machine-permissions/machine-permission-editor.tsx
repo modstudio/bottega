@@ -2,6 +2,7 @@ import { Badge } from '@bottega/hub-ui/badge'
 import { Button, IconButton } from '@bottega/hub-ui/button'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Select } from '@bottega/hub-ui/listbox/select'
+import { permissionListLabel } from '@bottega/hub-util/format'
 import { X } from 'lucide-react'
 import { useState } from 'react'
 import { MachineOptIn } from './machine-override.tsx'
@@ -47,7 +48,7 @@ function OverlayRules({
       <div className={machinePermissionEditorStyles().ruleTitle()}>{title}</div>
       {rows.map(({ list, rule }) => (
         <div key={`${list} ${rule}`} className={machinePermissionEditorStyles().ruleRow()}>
-          <Badge>{list}</Badge>
+          <Badge>{permissionListLabel(list)}</Badge>
           <code className={machinePermissionEditorStyles().rule()}>{rule}</code>
           <IconButton
             size="sm"
@@ -89,7 +90,7 @@ function OverlayEditor({ machine, change }: { machine: Overlay; change: Permissi
       {(close) => (
         <div className={machinePermissionEditorStyles().editor()}>
           <div className={machinePermissionEditorStyles().heading()}>
-            <Badge tone="info">This machine</Badge>
+            <Badge tone="info">Overridden</Badge>
             <span className={machinePermissionEditorStyles().explanation()}>
               Applies on this machine only, at the next session start.
             </span>
@@ -111,13 +112,15 @@ function OverlayEditor({ machine, change }: { machine: Overlay; change: Permissi
           <div className={machinePermissionEditorStyles().fields()}>
             <Select
               label="Machine permission list"
+              hint="Chooses whether this machine allows the rule, asks first, or blocks it."
               value={list}
-              options={names.map((name) => ({ value: name, label: name }))}
+              options={names.map((name) => ({ value: name, label: permissionListLabel(name) }))}
               onChange={(value) => setList(value as List)}
             />
             <Input
               aria-label="Machine permission rule"
               placeholder="Permission rule"
+              hint="Names the command or action this machine treats differently."
               value={rule}
               onChange={(event) => setRule(event.target.value)}
             />

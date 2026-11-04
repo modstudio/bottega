@@ -1,11 +1,49 @@
 import { Check, ChevronDown } from 'lucide-react'
-import { type KeyboardEvent, type ToggleEvent, useRef, useState } from 'react'
+import { type KeyboardEvent, type ReactNode, type ToggleEvent, useRef, useState } from 'react'
 import { useAnchor } from '../dom/use-anchor'
 import { useTypeahead } from '../dom/use-typeahead'
+import { ControlWithHint, useFieldHint } from '../field/control.ts'
 import { moveIndex, typeaheadIndex } from '../state/list-navigation'
 import { selectStyles } from './select.styles.ts'
 
 export type SelectOption = { value: string; label: string; note?: string; disabled?: boolean }
+
+function OptionRow({
+  option,
+  index,
+  selected,
+  active,
+  id,
+  onMove,
+  onChoose,
+}: {
+  option: SelectOption
+  index: number
+  selected: boolean
+  active: boolean
+  id: string
+  onMove(): void
+  onChoose(): void
+}) {
+  return (
+    // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the combobox; aria-activedescendant points here
+    <div
+      id={`${id}-${index}`}
+      data-index={index}
+      role="option"
+      aria-selected={selected}
+      aria-disabled={option.disabled || undefined}
+      onPointerMove={() => !option.disabled && onMove()}
+      onPointerDown={(event) => event.preventDefault()}
+      onPointerUp={onChoose}
+      className={selectStyles({ active, disabled: option.disabled }).option()}
+    >
+      <Check aria-hidden className={selectStyles({ selected }).check()} />
+      <span className={selectStyles().optionLabel()}>{option.label}</span>
+      {option.note ? <span className={selectStyles().optionNote()}>{option.note}</span> : null}
+    </div>
+  )
+}
 
 /**
  * A single choice from a list, drawn entirely by us: a native select's popup is
@@ -18,6 +56,7 @@ export function Select({
   onChange,
   label,
   onOpenChange,
+  hint,
   size = 'md',
   className,
 }: {
@@ -27,11 +66,14 @@ export function Select({
   /** Names the control for assistive technology. */
   label: string
   onOpenChange?: (open: boolean) => void
+  /** Help shown below the control and announced with it. */
+  hint?: ReactNode
   size?: 'sm' | 'md'
   /** Layout only: margin, width and placement. */
   className?: string
 }) {
   const { id, anchorStyle, positionedStyle } = useAnchor()
+  const { hintId, describedBy } = useFieldHint(hint)
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
   const list = useRef<HTMLDivElement>(null)
@@ -85,7 +127,7 @@ export function Select({
     if (query) activate(typeaheadIndex(query, labels, active, disabled))
   }
 
-  return (
+  const content = (
     <>
       <button
         ref={trigger}
@@ -95,6 +137,7 @@ export function Select({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={id}
+        aria-describedby={describedBy}
         aria-activedescendant={open && active >= 0 ? `${id}-${active}` : undefined}
         popoverTarget={id}
         style={anchorStyle}
@@ -120,30 +163,19 @@ export function Select({
         className={selectStyles().panel()}
       >
         {options.map((option, index) => (
-          // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the combobox; aria-activedescendant points here
-          <div
+          <OptionRow
             key={option.value}
-            id={`${id}-${index}`}
-            data-index={index}
-            role="option"
-            aria-selected={index === selected}
-            aria-disabled={option.disabled || undefined}
-            onPointerMove={() => !option.disabled && setActive(index)}
-            onPointerDown={(event) => event.preventDefault()}
-            onPointerUp={() => choose(index)}
-            className={selectStyles({
-              active: index === active,
-              disabled: option.disabled,
-            }).option()}
-          >
-            <Check aria-hidden className={selectStyles({ selected: index === selected }).check()} />
-            <span className={selectStyles().optionLabel()}>{option.label}</span>
-            {option.note ? (
-              <span className={selectStyles().optionNote()}>{option.note}</span>
-            ) : null}
-          </div>
+            {...{ option, index, id }}
+            selected={index === selected}
+            active={index === active}
+            onMove={() => setActive(index)}
+            onChoose={() => choose(index)}
+          />
         ))}
       </div>
     </>
+  )
+  return (
+    <ControlWithHint className={selectStyles().root()} control={content} {...{ hint, hintId }} />
   )
 }

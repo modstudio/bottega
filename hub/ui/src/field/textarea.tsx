@@ -1,4 +1,5 @@
-import type { Ref, TextareaHTMLAttributes } from 'react'
+import type { ReactNode, Ref, TextareaHTMLAttributes } from 'react'
+import { ControlWithHint, useFieldHint } from './control.ts'
 import { textareaStyles } from './textarea.styles.ts'
 
 type TextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'className'> & {
@@ -7,6 +8,8 @@ type TextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'classNam
   code?: boolean
   /** No frame of its own, for a textarea that fills a framed pane. */
   bare?: boolean
+  /** Help shown below the control and announced with it. */
+  hint?: ReactNode
   /** Layout only: margin, width and placement. */
   className?: string
 }
@@ -14,11 +17,26 @@ type TextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'classNam
 export function Textarea({
   code = false,
   bare = false,
+  hint,
   className,
   rows = 4,
   ...props
 }: TextareaProps) {
+  const { hintId, describedBy } = useFieldHint(hint, props['aria-describedby'])
+  const control = (
+    <textarea
+      {...props}
+      rows={rows}
+      aria-describedby={describedBy || undefined}
+      className={textareaStyles({ code, bare }).control({ class: className })}
+    />
+  )
   return (
-    <textarea {...props} rows={rows} className={textareaStyles({ code, bare, class: className })} />
+    <ControlWithHint
+      className={textareaStyles().root()}
+      control={control}
+      hint={hint}
+      hintId={hintId}
+    />
   )
 }
