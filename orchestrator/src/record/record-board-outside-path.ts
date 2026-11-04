@@ -3,6 +3,11 @@
 
 import type { SQL } from 'bun'
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
+import {
+  type OutsideIntake,
+  outsideAdmission,
+  resolveOutsideIntake,
+} from '../../../shared/outside-write-adapter.ts'
 import type { Audience } from '../board/board-policy.ts'
 import type { BoardTag } from '../board/board-tags.ts'
 import { requireOwnedHostedRunAndMachine } from './record-board-author.ts'
@@ -13,13 +18,13 @@ import {
   type HostedBoardReplyInput,
   RecordBoardError,
 } from './record-board-contract.ts'
-import { audienceIsProjectScoped, hostedProjectNameForAudience } from './record-board-scope.ts'
-import type { BoardTenant } from './record-board-tx.ts'
 import {
-  hasProjectWriteMembership,
-  insertOutsideBoardMessage,
-  isOutsideIntakeProject,
-} from './record-outside-write.ts'
+  audienceIsProjectScoped,
+  hostedProjectNameForAudience,
+  parseHostedAudience,
+} from './record-board-scope.ts'
+import type { BoardTenant } from './record-board-tx.ts'
+import { insertOutsideBoardMessage, isOutsideIntakeProject } from './record-outside-write.ts'
 
 type Ports = {
   existing(
@@ -44,22 +49,70 @@ export type OutsidePostInput = {
   clock: number
 }
 
+function boardIntake(intake: OutsideIntake): Extract<OutsideIntake, { kind: 'intake' }> | null {
+  if (intake.kind === 'multiple') throw new RecordBoardError(intake.refusal, 409)
+  return intake.kind === 'intake' ? intake : null
+}
+
+async function outsideAdmissionRefusal(tx: SQL, userId: string, spaceId: string): Promise<boolean> {
+  const admission = await outsideAdmission(tx, userId, spaceId)
+  if (admission.kind === 'outside') return false
+  if (admission.kind === 'refused')
+    throw new RecordBoardError(`${admission.error}; ${admission.remedy}`, 403)
+  return admission.kind === 'member'
+}
+
+export async function resolveOutsideReplyProjectId(
+  tx: SQL,
+  audience: Audience | null,
+  project: string | undefined,
+  projectId: string | null | undefined,
+): Promise<string | null> {
+  if (projectId) return projectId
+  const audienceProject = audience ? hostedProjectNameForAudience(audience, project) : null
+  if (
+    project &&
+    audienceProject &&
+    audience &&
+    (audience.kind === 'project' || audience.kind === 'workers') &&
+    project !== audienceProject
+  )
+    throw new RecordBoardError(
+      `board project ${project} does not match audience project:${audienceProject}`,
+      400,
+    )
+  const intake = audienceProject
+    ? boardIntake(await resolveOutsideIntake(tx, audienceProject))
+    : null
+  return intake?.projectId ?? null
+}
+
 export async function postOutsidePath(
   tx: SQL,
   values: OutsidePostInput,
   ports: Ports,
 ): Promise<HostedBoardMessage | null> {
   const { input, audience } = values
-  if (!input.projectId || !audienceIsProjectScoped(audience)) return null
-  if (await hasProjectWriteMembership(tx, input.userId, input.projectId)) return null
-  if (!(await isOutsideIntakeProject(tx, input.projectId))) return null
   const audienceProject = hostedProjectNameForAudience(audience, input.project)
+  if (!audienceIsProjectScoped(audience) || !audienceProject) return null
+  const projectId = input.projectId
+  if (projectId && !(await isOutsideIntakeProject(tx, projectId))) return null
+  const intake = boardIntake(
+    await resolveOutsideIntake(
+      tx,
+      input.projectId ? (input.project ?? audienceProject) : audienceProject,
+    ),
+  )
+  const resolvedProjectId = projectId ?? intake?.projectId
+  if (!resolvedProjectId || !intake || intake.projectId !== resolvedProjectId) return null
+  if (!projectId && !(await isOutsideIntakeProject(tx, resolvedProjectId))) return null
+  if (await outsideAdmissionRefusal(tx, input.userId, intake.spaceId)) return null
   if (input.project && audienceProject && input.project !== audienceProject)
     throw new RecordBoardError(
       `board project ${input.project} does not match audience ${input.audience}`,
       400,
     )
-  const authorProjectId = input.project ? input.projectId : null
+  const authorProjectId = input.project ? resolvedProjectId : null
   const requested: HostedBoardCreateContent = {
     kind: input.kind,
     purpose: values.purpose,
@@ -70,7 +123,7 @@ export async function postOutsidePath(
     ackDeadline: values.ackDeadline,
     expiresAt: values.expiresAt,
     threadRootId: null,
-    scopeProjectIds: [input.projectId],
+    scopeProjectIds: [resolvedProjectId],
     recipientUserIds: [],
     sharedSpaceReach: false,
     claimId: null,
@@ -94,7 +147,7 @@ export async function postOutsidePath(
     ackRequired: values.ackRequired,
     ackDeadline: values.ackDeadline,
     expiresAt: values.expiresAt,
-    projectId: input.projectId,
+    projectId: resolvedProjectId,
     createdAt: new Date(values.clock).toISOString(),
   })
   await ports.insertTags(tx, input.id, values.tags)
@@ -113,8 +166,14 @@ export async function replyOutsidePath(
   view: Ports['view'],
 ): Promise<HostedBoardMessage | null> {
   if (scope.length !== 1) return null
-  if (await hasProjectWriteMembership(tx, input.userId, scope[0]!)) return null
   if (!(await isOutsideIntakeProject(tx, scope[0]!))) return null
+  const rootAudience = root.audience ? parseHostedAudience(String(root.audience)) : null
+  const projectName = rootAudience
+    ? hostedProjectNameForAudience(rootAudience, input.project)
+    : null
+  const intake = projectName ? boardIntake(await resolveOutsideIntake(tx, projectName)) : null
+  if (!intake || intake.projectId !== scope[0]) return null
+  if (await outsideAdmissionRefusal(tx, input.userId, intake.spaceId)) return null
   await requireOwnedHostedRunAndMachine(tx, input.userId, {
     runId: input.authorRunId,
     machineId: input.authorMachineId,

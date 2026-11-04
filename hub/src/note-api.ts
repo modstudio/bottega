@@ -14,6 +14,11 @@ import {
   promoteHostedNote,
   reapHostedNotes,
 } from './hosted-notes.ts'
+import {
+  HostedOutsideNoteError,
+  insertOutsideNote,
+  listOutsideNotes,
+} from './hosted-outside-notes.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
@@ -36,6 +41,40 @@ const json = (value: unknown, status = 200) => Response.json(value, { status })
 const call = <T>(stub: unknown, real: T): T => {
   if (process.env.NODE_ENV === 'test' && !stub) throw new Error(TEST_REFUSAL)
   return (stub ?? real) as T
+}
+
+async function outsideRoute(context: RouteContext): Promise<Response | null> {
+  const { request, url, config, dependencies, who, body } = context
+  if (url.pathname !== '/v1/notes/outside') return null
+  if (request.method === 'GET') {
+    const project = url.searchParams.get('project')?.trim()
+    if (!project) return json({ error: 'outside note list requires project' }, 400)
+    return json(
+      await call(dependencies.outsideList, listOutsideNotes)(
+        config.recordDatabaseUrl,
+        who,
+        project,
+      ),
+    )
+  }
+  if (request.method === 'POST') {
+    const project = typeof body?.project === 'string' ? body.project.trim() : ''
+    const text = typeof body?.text === 'string' ? body.text.trim() : ''
+    const anchor = typeof body?.anchor === 'string' ? body.anchor : ''
+    const area = typeof body?.area === 'string' ? body.area.trim() || null : undefined
+    if (!project || !text || !anchor)
+      return json({ error: 'outside note requires project, text, and anchor' }, 400)
+    return json(
+      await call(dependencies.outsideCreate, insertOutsideNote)(config.recordDatabaseUrl, who, {
+        project,
+        text,
+        area,
+        anchor,
+      }),
+      201,
+    )
+  }
+  return new Response('not found', { status: 404 })
 }
 
 async function readRoute(context: RouteContext): Promise<Response | null> {
@@ -153,16 +192,27 @@ export async function noteApi(
       403,
     )
   assertAuthenticatedIdentity(who)
+  const body =
+    request.method === 'GET'
+      ? null
+      : ((await request.json().catch(() => null)) as Record<string, unknown> | null)
+  try {
+    const outside = await outsideRoute({ request, url, config, dependencies, who, body })
+    if (outside) return outside
+  } catch (error) {
+    if (error instanceof HostedOutsideNoteError)
+      return json(
+        { error: error.message, ...(error.remedy ? { remedy: error.remedy } : {}) },
+        error.status,
+      )
+    return json({ error: (error as Error).message }, 409)
+  }
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),
     who.spaceId,
     who.memberships,
   )
   if (!access.allowed) return json({ error: access.error, remedy: access.remedy }, 403)
-  const body =
-    request.method === 'GET'
-      ? null
-      : ((await request.json().catch(() => null)) as Record<string, unknown> | null)
   try {
     const context = { request, url, config, dependencies, who, body }
     return (

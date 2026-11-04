@@ -9,7 +9,6 @@ import {
   parseBoardPurpose,
 } from '../../../shared/board-purpose.ts'
 import { replyAudienceValue } from '../../../shared/board-reply-audience-options.ts'
-import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
 import {
   type Audience,
   acknowledgementRefusal,
@@ -54,7 +53,13 @@ import {
   type OutsidePostInput,
   postOutsidePath,
   replyOutsidePath,
+  resolveOutsideReplyProjectId,
 } from './record-board-outside-path.ts'
+import {
+  resolvePostingProjectId,
+  resolvePostProjects,
+  resolveVisibleProjectId,
+} from './record-board-project-resolution.ts'
 import {
   hostedBoardActor,
   hostedBoardPostRefusal,
@@ -65,7 +70,6 @@ import {
   sameHostedBoardCreateContent,
 } from './record-board-scope.ts'
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
-import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 
 type HostedBoardForcedScope = {
   scopeProjectIds: string[]
@@ -201,45 +205,6 @@ async function viewById(tx: SQL, id: string, clock: number): Promise<HostedBoard
   const loaded = await loadHostedBoardMessage(tx, id)
   if (!loaded) throw new RecordBoardError(`board message ${id} not found`, 404)
   return hostedBoardMessageView(loaded.row, loaded.tags, clock)
-}
-
-export async function resolveVisibleProjectId(
-  tx: SQL,
-  name: string,
-  requestedId?: string | null,
-): Promise<string> {
-  if (!requestedId)
-    throw new RecordBoardError(
-      `project-scoped board write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
-      400,
-    )
-  const resolved = await resolveRecordProjectIdentity(tx, {
-    projectId: requestedId,
-    projectName: name,
-  })
-  if (resolved.status !== 'found' || resolved.project.retired)
-    throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
-  return resolved.project.id
-}
-
-async function resolvePostingProjectId(
-  tx: SQL,
-  name: string,
-  requestedId?: string | null,
-): Promise<string | null> {
-  if (!requestedId)
-    throw new RecordBoardError(
-      `project-scoped board write is missing projectId; ${MISSING_PROJECT_ID_REMEDY}`,
-      400,
-    )
-  const resolved = await resolveRecordProjectIdentity(tx, {
-    projectId: requestedId,
-    projectName: name,
-  })
-  if (resolved.status !== 'found') {
-    throw new RecordBoardError(`unknown or invisible board project ${name}`, 400)
-  }
-  return resolved.project.retired ? null : resolved.project.id
 }
 
 function sessionOrNull(value: string | null | undefined): string | null {
@@ -566,21 +531,6 @@ async function prepareHostedPost(
   }
 }
 
-async function resolvePostProjects(
-  tx: SQL,
-  projectName: string | null,
-  postingProject: string | undefined,
-  postingProjectId: string | null | undefined,
-): Promise<{ projectId: string | null; authorProjectId: string | null }> {
-  const projectId = projectName
-    ? await resolveVisibleProjectId(tx, projectName, postingProjectId)
-    : null
-  if (!postingProject) return { projectId, authorProjectId: null }
-  if (projectName === postingProject) return { projectId, authorProjectId: projectId }
-  const authorProjectId = await resolvePostingProjectId(tx, postingProject, postingProjectId)
-  return { projectId, authorProjectId }
-}
-
 export async function postHostedBoardNoticeInTransaction(
   tx: SQL,
   input: HostedBoardPostInput & { userId: string },
@@ -762,8 +712,14 @@ async function replyHostedBoardMessageTx(
   requested.threadRootId = String(root.id)
   requested.recipientUserIds = hostedUuidList(root.recipient_user_ids)
   requested.sharedSpaceReach = Boolean(root.shared_space_reach)
+  const projectId = await resolveOutsideReplyProjectId(
+    tx,
+    root.audience ? parseHostedAudience(String(root.audience)) : null,
+    input.project,
+    input.projectId,
+  )
   const authorProjectId = input.project
-    ? await resolvePostingProjectId(tx, input.project, input.projectId)
+    ? await resolvePostingProjectId(tx, input.project, projectId)
     : null
   requested.authorProjectId = authorProjectId
   const sameId = await existingOrConflict(tx, input.id, requested)
@@ -786,7 +742,7 @@ async function replyHostedBoardMessageTx(
   return (
     (await replyOutsidePath(
       tx,
-      input,
+      { ...input, projectId },
       root,
       requested.scopeProjectIds,
       authorProjectId,

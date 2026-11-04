@@ -17,6 +17,7 @@ import {
   getNote,
   listActionableNotes,
   listNotes,
+  listProjectNotes,
   mergeNote,
   NOTE_ANCHOR_MAX_FILE_BYTES,
   type NoteAnchor,
@@ -25,6 +26,7 @@ import {
   resolveNoteReference,
   staleNotes,
 } from './note.ts'
+import { listOutsideProjectNotes } from './note-outside.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { createLocalTaskInTransaction, showTask } from './task.ts'
 
@@ -129,6 +131,67 @@ const acknowledge = (id: number, session: string) =>
   acknowledgeNote(recordId(id), session, { hosted })
 
 describe('suggestion notes', () => {
+  test('an unregistered project files and lists outside without touching the local cache', async () => {
+    const before = listNotes().length
+    const paths: string[] = []
+    const outsideHosted = {
+      baseUrl: 'https://hub.example.test',
+      token: 'test',
+      fetch: async (input: string, init?: RequestInit) => {
+        const url = new URL(input)
+        paths.push(`${init?.method ?? 'GET'} ${url.pathname}`)
+        if (url.pathname === '/v1/notes/outside' && init?.method === 'POST')
+          return Response.json({ id: crypto.randomUUID(), number: 7, project: 'outside-project' })
+        if (url.pathname === '/v1/notes/outside')
+          return Response.json([
+            {
+              id: crypto.randomUUID(),
+              number: 7,
+              project: 'outside-project',
+              text: 'outside text',
+              area: 'cli',
+              anchors: [],
+              sightings: 1,
+              created_at: '2026-11-04T12:00:00.000Z',
+            },
+          ])
+        return Response.json({ error: 'unexpected route' }, { status: 500 })
+      },
+    }
+    const created = await createNote(
+      {
+        project: 'outside-project',
+        text: 'outside text',
+        cwd: '/fixtures/repos/workshop',
+      },
+      { hosted: outsideHosted },
+    )
+    expect(created.note.label).toBe('outside-project#7')
+    expect('outside' in created && created.outside).toBeTrue()
+    expect(listNotes()).toHaveLength(before)
+    expect((await listOutsideProjectNotes('outside-project', outsideHosted))[0]?.label).toBe(
+      'outside-project#7',
+    )
+    expect(paths).toEqual(['POST /v1/notes/outside', 'GET /v1/notes/outside'])
+  })
+
+  test('an outside project list supports only text filtering', async () => {
+    await expect(listProjectNotes({ project: 'outside-project', stale: true })).rejects.toThrow(
+      "outside project 'outside-project' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable",
+    )
+  })
+
+  test('an outside note cannot use same-as', async () => {
+    await expect(
+      createNote({
+        project: 'outside-project',
+        text: 'outside text',
+        sameAs: crypto.randomUUID(),
+        cwd: '/fixtures/repos/workshop',
+      }),
+    ).rejects.toThrow('an outside note cannot be merged; file it as new')
+  })
+
   test('a named target project routes independently from the filing anchor', async () => {
     const requestedSpaces: Array<string | null> = []
     const writes: Record<string, unknown>[] = []

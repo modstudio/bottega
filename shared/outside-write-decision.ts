@@ -1,12 +1,13 @@
-// concern: record-outside-write-decision
+// concern: outside-write-decision
 /** Pure abuse-limit decision for signed-in writers outside a space. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_SLUG } from './brand.ts'
 
 export const OUTSIDE_MIN_ACCOUNT_AGE_MS = 24 * 60 * 60 * 1000
 export const OUTSIDE_WRITES_PER_HOUR = 5
 export const OUTSIDE_WRITES_PER_DAY = 20
 export const OUTSIDE_BODY_MAX_CHARS = 2000
+export const OUTSIDE_AREA_MAX_CHARS = 200
 export const OUTSIDE_LINK_MAX = 2
 
 export type OutsideWriteDecision =
@@ -24,6 +25,8 @@ export function outsideWriteDecision(input: {
   createdAt: Date
   emailVerified: boolean
   body: string
+  area: string | null
+  anchorLength: number
   writesLastHour: number
   writesLastDay: number
   oldestWriteLastHour: Date | null
@@ -47,6 +50,18 @@ export function outsideWriteDecision(input: {
       allowed: false,
       status: 413,
       refusal: `outside post body is too long; shorten the post to ${OUTSIDE_BODY_MAX_CHARS} characters`,
+    }
+  if ((input.area?.length ?? 0) > OUTSIDE_AREA_MAX_CHARS)
+    return {
+      allowed: false,
+      status: 413,
+      refusal: `outside note area is too long; shorten the area to ${OUTSIDE_AREA_MAX_CHARS} characters`,
+    }
+  if (input.anchorLength > OUTSIDE_BODY_MAX_CHARS)
+    return {
+      allowed: false,
+      status: 413,
+      refusal: `outside note anchor is too long; shorten the serialized anchor to ${OUTSIDE_BODY_MAX_CHARS} characters`,
     }
   const links = input.body.match(linkPattern)?.length ?? 0
   if (links > OUTSIDE_LINK_MAX)

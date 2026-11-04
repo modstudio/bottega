@@ -4,6 +4,7 @@ import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { noteMirrorCollision } from './hosted-notes.ts'
+import { HostedOutsideNoteError } from './hosted-outside-notes.ts'
 import { confirmCount } from './hosted-tasks.ts'
 import { createNote, getNote, promoteNote } from './note.ts'
 import { noteApi } from './note-api.ts'
@@ -26,6 +27,32 @@ const unreachable = {
 }
 
 describe('hosted-only note safety', () => {
+  test('the outside route preserves a service refusal status', async () => {
+    const status = 429
+    const message = 'outside write limit reached'
+    const response = await noteApi(
+      new Request('https://hub.example.test/v1/notes/outside', {
+        method: 'POST',
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: JSON.stringify({ project: 'outside', text: 'note', anchor: '{}' }),
+      }),
+      hostedRouteTestConfig,
+      {
+        fetch: (async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [],
+          })) as unknown as typeof fetch,
+        outsideCreate: async () => {
+          throw new HostedOutsideNoteError(message, status)
+        },
+      },
+    )
+    expect(response?.status).toBe(status)
+    expect(await response?.json()).toEqual({ error: message })
+  })
+
   test('the promote route passes the caller title to the promotion', async () => {
     const id = '01990000-0000-7000-8000-000000000001'
     let promotedInput: unknown

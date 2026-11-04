@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
+import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { OUTSIDE_WRITES_PER_HOUR } from '../src/record/record-outside-write-decision.ts'
 import { headers, json, notice } from './postgres-board-api-values.ts'
 
 const SEEDED_SUBJECTS = [
@@ -12,6 +12,8 @@ const SEEDED_SUBJECTS = [
 export function registerBoardOutsideApiProof(input: {
   origin: () => string
   token: () => string
+  readMemberToken: () => string
+  memberToken: () => string
   userId: () => string
   spaceId: () => string
   intakeProject: string
@@ -27,6 +29,8 @@ export function registerBoardOutsideApiProof(input: {
     const replyId = newRecordId()
     const refusedId = newRecordId()
     const mismatchId = newRecordId()
+    const replyMismatchId = newRecordId()
+    const nameOnlyId = newRecordId()
     const userId = input.userId()
     const previousUser = input
       .succeeds(
@@ -44,6 +48,24 @@ export function registerBoardOutsideApiProof(input: {
        WHERE id='${userId}';`,
     )
     try {
+      const nameOnly = await input.post(input.token(), {
+        ...notice(
+          nameOnlyId,
+          `project:${input.intakeProject}`,
+          input.caseSession('outside-intake-name-only'),
+        ),
+        project: input.intakeProject,
+        projectId: undefined,
+      })
+      expect(nameOnly.status).toBe(200)
+      expect((await json(nameOnly)).id).toBe(nameOnlyId)
+      input.succeeds(
+        'postgres',
+        'postgres',
+        `DELETE FROM space_outside_write WHERE subject_id='${nameOnlyId}';
+         DELETE FROM board_message WHERE id='${nameOnlyId}';`,
+      )
+
       const mismatch = await input.post(input.token(), {
         ...notice(
           mismatchId,
@@ -90,6 +112,21 @@ export function registerBoardOutsideApiProof(input: {
       expect(replied.status).toBe(200)
       expect((await json(replied)).id).toBe(replyId)
 
+      const replyMismatch = await fetch(`${input.origin()}/v1/board/messages/${rootId}/replies`, {
+        method: 'POST',
+        headers: headers(input.token()),
+        body: JSON.stringify({
+          id: replyMismatchId,
+          body: 'Outside author reply with the wrong project.',
+          authorSession: input.caseSession('outside-intake-reply-mismatch'),
+          project: input.otherProject,
+        }),
+      })
+      expect(replyMismatch.status).toBe(400)
+      expect(JSON.stringify(await replyMismatch.json())).toContain(
+        `board project ${input.otherProject} does not match audience project:${input.intakeProject}`,
+      )
+
       input.succeeds(
         'postgres',
         'postgres',
@@ -113,11 +150,54 @@ export function registerBoardOutsideApiProof(input: {
         'postgres',
         'postgres',
         `DELETE FROM space_outside_write WHERE user_id='${userId}' AND subject_id IN
-          ('${rootId}','${replyId}','${SEEDED_SUBJECTS[0]}','${SEEDED_SUBJECTS[1]}','${SEEDED_SUBJECTS[2]}');
-         DELETE FROM board_message WHERE id IN ('${replyId}','${rootId}');
+          ('${nameOnlyId}','${rootId}','${replyId}','${SEEDED_SUBJECTS[0]}','${SEEDED_SUBJECTS[1]}','${SEEDED_SUBJECTS[2]}');
+         DELETE FROM board_message WHERE id IN ('${nameOnlyId}','${replyId}','${rootId}');
          UPDATE "user" SET created_at='${previousCreatedAt}'::timestamptz,
            email_verified=${previousEmailVerified} WHERE id='${userId}';`,
       )
     }
+  })
+
+  test('a read member cannot use the outside board path', async () => {
+    const response = await input.post(input.readMemberToken(), {
+      ...notice(
+        newRecordId(),
+        `project:${input.intakeProject}`,
+        input.caseSession('outside-intake-read-member'),
+      ),
+      project: input.intakeProject,
+      projectId: input.intakeProjectId,
+    })
+    expect(response.status).toBe(403)
+    const body = JSON.stringify(await response.json())
+    expect(body).toContain('membership is read-only')
+    expect(body).toContain('space owner or admin')
+  })
+
+  test('a member replies from their project to an architects audience for another project', async () => {
+    const rootId = newRecordId()
+    const replyId = newRecordId()
+    const posted = await input.post(input.memberToken(), {
+      ...notice(
+        rootId,
+        `architects:${input.intakeProject}`,
+        input.caseSession('architects-other-project-root'),
+      ),
+      project: undefined,
+      projectId: input.intakeProjectId,
+    })
+    expect(posted.status).toBe(200)
+    const replied = await fetch(`${input.origin()}/v1/board/messages/${rootId}/replies`, {
+      method: 'POST',
+      headers: headers(input.memberToken()),
+      body: JSON.stringify({
+        id: replyId,
+        body: 'Member reply from the posting project.',
+        authorSession: input.caseSession('architects-other-project-reply'),
+        project: input.otherProject,
+      }),
+    })
+    expect(replied.status).toBe(200)
+    expect((await json(replied)).id).toBe(replyId)
   })
 }

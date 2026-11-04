@@ -3,7 +3,7 @@ import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } 
 import { isAbsolute, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
-import { noteAnchorWireSchema } from '../../shared/note-anchor.ts'
+import { parseNoteAnchorWire } from '../../shared/note-anchor.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
@@ -26,8 +26,10 @@ import {
   recordNoteDuplicateOutcomes,
 } from './note-duplicate-question.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
+import { createOutsideProjectNote, listOutsideProjectNotes } from './note-outside.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { notePromotionBody } from './note-promotion-body.ts'
+import type { NoteRow } from './note-row.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
 import {
   applyHostedStaleness,
@@ -55,7 +57,7 @@ export type NoteAnchor = NoteAnchorWire
 export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
 
 export function parseNoteAnchor(value: unknown): NoteAnchor {
-  return noteAnchorWireSchema.parse(value)
+  return parseNoteAnchorWire(value)
 }
 
 export function confineExplicitNoteAnchor(
@@ -95,32 +97,20 @@ export function parseExplicitNoteAnchor(value: unknown, cwd = process.cwd()): No
   return confineExplicitNoteAnchor(anchor, { cwdProject, projectPath: project.path })
 }
 
-export type NoteRow = {
-  record_id: string
-  number: number
-  label: string
-  project: string
-  text: string
-  area: string | null
-  anchors: NoteAnchor[]
-  sightings: number
-  created_at: string
-  last_seen_at: string
-  stale_at: string | null
-  stale_reason: string | null
-  promoted_task: string | null
-}
-
-export type NoteCandidate = {
-  record_id: string
-  number: number
-  label: string
-  project: string
-  text: string
+type NoteCandidate = Pick<NoteRow, 'record_id' | 'number' | 'label' | 'project' | 'text'> & {
   score: number
   probability?: number
 }
 export type NoteAcknowledgement = { note: NoteRow; alreadyAcknowledged: boolean }
+export type CreateNoteInput = {
+  text: string
+  cwd?: string
+  area?: string
+  sameAs?: string
+  forceNew?: boolean
+  anchor?: NoteAnchor
+  project?: string
+}
 
 const git = (cwd: string, ...args: string[]): string | null => {
   const result = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'ignore' })
@@ -158,6 +148,9 @@ function registeredProject(name: string): RegisteredProject {
     throw new Error(`project '${name}' is not registered; run \`${PLATFORM_SLUG} project list\``)
   return project
 }
+
+const isRegisteredNoteProject = (name: string) =>
+  projects().some((candidate) => candidate.name === name)
 
 function writeMode(
   projectName: string,
@@ -345,6 +338,32 @@ export function listActionableNotes(
   filters: { project?: string; session?: string | string[]; text?: string } = {},
 ): NoteRow[] {
   return listNotes({ ...filters, actionable: true })
+}
+
+export async function listProjectNotes(
+  filters: Parameters<typeof listNotes>[0] & { hosted?: NoteClientOptions },
+): Promise<NoteRow[]> {
+  if (filters.project && !isRegisteredNoteProject(filters.project)) {
+    if (filters.stale || filters.kept || filters.actionable)
+      throw new Error(
+        `outside project '${filters.project}' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable`,
+      )
+    const notes = await listOutsideProjectNotes(filters.project, filters.hosted)
+    const search = filters.text?.toLowerCase()
+    return search ? notes.filter((note) => note.text.toLowerCase().includes(search)) : notes
+  }
+  if (filters.actionable && filters.kept)
+    throw new Error('--actionable and --kept are mutually exclusive')
+  if (filters.kept && !filters.session)
+    throw new Error(
+      `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,
+    )
+  const { hosted: _, ...localFilters } = filters
+  return listNotes({
+    ...localFilters,
+    stale: Boolean(filters.stale),
+    kept: Boolean(filters.kept),
+  })
 }
 
 export function getNote(recordId: string): NoteRow {
@@ -539,11 +558,17 @@ function completedNoteCreation(
   candidates: NoteCandidate[],
   input: { text: string; sameAs?: string; forceNew?: boolean },
   project: string,
-): { note: NoteRow; candidates: NoteCandidate[] } {
+): CreateNoteResult {
   if (input.sameAs) recordNoteDuplicateOutcomes(input.text, project, 'same-as', input.sameAs)
   else if (input.forceNew) recordNoteDuplicateOutcomes(input.text, project, 'new')
   else recordNoteDuplicateOutcomes(input.text, project, 'filed')
-  return { note, candidates }
+  return { note, candidates, outside: false }
+}
+
+export type CreateNoteResult = {
+  note: NoteRow
+  candidates: NoteCandidate[]
+  outside: boolean
 }
 
 async function duplicateCandidatesForNewNote(
@@ -568,23 +593,32 @@ async function duplicateCandidatesForNewNote(
   ]
 }
 
+async function outsideNoteCreation(
+  input: CreateNoteInput,
+  text: string,
+  anchor: NoteAnchor,
+  project: string,
+  hosted: NoteClientOptions | undefined,
+) {
+  if (input.sameAs) throw new Error('an outside note cannot be merged; file it as new')
+  const note = await createOutsideProjectNote(
+    { project, text, area: input.area?.trim() || null, anchor },
+    hosted,
+  )
+  return { note, candidates: [], outside: true as const }
+}
+
 export async function createNote(
-  input: {
-    text: string
-    cwd?: string
-    area?: string
-    sameAs?: string
-    forceNew?: boolean
-    anchor?: NoteAnchor
-    project?: string
-  },
+  input: CreateNoteInput,
   options: { hosted?: NoteClientOptions } = {},
-): Promise<{ note: NoteRow; candidates: NoteCandidate[] }> {
+): Promise<CreateNoteResult> {
   const text = input.text.trim()
   if (!text) throw new Error('note text is required')
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
   const anchor = identifiedAnchor(input.anchor ?? deriveNoteAnchor(text, input.cwd))
   const targetProject = input.project ?? anchor.project
+  if (!isRegisteredNoteProject(targetProject))
+    return outsideNoteCreation(input, text, anchor, targetProject, options.hosted)
   const registered = registeredProject(targetProject)
   const candidates = await duplicateCandidatesForNewNote(text, targetProject, input.sameAs)
   const mode = writeMode(targetProject, options.hosted)
@@ -623,7 +657,8 @@ export async function createNote(
     await drainHostedEditOutbox(queuedAt, options.hosted)
     return completedNoteCreation(getNote(existing.record_id), candidates, input, targetProject)
   }
-  if (candidates.length && !input.forceNew) return { note: null as never, candidates }
+  if (candidates.length && !input.forceNew)
+    return { note: null as never, candidates, outside: false }
   if (mode === 'local-authoritative') {
     const at = nowIso()
     const recordId = writeTransaction((conn) => {

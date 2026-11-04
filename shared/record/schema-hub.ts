@@ -268,6 +268,7 @@ export const hubNote = pgTable.withRLS(
     spaceId: spaceIdentity(),
     projectName: text('project_name').notNull(),
     projectId: uuid('project_id').references(() => project.id, { onDelete: 'set null' }),
+    authorUserId: uuid('author_user_id').references(() => user.id, { onDelete: 'set null' }),
     number: bigint({ mode: 'number' }).notNull(),
     project: text().notNull(),
     text: text().notNull(),

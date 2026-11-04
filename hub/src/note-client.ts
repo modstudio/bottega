@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
+import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
@@ -141,4 +142,32 @@ export const hostedNoteCounts = (options?: Options) =>
   )
 export const hostedGetNote = (recordId: string, options?: Options) =>
   request<HostedNote>(`/v1/notes/${recordId}`, 'GET', undefined, options)
+export type OutsideNote = {
+  id: string
+  number: number
+  project: string
+  text: string
+  area: string | null
+  anchors: NoteAnchorWire[]
+  sightings: number
+  created_at: string
+}
+export const hostedCreateOutsideNote = (
+  body: { project: string; text: string; area?: string | null; anchor: string },
+  options?: Options,
+) =>
+  request<{ id: string; number: number; project: string }>(
+    '/v1/notes/outside',
+    'POST',
+    body,
+    options,
+    'non-idempotent',
+  )
+export const hostedListOutsideNotes = (project: string, options?: Options) =>
+  request<OutsideNote[]>(
+    `/v1/notes/outside?${new URLSearchParams({ project })}`,
+    'GET',
+    undefined,
+    options,
+  )
 export type NoteClientOptions = Options

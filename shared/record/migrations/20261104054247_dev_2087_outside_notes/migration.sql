@@ -1,0 +1,2 @@
+ALTER TABLE "hub_note" ADD COLUMN "author_user_id" uuid;--> statement-breakpoint
+ALTER TABLE "hub_note" ADD CONSTRAINT "hub_note_author_user_id_user_id_fkey" FOREIGN KEY ("author_user_id") REFERENCES "user"("id") ON DELETE SET NULL;
