@@ -2,6 +2,7 @@
 /** Owns the hosted JSON surface. Must not know SQL, local execution, or deployment. */
 
 import { type Context, Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
@@ -20,6 +21,7 @@ import {
   recordDocImportSchema,
   recordDocUpsertSchema,
 } from './record-api-doc-schemas.ts'
+import { recordApiServiceError } from './record-api-errors.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
@@ -38,7 +40,6 @@ import {
 } from './record-api-workflow.ts'
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
-import { RecordBoardError } from './record-board-contract.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type {
   ConfigEntry,
@@ -49,7 +50,7 @@ import type {
   DataKey,
   MachineKey,
 } from './record-config.ts'
-import { CONFIG_SCOPES, ConfigServiceError } from './record-config.ts'
+import { CONFIG_SCOPES } from './record-config.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -57,15 +58,14 @@ import {
   type RecordCursor,
   recordCursorOf,
 } from './record-cursor.ts'
-import {
-  type RecordDoc,
-  RecordDocError,
-  type RecordDocImportInput,
-  type RecordDocListInput,
-  type RecordDocOrderInput,
-  type RecordDocRevision,
+import type {
+  RecordDoc,
+  RecordDocImportInput,
+  RecordDocListInput,
+  RecordDocOrderInput,
+  RecordDocRevision,
 } from './record-docs.ts'
-import { RecordProjectError, type RecordProjectUpsertInput } from './record-projects.ts'
+import type { RecordProjectUpsertInput } from './record-projects.ts'
 import type {
   PublicRecordDoc,
   PublicRecordDocTreeItem,
@@ -80,7 +80,7 @@ import type {
 } from './record-runs.ts'
 import { runsWindowQuery } from './record-runs-window-query.ts'
 import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record-snapshots.ts'
-import { type RecordScore, RecordVerdictError } from './record-verdicts.ts'
+import type { RecordScore } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
@@ -293,6 +293,13 @@ const configList = z.object({ environment: z.string().min(1).optional() })
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
+  app.onError((error, context) => {
+    const serviceError = recordApiServiceError(error)
+    if (serviceError) return context.json({ error: serviceError.message }, serviceError.status)
+    if (error instanceof HTTPException) return error.getResponse()
+    console.error(error)
+    return context.text('Internal Server Error', 500)
+  })
   registerRecordCors(app, deps.allowedOrigins)
   registerRecordAccessRoutes(app, {
     ...deps,
@@ -434,15 +441,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     return review ? context.json(review) : context.json({ error: 'review not found' }, 404)
   })
   const writeError = (context: Context<ApiEnvironment>, error: unknown) => {
-    if (
-      error instanceof RecordDocError ||
-      error instanceof RecordVerdictError ||
-      error instanceof ConfigServiceError ||
-      error instanceof RecordProjectError ||
-      error instanceof RecordBoardError
-    ) {
-      return context.json({ error: error.message }, error.status)
-    }
+    const serviceError = recordApiServiceError(error)
+    if (serviceError) return context.json({ error: serviceError.message }, serviceError.status)
     throw error
   }
   registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })

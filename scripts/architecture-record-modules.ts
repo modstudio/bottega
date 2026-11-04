@@ -668,6 +668,13 @@ export const recordModules: RecordModule[] = [
     'hono/cors',
     '../../../shared/record-client-addresses.ts',
   ]),
+  module('orchestrator/src/record/record-api-errors.ts', [
+    './record-board-contract.ts',
+    './record-config.ts',
+    './record-docs.ts',
+    './record-projects.ts',
+    './record-verdicts.ts',
+  ]),
   module('orchestrator/src/record/record-api-public-docs.ts', [
     'hono',
     'hono/bun',

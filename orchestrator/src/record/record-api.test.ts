@@ -5,6 +5,7 @@ import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
 import { recordApi, SNAPSHOT_MAX_BYTES } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { ConfigServiceError } from './record-config.ts'
 import { RecordDocError } from './record-docs.ts'
 import {
   applyRecordSettingsPermission,
@@ -787,10 +788,16 @@ describe('record config API', () => {
     expect(JSON.stringify(await response.json())).not.toContain(envelope)
   })
 
-  test('current data key requires the documented recipientKeyId query parameter', async () => {
+  test('current data key validates its recipient and maps read failures', async () => {
     const response = await appWith(identity).request('/v1/config/data-keys/current')
     expect(response.status).toBe(422)
-    expect(await response.json()).toEqual({ error: 'invalid recipient key id' })
+    const path = '/v1/config/data-keys/current?recipientKeyId=AAAAAAAAAAAAAAAAAAAAAA'
+    const refused = await appWith(identity, {
+      currentDataKey: async () => Promise.reject(new ConfigServiceError('restore access', 422)),
+    }).request(path)
+    expect([refused.status, await refused.json()]).toEqual([422, { error: 'restore access' }])
+    const failed = await appWith(identity, { currentDataKey: notImplemented }).request(path)
+    expect(failed.status).toBe(500)
   })
 
   test('data key creation accepts a validated client id and passes it through', async () => {
