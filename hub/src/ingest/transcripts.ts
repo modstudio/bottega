@@ -363,7 +363,6 @@ export async function ingestTranscripts(
       // project it never touched.
       .filter((l) => projectOf(l.cwd))
     if (!legs.length) {
-      writeTransaction((conn) => recordTranscriptFingerprint(conn, file, fingerprint))
       continue
     }
 

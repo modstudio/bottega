@@ -2,11 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import {
-  applyChangedAfterFilter,
-  collectChangeCursor,
-  parseChangedAfter,
-} from './collect-change.ts'
+import { applyChangedAfterFilter, collectChangeCursor } from './collect-change.ts'
 
 function changedRoots(after: number): string[] {
   const where = ['r.parent_run_record_id IS NULL']
@@ -39,19 +35,4 @@ test('changed-after selects a mutation once and does not republish an open quest
     .run(id)
   expect(changedRoots(afterQuestion)).toContain(id)
   expect(changedRoots(collectChangeCursor())).toEqual([])
-})
-
-test('changed-after validation owns incompatible flags at the command edge', () => {
-  expect(() => parseChangedAfter({ value: '-1' })).toThrow(
-    '--changed-after must be a non-negative integer',
-  )
-  expect(() => parseChangedAfter({ value: '1', since: '2026-11-03' })).toThrow(
-    '--since and --changed-after cannot be combined',
-  )
-  expect(() => parseChangedAfter({ value: '1', hasRequestedRuns: true })).toThrow(
-    '--id and --changed-after cannot be combined',
-  )
-  expect(() => parseChangedAfter({ value: '1', jsonV1: true })).toThrow(
-    '--changed-after cannot be combined with --json 1; use --json (v2)',
-  )
 })

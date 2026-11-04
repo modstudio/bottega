@@ -13,7 +13,6 @@ const module = (file: string, allowed: string[]): OperatorWaitingModule => ({
 
 export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/collect-change.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/orch-contract.ts',
     '../database/db.ts',
   ]),

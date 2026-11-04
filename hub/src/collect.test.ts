@@ -8,7 +8,7 @@ import {
 import { collectFast, deliverOperatorNotifications, runsSince } from './collect.ts'
 import * as dbMod from './db.ts'
 import { db, writeTransaction } from './db.ts'
-import { ingestRuns } from './ingest/runs.ts'
+import { ingestRuns, RUN_CHANGE_CURSOR_SETTING } from './ingest/runs.ts'
 import type { claimWaitingNotifications } from './orch.ts'
 import { listOpenRulings } from './rulings.ts'
 import { clearOrchCache } from './serve.ts'
@@ -40,8 +40,8 @@ describe('run ingest', () => {
   test('run changes ingest rows after the stored cursor and write nothing once caught up', async () => {
     writeTransaction((conn) =>
       conn
-        .query("INSERT OR REPLACE INTO setting(key,value) VALUES ('collect.runs.change_seq','5')")
-        .run(),
+        .query('INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)')
+        .run(RUN_CHANGE_CURSOR_SETTING, '5'),
     )
     const changedRun = runFixture({ id: 9911 })
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
@@ -68,10 +68,8 @@ describe('run ingest', () => {
       })
       expect(
         db()
-          .query<{ value: string }, []>(
-            "SELECT value FROM setting WHERE key='collect.runs.change_seq'",
-          )
-          .get()?.value,
+          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+          .get(RUN_CHANGE_CURSOR_SETTING)?.value,
       ).toBe('7')
 
       const second = await collectFast({

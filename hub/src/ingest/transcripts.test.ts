@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,7 +6,9 @@ import { DEFAULT_IDLE_CAP_MS, engagedMs } from '../../../shared/interval.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { at, resetFixtureStore } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
+import { refreshProjects } from '../projects.ts'
 import {
+  ingestTranscripts,
   replaceTranscriptWindow,
   resolveTranscriptRoot,
   spendingSpans,
@@ -48,6 +50,77 @@ test('a fast pass skips an unchanged fingerprint while a rebuild re-reads it', (
       unreadable: 0,
     })
   } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a recent unregistered transcript remains unstamped and ingests after registration', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'transcript-unregistered-'))
+  const originalRoot = process.env.BOTTEGA_TRANSCRIPT_ROOT
+  try {
+    const file = join(root, 'session.jsonl')
+    writeFileSync(
+      file,
+      `${JSON.stringify({
+        timestamp: '2026-11-03T12:00:00.000Z',
+        cwd: '/fixtures/repos/new-project',
+        sessionId: 'new-project-session',
+        type: 'assistant',
+        message: { usage: { input_tokens: 10 } },
+      })}\n`,
+    )
+    process.env.BOTTEGA_TRANSCRIPT_ROOT = root
+
+    const first = await ingestTranscripts('2026-11-01T00:00:00.000Z', undefined, null)
+    expect(first).toMatchObject({ examined: 1, files: 1, rows: 0 })
+    expect(
+      db()
+        .query<Record<string, unknown>, [string]>(
+          'SELECT 1 FROM transcript_fingerprint WHERE path=?',
+        )
+        .get(file),
+    ).toBeNull()
+
+    const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({
+      stdout: Buffer.from(
+        JSON.stringify([
+          {
+            id: 99,
+            record_id: '01990000-0000-7000-8000-000000001199',
+            name: 'new-project',
+            path: '/fixtures/repos/new-project',
+            stack: null,
+            canon: true,
+            repository: true,
+            settings: {},
+          },
+        ]),
+      ),
+      stderr: Buffer.from(''),
+      exitCode: 0,
+      signalCode: null,
+      exitedDueToTimeout: false,
+    } as unknown as ReturnType<typeof Bun.spawnSync>)
+    try {
+      refreshProjects()
+      const second = await ingestTranscripts('2026-11-01T00:00:00.000Z', undefined, null)
+      expect(second).toMatchObject({ examined: 1, files: 1, rows: 1 })
+      expect(
+        db()
+          .query<{ project: string }, []>("SELECT project FROM interval WHERE source='claude'")
+          .get(),
+      ).toEqual({ project: 'new-project' })
+    } finally {
+      spawn.mockRestore()
+      refreshProjects()
+    }
+  } finally {
+    writeTransaction((conn) => {
+      conn.query("DELETE FROM interval WHERE ref='claude:session.jsonl:0'").run()
+      conn.query('DELETE FROM transcript_fingerprint WHERE path=?').run(join(root, 'session.jsonl'))
+    })
+    if (originalRoot === undefined) delete process.env.BOTTEGA_TRANSCRIPT_ROOT
+    else process.env.BOTTEGA_TRANSCRIPT_ROOT = originalRoot
     rmSync(root, { recursive: true, force: true })
   }
 })

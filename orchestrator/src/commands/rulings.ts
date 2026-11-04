@@ -12,13 +12,12 @@ import {
 import { db } from '../database/db.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { fileNote } from '../mcp/hub-notes.ts'
-import { parseChangedAfter } from '../run/collect-change.ts'
 import { questionIdentityMap, resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { fileRuling, type RulingFileStores } from '../run/ruling-file.ts'
 import { operatorAttributedRuling, rulingFileOfferLines } from '../run/ruling-file-text.ts'
 import { listRulingChanges, listRulings } from '../run/ruling-list.ts'
 import { overturnRuling } from '../run/ruling-overturn.ts'
-import { log } from './support.ts'
+import { log, parseChangedAfter } from './support.ts'
 
 function requiredText(value: string, label: string): string {
   if (!value.trim()) throw new Error(`${label} must not be empty`)

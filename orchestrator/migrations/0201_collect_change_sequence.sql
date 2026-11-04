@@ -3,9 +3,6 @@ CREATE TABLE collect_change_counter (
   value INTEGER NOT NULL
 );
 --> statement-breakpoint
-INSERT INTO collect_change_counter(record_id,value)
-VALUES ('01990000-0000-7000-8000-000000002099',0);
---> statement-breakpoint
 ALTER TABLE run ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 --> statement-breakpoint
 ALTER TABLE question ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
@@ -13,6 +10,8 @@ ALTER TABLE question ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0;
 -- BACKFILL
 UPDATE run SET change_seq=number WHERE change_seq=0;
 UPDATE question SET change_seq=(SELECT COALESCE(MAX(number),0) FROM run)+number WHERE change_seq=0;
+INSERT OR IGNORE INTO collect_change_counter(record_id,value)
+VALUES ('01990000-0000-7000-8000-000000002099',0);
 UPDATE collect_change_counter SET value=
   (SELECT MAX(value) FROM (
     SELECT COALESCE(MAX(change_seq),0) value FROM run

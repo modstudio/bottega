@@ -55,7 +55,6 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-retry.ts',
       './run-retry-workspace.ts',
       './run-identifier.ts',
-      './collect-change.ts',
       './synthetic-lifecycle-job.ts',
       './question-delivery.ts',
       './question-open.ts',

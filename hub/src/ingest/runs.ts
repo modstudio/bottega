@@ -493,10 +493,12 @@ function ingestRunSourceRows(
   )
 }
 
+export const RUN_CHANGE_CURSOR_SETTING = 'collect.runs.change_seq'
+
 function storedChangeCursor(): number | null {
   const value = db()
-    .query<{ value: string }, []>("SELECT value FROM setting WHERE key='collect.runs.change_seq'")
-    .get()?.value
+    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+    .get(RUN_CHANGE_CURSOR_SETTING)?.value
   if (value === undefined) return null
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
@@ -506,10 +508,10 @@ function stampChangeCursor(cursor: number): void {
   writeTransaction((conn) =>
     conn
       .query(
-        `INSERT INTO setting(key,value) VALUES ('collect.runs.change_seq',?)
+        `INSERT INTO setting(key,value) VALUES (?,?)
          ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
       )
-      .run(String(cursor)),
+      .run(RUN_CHANGE_CURSOR_SETTING, String(cursor)),
   )
 }
 

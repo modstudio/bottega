@@ -3,6 +3,7 @@
 
 import { format } from 'node:util'
 import type { Command, OptionValues } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export type CliFlags = {
   has(name: string): boolean
@@ -47,6 +48,28 @@ export function optionFlags(options: OptionValues): CliFlags {
 }
 
 export const collect = (value: string, previous: string[]): string[] => [...previous, value]
+
+/** Validates the changed-source cursor and its command-edge flag grammar. */
+export function parseChangedAfter(input: {
+  value: string | undefined
+  since?: string
+  hasRequestedRuns?: boolean
+  jsonV1?: boolean
+  limit?: string
+}): number | null {
+  const { value } = input
+  if (value === undefined) return null
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < 0)
+    throw new Error('--changed-after must be a non-negative integer')
+  if (input.since) throw new Error('--since and --changed-after cannot be combined')
+  if (input.hasRequestedRuns)
+    throw new Error(`${PLATFORM_SLUG} run list --id and --changed-after cannot be combined`)
+  if (input.jsonV1)
+    throw new Error('--changed-after cannot be combined with --json 1; use --json (v2)')
+  if (input.limit !== undefined) throw new Error('--limit and --changed-after cannot be combined')
+  return parsed
+}
 
 /** Extracts positional values from Commander's variadic action callback. */
 export const values = (input: unknown[]): string[] =>

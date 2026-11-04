@@ -437,7 +437,13 @@ function listingMemberJoin(rootAlias: string, live: boolean): string {
   )`
 }
 
-function listingLimit(value: string | undefined, json: boolean, live: boolean): number | null {
+function listingLimit(
+  value: string | undefined,
+  json: boolean,
+  live: boolean,
+  changedAfter: number | null,
+): number | null {
+  if (changedAfter !== null) return null
   if (value === undefined && live) return null
   return Number(value ?? (json ? 100000 : 20))
 }
@@ -573,7 +579,7 @@ export async function runListingCommand(
   applySinceListingFilter(sinceFlag, where, args)
   const changeSnapshot = applyChangedAfterFilter(options.changedAfter, where, args)
   where.push(...liveListingClauses(has('live')))
-  const limit = listingLimit(flag('limit'), json, has('live'))
+  const limit = listingLimit(flag('limit'), json, has('live'), options.changedAfter)
   let rows = db()
     .query(
       `${unscoredCte}

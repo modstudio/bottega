@@ -7,7 +7,6 @@ import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { resolveRecordedRunJob } from '../jobs/jobs.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
-import { parseChangedAfter } from '../run/collect-change.ts'
 import {
   classifyRunIdentifier,
   resolveRunIdentifier,
@@ -15,7 +14,7 @@ import {
 } from '../run/run-identifier.ts'
 import { runIdentityMap, runListingCommand } from '../run/run-listing.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
-import { collect, duration, log, optionFlags } from './support.ts'
+import { collect, duration, log, optionFlags, parseChangedAfter } from './support.ts'
 
 function chainHasPendingDelivery(rootId: string): boolean {
   return Boolean(
@@ -95,6 +94,7 @@ export function register(program: Command): void {
         since: resolvedFlags.flag('since'),
         hasRequestedRuns: requested.length > 0,
         jsonV1,
+        limit: resolvedFlags.flag('limit'),
       })
       await runListingCommand({ jsonV1, changedAfter }, resolvedFlags, {
         log,

@@ -376,6 +376,24 @@ test('collect change backfill never lowers row sequences or the counter when mig
       database.query<{ value: number }, []>('SELECT value FROM collect_change_counter').get()!
         .value,
     ).toBe(before.counter)
+
+    database.query('DELETE FROM collect_change_counter').run()
+    expect(applyMigrations(database)).toEqual([])
+    const restored = database
+      .query<{ value: number }, []>('SELECT value FROM collect_change_counter')
+      .get()
+    expect(restored?.value).toBe(Math.max(before.run, before.question))
+    database
+      .query(
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe)
+         VALUES ('01990000-0000-7000-8000-000000009904',9903,'2026-11-03','codex','implement','sha',1,'head','running',1)`,
+      )
+      .run()
+    expect(
+      database
+        .query<{ change_seq: number }, []>('SELECT change_seq FROM run WHERE number=9903')
+        .get()!.change_seq,
+    ).toBe(restored!.value + 1)
   } finally {
     database.close()
   }
