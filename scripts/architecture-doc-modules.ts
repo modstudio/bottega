@@ -107,6 +107,15 @@ export const docModules: DocModule[] = [
     '../record/record-project-destination-client.ts',
     './doc-write-allowed.ts',
   ]),
+  module('orchestrator/src/doc/doc-history-source.ts', []),
+  module('orchestrator/src/doc/doc-hosted-history.ts', [
+    '../../../shared/brand.ts',
+    '../record/record-api-client.ts',
+    '../record/record-doc-mapping.ts',
+    './doc-history-source.ts',
+    './doc-read-store.ts',
+    './doc-revision-store.ts',
+  ]),
   module('orchestrator/src/doc/canon-import-collision.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/doc/doc-files.ts', [
     'node:fs',

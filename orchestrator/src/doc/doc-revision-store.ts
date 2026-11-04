@@ -283,6 +283,10 @@ export function diffStoredDocRevisions(a: string, b: string, owner: string | nul
   const right = getStoredDocRevision(b, owner)
   if (!left) throw new Error(`no doc revision ${a}`)
   if (!right) throw new Error(`no doc revision ${b}`)
+  return diffDocRevisionValues(left, right)
+}
+
+export function diffDocRevisionValues(left: DocRevision, right: DocRevision): string {
   const x = [
     `status: ${left.status}`,
     `kind: ${left.kind}`,

@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import {
   DOC_AUDIENCES,
   DOC_FORMS,
@@ -25,6 +26,9 @@ import { db } from '../database/db.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
+import { decideDocHistorySource } from './doc-history-source.ts'
+import { type HostedDocRevision, readHostedDocRevisions } from './doc-hosted-history.ts'
+import { hostedDocClient } from './doc-hosted-client.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
@@ -764,7 +768,7 @@ async function transferDocs(
 
 function handleHistoryOutput(
   sub: string,
-  revisions: ReturnType<typeof listDocRevisions>,
+  revisions: Array<ReturnType<typeof listDocRevisions>[number] & { authorName?: string | null }>,
   flags: DocFlags,
   presentation: DocPresentation,
 ): boolean {
@@ -775,7 +779,7 @@ function handleHistoryOutput(
       JSON.stringify(
         revisions.map((revision) => ({
           ...revision,
-          authorName: revisionAuthorName(revision.author, user),
+          authorName: revision.authorName ?? revisionAuthorName(revision.author, user),
         })),
       ),
     )
@@ -805,9 +809,47 @@ async function handleHistoryDocCommand(
   const subject = rawSubject === '-' ? null : rawSubject
   if (flags.has('user') && (scope !== 'canon' || subject !== null))
     throw new Error('--user history address must be canon -')
+  if (sub === 'restore') {
+    const revision = argv[5]
+    const reason = flags.flag('reason')
+    if (!revision || !reason?.trim())
+      throw new Error(
+        `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
+      )
+    const restored = await restoreDoc(
+      scope,
+      subject,
+      slug,
+      resolveDocRevisionIdentifier(db(), revision),
+      { reason, author: flags.flag('author'), expectedRevision: flags.flag('expect') },
+      owner,
+    )
+    printRestoreResult(restored, flags, presentation, scope, subject, slug)
+    return true
+  }
   const revisions = listDocRevisions(scope, subject, slug, owner)
-  if (handleHistoryOutput(sub, revisions, flags, presentation)) return true
+  const doc = getDoc(scope, subject, slug, owner)
+  const source = decideDocHistorySource({
+    hostedConfigured: Boolean(resolveRecordApiUrl()?.trim()),
+    signedIn: cachedSignedInRecordUser() !== null,
+  })
+  const hosted =
+    source === 'hosted' && doc
+      ? await readHostedDocRevisions({
+          address: `${scope}/${subject ?? '_'}/${slug}`,
+          listRevisions: async () =>
+            (await hostedDocClient(scope, subject)).listRevisions(doc.record_id) as Promise<
+              HostedDocRevision[]
+            >,
+        })
+      : null
+  const selected = hosted?.revisions ?? revisions
+  if (handleHistoryOutput(sub, selected, flags, presentation)) return true
   if (sub === 'diff') {
+    if (hosted) {
+      presentation.write(hosted.diff(argv[5], argv[6]))
+      return true
+    }
     const a = argv[5] ? resolveDocRevisionIdentifier(db(), argv[5]) : revisions[1]?.record_id
     const b = argv[6] ? resolveDocRevisionIdentifier(db(), argv[6]) : revisions[0]?.record_id
     if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
@@ -817,22 +859,7 @@ async function handleHistoryDocCommand(
     presentation.write(diffDocRevisions(a, b, owner))
     return true
   }
-  const revision = argv[5]
-  const reason = flags.flag('reason')
-  if (!revision || !reason?.trim())
-    throw new Error(
-      `${PLATFORM_SLUG} doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--expect REVISION]`,
-    )
-  const restored = await restoreDoc(
-    scope,
-    subject,
-    slug,
-    resolveDocRevisionIdentifier(db(), revision),
-    { reason, author: flags.flag('author'), expectedRevision: flags.flag('expect') },
-    owner,
-  )
-  printRestoreResult(restored, flags, presentation, scope, subject, slug)
-  return true
+  return false
 }
 
 function printRestoreResult(
