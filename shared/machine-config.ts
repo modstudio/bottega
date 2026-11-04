@@ -84,6 +84,7 @@ export const MACHINE_CONFIG = {
   'machine.display_name': { type: 'string', default: '' },
   'machine.former_short_names': { type: 'string', default: '' },
   'machine.level': { type: 'string', default: 'full', values: MACHINE_LEVELS },
+  'machine.global_use': { type: 'string', default: 'on', values: ['on', 'off'] },
   ...DELEGATION_MACHINE_CONFIG,
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',

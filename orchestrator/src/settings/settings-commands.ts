@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
-import { readMachinePermissions } from '../../../shared/machine-config.ts'
+import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { summarizeSettings } from '../../../shared/settings-summary.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
@@ -352,8 +352,12 @@ function effectiveStoredSettings(
   const hosted = parseStoreOwned(body)
   if (target.kind === 'project') return hosted
   const merged = mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
-  return withMachineProductHooks(merged, assetPath(), resolveOrchestratorDatabase(process.env))
-    .settings
+  return withMachineProductHooks(
+    merged,
+    assetPath(),
+    resolveOrchestratorDatabase(process.env),
+    readMachineValue('machine.global_use') as 'on' | 'off',
+  ).settings
 }
 
 function redactedDrift(drift: SettingsDrift, file: OwnedSettings, store: OwnedSettings) {

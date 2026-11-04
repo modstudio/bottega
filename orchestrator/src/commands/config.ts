@@ -63,7 +63,10 @@ function registerConfigSet(config: Command): void {
         log(
           `wrote ${written.key} to ${written.home === 'machine' ? 'machine' : `hosted ${written.home} scope`}`,
         )
-        if (written.home === 'machine' && written.key.startsWith('autonomy.'))
+        if (
+          written.home === 'machine' &&
+          (written.key.startsWith('autonomy.') || written.key === 'machine.global_use')
+        )
           log(
             `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
           )

@@ -20,6 +20,9 @@ import sys
 import tempfile
 import uuid
 
+sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import should_hook_act
+
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
@@ -183,6 +186,9 @@ def first_observation(session_id: str, run_ids) -> bool:
 
 def main() -> int:
     try:
+        payload = json.load(sys.stdin)
+        if not should_hook_act(payload):
+            return 0
         try:
             heartbeat_decision = load_hook_module("heartbeat_decision", "heartbeat-decision.py")
             board_observation = load_hook_module(
@@ -190,7 +196,6 @@ def main() -> int:
             )
         except Exception:
             heartbeat_decision = board_observation = None
-        payload = json.load(sys.stdin)
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not isinstance(sid, str) or not sid:
             return 0

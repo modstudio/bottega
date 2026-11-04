@@ -57,7 +57,7 @@ const profileHooks = {
 }
 
 function render(hooks: unknown) {
-  return withMachineProductHooks({ permissions: {}, hooks }, ASSET_ROOT, DATABASE)
+  return withMachineProductHooks({ permissions: {}, hooks }, ASSET_ROOT, DATABASE, 'on')
 }
 
 test('typed profile hooks and an empty profile render the same canonical product hooks', () => {
@@ -74,6 +74,10 @@ test('typed profile hooks and an empty profile render the same canonical product
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
   expect(commands.match(/protect-main-checkout\.py/g)).toHaveLength(2)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(9)
+  expect(
+    commands.match(/BOTTEGA_ORCHESTRATOR_DB='\/state\/orchestrator\/orchestrator\.db'/g),
+  ).toHaveLength(25)
+  expect(commands.match(/BOTTEGA_GLOBAL_USE=on/g)).toHaveLength(25)
   for (const verb of ['run start', 'board ask', 'board post']) {
     expect(commands).toContain(`Bash(${PLATFORM_SLUG} ${verb}:*)`)
     expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} ${verb}:*)`)
@@ -102,7 +106,7 @@ test('git guard covers every Bash command and has no condition', () => {
   const preToolUse = hooks.PreToolUse ?? []
   const guard = preToolUse
     .flatMap((group) => group.hooks)
-    .find((item) => String(item.command).endsWith('/git-guard.py'))
+    .find((item) => String(item.command).includes('/git-guard.py'))
   expect(preToolUse.find((group) => group.hooks.includes(guard!))?.matcher).toBe('Bash')
   expect(guard).not.toHaveProperty('if')
 })
@@ -116,19 +120,26 @@ test('test substance guard covers every editor tool from the rendered install', 
   expect(group?.hooks).toEqual([
     {
       type: 'command',
-      command: `python3 ${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py`,
+      command: `BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py'`,
     },
     {
       type: 'command',
-      command: `python3 ${ASSET_ROOT}/orchestrator/hooks/hub-import-guard.py`,
+      command: `BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/hub-import-guard.py'`,
     },
   ])
 })
 
 test('product hook rendering is a fixed point', () => {
   const first = render({})
-  const second = withMachineProductHooks(first.settings, ASSET_ROOT, DATABASE)
+  const second = withMachineProductHooks(first.settings, ASSET_ROOT, DATABASE, 'on')
   expect(second.settings.hooks).toEqual(first.settings.hooks)
+})
+
+test('global use off is rendered into every product hook command', () => {
+  const hooks = withMachineProductHooks({ permissions: {}, hooks: {} }, ASSET_ROOT, DATABASE, 'off')
+    .settings.hooks
+  const commands = JSON.stringify(hooks)
+  expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(25)
 })
 
 test('superseded handlers name exactly the removed profile entries', () => {

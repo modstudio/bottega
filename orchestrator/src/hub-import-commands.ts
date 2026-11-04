@@ -281,15 +281,6 @@ export async function hubImportJudgeCommand(
   const file = targetFile(payload)
   if (!file) return { status: 'unchecked', findings: [], reason: 'tool input has no file path' }
 
-  const installedRoot = hubImportPolicyRoot()
-  if (!installedRoot) {
-    return {
-      status: 'unchecked',
-      findings: [],
-      reason: 'hub import judging requires the policy scripts from a development checkout',
-    }
-  }
-
   let database: Database
   try {
     database = openDatabase()
@@ -307,6 +298,15 @@ export async function hubImportJudgeCommand(
     database.close()
   }
   if (!target) return { status: 'ok', findings: [] }
+
+  const installedRoot = hubImportPolicyRoot()
+  if (!installedRoot) {
+    return {
+      status: 'unchecked',
+      findings: [],
+      reason: 'hub import judging requires the policy scripts from a development checkout',
+    }
+  }
 
   const { checkout, file: canonicalFile } = target
 

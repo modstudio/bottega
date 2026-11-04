@@ -161,49 +161,68 @@ function resolvedCondition(value: HookCondition | undefined, assetRoot: string) 
   return `Bash(${join(assetRoot, 'bin', PLATFORM_SLUG)} ${value.absoluteBottega}:*)`
 }
 
-function boardCommand(file: ScriptFile, assetRoot: string, databasePath: string): string {
+function productCommand(
+  file: ScriptFile,
+  assetRoot: string,
+  databasePath: string,
+  globalUse: 'on' | 'off',
+  environment: string[] = [],
+): string {
   return [
+    ...environment,
+    `BOTTEGA_ORCHESTRATOR_DB=${shellQuote(databasePath)}`,
+    `BOTTEGA_GLOBAL_USE=${globalUse}`,
+    'python3',
+    shellQuote(scriptPath(assetRoot, file)),
+  ].join(' ')
+}
+
+function boardCommand(
+  file: ScriptFile,
+  assetRoot: string,
+  databasePath: string,
+  globalUse: 'on' | 'off',
+): string {
+  return productCommand(file, assetRoot, databasePath, globalUse, [
     `BOARD_PUSH_REFRESH_SECONDS=${BOARD_PUSH_REFRESH_SECONDS}`,
     `BOARD_PUSH_REMIND_SECONDS=${BOARD_PUSH_REMIND_SECONDS}`,
     `BOARD_PUSH_RETRY_SECONDS=${BOARD_PUSH_RETRY_SECONDS}`,
     `BOARD_PRESENCE_REFRESH_SECONDS=${BOARD_PRESENCE_REFRESH_SECONDS}`,
     `BOARD_ACK_STOP_BLOCKS=${BOARD_ACK_STOP_BLOCKS}`,
     `BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`,
-    `BOTTEGA_ORCHESTRATOR_DB=${shellQuote(databasePath)}`,
     `BOTTEGA_BOARD_HOOK_STATE=${shellQuote(join(dirname(databasePath), 'board-hook-state'))}`,
-    'python3',
-    shellQuote(scriptPath(assetRoot, file)),
-  ].join(' ')
+  ])
 }
 
 function declaredHandler(
   declaration: ProductHookDeclaration,
   assetRoot: string,
   databasePath: string,
+  globalUse: 'on' | 'off',
 ) {
   const hookCondition = resolvedCondition(declaration.if, assetRoot)
   return {
     type: 'command',
     command: declaration.boardEnvironment
-      ? boardCommand(declaration.script, assetRoot, databasePath)
-      : `python3 ${scriptPath(assetRoot, declaration.script)}`,
+      ? boardCommand(declaration.script, assetRoot, databasePath, globalUse)
+      : productCommand(declaration.script, assetRoot, databasePath, globalUse),
     ...(hookCondition === undefined ? {} : { if: hookCondition }),
     ...(declaration.timeout === undefined ? {} : { timeout: declaration.timeout }),
   }
 }
 
-function declaredGroups(assetRoot: string, databasePath: string) {
+function declaredGroups(assetRoot: string, databasePath: string, globalUse: 'on' | 'off') {
   const groups = new Map<HookEvent, Array<Record<string, unknown>>>()
   for (const declaration of PRODUCT_HOOKS) {
     const eventGroups = groups.get(declaration.event) ?? []
     const previous = eventGroups.at(-1)
     const previousMatcher = isPlainObject(previous) ? previous.matcher : undefined
     if (previous && previousMatcher === declaration.matcher && Array.isArray(previous.hooks)) {
-      previous.hooks.push(declaredHandler(declaration, assetRoot, databasePath))
+      previous.hooks.push(declaredHandler(declaration, assetRoot, databasePath, globalUse))
     } else {
       eventGroups.push({
         ...(declaration.matcher === undefined ? {} : { matcher: declaration.matcher }),
-        hooks: [declaredHandler(declaration, assetRoot, databasePath)],
+        hooks: [declaredHandler(declaration, assetRoot, databasePath, globalUse)],
       })
     }
     groups.set(declaration.event, eventGroups)
@@ -227,12 +246,13 @@ export function withMachineProductHooks(
   settings: OwnedSettings,
   assetRoot: string,
   databasePath: string,
+  globalUse: 'on' | 'off',
 ): MachineProductHooksResult {
   const profileHooks = isPlainObject(settings.hooks) ? settings.hooks : {}
   const superseded: SupersededProfileHook[] = []
   const hooks = withoutSupersededProfileHooks(profileHooks, superseded)
 
-  for (const [event, groups] of declaredGroups(assetRoot, databasePath)) {
+  for (const [event, groups] of declaredGroups(assetRoot, databasePath, globalUse)) {
     const existing = Array.isArray(hooks[event]) ? hooks[event] : []
     hooks[event] = [...existing, ...groups]
   }

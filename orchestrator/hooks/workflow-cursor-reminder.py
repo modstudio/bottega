@@ -12,6 +12,9 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import should_hook_act
+
 CLI_TIMEOUT_SECONDS = 5
 
 
@@ -187,6 +190,8 @@ def main():
             f"bottega: hook payload could not be parsed ({error.__class__.__name__}: {error})",
             file=sys.stderr,
         )
+        return 0
+    if not should_hook_act(payload):
         return 0
     event = payload.get("hook_event_name")
     try:

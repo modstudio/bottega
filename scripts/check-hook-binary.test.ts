@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { gitHookBinaryViolations } from './check-hook-binary.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
+import { gitHookBinaryViolations, productHookScopeViolations } from './check-hook-binary.ts'
 
 const assignment = `common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
 main_checkout=\${BOTTEGA_MAIN_CHECKOUT:-$(dirname "$common_dir")}`
@@ -60,5 +60,25 @@ echo checking
 "$main_checkout/bin/${PLATFORM_SLUG}" machine migrate`,
       ),
     ).toEqual([`.githooks/post-merge:1: ${rule}; assign main_checkout from --git-common-dir`])
+  })
+})
+
+describe('productHookScopeViolations', () => {
+  const settings = `const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
+  { event: 'PreToolUse', script: 'guard.py' },
+]`
+
+  test('accepts a product hook that imports and calls the predicate', () => {
+    expect(
+      productHookScopeViolations(settings, {
+        'guard.py': 'from registered_scope import should_hook_act\nshould_hook_act(payload)\n',
+      }),
+    ).toEqual([])
+  })
+
+  test('names a product hook that does not call the predicate', () => {
+    expect(productHookScopeViolations(settings, { 'guard.py': 'def main(): pass\n' })).toEqual([
+      `orchestrator/hooks/guard.py: a product hook imports and calls should_hook_act(payload) before applying ${PLATFORM_NAME} behavior`,
+    ])
   })
 })

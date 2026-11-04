@@ -2,8 +2,12 @@
 """PreToolUse hook: refuse commands that clear Bun's shared package cache."""
 
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import should_hook_act
 
 
 BUN_CACHE_COMMAND = re.compile(
@@ -27,6 +31,8 @@ REASON = (
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
+        if not should_hook_act(payload):
+            return 0
         if payload.get("tool_name") != "Bash":
             return 0
         command = payload.get("tool_input", {}).get("command", "")

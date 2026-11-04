@@ -12,12 +12,14 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(__file__))
 from inbox_question_decision import decide_parsed_inbox_questions, parse_inbox_questions
 from notice_transport import (
     acknowledgement_refusals,
     refused_notice_name,
     transportable_notice_id,
 )
+from registered_scope import should_hook_act
 
 
 def _start(bottega, *args, env=None, cwd=None):
@@ -495,6 +497,12 @@ def orch_worker_session(env=None):
 
 
 def main() -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return 0
+    if not should_hook_act(payload):
+        return 0
     if orch_worker_session():
         return 0
     session_started_at = datetime.now(timezone.utc).isoformat(
@@ -521,7 +529,6 @@ def main() -> int:
     acknowledgement_timeout = 1.0
     notice_deadline = None
     try:
-        payload = json.load(sys.stdin)
         cwd = payload.get("cwd")
         if not cwd:
             return 0

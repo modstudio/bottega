@@ -11,6 +11,9 @@ import sys
 import time
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import should_hook_act
+
 from board_hook_common import (
     board_bin,
     marker_path,
@@ -333,9 +336,11 @@ def should_run_slow_path(
 
 def main() -> int:
     try:
+        payload = json.load(sys.stdin)
+        if not should_hook_act(payload):
+            return 0
         if os.environ.get("BOTTEGA_RUN_ID"):
             return 0
-        payload = json.load(sys.stdin)
         session = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         refresh = int(os.environ["BOARD_PUSH_REFRESH_SECONDS"])
         remind = int(os.environ["BOARD_PUSH_REMIND_SECONDS"])

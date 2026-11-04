@@ -56,6 +56,9 @@ decision and has no prompt to judge, so it is audit-only.
 """
 import json, os, re, sqlite3, subprocess, sys, time, uuid
 
+sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import should_hook_act
+
 ALLOW = {"claude-code-guide"}
 
 ORCHESTRATOR_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -201,6 +204,8 @@ def main() -> int:
         except Exception:
             pass  # stderr is the last fail-open record available
         return 0  # never block on a malformed payload
+    if not should_hook_act(payload):
+        return 0
 
     # Two payload shapes reach here, and only ONE of them can deny.
     #

@@ -14,6 +14,9 @@ import shlex
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import should_hook_act
+
 PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 
 DETACHED_DISPATCHES = {
@@ -117,6 +120,8 @@ def detached_dispatch(command: object):
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
+        if not should_hook_act(payload):
+            return 0
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         command = payload.get("tool_input", {}).get("command")
         kind = detached_dispatch(command)

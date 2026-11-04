@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   chmodSync,
@@ -12,6 +13,11 @@ import { join, resolve } from 'node:path'
 import { dir } from '../../test/preload.ts'
 
 const sourceHook = resolve(import.meta.dir, '../../hooks/no-attribution.py')
+const sourceRegisteredScope = resolve(import.meta.dir, '../../hooks/registered_scope.py')
+const sourceRegisteredScopeDecision = resolve(
+  import.meta.dir,
+  '../../hooks/registered_scope_decision.py',
+)
 const sourceMarkers = resolve(import.meta.dir, '../../../shared/attribution-markers.json')
 const fixturePath = join(import.meta.dir, 'fixtures/attribution-cases.json')
 const fixtureRunner = resolve(import.meta.dir, '../../test/no-attribution-fixture.py')
@@ -39,6 +45,8 @@ function layout(marker: 'valid' | 'absent' | 'unreadable' | 'malformed' = 'valid
   mkdirSync(join(hook, '..'), { recursive: true })
   mkdirSync(join(markerFile, '..'), { recursive: true })
   copyFileSync(sourceHook, hook)
+  copyFileSync(sourceRegisteredScope, join(hook, '..', 'registered_scope.py'))
+  copyFileSync(sourceRegisteredScopeDecision, join(hook, '..', 'registered_scope_decision.py'))
   chmodSync(hook, 0o755)
   if (marker === 'valid') copyFileSync(sourceMarkers, markerFile)
   else if (marker === 'unreadable') mkdirSync(markerFile)
@@ -118,6 +126,29 @@ describe('attribution hook', () => {
       exitCode: 0,
       stderr: '',
     })
+  })
+
+  test('uses registered scope to decide whether to deny a commit', () => {
+    const { root, hook } = layout('absent')
+    const store = join(root, 'orchestrator.db')
+    const database = new Database(store)
+    database.run('CREATE TABLE project (path TEXT NOT NULL, retired_at TEXT)')
+    database.close()
+    const environment = {
+      BOTTEGA_GLOBAL_USE: 'off',
+      BOTTEGA_ORCHESTRATOR_DB: store,
+    }
+
+    expect(invokeMany(hook, root, [{ command: 'git commit -m x' }], environment)[0]).toBeNull()
+
+    const writable = new Database(store)
+    writable.run('INSERT INTO project (path, retired_at) VALUES (?, NULL)', [root])
+    writable.close()
+    expect(
+      denialReason(
+        invokeMany(hook, root, [{ command: 'git commit -m x' }], environment)[0] ?? null,
+      ),
+    ).toContain('Cannot enforce AI attribution')
   })
 
   for (const state of ['absent', 'unreadable', 'malformed'] as const) {

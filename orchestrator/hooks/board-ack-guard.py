@@ -6,6 +6,7 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(__file__))
 from board_hook_common import (
     marker_path,
     pending,
@@ -13,6 +14,7 @@ from board_hook_common import (
     store_path,
     write_marker,
 )
+from registered_scope import should_hook_act
 
 
 def stop_state(session: str) -> tuple[str, int | None]:
@@ -42,9 +44,11 @@ def notice_summary(notices, stopping: bool = False) -> str:
 
 def main() -> int:
     try:
+        payload = json.load(sys.stdin)
+        if not should_hook_act(payload):
+            return 0
         if os.environ.get("BOTTEGA_RUN_ID"):
             return 0
-        payload = json.load(sys.stdin)
         session = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         if (
             not isinstance(session, str)

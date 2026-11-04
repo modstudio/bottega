@@ -11,6 +11,9 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
+sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import should_hook_act
+
 from board_hook_common import marker_path, read_marker, write_marker
 from score_reminder_decision import (
     WRITING_JOBS,
@@ -61,6 +64,8 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except Exception as e:
         print(f"bottega: hook payload could not be parsed ({e.__class__.__name__}: {e})", file=sys.stderr)
+        return 0
+    if not should_hook_act(payload):
         return 0
 
     # Never loop: if this hook already asked once and Claude is stopping again,

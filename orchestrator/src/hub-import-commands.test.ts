@@ -1,7 +1,8 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import { hubImportJudgeCommand, registeredHubCheckout } from './hub-import-commands.ts'
@@ -9,7 +10,7 @@ import { hubImportJudgeCommand, registeredHubCheckout } from './hub-import-comma
 afterEach(() => registerEmbeddedAssets(null))
 
 describe('hub import judge applicability', () => {
-  test('returns unchecked when a distribution has no development policy scripts', async () => {
+  test('returns ok in a distribution when the file is outside a registered checkout', async () => {
     registerEmbeddedAssets({
       assets: {},
       files: {},
@@ -20,16 +21,44 @@ describe('hub import judge applicability', () => {
         commit: 'abcdef',
       },
     })
-    let opened = false
+    const database = new Database(':memory:')
+    database.run(
+      'CREATE TABLE project (record_id TEXT PRIMARY KEY, name TEXT, path TEXT, stack TEXT, canon INTEGER, settings TEXT, retired_at TEXT)',
+    )
     const result = await hubImportJudgeCommand(
       JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '/tmp/hub/example.ts' } }),
       Date.now() + 1_000,
-      () => {
-        opened = true
-        throw new Error('must not open the register')
-      },
+      () => database,
     )
-    expect(opened).toBe(false)
+    expect(result).toEqual({ status: 'ok', findings: [] })
+  })
+
+  test('returns unchecked in a distribution for a file inside a registered checkout', async () => {
+    registerEmbeddedAssets({
+      assets: {},
+      files: {},
+      manifest: {
+        name: PLATFORM_NAME,
+        version: '1.2.3',
+        built: '2026-11-03T00:00:00.000Z',
+        commit: 'abcdef',
+      },
+    })
+    const projectPath = resolve(import.meta.dir, '../..')
+    const file = join(projectPath, 'hub', 'example.ts')
+    const database = new Database(':memory:')
+    database.run(
+      'CREATE TABLE project (record_id TEXT PRIMARY KEY, name TEXT, path TEXT, stack TEXT, canon INTEGER, settings TEXT, retired_at TEXT)',
+    )
+    database.run(
+      'INSERT INTO project (record_id, name, path, stack, canon, settings, retired_at) VALUES (?, ?, ?, ?, ?, ?, NULL)',
+      ['project', PLATFORM_SLUG, projectPath, 'bun', 1, '{}'],
+    )
+    const result = await hubImportJudgeCommand(
+      JSON.stringify({ tool_name: 'Write', tool_input: { file_path: file } }),
+      Date.now() + 1_000,
+      () => database,
+    )
     expect(result).toEqual({
       status: 'unchecked',
       findings: [],

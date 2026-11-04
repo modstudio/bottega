@@ -15,6 +15,10 @@ import sqlite3
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(__file__))
+from registered_scope import should_hook_act
+from registered_scope_decision import path_is_within
+
 from protect_main_checkout import (
     MUTATING_GIT_SUBCOMMANDS,
     decision_for_mutations,
@@ -329,7 +333,7 @@ def project_for(path, projects):
     resolved = real(path)
     for project in projects:
         root = real(project["path"])
-        if resolved == root or resolved.startswith(root + os.sep):
+        if path_is_within(resolved, root):
             return project, root
     return None, None
 
@@ -430,6 +434,8 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except Exception:
         return fail_open()
+    if not should_hook_act(payload):
+        return 0
     tool_name = payload.get("tool_name")
     if tool_name == "Bash":
         inp = payload.get("tool_input") or {}
