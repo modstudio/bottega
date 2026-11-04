@@ -6,17 +6,14 @@ import {
   AUTONOMY_VALUES,
   type AutonomyStage,
 } from '../../../../shared/autonomy.ts'
-import {
-  parseStoredSettingsRow,
-  type StoredSettings,
-  summarizeSettings,
-} from '../../../../shared/settings-summary.ts'
+import { summarizeSettings } from '../../../../shared/settings-summary.ts'
 import {
   readStoredShipTo,
   SHIP_TO_CONFIG_KEY,
   SHIP_TO_VALUES,
   STORED_SHIP_TO_CONFIG_ALIAS,
 } from '../../../../shared/ship-to.ts'
+import { type OwnedSettings, parseStoredSettingsRow } from '../../../../shared/stored-settings.ts'
 import {
   createRecordClient,
   type RecordClient,
@@ -170,7 +167,7 @@ async function clearHostedStageOverrides(client: RecordClient, entries: RecordCo
   }
 }
 
-function parseStoredSettings(body: string): StoredSettings {
+function parseStoredSettings(body: string): OwnedSettings {
   try {
     return parseStoredSettingsRow(body)
   } catch (error) {

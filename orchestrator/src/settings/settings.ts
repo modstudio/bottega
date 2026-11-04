@@ -3,17 +3,20 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from '../../../shared/settings-summary.ts'
+import {
+  AUTO_MODE_LISTS,
+  type AutoModeList,
+  ENV_NAME,
   OWNED_AUTO_MODE_SCHEMA,
   OWNED_SETTINGS_SCHEMA,
+  type OwnedAutoMode,
+  type OwnedSettings,
   parseStoredSettingsRow,
-  AUTO_MODE_LISTS as SETTINGS_AUTO_MODE_LISTS,
-  ENV_NAME as SETTINGS_ENV_NAME,
-  SETTINGS_PERMISSION_LISTS,
-  type AutoModeList as SettingsAutoModeList,
-  type OwnedAutoMode as SettingsOwnedAutoMode,
-  type SettingsPermissionList,
-  type OwnedSettings as SharedOwnedSettings,
-} from '../../../shared/settings-summary.ts'
+  StoredSettingsRowError,
+} from '../../../shared/stored-settings.ts'
 
 export { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 
@@ -21,10 +24,8 @@ export const SETTINGS_SLUG = 'settings'
 export const SETTINGS_SCOPE = 'settings'
 export const PERMISSION_LISTS = SETTINGS_PERMISSION_LISTS
 export type PermissionList = SettingsPermissionList
-export const AUTO_MODE_LISTS = SETTINGS_AUTO_MODE_LISTS
-export type AutoModeList = SettingsAutoModeList
-export type OwnedAutoMode = SettingsOwnedAutoMode
-export type OwnedSettings = SharedOwnedSettings
+export type { AutoModeList, OwnedAutoMode, OwnedSettings }
+export { AUTO_MODE_LISTS, ENV_NAME }
 
 export type SettingsEnvOperation = 'set' | 'unset'
 
@@ -33,8 +34,6 @@ export type SettingsEnvEdit = {
   changed: boolean
   message: string
 }
-
-export const ENV_NAME = SETTINGS_ENV_NAME
 
 export const SETTINGS_PARSE_REFUSAL =
   'refusing settings file: cannot parse JSON\ncleared by: fix the JSON syntax in the settings file'
@@ -96,11 +95,10 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
     assertValidEnvironment(parsed, 'stored settings row')
     return parsed
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    if (message.includes('cannot parse JSON')) {
+    if (error instanceof StoredSettingsRowError && error.reason === 'json') {
       throw new Error('refusing stored settings row: cannot parse JSON')
     }
-    if (message.includes('has an invalid shape')) {
+    if (error instanceof StoredSettingsRowError && error.reason === 'shape') {
       throw new Error('refusing stored settings row: invalid owned settings shape')
     }
     throw error

@@ -69,7 +69,6 @@ import { worktreeModules } from './architecture-worktree-modules.ts'
 import { REPOSITORY_ROOT_DATA_IMPORTS } from './repository-root-data-imports.ts'
 
 export type ArchitectureModule = { file: string; allowed: string[]; typeOnlyAllowed?: string[] }
-type ArchitectureInversion = { from: string; to: string }
 type ArchitectureException = { from: string; to: string; dependencyTypes: string[]; reason: string }
 type ConcernManifest = {
   roots: typeof CONCERNS
@@ -84,10 +83,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 
 const concerns: ConcernManifest = {
   roots: CONCERNS,
-  shared: {
-    root: 'shared',
-    reason: 'Shared code may depend on no platform concern.',
-  },
+  shared: { root: 'shared', reason: 'Shared code may depend on no platform concern.' },
   exceptions: [
     {
       from: 'hub/web',
@@ -466,7 +462,12 @@ export const modules: ArchitectureModule[] = [
   ...keyStoreModules,
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', ['./brand.ts']),
-  module('shared/settings-summary.ts', ['node:crypto', './secret-shaped.ts']),
+  module('shared/settings-summary.ts', [
+    'node:crypto',
+    './secret-shaped.ts',
+    './stored-settings.ts',
+  ]),
+  module('shared/stored-settings.ts', ['zod']),
   module('shared/hosted-config-space.ts', ['node:fs', 'node:path', './config-directory.ts']),
   module('shared/hosted-secret-opening.ts', [
     './brand.ts',
@@ -721,7 +722,7 @@ export const modules: ArchitectureModule[] = [
   ...worktreeModules,
 ]
 
-export const inversions: ArchitectureInversion[] = [
+export const inversions: { from: string; to: string }[] = [
   { from: 'orchestrator/src/jobs/jobs.ts', to: 'orchestrator/src/agent/agents.ts' },
   { from: 'orchestrator/src/route/route.ts', to: 'orchestrator/src/review/review.ts' },
   { from: 'orchestrator/src/review/review.ts', to: 'orchestrator/src/route/route.ts' },
