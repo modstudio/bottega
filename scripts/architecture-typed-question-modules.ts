@@ -25,13 +25,16 @@ export const typedQuestionModules = [
     '../../../shared/record-id.ts',
     '../database/db.ts',
   ]),
+  module('orchestrator/src/typed-question/backtest-source-name.ts', []),
   module('orchestrator/src/typed-question/spec-unsettled-question.ts', [
     '../../../shared/typed-question/registry.ts',
+    './backtest-source-name.ts',
     './cited-context.ts',
   ]),
-  module('orchestrator/src/typed-question/cited-context.ts', []),
+  module('orchestrator/src/typed-question/cited-context.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/typed-question/finding-duplicate-question.ts', [
     '../../../shared/typed-question/registry.ts',
+    './backtest-source-name.ts',
   ]),
   module('orchestrator/src/typed-question/typed-question-report.ts', [
     'bun:sqlite',
@@ -52,13 +55,13 @@ export const typedQuestionModules = [
   module('orchestrator/src/typed-question/typed-question-backtest.ts', [
     'bun:sqlite',
     'node:fs',
-    'node:path',
     '../../../shared/typed-question/registry.ts',
     '../../../shared/typed-question/typed-question-render.ts',
     '../collect/finding-duplicate-suggestions.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',
+    './cited-context.ts',
     './typed-question-report.ts',
     './typed-question-service.ts',
   ]),

@@ -1,7 +1,6 @@
 // concern: dispatch-commands
 /** Knows dispatch command preflight and run dispatch. Must not know transports, routing by value, worktrees, the CLI, or reviews. */
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
@@ -25,6 +24,7 @@ import {
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { DetachSpec } from '../route/failover.ts'
+import { checkoutFileReader } from '../typed-question/cited-context.ts'
 import {
   SPEC_UNSETTLED_QUESTION,
   SPEC_UNSETTLED_QUESTION_V2,
@@ -215,25 +215,6 @@ type SpecWarningInput = {
 
 const SPEC_QUESTION_WAIT_MS = 3_000
 
-function citedFileReader(cwd: string): (path: string) => string | null {
-  return (path) => {
-    try {
-      const root = realpathSync(cwd)
-      const candidate = realpathSync(resolve(root, path))
-      const fromRoot = relative(root, candidate)
-      if (
-        fromRoot.startsWith('..') ||
-        resolve(root, fromRoot) !== candidate ||
-        !statSync(candidate).isFile()
-      )
-        return null
-      return readFileSync(candidate, 'utf8')
-    } catch {
-      return null
-    }
-  }
-}
-
 async function waitForSpecQuestions(
   asks: Promise<[TypedQuestionAnswer | null, TypedQuestionAnswer | null]>,
 ): Promise<[TypedQuestionAnswer | null, TypedQuestionAnswer | null] | null> {
@@ -261,7 +242,7 @@ export async function warnForUnsettledSpec(
       ...common,
       state: SPEC_UNSETTLED_QUESTION_V2.contextBuilder(
         input.spec,
-        citedFileReader(input.cwd ?? process.cwd()),
+        checkoutFileReader(input.cwd ?? process.cwd()),
       ),
     }),
   ])

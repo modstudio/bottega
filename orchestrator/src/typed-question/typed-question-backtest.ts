@@ -2,8 +2,7 @@
 /** Replays declared typed questions over their declared historical subjects. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import { renderTypedQuestionBlock } from '../../../shared/typed-question/typed-question-render.ts'
 import {
@@ -14,19 +13,11 @@ import {
 import { db } from '../database/db.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
+import { type CitedFileReader, checkoutFileReader } from './cited-context.ts'
 import { TYPED_QUESTION_DECLARATIONS, typedQuestionReport } from './typed-question-report.ts'
 import { askTypedQuestion } from './typed-question-service.ts'
 
-type BacktestDeclaration = TypedQuestion & {
-  backtestSource(sources: {
-    specRuns(): Promise<unknown>
-    findingPairs(): Promise<unknown>
-  }): Promise<unknown>
-  contextBuilder?: (
-    spec: string,
-    readFile: (path: string) => string | null,
-  ) => Record<string, unknown>
-}
+type BacktestDeclaration = (typeof TYPED_QUESTION_DECLARATIONS)[number]
 
 type BacktestSubject = {
   subjectKind: string
@@ -42,42 +33,51 @@ type BacktestOptions = {
   project?: string
 }
 
-function projectReader(path: string): (relativePath: string) => string | null {
-  return (relativePath) => {
-    try {
-      const root = realpathSync(path)
-      const candidate = realpathSync(resolve(root, relativePath))
-      const fromRoot = relative(root, candidate)
-      if (
-        fromRoot.startsWith('..') ||
-        resolve(root, fromRoot) !== candidate ||
-        !statSync(candidate).isFile()
-      )
-        return null
-      return readFileSync(candidate, 'utf8')
-    } catch {
-      return null
-    }
-  }
-}
+/** Up to `limit` unanswered subjects, newest first, and how many answered ones were passed over. */
+type SourcedSubjects = { subjects: BacktestSubject[]; alreadyAnswered: number; commits: string[] }
 
-function hasAnswer(database: Database, question: TypedQuestion, subject: BacktestSubject): boolean {
-  return Boolean(
-    database
-      .query(
-        `SELECT 1 FROM typed_question_answer
-          WHERE question_id=? AND question_version=? AND subject_kind=? AND subject_ref=?
-            AND answer_json IS NOT NULL AND error IS NULL LIMIT 1`,
-      )
-      .get(question.id, question.version, subject.subjectKind, subject.subjectRef),
-  )
-}
+type Answered = (subjectKind: string, subjectRef: string) => boolean
 
-function specSubjects(
+type SubjectSource = (
   database: Database,
   declaration: BacktestDeclaration,
   options: BacktestOptions,
-): { subjects: BacktestSubject[]; commits: string[] } {
+  answered: Answered,
+) => SourcedSubjects
+
+function answeredFor(database: Database, question: TypedQuestion): Answered {
+  const statement = database.query<unknown, [string, number, string, string]>(
+    `SELECT 1 FROM typed_question_answer
+      WHERE question_id=? AND question_version=? AND subject_kind=? AND subject_ref=?
+        AND answer_json IS NOT NULL AND error IS NULL LIMIT 1`,
+  )
+  return (subjectKind, subjectRef) =>
+    Boolean(statement.get(question.id, question.version, subjectKind, subjectRef))
+}
+
+type Checkout = { read: CitedFileReader; commit: string | null }
+
+/** Reads cited files from each project's main checkout, resolving it and its commit once. */
+function checkoutContext(database: Database): (repo: string) => Checkout | null {
+  const checkouts = new Map<string, Checkout | null>()
+  return (repo) => {
+    if (!checkouts.has(repo)) {
+      const project = projectByName(repo, database)
+      checkouts.set(
+        repo,
+        project
+          ? {
+              read: checkoutFileReader(project.path),
+              commit: gitContext(project.path, 'rev-parse', '--verify', 'HEAD^{commit}'),
+            }
+          : null,
+      )
+    }
+    return checkouts.get(repo) ?? null
+  }
+}
+
+export const specRunSubjects: SubjectSource = (database, declaration, options, answered) => {
   const clauses = [
     'parent_run_record_id IS NULL',
     'prompt_path IS NOT NULL',
@@ -93,57 +93,71 @@ function specSubjects(
     parameters.push(options.project)
   }
   const rows = database
-    .query(
+    .query<{ job: string; repo: string | null; prompt_path: string; spec_sha: string }, string[]>(
       `SELECT job,repo,prompt_path,spec_sha FROM run WHERE ${clauses.join(' AND ')}
        ORDER BY started_at DESC`,
     )
-    .all(...parameters) as {
-    job: string
-    repo: string | null
-    prompt_path: string
-    spec_sha: string
-  }[]
+    .iterate(...parameters)
+  const builder = 'contextBuilder' in declaration ? declaration.contextBuilder : null
+  const checkout = checkoutContext(database)
   const commits = new Set<string>()
-  const subjects = rows.flatMap((row): BacktestSubject[] => {
-    if (!existsSync(row.prompt_path)) return []
+  const subjects: BacktestSubject[] = []
+  let alreadyAnswered = 0
+  for (const row of rows) {
+    if (subjects.length >= options.limit) break
+    const subjectKind = `spec:${row.job}`
+    if (answered(subjectKind, row.spec_sha)) {
+      alreadyAnswered += 1
+      continue
+    }
+    if (!existsSync(row.prompt_path)) continue
     const spec = readFileSync(row.prompt_path, 'utf8')
     let state: BacktestSubject['state'] = spec
-    if (declaration.contextBuilder) {
-      if (!row.repo) return []
-      const project = projectByName(row.repo, database)
-      if (!project) return []
-      const commit = gitContext(project.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-      if (commit) commits.add(`${row.repo}:${commit}`)
-      state = declaration.contextBuilder(spec, projectReader(project.path))
+    if (builder) {
+      const context = row.repo ? checkout(row.repo) : null
+      if (!context) continue
+      if (context.commit) commits.add(`${row.repo}:${context.commit}`)
+      state = builder(spec, context.read)
     }
-    return [{ subjectKind: `spec:${row.job}`, subjectRef: row.spec_sha, state }]
-  })
-  return { subjects, commits: [...commits] }
+    subjects.push({ subjectKind, subjectRef: row.spec_sha, state })
+  }
+  return { subjects, alreadyAnswered, commits: [...commits] }
 }
 
-export function findingBacktestSubjects(database: Database): BacktestSubject[] {
+export const findingPairSubjects: SubjectSource = (database, _declaration, options, answered) => {
   const runs = database
-    .query(
+    .query<{ id: string }, string[]>(
       `SELECT DISTINCT lens.run_record_id AS id,run.number
          FROM review_lens lens JOIN run ON run.record_id=lens.run_record_id
+        ${options.project ? 'WHERE run.repo=?' : ''}
         ORDER BY run.number DESC`,
     )
-    .all() as { id: string }[]
+    .iterate(...(options.project ? [options.project] : []))
   const seen = new Set<string>()
   const subjects: BacktestSubject[] = []
+  let alreadyAnswered = 0
   for (const run of runs) {
     for (const pair of selectFindingDuplicatePairs(
       run.id,
       findingRows(database, run.id),
       new Map(),
     )) {
-      const key = `${pair.subjectRef}\0${pair.stateSha}`
-      if (seen.has(key)) continue
-      seen.add(key)
+      if (subjects.length >= options.limit) return { subjects, alreadyAnswered, commits: [] }
+      if (seen.has(pair.subjectRef)) continue
+      seen.add(pair.subjectRef)
+      if (answered('finding-pair', pair.subjectRef)) {
+        alreadyAnswered += 1
+        continue
+      }
       subjects.push({ subjectKind: 'finding-pair', subjectRef: pair.subjectRef, state: pair.state })
     }
   }
-  return subjects
+  return { subjects, alreadyAnswered, commits: [] }
+}
+
+const SOURCES: Record<BacktestDeclaration['backtest'], SubjectSource> = {
+  'spec-runs': specRunSubjects,
+  'finding-pairs': findingPairSubjects,
 }
 
 export async function typedQuestionBacktest(
@@ -152,31 +166,31 @@ export async function typedQuestionBacktest(
   database: Database = db(true),
   ask: typeof askTypedQuestion = askTypedQuestion,
 ): Promise<void> {
-  const declarations = TYPED_QUESTION_DECLARATIONS as readonly BacktestDeclaration[]
-  const declaration = declarations.find(
+  const declaration = TYPED_QUESTION_DECLARATIONS.find(
     (candidate) => candidate.id === options.question && candidate.version === options.version,
   )
   if (!declaration) {
-    const ids = [...new Set(declarations.map((candidate) => candidate.id))].join(', ')
+    const ids = [...new Set(TYPED_QUESTION_DECLARATIONS.map((candidate) => candidate.id))]
     throw new Error(
-      `undeclared typed question ${JSON.stringify(options.question)}; declared ids: ${ids}`,
+      `undeclared typed question ${JSON.stringify(options.question)} v${options.version}; declared ids: ${ids.join(', ')}`,
     )
   }
-  const loaded = (await declaration.backtestSource({
-    specRuns: async () => specSubjects(database, declaration, options),
-    findingPairs: async () => ({ subjects: findingBacktestSubjects(database), commits: [] }),
-  })) as { subjects: BacktestSubject[]; commits: string[] }
-  for (const commit of loaded.commits) presentation.log(`context commit ${commit}`)
-  const candidates = loaded.subjects.slice(0, options.limit)
-  const unanswered = candidates.filter((subject) => !hasAnswer(database, declaration, subject))
+  const sourced = SOURCES[declaration.backtest](
+    database,
+    declaration,
+    options,
+    answeredFor(database, declaration),
+  )
+  for (const commit of sourced.commits) presentation.log(`context commit ${commit}`)
+  const pending = sourced.subjects
   let next = 0
   let errors = 0
   await Promise.all(
     Array.from(
-      { length: Math.min(FINDING_DUPLICATE_ASK_CONCURRENCY, unanswered.length) },
+      { length: Math.min(FINDING_DUPLICATE_ASK_CONCURRENCY, pending.length) },
       async () => {
         for (;;) {
-          const subject = unanswered[next++]
+          const subject = pending[next++]
           if (!subject) return
           const answer = await ask({ question: declaration, ...subject })
           if (!answer) errors += 1
@@ -185,15 +199,13 @@ export async function typedQuestionBacktest(
     ),
   )
   presentation.log(
-    `asked ${unanswered.length}; already answered ${candidates.length - unanswered.length}; errors ${errors}`,
+    `asked ${pending.length}; already answered ${sourced.alreadyAnswered}; errors ${errors}`,
   )
   const blocks = typedQuestionReport(
     { question: declaration.id, job: options.job },
     database,
   ).filter((candidate) => candidate.questionVersion === declaration.version)
-  for (const block of blocks) {
-    renderTypedQuestionBlock(block, presentation)
-  }
+  for (const block of blocks) renderTypedQuestionBlock(block, presentation)
 }
 
 export function backtestLimit(value: string | undefined): number {

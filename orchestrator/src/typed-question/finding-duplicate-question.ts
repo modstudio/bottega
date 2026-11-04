@@ -1,4 +1,5 @@
 import type { NoulQuestion } from '../../../shared/typed-question/registry.ts'
+import type { BacktestSourceName } from './backtest-source-name.ts'
 
 /** Asks whether two independent review findings identify the same defect. */
 export const FINDING_DUPLICATE_QUESTION = {
@@ -6,13 +7,7 @@ export const FINDING_DUPLICATE_QUESTION = {
   version: 1,
   type: 'noul',
   threshold: 0.8,
-  backtestSource: (sources: { specRuns(): Promise<unknown>; findingPairs(): Promise<unknown> }) =>
-    sources.findingPairs(),
+  backtest: 'finding-pairs',
   instructions:
     'These are two findings from independent code reviews of the same change. Judge whether they report the same underlying defect, so that one fix resolves both.',
-} as const satisfies NoulQuestion & {
-  backtestSource(sources: {
-    specRuns(): Promise<unknown>
-    findingPairs(): Promise<unknown>
-  }): Promise<unknown>
-}
+} as const satisfies NoulQuestion & { backtest: BacktestSourceName }

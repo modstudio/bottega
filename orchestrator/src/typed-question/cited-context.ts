@@ -1,6 +1,9 @@
 // concern: cited-context
 /** Extracts bounded repository file context cited by a specification. */
 
+import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { isAbsolute, relative, resolve } from 'node:path'
+
 export const CITED_FILE_BYTES = 16 * 1024
 export const CITED_TOTAL_BYTES = 64 * 1024
 
@@ -32,4 +35,20 @@ export function citedContext(spec: string, readFile: CitedFileReader): CitedFile
     remaining -= bytes.byteLength
   }
   return files
+}
+
+/** Reads a regular file inside one checkout; anything outside it, or unreadable, is null. */
+export function checkoutFileReader(checkout: string): CitedFileReader {
+  return (path) => {
+    try {
+      const root = realpathSync(checkout)
+      const candidate = realpathSync(resolve(root, path))
+      const fromRoot = relative(root, candidate)
+      if (fromRoot.startsWith('..') || isAbsolute(fromRoot) || !statSync(candidate).isFile())
+        return null
+      return readFileSync(candidate, 'utf8')
+    } catch {
+      return null
+    }
+  }
 }

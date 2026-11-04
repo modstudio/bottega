@@ -10,7 +10,7 @@ import {
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
-import { findingBacktestSubjects, typedQuestionBacktest } from './typed-question-backtest.ts'
+import { findingPairSubjects, typedQuestionBacktest } from './typed-question-backtest.ts'
 
 test('refuses an undeclared question and names the declared ids', async () => {
   await expect(
@@ -102,10 +102,58 @@ test('finding backtest source returns the same pairs as live selection', () => {
   const database = db()
   const currentRun = seedFindingPair()
   const live = selectFindingDuplicatePairs(currentRun, findingRows(database, currentRun), new Map())
-  const backtest = findingBacktestSubjects(database)
+  const backtest = findingPairSubjects(
+    database,
+    FINDING_DUPLICATE_QUESTION,
+    { question: FINDING_DUPLICATE_QUESTION.id, version: 1, limit: 50 },
+    () => false,
+  ).subjects
   expect(backtest.map((subject) => subject.subjectRef)).toContain(live[0]!.subjectRef)
   expect(backtest.find((subject) => subject.subjectRef === live[0]!.subjectRef)?.state).toEqual(
     live[0]!.state,
   )
-  expect(FINDING_DUPLICATE_QUESTION.backtestSource).toBeFunction()
+})
+
+test('the limit counts only unanswered subjects, so answered ones never exhaust it', async () => {
+  const database = db()
+  const dir = mkdtempSync(join(tmpdir(), 'backtest-limit-'))
+  const job = `limit-job-${newRecordId()}`
+  for (const [index, specSha] of ['older', 'newer'].entries()) {
+    const promptPath = join(dir, `${specSha}.txt`)
+    writeFileSync(promptPath, `spec ${specSha}`)
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,
+          turn,project_record_id,prompt_path)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex',?,'p',?,1,'p','ok',1,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        new Date(Date.now() + index).toISOString(),
+        job,
+        `${job}-${specSha}`,
+        fixtureProjectRecordId(database),
+        promptPath,
+      )
+  }
+  database
+    .query(
+      `INSERT INTO typed_question_answer
+       (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
+        model,input_tokens,latency_ms,error,created_at)
+       VALUES (?,'spec_unsettled',1,?,?,'state','{"noul":0.1}','jev',1,1,NULL,?)`,
+    )
+    .run(newRecordId(), `spec:${job}`, `${job}-newer`, new Date().toISOString())
+  const asked: string[] = []
+  await typedQuestionBacktest(
+    { question: 'spec_unsettled', version: 1, job, limit: 1 },
+    { log: () => {} },
+    database,
+    async (input) => {
+      asked.push(input.subjectRef)
+      return { noul: 0 }
+    },
+  )
+  expect(asked).toEqual([`${job}-older`])
 })
