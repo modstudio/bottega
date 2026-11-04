@@ -12,7 +12,10 @@ import {
 } from '../../../shared/subjects.ts'
 import { type RecordCursor, type RecordCursorRow, recordCursorAt } from './record-cursor.ts'
 import { recordPool } from './record-pool.ts'
-import { resolveRecordProjectIdentity } from './record-project-identity.ts'
+import {
+  resolveRecordProjectByName,
+  resolveRecordProjectIdentity,
+} from './record-project-identity.ts'
 
 export type RecordSubject = SubjectOutput & RecordCursorRow
 
@@ -86,12 +89,12 @@ async function readProjectId(
   input: { spaceId: string; project: string; projectId?: string | null },
 ): Promise<string> {
   if (input.projectId) return projectId(tx, input.spaceId, input.project, input.projectId)
-  const rows = await tx`
-    SELECT id FROM project
-    WHERE space_id=${input.spaceId}::uuid AND name=${input.project}
-  `
-  if (!rows.length) throw missingProject(input.project)
-  return String(rows[0]!.id)
+  const resolved = await resolveRecordProjectByName(tx, {
+    spaceId: input.spaceId,
+    projectName: input.project,
+  })
+  if (resolved.status === 'absent') throw missingProject(input.project)
+  return resolved.projectId
 }
 
 async function assertParent(

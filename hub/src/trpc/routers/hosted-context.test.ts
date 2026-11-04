@@ -451,7 +451,18 @@ describe('hosted context router', () => {
     })
     await expect(caller(extraKeyClient).settings.get({ user: true })).rejects.toMatchObject({
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'stored settings are invalid',
+      message: expect.stringContaining('stored settings row has an invalid shape at "undeclared"'),
+    })
+
+    const invalidJsonClient = fakeClient({
+      docs: mock(async () => ({
+        items: [{ ...settingsDoc, body: '{' }],
+        nextCursor: null,
+      })) as never,
+    })
+    await expect(caller(invalidJsonClient).settings.get({ user: true })).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: expect.stringMatching(/cannot parse JSON[\s\S]+cleared by: write a JSON object/),
     })
   })
 

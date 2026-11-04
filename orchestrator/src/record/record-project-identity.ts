@@ -6,6 +6,21 @@ import {
   recordProjectIdentityDecision,
 } from '../../../shared/record-project-identity.ts'
 
+export type RecordProjectByNameResult =
+  | { status: 'found'; projectId: string }
+  | { status: 'absent' }
+
+export async function resolveRecordProjectByName(
+  tx: SQL,
+  input: { spaceId: string; projectName: string },
+): Promise<RecordProjectByNameResult> {
+  const rows = await tx`
+    SELECT id FROM project
+    WHERE space_id=${input.spaceId}::uuid AND name=${input.projectName}
+  `
+  return rows.length ? { status: 'found', projectId: String(rows[0]!.id) } : { status: 'absent' }
+}
+
 export async function resolveRecordProjectIdentity(
   tx: SQL,
   input: {
