@@ -213,7 +213,7 @@ export function installationVersionText(fromDirectory: string, env: InstallEnvir
     : `${PLATFORM_NAME} ${identity.version} (development checkout)`
 }
 
-function gitCommonDir(root: string): string | null {
+export function gitCommonDir(root: string): string | null {
   const dotGit = join(root, '.git')
   if (!existsSync(dotGit)) return null
   try {

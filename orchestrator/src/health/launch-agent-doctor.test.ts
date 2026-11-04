@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideLaunchAgentDoctor,
   launchAgentDoctorReport,
+  launchAgentOwningRoot,
   scheduleLine,
   schedulesFailed,
 } from './launch-agent-doctor.ts'
@@ -19,6 +20,16 @@ const skipReasons = {
 }
 
 describe('launch agent doctor decision', () => {
+  test('a checkout linked worktree renders definitions for its owning main checkout', () => {
+    expect(
+      launchAgentOwningRoot({
+        installationKind: 'checkout',
+        runningRoot: '/projects/platform/.claude/worktrees/DEV-2103',
+        discoveredMainCheckout: '/projects/platform',
+      }),
+    ).toBe('/projects/platform')
+  })
+
   test('reads and reports no launch-agent facts on Linux', async () => {
     let reads = 0
     expect(

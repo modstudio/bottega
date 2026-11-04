@@ -9,6 +9,7 @@ import {
   checkoutHeadCommit,
   DIST_MANIFEST,
   type DistributionManifest,
+  gitCommonDir,
   INSTALL_HOME_ENV,
   installationBuildId,
   installationVersionText,
@@ -246,6 +247,7 @@ describe('installation identity', () => {
     writeFileSync(join(worktree, '.git'), `gitdir: ${linked}\n`)
     writeFileSync(join(linked, 'commondir'), '../..\n')
     writeFileSync(join(linked, 'HEAD'), 'ref: refs/heads/other\n')
+    expect(gitCommonDir(worktree)).toBe(mainGit)
     expect(checkoutHeadCommit(worktree)).toBe(commit)
 
     const release = scratch()

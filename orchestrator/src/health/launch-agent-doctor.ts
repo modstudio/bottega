@@ -4,10 +4,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type InstallationKind, resolveInstallationPaths } from '../../../shared/install-root.ts'
+import {
+  gitCommonDir,
+  type InstallationKind,
+  resolveInstallationPaths,
+} from '../../../shared/install-root.ts'
 import {
   type LaunchAgentRenderValues,
   launchAgentProgramPath,
@@ -153,8 +157,33 @@ export function decideLaunchAgentDoctor(input: {
   }
 }
 
-function currentRenderValues(owner: InstalledPlistOwner): LaunchAgentRenderValues {
-  const paths = resolveInstallationPaths(import.meta.dir, process.env)
+export function launchAgentOwningRoot(input: {
+  installationKind: InstallationKind | null
+  runningRoot: string
+  configuredMainCheckout?: string
+  discoveredMainCheckout?: string
+}): string {
+  if (input.installationKind !== 'checkout') return input.runningRoot
+  return input.configuredMainCheckout ?? input.discoveredMainCheckout ?? input.runningRoot
+}
+
+function currentRenderValues(
+  owner: InstalledPlistOwner,
+  installationKind: InstallationKind | null,
+): LaunchAgentRenderValues {
+  const runningPaths = resolveInstallationPaths(import.meta.dir, process.env)
+  const discoveredMainCheckout =
+    installationKind === 'checkout' && !process.env.BOTTEGA_MAIN_CHECKOUT
+      ? gitCommonDir(runningPaths.root)
+      : null
+  const owningRoot = launchAgentOwningRoot({
+    installationKind,
+    runningRoot: runningPaths.root,
+    configuredMainCheckout: process.env.BOTTEGA_MAIN_CHECKOUT,
+    discoveredMainCheckout: discoveredMainCheckout ? dirname(discoveredMainCheckout) : undefined,
+  })
+  const paths =
+    owningRoot === runningPaths.root ? runningPaths : resolveInstallationPaths(owningRoot, {})
   const home = homedir()
   const start = String(readMachineValue('spare.start_time'))
   const match = /^(\d{1,2}):(\d{2})$/.exec(start)
@@ -186,6 +215,7 @@ function currentRenderValues(owner: InstalledPlistOwner): LaunchAgentRenderValue
 
 function installedDefinitionObservations(
   owners: readonly InstalledPlistOwner[],
+  installationKind: InstallationKind | null,
 ): Record<string, LaunchAgentDefinitionObservation> {
   const agents = join(homedir(), 'Library', 'LaunchAgents')
   const observations: Record<string, LaunchAgentDefinitionObservation> = {}
@@ -199,7 +229,8 @@ function installedDefinitionObservations(
       programPath,
       programExists: programPath !== null && existsSync(programPath),
       plistMatches:
-        installed === renderLaunchAgentTemplate(owner.template, currentRenderValues(owner)),
+        installed ===
+        renderLaunchAgentTemplate(owner.template, currentRenderValues(owner, installationKind)),
     }
   }
   return observations
@@ -303,7 +334,7 @@ export async function launchAgentDoctorReport(
     skipReasons,
     loadObservation: loadedLaunchAgentLabels(owners, skipReasons),
     lastRuns: await lastRunByLabel(owners),
-    definitions: installedDefinitionObservations(owners),
+    definitions: installedDefinitionObservations(owners, installationKind),
   })
   const lines = ['launch agents']
   for (const { label, reason } of decision.skipped) {
