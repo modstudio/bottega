@@ -578,7 +578,7 @@ export async function stepCommand(
         options.commitCount,
       )
     : getWorkflowStep(slug, project, stepSlug, args, undefined, selection, live.resolution)
-  print(step, renderWorkflowStep(step, live.resolution?.note))
+  print(step, renderWorkflowStep(step))
 }
 
 export async function nextCommand(

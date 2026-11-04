@@ -76,7 +76,7 @@ async function workflowStep(
       )
     : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode }, live.resolution)
   return {
-    content: [{ type: 'text' as const, text: renderWorkflowStep(result, live.resolution?.note) }],
+    content: [{ type: 'text' as const, text: renderWorkflowStep(result) }],
   }
 }
 

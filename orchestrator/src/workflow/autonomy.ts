@@ -80,6 +80,7 @@ export type CursorAutonomyNotice = {
   autonomyComposeCommand?: string
   autonomyDifferences?: CursorAutonomyDifference[]
   autonomyUnavailableReason?: string
+  autonomyNote?: string
 }
 export type WorkflowAutonomyResolution = AutonomyResolution | CursorAutonomyResolution
 export type RulingsResolution = {

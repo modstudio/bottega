@@ -10,5 +10,6 @@ export function cursorAutonomyOutput(autonomy?: WorkflowAutonomyResolution): Cur
     autonomyComposeCommand: autonomy.cursor.composeCommand,
     autonomyDifferences: autonomy.looserLiveDifferences ?? [],
     autonomyUnavailableReason: autonomy.liveUnavailableReason,
+    autonomyNote: autonomy.note,
   }
 }

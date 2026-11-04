@@ -29,6 +29,7 @@ import {
 import {
   type CachedSessionContext,
   readSessionContextCache,
+  type StateEnvironment,
   writeSessionContextCache,
 } from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
@@ -96,7 +97,7 @@ async function readHosted(
 function refreshHostedCache(
   project: string,
   hosted: Extract<HostedRead, { status: 'available' }>,
-  env: ConfigEnvironment,
+  stateEnvironment: StateEnvironment,
   now: () => Date,
 ): string | null {
   try {
@@ -107,7 +108,7 @@ function refreshHostedCache(
         project,
         hosted: { user: hosted.user, space: hosted.space },
       },
-      env,
+      stateEnvironment,
     )
     return null
   } catch (error) {
@@ -124,6 +125,13 @@ function withHostedWarnings(
   return { ...resolved, ...(warnings.length ? { warnings } : {}) }
 }
 
+function validateSessionAutonomy(session: AutonomySettings): void {
+  if (session.shipTo === undefined) return
+  throw new Error(
+    `ship to is operator-owned and cannot be set at session scope; use ${PLATFORM_SLUG} machine config set autonomy.ship-to <value>`,
+  )
+}
+
 export async function resolveProjectAutonomy(
   project: string,
   workflow: string | undefined,
@@ -138,19 +146,16 @@ export async function resolveProjectAutonomy(
   stages: readonly AutonomyStage[] = [],
   hostedFallback?: CachedSessionContext,
   now: () => Date = () => new Date(),
+  stateEnvironment: StateEnvironment = env,
 ): Promise<AutonomyResolution> {
-  if (session.shipTo !== undefined) {
-    throw new Error(
-      `ship to is operator-owned and cannot be set at session scope; use ${PLATFORM_SLUG} machine config set autonomy.ship-to <value>`,
-    )
-  }
+  validateSessionAutonomy(session)
   const registered = projectByName(project, d)
   if (!registered) throw new Error(`unknown project "${project}"`)
   const local = readMachineAutonomy(project, env)
   const hosted = await readHosted(clientFactory, timeoutMs)
   const cached =
     hosted.status === 'unavailable'
-      ? (hostedFallback ?? readSessionContextCache(project, env))
+      ? (hostedFallback ?? readSessionContextCache(project, stateEnvironment))
       : null
   const hostedSettings =
     hosted.status === 'unavailable' && cached
@@ -170,12 +175,17 @@ export async function resolveProjectAutonomy(
     workflow,
     stages,
   )
-  const resolution = withHostedWarnings(resolved, hosted.warnings)
+  const cacheWarning =
+    hosted.status === 'available'
+      ? refreshHostedCache(project, hosted, stateEnvironment, now)
+      : null
+  const resolution = withHostedWarnings(resolved, [
+    ...hosted.warnings,
+    ...(cacheWarning ? [cacheWarning] : []),
+  ])
   if (hosted.status === 'available') {
-    const cacheWarning = refreshHostedCache(project, hosted, env, now)
     return {
       ...resolution,
-      ...(cacheWarning ? { warnings: [...(resolution.warnings ?? []), cacheWarning] } : {}),
       hosted: { status: hosted.status, user: hosted.user, space: hosted.space },
       session,
     }

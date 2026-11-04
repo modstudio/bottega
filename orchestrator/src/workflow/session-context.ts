@@ -5,11 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import {
-  resolveStateRoot,
-  STATE_HOME_ENV,
-  type StateEnvironment,
-} from '../../../shared/state-directory.ts'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { projectAt } from '../project/projects.ts'
 import {
   type AutonomyStage,
@@ -193,10 +189,6 @@ async function architectSessionContext(
     showResolvedStepCatalogue(project.name, undefined, dependencies.database).definition.steps,
   )
   const stateEnvironment = dependencies.stateEnvironment ?? process.env
-  const resolutionEnvironment = {
-    ...(dependencies.configEnvironment ?? process.env),
-    [STATE_HOME_ENV]: resolveStateRoot(stateEnvironment),
-  }
   const cached = readSessionContextCache(project.name, stateEnvironment)
   const resolution = await resolveProjectAutonomy(
     project.name,
@@ -206,11 +198,12 @@ async function architectSessionContext(
     {},
     dependencies.clientFactory,
     dependencies.database,
-    resolutionEnvironment,
+    dependencies.configEnvironment,
     undefined,
     autonomyStages,
     cached ?? undefined,
     dependencies.now,
+    stateEnvironment,
   )
   const byStage = new Map<AutonomyStage, { value: AutonomyValue; scope: string }[]>()
   for (const step of steps) {

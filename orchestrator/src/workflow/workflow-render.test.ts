@@ -64,7 +64,7 @@ describe('workflow rendering', () => {
     const reason =
       'hosted autonomy settings unavailable: offline; resolved from local and project scopes, then built-in because no cache exists'
 
-    expect(renderWorkflowStep(step, reason)).toContain(
+    expect(renderWorkflowStep({ ...step, autonomyNote: reason })).toContain(
       `${reason}\nfacts: ${JSON.stringify(step.facts)}\nAutonomy: auto (built-in)`,
     )
   })
