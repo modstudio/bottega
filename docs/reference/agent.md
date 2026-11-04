@@ -21,6 +21,7 @@ agents, jobs, and routing
 - [bottega agent show](#bottega-agent-show)
 - [bottega agent stats](#bottega-agent-stats)
 - [bottega agent typed-question](#bottega-agent-typed-question)
+- [bottega agent typed-question backtest](#bottega-agent-typed-question-backtest)
 
 ## bottega agent
 
@@ -268,16 +269,36 @@ show routing scores, latency, cost, and agent duels
 
 ## bottega agent typed-question
 
-**Synopsis:** `bottega agent typed-question [--question <id>] [--days <value>] [--json]`
+**Synopsis:** `bottega agent typed-question [--question <id>] [--days <value>] [--job <name>] [--json]`
 
 report typed-question outcomes and operating cost
 
 ### Options
 
-- `--question <id>`: report one question id
+- `--question <id>`: report or backtest one question id
 - `--days <value>`: limit answers to this many days
+- `--job <name>`: select a spec subject job
 - `--json`: write the report as JSON
 
 ### Related
 
 - [bottega agent](./agent.md#bottega-agent)
+- [bottega agent typed-question backtest](./agent.md#bottega-agent-typed-question-backtest)
+
+## bottega agent typed-question backtest
+
+**Synopsis:** `bottega agent typed-question backtest [--question <id>] [--version <value>] [--job <name>] [--limit <value>] [--project <name>]`
+
+ask a declared typed question about unanswered historical subjects
+
+### Options
+
+- `--question <id>`: select a declared question id
+- `--version <value>`: select a declared question version
+- `--job <name>`: select a spec subject job
+- `--limit <value>`: limit backtest subjects
+- `--project <name>`: select a registered project
+
+### Related
+
+- [bottega agent typed-question](./agent.md#bottega-agent-typed-question)

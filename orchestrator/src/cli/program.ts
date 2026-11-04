@@ -119,12 +119,20 @@ const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
  * because its broker declaration must be the process's FIRST store open: a stamp opens the
  * store read-only first, and a handle opened read-only can never be written through afterwards.
  */
+const isTypedQuestionBacktest = (argv: readonly string[]): boolean =>
+  argv[0] === 'typed-question' && argv[1] === 'backtest'
+
+const settingsInvocationSkipsStamp = (argv: readonly string[]): boolean =>
+  (argv[1] === 'render' && argv.includes('--check')) ||
+  (argv[1] === 'import' && argv.includes('--dry-run'))
+
 export function invocationSkipsSessionStamp(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
     review: ['coverage-audit', 'scope-proposal', 'yield'],
     pr: ['check'],
     setup: ['facts', 'plan'],
   }
+  if (isTypedQuestionBacktest(argv)) return false
   if (INVOCATIONS_WITHOUT_SESSION_STAMP.has(argv[0]!)) return true
   // Monitor owns its writable open so it can diagnose that open when the store is locked.
   // The lock-holder-only path never opens SQLite writable at all.
@@ -133,17 +141,14 @@ export function invocationSkipsSessionStamp(argv: string[]): boolean {
   if (argv[0] === 'port') return argv[1] === 'import' && argv.includes('--dry-run')
   if (argv[0] === 'canon') return argv[1] === 'audit' && argv.includes('--dry-run')
   if (readOnlySubcommands[argv[0]!]?.includes(argv[1] ?? '')) return true
-  if (argv[0] === 'settings') {
-    if (argv[1] === 'render' && argv.includes('--check')) return true
-    if (argv[1] === 'import' && argv.includes('--dry-run')) return true
-  }
+  if (argv[0] === 'settings') return settingsInvocationSkipsStamp(argv)
   return false
 }
 
 export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
   const command = argv[0] as (typeof READ_ONLY_STORE_COMMANDS)[number]
   if (!READ_ONLY_STORE_COMMANDS.includes(command)) return false
-  if (command === 'typed-question') return true
+  if (command === 'typed-question') return !isTypedQuestionBacktest(argv)
   if (command === 'gate-facts') return true
   if (command === 'runs') return true
   // Every option these verbs take is a boolean flag, so the first non-flag token is the run id.

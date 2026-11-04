@@ -3,6 +3,7 @@ import type { TypedQuestionMetrics } from './typed-question-metrics.ts'
 export type TypedQuestionReportBlock = Omit<TypedQuestionMetrics, 'labeled' | 'pending'> & {
   questionId: string
   questionVersion: number
+  subjectKind: string
   threshold: number | null
   labeled: number | null
   pending: number | null
@@ -34,6 +35,6 @@ export function renderTypedQuestionBlock(
     ['inputTokens', String(block.inputTokens)],
     ['costUsd', value(block.costUsd, 6)],
   ]
-  presentation.log(`\n${block.questionId} v${block.questionVersion}`)
+  presentation.log(`\n${block.questionId} v${block.questionVersion} (${block.subjectKind})`)
   for (const [name, shown] of lines) presentation.log(`  ${name.padEnd(16)}${shown}`)
 }

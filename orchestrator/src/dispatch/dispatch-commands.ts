@@ -24,7 +24,13 @@ import {
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { SPEC_UNSETTLED_QUESTION } from '../typed-question/spec-unsettled-question.ts'
+import { checkoutFileReader } from '../typed-question/cited-context.ts'
+import {
+  SPEC_UNSETTLED_QUESTION,
+  SPEC_UNSETTLED_QUESTION_V2,
+  specQuestionState,
+  specSubjectKind,
+} from '../typed-question/spec-unsettled-question.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
@@ -151,7 +157,7 @@ type DispatchPresentation = {
     question: TypedQuestion
     subjectKind: string
     subjectRef: string
-    state: string
+    state: string | Record<string, unknown>
   }): Promise<TypedQuestionAnswer | null>
   specIdentity(state: string): string
   validateSchema(path: string): unknown
@@ -204,24 +210,50 @@ type DispatchPresentation = {
 type SpecWarningInput = {
   jobName: string
   continuation: boolean
+  cwd?: string
   spec: string
   specIdentity: string
 }
 
-/** Ask about every new implementation spec, in every project, and present an advisory warning. */
+/** Bounds the wait for answers only; building the states first reads each cited file up to `CITED_FILE_BYTES`, until `CITED_TOTAL_BYTES` is kept. */
+const SPEC_QUESTION_WAIT_MS = 3_000
+
+/** Settle each ask on its own against one shared deadline, so a slow ask never discards a fast one. */
+async function settledByDeadline(
+  asks: readonly Promise<TypedQuestionAnswer | null>[],
+  waitMs: number,
+): Promise<(TypedQuestionAnswer | null)[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<null>((resolveDeadline) => {
+    timer = setTimeout(() => resolveDeadline(null), waitMs)
+  })
+  const settled = await Promise.all(asks.map((ask) => Promise.race([ask, deadline])))
+  if (timer) clearTimeout(timer)
+  return settled
+}
+
+/** Ask both declared versions about every new job spec; only implement v1 can warn. */
 export async function warnForUnsettledSpec(
   input: SpecWarningInput,
   ask: DispatchPresentation['askTypedQuestion'],
   warn: DispatchPresentation['error'],
+  waitMs = SPEC_QUESTION_WAIT_MS,
 ): Promise<void> {
-  if (input.jobName !== 'implement' || input.continuation) return
-  const answer = await ask({
-    question: SPEC_UNSETTLED_QUESTION,
-    subjectKind: 'spec',
-    subjectRef: input.specIdentity,
-    state: input.spec,
-  })
-  if (answer && 'noul' in answer && answer.noul >= SPEC_UNSETTLED_QUESTION.threshold) {
+  if (input.continuation) return
+  const common = { subjectKind: specSubjectKind(input.jobName), subjectRef: input.specIdentity }
+  const readFile = checkoutFileReader(input.cwd ?? process.cwd())
+  const [answer] = await settledByDeadline(
+    [SPEC_UNSETTLED_QUESTION, SPEC_UNSETTLED_QUESTION_V2].map((question) =>
+      ask({ question, ...common, state: specQuestionState(question, input.spec, readFile) }),
+    ),
+    waitMs,
+  )
+  if (
+    input.jobName === 'implement' &&
+    answer &&
+    'noul' in answer &&
+    answer.noul >= SPEC_UNSETTLED_QUESTION.threshold
+  ) {
     warn(
       `! this spec likely leaves a choice unsettled (p=${answer.noul.toFixed(2)}): ` +
         'a worker will probably stop and ask; settle it first or dispatch anyway',
@@ -256,6 +288,7 @@ export async function composeDispatchPrompt(input: {
     {
       jobName: input.jobName,
       continuation: input.continuation,
+      cwd: input.cwd,
       spec,
       specIdentity: input.presentation.specIdentity(prompt),
     },

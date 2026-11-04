@@ -57,7 +57,10 @@ import { answerCommand, continueCommand, retryCommand } from '../run/run-message
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
-import { typedQuestionCommand } from '../typed-question/typed-question-commands.ts'
+import {
+  typedQuestionBacktestCommand,
+  typedQuestionCommand,
+} from '../typed-question/typed-question-commands.ts'
 import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
@@ -437,9 +440,14 @@ function registerMetricCommands(program: Command): void {
         presentation,
       ),
     )
-  describedCommand(program, 'typed-question', 'report typed-question outcomes and operating cost')
-    .option('--question <id>', 'report one question id')
+  const typedQuestion = describedCommand(
+    program,
+    'typed-question',
+    'report typed-question outcomes and operating cost',
+  )
+    .option('--question <id>', 'report or backtest one question id')
     .option('--days <value>', 'limit answers to this many days')
+    .option('--job <name>', 'select a spec subject job')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action((options) =>
@@ -447,11 +455,22 @@ function registerMetricCommands(program: Command): void {
         {
           question: options.question,
           days: options.days,
+          job: options.job,
           json: Boolean(options.json),
         },
         presentation,
       ),
     )
+  typedQuestion
+    .command('backtest')
+    .description('ask a declared typed question about unanswered historical subjects')
+    .requiredOption('--question <id>', 'select a declared question id')
+    .requiredOption('--version <value>', 'select a declared question version')
+    .option('--job <name>', 'select a spec subject job')
+    .option('--limit <value>', 'limit backtest subjects')
+    .option('--project <name>', 'select a registered project')
+    .allowExcessArguments(false)
+    .action((options) => typedQuestionBacktestCommand(options, presentation))
 }
 
 async function epicAction(

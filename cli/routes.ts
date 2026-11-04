@@ -180,6 +180,7 @@ export const ROUTES = (
     route('agent set', 'orch', 'agent set'),
     route('agent remove', 'orch', 'agent remove'),
     route('agent list', 'orch', 'agents'),
+    route('agent typed-question backtest', 'orch', 'typed-question backtest'),
     route(
       'agent probe',
       'orch',

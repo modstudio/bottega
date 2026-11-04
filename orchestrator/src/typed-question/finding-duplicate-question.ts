@@ -1,11 +1,16 @@
 import type { NoulQuestion } from '../../../shared/typed-question/registry.ts'
+import type { BacktestSourceName } from './backtest-source-name.ts'
 
 /** Asks whether two independent review findings identify the same defect. */
+/** The subject kind of a pair of review findings, live and in a backtest. */
+export const FINDING_PAIR_SUBJECT_KIND = 'finding-pair'
+
 export const FINDING_DUPLICATE_QUESTION = {
   id: 'finding_duplicate',
   version: 1,
   type: 'noul',
   threshold: 0.8,
+  backtest: 'finding-pairs',
   instructions:
     'These are two findings from independent code reviews of the same change. Judge whether they report the same underlying defect, so that one fix resolves both.',
-} as const satisfies NoulQuestion
+} as const satisfies NoulQuestion & { backtest: BacktestSourceName }

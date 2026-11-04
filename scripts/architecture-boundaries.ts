@@ -248,6 +248,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/brand.ts',
       '../../../shared/typed-question/client.ts',
       '../../../shared/typed-question/registry.ts',
+      '../typed-question/cited-context.ts',
       '../typed-question/spec-unsettled-question.ts',
       'node:fs',
       './dispatch-preflight.ts',
