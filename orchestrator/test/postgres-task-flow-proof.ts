@@ -47,7 +47,11 @@ function proofDatabase(projectId: string): Database {
       projectId,
       PROJECT,
       '/tmp/hosted-task-flow-proof',
-      JSON.stringify({ trunk: 'main', tracker: { protocol: 'hub' } }),
+      JSON.stringify({
+        trunk: 'main',
+        docs: { protocol: 'orch-docs' },
+        tracker: { protocol: 'hub' },
+      }),
     )
   const draft = setWorkflowLocal(
     WORKFLOW,
