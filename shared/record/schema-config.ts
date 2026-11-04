@@ -17,6 +17,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import {
   RECORD_ACTOR_ROLE,
+  RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
   spaceIdentity,
   tenantPolicies,
@@ -109,6 +110,11 @@ export const secretDek = pgTable.withRLS(
     unique('secret_dek_space_version_unique').on(table.spaceId, table.version),
     unique('secret_dek_space_id_unique').on(table.spaceId, table.id),
     ...actorPolicies('secret_dek', table.spaceId),
+    pgPolicy('secret_dek_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
   ],
 )
 
@@ -135,6 +141,11 @@ export const configSecret = pgTable.withRLS(
       name: 'config_secret_space_dek_fk',
     }),
     ...actorPolicies('config_secret', table.spaceId, table.userId),
+    pgPolicy('config_secret_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
   ],
 )
 
@@ -175,6 +186,16 @@ export const secretDekWrap = pgTable.withRLS(
     check('secret_dek_wrap_recipient_key_id_check', keyIdCheck(table.recipientKeyId)),
     check('secret_dek_wrap_sender_key_id_check', keyIdCheck(table.senderKeyId)),
     ...actorPolicies('secret_dek_wrap', table.spaceId),
+    pgPolicy('secret_dek_wrap_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
+    pgPolicy('secret_dek_wrap_owner_delete', {
+      for: 'delete',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
   ],
 )
 
@@ -195,6 +216,17 @@ export const machinePublicKey = pgTable.withRLS(
     check('machine_public_key_key_id_check', keyIdCheck(table.keyId)),
     check('machine_public_key_length_check', sql`octet_length(${table.publicKey}) = 32`),
     ...tenantPolicies('machine_public_key', table.spaceId),
+    pgPolicy('machine_public_key_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
+    pgPolicy('machine_public_key_owner_update', {
+      for: 'update',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
   ],
 )
 

@@ -103,6 +103,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'inviteMember',
       'grantConfigAccess',
       'setActiveOrganization',
+      'withdrawConfigAccess',
     ],
   ),
   ...writeEntries(

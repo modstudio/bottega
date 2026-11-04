@@ -19,6 +19,7 @@ import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendEmailVerificationEmail } from '../mail/email-verification-mailer.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
+import { ensureMemberConfigRemovalSafe } from './record-config-access-removal.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
 
@@ -246,6 +247,35 @@ function recordAuthPresentation(environment: RecordAuthEnvironment) {
   }
 }
 
+function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBuiltInsPort) {
+  return {
+    beforeRemoveMember: async ({
+      member,
+      organization,
+    }: {
+      member: { userId: string }
+      organization: { id: string }
+    }) => {
+      await ensureMemberConfigRemovalSafe({ url, spaceId: organization.id, userId: member.userId })
+    },
+    afterCreateOrganization: async ({
+      organization: created,
+      user: owner,
+    }: {
+      organization: { id: string }
+      user: { id: string }
+    }) => {
+      await markCreatedSpaceOwner(authClient, created, owner)
+      await builtIns.ensure({
+        url,
+        userId: owner.id,
+        spaceId: created.id,
+        spaceIds: [created.id],
+      })
+    },
+  }
+}
+
 function recordDatabaseHooks(client: SQL, personalSpaces: ReturnType<typeof personalSpacePort>) {
   return {
     user: {
@@ -419,17 +449,7 @@ export function recordAuth(
         invitationExpiresIn: RECORD_INVITATION_EXPIRES_IN_SECONDS,
         // Invitation ids are unguessable and are delivered only in the invitation email.
         requireEmailVerificationOnInvitation: false,
-        organizationHooks: {
-          afterCreateOrganization: async ({ organization: created, user: owner }) => {
-            await markCreatedSpaceOwner(authClient, created, owner)
-            await builtIns.ensure({
-              url,
-              userId: owner.id,
-              spaceId: created.id,
-              spaceIds: [created.id],
-            })
-          },
-        },
+        organizationHooks: recordOrganizationHooks(url, authClient, builtIns),
         sendInvitationEmail: async ({ id, email, organization: invitedSpace, inviter, role }) => {
           if (!hubUrl)
             throw new Error(

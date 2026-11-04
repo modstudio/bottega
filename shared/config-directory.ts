@@ -14,6 +14,11 @@ export function machineKeyFilePath(env: ConfigEnvironment): string {
   return join(resolveConfigRoot(env), 'machine-key')
 }
 
+/** The owner-only directory holding revoked file-backed machine identities. */
+export function revokedMachineKeyDirectory(env: ConfigEnvironment): string {
+  return join(resolveConfigRoot(env), 'machine-key-revoked')
+}
+
 /** Resolve the per-user config root using only the supplied environment. */
 export function resolveConfigRoot(env: ConfigEnvironment): string {
   const override = env[CONFIG_HOME_ENV]

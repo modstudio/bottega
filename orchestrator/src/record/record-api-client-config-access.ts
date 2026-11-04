@@ -8,6 +8,10 @@ export type RecordConfigAccessClient = {
     items: Array<{ email: string; role: string; permission: string; configAccess: boolean }>
   }>
   grantConfigAccess(email: string): Promise<{ granted: true }>
+  withdrawConfigAccess(email: string): Promise<{
+    revokedMachineKeyIds: string[]
+    readableSecretKeys: string[]
+  }>
 }
 
 export function recordConfigAccessClient(request: RecordClientRequest): RecordConfigAccessClient {
@@ -15,6 +19,11 @@ export function recordConfigAccessClient(request: RecordClientRequest): RecordCo
     listConfigAccess: () => request('/v1/config-access'),
     grantConfigAccess: (email) =>
       request('/v1/config-access/grant', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }),
+    withdrawConfigAccess: (email) =>
+      request('/v1/config-access/withdraw', {
         method: 'POST',
         body: JSON.stringify({ email }),
       }),

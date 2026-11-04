@@ -39,6 +39,7 @@ function idleConfigAuthorizationDeps() {
     claimMachineKey: unused,
     listSpaceConfigAccess: async () => [],
     grantSpaceConfigAccess: unused,
+    withdrawSpaceConfigAccess: unused,
   }
 }
 
@@ -192,6 +193,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'inviteMember'
   | 'listConfigAccess'
   | 'grantConfigAccess'
+  | 'withdrawConfigAccess'
 > {
   return {
     whoami: unusedIdentityAndSpace,
@@ -202,6 +204,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     inviteMember: unusedIdentityAndSpace,
     listConfigAccess: unusedIdentityAndSpace,
     grantConfigAccess: unusedIdentityAndSpace,
+    withdrawConfigAccess: unusedIdentityAndSpace,
   }
 }
 

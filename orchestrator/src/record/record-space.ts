@@ -72,6 +72,13 @@ export async function grantRecordSpaceConfigAccess(
   await client.grantConfigAccess(email)
 }
 
+export async function withdrawRecordSpaceConfigAccess(
+  email: string,
+  client: Pick<RecordApiClient, 'withdrawConfigAccess'> = recordApiClient(),
+) {
+  return client.withdrawConfigAccess(email)
+}
+
 export async function recordMemberships(
   client: Pick<RecordApiClient, 'whoami'> = recordApiClient(),
 ): Promise<{ activeSpaceId: string | null; memberships: RecordMembership[] }> {

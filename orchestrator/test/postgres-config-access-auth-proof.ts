@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { bearerHeaders } from '../src/record/record-auth.ts'
 import {
   SIGN_UP_AUTH,
@@ -15,6 +16,8 @@ export function registerConfigAccessSpaceCreationProof(input: {
   otherUserId: () => string
   cliOutput: () => string[]
   succeeds: (source: string) => string
+  psql: (source: string) => { code: number; stderr: string }
+  apiUrl: () => string
 }): void {
   test('CLI sign-up creates owner memberships with config access and distinct identities', async () => {
     expect(input.cliOutput()).toEqual(SIGN_UP_CLI_OUTPUT)
@@ -62,5 +65,182 @@ export function registerConfigAccessSpaceCreationProof(input: {
     } finally {
       await auth.close()
     }
+  })
+
+  test('membership removal ignores a DEK held only by an unattributed key when the member held no wrap', () => {
+    const spaceId = newRecordId()
+    const membershipId = newRecordId()
+    const dekId = newRecordId()
+    const keyId = 'UNATTRIBUTED_ONLY_WRAP'
+    expect(
+      input.succeeds(`
+        BEGIN;
+        INSERT INTO space (id,name,slug,created_at)
+        VALUES ('${spaceId}','Unattributed-only wrap','unattributed-only-${spaceId.slice(-8)}',now());
+        INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at) VALUES
+          ('${newRecordId()}','${spaceId}','${input.userId()}','owner','write',true,now()),
+          ('${membershipId}','${spaceId}','${input.otherUserId()}','member','write',true,now());
+        INSERT INTO secret_dek (id,space_id,version,created_at)
+        VALUES ('${dekId}','${spaceId}',1,now());
+        INSERT INTO config_secret (id,space_id,user_id,key,environment,dek_id,row_version,envelope,updated_at)
+        VALUES ('${newRecordId()}','${spaceId}',NULL,'UNATTRIBUTED_ONLY','default','${dekId}',1,decode('01','hex'),now());
+        INSERT INTO machine_public_key (id,space_id,user_id,key_id,public_key,label,created_at)
+        VALUES ('${newRecordId()}','${spaceId}',NULL,'${keyId}',decode(repeat('55',32),'hex'),'unattributed-only',now());
+        INSERT INTO secret_dek_wrap (id,space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at)
+        VALUES ('${newRecordId()}','${spaceId}','${dekId}','${keyId}','${keyId}',decode('02','hex'),decode('03','hex'),now());
+        DELETE FROM membership WHERE id='${membershipId}';
+        SELECT
+          (SELECT count(*) FROM membership WHERE id='${membershipId}'),
+          (SELECT revoked_at IS NULL FROM machine_public_key WHERE space_id='${spaceId}' AND key_id='${keyId}'),
+          (SELECT count(*) FROM secret_dek_wrap WHERE space_id='${spaceId}' AND dek_id='${dekId}');
+        ROLLBACK;`),
+    ).toBe('0|t|1')
+  })
+
+  test('withdraw endpoint revokes only the member machines, returns exposed names, and refuses owners and non-holders', async () => {
+    const spaceId = input.succeeds(
+      `SELECT space_id FROM membership WHERE user_id='${input.userId()}' AND role='owner' ORDER BY created_at LIMIT 1;`,
+    )
+    const memberKey = 'WWWWWWWWWWWWWWWWWWWWWW'
+    const ownerKey = 'XXXXXXXXXXXXXXXXXXXXXX'
+    const otherSpaceKey = 'YYYYYYYYYYYYYYYYYYYYYY'
+    const unattributedKey = 'ZZZZZZZZZZZZZZZZZZZZZZ'
+    const dekId = newRecordId()
+    const strandedDekId = newRecordId()
+    input.succeeds(`
+      INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at)
+      VALUES ('${newRecordId()}','${spaceId}','${input.otherUserId()}','member','write',true,now());
+      INSERT INTO secret_dek (id,space_id,version,created_at)
+      VALUES ('${dekId}','${spaceId}',1,now());
+      INSERT INTO config_secret (id,space_id,user_id,key,environment,dek_id,row_version,envelope,updated_at)
+      VALUES ('${newRecordId()}','${spaceId}',NULL,'DEVELOPMENT_TOKEN','default','${dekId}',1,decode('01','hex'),now());
+      INSERT INTO machine_public_key (id,space_id,user_id,key_id,public_key,label,created_at) VALUES
+        ('${newRecordId()}','${spaceId}','${input.otherUserId()}','${memberKey}',decode(repeat('11',32),'hex'),'member',now()),
+        ('${newRecordId()}','${spaceId}','${input.userId()}','${ownerKey}',decode(repeat('22',32),'hex'),'owner',now()),
+        ('${newRecordId()}',(SELECT space_id FROM membership WHERE user_id='${input.otherUserId()}' AND role='owner' LIMIT 1),'${input.otherUserId()}','${otherSpaceKey}',decode(repeat('33',32),'hex'),'other-space',now());
+      INSERT INTO secret_dek_wrap (id,space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at)
+      VALUES
+        ('${newRecordId()}','${spaceId}','${dekId}','${memberKey}','${ownerKey}',decode('01','hex'),decode('02','hex'),now()),
+        ('${newRecordId()}','${spaceId}','${dekId}','${ownerKey}','${ownerKey}',decode('03','hex'),decode('04','hex'),now());`)
+    const request = (email: string) =>
+      fetch(`${input.apiUrl()}/v1/config-access/withdraw`, {
+        method: 'POST',
+        headers: {
+          ...Object.fromEntries(bearerHeaders(input.token())),
+          'content-type': 'application/json',
+          'x-record-space': spaceId,
+        },
+        body: JSON.stringify({ email }),
+      })
+    const owner = await request(SIGN_UP_AUTH.emailA)
+    expect(owner.status).toBe(422)
+    expect(await owner.text()).toContain('change their role first')
+
+    input.succeeds(`
+      INSERT INTO machine_public_key (id,space_id,user_id,key_id,public_key,label,created_at)
+      VALUES ('${newRecordId()}','${spaceId}',NULL,'${unattributedKey}',decode(repeat('44',32),'hex'),'unattributed',now());
+      INSERT INTO secret_dek_wrap (id,space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at)
+      VALUES ('${newRecordId()}','${spaceId}','${dekId}','${unattributedKey}','${ownerKey}',decode('05','hex'),decode('06','hex'),now());`)
+    const unattributed = await request(SIGN_UP_AUTH.emailB)
+    expect(unattributed.status).toBe(409)
+    const unattributedText = await unattributed.text()
+    expect(unattributedText).toContain(unattributedKey)
+    expect(unattributedText).toContain('machine config machine init')
+    expect(
+      input.succeeds(
+        `SELECT config_access FROM membership WHERE space_id='${spaceId}' AND user_id='${input.otherUserId()}';`,
+      ),
+    ).toBe('t')
+    input.succeeds(`
+      UPDATE machine_public_key SET revoked_at=now() WHERE space_id='${spaceId}' AND key_id='${unattributedKey}';
+      DELETE FROM secret_dek_wrap WHERE space_id='${spaceId}' AND recipient_key_id='${unattributedKey}';
+      INSERT INTO secret_dek (id,space_id,version,created_at) VALUES ('${strandedDekId}','${spaceId}',2,now());
+      INSERT INTO config_secret (id,space_id,user_id,key,environment,dek_id,row_version,envelope,updated_at)
+      VALUES ('${newRecordId()}','${spaceId}',NULL,'ONLY_MEMBER_CAN_OPEN','default','${strandedDekId}',1,decode('07','hex'),now());
+      INSERT INTO secret_dek_wrap (id,space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at)
+      VALUES ('${newRecordId()}','${spaceId}','${strandedDekId}','${memberKey}','${ownerKey}',decode('08','hex'),decode('09','hex'),now());`)
+    const stranded = await request(SIGN_UP_AUTH.emailB)
+    expect(stranded.status).toBe(409)
+    const strandedText = await stranded.text()
+    expect(strandedText).toContain('data key versions: 2')
+    expect(strandedText).toContain('machine config machine trust')
+    expect(
+      input.succeeds(
+        `SELECT m.config_access, k.revoked_at IS NULL,
+          (SELECT count(*) FROM secret_dek_wrap WHERE dek_id='${strandedDekId}')
+         FROM membership m JOIN machine_public_key k
+           ON k.space_id=m.space_id AND k.user_id=m.user_id
+         WHERE m.space_id='${spaceId}' AND m.user_id='${input.otherUserId()}' AND k.key_id='${memberKey}';`,
+      ),
+    ).toBe('t|t|1')
+    const direct = input.psql(
+      `UPDATE membership SET config_access=false WHERE space_id='${spaceId}' AND user_id='${input.otherUserId()}';`,
+    )
+    expect(direct.code).not.toBe(0)
+    expect(direct.stderr).toContain('strand data key versions: 2')
+    input.succeeds(`
+      INSERT INTO secret_dek_wrap (id,space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at)
+      VALUES ('${newRecordId()}','${spaceId}','${strandedDekId}','${ownerKey}','${ownerKey}',decode('0a','hex'),decode('0b','hex'),now());`)
+    const withdrawn = await request(SIGN_UP_AUTH.emailB)
+    expect(withdrawn.status).toBe(200)
+    expect(await withdrawn.json()).toEqual({
+      revokedMachineKeyIds: [memberKey],
+      readableSecretKeys: ['DEVELOPMENT_TOKEN', 'ONLY_MEMBER_CAN_OPEN'],
+    })
+    expect(
+      input.succeeds(
+        `SELECT key_id, revoked_at IS NOT NULL FROM machine_public_key
+         WHERE key_id IN ('${memberKey}','${ownerKey}','${otherSpaceKey}') ORDER BY key_id;
+         SELECT count(*) FROM secret_dek_wrap WHERE recipient_key_id='${memberKey}';`,
+      ),
+    ).toBe(`${memberKey}|t\n${ownerKey}|f\n${otherSpaceKey}|f\n0`)
+    const revokedRead = await fetch(
+      `${input.apiUrl()}/v1/config/data-keys/current?recipientKeyId=${memberKey}`,
+      {
+        headers: {
+          ...Object.fromEntries(bearerHeaders(input.otherToken())),
+          'x-record-space': spaceId,
+        },
+      },
+    )
+    expect(revokedRead.status).toBe(422)
+    expect(await revokedRead.text()).toContain("this machine's key is revoked in the space")
+    const repeated = await request(SIGN_UP_AUTH.emailB)
+    expect(repeated.status).toBe(422)
+    expect(await repeated.text()).toContain('does not have config access')
+
+    input.succeeds(`UPDATE membership SET config_access=true
+      WHERE space_id='${spaceId}' AND user_id='${input.otherUserId()}';`)
+    const regrantedRead = await fetch(
+      `${input.apiUrl()}/v1/config/data-keys/current?recipientKeyId=${memberKey}`,
+      {
+        headers: {
+          ...Object.fromEntries(bearerHeaders(input.otherToken())),
+          'x-record-space': spaceId,
+        },
+      },
+    )
+    expect(regrantedRead.status).toBe(422)
+    expect(await regrantedRead.text()).toContain('machine config machine init')
+
+    input.succeeds(`
+      UPDATE machine_public_key SET revoked_at=NULL WHERE space_id='${spaceId}' AND key_id='${memberKey}';
+      INSERT INTO secret_dek_wrap (id,space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at)
+      VALUES ('${newRecordId()}','${spaceId}','${dekId}','${memberKey}','${ownerKey}',decode('01','hex'),decode('02','hex'),now());`)
+    const auth = testRecordAuth(input.actorUrl(), input.authUrl())
+    try {
+      await auth.api.removeMember({
+        headers: bearerHeaders(input.token()),
+        body: { memberIdOrEmail: SIGN_UP_AUTH.emailB, organizationId: spaceId },
+      })
+    } finally {
+      await auth.close()
+    }
+    expect(
+      input.succeeds(
+        `SELECT revoked_at IS NOT NULL FROM machine_public_key WHERE space_id='${spaceId}' AND key_id='${memberKey}';
+         SELECT count(*) FROM secret_dek_wrap WHERE recipient_key_id='${memberKey}';`,
+      ),
+    ).toBe('t\n0')
   })
 }

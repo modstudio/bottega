@@ -28,6 +28,7 @@ import {
   recordSpaceAcceptCommand,
   recordSpaceAccessGrantCommand,
   recordSpaceAccessListCommand,
+  recordSpaceAccessWithdrawCommand,
   recordSpaceCreateCommand,
   recordSpaceInvitationsCommand,
   recordSpaceInviteCommand,
@@ -297,6 +298,15 @@ function registerSpaceAccessCommands(space: Command): void {
     .action((email) =>
       hostedCommand(`${PLATFORM_SLUG} record space access grant`, () =>
         recordSpaceAccessGrantCommand(String(email), presentation),
+      ),
+    )
+  access
+    .command('withdraw')
+    .description('withdraw config access from a member')
+    .argument('<email>')
+    .action((email) =>
+      hostedCommand(`${PLATFORM_SLUG} record space access withdraw`, () =>
+        recordSpaceAccessWithdrawCommand(String(email), presentation),
       ),
     )
 }

@@ -1,5 +1,9 @@
 import { readFileSync, type Stats, statSync } from 'node:fs'
-import { type ConfigEnvironment, machineKeyFilePath } from './config-directory.ts'
+import {
+  type ConfigEnvironment,
+  machineKeyFilePath,
+  revokedMachineKeyDirectory,
+} from './config-directory.ts'
 import { hubLoginTokenDirectory, recordSessionDirectory } from './state-directory.ts'
 
 /** Every path that may hold a secret in a file; directories are denied whole, staging included. */
@@ -7,6 +11,7 @@ export function fileBackedSecretPaths(environment: ConfigEnvironment): string[] 
   return [
     hubLoginTokenDirectory(environment),
     machineKeyFilePath(environment),
+    revokedMachineKeyDirectory(environment),
     recordSessionDirectory(environment),
   ]
 }

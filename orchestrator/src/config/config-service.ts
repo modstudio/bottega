@@ -39,6 +39,7 @@ import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import {
   machineKeyInfo,
   readMachineKey,
+  replaceRevokedMachineKey,
   writeMachineKey,
 } from '../../../shared/machine-key-store.ts'
 import {
@@ -76,6 +77,16 @@ const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
 const isNotFound = (error: unknown) => error instanceof ConfigClientError && error.status === 404
 
 export type RotationPlan = { reseal: ConfigSecret[]; retireDekIds: string[] }
+
+export function shouldRotateAfterRevocation(
+  current: DataKey,
+  revocations: readonly { revokedAt: string | null }[],
+): boolean {
+  return revocations.some(
+    ({ revokedAt }) =>
+      revokedAt !== null && new Date(revokedAt).getTime() > new Date(current.createdAt).getTime(),
+  )
+}
 
 export function planRotation(
   rows: ConfigSecret[],
@@ -168,7 +179,9 @@ async function currentOrCreate(client: ConfigClient) {
   const machine = await localMachine()
   try {
     const key = await client.currentDataKey(machine.keyId)
-    return { key, dek: await unwrap(client, key, machine) }
+    const remote = await unpinServerRevoked(client)
+    const rotated = await rotateAfterLatestRevocation(client, machine, key, remote)
+    return { key: rotated.key, dek: rotated.dek }
   } catch (error) {
     if (!isNotFound(error)) throw error
     await unpinServerRevoked(client)
@@ -200,9 +213,18 @@ export async function machineInit(
     if (current.user.id !== pinned.userId) throw new Error(pinnedUserMismatchRemedy(pinned.userId))
   }
   const existing = readMachineKey(env)
-  const pair = existing ?? (await generateMachineKeyPair())
-  const keyId = await machineKeyId(pair.publicKey)
-  if (!existing) writeMachineKey(pair, env)
+  let pair = existing ?? (await generateMachineKeyPair())
+  let keyId = await machineKeyId(pair.publicKey)
+  if (existing) {
+    const registered = (await client.listMachineKeys()).find((key) => key.keyId === keyId)
+    if (registered?.revokedAt) {
+      const replacement = await generateMachineKeyPair()
+      replaceRevokedMachineKey(keyId, replacement, env)
+      await unpinTrustedMachine(keyId, env)
+      pair = replacement
+      keyId = await machineKeyId(pair.publicKey)
+    }
+  } else writeMachineKey(pair, env)
   await pinTrustedMachine(keyId, pair.publicKey, label, env)
   if (!pinned)
     writeHostedConfigIdentity({ spaceId: current.activeSpaceId, userId: current.user.id }, env)
@@ -269,8 +291,13 @@ export async function machineTrust(
   const recipient = trust[keyId]
   if (!sender || !recipient) throw new Error('machine is absent from the trust list after pinning')
   try {
-    const current = await client.currentDataKey(machine.keyId)
-    const dek = await unwrap(client, current, machine)
+    const before = await client.currentDataKey(machine.keyId)
+    const {
+      key: current,
+      dek,
+      rotated,
+    } = await rotateAfterLatestRevocation(client, machine, before, remote)
+    if (rotated) return
     const who = await identity(client)
     const wrapped = await wrapDataKey({
       dek,
@@ -308,6 +335,80 @@ async function rowPlaintext(
     trust: await readTrustList(),
     expected: { key: row.key, scope: row.scope, environment: row.environment },
   })
+}
+
+async function rotateDataKey(
+  client: ConfigClient,
+  machine: Awaited<ReturnType<typeof localMachine>>,
+  currentBefore: DataKey,
+  trust: TrustList,
+  rotate: boolean,
+): Promise<{ key: DataKey; dek: Uint8Array; completed: string[]; rotated: boolean }> {
+  let current = currentBefore
+  let dek: Uint8Array
+  if (rotate) {
+    dek = generateDataKey()
+    const dekId = crypto.randomUUID()
+    const version = current.version + 1
+    await client.createDataKey({
+      dekId,
+      version,
+      wraps: await wrapsFor(dek, dekId, version, trust, client),
+    })
+    current = await client.getDataKey(dekId, machine.keyId)
+  } else {
+    dek = await unwrap(client, current, machine, trust)
+  }
+  const rows = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
+  const plan = planRotation(rows, current, await client.listDataKeys())
+  const completed: string[] = []
+  try {
+    const who = await identity(client)
+    for (const row of plan.reseal) {
+      const plaintext = await rowPlaintext(client, row, machine)
+      const envelope = sealValue({
+        dek,
+        plaintext,
+        valueContext: {
+          spaceId: who.spaceId,
+          userId: row.scope === 'user' ? who.userId : null,
+          keyName: row.key,
+          environment: row.environment,
+          dekId: current.id,
+          rowVersion: row.rowVersion + 1,
+        },
+      })
+      await client.putSecret(row.key, {
+        scope: row.scope,
+        environment: row.environment,
+        dekId: current.id,
+        envelope: encoded(envelope),
+        expectedRowVersion: row.rowVersion,
+      })
+      completed.push(`${row.scope}:${row.environment}:${row.key}`)
+    }
+    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId)
+    return { key: current, dek, completed, rotated: rotate }
+  } catch (error) {
+    throw new Error(
+      `rotation stopped after re-sealing rows [${completed.join(', ')}]: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+async function rotateAfterLatestRevocation(
+  client: ConfigClient,
+  machine: Awaited<ReturnType<typeof localMachine>>,
+  current: DataKey,
+  remote: readonly { revokedAt: string | null }[],
+) {
+  return rotateDataKey(
+    client,
+    machine,
+    current,
+    await readTrustList(),
+    shouldRotateAfterRevocation(current, remote),
+  )
 }
 
 async function revokeIfNeeded(
@@ -359,57 +460,11 @@ export async function machineRevoke(keyId: string, client = configClient()): Pro
   const remote = await unpinServerRevoked(client)
   let revokedAt = remote.find((item) => item.keyId === keyId)?.revokedAt
   revokedAt = await revokeIfNeeded(keyId, revokedAt, machine, client)
-  const trust = await readTrustList()
-  let current = await client.currentDataKey(machine.keyId)
-  const rows = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
-  const alreadyRotating = Boolean(revokedAt && new Date(current.createdAt) >= new Date(revokedAt))
-  let dek: Uint8Array
-  if (alreadyRotating) dek = await unwrap(client, current, machine, trust)
-  else {
-    dek = generateDataKey()
-    const dekId = crypto.randomUUID()
-    const version = current.version + 1
-    await client.createDataKey({
-      dekId,
-      version,
-      wraps: await wrapsFor(dek, dekId, version, trust, client),
-    })
-    current = await client.getDataKey(dekId, machine.keyId)
-  }
-  const plan = planRotation(rows, current, await client.listDataKeys())
-  const completed: string[] = []
-  try {
-    const who = await identity(client)
-    for (const row of plan.reseal) {
-      const plaintext = await rowPlaintext(client, row, machine)
-      const envelope = sealValue({
-        dek,
-        plaintext,
-        valueContext: {
-          spaceId: who.spaceId,
-          userId: row.scope === 'user' ? who.userId : null,
-          keyName: row.key,
-          environment: row.environment,
-          dekId: current.id,
-          rowVersion: row.rowVersion + 1,
-        },
-      })
-      await client.putSecret(row.key, {
-        scope: row.scope,
-        environment: row.environment,
-        dekId: current.id,
-        envelope: encoded(envelope),
-        expectedRowVersion: row.rowVersion,
-      })
-      completed.push(`${row.scope}:${row.environment}:${row.key}`)
-    }
-    for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId)
-    return completed
-  } catch (error) {
-    throw new Error(
-      `rotation stopped after re-sealing rows [${completed.join(', ')}]: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
+  const current = await client.currentDataKey(machine.keyId)
+  const result = await rotateAfterLatestRevocation(client, machine, current, [
+    { revokedAt: revokedAt ?? null },
+  ])
+  return result.completed
 }
 
 /** The scope flag one `machine config secret` repair carries: the verbs declare only `--space`. */

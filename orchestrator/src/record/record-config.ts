@@ -10,6 +10,8 @@ import {
   KEY_SIZE,
   sealClaimChallenge,
 } from '../../../shared/secret-envelope.ts'
+import { assertConfigAccessRemovalSafe } from './record-config-access-removal.ts'
+import { ConfigServiceError } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 
 export const CONFIG_SCOPES = ['user', 'space'] as const
@@ -62,14 +64,6 @@ export type MachineKeyClaimChallenge = {
 }
 const MACHINE_KEY_CLAIM_TTL_MS = 5 * 60 * 1000
 
-export class ConfigServiceError extends Error {
-  status: 404 | 409 | 422
-  constructor(message: string, status: 404 | 409 | 422) {
-    super(message)
-    this.status = status
-  }
-}
-
 const iso = (value: unknown) => new Date(String(value)).toISOString()
 const nullableIso = (value: unknown) => (value == null ? null : iso(value))
 const bytes = (value: unknown) => new Uint8Array(value as ArrayBufferLike)
@@ -117,15 +111,43 @@ function wrapRow(row: Record<string, unknown>): DataKeyWrap {
 }
 
 const configAccessRemedy = `a space owner or admin grants config access with \`${PLATFORM_SLUG} record space access grant <email>\``
+const withdrawnConfigAccessRemedy = `ask a space owner or admin to grant config access, run \`${PLATFORM_SLUG} machine config machine init\` to replace the revoked key, then trust the new key from a machine that holds config access with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``
 const machineClaimRemedy = `run \`${PLATFORM_SLUG} machine config machine init\` on that machine`
+
+function revokedMachineRefusal(condition: string): ConfigServiceError {
+  return new ConfigServiceError(`${condition}; ${withdrawnConfigAccessRemedy}`, 422)
+}
 
 async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> {
   const rows = await tx`
     SELECT config_access FROM membership
     WHERE space_id=${input.spaceId}::uuid AND user_id=${input.userId}::uuid
   `
-  if (rows[0]?.config_access !== true)
-    throw new ConfigServiceError(`signed-in user lacks config access; ${configAccessRemedy}`, 422)
+  if (rows[0]?.config_access === true) return
+  const revoked = await tx`
+    SELECT 1 FROM machine_public_key
+    WHERE space_id=${input.spaceId}::uuid AND user_id=${input.userId}::uuid
+      AND revoked_at IS NOT NULL
+    LIMIT 1
+  `
+  if (revoked[0])
+    throw revokedMachineRefusal(
+      'signed-in user lacks config access and a machine key of this user in the space is revoked',
+    )
+  throw new ConfigServiceError(`signed-in user lacks config access; ${configAccessRemedy}`, 422)
+}
+
+async function refuseRevokedRecipient(
+  tx: SQL,
+  input: ConfigTenant & { recipientKeyId: string },
+): Promise<void> {
+  const revoked = await tx`
+    SELECT 1 FROM machine_public_key
+    WHERE space_id=${input.spaceId}::uuid AND key_id=${input.recipientKeyId}
+      AND revoked_at IS NOT NULL
+    LIMIT 1
+  `
+  if (revoked[0]) throw revokedMachineRefusal("this machine's key is revoked in the space")
 }
 
 function conflict(kind: 'entry' | 'secret', currentRowVersion: number): never {
@@ -465,6 +487,7 @@ export async function currentDataKey(
   input: ConfigTenant & { recipientKeyId: string },
 ): Promise<DataKey | null> {
   return tenant(input, async (tx) => {
+    await refuseRevokedRecipient(tx, input)
     await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
@@ -495,6 +518,7 @@ export async function getDataKey(
   input: ConfigTenant & { dekId: string; recipientKeyId: string },
 ): Promise<DataKey | null> {
   return tenant(input, async (tx) => {
+    await refuseRevokedRecipient(tx, input)
     await requireConfigAccess(tx, input)
     const rows = await tx`
       SELECT * FROM secret_dek
@@ -913,6 +937,60 @@ export async function grantSpaceConfigAccess(
         'config access grant requires an owner or admin and an email belonging to this space; ask a space owner or admin to retry with a listed member',
         422,
       )
+  })
+}
+
+export type WithdrawSpaceConfigAccessResult = {
+  revokedMachineKeyIds: string[]
+  readableSecretKeys: string[]
+}
+
+export async function withdrawSpaceConfigAccess(
+  input: ConfigTenant & { email: string },
+): Promise<WithdrawSpaceConfigAccessResult> {
+  return tenant(input, async (tx) => {
+    const members = await tx`
+      SELECT m.id, m.user_id, m.role, m.config_access
+      FROM membership m JOIN "user" u ON u.id=m.user_id
+      WHERE m.space_id=${input.spaceId}::uuid
+        AND lower(u.email)=lower(${input.email})
+        AND record_membership_admin(m.space_id)
+      FOR UPDATE OF m
+    `
+    const member = members[0]
+    if (!member)
+      throw new ConfigServiceError(
+        'config access withdrawal requires an owner or admin and an email belonging to this space; ask a space owner or admin to retry with a listed member',
+        422,
+      )
+    if (String(member.role) === 'owner')
+      throw new ConfigServiceError(
+        'cannot withdraw config access from an owner because owners hold config access; change their role first',
+        422,
+      )
+    if (member.config_access !== true)
+      throw new ConfigServiceError(
+        `member ${input.email} does not have config access; list space access and choose a current holder`,
+        422,
+      )
+    await assertConfigAccessRemovalSafe(tx, input.spaceId, String(member.user_id))
+    const secrets = await tx`
+      SELECT DISTINCT key FROM config_secret
+      WHERE space_id=${input.spaceId}::uuid AND user_id IS NULL
+      ORDER BY key
+    `
+    await tx`UPDATE membership SET config_access=false WHERE id=${String(member.id)}::uuid`
+    const machines = await tx`
+      SELECT key_id FROM machine_public_key
+      WHERE space_id=${input.spaceId}::uuid
+        AND user_id=${String(member.user_id)}::uuid
+        AND revoked_at=now()
+      ORDER BY key_id
+    `
+    return {
+      revokedMachineKeyIds: machines.map((row: Record<string, unknown>) => String(row.key_id)),
+      readableSecretKeys: secrets.map((row: Record<string, unknown>) => String(row.key)),
+    }
   })
 }
 
