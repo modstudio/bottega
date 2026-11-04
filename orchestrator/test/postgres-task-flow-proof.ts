@@ -121,7 +121,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         }),
       ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
 
-      // Machine B is the same user's second machine: the DEV-1978 takeover ruling is cross-machine, and a
+      // Machine B is the same user's second machine: takeover is cross-machine for one user, and a
       // flow belongs to its user within the space, so another member's push is refused by design.
       input.signIn()
       const byTask = await client.readTaskFlow!({ taskKey: TASK_KEY })
