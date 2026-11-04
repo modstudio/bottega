@@ -29,6 +29,50 @@ export function registerBoardClaimApiProof(input: {
     })
     expect(taken.status).toBe(200)
     expect((await json(taken)).action).toBe('taken')
+    const sameSessionTake = await take(input.tokenA(), {
+      id: newRecordId(),
+      project: input.project,
+      projectId: input.projectId,
+      subject: 'resource:gpu',
+      holderSession: 'holder-a',
+      durationMs: 60_000,
+    })
+    expect(sameSessionTake.status).toBe(200)
+    expect(await json(sameSessionTake)).toMatchObject({ id: liveId, action: 'renewed' })
+    const sameUserConflict = await take(input.tokenA(), {
+      id: newRecordId(),
+      project: input.project,
+      projectId: input.projectId,
+      subject: 'resource:gpu',
+      holderSession: 'holder-b',
+    })
+    expect(sameUserConflict.status).toBe(409)
+    const sameUserConflictBody = JSON.stringify(await sameUserConflict.json())
+    expect(sameUserConflictBody).toContain(input.userA())
+    expect(sameUserConflictBody).toContain('session holder-a')
+    expect(sameUserConflictBody).toContain('board ask --audience session:holder-a')
+    const foreignRenew = await fetch(`${input.origin()}/v1/board/claims/${liveId}/renew`, {
+      method: 'POST',
+      headers: headers(input.tokenA()),
+      body: JSON.stringify({ holderSession: 'holder-b' }),
+    })
+    expect(foreignRenew.status).toBe(403)
+    const foreignRelease = await fetch(`${input.origin()}/v1/board/claims/${liveId}/release`, {
+      method: 'POST',
+      headers: headers(input.tokenA()),
+      body: JSON.stringify({ holderSession: 'holder-b' }),
+    })
+    expect(foreignRelease.status).toBe(403)
+    expect(JSON.stringify(await foreignRelease.json())).toContain('session:holder-a')
+    const foreignUserSameSession = await fetch(
+      `${input.origin()}/v1/board/claims/${liveId}/renew`,
+      {
+        method: 'POST',
+        headers: headers(input.tokenB()),
+        body: JSON.stringify({ holderSession: 'holder-a' }),
+      },
+    )
+    expect(foreignUserSameSession.status).toBe(403)
     const renewed = await fetch(`${input.origin()}/v1/board/claims/${liveId}/renew`, {
       method: 'POST',
       headers: headers(input.tokenA()),
@@ -53,9 +97,14 @@ export function registerBoardClaimApiProof(input: {
       }),
     )
     const told = (
-      notices.items as Array<{ message: { audience: string; claimId: string | null } }>
+      notices.items as Array<{
+        message: { audience: string; claimId: string | null; body: string }
+      }>
     ).some(
-      (item) => item.message.audience === 'session:holder-a' && item.message.claimId === liveId,
+      (item) =>
+        item.message.audience === 'session:holder-a' &&
+        item.message.claimId === liveId &&
+        item.message.body.includes('Session holder-b attempted to claim'),
     )
     expect(told).toBeTrue()
     const lapsedId = newRecordId()
@@ -70,7 +119,7 @@ export function registerBoardClaimApiProof(input: {
     expect(short.status).toBe(200)
     await Bun.sleep(20)
     const successor = newRecordId()
-    const takeover = await take(input.tokenB(), {
+    const takeover = await take(input.tokenA(), {
       id: successor,
       project: input.project,
       projectId: input.projectId,
@@ -79,6 +128,23 @@ export function registerBoardClaimApiProof(input: {
     })
     expect(takeover.status).toBe(200)
     expect((await json(takeover)).action).toBe('taken-over')
+    const takeoverNotices = await json(
+      await fetch(`${input.origin()}/v1/board/changes?after=0&limit=100`, {
+        headers: headers(input.tokenA()),
+      }),
+    )
+    expect(
+      (
+        takeoverNotices.items as Array<{
+          message: { audience: string; claimId: string | null; body: string }
+        }>
+      ).some(
+        (item) =>
+          item.message.audience === 'session:holder-a' &&
+          item.message.claimId === lapsedId &&
+          item.message.body.includes('Session holder-b took over'),
+      ),
+    ).toBeTrue()
     const listed = await json(
       await fetch(
         `${input.origin()}/v1/board/claims?project=${input.project}&projectId=${input.projectId}`,

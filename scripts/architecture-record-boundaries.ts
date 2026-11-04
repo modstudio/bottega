@@ -571,6 +571,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'orchestrator/src/record/record-board-claims.ts',
     [
       'bun',
+      '../../../shared/brand.ts',
       '../../../shared/record/schema.ts',
       '../board/board-claim-policy.ts',
       '../board/board-policy.ts',

@@ -2,6 +2,7 @@
 /** Owns hosted board claims. Must not know HTTP or local stores. */
 
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   BOARD_CLAIM_DEFAULT_MS,
@@ -139,6 +140,7 @@ function takeOverlaps(
   open: ClaimRow[],
   subject: ClaimSubject,
   userId: string,
+  session: string | null,
   clock: number,
 ): {
   exactHeld: ClaimRow | undefined
@@ -157,15 +159,15 @@ function takeOverlaps(
       hostedLive(row, clock) &&
       String(row.subject_kind) === subject.kind &&
       String(row.subject_value) === subject.value &&
-      String(row.holder_user_id) === userId,
+      sameHostedClaimHolder(row, userId, session),
   )
-  const conflicts = overlaps.filter((row) => String(row.holder_user_id) !== userId)
+  const conflicts = overlaps.filter((row) => !sameHostedClaimHolder(row, userId, session))
   const lapsedExact = overlaps.filter(
     (row) =>
       !hostedLive(row, clock) &&
       String(row.subject_kind) === subject.kind &&
       String(row.subject_value) === subject.value &&
-      String(row.holder_user_id) === userId,
+      sameHostedClaimHolder(row, userId, session),
   )
   return {
     exactHeld,
@@ -175,12 +177,34 @@ function takeOverlaps(
   }
 }
 
-function liveClaimRefusal(rows: ClaimRow[]): string {
-  const details = rows.map(
-    (row) =>
-      `user ${String(row.holder_user_id)} holding claim ${String(row.id)} until ${iso(row.lapses_at)} ` +
-      `(release claim ${String(row.id)}, or wait for lapse)`,
+function sameHostedClaimHolder(row: ClaimRow, userId: string, session: string | null): boolean {
+  return (
+    String(row.holder_user_id) === userId &&
+    (row.holder_session == null ? null : String(row.holder_session)) === session
   )
+}
+
+function claimHolderRemedy(row: ClaimRow): string {
+  if (row.holder_session == null) return ` (held by operator user ${String(row.holder_user_id)})`
+  const session = String(row.holder_session)
+  return ` (held by user ${String(row.holder_user_id)} session ${session}; ask with ${PLATFORM_SLUG} board ask --audience session:${session}, or wait for lapse)`
+}
+
+function liveClaimRefusal(rows: ClaimRow[]): string {
+  const details = rows.map((row) => {
+    const holder =
+      row.holder_session == null
+        ? `operator user ${String(row.holder_user_id)}`
+        : `user ${String(row.holder_user_id)} session ${String(row.holder_session)}`
+    const ask =
+      row.holder_session == null
+        ? ''
+        : `ask with ${PLATFORM_SLUG} board ask --audience session:${String(row.holder_session)}, `
+    return (
+      `${holder} holding claim ${String(row.id)} until ${iso(row.lapses_at)} ` +
+      `(${ask}release claim ${String(row.id)}, or wait for lapse)`
+    )
+  })
   return `${CLAIM_CONFLICT} ${details.join('; ')}`
 }
 
@@ -188,17 +212,26 @@ type ClaimTellKind = 'taken-over' | 'conflict-attempt'
 
 function claimTellNotice(
   kind: ClaimTellKind,
-  input: { userId: string; subject: string; project: string; claimId: string },
+  input: {
+    userId: string
+    actingSession: string | null
+    subject: string
+    project: string
+    claimId: string
+  },
 ): { title: string; body: string } {
+  const actor = input.actingSession
+    ? `Session ${input.actingSession}`
+    : `Operator user ${input.userId}`
   if (kind === 'taken-over') {
     return {
       title: 'Claim taken over',
-      body: `User ${input.userId} took over claim ${input.claimId} with ${input.subject} in ${input.project}.`,
+      body: `${actor} took over claim ${input.claimId} with ${input.subject} in ${input.project}.`,
     }
   }
   return {
     title: 'Conflicting claim attempt',
-    body: `User ${input.userId} attempted to claim ${input.subject} in ${input.project}; it conflicts with claim ${input.claimId}.`,
+    body: `${actor} attempted to claim ${input.subject} in ${input.project}; it conflicts with claim ${input.claimId}.`,
   }
 }
 
@@ -214,6 +247,7 @@ async function tellConflicts(
   for (const conflict of conflicts) {
     const copy = claimTellNotice(kind, {
       userId: input.userId,
+      actingSession: session,
       subject: input.subject,
       project: input.project,
       claimId: String(conflict.id),
@@ -297,7 +331,13 @@ export async function takeHostedBoardClaim(
     )
   const currentLive = () =>
     withBoardTenant(input, false, async (tx) => {
-      const { exactHeld, foreignLive } = await readTakeOverlaps(tx, input, subject, Date.now())
+      const { exactHeld, foreignLive } = await readTakeOverlaps(
+        tx,
+        input,
+        subject,
+        session,
+        Date.now(),
+      )
       return [...(exactHeld ? [exactHeld] : []), ...foreignLive]
     })
   let outcome: TakeOutcome
@@ -329,13 +369,14 @@ async function replayExistingTake(
   input: BoardTenant & HostedBoardTakeClaimInput,
   existing: ClaimRow,
   subject: ClaimSubject,
+  session: string | null,
   clock: number,
 ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }> {
   const name = await projectNameById(tx, String(existing.project_id))
   const sameSubject =
     String(existing.subject_kind) === subject.kind &&
     String(existing.subject_value) === subject.value &&
-    String(existing.holder_user_id) === input.userId
+    sameHostedClaimHolder(existing, input.userId, session)
   if (!sameSubject) {
     throw new RecordBoardError(
       `board claim ${input.id} already exists with different content; mint a new id`,
@@ -413,6 +454,7 @@ async function readTakeOverlaps(
   tx: SQL,
   input: BoardTenant & HostedBoardTakeClaimInput,
   subject: ClaimSubject,
+  session: string | null,
   clock: number,
 ) {
   const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
@@ -420,7 +462,7 @@ async function readTakeOverlaps(
     SELECT * FROM board_claim WHERE project_id=${projectId}::uuid AND closed_at IS NULL
     ORDER BY taken_at, id
   `) as ClaimRow[]
-  return { projectId, ...takeOverlaps(open, subject, input.userId, clock) }
+  return { projectId, ...takeOverlaps(open, subject, input.userId, session, clock) }
 }
 
 async function takeClaimInTx(
@@ -433,11 +475,12 @@ async function takeClaimInTx(
   clock: number,
 ): Promise<TakeOutcome> {
   const existing = await loadClaim(tx, input.id)
-  if (existing) return replayExistingTake(tx, input, existing, subject, clock)
+  if (existing) return replayExistingTake(tx, input, existing, subject, session, clock)
   const { projectId, exactHeld, conflicts, foreignLive, lapsedExact } = await readTakeOverlaps(
     tx,
     input,
     subject,
+    session,
     clock,
   )
   const decision = claimTakeDecision({
@@ -472,7 +515,7 @@ async function takeClaimInTx(
 export async function renewHostedBoardClaim(
   input: BoardTenant & { id: string; holderSession?: string | null },
 ): Promise<HostedBoardClaim> {
-  sessionOrNull(input.holderSession)
+  const session = sessionOrNull(input.holderSession)
   const clock = Date.now()
   return withBoardTenant(input, false, async (tx) => {
     const row = await loadClaim(tx, input.id)
@@ -480,8 +523,11 @@ export async function renewHostedBoardClaim(
     if (!hostedLive(row, clock)) {
       throw new RecordBoardError(`claim ${input.id} is no longer live; take the subject again`, 400)
     }
-    if (String(row.holder_user_id) !== input.userId) {
-      throw new RecordBoardError(`only the claim holder may renew claim ${input.id}`, 403)
+    if (!sameHostedClaimHolder(row, input.userId, session)) {
+      throw new RecordBoardError(
+        `only the claim holder may renew claim ${input.id}${claimHolderRemedy(row)}`,
+        403,
+      )
     }
     const at = new Date(clock).toISOString()
     await tx`
@@ -498,15 +544,18 @@ export async function renewHostedBoardClaim(
 export async function releaseHostedBoardClaim(
   input: BoardTenant & { id: string; holderSession?: string | null },
 ): Promise<HostedBoardClaim> {
-  sessionOrNull(input.holderSession)
+  const session = sessionOrNull(input.holderSession)
   const clock = Date.now()
   return withBoardTenant(input, false, async (tx) => {
     const row = await loadClaim(tx, input.id)
     if (!row) throw new RecordBoardError(`no board claim ${input.id}`, 404)
     if (!hostedLive(row, clock))
       throw new RecordBoardError(`claim ${input.id} is no longer live`, 400)
-    if (String(row.holder_user_id) !== input.userId) {
-      throw new RecordBoardError(`only the claim holder may release claim ${input.id}`, 403)
+    if (!sameHostedClaimHolder(row, input.userId, session)) {
+      throw new RecordBoardError(
+        `only the claim holder may release claim ${input.id}${claimHolderRemedy(row)}`,
+        403,
+      )
     }
     await tx`
       UPDATE board_claim
