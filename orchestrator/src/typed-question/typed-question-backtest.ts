@@ -10,7 +10,7 @@ import {
   selectFindingDuplicatePairs,
 } from '../collect/finding-duplicate-suggestions.ts'
 import { db } from '../database/db.ts'
-import { gitBlobPrefix } from '../git/git-environment.ts'
+import { gitBlobPrefix, gitContext } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import { CITED_FILE_BYTES, type CitedFileReader } from './cited-context.ts'
 import { FINDING_PAIR_SUBJECT_KIND } from './finding-duplicate-question.ts'
@@ -63,16 +63,27 @@ function answeredFor(database: Database, question: TypedQuestion): Answered {
     Boolean(statement.get(question.id, question.version, subjectKind, subjectRef))
 }
 
-/** Reads cited files as they were at the commit each run started from, in that project's checkout. */
+/**
+ * Reads cited files as they were at the commit each run started from, in that project's checkout.
+ * A commit the checkout no longer holds gives no reader, so the run counts unreadable instead of
+ * being asked, and recorded, with no context.
+ */
 function readerAtBase(database: Database): ReaderFor {
   const checkouts = new Map<string, string | null>()
+  const commits = new Map<string, boolean>()
   return (row) => {
     if (!row.repo || !row.base_commit) return null
     if (!checkouts.has(row.repo))
       checkouts.set(row.repo, projectByName(row.repo, database)?.path ?? null)
     const checkout = checkouts.get(row.repo)
+    if (!checkout) return null
     const commit = row.base_commit
-    return checkout ? (path) => gitBlobPrefix(checkout, commit, path, CITED_FILE_BYTES) : null
+    const key = `${row.repo}\0${commit}`
+    if (!commits.has(key))
+      commits.set(key, gitContext(checkout, 'rev-parse', '--verify', `${commit}^{commit}`) !== null)
+    return commits.get(key)
+      ? (path) => gitBlobPrefix(checkout, commit, path, CITED_FILE_BYTES)
+      : null
   }
 }
 
