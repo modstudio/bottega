@@ -11,7 +11,6 @@ export const documentSurfaceStyles = variant({
     crumb: 'contents',
     goneTitle: 'min-w-0 truncate text-text-primary',
     wideControl: 'hidden lg:inline-flex',
-    error: 'text-status-text',
     title: 'doc-title',
     empty: 'text-md text-text-muted',
   },

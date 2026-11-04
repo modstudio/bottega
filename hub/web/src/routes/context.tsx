@@ -4,6 +4,8 @@ import { useMachinePermissionChange } from '@bottega/hub-data/use-machine-permis
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button, TextButton } from '@bottega/hub-ui/button'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Textarea } from '@bottega/hub-ui/field/textarea'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-layout'
@@ -58,6 +60,10 @@ function ErrorText({ message }: { message: string }) {
       {message}
     </p>
   )
+}
+
+function LoadError({ title, error }: { title: string; error: { message: string } | null }) {
+  return error ? <ErrorState title={`Could not load ${title}`} message={error.message} /> : null
 }
 
 function Lines({ children }: { children: string }) {
@@ -257,9 +263,9 @@ export function UserCanonSection({
 
   return (
     <FieldSection title="User canon" description="Canon owned by the signed-in operator.">
-      {pending ? <p className="text-text-muted">Loading user canon…</p> : null}
-      {error ? <ErrorText message={error} /> : null}
-      {!pending && !error && rows?.length === 0 ? <p className="text-text-muted">No rows</p> : null}
+      {pending ? <EmptyState title="Loading user canon..." /> : null}
+      {error ? <ErrorState title="Could not load user canon" message={error} /> : null}
+      {!pending && !error && rows?.length === 0 ? <EmptyState title="No user canon." /> : null}
       {!error ? (
         <div className="grid gap-5 md:grid-cols-[15rem_minmax(0,1fr)]">
           <div className="space-y-2">
@@ -416,7 +422,7 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
       description="How much each workflow stage runs on its own, resolved for this machine. Your preset and overrides live in your hosted profile; a row can also be overridden on this machine alone."
     >
       <ProjectChooser {...{ project, options, onProject, showChooser }} />
-      {autonomy.error ? <ErrorText message={autonomy.error.message} /> : null}
+      <LoadError title="autonomy settings" error={autonomy.error} />
       {update.error ? <ErrorText message={update.error.message} /> : null}
       {updateShipTo.error ? <ErrorText message={updateShipTo.error.message} /> : null}
       {updatePreset.error ? <ErrorText message={updatePreset.error.message} /> : null}
@@ -580,15 +586,15 @@ function HostedAutonomySection({ project, options, onProject, showChooser }: Aut
   const clearStage = useMutation(api.clearStage.mutationOptions(refresh))
   const user = autonomy.data?.user
   const space = autonomy.data?.space
-  const error =
-    autonomy.error ?? update.error ?? updateShipTo.error ?? updatePreset.error ?? clearStage.error
+  const mutationError = update.error ?? updateShipTo.error ?? updatePreset.error ?? clearStage.error
   return (
     <FieldSection
       title="Autonomy"
       description="How much each workflow stage runs on its own. These values are your profile and apply on every machine you sign in from."
     >
       <ProjectChooser {...{ project, options, onProject, showChooser }} />
-      {error ? <ErrorText message={error.message} /> : null}
+      <LoadError title="autonomy settings" error={autonomy.error} />
+      {mutationError ? <ErrorText message={mutationError.message} /> : null}
       {user ? (
         <div className="space-y-3">
           <SettingBlock
@@ -718,7 +724,7 @@ function ManagedSettingsSection({
       {showChooser ? (
         <Select label="Settings target" value={target} options={options} onChange={onTarget} />
       ) : null}
-      {settings.error ? <ErrorText message={settings.error.message} /> : null}
+      <LoadError title="managed settings" error={settings.error} />
       {settings.data ? (
         <div className="space-y-5">
           {hosted ? null : (

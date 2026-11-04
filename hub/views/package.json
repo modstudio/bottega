@@ -76,7 +76,6 @@
     "./key-line/key-line.styles": "./src/key-line/key-line.styles.ts",
     "./insights": "./src/insights/insights.tsx",
     "./insights/hosted-insights": "./src/insights/hosted-insights.tsx",
-    "./insights/hosted-insights.styles": "./src/insights/hosted-insights.styles.ts",
     "./insights/insights.styles": "./src/insights/insights.styles.ts",
     "./markdown": "./src/markdown/markdown.tsx",
     "./markdown/headings": "./src/markdown/headings.ts",

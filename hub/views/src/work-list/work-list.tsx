@@ -9,6 +9,7 @@ import {
 import { Docked } from '@bottega/hub-ui/companion'
 import { useNow } from '@bottega/hub-ui/dom/clock'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { Segmented } from '@bottega/hub-ui/segmented'
@@ -617,13 +618,8 @@ export function TaskView({
   onOpenTask(row: TaskRow): void
   renderWaiting(item: WaitingRow): ReactNode
 }) {
-  if (pending) return <p className={workListStyles().muted()}>Loading {name}...</p>
-  if (error)
-    return (
-      <p data-tone="error" className={workListStyles().status()}>
-        {error}
-      </p>
-    )
+  if (pending) return <EmptyState title={`Loading ${name}...`} />
+  if (error) return <ErrorState title={`Could not load ${name}`} message={error} />
   if (!response) return null
   return (
     <section>
@@ -757,13 +753,8 @@ export function BoardView({
   onWhyChange(open: boolean): void
   phone: boolean
 }) {
-  if (pending) return <p className={workListStyles().muted()}>Loading board...</p>
-  if (error)
-    return (
-      <p data-tone="error" className={workListStyles().status()}>
-        {error}
-      </p>
-    )
+  if (pending) return <EmptyState title="Loading board..." />
+  if (error) return <ErrorState title="Could not load the board" message={error} />
   if (!response) return null
   const all = response.data.cards
   const q = search.trim().toLowerCase()

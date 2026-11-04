@@ -1,5 +1,6 @@
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { type Machine, SnapshotEmpty, SnapshotHeader } from '../snapshot/snapshot.tsx'
-import { hostedInsightStyles } from './hosted-insights.styles.ts'
 import { HealthView, RoutingView } from './insights'
 
 type Snapshot<Data> = {
@@ -24,13 +25,8 @@ export function HostedRouting({
   machineId,
   onMachineChange,
 }: HostedInsightProps<Parameters<typeof RoutingView>[0]['data']>) {
-  if (pending) return <p className={hostedInsightStyles().muted()}>Loading routing...</p>
-  if (error)
-    return (
-      <p data-tone="error" className={hostedInsightStyles().status()}>
-        could not load: {error}
-      </p>
-    )
+  if (pending) return <EmptyState title="Loading routing..." />
+  if (error) return <ErrorState title="Could not load routing" message={error} />
   if (!snapshot) return <SnapshotEmpty title="Routing" />
   return (
     <section>
@@ -53,18 +49,13 @@ export function HostedHealth({
   machineId,
   onMachineChange,
 }: HostedInsightProps<Parameters<typeof HealthView>[0]['data']>) {
-  if (pending) return <p className={hostedInsightStyles().muted()}>Loading health...</p>
-  if (error)
-    return (
-      <p data-tone="error" className={hostedInsightStyles().status()}>
-        could not load: {error}
-      </p>
-    )
-  if (!snapshot) return <SnapshotEmpty title="Health" />
+  if (pending) return <EmptyState title="Loading machines..." />
+  if (error) return <ErrorState title="Could not load machines" message={error} />
+  if (!snapshot) return <SnapshotEmpty title="Machines" />
   return (
     <section>
       <SnapshotHeader
-        title="Health"
+        title="Machines"
         takenAt={snapshot.takenAt}
         machineId={machineId ?? snapshot.machineId}
         machines={snapshot.machines}

@@ -1,4 +1,6 @@
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
 import {
@@ -111,15 +113,11 @@ export function HostedReports({
         subtitle={title || 'Choose a scope'}
         actions={phone ? <ToolbarBand scope={scope} /> : scope}
       />
-      {measuresError ? (
-        <p data-tone="error" className={reportsStyles().error()}>
-          {measuresError}
-        </p>
-      ) : null}
+      {measuresError ? <ErrorState title="Could not load reports" message={measuresError} /> : null}
       {measures ? (
         <MeasuresSummary measures={measures} />
       ) : (
-        <p className={reportsStyles().loading()}>Loading measures...</p>
+        <EmptyState title="Loading reports..." />
       )}
       {kind === 'space' ? (
         <ProjectBreakdown projects={sortedProjects} queries={projectMeasures} />

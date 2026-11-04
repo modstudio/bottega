@@ -4,6 +4,8 @@ import { waitingByRun } from '@bottega/hub-data/operator-waiting'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Button, IconButton } from '@bottega/hub-ui/button'
 import { Companion } from '@bottega/hub-ui/companion'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { DisplayRow } from '@bottega/hub-ui/form-layout'
 import { Segmented } from '@bottega/hub-ui/segmented'
@@ -179,15 +181,13 @@ function RunDetailPage({ id }: { id: string }) {
   if (detail.isPending)
     return (
       <Companion onClose={close} title={`Run ${runLabel}`} subtitle="Loading run...">
-        <p className="text-text-muted">Loading...</p>
+        <EmptyState title="Loading run..." />
       </Companion>
     )
   if (detail.error)
     return (
       <Companion onClose={close} title={`Run ${runLabel}`}>
-        <p data-tone="error" className="text-status-text">
-          Could not load this run. {detail.error.message}
-        </p>
+        <ErrorState title="Could not load the run" message={detail.error.message} />
       </Companion>
     )
   if (!run) return null

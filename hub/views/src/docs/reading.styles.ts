@@ -9,6 +9,5 @@ export const readingStyles = variant({
     next: 'text-right hover:text-text-primary',
     summary: 'doc-measure mt-3.5 text-lg text-text-muted',
     body: 'mt-6',
-    empty: 'text-md text-text-muted',
   },
 })

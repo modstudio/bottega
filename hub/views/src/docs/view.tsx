@@ -1,6 +1,7 @@
 import { Button } from '@bottega/hub-ui/button'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Drawer } from '@bottega/hub-ui/drawer'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { Kbd } from '@bottega/hub-ui/kbd'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
@@ -259,7 +260,7 @@ function DocsRail({
         <Kbd>/</Kbd>
       </button>
       <div className={viewStyles().railBody()}>
-        {loading ? <p className={viewStyles().loading()}>Loading docs…</p> : null}
+        {loading ? <EmptyState title="Loading docs..." /> : null}
         {hasTree ? (
           groups ? (
             <GroupedTree
@@ -281,7 +282,7 @@ function DocsRail({
             />
           )
         ) : loading ? null : (
-          <p className={viewStyles().empty()}>{emptyMessage}</p>
+          <EmptyState title={emptyMessage} />
         )}
       </div>
     </nav>

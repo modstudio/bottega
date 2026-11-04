@@ -1,4 +1,5 @@
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
@@ -61,7 +62,7 @@ export function SnapshotEmpty({ title }: { title: string }) {
   return (
     <section>
       <PageHeader title={title} />
-      <p className={snapshotStyles().empty()}>No {title.toLowerCase()} snapshot is available.</p>
+      <EmptyState title={`No ${title.toLowerCase()} snapshot is available.`} />
     </section>
   )
 }

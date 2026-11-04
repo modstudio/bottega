@@ -5,24 +5,16 @@ import { Button } from '@bottega/hub-ui/button'
 import { Checkbox } from '@bottega/hub-ui/checkbox'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { Dialog } from '@bottega/hub-ui/dialog'
-import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader, SectionTitle } from '@bottega/hub-ui/page-header'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@bottega/hub-ui/table'
 import { hourOfDayLabel, sendTimestamp } from '@bottega/hub-util/format'
 import { DEFAULT_ZONE, TIME_ZONES, WEEKDAYS, type Weekday } from '@bottega/hub-util/report-arrival'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { type ReactNode, useState } from 'react'
+import { useState } from 'react'
 
 type Settings = RecordSettingsResponse
 type Subscription = Settings['subscriptions'][number]
@@ -58,9 +50,9 @@ function OperatorEmailSettings() {
   if (isHostedMode() || !query.data) return null
   const delay = value ?? query.data.delayMinutes
   return (
-    <div className="mb-8 max-w-[800px]">
+    <div className="mb-8">
       <SectionTitle>Operator email</SectionTitle>
-      <div className="grid max-w-[320px] gap-2">
+      <div className="grid gap-2">
         <label htmlFor="operator-email-delay" className="text-sm text-text-muted">
           Delay in minutes (zero disables email)
         </label>
@@ -608,13 +600,8 @@ function SendResult({ row }: { row: Send }) {
   )
 }
 
-const responsive = (phone: boolean, phoneView: ReactNode, deskView: ReactNode) =>
-  phone ? phoneView : deskView
-const whenDesk = (phone: boolean, view: ReactNode) => (phone ? null : view)
-
-// biome-ignore lint/complexity/noExcessiveLinesPerFunction: phone cards and unchanged desk tables stay together.
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: collection setup stays with its page state.
 export function SettingsPage() {
-  const phone = useMediaQuery(PHONE_QUERY)
   const query = useQuery(
     trpc.record.settings.queryOptions({ hours: 48 }, { refetchInterval: 10_000 }),
   )
@@ -680,69 +667,28 @@ export function SettingsPage() {
   ]
   return (
     <section>
-      <PageHeader title="Report subscriptions" subtitle="Schedules and delivery history" />
+      <PageHeader title="Report email" subtitle="Schedules and delivery history" />
       <OperatorEmailSettings />
       {query.error ? (
-        <p className="text-status-text">could not load: {query.error.message}</p>
+        <ErrorState title="Could not load report email settings" message={query.error.message} />
       ) : null}
       {data ? (
         <>
-          <div className="flex max-w-[800px] items-center justify-between">
-            {whenDesk(phone, <SectionTitle>Subscriptions</SectionTitle>)}
-            {whenDesk(phone, createAction)}
-          </div>
-          {responsive(
-            phone,
-            <Collection
-              title="Subscriptions"
-              count={data.subscriptions.length}
-              actions={createAction}
-              columns={subscriptionColumns}
-              rows={data.subscriptions}
-              getKey={(row) => row.id}
-              onOpen={() => undefined}
-              rowActions={(row) => (
-                <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
-                  Edit
-                </Button>
-              )}
-              empty={{ title: 'No report subscriptions.', hint: 'Create one for this space.' }}
-            />,
-            <div className="mb-6 max-w-[800px] border border-border-default">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Scope</TableHead>
-                    <TableHead>Schedule</TableHead>
-                    <TableHead>Recipients</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.subscriptions.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell>{subscriptionScopeText(row, data.spaceId)}</TableCell>
-                      <TableCell muted>
-                        {subscriptionScheduleText(row)}
-                        <span className="mt-1 block">
-                          <SubscriptionStatus enabled={row.enabled} />
-                        </span>
-                      </TableCell>
-                      <TableCell>{subscriptionRecipientsText(row)}</TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {!data.subscriptions.length ? (
-                <EmptyState title="No report subscriptions." hint="Create one for this space." />
-              ) : null}
-            </div>,
-          )}
+          <Collection
+            title="Subscriptions"
+            count={data.subscriptions.length}
+            actions={createAction}
+            columns={subscriptionColumns}
+            rows={data.subscriptions}
+            getKey={(row) => row.id}
+            onOpen={() => undefined}
+            rowActions={(row) => (
+              <Button size="sm" variant="secondary" onClick={() => setEditing(row)}>
+                Edit
+              </Button>
+            )}
+            empty={{ title: 'No report subscriptions.', hint: 'Create one for this space.' }}
+          />
           {creating || editing ? (
             <SubscriptionDialog
               row={editing}
@@ -758,57 +704,21 @@ export function SettingsPage() {
               }}
             />
           ) : null}
-          <div className="max-w-[800px]">
-            {whenDesk(phone, <SectionTitle>Send history</SectionTitle>)}
-          </div>
-          {responsive(
-            phone,
-            <Collection
-              title="Send history"
-              count={data.sends.length}
-              columns={sendColumns}
-              rows={data.sends}
-              getKey={(row) => `${row.at}:${row.recipients}`}
-              onOpen={() => undefined}
-              empty={{
-                title: 'No reports have been sent.',
-                hint: 'No send records exist for this space.',
-              }}
-            />,
-            <div className="max-w-[800px] border border-border-default">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>When</TableHead>
-                    <TableHead>Result</TableHead>
-                    <TableHead numeric>Items</TableHead>
-                    <TableHead>Recipients</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.sends.map((row) => (
-                    <TableRow key={`${row.at}:${row.recipients}`}>
-                      <TableCell muted>{sendTimestamp(row.at)}</TableCell>
-                      <TableCell>
-                        <SendResult row={row} />
-                      </TableCell>
-                      <TableCell numeric>{row.items.toLocaleString()}</TableCell>
-                      <TableCell muted>{sendRecipientsText(row)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {!data.sends.length ? (
-                <EmptyState
-                  title="No reports have been sent."
-                  hint="No send records exist for this space."
-                />
-              ) : null}
-            </div>,
-          )}
+          <Collection
+            title="Send history"
+            count={data.sends.length}
+            columns={sendColumns}
+            rows={data.sends}
+            getKey={(row) => `${row.at}:${row.recipients}`}
+            onOpen={() => undefined}
+            empty={{
+              title: 'No reports have been sent.',
+              hint: 'No send records exist for this space.',
+            }}
+          />
         </>
       ) : query.isPending ? (
-        <p className="text-text-muted">Loading settings...</p>
+        <EmptyState title="Loading report email settings..." />
       ) : null}
     </section>
   )

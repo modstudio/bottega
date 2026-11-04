@@ -2,6 +2,7 @@ import { trpc } from '@bottega/hub-data/client'
 import { type WaitingInboxEntry, waitingInboxEntries } from '@bottega/hub-data/operator-waiting'
 import { Badge } from '@bottega/hub-ui/badge'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
+import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Identifier } from '@bottega/hub-ui/identifier'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { relativeTime } from '@bottega/hub-util/format'
@@ -71,9 +72,7 @@ function InboxPage() {
         subtitle="Questions and workflow rulings that need an operator."
       />
       {waiting.error ? (
-        <p data-tone="error" className="text-status-text">
-          Could not load the inbox: {waiting.error.message}
-        </p>
+        <ErrorState title="Could not load the inbox" message={waiting.error.message} />
       ) : null}
       <Collection
         title="Inbox"
