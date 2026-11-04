@@ -37,10 +37,11 @@ commit.
 
 ## Getting started
 
-Install the binary, run `bottega setup`, probe a worker, create a task and
-delegate it. [The getting-started guide](docs/getting-started.md) walks a fresh
-machine through its first delegated change. The project site is
-[bottega.run](https://bottega.run).
+Install with `curl -fsSL https://raw.githubusercontent.com/modstudio/bottega/main/install.sh | sh`,
+then run `bottega machine setup`; the [public install guide](https://bottega.run/docs/project/bottega/install)
+also covers joining a hosted record. Setup asks you to choose Record (tasks,
+documents, canon, the board, and workflows, with no worker agents) or Full
+(Record plus external worker agents and the sandbox).
 
 ## Local and hosted
 

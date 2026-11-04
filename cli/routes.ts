@@ -41,7 +41,7 @@ export const GROUPS = [
   ['record', 'the hosted record and outbox'],
   ['agent', 'agents, jobs, and routing'],
   ['dashboard', 'the local dashboard'],
-  ['machine', 'upkeep of this machine'],
+  ['machine', 'set up and maintain this machine'],
   ['mcp', 'model-context-protocol services'],
 ] as const
 

@@ -1,4 +1,4 @@
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { INSTALL_GUIDE_URL, PLATFORM_SLUG } from '../shared/brand.ts'
 import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { reportLegacyCalls } from './legacy-calls.ts'
@@ -137,6 +137,9 @@ function topHelp(): void {
   console.log(`usage: ${PLATFORM_SLUG} <group> [command] [arguments]\n`)
   console.log('Groups:')
   for (const [name, description] of GROUPS) console.log(`  ${name.padEnd(12)} ${description}`)
+  console.log(`\nStart here:
+  ${PLATFORM_SLUG} machine setup  set up this machine
+  ${INSTALL_GUIDE_URL}  install guide`)
 }
 
 async function groupHelp(group: string, entries: BinaryEntries): Promise<number> {
