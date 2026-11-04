@@ -2,6 +2,7 @@
 /** Presents typed-question measurements. Must not know CLI grammar. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { typedQuestionDays } from '../../../shared/typed-question/typed-question-blocks.ts'
 import { renderTypedQuestionBlock } from '../../../shared/typed-question/typed-question-render.ts'
 import { typedQuestionReport } from './typed-question-report.ts'
 
@@ -11,12 +12,7 @@ export function typedQuestionCommand(
   options: { question?: string; days?: string; json: boolean },
   presentation: Presentation,
 ): void {
-  let days: number | undefined
-  if (options.days !== undefined) {
-    days = Number(options.days)
-    if (!/^\d+$/.test(options.days) || !Number.isSafeInteger(days) || days < 1)
-      throw new Error('--days must be a positive integer')
-  }
+  const days = typedQuestionDays(options.days)
   const report = typedQuestionReport({ question: options.question, days })
   if (!report.length) {
     const filters = [

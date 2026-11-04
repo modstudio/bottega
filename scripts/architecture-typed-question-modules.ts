@@ -15,6 +15,11 @@ export const typedQuestionModules = [
   module('shared/typed-question/typed-question-metrics.ts', []),
   module('shared/typed-question/state-identity.ts', ['node:crypto']),
   module('shared/typed-question/typed-question-render.ts', ['./typed-question-metrics.ts']),
+  module('shared/typed-question/typed-question-blocks.ts', [
+    './client.ts',
+    './typed-question-metrics.ts',
+    './typed-question-render.ts',
+  ]),
   module('orchestrator/src/typed-question/typed-question-answer-store.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
@@ -28,8 +33,7 @@ export const typedQuestionModules = [
   ]),
   module('orchestrator/src/typed-question/typed-question-report.ts', [
     'bun:sqlite',
-    '../../../shared/typed-question/client.ts',
-    '../../../shared/typed-question/typed-question-metrics.ts',
+    '../../../shared/typed-question/typed-question-blocks.ts',
     '../../../shared/typed-question/typed-question-render.ts',
     '../database/db.ts',
     '../run/run-status.ts',
@@ -38,6 +42,7 @@ export const typedQuestionModules = [
   ]),
   module('orchestrator/src/typed-question/typed-question-commands.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/typed-question/typed-question-blocks.ts',
     '../../../shared/typed-question/typed-question-render.ts',
     './typed-question-report.ts',
   ]),
@@ -61,14 +66,14 @@ export const typedQuestionModules = [
   ]),
   module('hub/src/typed-question-report.ts', [
     'bun:sqlite',
-    '../../shared/typed-question/client.ts',
-    '../../shared/typed-question/typed-question-metrics.ts',
+    '../../shared/typed-question/typed-question-blocks.ts',
     '../../shared/typed-question/typed-question-render.ts',
     './db.ts',
     './note-duplicate-question.ts',
   ]),
   module('hub/src/typed-question-cli.ts', [
     '../../shared/brand.ts',
+    '../../shared/typed-question/typed-question-blocks.ts',
     '../../shared/typed-question/typed-question-render.ts',
     './typed-question-report.ts',
   ]),

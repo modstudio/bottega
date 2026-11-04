@@ -2,26 +2,15 @@
 /** Reads typed-question evidence and joins question-specific outcomes. */
 
 import type { Database } from 'bun:sqlite'
-import { noulProbability } from '../../../shared/typed-question/client.ts'
 import {
-  type TypedQuestionMetricRow,
-  typedQuestionMetrics,
-} from '../../../shared/typed-question/typed-question-metrics.ts'
+  type TypedQuestionAnswerRow,
+  typedQuestionBlocks,
+} from '../../../shared/typed-question/typed-question-blocks.ts'
 import type { TypedQuestionReportBlock } from '../../../shared/typed-question/typed-question-render.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { FINDING_DUPLICATE_QUESTION } from './finding-duplicate-question.ts'
 import { SPEC_UNSETTLED_QUESTION } from './spec-unsettled-question.ts'
-
-type AnswerRow = {
-  question_id: string
-  question_version: number
-  subject_ref: string
-  answer_json: string | null
-  input_tokens: number | null
-  latency_ms: number
-  error: string | null
-}
 
 const declarations = [SPEC_UNSETTLED_QUESTION, FINDING_DUPLICATE_QUESTION] as const
 
@@ -88,11 +77,6 @@ const labelers: Readonly<
   [FINDING_DUPLICATE_QUESTION.id]: findingDuplicateLabel,
 }
 
-/** A noul answer's probability; an error row carries none. */
-function probability(answerJson: string | null): number | null {
-  return answerJson === null ? null : noulProbability(answerJson)
-}
-
 export function typedQuestionReport(
   options: { question?: string; days?: number },
   database: Database = db(),
@@ -113,29 +97,12 @@ export function typedQuestionReport(
        FROM typed_question_answer ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
        ORDER BY question_id,question_version,created_at`,
     )
-    .all(...parameters) as AnswerRow[]
-  const groups = Map.groupBy(rows, (row) => `${row.question_id}\0${row.question_version}`)
-  return [...groups.values()].map((answers) => {
-    const first = answers[0]!
-    const labeler = labelers[first.question_id]
-    const metricRows: TypedQuestionMetricRow[] = answers.map((answer) => ({
-      probability: probability(answer.answer_json),
-      label: labeler ? labeler(database, answer.subject_ref) : null,
-      error: answer.error,
-      latencyMs: answer.latency_ms,
-      inputTokens: answer.input_tokens,
-    }))
-    const threshold = declaredThreshold(first.question_id, first.question_version)
-    const metrics = typedQuestionMetrics(metricRows, threshold)
+    .all(...parameters) as TypedQuestionAnswerRow[]
+  return typedQuestionBlocks(rows, (questionId, questionVersion) => {
+    const labeler = labelers[questionId]
     return {
-      questionId: first.question_id,
-      questionVersion: first.question_version,
-      threshold,
-      ...metrics,
-      labeled: labeler ? metrics.labeled : null,
-      pending: labeler ? metrics.pending : null,
-      baseRate: labeler ? metrics.baseRate : null,
-      auc: labeler ? metrics.auc : null,
+      label: labeler ? (subjectRef) => labeler(database, subjectRef) : null,
+      threshold: declaredThreshold(questionId, questionVersion),
     }
   })
 }
