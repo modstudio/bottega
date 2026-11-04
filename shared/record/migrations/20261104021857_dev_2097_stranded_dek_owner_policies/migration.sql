@@ -1,0 +1,2 @@
+CREATE POLICY "config_secret_owner_select" ON "config_secret" AS PERMISSIVE FOR SELECT TO "record_owner" USING (true);--> statement-breakpoint
+CREATE POLICY "secret_dek_owner_select" ON "secret_dek" AS PERMISSIVE FOR SELECT TO "record_owner" USING (true);

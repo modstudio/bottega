@@ -3,7 +3,7 @@
 
 import type { Context } from 'hono'
 import { RecordBoardError } from './record-board-contract.ts'
-import { ConfigServiceError } from './record-config.ts'
+import { ConfigServiceError } from './record-config-error.ts'
 import { RecordDocError } from './record-docs.ts'
 import { RecordProjectError } from './record-projects.ts'
 import { RecordVerdictError } from './record-verdicts.ts'

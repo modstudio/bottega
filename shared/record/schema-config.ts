@@ -110,6 +110,11 @@ export const secretDek = pgTable.withRLS(
     unique('secret_dek_space_version_unique').on(table.spaceId, table.version),
     unique('secret_dek_space_id_unique').on(table.spaceId, table.id),
     ...actorPolicies('secret_dek', table.spaceId),
+    pgPolicy('secret_dek_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
   ],
 )
 
@@ -136,6 +141,11 @@ export const configSecret = pgTable.withRLS(
       name: 'config_secret_space_dek_fk',
     }),
     ...actorPolicies('config_secret', table.spaceId, table.userId),
+    pgPolicy('config_secret_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
   ],
 )
 

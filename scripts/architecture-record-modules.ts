@@ -670,10 +670,18 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-errors.ts', [
     './record-board-contract.ts',
-    './record-config.ts',
+    './record-config-error.ts',
     './record-docs.ts',
     './record-projects.ts',
     './record-verdicts.ts',
+  ]),
+  module('orchestrator/src/record/record-config-error.ts', []),
+  module('orchestrator/src/record/record-config-access-removal.ts', [
+    'bun',
+    '../../../shared/brand.ts',
+    '../../../shared/record/tenant.ts',
+    './record-config-error.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-api-public-docs.ts', [
     'hono',

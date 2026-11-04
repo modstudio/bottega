@@ -5,7 +5,7 @@ import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
 import { recordApi, SNAPSHOT_MAX_BYTES } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { ConfigServiceError } from './record-config.ts'
+import { ConfigServiceError } from './record-config-error.ts'
 import { RecordDocError } from './record-docs.ts'
 import {
   applyRecordSettingsPermission,

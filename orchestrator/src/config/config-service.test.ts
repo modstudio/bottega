@@ -16,6 +16,7 @@ import {
   generateMachineKeyPair,
   KEY_SIZE,
   sealClaimChallenge,
+  sealValue,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
@@ -58,7 +59,7 @@ afterEach(() => {
   else process.env.BOTTEGA_KEYSTORE = previousKeystore
 })
 
-async function rotationFixture(revokedAt: string | null) {
+async function rotationFixture(revokedAt: string | null, resumeRow = false) {
   const root = mkdtempSync(join(tmpdir(), 'config-rotation-'))
   roots.push(root)
   process.env.BOTTEGA_CONFIG_HOME = root
@@ -85,7 +86,7 @@ async function rotationFixture(revokedAt: string | null) {
     recipientPublicKey: pair.publicKey,
   })
   const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-  let current = {
+  const oldKey = {
     id: oldId,
     version: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -98,6 +99,54 @@ async function rotationFixture(revokedAt: string | null) {
         ciphertext: encode(wrapped.ciphertext),
       },
     ],
+  }
+  const currentId = '01990000-0000-7000-8000-000000000004'
+  const currentDek = resumeRow ? generateDataKey() : oldDek
+  const currentWrapped = resumeRow
+    ? await wrapDataKey({
+        dek: currentDek,
+        wrapContext: { spaceId, dekId: currentId, dekVersion: 2 },
+        senderPrivateKey: pair.privateKey,
+        senderPublicKey: pair.publicKey,
+        recipientPublicKey: pair.publicKey,
+      })
+    : wrapped
+  let current = resumeRow
+    ? {
+        id: currentId,
+        version: 2,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        retiredAt: null,
+        wraps: [
+          {
+            recipientKeyId: keyId,
+            senderKeyId: keyId,
+            enc: encode(currentWrapped.enc),
+            ciphertext: encode(currentWrapped.ciphertext),
+          },
+        ],
+      }
+    : oldKey
+  const oldEnvelope = sealValue({
+    dek: oldDek,
+    plaintext: new TextEncoder().encode('resume-me'),
+    valueContext: {
+      spaceId,
+      userId: null,
+      keyName: 'TOKEN',
+      environment: 'default',
+      dekId: oldId,
+      rowVersion: 1,
+    },
+  })
+  let secret = {
+    key: 'TOKEN',
+    environment: 'default',
+    scope: 'space' as const,
+    dekId: oldId,
+    rowVersion: 1,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    envelope: encode(oldEnvelope),
   }
   const machines = [
     { keyId, publicKey: encode(pair.publicKey), label: 'current', createdAt: '', revokedAt: null },
@@ -118,6 +167,7 @@ async function rotationFixture(revokedAt: string | null) {
   ]
   const created: string[] = []
   const retired: string[] = []
+  let oldRetiredAt: string | null = null
   const client = {
     whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
     currentDataKey: async () => current,
@@ -136,19 +186,26 @@ async function rotationFixture(revokedAt: string | null) {
         wraps: input.wraps,
       }
     },
-    getDataKey: async () => current,
-    listSecrets: async () => [],
-    listDataKeys: async () => [
-      { ...current, id: oldId, version: 1, createdAt: '2026-01-01T00:00:00.000Z' },
-      current,
-    ],
+    getDataKey: async (id: string) => (id === oldId ? oldKey : current),
+    listSecrets: async () => (resumeRow ? [secret] : []),
+    listDataKeys: async () => [{ ...oldKey, retiredAt: oldRetiredAt }, current],
     retireDataKey: async (id: string) => {
       retired.push(id)
+      if (id === oldId) oldRetiredAt = '2027-01-01T00:00:00.000Z'
     },
     getSecret: async () => {
-      throw new ConfigClientError('response', '/v1/config/secrets', 404)
+      if (!resumeRow) throw new ConfigClientError('response', '/v1/config/secrets', 404)
+      return secret
     },
-    putSecret: async () => ({}),
+    putSecret: async (_key: string, input: { dekId: string; envelope: string }) => {
+      secret = {
+        ...secret,
+        dekId: input.dekId,
+        rowVersion: secret.rowVersion + 1,
+        envelope: input.envelope,
+      }
+      return secret
+    },
     addWraps: async (dekId: string, wraps: typeof current.wraps) => {
       if (dekId !== current.id) throw new Error('unknown data key')
       for (const wrap of wraps) {
@@ -484,6 +541,15 @@ test('machine revoke rotates through the shared rotation operation', async () =>
   const fixture = await rotationFixture(null)
   await machineRevoke(fixture.otherKeyId, fixture.client)
   expect(fixture.created).toHaveLength(1)
+  expect(fixture.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
+})
+
+test('machine revoke resumes re-sealing older rows without creating another data key', async () => {
+  const fixture = await rotationFixture('2025-06-01T00:00:00.000Z', true)
+  await expect(machineRevoke(fixture.otherKeyId, fixture.client)).resolves.toEqual([
+    'space:default:TOKEN',
+  ])
+  expect(fixture.created).toEqual([])
   expect(fixture.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
 })
 

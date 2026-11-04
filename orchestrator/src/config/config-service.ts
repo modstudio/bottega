@@ -345,22 +345,20 @@ async function rotateDataKey(
   rotate: boolean,
 ): Promise<{ key: DataKey; dek: Uint8Array; completed: string[]; rotated: boolean }> {
   let current = currentBefore
-  if (!rotate)
-    return {
-      key: current,
-      dek: await unwrap(client, current, machine, trust),
-      completed: [],
-      rotated: false,
-    }
-  const dek = generateDataKey()
-  const dekId = crypto.randomUUID()
-  const version = current.version + 1
-  await client.createDataKey({
-    dekId,
-    version,
-    wraps: await wrapsFor(dek, dekId, version, trust, client),
-  })
-  current = await client.getDataKey(dekId, machine.keyId)
+  let dek: Uint8Array
+  if (rotate) {
+    dek = generateDataKey()
+    const dekId = crypto.randomUUID()
+    const version = current.version + 1
+    await client.createDataKey({
+      dekId,
+      version,
+      wraps: await wrapsFor(dek, dekId, version, trust, client),
+    })
+    current = await client.getDataKey(dekId, machine.keyId)
+  } else {
+    dek = await unwrap(client, current, machine, trust)
+  }
   const rows = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
   const plan = planRotation(rows, current, await client.listDataKeys())
   const completed: string[] = []
@@ -390,7 +388,7 @@ async function rotateDataKey(
       completed.push(`${row.scope}:${row.environment}:${row.key}`)
     }
     for (const oldId of plan.retireDekIds) await client.retireDataKey(oldId)
-    return { key: current, dek, completed, rotated: true }
+    return { key: current, dek, completed, rotated: rotate }
   } catch (error) {
     throw new Error(
       `rotation stopped after re-sealing rows [${completed.join(', ')}]: ${error instanceof Error ? error.message : String(error)}`,
@@ -463,8 +461,9 @@ export async function machineRevoke(keyId: string, client = configClient()): Pro
   let revokedAt = remote.find((item) => item.keyId === keyId)?.revokedAt
   revokedAt = await revokeIfNeeded(keyId, revokedAt, machine, client)
   const current = await client.currentDataKey(machine.keyId)
-  const rotate = shouldRotateAfterRevocation(current, [{ revokedAt: revokedAt ?? null }])
-  const result = await rotateDataKey(client, machine, current, await readTrustList(), rotate)
+  const result = await rotateAfterLatestRevocation(client, machine, current, [
+    { revokedAt: revokedAt ?? null },
+  ])
   return result.completed
 }
 
