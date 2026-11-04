@@ -84,7 +84,7 @@ export function decideProjectRegisterPull(
       validateKeyPrefixes: Object.hasOwn(settings, 'keyPrefixes'),
       currentProjectName: local.name,
       projectNameAfterWrite: hosted.name,
-      register: localRows,
+      register: [...localRows],
     })
     if (problems.length) {
       return [

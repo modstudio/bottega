@@ -30,8 +30,8 @@ test('pulls a linked project update and retirement through an injected client', 
   }
 
   const result = await pullProjectRegister(db(), ['space-a'], {
-    listProjects: async ({ destinationSpaceId }) => {
-      expect(destinationSpaceId).toBe('space-a')
+    listProjects: async (destination) => {
+      expect(destination?.destinationSpaceId).toBe('space-a')
       return [hosted]
     },
   })

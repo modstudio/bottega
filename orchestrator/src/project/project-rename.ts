@@ -1,5 +1,6 @@
 // concern: project-rename
 /** Owns an atomic local project rename and register-row update. */
+import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from '../database/db.ts'
 import { upsertProject } from './projects.ts'
 
