@@ -118,6 +118,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
   const client: RecordApiClient = {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    listChanges: async () => ({ reset: { cursor: 'push-docs-test', tables: [] } }),
     applySettingsPermission: unused,
     applySettingsAutoMode: unused,
     inviteMember: unused,

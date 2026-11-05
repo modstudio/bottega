@@ -365,7 +365,9 @@ function applyPage(
       .filter((entry): entry is UpsertChange => entry.op === 'upsert')
       .sort((a, b) => order(a) - order(b)))
       project = applyFeedUpsert(local, change, deps, ownership, result, fallbacks) || project
-    let pending = owned.filter((entry) => entry.op === 'delete').sort((a, b) => order(b) - order(a))
+    let pending: Change[] = owned
+      .filter((entry) => entry.op === 'delete')
+      .sort((a, b) => order(b) - order(a))
     for (;;) {
       const blocked: Change[] = []
       let deleted = 0
@@ -459,7 +461,11 @@ async function prepareFeedIdentity(
   client: RecordApiClient,
 ): Promise<
   | { stopped: RecordCachePullResult }
-  | { identity: RecordIdentity; spaces: string[]; previous: string[] }
+  | {
+      identity: RecordIdentity & { activeSpaceId: string }
+      spaces: string[]
+      previous: string[]
+    }
 > {
   const identity = suppliedIdentity ?? (await client.whoami())
   rememberSignedInRecordUser(identity.user, local)
@@ -472,7 +478,7 @@ async function prepareFeedIdentity(
     return { stopped }
   }
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
-  return { identity, spaces, previous }
+  return { identity: identity as RecordIdentity & { activeSpaceId: string }, spaces, previous }
 }
 
 export async function pullRecordCacheFeed(
@@ -496,7 +502,11 @@ export async function pullRecordCacheFeed(
   let cursor = readCursor(local, CURSOR)
   if (!cursor) {
     const first = await client.listChanges({ wait: 0 })
-    if ('reset' in first) return resetAt(local, identity, spaces, first.reset.cursor, deps)
+    if ('reset' in first) {
+      addResult(result, await resetAt(local, identity, spaces, first.reset.cursor, deps))
+      result.reset = true
+      return result
+    }
     throw new Error('record change feed did not provide a reset cursor for an uninitialized cache')
   }
   const joined = spaces.filter((space) => !previous.includes(space))
@@ -504,7 +514,11 @@ export async function pullRecordCacheFeed(
   writeCursor(local, SPACES, JSON.stringify(spaces))
   for (;;) {
     const response = await client.listChanges({ after: cursor, wait: 0 })
-    if ('reset' in response) return resetAt(local, identity, spaces, response.reset.cursor, deps)
+    if ('reset' in response) {
+      addResult(result, await resetAt(local, identity, spaces, response.reset.cursor, deps))
+      result.reset = true
+      return result
+    }
     const page = applyPage(local, cursor, response, deps, {
       activeSpaceId: identity.activeSpaceId,
       projectSpaces: cache.projectSpaces,

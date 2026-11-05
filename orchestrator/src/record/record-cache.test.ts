@@ -31,6 +31,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     putSnapshot: async () => ({ takenAt: new Date().toISOString() }),
     listSnapshots: async () => ({ items: [] }),
     listDocs: async () => ({ items: [], nextCursor: null }),
+    listChanges: async () => ({ reset: { cursor: 'test-change-cursor', tables: [] } }),
     getDoc: async () => ({}),
     listRevisions: async () => [],
     upsertDoc: async () => ({ id: newRecordId(), revisionId: newRecordId() }),
@@ -637,7 +638,9 @@ describe('record cache pull', () => {
       ['space-a', undefined],
       ['space-alpha', undefined],
       ['space-b', undefined],
+      ['space-a', { at: updatedAt, id: firstId }],
       ['space-alpha', { at: updatedAt, id: secondId }],
+      ['space-b', { at: updatedAt, id: secondId }],
     ])
     expect(
       db()
@@ -648,7 +651,7 @@ describe('record cache pull', () => {
     ).toBe(JSON.stringify({ at: updatedAt, id: firstId }))
   })
 
-  test('inherits the legacy cursor into the active space only once', async () => {
+  test('inherits the legacy cursor once and clears the old space cursor after access is lost', async () => {
     const legacy = '2026-10-08T12:00:00.000Z'
     db().query("INSERT INTO schema_meta(key,value) VALUES ('record_docs_cursor',?)").run(legacy)
     let activeSpaceId = 'space-a'
@@ -674,12 +677,8 @@ describe('record cache pull', () => {
 
     expect(seen).toEqual([{ at: legacy, id: '00000000-0000-0000-0000-000000000000' }, undefined])
     expect(
-      db()
-        .query<{ value: string }, []>(
-          "SELECT value FROM schema_meta WHERE key='record_docs_cursor:space-a'",
-        )
-        .get()?.value,
-    ).toBe(JSON.stringify({ at: legacy, id: '00000000-0000-0000-0000-000000000000' }))
+      db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor:space-a'").get(),
+    ).toBeNull()
     expect(db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor'").get()).toBeNull()
   })
 

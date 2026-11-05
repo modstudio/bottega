@@ -317,6 +317,8 @@ test('purge deletes child rows first and keeps a hosted parent referenced by a l
   const child = newRecordId()
   const local = newRecordId()
   const subject = newRecordId()
+  const freeParent = newRecordId()
+  const freeChild = newRecordId()
   db()
     .query(
       `INSERT INTO subject(id,project_record_id,name,definition,position,created_at,updated_at,space_id)
@@ -341,6 +343,13 @@ test('purge deletes child rows first and keeps a hosted parent referenced by a l
       parent,
     )
   db()
+    .query(
+      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,parent_record_id,space_id)
+       VALUES (?,'global',NULL,?,'Free parent','Body','demand','["technical"]','a','a',NULL,'lost-space'),
+              (?,'global',NULL,?,'Free child','Body','demand','["technical"]','a','a',?,'lost-space')`,
+    )
+    .run(freeParent, `free-parent-${freeParent}`, freeChild, `free-child-${freeChild}`, freeParent)
+  db()
     .query('INSERT INTO doc_related_subject(record_id,doc_record_id,subject_id) VALUES (?,?,?)')
     .run(newRecordId(), child, subject)
   cursor('purge-before')
@@ -351,6 +360,8 @@ test('purge deletes child rows first and keeps a hosted parent referenced by a l
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(parent)).not.toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(child)).toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(local)).not.toBeNull()
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(freeParent)).toBeNull()
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(freeChild)).toBeNull()
   expect(db().query('SELECT 1 FROM subject WHERE id=?').get(subject)).toBeNull()
 })
 
