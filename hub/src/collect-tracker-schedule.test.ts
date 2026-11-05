@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   formatCollectLeg,
   oneShotTrackerSelection,
@@ -107,7 +108,9 @@ test('tasks output names only the reasons that skipped trackers', () => {
       durationMs: 1,
       trackerCounts: { read: 0, skippedFresh: 0, leftToWatcher: 4 },
     }),
-  ).toBe('tasks             ok (0 trackers read, 4 left to the watcher)')
+  ).toBe(
+    `tasks             ok (0 trackers read, 4 left to the watcher; force with ${PLATFORM_SLUG} collect --only tasks)`,
+  )
   expect(
     formatCollectLeg({
       source: 'tasks',

@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
@@ -190,7 +191,9 @@ export function formatCollectLeg(result: CollectLegResult): string {
   if (result.trackerCounts) {
     const counts = [`${result.trackerCounts.read} trackers read`]
     if (result.trackerCounts.leftToWatcher)
-      counts.push(`${result.trackerCounts.leftToWatcher} left to the watcher`)
+      counts.push(
+        `${result.trackerCounts.leftToWatcher} left to the watcher; force with ${PLATFORM_SLUG} collect --only tasks`,
+      )
     if (result.trackerCounts.skippedFresh)
       counts.push(`${result.trackerCounts.skippedFresh} skipped fresh`)
     return `${result.source.padEnd(18)}${separator}ok (${counts.join(', ')})`
@@ -537,6 +540,14 @@ function deleteWatcherAlive(holder: string) {
       // A later heartbeat replaces malformed state.
     }
   })
+}
+
+function attemptWatcherAliveWrite(action: () => void, onError: (error: Error) => void) {
+  try {
+    action()
+  } catch (e) {
+    onError(e as Error)
+  }
 }
 
 /**
@@ -891,10 +902,12 @@ export function watch(
         guard: LeaseGuard,
         outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
       ) => Promise<CollectCycleResult>,
+      heartbeat = false,
     ) =>
     async () => {
       if (stopping || busy || !acquireLease(holder)) return
       busy = true
+      if (heartbeat) attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
       // A failed collect must not stop the loop or take the server down: the
       // stored data is still the last good reading, which is the point of having
       // stored it.
@@ -932,6 +945,7 @@ export function watch(
         }
         return results
       }),
+    true,
   )
   const slow = runCycle(
     dependencies.slow ??
@@ -952,14 +966,8 @@ export function watch(
       const slowResults = await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)
       return [...fastResults, ...slowResults]
     })
-  writeWatcherAlive(holder)
-  void runCycle(initial)()
-  const heartbeatFast = () => {
-    if (stopping) return
-    writeWatcherAlive(holder)
-    void fast()
-  }
-  const a = setInterval(heartbeatFast, FAST_MS)
+  void runCycle(initial, true)()
+  const a = setInterval(() => void fast(), FAST_MS)
   const b = setInterval(() => void slow(), SLOW_MS)
 
   const stop = async () => {
@@ -968,7 +976,7 @@ export function watch(
     clearInterval(b)
     while (busy) await Bun.sleep(10)
     releaseLease(holder)
-    deleteWatcherAlive(holder)
+    attemptWatcherAliveWrite(() => deleteWatcherAlive(holder), onError)
   }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, async () => {

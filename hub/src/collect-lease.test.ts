@@ -6,7 +6,7 @@
  */
 import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { db } from './db.ts'
+import { db, writeTransaction } from './db.ts'
 import type { HostedOutboxReport } from './outbox.ts'
 import { acquireStoredLeaseIntent, releaseStoredLease } from './store-lease.ts'
 import { hostedCreateTask } from './task-client.ts'
@@ -266,6 +266,58 @@ describe('collect lease', () => {
     expect(Date.parse(watcherAlive()!.at)).toBeGreaterThanOrEqual(before)
     await stop()
     expect(watcherAlive()).toBeNull()
+  })
+
+  test('watch reports a failed heartbeat write and still runs the cycle', async () => {
+    writeTransaction((conn) =>
+      conn.exec(`
+        CREATE TRIGGER refuse_watcher_heartbeat
+        BEFORE INSERT ON setting
+        WHEN NEW.key = 'collect.watch.alive'
+        BEGIN
+          SELECT RAISE(FAIL, 'heartbeat refused');
+        END
+      `),
+    )
+    let cycleRan = false
+    let report!: (error: Error) => void
+    const reported = new Promise<Error>((resolve) => (report = resolve))
+    const stop = watch('failing-heartbeat-watch', report, {
+      initial: async (): Promise<undefined> => {
+        cycleRan = true
+      },
+      fast: async () => undefined,
+      slow: async () => undefined,
+    })
+    try {
+      expect((await reported).message).toContain('heartbeat refused')
+      await Bun.sleep(0)
+      expect(cycleRan).toBeTrue()
+      expect(watcherAlive()).toBeNull()
+    } finally {
+      writeTransaction((conn) => conn.exec('DROP TRIGGER refuse_watcher_heartbeat'))
+      await stop()
+    }
+  })
+
+  test("watch writes no heartbeat when another holder's lease prevents its cycle", async () => {
+    expect(acquireLease('heartbeat-competitor')).toBeTrue()
+    let ran = false
+    const stop = watch('blocked-heartbeat-watch', undefined, {
+      initial: async (): Promise<undefined> => {
+        ran = true
+      },
+      fast: async () => undefined,
+      slow: async () => undefined,
+    })
+    try {
+      await Bun.sleep(0)
+      expect(ran).toBeFalse()
+      expect(watcherAlive()).toBeNull()
+    } finally {
+      await stop()
+      releaseLease('heartbeat-competitor')
+    }
   })
 
   test('a waiting explicit request takes the next turn from watch', async () => {
