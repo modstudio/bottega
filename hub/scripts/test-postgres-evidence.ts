@@ -381,10 +381,14 @@ async function proveRecordChangePairCursor(
       whileYOpen.changes.some((change) => change.xid !== firstX.xid) ||
       whileYOpen.cursor.xid !== firstX.xid ||
       whileYOpen.cursor.seq <= changeY.seq ||
-      whileYOpen.lag < 1n
+      whileYOpen.lag !== 0n
     )
       throw new Error(
-        'older transaction changes were not readable while the younger xid stayed open',
+        `older transaction changes were not readable while the younger xid stayed open: ${
+          whileYOpen.resetRequired
+            ? 'reset'
+            : `${whileYOpen.changes.length} changes, cursor ${whileYOpen.cursor.xid}:${whileYOpen.cursor.seq}, lag ${whileYOpen.lag}, younger ${changeY.xid}:${changeY.seq}`
+        }`,
       )
 
     releaseY()
