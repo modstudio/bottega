@@ -128,7 +128,11 @@ test('--only tasks forces tracker collection despite a live watcher', async () =
           ran: true,
           value: await work({ assertHeld() {} }),
         })) as never,
-        collect: ((guard, since, only) =>
+        collect: ((
+          guard: Parameters<typeof collectOneShot>[0],
+          since: Parameters<typeof collectOneShot>[1],
+          only: Parameters<typeof collectOneShot>[2],
+        ) =>
           collectOneShot(guard, since, only, {
             incremental: async (selectedOnly) => {
               selected.push(selectedOnly ?? '')
