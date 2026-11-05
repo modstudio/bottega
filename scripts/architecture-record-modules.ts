@@ -207,6 +207,7 @@ export const recordModules: RecordModule[] = [
     'bun:sqlite',
     '../../../shared/record-project-contract.ts',
     '../database/db.ts',
+    '../database/project-register-store.ts',
     '../project/project-pull-decision.ts',
     '../project/project-rename.ts',
     '../project/projects.ts',
