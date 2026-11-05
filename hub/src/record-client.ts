@@ -441,6 +441,8 @@ const configEntrySchema = z.object({
   rowVersion: z.number().int().positive(),
   updatedAt: z.string().datetime({ offset: true }),
 })
+/** The config environment every hub screen reads and writes. */
+const DEFAULT_CONFIG_ENVIRONMENT = 'default'
 /** A sealed secret's metadata; the listing carries no value and no envelope. */
 const configSecretSchema = z.object({
   key: z.string(),
@@ -743,13 +745,46 @@ function recordSettingsClient(options: RecordClientOptions) {
   }
 }
 
-/** Sealed secret metadata only; no method here reads a value or an envelope. */
-function recordConfigSecretsClient(options: RecordClientOptions) {
+/** The hub's config entries and sealed secret metadata; secrets never carry a value or envelope. */
+function recordConfigClient(options: RecordClientOptions) {
   return {
+    configEntries: () =>
+      request(
+        options,
+        query('/v1/config/entries', { environment: DEFAULT_CONFIG_ENVIRONMENT }),
+        z.object({ items: z.array(configEntrySchema) }),
+      ).then(({ items }) => items),
+    putConfigEntry: (
+      key: string,
+      input: {
+        scope: 'user' | 'space'
+        value: string
+        expectedRowVersion: number | null
+      },
+    ) =>
+      request(options, `/v1/config/entries/${encodeURIComponent(key)}`, configEntrySchema, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...input, environment: DEFAULT_CONFIG_ENVIRONMENT }),
+      }),
+    deleteConfigEntry: (
+      key: string,
+      input: { scope: 'user' | 'space'; expectedRowVersion: number },
+    ) =>
+      request(
+        options,
+        `/v1/config/entries/${encodeURIComponent(key)}`,
+        z.object({ deleted: z.literal(true) }),
+        {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...input, environment: DEFAULT_CONFIG_ENVIRONMENT }),
+        },
+      ),
     configSecrets: () =>
       request(
         options,
-        query('/v1/config/secrets', { environment: 'default' }),
+        query('/v1/config/secrets', { environment: DEFAULT_CONFIG_ENVIRONMENT }),
         z.object({ items: z.array(configSecretSchema) }),
       ).then(({ items }) => items),
   }
@@ -757,7 +792,6 @@ function recordConfigSecretsClient(options: RecordClientOptions) {
 
 function recordConfigAccessClient(options: RecordClientOptions) {
   return {
-    ...recordConfigSecretsClient(options),
     configAccess: () => request(options, '/v1/config-access', configAccessListSchema),
     grantConfigAccess: (email: string) =>
       request(options, '/v1/config-access/grant', configAccessGrantSchema, {
@@ -953,39 +987,7 @@ export function createRecordClient(options: RecordClientOptions) {
         },
         body: JSON.stringify(input),
       }),
-    configEntries: () =>
-      request(
-        options,
-        query('/v1/config/entries', { environment: 'default' }),
-        z.object({ items: z.array(configEntrySchema) }),
-      ).then(({ items }) => items),
-    putConfigEntry: (
-      key: string,
-      input: {
-        scope: 'user' | 'space'
-        value: string
-        expectedRowVersion: number | null
-      },
-    ) =>
-      request(options, `/v1/config/entries/${encodeURIComponent(key)}`, configEntrySchema, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...input, environment: 'default' }),
-      }),
-    deleteConfigEntry: (
-      key: string,
-      input: { scope: 'user' | 'space'; expectedRowVersion: number },
-    ) =>
-      request(
-        options,
-        `/v1/config/entries/${encodeURIComponent(key)}`,
-        z.object({ deleted: z.literal(true) }),
-        {
-          method: 'DELETE',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ ...input, environment: 'default' }),
-        },
-      ),
+    ...recordConfigClient(options),
     ...recordSettingsClient(options),
     ...recordConfigAccessClient(options),
   }
