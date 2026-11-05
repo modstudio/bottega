@@ -27,6 +27,8 @@ On a machine where Bottega is developed, the installed copy is the `main` checko
 
 On any other machine, install a release in its own directory and update it by replacing that directory.
 
+Deploy images run `RELEASE_BUN_VERSION`; `scripts/check-bun-versions.ts` enforces it.
+
 ## Close out the session
 
 Run `bottega session close-out` to release everything the session owns through its ordinary owner and prove that nothing remains. Dispose of unique unproved branches only through `bottega tree branch dispose`, which archives their work before recording the ruling. Close landed tasks with `bottega task` and offer a resume brief through `bottega doc`. A session with live runs, held resources, queued landings, incomplete reviews, unresolved process items, unscored runs, or unclosed landed tasks is paused rather than finished.
