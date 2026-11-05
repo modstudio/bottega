@@ -12,10 +12,8 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  BOUND_RECORD_WRITE_REFUSAL,
-  currentRecordWriteDecision,
-} from '../record/record-write-authority.ts'
+import { readMachineValue } from '../../../shared/machine-config.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   applySetupActions as applySetupActionsWithService,
   type SetupEnvironmentService,
@@ -85,6 +83,33 @@ test('refuses a machine level action when its environment writer is unavailable'
 
   expect(results[0]?.status).toBe('refused')
   expect(results[0]?.message).toBe('machine-level writer is unavailable')
+})
+
+test('applies global use through the runtime environment adapter without changing machine level', async () => {
+  const configHome = mkdtempSync(join(tmpdir(), 'setup-global-use-'))
+  temporary.push(configHome)
+  process.env.BOTTEGA_CONFIG_HOME = configHome
+
+  const results = await applySetupActions(
+    [{ kind: 'set-global-use', from: null, to: 'off' }],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    setupEnvironmentService,
+  )
+
+  expect(results[0]?.status).toBe('applied')
+  expect(readMachineValue('machine.global_use')).toBe('off')
+  expect(readSetupMachineLevel()).toBeNull()
+})
+
+test('refuses a global-use action when its environment writer is unavailable', async () => {
+  const results = await applySetupActions([{ kind: 'set-global-use', from: null, to: 'off' }], {
+    add: async () => {},
+    fillAbsent: async () => {},
+  })
+
+  expect(results[0]?.status).toBe('refused')
+  expect(results[0]?.message).toBe('global-use writer is unavailable')
 })
 
 test('writes an inferred recipe before filling its absent register pointer and never overwrites', async () => {
@@ -329,8 +354,9 @@ test('renames the injected process environment before the hosted record-write ga
     {
       migrateEnvironment: async () => {
         const renamed = migrateProcessEnvironment(environment)
-        if (currentRecordWriteDecision(database, environment) === 'refused') {
-          throw new Error(BOUND_RECORD_WRITE_REFUSAL)
+        const decision = currentRecordWriteDecision(database, environment)
+        if (decision.verdict === 'refused') {
+          throw new Error(decision.refusal)
         }
         return { status: 'applied', message: `${renamed} environment name renamed in-process` }
       },

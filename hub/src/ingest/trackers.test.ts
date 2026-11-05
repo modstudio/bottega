@@ -136,13 +136,17 @@ describe('tracker observation times', () => {
 })
 
 const recordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+const keyStore = process.env.BOTTEGA_KEYSTORE
 beforeAll(() => {
   delete process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_KEYSTORE = 'file'
   resetFixtureStore()
 })
 afterAll(() => {
   if (recordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
   else process.env.BOTTEGA_RECORD_API_URL = recordApiUrl
+  if (keyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
+  else process.env.BOTTEGA_KEYSTORE = keyStore
 })
 
 describe('tracker register', () => {

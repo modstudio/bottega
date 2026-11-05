@@ -86,6 +86,7 @@ import type {
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
+import { currentRecordWriteDecision } from './record-write-authority.ts'
 
 export type RecordDocUpsertInput = {
   scope: string
@@ -562,7 +563,6 @@ export function recordApiBaseUrl(
   environment: Record<string, string | undefined> = process.env,
 ): string {
   const url = resolveRecordApiUrl(environment)
-  if (!url) throw recordApiUnreachable(new Error('BOTTEGA_RECORD_API_URL is not set'))
   if (
     environment.NODE_ENV === 'test' &&
     !environment.BOTTEGA_TEST_POSTGRES_CONTAINER &&
@@ -576,8 +576,9 @@ export async function recordApiRequest<T>(
   path: string,
   init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
   authentication?: RecordApiAuthentication,
+  transport: typeof fetch = fetch,
 ): Promise<T> {
-  const baseUrl = recordApiBaseUrl()
+  throwIfRecordApiRequestRefused()
   const token = init.signal
     ? await (authentication
         ? authentication.tokenAsync(init.signal)
@@ -592,13 +593,20 @@ export async function recordApiRequest<T>(
   if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
   let response: Response
   try {
-    response = await fetch(`${baseUrl}${path}`, { ...init, headers })
+    response = await transport(`${recordApiBaseUrl()}${path}`, { ...init, headers })
   } catch (error) {
     throw recordApiUnreachable(error)
   }
   const body = await response.json().catch(() => null)
   if (!response.ok) throw recordApiError(body, response.status, response.headers)
   return (init.schema ? init.schema(body) : (body as T)) as T
+}
+
+function throwIfRecordApiRequestRefused(): void {
+  const authority = currentRecordWriteDecision()
+  if (authority.verdict === 'refused') {
+    throw new RecordApiRequestError(authority.refusal, 'refused')
+  }
 }
 
 const defaultRequest = recordApiRequest
@@ -1013,6 +1021,7 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
     connection.abort()
   }
   try {
+    throwIfRecordApiRequestRefused()
     const response = await fetch(`${recordApiBaseUrl()}/v1/board/stream`, {
       method: 'GET',
       headers: boardStreamHeaders(token),

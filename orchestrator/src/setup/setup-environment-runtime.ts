@@ -17,7 +17,10 @@ import {
   restoreMigratedProjectRows,
 } from '../project/project-commands.ts'
 import { projects } from '../project/projects.ts'
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
   assertStoredSettingsEnvironmentMigration,
@@ -122,6 +125,7 @@ export async function withMigratedProcessEnvironment<T>(
 
 export const setupEnvironmentService = {
   setMachineLevel: (level: MachineLevel) => setMachineValue('machine.level', level),
+  setGlobalUse: (value: 'on' | 'off') => setMachineValue('machine.global_use', value),
   migrateEnvironment: async (
     preparedStateFileMigration?: PreparedStateFileMigration | null,
   ): Promise<{
@@ -136,14 +140,10 @@ export const setupEnvironmentService = {
         backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
         migrateSecrets: async (record) => {
           const authority = currentRecordWriteDecision()
-          if (authority === 'local-authoritative') {
+          throwIfRecordRefused(authority)
+          if (authority.verdict === 'local-authoritative') {
             notes.push('no hosted record: nothing to migrate')
             return []
-          }
-          if (authority === 'refused') {
-            throw new Error(
-              `sealed-secret environment migration did not run: configured record is unreachable; run ${PLATFORM_SLUG} record use <address>, then re-run ${PLATFORM_SLUG} machine setup apply`,
-            )
           }
           return migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
         },

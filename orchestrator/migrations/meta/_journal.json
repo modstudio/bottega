@@ -1538,6 +1538,14 @@
       "tag": "0201_collect_change_sequence",
       "breakpoints": true,
       "compatibility": "fenced"
+    },
+    {
+      "idx": 202,
+      "version": "6",
+      "when": 1793664000001,
+      "tag": "0202_record_install_binding_origin",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

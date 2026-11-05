@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
@@ -841,7 +841,7 @@ function workflowCommandProject(
     command,
     root,
     project: project?.name ?? null,
-    recordConfigured: Boolean(resolveRecordApiUrl()),
+    recordConfigured: recordApiConfigured(),
   })
   if (refusal) throw new Error(refusal)
   return { root, project }

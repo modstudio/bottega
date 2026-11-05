@@ -9,7 +9,9 @@ import type { MachineNamePair } from './machine-name.ts'
 import { claimCurrentMachineNames } from './machine-name-command.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { readHostedProjects } from './record-cache-projects.ts'
 import type { HiddenRow } from './record-moderation-hide.ts'
+import { cachedSignedInRecordUser } from './record-session.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
@@ -151,6 +153,14 @@ export async function recordMemberships(
   client: Pick<RecordApiClient, 'whoami'> = recordApiClient(),
 ): Promise<{ activeSpaceId: string | null; memberships: RecordMembership[] }> {
   return recordMembershipsFromIdentity(await client.whoami())
+}
+
+export async function readSignedInHostedProjectNames(
+  client: Pick<RecordApiClient, 'whoami' | 'listProjects'> = recordApiClient(),
+): Promise<string[]> {
+  if (!cachedSignedInRecordUser()) return []
+  const spaces = (await recordMemberships(client)).memberships.map(({ spaceId }) => spaceId)
+  return (await readHostedProjects(spaces, client)).map(({ name }) => name)
 }
 
 export async function requireRecordSpaceMembership(

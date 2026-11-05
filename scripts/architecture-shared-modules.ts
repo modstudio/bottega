@@ -50,7 +50,7 @@ export const sharedModules: ArchitectureModule[] = [
     './record-session.ts',
     './record-remedies.ts',
   ]),
-  module('shared/record-api-url.ts', ['./config-directory.ts', './env-values.ts']),
+  module('shared/record-api-url.ts', ['./brand.ts', './config-directory.ts', './env-values.ts']),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', ['./ship-to.ts']),
   module('shared/user-canon-home.ts', []),

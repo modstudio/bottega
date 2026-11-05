@@ -1,12 +1,17 @@
 // concern: porting
 /** Selects the local or additive hosted importer before either can mutate state. */
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 
 export function portImportAuthority(replace: boolean): 'local' | 'hosted' {
   const workerRefusal = workerStoreWriteRefusal('document', 'port import', process.env)
   if (workerRefusal) throw new Error(workerRefusal)
-  if (currentRecordWriteDecision() === 'local-authoritative') return 'local'
+  const decision = currentRecordWriteDecision()
+  throwIfRecordRefused(decision)
+  if (decision.verdict === 'local-authoritative') return 'local'
   if (replace)
     throw new Error(
       'replacing hosted port items is not supported\n' +

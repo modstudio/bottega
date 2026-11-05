@@ -3,23 +3,34 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured, resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { db } from '../database/db.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
-export const BOUND_RECORD_WRITE_REFUSAL =
-  'this install is bound to a hosted record, but BOTTEGA_RECORD_API_URL is not set in this environment\n' +
-  `cleared by: ${PLATFORM_SLUG} record use <address>`
 
 export function currentRecordWriteDecision(
   database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): RecordWriteDecision {
+  const binding = readRecordInstallBinding(database)
+  const resolvedOrigin = resolvedRecordOrigin(environment)
   return decideRecordWrite({
-    recordApiUrlSet: recordApiConfigured(environment),
-    installBound: readRecordInstallBinding(database).bound,
+    recordApiConfigured: recordApiConfigured(environment),
+    installBound: binding.bound,
+    boundOrigin: binding.recordOrigin,
+    resolvedOrigin,
   })
+}
+
+export function throwIfRecordRefused(
+  decision: Extract<RecordWriteDecision, { verdict: 'refused' }>,
+): never
+export function throwIfRecordRefused(
+  decision: RecordWriteDecision,
+): asserts decision is Exclude<RecordWriteDecision, { verdict: 'refused' }>
+export function throwIfRecordRefused(decision: RecordWriteDecision): void {
+  if (decision.verdict === 'refused') throw new Error(decision.refusal)
 }
 
 export function applyRecordWriteAuthority<T>(actions: {
@@ -27,8 +38,8 @@ export function applyRecordWriteAuthority<T>(actions: {
   hosted(): T | Promise<T>
 }): Promise<T> {
   const decision = currentRecordWriteDecision()
-  if (decision === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
-  if (decision === 'local-authoritative') return Promise.resolve(actions.local())
+  throwIfRecordRefused(decision)
+  if (decision.verdict === 'local-authoritative') return Promise.resolve(actions.local())
   return Promise.resolve(actions.hosted()).then((result) => {
     rememberHostedRecord()
     return result
@@ -37,8 +48,8 @@ export function applyRecordWriteAuthority<T>(actions: {
 
 export function requireHostedRecord(command: string): void {
   const decision = currentRecordWriteDecision()
-  if (decision === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
-  if (decision === 'local-authoritative') {
+  throwIfRecordRefused(decision)
+  if (decision.verdict === 'local-authoritative') {
     throw new Error(
       `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${command}\``,
     )

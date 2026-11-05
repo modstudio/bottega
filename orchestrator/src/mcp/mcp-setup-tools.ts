@@ -21,6 +21,7 @@ import {
 const questionSchema = z
   .object({
     id: z.string(),
+    folderPath: z.string().optional(),
     question: z.string(),
     why: z.string(),
     recommendation: z.string(),
@@ -36,7 +37,14 @@ const questionSchema = z
   })
   .strict()
 
-const noticeSchema = z.object({ message: z.string(), fix: z.string().nullable() }).strict()
+const noticeSchema = z
+  .object({
+    message: z.string(),
+    fix: z.string().nullable(),
+    blocking: z.boolean(),
+    folderPath: z.string().optional(),
+  })
+  .strict()
 
 const actionResultSchema = z
   .object({
@@ -51,6 +59,10 @@ const planOutputSchema = z
     questions: z.array(questionSchema),
     notices: z.array(noticeSchema),
     changes: z.array(z.string()),
+    folderSelection: z.object({
+      options: z.array(z.object({ path: z.string(), name: z.string() }).strict()),
+      defaults: z.array(z.string()),
+    }),
   })
   .strict()
 
@@ -78,6 +90,9 @@ const folderSchema = z.string().superRefine((folder, context) => {
 })
 
 const foldersSchema = z.array(folderSchema).min(1, 'folders must be a non-empty array; received []')
+const includeSchema = z.array(
+  z.string().refine(isAbsolute, 'included folder must be an absolute path'),
+)
 
 const structured = <T extends Record<string, unknown>>(value: T) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value) }],
@@ -100,14 +115,14 @@ export function registerSetupTools(
     'setup_plan',
     {
       description:
-        "Plan setup. Present every question, option, recommendation and why to the user, then pass the user's choices to setup_apply.",
-      inputSchema: z.object({ folders: foldersSchema }).strict(),
+        'Plan setup. Present folderSelection options and defaults, pass the folders the user confirms as include to setup_plan again and then to setup_apply, and present every question, option, recommendation and why from that returned plan. An unregistered folder is planned only when included.',
+      inputSchema: z.object({ folders: foldersSchema, include: includeSchema.optional() }).strict(),
       outputSchema: z.object(planOutputSchema.shape).strict(),
       annotations: { readOnlyHint: true },
     },
-    async ({ folders }) => {
+    async ({ folders, include = [] }) => {
       refuseWorkerCaller('setup_plan')
-      const plan = await service.plan(folders)
+      const plan = await service.plan(folders, include)
       const changes = planSetupActions(plan, recommendedAnswers(plan))
         .filter(setupActionChangesMachine)
         .map(setupActionLine)
@@ -115,6 +130,7 @@ export function registerSetupTools(
         planOutputSchema.parse({
           questions: plan.questions.map((question) => ({
             id: question.id,
+            folderPath: question.folderPath,
             question: question.question,
             why: question.why,
             recommendation: question.recommendation,
@@ -126,6 +142,7 @@ export function registerSetupTools(
           })),
           notices: plan.notices,
           changes,
+          folderSelection: plan.folderSelection,
         }),
       )
     },
@@ -140,14 +157,15 @@ export function registerSetupTools(
         .object({
           folders: foldersSchema,
           answers: z.record(z.string(), z.string()),
+          include: includeSchema.optional(),
         })
         .strict(),
       outputSchema: z.object(applyOutputSchema.shape).strict(),
     },
-    async ({ folders, answers }) => {
+    async ({ folders, answers, include = [] }) => {
       refuseWorkerCaller('setup_apply')
       try {
-        const outcome = await service.apply(folders, answers)
+        const outcome = await service.apply(folders, answers, {}, include)
         const actions = outcome.results.map((result) => ({
           line: setupActionLine(result),
           status: result.status,

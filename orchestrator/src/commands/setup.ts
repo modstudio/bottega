@@ -1,15 +1,19 @@
 // concern: cli
 /** Registers setup detection and project-register adapters. Must not own setup policy. */
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { type Command, InvalidArgumentError } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
+import { signInCommand } from '../record/record-auth-command.ts'
+import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { setupResultsRequireAttention } from '../setup/setup-apply.ts'
 import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
+import { MACHINE_LEVEL_QUESTION_ID } from '../setup/setup-engine.ts'
 import { restoreSetupEnvironment } from '../setup/setup-environment-runtime.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
-import { runInteractiveSetup, SETUP_CANCEL } from '../setup/setup-interactive.ts'
+import { runInteractiveSetup, runSetupSignIn, SETUP_CANCEL } from '../setup/setup-interactive.ts'
 import { type SetupService, setupService } from '../setup/setup-service.ts'
 import { collect, log } from './support.ts'
 
@@ -19,6 +23,7 @@ type SetupOptions = {
   yes?: boolean
   answers?: string
   level?: MachineLevel
+  include?: string[]
 }
 
 function parseMachineLevel(value: string): MachineLevel {
@@ -27,7 +32,7 @@ function parseMachineLevel(value: string): MachineLevel {
 }
 
 function levelAnswer(options: SetupOptions): Record<string, string> {
-  return options.level ? { 'machine:level': options.level } : {}
+  return options.level ? { [MACHINE_LEVEL_QUESTION_ID]: options.level } : {}
 }
 
 function inheritedSetupOptions(options: SetupOptions, command: Command): SetupOptions {
@@ -37,6 +42,9 @@ function inheritedSetupOptions(options: SetupOptions, command: Command): SetupOp
 function inputs(options: SetupOptions): string[] {
   return options.in?.length ? options.in : [process.cwd()]
 }
+
+const includedFolders = (options: SetupOptions): string[] =>
+  (options.include ?? []).map((folder) => resolve(folder))
 
 function refuseWorkerRestore(): void {
   if (!isOrchWorkerProcess(process.env, process.pid)) return
@@ -64,8 +72,8 @@ async function applyNonInteractiveSetup(
     }
   }
   const outcome = options.yes
-    ? await service.applyRecommended(folders, levelAnswer(options))
-    : await service.apply(folders, answerValue, levelAnswer(options))
+    ? await service.applyRecommended(folders, levelAnswer(options), includedFolders(options))
+    : await service.apply(folders, answerValue, levelAnswer(options), includedFolders(options))
   const { plan, actions, results } = outcome
   if (setupResultsRequireAttention(results)) process.exitCode = 1
   log(
@@ -94,8 +102,18 @@ async function applyInteractiveSetup(options: SetupOptions, service: SetupServic
     return
   }
   const folders = inputs(options)
-  const prepared = await service.prepare(folders)
   introduceSetup(folders)
+  const signIn = await runSetupSignIn(
+    cachedSignedInRecordUser()?.email ?? null,
+    clackSetupPrompter,
+    (email, password) =>
+      signInCommand(email, async () => password, { log: clackSetupPrompter.line }),
+  )
+  if (signIn === SETUP_CANCEL) {
+    process.exitCode = 130
+    return
+  }
+  const prepared = await service.prepare(folders)
   const plan = await gatherSetupPlan(
     () => Promise.resolve(prepared.plan),
     () => {
@@ -164,10 +182,15 @@ export function register(program: Command, service: SetupService = setupService)
     .option('--in <folder>', 'folder to inspect', collect, [])
     .option('--json', 'write the setup plan as compact JSON')
     .option('--level <record|full>', 'answer the install-level question', parseMachineLevel)
+    .option('--include <folder>', 'include an unregistered project folder', collect, [])
     .allowExcessArguments(false)
     .action(async (options: SetupOptions, command: Command) => {
       const resolved = inheritedSetupOptions(options, command)
-      const plan = await service.dryRun(inputs(resolved), levelAnswer(resolved))
+      const plan = await service.dryRun(
+        inputs(resolved),
+        levelAnswer(resolved),
+        includedFolders(resolved),
+      )
       log(JSON.stringify(plan, null, resolved.json ? undefined : 2))
     })
   setup
@@ -178,6 +201,7 @@ export function register(program: Command, service: SetupService = setupService)
     .option('--answers <file>', 'JSON file containing explicit setup answers')
     .option('--json', 'write the setup result as compact JSON')
     .option('--level <record|full>', 'answer the install-level question', parseMachineLevel)
+    .option('--include <folder>', 'include an unregistered project folder', collect, [])
     .allowExcessArguments(false)
     .action((options: SetupOptions, command: Command) =>
       applyNonInteractiveSetup(inheritedSetupOptions(options, command), service),

@@ -40,6 +40,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-environment.ts',
       './setup-environment-runtime.ts',
       './setup-facts.ts',
+      './setup-folder-selection.ts',
       './setup-mcp.ts',
       './setup-mcp-config.ts',
       './setup-mcp-config-migration.ts',
@@ -51,6 +52,20 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     typeOnlyAllowed: [],
     reason:
       'Keep shared setup assembly and application independent of CLI and MCP presentation grammar.',
+  },
+  {
+    name: 'setup-folder-selection-boundary',
+    file: 'orchestrator/src/setup/setup-folder-selection.ts',
+    allowed: [],
+    typeOnlyAllowed: ['./setup-engine.ts'],
+    reason: 'Keep folder selection pure and independent of setup adapters and presentation.',
+  },
+  {
+    name: 'setup-notice-order-boundary',
+    file: 'orchestrator/src/setup/setup-notice-order.ts',
+    allowed: [],
+    typeOnlyAllowed: ['./setup-engine.ts'],
+    reason: 'Keep notice priority pure and independent of setup adapters and presentation.',
   },
   {
     name: 'setup-environment-boundary',
@@ -97,6 +112,13 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       'Keep linked-worktree persistence refusal independent of setup planning and harness CLI grammar.',
   },
   {
+    name: 'setup-repository-facts-types-boundary',
+    file: 'orchestrator/src/setup/repository-facts-types.ts',
+    allowed: [],
+    typeOnlyAllowed: ['./setup-toolchain.ts'],
+    reason: 'Keep repository fact values shared without coupling setup policy to repository I/O.',
+  },
+  {
     name: 'setup-repository-facts-boundary',
     file: 'orchestrator/src/setup/repository-facts.ts',
     allowed: [
@@ -106,7 +128,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../project/projects.ts',
       './repository-toolchain.ts',
     ],
-    typeOnlyAllowed: ['./setup-toolchain.ts'],
+    typeOnlyAllowed: ['./repository-facts-types.ts', './setup-engine.ts'],
     reason: 'Keep repository detection independent of stores, setup policy, and CLI grammar.',
   },
   {
@@ -116,7 +138,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     typeOnlyAllowed: [
       '../../../shared/machine-config.ts',
       '../project/projects.ts',
-      './repository-facts.ts',
+      './repository-facts-types.ts',
       './setup-facts.ts',
       './setup-legacy-path.ts',
       './setup-mcp-config.ts',
@@ -127,10 +149,9 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-planner-boundary',
     file: 'orchestrator/src/setup/setup-planner.ts',
-    allowed: ['../../../shared/machine-config.ts', './setup-toolchain.ts'],
+    allowed: ['../../../shared/machine-config.ts', './setup-engine.ts', './setup-toolchain.ts'],
     typeOnlyAllowed: [
       '../project/projects.ts',
-      './setup-engine.ts',
       './setup-facts.ts',
       './setup-mcp.ts',
       './setup-mcp-config.ts',
@@ -237,8 +258,13 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-interactive-boundary',
     file: 'orchestrator/src/setup/setup-interactive.ts',
-    allowed: ['./setup-planner.ts'],
-    typeOnlyAllowed: ['./setup-apply.ts', './setup-engine.ts'],
+    allowed: [
+      './setup-engine.ts',
+      './setup-folder-selection.ts',
+      './setup-notice-order.ts',
+      './setup-planner.ts',
+    ],
+    typeOnlyAllowed: ['./setup-apply.ts'],
     reason:
       'Keep interactive setup decisions independent of prompt adapters, stores, and commands.',
   },

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { RECORD_API_ORIGIN } from './brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
 import { recordApiConfigured, resolveRecordApiUrl } from './record-api-url.ts'
 
@@ -44,7 +45,7 @@ test('the record endpoint falls back to configured files', () => {
   }
 })
 
-test('the record endpoint is undefined when no source provides it', () => {
+test('the record endpoint falls back to the built-in hosted address', () => {
   const root = mkdtempSync(join(tmpdir(), 'record-api-url-missing-'))
   try {
     expect(
@@ -52,7 +53,7 @@ test('the record endpoint is undefined when no source provides it', () => {
         [CONFIG_HOME_ENV]: join(root, 'config'),
         [HARNESS_ENV_FILE_ENV]: '',
       }),
-    ).toBeUndefined()
+    ).toBe(RECORD_API_ORIGIN)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -4,27 +4,17 @@ import { readdirSync, realpathSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { gitAt } from '../../../shared/git.ts'
 import { sniffStack } from '../project/projects.ts'
+import type { RepositoryFacts } from './repository-facts-types.ts'
 import { detectRepositoryToolchain } from './repository-toolchain.ts'
-import type { ToolchainFacts } from './setup-toolchain.ts'
+import type { SetupNotice } from './setup-engine.ts'
 
-export type RepositoryFacts = ToolchainFacts & {
-  name: string
-  path: string
-  currentBranch: string | null
-  clean: boolean
-  originUrl: string | null
-  originHost: string | null
-  remoteDefaultBranch: string | null
-  stack: string | null
-  inspectionTimedOut: boolean
-}
+export type { RepositoryFacts } from './repository-facts-types.ts'
 
 type RepositoryGitCapture = { exitCode: number; stdout: string; timedOut: boolean }
 export type RepositoryGitRunner = (path: string, args: string[]) => RepositoryGitCapture
-type RepositoryFactsNotice = { message: string; fix: string | null }
 export type RepositoryFactsReport = {
   repositories: RepositoryFacts[]
-  notices: RepositoryFactsNotice[]
+  notices: SetupNotice[]
 }
 
 const GIT_TIMEOUT_MS = 3_000
@@ -117,7 +107,7 @@ export async function gatherRepositoryFactsReport(
   sniff: (path: string) => string | null = sniffStack,
 ): Promise<RepositoryFactsReport> {
   const repositories = new Map<string, RepositoryFacts>()
-  const notices: RepositoryFactsNotice[] = []
+  const notices: SetupNotice[] = []
   for (const folder of folders) {
     const root = resolve(folder)
     const candidates = [root]
@@ -136,6 +126,8 @@ export async function gatherRepositoryFactsReport(
         notices.push({
           message: `git inspection timed out for ${basename(candidate)} at ${candidate}`,
           fix: `git -C ${candidate} rev-parse --show-toplevel`,
+          blocking: true,
+          folderPath: candidate,
         })
       }
       const top = inspected.root

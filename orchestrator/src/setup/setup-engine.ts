@@ -4,7 +4,7 @@
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
-import type { RepositoryFacts } from './repository-facts.ts'
+import type { RepositoryFacts } from './repository-facts-types.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
 import type { LegacyMcpServerName } from './setup-mcp.ts'
@@ -21,6 +21,7 @@ import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './set
 
 export type SetupQuestion = {
   id: string
+  folderPath?: string
   question: string
   options: {
     id: string
@@ -32,7 +33,12 @@ export type SetupQuestion = {
   why: string
 }
 
-export type SetupNotice = { message: string; fix: string | null }
+export type SetupNotice = {
+  message: string
+  fix: string | null
+  blocking: boolean
+  folderPath?: string
+}
 export type SetupAgent = {
   name: string
   harness: string
@@ -77,6 +83,7 @@ export type SetupPlan = {
   registrations: SetupRegistrationProposal[]
   questions: SetupQuestion[]
   notices: SetupNotice[]
+  folderSelection: { options: Array<{ path: string; name: string }>; defaults: string[] }
   mcpConfigMigrations?: McpConfigMigration[]
   legacyPathSymlinks?: LegacyPathSymlink[]
 }
@@ -88,9 +95,12 @@ export function recommendedMachineLevel(machine: SetupFacts): MachineLevel {
     : 'record'
 }
 
+export const MACHINE_LEVEL_QUESTION_ID = 'machine:level'
+export const MACHINE_GLOBAL_USE_QUESTION_ID = 'machine:global-use'
+
 function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
   return {
-    id: 'machine:level',
+    id: MACHINE_LEVEL_QUESTION_ID,
     question: 'Which install level should this machine use?',
     options: [
       {
@@ -106,6 +116,23 @@ function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
     ],
     recommendation: recommendedMachineLevel(machine),
     why: 'The install level controls whether this machine can dispatch external worker agents.',
+  }
+}
+
+function globalUseQuestion(machine: SetupFacts): SetupQuestion {
+  return {
+    id: MACHINE_GLOBAL_USE_QUESTION_ID,
+    question: `Should ${PLATFORM_NAME} act in every folder, or only in registered projects?`,
+    options: [
+      { id: 'on', label: 'Every folder', why: `Allows ${PLATFORM_NAME} to act globally.` },
+      {
+        id: 'off',
+        label: 'Registered projects only',
+        why: 'Limits actions to registered projects.',
+      },
+    ],
+    recommendation: machine.globalUse ?? 'on',
+    why: 'The declared default is every folder.',
   }
 }
 
@@ -203,6 +230,7 @@ function proposeHarnessRegistrations(
     notices.push({
       message: `${harness} cannot register a local MCP server non-interactively through its CLI`,
       fix: manualMcpInstructions(harness),
+      blocking: false,
     })
     return []
   }
@@ -269,6 +297,7 @@ function proposeHarnessRegistrations(
       notices.push({
         message: `${harness} ${server.name} registration could not be read exactly: ${current.detail}`,
         fix: `${facts.path} ${harness === 'grok' ? 'mcp list --json' : `mcp get ${server.name}`}`,
+        blocking: false,
       })
     return {
       harness,
@@ -311,18 +340,15 @@ export function deriveKeyPrefix(name: string, occupied: ReadonlySet<string>): st
 
 function machineNotices(machine: SetupFacts): SetupNotice[] {
   const notices: SetupNotice[] = []
-  if (!machine.recordApiUrl) {
-    notices.push({
-      message: 'hosted record address is not configured',
-      fix: `${PLATFORM_SLUG} record use <address>`,
-    })
-  }
-  if (!machine.git.path) notices.push({ message: 'git is missing', fix: 'install git' })
-  if (!machine.gh.path) notices.push({ message: 'gh is missing', fix: 'install gh' })
+  if (!machine.git.path)
+    notices.push({ message: 'git is missing', fix: 'install git', blocking: true })
+  if (!machine.gh.path)
+    notices.push({ message: 'gh is missing', fix: 'install gh', blocking: true })
   else if (!machine.gh.loggedIn)
     notices.push({
       message: 'gh is signed out',
       fix: 'gh auth login --hostname github.com',
+      blocking: true,
     })
   return notices
 }
@@ -345,6 +371,7 @@ function builtInAgentNotice(
       ? {
           message: `${name} harness is installed and signed in but the ${name} agent is disabled`,
           fix: `${PLATFORM_SLUG} agent set ${name} --enabled true`,
+          blocking: false,
         }
       : null
   }
@@ -352,24 +379,28 @@ function builtInAgentNotice(
     return {
       message: `${name} agent is enabled but the ${name} harness is not installed`,
       fix: `install ${name}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
+      blocking: true,
     }
   }
   if (harness.auth === 'signed-out') {
     return {
       message: `${name} agent is enabled but the ${name} harness is not signed in`,
       fix: `sign in to ${name}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
+      blocking: false,
     }
   }
   if (harness.auth === 'unknown') {
     return {
       message: `the sign-in state of ${name} could not be established`,
       fix: `check ${name} sign-in and re-run ${PLATFORM_SLUG} machine setup plan`,
+      blocking: false,
     }
   }
   return !agent.probePassed
     ? {
         message: `${name} harness is installed and signed in but the ${name} agent cannot take repository work until it is probed`,
         fix: `${PLATFORM_SLUG} agent probe ${name}`,
+        blocking: false,
       }
     : null
 }
@@ -389,10 +420,20 @@ function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] 
       notices.push({
         message: `${candidate.harness} harness is installed but unregistered`,
         fix: `${PLATFORM_SLUG} agent add <name> --harness ${candidate.harness} --backend <backend> --model <model>`,
+        blocking: false,
       })
     }
   }
   return notices
+}
+
+function unsafeRecipeNotice(repository: RepositoryFacts, reason: string): SetupNotice {
+  return {
+    message: `refusing inferred worktree recipe ${INFERRED_RECIPE_PATH} for ${repository.name}: ${reason}`,
+    fix: `replace ${INFERRED_RECIPE_PATH} with a regular file inside ${repository.path}`,
+    blocking: false,
+    folderPath: repository.path,
+  }
 }
 
 function proposeProjectToolchain(
@@ -413,6 +454,8 @@ function proposeProjectToolchain(
     notices.push({
       message: `no gate was detected for ${repository.name}`,
       fix: `${PLATFORM_SLUG} project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
+      blocking: false,
+      folderPath: repository.path,
     })
   }
   const recipeContent = inferredRecipeContent(repository)
@@ -427,10 +470,7 @@ function proposeProjectToolchain(
     }
   }
   if (repository.inferredRecipeFile.status === 'unsafe') {
-    notices.push({
-      message: `refusing inferred worktree recipe ${INFERRED_RECIPE_PATH} for ${repository.name}: ${repository.inferredRecipeFile.reason}`,
-      fix: `replace ${INFERRED_RECIPE_PATH} with a regular file inside ${repository.path}`,
-    })
+    notices.push(unsafeRecipeNotice(repository, repository.inferredRecipeFile.reason))
     return {
       gate,
       recipeQuestionId: null,
@@ -461,6 +501,7 @@ function proposeProjectToolchain(
     }
     questions.push({
       id: recipeQuestionId,
+      folderPath: repository.path,
       question: `${INFERRED_RECIPE_PATH} already exists for ${repository.name}. Activate it as written?\nCreate steps: ${createSteps}`,
       options: [
         {
@@ -488,6 +529,7 @@ function proposeProjectToolchain(
   const recipeQuestionId = questionId(repository.path, 'worktree-recipe')
   questions.push({
     id: recipeQuestionId,
+    folderPath: repository.path,
     question: `Write an inferred Files-level worktree recipe for ${repository.name}?`,
     options: [
       {
@@ -526,6 +568,140 @@ function recoveredWorktreeSettings(
   }
 }
 
+function proposePrefix(
+  repository: RepositoryFacts,
+  current: Project | null,
+  occupied: Set<string>,
+  questions: SetupQuestion[],
+): { prefixQuestionId: string | null; proposedPrefix?: string } {
+  if ((current?.settings.keyPrefixes ?? []).length > 0) return { prefixQuestionId: null }
+  const proposedPrefix = deriveKeyPrefix(repository.name, occupied)
+  occupied.add(proposedPrefix)
+  const prefixQuestionId = questionId(repository.path, 'key-prefix')
+  questions.push({
+    id: prefixQuestionId,
+    folderPath: repository.path,
+    question: `Which task key prefix should ${repository.name} use?`,
+    options: [
+      {
+        id: proposedPrefix,
+        label: proposedPrefix,
+        why: 'Uppercase letters and digits derived from the repository name and unique in the register.',
+      },
+    ],
+    recommendation: proposedPrefix,
+    why: 'Every project needs a short, unique task key prefix for attribution.',
+  })
+  return { prefixQuestionId, proposedPrefix }
+}
+
+function proposeTrunk(
+  repository: RepositoryFacts,
+  current: Project | null,
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+): { trunkQuestionId: string | null; proposedTrunk?: string } {
+  if (current?.settings.trunk)
+    return { trunkQuestionId: null, proposedTrunk: current.settings.trunk }
+  if (!repository.currentBranch) {
+    notices.push({
+      message: repository.remoteDefaultBranch
+        ? `${repository.name} has detached HEAD; remote default is ${repository.remoteDefaultBranch}; leaving trunk unset`
+        : `${repository.name} has detached HEAD; leaving trunk unset`,
+      fix: null,
+      blocking: false,
+      folderPath: repository.path,
+    })
+    return { trunkQuestionId: null }
+  }
+  if (
+    !repository.remoteDefaultBranch ||
+    repository.remoteDefaultBranch === repository.currentBranch
+  )
+    return { trunkQuestionId: null, proposedTrunk: repository.currentBranch }
+  const trunkQuestionId = questionId(repository.path, 'trunk')
+  questions.push({
+    id: trunkQuestionId,
+    folderPath: repository.path,
+    question: `Which trunk setting should ${repository.name} use?`,
+    options: [
+      {
+        id: 'unset',
+        label: 'Leave trunk unset',
+        why: `The register requires trunk to be the checked-out branch, and the remote default is ${repository.remoteDefaultBranch}.`,
+        effect: { trunk: null },
+      },
+      {
+        id: 'current',
+        label: `Use the current branch ${repository.currentBranch} as trunk`,
+        why: 'The current symbolic HEAD is the only branch the register can accept now.',
+        effect: { trunk: repository.currentBranch },
+      },
+    ],
+    recommendation: 'unset',
+    why: 'The checked-out branch and remote default disagree.',
+  })
+  notices.push({
+    message: `check out ${repository.remoteDefaultBranch} and re-run setup to declare it as trunk`,
+    fix: `git -C ${repository.path} switch ${repository.remoteDefaultBranch}`,
+    blocking: false,
+    folderPath: repository.path,
+  })
+  return { trunkQuestionId }
+}
+
+function proposeRepository(
+  repository: RepositoryFacts,
+  register: Project[],
+  occupied: Set<string>,
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+  resolveLifecycle: SetupLifecycleResolver,
+): SetupProposal {
+  if (repository.inspectionTimedOut)
+    notices.push({
+      message: `git inspection timed out for ${repository.name} at ${repository.path}`,
+      fix: `git -C ${repository.path} status`,
+      blocking: true,
+      folderPath: repository.path,
+    })
+  const current = register.find((project) => project.path === repository.path) ?? null
+  const { prefixQuestionId, proposedPrefix } = proposePrefix(
+    repository,
+    current,
+    occupied,
+    questions,
+  )
+  const { trunkQuestionId, proposedTrunk } = proposeTrunk(repository, current, questions, notices)
+  const { gate, recipeQuestionId, recipeContent, recoverRecipePointer, recipeActivationAnswer } =
+    proposeProjectToolchain(repository, current, questions, notices, resolveLifecycle)
+  const settings: ProjectSettings = {
+    ...current?.settings,
+    ...(proposedPrefix ? { keyPrefixes: [proposedPrefix] } : {}),
+    ...(current?.settings.tracker
+      ? { tracker: current.settings.tracker }
+      : { tracker: { kind: 'hub', protocol: 'hub' } }),
+    ...(proposedTrunk ? { trunk: proposedTrunk } : {}),
+    ...(gate ? { gate } : {}),
+    ...recoveredWorktreeSettings(current, recoverRecipePointer),
+  }
+  return {
+    repository,
+    current,
+    project: {
+      name: current?.name ?? repository.name,
+      path: repository.path,
+      stack: current?.stack ?? repository.stack,
+      settings,
+    },
+    prefixQuestionId,
+    trunkQuestionId,
+    recipeQuestionId,
+    recipeActivationAnswer,
+    recipeContent,
+  }
+}
+
 export function proposeSetup(
   resolveLifecycle: SetupLifecycleResolver,
   machine: SetupFacts,
@@ -534,121 +710,39 @@ export function proposeSetup(
   agents: SetupAgent[],
   repositoryNotices: SetupNotice[] = [],
   servers: McpServer[] = [],
+  hostedProjectNames: readonly string[] = [],
 ): SetupPlan {
   const occupied = new Set(
     register
       .flatMap((project) => project.settings.keyPrefixes ?? [])
       .map((prefix) => prefix.toUpperCase()),
   )
-  const questions: SetupQuestion[] = [machineLevelQuestion(machine)]
+  const questions: SetupQuestion[] = [globalUseQuestion(machine), machineLevelQuestion(machine)]
   const notices = [
     ...machineNotices(machine),
     ...agentNotices(machine, agents),
     ...repositoryNotices,
   ]
   const registrations = proposeMcpRegistrations(machine, servers, questions, notices)
-  const proposals = repositories.map((repository) => {
-    if (repository.inspectionTimedOut) {
-      notices.push({
-        message: `git inspection timed out for ${repository.name} at ${repository.path}`,
-        fix: `git -C ${repository.path} status`,
-      })
-    }
-    const current = register.find((project) => project.path === repository.path) ?? null
-    const currentPrefixes = current?.settings.keyPrefixes ?? []
-    let prefixQuestionId: string | null = null
-    let proposedPrefix: string | undefined
-    if (currentPrefixes.length === 0) {
-      proposedPrefix = deriveKeyPrefix(repository.name, occupied)
-      occupied.add(proposedPrefix)
-      prefixQuestionId = questionId(repository.path, 'key-prefix')
-      questions.push({
-        id: prefixQuestionId,
-        question: `Which task key prefix should ${repository.name} use?`,
-        options: [
-          {
-            id: proposedPrefix,
-            label: proposedPrefix,
-            why: 'Uppercase letters and digits derived from the repository name and unique in the register.',
-          },
-        ],
-        recommendation: proposedPrefix,
-        why: 'Every project needs a short, unique task key prefix for attribution.',
-      })
-    }
-
-    let trunkQuestionId: string | null = null
-    let proposedTrunk: string | undefined
-    if (current?.settings.trunk) {
-      proposedTrunk = current.settings.trunk
-    } else if (repository.currentBranch) {
-      if (
-        repository.remoteDefaultBranch &&
-        repository.remoteDefaultBranch !== repository.currentBranch
-      ) {
-        trunkQuestionId = questionId(repository.path, 'trunk')
-        questions.push({
-          id: trunkQuestionId,
-          question: `Which trunk setting should ${repository.name} use?`,
-          options: [
-            {
-              id: 'unset',
-              label: 'Leave trunk unset',
-              why: `The register requires trunk to be the checked-out branch, and the remote default is ${repository.remoteDefaultBranch}.`,
-              effect: { trunk: null },
-            },
-            {
-              id: 'current',
-              label: `Use the current branch ${repository.currentBranch} as trunk`,
-              why: 'The current symbolic HEAD is the only branch the register can accept now.',
-              effect: { trunk: repository.currentBranch },
-            },
-          ],
-          recommendation: 'unset',
-          why: 'The checked-out branch and remote default disagree.',
-        })
-        notices.push({
-          message: `check out ${repository.remoteDefaultBranch} and re-run setup to declare it as trunk`,
-          fix: `git -C ${repository.path} switch ${repository.remoteDefaultBranch}`,
-        })
-      } else {
-        proposedTrunk = repository.currentBranch
-      }
-    } else {
-      notices.push({
-        message: repository.remoteDefaultBranch
-          ? `${repository.name} has detached HEAD; remote default is ${repository.remoteDefaultBranch}; leaving trunk unset`
-          : `${repository.name} has detached HEAD; leaving trunk unset`,
-        fix: null,
-      })
-    }
-    const { gate, recipeQuestionId, recipeContent, recoverRecipePointer, recipeActivationAnswer } =
-      proposeProjectToolchain(repository, current, questions, notices, resolveLifecycle)
-    const settings: ProjectSettings = {
-      ...current?.settings,
-      ...(proposedPrefix ? { keyPrefixes: [proposedPrefix] } : {}),
-      ...(current?.settings.tracker
-        ? { tracker: current.settings.tracker }
-        : { tracker: { kind: 'hub', protocol: 'hub' } }),
-      ...(proposedTrunk ? { trunk: proposedTrunk } : {}),
-      ...(gate ? { gate } : {}),
-      ...recoveredWorktreeSettings(current, recoverRecipePointer),
-    }
-    return {
-      repository,
-      current,
-      project: {
-        name: current?.name ?? repository.name,
-        path: repository.path,
-        stack: current?.stack ?? repository.stack,
-        settings,
-      },
-      prefixQuestionId,
-      trunkQuestionId,
-      recipeQuestionId,
-      recipeActivationAnswer,
-      recipeContent,
-    }
-  })
-  return { facts: { machine, repositories }, proposals, registrations, questions, notices }
+  const proposals = repositories.map((repository) =>
+    proposeRepository(repository, register, occupied, questions, notices, resolveLifecycle),
+  )
+  const hosted = new Set(hostedProjectNames)
+  return {
+    facts: { machine, repositories },
+    proposals,
+    registrations,
+    questions,
+    notices,
+    folderSelection: {
+      options: repositories.map(({ path, name }) => ({ path, name })),
+      defaults: repositories
+        .filter(
+          (repository) =>
+            register.some((project) => project.path === repository.path) ||
+            hosted.has(repository.name),
+        )
+        .map((repository) => repository.path),
+    },
+  }
 }

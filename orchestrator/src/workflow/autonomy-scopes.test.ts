@@ -511,6 +511,9 @@ test('answer combines a cursor rulings snapshot with a stricter current setting'
       taskRecordId: 'task-867',
       database: d,
       env: missingConfig,
+      clientFactory: () => {
+        throw new ConfigClientError('not-configured', '/v1/config')
+      },
     }),
   ).toEqual({ value: 'user', scope: 'project' })
 
@@ -527,6 +530,9 @@ test('answer combines a cursor rulings snapshot with a stricter current setting'
       taskRecordId: 'task-867',
       database: d,
       env: missingConfig,
+      clientFactory: () => {
+        throw new ConfigClientError('not-configured', '/v1/config')
+      },
     }),
   ).toEqual({ value: 'user', scope: 'session' })
 })

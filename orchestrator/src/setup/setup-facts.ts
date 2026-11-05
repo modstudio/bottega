@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured, resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
 import {
   type CliVersionCapture,
@@ -35,9 +35,11 @@ export type CommandCapture = CliVersionCapture
 
 export type SetupFactsCapture = {
   machineLevel: MachineLevel | null
+  globalUse?: 'on' | 'off' | null
   installationKind?: InstallationKind | null
   schedules?: ScheduleSetupFact[]
-  recordApiUrl: string | null
+  recordApiUrl: string
+  recordApiConfigured: boolean
   platform: NodeJS.Platform
   arch: NodeJS.Architecture
   procVersion: string | null
@@ -59,9 +61,11 @@ export type SetupFactsCapture = {
 
 export type SetupFacts = {
   machineLevel: MachineLevel | null
+  globalUse: 'on' | 'off' | null
   installationKind: InstallationKind | null
   schedules: ScheduleSetupFact[]
-  recordApiUrl: string | null
+  recordApiUrl: string
+  recordApiConfigured: boolean
   os: { platform: NodeJS.Platform; arch: NodeJS.Architecture; wsl: boolean }
   bun: { path: string; version: string }
   git: { path: string | null; version: string | null }
@@ -82,9 +86,11 @@ export type SetupFacts = {
 export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
   return {
     machineLevel: capture.machineLevel,
+    globalUse: capture.globalUse ?? null,
     installationKind: capture.installationKind ?? null,
     schedules: capture.schedules ?? [],
     recordApiUrl: capture.recordApiUrl,
+    recordApiConfigured: capture.recordApiConfigured,
     os: {
       platform: capture.platform,
       arch: capture.arch,
@@ -161,6 +167,10 @@ export function readSetupMachineLevel(): MachineLevel | null {
   return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
 }
 
+function readSetupGlobalUse(): 'on' | 'off' | null {
+  return (readMachineFileValue('machine.global_use') as 'on' | 'off' | undefined) ?? null
+}
+
 /** The running installation's kind, or null when its identity is unreadable; doctor reports why. */
 function readInstallationKind(): InstallationKind | null {
   try {
@@ -203,9 +213,11 @@ export async function gatherSetupFacts(
   const installationKind = readInstallationKind()
   return classifySetupFacts({
     machineLevel: readSetupMachineLevel(),
+    globalUse: readSetupGlobalUse(),
     installationKind,
     schedules: installationKind === 'distribution' ? gatherScheduleSetupFacts() : [],
-    recordApiUrl: resolveRecordApiUrl() ?? null,
+    recordApiUrl: resolveRecordApiUrl(),
+    recordApiConfigured: recordApiConfigured(),
     platform: process.platform,
     arch: process.arch,
     procVersion: procVersion(),

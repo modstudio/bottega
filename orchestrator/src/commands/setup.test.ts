@@ -33,6 +33,7 @@ function stubSetupService(overrides: Partial<SetupService>): SetupService {
     registrations: [],
     questions: [],
     notices: [],
+    folderSelection: { options: [], defaults: [] },
   }
   const outcome = { plan, actions: [], results: [] }
   return {

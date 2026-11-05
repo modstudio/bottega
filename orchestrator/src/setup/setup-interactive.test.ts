@@ -3,6 +3,7 @@ import type { SetupActionResult } from './setup-apply.ts'
 import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
 import {
   runInteractiveSetup,
+  runSetupSignIn,
   SETUP_CANCEL,
   type SetupPrompter,
   type SetupSelectOption,
@@ -10,6 +11,7 @@ import {
 import type { SetupAction } from './setup-planner.ts'
 
 class ScriptedPrompter implements SetupPrompter {
+  readonly events: string[] = []
   readonly lines: string[] = []
   readonly notes: Array<{ message: string; title?: string }> = []
   readonly selections: Array<{
@@ -42,6 +44,7 @@ class ScriptedPrompter implements SetupPrompter {
     options: SetupSelectOption[]
     initialValue: string
   }): Promise<string | typeof SETUP_CANCEL> {
+    this.events.push(`select:${input.message.split('\n')[0]}`)
     this.selections.push(input)
     return this.selected.shift() ?? input.initialValue
   }
@@ -50,17 +53,72 @@ class ScriptedPrompter implements SetupPrompter {
     message: string
     initialValue: boolean
   }): Promise<boolean | typeof SETUP_CANCEL> {
+    this.events.push(`confirm:${input.message}`)
     this.confirmations.push(input)
     return this.confirmed.shift() ?? input.initialValue
   }
+
+  async multiselect(input: {
+    message: string
+    options: Array<{ value: string; label: string }>
+    initialValues: string[]
+  }): Promise<string[] | typeof SETUP_CANCEL> {
+    this.events.push(`folders:${input.message}`)
+    return input.initialValues
+  }
+
+  async text(): Promise<string | typeof SETUP_CANCEL> {
+    this.events.push('text:Email')
+    return 'person@example.test'
+  }
+
+  async password(): Promise<string | typeof SETUP_CANCEL> {
+    this.events.push('password:Password')
+    return 'fixture-password'
+  }
 }
+
+test('fresh setup asks sign-in, global use, level, folders, then per-folder questions', async () => {
+  const prompts = new ScriptedPrompter([], [true, true])
+  await runSetupSignIn(null, prompts, async () => {})
+  const input = plan(
+    [
+      question('machine:global-use', 'on', [{ id: 'on' }, { id: 'off' }]),
+      question('machine:level', 'record', [{ id: 'record' }, { id: 'full' }]),
+      question(
+        'project:%2Fwork%2Falpha:key-prefix',
+        'ALPHA',
+        [{ id: 'ALPHA' }, { id: 'ALT' }],
+        '/work/alpha',
+      ),
+    ],
+    [proposal('alpha', 'project:%2Fwork%2Falpha:key-prefix')],
+  )
+  input.folderSelection = {
+    options: [{ path: '/work/alpha', name: 'alpha' }],
+    defaults: ['/work/alpha'],
+  }
+  await runInteractiveSetup(input, prompts, async () => [])
+  expect(prompts.events.slice(0, 8)).toEqual([
+    'confirm:Sign in to your account now?',
+    'text:Email',
+    'password:Password',
+    'select:Choose machine:global-use',
+    'select:Choose machine:level',
+    'folders:Which folders should be projects on this machine?',
+    'select:Choose project:%2Fwork%2Falpha:key-prefix',
+    'confirm:Apply these changes?',
+  ])
+})
 
 const question = (
   id: string,
   recommendation: string,
   options: Array<{ id: string; label?: string; why?: string }>,
+  folderPath?: string,
 ): SetupQuestion => ({
   id,
+  ...(folderPath ? { folderPath } : {}),
   question: `Choose ${id}`,
   why: `Why ${id}`,
   recommendation,
@@ -94,6 +152,10 @@ const plan = (questions: SetupQuestion[] = [], proposals: SetupProposal[] = []):
     registrations: [],
     questions,
     notices: [],
+    folderSelection: {
+      options: proposals.map((item) => ({ path: item.repository.path, name: item.project.name })),
+      defaults: proposals.map((item) => item.repository.path),
+    },
   }) as unknown as SetupPlan
 
 test('offers every prompted recommendation as the preselected marked option', async () => {

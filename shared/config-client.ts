@@ -243,7 +243,6 @@ export function configClient(
   signal?: AbortSignal,
 ): ConfigClient {
   const url = resolveRecordApiUrl(env)
-  if (!url) throw new ConfigClientError('not-configured', '/v1/config')
   const resolvedToken = token === undefined ? readRecordSessionToken() : token
   if (!resolvedToken) throw new ConfigClientError('not-configured', '/v1/config')
   return createConfigClient(url.replace(/\/$/, ''), resolvedToken, transport, signal)

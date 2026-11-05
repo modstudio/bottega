@@ -5,16 +5,17 @@ import { machineId } from '../record/machine-identity.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../record/record-auth.ts'
 import {
-  BOUND_RECORD_WRITE_REFUSAL,
   currentRecordWriteDecision,
+  throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
 
 export async function signedInDocOwner(): Promise<string> {
-  switch (currentRecordWriteDecision()) {
+  const decision = currentRecordWriteDecision()
+  switch (decision.verdict) {
     case 'local-authoritative':
       return `operator:${machineId()}`
     case 'refused':
-      throw new Error(BOUND_RECORD_WRITE_REFUSAL)
+      return throwIfRecordRefused(decision)
     case 'hosted': {
       const owner = await signedInRecordUserId()
       if (!owner) throw new Error(RECORD_SIGN_IN_REMEDY)

@@ -2,7 +2,14 @@
 /** Owns the interactive setup flow over a presentation port. Pure: no process, prompt library, store, or CLI. */
 
 import type { SetupActionResult } from './setup-apply.ts'
-import type { SetupPlan, SetupQuestion } from './setup-engine.ts'
+import {
+  MACHINE_GLOBAL_USE_QUESTION_ID,
+  MACHINE_LEVEL_QUESTION_ID,
+  type SetupPlan,
+  type SetupQuestion,
+} from './setup-engine.ts'
+import { selectSetupFolders } from './setup-folder-selection.ts'
+import { orderSetupNotices } from './setup-notice-order.ts'
 import {
   planSetupActions,
   type SetupAction,
@@ -24,6 +31,36 @@ export interface SetupPrompter {
     initialValue: string
   }): Promise<string | typeof SETUP_CANCEL>
   confirm(input: { message: string; initialValue: boolean }): Promise<boolean | typeof SETUP_CANCEL>
+  multiselect(input: {
+    message: string
+    options: Array<{ value: string; label: string }>
+    initialValues: string[]
+  }): Promise<string[] | typeof SETUP_CANCEL>
+  text(input: { message: string }): Promise<string | typeof SETUP_CANCEL>
+  password(input: { message: string }): Promise<string | typeof SETUP_CANCEL>
+}
+
+export async function runSetupSignIn(
+  accountEmail: string | null,
+  prompter: SetupPrompter,
+  signIn: (email: string, password: string) => Promise<void>,
+): Promise<boolean | typeof SETUP_CANCEL> {
+  if (accountEmail) {
+    prompter.line(`Signed in as ${accountEmail}.`)
+    return false
+  }
+  const wanted = await prompter.confirm({
+    message: 'Sign in to your account now?',
+    initialValue: true,
+  })
+  if (wanted === SETUP_CANCEL) return SETUP_CANCEL
+  if (!wanted) return false
+  const email = await prompter.text({ message: 'Email' })
+  if (email === SETUP_CANCEL) return SETUP_CANCEL
+  const password = await prompter.password({ message: 'Password' })
+  if (password === SETUP_CANCEL) return SETUP_CANCEL
+  await signIn(email, password)
+  return true
 }
 
 export type InteractiveSetupOutcome =
@@ -61,21 +98,12 @@ function cancelled(prompter: SetupPrompter, changesAlreadyMade: boolean): Intera
   return { kind: 'cancelled' }
 }
 
-export async function runInteractiveSetup(
-  plan: SetupPlan,
+async function askSetupQuestions(
+  questions: readonly SetupQuestion[],
+  answers: Record<string, string>,
   prompter: SetupPrompter,
-  apply: SetupApply,
-  changesAlreadyMade = false,
-  fixedAnswers: Record<string, string> = {},
-): Promise<InteractiveSetupOutcome> {
-  for (const notice of plan.notices) {
-    prompter.note(notice.fix ? `${notice.message}\nFix: ${notice.fix}` : notice.message, 'Notice')
-  }
-
-  const answers: Record<string, string> = { ...fixedAnswers }
-  for (const question of plan.questions.filter(
-    (question) => !Object.hasOwn(answers, question.id),
-  )) {
+): Promise<boolean> {
+  for (const question of questions.filter((item) => !Object.hasOwn(answers, item.id))) {
     if (question.options.length === 1) {
       const option = question.options[0]!
       answers[question.id] = option.id
@@ -87,13 +115,58 @@ export async function runInteractiveSetup(
       options: questionOptions(question),
       initialValue: question.recommendation,
     })
-    if (answer === SETUP_CANCEL) return cancelled(prompter, changesAlreadyMade)
+    if (answer === SETUP_CANCEL) return false
     answers[question.id] = answer
   }
+  return true
+}
+
+function presentSetupNotices(plan: SetupPlan, prompter: SetupPrompter): void {
+  const notices = orderSetupNotices(plan.notices)
+  if (!notices.length) return
+  prompter.note(
+    notices
+      .map((notice) => (notice.fix ? `${notice.message} — Fix: ${notice.fix}` : notice.message))
+      .join('\n'),
+    'Needs attention',
+  )
+}
+
+export async function runInteractiveSetup(
+  plan: SetupPlan,
+  prompter: SetupPrompter,
+  apply: SetupApply,
+  changesAlreadyMade = false,
+  fixedAnswers: Record<string, string> = {},
+): Promise<InteractiveSetupOutcome> {
+  const answers: Record<string, string> = { ...fixedAnswers }
+  const firstQuestionIds = [MACHINE_GLOBAL_USE_QUESTION_ID, MACHINE_LEVEL_QUESTION_ID]
+  const questionRank = (question: SetupQuestion) => {
+    const index = firstQuestionIds.indexOf(question.id)
+    return index < 0 ? firstQuestionIds.length : index
+  }
+  const globalQuestions = plan.questions
+    .filter((question) => !question.folderPath)
+    .sort((left, right) => questionRank(left) - questionRank(right))
+  if (!(await askSetupQuestions(globalQuestions, answers, prompter)))
+    return cancelled(prompter, changesAlreadyMade)
+
+  const selectedFolders = await prompter.multiselect({
+    message: 'Which folders should be projects on this machine?',
+    options: plan.folderSelection.options.map(({ path, name }) => ({ value: path, label: name })),
+    initialValues: plan.folderSelection.defaults,
+  })
+  if (selectedFolders === SETUP_CANCEL) return cancelled(prompter, changesAlreadyMade)
+  plan = selectSetupFolders(plan, selectedFolders)
+
+  const projectQuestions = plan.questions.filter((question) => question.folderPath)
+  if (!(await askSetupQuestions(projectQuestions, answers, prompter)))
+    return cancelled(prompter, changesAlreadyMade)
 
   const validated = validateSetupAnswers(plan.questions, answers)
   const actions = planSetupActions(plan, validated)
   const summary = actions.filter(setupActionChangesMachine).map(setupActionLine)
+  presentSetupNotices(plan, prompter)
   if (summary.length === 0) {
     prompter.line('The machine and projects are already set up.')
     return { kind: 'nothing-to-do' }
