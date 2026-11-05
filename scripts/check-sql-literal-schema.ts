@@ -159,6 +159,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/database/migrations.ts',
+    ['30e4139155a55f2d'],
+    'migration metadata repair adds compatibility only when schema introspection found it absent',
+  ),
+  ...exempt(
+    'orchestrator/src/database/migrations.ts',
     ['0651cf428a37b47f', '4a0ead7d36fbbeb7'],
     'question migration orphan preflight reads controlled legacy table/column names before the UUID-key rebuild',
   ),

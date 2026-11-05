@@ -838,8 +838,15 @@ function createMigrationsTable(d: Database): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hash TEXT NOT NULL,
     created_at NUMERIC,
-    version TEXT
+    version TEXT,
+    compatibility TEXT
   )`)
+  const hasCompatibility = d
+    .query(`SELECT 1 FROM pragma_table_info(?) WHERE name = 'compatibility'`)
+    .get(MIGRATIONS_TABLE)
+  if (!hasCompatibility) {
+    d.exec(`ALTER TABLE ${MIGRATIONS_TABLE} ADD COLUMN compatibility TEXT`)
+  }
 }
 
 function ensureSchemaLock(d: Database): void {
@@ -850,11 +857,24 @@ function ensureSchemaLock(d: Database): void {
 }
 
 function recordMigration(d: Database, entry: MigrationJournalEntry, folder: string): void {
-  d.query(`INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version) VALUES (?,?,?)`).run(
-    migrationHash(entry, folder),
-    entry.when,
-    entry.tag,
+  d.query(
+    `INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version,compatibility) VALUES (?,?,?,?)`,
+  ).run(migrationHash(entry, folder), entry.when, entry.tag, entry.compatibility ?? null)
+}
+
+function backfillMigrationCompatibilities(
+  d: Database,
+  journal: MigrationJournalEntry[],
+  folder: string,
+): void {
+  const update = d.query(
+    `UPDATE ${MIGRATIONS_TABLE} SET compatibility=?
+     WHERE compatibility IS NULL AND created_at=? AND hash=?`,
   )
+  for (const entry of journal) {
+    if (entry.compatibility === undefined) continue
+    update.run(entry.compatibility, entry.when, migrationHash(entry, folder))
+  }
 }
 
 function adoptBaseline(d: Database, folder: string): string[] {
@@ -967,6 +987,8 @@ function applyMigrationRange(
     ensureSchemaLock(d)
     d.exec(`UPDATE ${SCHEMA_LOCK_TABLE} SET id = 1 WHERE id = 1`)
     const versions = adoptBaseline(d, folder)
+    createMigrationsTable(d)
+    backfillMigrationCompatibilities(d, journal, folder)
     const state = migrationState(d, folder)
     if (state.ahead) {
       throw new Error(

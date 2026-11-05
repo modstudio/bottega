@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decideInFlightMigration,
+  inFlightAppliedMigrationCompatibility,
   inFlightMigrationCompatibility,
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
@@ -56,6 +57,14 @@ describe('in-flight migration compatibility', () => {
     expect(inFlightMigrationCompatibility(entries, entries.length, entries.length + 2)).toBe(
       'incompatible',
     )
+  })
+
+  test('applied rows require a complete all-additive range', () => {
+    const rows = [null, 'additive', 'additive', 'fenced']
+    expect(inFlightAppliedMigrationCompatibility(rows, 1, 3)).toBe('additive')
+    expect(inFlightAppliedMigrationCompatibility(rows, 1, 4)).toBe('incompatible')
+    expect(inFlightAppliedMigrationCompatibility(rows, 0, 2)).toBe('incompatible')
+    expect(inFlightAppliedMigrationCompatibility(rows, 3, 5)).toBe('incompatible')
   })
 
   test('new journal entries must declare non-empty compatibility metadata', () => {

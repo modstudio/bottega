@@ -20,6 +20,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       'shared/read-only-database-access.ts',
       'shared/store-access.ts',
       'orchestrator/src/caller-classification.ts',
+      `${source}applied-migration-compatibilities.ts`,
       `${source}contention.ts`,
       `${source}database-file-family.ts`,
       `${source}database-location.ts`,

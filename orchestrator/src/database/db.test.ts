@@ -3,17 +3,21 @@ import { expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import {
   checkpointAndCloseDatabase,
   closeDatabaseForFixture,
   DB_PATH,
   db,
+  enableSchemaReload,
   openProcessStoreHandle,
   type ProcessHandleFacts,
   registerOpenHooks,
   withReadOnlyDatabaseAccess,
   writableDb,
 } from './db.ts'
+import { migrationJournal } from './migrations.ts'
 import { keepJournalSidecars } from './wal-persistence.ts'
 
 /** A worker caller on a store the facts declare outside OS temporary state: restricted read-only. */
@@ -26,6 +30,74 @@ const restrictedHandleFacts: ProcessHandleFacts = {
   brokerChannel: false,
   storePathUnderTemporaryRoot: false,
 }
+
+function hideJournalAfter(version: number): void {
+  const entries = migrationJournal().slice(0, version)
+  registerEmbeddedAssets({
+    assets: {
+      'orchestrator/migrations/meta/_journal.json': JSON.stringify({
+        version: '7',
+        dialect: 'sqlite',
+        entries,
+      }),
+    },
+    files: {},
+    manifest: {
+      name: PLATFORM_NAME,
+      version: '1.2.3',
+      built: '2026-11-05T12:00:00.000Z',
+      commit: 'abcdef1234567890',
+    },
+  })
+}
+
+function prepareStaleSchemaReload(compatibility: string | null): {
+  prior: number
+  next: number
+} {
+  const entry = migrationJournal().find(
+    (candidate) => candidate.tag === '0145_agent_trains_on_inputs',
+  )!
+  const prior = entry.idx
+  const next = entry.idx + 1
+  closeDatabaseForFixture()
+  const other = new Database(DB_PATH, { readwrite: true, create: false })
+  other.exec(`PRAGMA user_version = ${prior}`)
+  db()
+  enableSchemaReload(() => {})
+  other
+    .query('UPDATE orch_migrations SET compatibility=? WHERE created_at=?')
+    .run(compatibility, entry.when)
+  other.exec(`PRAGMA user_version = ${next}`)
+  other.close()
+  hideJournalAfter(prior)
+  return { prior, next }
+}
+
+test('schema reload uses additive store rows absent from the process journal', () => {
+  try {
+    prepareStaleSchemaReload('additive')
+    expect(() => db()).not.toThrow()
+  } finally {
+    registerEmbeddedAssets(null)
+    closeDatabaseForFixture()
+  }
+})
+
+test.each(['fenced', null] as const)(
+  'schema reload refuses a %s store row absent from the process journal',
+  (compatibility) => {
+    try {
+      const { prior, next } = prepareStaleSchemaReload(compatibility)
+      expect(() => db()).toThrow(
+        `store migrated from version ${prior} to ${next} past this process's version; restart this process, and re-dispatch any run it was coordinating`,
+      )
+    } finally {
+      registerEmbeddedAssets(null)
+      closeDatabaseForFixture()
+    }
+  },
+)
 
 test('a writable open refuses when no hooks are registered', () => {
   closeDatabaseForFixture()

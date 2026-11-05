@@ -69,11 +69,24 @@ export function inFlightMigrationCompatibility(
   processJournalVersion: number,
   storeVersion: number,
 ): InFlightMigrationCompatibility {
+  return inFlightAppliedMigrationCompatibility(
+    entries.map((entry) => entry.compatibility ?? null),
+    processJournalVersion,
+    storeVersion,
+  )
+}
+
+/** An unmarked, unavailable, or non-additive applied row makes the range incompatible. */
+export function inFlightAppliedMigrationCompatibility(
+  compatibilities: Array<string | null>,
+  processJournalVersion: number,
+  storeVersion: number,
+): InFlightMigrationCompatibility {
   if (storeVersion <= processJournalVersion) return 'incompatible'
-  const changed = entries.slice(processJournalVersion, storeVersion)
+  const changed = compatibilities.slice(processJournalVersion, storeVersion)
   if (
     changed.length !== storeVersion - processJournalVersion ||
-    changed.some((entry) => entry.compatibility !== 'additive')
+    changed.some((compatibility) => compatibility !== 'additive')
   ) {
     return 'incompatible'
   }

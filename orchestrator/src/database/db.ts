@@ -25,6 +25,7 @@ import {
   classifyCaller,
   resolveCallerIdentity,
 } from '../caller-classification.ts'
+import { appliedMigrationCompatibilities } from './applied-migration-compatibilities.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
 import { DATABASE_SIDECAR_SUFFIXES } from './database-file-family.ts'
 import {
@@ -40,7 +41,7 @@ import {
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
   decideInFlightMigration,
-  inFlightMigrationCompatibility,
+  inFlightAppliedMigrationCompatibility,
 } from './migration-compatibility.ts'
 import { activeMigrationDrain } from './migration-drain-state.ts'
 import {
@@ -53,7 +54,6 @@ import {
   applyMigrations,
   applyMigrationsBefore,
   type BeforeMigrationApply,
-  migrationJournal,
   migrationRefusal,
   readUserVersion,
   staleWriteRefusal,
@@ -459,7 +459,11 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
     const decision = decideInFlightMigration({
       processJournalVersion: from,
       storeVersion: actual,
-      migrationCompatibility: inFlightMigrationCompatibility(migrationJournal(), from, actual),
+      migrationCompatibility: inFlightAppliedMigrationCompatibility(
+        appliedMigrationCompatibilities(d),
+        from,
+        actual,
+      ),
     })
     if (decision.action === 'fail') {
       schemaReloadRefusal?.(decision.reason)
