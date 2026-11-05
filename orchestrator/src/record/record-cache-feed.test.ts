@@ -425,6 +425,83 @@ test('an empty live-space set leaves remembered spaces untouched and reports a w
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(hosted)).not.toBeNull()
 })
 
+test('a membership outside the mirrored cache spaces is neither pulled nor remembered', async () => {
+  cursor('membership-before')
+  spaces([])
+  const pulled: string[] = []
+  const client = feedClient(
+    async () => empty('membership-before'),
+    async () => ({
+      ...identity,
+      memberships: [
+        ...identity.memberships,
+        {
+          space_id: 'membership-only',
+          name: 'Membership only',
+          slug: 'membership-only',
+          role: 'member',
+          permission: 'write',
+        },
+      ],
+    }),
+  )
+  client.listDocs = async (_query, destination) => {
+    pulled.push(destination!.destinationSpaceId!)
+    return { items: [], nextCursor: null }
+  }
+  installRecordApiClient(client)
+
+  await pullRecordCache(db())
+
+  expect(pulled).toEqual(['space-a'])
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_spaces'").get(),
+  ).toEqual({ value: '["space-a"]' })
+})
+
+test('switching the active space purges the old mirror and pulls the new space', async () => {
+  const hosted = newRecordId()
+  cursor('switch-before')
+  spaces(['space-a'])
+  db()
+    .query(
+      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,space_id)
+       VALUES (?,'global',NULL,?,'Hosted','Body','demand','["technical"]','a','a','space-a')`,
+    )
+    .run(hosted, `hosted-${hosted}`)
+  const pulled: string[] = []
+  const client = feedClient(
+    async () => empty('switch-before'),
+    async () => ({
+      ...identity,
+      activeSpaceId: 'space-b',
+      memberships: [
+        ...identity.memberships,
+        {
+          space_id: 'space-b',
+          name: 'Space B',
+          slug: 'space-b',
+          role: 'member',
+          permission: 'write',
+        },
+      ],
+    }),
+  )
+  client.listDocs = async (_query, destination) => {
+    pulled.push(destination!.destinationSpaceId!)
+    return { items: [], nextCursor: null }
+  }
+  installRecordApiClient(client)
+
+  await pullRecordCache(db())
+
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(hosted)).toBeNull()
+  expect(pulled).toEqual(['space-b'])
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_spaces'").get(),
+  ).toEqual({ value: '["space-b"]' })
+})
+
 test('purge clears keyset cursors so a later rejoin pulls from the start', async () => {
   cursor('rejoin-before')
   spaces(['lost-space'])

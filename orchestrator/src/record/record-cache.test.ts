@@ -581,7 +581,7 @@ describe('record cache pull', () => {
     ).toEqual({ at: secondCursorAt, id: secondId })
   })
 
-  test('keeps a cursor per space when the active space changes', async () => {
+  test('pulls only active and project destination spaces when the active space changes', async () => {
     upsertProject({
       recordId: newRecordId(),
       name: 'alpha',
@@ -638,9 +638,8 @@ describe('record cache pull', () => {
       ['space-a', undefined],
       ['space-alpha', undefined],
       ['space-b', undefined],
-      ['space-a', { at: updatedAt, id: firstId }],
-      ['space-alpha', { at: updatedAt, id: secondId }],
       ['space-b', { at: updatedAt, id: secondId }],
+      ['space-alpha', { at: updatedAt, id: secondId }],
     ])
     expect(
       db()
@@ -648,7 +647,7 @@ describe('record cache pull', () => {
           "SELECT value FROM schema_meta WHERE key='record_docs_cursor:space-a'",
         )
         .get()?.value,
-    ).toBe(JSON.stringify({ at: updatedAt, id: firstId }))
+    ).toBeUndefined()
   })
 
   test('inherits the legacy cursor once and clears the old space cursor after access is lost', async () => {

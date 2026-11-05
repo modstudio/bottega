@@ -1,7 +1,6 @@
 // concern: record-cache
 /** Advances the local record mirror from the ordered hosted change feed. */
 import type { Database } from 'bun:sqlite'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
@@ -89,7 +88,7 @@ type Dependencies = {
   cacheSpaces(
     identity: RecordIdentity,
     local: Database,
-  ): { projectSpaces: ReadonlyMap<string, string | null> }
+  ): { spaces: string[]; projectSpaces: ReadonlyMap<string, string | null> }
   pullKeysets(
     local: Database,
     identity: RecordIdentity,
@@ -121,13 +120,6 @@ type Change = RecordChangePage['changes'][number]
 type UpsertChange = Extract<Change, { op: 'upsert' }>
 type FallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
 
-const membershipSpaces = (identity: RecordIdentity) =>
-  [
-    ...new Set([
-      ...parseRecordSpaceMemberships(identity.memberships).map((membership) => membership.spaceId),
-      ...(identity.activeSpaceId ? [identity.activeSpaceId] : []),
-    ]),
-  ].sort()
 const rememberedSpaces = (local: Database): string[] => {
   const value = readCursor(local, SPACES)
   if (!value) return []
@@ -490,6 +482,7 @@ async function prepareFeedIdentity(
   local: Database,
   suppliedIdentity: RecordIdentity | undefined,
   client: RecordApiClient,
+  deps: Dependencies,
 ): Promise<
   | { stopped: RecordCachePullResult }
   | {
@@ -501,7 +494,7 @@ async function prepareFeedIdentity(
   const identity = suppliedIdentity ?? (await client.whoami())
   rememberSignedInRecordUser(identity.user, local)
   if (identity.activeSpaceId) rememberActiveRecordSpace(local, identity.activeSpaceId)
-  const spaces = membershipSpaces(identity)
+  const spaces = deps.cacheSpaces(identity, local).spaces
   const previous = rememberedSpaces(local)
   if (!spaces.length && previous.length) {
     const stopped = emptyRecordCachePullResult()
@@ -520,7 +513,7 @@ export async function pullRecordCacheFeed(
   if (!local.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'").get())
     return emptyRecordCachePullResult()
   const client: RecordApiClient = recordApiClient()
-  const prepared = await prepareFeedIdentity(local, suppliedIdentity, client)
+  const prepared = await prepareFeedIdentity(local, suppliedIdentity, client, deps)
   if ('stopped' in prepared) return prepared.stopped
   const { identity, spaces, previous } = prepared
   const cache = deps.cacheSpaces(identity, local)
