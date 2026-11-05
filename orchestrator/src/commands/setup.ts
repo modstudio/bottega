@@ -10,6 +10,7 @@ import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import { setupResultsRequireAttention } from '../setup/setup-apply.ts'
 import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/setup-clack.ts'
+import { MACHINE_LEVEL_QUESTION_ID } from '../setup/setup-engine.ts'
 import { restoreSetupEnvironment } from '../setup/setup-environment-runtime.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
 import { runInteractiveSetup, runSetupSignIn, SETUP_CANCEL } from '../setup/setup-interactive.ts'
@@ -31,7 +32,7 @@ function parseMachineLevel(value: string): MachineLevel {
 }
 
 function levelAnswer(options: SetupOptions): Record<string, string> {
-  return options.level ? { 'machine:level': options.level } : {}
+  return options.level ? { [MACHINE_LEVEL_QUESTION_ID]: options.level } : {}
 }
 
 function inheritedSetupOptions(options: SetupOptions, command: Command): SetupOptions {

@@ -13,11 +13,15 @@ export const NEVER_BOUND: RecordInstallBinding = {
   recordOrigin: null,
 }
 
-export function readRecordInstallBinding(database: Database): RecordInstallBinding {
-  const hasOrigin = database
+export function recordInstallBindingHasOrigin(database: Database): boolean {
+  return database
     .query<{ name: string }, []>("SELECT name FROM pragma_table_info('record_install_binding')")
     .all()
     .some(({ name }) => name === 'record_origin')
+}
+
+export function readRecordInstallBinding(database: Database): RecordInstallBinding {
+  const hasOrigin = recordInstallBindingHasOrigin(database)
   if (!hasOrigin) {
     const legacy = database
       .query<{ bound_at: string }, []>('SELECT bound_at FROM record_install_binding WHERE id = 1')

@@ -115,7 +115,7 @@ export function registerSetupTools(
     'setup_plan',
     {
       description:
-        "Plan setup. Present every question, option, recommendation and why to the user, then pass the user's choices to setup_apply.",
+        'Plan setup. Present folderSelection options and defaults, pass the folders the user confirms as include to setup_plan again and then to setup_apply, and present every question, option, recommendation and why from that returned plan. An unregistered folder is planned only when included.',
       inputSchema: z.object({ folders: foldersSchema, include: includeSchema.optional() }).strict(),
       outputSchema: z.object(planOutputSchema.shape).strict(),
       annotations: { readOnlyHint: true },

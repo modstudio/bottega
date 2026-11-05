@@ -3,10 +3,7 @@
 
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import {
-  currentRecordWriteDecision,
-  currentRecordWriteRefusal,
-} from '../record/record-write-authority.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import { decideProjectAdd, type ProjectAddDecisionResult } from './project-add-decision.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
@@ -18,8 +15,8 @@ export async function projectAddDecision(input: {
   selectedSpace?: string
 }): Promise<ProjectAddDecisionResult> {
   const authority = currentRecordWriteDecision()
-  if (authority === 'refused') throw new Error(currentRecordWriteRefusal())
-  if (authority === 'local-authoritative') {
+  if (authority.verdict === 'refused') throw new Error(authority.refusal)
+  if (authority.verdict === 'local-authoritative') {
     return { decision: { kind: 'mint', settings: input.requestedSettings } }
   }
   const client = recordApiClient()

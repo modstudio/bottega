@@ -245,7 +245,9 @@ export async function promoteMatchingWorkflowTreeDrafts(
     ),
   })
   for (const item of decision.promotions) {
-    const local = currentRecordWriteDecision(database) === 'local-authoritative'
+    const authority = currentRecordWriteDecision(database)
+    if (authority.verdict === 'refused') throw new Error(authority.refusal)
+    const local = authority.verdict === 'local-authoritative'
     if (item.kind === 'catalogue')
       await promoteCatalogueTreeDraft(item, input, database, decision, local)
     else if (local) promoteWorkflowLocal(item.slug, item.n, input.reason, input.author, database)
@@ -694,7 +696,9 @@ export function importWorkflowTree(
         workflowOutcomes: plan.noChangeWorkflows,
         ...(plan.warnings.length ? { warnings: plan.warnings } : {}),
       }
-    if (currentRecordWriteDecision(database) === 'hosted')
+    const authority = currentRecordWriteDecision(database)
+    if (authority.verdict === 'refused') throw new Error(authority.refusal)
+    if (authority.verdict === 'hosted')
       return writeHostedImport(plan, reason, author, database, project)
     return writeLocalImport(plan, reason, author, database)
   }, database)

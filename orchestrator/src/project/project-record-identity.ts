@@ -6,10 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { authenticatedRecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { storedRecordToken, storedRecordTokenAsync } from '../record/record-session.ts'
-import {
-  currentRecordWriteDecision,
-  currentRecordWriteRefusal,
-} from '../record/record-write-authority.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import type { StoredProjectSettings } from './project-settings.ts'
 import { storeProjectRecordId } from './projects.ts'
 
@@ -136,8 +133,8 @@ export async function fillProjectRecordIds(database?: Database): Promise<FilledP
     .all() as MissingProjectRecordRow[]
   if (rows.length === 0) return []
   const authority = currentRecordWriteDecision(database)
-  if (authority === 'refused') throw new Error(currentRecordWriteRefusal(database))
-  const hostingConfigured = authority === 'hosted'
+  if (authority.verdict === 'refused') throw new Error(authority.refusal)
+  const hostingConfigured = authority.verdict === 'hosted'
   const client = hostingConfigured
     ? database
       ? authenticatedRecordApiClient({

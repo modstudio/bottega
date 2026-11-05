@@ -15,6 +15,13 @@ export function selectSetupFolders(plan: SetupPlan, selected: readonly string[])
 }
 
 export function nonInteractiveSetupFolders(plan: SetupPlan, included: readonly string[]): string[] {
+  const inspected = new Set(plan.proposals.map((proposal) => proposal.repository.path))
+  const unmatched = included.find((path) => !inspected.has(path))
+  if (unmatched) {
+    throw new Error(
+      `included folder ${JSON.stringify(unmatched)} was not inspected; pass that folder, or a parent of it, with --in (for MCP, in folders)`,
+    )
+  }
   const includes = new Set(included)
   return plan.proposals
     .filter((proposal) => Boolean(proposal.current) || includes.has(proposal.repository.path))

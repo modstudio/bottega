@@ -4,14 +4,12 @@
 import type { Database } from 'bun:sqlite'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { recordInstallBindingHasOrigin } from './install-binding.ts'
 
 export function rememberHostedRecord(database: Database = db()): void {
   const recordOrigin = new URL(resolveRecordApiUrl()).origin
   writeTransaction(() => {
-    const hasOrigin = database
-      .query<{ name: string }, []>("SELECT name FROM pragma_table_info('record_install_binding')")
-      .all()
-      .some(({ name }) => name === 'record_origin')
+    const hasOrigin = recordInstallBindingHasOrigin(database)
     if (!hasOrigin) {
       database
         .query(

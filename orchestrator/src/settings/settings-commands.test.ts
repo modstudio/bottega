@@ -13,7 +13,6 @@ import { db } from '../database/db.ts'
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
-import { currentRecordWriteRefusal } from '../record/record-write-authority.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import {
   settingsImportCommand,
@@ -125,7 +124,7 @@ describe('settings import', () => {
 
     await expect(
       settingsImportCommand(presentation().flags({ user: true }), presentation().port(root)),
-    ).rejects.toThrow(currentRecordWriteRefusal())
+    ).rejects.toThrow('record use https://staging.example.test')
 
     expect(keychainCalls).toBe(0)
     expect(apiCalls).toEqual([])

@@ -10,7 +10,7 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
       boundOrigin: null,
       resolvedOrigin,
     }),
-  ).toBe('hosted')
+  ).toEqual({ verdict: 'hosted' })
   expect(
     decideRecordWrite({
       recordApiConfigured: false,
@@ -18,7 +18,7 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
       boundOrigin: null,
       resolvedOrigin,
     }),
-  ).toBe('local-authoritative')
+  ).toEqual({ verdict: 'local-authoritative' })
   expect(
     decideRecordWrite({
       recordApiConfigured: false,
@@ -26,7 +26,12 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
       boundOrigin: null,
       resolvedOrigin,
     }),
-  ).toBe('hosted')
+  ).toMatchObject({
+    verdict: 'refused',
+    boundOrigin: null,
+    resolvedOrigin,
+    refusal: expect.stringContaining('no recorded address'),
+  })
   expect(
     decideRecordWrite({
       recordApiConfigured: false,
@@ -34,7 +39,7 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
       boundOrigin: resolvedOrigin,
       resolvedOrigin,
     }),
-  ).toBe('hosted')
+  ).toEqual({ verdict: 'hosted' })
   expect(
     decideRecordWrite({
       recordApiConfigured: false,
@@ -42,5 +47,10 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
       boundOrigin: 'https://staging.example.test',
       resolvedOrigin,
     }),
-  ).toBe('refused')
+  ).toMatchObject({
+    verdict: 'refused',
+    boundOrigin: 'https://staging.example.test',
+    resolvedOrigin,
+    refusal: expect.stringContaining('record use https://staging.example.test'),
+  })
 })

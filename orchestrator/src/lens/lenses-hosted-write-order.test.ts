@@ -8,7 +8,6 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
-import { currentRecordWriteRefusal } from '../record/record-write-authority.ts'
 import { selectProjectProfile, setLens, setProfile, showLens, showProfile } from './lenses.ts'
 
 const HOSTED_SPACE = '01990000-0000-7000-8000-000000000002'
@@ -252,7 +251,7 @@ test('lens writes stay local-authoritative without a record and refuse a bound m
         requiresExecution: false,
         reason: 'prove refusal branch',
       }),
-    ).rejects.toThrow(currentRecordWriteRefusal())
+    ).rejects.toThrow('record use https://staging.example.test')
     expect(showLens('local-authoritative-lens')!.title).toBe('Local lens')
   } finally {
     db().query('DELETE FROM record_install_binding').run()

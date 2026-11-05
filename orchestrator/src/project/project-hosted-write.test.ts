@@ -10,7 +10,6 @@ import {
 import { db } from '../database/db.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
-import { currentRecordWriteRefusal } from '../record/record-write-authority.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { projectByName, upsertProject } from './projects.ts'
 
@@ -93,7 +92,7 @@ test('a bound store refuses before adding a local row and names record use', asy
   db().query("UPDATE record_install_binding SET record_origin='https://staging.example.test'").run()
   const path = mkdtempSync(join(tmpdir(), 'orch-bound-project-'))
   await expect(runProject(['project', 'add', path], { name: 'bound-refusal' })).rejects.toThrow(
-    currentRecordWriteRefusal(),
+    'record use https://staging.example.test',
   )
   expect(projectByName('bound-refusal')).toBeNull()
 })

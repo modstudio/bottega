@@ -6,7 +6,9 @@ import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 export function portImportAuthority(replace: boolean): 'local' | 'hosted' {
   const workerRefusal = workerStoreWriteRefusal('document', 'port import', process.env)
   if (workerRefusal) throw new Error(workerRefusal)
-  if (currentRecordWriteDecision() === 'local-authoritative') return 'local'
+  const decision = currentRecordWriteDecision()
+  if (decision.verdict === 'refused') throw new Error(decision.refusal)
+  if (decision.verdict === 'local-authoritative') return 'local'
   if (replace)
     throw new Error(
       'replacing hosted port items is not supported\n' +

@@ -149,10 +149,9 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-planner-boundary',
     file: 'orchestrator/src/setup/setup-planner.ts',
-    allowed: ['../../../shared/machine-config.ts', './setup-toolchain.ts'],
+    allowed: ['../../../shared/machine-config.ts', './setup-engine.ts', './setup-toolchain.ts'],
     typeOnlyAllowed: [
       '../project/projects.ts',
-      './setup-engine.ts',
       './setup-facts.ts',
       './setup-mcp.ts',
       './setup-mcp-config.ts',

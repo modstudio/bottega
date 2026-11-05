@@ -548,8 +548,9 @@ export const recordModules: RecordModule[] = [
     'bun:sqlite',
     '../../../shared/record-api-url.ts',
     '../database/db.ts',
+    './install-binding.ts',
   ]),
-  module('orchestrator/src/record/record-write-decision.ts', []),
+  module('orchestrator/src/record/record-write-decision.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-write-authority.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-api-url.ts',

@@ -13,7 +13,6 @@ import { compilePack } from '../canon/canon.ts'
 import { db } from '../database/db.ts'
 import { projects, retireProject, upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
-import { currentRecordWriteRefusal } from '../record/record-write-authority.ts'
 import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
 import {
   consumeDoc as consumeDocument,
@@ -133,7 +132,7 @@ describe('scoped operator docs', () => {
         delivery: 'demand',
         reason: 'prove refusal',
       }),
-    ).rejects.toThrow(currentRecordWriteRefusal())
+    ).rejects.toThrow('record use https://staging.example.test')
     expect(getDoc('global', null, 'bound-refusal')).toBeNull()
   })
 

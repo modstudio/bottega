@@ -137,14 +137,12 @@ export const setupEnvironmentService = {
         backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
         migrateSecrets: async (record) => {
           const authority = currentRecordWriteDecision()
-          if (authority === 'local-authoritative') {
+          if (authority.verdict === 'local-authoritative') {
             notes.push('no hosted record: nothing to migrate')
             return []
           }
-          if (authority === 'refused') {
-            throw new Error(
-              `sealed-secret environment migration did not run: configured record is unreachable; run ${PLATFORM_SLUG} record use <address>, then re-run ${PLATFORM_SLUG} machine setup apply`,
-            )
+          if (authority.verdict === 'refused') {
+            throw new Error(authority.refusal)
           }
           return migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
         },

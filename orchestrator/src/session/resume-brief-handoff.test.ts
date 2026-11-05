@@ -218,7 +218,7 @@ test('hosted author preparation resolves the latest non-consume revision author'
   let localHostedReads = 0
   expect(
     await resumeBriefAuthorSession(stored, db(), {
-      writeDecision: 'local-authoritative',
+      writeDecision: { verdict: 'local-authoritative' },
       listHostedRevisions: async () => {
         localHostedReads += 1
         return []
@@ -233,7 +233,7 @@ test('hosted author preparation resolves the latest non-consume revision author'
       database: db(),
       machine,
       author: {
-        writeDecision: 'hosted',
+        writeDecision: { verdict: 'hosted' },
         listHostedRevisions: async () => {
           throw new Error('hosted record unavailable')
         },
@@ -243,7 +243,7 @@ test('hosted author preparation resolves the latest non-consume revision author'
   expect(getDoc('resume', 'handoff-project', stored.slug)?.body).toContain('status: open')
 
   const resolvedAuthor = await resumeBriefAuthorSession(stored, db(), {
-    writeDecision: 'hosted',
+    writeDecision: { verdict: 'hosted' },
     listHostedRevisions: async () => [
       {
         id: newRecordId(),
@@ -268,7 +268,7 @@ test('hosted author preparation resolves the latest non-consume revision author'
       database: db(),
       machine,
       author: {
-        writeDecision: 'hosted',
+        writeDecision: { verdict: 'hosted' },
         listHostedRevisions: async () => [
           {
             id: newRecordId(),
@@ -296,7 +296,7 @@ test('hosted author preparation resolves the latest non-consume revision author'
     database: db(),
     machine,
     author: {
-      writeDecision: 'hosted',
+      writeDecision: { verdict: 'hosted' },
       listHostedRevisions: async () => [
         {
           id: newRecordId(),

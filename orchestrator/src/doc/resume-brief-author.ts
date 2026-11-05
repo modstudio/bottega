@@ -29,7 +29,10 @@ export async function resumeBriefAuthorSession(
   options: ResumeBriefAuthorOptions = {},
 ): Promise<string | null> {
   const writeDecision = options.writeDecision ?? currentRecordWriteDecision(database)
-  if (writeDecision !== 'hosted') return latestStoredDocAuthorSession(doc.record_id, database)
+  if (writeDecision.verdict === 'refused') throw new Error(writeDecision.refusal)
+  if (writeDecision.verdict !== 'hosted') {
+    return latestStoredDocAuthorSession(doc.record_id, database)
+  }
   let revisions: ResumeBriefHostedRevision[]
   try {
     revisions = options.listHostedRevisions

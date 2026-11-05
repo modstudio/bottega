@@ -1,7 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   DOC_KINDS,
   DOC_STATUSES,
@@ -42,14 +41,7 @@ type RecordAuthHeaders = {
 }
 
 export function requiredRecordApiUrl(): string {
-  const baseUrl = resolveRecordApiUrl()
-  if (!baseUrl) {
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: `BOTTEGA_RECORD_API_URL is required\nconfigure the address with ${PLATFORM_SLUG} record use <address>`,
-    })
-  }
-  return baseUrl
+  return resolveRecordApiUrl()
 }
 
 export type RecordFetch = (input: string, init?: RequestInit) => Promise<Response>

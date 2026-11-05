@@ -16,7 +16,6 @@ import {
 import {
   applyRecordWriteAuthority,
   currentRecordWriteDecision,
-  currentRecordWriteRefusal,
   requireHostedRecord,
 } from '../record/record-write-authority.ts'
 import type { ProjectSettings, StoredProjectSettings } from './project-settings.ts'
@@ -85,8 +84,8 @@ export async function hostedProjectDestination(
   settings: ProjectSettings | StoredProjectSettings,
 ): Promise<HostedProjectDestination | undefined> {
   const authority = currentRecordWriteDecision()
-  if (authority === 'refused') throw new Error(currentRecordWriteRefusal())
-  if (authority === 'local-authoritative') return undefined
+  if (authority.verdict === 'refused') throw new Error(authority.refusal)
+  if (authority.verdict === 'local-authoritative') return undefined
   const identity = await recordApiClient().whoami()
   const decision = projectDestinationFromIdentity(project, settings, identity)
   if ('refused' in decision) throw new Error(recordSpaceMembershipRefusal(decision.declaredSpace))

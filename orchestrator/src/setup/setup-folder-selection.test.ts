@@ -36,3 +36,9 @@ test('non-interactive setup selects registered folders plus explicit includes', 
   expect(nonInteractiveSetupFolders(plan, ['/other'])).toEqual(['/registered', '/other'])
   expect(nonInteractiveSetupFolders(plan, [])).toEqual(['/registered'])
 })
+
+test('non-interactive setup refuses an include outside the inspected proposals', () => {
+  expect(() => nonInteractiveSetupFolders(plan, ['/missing'])).toThrow(
+    'included folder "/missing" was not inspected; pass that folder, or a parent of it, with --in (for MCP, in folders)',
+  )
+})

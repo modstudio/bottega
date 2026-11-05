@@ -2,7 +2,13 @@
 /** Resolves setup answers into ordered project-register actions. Pure: it never applies them. */
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
 import type { ProjectSettings } from '../project/projects.ts'
-import type { SetupPlan, SetupProposal, SetupQuestion } from './setup-engine.ts'
+import {
+  MACHINE_GLOBAL_USE_QUESTION_ID,
+  MACHINE_LEVEL_QUESTION_ID,
+  type SetupPlan,
+  type SetupProposal,
+  type SetupQuestion,
+} from './setup-engine.ts'
 import type { HarnessName, LegacyMcpServerName, McpServer } from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
@@ -178,10 +184,12 @@ function diffSettings(current: ProjectSettings | null, proposed: ProjectSettings
 }
 
 function selectedMachineLevel(plan: SetupPlan, answers: SetupAnswers): MachineLevel {
-  const selected = (answers['machine:level'] ??
+  const selected = (answers[MACHINE_LEVEL_QUESTION_ID] ??
     plan.facts?.machine?.machineLevel ??
     'full') as MachineLevel
-  if (!MACHINE_LEVELS.includes(selected)) throw new Error('missing answer for "machine:level"')
+  if (!MACHINE_LEVELS.includes(selected)) {
+    throw new Error(`missing answer for ${JSON.stringify(MACHINE_LEVEL_QUESTION_ID)}`)
+  }
   return selected
 }
 
@@ -219,7 +227,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     currentLevel === undefined || currentLevel === selectedLevel
       ? null
       : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
-  const selectedGlobalUse = answers['machine:global-use'] as 'on' | 'off' | undefined
+  const selectedGlobalUse = answers[MACHINE_GLOBAL_USE_QUESTION_ID] as 'on' | 'off' | undefined
   const currentGlobalUse = plan.facts.machine.globalUse
   const globalUse: SetupAction | null =
     selectedGlobalUse === undefined || currentGlobalUse === selectedGlobalUse
