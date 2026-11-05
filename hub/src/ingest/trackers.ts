@@ -120,6 +120,12 @@ export const trackerProjects = () =>
     })
     .map((project) => project.name)
 
+const BACKFILL_RESULT = 'backfill'
+
+/** True for a tracker project that was read successfully, never the synthetic backfill row. */
+export const successfulTrackerRead = (result: TrackerResult) =>
+  result.project !== BACKFILL_RESULT && !result.error && !result.skipped
+
 const trackerReadKey = (project: Project) => `collect.tracker.${project}.at`
 
 export function trackerProjectsReadSince(
@@ -559,10 +565,8 @@ export function finishTrackerResults(
 ): TrackerResult[] {
   const filled = results.reduce((sum, item) => sum + item.filled, 0)
   const out = results.map((item) => item.result)
-  if (filled) out.push({ project: 'backfill', tasks: filled, changed: 0, activity: true })
-  const successfulProjects = out.filter(
-    (result) => result.project !== 'backfill' && !result.error && !result.skipped,
-  )
+  if (filled) out.push({ project: BACKFILL_RESULT, tasks: filled, changed: 0, activity: true })
+  const successfulProjects = out.filter(successfulTrackerRead)
   if (successfulProjects.length)
     writeTransaction((conn) => {
       const write = conn.query(

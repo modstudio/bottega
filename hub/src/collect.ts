@@ -14,6 +14,7 @@ import { ingestGit } from './ingest/git.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
 import {
   ingestTrackers,
+  successfulTrackerRead,
   type TrackerResult,
   trackerLegError,
   trackerProjects,
@@ -620,7 +621,7 @@ async function collectSlowSourceLegs(
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
           return {
-            read: trackerResults.filter((result) => result.project !== 'backfill').length,
+            read: trackerResults.filter(successfulTrackerRead).length,
             skippedFresh: selection.skippedFresh,
           }
         },
@@ -751,7 +752,7 @@ export async function collectOnce(
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
           return {
-            read: trackerResults.filter((result) => result.project !== 'backfill').length,
+            read: trackerResults.filter(successfulTrackerRead).length,
             skippedFresh: 0,
           }
         },
