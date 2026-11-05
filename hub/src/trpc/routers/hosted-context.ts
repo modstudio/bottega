@@ -5,6 +5,8 @@ import {
   AUTONOMY_STAGES,
   AUTONOMY_VALUES,
   type AutonomyStage,
+  RULINGS_CONFIG_KEY,
+  RULINGS_VALUES,
 } from '../../../../shared/autonomy.ts'
 import { resolvePersonalItemSpace } from '../../../../shared/personal-item-space.ts'
 import { summarizeSettings } from '../../../../shared/settings-summary.ts'
@@ -29,10 +31,8 @@ const slug = z.string().trim().min(1, 'Slug is required')
 const reason = z.string().trim().min(1, 'Reason is required')
 const expectedRevision = z.string().uuid().optional()
 const expectedRowVersion = z.number().int().positive().nullable()
-const target = z.union([
-  z.object({ user: z.literal(true) }),
-  z.object({ project: z.string().min(1) }),
-])
+const project = z.string().min(1)
+const target = z.union([z.object({ user: z.literal(true) }), z.object({ project })])
 
 type ClientFactory = (context: Context) => RecordClient
 
@@ -131,7 +131,7 @@ function scopedAutonomy(entries: RecordConfigEntry[], scope: 'user' | 'space') {
   const entry = (key: string) => selected.find((candidate) => candidate.key === key)
   return {
     preset: leaf(entry('autonomy.preset')),
-    rulings: leaf(entry('autonomy.rulings')),
+    rulings: leaf(entry(RULINGS_CONFIG_KEY)),
     shipTo: shipToLeaf(entry(SHIP_TO_CONFIG_KEY), entry(STORED_SHIP_TO_CONFIG_ALIAS)),
     stages: Object.fromEntries(
       AUTONOMY_STAGES.map((stage) => [stage, leaf(entry(`autonomy.stage.${stage}`))]),
@@ -261,6 +261,19 @@ async function hostedSettingsGet(client: RecordClient, input: z.infer<typeof tar
   }
 }
 
+/** Writes one of the user's own config entries, guarded by the row version the screen read. */
+function putUserEntry(
+  client: RecordClient,
+  key: string,
+  input: { value: string; expectedRowVersion: number | null },
+) {
+  return client.putConfigEntry(key, {
+    scope: 'user',
+    value: input.value,
+    expectedRowVersion: input.expectedRowVersion,
+  })
+}
+
 export function createHostedContextRouter(clientFor: ClientFactory = defaultClient) {
   return t.router({
     projects: t.procedure.query(async ({ ctx }) =>
@@ -335,12 +348,12 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
     }),
     autonomy: t.router({
       get: t.procedure
-        .input(z.object({ project: z.string().min(1) }))
+        .input(z.object({ project }))
         .query(({ ctx, input }) => hostedAutonomy(clientFor(ctx), input.project)),
       set: t.procedure
         .input(
           z.object({
-            project: z.string().min(1),
+            project,
             stage: z.enum(AUTONOMY_STAGES),
             value: z.enum(AUTONOMY_VALUES),
             expectedRowVersion,
@@ -348,28 +361,14 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
         )
         .mutation(async ({ ctx, input }) => {
           const client = clientFor(ctx)
-          await client.putConfigEntry(`autonomy.stage.${input.stage}`, {
-            scope: 'user',
-            value: input.value,
-            expectedRowVersion: input.expectedRowVersion,
-          })
+          await putUserEntry(client, `autonomy.stage.${input.stage}`, input)
           return hostedAutonomy(client, input.project)
         }),
       setShipTo: t.procedure
-        .input(
-          z.object({
-            project: z.string().min(1),
-            value: z.enum(SHIP_TO_VALUES),
-            expectedRowVersion,
-          }),
-        )
+        .input(z.object({ project, value: z.enum(SHIP_TO_VALUES), expectedRowVersion }))
         .mutation(async ({ ctx, input }) => {
           const client = clientFor(ctx)
-          await client.putConfigEntry(SHIP_TO_CONFIG_KEY, {
-            scope: 'user',
-            value: input.value,
-            expectedRowVersion: input.expectedRowVersion,
-          })
+          await putUserEntry(client, SHIP_TO_CONFIG_KEY, input)
           const alias = (await client.configEntries()).find(
             (entry) => entry.scope === 'user' && entry.key === STORED_SHIP_TO_CONFIG_ALIAS,
           )
@@ -380,21 +379,18 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
             })
           return hostedAutonomy(client, input.project)
         }),
-      setPreset: t.procedure
-        .input(
-          z.object({
-            project: z.string().min(1),
-            value: z.enum(AUTONOMY_PRESETS),
-            expectedRowVersion,
-          }),
-        )
+      setRulings: t.procedure
+        .input(z.object({ project, value: z.enum(RULINGS_VALUES), expectedRowVersion }))
         .mutation(async ({ ctx, input }) => {
           const client = clientFor(ctx)
-          await client.putConfigEntry('autonomy.preset', {
-            scope: 'user',
-            value: input.value,
-            expectedRowVersion: input.expectedRowVersion,
-          })
+          await putUserEntry(client, RULINGS_CONFIG_KEY, input)
+          return hostedAutonomy(client, input.project)
+        }),
+      setPreset: t.procedure
+        .input(z.object({ project, value: z.enum(AUTONOMY_PRESETS), expectedRowVersion }))
+        .mutation(async ({ ctx, input }) => {
+          const client = clientFor(ctx)
+          await putUserEntry(client, 'autonomy.preset', input)
           const entries = await client.configEntries()
           await clearHostedStageOverrides(client, entries)
           return hostedAutonomy(client, input.project)
@@ -402,7 +398,7 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
       clearStage: t.procedure
         .input(
           z.object({
-            project: z.string().min(1),
+            project,
             stage: z.enum(AUTONOMY_STAGES),
             expectedRowVersion,
           }),

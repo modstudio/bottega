@@ -343,30 +343,13 @@ function LayerDetails({
 
 function matrixColumns({
   project,
-  projects,
-  onProject,
   machine,
 }: {
   project: string
-  projects: string[]
-  onProject(name: string): void
   machine: boolean
 }): MatrixColumn[] {
   const columns: MatrixColumn[] = [{ layer: 'account', label: 'Your account' }]
-  if (project)
-    columns.push({
-      layer: 'project',
-      label: project,
-      heading: (
-        <Select
-          size="sm"
-          label="Project"
-          value={project}
-          options={projects.map((name) => ({ value: name, label: name }))}
-          onChange={onProject}
-        />
-      ),
-    })
+  if (project) columns.push({ layer: 'project', label: project })
   if (machine) columns.push({ layer: 'machine', label: 'This machine' })
   return columns
 }
@@ -389,12 +372,17 @@ export function PersonalPermissionsPage() {
     project,
   )
 
-  const columns = matrixColumns({
-    project,
-    projects: managed.map((row) => row.name),
-    onProject: setProjectChoice,
-    machine: Boolean(machine),
-  })
+  const columns = matrixColumns({ project, machine: Boolean(machine) })
+  const projectPicker = project ? (
+    <Select
+      key="project"
+      size="sm"
+      label="Project"
+      value={project}
+      options={managed.map((row) => ({ value: row.name, label: row.name }))}
+      onChange={setProjectChoice}
+    />
+  ) : null
   const rows = matrixRows({
     account: account.data?.settings.permissions,
     project: project ? projectSettings.data?.settings.permissions : undefined,
@@ -409,7 +397,7 @@ export function PersonalPermissionsPage() {
     <div className="mx-auto max-w-6xl space-y-8 px-5 pb-12">
       <PageHeader
         title="Permissions"
-        subtitle="What agents may do without asking, on your account, in a project and on this machine. Applied to every agent when a session starts."
+        about="What agents may do without asking, on your account, in a project and on this machine. Applied to every agent when a session starts."
       />
       {loadError ? (
         <ErrorState title="Could not load permissions" message={loadError.message} />
@@ -420,6 +408,7 @@ export function PersonalPermissionsPage() {
           key={`${project}:${account.data.revision}:${projectSettings.data?.revision ?? ''}`}
           rows={rows}
           columns={columns}
+          scope={projectPicker}
           notice={findings.map((finding) => (
             <ErrorState
               key={`${finding.rule}-${finding.message}`}

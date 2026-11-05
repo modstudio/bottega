@@ -1,5 +1,6 @@
 import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
+import { InfoTip } from '@bottega/hub-ui/popover/info-tip'
 import {
   Table,
   TableBody,
@@ -11,8 +12,8 @@ import {
 import { TableCard } from '@bottega/hub-ui/table-card'
 import { autonomyLayersStyles } from './autonomy-layers.styles.ts'
 
-/** One setting the table shows as a column: the preset, rulings, ship-to or one stage. */
-export type AutonomyColumn = { id: string; label: string }
+/** One setting the table shows as a row: the preset, rulings, ship-to or one stage. */
+export type AutonomyColumn = { id: string; label: string; hint?: string }
 
 /** What one layer says, by column id; `null` means it says nothing and the next layer decides. */
 export type AutonomyLayerView = {
@@ -46,20 +47,18 @@ const NOT_SET = '__not_set__'
 function Cell({
   layer,
   column,
-  wins,
   edit,
 }: {
   layer: AutonomyLayerView
   column: AutonomyColumn
-  wins: boolean
   edit: AutonomyEdit
 }) {
   const value = layer.values[column.id] ?? null
   const choice = layer.editable?.[column.id]
-  const tone = { wins, set: value !== null }
+  const tone = { set: value !== null }
   return (
     <TableCell>
-      <div data-tone={wins ? 'success' : undefined} className={autonomyLayersStyles(tone).cell()}>
+      <div>
         {choice ? (
           <Select
             size="sm"
@@ -80,20 +79,34 @@ function Cell({
   )
 }
 
+/** A name with its explanation behind a tip, so the explanation never crowds the table. */
+function Named({ label, hint }: { label: string; hint?: string }) {
+  return (
+    <span className={autonomyLayersStyles().named()}>
+      {label}
+      {hint ? <InfoTip label={`About ${label}`}>{hint}</InfoTip> : null}
+    </span>
+  )
+}
+
 /**
- * Where each autonomy setting comes from. Layers are listed in the order they are consulted;
- * the first one that says something decides, and that cell is marked.
+ * Where each autonomy setting comes from: one row per setting, one column per layer in the
+ * order layers are consulted. The first layer that says something decides; the In effect column
+ * shows its value and names that layer.
  */
 export function AutonomyLayers({
   layers,
   columns,
   edit,
   heading,
+  scope,
 }: {
   layers: readonly AutonomyLayerView[]
   columns: readonly AutonomyColumn[]
   edit: AutonomyEdit
   heading?: React.ReactNode
+  /** Toolbar controls that choose what the table shows, such as the project. */
+  scope?: React.ReactNode
 }) {
   const winner = Object.fromEntries(
     columns.map((column) => [
@@ -102,53 +115,45 @@ export function AutonomyLayers({
     ]),
   )
   return (
-    <TableCard heading={heading}>
+    <TableCard heading={heading} filters={scope}>
       {edit.error ? <ErrorState title="Could not change autonomy" message={edit.error} /> : null}
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Layer</TableHead>
-            {columns.map((column) => (
-              <TableHead key={column.id}>{column.label}</TableHead>
+            <TableHead>Setting</TableHead>
+            <TableHead>
+              <Named
+                label="In effect"
+                hint="What agents get now. Agents consult the layers from left to right and use the first one that says something; the layer named under the value is the one that decided."
+              />
+            </TableHead>
+            {layers.map((layer) => (
+              <TableHead key={layer.scope}>
+                <Named label={layer.label} hint={layer.hint} />
+              </TableHead>
             ))}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {layers.map((layer) => (
-            <TableRow key={layer.scope}>
-              <TableCell>
-                <span className={autonomyLayersStyles().layer()}>{layer.label}</span>
-                <span className={autonomyLayersStyles().hint()}>{layer.hint}</span>
-              </TableCell>
-              {columns.map((column) => (
-                <Cell
-                  key={column.id}
-                  layer={layer}
-                  column={column}
-                  wins={winner[column.id] === layer.scope}
-                  edit={edit}
-                />
-              ))}
-            </TableRow>
-          ))}
-          <TableRow>
-            <TableCell>
-              <span className={autonomyLayersStyles().layer()}>In effect</span>
-              <span className={autonomyLayersStyles().hint()}>What agents get now.</span>
-            </TableCell>
-            {columns.map((column) => {
-              const scope = winner[column.id]
-              const layer = layers.find((candidate) => candidate.scope === scope)
-              return (
-                <TableCell key={column.id}>
-                  <span className={autonomyLayersStyles().effect()}>
-                    {layer?.values[column.id] ?? '—'}
-                  </span>
-                  <span className={autonomyLayersStyles().hint()}>{layer?.label ?? ''}</span>
+          {columns.map((column) => {
+            const decided = layers.find((layer) => layer.scope === winner[column.id])
+            return (
+              <TableRow key={column.id}>
+                <TableCell>
+                  <Named label={column.label} hint={column.hint} />
                 </TableCell>
-              )
-            })}
-          </TableRow>
+                <TableCell>
+                  <span className={autonomyLayersStyles().effect()}>
+                    {decided?.values[column.id] ?? '—'}
+                  </span>
+                  <span className={autonomyLayersStyles().hint()}>{decided?.label ?? ''}</span>
+                </TableCell>
+                {layers.map((layer) => (
+                  <Cell key={layer.scope} layer={layer} column={column} edit={edit} />
+                ))}
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </TableCard>

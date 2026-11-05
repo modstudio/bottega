@@ -237,7 +237,7 @@ export function MessagesContent({
 
   return (
     <section>
-      <PageHeader title="Messages" subtitle="Operator messages, questions, and receipts" />
+      <PageHeader title="Messages" about="Operator messages, questions, and receipts" />
       {query.error ? (
         <ErrorState title="Could not load messages" message={query.error.message} />
       ) : null}

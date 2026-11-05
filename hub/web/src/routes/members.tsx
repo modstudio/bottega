@@ -215,11 +215,10 @@ function MembersPage() {
   ) : null
   return (
     <section>
-      <PageHeader title="Members" subtitle="Manage this space" />
-      <p className="mb-8 text-text-muted">
-        Config access lets a member read and change this space's sealed configuration and secrets
-        from their machines.
-      </p>
+      <PageHeader
+        title="Members"
+        about="Config access lets a member read and change this space's sealed configuration and secrets from their machines."
+      />
       {configAccess.error ? (
         <div className="mb-4">
           <ErrorState title="Could not load access" message={configAccess.error.message} />

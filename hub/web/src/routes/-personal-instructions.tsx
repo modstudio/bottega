@@ -308,7 +308,7 @@ export function PersonalInstructionsPage() {
     <div className="mx-auto max-w-7xl px-5 pb-12">
       <PageHeader
         title="Instructions"
-        subtitle="What every agent you run is told, on every machine you sign in on."
+        about="What every agent you run is told, on every machine you sign in on."
       />
       <UserCanonSection rows={canon.data} pending={canon.isPending} error={canon.error?.message} />
     </div>

@@ -34,7 +34,7 @@ export const Grouped: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.queryByText('Read any file')).not.toBeInTheDocument()
     await expect(canvas.getByText('1 allowed · 1 ask first')).toBeInTheDocument()
-    await userEvent.click(canvas.getByRole('button', { name: /Git/ }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Git' }))
     await expect(canvas.getByText('Run git push --force …')).toBeInTheDocument()
     await userEvent.type(canvas.getByRole('textbox', { name: 'Search permissions' }), 'starship')
     await expect(canvas.queryByText('Read any file')).not.toBeInTheDocument()
@@ -44,7 +44,7 @@ export const Grouped: Story = {
 export const OneSave: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: /Files/ }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Files' }))
     await userEvent.click(canvas.getByRole('combobox', { name: 'Your account: Read any file' }))
     await userEvent.click(canvas.getByRole('option', { name: 'Blocked' }))
     await expect(canvas.getByText('1 unsaved change')).toBeInTheDocument()

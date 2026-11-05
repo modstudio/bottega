@@ -5,6 +5,9 @@ import {
   AUTONOMY_STAGES,
   AUTONOMY_VALUES,
   type AutonomyPreset,
+  RULINGS_CONFIG_KEY,
+  RULINGS_VALUES,
+  type RulingsValue,
 } from '../../../../shared/autonomy.ts'
 import { SHIP_TO_CONFIG_KEY, SHIP_TO_VALUES } from '../../../../shared/ship-to.ts'
 import {
@@ -46,7 +49,7 @@ const permissionList = z.enum(['allow', 'ask', 'deny'])
 const autonomyValue = z.enum(AUTONOMY_VALUES)
 const autonomyPreset = z.enum(AUTONOMY_PRESETS)
 const shipToValue = z.enum(SHIP_TO_VALUES)
-const rulingsValue = z.enum(['agent', 'user'])
+const rulingsValue = z.enum(RULINGS_VALUES)
 const target = z.union([
   z.object({ user: z.literal(true) }),
   z.object({ project: z.string().min(1) }),
@@ -110,7 +113,7 @@ async function localAutonomy(project: string) {
         : user.some((entry) => entry.key === `autonomy.stage.${stage.stage}`),
     }
   })
-  const rulingsMachineValue = machineValue({ kind: 'rulings' }, ['agent', 'user'] as const)
+  const rulingsMachineValue = machineValue({ kind: 'rulings' }, RULINGS_VALUES)
   const shipToMachineValue = machineValue({ kind: 'shipTo' }, SHIP_TO_VALUES)
   return {
     ...resolved,
@@ -128,7 +131,7 @@ async function localAutonomy(project: string) {
   } as Omit<typeof resolved, 'stages' | 'rulings' | 'shipTo'> & {
     userPreset?: AutonomyPreset | null
     stages: typeof stages
-    rulings: typeof resolved.rulings & { machineValue?: 'agent' | 'user' }
+    rulings: typeof resolved.rulings & { machineValue?: RulingsValue }
     shipTo: typeof resolved.shipTo & {
       machineValue?: (typeof SHIP_TO_VALUES)[number]
     }
@@ -263,6 +266,19 @@ export const contextRouter = t.router({
       .mutation(async ({ input }) => {
         projectPath(input.project)
         await fromOrch(() => configSet(SHIP_TO_CONFIG_KEY, input.value))
+        return localAutonomy(input.project)
+      }),
+    setRulings: mutation
+      .input(
+        z.object({
+          project: z.string().min(1),
+          value: rulingsValue,
+          expectedRowVersion: z.number().int().positive().nullable().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        projectPath(input.project)
+        await fromOrch(() => configSet(RULINGS_CONFIG_KEY, input.value, input.expectedRowVersion))
         return localAutonomy(input.project)
       }),
     setPreset: mutation

@@ -160,7 +160,7 @@ function LocalNotesPage() {
   ]
   return (
     <section>
-      <PageHeader title="Notes" subtitle="The suggestion box" />
+      <PageHeader title="Notes" about="The suggestion box" />
       <NotesError error={notes.error} />
       <Collection
         title="Notes"
@@ -270,7 +270,7 @@ export function HostedNotesPage() {
   ]
   return (
     <section>
-      <PageHeader title="Notes" subtitle="The suggestion box · read only" />
+      <PageHeader title="Notes" about="The suggestion box · read only" />
       <NotesError error={query.error} />
       <Collection
         title="Notes"

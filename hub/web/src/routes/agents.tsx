@@ -100,7 +100,7 @@ function AgentsView({
     })
   return (
     <section>
-      {header ?? <PageHeader title="Agents" subtitle="Code-declared runners and their limits" />}
+      {header ?? <PageHeader title="Agents" about="Code-declared runners and their limits" />}
       {error ? <ErrorState title="Could not load agents" message={error.message} /> : null}
       <Collection
         title="Agents"

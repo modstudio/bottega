@@ -52,10 +52,10 @@ type Story = StoryObj<typeof meta>
 export const Waterfall: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    const effect = canvas.getByText('In effect').closest('tr')!
-    const cells = within(effect).getAllByRole('cell')
-    await expect(cells[1]).toHaveTextContent('autoYour account')
-    await expect(cells[2]).toHaveTextContent('askThis machine')
+    const inEffect = (setting: string) =>
+      within(canvas.getByText(setting).closest('tr')!).getAllByRole('cell')[1]
+    await expect(inEffect('Plan')).toHaveTextContent('autoYour account')
+    await expect(inEffect('Canon')).toHaveTextContent('askThis machine')
     await userEvent.click(canvas.getByRole('combobox', { name: 'This machine: Canon' }))
     await userEvent.click(await canvas.findByRole('option', { name: 'Not set' }))
     await expect(args.edit.run).toHaveBeenCalledWith('local user', 'canon', null)

@@ -81,6 +81,7 @@ describe('hostedRouter', () => {
       'context.autonomy.get',
       'context.autonomy.set',
       'context.autonomy.setPreset',
+      'context.autonomy.setRulings',
       'context.autonomy.setShipTo',
       'context.projects',
       'context.settings.get',

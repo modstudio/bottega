@@ -3,6 +3,7 @@ import { type KeyboardEvent, type ReactNode, type ToggleEvent, useRef, useState 
 import { useAnchor } from '../dom/use-anchor'
 import { useTypeahead } from '../dom/use-typeahead'
 import { ControlWithHint, useFieldHint } from '../field/control.ts'
+import { type ControlSize, useControlSize } from '../field/control-size'
 import { moveIndex, typeaheadIndex } from '../state/list-navigation'
 import { selectStyles } from './select.styles.ts'
 
@@ -57,7 +58,7 @@ export function Select({
   label,
   onOpenChange,
   hint,
-  size = 'md',
+  size: own,
   className,
 }: {
   value: string
@@ -68,10 +69,11 @@ export function Select({
   onOpenChange?: (open: boolean) => void
   /** Help shown below the control and announced with it. */
   hint?: ReactNode
-  size?: 'sm' | 'md'
+  size?: ControlSize
   /** Layout only: margin, width and placement. */
   className?: string
 }) {
+  const size = useControlSize(own, 'md')
   const { id, anchorStyle, positionedStyle } = useAnchor()
   const { hintId, describedBy } = useFieldHint(hint)
   const [open, setOpen] = useState(false)
@@ -82,7 +84,6 @@ export function Select({
   const disabled = options.map((option) => Boolean(option.disabled))
   const labels = options.map((option) => option.label)
   const selected = options.findIndex((option) => option.value === value)
-  const current = options[selected]
 
   const optionAt = (index: number) =>
     list.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)
@@ -144,7 +145,9 @@ export function Select({
         onKeyDown={onTriggerKeyDown}
         className={selectStyles({ size }).trigger({ class: className })}
       >
-        <span className={selectStyles().triggerLabel()}>{current?.label ?? 'Choose…'}</span>
+        <span className={selectStyles().triggerLabel()}>
+          {options[selected]?.label ?? 'Choose…'}
+        </span>
         <ChevronDown aria-hidden className={selectStyles().triggerIcon()} />
       </button>
       <div

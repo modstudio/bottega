@@ -1,15 +1,11 @@
 import { hostedTrpc, queryClient, trpc } from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { useContextProjects } from '@bottega/hub-data/use-projects'
-import { Badge } from '@bottega/hub-ui/badge'
-import { TextButton } from '@bottega/hub-ui/button'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { ErrorState } from '@bottega/hub-ui/error-state'
-import { DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-layout'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
-import { Segmented } from '@bottega/hub-ui/segmented'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import {
   type AutonomyChoice,
@@ -27,9 +23,10 @@ import {
   AUTONOMY_VALUES,
   type AutonomyPreset,
   type AutonomyValue,
+  RULINGS_VALUES,
 } from '../../../../shared/autonomy'
 import { isShipToValue, SHIP_TO_VALUES } from '../../../../shared/ship-to'
-import type { AppRouter } from '../../../src/trpc/router.ts'
+import type { AppRouter, HostedRouter } from '../../../src/trpc/router.ts'
 
 /**
  * The local and hosted servers mount different routers, so every read and write names the
@@ -43,11 +40,9 @@ const presetOptions = AUTONOMY_PRESETS.map((value) => ({ value, label: capitaliz
 
 const stageValues = AUTONOMY_VALUES.map((value) => ({ value, label: capitalized(value) }))
 
-const FROM_PRESET = { value: '', label: 'From preset', disabled: true }
-
 const shipToValues = SHIP_TO_VALUES.map((value) => ({ value, label: capitalized(value) }))
 
-const rulingsValues = (['agent', 'user'] as const).map((value) => ({
+const rulingsValues = RULINGS_VALUES.map((value) => ({
   value,
   label: capitalized(value),
 }))
@@ -66,32 +61,6 @@ function LoadError({ title, error }: { title: string; error: { message: string }
   return error ? <ErrorState title={`Could not load ${title}`} message={error.message} /> : null
 }
 
-function ShipToSetting({
-  detail,
-  value,
-  onChange,
-}: {
-  detail: ReactNode
-  value: string
-  onChange(value: string): void
-}) {
-  return (
-    <SettingBlock
-      label="Ship to"
-      hint={detail}
-      control={
-        <Select
-          label="Ship to"
-          hint="Chooses where completed work is sent, for every project."
-          value={value}
-          options={shipToValues}
-          onChange={onChange}
-        />
-      }
-    />
-  )
-}
-
 /** Personal settings span every agent on every machine you sign in on. */
 const PERSONAL_SUBTITLE =
   'Your setup for every agent, on every machine you sign in on. A row marked as overridden applies on this machine only.'
@@ -107,7 +76,7 @@ function PersonalFrame({
 }) {
   return (
     <div className="mx-auto max-w-[96rem] space-y-8 px-5 pb-12">
-      <PageHeader title={title} subtitle={PERSONAL_SUBTITLE} actions={actions} />
+      <PageHeader title={title} about={PERSONAL_SUBTITLE} actions={actions} />
       {children}
     </div>
   )
@@ -132,7 +101,6 @@ export function PersonalAutonomyPage() {
             filters={
               <Select
                 label="Project"
-                hint="Chooses the project whose autonomy values are shown."
                 value={selectedProject}
                 options={projectOptions}
                 onChange={setProjectChoice}
@@ -161,8 +129,8 @@ type AutonomySectionProps = {
 function ProjectChooser(props: AutonomySectionProps) {
   return props.showChooser ? (
     <Select
+      size="sm"
       label="Project"
-      hint="Chooses the project whose autonomy values are shown."
       value={props.project}
       options={props.options}
       onChange={props.onProject}
@@ -191,10 +159,18 @@ const LAYER_TEXT: Record<string, { label: string; hint: string }> = {
 }
 
 const AUTONOMY_COLUMNS: AutonomyColumn[] = [
-  { id: 'preset', label: 'Preset' },
-  { id: 'rulings', label: 'Rulings' },
-  { id: 'shipTo', label: 'Ship to' },
-  ...AUTONOMY_STAGES.map((stage) => ({ id: stage, label: capitalized(stage) })),
+  {
+    id: 'preset',
+    label: 'Preset',
+    hint: 'The default independence for every stage. Changing your account preset clears its stage choices; a stricter preset applies to workflows already running, a looser one only to workflows started afterwards.',
+  },
+  { id: 'rulings', label: 'Rulings', hint: 'Who rules on the decisions workers raise.' },
+  { id: 'shipTo', label: 'Ship to', hint: 'Where completed work is sent.' },
+  ...AUTONOMY_STAGES.map((stage) => ({
+    id: stage,
+    label: capitalized(stage),
+    hint: `How independently agents run the ${capitalized(stage)} stage.`,
+  })),
 ]
 
 function layerValues(layer: ResolvedLayer): Record<string, string | null> {
@@ -223,6 +199,7 @@ function accountChoices(
 ): Record<string, AutonomyChoice> {
   return {
     preset: { options: presetOptions, selected: data.userPreset ?? null, unset: KEEP },
+    rulings: { options: rulingsValues, selected: layer.rulings, unset: KEEP },
     shipTo: { options: shipToValues, selected: layer.shipTo, unset: KEEP },
     ...Object.fromEntries(
       data.stages.map((stage) => {
@@ -280,6 +257,7 @@ function useAutonomyMutations() {
     set: useMutation(api.set.mutationOptions(refreshed)),
     setShipTo: useMutation(api.setShipTo.mutationOptions(refreshed)),
     setPreset: useMutation(api.setPreset.mutationOptions(refreshed)),
+    setRulings: useMutation(api.setRulings.mutationOptions(refreshed)),
     clearStage: useMutation(api.clearStage.mutationOptions(refreshed)),
     setMachine: useMutation(api.setMachine.mutationOptions(refreshed)),
     clearMachine: useMutation(api.clearMachine.mutationOptions(refreshed)),
@@ -322,20 +300,32 @@ function writeAccount(
   const stage = stageOf(column)
   if (column === 'preset' && value)
     mutations.setPreset.mutate({ project, value: value as AutonomyPreset })
+  else if (column === 'rulings' && (value === 'agent' || value === 'user'))
+    mutations.setRulings.mutate({ project, value })
   else if (column === 'shipTo' && value && isShipToValue(value))
     mutations.setShipTo.mutate({ project, value })
   else if (stage && value === null) mutations.clearStage.mutate({ project, stage })
   else if (stage && value) mutations.set.mutate({ project, stage, value: value as AutonomyValue })
 }
 
+/** One table's write state: pending while any of its writes runs, and the first write's error. */
+function mutationState(
+  mutations: Record<string, { isPending: boolean; error: { message: string } | null }>,
+) {
+  const all = Object.values(mutations)
+  return {
+    pending: all.some((mutation) => mutation.isPending),
+    error: all.find((mutation) => mutation.error)?.error?.message ?? null,
+  }
+}
+
 /** Routes a table edit to the write for its layer: this machine's config, or your account. */
 function useAutonomyEdit(project: string): AutonomyEdit {
   const mutations = useAutonomyMutations()
-  const all = Object.values(mutations)
-  const pending = all.some((mutation) => mutation.isPending)
+  const { pending, error } = mutationState(mutations)
   return {
     pending,
-    error: all.find((mutation) => mutation.error)?.error?.message ?? null,
+    error,
     run(scope, column, value) {
       if (pending) return
       if (scope === 'local user') writeMachine(mutations, project, column, value)
@@ -352,11 +342,7 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
   const edit = useAutonomyEdit(project)
   const data = autonomy.data?.registered ? autonomy.data : null
   return (
-    <FieldSection
-      title="Where each setting comes from"
-      description="Agents consult these layers from the top down and use the first one that says something; that cell is marked. Changing your account's preset clears its stage choices. A stricter preset applies to workflows already running; a looser one applies only to workflows started afterwards."
-    >
-      <ProjectChooser {...{ project, options, onProject, showChooser }} />
+    <>
       <LoadError title="autonomy settings" error={autonomy.error} />
       {autonomy.isLoading ? <EmptyState title="Loading autonomy..." /> : null}
       {data?.warnings?.map((warning) => (
@@ -369,122 +355,136 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
         />
       ) : null}
       {data?.layers ? (
-        <AutonomyLayers layers={autonomyLayers(data)} columns={AUTONOMY_COLUMNS} edit={edit} />
+        <AutonomyLayers
+          layers={autonomyLayers(data)}
+          columns={AUTONOMY_COLUMNS}
+          edit={edit}
+          scope={<ProjectChooser {...{ project, options, onProject, showChooser }} />}
+        />
       ) : null}
-    </FieldSection>
+    </>
   )
+}
+
+type HostedAutonomy = inferRouterOutputs<HostedRouter>['context']['autonomy']['get']
+type HostedScope = HostedAutonomy['user']
+
+function hostedValues(scope: HostedScope | undefined): Record<string, string | null> {
+  return {
+    preset: scope?.preset?.value ?? null,
+    rulings: scope?.rulings?.value ?? null,
+    shipTo: scope?.shipTo?.value ?? null,
+    ...Object.fromEntries(
+      AUTONOMY_STAGES.map((stage) => [stage, scope?.stages[stage]?.value ?? null]),
+    ),
+  }
+}
+
+/** Your account's row edits its own entries; a stage left unset follows the preset. */
+function hostedAccountChoices(user: HostedScope): Record<string, AutonomyChoice> {
+  return {
+    preset: { options: presetOptions, selected: user.preset?.value ?? null, unset: KEEP },
+    rulings: { options: rulingsValues, selected: user.rulings?.value ?? null, unset: KEEP },
+    shipTo: { options: shipToValues, selected: user.shipTo?.value ?? null, unset: KEEP },
+    ...Object.fromEntries(
+      AUTONOMY_STAGES.map((stage) => [
+        stage,
+        {
+          options: stageValues,
+          selected: user.stages[stage]?.value ?? null,
+          unset: { label: 'From preset' },
+        },
+      ]),
+    ),
+  }
+}
+
+/** The hosted page's rows: your account, which you edit, above the space it falls back to. */
+export function hostedAutonomyLayers(data: HostedAutonomy): AutonomyLayerView[] {
+  return [
+    {
+      scope: 'hosted user',
+      ...LAYER_TEXT['hosted user']!,
+      values: hostedValues(data.user),
+      editable: hostedAccountChoices(data.user),
+    },
+    { scope: 'hosted space', ...LAYER_TEXT['hosted space']!, values: hostedValues(data.space) },
+  ]
+}
+
+function useHostedAutonomyMutations() {
+  const api = hostedTrpc.context.autonomy
+  const refresh = { onSettled: () => queryClient.invalidateQueries({ queryKey: api.pathKey() }) }
+  return {
+    set: useMutation(api.set.mutationOptions(refresh)),
+    setShipTo: useMutation(api.setShipTo.mutationOptions(refresh)),
+    setRulings: useMutation(api.setRulings.mutationOptions(refresh)),
+    setPreset: useMutation(api.setPreset.mutationOptions(refresh)),
+    clearStage: useMutation(api.clearStage.mutationOptions(refresh)),
+  }
+}
+
+/** Writes one account cell, guarded by the row version the table was drawn from. */
+function writeHostedAccount(
+  mutations: ReturnType<typeof useHostedAutonomyMutations>,
+  project: string,
+  user: HostedScope,
+  column: string,
+  value: string | null,
+) {
+  const stage = stageOf(column)
+  if (column === 'preset' && value) {
+    const expectedRowVersion = user.preset?.rowVersion ?? null
+    mutations.setPreset.mutate({ project, value: value as AutonomyPreset, expectedRowVersion })
+  } else if (column === 'rulings' && (value === 'agent' || value === 'user')) {
+    const expectedRowVersion = user.rulings?.rowVersion ?? null
+    mutations.setRulings.mutate({ project, value, expectedRowVersion })
+  } else if (column === 'shipTo' && value && isShipToValue(value)) {
+    const expectedRowVersion = user.shipTo?.rowVersion ?? null
+    mutations.setShipTo.mutate({ project, value, expectedRowVersion })
+  } else if (stage) {
+    const leaf = user.stages[stage]
+    if (value === null && leaf)
+      mutations.clearStage.mutate({ project, stage, expectedRowVersion: leaf.rowVersion })
+    else if (value)
+      mutations.set.mutate({
+        project,
+        stage,
+        value: value as AutonomyValue,
+        expectedRowVersion: leaf?.rowVersion ?? null,
+      })
+  }
 }
 
 /** Your hosted profile's autonomy; every signed-in machine resolves it below its own overrides. */
 function HostedAutonomySection({ project, options, onProject, showChooser }: AutonomySectionProps) {
-  const api = hostedTrpc.context.autonomy
   const autonomy = useQuery({
-    ...api.get.queryOptions({ project: project || '_' }),
+    ...hostedTrpc.context.autonomy.get.queryOptions({ project: project || '_' }),
     enabled: Boolean(project),
   })
-  const refresh = { onSettled: () => queryClient.invalidateQueries({ queryKey: api.pathKey() }) }
-  const update = useMutation(api.set.mutationOptions(refresh))
-  const updateShipTo = useMutation(api.setShipTo.mutationOptions(refresh))
-  const updatePreset = useMutation(api.setPreset.mutationOptions(refresh))
-  const clearStage = useMutation(api.clearStage.mutationOptions(refresh))
+  const mutations = useHostedAutonomyMutations()
+  const { pending, error } = mutationState(mutations)
   const user = autonomy.data?.user
-  const space = autonomy.data?.space
-  const mutationError = update.error ?? updateShipTo.error ?? updatePreset.error ?? clearStage.error
+  const edit: AutonomyEdit = {
+    pending,
+    error,
+    run(scope, column, value) {
+      if (!pending && user && scope === 'hosted user')
+        writeHostedAccount(mutations, project, user, column, value)
+    },
+  }
   return (
-    <FieldSection
-      title="Autonomy"
-      description="Values resolve for the selected project. An Overridden badge means the value applies on one machine only."
-    >
-      <ProjectChooser {...{ project, options, onProject, showChooser }} />
+    <>
       <LoadError title="autonomy settings" error={autonomy.error} />
-      {mutationError ? <ErrorText message={mutationError.message} /> : null}
-      {user ? (
-        <div className="space-y-3">
-          <SettingBlock
-            label="Preset"
-            hint="Sets the default independence for every workflow stage and clears stage-specific choices. A stricter preset applies to workflows already running; a looser one applies only to workflows started afterwards."
-            control={
-              <Segmented
-                label="Autonomy preset"
-                value={user.preset?.value ?? ''}
-                options={presetOptions}
-                onChange={(next) =>
-                  updatePreset.mutate({
-                    project,
-                    value: next as AutonomyPreset,
-                    expectedRowVersion: user.preset?.rowVersion ?? null,
-                  })
-                }
-              />
-            }
-          />
-          <DisplayRow
-            label="Rulings"
-            value={user.rulings?.value ?? space?.rulings?.value ?? 'not set'}
-          />
-          <ShipToSetting
-            detail={
-              user.shipTo ? 'Set in your profile.' : 'Not set; each machine uses its default.'
-            }
-            value={user.shipTo?.value ?? ''}
-            onChange={(next) => {
-              if (isShipToValue(next)) {
-                updateShipTo.mutate({
-                  project,
-                  value: next,
-                  expectedRowVersion: user.shipTo?.rowVersion ?? null,
-                })
-              }
-            }}
-          />
-          {autonomy.data?.stages.map((stage) => {
-            const leaf = user.stages[stage]
-            return (
-              <SettingBlock
-                key={stage}
-                label={capitalized(stage)}
-                hint={
-                  leaf ? (
-                    <span className="flex flex-wrap items-center gap-2">
-                      <Badge tone="warning">Custom</Badge>
-                      <TextButton
-                        disabled={clearStage.isPending}
-                        onClick={() =>
-                          clearStage.mutate({
-                            project,
-                            stage,
-                            expectedRowVersion: leaf.rowVersion,
-                          })
-                        }
-                      >
-                        Follow preset
-                      </TextButton>
-                    </span>
-                  ) : (
-                    `Follows the ${user.preset?.value ?? 'default'} preset`
-                  )
-                }
-                control={
-                  <Select
-                    label={`${capitalized(stage)} autonomy`}
-                    hint={`Sets how independently agents run the ${capitalized(stage)} stage for this project.`}
-                    value={leaf?.value ?? ''}
-                    options={leaf ? stageValues : [FROM_PRESET, ...stageValues]}
-                    onChange={(next) =>
-                      update.mutate({
-                        project,
-                        stage,
-                        value: next as AutonomyValue,
-                        expectedRowVersion: leaf?.rowVersion ?? null,
-                      })
-                    }
-                  />
-                }
-              />
-            )
-          })}
-        </div>
+      {autonomy.isLoading ? <EmptyState title="Loading autonomy..." /> : null}
+      {autonomy.data ? (
+        <AutonomyLayers
+          layers={hostedAutonomyLayers(autonomy.data)}
+          columns={AUTONOMY_COLUMNS}
+          edit={edit}
+          scope={<ProjectChooser {...{ project, options, onProject, showChooser }} />}
+        />
       ) : null}
-    </FieldSection>
+    </>
   )
 }

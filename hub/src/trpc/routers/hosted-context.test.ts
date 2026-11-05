@@ -275,6 +275,20 @@ describe('hosted context router', () => {
     })
   })
 
+  test('autonomy.setRulings writes the versioned user rulings key', async () => {
+    const client = fakeClient()
+    await caller(client).autonomy.setRulings({
+      project: 'alpha',
+      value: 'user',
+      expectedRowVersion: 2,
+    })
+    expect(client.putConfigEntry).toHaveBeenCalledWith('autonomy.rulings', {
+      scope: 'user',
+      value: 'user',
+      expectedRowVersion: 2,
+    })
+  })
+
   test('autonomy.setShipTo writes a versioned user ship-to level', async () => {
     const client = fakeClient()
     await caller(client).autonomy.setShipTo({

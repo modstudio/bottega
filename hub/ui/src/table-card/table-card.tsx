@@ -2,6 +2,7 @@ import { SlidersHorizontal } from 'lucide-react'
 import { Children, type ReactNode } from 'react'
 import { Button } from '../button/button'
 import { PHONE_QUERY, useMediaQuery } from '../dom/use-media-query'
+import { ControlSizeProvider } from '../field/control-size'
 import { Popover } from '../popover/popover'
 import { ToolbarBand } from '../toolbar-band/toolbar-band'
 import { tableCardStyles } from './table-card.styles.ts'
@@ -168,7 +169,10 @@ export function TableCard({
   const Toolbar = phone ? PhoneToolbar : DeskToolbar
   return (
     <section className={tableCardStyles().root()}>
-      <Toolbar {...toolbar} filtersActive={filtersActive} />
+      {/* One control height across every table's toolbar, whatever its callers pass. */}
+      <ControlSizeProvider size="sm">
+        <Toolbar {...toolbar} filtersActive={filtersActive} />
+      </ControlSizeProvider>
       <div className={tableCardStyles().body()}>
         <div className={tableCardStyles({ panel: Boolean(panel) }).card()}>
           {/* Positioned, so absolutely placed content (screen-reader labels) is clipped with the rows. */}
