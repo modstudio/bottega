@@ -13,6 +13,8 @@ import type { HostedRouteConfig } from './hosted-route-config.ts'
 import { hostedVersionResponse } from './hosted-version.ts'
 import { noteApi } from './note-api.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
+import { docsHtmlInsert } from './public-docs-text.ts'
+import { publicDocsTextApi } from './public-docs-text-api.ts'
 import { reportApi } from './report-api.ts'
 import { taskApi } from './task-api.ts'
 import { createContext } from './trpc/context.ts'
@@ -25,6 +27,28 @@ type HostedRouteDependencies = {
   notes?: Parameters<typeof noteApi>[2]
   waitingEmail?: Parameters<typeof operatorWaitingEmailApi>[2]
   reports?: Parameters<typeof reportApi>[2]
+  publicDocsText?: Parameters<typeof publicDocsTextApi>[1]
+}
+
+function transformDocsIndex(response: Response, pathname: string): Response {
+  const insert = docsHtmlInsert(pathname)
+  if (!insert) return response
+  const rewriter = new HTMLRewriter().on('body', {
+    element(element) {
+      element.prepend(insert.noscript, { html: true })
+    },
+  })
+  if (insert.alternateHref) {
+    rewriter.on('head', {
+      element(element) {
+        element.append(
+          `<link rel="alternate" type="text/markdown" href="${insert.alternateHref}">`,
+          { html: true },
+        )
+      },
+    })
+  }
+  return rewriter.transform(response)
 }
 
 export function hostedServerConfig(environment: ServerEnvironment = process.env) {
@@ -63,6 +87,8 @@ export function hostedRequestHandler(
     if (waitingEmail) return waitingEmail
     const reports = await reportApi(req, config, dependencies.reports)
     if (reports) return reports
+    const publicDocsText = await publicDocsTextApi(req, dependencies.publicDocsText)
+    if (publicDocsText) return publicDocsText
     if (url.pathname.startsWith('/trpc')) {
       return fetchRequestHandler({
         endpoint: '/trpc',
@@ -89,7 +115,11 @@ export function hostedRequestHandler(
             headers: { 'content-type': 'text/plain; charset=utf-8' },
           })
     }
-    return new Response(file)
+    const response = new Response(file, {
+      headers:
+        resolved.kind === 'index' ? { 'content-type': 'text/html; charset=utf-8' } : undefined,
+    })
+    return resolved.kind === 'index' ? transformDocsIndex(response, url.pathname) : response
   }
 }
 

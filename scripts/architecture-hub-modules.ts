@@ -26,6 +26,14 @@ export const hubModuleSpecs = [
     allowed: ['bun'],
   },
   {
+    file: 'hub/src/public-docs-text.ts',
+    allowed: ['../../shared/brand.ts'],
+  },
+  {
+    file: 'hub/src/public-docs-text-api.ts',
+    allowed: ['../../shared/brand.ts', './public-docs.ts', './public-docs-text.ts'],
+  },
+  {
     file: 'hub/src/hosted-tenant.ts',
     allowed: ['bun', '../../shared/record/tenant.ts'],
   },
