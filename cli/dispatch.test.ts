@@ -161,6 +161,128 @@ test('machine -h prints group help', async () => {
   expect(calls).toEqual([])
 })
 
+test('machine storage composes both owners into one JSON report', async () => {
+  const dispatch = entries([])
+  dispatch.orchStorage = async () => ({
+    declarations: [
+      {
+        store: 'orchestrator',
+        table: 'run',
+        class: 'cache',
+        keep: 'window',
+        remover: null,
+        slice: 'working-set',
+      },
+    ],
+    measurements: [{ store: 'orchestrator', table: 'run', bytes: 4, rows: 1 }],
+    missing: [{ store: 'hosted', reason: 'record unavailable' }],
+  })
+  dispatch.hubStorage = async () => ({
+    declarations: [
+      {
+        store: 'hub',
+        table: 'task',
+        class: 'cache',
+        keep: 'window',
+        remover: null,
+        slice: 'working-set',
+      },
+    ],
+    measurements: [{ store: 'hub', table: 'task', bytes: 8, rows: 2 }],
+  })
+  const output: string[] = []
+  const original = console.log
+  console.log = (value?: unknown) => output.push(String(value))
+  try {
+    expect(await dispatchBinary(['machine', 'storage', '--json'], dispatch, () => '')).toBe(0)
+  } finally {
+    console.log = original
+  }
+  const report = JSON.parse(output[0]!)
+  expect(report.tables).toHaveLength(2)
+  expect(report.missing).toEqual([{ store: 'hosted', reason: 'record unavailable' }])
+})
+
+test('machine storage preserves table measurements when the resource walk fails', async () => {
+  const dispatch = entries([])
+  dispatch.orchStorage = async () => ({
+    declarations: [
+      {
+        store: 'orchestrator',
+        table: 'run',
+        class: 'cache',
+        keep: 'window',
+        remover: null,
+        slice: 'working-set',
+      },
+    ],
+    measurements: [{ store: 'orchestrator', table: 'run', bytes: 4, rows: 1 }],
+    missing: [],
+    resourceError: 'worktree unavailable',
+  })
+  dispatch.hubStorage = async () => ({ declarations: [], measurements: [] })
+  const output: string[] = []
+  const original = console.log
+  console.log = (value?: unknown) => output.push(String(value))
+  try {
+    expect(await dispatchBinary(['machine', 'storage', '--json'], dispatch, () => '')).toBe(0)
+  } finally {
+    console.log = original
+  }
+  const report = JSON.parse(output[0]!)
+  expect(report.tables.map((table: { table: string }) => table.table)).toEqual(['run'])
+  expect(report.missing).toEqual([])
+  expect(report.resourceError).toBe('worktree unavailable')
+})
+
+test('machine storage preserves one owner when the other fails', async () => {
+  const dispatch = entries([])
+  dispatch.orchStorage = async () => {
+    throw new Error('orchestrator locked')
+  }
+  dispatch.hubStorage = async () => ({
+    declarations: [
+      {
+        store: 'hub',
+        table: 'task',
+        class: 'cache',
+        keep: 'window',
+        remover: null,
+        slice: 'working-set',
+      },
+    ],
+    measurements: [{ store: 'hub', table: 'task', bytes: 8, rows: 2 }],
+  })
+  const output: string[] = []
+  const original = console.log
+  console.log = (value?: unknown) => output.push(String(value))
+  try {
+    expect(await dispatchBinary(['machine', 'storage', '--json'], dispatch, () => '')).toBe(0)
+  } finally {
+    console.log = original
+  }
+  const report = JSON.parse(output[0]!)
+  expect(report.tables.map((table: { table: string }) => table.table)).toEqual(['task'])
+  expect(report.missing).toEqual([{ store: 'orchestrator', reason: 'orchestrator locked' }])
+})
+
+test('machine storage exits non-zero when neither owner can measure', async () => {
+  const dispatch = entries([])
+  dispatch.orchStorage = async () => {
+    throw new Error('orchestrator locked')
+  }
+  dispatch.hubStorage = async () => {
+    throw new Error('hub locked')
+  }
+  const original = console.log
+  console.log = () => {}
+  try {
+    expect(await dispatchBinary(['machine', 'storage', '--json'], dispatch, () => '')).toBe(1)
+  } finally {
+    console.log = original
+  }
+})
+
 test('routes public and composite commands with unchanged remaining arguments', async () => {
   const calls: string[] = []
   const dispatch = entries(calls)

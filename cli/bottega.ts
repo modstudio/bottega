@@ -12,6 +12,8 @@ const entries = {
   hubOutbox: async () => (await import('../hub/src/cli.ts')).outboxEntries(),
   hubOutboxSummaryLines: async (rows: readonly Record<string, unknown>[]) =>
     (await import('../hub/src/cli.ts')).outboxSummaryLines(rows),
+  orchStorage: async () => (await import('../orchestrator/src/cli/orch.ts')).tableStorageEntries(),
+  hubStorage: async () => (await import('../hub/src/cli.ts')).tableStorageEntries(),
   runExec: async (argv: string[]) => (await import('../orchestrator/src/run/exec.ts')).main(argv),
   askProxy: async (argv: string[]) =>
     (await import('../orchestrator/src/ask/ask-proxy.ts')).runAskProxy(argv),

@@ -241,7 +241,25 @@ export const hubModuleSpecs = [
       './cli-program.ts',
       './db.ts',
       './outbox.ts',
+      './storage-lifecycle.ts',
+      './table-storage-report.ts',
     ],
+  },
+  {
+    file: 'hub/src/storage-lifecycle.ts',
+    allowed: ['../../shared/storage-lifecycle.ts'],
+  },
+  {
+    file: 'hub/src/storage-measurement.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../shared/sqlite-storage-measurement.ts',
+      '../../shared/storage-lifecycle.ts',
+    ],
+  },
+  {
+    file: 'hub/src/table-storage-report.ts',
+    allowed: ['./db.ts', './storage-measurement.ts'],
   },
   {
     file: 'hub/src/cli-program.ts',

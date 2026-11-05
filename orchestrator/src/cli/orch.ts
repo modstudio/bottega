@@ -178,4 +178,35 @@ export async function outboxEntries(): Promise<Record<string, unknown>[]> {
   return quarantinedOutboxRows(db())
 }
 
+/** Structured owner output for the product front door's composite storage report. */
+export async function tableStorageEntries() {
+  const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
+  registerStandardRuntime()
+  const { ensureDatabase } = await import('../database/db.ts')
+  ensureDatabase()
+  const report = await (
+    await import('../monitor/table-storage-report.ts')
+  ).orchestratorTableStorage()
+  const { orchestratorTableLifecycles } = await import('../database/storage-lifecycle.ts')
+  const { hostedTableLifecycles } = await import('../../../shared/record/storage-lifecycle.ts')
+  let resources: unknown
+  let resourcesText: string | undefined
+  let resourceError: string | undefined
+  try {
+    const { formatStorageReport, storageReport } = await import('../monitor/storage-report.ts')
+    const report = await storageReport()
+    resources = report
+    resourcesText = formatStorageReport(report)
+  } catch (error) {
+    resourceError = error instanceof Error ? error.message : String(error)
+  }
+  return {
+    ...report,
+    declarations: [...orchestratorTableLifecycles, ...hostedTableLifecycles],
+    resources,
+    resourcesText,
+    resourceError,
+  }
+}
+
 if (import.meta.main) process.exitCode = await main(process.argv.slice(2))

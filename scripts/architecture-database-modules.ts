@@ -128,6 +128,14 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/machine-config.ts',
   ]),
+  module('orchestrator/src/database/storage-lifecycle.ts', [
+    '../../../shared/storage-lifecycle.ts',
+  ]),
+  module('orchestrator/src/database/storage-measurement.ts', [
+    'bun:sqlite',
+    '../../../shared/sqlite-storage-measurement.ts',
+    '../../../shared/storage-lifecycle.ts',
+  ]),
   module('orchestrator/src/runtime/store-hooks.ts', [
     '../database/db.ts',
     '../evidence/evidence-query.ts',

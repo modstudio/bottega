@@ -205,6 +205,7 @@ function unusedSubject(): Promise<never> {
 
 export function unusedIdentityAndSpaceClientMethods(): Pick<
   RecordApiClient,
+  | 'storage'
   | 'whoami'
   | 'createOrganization'
   | 'setActiveOrganization'
@@ -226,6 +227,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'listHidden'
 > {
   return {
+    storage: unusedIdentityAndSpace,
     whoami: unusedIdentityAndSpace,
     createOrganization: unusedIdentityAndSpace,
     setActiveOrganization: unusedIdentityAndSpace,

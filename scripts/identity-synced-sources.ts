@@ -93,6 +93,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'readTaskFlow',
     'searchDocs',
     'searchPublicDocs',
+    'storage',
     'showOutsideIntake',
     'whoami',
   ]),

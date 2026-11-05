@@ -226,6 +226,12 @@ export const monitorModules: MonitorModule[] = [
   ]),
   module('orchestrator/src/monitor/storage-conditions.ts', ['../storage-walk.ts']),
   module('orchestrator/src/monitor/storage-commands.ts', ['./storage-report.ts']),
+  module('orchestrator/src/monitor/table-storage-report.ts', [
+    '../../../shared/storage-lifecycle.ts',
+    '../database/db.ts',
+    '../database/storage-measurement.ts',
+    '../record/record-api-client.ts',
+  ]),
   module('orchestrator/src/monitor/orphan-inventory-conditions.ts', [
     '../../../shared/brand.ts',
     '../resources/resource-inventory.ts',
