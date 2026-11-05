@@ -40,7 +40,7 @@ export function temporaryStateStoreMigrationAllowed(
 export const STATE_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`
 export const ORCHESTRATOR_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_ORCHESTRATOR_DB`
 export const ORCHESTRATOR_DATABASE_WRITE_ENV = `${ORCHESTRATOR_DATABASE_ENV}_WRITE`
-export const DATABASE_HUB_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
+export const HUB_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
 
 /** Resolve the per-user state root using only the supplied environment. */
 export function resolveStateRoot(env: StateEnvironment): string {
@@ -174,7 +174,7 @@ export function resolveRunsDirectory(env: StateEnvironment): string {
 }
 
 export function resolveHubDatabase(env: StateEnvironment): string {
-  const override = env[DATABASE_HUB_ENV]
+  const override = env[HUB_DATABASE_ENV]
   return override ? resolve(override) : resolveStatePaths(env).hubDatabase
 }
 

@@ -12,6 +12,8 @@ export type MigrationJournalEntry = {
   compatibility?: string
 }
 
+export type MigrationJournalEntryWithHash = MigrationJournalEntry & { hash: string }
+
 const LAST_LEGACY_COMPATIBILITY_OPTIONAL_INDEX = 180
 
 export type InFlightMigrationDecision =

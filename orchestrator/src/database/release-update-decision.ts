@@ -9,7 +9,7 @@ import {
   INSTALL_SCRIPT_URL,
   parseSha256Sums,
 } from '../../../shared/release-artifacts.ts'
-import type { MigrationJournalEntry } from './migration-compatibility.ts'
+import type { MigrationJournalEntryWithHash } from './migration-compatibility.ts'
 import { decideMigrationDrain, type MigrationDrainDecision } from './migration-drain-decision.ts'
 
 export type UpdatePathDecision =
@@ -53,7 +53,15 @@ export function resolveReleaseVersion(input: {
   currentVersion: string
   sumsUrl: string
 }): ReleaseResolution {
-  const entries = parseSha256Sums(input.sums)
+  let entries: Map<string, string>
+  try {
+    entries = parseSha256Sums(input.sums)
+  } catch (error) {
+    throw new Error(
+      `could not parse SHA256SUMS from ${input.sumsUrl}: ${error instanceof Error ? error.message : String(error)}; ` +
+        `retry, or check ${DOWNLOAD_BASE_URL_ENV}`,
+    )
+  }
   let version: string
   let asset: string
   if (input.requestedVersion) {
@@ -91,8 +99,6 @@ export function resolveReleaseVersion(input: {
   return { action: 'install', version, asset, digest: entries.get(asset)! }
 }
 
-export type CandidateMigration = MigrationJournalEntry & { hash: string }
-
 export type AppliedMigration = { when: number; hash: string }
 
 export type CandidateStoreDecision =
@@ -101,7 +107,7 @@ export type CandidateStoreDecision =
 
 export function candidateStoreDecision(
   applied: readonly AppliedMigration[],
-  journal: CandidateMigration[],
+  journal: MigrationJournalEntryWithHash[],
 ): CandidateStoreDecision {
   if (applied.length > journal.length) return { state: 'ahead' }
   for (const [index, row] of applied.entries()) {
@@ -116,6 +122,36 @@ export function candidateStoreDecision(
     position,
     drain: decideMigrationDrain({ journal, storeVersion: position }),
   }
+}
+
+function compareReleaseVersions(left: string, right: string): number {
+  const leftParts = left.split('.').map(Number)
+  const rightParts = right.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    const difference = leftParts[index]! - rightParts[index]!
+    if (difference !== 0) return difference
+  }
+  return 0
+}
+
+export function releaseDowngradeRefusal(targetVersion: string, runningVersion: string): string | null {
+  if (compareReleaseVersions(targetVersion, runningVersion) >= 0) return null
+  return (
+    `release ${targetVersion} is older than the running ${runningVersion}; ` +
+    `install it with the installer: curl -fsSL ${INSTALL_SCRIPT_URL} | sh -s -- ${targetVersion}`
+  )
+}
+
+export function candidateIdentityRefusal(
+  installation: { kind: 'distribution' | 'checkout'; version: string },
+  expected: { version: string; asset: string; channelUrl: string },
+): string | null {
+  if (installation.kind === 'distribution' && installation.version === expected.version) return null
+  return (
+    `${expected.asset} from ${expected.channelUrl} identified itself as ` +
+    `${installation.kind} ${installation.version}, not release ${expected.version}; ` +
+    `retry ${expected.asset} from ${expected.channelUrl}`
+  )
 }
 
 function probeDetail(exitStatus: number, stderr: string): string {

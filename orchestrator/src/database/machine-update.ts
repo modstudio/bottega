@@ -5,8 +5,9 @@ import { existsSync, realpathSync } from 'node:fs'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   INSTALL_HOME_ENV,
-  installationIdentity,
   installRoot,
+  runningInstallationIdentity,
+  type InstallationIdentity,
 } from '../../../shared/install-root.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
@@ -176,7 +177,7 @@ async function applyWithMigrationGuard(input: {
 
 async function updateDistribution(input: {
   presentation: Presentation
-  manifest: Extract<ReturnType<typeof installationIdentity>, { kind: 'distribution' }>['manifest']
+  manifest: Extract<InstallationIdentity, { kind: 'distribution' }>['manifest']
   requestedVersion?: string
   deps: UpdateDependencies
 }): Promise<void> {
@@ -250,7 +251,7 @@ export async function machineUpdateCommand(
   }
   const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
-  const identity = installationIdentity(import.meta.dir, process.env)
+  const identity = runningInstallationIdentity(import.meta.dir, process.env)
   const path = decideUpdatePath(identity.kind, requestedVersion)
   if (path.action === 'refuse') throw new Error(path.reason)
   if (identity.kind === 'distribution') {

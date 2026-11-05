@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import type { InstallationIdentity } from '../../shared/install-root.ts'
+import type { MigrationJournalEntryWithHash } from './database/migration-compatibility.ts'
 import {
-  type HashedMigrationJournalEntry,
   MACHINE_JOURNAL_SCHEMA,
   MACHINE_JOURNAL_SCHEMA_VERSION,
   shapeMachineJournal,
@@ -38,7 +38,7 @@ test.each([
   },
   { identity: checkout, expected: checkout },
 ])('shapes and validates a $identity.kind installation journal', ({ identity, expected }) => {
-  const entries: HashedMigrationJournalEntry[] = [
+  const entries: MigrationJournalEntryWithHash[] = [
     { idx: 0, when: 1_700_000_000_000, tag: '0000_x', hash: 'a'.repeat(64) },
     {
       idx: 1,

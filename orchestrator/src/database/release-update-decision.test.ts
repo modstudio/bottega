@@ -2,10 +2,12 @@ import { expect, test } from 'bun:test'
 import { artifactName } from '../../../shared/release-artifacts.ts'
 import {
   candidateStoreDecision,
+  candidateIdentityRefusal,
   decideCurrentReleaseUpdate,
   downloadBaseUrlRefusal,
   normalizeReleaseVersion,
   predatesUpdateRefusal,
+  releaseDowngradeRefusal,
   resolveReleaseVersion,
   storeAheadRefusal,
   unreadableJournalSchemaRefusal,
@@ -77,6 +79,19 @@ test('named release resolution accepts an edge-normalized version and requires i
   ).toThrow('1.2.4 is not available')
 })
 
+test('downloaded checksum parse failures name the URL and retry remedy', () => {
+  expect(() =>
+    resolveReleaseVersion({
+      sums: 'not a checksum',
+      target,
+      currentVersion: '1.0.0',
+      sumsUrl: 'file:///releases/latest/download/SHA256SUMS',
+    }),
+  ).toThrow(
+    'could not parse SHA256SUMS from file:///releases/latest/download/SHA256SUMS: invalid SHA256SUMS line',
+  )
+})
+
 test('same version is a no-op with a remedy', () => {
   const asset = artifactName('1.2.3', target)
   expect(
@@ -101,6 +116,29 @@ test('current release chooses a no-op or interrupted-update migration', () => {
     action: 'migrate',
     message: 'migrated the store to 1.2.3',
   })
+})
+
+test('release downgrade comparison refuses older and allows newer or equal versions', () => {
+  expect(releaseDowngradeRefusal('1.2.2', '1.2.3')).toContain(
+    'release 1.2.2 is older than the running 1.2.3',
+  )
+  expect(releaseDowngradeRefusal('1.3.0', '1.2.3')).toBeNull()
+  expect(releaseDowngradeRefusal('1.2.3', '1.2.3')).toBeNull()
+})
+
+test('candidate identity must be the requested distribution release', () => {
+  const expected = {
+    version: '1.2.3',
+    asset: 'bottega-1.2.3-linux-x64.tar.gz',
+    channelUrl: 'file:///releases/download/v1.2.3/SHA256SUMS',
+  }
+  expect(candidateIdentityRefusal({ kind: 'distribution', version: '1.2.3' }, expected)).toBeNull()
+  expect(candidateIdentityRefusal({ kind: 'distribution', version: '1.2.2' }, expected)).toContain(
+    `${expected.asset} from ${expected.channelUrl}`,
+  )
+  expect(candidateIdentityRefusal({ kind: 'checkout', version: '1.2.3' }, expected)).toContain(
+    'identified itself as checkout 1.2.3',
+  )
 })
 
 test('download URLs require an absolute supported scheme', () => {

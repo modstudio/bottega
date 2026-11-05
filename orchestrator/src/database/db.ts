@@ -20,6 +20,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { createReadOnlyDatabaseAccess } from '../../../shared/read-only-database-access.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
+import { ORCHESTRATOR_DATABASE_WRITE_ENV } from '../../../shared/state-directory.ts'
 import {
   type CallerIdentityResolution,
   classifyCaller,
@@ -37,7 +38,6 @@ import {
   linkedWorktreeDatabaseInitializationMessage,
   linkedWorktreeMigrationAllowed,
   missingDatabaseMessage,
-  ORCHESTRATOR_DATABASE_WRITE_ENV,
 } from './database-location.ts'
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
@@ -710,7 +710,7 @@ function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writabl
     DATABASE_RESOLUTION.linkedWorktreeBinary &&
       DATABASE_RESOLUTION.registeredPath &&
       sameStore(DATABASE_RESOLUTION.registeredPath, DB_PATH) &&
-      process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE !== '1',
+      process.env[ORCHESTRATOR_DATABASE_WRITE_ENV] !== '1',
   )
   if (!storeWritesRefused() && !registeredStoreWriteProtected && databaseWritable(d)) {
     d.exec(`

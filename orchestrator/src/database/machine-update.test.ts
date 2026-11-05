@@ -1,8 +1,14 @@
 import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
+import {
+  DIST_MANIFEST,
+  INSTALL_HOME_ENV,
+  installRoot,
+} from '../../../shared/install-root.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { db } from './db.ts'
@@ -385,6 +391,35 @@ test('machine update refuses an installation that is not a registered main check
   ).rejects.toThrow(
     `refusing machine update: this installation's root ${dir} is not a registered main checkout; run the registered main checkout's bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
   )
+})
+
+test('machine update chooses the running checkout when install home names a distribution', async () => {
+  const designated = mkdtempSync(join(tmpdir(), 'machine-update-designated-release.'))
+  const previous = process.env[INSTALL_HOME_ENV]
+  writeFileSync(
+    join(designated, DIST_MANIFEST),
+    JSON.stringify({
+      name: PLATFORM_NAME,
+      version: '1.2.3',
+      built: '2026-11-05T12:00:00.000Z',
+      commit: 'abc1234',
+    }),
+  )
+  process.env[INSTALL_HOME_ENV] = designated
+  try {
+    await expect(
+      machineUpdateCommand(
+        { log: () => {} },
+        { authorityRefusal: () => null, project: () => null },
+      ),
+    ).rejects.toThrow(
+      `refusing machine update: this installation's root ${designated} is not a registered main checkout`,
+    )
+  } finally {
+    if (previous === undefined) delete process.env[INSTALL_HOME_ENV]
+    else process.env[INSTALL_HOME_ENV] = previous
+    rmSync(designated, { recursive: true, force: true })
+  }
 })
 
 test('unregistered main checkout refusal names the registered binary when the register has one', () => {
