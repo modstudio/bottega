@@ -79,6 +79,7 @@ type CanonicalStep = {
 type MachineStep = MachinePermissionChange & { kind: 'machine' }
 type RefusalStep = { kind: 'refusal'; message: string }
 export type SaveStep = CanonicalStep | MachineStep | RefusalStep
+type MachineBatchResult = { saved: number; error: string | null }
 
 /**
  * The writes one cell change needs, removals first so a rule never sits in two lists. A machine
@@ -135,6 +136,39 @@ function useSettings(target: Target, enabled: boolean) {
   return hosted ? remote : local
 }
 
+function machineBatchAt(steps: SaveStep[], start: number) {
+  const batch: MachinePermissionChange[] = []
+  let next = start
+  while (next < steps.length && steps[next]?.kind === 'machine') {
+    const { kind: _kind, ...change } = steps[next] as MachineStep
+    batch.push(change)
+    next += 1
+  }
+  return { batch, next }
+}
+
+async function applySaveSteps(
+  steps: SaveStep[],
+  applyCanonical: (step: CanonicalStep) => Promise<void>,
+  applyMachine: (steps: readonly MachinePermissionChange[]) => Promise<MachineBatchResult>,
+  onSaved: (count: number) => void,
+) {
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index]!
+    if (step.kind === 'refusal') throw new Error(step.message)
+    if (step.kind === 'canonical') {
+      await applyCanonical(step)
+      onSaved(1)
+      continue
+    }
+    const machine = machineBatchAt(steps, index)
+    const result = await applyMachine(machine.batch)
+    onSaved(result.saved)
+    if (result.error) throw new Error(result.error)
+    index = machine.next - 1
+  }
+}
+
 /**
  * Saves every held change in order, carrying each target's new revision into its next write.
  * The store has no batch write, so a refusal partway leaves the earlier changes saved; the
@@ -157,21 +191,9 @@ function useMatrixSave(revisions: { account: string | null; project: string | nu
     const revision = { ...revisions }
     let done = 0
     try {
-      for (let index = 0; index < steps.length; index += 1) {
-        const step = steps[index]!
-        if (step.kind === 'refusal') throw new Error(step.message)
-        if (step.kind === 'machine') {
-          const batch: MachinePermissionChange[] = []
-          while (index < steps.length && steps[index]?.kind === 'machine') {
-            const { kind: _kind, ...change } = steps[index] as MachineStep
-            batch.push(change)
-            index += 1
-          }
-          index -= 1
-          const result = await machine.run(batch)
-          done += result.saved
-          if (result.error) throw new Error(result.error)
-        } else {
+      await applySaveSteps(
+        steps,
+        async (step) => {
           const layer = 'user' in step.target ? 'account' : 'project'
           const result = await canonical.mutateAsync({
             target: step.target,
@@ -182,9 +204,12 @@ function useMatrixSave(revisions: { account: string | null; project: string | nu
             expectedRevision: revision[layer] ?? '',
           })
           revision[layer] = result.revision
-          done += 1
-        }
-      }
+        },
+        machine.run,
+        (count) => {
+          done += count
+        },
+      )
       return true
     } catch (failure) {
       const message = failure instanceof Error ? failure.message : String(failure)

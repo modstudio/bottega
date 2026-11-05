@@ -19,13 +19,13 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   AUTONOMY_PRESETS,
   AUTONOMY_STAGES,
   AUTONOMY_VALUES,
   type AutonomyStage,
 } from '../../shared/autonomy.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../shared/config-contract.ts'
 import {
   DOC_AUDIENCES,

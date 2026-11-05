@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { hostedTrpc, type HostedProjectRow, trpc } from './client.ts'
+import { type HostedProjectRow, hostedTrpc, trpc } from './client.ts'
 import { isHostedMode } from './hub-mode.ts'
 
 export type HostedProjectColors = Record<string, { light: string | null; dark: string | null }>

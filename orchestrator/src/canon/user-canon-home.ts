@@ -2,10 +2,12 @@
 /** Pure Claude-home mapping and hydration decisions. Must not know filesystems, stores, commands, or transports. */
 import { posix } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 export {
   USER_CANON_HOME_MAPPINGS,
   type UserCanonHomeMapping,
 } from '../../../shared/user-canon-home.ts'
+
 import {
   USER_CANON_HOME_MAPPINGS,
   type UserCanonHomeMapping,
