@@ -91,8 +91,8 @@ function Named({ label, hint }: { label: string; hint?: string }) {
 
 /**
  * Where each autonomy setting comes from: one row per setting, one column per layer in the
- * order layers are consulted. The first layer that says something decides, and that cell is
- * marked; the In effect column shows the result.
+ * order layers are consulted. The first layer that says something decides; the In effect column
+ * shows its value and names that layer.
  */
 export function AutonomyLayers({
   layers,
@@ -124,7 +124,7 @@ export function AutonomyLayers({
             <TableHead>
               <Named
                 label="In effect"
-                hint="What agents get now. Agents consult the layers from left to right and use the first one that says something; that cell is marked."
+                hint="What agents get now. Agents consult the layers from left to right and use the first one that says something; the layer named under the value is the one that decided."
               />
             </TableHead>
             {layers.map((layer) => (

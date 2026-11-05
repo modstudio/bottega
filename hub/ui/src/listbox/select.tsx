@@ -3,7 +3,7 @@ import { type KeyboardEvent, type ReactNode, type ToggleEvent, useRef, useState 
 import { useAnchor } from '../dom/use-anchor'
 import { useTypeahead } from '../dom/use-typeahead'
 import { ControlWithHint, useFieldHint } from '../field/control.ts'
-import { useControlSize } from '../field/control-size'
+import { type ControlSize, useControlSize } from '../field/control-size'
 import { moveIndex, typeaheadIndex } from '../state/list-navigation'
 import { selectStyles } from './select.styles.ts'
 
@@ -69,7 +69,7 @@ export function Select({
   onOpenChange?: (open: boolean) => void
   /** Help shown below the control and announced with it. */
   hint?: ReactNode
-  size?: 'sm' | 'md'
+  size?: ControlSize
   /** Layout only: margin, width and placement. */
   className?: string
 }) {

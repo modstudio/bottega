@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { useControlSize } from '../field/control-size'
+import { type ControlSize, useControlSize } from '../field/control-size'
 import { segmentedOptionStyles, segmentedStyles } from './segmented.styles.ts'
 
 /** One choice from a few short options, all visible at once. */
@@ -14,7 +14,7 @@ export function Segmented({
   options: readonly { value: string; label: string; icon?: LucideIcon }[]
   onChange: (value: string) => void
   label: string
-  size?: 'sm' | 'md'
+  size?: ControlSize
 }) {
   const size = useControlSize(own, 'sm')
   return (

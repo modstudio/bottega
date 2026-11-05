@@ -1,10 +1,10 @@
 import type { ButtonHTMLAttributes, ReactElement, Ref } from 'react'
 import { renderAs } from '../dom/render'
-import { useControlSize } from '../field/control-size'
+import { type ControlSize, useControlSize } from '../field/control-size'
 import { buttonStyles, iconButtonStyles, textButtonStyles } from './button.styles.ts'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
-type ButtonSize = 'sm' | 'md' | 'lg'
+type ButtonSize = ControlSize | 'lg'
 
 type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & {
   ref?: Ref<HTMLButtonElement>

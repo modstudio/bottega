@@ -174,7 +174,7 @@ function navFor(mode: Mode): NavSection[] {
 const LOCAL_NAV = navFor('local')
 const HOSTED_NAV = navFor('hosted')
 
-export function navForMode(mode: 'hosted' | 'local'): NavSection[] {
+export function navForMode(mode: Mode): NavSection[] {
   return mode === 'hosted' ? HOSTED_NAV : LOCAL_NAV
 }
 

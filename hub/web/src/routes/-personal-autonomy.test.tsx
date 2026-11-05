@@ -3,7 +3,11 @@ import { queryClient, trpc } from '@bottega/hub-data/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { autonomyLayers, PersonalAutonomyPage } from '@/routes/-personal-autonomy'
+import {
+  autonomyLayers,
+  hostedAutonomyLayers,
+  PersonalAutonomyPage,
+} from '@/routes/-personal-autonomy'
 import { UserCanonSection } from '@/routes/-personal-instructions'
 import { PersonalPermissionsPage } from '@/routes/-personal-permissions'
 
@@ -214,6 +218,32 @@ test('a stale or signed-out account row reads only', () => {
   expect(staleAccount.editable).toBeUndefined()
   const signedOut = autonomyLayers(resolution('hosted user', undefined))
   expect(signedOut.find((layer) => layer.scope === 'hosted user')!.editable).toBeUndefined()
+})
+
+test('hosted autonomy edits your account and shows the space beneath it read-only', () => {
+  const none = { plan: null, implement: null, review: null, docs: null, canon: null, ship: null }
+  const [account, space] = hostedAutonomyLayers({
+    mode: 'hosted',
+    project: 'alpha',
+    stages: ['plan', 'implement', 'review', 'docs', 'canon', 'ship'],
+    user: {
+      preset: { value: 'guided', rowVersion: 1 },
+      rulings: { value: 'user', rowVersion: 2 },
+      shipTo: null,
+      stages: { ...none, review: { value: 'auto', rowVersion: 3 } },
+    },
+    space: {
+      preset: null,
+      rulings: { value: 'agent', rowVersion: 4 },
+      shipTo: { value: 'production', rowVersion: 5 },
+      stages: none,
+    },
+  })
+  expect(account!.values).toMatchObject({ rulings: 'user', shipTo: null, review: 'auto' })
+  expect(account!.editable?.rulings?.selected).toBe('user')
+  expect(account!.editable?.plan?.selected).toBeNull()
+  expect(space!.values).toMatchObject({ rulings: 'agent', shipTo: 'production', review: null })
+  expect(space!.editable).toBeUndefined()
 })
 
 test('the autonomy page marks what is in effect and where it came from', () => {
