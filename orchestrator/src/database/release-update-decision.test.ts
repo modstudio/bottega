@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { artifactName } from '../../../shared/release-artifacts.ts'
 import {
-  candidateStoreDecision,
   candidateIdentityRefusal,
+  candidateStoreDecision,
   decideCurrentReleaseUpdate,
   downloadBaseUrlRefusal,
   normalizeReleaseVersion,
@@ -129,7 +130,7 @@ test('release downgrade comparison refuses older and allows newer or equal versi
 test('candidate identity must be the requested distribution release', () => {
   const expected = {
     version: '1.2.3',
-    asset: 'bottega-1.2.3-linux-x64.tar.gz',
+    asset: `${PLATFORM_SLUG}-1.2.3-linux-x64.tar.gz`,
     channelUrl: 'file:///releases/download/v1.2.3/SHA256SUMS',
   }
   expect(candidateIdentityRefusal({ kind: 'distribution', version: '1.2.3' }, expected)).toBeNull()

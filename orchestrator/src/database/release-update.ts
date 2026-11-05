@@ -113,7 +113,10 @@ function databaseOverrideFreeEnvironment(
   return env
 }
 
-function candidateJournal(staged: string, version: string): {
+function candidateJournal(
+  staged: string,
+  version: string,
+): {
   installation: ReturnType<typeof MACHINE_JOURNAL_SCHEMA.parse>['installation']
   journal: MigrationJournalEntryWithHash[]
 } {

@@ -134,7 +134,10 @@ function compareReleaseVersions(left: string, right: string): number {
   return 0
 }
 
-export function releaseDowngradeRefusal(targetVersion: string, runningVersion: string): string | null {
+export function releaseDowngradeRefusal(
+  targetVersion: string,
+  runningVersion: string,
+): string | null {
   if (compareReleaseVersions(targetVersion, runningVersion) >= 0) return null
   return (
     `release ${targetVersion} is older than the running ${runningVersion}; ` +

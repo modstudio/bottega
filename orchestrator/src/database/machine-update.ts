@@ -5,9 +5,9 @@ import { existsSync, realpathSync } from 'node:fs'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   INSTALL_HOME_ENV,
+  type InstallationIdentity,
   installRoot,
   runningInstallationIdentity,
-  type InstallationIdentity,
 } from '../../../shared/install-root.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'

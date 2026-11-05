@@ -24,6 +24,7 @@ const INSTALL_AWARE_RESOLVERS = new Set([
   'resolveInstallRoot',
   'resolveInstallationPaths',
   'runningInstallRoot',
+  'runningInstallationIdentity',
 ])
 
 /** Module identity used for stack-frame attribution, never opened as a filesystem path. */

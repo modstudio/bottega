@@ -19,8 +19,8 @@ import { storedMachineId } from '../../../shared/machine-config.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { createReadOnlyDatabaseAccess } from '../../../shared/read-only-database-access.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { decideStoreAccess } from '../../../shared/store-access.ts'
 import { ORCHESTRATOR_DATABASE_WRITE_ENV } from '../../../shared/state-directory.ts'
+import { decideStoreAccess } from '../../../shared/store-access.ts'
 import {
   type CallerIdentityResolution,
   classifyCaller,
