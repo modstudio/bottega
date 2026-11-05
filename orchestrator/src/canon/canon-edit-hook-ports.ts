@@ -2,6 +2,7 @@
 /** Supplies filesystem, state, and register facts to the canon edit hook handler. */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
 import {
   concernStateDirectory,
   resolveOrchestratorDatabase,
@@ -9,7 +10,6 @@ import {
 import type { EnforcedContext } from './canon-edit-guard.ts'
 import type { CanonEditHookPorts } from './canon-edit-hook-handler.ts'
 import type { TranscriptWatermark } from './canon-edit-transcript.ts'
-import { canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
 
 function transcriptLines(path: string): string[] {
   const lines = readFileSync(path, 'utf8').split(/\r?\n/)

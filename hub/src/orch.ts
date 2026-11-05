@@ -23,9 +23,9 @@ import {
   AUTONOMY_PRESETS,
   AUTONOMY_STAGES,
   AUTONOMY_VALUES,
-  STAGE_AUTONOMY_VALUES,
   type AutonomyLayerRow,
   type AutonomyStage,
+  STAGE_AUTONOMY_VALUES,
 } from '../../shared/autonomy.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../shared/config-contract.ts'

@@ -282,6 +282,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
     file: `${source}user-canon-home-files.ts`,
     allowed: [
       'shared/brand.ts',
+      'shared/user-canon-home.ts',
       'node:fs',
       'node:path',
       'orchestrator/src/settings/settings-write.ts',

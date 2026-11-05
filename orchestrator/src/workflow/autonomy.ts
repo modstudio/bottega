@@ -5,10 +5,10 @@ import {
   AUTONOMY_PRESETS,
   AUTONOMY_STAGES,
   AUTONOMY_VALUES,
+  type AutonomyLayerRow,
   type AutonomyPreset,
   type AutonomyStage,
   type AutonomyValue,
-  type AutonomyLayerRow,
   type StageAutonomyValue,
 } from '../../../shared/autonomy.ts'
 import { readStoredShipTo, SHIP_TO_VALUES, type ShipToValue } from '../../../shared/ship-to.ts'

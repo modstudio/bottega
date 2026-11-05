@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { USER_CANON_HOME_MAPPINGS } from '../../../shared/user-canon-home.ts'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { USER_CANON_HOME_MAPPINGS } from '../../../shared/user-canon-home.ts'
 import {
   decideUserCanonHydration,
   mapUserCanonHomePath,
