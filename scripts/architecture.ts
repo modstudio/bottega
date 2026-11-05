@@ -106,6 +106,18 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
+  module('orchestrator/src/machine/machine-journal.ts', [
+    'zod',
+    '../../../shared/install-root.ts',
+    '../database/migration-compatibility.ts',
+  ]),
+  module('orchestrator/src/commands/machine-journal.ts', [
+    'commander',
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+    '../database/migrations.ts',
+    '../machine/machine-journal.ts',
+  ]),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',

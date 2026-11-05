@@ -470,6 +470,7 @@ export const CLI_COMMANDS = new Set([
   'fix-defect',
   'gate',
   'jobs',
+  'journal',
   'lens',
   'link-tasks',
   'load',

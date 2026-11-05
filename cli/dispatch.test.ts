@@ -157,6 +157,7 @@ test('machine -h prints group help', async () => {
     console.log = originalLog
   }
   expect(output.join('\n')).toContain(`usage: ${PLATFORM_SLUG} machine <command> [arguments]`)
+  expect(output.join('\n')).not.toContain('journal')
   expect(calls).toEqual([])
 })
 
