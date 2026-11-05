@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { fileIssue } from '../mcp/mcp.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
@@ -18,16 +19,15 @@ export async function fileUnavailableMonitorIssues(
   )
   for (const condition of unavailable) {
     const prior = database
-      .query(
-        `SELECT condition.issue_key FROM monitor_condition condition
-         JOIN monitor_invocation invocation
-           ON invocation.record_id=condition.invocation_record_id
-         WHERE condition.kind=? AND condition.subject=? AND condition.issue_key IS NOT NULL
-         ORDER BY invocation.started_at DESC,condition.record_id DESC LIMIT 1`,
-      )
+      .query(`SELECT issue_key FROM monitor_issue WHERE kind=? AND subject=?`)
       .get(condition.kind, condition.subject) as { issue_key: string } | null
     if (prior) {
       condition.issueKey = prior.issue_key
+      database
+        .query(
+          'UPDATE monitor_condition SET issue_key=? WHERE invocation_record_id=? AND kind=? AND subject=?',
+        )
+        .run(prior.issue_key, invocationRecordId, condition.kind, condition.subject)
       continue
     }
     try {
@@ -52,6 +52,13 @@ export async function fileUnavailableMonitorIssues(
         PLATFORM_SLUG,
       )
       condition.issueKey = filed.key
+      database
+        .query(
+          `INSERT INTO monitor_issue(record_id,kind,subject,issue_key,filed_at) VALUES (?,?,?,?,?)
+           ON CONFLICT(kind,subject) DO UPDATE SET
+             issue_key=excluded.issue_key,filed_at=excluded.filed_at`,
+        )
+        .run(newRecordId(), condition.kind, condition.subject, filed.key, new Date().toISOString())
       database
         .query(
           'UPDATE monitor_condition SET issue_key=? WHERE invocation_record_id=? AND kind=? AND subject=?',

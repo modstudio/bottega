@@ -9,6 +9,16 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const databaseModules: ArchitectureModule[] = [
+  module('orchestrator/src/database/contention-retention.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../host-pressure/host-pressure-decision.ts',
+    './db.ts',
+    './contention-rollup-state.ts',
+    './retention-chunks.ts',
+  ]),
+  module('orchestrator/src/database/retention-chunks.ts', []),
+  module('orchestrator/src/database/contention-rollup-state.ts', ['bun:sqlite']),
   module('orchestrator/src/database/release-update-decision.ts', [
     'node:crypto',
     '../../../shared/brand.ts',

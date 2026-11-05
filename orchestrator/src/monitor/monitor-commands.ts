@@ -28,6 +28,7 @@ import {
   MonitorStoreBusyError,
   monitor,
   monitorHistory,
+  monitorHistoryReleasedBefore,
 } from './monitor.ts'
 import {
   claimMonitorNoticesForCommand,
@@ -40,6 +41,8 @@ import {
 } from './monitor-store-write-lock.ts'
 import {
   boundedConditionDetail,
+  MONITOR_HISTORY_DEFAULT_LIMIT,
+  MONITOR_RAW_WINDOW_MS,
   type MonitorHostLoad,
   type MonitorHostPressure,
   type MonitorNotice,
@@ -247,8 +250,9 @@ async function showHistory(
   presentation: Presentation,
 ): Promise<void> {
   const rows = monitorHistory(limit)
+  const releasedBefore = monitorHistoryReleasedBefore()
   if (json) await presentation.write(`${JSON.stringify(rows)}\n`)
-  else
+  else {
     for (const row of rows)
       presentation.log(
         formatMonitorPass(
@@ -259,6 +263,19 @@ async function showHistory(
           displayConditions(row.conditions),
         ).join('\n'),
       )
+    if (shouldReportReleasedMonitorHistory(rows.length, limit, releasedBefore))
+      presentation.log(
+        `Monitor invocations older than ${MONITOR_RAW_WINDOW_MS / 86_400_000} days are released, most recently those started through ${releasedBefore}; the newest ${MONITOR_HISTORY_DEFAULT_LIMIT} invocations are always kept.`,
+      )
+  }
+}
+
+export function shouldReportReleasedMonitorHistory(
+  rowsReturned: number,
+  limit: number,
+  releasedBefore: string | null,
+): boolean {
+  return releasedBefore !== null && rowsReturned < limit
 }
 
 async function monitorResultOrReport(

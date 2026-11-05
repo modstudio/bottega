@@ -5,6 +5,7 @@ import type { StoreLockRefusalEntry } from '../../../shared/store-lock-refusal-l
 import type { StoreWriteHoldEntry } from '../../../shared/store-write-hold-log.ts'
 import type { RecordedHostLoad } from '../gate-load.ts'
 import { enqueueContention } from '../record/landing-outbox.ts'
+import { contentionRolledThroughDay } from './contention-rollup-state.ts'
 
 const RESOURCE_KINDS = [
   'trunk',
@@ -91,11 +92,12 @@ const emptyContention = (): ContentionSummary => ({
 function topKeys<T>(
   rows: readonly T[],
   keyOf: (row: T) => string,
+  weightOf: (row: T) => number = () => 1,
 ): { key: string; count: number }[] {
   const keys = new Map<string, number>()
   for (const row of rows) {
     const key = keyOf(row)
-    keys.set(key, (keys.get(key) ?? 0) + 1)
+    keys.set(key, (keys.get(key) ?? 0) + weightOf(row))
   }
   return [...keys]
     .map(([key, count]) => ({ key, count }))
@@ -163,24 +165,43 @@ export function insertContention(d: Database, row: ContentionWrite): void {
 
 export function summarizeContention(d: Database, from: string): ContentionSummary {
   if (!contentionTableExists(d)) return emptyContention()
-  const rows = d
+  type SummaryRow = Omit<ContentionRow, 'landing_record_id' | 'cause' | 'at' | 'duration_ms'> & {
+    event_count: number
+    total_duration_ms: number
+  }
+  const rolledThrough = contentionRolledThroughDay(d)
+  const rolled = rolledThrough
+    ? (d
+        .query(
+          `SELECT session_id,resource_kind,resource_key,event_kind,event_count,total_duration_ms
+           FROM contention_day WHERE date(day)>=date(?) AND date(day)<=date(?)`,
+        )
+        .all(from, rolledThrough) as SummaryRow[])
+    : []
+  const raw = d
     .query(
-      `SELECT session_id, resource_kind, resource_key, event_kind, duration_ms
-       FROM contention WHERE datetime(at) >= datetime(?)`,
+      `SELECT session_id,resource_kind,resource_key,event_kind,COUNT(*) event_count,
+              SUM(MAX(0,COALESCE(duration_ms,0))) total_duration_ms
+       FROM contention
+       WHERE at >= ? AND (? IS NULL OR at >= date(?, '+1 day'))
+       GROUP BY session_id,resource_kind,resource_key,event_kind`,
     )
-    .all(from) as Omit<ContentionRow, 'landing_record_id' | 'cause' | 'at'>[]
+    .all(from, rolledThrough, rolledThrough) as SummaryRow[]
+  const rows = [...rolled, ...raw]
   const resources = RESOURCE_KINDS.map((kind): ContentionResourceSummary => {
     const matching = rows.filter((row) => row.resource_kind === kind)
-    const totalDurationMs = matching.reduce(
-      (sum, row) => sum + Math.max(0, row.duration_ms ?? 0),
-      0,
-    )
+    const count = matching.reduce((sum, row) => sum + row.event_count, 0)
+    const totalDurationMs = matching.reduce((sum, row) => sum + row.total_duration_ms, 0)
     return {
       kind,
-      count: matching.length,
+      count,
       totalDurationMs,
-      meanDurationMs: matching.length ? Math.round(totalDurationMs / matching.length) : 0,
-      topKeys: topKeys(matching, (row) => row.resource_key),
+      meanDurationMs: count ? Math.round(totalDurationMs / count) : 0,
+      topKeys: topKeys(
+        matching,
+        (row) => row.resource_key,
+        (row) => row.event_count,
+      ),
     }
   })
   const sessions = new Map<string, ContentionSessionSummary>()
@@ -193,8 +214,9 @@ export function summarizeContention(d: Database, from: string): ContentionSummar
   }
   for (const row of rows) {
     if (!row.session_id) continue
-    if (row.event_kind === 'wait') session(row.session_id).waitsSuffered += 1
-    if (row.event_kind === 'invalidation') session(row.session_id).invalidationsCaused += 1
+    if (row.event_kind === 'wait') session(row.session_id).waitsSuffered += row.event_count
+    if (row.event_kind === 'invalidation')
+      session(row.session_id).invalidationsCaused += row.event_count
   }
   return {
     resources,

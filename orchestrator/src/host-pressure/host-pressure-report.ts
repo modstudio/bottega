@@ -7,6 +7,7 @@ import {
   isHostCapacityWait,
   loadContentionWaits,
 } from '../database/contention.ts'
+import { contentionRawHorizon } from '../database/contention-retention.ts'
 import { nearestRankPercentile } from '../state/statistics.ts'
 import type { PressureSample } from './host-pressure-decision.ts'
 import { loadHostPressureSamples } from './host-pressure-service.ts'
@@ -83,6 +84,7 @@ export function loadHostPressureReport(
     windows.currentWindow.end,
   )
   return {
+    contentionRawHorizon: contentionRawHorizon(database, Date.parse(windows.currentWindow.end)),
     current: hostPressureReport(samples, rows, windows.currentWindow),
     previous: hostPressureReport(samples, rows, windows.previousWindow),
   }

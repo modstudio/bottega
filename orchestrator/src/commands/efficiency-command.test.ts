@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
+import { setContentionRolledThroughDay } from '../database/contention-rollup-state.ts'
+import { db } from '../database/db.ts'
 import type { CycleCostWindowReport } from '../evidence/cycle-cost.ts'
 import { provisioningReport } from '../monitor/provisioning-report.ts'
 import {
+  efficiencyCommand,
   efficiencyWindows,
   formatCycleWindow,
   formatHostPressure,
@@ -139,4 +142,31 @@ test('host-pressure formatting names retained coverage and empty windows honestl
       loadAveragePerCpu: { median: null, p90: null },
     }).join('\n'),
   ).toContain('samples: no retained samples (15-minute retention)')
+})
+
+test('efficiency reports the raw contention horizon in text and JSON', async () => {
+  const database = db()
+  setContentionRolledThroughDay(database, '2026-10-29')
+  const output: string[] = []
+  try {
+    await efficiencyCommand(
+      { since: '15d', json: false, sections: ['host-pressure'] },
+      { write: async (value) => void output.push(value) },
+      Date.parse('2026-10-30T00:00:00.000Z'),
+    )
+    expect(output.pop()).toContain(
+      'Contention waits before 2026-10-16T00:00:00.000Z are outside the raw window',
+    )
+
+    await efficiencyCommand(
+      { since: '15d', json: true, sections: ['host-pressure'] },
+      { write: async (value) => void output.push(value) },
+      Date.parse('2026-10-30T00:00:00.000Z'),
+    )
+    expect(JSON.parse(output.pop()!)['host-pressure'].contentionRawHorizon).toBe(
+      '2026-10-16T00:00:00.000Z',
+    )
+  } finally {
+    setContentionRolledThroughDay(database, null)
+  }
 })

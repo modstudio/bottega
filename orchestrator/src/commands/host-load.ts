@@ -6,6 +6,7 @@ import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { boundedJsonLinePath } from '../../../shared/bounded-json-lines-log.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
+import { contentionRawHorizon } from '../database/contention-retention.ts'
 import { db } from '../database/db.ts'
 import {
   HOST_LOAD_LOG_NAME,
@@ -60,8 +61,12 @@ export async function hostLoadCommand(
       `host load window has no samples in ${path}\ncleared by: run ${PLATFORM_SLUG} machine load sample and keep its launchd sampler job running`,
     )
   }
+  const rawHorizon = contentionRawHorizon(database, now)
+  const rawCoverageReleased = rawHorizon && Date.parse(since) < Date.parse(rawHorizon)
   if (options.json) {
-    await presentation.write(`${JSON.stringify({ since, ...report }, null, 2)}\n`)
+    await presentation.write(
+      `${JSON.stringify({ since, contentionRawHorizon: rawHorizon, ...report }, null, 2)}\n`,
+    )
     return
   }
   const quantileText = Object.entries(report.cpuBusyQuantiles)
@@ -70,7 +75,10 @@ export async function hostLoadCommand(
   await presentation.write(
     `host load: ${report.sampleCount} samples ${report.firstSampleAt} to ${report.lastSampleAt}\n` +
       `${quantileText}\n` +
-      `swap latest=${report.latestSwapUsed} delta=${report.swapDelta} loadavg1=${report.latestLoadavg1.toFixed(3)} waits>=${HOST_LOAD_WAIT_MIN_MS}ms=${report.hostCapacityWaitCount}\n`,
+      `swap latest=${report.latestSwapUsed} delta=${report.swapDelta} loadavg1=${report.latestLoadavg1.toFixed(3)} waits>=${HOST_LOAD_WAIT_MIN_MS}ms=${report.hostCapacityWaitCount}\n` +
+      (rawCoverageReleased
+        ? `contention waits before ${rawHorizon} are outside the raw window; ${PLATFORM_SLUG} machine health still totals the older days\n`
+        : ''),
   )
 }
 

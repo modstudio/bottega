@@ -30,7 +30,7 @@ export const hubTableLifecycles: readonly TableLifecycle[] = [
   ),
   ...entries(['typed_question_answer', 'typed_question_outcome'], 'record', 'kept'),
   ...entries(['question_delivery'], 'journal', null, 'outbox'),
-  ...entries(['interval'], 'telemetry', null, 'telemetry'),
+  ...entries(['interval'], 'telemetry', null, 'working-set'),
   ...entries(
     ['commit_key', 'task_identity_claim', 'transcript_fingerprint'],
     'machine',

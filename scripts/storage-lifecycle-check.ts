@@ -2,7 +2,11 @@
 /** Refuses lifecycle declarations that do not match the three store schemas. */
 
 import { isAbsolute, resolve } from 'node:path'
-import type { LifecycleStore, TableLifecycle } from '../shared/storage-lifecycle.ts'
+import {
+  LIFECYCLE_KEEP,
+  type LifecycleStore,
+  type TableLifecycle,
+} from '../shared/storage-lifecycle.ts'
 
 type SchemaTable = { name: string; columns: readonly string[] }
 type Tables = Readonly<Record<LifecycleStore, readonly SchemaTable[]>>
@@ -16,11 +20,18 @@ function declarationShapeRefusals(address: string, declaration: TableLifecycle):
   if (
     declaration.remover === 'kept' &&
     declaration.class !== 'record' &&
-    declaration.class !== 'machine'
+    declaration.class !== 'machine' &&
+    declaration.class !== 'telemetry'
   )
     findings.push(
-      `${address}: kept lifecycle marker is valid only for record or bounded machine rows`,
+      `${address}: kept lifecycle marker is valid only for record, bounded machine rows, or telemetry rollups`,
     )
+  if (
+    declaration.remover === 'kept' &&
+    declaration.class === 'telemetry' &&
+    declaration.keep === LIFECYCLE_KEEP.telemetry
+  )
+    findings.push(`${address}: kept telemetry rollup must declare its own keep rule`)
   return findings
 }
 

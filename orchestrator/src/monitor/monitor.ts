@@ -10,7 +10,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { boardEscalations } from '../board/board-service.ts'
 import { storedPackDrift } from '../canon/canon.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { type db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { sampleHostLoad } from '../host-load-sample.ts'
 import { sampleHostPressure } from '../host-pressure/host-pressure-service.ts'
 import { projectLockState } from '../project/project-lock.ts'
@@ -35,7 +35,6 @@ import {
 import { gitLocks, shellQuote, worktreeIndexLockForPath } from '../resources/git-locks.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
-import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -87,7 +86,6 @@ import {
   boundedConditionDetail,
   type HumanMonitorCondition,
   type MonitorCondition,
-  type MonitorHistoryRow,
   type MonitorNoticeKind,
   type MonitorResult,
   type UnaddressedMonitorCondition,
@@ -1008,56 +1006,8 @@ export async function monitor(
   )
 }
 
-export function monitorHistory(limit = 20): MonitorHistoryRow[] {
-  return (
-    db()
-      .query(
-        `SELECT i.record_id,i.number AS id,i.started_at,i.finished_at,i.trigger,i.findings,i.errors,
-         i.host_load,(SELECT json_group_array(json_object(
-       'kind',c.kind,'subject',c.subject,'condition_since',c.condition_since,
-       'age_ms',c.age_ms,'detail',c.detail,'action',c.action,'issue_key',c.issue_key,
-       'severity',c.severity
-       ,'owner_session_id',c.owner_session_id,'delivered_at',c.delivered_at
-     )) FROM monitor_condition c WHERE c.invocation_record_id=i.record_id) conditions
-       FROM monitor_invocation i ORDER BY i.started_at DESC,i.record_id DESC LIMIT ?`,
-      )
-      .all(limit) as (Omit<MonitorHistoryRow, 'conditions' | 'host_load'> & {
-      conditions: string | null
-      host_load: string | null
-    })[]
-  ).map((row) => ({
-    ...row,
-    conditions: JSON.parse(row.conditions ?? '[]') as unknown[],
-    host_load: row.host_load ? JSON.parse(row.host_load) : null,
-  }))
-}
-
-/**
- * Map one stored history row's snake_case condition onto the printable shape.
- * Lives beside monitorHistory so the persisted column names are normalized in
- * one place rather than at each call site that wants to print them.
- */
-export function displayConditions(conditions: unknown[]): HumanMonitorCondition[] {
-  return conditions.map((raw): HumanMonitorCondition => {
-    const condition = raw as {
-      kind: string
-      subject: string
-      age_ms: number | null
-      detail: string
-      action: string
-      issue_key?: string | null
-      severity?: MonitorSeverity | null
-      owner_session_id?: string | null
-    }
-    return {
-      kind: condition.kind,
-      subject: condition.subject,
-      ageMs: condition.age_ms,
-      detail: condition.detail,
-      action: condition.action,
-      issueKey: condition.issue_key,
-      severity: condition.severity,
-      ownerSession: condition.owner_session_id,
-    }
-  })
-}
+export {
+  displayConditions,
+  monitorHistory,
+  monitorHistoryReleasedBefore,
+} from './monitor-history.ts'
