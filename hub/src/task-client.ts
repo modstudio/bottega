@@ -69,6 +69,7 @@ export type HostedTaskIdentity = {
     targetSpaceNotes?: boolean
     noteTriageStaleness?: boolean
     spaceChanges?: boolean
+    recordChanges?: boolean
     spacePush?: boolean
     spacePushTables?: PushableHubChangeTable[]
     spaceIdentitySet?: boolean
@@ -768,6 +769,7 @@ export async function hostedTaskIdentity(
       targetSpaceNotes: capabilityFlag(value.capabilities, 'targetSpaceNotes'),
       noteTriageStaleness: capabilityFlag(value.capabilities, 'noteTriageStaleness'),
       spaceChanges: capabilityFlag(value.capabilities, 'spaceChanges'),
+      recordChanges: capabilityFlag(value.capabilities, 'recordChanges'),
       spacePush: capabilityFlag(value.capabilities, 'spacePush'),
       spaceIdentitySet: capabilityFlag(value.capabilities, 'spaceIdentitySet'),
       spacePushTables:

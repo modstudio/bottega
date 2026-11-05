@@ -19,6 +19,7 @@ const identity = {
   ],
   capabilities: {
     spaceChanges: true,
+    recordChanges: true,
     projectNoteCounters: true,
     targetSpaceNotes: true,
   },
@@ -53,6 +54,7 @@ function route(options: {
   feed: (after: string | null, call: number) => Response
   failTaskSpaceOnce?: string
   calls?: Array<{ path: string; space: string | null; after: string | null }>
+  identity?: typeof identity
 }) {
   let feedCalls = 0
   let failed = false
@@ -60,7 +62,7 @@ function route(options: {
     const url = new URL(input)
     const space = new Headers(init?.headers).get('x-record-space')
     options.calls?.push({ path: url.pathname, space, after: url.searchParams.get('after') })
-    if (url.pathname === '/v1/tasks/identity') return Response.json(identity)
+    if (url.pathname === '/v1/tasks/identity') return Response.json(options.identity ?? identity)
     if (url.pathname === '/v1/changes')
       return options.feed(url.searchParams.get('after'), feedCalls++)
     if (url.pathname === '/v1/tasks') {
@@ -75,6 +77,49 @@ function route(options: {
     throw new Error(`unexpected route ${url.pathname}`)
   }
 }
+
+test('the feed refuses an identity without recordChanges before requesting changes', async () => {
+  const calls: Array<{ path: string; space: string | null; after: string | null }> = []
+  const fetch = route({
+    feed: () => {
+      throw new Error('feed must not be requested')
+    },
+    calls,
+    identity: { ...identity, capabilities: { ...identity.capabilities, recordChanges: false } },
+  })
+
+  await expect(
+    pullHostedChanges({ ...options, fetch, registeredProjects: registered }),
+  ).rejects.toThrow(
+    'the hosted hub does not serve the record change feed; release the hosted hub at or after the version that does',
+  )
+  expect(calls.map((call) => call.path)).toEqual(['/v1/tasks/identity'])
+})
+
+test('the feed snapshot cursor neither reads nor overwrites legacy snapshot state', async () => {
+  const legacyKey = 'collect.hosted-changes.cursor.snapshot.space-one'
+  const legacyValue = JSON.stringify({ head: 42, cursor: 'legacy-page' })
+  writeTransaction((conn) =>
+    conn.query('INSERT INTO setting(key,value) VALUES (?,?)').run(legacyKey, legacyValue),
+  )
+  const calls: Array<{ path: string; space: string | null; after: string | null }> = []
+  const fetch = route({
+    feed: (after) => (after === null ? reset('horizon') : page('horizon')),
+    calls,
+  })
+
+  await pullHostedChanges({
+    ...options,
+    fetch,
+    registeredProjects: registered.slice(0, 1),
+  })
+
+  expect(calls.find((call) => call.path === '/v1/tasks' && call.space === 'space-one')?.after).toBe(
+    null,
+  )
+  expect(stored(legacyKey)).toBe(legacyValue)
+  expect(stored('collect.hosted-record-changes.snapshot.task.space-one')).toBeUndefined()
+})
 
 test('a first feed pass full-pulls every family and space before storing the horizon', async () => {
   const calls: Array<{ path: string; space: string | null; after: string | null }> = []

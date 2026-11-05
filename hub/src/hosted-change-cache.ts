@@ -493,7 +493,7 @@ const jsonSetting = <T>(key: string, fallback: T): T => {
 }
 const pair = (name: FamilyName, space: string) => `${name}:${space}`
 const snapshotCursorKey = (feed: FeedFamily, space: string) =>
-  `${feed.family.cursorPrefix}.snapshot.${space}`
+  `collect.hosted-record-changes.snapshot.${feed.name}.${space}`
 
 function feedFamilies(
   registered: readonly RegisteredTaskSpace[],
@@ -629,9 +629,9 @@ type FeedPass = {
 async function prepareFeedPass(options: PullOptions): Promise<FeedPass> {
   const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(shared)
-  if (identity.capabilities?.spaceChanges !== true)
+  if (identity.capabilities?.recordChanges !== true)
     throw new Error(
-      'the hosted hub does not serve the change log; release the hosted hub at or after the version that does',
+      'the hosted hub does not serve the record change feed; release the hosted hub at or after the version that does',
     )
   const registered = options.registeredProjects ?? projects()
   const families = feedFamilies(registered, identity)
