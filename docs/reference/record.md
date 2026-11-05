@@ -508,7 +508,7 @@ withdraw config access from a member
 
 **Synopsis:** `bottega record space create [--name <name>] [--slug <slug>]`
 
-create a hosted record space
+create a hosted record space and report the active space, with the command that switches back
 
 ### Options
 

@@ -232,7 +232,9 @@ function registerSpaceCommands(record: Command): void {
     .action(() => hostedRecord('space list', () => recordSpaceListCommand(presentation)))
   space
     .command('create')
-    .description('create a hosted record space')
+    .description(
+      'create a hosted record space and report the active space, with the command that switches back',
+    )
     .requiredOption('--name <name>', 'display name for the new space')
     .requiredOption('--slug <slug>', 'URL slug for the new space')
     .action((options) =>

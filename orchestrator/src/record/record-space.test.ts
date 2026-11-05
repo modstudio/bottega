@@ -1,13 +1,141 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  createRecordSpace,
   pendingRecordInvitations,
   recordMembershipsFromIdentity,
+  recordSpaceCreateReport,
   recordSpaceRole,
   refuseDuplicateRecordSpaceSlug,
   switchRecordSpace,
 } from './record-space.ts'
 
 describe('record space decisions', () => {
+  test('returns active spaces from before and after creation', async () => {
+    const identities = [
+      {
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-before',
+        personalSpaceId: null,
+        memberships: [
+          {
+            space_id: 'space-before',
+            name: 'Before',
+            slug: 'before',
+            role: 'owner',
+            permission: 'write',
+          },
+        ],
+      },
+      {
+        user: { id: 'user-a' },
+        activeSpaceId: 'space-created',
+        personalSpaceId: null,
+        memberships: [
+          {
+            space_id: 'space-created',
+            name: 'Created',
+            slug: 'created',
+            role: 'owner',
+            permission: 'write',
+          },
+        ],
+      },
+    ]
+    let whoamiCall = 0
+    expect(
+      await createRecordSpace('Created', 'created', {
+        whoami: async () => identities[whoamiCall++]!,
+        createOrganization: async () => ({ id: 'space-created', slug: 'created' }),
+      }),
+    ).toEqual({
+      id: 'space-created',
+      slug: 'created',
+      before: { id: 'space-before', slug: 'before' },
+      after: { id: 'space-created', slug: 'created' },
+    })
+    expect(whoamiCall).toBe(2)
+  })
+
+  test('reports a switch to the created space and the command that restores the previous slug', () => {
+    expect(
+      recordSpaceCreateReport(
+        { id: 'space-before', slug: 'before' },
+        { id: 'space-created', slug: 'created' },
+        { id: 'space-created', slug: 'created' },
+      ),
+    ).toEqual([
+      'active record space switched from before to created for every lane on this machine',
+      `switch back: ${PLATFORM_SLUG} record space switch before`,
+    ])
+  })
+
+  test('reports the created space without undo when there was no previous active space', () => {
+    expect(
+      recordSpaceCreateReport(
+        { id: null, slug: null },
+        { id: 'space-created', slug: 'created' },
+        { id: 'space-created', slug: 'created' },
+      ),
+    ).toEqual(['active record space is now created'])
+  })
+
+  test('uses the previous id when its slug cannot be resolved', () => {
+    expect(
+      recordSpaceCreateReport(
+        { id: 'space-before', slug: null },
+        { id: 'space-created', slug: 'created' },
+        { id: 'space-created', slug: 'created' },
+      ),
+    ).toEqual([
+      'active record space switched from space-before to created for every lane on this machine',
+      `switch back: ${PLATFORM_SLUG} record space switch space-before`,
+    ])
+  })
+
+  test('reports an unchanged active space by slug', () => {
+    expect(
+      recordSpaceCreateReport(
+        { id: 'space-before', slug: 'before' },
+        { id: 'space-before', slug: 'before' },
+        { id: 'space-created', slug: 'created' },
+      ),
+    ).toEqual([
+      'active record space unchanged: before',
+      'created space created is not active',
+      `switch to it: ${PLATFORM_SLUG} record space switch created`,
+    ])
+  })
+
+  test('reports an unchanged active space when there is no active space', () => {
+    expect(
+      recordSpaceCreateReport(
+        { id: null, slug: null },
+        { id: null, slug: null },
+        { id: 'space-created', slug: 'created' },
+      ),
+    ).toEqual([
+      'active record space unchanged: none',
+      'created space created is not active',
+      `switch to it: ${PLATFORM_SLUG} record space switch created`,
+    ])
+  })
+
+  test('reports the actual third space selected after creation', () => {
+    expect(
+      recordSpaceCreateReport(
+        { id: 'space-before', slug: 'before' },
+        { id: 'space-third', slug: 'third' },
+        { id: 'space-created', slug: 'created' },
+      ),
+    ).toEqual([
+      'active record space switched from before to third for every lane on this machine',
+      `switch back: ${PLATFORM_SLUG} record space switch before`,
+      'created space created is not active',
+      `switch to it: ${PLATFORM_SLUG} record space switch created`,
+    ])
+  })
+
   test('maps whoami memberships into the rows printed by space list', () => {
     expect(
       recordMembershipsFromIdentity({

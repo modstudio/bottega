@@ -37,6 +37,7 @@ import {
   pauseRecordSpaceOutsideIntake,
   pendingRecordInvitations,
   recordMemberships,
+  recordSpaceCreateReport,
   recordSpaceRole,
   resumeRecordSpaceOutsideIntake,
   setRecordSpaceOutsideIntake,
@@ -284,6 +285,9 @@ export async function recordSpaceCreateCommand(
 ): Promise<void> {
   const created = await createRecordSpace(name, slug)
   presentation.log(`${created.id}\t${created.slug}`)
+  for (const line of recordSpaceCreateReport(created.before, created.after, created)) {
+    presentation.log(line)
+  }
 }
 
 export async function recordSpaceSwitchCommand(
