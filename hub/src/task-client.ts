@@ -465,6 +465,95 @@ export async function hostedSpaceChanges(after: number, options: HostedSpaceChan
   return parseHostedSpaceChangePage(page, after, new Set(options.tables.split(',')))
 }
 
+export type HostedRecordChange = Omit<HostedSpaceChange, 'sequence'> & { space: string }
+export type HostedRecordChangePage = {
+  changes: HostedRecordChange[]
+  cursor: string
+  lag: number
+  more: boolean
+}
+export type HostedRecordChangeResult =
+  | HostedRecordChangePage
+  | { reset: { cursor: string; tables: string[] } }
+
+function parseRecordChangeEntry(value: unknown, index: number): HostedRecordChange {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw malformedChangePage(`changes[${index}] must be an object`)
+  const change = value as Record<string, unknown>
+  if (
+    typeof change.table !== 'string' ||
+    typeof change.id !== 'string' ||
+    typeof change.space !== 'string'
+  )
+    throw malformedChangePage(`changes[${index}] must name table, id, and space`)
+  if (change.op === 'delete') {
+    if ('row' in change)
+      throw malformedChangePage(`changes[${index}] delete must not include a row`)
+    return { table: change.table, id: change.id, space: change.space, op: 'delete' }
+  }
+  if (
+    change.op !== 'upsert' ||
+    !change.row ||
+    typeof change.row !== 'object' ||
+    Array.isArray(change.row)
+  )
+    throw malformedChangePage(`changes[${index}] upsert must include a row`)
+  return {
+    table: change.table,
+    id: change.id,
+    space: change.space,
+    op: 'upsert',
+    row: change.row as HostedSpaceChange['row'],
+  }
+}
+
+export async function hostedRecordChanges(
+  after: string | undefined,
+  options: Parameters<typeof request>[3] & { limit?: number } = {},
+): Promise<HostedRecordChangeResult> {
+  const query = new URLSearchParams()
+  if (after !== undefined) query.set('after', after)
+  if (options.limit !== undefined) query.set('limit', String(options.limit))
+  const { response, value } = await responseObject(
+    `/v1/changes?${query}`,
+    'GET',
+    undefined,
+    options,
+  )
+  if (response.status === 410) {
+    if (
+      value.reset !== true ||
+      typeof value.cursor !== 'string' ||
+      !Array.isArray(value.tables) ||
+      !value.tables.every((table) => typeof table === 'string')
+    )
+      throw malformedChangePage('reset body is invalid')
+    return { reset: { cursor: value.cursor, tables: value.tables } }
+  }
+  if (!response.ok)
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: value,
+      safety: 'probe',
+    })
+  if (
+    !Array.isArray(value.changes) ||
+    typeof value.cursor !== 'string' ||
+    typeof value.lag !== 'number' ||
+    !Number.isInteger(value.lag) ||
+    value.lag < 0 ||
+    typeof value.more !== 'boolean'
+  )
+    throw malformedChangePage('feed body is invalid')
+  return {
+    changes: value.changes.map(parseRecordChangeEntry),
+    cursor: value.cursor,
+    lag: value.lag,
+    more: value.more,
+  }
+}
+
 function capabilityFlag(capabilities: unknown, name: string): boolean {
   return (
     typeof capabilities === 'object' &&
