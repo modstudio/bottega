@@ -47,6 +47,13 @@ function intentHolder(): string | null {
   return row ? (JSON.parse(row.value) as { holder: string }).holder : null
 }
 
+function watcherAlive(): { holder: string; pid: number; at: string } | null {
+  const row = db()
+    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.watch.alive'`)
+    .get()
+  return row ? JSON.parse(row.value) : null
+}
+
 describe('watch cycle start decision', () => {
   const facts = {
     leaseHolder: null,
@@ -238,6 +245,27 @@ describe('collect lease', () => {
     expect(result.ran).toBeTrue()
     expect(explicitRan).toBeTrue()
     await stop()
+  })
+
+  test('watch writes its heartbeat on the first pass and removes it on clean stop', async () => {
+    let cycleFinished!: () => void
+    const finished = new Promise<void>((resolve) => {
+      cycleFinished = resolve
+    })
+    const before = Date.now()
+    const stop = watch('heartbeat-watch', undefined, {
+      initial: async (): Promise<undefined> => {
+        cycleFinished()
+      },
+      fast: async () => undefined,
+      slow: async () => undefined,
+    })
+    await finished
+
+    expect(watcherAlive()).toMatchObject({ holder: 'heartbeat-watch', pid: process.pid })
+    expect(Date.parse(watcherAlive()!.at)).toBeGreaterThanOrEqual(before)
+    await stop()
+    expect(watcherAlive()).toBeNull()
   })
 
   test('a waiting explicit request takes the next turn from watch', async () => {
