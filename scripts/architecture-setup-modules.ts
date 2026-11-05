@@ -112,6 +112,13 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       'Keep linked-worktree persistence refusal independent of setup planning and harness CLI grammar.',
   },
   {
+    name: 'setup-repository-facts-types-boundary',
+    file: 'orchestrator/src/setup/repository-facts-types.ts',
+    allowed: [],
+    typeOnlyAllowed: ['./setup-toolchain.ts'],
+    reason: 'Keep repository fact values shared without coupling setup policy to repository I/O.',
+  },
+  {
     name: 'setup-repository-facts-boundary',
     file: 'orchestrator/src/setup/repository-facts.ts',
     allowed: [
