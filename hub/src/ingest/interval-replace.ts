@@ -24,8 +24,8 @@ export function decideCollectorReplace<
 >(
   existing: readonly E[],
   recomputed: readonly T[],
-  preservedRefs: ReadonlySet<string> = new Set(),
-  equal: (existing: E, recomputed: T) => boolean = () => false,
+  preservedRefs: ReadonlySet<string>,
+  equal: (existing: E, recomputed: T) => boolean,
 ): CollectorReplaceDecision<T> {
   const byKey = new Map(existing.map((row) => [naturalKey(row), row]))
   const recomputedKeys = new Set(recomputed.map(naturalKey))

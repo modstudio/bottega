@@ -344,17 +344,17 @@ function applyOrchReplace(
   }
 }
 
+/** The stored columns `sameOrchInterval` compares; both reads select exactly these. */
+const STORED_ORCH_COLUMNS = `record_id, source, ref, start_at, end_at, task_key, task_record_id, project,
+  project_record_id, agent, job, vendor_tokens, vendor_cost_usd, via, open, session_id, user_id`
+
 function orchIntervalWriter(conn: Database) {
   const selectChain = conn.query<StoredOrchIntervalRow, [string, string]>(
-    `SELECT record_id, source, ref, start_at, end_at, task_key, task_record_id, project,
-            project_record_id, agent, job, vendor_tokens, vendor_cost_usd, via, open, session_id, user_id
-     FROM interval
+    `SELECT ${STORED_ORCH_COLUMNS} FROM interval
      WHERE source = 'orch' AND (ref = ? OR ref LIKE ?)`,
   )
   const selectRef = conn.query<StoredOrchIntervalRow, [string]>(
-    `SELECT record_id, source, ref, start_at, end_at, task_key, task_record_id, project,
-            project_record_id, agent, job, vendor_tokens, vendor_cost_usd, via, open, session_id, user_id
-     FROM interval WHERE source = 'orch' AND ref = ?`,
+    `SELECT ${STORED_ORCH_COLUMNS} FROM interval WHERE source = 'orch' AND ref = ?`,
   )
   const close = conn.query(`UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`)
   const closeReplaced = conn.query(

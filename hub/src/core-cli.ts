@@ -60,7 +60,7 @@ export async function collectOneShot(
 ) {
   const t0 = Date.now()
   const results = since
-    ? await (dependencies.rebuild ?? collectOnce)(since ?? hoursAgo(24 * 30), only, guard)
+    ? await (dependencies.rebuild ?? collectOnce)(since, only, guard)
     : await (dependencies.incremental ?? collectIncremental)(only, guard)
   for (const result of results) console.log(formatCollectLeg(result))
   console.log(`\ncollected in ${human(Date.now() - t0)}`)
