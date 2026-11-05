@@ -13,6 +13,9 @@ export async function pruneHostedChanges(client: SQL) {
     await client`SELECT hub_change_prune() AS hub_deleted,
       record_change_prune() AS record_deleted`,
   )[0]
-  if (!result) throw new Error('hub change pruning returned no result; verify the record migration')
+  if (!result)
+    throw new Error(
+      'change journal pruning returned no result; verify the hub and record change migrations',
+    )
   return { hub: Number(result.hub_deleted), record: Number(result.record_deleted) }
 }
