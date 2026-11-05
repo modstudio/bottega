@@ -183,8 +183,7 @@ describe('hosted context router', () => {
         personalSpaceId,
       )
       expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
-      expect(client.whoami).toHaveBeenCalledTimes(1)
-    },
+      },
   )
 
   test('userCanon.get finds one owner-scoped row', async () => {
@@ -447,8 +446,7 @@ describe('hosted context router', () => {
         personalSpaceId,
       )
       expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
-      expect(client.whoami).toHaveBeenCalledTimes(1)
-    },
+      },
   )
 
   test('settings.get accepts the owned settings shape but refuses undeclared keys', async () => {

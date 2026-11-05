@@ -145,6 +145,36 @@ describe('record API doc write refusals', () => {
     expect(writtenSpace).toBe('space-personal')
   })
 
+  test('a destination-less user settings write refuses without a personal space', async () => {
+    let written = false
+    const app = appWith(
+      { ...personalIdentity, personalSpaceId: null },
+      {
+        upsertDoc: async () => {
+          written = true
+          return { id, revisionId: id }
+        },
+      },
+    )
+    const response = await app.request('/v1/docs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'settings',
+        subject: null,
+        owner: personalIdentity.user.id,
+        slug: 'settings',
+        title: 'Settings',
+        body: JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] }),
+        delivery: 'demand',
+        reason: 'test missing personal space',
+        author: personalIdentity.user.id,
+      }),
+    })
+    expect(response.status).toBe(409)
+    expect(written).toBe(false)
+  })
+
   test('an id-only personal settings read probes active then personal space', async () => {
     const spaces: string[] = []
     const personalDoc = {
