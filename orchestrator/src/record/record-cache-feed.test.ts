@@ -9,6 +9,7 @@ import { db } from '../database/db.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordChangePage } from './record-api-client-changes.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { decodeRecordCursor } from './record-cursor.ts'
 
 const cursor = (value: string) =>
   db()
@@ -16,12 +17,19 @@ const cursor = (value: string) =>
       "INSERT INTO schema_meta(key,value) VALUES ('record_change_cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
     )
     .run(value)
-const spaces = (values: string[]) =>
+const spaces = (values: string[]) => {
+  const value = JSON.stringify(values)
   db()
     .query(
       "INSERT INTO schema_meta(key,value) VALUES ('record_change_spaces',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
     )
-    .run(JSON.stringify(values))
+    .run(value)
+  db()
+    .query(
+      "INSERT INTO schema_meta(key,value) VALUES ('record_change_pull_spaces',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+    )
+    .run(value)
+}
 const empty = (at: string): RecordChangePage => ({
   changes: [],
   cursor: at,
@@ -459,7 +467,7 @@ test('a membership outside the mirrored cache spaces is neither pulled nor remem
   ).toEqual({ value: '["space-a"]' })
 })
 
-test('switching the active space purges the old mirror and pulls the new space', async () => {
+test('switching the active space keeps an accessible old mirror and pulls the new space', async () => {
   const hosted = newRecordId()
   cursor('switch-before')
   spaces(['space-a'])
@@ -469,6 +477,9 @@ test('switching the active space purges the old mirror and pulls the new space',
        VALUES (?,'global',NULL,?,'Hosted','Body','demand','["technical"]','a','a','space-a')`,
     )
     .run(hosted, `hosted-${hosted}`)
+  db()
+    .query("INSERT INTO schema_meta(key,value) VALUES ('record_docs_cursor:space-a',?)")
+    .run(JSON.stringify({ at: '2026-11-05T00:00:00.000Z', id: hosted }))
   const pulled: string[] = []
   const client = feedClient(
     async () => empty('switch-before'),
@@ -495,11 +506,33 @@ test('switching the active space purges the old mirror and pulls the new space',
 
   await pullRecordCache(db())
 
-  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(hosted)).toBeNull()
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(hosted)).not.toBeNull()
   expect(pulled).toEqual(['space-b'])
   expect(
     db().query("SELECT value FROM schema_meta WHERE key='record_change_spaces'").get(),
-  ).toEqual({ value: '["space-b"]' })
+  ).toEqual({ value: '["space-a","space-b"]' })
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_docs_cursor:space-a'").get(),
+  ).toEqual({ value: JSON.stringify({ at: '2026-11-05T00:00:00.000Z', id: hosted }) })
+
+  pulled.length = 0
+  const switchedBack = feedClient(
+    async () => empty('switch-before'),
+    async () => identity,
+  )
+  switchedBack.listDocs = async (input, destination) => {
+    pulled.push(destination!.destinationSpaceId!)
+    expect(decodeRecordCursor(input.cursor!)).toEqual({
+      at: '2026-11-05T00:00:00.000Z',
+      id: hosted,
+    })
+    return { items: [], nextCursor: null }
+  }
+  installRecordApiClient(switchedBack)
+
+  await pullRecordCache(db())
+
+  expect(pulled).toEqual(['space-a'])
 })
 
 test('purge clears keyset cursors so a later rejoin pulls from the start', async () => {

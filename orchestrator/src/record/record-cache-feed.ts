@@ -1,6 +1,7 @@
 // concern: record-cache
 /** Advances the local record mirror from the ordered hosted change feed. */
 import type { Database } from 'bun:sqlite'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
@@ -51,6 +52,7 @@ import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workf
 
 const CURSOR = 'record_change_cursor'
 const SPACES = 'record_change_spaces'
+const PULL_SPACES = 'record_change_pull_spaces'
 
 const emptyProject = (): ProjectRegisterPullResult => ({
   updated: 0,
@@ -120,8 +122,8 @@ type Change = RecordChangePage['changes'][number]
 type UpsertChange = Extract<Change, { op: 'upsert' }>
 type FallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
 
-const rememberedSpaces = (local: Database): string[] => {
-  const value = readCursor(local, SPACES)
+const storedSpaces = (local: Database, key: string): string[] => {
+  const value = readCursor(local, key)
   if (!value) return []
   try {
     const parsed = JSON.parse(value)
@@ -130,6 +132,20 @@ const rememberedSpaces = (local: Database): string[] => {
     return []
   }
 }
+
+const rememberedSpaces = (local: Database): string[] => storedSpaces(local, SPACES)
+const previousPullSpaces = (local: Database, remembered: string[]): string[] =>
+  readCursor(local, PULL_SPACES) === undefined ? remembered : storedSpaces(local, PULL_SPACES)
+
+const accessSpaces = (identity: RecordIdentity): string[] =>
+  [
+    ...new Set([
+      ...parseRecordSpaceMemberships(identity.memberships).map((membership) => membership.spaceId),
+      ...(identity.activeSpaceId ? [identity.activeSpaceId] : []),
+    ]),
+  ].sort()
+
+const unionSpaces = (...sets: readonly string[][]): string[] => [...new Set(sets.flat())].sort()
 
 function purgeLostSpaces(local: Database, spaces: readonly string[], deps: Dependencies): number {
   if (!spaces.length) return 0
@@ -463,13 +479,15 @@ async function resetAt(
   local: Database,
   identity: RecordIdentity,
   spaces: string[],
+  remembered: string[],
   cursor: string,
   deps: Dependencies,
 ) {
   const result = await deps.pullKeysets(local, identity, spaces)
   writeTransaction(() => {
     writeCursor(local, CURSOR, cursor)
-    writeCursor(local, SPACES, JSON.stringify(spaces))
+    writeCursor(local, SPACES, JSON.stringify(remembered))
+    writeCursor(local, PULL_SPACES, JSON.stringify(spaces))
   }, local)
   return {
     ...emptyRecordCachePullResult(),
@@ -488,21 +506,37 @@ async function prepareFeedIdentity(
   | {
       identity: RecordIdentity & { activeSpaceId: string }
       spaces: string[]
-      previous: string[]
+      remembered: string[]
+      previousPull: string[]
+      lost: string[]
+      purgeWarning: string | null
     }
 > {
   const identity = suppliedIdentity ?? (await client.whoami())
   rememberSignedInRecordUser(identity.user, local)
   if (identity.activeSpaceId) rememberActiveRecordSpace(local, identity.activeSpaceId)
   const spaces = deps.cacheSpaces(identity, local).spaces
-  const previous = rememberedSpaces(local)
-  if (!spaces.length && previous.length) {
+  const remembered = rememberedSpaces(local)
+  const memberships = parseRecordSpaceMemberships(identity.memberships)
+  if (!identity.activeSpaceId && !memberships.length && remembered.length) {
     const stopped = emptyRecordCachePullResult()
     stopped.purgeWarning = 'record spaces could not be confirmed; remembered spaces were not purged'
     return { stopped }
   }
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
-  return { identity: identity as RecordIdentity & { activeSpaceId: string }, spaces, previous }
+  const purgeWarning =
+    !memberships.length && remembered.length
+      ? 'record spaces could not be confirmed; remembered spaces were not purged'
+      : null
+  const access = accessSpaces(identity)
+  return {
+    identity: identity as RecordIdentity & { activeSpaceId: string },
+    spaces,
+    remembered,
+    previousPull: previousPullSpaces(local, remembered),
+    lost: purgeWarning ? [] : remembered.filter((space) => !access.includes(space)),
+    purgeWarning,
+  }
 }
 
 export async function pullRecordCacheFeed(
@@ -515,31 +549,41 @@ export async function pullRecordCacheFeed(
   const client: RecordApiClient = recordApiClient()
   const prepared = await prepareFeedIdentity(local, suppliedIdentity, client, deps)
   if ('stopped' in prepared) return prepared.stopped
-  const { identity, spaces, previous } = prepared
+  const { identity, spaces, remembered, previousPull, lost, purgeWarning } = prepared
   const cache = deps.cacheSpaces(identity, local)
   const result = emptyRecordCachePullResult()
-  result.purgeKept += purgeLostSpaces(
-    local,
-    previous.filter((space) => !spaces.includes(space)),
-    deps,
+  result.purgeWarning = purgeWarning
+  result.purgeKept += purgeLostSpaces(local, lost, deps)
+  const nextRemembered = unionSpaces(
+    remembered.filter((space) => !lost.includes(space)),
+    spaces,
   )
   let cursor = readCursor(local, CURSOR)
   if (!cursor) {
     const first = await client.listChanges({ wait: 0 })
     if ('reset' in first) {
-      addResult(result, await resetAt(local, identity, spaces, first.reset.cursor, deps))
+      addResult(
+        result,
+        await resetAt(local, identity, spaces, nextRemembered, first.reset.cursor, deps),
+      )
       result.reset = true
       return result
     }
     throw new Error('record change feed did not provide a reset cursor for an uninitialized cache')
   }
-  const joined = spaces.filter((space) => !previous.includes(space))
+  const joined = spaces.filter((space) => !previousPull.includes(space))
   if (joined.length) addResult(result, await deps.pullKeysets(local, identity, joined))
-  writeCursor(local, SPACES, JSON.stringify(spaces))
+  writeTransaction(() => {
+    writeCursor(local, SPACES, JSON.stringify(nextRemembered))
+    writeCursor(local, PULL_SPACES, JSON.stringify(spaces))
+  }, local)
   for (;;) {
     const response = await client.listChanges({ after: cursor, wait: 0 })
     if ('reset' in response) {
-      addResult(result, await resetAt(local, identity, spaces, response.reset.cursor, deps))
+      addResult(
+        result,
+        await resetAt(local, identity, spaces, nextRemembered, response.reset.cursor, deps),
+      )
       result.reset = true
       return result
     }
