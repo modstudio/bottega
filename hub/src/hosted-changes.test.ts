@@ -9,6 +9,7 @@ import { migrationSessionStatements } from '../../shared/record/migration-sessio
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
 import {
+  hostedChangeService,
   hubChangeReadability,
   laterRowKeys,
   READABLE_HUB_CHANGES,
@@ -93,7 +94,7 @@ async function createDatabase() {
 }
 
 type SqlFragment = { readonly sql: string }
-function pgliteSql(database: PGlite): SQL {
+function pgliteSql(database: Pick<PGlite, 'query'>): SQL {
   const query = async (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
     let statement = strings[0]!
     const parameters: unknown[] = []
@@ -110,6 +111,13 @@ function pgliteSql(database: PGlite): SQL {
   }
   query.unsafe = (sql: string) => ({ sql })
   return query as unknown as SQL
+}
+
+function pgliteClient(database: PGlite): SQL {
+  const client = pgliteSql(database)
+  client.begin = ((work: (tx: SQL) => Promise<unknown>) =>
+    database.transaction((transaction) => work(pgliteSql(transaction)))) as SQL['begin']
+  return client
 }
 
 async function bind(database: PGlite, spaceId: string) {
@@ -131,6 +139,22 @@ beforeAll(async () => {
 })
 afterAll(async () => {
   if (database) await database.close()
+})
+
+test('record change service reads the tenant prefix with a bigint cursor', async () => {
+  await database.exec(`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+    VALUES ('01990000-0000-7000-8000-000000001319','${spaceA}','record-feed',ARRAY['RCF'],now())`)
+  const page = await hostedChangeService.readRecordChanges(
+    pgliteClient(database),
+    { userId, spaceId: spaceA },
+    0n,
+    1,
+  )
+  expect(page.resetRequired).toBe(false)
+  if (!page.resetRequired) {
+    expect(page.changes).toHaveLength(1)
+    expect(page.cursor).toBe(page.changes[0]!.seq)
+  }
 })
 
 test('every logged table is readable or explicitly deferred', () => {

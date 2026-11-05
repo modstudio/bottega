@@ -7,7 +7,9 @@ import {
 
 test('record service URL carries both startup transaction bounds and preserves existing options', () => {
   const configured = new URL(
-    recordServiceUrl('postgres://actor:secret@record.example/record?sslmode=require&options=-c%20search_path%3Dpublic'),
+    recordServiceUrl(
+      'postgres://actor:secret@record.example/record?sslmode=require&options=-c%20search_path%3Dpublic',
+    ),
   )
   expect(configured.searchParams.get('sslmode')).toBe('require')
   expect(configured.searchParams.get('options')).toBe(

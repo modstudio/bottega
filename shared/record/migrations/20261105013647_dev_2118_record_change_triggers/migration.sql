@@ -1,7 +1,7 @@
-ALTER TABLE public.record_change FORCE ROW LEVEL SECURITY;
-ALTER TABLE public.record_change_horizon FORCE ROW LEVEL SECURITY;
-
 INSERT INTO public.record_change_horizon (singleton, seq) VALUES (true, 0);
+
+ALTER TABLE "record_change" FORCE ROW LEVEL SECURITY;
+ALTER TABLE "record_change_horizon" FORCE ROW LEVEL SECURITY;
 
 CREATE FUNCTION public.record_change_log_row() RETURNS trigger
 LANGUAGE plpgsql
@@ -82,6 +82,25 @@ CREATE TRIGGER record_change_step_catalogue_event AFTER INSERT OR UPDATE OR DELE
 CREATE TRIGGER record_change_run AFTER INSERT OR UPDATE OR DELETE ON public.run FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row();
 CREATE TRIGGER record_change_review_lens AFTER INSERT OR UPDATE OR DELETE ON public.review_lens FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row();
 CREATE TRIGGER record_change_run_score AFTER INSERT OR UPDATE OR DELETE ON public.run_score FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row('run_id');
+
+DO $migration$
+DECLARE
+  definition text;
+  updated_definition text;
+BEGIN
+  SELECT pg_get_functiondef('record_move_project_space(text,text,text,bigint)'::regprocedure)
+  INTO definition;
+  updated_definition := replace(
+    definition,
+    '(''routing_evidence_head'',''space''),',
+    '(''routing_evidence_head'',''space''),(''record_change'',''space''),'
+  );
+  IF updated_definition = definition THEN
+    RAISE EXCEPTION 'record change migration could not extend the project-space classification; regenerate record_move_project_space with record_change classified as space';
+  END IF;
+  EXECUTE updated_definition;
+END
+$migration$;
 
 CREATE FUNCTION public.record_change_prune() RETURNS bigint
 LANGUAGE plpgsql

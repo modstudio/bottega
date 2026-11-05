@@ -226,3 +226,80 @@ export async function listHostedChanges(
     return readHostedChangesInTransaction(tx, identity, input)
   })
 }
+
+type RecordChangeEntry = {
+  seq: bigint
+  table: string
+  rowId: string
+  op: 'upsert' | 'delete'
+  at: string
+}
+
+type RecordChangeLogRow = {
+  seq: string | number | bigint
+  table_name: string
+  row_id: string
+  op: 'upsert' | 'delete'
+  at: string | Date
+  below_cutoff: boolean
+}
+
+const asBigInt = (value: string | number | bigint) => BigInt(value)
+
+async function readRecordChangesInTransaction(tx: SQL, after: bigint, limit: number) {
+  const metadata = rows<{ horizon: string | number | bigint; newest: string | number | bigint }>(
+    await tx`SELECT
+      (SELECT seq FROM record_change_horizon WHERE singleton)::text AS horizon,
+      COALESCE((SELECT max(seq) FROM record_change), 0)::text AS newest`,
+  )[0]!
+  const horizon = asBigInt(metadata.horizon)
+  const newest = asBigInt(metadata.newest)
+  if (after < horizon) {
+    return {
+      resetRequired: true as const,
+      horizon,
+      cursor: horizon,
+      lag: newest > horizon ? newest - horizon : 0n,
+    }
+  }
+
+  const candidates = rows<RecordChangeLogRow>(
+    await tx`SELECT seq::text, table_name, row_id::text, op, at,
+      xid < pg_snapshot_xmin(pg_current_snapshot()) AS below_cutoff
+    FROM record_change
+    WHERE seq > ${after}
+    ORDER BY seq
+    LIMIT ${limit}`,
+  )
+  const blockedAt = candidates.findIndex((row) => !row.below_cutoff)
+  const selected = blockedAt === -1 ? candidates : candidates.slice(0, blockedAt)
+  const changes: RecordChangeEntry[] = selected.map((row) => ({
+    seq: asBigInt(row.seq),
+    table: row.table_name,
+    rowId: row.row_id,
+    op: row.op,
+    at: new Date(row.at).toISOString(),
+  }))
+  const cursor = changes.at(-1)?.seq ?? after
+  return {
+    resetRequired: false as const,
+    changes,
+    cursor,
+    lag: newest > cursor ? newest - cursor : 0n,
+  }
+}
+
+async function readRecordChanges(
+  client: SQL,
+  identity: TaskIdentity,
+  after: bigint,
+  limit: number,
+) {
+  return client.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`
+    await bindTenant(tx, identity)
+    return readRecordChangesInTransaction(tx, after, limit)
+  })
+}
+
+export const hostedChangeService = { listHostedChanges, readRecordChanges }

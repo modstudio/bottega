@@ -9,8 +9,7 @@ import {
   recordServiceUrl,
 } from '../../shared/record/service-connection.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import { listHostedChanges } from '../src/hosted-changes.ts'
-import { readRecordChanges } from '../src/record-changes.ts'
+import { hostedChangeService, listHostedChanges } from '../src/hosted-changes.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import { listHostedNotes } from '../src/hosted-note-list.ts'
@@ -214,7 +213,7 @@ async function proveRecordChangeOrdering(admin: SQL) {
     const seqB = BigInt(seqBRows[0]!.seq)
     if (seqB <= seqA) throw new Error('later record change did not receive a later sequence')
 
-    const heldRead = await readRecordChanges(actorUrl, identityA, seqA - 1n, 10)
+    const heldRead = await hostedChangeService.readRecordChanges(actorUrl, identityA, seqA - 1n, 10)
     if (
       heldRead.resetRequired ||
       heldRead.changes.length !== 0 ||
@@ -225,14 +224,16 @@ async function proveRecordChangeOrdering(admin: SQL) {
 
     releaseA()
     await transactionA
-    const released = await readRecordChanges(actorUrl, identityA, seqA - 1n, 10)
+    const released = await hostedChangeService.readRecordChanges(actorUrl, identityA, seqA - 1n, 10)
     if (
       released.resetRequired ||
       released.changes.length < 2 ||
       released.changes[0]?.seq !== seqA ||
       released.changes[1]?.seq !== seqB
     )
-      throw new Error('record change prefix did not return interleaved transactions in sequence order')
+      throw new Error(
+        'record change prefix did not return interleaved transactions in sequence order',
+      )
 
     const deleteProject = newRecordId()
     await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
@@ -243,18 +244,35 @@ async function proveRecordChangeOrdering(admin: SQL) {
       await bindTenant(tx, identityB)
       await tx`DELETE FROM project WHERE id=${deleteProject}::uuid`
     })
-    const deleted = await readRecordChanges(actorUrl, identityB, BigInt(inserted[0]!.seq), 10)
+    const deleted = await hostedChangeService.readRecordChanges(
+      actorUrl,
+      identityB,
+      BigInt(inserted[0]!.seq),
+      10,
+    )
     if (deleted.resetRequired || deleted.changes[0]?.op !== 'delete')
       throw new Error('record change reader did not return a delete tombstone')
 
     const moveProject = newRecordId()
     await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
       VALUES (${moveProject}::uuid,${SPACE_B}::uuid,'record-move',ARRAY['RCM'],now())`
-    const beforeMove = await admin<{ seq: string }[]>`SELECT max(seq)::text AS seq FROM record_change
+    const beforeMove = await admin<
+      { seq: string }[]
+    >`SELECT max(seq)::text AS seq FROM record_change
       WHERE table_name='project' AND row_id=${moveProject}::uuid`
     await admin`UPDATE project SET space_id=${SPACE_A}::uuid WHERE id=${moveProject}::uuid`
-    const oldSpace = await readRecordChanges(actorUrl, identityB, BigInt(beforeMove[0]!.seq), 10)
-    const newSpace = await readRecordChanges(actorUrl, identityA, BigInt(beforeMove[0]!.seq), 10)
+    const oldSpace = await hostedChangeService.readRecordChanges(
+      actorUrl,
+      identityB,
+      BigInt(beforeMove[0]!.seq),
+      10,
+    )
+    const newSpace = await hostedChangeService.readRecordChanges(
+      actorUrl,
+      identityA,
+      BigInt(beforeMove[0]!.seq),
+      10,
+    )
     if (oldSpace.resetRequired || oldSpace.changes[0]?.op !== 'delete')
       throw new Error('space move did not write a tombstone for the old space')
     if (newSpace.resetRequired || newSpace.changes[0]?.op !== 'upsert')
@@ -265,7 +283,7 @@ async function proveRecordChangeOrdering(admin: SQL) {
     await admin`SELECT record_change_prune()`
     const horizonRows = await admin<{ seq: string }[]>`SELECT seq::text FROM record_change_horizon`
     const horizon = BigInt(horizonRows[0]!.seq)
-    const reset = await readRecordChanges(actorUrl, identityA, horizon - 1n, 10)
+    const reset = await hostedChangeService.readRecordChanges(actorUrl, identityA, horizon - 1n, 10)
     if (!reset.resetRequired || reset.horizon !== horizon || reset.cursor !== horizon)
       throw new Error('record change pruning did not return the reset horizon')
   } finally {

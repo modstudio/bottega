@@ -196,9 +196,9 @@ test('record change triggers cover every replicated table', async () => {
   expect(triggers.map(({ table_name }) => table_name)).toEqual(
     [...RECORD_CHANGE_REPLICATED_TABLES].toSorted(),
   )
-  expect(triggers.every(({ enabled, trigger_type }) => enabled === 'O' && trigger_type === 29)).toBe(
-    true,
-  )
+  expect(
+    triggers.every(({ enabled, trigger_type }) => enabled === 'O' && trigger_type === 29),
+  ).toBe(true)
 })
 
 test('portable record UUID function orders version-7 UUIDs from distinct timestamps', async () => {

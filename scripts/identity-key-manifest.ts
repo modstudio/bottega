@@ -255,11 +255,13 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'hub_interval.open',
     'run.provisioning_entries_limited',
     'pull_request_ci.complete',
+    'record_change_horizon.singleton',
   ]),
   ...manifest('hosted', 'count, ordinal, version, handle, or measurement', [
     'doc.position',
     'doc_revision.position',
     'hub_change.sequence',
+    'record_change_horizon.seq',
     'routing_evidence_head.sequence',
     'rate_limit.count',
     'rate_limit.last_request',
@@ -462,6 +464,11 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
 ]
 
 const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
+  {
+    store: 'hosted',
+    table: 'record_change',
+    reason: 'global ordered replication-log sequence',
+  },
   {
     store: 'orchestrator',
     table: 'collect_change_counter',
