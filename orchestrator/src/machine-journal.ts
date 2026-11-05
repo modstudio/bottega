@@ -2,8 +2,8 @@
 /** Shapes the store-free release probe consumed by the updater. */
 
 import { z } from 'zod'
-import type { InstallationIdentity } from '../../../shared/install-root.ts'
-import type { MigrationJournalEntry } from '../database/migration-compatibility.ts'
+import type { InstallationIdentity } from '../../shared/install-root.ts'
+import type { MigrationJournalEntry } from './database/migration-compatibility.ts'
 
 export const MACHINE_JOURNAL_SCHEMA_VERSION = 1
 

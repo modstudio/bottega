@@ -5,7 +5,7 @@ import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
 import { migrationJournal } from '../database/migrations.ts'
-import { shapeMachineJournal } from '../machine/machine-journal.ts'
+import { shapeMachineJournal } from '../machine-journal.ts'
 
 const JSON_ONLY_REFUSAL = `machine journal prints JSON only\ncleared by: ${PLATFORM_SLUG} machine journal --json`
 

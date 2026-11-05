@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
-import type { InstallationIdentity } from '../../../shared/install-root.ts'
-import type { MigrationJournalEntry } from '../database/migration-compatibility.ts'
+import { PLATFORM_NAME } from '../../shared/brand.ts'
+import type { InstallationIdentity } from '../../shared/install-root.ts'
+import type { MigrationJournalEntry } from './database/migration-compatibility.ts'
 import {
   MACHINE_JOURNAL_SCHEMA,
   MACHINE_JOURNAL_SCHEMA_VERSION,
