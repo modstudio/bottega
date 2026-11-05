@@ -297,6 +297,8 @@ async function proveHostedRecordChangeFeed(admin: SQL) {
     throw new Error('hosted change feed did not return the note from the second space')
   if (byId.get(hidden)?.op !== 'delete')
     throw new Error('hosted change feed did not hide a non-author note as a delete')
+  await admin`DELETE FROM hub_note WHERE id=ANY(${admin.array([note, hidden], 'uuid')})`
+  await admin`DELETE FROM hub_task WHERE id=${task}::uuid`
 }
 
 type EvidenceChangeCursor = { xid: bigint; seq: bigint }

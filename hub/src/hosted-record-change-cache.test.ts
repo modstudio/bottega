@@ -187,10 +187,12 @@ test('a move out of the pull set applies its old-space delete before skipping th
     conn
       .query('INSERT INTO setting(key,value) VALUES (?,?)')
       .run('collect.hosted-record-changes.cursor', 'before')
-    conn.query('INSERT INTO setting(key,value) VALUES (?,?)').run(
-      'collect.hosted-record-changes.spaces',
-      JSON.stringify({ task: ['space-one'], note: ['space-one'], send: ['space-one'] }),
-    )
+    conn
+      .query('INSERT INTO setting(key,value) VALUES (?,?)')
+      .run(
+        'collect.hosted-record-changes.spaces',
+        JSON.stringify({ task: ['space-one'], note: ['space-one'], send: ['space-one'] }),
+      )
     conn
       .query(
         `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
