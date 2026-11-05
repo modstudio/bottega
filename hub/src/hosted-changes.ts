@@ -226,3 +226,115 @@ export async function listHostedChanges(
     return readHostedChangesInTransaction(tx, identity, input)
   })
 }
+
+type RecordChangeEntry = {
+  xid: bigint
+  seq: bigint
+  table: string
+  rowId: string
+  op: 'upsert' | 'delete'
+  at: string
+}
+
+type RecordChangeLogRow = {
+  xid: string | number | bigint
+  seq: string | number | bigint
+  table_name: string
+  row_id: string
+  op: 'upsert' | 'delete'
+  at: string | Date
+}
+
+const asBigInt = (value: string | number | bigint) => BigInt(value)
+
+export type RecordChangeCursor = { xid: bigint; seq: bigint }
+
+const cursorBefore = (left: RecordChangeCursor, right: RecordChangeCursor) =>
+  left.xid < right.xid || (left.xid === right.xid && left.seq < right.seq)
+
+/**
+ * A machine with no cursor, or one below the pruning horizon, cannot resume: it reloads and then
+ * reads on from the horizon.
+ */
+export function recordChangeResetRequired(
+  after: RecordChangeCursor | null,
+  horizon: RecordChangeCursor,
+): after is null {
+  return after === null || cursorBefore(after, horizon)
+}
+
+/** Shapes a page already restricted to transactions below the snapshot cutoff. */
+export function recordChangePage(
+  after: RecordChangeCursor,
+  candidates: readonly RecordChangeLogRow[],
+) {
+  const changes: RecordChangeEntry[] = candidates.map((row) => ({
+    xid: asBigInt(row.xid),
+    seq: asBigInt(row.seq),
+    table: row.table_name,
+    rowId: row.row_id,
+    op: row.op,
+    at: new Date(row.at).toISOString(),
+  }))
+  const last = changes.at(-1)
+  const cursor = last === undefined ? after : { xid: last.xid, seq: last.seq }
+  return { changes, cursor }
+}
+
+async function recordChangeLag(tx: SQL, cursor: RecordChangeCursor) {
+  const result = rows<{ lag: string | number | bigint }>(
+    await tx`SELECT count(*)::text AS lag
+    FROM record_change
+    WHERE (xid, seq) > (${cursor.xid.toString()}::xid8, ${cursor.seq})`,
+  )[0]!
+  return asBigInt(result.lag)
+}
+
+async function readRecordChangesInTransaction(
+  tx: SQL,
+  after: RecordChangeCursor | null,
+  limit: number,
+) {
+  const metadata = rows<{
+    horizon_xid: string | number | bigint
+    horizon_seq: string | number | bigint
+  }>(
+    await tx`SELECT xid::text AS horizon_xid, seq::text AS horizon_seq
+      FROM record_change_horizon WHERE singleton`,
+  )[0]!
+  const horizon = { xid: asBigInt(metadata.horizon_xid), seq: asBigInt(metadata.horizon_seq) }
+  if (recordChangeResetRequired(after, horizon)) {
+    return {
+      resetRequired: true as const,
+      horizon,
+      cursor: horizon,
+      lag: await recordChangeLag(tx, horizon),
+    }
+  }
+
+  const candidates = rows<RecordChangeLogRow>(
+    await tx`SELECT xid::text, seq::text, table_name, row_id::text, op, at
+    FROM record_change
+    WHERE xid < pg_snapshot_xmin(pg_current_snapshot())
+      AND (xid, seq) > (${after.xid.toString()}::xid8, ${after.seq})
+    ORDER BY record_change.xid, record_change.seq
+    LIMIT ${limit}`,
+  )
+  const page = recordChangePage(after, candidates)
+  return { resetRequired: false as const, ...page, lag: await recordChangeLag(tx, page.cursor) }
+}
+
+async function readRecordChanges(
+  client: SQL,
+  identity: TaskIdentity,
+  after: RecordChangeCursor | null,
+  limit: number,
+) {
+  return client.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`
+    await bindTenant(tx, identity)
+    return readRecordChangesInTransaction(tx, after, limit)
+  })
+}
+
+export const hostedChangeService = { listHostedChanges, readRecordChanges }

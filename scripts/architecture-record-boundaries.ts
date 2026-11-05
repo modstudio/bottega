@@ -267,6 +267,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       '../../../shared/record-remedies.ts',
       '../../../shared/record/schema-auth.ts',
+      '../../../shared/record/service-connection.ts',
       '../mail/email-verification-mailer.ts',
       '../mail/invitation-mailer.ts',
       '../mail/password-reset-mailer.ts',
@@ -716,6 +717,12 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     'shared/record/schema-question.ts',
     ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts', './schema-hub.ts', './schema-run.ts'],
     'Enforce the hosted question schema concern boundary; the hosted question references its task by UUID with ON DELETE SET NULL.',
+  ),
+  boundary(
+    'postgres-schema-record-change-boundary',
+    'shared/record/schema-record-change.ts',
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    'Enforce the hosted record change journal schema concern boundary.',
   ),
   boundary(
     'postgres-schema-snapshots-boundary',

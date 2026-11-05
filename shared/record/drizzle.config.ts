@@ -20,6 +20,7 @@ export default defineConfig({
     './shared/record/schema-workflow-catalogue.ts',
     './shared/record/schema-lens-catalogue.ts',
     './shared/record/schema-port.ts',
+    './shared/record/schema-record-change.ts',
   ],
   out: './shared/record/migrations',
 })

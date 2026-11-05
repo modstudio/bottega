@@ -13,7 +13,10 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
-  module('orchestrator/src/record/record-pool.ts', ['bun']),
+  module('orchestrator/src/record/record-pool.ts', [
+    'bun',
+    '../../../shared/record/service-connection.ts',
+  ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', [
     '../../../shared/install-root.ts',
     '../../../shared/record/migration-session.ts',

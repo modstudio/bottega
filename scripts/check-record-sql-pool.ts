@@ -6,7 +6,7 @@ import { Glob } from 'bun'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const RECORD_POOL_FILE = 'orchestrator/src/record/record-pool.ts'
-const NEW_SQL = /new\s+SQL\s*\(/g
+const NEW_SQL = /new\s+SQL\s*\((?!\s*recordServiceUrl\()/g
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 
 const RECORD_SQL_POOL_EXEMPTIONS = new Map<string, { sites: number; reason: string }>([
@@ -25,10 +25,6 @@ const RECORD_SQL_POOL_EXEMPTIONS = new Map<string, { sites: number; reason: stri
       reason: 'record_move_project_space leaves session-lifetime temp tables on its connection',
     },
   ],
-  [
-    'orchestrator/src/record/record-auth.ts',
-    { sites: 2, reason: 'Better Auth owns its dedicated one-connection clients' },
-  ],
 ])
 
 export type RecordSqlSource = { file: string; source: string }
@@ -42,7 +38,7 @@ export function recordSqlPoolViolations(files: readonly RecordSqlSource[]): stri
     for (const site of sites.slice(exemption?.sites ?? 0)) {
       const line = source.slice(0, site.index).split('\n').length
       violations.push(
-        `${file}:${line}: new SQL() is not allowed here; use recordPool(url) from orchestrator/src/record/record-pool.ts`,
+        `${file}:${line}: new SQL() is not allowed here; use recordPool(url) from orchestrator/src/record/record-pool.ts, or open a dedicated client with new SQL(recordServiceUrl(url)) from shared/record/service-connection.ts`,
       )
     }
   }
@@ -51,7 +47,7 @@ export function recordSqlPoolViolations(files: readonly RecordSqlSource[]): stri
 
 function productionSources(): RecordSqlSource[] {
   const sources: RecordSqlSource[] = []
-  for (const directory of ['orchestrator/src/record', 'orchestrator/src/postgres']) {
+  for (const directory of ['orchestrator/src/record', 'orchestrator/src/postgres', 'hub/src']) {
     for (const relative of new Glob('**/*.ts').scanSync({ cwd: join(ROOT, directory) })) {
       const file = join(directory, relative)
       sources.push({ file, source: readFileSync(join(ROOT, file), 'utf8') })

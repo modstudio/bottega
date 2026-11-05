@@ -9,10 +9,13 @@ import { migrationSessionStatements } from '../../shared/record/migration-sessio
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
 import {
+  hostedChangeService,
   hubChangeReadability,
   laterRowKeys,
   READABLE_HUB_CHANGES,
   readHostedChangesInTransaction,
+  recordChangePage,
+  recordChangeResetRequired,
 } from './hosted-changes.ts'
 
 const migrationsFolder = join(
@@ -93,7 +96,7 @@ async function createDatabase() {
 }
 
 type SqlFragment = { readonly sql: string }
-function pgliteSql(database: PGlite): SQL {
+function pgliteSql(database: Pick<PGlite, 'query'>): SQL {
   const query = async (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
     let statement = strings[0]!
     const parameters: unknown[] = []
@@ -110,6 +113,13 @@ function pgliteSql(database: PGlite): SQL {
   }
   query.unsafe = (sql: string) => ({ sql })
   return query as unknown as SQL
+}
+
+function pgliteClient(database: PGlite): SQL {
+  const client = pgliteSql(database)
+  client.begin = ((work: (tx: SQL) => Promise<unknown>) =>
+    database.transaction((transaction) => work(pgliteSql(transaction)))) as SQL['begin']
+  return client
 }
 
 async function bind(database: PGlite, spaceId: string) {
@@ -131,6 +141,78 @@ beforeAll(async () => {
 })
 afterAll(async () => {
   if (database) await database.close()
+})
+
+test('a first read resets to the horizon, then reads committed tenant changes after it', async () => {
+  await database.exec(`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+    VALUES ('01990000-0000-7000-8000-000000001319','${spaceA}','record-feed',ARRAY['RCF'],now())`)
+  const identity = { userId, spaceId: spaceA }
+  const first = await hostedChangeService.readRecordChanges(
+    pgliteClient(database),
+    identity,
+    null,
+    1,
+  )
+  expect(first.resetRequired).toBe(true)
+  const page = await hostedChangeService.readRecordChanges(
+    pgliteClient(database),
+    identity,
+    first.cursor,
+    1,
+  )
+  expect(page.resetRequired).toBe(false)
+  if (!page.resetRequired) {
+    expect(page.changes).toHaveLength(1)
+    expect(page.cursor).toEqual({ xid: page.changes[0]!.xid, seq: page.changes[0]!.seq })
+  }
+})
+
+test('record change pages follow numeric order across a digit boundary', async () => {
+  await database.exec(`SELECT setval('record_change_seq_seq', 998);
+    BEGIN;
+    INSERT INTO project(id,space_id,name,key_prefixes,created_at) VALUES
+      ('01990000-0000-7000-8000-000000001320','${spaceA}','record-digit-a',ARRAY['RDA'],now()),
+      ('01990000-0000-7000-8000-000000001321','${spaceA}','record-digit-b',ARRAY['RDB'],now());
+    COMMIT;`)
+  const identity = { userId, spaceId: spaceA }
+  const client = pgliteClient(database)
+  let read = await hostedChangeService.readRecordChanges(client, identity, null, 1)
+  const seqs: bigint[] = []
+  for (let page = 0; page < 20; page += 1) {
+    read = await hostedChangeService.readRecordChanges(client, identity, read.cursor, 1)
+    if (read.resetRequired || read.changes.length === 0) break
+    seqs.push(...read.changes.map((change) => change.seq))
+  }
+  expect(seqs).toContain(999n)
+  expect(seqs.indexOf(1000n)).toBe(seqs.indexOf(999n) + 1)
+})
+
+test('a record change reset orders cursors by transaction before sequence', () => {
+  const horizon = { xid: 12n, seq: 20n }
+  expect(recordChangeResetRequired(null, horizon)).toBe(true)
+  expect(recordChangeResetRequired({ xid: 12n, seq: 19n }, horizon)).toBe(true)
+  expect(recordChangeResetRequired({ xid: 11n, seq: 99n }, horizon)).toBe(true)
+  expect(recordChangeResetRequired({ xid: 13n, seq: 1n }, horizon)).toBe(false)
+  expect(recordChangeResetRequired(horizon, horizon)).toBe(false)
+})
+
+test('a record change page advances its pair cursor to the last returned row', () => {
+  const row = (xid: number, seq: number) => ({
+    xid: String(xid),
+    seq: String(seq),
+    table_name: 'project',
+    row_id: `row-${seq}`,
+    op: 'upsert' as const,
+    at: '2026-11-05T00:00:00.000Z',
+  })
+  const after = { xid: 10n, seq: 10n }
+  const page = recordChangePage(after, [row(11, 13), row(12, 12)])
+  expect(page.changes.map((change) => [change.xid, change.seq])).toEqual([
+    [11n, 13n],
+    [12n, 12n],
+  ])
+  expect(page.cursor).toEqual({ xid: 12n, seq: 12n })
+  expect(recordChangePage(after, []).cursor).toBe(after)
 })
 
 test('every logged table is readable or explicitly deferred', () => {

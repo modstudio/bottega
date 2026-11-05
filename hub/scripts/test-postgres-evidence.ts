@@ -3,8 +3,13 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import {
+  RECORD_SERVICE_IDLE_IN_TRANSACTION_TIMEOUT,
+  RECORD_SERVICE_STATEMENT_TIMEOUT,
+  recordServiceUrl,
+} from '../../shared/record/service-connection.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import { listHostedChanges } from '../src/hosted-changes.ts'
+import { hostedChangeService, listHostedChanges } from '../src/hosted-changes.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import { listHostedNotes } from '../src/hosted-note-list.ts'
@@ -58,6 +63,7 @@ const actorDatabaseUrl = process.env.BOTTEGA_RECORD_URL
 if (!adminUrl || !actorDatabaseUrl)
   throw new Error('Postgres evidence proof requires test and actor URLs')
 const actorUrl = new SQL(actorDatabaseUrl)
+const boundedActorUrl = new SQL(recordServiceUrl(actorDatabaseUrl), { max: 1 })
 
 const USER = '01990000-0000-7000-8000-000000000650'
 const SECOND_USER = '01990000-0000-7000-8000-000000000651'
@@ -175,6 +181,251 @@ const pushIntervalDeletes = (
     ids.map((id) => ({ table: 'hub_interval', id, op: 'delete' })),
   )
 
+async function proveRecordChangeRows(admin: SQL, actor: SQL) {
+  const identityA = { userId: USER, spaceId: SPACE_A }
+  const identityB = { userId: USER, spaceId: SPACE_B }
+  const deleteProject = newRecordId()
+  await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+    VALUES (${deleteProject}::uuid,${SPACE_B}::uuid,'record-delete',ARRAY['RCD'],now())`
+  const inserted = await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+    FROM record_change WHERE table_name='project' AND row_id=${deleteProject}::uuid
+    ORDER BY record_change.xid DESC, record_change.seq DESC LIMIT 1`
+  await actor.begin(async (tx) => {
+    await bindTenant(tx, identityB)
+    await tx`DELETE FROM project WHERE id=${deleteProject}::uuid`
+  })
+  const deleted = await hostedChangeService.readRecordChanges(
+    actorUrl,
+    identityB,
+    { xid: BigInt(inserted[0]!.xid), seq: BigInt(inserted[0]!.seq) },
+    10,
+  )
+  if (deleted.resetRequired || deleted.changes[0]?.op !== 'delete')
+    throw new Error('record change reader did not return a delete tombstone')
+
+  const moveProject = newRecordId()
+  await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+    VALUES (${moveProject}::uuid,${SPACE_B}::uuid,'record-move',ARRAY['RCM'],now())`
+  const beforeMove = await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+    FROM record_change WHERE table_name='project' AND row_id=${moveProject}::uuid
+    ORDER BY record_change.xid DESC, record_change.seq DESC LIMIT 1`
+  const beforeMoveCursor = {
+    xid: BigInt(beforeMove[0]!.xid),
+    seq: BigInt(beforeMove[0]!.seq),
+  }
+  await admin`UPDATE project SET space_id=${SPACE_A}::uuid WHERE id=${moveProject}::uuid`
+  const oldSpace = await hostedChangeService.readRecordChanges(
+    actorUrl,
+    identityB,
+    beforeMoveCursor,
+    10,
+  )
+  const newSpace = await hostedChangeService.readRecordChanges(
+    actorUrl,
+    identityA,
+    beforeMoveCursor,
+    10,
+  )
+  if (oldSpace.resetRequired || oldSpace.changes[0]?.op !== 'delete')
+    throw new Error('space move did not write a tombstone for the old space')
+  if (newSpace.resetRequired || newSpace.changes[0]?.op !== 'upsert')
+    throw new Error('space move did not write an upsert for the new space')
+
+  await admin`UPDATE record_change SET at=now()-interval '31 days'
+    WHERE row_id=${moveProject}::uuid`
+  await admin`SELECT record_change_prune()`
+  const horizonRows = await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+    FROM record_change_horizon`
+  const horizon = {
+    xid: BigInt(horizonRows[0]!.xid),
+    seq: BigInt(horizonRows[0]!.seq),
+  }
+  const reset = await hostedChangeService.readRecordChanges(
+    actorUrl,
+    identityA,
+    { xid: horizon.xid, seq: horizon.seq - 1n },
+    10,
+  )
+  if (
+    !reset.resetRequired ||
+    reset.horizon.xid !== horizon.xid ||
+    reset.horizon.seq !== horizon.seq ||
+    reset.cursor.xid !== horizon.xid ||
+    reset.cursor.seq !== horizon.seq
+  )
+    throw new Error('record change pruning did not return the reset horizon')
+}
+
+type EvidenceChangeCursor = { xid: bigint; seq: bigint }
+
+async function latestRecordChange(admin: SQL, rowId?: string): Promise<EvidenceChangeCursor> {
+  const found = rowId
+    ? await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+        FROM record_change WHERE table_name='project' AND row_id=${rowId}::uuid
+        ORDER BY record_change.xid DESC, record_change.seq DESC LIMIT 1`
+    : await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+        FROM record_change WHERE space_id=${SPACE_A}::uuid ORDER BY record_change.xid DESC, record_change.seq DESC LIMIT 1`
+  return { xid: BigInt(found[0]!.xid), seq: BigInt(found[0]!.seq) }
+}
+
+async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB: SQL) {
+  const identityA = { userId: USER, spaceId: SPACE_A }
+  let releaseA: () => void = () => undefined
+  let transactionA: Promise<unknown> | undefined
+  try {
+    const baseline = await latestRecordChange(admin)
+    const heldA = new Promise<void>((resolve) => {
+      releaseA = resolve
+    })
+    let publishA!: (cursor: { xid: bigint; seq: bigint }) => void
+    const cursorA = new Promise<{ xid: bigint; seq: bigint }>((resolve) => {
+      publishA = resolve
+    })
+    transactionA = connectionA.begin(async (tx) => {
+      await bindTenant(tx, identityA)
+      await tx`UPDATE project SET color='#111111' WHERE id=${PROJECT_A}::uuid`
+      publishA(await latestRecordChange(tx, PROJECT_A))
+      await heldA
+    })
+    const changeA = await cursorA
+    await connectionB.begin(async (tx) => {
+      await bindTenant(tx, identityA)
+      await tx`UPDATE project SET color='#222222' WHERE id=${PROJECT_A_OTHER}::uuid`
+    })
+    const changeB = await latestRecordChange(admin, PROJECT_A_OTHER)
+    if (changeB.seq <= changeA.seq)
+      throw new Error('later record change did not receive a later sequence')
+
+    const heldRead = await hostedChangeService.readRecordChanges(actorUrl, identityA, baseline, 10)
+    if (
+      heldRead.resetRequired ||
+      heldRead.changes.length !== 0 ||
+      heldRead.cursor.xid !== baseline.xid ||
+      heldRead.cursor.seq !== baseline.seq ||
+      heldRead.lag !== 1n
+    )
+      throw new Error('open transaction did not hold back later xids and grow count lag')
+
+    releaseA()
+    await transactionA
+    const released = await hostedChangeService.readRecordChanges(actorUrl, identityA, baseline, 10)
+    if (
+      released.resetRequired ||
+      released.changes.length < 2 ||
+      released.changes[0]?.xid !== changeA.xid ||
+      released.changes[0]?.seq !== changeA.seq ||
+      released.changes[1]?.xid !== changeB.xid ||
+      released.changes[1]?.seq !== changeB.seq
+    )
+      throw new Error('record change reader did not return released transactions in xid order')
+    return released.cursor
+  } finally {
+    releaseA()
+    await transactionA?.catch(() => undefined)
+  }
+}
+
+async function proveRecordChangePairCursor(
+  connectionA: SQL,
+  connectionB: SQL,
+  baseline: EvidenceChangeCursor,
+) {
+  const identityA = { userId: USER, spaceId: SPACE_A }
+  let continueX: () => void = () => undefined
+  let releaseY: () => void = () => undefined
+  let transactionX: Promise<unknown> | undefined
+  let transactionY: Promise<unknown> | undefined
+  try {
+    const yMayStart = new Promise<void>((resolve) => {
+      continueX = resolve
+    })
+    let publishXFirst!: (cursor: { xid: bigint; seq: bigint }) => void
+    const xFirst = new Promise<{ xid: bigint; seq: bigint }>((resolve) => {
+      publishXFirst = resolve
+    })
+    transactionX = connectionA.begin(async (tx) => {
+      await bindTenant(tx, identityA)
+      await tx`UPDATE project SET color='#333333' WHERE id=${PROJECT_A}::uuid`
+      publishXFirst(await latestRecordChange(tx, PROJECT_A))
+      await yMayStart
+      await tx`UPDATE project SET color='#444444' WHERE id=${PROJECT_A}::uuid`
+    })
+    const firstX = await xFirst
+
+    const heldY = new Promise<void>((resolve) => {
+      releaseY = resolve
+    })
+    let publishY!: (cursor: { xid: bigint; seq: bigint }) => void
+    const cursorY = new Promise<{ xid: bigint; seq: bigint }>((resolve) => {
+      publishY = resolve
+    })
+    transactionY = connectionB.begin(async (tx) => {
+      await bindTenant(tx, identityA)
+      await tx`UPDATE project SET color='#555555' WHERE id=${PROJECT_A_OTHER}::uuid`
+      publishY(await latestRecordChange(tx, PROJECT_A_OTHER))
+      await heldY
+    })
+    const changeY = await cursorY
+    continueX()
+    await transactionX
+
+    const whileYOpen = await hostedChangeService.readRecordChanges(
+      actorUrl,
+      identityA,
+      baseline,
+      10,
+    )
+    if (
+      whileYOpen.resetRequired ||
+      whileYOpen.changes.length !== 2 ||
+      whileYOpen.changes.some((change) => change.xid !== firstX.xid) ||
+      whileYOpen.cursor.xid !== firstX.xid ||
+      whileYOpen.cursor.seq <= changeY.seq ||
+      whileYOpen.lag !== 0n
+    )
+      throw new Error(
+        `older transaction changes were not readable while the younger xid stayed open: ${
+          whileYOpen.resetRequired
+            ? 'reset'
+            : `${whileYOpen.changes.length} changes, cursor ${whileYOpen.cursor.xid}:${whileYOpen.cursor.seq}, lag ${whileYOpen.lag}, younger ${changeY.xid}:${changeY.seq}`
+        }`,
+      )
+
+    releaseY()
+    await transactionY
+    const afterYCommit = await hostedChangeService.readRecordChanges(
+      actorUrl,
+      identityA,
+      whileYOpen.cursor,
+      10,
+    )
+    if (
+      afterYCommit.resetRequired ||
+      afterYCommit.changes.length !== 1 ||
+      afterYCommit.changes[0]?.xid !== changeY.xid ||
+      afterYCommit.changes[0]?.seq !== changeY.seq
+    )
+      throw new Error('pair cursor skipped the younger xid with an earlier sequence')
+  } finally {
+    continueX()
+    releaseY()
+    await Promise.allSettled([transactionX, transactionY].filter(Boolean) as Promise<unknown>[])
+  }
+}
+
+async function proveRecordChangeOrdering(admin: SQL) {
+  const connectionA = new SQL(actorDatabaseUrl!, { max: 1 })
+  const connectionB = new SQL(actorDatabaseUrl!, { max: 1 })
+  try {
+    const baseline = await proveRecordChangeCutoff(admin, connectionA, connectionB)
+    await proveRecordChangePairCursor(connectionA, connectionB, baseline)
+    await proveRecordChangeRows(admin, connectionB)
+  } finally {
+    await connectionA.close()
+    await connectionB.close()
+  }
+}
+
 const admin = new SQL(adminUrl)
 try {
   await admin`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
@@ -202,6 +453,19 @@ try {
       (${newRecordId()}::uuid,${SPACE_A}::uuid,${OWNER_USER}::uuid,'owner','write',now())`
   await admin`INSERT INTO machine(id,user_id,name,registered_at,last_seen)
     VALUES (${MACHINE}::uuid,${USER}::uuid,'evidence-machine',now(),now())`
+
+  const statementTimeout = await boundedActorUrl<{ statement_timeout: string }[]>`
+    SHOW statement_timeout`
+  const idleTimeout = await boundedActorUrl<{ idle_in_transaction_session_timeout: string }[]>`
+    SHOW idle_in_transaction_session_timeout`
+  if (
+    statementTimeout[0]?.statement_timeout !== RECORD_SERVICE_STATEMENT_TIMEOUT ||
+    idleTimeout[0]?.idle_in_transaction_session_timeout !==
+      RECORD_SERVICE_IDLE_IN_TRANSACTION_TIMEOUT
+  )
+    throw new Error('hosted service pool did not apply both record transaction bounds')
+
+  await proveRecordChangeOrdering(admin)
 
   const intakeId = newRecordId()
   const outsideTokens = new Map([
@@ -2250,6 +2514,7 @@ try {
   await admin`DELETE FROM operator_waiting_email WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
+  await admin`DELETE FROM record_change WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM hub_change WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
@@ -2257,4 +2522,5 @@ try {
   await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid, ${READ_USER}::uuid,
     ${OUTSIDE_USER}::uuid, ${OTHER_OUTSIDE_USER}::uuid, ${OWNER_USER}::uuid)`
   await admin.close()
+  await boundedActorUrl.close()
 }

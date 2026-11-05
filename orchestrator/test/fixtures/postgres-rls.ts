@@ -23,6 +23,7 @@ export const postgresSchema =
     'schema-workflow-catalogue.ts',
     'schema-lens-catalogue.ts',
     'schema-port.ts',
+    'schema-record-change.ts',
   ]
     .map((file) => readFileSync(join(recordFolder, file), 'utf8'))
     .join('\n') + readFileSync(join(recordFolder, 'schema-docs.ts'), 'utf8')

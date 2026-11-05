@@ -3,6 +3,7 @@
 // concern: hosted-report-delivery-cli
 
 import { SQL } from 'bun'
+import { recordServiceUrl } from '../../shared/record/service-connection.ts'
 import { pruneHostedChanges } from './change-pruning.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { runReportDeliveryPass } from './report-delivery.ts'
@@ -20,7 +21,7 @@ type DeliveryResult = {
 export async function runScheduledReportDelivery(input: {
   deliveryEnabled: boolean
   dryRun: boolean
-  prune(): Promise<number>
+  prune(): Promise<{ hub: number; record: number }>
   deliver(): Promise<DeliveryResult>
   print(line: string): void
   printError(line: string): void
@@ -30,7 +31,9 @@ export async function runScheduledReportDelivery(input: {
   } else {
     try {
       const deleted = await input.prune()
-      input.print(`change log pruning: ${deleted} deleted`)
+      input.print(
+        `change log pruning: ${deleted.hub} hub changes, ${deleted.record} record changes deleted`,
+      )
     } catch (cause) {
       input.printError(`change log pruning failed: ${String(cause)}`)
     }
@@ -54,7 +57,7 @@ export async function runReportDeliveryCommand(
 ) {
   const databaseUrl = environment.BOTTEGA_RECORD_DATABASE_URL
   if (!databaseUrl) throw new Error('BOTTEGA_RECORD_DATABASE_URL is required')
-  const database = new SQL(databaseUrl)
+  const database = new SQL(recordServiceUrl(databaseUrl))
   try {
     return await runScheduledReportDelivery({
       deliveryEnabled: environment.BOTTEGA_REPORT_DELIVERY_ENABLED === 'true',

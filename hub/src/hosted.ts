@@ -5,6 +5,7 @@ import { SQL } from 'bun'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
 import { resolveInstallRoot } from '../../shared/install-root.ts'
+import { recordServiceUrl } from '../../shared/record/service-connection.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
@@ -94,7 +95,7 @@ export function hostedRequestHandler(
 
 function startHostedServer(environment: ServerEnvironment = process.env) {
   const config = hostedServerConfig(environment)
-  const recordDatabase = new SQL(config.recordDatabaseUrl)
+  const recordDatabase = new SQL(recordServiceUrl(config.recordDatabaseUrl))
   const routeConfig = { recordApiUrl: config.recordApiUrl, recordDatabaseUrl: recordDatabase }
   const fetch = hostedRequestHandler(routeConfig)
   const server = Bun.serve({

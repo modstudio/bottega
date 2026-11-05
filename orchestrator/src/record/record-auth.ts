@@ -15,6 +15,7 @@ import {
   session,
   verification,
 } from '../../../shared/record/schema-auth.ts'
+import { recordServiceUrl } from '../../../shared/record/service-connection.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendEmailVerificationEmail } from '../mail/email-verification-mailer.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
@@ -31,9 +32,15 @@ export const RECORD_SIGN_UP_INVITATION_REQUIRED = `Record sign-up is by invitati
 type RecordAuthEnvironment = Record<string, string | undefined>
 
 function recordAuthClients(url: string, authDatabaseUrl: string | undefined) {
-  const client = new SQL(url, { max: 1, idleTimeout: RECORD_POOL_IDLE_TIMEOUT_SECONDS })
+  const client = new SQL(recordServiceUrl(url), {
+    max: 1,
+    idleTimeout: RECORD_POOL_IDLE_TIMEOUT_SECONDS,
+  })
   const authClient = authDatabaseUrl
-    ? new SQL(authDatabaseUrl, { max: 1, idleTimeout: RECORD_POOL_IDLE_TIMEOUT_SECONDS })
+    ? new SQL(recordServiceUrl(authDatabaseUrl), {
+        max: 1,
+        idleTimeout: RECORD_POOL_IDLE_TIMEOUT_SECONDS,
+      })
     : client
   return { client, authClient }
 }
