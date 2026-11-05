@@ -764,9 +764,44 @@ function recordPublicDocsClient(options: RecordClientOptions) {
   }
 }
 
+function recordDocReadClient(options: RecordClientOptions) {
+  const destination = (spaceId?: string) =>
+    spaceId ? { headers: { 'x-record-space': spaceId } } : undefined
+  return {
+    docs: (input: RecordDocListInput = {}, spaceId?: string) =>
+      request(
+        options,
+        query('/v1/docs', {
+          scope: input.scope,
+          subject: input.subject,
+          audience: input.audience,
+          status: input.status,
+          kind: input.kind,
+          limit: input.limit,
+          cursor: input.cursor,
+          acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
+        }),
+        docsSchema,
+        destination(spaceId),
+      ),
+    doc: (id: string, audience?: DocAudience, spaceId?: string) =>
+      request(options, query(`/v1/docs/${encodeURIComponent(id)}`, { audience }), docSchema, {
+        headers: destination(spaceId)?.headers,
+      }),
+    docRevisions: (id: string, audience?: DocAudience, spaceId?: string) =>
+      request(
+        options,
+        query(`/v1/docs/${encodeURIComponent(id)}/revisions`, { audience }),
+        docRevisionsSchema,
+        destination(spaceId),
+      ),
+  }
+}
+
 export function createRecordClient(options: RecordClientOptions) {
   return {
     ...recordPublicDocsClient(options),
+    ...recordDocReadClient(options),
     whoami: () => request(options, '/v1/whoami', whoamiSchema),
     setActiveSpace: (spaceId: string) =>
       request(options, '/v1/active-space', z.object({ activeSpaceId: z.string() }), {
@@ -878,30 +913,7 @@ export function createRecordClient(options: RecordClientOptions) {
           body: JSON.stringify({}),
         },
       ),
-    docs: (input: RecordDocListInput = {}) =>
-      request(
-        options,
-        query('/v1/docs', {
-          scope: input.scope,
-          subject: input.subject,
-          audience: input.audience,
-          status: input.status,
-          kind: input.kind,
-          limit: input.limit,
-          cursor: input.cursor,
-          acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
-        }),
-        docsSchema,
-      ),
-    doc: (id: string, audience?: DocAudience) =>
-      request(options, query(`/v1/docs/${encodeURIComponent(id)}`, { audience }), docSchema),
     docSearch: (input: RecordDocSearchInput) => recordDocSearch(options, input),
-    docRevisions: (id: string, audience?: DocAudience) =>
-      request(
-        options,
-        query(`/v1/docs/${encodeURIComponent(id)}/revisions`, { audience }),
-        docRevisionsSchema,
-      ),
     subjects: (input: { project: string; includeRetired?: boolean }, destinationSpaceId: string) =>
       recordSubjects(options, input, destinationSpaceId),
     putDoc: (input: RecordPutDocInput, destinationSpaceId?: string) =>

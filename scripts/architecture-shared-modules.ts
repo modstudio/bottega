@@ -26,6 +26,7 @@ export const sharedModules: ArchitectureModule[] = [
   ]),
   module('shared/env-values.ts', ['node:fs', 'node:util', './config-directory.ts']),
   module('shared/record-client-addresses.ts', []),
+  module('shared/personal-item-space.ts', []),
   module('shared/outside-write-adapter.ts', [
     'bun',
     './outside-write-decision.ts',

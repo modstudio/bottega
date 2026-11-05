@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -22,19 +23,30 @@ import {
   recordDocImportSchema,
   recordDocUpsertSchema,
 } from './record-api-doc-schemas.ts'
+import { recordDocumentScopes } from './record-api-doc-tenant.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
-import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
+import { registerRecordReadRoutes } from './record-api-read-routes.ts'
+import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import {
   type RecordSessionRouteDeps,
   registerRecordSessionRoutes,
 } from './record-api-session-routes.ts'
 import type { RecordSettingsRouteDeps } from './record-api-settings.ts'
-import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
-import { base64urlSchema, decoded, encoded, idSchema, keyIdSchema } from './record-api-wire.ts'
+import type { RecordSubjectRouteDeps } from './record-api-subjects.ts'
+import { requestTenant } from './record-api-tenant.ts'
+import {
+  base64urlSchema,
+  decoded,
+  encoded,
+  idSchema,
+  inputConfigWrap,
+  jsonConfigWrap,
+  keyIdSchema,
+} from './record-api-wire.ts'
 import {
   type RecordWorkflowRouteDeps,
   registerRecordWorkflowRoutes,
@@ -47,6 +59,7 @@ import type {
   ConfigScope,
   ConfigSecret,
   ConfigSecretMetadata,
+  ConfigTenant,
   ConfigWrapInput,
   DataKey,
   MachineKey,
@@ -86,7 +99,7 @@ import type { RecordScore } from './record-verdicts.ts'
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
-type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordLensRouteDeps &
@@ -284,18 +297,20 @@ const registerRecordIdentityRoutes = (app: Hono<ApiEnvironment>, deps: Deps) => 
   registerRecordChangeRoute(app, deps)
 }
 
-const jsonWrap = (wrap: ConfigWrapInput) => ({
-  ...wrap,
-  enc: encoded(wrap.enc),
-  ciphertext: encoded(wrap.ciphertext),
-})
-const inputWrap = (wrap: z.infer<typeof wrapSchema>): ConfigWrapInput => ({
-  ...wrap,
-  enc: decoded(wrap.enc),
-  ciphertext: decoded(wrap.ciphertext),
-})
 const configAddress = z.object({ environment: z.string().min(1), scope: configScopeSchema })
 const configList = z.object({ environment: z.string().min(1).optional() })
+const docTarget = (scope: string, subject: string | null, ownerUserId: string | null) =>
+  ({ kind: 'document', scope, subject, ownerUserId }) as const
+const personalListTarget = (
+  scope: string | undefined,
+  subject: string | null | undefined,
+  userId: string,
+) =>
+  scope !== undefined &&
+  subject !== undefined &&
+  isPersonalItem(userId, docTarget(scope, subject, userId))
+    ? docTarget(scope, subject, userId)
+    : null
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
@@ -344,24 +359,11 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   })
   const scope = (context: Context<ApiEnvironment>): Tenant | null => {
     const identity = context.get('identity') as RecordIdentity
-    if (!identity.activeSpaceId) return null
-    const memberships = identity.memberships.map((row) => String(row.space_id))
-    const destinationSpaceId = context.get('destinationSpaceId')
-    return {
-      url: deps.recordUrl,
-      userId: identity.user.id,
-      spaceId: destinationSpaceId ?? identity.activeSpaceId,
-      spaceIds:
-        destinationSpaceId != null
-          ? [destinationSpaceId]
-          : identity.activeSpaceId === identity.personalSpaceId
-            ? memberships
-            : [identity.activeSpaceId],
-    }
+    return requestTenant(identity, context.get('destinationSpaceId'), deps.recordUrl)
   }
+  const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })
-  registerRecordSubjectRoutes(app, deps, { scope, noSpace })
-  registerRecordReleaseRoutes(app, deps, { scope, noSpace })
+  registerRecordReadRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
     const tenant = scope(context)
     if (!tenant) return noSpace(context)
@@ -451,7 +453,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (refusal) return refusal
     throw error
   }
-  registerRecordWriteRoutes(app, deps, { scope, noSpace, writeError })
+  registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, writeError })
   for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
   const configBody = z.object({
     environment: z.string().min(1),
@@ -592,7 +594,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!query.success) return context.json({ error: 'invalid recipient key id' }, 422)
     const item = await deps.currentDataKey({ ...active, ...query.data })
     return item
-      ? context.json({ ...item, wraps: item.wraps.map(jsonWrap) })
+      ? context.json({ ...item, wraps: item.wraps.map(jsonConfigWrap) })
       : context.json({ error: 'data key not found' }, 404)
   })
   app.get('/v1/config/data-keys', async (context) => {
@@ -609,7 +611,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       return context.json({ error: 'invalid data key address' }, 422)
     const item = await deps.getDataKey({ ...active, dekId: dekId.data, ...query.data })
     return item
-      ? context.json({ ...item, wraps: item.wraps.map(jsonWrap) })
+      ? context.json({ ...item, wraps: item.wraps.map(jsonConfigWrap) })
       : context.json({ error: 'data key not found' }, 404)
   })
   app.post('/v1/config/data-keys', async (context) => {
@@ -629,7 +631,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
           ...active,
           dekId: body.data.dekId,
           version: body.data.version,
-          wraps: body.data.wraps.map(inputWrap),
+          wraps: body.data.wraps.map(inputConfigWrap),
         }),
       )
     } catch (error) {
@@ -649,7 +651,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       await deps.addDataKeyWraps({
         ...active,
         dekId: dekId.data,
-        wraps: body.data.wraps.map(inputWrap),
+        wraps: body.data.wraps.map(inputConfigWrap),
       })
       return context.json({ added: body.data.wraps.length })
     } catch (error) {
@@ -727,8 +729,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   app.get('/v1/docs', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const query = z
       .object({
         scope: filterSchema,
@@ -750,6 +750,14 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       })
       .safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid doc list query' }, 400)
+    const subject = query.data.subject === undefined ? undefined : query.data.subject || null
+    const listTarget = personalListTarget(
+      query.data.scope,
+      subject,
+      context.get('identity').user.id,
+    )
+    const tenant = listTarget ? docScope(context, listTarget) : scope(context)
+    if (!tenant) return noSpace(context)
     let cursor: RecordCursor | null = null
     try {
       cursor = query.data.cursor ? decodeRecordCursor(query.data.cursor) : null
@@ -759,7 +767,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const items = await deps.listDocs({
       ...tenant,
       scope: query.data.scope,
-      subject: query.data.subject === undefined ? undefined : query.data.subject || null,
+      subject,
       audience: query.data.audience,
       status: query.data.status,
       kind: query.data.kind,
@@ -771,28 +779,21 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     })
     return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
   })
-  app.get('/v1/docs/counts', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
-    const docs = await deps.countDocs(tenant)
-    const scores = await deps.countScores(tenant)
-    return context.json({ ...docs, ...scores })
-  })
   app.get('/v1/docs/:id', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const tenant = await docIdScope(context, id.data)
+    if (!tenant) return noSpace(context)
     const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
     if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
     const doc = await deps.readDoc({ ...tenant, id: id.data, audience: audience.data })
     return doc ? context.json(doc) : context.json({ error: 'doc not found' }, 404)
   })
   app.get('/v1/docs/:id/revisions', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const tenant = await docIdScope(context, id.data)
+    if (!tenant) return noSpace(context)
     const audience = z.enum(DOC_AUDIENCES).optional().safeParse(context.req.query('audience'))
     if (!audience.success) return context.json({ error: 'invalid doc audience' }, 400)
     try {
@@ -807,10 +808,13 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   app.put('/v1/docs', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
+    const tenant = docScope(
+      context,
+      docTarget(body.data.scope, body.data.subject, body.data.owner ?? null),
+    )
+    if (!tenant) return noSpace(context)
     try {
       return context.json(await hostedDocUpsert(tenant, body.data, context.get('identity'), deps))
     } catch (error) {
@@ -818,10 +822,13 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   app.post('/v1/docs/import', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const body = recordDocImportSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc import' }, 400)
+    const tenant = docScope(
+      context,
+      docTarget(body.data.doc.scope, body.data.doc.subject, body.data.doc.owner ?? null),
+    )
+    if (!tenant) return noSpace(context)
     try {
       return context.json(await deps.importDoc({ ...tenant, ...body.data }))
     } catch (error) {
@@ -829,10 +836,17 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   app.post('/v1/docs/canon/import', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const body = recordCanonImportSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid canon import' }, 400)
+    const tenant = docScope(
+      context,
+      docTarget(
+        'canon',
+        body.data.address.kind === 'user' ? null : body.data.address.subject,
+        body.data.address.kind === 'user' ? context.get('identity').user.id : null,
+      ),
+    )
+    if (!tenant) return noSpace(context)
     try {
       return context.json(await deps.importCanon({ ...tenant, ...body.data }))
     } catch (error) {
@@ -840,10 +854,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   app.delete('/v1/docs/:id', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const tenant = await docIdScope(context, id.data)
+    if (!tenant) return noSpace(context)
     const body = docWriteContextSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc delete' }, 400)
     try {
@@ -853,10 +867,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   app.post('/v1/docs/:id/consume', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const tenant = await docIdScope(context, id.data)
+    if (!tenant) return noSpace(context)
     const body = docWriteContextSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc consume' }, 400)
     try {
@@ -866,10 +880,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     }
   })
   app.post('/v1/docs/:id/restore', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
     const id = idSchema.safeParse(context.req.param('id'))
     if (!id.success) return context.json({ error: 'doc id must be a uuid' }, 400)
+    const tenant = await docIdScope(context, id.data)
+    if (!tenant) return noSpace(context)
     const body = docWriteContextSchema
       .extend({
         revisionId: z.string().uuid(),
@@ -878,23 +892,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!body.success) return context.json({ error: 'invalid doc restore' }, 400)
     try {
       return context.json(await deps.restoreDoc({ ...tenant, id: id.data, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.post('/v1/docs/rename-subject', async (context) => {
-    const tenant = scope(context)
-    if (!tenant) return noSpace(context)
-    const body = z
-      .object({
-        from: z.string().min(1),
-        to: z.string().min(1),
-        count: z.number().int().nonnegative(),
-      })
-      .safeParse(await context.req.json().catch(() => null))
-    if (!body.success) return context.json({ error: 'invalid subject rename' }, 400)
-    try {
-      return context.json(await deps.renameDocSubject({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
     }

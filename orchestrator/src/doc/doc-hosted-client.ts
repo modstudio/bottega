@@ -1,8 +1,13 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
+import { isPersonalItem, resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
 import { projectRowByName } from '../project/projects.ts'
-import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import {
+  type RecordApiClient,
+  RecordApiRequestError,
+  recordApiClient,
+} from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 
@@ -37,7 +42,22 @@ export async function hostedDocClient(
           client,
         ),
       }
-    : undefined
+    : await (async () => {
+        const identity = await client.whoami()
+        const target = { kind: 'document', scope, subject, ownerUserId: identity.user.id } as const
+        const spaceId = resolvePersonalItemSpace(
+          {
+            userId: identity.user.id,
+            activeSpaceId: identity.activeSpaceId,
+            personalSpaceId: identity.personalSpaceId,
+          },
+          target,
+        )
+        if (!spaceId && isPersonalItem(identity.user.id, target)) {
+          throw new RecordApiRequestError('personal space is not provisioned', 'refused', 409)
+        }
+        return spaceId ? { destinationSpaceId: spaceId } : undefined
+      })()
   return {
     listDocs: (query) => client.listDocs(query, destination),
     getDoc: (id) => client.getDoc(id, destination),

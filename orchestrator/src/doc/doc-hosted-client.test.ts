@@ -153,6 +153,61 @@ test('a project-addressed document client binds every call to the declared space
   expect(destinations).toEqual(Array.from({ length: 12 }, () => 'docs-space'))
 })
 
+test('a non-project document client binds every call to the personal space', async () => {
+  const destinations: Array<string | undefined> = []
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'organization-space',
+      personalSpaceId: 'personal-space',
+      memberships: [],
+    }),
+    listDocs: async (_query, destination) => {
+      destinations.push(destination?.destinationSpaceId)
+      return { items: [], nextCursor: null }
+    },
+    upsertDoc: async (_input, destination) => {
+      destinations.push(destination?.destinationSpaceId)
+      return { id: 'doc', revisionId: 'rev' }
+    },
+  })
+  const client = await hostedDocClient('settings', null)
+  await client.listDocs({})
+  await client.upsertDoc({
+    scope: 'settings',
+    subject: null,
+    owner: 'user-a',
+    slug: 'settings',
+    title: 'Settings',
+    body: '{}',
+    delivery: 'demand',
+    audiences: ['technical'],
+    position: 0,
+    reason: 'test',
+    author: 'user-a',
+  })
+  expect(destinations).toEqual(['personal-space', 'personal-space'])
+})
+
+test('a personal document client refuses when no personal space is provisioned', async () => {
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'organization-space',
+      personalSpaceId: null,
+      memberships: [],
+    }),
+  })
+  await expect(hostedDocClient('canon', null)).rejects.toMatchObject({
+    message: 'personal space is not provisioned',
+    status: 409,
+  })
+})
+
 test('a retired project still supplies its declared document destination', async () => {
   upsertProject({
     recordId: newRecordId(),

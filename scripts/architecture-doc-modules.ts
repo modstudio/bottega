@@ -102,6 +102,7 @@ export const docModules: DocModule[] = [
     '../../../shared/record-id.ts',
   ]),
   module('orchestrator/src/doc/doc-hosted-client.ts', [
+    '../../../shared/personal-item-space.ts',
     '../project/projects.ts',
     '../record/record-api-client.ts',
     '../record/record-project-destination-client.ts',

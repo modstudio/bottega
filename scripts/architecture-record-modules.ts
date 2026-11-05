@@ -775,22 +775,10 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-doc-order.ts', [
     'hono',
+    '../../../shared/personal-item-space.ts',
     './record-api-doc-schemas.ts',
     './record-auth.ts',
     './record-docs.ts',
-  ]),
-  module('orchestrator/src/record/record-api-write-routes.ts', [
-    'hono',
-    './record-api-board.ts',
-    './record-api-config-access-routes.ts',
-    './record-api-doc-order.ts',
-    './record-api-machine-key-claim-routes.ts',
-    './record-api-moderation-routes.ts',
-    './record-api-outside-block-routes.ts',
-    './record-api-outside-intake-routes.ts',
-    './record-api-projects.ts',
-    './record-api-settings.ts',
-    './record-auth.ts',
   ]),
   module('orchestrator/src/record/record-api-config-access-routes.ts', [
     'hono',
@@ -872,6 +860,7 @@ export const recordModules: RecordModule[] = [
     './record-settings.ts',
   ]),
   module('orchestrator/src/record/record-settings.ts', [
+    '../../../shared/personal-item-space.ts',
     '../doc/doc-write-allowed.ts',
     '../settings/settings.ts',
     '../settings/settings-auto-mode.ts',
