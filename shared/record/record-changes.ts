@@ -59,7 +59,7 @@ export function decodeRecordChangeCursor(value: string): RecordChangeCursor {
 export function recordChangeResetRequired(
   after: RecordChangeCursor | null,
   horizon: RecordChangeCursor,
-): after is null {
+): boolean {
   return after === null || before(after, horizon)
 }
 
@@ -105,7 +105,7 @@ async function readRecordChangesInTransaction(
       FROM record_change_horizon WHERE singleton`,
   )[0]!
   const horizon = { xid: asBigInt(metadata.horizon_xid), seq: asBigInt(metadata.horizon_seq) }
-  if (recordChangeResetRequired(after, horizon))
+  if (after === null || recordChangeResetRequired(after, horizon))
     return {
       resetRequired: true as const,
       horizon,
@@ -143,7 +143,7 @@ async function readRecordChangesInTransaction(
   }
 }
 
-type RecordChangeReadPage = Awaited<ReturnType<typeof readRecordChangesInTransaction>>
+export type RecordChangeReadPage = Awaited<ReturnType<typeof readRecordChangesInTransaction>>
 
 export function readRecordChanges(
   client: SQL,

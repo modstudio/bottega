@@ -4,6 +4,7 @@ import type { SQL } from 'bun'
 import {
   type RecordChangeCursor,
   type RecordChangeEntry,
+  type RecordChangeReadPage,
   readRecordChanges,
 } from '../../../shared/record/record-changes.ts'
 import type { TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -40,17 +41,17 @@ const RECORD_CHANGE_LOG_TABLES = [
   'run',
 ] as const
 
-type MaterializedChange = {
+type MaterializedRecordChange = {
   table: RecordChangeServedTable
   id: string
   space: string
   op: 'upsert' | 'delete'
   row?: unknown
 }
-type FamilyKey = Omit<MaterializedChange, 'row'> & { position: number }
-function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
-  const keyed = new Map<string, FamilyKey>()
-  const keep = (key: FamilyKey) => keyed.set(`${key.table}:${key.id}`, key)
+export type RecordChangeFamilyKey = Omit<MaterializedRecordChange, 'row'> & { position: number }
+export function familyKeys(changes: readonly RecordChangeEntry[]): RecordChangeFamilyKey[] {
+  const keyed = new Map<string, RecordChangeFamilyKey>()
+  const keep = (key: RecordChangeFamilyKey) => keyed.set(`${key.table}:${key.id}`, key)
   for (const [position, change] of changes.entries()) {
     if (change.table === 'run') {
       keep({
@@ -94,7 +95,10 @@ function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
   return [...keyed.values()].sort((left, right) => left.position - right.position)
 }
 
-async function rowsByFamily(tx: SQL, keys: readonly FamilyKey[]): Promise<Map<string, unknown>> {
+async function rowsByFamily(
+  tx: SQL,
+  keys: readonly RecordChangeFamilyKey[],
+): Promise<Map<string, unknown>> {
   const result = new Map<string, unknown>()
   const ids = (table: RecordChangeServedTable) => [
     ...new Set(
@@ -152,6 +156,26 @@ async function rowsByFamily(tx: SQL, keys: readonly FamilyKey[]): Promise<Map<st
   return result
 }
 
+export async function materializeRecordChangePage(
+  tx: SQL,
+  page: Exclude<RecordChangeReadPage, { resetRequired: true }>,
+) {
+  const keys = familyKeys(page.changes)
+  const materialized = await rowsByFamily(tx, keys)
+  const changes: MaterializedRecordChange[] = []
+  for (const key of keys) {
+    const row = materialized.get(`${key.table}:${key.id}`)
+    const base = {
+      table: key.table,
+      id: key.id,
+      space: key.space,
+      op: row ? ('upsert' as const) : ('delete' as const),
+    }
+    changes.push(row === undefined ? base : { ...base, row })
+  }
+  return { ...page, changes }
+}
+
 export async function readRecordChangeFeed(
   input: { url: string } & TenantPrincipal & { after: RecordChangeCursor | null; limit: number },
 ) {
@@ -163,20 +187,9 @@ export async function readRecordChangeFeed(
     RECORD_CHANGE_LOG_TABLES,
     async (tx, page) => {
       if (page.resetRequired) return page
-      const keys = familyKeys(page.changes)
-      const materialized = await rowsByFamily(tx, keys)
-      const changes: MaterializedChange[] = []
-      for (const key of keys) {
-        const row = materialized.get(`${key.table}:${key.id}`)
-        const base = {
-          table: key.table,
-          id: key.id,
-          space: key.space,
-          op: row ? ('upsert' as const) : ('delete' as const),
-        }
-        changes.push(row === undefined ? base : { ...base, row })
-      }
-      return { ...page, changes }
+      return materializeRecordChangePage(tx, page)
     },
   )
 }
+
+export type RecordChangeFeedResult = Awaited<ReturnType<typeof readRecordChangeFeed>>

@@ -9,20 +9,11 @@ import {
   type RecordChangeCursor,
 } from '../../../shared/record/record-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { RECORD_CHANGE_SERVED_TABLES } from './record-change-feed.ts'
+import { RECORD_CHANGE_SERVED_TABLES, type RecordChangeFeedResult } from './record-change-feed.ts'
 
 const MAX_RECORD_CHANGE_WAIT_SECONDS = 30
 
 type Environment = { Variables: { identity: RecordIdentity } }
-type ReadResult =
-  | { resetRequired: true; cursor: RecordChangeCursor; lag: number }
-  | {
-      resetRequired: false
-      cursor: RecordChangeCursor
-      lag: number
-      more: boolean
-      changes: unknown[]
-    }
 export type RecordChangeRouteDeps = {
   readChanges(input: {
     userId: string
@@ -30,7 +21,7 @@ export type RecordChangeRouteDeps = {
     spaceIds: string[]
     after: RecordChangeCursor | null
     limit: number
-  }): Promise<ReadResult>
+  }): Promise<RecordChangeFeedResult>
   waitForRecordChange(milliseconds: number, signal?: AbortSignal): Promise<void>
 }
 const integer = (maximum: number) => z.coerce.number().int().min(0).max(maximum)

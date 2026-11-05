@@ -31,7 +31,9 @@ function app(deps: Partial<RecordChangeRouteDeps>) {
 }
 
 test('record changes reset without a cursor and reject a malformed cursor', async () => {
-  const reset = app({ readChanges: async () => ({ resetRequired: true, cursor, lag: 0 }) })
+  const reset = app({
+    readChanges: async () => ({ resetRequired: true, horizon: cursor, cursor, lag: 0 }),
+  })
   const response = await reset.request('/v1/changes')
   expect(response.status).toBe(410)
   expect(await response.json()).toMatchObject({

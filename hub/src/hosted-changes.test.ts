@@ -9,7 +9,7 @@ import { migrationSessionStatements } from '../../shared/record/migration-sessio
 import { readRecordChanges } from '../../shared/record/record-changes.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
-import { RECORD_CHANGE_REPLICATED_TABLES } from '../../shared/record/schema-record-change.ts'
+import { RECORD_CHANGE_LOGGED_TABLES } from '../../shared/record/schema-record-change.ts'
 import {
   hubChangeReadability,
   laterRowKeys,
@@ -151,7 +151,7 @@ test('a first read resets to the horizon, then reads committed tenant changes af
     identity,
     null,
     1,
-    RECORD_CHANGE_REPLICATED_TABLES,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   expect(first.resetRequired).toBe(true)
   const page = await readRecordChanges(
@@ -159,7 +159,7 @@ test('a first read resets to the horizon, then reads committed tenant changes af
     identity,
     first.cursor,
     1,
-    RECORD_CHANGE_REPLICATED_TABLES,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   expect(page.resetRequired).toBe(false)
   if (!page.resetRequired) {
@@ -187,17 +187,11 @@ test('record change pages follow numeric order across a digit boundary', async (
     identity,
     { xid: BigInt(inserted.rows[0]!.xid), seq: BigInt(inserted.rows[0]!.seq) - 1n },
     1,
-    RECORD_CHANGE_REPLICATED_TABLES,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   const seqs: bigint[] = read.resetRequired ? [] : read.changes.map((change) => change.seq)
   for (let page = 0; page < 20; page += 1) {
-    read = await readRecordChanges(
-      client,
-      identity,
-      read.cursor,
-      1,
-      RECORD_CHANGE_REPLICATED_TABLES,
-    )
+    read = await readRecordChanges(client, identity, read.cursor, 1, RECORD_CHANGE_LOGGED_TABLES)
     if (read.resetRequired || read.changes.length === 0) break
     seqs.push(...read.changes.map((change) => change.seq))
   }

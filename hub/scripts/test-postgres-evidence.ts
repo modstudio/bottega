@@ -4,7 +4,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
 import { readRecordChanges } from '../../shared/record/record-changes.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { RECORD_CHANGE_REPLICATED_TABLES } from '../../shared/record/schema-record-change.ts'
+import { RECORD_CHANGE_LOGGED_TABLES } from '../../shared/record/schema-record-change.ts'
 import {
   RECORD_SERVICE_IDLE_IN_TRANSACTION_TIMEOUT,
   RECORD_SERVICE_STATEMENT_TIMEOUT,
@@ -201,7 +201,7 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     identityB,
     { xid: BigInt(inserted[0]!.xid), seq: BigInt(inserted[0]!.seq) },
     10,
-    RECORD_CHANGE_REPLICATED_TABLES,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   if (deleted.resetRequired || deleted.changes[0]?.op !== 'delete')
     throw new Error('record change reader did not return a delete tombstone')
@@ -222,14 +222,14 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     identityB,
     beforeMoveCursor,
     10,
-    RECORD_CHANGE_REPLICATED_TABLES,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   const newSpace = await readRecordChanges(
     actorUrl,
     identityA,
     beforeMoveCursor,
     10,
-    RECORD_CHANGE_REPLICATED_TABLES,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   if (oldSpace.resetRequired || oldSpace.changes[0]?.op !== 'delete')
     throw new Error('space move did not write a tombstone for the old space')
@@ -250,7 +250,7 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     identityA,
     { xid: horizon.xid, seq: horizon.seq - 1n },
     10,
-    RECORD_CHANGE_REPLICATED_TABLES,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   if (
     !reset.resetRequired ||
@@ -307,7 +307,7 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
       identityA,
       baseline,
       10,
-      RECORD_CHANGE_REPLICATED_TABLES,
+      RECORD_CHANGE_LOGGED_TABLES,
     )
     if (
       heldRead.resetRequired ||
@@ -325,7 +325,7 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
       identityA,
       baseline,
       10,
-      RECORD_CHANGE_REPLICATED_TABLES,
+      RECORD_CHANGE_LOGGED_TABLES,
     )
     if (
       released.resetRequired ||
@@ -392,7 +392,7 @@ async function proveRecordChangePairCursor(
       identityA,
       baseline,
       10,
-      RECORD_CHANGE_REPLICATED_TABLES,
+      RECORD_CHANGE_LOGGED_TABLES,
     )
     if (
       whileYOpen.resetRequired ||
@@ -417,7 +417,7 @@ async function proveRecordChangePairCursor(
       identityA,
       whileYOpen.cursor,
       10,
-      RECORD_CHANGE_REPLICATED_TABLES,
+      RECORD_CHANGE_LOGGED_TABLES,
     )
     if (
       afterYCommit.resetRequired ||

@@ -6,7 +6,7 @@ import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { migrationSessionStatements } from './migration-session.ts'
 import { newRecordId, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
 import { HUB_CHANGE_SOURCE_EXCLUSIONS, HUB_CHANGE_SOURCES } from './schema-hub.ts'
-import { RECORD_CHANGE_REPLICATED_TABLES } from './schema-record-change.ts'
+import { RECORD_CHANGE_TRIGGER_TABLES } from './schema-record-change.ts'
 
 const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
 const spaceA = '01990000-0000-7000-8000-000000001240'
@@ -197,7 +197,7 @@ test('record change triggers cover every replicated table', async () => {
     )
   ).rows
   expect(triggers.map(({ table_name }) => table_name)).toEqual(
-    [...RECORD_CHANGE_REPLICATED_TABLES].toSorted(),
+    [...RECORD_CHANGE_TRIGGER_TABLES].toSorted(),
   )
   expect(
     triggers.every(({ enabled, trigger_type }) => enabled === 'O' && trigger_type === 29),

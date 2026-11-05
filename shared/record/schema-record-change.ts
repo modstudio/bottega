@@ -19,7 +19,13 @@ const xid8 = customType<{ data: string }>({ dataType: () => 'xid8' })
 const currentSpace = sql`nullif(current_setting('app.space_id', true), '')::uuid`
 const readableSpaces = sql`string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]`
 
-export const RECORD_CHANGE_REPLICATED_TABLES = [
+export const RECORD_CHANGE_CHILD_TABLES = [
+  ['doc_related_subject', 'doc'],
+  ['review_lens', 'run'],
+  ['run_exclusion', 'run'],
+] as const
+
+export const RECORD_CHANGE_TRIGGER_TABLES = [
   'hub_task',
   'hub_task_comment',
   'hub_task_document',
@@ -55,8 +61,14 @@ export const RECORD_CHANGE_REPLICATED_TABLES = [
   'step_catalogue_event',
   'run',
   'review_lens',
+  'run_exclusion',
   'run_score',
 ] as const
+
+const recordChangeChildTables = new Set<string>(RECORD_CHANGE_CHILD_TABLES.map(([table]) => table))
+export const RECORD_CHANGE_LOGGED_TABLES = RECORD_CHANGE_TRIGGER_TABLES.filter(
+  (table) => !recordChangeChildTables.has(table),
+)
 
 export const recordChange = pgTable.withRLS(
   'record_change',
