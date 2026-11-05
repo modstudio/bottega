@@ -146,57 +146,6 @@ export function renderOwnedSettingsFile(
   return environment === undefined ? next : renderEnvironment(next, environment)
 }
 
-/** Render only the selected owned surfaces, removing previously rendered values elsewhere. */
-export function renderScopedSettingsFile(
-  text: string,
-  owned: OwnedSettings,
-  environment: Record<string, string>,
-  scope: 'all' | 'hooks' | 'project' | 'none',
-): string {
-  if (scope === 'all') return renderOwnedSettingsFile(text, owned, environment)
-  const source = scope === 'none' ? text : renderOwnedSettingsFile(text, owned, environment)
-  const selected =
-    scope === 'hooks'
-      ? new Set(['hooks'])
-      : scope === 'project'
-        ? new Set(['permissions', 'autoMode'])
-        : new Set<string>()
-  const parsed = parseSettingsFile(source)
-  let next = source
-  for (const member of [...parsed.members].reverse()) {
-    if (member.ownedKey === null || selected.has(member.ownedKey)) continue
-    next = removeObjectMember(next, member.nameStart, member.valueEnd)
-  }
-  if (scope !== 'project') next = removeNamedMember(next, 'env')
-  return next
-}
-
-function removeNamedMember(text: string, name: string): string {
-  const span = locateObject(text)
-  const names = Object.keys(JSON.parse(text) as Record<string, unknown>)
-  const index = names.indexOf(name)
-  if (index < 0) return text
-  const member = span.members[index]!
-  return removeObjectMember(text, member.nameStart, member.valueEnd)
-}
-
-function removeObjectMember(text: string, nameStart: number, valueEnd: number): string {
-  let start = nameStart
-  while (start > 0 && /[ \t]/.test(text[start - 1]!)) start--
-  if (start > 0 && text[start - 1] === '\n') start--
-  let end = valueEnd
-  while (end < text.length && /[ \t]/.test(text[end]!)) end++
-  if (text[end] === ',') end++
-  else {
-    let comma = start - 1
-    while (comma >= 0 && /\s/.test(text[comma]!)) comma--
-    if (text[comma] === ',') start = comma
-  }
-  if (text[end] === '\r') end++
-  if (text[end] === '\n') end++
-  return `${text.slice(0, start)}${text.slice(end)}`
-}
-
 export function displaySettingsValue(path: string, value: string): string {
   if (!containsSecretShaped(value)) return value
   return `${path} ${fingerprintValue(value)} secret-shaped`

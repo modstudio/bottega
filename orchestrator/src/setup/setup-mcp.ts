@@ -356,13 +356,27 @@ export function reconcileClaudeMcpRegistration(input: {
   present: boolean
   check: boolean
   forceReplace?: boolean
+  refuseChangedBeforeAdd?: boolean
+  removeName?: LegacyMcpServerName
 }): { changed: boolean; detail?: string } {
   const { port, server, scope, cwd } = input
   const commandCwd = cwd ?? process.env.HOME
-  const current: McpReadback = input.forceReplace
+  const current: McpReadback = input.removeName
+    ? { status: 'absent' }
+    : input.forceReplace
     ? { status: 'registered', command: server.command, args: server.args, scope }
     : readMcpRegistration('claude', port.bin, server.name, port.runner, { cwd: commandCwd })
   if (current.status === 'unreadable') throw new Error(current.detail)
+  if (
+    input.refuseChangedBeforeAdd &&
+    current.status === 'registered' &&
+    (current.scope ?? 'user') === scope &&
+    !sameMcpRegistration(current, server)
+  ) {
+    throw new Error(
+      `claude ${server.name} changed before add (registered command or arguments differ); run ${PLATFORM_SLUG} machine setup apply to review and replace it`,
+    )
+  }
   const action = claudeMcpReconcileAction(
     current,
     server,
@@ -372,6 +386,15 @@ export function reconcileClaudeMcpRegistration(input: {
   )
   if (action === 'none') return { changed: false }
   if (input.check) return { changed: true, detail: 'would apply' }
+  if (input.removeName) {
+    const removed = port.runner(
+      mcpRemoveArgv('claude', port.bin, input.removeName, scope),
+      SETUP_COMMAND_TIMEOUT_MS,
+      { cwd: commandCwd },
+    )
+    const failure = resultFailure(removed)
+    if (failure) throw new Error(`claude refused MCP remove: ${failure}`)
+  }
   if (action === 'remove' || action === 'replace') {
     const removed = port.runner(
       mcpRemoveArgv('claude', port.bin, server.name, scope),

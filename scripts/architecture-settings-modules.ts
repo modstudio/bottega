@@ -101,7 +101,6 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/settings/settings-machine-apply.ts', [
     '../../../shared/brand.ts',
-    '../../../shared/git.ts',
     'bun:sqlite',
     'fs',
     'path',
@@ -130,18 +129,14 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/settings/settings-machine-projects.ts', [
     'node:fs',
-    'node:path',
     '../../../shared/git.ts',
-    '../../../shared/git-path-list.ts',
-    './settings.ts',
-    './settings-files.ts',
-    './settings-render.ts',
-    './settings-write.ts',
+    './settings-machine-scope.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-mcp-placement.ts', [
     'node:crypto',
     'node:fs',
     'node:path',
+    '../../../shared/brand.ts',
     '../../../shared/state-directory.ts',
     '../setup/setup-mcp.ts',
     './settings-machine-scope.ts',

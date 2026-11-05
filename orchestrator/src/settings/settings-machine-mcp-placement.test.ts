@@ -106,6 +106,43 @@ test('first local placement reads user once, then writes projects without readba
   }
 })
 
+test('a failed recorded removal converges through one scoped reconcile', () => {
+  const root = mkdtempSync(join(tmpdir(), 'claude-mcp-placement-'))
+  const environment = { BOTTEGA_STATE_HOME: root }
+  const reconciles: Array<{ scope: string; present: boolean }> = []
+  try {
+    writeClaudeMcpPlacement(environment, { scope: 'user', projectPaths: [] })
+    const results = reconcileClaudeMcpPlacementPlan(
+      false,
+      decideMachineSettingsScope('off', [
+        { path: '/projects/one', exists: true, gitMainCheckout: true },
+      ]),
+      {
+        environment,
+        port: () => ({ bin: 'claude', runner: () => fixtureCommandResult() }),
+        server: stableMcpServers()[0]!,
+        read: readClaudeMcpPlacement,
+        write: writeClaudeMcpPlacement,
+        reconcile: (input) => {
+          reconciles.push({ scope: input.scope, present: input.present })
+          return { changed: false }
+        },
+        mutate: ({ action }) => {
+          if (action === 'remove') throw new Error('already absent')
+        },
+      },
+    )
+    expect(reconciles).toEqual([{ scope: 'user', present: false }])
+    expect(results.every((result) => result.outcome !== 'refused')).toBe(true)
+    expect(readClaudeMcpPlacement(environment)).toEqual({
+      scope: 'local',
+      projectPaths: ['/projects/one'],
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 function fixtureCommandResult() {
   return { exitCode: 0, stdout: '', stderr: '', timedOut: false, error: null }
 }

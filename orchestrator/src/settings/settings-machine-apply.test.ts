@@ -250,9 +250,10 @@ describe('settings apply', () => {
       detail: expect.stringContaining('unmatched drop(s): allow Bash(missing)'),
     })
     const applied = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'))
-    expect(applied.permissions).toBeUndefined()
-    expect(applied.autoMode).toBeUndefined()
-    expect(applied.env).toBeUndefined()
+    expect(applied.permissions).toEqual({ allow: ['Bash(git status)'] })
+    expect(applied.autoMode).toEqual({ allow: ['$defaults', 'Bash(docker compose *)'] })
+    expect(applied.env).toEqual({})
+    expect(existsSync(join(root, '.claude', 'settings.local.json'))).toBe(false)
     const productHookCommands = Object.values(
       applied.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>,
     )

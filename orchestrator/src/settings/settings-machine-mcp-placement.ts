@@ -4,6 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { claudeMcpPlacementPath, type StateEnvironment } from '../../../shared/state-directory.ts'
 import type {
   ClaudeMcpRegistrationPort,
@@ -89,8 +90,14 @@ export function writeClaudeMcpPlacement(
   }
 }
 
-function target(call: ClaudeMcpPlacementCall): string {
-  return call.scope === 'user' ? 'MCP claude user' : `MCP claude project ${call.projectPath}`
+export type ClaudeMcpPlacementTarget = { kind: 'user' } | { kind: 'project'; path: string }
+
+export function claudeMcpPlacementTargetName(target: ClaudeMcpPlacementTarget): string {
+  return target.kind === 'user' ? 'MCP claude user' : `MCP claude project ${target.path}`
+}
+
+function callTarget(call: ClaudeMcpPlacementCall): ClaudeMcpPlacementTarget {
+  return call.scope === 'user' ? { kind: 'user' } : { kind: 'project', path: call.projectPath }
 }
 
 function result(targetName: string, changed: boolean, detail?: string): ClaudeMcpPlacementResult {
@@ -113,10 +120,10 @@ function refused(targetName: string, error: unknown): ClaudeMcpPlacementResult {
 
 function plannedTargets(plan: MachineSettingsScopePlan): string[] {
   return [
-    'MCP claude user',
+    claudeMcpPlacementTargetName({ kind: 'user' }),
     ...plan.projects
       .filter((project) => project.action !== 'skip')
-      .map((project) => `MCP claude project ${project.path}`),
+      .map((project) => claudeMcpPlacementTargetName({ kind: 'project', path: project.path })),
   ]
 }
 
@@ -130,14 +137,18 @@ function checkPlacement(
   }
   const inputs: Array<{ target: string; scope: 'user' | 'local'; cwd?: string; present: boolean }> =
     [
-      { target: 'MCP claude user', scope: 'user', present: plan.user.mcp },
+      {
+        target: claudeMcpPlacementTargetName({ kind: 'user' }),
+        scope: 'user',
+        present: plan.user.mcp,
+      },
       ...plan.projects
         .filter((project) => project.action !== 'skip')
         .map((project) => ({
-          target: `MCP claude project ${project.path}`,
+          target: claudeMcpPlacementTargetName({ kind: 'project', path: project.path }),
           scope: 'local' as const,
           cwd: project.path,
-          present: project.action === 'render-and-register',
+          present: project.action === 'register',
         })),
     ]
   return inputs.map((input) => {
@@ -171,7 +182,7 @@ function applyPlacementCalls(
   }
   let current = decision.initial
   for (const [index, call] of decision.calls.entries()) {
-    const name = target(call)
+    const name = claudeMcpPlacementTargetName(callTarget(call))
     try {
       if (call.action === 'inspect-and-remove-user') {
         const reconciled = deps.reconcile({
@@ -183,21 +194,41 @@ function applyPlacementCalls(
         })
         results.set(name, result(name, reconciled.changed, reconciled.detail))
       } else {
-        deps.mutate({
+        const mutation = {
           port,
           server: deps.server,
           action: call.action,
           scope: call.scope,
           ...(call.scope === 'local' ? { cwd: call.projectPath } : {}),
-        })
-        results.set(name, result(name, true))
+        } as MutateInput
+        try {
+          deps.mutate(mutation)
+          results.set(name, result(name, true))
+        } catch {
+          const reconciled = deps.reconcile({
+            port,
+            server: deps.server,
+            scope: call.scope,
+            ...(call.scope === 'local' ? { cwd: call.projectPath } : {}),
+            present: call.action === 'add',
+            check: false,
+          })
+          results.set(name, result(name, true, reconciled.detail))
+        }
       }
       current = placementAfterClaudeMcpCall(current, call)
       deps.write(deps.environment, current)
     } catch (error) {
-      results.set(name, refused(name, error))
+      const detail = error instanceof Error ? error.message : String(error)
+      results.set(
+        name,
+        refused(
+          name,
+          `${detail}; placement record ${claudeMcpPlacementPath(deps.environment)}; verify with ${PLATFORM_SLUG} machine settings apply --check`,
+        ),
+      )
       for (const pending of decision.calls.slice(index + 1)) {
-        const pendingTarget = target(pending)
+        const pendingTarget = claudeMcpPlacementTargetName(callTarget(pending))
         results.set(pendingTarget, refused(pendingTarget, `not applied after ${name} was refused`))
       }
       break
@@ -227,7 +258,8 @@ export function reconcileClaudeMcpPlacementPlan(
       try {
         deps.write(deps.environment, decision.desired)
       } catch (error) {
-        results.set('MCP claude user', refused('MCP claude user', error))
+        const userTarget = claudeMcpPlacementTargetName({ kind: 'user' })
+        results.set(userTarget, refused(userTarget, error))
       }
     }
     return [...results.values()]

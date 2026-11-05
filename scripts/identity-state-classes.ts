@@ -1,4 +1,3 @@
-import { PLATFORM_NAME } from '../shared/brand.ts'
 import type { StateClassStore } from './identity-inventory.ts'
 
 export type TableStateClassDeclaration = {
@@ -60,7 +59,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     class: 'machine-only',
     reason:
       'Records the Claude MCP scopes applied on this machine to avoid session-start CLI reads',
-    ruling: `Shmuel Barkin, DEV-2089, 2026-11-04: keep a machine-only record of the Claude MCP placement ${PLATFORM_NAME} last applied`,
+    ruling: PORTABLE_RULING,
   },
   local(
     'orchestrator',

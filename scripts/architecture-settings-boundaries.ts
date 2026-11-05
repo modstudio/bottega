@@ -64,7 +64,6 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'shared/brand.ts',
       'node:fs',
-      'shared/git.ts',
       'shared/install-root.ts',
       'shared/machine-config.ts',
       'shared/state-directory.ts',
@@ -148,7 +147,6 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     file: `${source}settings-machine-apply.ts`,
     allowed: [
       'shared/brand.ts',
-      'shared/git.ts',
       'bun:sqlite',
       'node:fs',
       'node:path',
@@ -186,6 +184,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'node:crypto',
       'node:fs',
       'node:path',
+      'shared/brand.ts',
       'shared/state-directory.ts',
       'orchestrator/src/setup/setup-mcp.ts',
       `${source}settings-machine-scope.ts`,

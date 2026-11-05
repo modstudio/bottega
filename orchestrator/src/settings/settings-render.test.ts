@@ -5,7 +5,6 @@ import {
   parseSettingsFile,
   plainSettingsEnvironment,
   renderOwnedSettingsFile,
-  renderScopedSettingsFile,
 } from './settings-render.ts'
 
 const source = `{
@@ -206,26 +205,4 @@ describe('diffOwnedSettings', () => {
     expect(diffOwnedSettings(file, store).hooks.removed).toEqual([])
   })
 
-  test('project scope preserves hand-written keys and removes hooks when switching scopes', () => {
-    const owned = {
-      permissions: { allow: ['canonical'] },
-      hooks: { SessionStart: [{ matcher: 'startup' }] },
-      autoMode: { allow: ['$defaults'] },
-    }
-    const project = renderScopedSettingsFile(
-      '{\n  "handWritten": true,\n  "hooks": {"local": []}\n}\n',
-      owned,
-      { PLAIN: 'value' },
-      'project',
-    )
-    expect(JSON.parse(project)).toEqual({
-      handWritten: true,
-      permissions: { allow: ['canonical'] },
-      autoMode: { allow: ['$defaults'] },
-      env: { PLAIN: 'value' },
-    })
-    expect(JSON.parse(renderScopedSettingsFile(project, owned, {}, 'none'))).toEqual({
-      handWritten: true,
-    })
-  })
 })

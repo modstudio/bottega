@@ -1,17 +1,16 @@
 // concern: settings-machine-scope
-/** Pure decision for placing rendered Claude settings and MCP registration. */
+/** Pure decision for placing the Claude MCP registration. */
 
 export type RegisteredProjectScopeFact = {
   path: string
   exists: boolean
   gitMainCheckout: boolean
 }
-
 export type MachineSettingsScopePlan = {
-  user: { rendered: 'all' | 'hooks'; mcp: boolean }
+  user: { mcp: boolean }
   projects: Array<{
     path: string
-    action: 'render-and-register' | 'remove-rendered-and-registration' | 'skip'
+    action: 'register' | 'remove-registration' | 'skip'
     reason?: 'missing path' | 'not a git main checkout'
   }>
 }
@@ -38,7 +37,7 @@ export function decideMachineSettingsScope(
   projects: readonly RegisteredProjectScopeFact[],
 ): MachineSettingsScopePlan {
   return {
-    user: { rendered: globalUse === 'on' ? 'all' : 'hooks', mcp: globalUse === 'on' },
+    user: { mcp: globalUse === 'on' },
     projects: projects.map((project) => {
       if (!project.exists)
         return { path: project.path, action: 'skip', reason: 'missing path' } as const
@@ -50,7 +49,7 @@ export function decideMachineSettingsScope(
         } as const
       return {
         path: project.path,
-        action: globalUse === 'off' ? 'render-and-register' : 'remove-rendered-and-registration',
+        action: globalUse === 'off' ? 'register' : 'remove-registration',
       } as const
     }),
   }
@@ -62,7 +61,7 @@ export function desiredClaudeMcpPlacement(plan: MachineSettingsScopePlan): Claud
     : {
         scope: 'local',
         projectPaths: plan.projects
-          .filter((project) => project.action === 'render-and-register')
+          .filter((project) => project.action === 'register')
           .map((project) => project.path),
       }
 }
@@ -78,7 +77,7 @@ export function decideClaudeMcpPlacementCalls(
       initial,
       desired,
       calls: [
-        { action: 'inspect-and-remove-user', scope: 'user' },
+        { action: 'remove', scope: 'user' },
         ...desired.projectPaths.map(
           (projectPath): ClaudeMcpPlacementCall => ({ action: 'add', scope: 'local', projectPath }),
         ),
@@ -93,7 +92,7 @@ export function decideClaudeMcpPlacementCalls(
       initial,
       desired,
       calls: [
-        { action: 'remove', scope: 'user' },
+        { action: 'inspect-and-remove-user', scope: 'user' },
         ...desired.projectPaths.map(
           (projectPath): ClaudeMcpPlacementCall => ({ action: 'add', scope: 'local', projectPath }),
         ),
@@ -139,8 +138,4 @@ export function placementAfterClaudeMcpCall(
   if (call.action === 'add') paths.add(call.projectPath)
   else paths.delete(call.projectPath)
   return { scope: 'local', projectPaths: [...paths] }
-}
-
-export function scopedProjectHasDrift(settingsMatch: boolean, mcpMatches: boolean): boolean {
-  return !settingsMatch || !mcpMatches
 }

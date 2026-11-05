@@ -295,6 +295,75 @@ test('reconciles Claude local scope through the project cwd and reports check dr
   expect(mcpRemoveArgv('claude', '/bin/claude', MCP_SERVER_NAME, 'local')).toContain('local')
 })
 
+test('reconcile removes a registered Claude user-scope entry', () => {
+  const calls: string[][] = []
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  const runner = (argv: string[]) => {
+    calls.push(argv)
+    return argv.includes('get')
+      ? result(`Scope: User config\nCommand: ${FRONT_DOOR}\nArgs: mcp\n`)
+      : result('removed')
+  }
+  expect(
+    reconcileClaudeMcpRegistration({
+      port: { bin: '/bin/claude', runner },
+      server,
+      scope: 'user',
+      present: false,
+      check: false,
+    }),
+  ).toEqual({ changed: true })
+  expect(calls.at(-1)).toEqual([
+    '/bin/claude',
+    'mcp',
+    'remove',
+    '--scope',
+    'user',
+    MCP_SERVER_NAME,
+  ])
+})
+
+test('forced reconcile replaces a Claude entry and refuses a differing post-add readback', () => {
+  const calls: string[][] = []
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  expect(() =>
+    reconcileClaudeMcpRegistration({
+      port: {
+        bin: '/bin/claude',
+        runner: (argv) => {
+          calls.push(argv)
+          return argv.includes('get')
+            ? result('Scope: User config\nCommand: /wrong\nArgs:\n')
+            : result('ok')
+        },
+      },
+      server,
+      scope: 'user',
+      present: true,
+      check: false,
+      forceReplace: true,
+    }),
+  ).toThrow('did not match after add')
+  expect(calls.map((argv) => argv[2])).toEqual(['remove', 'add', 'get'])
+})
+
+test('reconcile preserves the changed-before-add refusal without explicit replacement', () => {
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  expect(() =>
+    reconcileClaudeMcpRegistration({
+      port: {
+        bin: '/bin/claude',
+        runner: () => result('Scope: User config\nCommand: /wrong\nArgs:\n'),
+      },
+      server,
+      scope: 'user',
+      present: true,
+      check: false,
+      refuseChangedBeforeAdd: true,
+    }),
+  ).toThrow('changed before add')
+})
+
 test('mutates a decided Claude scope without a CLI readback', () => {
   const calls: string[][] = []
   const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
