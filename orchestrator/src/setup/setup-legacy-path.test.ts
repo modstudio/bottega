@@ -126,6 +126,7 @@ test('setup plan proposes removing a checkout-pointing symlink and leaves others
   expect(captured).toEqual([{ path: remove, target: orch }])
 
   const plan = {
+    facts: { machine: { globalUse: 'on' }, repositories: [] },
     registrations: [],
     proposals: [],
     questions: [],

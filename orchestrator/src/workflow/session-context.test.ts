@@ -17,6 +17,9 @@ const stateRoot = join(dir, 'session-context-state')
 mkdirSync(stateRoot)
 const stateEnvironment = { BOTTEGA_STATE_HOME: stateRoot }
 type SessionContextDependencies = NonNullable<Parameters<typeof sessionContextCommand>[2]>
+const signedOutClient: SessionContextDependencies['clientFactory'] = () => {
+  throw new ConfigClientError('not-configured', '/v1/config')
+}
 
 function repository(name: string): string {
   const path = join(stateRoot, name)
@@ -35,7 +38,7 @@ async function contextJson(cwd: string, dependencies: SessionContextDependencies
   await sessionContextCommand(
     { cwd, json: true },
     { log: (line) => lines.push(line) },
-    { stateEnvironment, ...dependencies },
+    { stateEnvironment, clientFactory: signedOutClient, ...dependencies },
   )
   return JSON.parse(lines.join('\n')) as Record<string, unknown>
 }
@@ -45,7 +48,7 @@ async function contextText(cwd: string, dependencies: SessionContextDependencies
   await sessionContextCommand(
     { cwd, json: false },
     { log: (line) => lines.push(line) },
-    { stateEnvironment, ...dependencies },
+    { stateEnvironment, clientFactory: signedOutClient, ...dependencies },
   )
   return lines.join('\n')
 }
