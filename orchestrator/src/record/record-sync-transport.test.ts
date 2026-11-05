@@ -11,6 +11,7 @@ import {
 import { newRecordId } from '../../../shared/record-id.ts'
 import { defaultShortName } from './machine-name.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
+import { BUILT_INS_REVALIDATE_MS } from './record-built-ins-identity.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
 
@@ -85,7 +86,7 @@ test('sync sends an empty batch to register and refresh its machine', async () =
   ])
 })
 
-test('sync ensures built-ins once per content identity and records the marker', async () => {
+test('sync ensures built-ins once per content identity, and again once the marker expires', async () => {
   using local = localOutbox(0)
   let ensured = 0
   const client = {
@@ -103,9 +104,17 @@ test('sync ensures built-ins once per content identity and records the marker', 
       `SELECT value FROM schema_meta WHERE key='record_built_ins:${SPACE_ID}'`,
     )
     .get()?.value
-  expect(marker).toHaveLength(64)
+  expect(marker).toMatch(/^[0-9a-f]{64}@/)
   await syncRecord({ ...options(local), client })
   expect(ensured).toBe(1)
+
+  const identity = marker!.split('@')[0]
+  const expired = new Date(Date.now() - BUILT_INS_REVALIDATE_MS - 60_000).toISOString()
+  local
+    .query(`UPDATE schema_meta SET value=? WHERE key='record_built_ins:${SPACE_ID}'`)
+    .run(`${identity}@${expired}`)
+  await syncRecord({ ...options(local), client })
+  expect(ensured).toBe(2)
 })
 
 test('sync sends ordered bounded batches and applies each response before continuing', async () => {

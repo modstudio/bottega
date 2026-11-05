@@ -50,15 +50,28 @@ const RECORD_BUILT_INS_IDENTITY = builtInsIdentity({
 
 const markerKey = (spaceId: string) => `record_built_ins:${spaceId}`
 
-/** True when this store recorded that the space received the current built-ins. */
-export function builtInsEnsured(local: Database, spaceId: string): boolean {
+/**
+ * How long a recorded ensure stands before sync repeats it. The ensure also repairs a built-in a
+ * hosted restore or a member removed, so the marker only spares repeats, never the repair.
+ */
+export const BUILT_INS_REVALIDATE_MS = 24 * 60 * 60_000
+
+/** True when this store recorded, within the revalidation window, that the space holds the current built-ins. */
+export function builtInsEnsured(local: Database, spaceId: string, nowMs = Date.now()): boolean {
   const recorded = local
     .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
     .get(markerKey(spaceId))?.value
-  return recorded === RECORD_BUILT_INS_IDENTITY
+  if (!recorded) return false
+  const [identity, at] = recorded.split('@')
+  const ensuredAt = Date.parse(at ?? '')
+  return (
+    identity === RECORD_BUILT_INS_IDENTITY &&
+    Number.isFinite(ensuredAt) &&
+    nowMs - ensuredAt < BUILT_INS_REVALIDATE_MS
+  )
 }
 
-export function recordBuiltInsEnsured(local: Database, spaceId: string): void {
+export function recordBuiltInsEnsured(local: Database, spaceId: string, nowMs = Date.now()): void {
   writeTransaction(
     () =>
       local
@@ -66,7 +79,7 @@ export function recordBuiltInsEnsured(local: Database, spaceId: string): void {
           `INSERT INTO schema_meta (key,value) VALUES (?,?)
            ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
         )
-        .run(markerKey(spaceId), RECORD_BUILT_INS_IDENTITY),
+        .run(markerKey(spaceId), `${RECORD_BUILT_INS_IDENTITY}@${new Date(nowMs).toISOString()}`),
     local,
   )
 }
