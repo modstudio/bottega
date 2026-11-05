@@ -346,6 +346,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'reorderDocs',
       'score',
       'setActiveSpace',
+      'setMemberPermission',
       'settingsAutoMode',
       'settingsPermission',
       'void',

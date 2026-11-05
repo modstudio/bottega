@@ -88,6 +88,7 @@ const configAccessListSchema = z.object({
   ),
 })
 const configAccessGrantSchema = z.object({ granted: z.literal(true) })
+const memberPermissionSchema = z.object({ permission: z.enum(['read', 'write']) })
 const configAccessWithdrawSchema = z.object({
   revokedMachineKeyIds: z.array(z.string()),
   readableSecretKeys: z.array(z.string()),
@@ -798,6 +799,12 @@ function recordConfigAccessClient(options: RecordClientOptions) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email }),
+      }),
+    setMemberPermission: (email: string, permission: 'read' | 'write') =>
+      request(options, '/v1/config-access/permission', memberPermissionSchema, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, permission }),
       }),
     withdrawConfigAccess: (email: string) =>
       request(options, '/v1/config-access/withdraw', configAccessWithdrawSchema, {

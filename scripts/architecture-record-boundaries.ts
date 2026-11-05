@@ -194,6 +194,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       'bun:sqlite',
       '../postgres/postgres-migrate.ts',
       './record-config.ts',
+      './record-member-permission.ts',
       './record-api.ts',
       './machine-name-record.ts',
       './record-lens-catalogue.ts',
@@ -309,6 +310,18 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       './record-pool.ts',
     ],
     'Enforce the hosted config service concern boundary.',
+  ),
+  boundary(
+    'record-member-permission-boundary',
+    'orchestrator/src/record/record-member-permission.ts',
+    [
+      'bun',
+      '../../../shared/record/tenant.ts',
+      './record-config.ts',
+      './record-config-error.ts',
+      './record-pool.ts',
+    ],
+    'Keep hosted member permission writes behind the tenant-bound record service.',
   ),
   boundary(
     'record-docs-boundary',
