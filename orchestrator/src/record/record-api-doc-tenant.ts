@@ -8,14 +8,9 @@ import {
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordDoc } from './record-docs.ts'
 import { RecordDocError } from './record-docs.ts'
+import type { RecordSettingsTenant } from './record-settings.ts'
 
-export type RecordDocumentTenant = {
-  url: string
-  userId: string
-  spaceId: string
-  spaceIds: string[]
-  personalSpaceId?: string | null
-}
+export type RecordDocumentTenant = RecordSettingsTenant
 
 type RecordDocumentContext = {
   get(key: 'identity'): RecordIdentity
@@ -44,6 +39,7 @@ function recordDocumentTenant(
   return spaceId === tenant.spaceId ? tenant : tenantAt(tenant, spaceId)
 }
 
+/** An id names one row, so the operation binds to the space that holds it. */
 async function recordDocumentIdTenant(
   tenant: RecordDocumentTenant,
   identity: RecordIdentity,
@@ -52,20 +48,11 @@ async function recordDocumentIdTenant(
   readDoc: (input: RecordDocumentTenant & { id: string }) => Promise<RecordDoc | null>,
 ): Promise<RecordDocumentTenant> {
   if (explicitDestination) return tenant
-  const active = await readDoc({ ...tenantAt(tenant, tenant.spaceId), id })
+  if (await readDoc({ ...tenantAt(tenant, tenant.spaceId), id })) return tenant
   const personalSpaceId = identity.personalSpaceId
-  const found =
-    active ??
-    (personalSpaceId && personalSpaceId !== tenant.spaceId
-      ? await readDoc({ ...tenantAt(tenant, personalSpaceId), id })
-      : null)
-  if (!found) return tenant
-  return recordDocumentTenant(tenant, identity, false, {
-    kind: 'document',
-    scope: found.scope,
-    subject: found.subject,
-    ownerUserId: found.owner,
-  })
+  if (!personalSpaceId || personalSpaceId === tenant.spaceId) return tenant
+  const personal = tenantAt(tenant, personalSpaceId)
+  return (await readDoc({ ...personal, id })) ? personal : tenant
 }
 
 export function recordDocumentScopes<Context extends RecordDocumentContext>(input: {

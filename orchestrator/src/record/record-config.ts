@@ -239,14 +239,15 @@ async function scopedRow(
 export async function listConfigEntries(
   input: ConfigTenant & { environment?: string },
 ): Promise<ConfigEntry[]> {
-  const personal = configTenant(input, 'user')
-  const spaces = [...new Set([input.spaceId, personal.spaceId])]
+  // A missing personal space hides only the caller's own entries, never the space's.
+  const personalSpaceId = input.personalSpaceId ?? null
+  const spaces = [...new Set([input.spaceId, personalSpaceId].filter((id) => id !== null))]
   return tenant({ ...input, spaceIds: spaces }, async (tx) => {
     const rows = await tx`
       SELECT key, environment, user_id, value, row_version, updated_at
       FROM config_entry
       WHERE ((space_id=${input.spaceId}::uuid AND user_id IS NULL)
-          OR (space_id=${personal.spaceId}::uuid AND user_id=${input.userId}::uuid))
+          OR (space_id=${personalSpaceId}::uuid AND user_id=${input.userId}::uuid))
         AND (${input.environment ?? null}::text IS NULL OR environment=${input.environment ?? null})
       ORDER BY key, environment, user_id NULLS FIRST
     `

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -305,8 +306,10 @@ const personalListTarget = (
   subject: string | null | undefined,
   userId: string,
 ) =>
-  (scope === 'settings' || scope === 'canon') && subject === null
-    ? docTarget(scope, null, userId)
+  scope !== undefined &&
+  subject !== undefined &&
+  isPersonalItem(userId, docTarget(scope, subject, userId))
+    ? docTarget(scope, subject, userId)
     : null
 
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
