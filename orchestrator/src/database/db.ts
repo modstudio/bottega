@@ -25,6 +25,7 @@ import {
   classifyCaller,
   resolveCallerIdentity,
 } from '../caller-classification.ts'
+import { appliedMigrationCompatibilities } from './applied-migration-compatibilities.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
 import { DATABASE_SIDECAR_SUFFIXES } from './database-file-family.ts'
 import {
@@ -40,7 +41,8 @@ import {
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
   decideInFlightMigration,
-  inFlightMigrationCompatibility,
+  type InFlightMigrationCompatibility,
+  inFlightAppliedMigrationCompatibility,
 } from './migration-compatibility.ts'
 import { activeMigrationDrain } from './migration-drain-state.ts'
 import {
@@ -53,7 +55,6 @@ import {
   applyMigrations,
   applyMigrationsBefore,
   type BeforeMigrationApply,
-  migrationJournal,
   migrationRefusal,
   readUserVersion,
   staleWriteRefusal,
@@ -448,6 +449,14 @@ export function enableSchemaReloadUnlessRegistered(): void {
   enableSchemaReload()
 }
 
+function storeRangeCompatibility(
+  d: Database,
+  opened: number,
+  store: number,
+): InFlightMigrationCompatibility {
+  return inFlightAppliedMigrationCompatibility(appliedMigrationCompatibilities(d), opened, store)
+}
+
 function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
   if (handle && d !== handle) return d
   const actual = readUserVersion(d)
@@ -459,7 +468,7 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
     const decision = decideInFlightMigration({
       processJournalVersion: from,
       storeVersion: actual,
-      migrationCompatibility: inFlightMigrationCompatibility(migrationJournal(), from, actual),
+      migrationCompatibility: storeRangeCompatibility(d, from, actual),
     })
     if (decision.action === 'fail') {
       schemaReloadRefusal?.(decision.reason)
@@ -487,6 +496,13 @@ function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
 export function storeSchemaVersions(): { opened: number; store: number } | null {
   if (openedUserVersion === null || !handle) return null
   return { opened: openedUserVersion, store: readUserVersion(handle) }
+}
+
+/** Compatibility recorded by the store for migrations applied after this process opened it. */
+export function storeInFlightMigrationCompatibility(): InFlightMigrationCompatibility | null {
+  const versions = storeSchemaVersions()
+  if (!versions || !handle) return null
+  return storeRangeCompatibility(handle, versions.opened, versions.store)
 }
 
 /** The facts the process-handle open is given: the actor facts plus where the store sits. */

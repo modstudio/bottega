@@ -15,12 +15,11 @@ import {
   enableSchemaReloadUnlessRegistered,
   nowIso,
   sessionId,
+  storeInFlightMigrationCompatibility,
   storeSchemaVersions,
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
-import { inFlightMigrationCompatibility } from '../database/migration-compatibility.ts'
-import { migrationJournal } from '../database/migrations.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
@@ -326,10 +325,7 @@ function evidenceRecordingDecision(): WorkflowEvidenceRecordingDecision {
   return decideWorkflowEvidenceRecording({
     openedSchemaVersion: versions?.opened ?? null,
     storeSchemaVersion: versions?.store ?? null,
-    compatibility: () =>
-      versions
-        ? inFlightMigrationCompatibility(migrationJournal(), versions.opened, versions.store)
-        : 'incompatible',
+    compatibility: () => storeInFlightMigrationCompatibility() ?? 'incompatible',
   })
 }
 

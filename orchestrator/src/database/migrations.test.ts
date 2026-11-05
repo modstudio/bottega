@@ -99,6 +99,37 @@ test('embedded migrations produce the disk journal and schema hash', () => {
   }
 })
 
+test('applied migrations after the legacy boundary record their journal compatibility', () => {
+  const database = migratedTestDatabase()
+  try {
+    const rows = database
+      .query('SELECT compatibility FROM orch_migrations ORDER BY created_at, id')
+      .all() as Array<{ compatibility: string | null }>
+    for (const entry of migrationJournal().slice(181)) {
+      expect(rows[entry.idx]?.compatibility).toBe(entry.compatibility)
+      expect(rows[entry.idx]?.compatibility).not.toBeNull()
+    }
+  } finally {
+    database.close()
+  }
+})
+
+test('applying migrations repairs and backfills a legacy migration table', () => {
+  const database = migratedTestDatabase()
+  try {
+    database.exec('ALTER TABLE orch_migrations DROP COLUMN compatibility')
+    expect(applyMigrations(database)).toEqual([])
+    const rows = database
+      .query('SELECT compatibility FROM orch_migrations ORDER BY created_at, id')
+      .all() as Array<{ compatibility: string | null }>
+    for (const entry of migrationJournal()) {
+      expect(rows[entry.idx]?.compatibility).toBe(entry.compatibility ?? null)
+    }
+  } finally {
+    database.close()
+  }
+})
+
 test('the schema hash ignores an in-flight write probe table', () => {
   const database = migratedTestDatabase()
   try {
