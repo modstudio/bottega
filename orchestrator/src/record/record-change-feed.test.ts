@@ -250,7 +250,7 @@ test('materialized changes reuse pull rows and preserve child mappings and tombs
     { table: 'run_score', id: excludedRunId, space: spaceId, op: 'upsert', row: excludedScore },
   ])
 
-  const routingPull = mapRecordRoutingEvidenceRow(
+  const { evidenceSequence: _routingCursor, ...routingPull } = mapRecordRoutingEvidenceRow(
     (await recordRoutingEvidenceRows(sql, { ids: [scoredRunId] }))[0]!,
   )
   const scorePull = mapRecordScoreRow((await recordScoreRows(sql, { ids: [scoredRunId] }))[0]!)
@@ -313,9 +313,10 @@ test('materialized changes reuse pull rows and preserve child mappings and tombs
   )
   expect(afterReviewLens.resetRequired).toBe(false)
   if (afterReviewLens.resetRequired) return
-  const routingAfterLens = mapRecordRoutingEvidenceRow(
+  const { evidenceSequence: _routingAfterLensCursor, ...routingAfterLens } =
+    mapRecordRoutingEvidenceRow(
     (await recordRoutingEvidenceRows(sql, { ids: [scoredRunId] }))[0]!,
-  )
+    )
   const scoreAfterLens = mapRecordScoreRow((await recordScoreRows(sql, { ids: [scoredRunId] }))[0]!)
   expect(afterReviewLens.changes).toEqual(
     expect.arrayContaining([

@@ -553,7 +553,12 @@ export async function pullRecordCache(local: Database = db(), suppliedIdentity?:
   if (!recordApiConfigured() && !recordApiClientInjected() && !suppliedIdentity)
     return emptyRecordCachePullResult()
   if (recordApiClientInjected() && typeof recordApiClient().listChanges !== 'function')
-    return pullRecordCacheKeysets(local, suppliedIdentity)
+    return {
+      ...(await pullRecordCacheKeysets(local, suppliedIdentity)),
+      changes: 0,
+      orphans: 0,
+      reset: true,
+    }
   return pullRecordCacheFeed(local, suppliedIdentity, {
     cacheSpaces: recordCacheSpaces,
     pullKeysets: pullRecordCacheKeysets,

@@ -151,7 +151,10 @@ async function rowsByFamily(
     add(
       'routing_evidence',
       await recordRoutingEvidenceRows(tx, { ids: evidence }),
-      mapRecordRoutingEvidenceRow,
+      (row) => {
+        const { evidenceSequence: _cursor, ...item } = mapRecordRoutingEvidenceRow(row)
+        return item
+      },
     )
   return result
 }

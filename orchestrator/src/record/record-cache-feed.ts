@@ -19,7 +19,7 @@ import {
   portCatalogueParentPresent,
   pullPortCatalogue,
 } from './record-cache-port.ts'
-import { pullProjectRegister } from './record-cache-projects.ts'
+import { type ProjectRegisterPullResult, pullProjectRegister } from './record-cache-projects.ts'
 import {
   applyWorkflowCatalogueRow,
   pullWorkflowCatalogue,
@@ -33,7 +33,7 @@ import {
 } from './record-port-contract.ts'
 import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
-import { upsertPoolRun } from './record-routing-pool.ts'
+import { type RoutingPoolPullResult, upsertPoolRun } from './record-routing-pool.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workflow-contract.ts'
 
@@ -49,8 +49,14 @@ const writeMeta = (local: Database, key: string, value: string) =>
     )
     .run(key, value)
 
-const emptyProject = () => ({ updated: 0, retired: 0, unretired: 0, skipped: 0, warnings: [] })
-const emptyRouting = () => ({ added: 0, updated: 0, caughtUp: true })
+const emptyProject = (): ProjectRegisterPullResult => ({
+  updated: 0,
+  retired: 0,
+  unretired: 0,
+  skipped: 0,
+  warnings: [],
+})
+const emptyRouting = (): RoutingPoolPullResult => ({ added: 0, updated: 0, caughtUp: true })
 export const emptyRecordCachePullResult = () => ({
   docs: 0,
   skippedDocs: 0,
@@ -99,6 +105,7 @@ type Dependencies = {
   applyScore(local: Database, row: Record<string, unknown>): void
 }
 type Change = RecordChangePage['changes'][number]
+type UpsertChange = Extract<Change, { op: 'upsert' }>
 type FallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
 
 const membershipSpaces = (identity: RecordIdentity) =>
@@ -256,7 +263,7 @@ function deleteChange(local: Database, change: Change, deps: Dependencies): void
 
 function upsertChange(
   local: Database,
-  change: Change,
+  change: UpsertChange,
   deps: Dependencies,
   result: RecordCachePullResult,
 ) {
@@ -408,7 +415,7 @@ export async function pullRecordCacheFeed(
   )
   let cursor = readMeta(local, CURSOR)
   if (!cursor) {
-    const first = await client.listChanges({ wait: 0 })
+    const first = await client.listChanges!({ wait: 0 })
     if ('reset' in first) return resetAt(local, identity, spaces, first.reset.cursor, deps)
     throw new Error('record change feed did not provide a reset cursor for an uninitialized cache')
   }
@@ -417,7 +424,7 @@ export async function pullRecordCacheFeed(
   if (joined.length) addResult(result, await deps.pullKeysets(local, identity, joined))
   writeMeta(local, SPACES, JSON.stringify(spaces))
   for (;;) {
-    const response = await client.listChanges({ after: cursor, wait: 0 })
+    const response = await client.listChanges!({ after: cursor, wait: 0 })
     if ('reset' in response) return resetAt(local, identity, spaces, response.reset.cursor, deps)
     const page = applyPage(local, cursor, response, deps)
     if (!page.applied) {
