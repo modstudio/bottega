@@ -4,7 +4,9 @@
 import type { Hono } from 'hono'
 import { registerRecordBoardRoutes } from './record-api-board.ts'
 import { registerRecordConfigAccessRoutes } from './record-api-config-access-routes.ts'
+import { registerRecordDocCountsRoute } from './record-api-doc-counts.ts'
 import { registerRecordDocOrderRoute } from './record-api-doc-order.ts'
+import { registerRecordDocRenameRoute } from './record-api-doc-rename.ts'
 import { registerRecordMachineKeyClaimRoutes } from './record-api-machine-key-claim-routes.ts'
 import { registerRecordModerationRoutes } from './record-api-moderation-routes.ts'
 import { registerRecordOutsideBlockRoutes } from './record-api-outside-block-routes.ts'
@@ -22,7 +24,8 @@ type Deps = Parameters<typeof registerRecordProjectRoutes>[1] &
   Parameters<typeof registerRecordOutsideBlockRoutes>[1] &
   Parameters<typeof registerRecordModerationRoutes>[1] &
   Parameters<typeof registerRecordOutsideIntakeRoutes>[1] &
-  Parameters<typeof registerRecordDocOrderRoute>[1]
+  Parameters<typeof registerRecordDocOrderRoute>[1] &
+  Parameters<typeof registerRecordDocCountsRoute>[1]
 type Ports = Parameters<typeof registerRecordProjectRoutes>[2] &
   Parameters<typeof registerRecordSettingsRoutes>[2] &
   Parameters<typeof registerRecordBoardRoutes>[2] &
@@ -31,7 +34,8 @@ type Ports = Parameters<typeof registerRecordProjectRoutes>[2] &
   Parameters<typeof registerRecordOutsideBlockRoutes>[2] &
   Parameters<typeof registerRecordModerationRoutes>[2] &
   Parameters<typeof registerRecordOutsideIntakeRoutes>[2] &
-  Parameters<typeof registerRecordDocOrderRoute>[2]
+  Parameters<typeof registerRecordDocOrderRoute>[2] &
+  Parameters<typeof registerRecordDocCountsRoute>[2]
 
 export function registerRecordWriteRoutes(
   app: Hono<ApiEnvironment>,
@@ -47,4 +51,6 @@ export function registerRecordWriteRoutes(
   registerRecordOutsideBlockRoutes(app, deps, ports)
   registerRecordModerationRoutes(app, deps, ports)
   registerRecordDocOrderRoute(app, deps, ports)
+  registerRecordDocRenameRoute(app, deps.renameDocSubject, ports)
+  registerRecordDocCountsRoute(app, deps, ports)
 }

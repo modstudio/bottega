@@ -878,11 +878,6 @@ export const recordModules: RecordModule[] = [
     '../settings/settings-permission.ts',
     './record-docs.ts',
   ]),
-  module('orchestrator/src/record/record-api-doc-tenant.ts', [
-    '../../../shared/personal-item-space.ts',
-    './record-auth.ts',
-    './record-docs.ts',
-  ]),
   module('orchestrator/src/record/record-space-move.ts', [
     '../../../shared/brand.ts',
     'bun',

@@ -17,6 +17,11 @@ export type RecordDocumentTenant = {
   personalSpaceId?: string | null
 }
 
+type RecordDocumentContext = {
+  get(key: 'identity'): RecordIdentity
+  get(key: 'destinationSpaceId'): string | undefined
+}
+
 const identityOf = (identity: RecordIdentity) => ({
   userId: identity.user.id,
   activeSpaceId: identity.activeSpaceId,
@@ -61,4 +66,34 @@ export async function recordDocumentIdTenant(
     subject: found.subject,
     ownerUserId: found.owner,
   })
+}
+
+export function recordDocumentScopes<Context extends RecordDocumentContext>(input: {
+  scope(context: Context): RecordDocumentTenant | null
+  readDoc(input: RecordDocumentTenant & { id: string }): Promise<RecordDoc | null>
+}) {
+  const docScope = (context: Context, target: PersonalItemTarget) => {
+    const tenant = input.scope(context)
+    return tenant
+      ? recordDocumentTenant(
+          tenant,
+          context.get('identity'),
+          context.get('destinationSpaceId') !== undefined,
+          target,
+        )
+      : null
+  }
+  const docIdScope = async (context: Context, id: string) => {
+    const tenant = input.scope(context)
+    return tenant
+      ? recordDocumentIdTenant(
+          tenant,
+          context.get('identity'),
+          context.get('destinationSpaceId') !== undefined,
+          id,
+          input.readDoc,
+        )
+      : null
+  }
+  return { docScope, docIdScope }
 }

@@ -12,6 +12,26 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordBindingModules: RecordModule[] = [
+  module('orchestrator/src/record/record-api-doc-counts.ts', [
+    'hono',
+    './record-api-doc-tenant.ts',
+    './record-auth.ts',
+  ]),
+  module('orchestrator/src/record/record-api-doc-tenant.ts', [
+    '../../../shared/personal-item-space.ts',
+    './record-auth.ts',
+    './record-docs.ts',
+  ]),
+  module('orchestrator/src/record/record-api-doc-rename.ts', [
+    'hono',
+    'zod',
+    './record-api-doc-tenant.ts',
+    './record-auth.ts',
+  ]),
+  module('orchestrator/src/record/record-api-tenant.ts', [
+    './record-api-doc-tenant.ts',
+    './record-auth.ts',
+  ]),
   module('orchestrator/src/record/install-binding.ts', ['bun:sqlite']),
   module('orchestrator/src/record/install-binding-write.ts', [
     'bun:sqlite',
