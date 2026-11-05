@@ -183,6 +183,7 @@ describe('hosted context router', () => {
         personalSpaceId,
       )
       expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
+      expect(client.whoami).toHaveBeenCalledTimes(1)
     },
   )
 
@@ -446,6 +447,7 @@ describe('hosted context router', () => {
         personalSpaceId,
       )
       expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
+      expect(client.whoami).toHaveBeenCalledTimes(1)
     },
   )
 

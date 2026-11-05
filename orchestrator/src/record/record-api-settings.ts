@@ -8,16 +8,10 @@ import type {
   RecordSettingsAutoModeResult,
   RecordSettingsPermissionInput,
   RecordSettingsPermissionResult,
+  RecordSettingsTenant,
 } from './record-settings.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
-type Tenant = {
-  url: string
-  userId: string
-  spaceId: string
-  spaceIds: string[]
-  personalSpaceId?: string | null
-}
 
 const targetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user') }).strict(),
@@ -50,7 +44,7 @@ export function registerRecordSettingsRoutes(
   app: Hono<ApiEnvironment>,
   deps: RecordSettingsRouteDeps,
   ports: {
-    scope(context: Context<ApiEnvironment>): Tenant | null
+    scope(context: Context<ApiEnvironment>): RecordSettingsTenant | null
     noSpace(context: Context<ApiEnvironment>): Response
     writeError(context: Context<ApiEnvironment>, error: unknown): Response
   },

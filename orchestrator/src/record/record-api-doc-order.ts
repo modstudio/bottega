@@ -2,6 +2,7 @@
 /** Validates and serves the hosted document-order write edge. */
 
 import type { Context, Hono } from 'hono'
+import type { PersonalItemTarget } from '../../../shared/personal-item-space.ts'
 import { recordDocOrderSchema } from './record-api-doc-schemas.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordDocOrderInput } from './record-docs.ts'
@@ -15,6 +16,7 @@ type Deps = {
 
 type Ports = {
   scope(context: Context<ApiEnvironment>): Tenant | null
+  docScope(context: Context<ApiEnvironment>, target: PersonalItemTarget): Tenant | null
   noSpace(context: Context<ApiEnvironment>): Response
   writeError(context: Context<ApiEnvironment>, error: unknown): Response
 }
@@ -25,10 +27,15 @@ export function registerRecordDocOrderRoute(
   ports: Ports,
 ): void {
   app.put('/v1/docs/order', async (context) => {
-    const tenant = ports.scope(context)
-    if (!tenant) return ports.noSpace(context)
     const body = recordDocOrderSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc order' }, 400)
+    const tenant = ports.docScope(context, {
+      kind: 'document',
+      scope: body.data.scope,
+      subject: body.data.subject,
+      ownerUserId: context.get('identity').user.id,
+    })
+    if (!tenant) return ports.noSpace(context)
     try {
       return context.json(await deps.reorderDocs({ ...tenant, ...body.data }))
     } catch (error) {

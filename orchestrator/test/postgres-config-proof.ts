@@ -16,6 +16,7 @@ import {
   deleteConfigSecret,
   getDataKey,
   grantSpaceConfigAccess,
+  listConfigEntries,
   listConfigSecrets,
   listDataKeys,
   listSpaceConfigAccess,
@@ -42,6 +43,7 @@ export function registerHostedConfigProofs(
     spaceId: spaceA,
     spaceIds: [spaceA, spaceB],
     userId: userA,
+    personalSpaceId: spaceB,
   }
   beforeAll(() => {
     succeeds(
@@ -62,7 +64,9 @@ export function registerHostedConfigProofs(
          ('01990000-0000-7000-8000-000000000201', '${spaceA}', NULL, 'wide', 'default', 'wide-a', 1, now()),
          ('01990000-0000-7000-8000-000000000202', '${spaceA}', '${userA}', 'user-x', 'default', 'x-a', 1, now()),
          ('01990000-0000-7000-8000-000000000203', '${spaceA}', '${USER_B}', 'user-y', 'default', 'y-a', 1, now()),
-         ('01990000-0000-7000-8000-000000000204', '${spaceB}', NULL, 'wide', 'default', 'wide-b', 1, now());
+         ('01990000-0000-7000-8000-000000000204', '${spaceB}', NULL, 'wide', 'default', 'wide-b', 1, now()),
+         ('01990000-0000-7000-8000-000000000205', '${spaceB}', '${userA}', 'personal-x', 'default', 'personal-a', 1, now()),
+         ('01990000-0000-7000-8000-000000000206', '${spaceB}', '${USER_B}', 'personal-y', 'default', 'personal-b', 1, now());
        INSERT INTO config_secret
          (id, space_id, user_id, key, environment, dek_id, row_version, envelope, updated_at)
        VALUES
@@ -434,6 +438,11 @@ export function registerHostedConfigProofs(
     expect(items.length).toBeGreaterThan(0)
     expect(items.every((item) => !('envelope' in item))).toBe(true)
     expect(items.map((item) => item.key)).not.toContain('wide-b')
+  })
+
+  test('config entry list combines active shared entries with only the caller personal entries', async () => {
+    const items = await listConfigEntries(serviceTenant)
+    expect(items.map((item) => item.key)).toEqual(['personal-x', 'wide'])
   })
 
   test('config service enforces row versions on entry and secret put and delete', async () => {

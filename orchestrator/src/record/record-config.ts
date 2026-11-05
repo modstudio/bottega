@@ -3,6 +3,7 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
+import { resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import {
@@ -10,7 +11,6 @@ import {
   KEY_SIZE,
   sealClaimChallenge,
 } from '../../../shared/secret-envelope.ts'
-import { resolvePersonalItemSpace } from './personal-item-space.ts'
 import { assertConfigAccessRemovalSafe } from './record-config-access-removal.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
@@ -78,7 +78,7 @@ function configTenant(input: ConfigTenant, scope: ConfigScope): ConfigTenant {
     {
       userId: input.userId,
       activeSpaceId: input.spaceId,
-      personalSpaceId: input.personalSpaceId ?? input.spaceId,
+      personalSpaceId: input.personalSpaceId,
     },
     { kind: 'config-entry', scope },
   )

@@ -1,9 +1,13 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
+import { resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
 import { projectRowByName } from '../project/projects.ts'
-import { resolvePersonalItemSpace } from '../record/personal-item-space.ts'
-import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import {
+  type RecordApiClient,
+  RecordApiRequestError,
+  recordApiClient,
+} from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
 
@@ -48,6 +52,9 @@ export async function hostedDocClient(
           },
           { kind: 'document', scope, subject, ownerUserId: identity.user.id },
         )
+        if (!spaceId && (scope === 'settings' || scope === 'canon') && subject === null) {
+          throw new RecordApiRequestError('personal space is not provisioned', 'refused', 409)
+        }
         return spaceId ? { destinationSpaceId: spaceId } : undefined
       })()
   return {

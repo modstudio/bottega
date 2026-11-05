@@ -1,6 +1,7 @@
 // concern: record-settings
 /** Applies tenant-bound settings edits through the hosted document service. Must not know HTTP or local stores. */
 
+import { resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import {
   type AutoModeList,
@@ -18,7 +19,6 @@ import {
   editSettingsPermission,
   type SettingsPermissionOperation,
 } from '../settings/settings-permission.ts'
-import { resolvePersonalItemSpace } from './personal-item-space.ts'
 import {
   listRecordDocRevisions,
   listRecordDocs,
@@ -26,14 +26,14 @@ import {
   upsertRecordDoc,
 } from './record-docs.ts'
 
-type Tenant = {
+export type RecordSettingsTenant = {
   url: string
   userId: string
   spaceId: string
   spaceIds: string[]
   personalSpaceId?: string | null
 }
-export type RecordSettingsPermissionInput = Tenant & {
+export type RecordSettingsPermissionInput = RecordSettingsTenant & {
   target: { kind: 'user' } | { kind: 'project'; project: string }
   list: PermissionList
   rule: string
@@ -47,7 +47,7 @@ export type RecordSettingsPermissionResult = {
   permissions: Record<PermissionList, string[]>
 }
 
-export type RecordSettingsAutoModeInput = Tenant & {
+export type RecordSettingsAutoModeInput = RecordSettingsTenant & {
   target: { kind: 'user' } | { kind: 'project'; project: string }
   list: AutoModeList
   rule: string
@@ -115,7 +115,7 @@ async function applyRecordSettingsEdit<
     {
       userId: input.userId,
       activeSpaceId: input.spaceId,
-      personalSpaceId: input.personalSpaceId ?? input.spaceId,
+      personalSpaceId: input.personalSpaceId,
     },
     { kind: 'document', scope: SETTINGS_SCOPE, subject, ownerUserId: owner },
   )

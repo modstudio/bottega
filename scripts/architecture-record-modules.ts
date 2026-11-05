@@ -773,6 +773,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-doc-order.ts', [
     'hono',
+    '../../../shared/personal-item-space.ts',
     './record-api-doc-schemas.ts',
     './record-auth.ts',
     './record-docs.ts',
@@ -870,14 +871,18 @@ export const recordModules: RecordModule[] = [
     './record-settings.ts',
   ]),
   module('orchestrator/src/record/record-settings.ts', [
+    '../../../shared/personal-item-space.ts',
     '../doc/doc-write-allowed.ts',
     '../settings/settings.ts',
     '../settings/settings-auto-mode.ts',
     '../settings/settings-permission.ts',
     './record-docs.ts',
-    './personal-item-space.ts',
   ]),
-  module('orchestrator/src/record/personal-item-space.ts', []),
+  module('orchestrator/src/record/record-api-doc-tenant.ts', [
+    '../../../shared/personal-item-space.ts',
+    './record-auth.ts',
+    './record-docs.ts',
+  ]),
   module('orchestrator/src/record/record-space-move.ts', [
     '../../../shared/brand.ts',
     'bun',

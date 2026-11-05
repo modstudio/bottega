@@ -98,6 +98,21 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
   })
 
 const id = '01990000-0000-7000-8000-000000000001'
+const personalIdentity: RecordIdentity = {
+  ...identity,
+  user: { ...identity.user, id: '01990000-0000-7000-8000-0000000000aa' },
+  personalSpaceId: 'space-personal',
+  memberships: [
+    ...identity.memberships,
+    {
+      space_id: 'space-personal',
+      name: 'Personal',
+      slug: 'personal',
+      role: 'owner',
+      permission: 'write',
+    },
+  ],
+}
 describe('record API', () => {
   test('serves reconciled workflow import only on the v2 route', async () => {
     const imported = mock(async () => ({
@@ -264,6 +279,110 @@ describe('record API', () => {
       error: 'signed-in user is not a member of record space outside',
     })
     expect(calls).toBe(0)
+  })
+
+  test('a destination-less user settings write uses the personal space', async () => {
+    let writtenSpace = ''
+    const app = appWith(personalIdentity, {
+      upsertDoc: async (input: { spaceId: string }) => {
+        writtenSpace = input.spaceId
+        return { id, revisionId: id }
+      },
+    })
+    const response = await app.request('/v1/docs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'settings',
+        subject: null,
+        owner: personalIdentity.user.id,
+        slug: 'settings',
+        title: 'Settings',
+        body: JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] }),
+        delivery: 'demand',
+        reason: 'test personal destination',
+        author: personalIdentity.user.id,
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(writtenSpace).toBe('space-personal')
+  })
+
+  test('an id-only personal settings read probes active then personal space', async () => {
+    const spaces: string[] = []
+    const personalDoc = {
+      id,
+      scope: 'settings',
+      subject: null,
+      owner: personalIdentity.user.id,
+      title: 'Settings',
+      body: '{}',
+    }
+    const app = appWith(personalIdentity, {
+      readDoc: async (input: { spaceId: string }) => {
+        spaces.push(input.spaceId)
+        return input.spaceId === 'space-personal' ? personalDoc : null
+      },
+    })
+    const response = await app.request(`/v1/docs/${id}`)
+    expect(response.status).toBe(200)
+    expect(spaces).toEqual(['space-a', 'space-personal', 'space-personal'])
+  })
+
+  test('the settings route reads and writes a user document in the personal space', async () => {
+    const spaces: string[] = []
+    const revision = '01990000-0000-7000-8000-000000000010'
+    const app = appWith(personalIdentity, {
+      applySettingsPermission: (input: RecordSettingsPermissionInput) =>
+        applyRecordSettingsPermission(input, {
+          listDocs: async (tenant) => {
+            spaces.push(tenant.spaceId)
+            return [
+              {
+                id,
+                spaceId: tenant.spaceId,
+                spaceName: 'Personal',
+                scope: 'settings',
+                subject: null,
+                owner: personalIdentity.user.id,
+                slug: 'settings',
+                title: 'settings',
+                body: JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] }),
+                delivery: 'demand',
+                audiences: ['technical'],
+                parentId: null,
+                position: 0,
+                projectName: null,
+                createdAt: '2026-09-28T12:00:00.000Z',
+                updatedAt: '2026-09-28T12:00:00.000Z',
+                deletedAt: null,
+              },
+            ]
+          },
+          listRevisions: async (tenant) => {
+            spaces.push(tenant.spaceId)
+            return [{ id: revision } as never]
+          },
+          upsertDoc: async (tenant) => {
+            spaces.push(tenant.spaceId)
+            return { id, revisionId: id }
+          },
+        }),
+    })
+    const response = await app.request('/v1/settings/permission', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        target: { kind: 'user' },
+        list: 'allow',
+        rule: 'Bash(git status)',
+        operation: 'add',
+        reason: 'test personal settings route',
+        expectedRevision: revision,
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(spaces).toEqual(['space-personal', 'space-personal', 'space-personal'])
   })
 
   test('registers public docs outside session middleware and signed search inside it', async () => {
