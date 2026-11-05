@@ -30,6 +30,8 @@ const outsiderSpaceId = '01990000-0000-7000-8000-000000002113'
 const memberProjectId = '01990000-0000-7000-8000-000000002114'
 const outsiderProjectId = '01990000-0000-7000-8000-000000002115'
 const memberMembershipId = '01990000-0000-7000-8000-000000002116'
+const reviewId = '01990000-0000-7000-8000-000000002117'
+const reviewLensId = '01990000-0000-7000-8000-000000002118'
 
 const change = (
   table: string,
@@ -231,4 +233,66 @@ test('materialized changes reuse pull rows and preserve child mappings and tombs
       },
     ]),
   )
+
+  await database.exec(`DELETE FROM doc_related_subject WHERE id='${relationId}'`)
+  const afterRelationDelete = await readRecordChanges(
+    sql,
+    { userId, spaceId, spaceIds: [spaceId] },
+    feed.cursor,
+    100,
+    ['doc'],
+    async (tx, page) => (page.resetRequired ? page : materializeRecordChangePage(tx, page)),
+  )
+  expect(afterRelationDelete.resetRequired).toBe(false)
+  if (afterRelationDelete.resetRequired) return
+  const deletedRelationDoc = afterRelationDelete.changes.find(
+    (entry) => entry.table === 'doc' && entry.id === secondDocId,
+  )
+  expect(deletedRelationDoc).toMatchObject({ table: 'doc', id: secondDocId, op: 'upsert' })
+  expect(deletedRelationDoc).toHaveProperty('row')
+  if (!deletedRelationDoc) throw new Error('deleted relation document change is missing')
+  expect((deletedRelationDoc.row as { relatedSubjects: unknown[] }).relatedSubjects).toEqual([])
+
+  await database.exec(`
+    INSERT INTO review_lens (
+      id,space_id,review_id,run_id,machine_id,lens,agent,standards_read,files_covered,
+      commands_run,could_not_verify,mcp_tools,docs_read,substitutes,created_at,updated_at
+    ) VALUES (
+      '${reviewLensId}','${spaceId}','${reviewId}','${scoredRunId}','${machineId}',
+      'feed-review-lens','feed-reviewer','[]','[]','[]','[]','[]','[]','[]',now(),now()
+    )
+  `)
+  const afterReviewLens = await readRecordChanges(
+    sql,
+    { userId, spaceId, spaceIds: [spaceId] },
+    afterRelationDelete.cursor,
+    100,
+    ['run'],
+    async (tx, page) => (page.resetRequired ? page : materializeRecordChangePage(tx, page)),
+  )
+  expect(afterReviewLens.resetRequired).toBe(false)
+  if (afterReviewLens.resetRequired) return
+  const routingAfterLens = mapRecordRoutingEvidenceRow(
+    (await recordRoutingEvidenceRows(sql, { ids: [scoredRunId] }))[0]!,
+  )
+  const scoreAfterLens = mapRecordScoreRow((await recordScoreRows(sql, { ids: [scoredRunId] }))[0]!)
+  expect(afterReviewLens.changes).toEqual(
+    expect.arrayContaining([
+      {
+        table: 'routing_evidence',
+        id: scoredRunId,
+        space: spaceId,
+        op: 'upsert',
+        row: routingAfterLens,
+      },
+      {
+        table: 'run_score',
+        id: scoredRunId,
+        space: spaceId,
+        op: 'upsert',
+        row: scoreAfterLens,
+      },
+    ]),
+  )
+  expect(routingAfterLens.lenses).toContain('feed-review-lens')
 })

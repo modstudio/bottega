@@ -20,9 +20,9 @@ const currentSpace = sql`nullif(current_setting('app.space_id', true), '')::uuid
 const readableSpaces = sql`string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]`
 
 export const RECORD_CHANGE_CHILD_TABLES = [
-  ['doc_related_subject', 'doc'],
-  ['review_lens', 'run'],
-  ['run_exclusion', 'run'],
+  ['doc_related_subject', 'doc_id', 'doc'],
+  ['review_lens', 'run_id', 'run'],
+  ['run_exclusion', 'run_id', 'run'],
 ] as const
 
 export const RECORD_CHANGE_TRIGGER_TABLES = [
