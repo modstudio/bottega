@@ -231,8 +231,33 @@ test('transcript collector skips an unlinked projectless row and writes a valid 
       },
     ]),
   )
-  expect(result).toEqual({ rows: 1, skippedUnlinked: 1 })
+  expect(result).toEqual({ rows: 1, unchanged: 0, skippedUnlinked: 1 })
   expect(db().query(`SELECT ref FROM interval WHERE source='claude'`).all()).toEqual([
     { ref: 'claude:fixture.jsonl:0' },
   ])
+})
+
+test('transcript replacement writes only changed interval values', () => {
+  const row = {
+    source: 'claude' as const,
+    ref: 'claude:unchanged.jsonl:0',
+    start_at: '2026-09-01T11:00:00.000Z',
+    end_at: '2026-09-01T11:01:00.000Z',
+    task_key: null,
+    project: 'alpha',
+    claude_tokens: 10,
+    via: null,
+    session_id: null,
+    user_id: null,
+  }
+  const replace = (claudeTokens = row.claude_tokens) =>
+    writeTransaction((conn) =>
+      replaceTranscriptWindow(conn, ['unchanged.jsonl'], '2026-09-01', [
+        { ...row, claude_tokens: claudeTokens },
+      ]),
+    )
+
+  expect(replace()).toEqual({ rows: 1, unchanged: 0, skippedUnlinked: 0 })
+  expect(replace()).toEqual({ rows: 0, unchanged: 1, skippedUnlinked: 0 })
+  expect(replace(11)).toEqual({ rows: 1, unchanged: 0, skippedUnlinked: 0 })
 })

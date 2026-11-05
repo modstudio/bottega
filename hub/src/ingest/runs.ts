@@ -18,7 +18,7 @@ import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
 import { chunks, type IngestTransaction } from './batches.ts'
-import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
+import { decideCollectorReplace } from './interval-replace.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
 
@@ -188,6 +188,31 @@ type OrchIntervalRow = {
   user_id: string | null
 }
 
+type ComparableOrchIntervalRow = OrchIntervalRow & {
+  task_record_id: string | null
+  project_record_id: string | null
+}
+
+type StoredOrchIntervalRow = ComparableOrchIntervalRow & { record_id: string }
+
+function sameOrchInterval(existing: StoredOrchIntervalRow, recomputed: ComparableOrchIntervalRow) {
+  return (
+    existing.end_at === recomputed.end_at &&
+    existing.task_key === recomputed.task_key &&
+    existing.task_record_id === recomputed.task_record_id &&
+    existing.project === recomputed.project &&
+    existing.project_record_id === recomputed.project_record_id &&
+    existing.agent === recomputed.agent &&
+    existing.job === recomputed.job &&
+    existing.vendor_tokens === recomputed.vendor_tokens &&
+    existing.vendor_cost_usd === recomputed.vendor_cost_usd &&
+    existing.via === recomputed.via &&
+    existing.open === recomputed.open &&
+    existing.session_id === recomputed.session_id &&
+    existing.user_id === recomputed.user_id
+  )
+}
+
 type OrchTurnLike = {
   number: number
   record_id: string
@@ -232,10 +257,10 @@ function orchIntervalRow(
 
 function applyOrchReplace(
   conn: Database,
-  existing: ExistingIntervalRow[],
+  existing: StoredOrchIntervalRow[],
   recomputed: readonly OrchIntervalRow[],
   preservedRefs: ReadonlySet<string> = new Set(),
-): { skippedUnlinked: number } {
+): { written: number; unchanged: number; skippedUnlinked: number } {
   const linked = recomputed.map((row) => {
     const current = existing.find(
       (candidate) =>
@@ -244,28 +269,29 @@ function applyOrchReplace(
         candidate.start_at === row.start_at,
     )
     return {
-      row,
-      taskRecordId: current
+      ...row,
+      task_record_id: current
         ? intervalTaskRecordIdForUpdate(conn, current.record_id, row.task_key)
         : uniqueTaskRecordIdForKey(conn, row.task_key),
-      projectRecordId: projectRecordIdFor(row.project),
+      project_record_id: projectRecordIdFor(row.project),
     }
   })
   const skipped = linked.filter(
-    ({ taskRecordId, projectRecordId }) => !taskRecordId && !projectRecordId,
+    ({ task_record_id, project_record_id }) => !task_record_id && !project_record_id,
   )
   const valid = linked.filter(
-    ({ taskRecordId, projectRecordId }) => taskRecordId || projectRecordId,
+    ({ task_record_id, project_record_id }) => task_record_id || project_record_id,
   )
-  const keepRefs = new Set([...preservedRefs, ...skipped.map(({ row }) => row.ref)])
-  const decision = decideCollectorReplace(
+  const keepRefs = new Set([...preservedRefs, ...skipped.map((row) => row.ref)])
+  const decision = decideCollectorReplace<ComparableOrchIntervalRow, StoredOrchIntervalRow>(
     existing,
-    valid.map(({ row }) => row),
+    valid,
     keepRefs,
+    sameOrchInterval,
   )
   const update = conn.query(
     `UPDATE interval SET end_at=?, vendor_tokens=?, vendor_cost_usd=?, task_key=?, task_record_id=?,
-       project=?, project_record_id=?, job=?, via=?, open=?, session_id=?, user_id=?
+       project=?, project_record_id=?, agent=?, job=?, via=?, open=?, session_id=?, user_id=?
      WHERE record_id=?`,
   )
   const insert = conn.query(
@@ -280,9 +306,10 @@ function applyOrchReplace(
       row.vendor_tokens,
       row.vendor_cost_usd,
       row.task_key,
-      intervalTaskRecordIdForUpdate(conn, row.record_id, row.task_key),
+      row.task_record_id,
       row.project,
-      projectRecordIdFor(row.project),
+      row.project_record_id,
+      row.agent,
       row.job,
       row.via,
       row.open,
@@ -294,9 +321,9 @@ function applyOrchReplace(
     insert.run(
       newRecordId(),
       row.task_key,
-      uniqueTaskRecordIdForKey(conn, row.task_key),
+      row.task_record_id,
       row.project,
-      projectRecordIdFor(row.project),
+      row.project_record_id,
       row.agent,
       row.job,
       row.start_at,
@@ -310,16 +337,24 @@ function applyOrchReplace(
       row.user_id,
     )
   for (const recordId of decision.deletes) remove.run(recordId)
-  return { skippedUnlinked: skipped.length }
+  return {
+    written: decision.updates.length + decision.inserts.length,
+    unchanged: decision.unchanged,
+    skippedUnlinked: skipped.length,
+  }
 }
 
+/** The stored columns `sameOrchInterval` compares; both reads select exactly these. */
+const STORED_ORCH_COLUMNS = `record_id, source, ref, start_at, end_at, task_key, task_record_id, project,
+  project_record_id, agent, job, vendor_tokens, vendor_cost_usd, via, open, session_id, user_id`
+
 function orchIntervalWriter(conn: Database) {
-  const selectChain = conn.query<ExistingIntervalRow, [string, string]>(
-    `SELECT record_id, source, ref, start_at FROM interval
+  const selectChain = conn.query<StoredOrchIntervalRow, [string, string]>(
+    `SELECT ${STORED_ORCH_COLUMNS} FROM interval
      WHERE source = 'orch' AND (ref = ? OR ref LIKE ?)`,
   )
-  const selectRef = conn.query<ExistingIntervalRow, [string]>(
-    `SELECT record_id, source, ref, start_at FROM interval WHERE source = 'orch' AND ref = ?`,
+  const selectRef = conn.query<StoredOrchIntervalRow, [string]>(
+    `SELECT ${STORED_ORCH_COLUMNS} FROM interval WHERE source = 'orch' AND ref = ?`,
   )
   const close = conn.query(`UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`)
   const closeReplaced = conn.query(
@@ -373,8 +408,8 @@ function ingestOneRun(
     }
     const written = writer.replaceChain(run.record_id, recomputed, preservedRefs)
     return {
-      rows: recomputed.length - written.skippedUnlinked,
-      skipped: skipped + written.skippedUnlinked,
+      rows: written.written,
+      skipped: skipped + written.unchanged + written.skippedUnlinked,
       ...(written.skippedUnlinked ? { skippedUnlinked: written.skippedUnlinked } : {}),
     }
   }
@@ -386,7 +421,7 @@ function ingestOneRun(
   const written = writer.replaceRef(`orch:${run.record_id}`, [built.value])
   return written.skippedUnlinked
     ? { rows: 0, skipped: 1, skippedUnlinked: 1 }
-    : { rows: 1, skipped: 0 }
+    : { rows: written.written, skipped: written.unchanged }
 }
 
 function ingestRunRows(

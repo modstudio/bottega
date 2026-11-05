@@ -8,6 +8,8 @@ const existing = (recordId: string, startAt: string, ref = 'claude:file:0') => (
   start_at: startAt,
 })
 
+const neverEqual = () => false
+
 const recomputed = (startAt: string, endAt: string, ref = 'claude:file:0') => ({
   source: 'claude',
   ref,
@@ -19,6 +21,8 @@ test('unchanged start updates in place and keeps the UUID', () => {
   const decision = decideCollectorReplace(
     [existing('keep-id', '2026-10-08T10:00:00.000Z')],
     [recomputed('2026-10-08T10:00:00.000Z', '2026-10-08T10:05:00.000Z')],
+    new Set(),
+    neverEqual,
   )
   expect(decision).toEqual({
     updates: [
@@ -32,6 +36,7 @@ test('unchanged start updates in place and keeps the UUID', () => {
     ],
     inserts: [],
     deletes: [],
+    unchanged: 0,
   })
 })
 
@@ -39,6 +44,8 @@ test('changed start yields one insert and one delete', () => {
   const decision = decideCollectorReplace(
     [existing('old-id', '2026-10-08T10:00:00.000Z')],
     [recomputed('2026-10-08T10:01:00.000Z', '2026-10-08T10:05:00.000Z')],
+    new Set(),
+    neverEqual,
   )
   expect(decision.updates).toEqual([])
   expect(decision.inserts).toEqual([
@@ -51,6 +58,8 @@ test('a row that only grew longer is an update', () => {
   const decision = decideCollectorReplace(
     [existing('keep-id', '2026-10-08T10:00:00.000Z')],
     [recomputed('2026-10-08T10:00:00.000Z', '2026-10-08T11:00:00.000Z')],
+    new Set(),
+    neverEqual,
   )
   expect(decision.updates).toHaveLength(1)
   expect(decision.updates[0]?.record_id).toBe('keep-id')
@@ -66,6 +75,8 @@ test('a split updates the surviving start and inserts the new start', () => {
       recomputed('2026-10-08T10:00:00.000Z', '2026-10-08T10:10:00.000Z'),
       recomputed('2026-10-08T10:20:00.000Z', '2026-10-08T10:30:00.000Z'),
     ],
+    new Set(),
+    neverEqual,
   )
   expect(decision.updates.map((row) => [row.record_id, row.start_at])).toEqual([
     ['keep-id', '2026-10-08T10:00:00.000Z'],
@@ -82,6 +93,21 @@ test('preserved refs stay out of the pure replacement decision deletes', () => {
     ],
     [],
     new Set(['orch:1:turn:1']),
+    neverEqual,
   )
-  expect(decision).toEqual({ updates: [], inserts: [], deletes: ['delete-id'] })
+  expect(decision).toEqual({ updates: [], inserts: [], deletes: ['delete-id'], unchanged: 0 })
+})
+
+test('equal stored values are unchanged rather than updated', () => {
+  const prior = {
+    ...existing('keep-id', '2026-10-08T10:00:00.000Z'),
+    end_at: '2026-10-08T10:05:00.000Z',
+  }
+  const decision = decideCollectorReplace(
+    [prior],
+    [recomputed('2026-10-08T10:00:00.000Z', '2026-10-08T10:05:00.000Z')],
+    new Set(),
+    (stored, next) => stored.end_at === next.end_at,
+  )
+  expect(decision).toEqual({ updates: [], inserts: [], deletes: [], unchanged: 1 })
 })

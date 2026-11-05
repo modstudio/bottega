@@ -314,11 +314,11 @@ publish hosted record snapshots
 
 **Synopsis:** `bottega record pull [--since <ISO>] [--only <runs|transcripts|git|tasks>] [--watch]`
 
-ingest every source into the local record
+incrementally ingest every source; --since rebuilds a window
 
 ### Options
 
-- `--since <ISO>`: earliest source timestamp to ingest
+- `--since <ISO>`: rebuild from the earliest source timestamp
 - `--only <runs|transcripts|git|tasks>`: source to ingest
 - `--watch`: keep collecting on a clock; what launchd runs
 
@@ -745,12 +745,12 @@ unhide a board message or note (owner only)
 
 **Synopsis:** `bottega record sync [--backfill] [--since <ISO>] [--only <runs|transcripts|git|tasks>]`
 
-synchronize both concern records
+incrementally synchronize both records; --since rebuilds the hub window
 
 ### Options
 
 - `--backfill`: enqueue older records before pushing
-- `--since <ISO>`: earliest source timestamp to ingest
+- `--since <ISO>`: rebuild from the earliest source timestamp
 - `--only <runs|transcripts|git|tasks>`: source to ingest
 
 ### Related
