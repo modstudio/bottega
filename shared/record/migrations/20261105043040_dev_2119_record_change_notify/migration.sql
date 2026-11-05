@@ -30,9 +30,9 @@ BEGIN
     VALUES (old_space,logged_table,old_id,CASE WHEN TG_NARGS > 1 THEN 'upsert' ELSE 'delete' END);
     logged := true;
   ELSIF OLD IS DISTINCT FROM NEW THEN
-    IF old_space IS DISTINCT FROM new_space THEN
+    IF old_space IS DISTINCT FROM new_space OR old_id IS DISTINCT FROM new_id THEN
       INSERT INTO public.record_change (space_id,table_name,row_id,op)
-      VALUES (old_space,logged_table,old_id,'delete');
+      VALUES (old_space,logged_table,old_id,CASE WHEN TG_NARGS > 1 THEN 'upsert' ELSE 'delete' END);
     END IF;
     INSERT INTO public.record_change (space_id,table_name,row_id,op)
     VALUES (new_space,logged_table,new_id,'upsert');

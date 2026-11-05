@@ -17,3 +17,22 @@ test('a failed listener open falls back to polling and the next wait retries', a
   expect(attempts).toBe(2)
   await source.close()
 })
+
+test('a notification wakes a waiter before its safety timeout', async () => {
+  let notify: (() => void) | undefined
+  const listener = {
+    async listen(_channel: string, onnotify: () => void) {
+      notify = onnotify
+      return { async unlisten() {} }
+    },
+    async close() {},
+  }
+  const source = createRecordChangeWakeSource('postgres://unused', listener)
+  const started = performance.now()
+  const waiting = source.wait(1_000)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  notify?.()
+  await waiting
+  expect(performance.now() - started).toBeLessThan(500)
+  await source.close()
+})

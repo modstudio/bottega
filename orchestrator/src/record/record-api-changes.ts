@@ -49,7 +49,7 @@ export function registerRecordChangeRoute(app: Hono<Environment>, deps: RecordCh
     }
     const identity = context.get('identity')
     const spaces = identity.memberships.map((membership) => String(membership.space_id))
-    const primarySpace = spaces[0] ?? identity.personalSpaceId ?? identity.activeSpaceId
+    const primarySpace = identity.activeSpaceId ?? spaces[0]
     if (!primarySpace) return context.json({ error: 'record session has no spaces' }, 409)
     const principal = {
       userId: identity.user.id,

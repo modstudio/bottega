@@ -12,7 +12,7 @@ const cursor = { xid: 12n, seq: 34n }
 const identity = {
   user: { id: user },
   personalSpaceId: spaceA,
-  activeSpaceId: spaceA,
+  activeSpaceId: spaceB,
   memberships: [{ space_id: spaceA }, { space_id: spaceB }],
 } as RecordIdentity
 
@@ -45,9 +45,11 @@ test('record changes reset without a cursor and reject a malformed cursor', asyn
 
 test('record changes bind every membership and preserve two-space rows', async () => {
   let spaces: string[] = []
+  let primarySpace = ''
   const response = await app({
     readChanges: async (input) => {
       spaces = input.spaceIds
+      primarySpace = input.spaceId
       return {
         resetRequired: false,
         cursor,
@@ -60,6 +62,7 @@ test('record changes bind every membership and preserve two-space rows', async (
       }
     },
   }).request(`/v1/changes?after=${encodeRecordChangeCursor(cursor)}`)
+  expect(primarySpace).toBe(spaceB)
   expect(spaces).toEqual([spaceA, spaceB])
   const body = (await response.json()) as { changes: Array<{ space: string }> }
   expect(body.changes.map((change) => change.space)).toEqual([spaceA, spaceB])
