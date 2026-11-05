@@ -32,6 +32,7 @@ test('unchanged start updates in place and keeps the UUID', () => {
     ],
     inserts: [],
     deletes: [],
+    unchanged: 0,
   })
 })
 
@@ -83,5 +84,19 @@ test('preserved refs stay out of the pure replacement decision deletes', () => {
     [],
     new Set(['orch:1:turn:1']),
   )
-  expect(decision).toEqual({ updates: [], inserts: [], deletes: ['delete-id'] })
+  expect(decision).toEqual({ updates: [], inserts: [], deletes: ['delete-id'], unchanged: 0 })
+})
+
+test('equal stored values are unchanged rather than updated', () => {
+  const prior = {
+    ...existing('keep-id', '2026-10-08T10:00:00.000Z'),
+    end_at: '2026-10-08T10:05:00.000Z',
+  }
+  const decision = decideCollectorReplace(
+    [prior],
+    [recomputed('2026-10-08T10:00:00.000Z', '2026-10-08T10:05:00.000Z')],
+    new Set(),
+    (stored, next) => stored.end_at === next.end_at,
+  )
+  expect(decision).toEqual({ updates: [], inserts: [], deletes: [], unchanged: 1 })
 })

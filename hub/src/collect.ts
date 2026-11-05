@@ -494,28 +494,33 @@ export async function collectFast(
     transcripts?: (since: string) => Promise<IngestReport>
   } = {},
   guard?: LeaseGuard,
+  only?: string,
 ) {
+  const selected = (source: string) => !only || only === source
+  const runsFastLeg = selected('runs') || selected('transcripts')
   const results = [] as CollectLegResult[]
   guard?.assertHeld()
-  results.push(
+  if (selected('runs')) results.push(
     await settleLeg(
       'runs',
       () => (dependencies.runs ?? ingestRunChanges)(runsSince()),
       collectLegMetrics,
     ),
   )
-  guard?.assertHeld('runs')
-  results.push(
+  guard?.assertHeld(selected('runs') ? 'runs' : undefined)
+  if (selected('transcripts')) results.push(
     await settleLeg(
       'transcripts',
       () => (dependencies.transcripts ?? ingestTranscripts)(hoursAgo(2)),
       collectLegMetrics,
     ),
   )
-  guard?.assertHeld('transcripts')
-  rollUpDays()
-  guard?.assertHeld('roll up days')
-  stamp('collect.at')
+  guard?.assertHeld(selected('transcripts') ? 'transcripts' : undefined)
+  if (runsFastLeg) {
+    rollUpDays()
+    guard?.assertHeld('roll up days')
+    stamp('collect.at')
+  }
   return results
 }
 
@@ -563,21 +568,26 @@ export async function deliverOperatorNotifications(
 }
 
 /** The remote and commit-shaped legs. */
-async function collectSlow(
+export async function collectSlow(
   scheduled = false,
   guard?: LeaseGuard,
   outboxSchedule?: HostedOutboxDrainSchedule<HostedOutboxReport>,
+  only?: string,
 ) {
+  const selected = (source: string) => !only || only === source
+  const runsSlowLeg = selected('git') || selected('tasks')
   const results = [] as CollectLegResult[]
-  let lastCompleted = 'tasks'
+  let lastCompleted = 'project identity'
   guard?.assertHeld()
   writeTransaction((conn) => applyProjectRegisterNames(conn))
   guard?.assertHeld('project identity')
-  results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
-  guard?.assertHeld('git')
-  const due = scheduled ? trackerSchedule.due(trackerProjects()) : null
+  if (selected('git'))
+    results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
+  if (selected('git')) lastCompleted = 'git'
+  guard?.assertHeld(selected('git') ? 'git' : 'project identity')
+  const due = scheduled && selected('tasks') ? trackerSchedule.due(trackerProjects()) : null
   let trackerResults: TrackerResult[] = []
-  results.push(
+  if (selected('tasks')) results.push(
     await settleLeg('tasks', async () => {
       trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
       if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
@@ -585,11 +595,14 @@ async function collectSlow(
       if (error) throw new Error(error)
     }),
   )
-  guard?.assertHeld('tasks')
-  stamp('collect.slow.at')
-  pruneOutboxTrace()
-  if (resolveHostedUrl()) {
-    guard?.assertHeld('tasks')
+  if (selected('tasks')) lastCompleted = 'tasks'
+  guard?.assertHeld(selected('tasks') ? 'tasks' : selected('git') ? 'git' : 'project identity')
+  if (runsSlowLeg) {
+    stamp('collect.slow.at')
+    pruneOutboxTrace()
+  }
+  if (!only && resolveHostedUrl()) {
+    guard?.assertHeld(lastCompleted)
     const hostedResults = await hostedCollectLegs(
       guard,
       outboxSchedule ? { outbox: () => outboxSchedule.slow() } : {},
@@ -599,11 +612,27 @@ async function collectSlow(
     guard?.assertHeld('hosted')
   }
   guard?.assertHeld(lastCompleted)
-  stamp('collect.at')
+  if (runsSlowLeg) {
+    if (only) {
+      rollUpDays()
+      guard?.assertHeld('roll up days')
+    }
+    stamp('collect.at')
+  }
   return results
 }
 
 const UNGUARDED_LEASE: LeaseGuard = { assertHeld() {} }
+
+/** Run both incremental cadences immediately, without tracker scheduling. */
+export async function collectIncremental(
+  only?: string,
+  guard: LeaseGuard = UNGUARDED_LEASE,
+): Promise<CollectLegResult[]> {
+  const fast = await collectFast({}, guard, only)
+  const slow = await collectSlow(false, guard, undefined, only)
+  return [...fast, ...slow]
+}
 
 export async function collectOnce(
   since: string,

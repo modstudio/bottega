@@ -11,7 +11,7 @@ import { db, nowIso, writeTransaction } from '../db.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { hostedSignedInUserId } from '../task-client.ts'
 import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
-import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
+import { decideCollectorReplace } from './interval-replace.ts'
 
 type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
 type TranscriptFingerprint = { size: number; mtimeMs: number }
@@ -234,15 +234,41 @@ type TranscriptIntervalRow = {
   user_id: string | null
 }
 
+type ComparableTranscriptIntervalRow = TranscriptIntervalRow & {
+  task_record_id: string | null
+  project_record_id: string | null
+}
+
+type StoredTranscriptIntervalRow = ComparableTranscriptIntervalRow & { record_id: string }
+
+function sameTranscriptInterval(
+  existing: StoredTranscriptIntervalRow,
+  recomputed: ComparableTranscriptIntervalRow,
+) {
+  return (
+    existing.task_key === recomputed.task_key &&
+    existing.task_record_id === recomputed.task_record_id &&
+    existing.project === recomputed.project &&
+    existing.project_record_id === recomputed.project_record_id &&
+    existing.end_at === recomputed.end_at &&
+    existing.claude_tokens === recomputed.claude_tokens &&
+    existing.via === recomputed.via &&
+    existing.session_id === recomputed.session_id &&
+    existing.user_id === recomputed.user_id
+  )
+}
+
 export function replaceTranscriptWindow(
   conn: Database,
   fileRefs: readonly string[],
   since: string,
   recomputed: readonly TranscriptIntervalRow[],
-): { rows: number; skippedUnlinked: number } {
-  const existing: ExistingIntervalRow[] = []
-  const select = conn.query<ExistingIntervalRow, [string, string]>(
-    `SELECT record_id, source, ref, start_at FROM interval
+): { rows: number; unchanged: number; skippedUnlinked: number } {
+  const existing: StoredTranscriptIntervalRow[] = []
+  const select = conn.query<StoredTranscriptIntervalRow, [string, string]>(
+    `SELECT record_id, source, ref, start_at, end_at, task_key, task_record_id, project,
+            project_record_id, claude_tokens, via, session_id, user_id
+     FROM interval
      WHERE source = 'claude' AND ref LIKE ? AND end_at >= ?`,
   )
   for (const ref of fileRefs) existing.push(...select.all(`claude:${ref}:%`, since))
@@ -254,23 +280,27 @@ export function replaceTranscriptWindow(
         candidate.start_at === row.start_at,
     )
     return {
-      row,
-      taskRecordId: current
+      ...row,
+      task_record_id: current
         ? intervalTaskRecordIdForUpdate(conn, current.record_id, row.task_key)
         : uniqueTaskRecordIdForKey(conn, row.task_key),
-      projectRecordId: projectRecordIdFor(row.project),
+      project_record_id: projectRecordIdFor(row.project),
     }
   })
   const skipped = linked.filter(
-    ({ taskRecordId, projectRecordId }) => !taskRecordId && !projectRecordId,
+    ({ task_record_id, project_record_id }) => !task_record_id && !project_record_id,
   )
   const valid = linked.filter(
-    ({ taskRecordId, projectRecordId }) => taskRecordId || projectRecordId,
+    ({ task_record_id, project_record_id }) => task_record_id || project_record_id,
   )
-  const decision = decideCollectorReplace(
+  const decision = decideCollectorReplace<
+    ComparableTranscriptIntervalRow,
+    StoredTranscriptIntervalRow
+  >(
     existing,
-    valid.map(({ row }) => row),
-    new Set(skipped.map(({ row }) => row.ref)),
+    valid,
+    new Set(skipped.map((row) => row.ref)),
+    sameTranscriptInterval,
   )
   const update = conn.query(
     `UPDATE interval SET task_key=?, task_record_id=?, project=?, project_record_id=?, agent=NULL, end_at=?, claude_tokens=?,
@@ -286,9 +316,9 @@ export function replaceTranscriptWindow(
   for (const row of decision.updates)
     update.run(
       row.task_key,
-      intervalTaskRecordIdForUpdate(conn, row.record_id, row.task_key),
+      row.task_record_id,
       row.project,
-      projectRecordIdFor(row.project),
+      row.project_record_id,
       row.end_at,
       row.claude_tokens,
       row.via,
@@ -300,9 +330,9 @@ export function replaceTranscriptWindow(
     insert.run(
       newRecordId(),
       row.task_key,
-      uniqueTaskRecordIdForKey(conn, row.task_key),
+      row.task_record_id,
       row.project,
-      projectRecordIdFor(row.project),
+      row.project_record_id,
       row.start_at,
       row.end_at,
       row.claude_tokens,
@@ -312,7 +342,11 @@ export function replaceTranscriptWindow(
       row.user_id,
     )
   for (const recordId of decision.deletes) remove.run(recordId)
-  return { rows: valid.length, skippedUnlinked: skipped.length }
+  return {
+    rows: decision.updates.length + decision.inserts.length,
+    unchanged: decision.unchanged,
+    skippedUnlinked: skipped.length,
+  }
 }
 
 /**
@@ -352,6 +386,7 @@ export async function ingestTranscripts(
   // several .jsonl files can carry the same sessionId.
   let files = 0
   let rows = 0
+  let unchanged = 0
   let skippedUnlinked = 0
   const selected = transcriptFilesForPass(root.path, sinceDay, options.rebuild)
   for (const { file, fingerprint } of selected.changed) {
@@ -434,6 +469,7 @@ export async function ingestTranscripts(
         recomputed,
       )
       rows += result.rows
+      unchanged += result.unchanged
       skippedUnlinked += result.skippedUnlinked
       recordTranscriptFingerprint(conn, file, fingerprint)
     })
@@ -450,7 +486,7 @@ export async function ingestTranscripts(
     files,
     rows,
     source: 'read',
-    skipped: selected.skipped,
+    skipped: selected.skipped + unchanged,
     ...(skippedUnlinked ? { skippedUnlinked } : {}),
     ...(selected.unreadable ? { unreadable: selected.unreadable } : {}),
   }

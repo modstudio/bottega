@@ -37,6 +37,54 @@ test('notification delivery logs one failure and continues through the claimed b
 })
 
 describe('run ingest', () => {
+  test('a repeated completed run is unchanged while changed content is written', async () => {
+    const run = runFixture({
+      id: 9910,
+      status: 'delivered',
+      latency_ms: 5_000,
+      vendor_tokens: 100,
+    })
+    const pass = (row = run) =>
+      collectFast(
+        {
+          runs: async () => ({ examined: 1, ...(await ingestRunFixtures(row)) }),
+        },
+        undefined,
+        'runs',
+      )
+
+    try {
+      expect((await pass())[0]).toMatchObject({
+        source: 'runs',
+        ok: true,
+        metrics: { examined: 1, written: 1, unchanged: 0 },
+      })
+      expect((await pass())[0]).toMatchObject({
+        source: 'runs',
+        ok: true,
+        metrics: { examined: 1, written: 0, unchanged: 1 },
+      })
+      expect(
+        (
+          await pass(
+            runFixture({
+              id: 9910,
+              status: 'delivered',
+              latency_ms: 5_000,
+              vendor_tokens: 101,
+            }),
+          )
+        )[0],
+      ).toMatchObject({
+        source: 'runs',
+        ok: true,
+        metrics: { examined: 1, written: 1, unchanged: 0 },
+      })
+    } finally {
+      resetFixtureStore()
+    }
+  })
+
   test('run changes ingest rows after the stored cursor and write nothing once caught up', async () => {
     writeTransaction((conn) =>
       conn
