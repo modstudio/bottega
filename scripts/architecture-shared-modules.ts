@@ -59,11 +59,6 @@ export const sharedModules: ArchitectureModule[] = [
   ...keyStoreModules,
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', ['./brand.ts']),
-  module('shared/settings-summary.ts', [
-    'node:crypto',
-    './secret-shaped.ts',
-    './stored-settings.ts',
-  ]),
   module('shared/stored-settings.ts', ['zod']),
   module('shared/hosted-config-space.ts', ['node:fs', 'node:path', './config-directory.ts']),
   module('shared/hosted-secret-opening.ts', [

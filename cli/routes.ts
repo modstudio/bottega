@@ -143,7 +143,7 @@ export const ROUTES = (
     {
       command: ['record', 'sync'],
       owner: 'composite',
-      description: 'synchronize both concern records',
+      description: 'incrementally synchronize both records; --since rebuilds the hub window',
       composite: [
         {
           owner: 'orch',
@@ -159,7 +159,12 @@ export const ROUTES = (
         },
       ],
     },
-    route('record pull', 'hub', 'collect', 'ingest every source into the local record'),
+    route(
+      'record pull',
+      'hub',
+      'collect',
+      'incrementally ingest every source; --since rebuilds a window',
+    ),
     route('record lease', 'hub', 'lease', 'show the current local collect lease'),
     route('record push', 'orch', 'sync', "push this machine's orchestrator record"),
     route(

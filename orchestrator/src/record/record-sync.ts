@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineNames, writeMachineNames } from '../../../shared/machine-config.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
@@ -31,6 +31,7 @@ import {
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
+import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
 import {
@@ -532,10 +533,14 @@ async function sendSyncBatch(input: {
 
 async function ensureActiveSpaceBuiltIns(
   client: Pick<ReturnType<typeof recordApiClient>, 'whoami' | 'ensureSpaceBuiltIns'>,
+  local: Database,
 ): Promise<Awaited<ReturnType<typeof client.whoami>>> {
   const session = await client.whoami()
-  if (session.activeSpaceId && client.ensureSpaceBuiltIns)
+  if (session.activeSpaceId && client.ensureSpaceBuiltIns) {
+    if (builtInsEnsured(local, session.activeSpaceId)) return session
     await client.ensureSpaceBuiltIns({ destinationSpaceId: session.activeSpaceId })
+    recordBuiltInsEnsured(local, session.activeSpaceId)
+  }
   return session
 }
 
@@ -550,6 +555,7 @@ function completedSyncResult(input: {
   backfill: RecordSyncResult['backfill']
   machineNameRefusal?: string
   routingPool?: RecordSyncResult['routingPool']
+  projectRegister?: RecordSyncResult['projectRegister']
 }): RecordSyncResult {
   return {
     pushed: input.pushed,
@@ -557,6 +563,7 @@ function completedSyncResult(input: {
     pending: pendingCount(input.local),
     configured: true,
     ...(input.routingPool ? { routingPool: input.routingPool } : {}),
+    ...(input.projectRegister ? { projectRegister: input.projectRegister } : {}),
     quarantined: quarantinedOutboxRows(input.local),
     blocked: input.blocked,
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
@@ -590,8 +597,18 @@ function cacheFirstSyncedMachineNames(
   writeMachineNames({ shortName: identity.shortName, displayName: identity.displayName })
 }
 
+async function pullAfterSync(
+  options: RecordSyncOptions,
+  local: Database,
+  identity: NonNullable<Parameters<typeof pullRecordCache>[1]>,
+): Promise<Pick<RecordSyncResult, 'routingPool' | 'projectRegister'>> {
+  if (options.client) return {}
+  const pull = await pullRecordCache(local, identity)
+  return { routingPool: pull.routingPool, projectRegister: pull.projectRegister }
+}
+
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
-  const configured = Boolean(resolveRecordApiUrl(process.env) || options.client)
+  const configured = recordApiConfigured(process.env) || Boolean(options.client)
   const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
   const identity = {
     ...requestedIdentity,
@@ -622,7 +639,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
-  const session = await ensureActiveSpaceBuiltIns(client)
+  const session = await ensureActiveSpaceBuiltIns(client, writableLocal)
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0
@@ -664,8 +681,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     if (!batch.request.rows.length) break
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
-  let routingPool: RecordSyncResult['routingPool']
-  if (!options.client) routingPool = (await pullRecordCache(writableLocal)).routingPool
+  const { routingPool, projectRegister } = await pullAfterSync(options, writableLocal, session)
   rememberHostedRecord(writableLocal)
   return completedSyncResult({
     pushed,
@@ -678,5 +694,6 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     backfill,
     machineNameRefusal,
     routingPool,
+    projectRegister,
   })
 }

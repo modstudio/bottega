@@ -8,6 +8,7 @@ import {
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
 import {
+  collectIncremental,
   collectLease,
   collectOnce,
   formatCollectLeg,
@@ -48,13 +49,22 @@ import {
 import { startRevisionMonitor } from './service-revision.ts'
 import { hoursAgo } from './time.ts'
 
-async function collect(
+/** The legs `--only` may name. */
+const COLLECT_LEGS = ['runs', 'transcripts', 'git', 'tasks']
+
+export async function collectOneShot(
   guard: import('./collect.ts').LeaseGuard | undefined,
   since?: string,
   only?: string,
+  dependencies: {
+    incremental?: typeof collectIncremental
+    rebuild?: typeof collectOnce
+  } = {},
 ) {
   const t0 = Date.now()
-  const results = await collectOnce(since ?? hoursAgo(24 * 30), only, guard)
+  const results = since
+    ? await (dependencies.rebuild ?? collectOnce)(since, only, guard)
+    : await (dependencies.incremental ?? collectIncremental)(only, guard)
   for (const result of results) console.log(formatCollectLeg(result))
   console.log(`\ncollected in ${human(Date.now() - t0)}`)
   if (results.some((result) => !result.ok)) process.exitCode = 1
@@ -194,12 +204,19 @@ function registerCollectionCommands(program: Command): void {
     })
   program
     .command('collect')
-    .description('ingest every source into hub.db')
-    .option('--since <ISO>', 'earliest source timestamp to ingest')
+    .description('incrementally ingest every source into hub.db')
+    .option('--since <ISO>', 'rebuild from the earliest source timestamp')
     .option('--only <runs|transcripts|git|tasks>', 'source to ingest')
     .option('--watch', 'keep collecting on a clock; what launchd runs')
     .action(async (options: { since?: string; only?: string; watch?: boolean }) => {
       requireDatabase()
+      if (options.only && !COLLECT_LEGS.includes(options.only)) {
+        console.error(
+          `hub: --only ${options.only} names no collect leg; use one of ${COLLECT_LEGS.join(', ')}`,
+        )
+        process.exitCode = 2
+        return
+      }
       if (options.watch) {
         console.log(`hub: collecting every ${20}s (fast) and ${300}s (slow); ctrl-c to stop`)
         const holder = `collect:${process.pid}`
@@ -215,7 +232,7 @@ function registerCollectionCommands(program: Command): void {
       }
       const result = await withLease(
         `collect:${process.pid}`,
-        (guard) => collect(guard, options.since, options.only),
+        (guard) => collectOneShot(guard, options.since, options.only),
         undefined,
         undefined,
         (legs) => legs,

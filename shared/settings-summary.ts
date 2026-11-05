@@ -1,5 +1,6 @@
 /** Pure redacted presentation of stored managed settings. */
 import { createHash } from 'node:crypto'
+import { canonicalJson } from './canonical-json.ts'
 import { containsSecretShaped, redactSecretShaped } from './secret-shaped.ts'
 import type { OwnedSettings } from './stored-settings.ts'
 
@@ -11,18 +12,6 @@ const object = (value: unknown): value is Record<string, unknown> =>
 
 const fingerprint = (value: unknown) =>
   createHash('sha256').update(canonicalJson(value)).digest('hex').slice(0, 12)
-
-const canonicalJson = (value: unknown): string => JSON.stringify(canonicalize(value))
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize)
-  if (!object(value)) return value
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, canonicalize(value[key])]),
-  )
-}
 
 function permissionLists(permissions: unknown): Record<SettingsPermissionList, string[]> {
   const lists = { allow: [], ask: [], deny: [] } as Record<SettingsPermissionList, string[]>

@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import {
@@ -28,6 +28,13 @@ import { pullRecordCache } from '../record/record-cache.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
+  type ClaudeMcpRegistrationPort,
+  mutateClaudeMcpRegistration,
+  reconcileClaudeMcpRegistration,
+  runSetupCommand,
+  stableMcpServers,
+} from '../setup/setup-mcp.ts'
+import {
   ownedEnvironmentNames,
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
@@ -40,6 +47,13 @@ import {
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
+import {
+  readClaudeMcpPlacement,
+  reconcileClaudeMcpPlacementPlan,
+  writeClaudeMcpPlacement,
+} from './settings-machine-mcp-placement.ts'
+import { registeredProjectScopeFact } from './settings-machine-projects.ts'
+import { decideMachineSettingsScope } from './settings-machine-scope.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import { renderedSettingsEnvironment, renderOwnedSettingsFile } from './settings-render.ts'
@@ -62,6 +76,13 @@ type Dependencies = {
   runsDirectory: string
   applySettings: typeof applySettingsWrite
   applyCanon: typeof applyUserCanonHomePlans
+  projectPaths(): string[]
+  projectFact: typeof registeredProjectScopeFact
+  claudeMcpPort(): ClaudeMcpRegistrationPort | null
+  reconcileMcp: typeof reconcileClaudeMcpRegistration
+  mutateMcp: typeof mutateClaudeMcpRegistration
+  readMcpPlacement: typeof readClaudeMcpPlacement
+  writeMcpPlacement: typeof writeClaudeMcpPlacement
 }
 
 type ApplyOverrides = Partial<Dependencies> & {
@@ -82,6 +103,22 @@ function dependencies(overrides: Partial<Dependencies>): Dependencies {
     runsDirectory: resolveRunsDirectory(process.env),
     applySettings: applySettingsWrite,
     applyCanon: applyUserCanonHomePlans,
+    projectPaths: () =>
+      local
+        .query<{ path: string }, []>(
+          'SELECT path FROM project WHERE retired_at IS NULL ORDER BY name',
+        )
+        .all()
+        .map((row) => row.path),
+    projectFact: registeredProjectScopeFact,
+    claudeMcpPort: () => {
+      const bin = Bun.which('claude')
+      return bin ? { bin, runner: runSetupCommand } : null
+    },
+    reconcileMcp: reconcileClaudeMcpRegistration,
+    mutateMcp: mutateClaudeMcpRegistration,
+    readMcpPlacement: readClaudeMcpPlacement,
+    writeMcpPlacement: writeClaudeMcpPlacement,
     ...overrides,
   }
 }
@@ -171,6 +208,33 @@ function applyUserSettings(
   } catch (error) {
     return refusal(target, error)
   }
+}
+
+function applyClaudeMcpPlacement(check: boolean, deps: Dependencies): MachineSettingsApplyResult[] {
+  const globalUse = readMachineValue('machine.global_use', deps.environment) as 'on' | 'off'
+  const scope = decideMachineSettingsScope(globalUse, deps.projectPaths().map(deps.projectFact))
+  const server = stableMcpServers().find((candidate) => candidate.name === MCP_SERVER_NAME)
+  if (!server) return [refusal('MCP claude', `stable MCP server ${MCP_SERVER_NAME} is missing`)]
+  const results: MachineSettingsApplyResult[] = reconcileClaudeMcpPlacementPlan(check, scope, {
+    environment: deps.environment,
+    port: deps.claudeMcpPort,
+    server,
+    read: deps.readMcpPlacement,
+    write: deps.writeMcpPlacement,
+    reconcile: deps.reconcileMcp,
+    mutate: deps.mutateMcp,
+  })
+  for (const project of scope.projects) {
+    if (project.action === 'skip') {
+      results.push({
+        target: `project ${project.path}`,
+        outcome: 'skipped',
+        detail: project.reason,
+        changed: false,
+      })
+    }
+  }
+  return results
 }
 
 function unmatchedDropDetail(drops: { list: string; rule: string }[]): string | undefined {
@@ -306,6 +370,7 @@ export async function applyMachineSettings(
     return [
       applyUserSettings(owner, input.check, deps),
       ...applyUserCanon(owner, input.check, deps),
+      ...applyClaudeMcpPlacement(input.check, deps),
     ]
   } finally {
     lease.release()

@@ -7,6 +7,7 @@ import type { RunRecordBackfillResult } from '../run/run-outbox.ts'
 import type { LandingEvidenceBackfillResult } from './landing-outbox.ts'
 import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
 import type { RecordApiClient } from './record-api-client.ts'
+import type { ProjectRegisterPullResult } from './record-cache-projects.ts'
 import type { RoutingPoolPullResult } from './record-routing-pool.ts'
 
 export type OutboxRow = { id: number; kind: string; row_id: string; payload: string }
@@ -31,6 +32,7 @@ export type RecordSyncResult = {
   pending: number
   configured: boolean
   routingPool?: RoutingPoolPullResult
+  projectRegister?: ProjectRegisterPullResult
   quarantined: QuarantinedOutboxRow[]
   blocked: BlockedOutboxRow[]
   machineNameRefusal?: string

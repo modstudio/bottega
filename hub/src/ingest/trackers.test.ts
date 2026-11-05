@@ -6,11 +6,13 @@ import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
 import {
+  finishTrackerResults,
   ingestTrackers,
   type TrackerTask,
   trackerCredentials,
   trackerLegError,
   trackerObservationTimes,
+  trackerProjectsReadSince,
   trackerRegistrations,
   writeTrackerCache,
 } from './trackers.ts'
@@ -144,6 +146,30 @@ afterAll(() => {
 })
 
 describe('tracker register', () => {
+  test('successful reads record per-project freshness and failures do not', () => {
+    const at = '2026-10-01T12:00:00.000Z'
+    finishTrackerResults(
+      [
+        { result: { project: 'fresh', tasks: 2, changed: 0 }, filled: 0 },
+        { result: { project: 'failed', tasks: 0, changed: 0, error: 'down' }, filled: 0 },
+        { result: { project: 'skipped', tasks: 0, changed: 0, skipped: 'no key' }, filled: 0 },
+      ],
+      at,
+    )
+    writeTransaction((conn) =>
+      conn
+        .query('INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)')
+        .run('collect.tracker.stale.at', '2026-09-01T12:00:00.000Z'),
+    )
+
+    expect(
+      trackerProjectsReadSince(
+        ['fresh', 'stale', 'failed', 'skipped', 'never'],
+        Date.parse(at) - 1,
+      ),
+    ).toEqual(new Set(['fresh']))
+  })
+
   test('only projects that declare a usable tracker are polled', async () => {
     const results = await ingestTrackers()
     expect(results.map((result) => result.project)).toEqual(['alpha'])

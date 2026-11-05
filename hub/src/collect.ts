@@ -14,9 +14,11 @@ import { ingestGit } from './ingest/git.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
 import {
   ingestTrackers,
+  successfulTrackerRead,
   type TrackerResult,
   trackerLegError,
   trackerProjects,
+  trackerProjectsReadSince,
 } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { correctStoredIntervalProjects } from './interval-project-correction.ts'
@@ -64,9 +66,12 @@ type PollState = { nextAt: number; quiet: number; failures: number }
  *
  * A changing tracker stays on the five-minute floor. Quiet trackers step to
  * ten and then fifteen minutes. Failures double out to an hour, so an outage
- * cannot produce a request every tick. State is deliberately process-local:
- * restarting or explicitly collecting means "fresh now", not "honor an old
- * delay". The injected clock keeps this policy deterministic in tests.
+ * cannot produce a request every tick. This schedule is deliberately
+ * process-local: restarting the watch means "fresh now", not "honor an old
+ * delay". A one-shot collect instead skips a tracker whose last successful
+ * read, persisted by any process, falls within `SLOW_MS`; collecting tasks
+ * explicitly, or rebuilding with `--since`, reads every tracker. The injected clock keeps this policy
+ * deterministic in tests.
  */
 export class TrackerPollSchedule {
   private state = new Map<string, PollState>()
@@ -106,6 +111,18 @@ export class TrackerPollSchedule {
 
 const trackerSchedule = new TrackerPollSchedule()
 
+export function oneShotTrackerSelection(
+  projectNames: readonly string[],
+  fresh: ReadonlySet<string>,
+  forced: boolean,
+): { only: ReadonlySet<string> | null; skippedFresh: number } {
+  if (forced) return { only: null, skippedFresh: 0 }
+  return {
+    only: new Set(projectNames.filter((project) => !fresh.has(project))),
+    skippedFresh: fresh.size,
+  }
+}
+
 export type CollectLegResult =
   | {
       source: string
@@ -114,6 +131,7 @@ export type CollectLegResult =
       metrics?: CollectLegMetrics
       hostedChanges?: HostedChangeLegReport
       hostedOutbox?: HostedOutboxReport
+      trackerCounts?: { read: number; skippedFresh: number }
     }
   | { source: string; ok: false; error: string; durationMs: number }
 
@@ -145,6 +163,8 @@ export function formatCollectLeg(result: CollectLegResult): string {
     return `${result.source.padEnd(18)}${separator}${hostedChangeLegLine(result.hostedChanges)}`
   if (result.hostedOutbox)
     return `${result.source.padEnd(18)}${separator}${hostedOutboxLine(result.hostedOutbox)}`
+  if (result.trackerCounts)
+    return `${result.source.padEnd(18)}${separator}ok (${result.trackerCounts.read} trackers read, ${result.trackerCounts.skippedFresh} skipped fresh)`
   return `${result.source.padEnd(18)}ok`
 }
 
@@ -494,28 +514,35 @@ export async function collectFast(
     transcripts?: (since: string) => Promise<IngestReport>
   } = {},
   guard?: LeaseGuard,
+  only?: string,
 ) {
+  const selected = (source: string) => !only || only === source
+  const runsFastLeg = selected('runs') || selected('transcripts')
   const results = [] as CollectLegResult[]
   guard?.assertHeld()
-  results.push(
-    await settleLeg(
-      'runs',
-      () => (dependencies.runs ?? ingestRunChanges)(runsSince()),
-      collectLegMetrics,
-    ),
-  )
-  guard?.assertHeld('runs')
-  results.push(
-    await settleLeg(
-      'transcripts',
-      () => (dependencies.transcripts ?? ingestTranscripts)(hoursAgo(2)),
-      collectLegMetrics,
-    ),
-  )
-  guard?.assertHeld('transcripts')
-  rollUpDays()
-  guard?.assertHeld('roll up days')
-  stamp('collect.at')
+  if (selected('runs'))
+    results.push(
+      await settleLeg(
+        'runs',
+        () => (dependencies.runs ?? ingestRunChanges)(runsSince()),
+        collectLegMetrics,
+      ),
+    )
+  guard?.assertHeld(selected('runs') ? 'runs' : undefined)
+  if (selected('transcripts'))
+    results.push(
+      await settleLeg(
+        'transcripts',
+        () => (dependencies.transcripts ?? ingestTranscripts)(hoursAgo(2)),
+        collectLegMetrics,
+      ),
+    )
+  guard?.assertHeld(selected('transcripts') ? 'transcripts' : undefined)
+  if (runsFastLeg) {
+    rollUpDays()
+    guard?.assertHeld('roll up days')
+    stamp('collect.at')
+  }
   return results
 }
 
@@ -562,34 +589,70 @@ export async function deliverOperatorNotifications(
   }
 }
 
+async function collectSlowSourceLegs(
+  scheduled: boolean,
+  guard: LeaseGuard | undefined,
+  only?: string,
+) {
+  const collectGit = !only || only === 'git'
+  const collectTasks = !only || only === 'tasks'
+  const results = [] as CollectLegResult[]
+  let lastCompleted = 'project identity'
+  if (collectGit) {
+    results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
+    lastCompleted = 'git'
+  }
+  guard?.assertHeld(lastCompleted)
+  const registeredTrackers = collectTasks ? trackerProjects() : []
+  const fresh =
+    collectTasks && !scheduled && !only
+      ? trackerProjectsReadSince(registeredTrackers, Date.now() - SLOW_MS)
+      : new Set<string>()
+  const selection = oneShotTrackerSelection(registeredTrackers, fresh, only === 'tasks')
+  const due = scheduled ? trackerSchedule.due(registeredTrackers) : selection.only
+  let trackerResults: TrackerResult[] = []
+  if (collectTasks) {
+    results.push(
+      (await settleTimedLeg(
+        'tasks',
+        async () => {
+          trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
+          if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
+          const error = trackerLegError(trackerResults)
+          if (error) throw new Error(error)
+          return {
+            read: trackerResults.filter(successfulTrackerRead).length,
+            skippedFresh: selection.skippedFresh,
+          }
+        },
+        (trackerCounts) => ({ ok: true, trackerCounts }),
+      ))!,
+    )
+    lastCompleted = 'tasks'
+  }
+  guard?.assertHeld(lastCompleted)
+  return { results, lastCompleted, ran: collectGit || collectTasks }
+}
+
 /** The remote and commit-shaped legs. */
 async function collectSlow(
   scheduled = false,
   guard?: LeaseGuard,
   outboxSchedule?: HostedOutboxDrainSchedule<HostedOutboxReport>,
+  only?: string,
 ) {
-  const results = [] as CollectLegResult[]
-  let lastCompleted = 'tasks'
   guard?.assertHeld()
   writeTransaction((conn) => applyProjectRegisterNames(conn))
   guard?.assertHeld('project identity')
-  results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
-  guard?.assertHeld('git')
-  const due = scheduled ? trackerSchedule.due(trackerProjects()) : null
-  let trackerResults: TrackerResult[] = []
-  results.push(
-    await settleLeg('tasks', async () => {
-      trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
-      if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
-      const error = trackerLegError(trackerResults)
-      if (error) throw new Error(error)
-    }),
-  )
-  guard?.assertHeld('tasks')
-  stamp('collect.slow.at')
-  pruneOutboxTrace()
-  if (resolveHostedUrl()) {
-    guard?.assertHeld('tasks')
+  const slow = await collectSlowSourceLegs(scheduled, guard, only)
+  const results = slow.results
+  let lastCompleted = slow.lastCompleted
+  if (slow.ran) {
+    stamp('collect.slow.at')
+    pruneOutboxTrace()
+  }
+  if (!only && resolveHostedUrl()) {
+    guard?.assertHeld(lastCompleted)
     const hostedResults = await hostedCollectLegs(
       guard,
       outboxSchedule ? { outbox: () => outboxSchedule.slow() } : {},
@@ -599,11 +662,27 @@ async function collectSlow(
     guard?.assertHeld('hosted')
   }
   guard?.assertHeld(lastCompleted)
-  stamp('collect.at')
+  if (slow.ran) {
+    if (only) {
+      rollUpDays()
+      guard?.assertHeld('roll up days')
+    }
+    stamp('collect.at')
+  }
   return results
 }
 
 const UNGUARDED_LEASE: LeaseGuard = { assertHeld() {} }
+
+/** Run both incremental cadences immediately, without tracker scheduling. */
+export async function collectIncremental(
+  only?: string,
+  guard: LeaseGuard = UNGUARDED_LEASE,
+): Promise<CollectLegResult[]> {
+  const fast = await collectFast({}, guard, only)
+  const slow = await collectSlow(false, guard, undefined, only)
+  return [...fast, ...slow]
+}
 
 export async function collectOnce(
   since: string,
@@ -658,19 +737,27 @@ export async function collectOnce(
   if (selected('tasks')) {
     guard.assertHeld(previous)
     results.push(
-      await settleLeg('tasks', async () => {
-        const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
-        for (const result of trackerResults) {
-          const note = result.skipped
-            ? `skipped: ${result.skipped}`
-            : result.error
-              ? `FAILED: ${result.error}`
-              : `${result.tasks} tasks, ${result.changed} status changes`
-          console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
-        }
-        const error = trackerLegError(trackerResults)
-        if (error) throw new Error(error)
-      }),
+      (await settleTimedLeg(
+        'tasks',
+        async () => {
+          const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
+          for (const result of trackerResults) {
+            const note = result.skipped
+              ? `skipped: ${result.skipped}`
+              : result.error
+                ? `FAILED: ${result.error}`
+                : `${result.tasks} tasks, ${result.changed} status changes`
+            console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
+          }
+          const error = trackerLegError(trackerResults)
+          if (error) throw new Error(error)
+          return {
+            read: trackerResults.filter(successfulTrackerRead).length,
+            skippedFresh: 0,
+          }
+        },
+        (trackerCounts) => ({ ok: true, trackerCounts }),
+      ))!,
     )
     previous = 'tasks'
     guard.assertHeld(previous)

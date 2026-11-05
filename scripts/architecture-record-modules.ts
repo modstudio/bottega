@@ -203,6 +203,16 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-lens-contract.ts',
   ]),
+  module('orchestrator/src/record/record-cache-projects.ts', [
+    'bun:sqlite',
+    '../../../shared/record-project-contract.ts',
+    '../database/db.ts',
+    '../database/project-register-store.ts',
+    '../project/project-pull-decision.ts',
+    '../project/project-rename.ts',
+    '../project/projects.ts',
+    './record-api-client.ts',
+  ]),
   module('orchestrator/src/record/record-cache-catalogues.ts', [
     'bun:sqlite',
     './record-cache-lens.ts',
@@ -281,6 +291,14 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-generator.ts',
   ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/record/record-built-ins-identity.ts', [
+    '../../../shared/canonical-json.ts',
+    '../database/db.ts',
+    'bun:sqlite',
+    'node:crypto',
+    '../lens/lens-built-ins.ts',
+    '../workflow/workflow-built-ins.ts',
+  ]),
   module('orchestrator/src/record/record-sync-contract.ts', []),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-sync-results.ts', [

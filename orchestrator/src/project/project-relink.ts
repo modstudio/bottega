@@ -10,6 +10,7 @@ import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { PROJECT_REFERENCES } from './project-reference-counts.ts'
+import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
 import type { Project } from './projects.ts'
 import { projectByName, projects } from './projects.ts'
 
@@ -141,10 +142,6 @@ export function relinkProjectIdentity(
     rewritten,
     retried,
   }
-}
-
-function retiredHostedProjectMessage(name: string): string {
-  return `hosted project ${name} is retired in the space; unretire it from a machine that holds it with ${PLATFORM_SLUG} project retire ${name} --undo, then run ${PLATFORM_SLUG} project relink ${name} here`
 }
 
 export async function adoptHostedProjectIdentity(
