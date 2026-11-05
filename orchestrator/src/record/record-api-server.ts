@@ -42,6 +42,8 @@ import {
   importRecordPortCatalogue,
   importRecordWorkflowCatalogue,
 } from './record-catalogue-import.ts'
+import { readRecordChangeFeed } from './record-change-feed.ts'
+import { createRecordChangeWakeSource } from './record-change-wake.ts'
 import {
   addDataKeyWraps,
   claimMachineKey,
@@ -168,11 +170,13 @@ export async function stopRecordApiServer(input: {
   stop(closeActiveConnections?: boolean): void | Promise<void>
   closeActiveConnections?: boolean
   boardWakeSource: { close(): Promise<void> }
+  recordChangeWakeSource: { close(): Promise<void> }
   boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>
   auth: { close(): Promise<void> }
 }): Promise<void> {
   input.boardStreamRegistry.closeAll()
   await input.boardWakeSource.close()
+  await input.recordChangeWakeSource.close()
   await input.stop(input.closeActiveConnections)
   await Promise.all([input.auth.close(), closeRecordPools()])
 }
@@ -181,6 +185,7 @@ function serveRecordApi(
   app: { fetch(request: Request): Response | Promise<Response> },
   port: number,
   boardWakeSource: Awaited<ReturnType<typeof createBoardWakeSource>>,
+  recordChangeWakeSource: ReturnType<typeof createRecordChangeWakeSource>,
   boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>,
   auth: ReturnType<typeof recordAuth>,
 ) {
@@ -211,6 +216,7 @@ function serveRecordApi(
       stop,
       closeActiveConnections,
       boardWakeSource,
+      recordChangeWakeSource,
       boardStreamRegistry,
       auth,
     })
@@ -296,16 +302,46 @@ function recordSpaceAccessDependencies() {
   }
 }
 
+function recordChangeDependencies(
+  config: ReturnType<typeof recordApiServerConfig>,
+  wake: ReturnType<typeof createRecordChangeWakeSource>,
+) {
+  return {
+    readChanges: (input: Omit<Parameters<typeof readRecordChangeFeed>[0], 'url'>) =>
+      readRecordChangeFeed({ ...input, url: config.recordUrl }),
+    waitForRecordChange: (milliseconds: number, signal?: AbortSignal) =>
+      wake.wait(milliseconds, signal),
+  }
+}
+
+function recordScoreDependencies() {
+  return {
+    upsertScore: async (input: Parameters<typeof upsertRecordScore>[0]) =>
+      upsertRecordScore({
+        ...input,
+        delivery: input.delivery as 'none' | 'partial' | 'full',
+        quality: input.quality as 'wrong' | 'mixed' | 'right' | null,
+        fidelity: input.fidelity as 'drifted' | 'partial' | 'faithful' | null,
+      }),
+    voidRun: voidRecordRun,
+    unvoidRun: unvoidRecordRun,
+    listScores: listRecordScores,
+    countScores: countRecordScores,
+  }
+}
+
 async function serveRecordApiWithAuth(
   config: ReturnType<typeof recordApiServerConfig>,
   auth: ReturnType<typeof recordAuth>,
 ) {
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
+  const recordChangeWakeSource = createRecordChangeWakeSource(config.recordUrl)
   const boardStreamRegistry = createBoardStreamRegistry()
   const migrations = recordMigrationCount()
   const app = recordApi({
     clientAddresses: { recordApiUrl: config.authUrl, hubHostedUrl: config.hubUrl },
     recordUrl: config.recordUrl,
+    ...recordChangeDependencies(config, recordChangeWakeSource),
     allowedOrigins: config.allowedOrigins,
     ...recordApiAccessDependencies(config, auth, migrations),
     ...recordRunDependencies(),
@@ -324,17 +360,7 @@ async function serveRecordApiWithAuth(
     retireSubject: retireRecordSubject,
     ...recordDocDependencies(),
     ...recordSettingsDependencies(),
-    upsertScore: async (input) =>
-      upsertRecordScore({
-        ...input,
-        delivery: input.delivery as 'none' | 'partial' | 'full',
-        quality: input.quality as 'wrong' | 'mixed' | 'right' | null,
-        fidelity: input.fidelity as 'drifted' | 'partial' | 'faithful' | null,
-      }),
-    voidRun: voidRecordRun,
-    unvoidRun: unvoidRecordRun,
-    listScores: listRecordScores,
-    countScores: countRecordScores,
+    ...recordScoreDependencies(),
     upsertSnapshot: upsertRecordSnapshot,
     listSnapshots: listRecordSnapshots,
     listConfigEntries,
@@ -379,7 +405,14 @@ async function serveRecordApiWithAuth(
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
-  return serveRecordApi(app, config.port, boardWakeSource, boardStreamRegistry, auth)
+  return serveRecordApi(
+    app,
+    config.port,
+    boardWakeSource,
+    recordChangeWakeSource,
+    boardStreamRegistry,
+    auth,
+  )
 }
 
 export async function startRecordApiServer(environment: ServerEnvironment = process.env) {

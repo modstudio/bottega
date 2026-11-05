@@ -1,8 +1,7 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import {
-  hostedChangeService,
-  type listHostedChanges,
+  listHostedChanges,
   MAX_HUB_CHANGE_PAGE_SIZE,
   READABLE_HUB_CHANGES,
   type ReadableHubChangeTable,
@@ -196,11 +195,7 @@ async function changeLogResponse(
   }
   try {
     return json(
-      await (dependencies.list ?? hostedChangeService.listHostedChanges)(
-        config.recordDatabaseUrl,
-        who,
-        input,
-      ),
+      await (dependencies.list ?? listHostedChanges)(config.recordDatabaseUrl, who, input),
     )
   } catch (error) {
     return json({ error: (error as Error).message }, 409)

@@ -6,16 +6,15 @@ import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { migrationSessionStatements } from '../../shared/record/migration-session.ts'
+import { readRecordChanges } from '../../shared/record/record-changes.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
+import { RECORD_CHANGE_LOGGED_TABLES } from '../../shared/record/schema-record-change.ts'
 import {
-  hostedChangeService,
   hubChangeReadability,
   laterRowKeys,
   READABLE_HUB_CHANGES,
   readHostedChangesInTransaction,
-  recordChangePage,
-  recordChangeResetRequired,
 } from './hosted-changes.ts'
 
 const migrationsFolder = join(
@@ -147,18 +146,20 @@ test('a first read resets to the horizon, then reads committed tenant changes af
   await database.exec(`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES ('01990000-0000-7000-8000-000000001319','${spaceA}','record-feed',ARRAY['RCF'],now())`)
   const identity = { userId, spaceId: spaceA }
-  const first = await hostedChangeService.readRecordChanges(
+  const first = await readRecordChanges(
     pgliteClient(database),
     identity,
     null,
     1,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   expect(first.resetRequired).toBe(true)
-  const page = await hostedChangeService.readRecordChanges(
+  const page = await readRecordChanges(
     pgliteClient(database),
     identity,
     first.cursor,
     1,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   expect(page.resetRequired).toBe(false)
   if (!page.resetRequired) {
@@ -176,43 +177,55 @@ test('record change pages follow numeric order across a digit boundary', async (
     COMMIT;`)
   const identity = { userId, spaceId: spaceA }
   const client = pgliteClient(database)
-  let read = await hostedChangeService.readRecordChanges(client, identity, null, 1)
-  const seqs: bigint[] = []
+  const inserted = await database.query<{ xid: string; seq: string }>(
+    `SELECT xid::text,seq::text FROM record_change
+     WHERE row_id IN ('01990000-0000-7000-8000-000000001320','01990000-0000-7000-8000-000000001321')
+     ORDER BY record_change.seq`,
+  )
+  let read = await readRecordChanges(
+    client,
+    identity,
+    { xid: BigInt(inserted.rows[0]!.xid), seq: BigInt(inserted.rows[0]!.seq) - 1n },
+    1,
+    RECORD_CHANGE_LOGGED_TABLES,
+  )
+  const seqs: bigint[] = read.resetRequired ? [] : read.changes.map((change) => change.seq)
   for (let page = 0; page < 20; page += 1) {
-    read = await hostedChangeService.readRecordChanges(client, identity, read.cursor, 1)
+    read = await readRecordChanges(client, identity, read.cursor, 1, RECORD_CHANGE_LOGGED_TABLES)
     if (read.resetRequired || read.changes.length === 0) break
     seqs.push(...read.changes.map((change) => change.seq))
   }
-  expect(seqs).toContain(999n)
-  expect(seqs.indexOf(1000n)).toBe(seqs.indexOf(999n) + 1)
-})
-
-test('a record change reset orders cursors by transaction before sequence', () => {
-  const horizon = { xid: 12n, seq: 20n }
-  expect(recordChangeResetRequired(null, horizon)).toBe(true)
-  expect(recordChangeResetRequired({ xid: 12n, seq: 19n }, horizon)).toBe(true)
-  expect(recordChangeResetRequired({ xid: 11n, seq: 99n }, horizon)).toBe(true)
-  expect(recordChangeResetRequired({ xid: 13n, seq: 1n }, horizon)).toBe(false)
-  expect(recordChangeResetRequired(horizon, horizon)).toBe(false)
-})
-
-test('a record change page advances its pair cursor to the last returned row', () => {
-  const row = (xid: number, seq: number) => ({
-    xid: String(xid),
-    seq: String(seq),
-    table_name: 'project',
-    row_id: `row-${seq}`,
-    op: 'upsert' as const,
-    at: '2026-11-05T00:00:00.000Z',
-  })
-  const after = { xid: 10n, seq: 10n }
-  const page = recordChangePage(after, [row(11, 13), row(12, 12)])
-  expect(page.changes.map((change) => [change.xid, change.seq])).toEqual([
-    [11n, 13n],
-    [12n, 12n],
+  expect(seqs).toEqual(inserted.rows.map((row) => BigInt(row.seq)))
+  expect(seqs).toEqual([999n, 1000n])
+  await database.query('DELETE FROM record_change WHERE seq=ANY($1::bigint[])', [
+    inserted.rows.map((row) => row.seq),
   ])
-  expect(page.cursor).toEqual({ xid: 12n, seq: 12n })
-  expect(recordChangePage(after, []).cursor).toBe(after)
+})
+
+test('an underfull page advances past unserved rows and leaves no served lag', async () => {
+  await database.exec(`SELECT setval('record_change_seq_seq', 998)`)
+  const inserted = await database.query<{ xid: string; seq: string }>(
+    `INSERT INTO record_change(space_id,table_name,row_id,op)
+     VALUES ($1,'hub_task',$2,'upsert'),($1,'hub_task',$3,'upsert')
+     RETURNING xid::text,seq::text`,
+    [spaceA, '01990000-0000-7000-8000-000000001322', '01990000-0000-7000-8000-000000001323'],
+  )
+  const after = {
+    xid: BigInt(inserted.rows[0]!.xid),
+    seq: BigInt(inserted.rows[0]!.seq) - 1n,
+  }
+  const page = await readRecordChanges(pgliteClient(database), identity(spaceA), after, 10, [
+    'project',
+  ])
+  expect(page.resetRequired).toBe(false)
+  if (!page.resetRequired) {
+    expect(page.changes).toEqual([])
+    expect(page.cursor).toEqual({ xid: BigInt(inserted.rows[1]!.xid), seq: 1000n })
+    expect(page.lag).toBe(0)
+  }
+  await database.query('DELETE FROM record_change WHERE seq=ANY($1::bigint[])', [
+    inserted.rows.map((row) => row.seq),
+  ])
 })
 
 test('every logged table is readable or explicitly deferred', () => {

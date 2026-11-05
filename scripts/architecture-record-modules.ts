@@ -2,6 +2,7 @@
 /** The hosted-record command module allowlists, kept beside the root manifest so it stays within its file ceiling. */
 import { dirname, normalize } from 'node:path'
 import { recordBindingModules } from './architecture-record-binding-modules.ts'
+import { recordChangeModules } from './architecture-record-change-modules.ts'
 
 type RecordModule = { file: string; allowed: string[] }
 
@@ -13,6 +14,7 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  ...recordChangeModules,
   module('orchestrator/src/record/record-pool.ts', [
     'bun',
     '../../../shared/record/service-connection.ts',

@@ -1,0 +1,1 @@
+ALTER POLICY "record_change_space_select" ON "record_change" TO "record_actor" USING ("record_change"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid OR "record_change"."space_id" = ANY(string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]));

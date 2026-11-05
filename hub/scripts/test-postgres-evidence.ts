@@ -2,14 +2,16 @@
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
+import { readRecordChanges } from '../../shared/record/record-changes.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { RECORD_CHANGE_LOGGED_TABLES } from '../../shared/record/schema-record-change.ts'
 import {
   RECORD_SERVICE_IDLE_IN_TRANSACTION_TIMEOUT,
   RECORD_SERVICE_STATEMENT_TIMEOUT,
   recordServiceUrl,
 } from '../../shared/record/service-connection.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import { hostedChangeService, listHostedChanges } from '../src/hosted-changes.ts'
+import { listHostedChanges } from '../src/hosted-changes.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import { listHostedNotes } from '../src/hosted-note-list.ts'
@@ -194,11 +196,12 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     await bindTenant(tx, identityB)
     await tx`DELETE FROM project WHERE id=${deleteProject}::uuid`
   })
-  const deleted = await hostedChangeService.readRecordChanges(
+  const deleted = await readRecordChanges(
     actorUrl,
     identityB,
     { xid: BigInt(inserted[0]!.xid), seq: BigInt(inserted[0]!.seq) },
     10,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   if (deleted.resetRequired || deleted.changes[0]?.op !== 'delete')
     throw new Error('record change reader did not return a delete tombstone')
@@ -214,17 +217,19 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     seq: BigInt(beforeMove[0]!.seq),
   }
   await admin`UPDATE project SET space_id=${SPACE_A}::uuid WHERE id=${moveProject}::uuid`
-  const oldSpace = await hostedChangeService.readRecordChanges(
+  const oldSpace = await readRecordChanges(
     actorUrl,
     identityB,
     beforeMoveCursor,
     10,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
-  const newSpace = await hostedChangeService.readRecordChanges(
+  const newSpace = await readRecordChanges(
     actorUrl,
     identityA,
     beforeMoveCursor,
     10,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   if (oldSpace.resetRequired || oldSpace.changes[0]?.op !== 'delete')
     throw new Error('space move did not write a tombstone for the old space')
@@ -240,11 +245,12 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     xid: BigInt(horizonRows[0]!.xid),
     seq: BigInt(horizonRows[0]!.seq),
   }
-  const reset = await hostedChangeService.readRecordChanges(
+  const reset = await readRecordChanges(
     actorUrl,
     identityA,
     { xid: horizon.xid, seq: horizon.seq - 1n },
     10,
+    RECORD_CHANGE_LOGGED_TABLES,
   )
   if (
     !reset.resetRequired ||
@@ -296,19 +302,31 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
     if (changeB.seq <= changeA.seq)
       throw new Error('later record change did not receive a later sequence')
 
-    const heldRead = await hostedChangeService.readRecordChanges(actorUrl, identityA, baseline, 10)
+    const heldRead = await readRecordChanges(
+      actorUrl,
+      identityA,
+      baseline,
+      10,
+      RECORD_CHANGE_LOGGED_TABLES,
+    )
     if (
       heldRead.resetRequired ||
       heldRead.changes.length !== 0 ||
       heldRead.cursor.xid !== baseline.xid ||
       heldRead.cursor.seq !== baseline.seq ||
-      heldRead.lag !== 1n
+      heldRead.lag !== 1
     )
       throw new Error('open transaction did not hold back later xids and grow count lag')
 
     releaseA()
     await transactionA
-    const released = await hostedChangeService.readRecordChanges(actorUrl, identityA, baseline, 10)
+    const released = await readRecordChanges(
+      actorUrl,
+      identityA,
+      baseline,
+      10,
+      RECORD_CHANGE_LOGGED_TABLES,
+    )
     if (
       released.resetRequired ||
       released.changes.length < 2 ||
@@ -369,11 +387,12 @@ async function proveRecordChangePairCursor(
     continueX()
     await transactionX
 
-    const whileYOpen = await hostedChangeService.readRecordChanges(
+    const whileYOpen = await readRecordChanges(
       actorUrl,
       identityA,
       baseline,
       10,
+      RECORD_CHANGE_LOGGED_TABLES,
     )
     if (
       whileYOpen.resetRequired ||
@@ -381,7 +400,7 @@ async function proveRecordChangePairCursor(
       whileYOpen.changes.some((change) => change.xid !== firstX.xid) ||
       whileYOpen.cursor.xid !== firstX.xid ||
       whileYOpen.cursor.seq <= changeY.seq ||
-      whileYOpen.lag !== 0n
+      whileYOpen.lag !== 0
     )
       throw new Error(
         `older transaction changes were not readable while the younger xid stayed open: ${
@@ -393,11 +412,12 @@ async function proveRecordChangePairCursor(
 
     releaseY()
     await transactionY
-    const afterYCommit = await hostedChangeService.readRecordChanges(
+    const afterYCommit = await readRecordChanges(
       actorUrl,
       identityA,
       whileYOpen.cursor,
       10,
+      RECORD_CHANGE_LOGGED_TABLES,
     )
     if (
       afterYCommit.resetRequired ||
@@ -423,6 +443,56 @@ async function proveRecordChangeOrdering(admin: SQL) {
   } finally {
     await connectionA.close()
     await connectionB.close()
+  }
+}
+
+async function proveRecordChangeMultiSpacePolicyAndNotify(admin: SQL) {
+  const actor = new SQL(actorDatabaseUrl!, { max: 1 })
+  try {
+    const visible = await actor.begin(async (tx) => {
+      await bindTenant(tx, { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A, SPACE_B] })
+      return tx<{ space_id: string }[]>`SELECT DISTINCT space_id::text FROM record_change
+        WHERE space_id=ANY(string_to_array(${`${SPACE_A},${SPACE_B}`},',')::uuid[])`
+    })
+    if (
+      !visible.some((row) => row.space_id === SPACE_A) ||
+      !visible.some((row) => row.space_id === SPACE_B)
+    )
+      throw new Error('record change multi-space policy did not expose both member spaces')
+    const hidden = await actor.begin(async (tx) => {
+      await bindTenant(tx, { userId: SECOND_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+      return tx`SELECT 1 FROM record_change WHERE space_id=ANY(string_to_array(${`${SPACE_B},${SPACE_C}`},',')::uuid[]) LIMIT 1`
+    })
+    if (hidden.length)
+      throw new Error('record change multi-space policy exposed a non-member space')
+
+    const listener = new SQL(actorDatabaseUrl!, { max: 1 })
+    let notifications = 0
+    const notified = new Promise<void>((resolve) => {
+      void listener.listen('record_change_advanced', () => {
+        notifications++
+        resolve()
+      })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await admin.begin(async (tx) => {
+      await tx`UPDATE project SET color='#121212' WHERE id=${PROJECT_A}::uuid`
+      await tx`UPDATE project SET color='#131313' WHERE id=${PROJECT_A_OTHER}::uuid`
+    })
+    await Promise.race([
+      notified,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('record change notification did not fire')), 2_000),
+      ),
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await listener.close()
+    if (notifications !== 1)
+      throw new Error(
+        `record change transaction sent ${notifications} notifications instead of one`,
+      )
+  } finally {
+    await actor.close()
   }
 }
 
@@ -466,6 +536,7 @@ try {
     throw new Error('hosted service pool did not apply both record transaction bounds')
 
   await proveRecordChangeOrdering(admin)
+  await proveRecordChangeMultiSpacePolicyAndNotify(admin)
 
   const intakeId = newRecordId()
   const outsideTokens = new Map([

@@ -14,6 +14,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/command-spellings.ts', []),
   module('shared/note-label.ts', []),
   module('shared/record/postgres-error.ts', []),
+  module('shared/record/record-changes.ts', ['bun', 'node:buffer', './tenant.ts']),
   ...proseModules,
   module('shared/canon-frontmatter.ts', []),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),

@@ -65,39 +65,32 @@ function mapped(table: RecordWorkflowTable, row: Record<string, unknown>) {
   }
 }
 
+export { mapped as mapRecordWorkflowRow }
+
+export async function recordWorkflowRows(
+  tx: SQL,
+  table: RecordWorkflowTable,
+  select:
+    | { ids: readonly string[] }
+    | { spaceId: string; cursor: RecordCursor | null; limit: number },
+): Promise<Record<string, unknown>[]> {
+  const from = `SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM ${table}`
+  if ('ids' in select)
+    return tx.unsafe(
+      `${from} WHERE id=ANY(string_to_array($1,',')::uuid[]) ORDER BY updated_at,id LIMIT $2`,
+      [select.ids.join(','), select.ids.length],
+    ) as Promise<Record<string, unknown>[]>
+  return tx.unsafe(
+    `${from} WHERE space_id=$1::uuid AND ($2::timestamptz IS NULL OR (updated_at,id)>($2::timestamptz,$3::uuid)) ORDER BY updated_at,id LIMIT $4`,
+    [select.spaceId, select.cursor?.at ?? null, select.cursor?.id ?? null, select.limit + 1],
+  ) as Promise<Record<string, unknown>[]>
+}
+
 export async function listRecordWorkflowCatalogue(
   input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
 ): Promise<(Record<string, unknown> & RecordListCursorRow)[]> {
   return tenant(input, async (tx) => {
-    const at = input.cursor?.at ?? null,
-      id = input.cursor?.id ?? null
-    let rows: Record<string, unknown>[]
-    switch (input.table) {
-      case 'step_catalogue':
-        rows =
-          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM step_catalogue WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
-        break
-      case 'step_catalogue_version':
-        rows =
-          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM step_catalogue_version WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
-        break
-      case 'step_catalogue_event':
-        rows =
-          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM step_catalogue_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
-        break
-      case 'workflow':
-        rows =
-          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM workflow WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
-        break
-      case 'workflow_version':
-        rows =
-          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM workflow_version WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
-        break
-      case 'workflow_event':
-        rows =
-          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM workflow_event WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
-        break
-    }
+    const rows = await recordWorkflowRows(tx, input.table, input)
     return rows.map((row) => ({
       ...mapped(input.table, row),
       [recordCursorAt]: text(row.cursor_at),

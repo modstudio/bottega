@@ -64,6 +64,50 @@ function mapped(row: Record<string, unknown>): RecordSubject {
   }
 }
 
+export { mapped as mapRecordSubjectRow }
+
+export async function recordSubjectRows(
+  tx: SQL,
+  input:
+    | { ids: readonly string[] }
+    | {
+        spaceId: string
+        projectId: string | null
+        includeRetired: boolean
+        order: 'catalog' | 'updated'
+        cursor?: RecordCursor | null
+        limit: number
+      },
+): Promise<Record<string, unknown>[]> {
+  const from = `SELECT s.*,p.name AS project,
+      to_char(s.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+    FROM subject s JOIN project p ON p.space_id=s.space_id AND p.id=s.project_id`
+  if ('ids' in input)
+    return tx.unsafe(
+      `${from} WHERE s.id=ANY(string_to_array($1, ',')::uuid[])
+       ORDER BY s.updated_at,s.id LIMIT $2`,
+      [input.ids.join(','), input.ids.length],
+    ) as Promise<Record<string, unknown>[]>
+  return tx.unsafe(
+    `${from} WHERE s.space_id=$1::uuid
+      AND ($2::uuid IS NULL OR p.id=$2::uuid)
+      AND ($3::boolean OR s.retired_at IS NULL)
+      AND ($4::timestamptz IS NULL OR (s.updated_at,s.id)>($4::timestamptz,$5::uuid))
+     ORDER BY CASE WHEN $6::boolean THEN s.updated_at END,
+       CASE WHEN $6::boolean THEN s.id END,
+       CASE WHEN NOT $6::boolean THEN s.position END,s.id LIMIT $7`,
+    [
+      input.spaceId,
+      input.projectId,
+      input.includeRetired,
+      input.cursor?.at ?? null,
+      input.cursor?.id ?? null,
+      input.order === 'updated',
+      input.limit,
+    ],
+  ) as Promise<Record<string, unknown>[]>
+}
+
 async function projectId(
   tx: SQL,
   spaceId: string,
@@ -138,21 +182,7 @@ export async function listRecordSubjects(
           projectId: input.projectId,
         })
       : null
-    const rows = await tx`
-      SELECT s.*,p.name AS project,
-        to_char(s.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
-      FROM subject s
-      JOIN project p ON p.space_id=s.space_id AND p.id=s.project_id
-      WHERE s.space_id=${input.spaceId}::uuid
-        AND (${selectedProjectId}::uuid IS NULL OR p.id=${selectedProjectId}::uuid)
-        AND (${input.includeRetired} OR s.retired_at IS NULL)
-        AND (${input.cursor?.at ?? null}::timestamptz IS NULL OR
-          (s.updated_at,s.id) > (${input.cursor?.at ?? null}::timestamptz,${input.cursor?.id ?? null}::uuid))
-      ORDER BY CASE WHEN ${input.order === 'updated'} THEN s.updated_at END,
-        CASE WHEN ${input.order === 'updated'} THEN s.id END,
-        CASE WHEN ${input.order === 'catalog'} THEN s.position END,s.id
-      LIMIT ${input.limit}
-    `
+    const rows = await recordSubjectRows(tx, { ...input, projectId: selectedProjectId })
     return rows.map((row: Record<string, unknown>) => mapped(row))
   })
 }
