@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { RECORD_API_ORIGIN } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { hostedRequestHandler, hostedServerConfig } from './hosted.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
@@ -27,14 +28,15 @@ describe('hosted server config', () => {
     }
   })
 
-  test('refuses to start without BOTTEGA_RECORD_API_URL', () => {
-    expect(() =>
+  test('uses the built-in record address without BOTTEGA_RECORD_API_URL', () => {
+    expect(
       hostedServerConfig({
         PORT: '3000',
         [CONFIG_HOME_ENV]: join(tmpdir(), 'missing-platform-test-config'),
         [HARNESS_ENV_FILE_ENV]: '',
+        BOTTEGA_RECORD_DATABASE_URL: 'postgres://example.test/db',
       }),
-    ).toThrow('BOTTEGA_RECORD_API_URL is required')
+    ).toMatchObject({ recordApiUrl: RECORD_API_ORIGIN })
   })
 
   test('refuses to start without BOTTEGA_RECORD_DATABASE_URL', () => {

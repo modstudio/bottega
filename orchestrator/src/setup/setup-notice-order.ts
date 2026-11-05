@@ -4,6 +4,7 @@ import type { SetupNotice } from './setup-engine.ts'
 
 const BLOCKING_NOTICE = [
   'git is missing',
+  'gh is missing',
   'harness is not installed',
   'gh is signed out',
   'git inspection timed out',

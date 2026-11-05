@@ -85,6 +85,10 @@ function fixturePlan(
     registrations: [],
     questions: [question],
     notices: [{ message: 'One harness is signed out.', fix: 'Sign in to that harness.' }],
+    folderSelection: {
+      options: proposals.map((item) => ({ path: item.repository.path, name: item.project.name })),
+      defaults: proposals.map((item) => item.repository.path),
+    },
   }
 }
 

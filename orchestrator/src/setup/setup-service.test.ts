@@ -42,6 +42,7 @@ const emptyPlan = (): SetupPlan => ({
   registrations: [],
   questions: [],
   notices: [],
+  folderSelection: { options: [], defaults: [] },
 })
 
 const preparedMigration = {
