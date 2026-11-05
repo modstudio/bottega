@@ -1,0 +1,102 @@
+import { dirname, join } from 'node:path'
+import type { ArchitectureModule } from './architecture.ts'
+import { keyStoreModules } from './architecture-key-store-modules.ts'
+import { proseModules } from './architecture-prose-modules.ts'
+
+const module = (file: string, allowed: string[]): ArchitectureModule => ({
+  file,
+  allowed: allowed.map((target) => (target.startsWith('.') ? join(dirname(file), target) : target)),
+})
+
+export const sharedModules: ArchitectureModule[] = [
+  module('shared/run-process-marker.ts', []),
+  module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
+  module('shared/command-spellings.ts', []),
+  module('shared/note-label.ts', []),
+  module('shared/record/postgres-error.ts', []),
+  ...proseModules,
+  module('shared/config-directory.ts', ['node:path', './brand.ts']),
+  module('shared/env-source.ts', [
+    './config-client.ts',
+    './config-directory.ts',
+    './env-values.ts',
+    './hosted-secrets.ts',
+  ]),
+  module('shared/env-values.ts', ['node:fs', 'node:util', './config-directory.ts']),
+  module('shared/record-client-addresses.ts', []),
+  module('shared/outside-write-adapter.ts', [
+    'bun',
+    './outside-write-decision.ts',
+    './record-space-request.ts',
+  ]),
+  module('shared/delegation-mode.ts', []),
+  module('shared/machine-config.ts', [
+    '@decimalturn/toml-patch',
+    'node:fs',
+    'node:path',
+    'zod',
+    './autonomy.ts',
+    './brand.ts',
+    './config-directory.ts',
+    './delegation-mode.ts',
+    './ship-to.ts',
+    './secret-shaped.ts',
+    './settings-summary.ts',
+  ]),
+  module('shared/config-client.ts', [
+    './http-json.ts',
+    './record-api-url.ts',
+    './record-session.ts',
+    './record-remedies.ts',
+  ]),
+  module('shared/record-api-url.ts', ['./config-directory.ts', './env-values.ts']),
+  module('shared/http-json.ts', []),
+  module('shared/autonomy.ts', []),
+  module('shared/user-canon-home.ts', []),
+  module('shared/caller-classification.ts', []),
+  module('shared/keychain.ts', []),
+  ...keyStoreModules,
+  module('shared/machine-key-id.ts', []),
+  module('shared/record-remedies.ts', ['./brand.ts']),
+  module('shared/settings-summary.ts', [
+    'node:crypto',
+    './secret-shaped.ts',
+    './stored-settings.ts',
+  ]),
+  module('shared/stored-settings.ts', ['zod']),
+  module('shared/hosted-config-space.ts', ['node:fs', 'node:path', './config-directory.ts']),
+  module('shared/hosted-secret-opening.ts', [
+    './brand.ts',
+    './config-client.ts',
+    './hosted-config-space.ts',
+    './record-remedies.ts',
+    './secret-envelope.ts',
+    './trust-list.ts',
+  ]),
+  module('shared/trust-list.ts', [
+    'node:fs',
+    'node:path',
+    'zod',
+    './config-directory.ts',
+    './machine-key-id.ts',
+  ]),
+  module('shared/hosted-secrets.ts', [
+    './config-client.ts',
+    './hosted-config-space.ts',
+    './hosted-secret-opening.ts',
+    './machine-key-store.ts',
+    './sealed-value.ts',
+    './trust-list.ts',
+  ]),
+  module('shared/sealed-value.ts', []),
+  module('shared/secret-envelope.ts', [
+    '@hpke/chacha20poly1305',
+    '@hpke/core',
+    '@hpke/dhkem-x25519',
+    '@noble/ciphers/chacha.js',
+    './brand.ts',
+    './machine-key-id.ts',
+  ]),
+  module('shared/state-directory.ts', ['./brand.ts']),
+  module('shared/sandbox-runtime-assets.ts', []),
+]

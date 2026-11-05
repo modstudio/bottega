@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { matrixRows, saveSteps } from '@/routes/-personal-permissions'
+import { applySaveSteps, matrixRows, saveSteps } from '@/routes/-personal-permissions'
 
 const accountList = (rule: string) => (rule === 'Read' ? ('allow' as const) : undefined)
 const machineDropList = (rule: string) => (rule === 'Read' ? ('deny' as const) : undefined)
@@ -57,4 +57,29 @@ test('dropping a rule refuses until its account rule has been saved', () => {
       message: 'Cannot drop Write on this machine: save the account rule first.',
     },
   ])
+})
+
+test('a refusal stops the save before any canonical or machine write', async () => {
+  const steps = saveSteps(
+    { rule: 'Write', layer: 'account', from: 'none', to: 'allow' },
+    context,
+  ).concat(saveSteps({ rule: 'Write', layer: 'machine', from: 'inherit', to: 'drop' }, context))
+  let canonicalCalls = 0
+  let machineCalls = 0
+
+  await expect(
+    applySaveSteps(
+      steps,
+      async () => {
+        canonicalCalls += 1
+      },
+      async () => {
+        machineCalls += 1
+        return { saved: 0, error: null }
+      },
+      () => undefined,
+    ),
+  ).rejects.toThrow('Cannot drop Write on this machine: save the account rule first.')
+  expect(canonicalCalls).toBe(0)
+  expect(machineCalls).toBe(0)
 })

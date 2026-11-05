@@ -147,15 +147,17 @@ function machineBatchAt(steps: SaveStep[], start: number) {
   return { batch, next }
 }
 
-async function applySaveSteps(
+export async function applySaveSteps(
   steps: SaveStep[],
   applyCanonical: (step: CanonicalStep) => Promise<void>,
   applyMachine: (steps: readonly MachinePermissionChange[]) => Promise<MachineBatchResult>,
   onSaved: (count: number) => void,
 ) {
+  const refusal = steps.find((step): step is RefusalStep => step.kind === 'refusal')
+  if (refusal) throw new Error(refusal.message)
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index]!
-    if (step.kind === 'refusal') throw new Error(step.message)
+    if (step.kind === 'refusal') continue
     if (step.kind === 'canonical') {
       await applyCanonical(step)
       onSaved(1)
@@ -171,8 +173,8 @@ async function applySaveSteps(
 
 /**
  * Saves every held change in order, carrying each target's new revision into its next write.
- * The store has no batch write, so a refusal partway leaves the earlier changes saved; the
- * message says how many went through.
+ * Refusals stop the whole save before the first write. The store has no batch write, so a
+ * write failure can still leave earlier changes saved; the message says how many went through.
  */
 function useMatrixSave(revisions: { account: string | null; project: string | null }) {
   const localCanonical = useMutation(trpc.context.settings.permission.mutationOptions())
