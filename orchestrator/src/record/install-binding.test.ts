@@ -13,9 +13,14 @@ test('the record install binding is monotonic and records its first binding time
   rememberHostedRecord(database)
   const first = readRecordInstallBinding(database)
   expect(first.bound).toBe(true)
+  expect(first.recordOrigin).toStartWith('http')
 
   rememberHostedRecord(database)
   expect(readRecordInstallBinding(database)).toEqual(first)
+
+  database.query('UPDATE record_install_binding SET record_origin=NULL').run()
+  rememberHostedRecord(database)
+  expect(readRecordInstallBinding(database).recordOrigin).toBe(first.recordOrigin)
   database.close()
 })
 

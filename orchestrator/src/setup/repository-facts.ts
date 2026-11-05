@@ -4,21 +4,11 @@ import { readdirSync, realpathSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { gitAt } from '../../../shared/git.ts'
 import { sniffStack } from '../project/projects.ts'
+import type { RepositoryFacts } from './repository-facts-types.ts'
 import { detectRepositoryToolchain } from './repository-toolchain.ts'
 import type { SetupNotice } from './setup-engine.ts'
-import type { ToolchainFacts } from './setup-toolchain.ts'
 
-export type RepositoryFacts = ToolchainFacts & {
-  name: string
-  path: string
-  currentBranch: string | null
-  clean: boolean
-  originUrl: string | null
-  originHost: string | null
-  remoteDefaultBranch: string | null
-  stack: string | null
-  inspectionTimedOut: boolean
-}
+export type { RepositoryFacts } from './repository-facts-types.ts'
 
 type RepositoryGitCapture = { exitCode: number; stdout: string; timedOut: boolean }
 export type RepositoryGitRunner = (path: string, args: string[]) => RepositoryGitCapture

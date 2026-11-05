@@ -190,6 +190,8 @@ mkdirSync(dirname(template), { recursive: true })
   try {
     fixture.exec('PRAGMA foreign_keys = ON;')
     applyMigrations(fixture)
+    // Tests opt into hosted authority explicitly; migration backfills must not bind the suite baseline.
+    fixture.query('DELETE FROM record_install_binding').run()
     excludeSharedOutputRuns(fixture)
     seedWorkflows(fixture)
   } finally {

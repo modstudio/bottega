@@ -245,6 +245,27 @@ describe('setup MCP tools', () => {
     })
   })
 
+  test('setup_apply accepts the question setup_plan returned for the same include', async () => {
+    const service = serviceFor(fixturePlan())
+    const result = await withClient(service, async (client) => {
+      const planned = await client.callTool({
+        name: 'setup_plan',
+        arguments: { folders: [folder], include: [`${folder}/alpha`] },
+      })
+      const returned = planned.structuredContent as { questions: SetupQuestion[] }
+      return client.callTool({
+        name: 'setup_apply',
+        arguments: {
+          folders: [folder],
+          include: [`${folder}/alpha`],
+          answers: { [returned.questions[0]!.id]: returned.questions[0]!.recommendation },
+        },
+      })
+    })
+
+    expect(result.isError).not.toBe(true)
+  })
+
   test.each([
     ['a missing answer', {}],
     ['an unknown question id', { [question.id]: 'ALPHA', unknown: 'value' }],

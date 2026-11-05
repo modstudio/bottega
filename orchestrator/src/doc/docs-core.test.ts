@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { consumeDoc, importDocs, removeDoc, resume, setDoc } from '../../test/fixtures/docs.ts'
 import {
@@ -14,6 +13,7 @@ import { compilePack } from '../canon/canon.ts'
 import { db } from '../database/db.ts'
 import { projects, retireProject, upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
+import { currentRecordWriteRefusal } from '../record/record-write-authority.ts'
 import { docReferenceTargetProjects } from './doc-lint-adapter.ts'
 import {
   consumeDoc as consumeDocument,
@@ -120,6 +120,9 @@ describe('scoped operator docs', () => {
 
   test('a bound install without an endpoint refuses before writing locally', async () => {
     rememberHostedRecord()
+    db()
+      .query("UPDATE record_install_binding SET record_origin='https://staging.example.test'")
+      .run()
     await expect(
       writeDoc({
         scope: 'global',
@@ -130,7 +133,7 @@ describe('scoped operator docs', () => {
         delivery: 'demand',
         reason: 'prove refusal',
       }),
-    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record use`))
+    ).rejects.toThrow(currentRecordWriteRefusal())
     expect(getDoc('global', null, 'bound-refusal')).toBeNull()
   })
 

@@ -13,6 +13,7 @@ import { db } from '../database/db.ts'
 import { getDoc, setDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
+import { currentRecordWriteRefusal } from '../record/record-write-authority.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import {
   settingsImportCommand,
@@ -96,6 +97,9 @@ describe('settings import', () => {
     const root = fixtureProject('bound-user')
     delete process.env.BOTTEGA_RECORD_API_URL
     rememberHostedRecord()
+    db()
+      .query("UPDATE record_install_binding SET record_origin='https://staging.example.test'")
+      .run()
 
     let keychainCalls = 0
     installRecordSessionRunner(() => {
@@ -121,7 +125,7 @@ describe('settings import', () => {
 
     await expect(
       settingsImportCommand(presentation().flags({ user: true }), presentation().port(root)),
-    ).rejects.toThrow(new RegExp(`bound to a hosted record[\\s\\S]*${PLATFORM_SLUG} record use`))
+    ).rejects.toThrow(currentRecordWriteRefusal())
 
     expect(keychainCalls).toBe(0)
     expect(apiCalls).toEqual([])

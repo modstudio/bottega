@@ -32,7 +32,6 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../database/db.ts',
       '../project/project-commands.ts',
       '../project/projects.ts',
-      '../record/record-cache-projects.ts',
       '../record/record-space.ts',
       '../worktree/worktree-lifecycle.ts',
       './repository-facts.ts',
@@ -122,7 +121,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../project/projects.ts',
       './repository-toolchain.ts',
     ],
-    typeOnlyAllowed: ['./setup-engine.ts', './setup-toolchain.ts'],
+    typeOnlyAllowed: ['./repository-facts-types.ts', './setup-engine.ts'],
     reason: 'Keep repository detection independent of stores, setup policy, and CLI grammar.',
   },
   {
@@ -132,7 +131,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     typeOnlyAllowed: [
       '../../../shared/machine-config.ts',
       '../project/projects.ts',
-      './repository-facts.ts',
+      './repository-facts-types.ts',
       './setup-facts.ts',
       './setup-legacy-path.ts',
       './setup-mcp-config.ts',

@@ -2,14 +2,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { db } from '../database/db.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
+import { currentRecordWriteRefusal } from '../record/record-write-authority.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { projectByName, upsertProject } from './projects.ts'
 
@@ -89,11 +90,10 @@ test('fresh stores add, fill, retire, and unretire locally without a hosted call
 
 test('a bound store refuses before adding a local row and names record use', async () => {
   rememberHostedRecord()
+  db().query("UPDATE record_install_binding SET record_origin='https://staging.example.test'").run()
   const path = mkdtempSync(join(tmpdir(), 'orch-bound-project-'))
   await expect(runProject(['project', 'add', path], { name: 'bound-refusal' })).rejects.toThrow(
-    new RegExp(
-      `bound to a hosted record[\\s\\S]*BOTTEGA_RECORD_API_URL[\\s\\S]*${PLATFORM_SLUG} record use`,
-    ),
+    currentRecordWriteRefusal(),
   )
   expect(projectByName('bound-refusal')).toBeNull()
 })

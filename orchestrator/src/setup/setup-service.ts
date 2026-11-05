@@ -8,8 +8,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectByName, projects } from '../project/projects.ts'
-import { readSignedInHostedProjectNames } from '../record/record-cache-projects.ts'
-import { requireRecordSpaceMembership } from '../record/record-space.ts'
+import {
+  readSignedInHostedProjectNames,
+  requireRecordSpaceMembership,
+} from '../record/record-space.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { gatherRepositoryFactsReport } from './repository-facts.ts'
 import {

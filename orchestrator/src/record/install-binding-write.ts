@@ -8,6 +8,19 @@ import { db, nowIso, writeTransaction } from '../database/db.ts'
 export function rememberHostedRecord(database: Database = db()): void {
   const recordOrigin = new URL(resolveRecordApiUrl()).origin
   writeTransaction(() => {
+    const hasOrigin = database
+      .query<{ name: string }, []>("SELECT name FROM pragma_table_info('record_install_binding')")
+      .all()
+      .some(({ name }) => name === 'record_origin')
+    if (!hasOrigin) {
+      database
+        .query(
+          `INSERT INTO record_install_binding (id, bound_at) VALUES (1, ?)
+           ON CONFLICT(id) DO NOTHING`,
+        )
+        .run(nowIso())
+      return
+    }
     database
       .query(
         `INSERT INTO record_install_binding (id, bound_at, record_origin) VALUES (1, ?, ?)

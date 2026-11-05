@@ -4,7 +4,7 @@
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
-import type { RepositoryFacts } from './repository-facts.ts'
+import type { RepositoryFacts } from './repository-facts-types.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
 import type { LegacyMcpServerName } from './setup-mcp.ts'
