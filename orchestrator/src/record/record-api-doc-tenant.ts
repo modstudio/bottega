@@ -48,11 +48,17 @@ async function recordDocumentIdTenant(
   readDoc: (input: RecordDocumentTenant & { id: string }) => Promise<RecordDoc | null>,
 ): Promise<RecordDocumentTenant> {
   if (explicitDestination) return tenant
-  if (await readDoc({ ...tenantAt(tenant, tenant.spaceId), id })) return tenant
+  // A row that fails to parse is still held where it was read; the route reports its shape.
+  const holds = (at: RecordDocumentTenant) =>
+    readDoc({ ...at, id }).then(
+      (doc) => doc !== null,
+      () => true,
+    )
+  if (await holds(tenant)) return tenant
   const personalSpaceId = identity.personalSpaceId
   if (!personalSpaceId || personalSpaceId === tenant.spaceId) return tenant
   const personal = tenantAt(tenant, personalSpaceId)
-  return (await readDoc({ ...personal, id })) ? personal : tenant
+  return (await holds(personal)) ? personal : tenant
 }
 
 export function recordDocumentScopes<Context extends RecordDocumentContext>(input: {
