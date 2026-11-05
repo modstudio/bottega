@@ -33,8 +33,8 @@ export function decideWorkflowEvidenceRecording(input: {
   /** The store's user_version after the child exited, or null when it was not read. */
   storeSchemaVersion: number | null
   /**
-   * The journal compatibility of the range, from `inFlightMigrationCompatibility`. Asked
-   * only when the store moved forward, so equal versions never read the journal.
+   * The compatibility recorded by the store for the forward range. Asked only when the
+   * store moved forward, so equal versions never read migration metadata.
    */
   compatibility: () => InFlightMigrationCompatibility
 }): WorkflowEvidenceRecordingDecision {

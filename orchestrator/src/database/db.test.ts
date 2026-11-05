@@ -14,6 +14,7 @@ import {
   openProcessStoreHandle,
   type ProcessHandleFacts,
   registerOpenHooks,
+  storeInFlightMigrationCompatibility,
   withReadOnlyDatabaseAccess,
   writableDb,
 } from './db.ts'
@@ -78,6 +79,16 @@ test('schema reload uses additive store rows absent from the process journal', (
   try {
     prepareStaleSchemaReload('additive')
     expect(() => db()).not.toThrow()
+  } finally {
+    registerEmbeddedAssets(null)
+    closeDatabaseForFixture()
+  }
+})
+
+test('workflow evidence reads additive compatibility from store rows absent from the process journal', () => {
+  try {
+    prepareStaleSchemaReload('additive')
+    expect(storeInFlightMigrationCompatibility()).toBe('additive')
   } finally {
     registerEmbeddedAssets(null)
     closeDatabaseForFixture()

@@ -29,9 +29,9 @@ test('returns stored compatibility in applied order', () => {
       compatibility TEXT
     )`)
     database.exec(`
-      INSERT INTO orch_migrations VALUES (3, 'c', 2, 'c', 'fenced');
-      INSERT INTO orch_migrations VALUES (2, 'b', 1, 'b', NULL);
-      INSERT INTO orch_migrations VALUES (1, 'a', 1, 'a', 'additive');
+      INSERT INTO orch_migrations VALUES (3, 'c', 1, 'c', 'fenced');
+      INSERT INTO orch_migrations VALUES (2, 'b', 2, 'b', NULL);
+      INSERT INTO orch_migrations VALUES (1, 'a', 3, 'a', 'additive');
     `)
     expect(appliedMigrationCompatibilities(database)).toEqual(['additive', null, 'fenced'])
   } finally {

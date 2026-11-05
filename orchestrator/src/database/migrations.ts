@@ -9,6 +9,10 @@ import {
   enterMigrationConnectionPolicy,
   leaveMigrationConnectionPolicy,
 } from '../../../shared/migration-connection-policy.ts'
+import {
+  hasMigrationCompatibilityColumn,
+  MIGRATIONS_TABLE,
+} from './applied-migration-compatibilities.ts'
 import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
@@ -38,7 +42,6 @@ import {
 } from './workflow-uuid-migration-preflight.ts'
 import { isWriteProbeTable } from './write-probe.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
-const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
 const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
@@ -841,10 +844,7 @@ function createMigrationsTable(d: Database): void {
     version TEXT,
     compatibility TEXT
   )`)
-  const hasCompatibility = d
-    .query(`SELECT 1 FROM pragma_table_info(?) WHERE name = 'compatibility'`)
-    .get(MIGRATIONS_TABLE)
-  if (!hasCompatibility) {
+  if (!hasMigrationCompatibilityColumn(d)) {
     d.exec(`ALTER TABLE ${MIGRATIONS_TABLE} ADD COLUMN compatibility TEXT`)
   }
 }

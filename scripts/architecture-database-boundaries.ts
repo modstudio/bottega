@@ -4,6 +4,33 @@ const source = 'orchestrator/src/database/'
 
 export const databaseBoundarySpecs: ImportBoundary[] = [
   {
+    name: 'migrations-boundary',
+    file: `${source}migrations.ts`,
+    allowed: [
+      'bun:sqlite',
+      'node:crypto',
+      'node:path',
+      'shared/brand.ts',
+      'shared/embedded-assets.ts',
+      'shared/install-root.ts',
+      'shared/migration-connection-policy.ts',
+      `${source}applied-migration-compatibilities.ts`,
+      `${source}agent-port-baseline-uuid-migration-preflight.ts`,
+      `${source}gate-check-execution-uuid-migration-preflight.ts`,
+      `${source}lens-port-migration-preflight.ts`,
+      `${source}lens-profile-pin-contract-preflight.ts`,
+      `${source}metric-receipt-cache-uuid-migration-preflight.ts`,
+      `${source}migration-backfill-compatibility.ts`,
+      `${source}migration-compatibility.ts`,
+      `${source}monitor-release-claim-uuid-migration-preflight.ts`,
+      `${source}task-flow-migration-preflight.ts`,
+      `${source}workflow-uuid-migration-preflight.ts`,
+      `${source}write-probe.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep migration bookkeeping and application dependencies explicit.',
+  },
+  {
     name: 'database-boundary',
     file: `${source}db.ts`,
     allowed: [
