@@ -233,20 +233,46 @@ function directOrphanFamily(
 
 type DeleteResult = 'deleted' | 'blocked' | 'skipped'
 
+type SpaceProbe = (local: Database) => ReturnType<Database['query']>
+/** One literal probe per catalogue contract table; a contract table without one fails to compile. */
+const CATALOGUE_SPACE_PROBES: Record<
+  RecordLensTable | RecordWorkflowTable | RecordPortTable,
+  SpaceProbe
+> = {
+  lens: (local) => local.query('SELECT space_id FROM lens WHERE record_id=?'),
+  lens_revision: (local) => local.query('SELECT space_id FROM lens_revision WHERE record_id=?'),
+  lens_profile: (local) => local.query('SELECT space_id FROM lens_profile WHERE record_id=?'),
+  lens_profile_revision: (local) =>
+    local.query('SELECT space_id FROM lens_profile_revision WHERE record_id=?'),
+  project_lens_profile: (local) =>
+    local.query('SELECT space_id FROM project_lens_profile WHERE record_id=?'),
+  project_lens_profile_revision: (local) =>
+    local.query('SELECT space_id FROM project_lens_profile_revision WHERE record_id=?'),
+  step_catalogue: (local) => local.query('SELECT space_id FROM step_catalogue WHERE record_id=?'),
+  step_catalogue_version: (local) =>
+    local.query('SELECT space_id FROM step_catalogue_version WHERE record_id=?'),
+  step_catalogue_event: (local) =>
+    local.query('SELECT space_id FROM step_catalogue_event WHERE record_id=?'),
+  workflow: (local) => local.query('SELECT space_id FROM workflow WHERE record_id=?'),
+  workflow_version: (local) =>
+    local.query('SELECT space_id FROM workflow_version WHERE record_id=?'),
+  workflow_event: (local) => local.query('SELECT space_id FROM workflow_event WHERE record_id=?'),
+  port_doctrine: (local) => local.query('SELECT space_id FROM port_doctrine WHERE record_id=?'),
+  port_pair: (local) => local.query('SELECT space_id FROM port_pair WHERE record_id=?'),
+  port_baseline: (local) => local.query('SELECT space_id FROM port_baseline WHERE record_id=?'),
+  port_ref: (local) => local.query('SELECT space_id FROM port_ref WHERE record_id=?'),
+  port_ref_source: (local) => local.query('SELECT space_id FROM port_ref_source WHERE record_id=?'),
+  port_skip: (local) => local.query('SELECT space_id FROM port_skip WHERE record_id=?'),
+}
+
 function catalogueLocalRow(
   local: Database,
   table: string,
   recordId: string,
 ): { space_id: string | null } | null | undefined {
-  const tables: readonly string[] = [
-    ...RECORD_LENS_TABLES,
-    ...RECORD_WORKFLOW_TABLES,
-    ...RECORD_PORT_TABLES,
-  ]
-  if (!tables.includes(table)) return undefined
-  return local
-    .query<{ space_id: string | null }, [string]>(`SELECT space_id FROM ${table} WHERE record_id=?`)
-    .get(recordId)
+  if (!Object.hasOwn(CATALOGUE_SPACE_PROBES, table)) return undefined
+  const probe = CATALOGUE_SPACE_PROBES[table as keyof typeof CATALOGUE_SPACE_PROBES]
+  return probe(local).get(recordId) as { space_id: string | null } | null
 }
 
 function localRowSpace(local: Database, change: Change): string | null | undefined {
