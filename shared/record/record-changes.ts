@@ -86,7 +86,7 @@ async function recordChangeLag(tx: SQL, cursor: RecordChangeCursor): Promise<num
   return lag
 }
 
-export async function readRecordChangesInTransaction(
+async function readRecordChangesInTransaction(
   tx: SQL,
   after: RecordChangeCursor | null,
   limit: number,
@@ -113,7 +113,7 @@ export async function readRecordChangesInTransaction(
       WHERE xid<pg_snapshot_xmin(pg_current_snapshot())
         AND (xid,seq)>(${after.xid.toString()}::xid8,${after.seq})
         AND table_name=ANY(string_to_array(${tables.join(',')}, ',')::text[])
-      ORDER BY xid,seq LIMIT ${limit}`,
+      ORDER BY record_change.xid,record_change.seq LIMIT ${limit}`,
   )
   const page = recordChangePage(after, candidates)
   return {
@@ -124,16 +124,30 @@ export async function readRecordChangesInTransaction(
   }
 }
 
+type RecordChangeReadPage = Awaited<ReturnType<typeof readRecordChangesInTransaction>>
+
+export function readRecordChanges(
+  client: SQL,
+  principal: TenantPrincipal,
+  after: RecordChangeCursor | null,
+  limit: number,
+  tables: readonly string[],
+): Promise<RecordChangeReadPage>
+export function readRecordChanges<T>(
+  client: SQL,
+  principal: TenantPrincipal,
+  after: RecordChangeCursor | null,
+  limit: number,
+  tables: readonly string[],
+  materialize: (tx: SQL, page: RecordChangeReadPage) => Promise<T>,
+): Promise<T>
 export async function readRecordChanges(
   client: SQL,
   principal: TenantPrincipal,
   after: RecordChangeCursor | null,
   limit: number,
   tables: readonly string[],
-  materialize?: (
-    tx: SQL,
-    page: Awaited<ReturnType<typeof readRecordChangesInTransaction>>,
-  ) => Promise<unknown>,
+  materialize?: (tx: SQL, page: RecordChangeReadPage) => Promise<unknown>,
 ) {
   return client.begin(async (tx) => {
     await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`

@@ -58,9 +58,11 @@ export function registerRecordChangeRoute(app: Hono<Environment>, deps: RecordCh
     }
     const identity = context.get('identity')
     const spaces = identity.memberships.map((membership) => String(membership.space_id))
+    const primarySpace = spaces[0] ?? identity.personalSpaceId ?? identity.activeSpaceId
+    if (!primarySpace) return context.json({ error: 'record session has no spaces' }, 409)
     const principal = {
       userId: identity.user.id,
-      spaceId: spaces[0] ?? identity.personalSpaceId,
+      spaceId: primarySpace,
       spaceIds: spaces,
     }
     const read = () => deps.readChanges({ ...principal, after, limit: query.data.limit })
@@ -77,7 +79,7 @@ export function registerRecordChangeRoute(app: Hono<Environment>, deps: RecordCh
     const deadline = Date.now() + query.data.wait * 1_000
     while (!result.changes.length && Date.now() < deadline && !context.req.raw.signal.aborted) {
       await deps.waitForRecordChange(deadline - Date.now(), context.req.raw.signal)
-      if (context.req.raw.signal.aborted) return context.body(null, 499)
+      if (context.req.raw.signal.aborted) return new Response(null, { status: 499 })
       result = await read()
       if (result.resetRequired)
         return context.json(

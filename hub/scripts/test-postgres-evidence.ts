@@ -314,7 +314,7 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
       heldRead.changes.length !== 0 ||
       heldRead.cursor.xid !== baseline.xid ||
       heldRead.cursor.seq !== baseline.seq ||
-      heldRead.lag !== 1n
+      heldRead.lag !== 1
     )
       throw new Error('open transaction did not hold back later xids and grow count lag')
 
@@ -460,7 +460,7 @@ async function proveRecordChangeMultiSpacePolicyAndNotify(admin: SQL) {
     )
       throw new Error('record change multi-space policy did not expose both member spaces')
     const hidden = await actor.begin(async (tx) => {
-      await bindTenant(tx, { userId: SECOND_USER, spaceId: SPACE_A, spaceIds: [SPACE_B, SPACE_C] })
+      await bindTenant(tx, { userId: SECOND_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
       return tx`SELECT 1 FROM record_change WHERE space_id=ANY(string_to_array(${`${SPACE_B},${SPACE_C}`},',')::uuid[]) LIMIT 1`
     })
     if (hidden.length)

@@ -114,6 +114,14 @@ function idleBoardDeps(): RecordBoardDeps {
 
 export function idleRecordApiDeps() {
   return {
+    readChanges: async () => ({
+      resetRequired: false as const,
+      cursor: { xid: 0n, seq: 0n },
+      lag: 0,
+      more: false,
+      changes: [],
+    }),
+    waitForRecordChange: async () => undefined,
     clientAddresses: {
       recordApiUrl: 'https://api.example.test',
       hubHostedUrl: 'https://app.example.test',
