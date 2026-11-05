@@ -15,7 +15,7 @@ export async function signedInDocOwner(): Promise<string> {
     case 'local-authoritative':
       return `operator:${machineId()}`
     case 'refused':
-      throwIfRecordRefused(decision)
+      return throwIfRecordRefused(decision)
     case 'hosted': {
       const owner = await signedInRecordUserId()
       if (!owner) throw new Error(RECORD_SIGN_IN_REMEDY)
