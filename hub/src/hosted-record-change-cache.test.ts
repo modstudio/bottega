@@ -182,6 +182,40 @@ test('one feed page splits families, skips an outside space, and advances one cu
   )
 })
 
+test('a move out of the pull set applies its old-space delete before skipping the new-space upsert', async () => {
+  writeTransaction((conn) => {
+    conn
+      .query('INSERT INTO setting(key,value) VALUES (?,?)')
+      .run('collect.hosted-record-changes.cursor', 'before')
+    conn.query('INSERT INTO setting(key,value) VALUES (?,?)').run(
+      'collect.hosted-record-changes.spaces',
+      JSON.stringify({ task: ['space-one'], note: ['space-one'], send: ['space-one'] }),
+    )
+    conn
+      .query(
+        `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run('moved-task', 'DEV-1', 'one', 'local', '2026-01-01', '2026-01-01')
+  })
+  const changes = [
+    { table: 'hub_task', id: 'moved-task', space: 'space-one', op: 'delete' },
+    { table: 'hub_task', id: 'moved-task', space: 'space-two', op: 'upsert', row: {} },
+  ]
+  const report = await pullHostedChanges({
+    ...options,
+    fetch: route({ feed: () => page('after', changes) }),
+    registeredProjects: registered.slice(0, 1),
+  })
+  expect(db().query('SELECT 1 FROM task WHERE record_id=?').get('moved-task')).toBeNull()
+  expect(report.families.find((family) => family.name === 'task')?.report.spaces).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ spaceId: 'space-one', deletesApplied: 1 }),
+      expect.objectContaining({ spaceId: 'space-two', outsidePullSetSkipped: 1 }),
+    ]),
+  )
+})
+
 test('a failed full pull remains pending while the feed advances and retries next pass', async () => {
   const calls: Array<{ path: string; space: string | null; after: string | null }> = []
   const fetch = route({

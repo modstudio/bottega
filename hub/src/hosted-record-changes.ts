@@ -25,7 +25,8 @@ export type HostedRecordChange = {
 
 function collapsedEntries(changes: readonly RecordChangeEntry[]) {
   const collapsed = new Map<string, RecordChangeEntry>()
-  for (const change of changes) collapsed.set(`${change.table}:${change.id}`, change)
+  for (const change of changes)
+    collapsed.set(`${change.table}:${change.space}:${change.id}`, change)
   const keys = new Set(collapsed.values())
   return changes.filter((change) => keys.has(change))
 }

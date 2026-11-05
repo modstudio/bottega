@@ -318,6 +318,49 @@ test('record feed materialization collapses entries, reads each space, and prese
   `)
 })
 
+test('record feed materialization preserves both sides of a cross-space move', async () => {
+  const movedTask = '01990000-0000-7000-8000-000000001366'
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    VALUES
+      ('${movedTask}','${spaceB}','${PLATFORM_NAME}','DEV-1366','${PLATFORM_NAME}','moved','local',now(),now(),now(),now());
+  `)
+  const result = await database.transaction(async (transaction) => {
+    const tx = pgliteSql(transaction)
+    await tx`SET ROLE ${tx.unsafe(RECORD_ACTOR_ROLE)}`
+    await bindTenant(tx, { userId, spaceId: spaceA, spaceIds: [spaceA, spaceB] })
+    return materializeHostedRecordChangePage(tx, {
+      resetRequired: false,
+      cursor: { xid: 2n, seq: 2n },
+      lag: 0,
+      more: false,
+      changes: [
+        { xid: 1n, seq: 1n, table: 'hub_task', id: movedTask, space: spaceA, op: 'delete' },
+        { xid: 1n, seq: 2n, table: 'hub_task', id: movedTask, space: spaceB, op: 'upsert' },
+      ],
+    })
+  })
+  expect(result.changes).toEqual([
+    { table: 'hub_task', id: movedTask, space: spaceA, op: 'delete' },
+    expect.objectContaining({
+      table: 'hub_task',
+      id: movedTask,
+      space: spaceB,
+      op: 'upsert',
+      row: expect.objectContaining({ title: 'moved' }),
+    }),
+  ])
+  await database.exec(`
+    RESET ROLE;
+    DELETE FROM hub_task WHERE id='${movedTask}';
+    DELETE FROM record_change WHERE row_id='${movedTask}';
+    DELETE FROM hub_change WHERE row_id='${movedTask}';
+    DELETE FROM hub_change_head WHERE space_id='${spaceB}';
+  `)
+})
+
 test('later row suppression returns one key for many later changes to the same row', async () => {
   const sql = pgliteSql(database)
   await bind(database, spaceH)

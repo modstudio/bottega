@@ -272,14 +272,14 @@ async function proveHostedRecordChangeFeed(admin: SQL) {
   const hidden = newRecordId()
   await admin`INSERT INTO hub_task
     (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
-    VALUES (${task}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-2121',${PLATFORM_SLUG},'feed task','local',now(),now(),now(),now())`
+    VALUES (${task}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-699',${PLATFORM_SLUG},'feed task','local',now(),now(),now(),now())`
   await admin`INSERT INTO hub_note
     (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at)
-    VALUES (${note}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},2121,${PLATFORM_SLUG},'feed note','[]',1,now(),now(),now())`
+    VALUES (${note}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},698,${PLATFORM_SLUG},'feed note','[]',1,now(),now(),now())`
   await admin`INSERT INTO hub_note
     (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at,
       author_user_id)
-    VALUES (${hidden}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},2122,${PLATFORM_SLUG},'hidden feed note','[]',1,now(),now(),now(),
+    VALUES (${hidden}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},699,${PLATFORM_SLUG},'hidden feed note','[]',1,now(),now(),now(),
       ${SECOND_USER}::uuid)`
   await actorUrl.begin(async (tx) => {
     await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
