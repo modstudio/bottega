@@ -118,6 +118,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'write-probe cleanup interpolates a table name restricted to the numeric probe prefix',
   ),
   ...exempt(
+    'shared/sqlite-storage-measurement.ts',
+    ['a20706af33d7c41d'],
+    'storage measurement quotes table names enumerated from the same SQLite schema',
+  ),
+  ...exempt(
     'orchestrator/src/monitor/monitor-hosted-pressure.ts',
     ['73d0a0a91537afc7'],
     'hosted-pressure claim restores the numeric busy_timeout captured from the same connection',

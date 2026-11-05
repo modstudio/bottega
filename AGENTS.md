@@ -72,15 +72,13 @@ checkout follows it. Never fast-forward local trunk and call that landed, and do
 not invent a local admission queue.
 
 The full suite runs in GitHub Actions, sharded, on every pull request and in the
-merge queue. The aggregate `ci` check is the proof a commit has, and the merge
-queue tests each pull request on top of the current trunk before it lands. The
-local gate, `bun run check`, runs the fast static checks; run it before opening
-the pull request.
+merge queue, which tests each pull request on top of the current trunk. The
+local gate, `bun run check`, runs the fast static checks.
 
 A ruleset on the landing branch requires the merge queue and the `ci` check, so
 no change reaches trunk outside a pull request.
 
-CI proves the commit; the merge queue admits it. A check that skips what it
+A check that skips what it
 cannot provision is informational, not a gate, because running nothing proves
 nothing. Attribute each failure before aggregating it; an unattributed count is
 not a rate.

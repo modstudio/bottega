@@ -14,6 +14,17 @@ export function outboxEntries(): Record<string, unknown>[] {
   return listHostedOutbox()
 }
 
+/** Structured owner output for the product front door's composite storage report. */
+export function tableStorageEntries() {
+  requireDatabase()
+  return Promise.all([import('./table-storage-report.ts'), import('./storage-lifecycle.ts')]).then(
+    ([{ hubTableStorage }, { hubTableLifecycles }]) => ({
+      ...hubTableStorage(),
+      declarations: hubTableLifecycles,
+    }),
+  )
+}
+
 export function outboxSummaryLines(rows: readonly Record<string, unknown>[]): string[] {
   requireDatabase()
   return hostedOutboxSummaryLines(rows as OutboxEntry[])

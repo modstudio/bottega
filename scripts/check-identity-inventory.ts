@@ -6,8 +6,10 @@ import * as noteClient from '../hub/src/note-client.ts'
 import { PUSHABLE_HUB_CHANGE_TABLES } from '../hub/src/push-contract.ts'
 import { createRecordClient } from '../hub/src/record-client.ts'
 import * as reportClient from '../hub/src/report-client.ts'
+import { hubTableLifecycles } from '../hub/src/storage-lifecycle.ts'
 import * as taskClient from '../hub/src/task-client.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
+import { orchestratorTableLifecycles } from '../orchestrator/src/database/storage-lifecycle.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../orchestrator/src/record/outbox-payload-contracts.ts'
 import * as recordApiClientModule from '../orchestrator/src/record/record-api-client.ts'
 import { recordApiClient } from '../orchestrator/src/record/record-api-client.ts'
@@ -18,6 +20,7 @@ import { recordWorkflowClient } from '../orchestrator/src/record/record-api-clie
 import * as recordEmailVerificationClient from '../orchestrator/src/record/record-email-verification-client.ts'
 import { SNAPSHOT_KINDS } from '../orchestrator/src/record/record-snapshots.ts'
 import { configClient } from '../shared/config-client.ts'
+import { hostedTableLifecycles } from '../shared/record/storage-lifecycle.ts'
 import { enumerateClientMethods } from './identity-client-enumeration.ts'
 import {
   assertShrinkingKeyBaseline,
@@ -31,6 +34,7 @@ import baseline from './identity-key-baseline.json'
 import { KEY_MANIFESTS } from './identity-key-manifest.ts'
 import { stateClassRefusals } from './identity-state-class-check.ts'
 import { STATE_CLASSES } from './identity-state-classes.ts'
+import { repositoryLifecycleSymbol, storageLifecycleRefusals } from './storage-lifecycle-check.ts'
 
 type Baseline = Record<'orchestrator' | 'hub' | 'hosted', string[]>
 
@@ -186,6 +190,7 @@ async function main(): Promise<void> {
         ...sqliteSyncedSchemaFacts('hub', hubTables),
       ],
     )
+    const hostedTableInventory = await hostedKeyTables()
     const classRefusals = stateClassRefusals({
       tables: {
         orchestrator: orchestratorTables.map((table) => table.name),
@@ -194,14 +199,37 @@ async function main(): Promise<void> {
       declarations: STATE_CLASSES,
       outboxSources: Object.values(OUTBOX_KIND_SOURCES).map(({ source }) => source),
       pushableHubTables: PUSHABLE_HUB_TABLES,
-      hostedTables: (await hostedKeyTables()).map((table) => table.name),
+      hostedTables: hostedTableInventory.map((table) => table.name),
     })
-    const refusals = [...syncedRefusals, ...runtimeSyncedSourceRefusals(), ...classRefusals]
+    const lifecycleRefusals = await storageLifecycleRefusals(
+      {
+        orchestrator: orchestratorTables.map((table) => ({
+          name: table.name,
+          columns: table.columns.map((column) => column.name),
+        })),
+        hub: hubTables.map((table) => ({
+          name: table.name,
+          columns: table.columns.map((column) => column.name),
+        })),
+        hosted: hostedTableInventory.map((table) => ({
+          name: table.name,
+          columns: table.columns.map((column) => column.name),
+        })),
+      },
+      [...orchestratorTableLifecycles, ...hubTableLifecycles, ...hostedTableLifecycles],
+      repositoryLifecycleSymbol,
+    )
+    const refusals = [
+      ...syncedRefusals,
+      ...runtimeSyncedSourceRefusals(),
+      ...classRefusals,
+      ...lifecycleRefusals,
+    ]
     if (refusals.length) throw new Error(refusals.join('\n'))
     const inventories = {
       orchestrator: classifyKeyInventory('orchestrator', orchestratorTables, KEY_MANIFESTS),
       hub: classifyKeyInventory('hub', hubTables, KEY_MANIFESTS),
-      hosted: classifyKeyInventory('hosted', await hostedKeyTables(), KEY_MANIFESTS),
+      hosted: classifyKeyInventory('hosted', hostedTableInventory, KEY_MANIFESTS),
     }
     for (const store of ['orchestrator', 'hub', 'hosted'] as const) {
       assertShrinkingKeyBaseline(

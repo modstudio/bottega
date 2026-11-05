@@ -352,7 +352,8 @@ function ownerRouteUnits(
   notWalked: Set<string>,
   book: CommandBook,
 ): DocumentationUnit[] {
-  if (route.owner !== 'orch' && route.owner !== 'hub') return []
+  if (route.owner !== 'orch' && route.owner !== 'hub')
+    throw new Error(`cannot document route owner ${route.owner}: ${routeSpelling(route)}`)
   const command = resolveOwnerCommand(route, route.owner, route.argv ?? [], programs)
   const spelling = routeSpelling(route)
   const group = route.command[0]!
@@ -429,7 +430,7 @@ function routeUnits(
   if (route.hidden) return []
   if (route.owner === 'composite') return compositeRouteUnits(route, programs, book)
   if (route.owner === 'outbox') return outboxRouteUnits(route, programs, routedSpellings, book)
-  if (route.owner === 'local') {
+  if (route.owner === 'local' || route.owner === 'storage') {
     const spelling = routeSpelling(route)
     const commandUnit = routeCommandUnit(route, route.description ?? '', 'cli/routes.ts')
     writeCommand(book, {

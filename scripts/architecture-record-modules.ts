@@ -3,6 +3,7 @@
 import { dirname, normalize } from 'node:path'
 import { recordBindingModules } from './architecture-record-binding-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
+import { storageRecordModules } from './architecture-storage-modules.ts'
 
 type RecordModule = { file: string; allowed: string[] }
 
@@ -17,6 +18,7 @@ const cacheDeleteImports = ['bun:sqlite', '../database/db.ts', '../database/tole
 
 export const recordModules: RecordModule[] = [
   ...recordChangeModules,
+  ...storageRecordModules,
   module('orchestrator/src/record/record-pool.ts', [
     'bun',
     '../../../shared/record/service-connection.ts',

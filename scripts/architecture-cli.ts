@@ -26,13 +26,19 @@ export const cliModules = [
       'shared/brand.ts',
       'shared/commander-public-path.ts',
       'shared/self-spawn.ts',
+      'shared/storage-lifecycle.ts',
       'cli/legacy-calls.ts',
       'cli/routes.ts',
+      'cli/storage-report.ts',
     ],
   },
   {
     file: 'cli/legacy-calls.ts',
     allowed: ['node:fs', 'node:path', 'shared/brand.ts', 'shared/state-directory.ts'],
+  },
+  {
+    file: 'cli/storage-report.ts',
+    allowed: ['shared/storage-lifecycle.ts'],
   },
   { file: 'cli/routes.ts', allowed: [] },
   {

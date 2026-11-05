@@ -1,8 +1,15 @@
 import { INSTALL_GUIDE_URL, PLATFORM_SLUG } from '../shared/brand.ts'
 import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
+import {
+  joinStorageMeasurements,
+  type TableLifecycle,
+  type TableStorageMeasurement,
+  type TableStorageReport,
+} from '../shared/storage-lifecycle.ts'
 import { reportLegacyCalls } from './legacy-calls.ts'
 import { type CommandRoute, GROUPS, HAND_PARSED_OWNERS, ROUTES, resolveRoute } from './routes.ts'
+import { formatCompositeStorageReport } from './storage-report.ts'
 
 export type BinaryEntries = {
   orch(argv: string[], invocation?: PublicCommandInvocation): Promise<number>
@@ -10,6 +17,18 @@ export type BinaryEntries = {
   orchOutbox(): Promise<Record<string, unknown>[]>
   hubOutbox(): Promise<Record<string, unknown>[]>
   hubOutboxSummaryLines(rows: readonly Record<string, unknown>[]): Promise<string[]>
+  orchStorage?(): Promise<{
+    declarations: readonly TableLifecycle[]
+    measurements: TableStorageMeasurement[]
+    missing: TableStorageReport['missing']
+    resources?: unknown
+    resourcesText?: string
+    resourceError?: string
+  }>
+  hubStorage?(): Promise<{
+    declarations: readonly TableLifecycle[]
+    measurements: TableStorageMeasurement[]
+  }>
   runExec(argv: string[]): Promise<number>
   askProxy(argv: string[]): Promise<number>
   retrievalSearch(argv: string[]): Promise<void>
@@ -101,6 +120,55 @@ async function dispatchOutbox(
     [...prefix, verb!, id, ...extraArguments],
     invocationFor(prefix, invocation.publicPath),
   )
+}
+
+async function dispatchStorage(rest: string[], entries: BinaryEntries): Promise<number> {
+  if (rest.some((argument) => argument !== '--json')) {
+    console.error(`usage: ${PLATFORM_SLUG} machine storage [--json]`)
+    return 2
+  }
+  if (!entries.orchStorage || !entries.hubStorage) throw new Error('storage owners are unavailable')
+  const [orchestratorResult, hubResult] = await Promise.allSettled([
+    entries.orchStorage(),
+    entries.hubStorage(),
+  ])
+  const declarations: TableLifecycle[] = []
+  const measurements: TableStorageMeasurement[] = []
+  const missing: TableStorageReport['missing'] = []
+  let resources: unknown = null
+  let resourcesText: string | undefined
+  let resourceError: string | undefined
+  const reason = (value: unknown) => (value instanceof Error ? value.message : String(value))
+  if (orchestratorResult.status === 'fulfilled') {
+    const orchestrator = orchestratorResult.value
+    declarations.push(...orchestrator.declarations)
+    measurements.push(...orchestrator.measurements)
+    missing.push(...orchestrator.missing)
+    resources = orchestrator.resources ?? null
+    resourcesText = orchestrator.resourcesText
+    resourceError = orchestrator.resourceError
+  } else {
+    missing.push({ store: 'orchestrator', reason: reason(orchestratorResult.reason) })
+  }
+  if (hubResult.status === 'fulfilled') {
+    declarations.push(...hubResult.value.declarations)
+    measurements.push(...hubResult.value.measurements)
+  } else {
+    missing.push({ store: 'hub', reason: reason(hubResult.reason) })
+  }
+  const report = joinStorageMeasurements(declarations, measurements, missing)
+  console.log(
+    rest.includes('--json')
+      ? JSON.stringify({ resources, ...(resourceError ? { resourceError } : {}), ...report })
+      : [
+          resourcesText,
+          resourceError ? `resources missing: ${resourceError}` : undefined,
+          formatCompositeStorageReport(report),
+        ]
+          .filter(Boolean)
+          .join('\n'),
+  )
+  return measurements.length || resources !== null ? 0 : 1
 }
 
 function dispatchOrchestratorOutbox(
@@ -254,6 +322,7 @@ export async function dispatchBinary(
     }
   }
   if (resolved.route.owner === 'local') return reportLegacyCalls(resolved.rest)
+  if (resolved.route.owner === 'storage') return dispatchStorage(resolved.rest, entries)
   if (resolved.route.owner === 'outbox') {
     const ownerPath = resolved.route.argv ?? []
     return dispatchOutbox(

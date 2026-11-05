@@ -8,6 +8,7 @@ import {
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { renameHostedMachine, retireHostedMachine } from './machine-name-record.ts'
 import { recordApi } from './record-api.ts'
+import { platformOwnerUserIds, registerRecordStorageRoute } from './record-api-storage.ts'
 import {
   recordAllowedOrigins,
   recordAuth,
@@ -118,6 +119,7 @@ import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsAutoMode, applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
 import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
+import { readRecordStorage } from './record-storage.ts'
 import {
   addRecordSubject,
   defineRecordSubject,
@@ -330,9 +332,21 @@ function recordScoreDependencies() {
   }
 }
 
+function registerStorageRoute(
+  app: ReturnType<typeof recordApi>,
+  config: ReturnType<typeof recordApiServerConfig>,
+  environment: ServerEnvironment,
+) {
+  registerRecordStorageRoute(app, {
+    platformOwnerUserIds: () => platformOwnerUserIds(environment),
+    readStorage: () => readRecordStorage(config.recordUrl),
+  })
+}
+
 async function serveRecordApiWithAuth(
   config: ReturnType<typeof recordApiServerConfig>,
   auth: ReturnType<typeof recordAuth>,
+  environment: ServerEnvironment,
 ) {
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const recordChangeWakeSource = createRecordChangeWakeSource(config.recordUrl)
@@ -405,6 +419,7 @@ async function serveRecordApiWithAuth(
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
   })
+  registerStorageRoute(app, config, environment)
   return serveRecordApi(
     app,
     config.port,
@@ -419,7 +434,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
   const config = recordApiServerConfig(environment)
   const auth = recordServerAuth(config, environment)
   try {
-    return await serveRecordApiWithAuth(config, auth)
+    return await serveRecordApiWithAuth(config, auth, environment)
   } catch (error) {
     await auth.close()
     throw error

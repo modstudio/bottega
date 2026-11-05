@@ -1,6 +1,11 @@
-type RouteOwner = 'orch' | 'hub' | 'local' | 'composite' | 'outbox'
+type RouteOwner = 'orch' | 'hub' | 'local' | 'composite' | 'outbox' | 'storage'
 
-export const HAND_PARSED_OWNERS: ReadonlySet<RouteOwner> = new Set(['local', 'outbox', 'composite'])
+export const HAND_PARSED_OWNERS: ReadonlySet<RouteOwner> = new Set([
+  'local',
+  'outbox',
+  'composite',
+  'storage',
+])
 
 export type CommandRoute = {
   command: readonly string[]
@@ -246,6 +251,12 @@ export const ROUTES = (
         { owner: 'hub', argv: ['migrate'], label: 'hub migration' },
       ],
     },
+    {
+      command: ['machine', 'storage'],
+      owner: 'storage',
+      description: 'measure every table and its declared lifecycle',
+      options: [{ flags: '--json', description: 'write the storage report as JSON' }],
+    },
     route(
       'machine update',
       'orch',
@@ -259,7 +270,6 @@ export const ROUTES = (
       'blockers',
       'monitor',
       'load',
-      'storage',
       'provisioning',
       'efficiency',
       'sweep',

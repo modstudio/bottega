@@ -186,6 +186,7 @@ function capturingClient(overrides: Partial<RecordApiClient> = {}): {
         personalSpaceId: newRecordId(),
         memberships: [],
       })),
+    storage: overrides.storage ?? (async () => ({ tables: [] })),
   }
   return { client, imports, hosted }
 }

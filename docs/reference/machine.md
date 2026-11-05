@@ -1083,7 +1083,7 @@ work the spare queue once and print the night summary
 
 **Synopsis:** `bottega machine storage [--json]`
 
-measure run, worktree, store, and volume storage
+measure every table and its declared lifecycle
 
 ### Options
 
