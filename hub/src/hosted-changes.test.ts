@@ -6,16 +6,19 @@ import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import { migrationSessionStatements } from '../../shared/record/migration-session.ts'
+import {
+  readRecordChanges,
+  recordChangePage,
+  recordChangeResetRequired,
+} from '../../shared/record/record-changes.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
+import { RECORD_CHANGE_REPLICATED_TABLES } from '../../shared/record/schema-record-change.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
 import {
-  hostedChangeService,
   hubChangeReadability,
   laterRowKeys,
   READABLE_HUB_CHANGES,
   readHostedChangesInTransaction,
-  recordChangePage,
-  recordChangeResetRequired,
 } from './hosted-changes.ts'
 
 const migrationsFolder = join(
@@ -147,18 +150,20 @@ test('a first read resets to the horizon, then reads committed tenant changes af
   await database.exec(`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES ('01990000-0000-7000-8000-000000001319','${spaceA}','record-feed',ARRAY['RCF'],now())`)
   const identity = { userId, spaceId: spaceA }
-  const first = await hostedChangeService.readRecordChanges(
+  const first = await readRecordChanges(
     pgliteClient(database),
     identity,
     null,
     1,
+    RECORD_CHANGE_REPLICATED_TABLES,
   )
   expect(first.resetRequired).toBe(true)
-  const page = await hostedChangeService.readRecordChanges(
+  const page = await readRecordChanges(
     pgliteClient(database),
     identity,
     first.cursor,
     1,
+    RECORD_CHANGE_REPLICATED_TABLES,
   )
   expect(page.resetRequired).toBe(false)
   if (!page.resetRequired) {
@@ -176,10 +181,10 @@ test('record change pages follow numeric order across a digit boundary', async (
     COMMIT;`)
   const identity = { userId, spaceId: spaceA }
   const client = pgliteClient(database)
-  let read = await hostedChangeService.readRecordChanges(client, identity, null, 1)
+  let read = await readRecordChanges(client, identity, null, 1, RECORD_CHANGE_REPLICATED_TABLES)
   const seqs: bigint[] = []
   for (let page = 0; page < 20; page += 1) {
-    read = await hostedChangeService.readRecordChanges(client, identity, read.cursor, 1)
+    read = await readRecordChanges(client, identity, read.cursor, 1, RECORD_CHANGE_REPLICATED_TABLES)
     if (read.resetRequired || read.changes.length === 0) break
     seqs.push(...read.changes.map((change) => change.seq))
   }
@@ -202,8 +207,8 @@ test('a record change page advances its pair cursor to the last returned row', (
     seq: String(seq),
     table_name: 'project',
     row_id: `row-${seq}`,
+    space_id: spaceA,
     op: 'upsert' as const,
-    at: '2026-11-05T00:00:00.000Z',
   })
   const after = { xid: 10n, seq: 10n }
   const page = recordChangePage(after, [row(11, 13), row(12, 12)])

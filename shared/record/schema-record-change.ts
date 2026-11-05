@@ -17,6 +17,7 @@ import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE, space, user } from './schema.ts'
 
 const xid8 = customType<{ data: string }>({ dataType: () => 'xid8' })
 const currentSpace = sql`nullif(current_setting('app.space_id', true), '')::uuid`
+const readableSpaces = sql`string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]`
 
 export const RECORD_CHANGE_REPLICATED_TABLES = [
   'hub_task',
@@ -82,7 +83,7 @@ export const recordChange = pgTable.withRLS(
     pgPolicy('record_change_space_select', {
       for: 'select',
       to: RECORD_ACTOR_ROLE,
-      using: sql`${table.spaceId} = ${currentSpace}`,
+      using: sql`${table.spaceId} = ${currentSpace} OR ${table.spaceId} = ANY(${readableSpaces})`,
     }),
     pgPolicy('record_change_space_insert', {
       for: 'insert',

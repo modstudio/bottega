@@ -109,6 +109,8 @@ function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPor
   }
 }
 
+export { mapped as mapRecordPortRow }
+
 export async function listRecordPortCatalogue(
   input: Tenant & { table: RecordPortTable; limit: number; cursor: RecordCursor | null },
 ): Promise<(RecordPortRow & RecordListCursorRow)[]> {

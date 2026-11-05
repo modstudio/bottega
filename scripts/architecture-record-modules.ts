@@ -13,6 +13,18 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/record/record-api-changes.ts', [
+    'hono', 'zod', '../../../shared/record/record-changes.ts',
+    './record-auth.ts', './record-change-feed.ts',
+  ]),
+  module('orchestrator/src/record/record-change-wake.ts', ['bun']),
+  module('orchestrator/src/record/record-change-feed.ts', [
+    'bun', '../../../shared/record/tenant.ts', '../../../shared/record/record-changes.ts',
+    './record-lens-contract.ts', './record-port-contract.ts', './record-workflow-contract.ts',
+    './record-doc-mapping.ts', './record-lens-catalogue.ts', './record-port-catalogue.ts',
+    './record-projects.ts', './record-pool.ts', './record-routing-evidence.ts',
+    './record-subjects.ts', './record-verdicts.ts', './record-workflow-catalogue.ts',
+  ]),
   module('orchestrator/src/record/record-pool.ts', [
     'bun',
     '../../../shared/record/service-connection.ts',

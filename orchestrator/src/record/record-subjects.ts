@@ -63,6 +63,7 @@ function mapped(row: Record<string, unknown>): RecordSubject {
     [recordCursorAt]: row.cursor_at == null ? updatedAt : String(row.cursor_at),
   }
 }
+export { mapped as mapRecordSubjectRow }
 
 async function projectId(
   tx: SQL,

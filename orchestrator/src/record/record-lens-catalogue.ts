@@ -50,7 +50,7 @@ function hostedLensProfilePinVersionSql(input: {
   }
 }
 
-async function selectionRows(
+export async function selectionRows(
   tx: SQL,
   spaceId: string,
   after: { at: string | null; id: string | null; rowId: string | null; limit: number },
@@ -76,7 +76,7 @@ async function selectionRows(
   )
 }
 
-async function selectionRevisionRows(
+export async function selectionRevisionRows(
   tx: SQL,
   spaceId: string,
   after: { at: string | null; id: string | null; rowId: string | null; limit: number },
@@ -181,6 +181,8 @@ function mapped(
       }
   }
 }
+
+export { mapped as mapRecordLensRow }
 
 export async function listRecordLensCatalogue(
   input: Tenant & { table: RecordLensTable; limit: number; cursor: RecordCursor | null },

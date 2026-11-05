@@ -9,7 +9,9 @@ import {
   recordServiceUrl,
 } from '../../shared/record/service-connection.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import { hostedChangeService, listHostedChanges } from '../src/hosted-changes.ts'
+import { readRecordChanges } from '../../shared/record/record-changes.ts'
+import { RECORD_CHANGE_REPLICATED_TABLES } from '../../shared/record/schema-record-change.ts'
+import { listHostedChanges } from '../src/hosted-changes.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import { listHostedNotes } from '../src/hosted-note-list.ts'
@@ -194,11 +196,12 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     await bindTenant(tx, identityB)
     await tx`DELETE FROM project WHERE id=${deleteProject}::uuid`
   })
-  const deleted = await hostedChangeService.readRecordChanges(
+  const deleted = await readRecordChanges(
     actorUrl,
     identityB,
     { xid: BigInt(inserted[0]!.xid), seq: BigInt(inserted[0]!.seq) },
     10,
+    RECORD_CHANGE_REPLICATED_TABLES,
   )
   if (deleted.resetRequired || deleted.changes[0]?.op !== 'delete')
     throw new Error('record change reader did not return a delete tombstone')
@@ -214,17 +217,19 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     seq: BigInt(beforeMove[0]!.seq),
   }
   await admin`UPDATE project SET space_id=${SPACE_A}::uuid WHERE id=${moveProject}::uuid`
-  const oldSpace = await hostedChangeService.readRecordChanges(
+  const oldSpace = await readRecordChanges(
     actorUrl,
     identityB,
     beforeMoveCursor,
     10,
+    RECORD_CHANGE_REPLICATED_TABLES,
   )
-  const newSpace = await hostedChangeService.readRecordChanges(
+  const newSpace = await readRecordChanges(
     actorUrl,
     identityA,
     beforeMoveCursor,
     10,
+    RECORD_CHANGE_REPLICATED_TABLES,
   )
   if (oldSpace.resetRequired || oldSpace.changes[0]?.op !== 'delete')
     throw new Error('space move did not write a tombstone for the old space')
@@ -240,11 +245,12 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     xid: BigInt(horizonRows[0]!.xid),
     seq: BigInt(horizonRows[0]!.seq),
   }
-  const reset = await hostedChangeService.readRecordChanges(
+  const reset = await readRecordChanges(
     actorUrl,
     identityA,
     { xid: horizon.xid, seq: horizon.seq - 1n },
     10,
+    RECORD_CHANGE_REPLICATED_TABLES,
   )
   if (
     !reset.resetRequired ||
@@ -296,7 +302,7 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
     if (changeB.seq <= changeA.seq)
       throw new Error('later record change did not receive a later sequence')
 
-    const heldRead = await hostedChangeService.readRecordChanges(actorUrl, identityA, baseline, 10)
+    const heldRead = await readRecordChanges(actorUrl, identityA, baseline, 10, RECORD_CHANGE_REPLICATED_TABLES)
     if (
       heldRead.resetRequired ||
       heldRead.changes.length !== 0 ||
@@ -308,7 +314,7 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
 
     releaseA()
     await transactionA
-    const released = await hostedChangeService.readRecordChanges(actorUrl, identityA, baseline, 10)
+    const released = await readRecordChanges(actorUrl, identityA, baseline, 10, RECORD_CHANGE_REPLICATED_TABLES)
     if (
       released.resetRequired ||
       released.changes.length < 2 ||
@@ -369,11 +375,12 @@ async function proveRecordChangePairCursor(
     continueX()
     await transactionX
 
-    const whileYOpen = await hostedChangeService.readRecordChanges(
+    const whileYOpen = await readRecordChanges(
       actorUrl,
       identityA,
       baseline,
       10,
+      RECORD_CHANGE_REPLICATED_TABLES,
     )
     if (
       whileYOpen.resetRequired ||
@@ -381,7 +388,7 @@ async function proveRecordChangePairCursor(
       whileYOpen.changes.some((change) => change.xid !== firstX.xid) ||
       whileYOpen.cursor.xid !== firstX.xid ||
       whileYOpen.cursor.seq <= changeY.seq ||
-      whileYOpen.lag !== 0n
+      whileYOpen.lag !== 0
     )
       throw new Error(
         `older transaction changes were not readable while the younger xid stayed open: ${
@@ -393,11 +400,12 @@ async function proveRecordChangePairCursor(
 
     releaseY()
     await transactionY
-    const afterYCommit = await hostedChangeService.readRecordChanges(
+    const afterYCommit = await readRecordChanges(
       actorUrl,
       identityA,
       whileYOpen.cursor,
       10,
+      RECORD_CHANGE_REPLICATED_TABLES,
     )
     if (
       afterYCommit.resetRequired ||

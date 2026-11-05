@@ -42,6 +42,7 @@ test('stopping the server ends an open board stream before closing its wake sour
       serverStopped = true
     },
     boardWakeSource: wakeSource,
+    recordChangeWakeSource: { async close() {} },
     boardStreamRegistry: registry,
     auth: {
       async close() {

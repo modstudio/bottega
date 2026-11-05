@@ -38,6 +38,21 @@ const iso = (value: unknown) => new Date(String(value)).toISOString()
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 
+export function mapRecordRoutingEvidenceRow(row: Record<string, unknown>): RecordRoutingEvidenceRow {
+  return {
+    id: String(row.id), spaceId: String(row.space_id), agent: String(row.agent),
+    model: nullableString(row.model), job: String(row.job), stack: nullableString(row.stack),
+    promptBytes: Number(row.prompt_bytes), status: String(row.status),
+    failureKind: nullableString(row.failure_kind), executor: String(row.executor) as 'external' | 'harness',
+    evidenceExcluded: nullableString(row.evidence_excluded), startedAt: iso(row.started_at),
+    latencyMs: nullableNumber(row.latency_ms), vendorTokens: nullableNumber(row.vendor_tokens),
+    modelCalls: nullableNumber(row.model_calls), peakCallTokens: nullableNumber(row.peak_call_tokens),
+    delivery: nullableString(row.delivery), quality: nullableString(row.quality),
+    fidelity: nullableString(row.fidelity), lenses: Array.isArray(row.lenses) ? row.lenses.map(String) : [],
+    evidenceSequence: BigInt(String(row.evidence_seq)),
+  }
+}
+
 export async function listRecordRoutingEvidence(
   input: Tenant & { limit: number; cursor: bigint | null },
 ): Promise<RecordRoutingEvidenceRow[]> {
@@ -79,28 +94,6 @@ export async function listRecordRoutingEvidence(
       ORDER BY r.evidence_seq
       LIMIT ${input.limit + 1}
     `
-    return rows.map((row: Record<string, unknown>) => ({
-      id: String(row.id),
-      spaceId: String(row.space_id),
-      agent: String(row.agent),
-      model: nullableString(row.model),
-      job: String(row.job),
-      stack: nullableString(row.stack),
-      promptBytes: Number(row.prompt_bytes),
-      status: String(row.status),
-      failureKind: nullableString(row.failure_kind),
-      executor: String(row.executor) as 'external' | 'harness',
-      evidenceExcluded: nullableString(row.evidence_excluded),
-      startedAt: iso(row.started_at),
-      latencyMs: nullableNumber(row.latency_ms),
-      vendorTokens: nullableNumber(row.vendor_tokens),
-      modelCalls: nullableNumber(row.model_calls),
-      peakCallTokens: nullableNumber(row.peak_call_tokens),
-      delivery: nullableString(row.delivery),
-      quality: nullableString(row.quality),
-      fidelity: nullableString(row.fidelity),
-      lenses: Array.isArray(row.lenses) ? row.lenses.map(String) : [],
-      evidenceSequence: BigInt(String(row.evidence_seq)),
-    }))
+    return rows.map((row: Record<string, unknown>) => mapRecordRoutingEvidenceRow(row))
   })
 }

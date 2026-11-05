@@ -35,6 +35,20 @@ export type RecordScore = {
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
+export function mapRecordScoreRow(row: Record<string, unknown>): RecordScore {
+  return {
+    runId: String(row.run_id),
+    delivery: row.delivery == null ? null : (String(row.delivery) as Delivery),
+    quality: row.quality == null ? null : (String(row.quality) as Quality),
+    fidelity: row.fidelity == null ? null : (String(row.fidelity) as Fidelity),
+    note: row.note == null ? null : String(row.note),
+    scoredAt: iso(row.scored_at),
+    scoredBy: row.scored_by == null ? null : String(row.scored_by),
+    updatedAt: iso(row.updated_at)!,
+    evidenceExcluded: row.evidence_excluded == null ? null : String(row.evidence_excluded),
+  }
+}
+
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
     await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
@@ -217,17 +231,7 @@ export async function listRecordScores(
         COALESCE(s.run_id, e.run_id)
       LIMIT ${input.limit + 1}
     `
-    return rows.map((row: Record<string, unknown>) => ({
-      runId: String(row.run_id),
-      delivery: row.delivery == null ? null : (String(row.delivery) as Delivery),
-      quality: row.quality == null ? null : (String(row.quality) as Quality),
-      fidelity: row.fidelity == null ? null : (String(row.fidelity) as Fidelity),
-      note: row.note == null ? null : String(row.note),
-      scoredAt: iso(row.scored_at),
-      scoredBy: row.scored_by == null ? null : String(row.scored_by),
-      updatedAt: iso(row.updated_at)!,
-      evidenceExcluded: row.evidence_excluded == null ? null : String(row.evidence_excluded),
-    }))
+    return rows.map((row: Record<string, unknown>) => mapRecordScoreRow(row))
   })
 }
 

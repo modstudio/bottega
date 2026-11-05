@@ -65,6 +65,8 @@ function mapped(table: RecordWorkflowTable, row: Record<string, unknown>) {
   }
 }
 
+export { mapped as mapRecordWorkflowRow }
+
 export async function listRecordWorkflowCatalogue(
   input: Tenant & { table: RecordWorkflowTable; limit: number; cursor: RecordCursor | null },
 ): Promise<(Record<string, unknown> & RecordListCursorRow)[]> {
