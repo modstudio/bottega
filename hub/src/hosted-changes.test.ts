@@ -14,6 +14,7 @@ import {
   laterRowKeys,
   READABLE_HUB_CHANGES,
   readHostedChangesInTransaction,
+  recordChangePage,
 } from './hosted-changes.ts'
 
 const migrationsFolder = join(
@@ -141,13 +142,16 @@ afterAll(async () => {
   if (database) await database.close()
 })
 
-test('record change service reads the tenant prefix with a bigint cursor', async () => {
+test('a first read resets to the start watermark, then reads the tenant prefix after it', async () => {
   await database.exec(`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES ('01990000-0000-7000-8000-000000001319','${spaceA}','record-feed',ARRAY['RCF'],now())`)
+  const identity = { userId, spaceId: spaceA }
+  const first = await hostedChangeService.readRecordChanges(pgliteClient(database), identity, 0n, 1)
+  expect(first.resetRequired).toBe(true)
   const page = await hostedChangeService.readRecordChanges(
     pgliteClient(database),
-    { userId, spaceId: spaceA },
-    0n,
+    identity,
+    first.cursor,
     1,
   )
   expect(page.resetRequired).toBe(false)
@@ -155,6 +159,22 @@ test('record change service reads the tenant prefix with a bigint cursor', async
     expect(page.changes).toHaveLength(1)
     expect(page.cursor).toBe(page.changes[0]!.seq)
   }
+})
+
+test('a record change page stops before the first row behind an open transaction', () => {
+  const row = (seq: number, belowCutoff: boolean) => ({
+    seq: String(seq),
+    table_name: 'project',
+    row_id: `row-${seq}`,
+    op: 'upsert' as const,
+    at: '2026-11-05T00:00:00.000Z',
+    below_cutoff: belowCutoff,
+  })
+  const page = recordChangePage(10n, 14n, [row(11, true), row(12, false), row(13, true)])
+  expect(page.changes.map((change) => change.seq)).toEqual([11n])
+  expect(page.cursor).toBe(11n)
+  expect(page.lag).toBe(3n)
+  expect(recordChangePage(10n, 14n, [row(11, false)]).cursor).toBe(10n)
 })
 
 test('every logged table is readable or explicitly deferred', () => {

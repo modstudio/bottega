@@ -246,31 +246,29 @@ type RecordChangeLogRow = {
 
 const asBigInt = (value: string | number | bigint) => BigInt(value)
 
-async function readRecordChangesInTransaction(tx: SQL, after: bigint, limit: number) {
-  const metadata = rows<{ horizon: string | number | bigint; newest: string | number | bigint }>(
-    await tx`SELECT
-      (SELECT seq FROM record_change_horizon WHERE singleton)::text AS horizon,
-      COALESCE((SELECT max(seq) FROM record_change), 0)::text AS newest`,
-  )[0]!
-  const horizon = asBigInt(metadata.horizon)
-  const newest = asBigInt(metadata.newest)
-  if (after < horizon) {
-    return {
-      resetRequired: true as const,
-      horizon,
-      cursor: horizon,
-      lag: newest > horizon ? newest - horizon : 0n,
-    }
-  }
+const changeLag = (newest: bigint, cursor: bigint) => (newest > cursor ? newest - cursor : 0n)
 
-  const candidates = rows<RecordChangeLogRow>(
-    await tx`SELECT seq::text, table_name, row_id::text, op, at,
-      xid < pg_snapshot_xmin(pg_current_snapshot()) AS below_cutoff
-    FROM record_change
-    WHERE seq > ${after}
-    ORDER BY seq
-    LIMIT ${limit}`,
-  )
+/** A cursor below the pruning horizon cannot resume; the consumer resets to the horizon. */
+function recordChangeReset(after: bigint, horizon: bigint, newest: bigint) {
+  if (after >= horizon) return null
+  return {
+    resetRequired: true as const,
+    horizon,
+    cursor: horizon,
+    lag: changeLag(newest, horizon),
+  }
+}
+
+/**
+ * Returns the contiguous prefix of committed-before-every-open-transaction rows. A row behind an
+ * open transaction's position is withheld with everything after it, so a later commit never
+ * passes a lower sequence that has yet to commit.
+ */
+export function recordChangePage(
+  after: bigint,
+  newest: bigint,
+  candidates: readonly RecordChangeLogRow[],
+) {
   const blockedAt = candidates.findIndex((row) => !row.below_cutoff)
   const selected = blockedAt === -1 ? candidates : candidates.slice(0, blockedAt)
   const changes: RecordChangeEntry[] = selected.map((row) => ({
@@ -281,12 +279,29 @@ async function readRecordChangesInTransaction(tx: SQL, after: bigint, limit: num
     at: new Date(row.at).toISOString(),
   }))
   const cursor = changes.at(-1)?.seq ?? after
-  return {
-    resetRequired: false as const,
-    changes,
-    cursor,
-    lag: newest > cursor ? newest - cursor : 0n,
-  }
+  return { resetRequired: false as const, changes, cursor, lag: changeLag(newest, cursor) }
+}
+
+async function readRecordChangesInTransaction(tx: SQL, after: bigint, limit: number) {
+  const metadata = rows<{ horizon: string | number | bigint; newest: string | number | bigint }>(
+    await tx`SELECT
+      (SELECT seq FROM record_change_horizon WHERE singleton)::text AS horizon,
+      COALESCE((SELECT max(seq) FROM record_change), 0)::text AS newest`,
+  )[0]!
+  const horizon = asBigInt(metadata.horizon)
+  const newest = asBigInt(metadata.newest)
+  const reset = recordChangeReset(after, horizon, newest)
+  if (reset) return reset
+
+  const candidates = rows<RecordChangeLogRow>(
+    await tx`SELECT seq::text, table_name, row_id::text, op, at,
+      xid < pg_snapshot_xmin(pg_current_snapshot()) AS below_cutoff
+    FROM record_change
+    WHERE seq > ${after}
+    ORDER BY seq
+    LIMIT ${limit}`,
+  )
+  return recordChangePage(after, newest, candidates)
 }
 
 async function readRecordChanges(

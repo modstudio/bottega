@@ -10,7 +10,7 @@ test('refuses a per-call record client and names the pool remedy', () => {
       },
     ]),
   ).toEqual([
-    'orchestrator/src/record/example.ts:2: new SQL() is not allowed here; use recordPool(url) from orchestrator/src/record/record-pool.ts',
+    'orchestrator/src/record/example.ts:2: new SQL() is not allowed here; use recordPool(url) from orchestrator/src/record/record-pool.ts, or open a dedicated client with new SQL(recordServiceUrl(url)) from shared/record/service-connection.ts',
   ])
 })
 
@@ -31,6 +31,19 @@ test('allows only the declared sites in an exempt file', () => {
       },
     ]),
   ).toEqual([
-    'orchestrator/src/record/record-board-wake.ts:2: new SQL() is not allowed here; use recordPool(url) from orchestrator/src/record/record-pool.ts',
+    'orchestrator/src/record/record-board-wake.ts:2: new SQL() is not allowed here; use recordPool(url) from orchestrator/src/record/record-pool.ts, or open a dedicated client with new SQL(recordServiceUrl(url)) from shared/record/service-connection.ts',
+  ])
+})
+
+test('allows a dedicated client that carries the service connection bounds', () => {
+  expect(
+    recordSqlPoolViolations([
+      {
+        file: 'hub/src/example.ts',
+        source: 'const bounded = new SQL(recordServiceUrl(url))\nconst unbounded = new SQL(url)',
+      },
+    ]),
+  ).toEqual([
+    'hub/src/example.ts:2: new SQL() is not allowed here; use recordPool(url) from orchestrator/src/record/record-pool.ts, or open a dedicated client with new SQL(recordServiceUrl(url)) from shared/record/service-connection.ts',
   ])
 })

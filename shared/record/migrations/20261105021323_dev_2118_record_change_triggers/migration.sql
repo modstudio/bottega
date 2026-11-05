@@ -1,4 +1,8 @@
-INSERT INTO public.record_change_horizon (singleton, seq) VALUES (true, 0);
+-- The journal starts empty while the record already holds rows, so the horizon starts at a
+-- consumed sequence value: a cursor of 0 is below it and resets to a full reload, and every
+-- logged row sits above the cursor that reset returns.
+INSERT INTO public.record_change_horizon (singleton, seq)
+VALUES (true, nextval(pg_get_serial_sequence('public.record_change', 'seq')));
 -- Keep project-space moves exhaustive without moving the global journal's historical rows.
 CREATE OR REPLACE FUNCTION record_move_project_space(
   source_space text,

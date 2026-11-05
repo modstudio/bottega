@@ -1,5 +1,5 @@
 // concern: hosted-change-pruning
-/** Runs the hosted change-log retention operation through its guarded record function. */
+/** Runs each hosted change journal's retention through its guarded record function. */
 
 import type { SQL } from 'bun'
 
@@ -14,5 +14,5 @@ export async function pruneHostedChanges(client: SQL) {
       record_change_prune() AS record_deleted`,
   )[0]
   if (!result) throw new Error('hub change pruning returned no result; verify the record migration')
-  return Number(result.hub_deleted) + Number(result.record_deleted)
+  return { hub: Number(result.hub_deleted), record: Number(result.record_deleted) }
 }
