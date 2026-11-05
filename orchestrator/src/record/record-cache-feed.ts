@@ -412,16 +412,10 @@ function applyFeedUpsert(
   local: Database,
   change: Change,
   deps: Dependencies,
-  ownership: Ownership,
   result: RecordCachePullResult,
   fallbacks: Set<string>,
   orphans: Change[],
 ): boolean {
-  if (!feedEntryOwned(local, change, ownership)) {
-    if (change.op === 'upsert' && change.table === 'doc') result.skippedDocs++
-    else if (change.op === 'upsert' && change.table === 'subject') result.skippedSubjects++
-    return false
-  }
   const orphan = orphanFamily(local, change)
   if (orphan) {
     fallbacks.add(`${orphan}:${change.space}`)
@@ -456,8 +450,7 @@ function applyPage(
     for (const change of owned
       .filter((entry): entry is UpsertChange => entry.op === 'upsert')
       .sort((a, b) => order(a) - order(b)))
-      project =
-        applyFeedUpsert(local, change, deps, ownership, result, fallbacks, orphans) || project
+      project = applyFeedUpsert(local, change, deps, result, fallbacks, orphans) || project
     let pending: Change[] = owned
       .filter((entry) => entry.op === 'delete')
       .sort((a, b) => order(b) - order(a))
