@@ -95,6 +95,24 @@ describe('decideProjectAdd', () => {
     })
   })
 
+  test('refuses a retired hosted namesake with the relink remedy', () => {
+    const decision = decideProjectAdd({
+      name: 'probe',
+      requestedStack: null,
+      stackWasRequested: false,
+      requestedSettings: {},
+      hostedProjects: [hosted({ retiredAt: '2026-11-04T12:00:00.000Z' })],
+      memberships,
+      activeSpaceId: 'space-a',
+    })
+    expect(decision).toEqual({
+      decision: {
+        kind: 'refuse',
+        reason: `hosted project probe is retired in the space; unretire it from a machine that holds it with ${PLATFORM_SLUG} project retire probe --undo, then run ${PLATFORM_SLUG} project relink probe here`,
+      },
+    })
+  })
+
   test('refuses an ambiguous name and lists its spaces', () => {
     expect(
       decideProjectAdd({

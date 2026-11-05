@@ -45,6 +45,23 @@ export function writeProjectRegisterRow(database: Database, project: ProjectRegi
     )
 }
 
+/** Mirror a hosted row onto the local row it is linked to by record id, lifecycle included; returns rows changed. */
+export function mirrorProjectRegisterRow(
+  database: Database,
+  project: Omit<ProjectRegisterWrite, 'path'> & { retiredAt: string | null },
+): number {
+  return database
+    .query('UPDATE project SET name=?,stack=?,canon=?,settings=?,retired_at=? WHERE record_id=?')
+    .run(
+      project.name,
+      project.stack ?? null,
+      project.canon ? 1 : 0,
+      JSON.stringify(project.settings ?? {}),
+      project.retiredAt,
+      project.recordId,
+    ).changes
+}
+
 /** Register the built-in tracker project only while creating a brand-new store. */
 export function initializeDefaultLocalProject(
   database: Database,

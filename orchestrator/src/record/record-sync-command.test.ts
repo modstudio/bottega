@@ -5,6 +5,7 @@ import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { db } from '../database/db.ts'
 import {
   blockedOutboxLines,
+  projectRegisterLines,
   quarantinedOutboxLines,
   quarantinedParentHeldLines,
   readOnlyDeferredLines,
@@ -100,4 +101,21 @@ test('sync presentation reports routing pool fill progress and completion', () =
   expect(routingPoolLine({ added: 3, updated: 1, caughtUp: true })).toBe(
     'routing pool: 3 added, 1 updated, caught up',
   )
+})
+
+test('sync presentation reports project register counts and every skip reason', () => {
+  expect(
+    projectRegisterLines({
+      updated: 2,
+      retired: 1,
+      unretired: 1,
+      skipped: 1,
+      warnings: [
+        'project old-name cannot mirror hosted name new-name because it collides with local project new-name',
+      ],
+    }),
+  ).toEqual([
+    'project register: 2 updated, 1 retired, 1 un-retired, 1 skipped',
+    'project register skipped: project old-name cannot mirror hosted name new-name because it collides with local project new-name',
+  ])
 })

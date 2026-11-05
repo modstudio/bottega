@@ -203,6 +203,16 @@ export const recordModules: RecordModule[] = [
     './record-cursor.ts',
     './record-lens-contract.ts',
   ]),
+  module('orchestrator/src/record/record-cache-projects.ts', [
+    'bun:sqlite',
+    '../../../shared/record-project-contract.ts',
+    '../database/db.ts',
+    '../database/project-register-store.ts',
+    '../project/project-pull-decision.ts',
+    '../project/project-rename.ts',
+    '../project/projects.ts',
+    './record-api-client.ts',
+  ]),
   module('orchestrator/src/record/record-cache-catalogues.ts', [
     'bun:sqlite',
     './record-cache-lens.ts',

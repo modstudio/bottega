@@ -40,6 +40,23 @@ export function routingPoolLine(
   return `routing pool: ${pool.added} added, ${pool.updated} updated, ${pool.caughtUp ? 'caught up' : 'filling'}`
 }
 
+export function projectRegisterLines(
+  pull: NonNullable<Awaited<ReturnType<typeof syncRecord>>['projectRegister']>,
+): string[] {
+  return [
+    `project register: ${pull.updated} updated, ${pull.retired} retired, ${pull.unretired} un-retired, ${pull.skipped} skipped`,
+    ...pull.warnings.map((warning) => `project register skipped: ${warning}`),
+  ]
+}
+
+function logProjectRegister(
+  pull: Awaited<ReturnType<typeof syncRecord>>['projectRegister'],
+  presentation: { log(value: string): void },
+): void {
+  if (!pull) return
+  for (const line of projectRegisterLines(pull)) presentation.log(line)
+}
+
 export function quarantinedParentHeldLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['quarantinedParentHolds']>,
 ): string[] {
@@ -92,6 +109,7 @@ export async function syncCommand(
   }
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
   if (result.routingPool) presentation.log(routingPoolLine(result.routingPool))
+  logProjectRegister(result.projectRegister, presentation)
   if (result.machineNameRefusal)
     presentation.log(`machine name not claimed: ${result.machineNameRefusal}`)
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
