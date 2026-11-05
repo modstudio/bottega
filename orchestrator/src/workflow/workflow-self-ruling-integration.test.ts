@@ -58,6 +58,7 @@ const database = testDatabaseFixture((d) => {
 function resolution(d: Database): AutonomyResolution {
   const preliminary = composeWorkflow('flow', 'fixture', 'default', args, d)
   return {
+    layers: [],
     steps: Object.fromEntries(
       preliminary.steps.map((step) => [step.slug, { value: 'auto' as const, scope: 'test' }]),
     ),

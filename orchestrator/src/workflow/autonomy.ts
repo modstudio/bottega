@@ -69,7 +69,8 @@ export type AutonomyResolution = {
 type LegacyReleaseResolution = Omit<AutonomyResolution['shipTo'], 'value'> & {
   value: unknown
 }
-export type StoredAutonomyResolution = Omit<AutonomyResolution, 'shipTo'> & {
+export type StoredAutonomyResolution = Omit<AutonomyResolution, 'shipTo' | 'layers'> & {
+  layers?: AutonomyLayer[]
   shipTo?: AutonomyResolution['shipTo']
   release?: LegacyReleaseResolution
 }
@@ -351,7 +352,8 @@ export function resolveAutonomy(
   const layers = checked.map(
     ({ name, settings }): AutonomyLayer => ({
       scope: name,
-      preset: (workflow && settings.workflows?.[workflow]?.preset) ?? settings.preset ?? null,
+      preset:
+        (workflow ? settings.workflows?.[workflow]?.preset : undefined) ?? settings.preset ?? null,
       rulings: scopeRuling(settings, workflow) ?? null,
       shipTo: settings.shipTo ?? null,
       stages: Object.fromEntries(

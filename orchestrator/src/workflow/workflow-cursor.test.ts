@@ -814,6 +814,7 @@ describe('workflow cursor adapter', () => {
     )
     d.query('DELETE FROM workflow_cursor').run()
     const resolution = {
+      layers: [],
       steps: Object.fromEntries(
         preliminary.steps.map((step) => [
           step.slug,
@@ -954,6 +955,7 @@ describe('workflow cursor adapter', () => {
   test('a null pre-migration snapshot falls back to catalogue defaults', () => {
     const d = database()
     const resolution = {
+      layers: [],
       steps: { rebase: { value: 'review' as const, scope: 'session' } },
       rulings: { value: 'agent' as const, scope: 'built-in' },
       shipTo: { value: 'trunk' as const, scope: 'built-in' },

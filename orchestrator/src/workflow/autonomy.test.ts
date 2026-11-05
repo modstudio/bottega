@@ -95,7 +95,7 @@ describe('autonomy resolution', () => {
   })
 
   test('layers preserve the scope waterfall and every winner is its first non-null value', () => {
-    const cases = [
+    const cases: { name: string; settings: unknown }[][] = [
       [
         { name: 'session', settings: { stages: { plan: 'review' as const } } },
         { name: 'empty middle', settings: {} },
@@ -120,15 +120,19 @@ describe('autonomy resolution', () => {
       expect(result.layers.map(({ scope }) => scope)).toEqual(scopes.map(({ name }) => name))
       for (const stage of autonomyStages) {
         const first = result.layers.find((layer) => layer.stages[stage] !== null)
+        const value = first?.stages[stage]
+        if (!first || value === null || value === undefined) throw new Error(`no ${stage} layer`)
         expect(result.stages?.[stage]).toEqual({
-          value: first?.stages[stage],
-          scope: first?.scope,
+          value,
+          scope: first.scope,
         })
       }
       const firstRuling = result.layers.find((layer) => layer.rulings !== null)
-      expect(result.rulings).toEqual({ value: firstRuling?.rulings, scope: firstRuling?.scope })
+      if (!firstRuling || firstRuling.rulings === null) throw new Error('no rulings layer')
+      expect(result.rulings).toEqual({ value: firstRuling.rulings, scope: firstRuling.scope })
       const firstShipTo = result.layers.find((layer) => layer.shipTo !== null)
-      expect(result.shipTo).toEqual({ value: firstShipTo?.shipTo, scope: firstShipTo?.scope })
+      if (!firstShipTo || firstShipTo.shipTo === null) throw new Error('no ship-to layer')
+      expect(result.shipTo).toEqual({ value: firstShipTo.shipTo, scope: firstShipTo.scope })
     }
   })
 

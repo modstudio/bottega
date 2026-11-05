@@ -484,6 +484,7 @@ describe('importWorkflowTree', () => {
       d,
       selection,
       {
+        layers: [],
         steps: { 'promote-release': { value: 'ask', scope: 'test' } },
         rulings: { value: 'agent', scope: 'test' },
         shipTo: { value: 'production', scope: 'test' },

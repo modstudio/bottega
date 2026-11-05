@@ -164,7 +164,6 @@ export function staleSessionContext(
     )
   return {
     ...slice,
-    layers: slice.layers,
     rulings,
     stages,
     shipTo,

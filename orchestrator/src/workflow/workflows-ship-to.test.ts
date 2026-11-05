@@ -95,6 +95,7 @@ const publishShipToFixture = (
 }
 
 const shipToAutonomy = (level: 'branch' | 'trunk' | 'production') => ({
+  layers: [],
   steps: { 'ship-to-fixture': { value: 'auto' as const, scope: 'test' } },
   rulings: { value: 'agent' as const, scope: 'test' },
   shipTo: { value: level, scope: 'session' },

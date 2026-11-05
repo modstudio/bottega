@@ -148,6 +148,9 @@ function staleAutonomyLayer(layer: AutonomyLayer): AutonomyLayer {
   }
 }
 
+const cachedHostedNote = (reason: string, cached: CachedSessionContext, now: () => Date) =>
+  `hosted autonomy settings unavailable: ${reason}; resolved from cached hosted autonomy settings, local and project scopes (cache age ${Math.max(0, now().getTime() - Date.parse(cached.resolvedAt))} ms)`
+
 export async function resolveProjectAutonomy(
   project: string,
   workflow: string | undefined,
@@ -214,7 +217,6 @@ export async function resolveProjectAutonomy(
       session,
     }
   if (cached) {
-    const ageMs = Math.max(0, now().getTime() - Date.parse(cached.resolvedAt))
     return {
       ...resolution,
       layers: resolution.layers.map(staleAutonomyLayer),
@@ -235,7 +237,7 @@ export async function resolveProjectAutonomy(
       rulings: { ...resolution.rulings, scope: staleHostedScope(resolution.rulings.scope) },
       shipTo: { ...resolution.shipTo, scope: staleHostedScope(resolution.shipTo.scope) },
       hosted: { status: hosted.status, reason: hosted.reason },
-      note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from cached hosted autonomy settings, local and project scopes (cache age ${ageMs} ms)`,
+      note: cachedHostedNote(hosted.reason, cached, now),
       session,
     }
   }
