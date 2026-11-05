@@ -1,5 +1,5 @@
-import type { StateClassStore } from './identity-inventory.ts'
 import { PLATFORM_NAME } from '../shared/brand.ts'
+import type { StateClassStore } from './identity-inventory.ts'
 
 export type TableStateClassDeclaration = {
   store: StateClassStore
