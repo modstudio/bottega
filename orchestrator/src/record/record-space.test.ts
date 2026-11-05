@@ -100,7 +100,25 @@ describe('record space decisions', () => {
         { id: 'space-before', slug: 'before' },
         { id: 'space-created', slug: 'created' },
       ),
-    ).toEqual(['active record space unchanged: before'])
+    ).toEqual([
+      'active record space unchanged: before',
+      'created space created is not active',
+      `switch to it: ${PLATFORM_SLUG} record space switch created`,
+    ])
+  })
+
+  test('reports an unchanged active space when there is no active space', () => {
+    expect(
+      recordSpaceCreateReport(
+        { id: null, slug: null },
+        { id: null, slug: null },
+        { id: 'space-created', slug: 'created' },
+      ),
+    ).toEqual([
+      'active record space unchanged: none',
+      'created space created is not active',
+      `switch to it: ${PLATFORM_SLUG} record space switch created`,
+    ])
   })
 
   test('reports the actual third space selected after creation', () => {
@@ -113,6 +131,8 @@ describe('record space decisions', () => {
     ).toEqual([
       'active record space switched from before to third for every lane on this machine',
       `switch back: ${PLATFORM_SLUG} record space switch before`,
+      'created space created is not active',
+      `switch to it: ${PLATFORM_SLUG} record space switch created`,
     ])
   })
 
