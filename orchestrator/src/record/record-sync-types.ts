@@ -33,6 +33,12 @@ export type RecordSyncResult = {
   configured: boolean
   routingPool?: RoutingPoolPullResult
   projectRegister?: ProjectRegisterPullResult
+  orphans?: number
+  deletesBlocked?: number
+  purgeKept?: number
+  skippedDocs?: number
+  skippedSubjects?: number
+  purgeWarning?: string
   quarantined: QuarantinedOutboxRow[]
   blocked: BlockedOutboxRow[]
   machineNameRefusal?: string

@@ -2,12 +2,58 @@
 /** Pulls and reconciles the six hosted lens catalogue streams. */
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
 import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
 import { RECORD_LENS_TABLES, type RecordLensTable } from './record-lens-contract.ts'
 
 const LENS_CURSOR = 'record_lens_cursor'
+
+const deleteLensRowStatements: Record<RecordLensTable, string> = {
+  lens: 'DELETE FROM lens WHERE record_id=?',
+  lens_revision: 'DELETE FROM lens_revision WHERE record_id=?',
+  lens_profile: 'DELETE FROM lens_profile WHERE record_id=?',
+  lens_profile_revision: 'DELETE FROM lens_profile_revision WHERE record_id=?',
+  project_lens_profile: 'DELETE FROM project_lens_profile WHERE record_id=?',
+  project_lens_profile_revision: 'DELETE FROM project_lens_profile_revision WHERE record_id=?',
+}
+
+export function deleteLensCatalogueRow(
+  local: Database,
+  table: RecordLensTable,
+  recordId: string,
+): boolean {
+  return tolerantDelete(local.query(deleteLensRowStatements[table]), recordId)
+}
+
+export function purgeLensCatalogueSpace(local: Database, spaceId: string): number {
+  let kept = 0
+  const rows: Record<RecordLensTable, ReturnType<Database['query']>> = {
+    lens: local.query('SELECT record_id FROM lens WHERE space_id=?'),
+    lens_revision: local.query('SELECT record_id FROM lens_revision WHERE space_id=?'),
+    lens_profile: local.query('SELECT record_id FROM lens_profile WHERE space_id=?'),
+    lens_profile_revision: local.query(
+      'SELECT record_id FROM lens_profile_revision WHERE space_id=?',
+    ),
+    project_lens_profile: local.query(
+      'SELECT record_id FROM project_lens_profile WHERE space_id=?',
+    ),
+    project_lens_profile_revision: local.query(
+      'SELECT record_id FROM project_lens_profile_revision WHERE space_id=?',
+    ),
+  }
+  for (const table of [...RECORD_LENS_TABLES].reverse()) {
+    const ids = rows[table].all(spaceId) as { record_id: string }[]
+    for (const { record_id } of ids) if (!deleteLensCatalogueRow(local, table, record_id)) kept++
+  }
+  local
+    .query("DELETE FROM schema_meta WHERE key LIKE ? ESCAPE '\\'")
+    .run(
+      `${LENS_CURSOR}:${spaceId.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}:%`,
+    )
+  return kept
+}
 
 export async function pullLensCatalogue(
   local: Database,
@@ -58,6 +104,31 @@ export function applyLensCatalogueRow(
   item: Record<string, unknown>,
 ): void {
   lensRowApplicators[table](local, item)
+}
+
+export function lensCatalogueParentPresent(
+  local: Database,
+  table: RecordLensTable,
+  item: Record<string, unknown>,
+): boolean {
+  const spaceId = String(item.spaceId)
+  let parent: { table: string; id: unknown } | null = null
+  if (table === 'lens_revision' || table === 'lens_profile')
+    parent = { table: 'lens', id: item.lensId }
+  else if (table === 'lens_profile_revision') parent = { table: 'lens_profile', id: item.profileId }
+  else if (table === 'project_lens_profile' && item.lensId != null)
+    parent = { table: 'lens', id: item.lensId }
+  else if (table === 'project_lens_profile_revision')
+    parent = { table: 'project_lens_profile', id: item.selectionId }
+  if (!parent) return true
+  const queries: Record<string, ReturnType<Database['query']>> = {
+    lens: local.query('SELECT 1 FROM lens WHERE record_id=? AND space_id=?'),
+    lens_profile: local.query('SELECT 1 FROM lens_profile WHERE record_id=? AND space_id=?'),
+    project_lens_profile: local.query(
+      'SELECT 1 FROM project_lens_profile WHERE record_id=? AND space_id=?',
+    ),
+  }
+  return Boolean(queries[parent.table]?.get(String(parent.id), spaceId))
 }
 
 const nullableText = (value: unknown) => (value == null ? null : String(value))

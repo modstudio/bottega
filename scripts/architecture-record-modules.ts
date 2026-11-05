@@ -13,6 +13,8 @@ const module = (file: string, allowed: string[]): RecordModule => ({
   ),
 })
 
+const cacheDeleteImports = ['bun:sqlite', '../database/db.ts', '../database/tolerant-delete.ts']
+
 export const recordModules: RecordModule[] = [
   ...recordChangeModules,
   module('orchestrator/src/record/record-pool.ts', [
@@ -186,9 +188,8 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-cache-cursor.ts', ['bun:sqlite', './record-cursor.ts']),
   module('orchestrator/src/record/record-routing-pool.ts', [
-    'bun:sqlite',
+    ...cacheDeleteImports,
     '../../../shared/record-id.ts',
-    '../database/db.ts',
     './record-api-client.ts',
     './record-cache-cursor.ts',
     './record-cursor.ts',
@@ -197,13 +198,13 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-client-machine.ts', ['./record-api-client-paths.ts']),
   module('orchestrator/src/record/record-api-client-session.ts', [
     './record-api-client-paths.ts',
+    './record-api-client-response.ts',
     './record-auth.ts',
     './record-sync-contract.ts',
   ]),
   module('orchestrator/src/record/record-email-verification-client.ts', ['./record-api-client.ts']),
   module('orchestrator/src/record/record-cache-lens.ts', [
-    'bun:sqlite',
-    '../database/db.ts',
+    ...cacheDeleteImports,
     './record-api-client.ts',
     './record-cache-cursor.ts',
     './record-cursor.ts',
@@ -221,6 +222,8 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-cache-catalogues.ts', [
     'bun:sqlite',
+    '../../../shared/record-api-url.ts',
+    './record-api-client.ts',
     './record-cache-lens.ts',
     './record-cache-port.ts',
     './record-cache-workflow.ts',
@@ -262,8 +265,7 @@ export const recordModules: RecordModule[] = [
     './record-task-flow-contract.ts',
   ]),
   module('orchestrator/src/record/record-cache-workflow.ts', [
-    'bun:sqlite',
-    '../database/db.ts',
+    ...cacheDeleteImports,
     './record-api-client.ts',
     './record-cache-cursor.ts',
     './record-cursor.ts',

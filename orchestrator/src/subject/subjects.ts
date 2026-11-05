@@ -9,12 +9,31 @@ import {
   subjectState,
 } from '../../../shared/subjects.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { projectByName, projectRowByName } from '../project/projects.ts'
 import type { RecordSubject } from '../record/record-subjects.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { subjectClient } from './subject-client.ts'
 
 export type Subject = SubjectOutput
+
+export function deleteSubjectRecord(database: Database, recordId: string): boolean {
+  return tolerantDelete(database.query('DELETE FROM subject WHERE id=?'), recordId)
+}
+
+export function purgeSubjectSpace(database: Database, spaceId: string): number {
+  let progress = true
+  while (progress) {
+    progress = false
+    const ids = database
+      .query<{ id: string }, [string]>('SELECT id FROM subject WHERE space_id=?')
+      .all(spaceId)
+    for (const { id } of ids) if (deleteSubjectRecord(database, id)) progress = true
+  }
+  return database
+    .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM subject WHERE space_id=?')
+    .get(spaceId)!.n
+}
 
 type LocalRow = {
   id: string
@@ -117,7 +136,11 @@ function assertParent(database: Database, row: RecordSubject, projectId: string)
   }
 }
 
-export function applySubjectRecord(row: RecordSubject, database: Database = db()): Subject {
+export function applySubjectRecord(
+  row: RecordSubject,
+  database: Database = db(),
+  hostedSpaceId?: string,
+): Subject {
   const project = projectRowByName(row.project, database)
   if (!project) {
     throw new Error(
@@ -130,11 +153,12 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
     database
       .query(
         `INSERT INTO subject
-       (id,project_record_id,name,definition,position,parent_id,retired_at,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?)
+       (id,project_record_id,name,definition,position,parent_id,retired_at,created_at,updated_at,space_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET project_record_id=excluded.project_record_id,name=excluded.name,
          definition=excluded.definition,position=excluded.position,parent_id=excluded.parent_id,
-         retired_at=excluded.retired_at,updated_at=excluded.updated_at`,
+         retired_at=excluded.retired_at,updated_at=excluded.updated_at,
+         space_id=COALESCE(excluded.space_id,subject.space_id)`,
       )
       .run(
         row.id,
@@ -146,6 +170,7 @@ export function applySubjectRecord(row: RecordSubject, database: Database = db()
         row.retiredAt,
         row.createdAt,
         row.updatedAt,
+        hostedSpaceId ?? null,
       )
   } catch (error) {
     if (String(error).includes('subject.project_record_id, subject.name')) {

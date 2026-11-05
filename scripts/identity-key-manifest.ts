@@ -6,6 +6,7 @@ import type {
   KeyStore,
   ManifestColumn,
 } from './identity-inventory.ts'
+import { RECORD_CACHE_IDENTITIES } from './identity-record-cache-manifest.ts'
 import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { RULED_REFERENCES } from './identity-ruled-reference-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
@@ -700,6 +701,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
 ]
 
 const UUID_COLUMNS: readonly ManifestColumn[] = [
+  ...RECORD_CACHE_IDENTITIES,
   ...manifest('orchestrator', 'owned or referenced UUID', [
     'collect_change_counter.record_id',
     'agent.record_id',
@@ -749,7 +751,6 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'contention.record_id',
     'contention.run_record_id',
     'contention.landing_record_id',
-    'doc.record_id',
     'doc.parent_record_id',
     'doc.project_record_id',
     'doc.article_subject_id',
@@ -905,7 +906,6 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'step_catalogue_version.record_id',
     'step_catalogue_version.catalogue_record_id',
     'step_catalogue_version.space_id',
-    'subject.id',
     'subject.project_record_id',
     'subject.parent_id',
     'test_flake.record_id',

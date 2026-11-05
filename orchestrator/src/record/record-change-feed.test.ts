@@ -32,6 +32,9 @@ const outsiderProjectId = '01990000-0000-7000-8000-000000002115'
 const memberMembershipId = '01990000-0000-7000-8000-000000002116'
 const reviewId = '01990000-0000-7000-8000-000000002117'
 const reviewLensId = '01990000-0000-7000-8000-000000002118'
+const movedSpaceId = '01990000-0000-7000-8000-000000002119'
+const movedMembershipId = '01990000-0000-7000-8000-000000002120'
+const movedDocId = '01990000-0000-7000-8000-000000002121'
 
 const change = (
   table: string,
@@ -121,6 +124,44 @@ test('record changes read every member space and exclude a non-member space', as
   expect(feed.changes.some((entry) => entry.id === outsiderProjectId)).toBe(false)
 })
 
+test('moving a document logs a delete in its old space and an upsert in its new space', async () => {
+  const movedDatabase = await createHostedRecordFixture({ spaceId, userId })
+  await movedDatabase.exec(`
+    RESET ROLE;
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${movedSpaceId}','Moved document space','moved-document-space',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('${movedMembershipId}','${movedSpaceId}','${userId}','member','write',now());
+    INSERT INTO doc (
+      id,space_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at
+    ) VALUES (
+      '${movedDocId}','${spaceId}','global',NULL,'moved-doc','Moved doc','Body','demand',
+      ARRAY['technical'],now(),now()
+    );
+    UPDATE doc SET space_id='${movedSpaceId}' WHERE id='${movedDocId}';
+    SET ROLE record_actor;
+  `)
+  const changes = await readRecordChanges(
+    pgliteSql(movedDatabase),
+    { userId, spaceId, spaceIds: [spaceId, movedSpaceId] },
+    { xid: 0n, seq: 0n },
+    100,
+    ['doc'],
+  )
+  expect(changes.resetRequired).toBe(false)
+  if (changes.resetRequired) return
+  expect(
+    changes.changes
+      .filter((entry) => entry.id === movedDocId)
+      .map(({ space, op }) => ({ space, op })),
+  ).toEqual([
+    { space: spaceId, op: 'upsert' },
+    { space: spaceId, op: 'delete' },
+    { space: movedSpaceId, op: 'upsert' },
+  ])
+  await movedDatabase.close()
+})
+
 test('materialized changes reuse pull rows and preserve child mappings and tombstones', async () => {
   await database.exec(`
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
@@ -169,7 +210,7 @@ test('materialized changes reuse pull rows and preserve child mappings and tombs
     sql,
     { userId, spaceId, spaceIds: [spaceId] },
     { xid: 0n, seq: 0n },
-    100,
+    200,
     ['doc', 'subject', 'project', 'port_doctrine', 'run'],
     async (tx, page) => (page.resetRequired ? page : materializeRecordChangePage(tx, page)),
   )
@@ -209,7 +250,7 @@ test('materialized changes reuse pull rows and preserve child mappings and tombs
     { table: 'run_score', id: excludedRunId, space: spaceId, op: 'upsert', row: excludedScore },
   ])
 
-  const routingPull = mapRecordRoutingEvidenceRow(
+  const { evidenceSequence: _routingCursor, ...routingPull } = mapRecordRoutingEvidenceRow(
     (await recordRoutingEvidenceRows(sql, { ids: [scoredRunId] }))[0]!,
   )
   const scorePull = mapRecordScoreRow((await recordScoreRows(sql, { ids: [scoredRunId] }))[0]!)
@@ -272,9 +313,8 @@ test('materialized changes reuse pull rows and preserve child mappings and tombs
   )
   expect(afterReviewLens.resetRequired).toBe(false)
   if (afterReviewLens.resetRequired) return
-  const routingAfterLens = mapRecordRoutingEvidenceRow(
-    (await recordRoutingEvidenceRows(sql, { ids: [scoredRunId] }))[0]!,
-  )
+  const { evidenceSequence: _routingAfterLensCursor, ...routingAfterLens } =
+    mapRecordRoutingEvidenceRow((await recordRoutingEvidenceRows(sql, { ids: [scoredRunId] }))[0]!)
   const scoreAfterLens = mapRecordScoreRow((await recordScoreRows(sql, { ids: [scoredRunId] }))[0]!)
   expect(afterReviewLens.changes).toEqual(
     expect.arrayContaining([

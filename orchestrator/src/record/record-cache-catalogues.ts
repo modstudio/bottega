@@ -2,6 +2,8 @@
 /** Pulls every hosted catalogue stream required before a project may use a space. */
 
 import type { Database } from 'bun:sqlite'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { recordApiClientInjected } from './record-api-client.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { pullPortCatalogue } from './record-cache-port.ts'
 import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
@@ -21,6 +23,7 @@ export async function pullRecordCataloguesForSpace(
   local: Database,
   spaceId: string,
 ): Promise<void> {
+  if (!recordApiConfigured() && !recordApiClientInjected()) return
   try {
     await pullLensCatalogue(local, [spaceId])
   } catch (error) {

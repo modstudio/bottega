@@ -620,6 +620,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'bun:sqlite',
       '../database/db.ts',
+      '../database/tolerant-delete.ts',
       './record-api-client.ts',
       './record-cache-cursor.ts',
       './record-cursor.ts',
@@ -735,6 +736,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record-space-membership.ts',
       '../../../shared/record-api-url.ts',
       '../database/db.ts',
+      '../database/tolerant-delete.ts',
       '../doc/doc-audiences-codec.ts',
       '../project-space.ts',
       '../project/projects.ts',
@@ -742,6 +744,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-api-client.ts',
       './record-auth.ts',
       './record-cache-cursor.ts',
+      './record-cache-feed.ts',
       './record-cache-lens.ts',
       './record-cache-port.ts',
       './record-cache-projects.ts',

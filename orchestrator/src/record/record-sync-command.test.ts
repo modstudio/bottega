@@ -119,3 +119,39 @@ test('sync presentation reports project register counts and every skip reason', 
     'project register skipped: project old-name cannot mirror hosted name new-name because it collides with local project new-name',
   ])
 })
+
+test('sync presentation reports only nonzero record-cache misses and its purge warning', async () => {
+  const output: string[] = []
+  await syncCommand(
+    { backfill: false },
+    { log: (line) => output.push(line) },
+    {
+      sync: async () =>
+        ({
+          configured: true,
+          pushed: 0,
+          failed: 0,
+          pending: 0,
+          quarantined: [],
+          blocked: [],
+          orphans: 2,
+          deletesBlocked: 1,
+          purgeKept: 3,
+          skippedDocs: 4,
+          skippedSubjects: 0,
+          purgeWarning: 'memberships unavailable',
+        }) as never,
+      boardAdoption: {
+        database: db(),
+        hostedConfigured: () => false,
+        signedIn: () => false,
+      } as never,
+    },
+  )
+  expect(output).toContain('record cache orphans: 2')
+  expect(output).toContain('record cache deletes blocked: 1')
+  expect(output).toContain('record cache purge rows kept: 3')
+  expect(output).toContain('record cache docs skipped: 4')
+  expect(output.some((line) => line.includes('subjects skipped'))).toBe(false)
+  expect(output).toContain('record cache purge warning: memberships unavailable')
+})

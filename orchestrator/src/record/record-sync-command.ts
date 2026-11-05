@@ -57,6 +57,21 @@ function logProjectRegister(
   for (const line of projectRegisterLines(pull)) presentation.log(line)
 }
 
+function logRecordCacheCounts(
+  result: Awaited<ReturnType<typeof syncRecord>>,
+  presentation: { log(value: string): void },
+): void {
+  for (const [count, label] of [
+    [result.orphans, 'record cache orphans'],
+    [result.deletesBlocked, 'record cache deletes blocked'],
+    [result.purgeKept, 'record cache purge rows kept'],
+    [result.skippedDocs, 'record cache docs skipped'],
+    [result.skippedSubjects, 'record cache subjects skipped'],
+  ] as const)
+    if (count) presentation.log(`${label}: ${count}`)
+  if (result.purgeWarning) presentation.log(`record cache purge warning: ${result.purgeWarning}`)
+}
+
 export function quarantinedParentHeldLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['quarantinedParentHolds']>,
 ): string[] {
@@ -110,6 +125,7 @@ export async function syncCommand(
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
   if (result.routingPool) presentation.log(routingPoolLine(result.routingPool))
   logProjectRegister(result.projectRegister, presentation)
+  logRecordCacheCounts(result, presentation)
   if (result.machineNameRefusal)
     presentation.log(`machine name not claimed: ${result.machineNameRefusal}`)
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)

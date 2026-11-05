@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readCursor, writeCursor } from './record-cache-cursor.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
@@ -12,13 +13,29 @@ export const ROUTING_POOL_PAGE_LIMIT = 100
 export const ROUTING_POOL_PAGES_PER_SYNC = 5
 const ROUTING_POOL_CURSOR = 'record_routing_pool_seq'
 
+export function deleteRoutingPoolRow(local: Database, recordId: string): boolean {
+  return tolerantDelete(local.query('DELETE FROM routing_pool_run WHERE record_id=?'), recordId)
+}
+
+export function purgeRoutingPoolSpace(local: Database, spaceId: string): number {
+  let kept = 0
+  const ids = local
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM routing_pool_run WHERE space_id=?',
+    )
+    .all(spaceId)
+  for (const { record_id } of ids) if (!deleteRoutingPoolRow(local, record_id)) kept++
+  local.query('DELETE FROM schema_meta WHERE key=?').run(`${ROUTING_POOL_CURSOR}:${spaceId}`)
+  return kept
+}
+
 export type RoutingPoolPullResult = {
   added: number
   updated: number
   caughtUp: boolean
 }
 
-function upsertPoolRun(local: Database, row: RecordRoutingEvidence, pulledAt: string): void {
+export function upsertPoolRun(local: Database, row: RecordRoutingEvidence, pulledAt: string): void {
   local
     .query(
       `INSERT INTO routing_pool_run (

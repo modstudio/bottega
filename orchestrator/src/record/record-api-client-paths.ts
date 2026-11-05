@@ -96,7 +96,11 @@ export type ProjectIdentityClient = {
 
 export type RecordClientRequest = <T>(
   path: string,
-  init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
+  init?: RequestInit & {
+    schema?: (body: unknown) => T
+    acceptedError?: { status: number; schema: (body: unknown) => T }
+    destinationSpaceId?: string
+  },
 ) => Promise<T>
 
 export function subjectMutationBody(

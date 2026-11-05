@@ -363,6 +363,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    async listChanges() {
+      return { reset: { cursor: 'fixture-change-cursor', tables: [] } }
+    },
     async listRoutingEvidence() {
       return { items: [], nextCursor: null }
     },

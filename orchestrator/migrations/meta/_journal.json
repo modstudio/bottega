@@ -1546,6 +1546,14 @@
       "tag": "0202_record_install_binding_origin",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 203,
+      "version": "6",
+      "when": 1793664000002,
+      "tag": "0203_record_cache_hosted_space",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

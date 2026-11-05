@@ -2,6 +2,7 @@
 /** Pulls and reconciles the six hosted port item streams. */
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
 import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
@@ -15,6 +16,52 @@ import {
 } from './record-port-contract.ts'
 
 const CURSOR = 'record_port_cursor'
+
+export function deletePortCatalogueRow(
+  local: Database,
+  table: RecordPortTable,
+  recordId: string,
+  spaceId: string,
+): boolean {
+  if (table === 'port_ref' || table === 'port_ref_source') {
+    applyPortCatalogueRow(local, table, {
+      id: recordId,
+      spaceId,
+      deletedAt: new Date().toISOString(),
+    } as never)
+    return true
+  }
+  const statements: Partial<Record<RecordPortTable, ReturnType<Database['query']>>> = {
+    port_doctrine: local.query('DELETE FROM port_doctrine WHERE record_id=?'),
+    port_pair: local.query('DELETE FROM port_pair WHERE record_id=?'),
+    port_baseline: local.query('DELETE FROM port_baseline WHERE record_id=?'),
+    port_skip: local.query('DELETE FROM port_skip WHERE record_id=?'),
+  }
+  return tolerantDelete(statements[table]!, recordId)
+}
+
+export function purgePortCatalogueSpace(local: Database, spaceId: string): number {
+  let kept = 0
+  const rows: Record<RecordPortTable, ReturnType<Database['query']>> = {
+    port_doctrine: local.query('SELECT record_id FROM port_doctrine WHERE space_id=?'),
+    port_pair: local.query('SELECT record_id FROM port_pair WHERE space_id=?'),
+    port_baseline: local.query('SELECT record_id FROM port_baseline WHERE space_id=?'),
+    port_ref: local.query('SELECT record_id FROM port_ref WHERE space_id=?'),
+    port_ref_source: local.query('SELECT record_id FROM port_ref_source WHERE space_id=?'),
+    port_skip: local.query('SELECT record_id FROM port_skip WHERE space_id=?'),
+  }
+  for (const table of [...RECORD_PORT_TABLES].reverse()) {
+    const ids = rows[table].all(spaceId) as { record_id: string }[]
+    for (const { record_id } of ids)
+      if (!deletePortCatalogueRow(local, table, record_id, spaceId)) kept++
+  }
+  local
+    .query("DELETE FROM schema_meta WHERE key LIKE ? ESCAPE '\\'")
+    .run(
+      `${CURSOR}:${spaceId.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}:%`,
+    )
+  return kept
+}
 
 export async function pullPortCatalogue(
   local: Database,
@@ -53,7 +100,7 @@ async function pullTable(
       { destinationSpaceId: spaceId },
     )
     if (!page.items.length) return { count, completed: true }
-    if (page.items.some((item) => !parentPresent(local, table, item)))
+    if (page.items.some((item) => !portCatalogueParentPresent(local, table, item)))
       return { count, completed: false }
     writeTransaction(() => {
       for (const item of page.items) {
@@ -87,7 +134,11 @@ const hasRef = (local: Database, id: unknown, spaceId: unknown) =>
       .query('SELECT 1 FROM port_ref WHERE record_id=? AND space_id=?')
       .get(String(id), String(spaceId)),
   )
-function parentPresent(local: Database, table: RecordPortTable, item: RecordPortRow) {
+export function portCatalogueParentPresent(
+  local: Database,
+  table: RecordPortTable,
+  item: RecordPortRow,
+) {
   switch (table) {
     case 'port_pair': {
       return true

@@ -3,13 +3,15 @@
 import type { Database } from 'bun:sqlite'
 import { normalizeDocAudiences } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import { projects } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
-import { recordApiClient } from './record-api-client.ts'
+import { recordApiClient, recordApiClientInjected } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   readCursor,
@@ -17,6 +19,7 @@ import {
   writeCursor,
   writeRecordCursor,
 } from './record-cache-cursor.ts'
+import { emptyRecordCachePullResult, pullRecordCacheFeed } from './record-cache-feed.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import { pullPortCatalogue } from './record-cache-port.ts'
@@ -87,7 +90,7 @@ function applyDocPage(
       ...ownership,
     })
     if (owned) {
-      applyDoc(local, item, unresolvedParents)
+      applyDoc(local, item, unresolvedParents, ownership.pullingSpaceId)
       resolveRememberedParents(local, unresolvedParents)
       docs++
     } else {
@@ -184,9 +187,10 @@ async function pullDocs(
   return { docs, skippedDocs }
 }
 
-export async function pullRecordCache(
+async function pullRecordCacheKeysets(
   local: Database = db(),
   suppliedIdentity?: RecordIdentity,
+  requestedSpaces?: readonly string[],
 ): Promise<{
   docs: number
   skippedDocs: number
@@ -204,32 +208,21 @@ export async function pullRecordCache(
       "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='schema_meta'",
     )
     .get()
-  if (!hasMeta)
-    return {
-      docs: 0,
-      skippedDocs: 0,
-      subjects: 0,
-      skippedSubjects: 0,
-      scores: 0,
-      lensCatalogue: 0,
-      workflowCatalogue: 0,
-      portCatalogue: 0,
-      projectRegister: { updated: 0, retired: 0, unretired: 0, skipped: 0, warnings: [] },
-      routingPool: { added: 0, updated: 0, caughtUp: true },
-    }
+  if (!hasMeta) return emptyRecordCachePullResult()
   const client = recordApiClient()
   const identity = suppliedIdentity ?? (await client.whoami())
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   rememberSignedInRecordUser(identity.user, local)
   rememberActiveRecordSpace(local, identity.activeSpaceId)
   let cache = recordCacheSpaces(identity, local)
-  const projectRegister = await pullProjectRegister(local, cache.spaces, client)
+  const spaces = requestedSpaces ? [...requestedSpaces] : cache.spaces
+  const projectRegister = await pullProjectRegister(local, spaces, client)
   cache = recordCacheSpaces(identity, local)
-  const pulledSubjects = await pullSubjects(local, cache.spaces, cache.projectSpaces)
-  const pulledDocs = await pullDocs(local, identity, cache.spaces, cache.projectSpaces)
-  const lensCatalogue = await pullLensCatalogue(local, cache.spaces)
-  const workflowPull = await pullWorkflowCatalogue(local, cache.spaces)
-  const portPull = await pullPortCatalogue(local, cache.spaces)
+  const pulledSubjects = await pullSubjects(local, spaces, cache.projectSpaces)
+  const pulledDocs = await pullDocs(local, identity, spaces, cache.projectSpaces)
+  const lensCatalogue = await pullLensCatalogue(local, spaces)
+  const workflowPull = await pullWorkflowCatalogue(local, spaces)
+  const portPull = await pullPortCatalogue(local, spaces)
   for (const [project, spaceId] of cache.projectSpaces)
     if (
       spaceId === null ||
@@ -251,7 +244,7 @@ export async function pullRecordCache(
     }, local)
     if (!page.nextCursor) break
   }
-  const routingPool = await pullRoutingPool(local, cache.spaces)
+  const routingPool = await pullRoutingPool(local, spaces)
   return {
     ...pulledDocs,
     ...pulledSubjects,
@@ -292,7 +285,7 @@ async function pullSubjects(
           if (projectSpaces.get(row.project) !== spaceId) {
             skippedSubjects++
           } else {
-            applySubjectRecord(row, local)
+            applySubjectRecord(row, local, spaceId)
             subjects++
           }
           cursor = { at: row.updatedAt, id: row.id }
@@ -398,10 +391,20 @@ function pulledDocParentId(local: Database, parentRecordId: string | null): stri
     : null
 }
 
+const hostedDocUpdateIdentity = (spaceId: string | undefined, recordId: string) => [
+  spaceId ?? null,
+  recordId,
+]
+const hostedDocInsertIdentity = (recordId: string, spaceId: string | undefined) => [
+  recordId,
+  spaceId ?? null,
+]
+
 function applyDoc(
   local: Database,
   item: Record<string, unknown>,
   unresolvedParents: Map<string, string>,
+  hostedSpaceId?: string,
 ): void {
   const recordId = String(item.id)
   const deletedAt = item.deletedAt == null ? null : String(item.deletedAt)
@@ -435,7 +438,7 @@ function applyDoc(
   if (existing) {
     local
       .query(
-        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_record_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, subject=?, owner=? WHERE record_id=?',
+        'UPDATE doc SET title=?, body=?, delivery=?, audiences=?, parent_record_id=?, position=?, featured=?, status=?, kind=?, form=?, article_subject_id=?, source_files=?, checked_against_commit=?, summary=?, replacement_slug=?, updated_at=?, subject=?, owner=?, space_id=COALESCE(?,space_id) WHERE record_id=?',
       )
       .run(
         title,
@@ -456,7 +459,7 @@ function applyDoc(
         updatedAt,
         subject,
         owner,
-        recordId,
+        ...hostedDocUpdateIdentity(hostedSpaceId, recordId),
       )
     syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
     return
@@ -473,8 +476,8 @@ function applyDoc(
   }
   local
     .query(
-      `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_record_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_record_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id, space_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       scope,
@@ -499,9 +502,39 @@ function applyDoc(
       replacementSlug,
       createdAt,
       updatedAt,
-      recordId,
+      ...hostedDocInsertIdentity(recordId, hostedSpaceId),
     )
   syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
+}
+
+function deleteDocRecord(local: Database, recordId: string): boolean {
+  return tolerantDelete(local.query('DELETE FROM doc WHERE record_id=?'), recordId)
+}
+
+function prepareDocSpacePurge(local: Database, spaceId: string): void {
+  local
+    .query(
+      `DELETE FROM doc_related_subject
+       WHERE doc_record_id IN (SELECT record_id FROM doc WHERE space_id=?)
+          OR subject_id IN (SELECT id FROM subject WHERE space_id=?)`,
+    )
+    .run(spaceId, spaceId)
+}
+
+function purgeDocSpace(local: Database, spaceId: string): number {
+  let progress = true
+  while (progress) {
+    progress = false
+    const ids = local
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM doc WHERE space_id=?')
+      .all(spaceId)
+    for (const { record_id } of ids) if (deleteDocRecord(local, record_id)) progress = true
+  }
+  local.query('DELETE FROM schema_meta WHERE key=?').run(`${DOCS_CURSOR}:${spaceId}`)
+  local.query('DELETE FROM schema_meta WHERE key=?').run(`${SUBJECTS_CURSOR}:${spaceId}`)
+  return local
+    .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM doc WHERE space_id=?')
+    .get(spaceId)!.n
 }
 
 function applyScore(local: Database, item: Record<string, unknown>): void {
@@ -533,4 +566,20 @@ function applyScore(local: Database, item: Record<string, unknown>): void {
       String(item.scoredAt ?? nowIso()),
       String(item.scoredBy ?? 'record'),
     )
+}
+
+export async function pullRecordCache(local: Database = db(), suppliedIdentity?: RecordIdentity) {
+  if (!recordApiConfigured() && !recordApiClientInjected() && !suppliedIdentity)
+    return emptyRecordCachePullResult()
+  return pullRecordCacheFeed(local, suppliedIdentity, {
+    cacheSpaces: recordCacheSpaces,
+    pullKeysets: pullRecordCacheKeysets,
+    pullDocs,
+    pullSubjects,
+    applyDoc,
+    deleteDoc: deleteDocRecord,
+    prepareDocSpacePurge,
+    purgeDocSpace,
+    applyScore,
+  })
 }

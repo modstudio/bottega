@@ -38,6 +38,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    listChanges: async () => ({ reset: { cursor: 'postgres-docs-proof', tables: [] } }),
     whoami: () => get('/v1/whoami') as Promise<RecordIdentity>,
     inviteMember: unused,
     putSnapshot: unused,

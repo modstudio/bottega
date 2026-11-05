@@ -2,6 +2,7 @@
 /** Pulls and reconciles the six hosted workflow catalogue streams. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
 import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
@@ -9,6 +10,49 @@ import type { RecordWorkflowKind, RecordWorkflowWriteResponse } from './record-w
 import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workflow-contract.ts'
 
 const CURSOR = 'record_workflow_cursor'
+
+export function deleteWorkflowCatalogueRow(
+  local: Database,
+  table: RecordWorkflowTable,
+  recordId: string,
+): boolean {
+  const statements: Record<RecordWorkflowTable, ReturnType<Database['query']>> = {
+    workflow: local.query('DELETE FROM workflow WHERE record_id=?'),
+    workflow_version: local.query('DELETE FROM workflow_version WHERE record_id=?'),
+    workflow_event: local.query('DELETE FROM workflow_event WHERE record_id=?'),
+    step_catalogue: local.query('DELETE FROM step_catalogue WHERE record_id=?'),
+    step_catalogue_version: local.query('DELETE FROM step_catalogue_version WHERE record_id=?'),
+    step_catalogue_event: local.query('DELETE FROM step_catalogue_event WHERE record_id=?'),
+  }
+  return tolerantDelete(statements[table], recordId)
+}
+
+export function purgeWorkflowCatalogueSpace(local: Database, spaceId: string): number {
+  let kept = 0
+  const rows: Record<RecordWorkflowTable, ReturnType<Database['query']>> = {
+    workflow: local.query('SELECT record_id FROM workflow WHERE space_id=?'),
+    workflow_version: local.query('SELECT record_id FROM workflow_version WHERE space_id=?'),
+    workflow_event: local.query('SELECT record_id FROM workflow_event WHERE space_id=?'),
+    step_catalogue: local.query('SELECT record_id FROM step_catalogue WHERE space_id=?'),
+    step_catalogue_version: local.query(
+      'SELECT record_id FROM step_catalogue_version WHERE space_id=?',
+    ),
+    step_catalogue_event: local.query(
+      'SELECT record_id FROM step_catalogue_event WHERE space_id=?',
+    ),
+  }
+  for (const table of [...RECORD_WORKFLOW_TABLES].reverse()) {
+    const ids = rows[table].all(spaceId) as { record_id: string }[]
+    for (const { record_id } of ids)
+      if (!deleteWorkflowCatalogueRow(local, table, record_id)) kept++
+  }
+  local
+    .query("DELETE FROM schema_meta WHERE key LIKE ? ESCAPE '\\'")
+    .run(
+      `${CURSOR}:${spaceId.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}:%`,
+    )
+  return kept
+}
 
 export async function pullWorkflowCatalogue(
   local: Database,
@@ -47,7 +91,7 @@ async function pullTable(
       { destinationSpaceId: spaceId },
     )
     if (!page.items.length) return { count, completed: true }
-    if (page.items.some((item) => !parentPresent(local, table, item)))
+    if (page.items.some((item) => !workflowCatalogueParentPresent(local, table, item)))
       return { count, completed: false }
     writeTransaction(() => {
       for (const item of page.items) {
@@ -79,7 +123,7 @@ function names(table: RecordWorkflowTable) {
     eventForeign: workflow ? 'workflow_version_record_id' : 'catalogue_version_record_id',
   }
 }
-function parentPresent(
+export function workflowCatalogueParentPresent(
   local: Database,
   table: RecordWorkflowTable,
   item: Record<string, unknown>,
@@ -101,7 +145,7 @@ function parentPresent(
   return true
 }
 
-function applyWorkflowCatalogueRow(
+export function applyWorkflowCatalogueRow(
   local: Database,
   table: RecordWorkflowTable,
   item: Record<string, unknown>,
