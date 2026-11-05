@@ -9,7 +9,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { gitToplevel } from '../../../shared/git.ts'
+import { gitAt, gitToplevel } from '../../../shared/git.ts'
+import { nulPathListArgs } from '../../../shared/git-path-list.ts'
 import type { OwnedSettings } from './settings.ts'
 import { projectLocalSettingsPath, readSettingsFile } from './settings-files.ts'
 import { renderScopedSettingsFile } from './settings-render.ts'
@@ -28,7 +29,7 @@ export function registeredProjectScopeFact(path: string): {
   return { path, exists: true, gitMainCheckout: main }
 }
 
-export function ensureProjectLocalSettingsIgnored(project: string): void {
+function ensureProjectLocalSettingsIgnored(project: string): void {
   const target = '.claude/settings.local.json'
   if (projectLocalSettingsIgnored(project)) return
   const common = git(project, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
@@ -41,7 +42,7 @@ export function ensureProjectLocalSettingsIgnored(project: string): void {
 
 function projectLocalSettingsIgnored(project: string): boolean {
   const target = '.claude/settings.local.json'
-  if (git(project, ['ls-files', '--error-unmatch', '--', target], true) !== null) {
+  if (git(project, nulPathListArgs(['ls-files', '--error-unmatch', '--', target])) !== null) {
     throw new Error(`refusing to edit tracked settings file ${join(project, target)}`)
   }
   return git(project, ['check-ignore', '-q', '--', target], true) !== null
@@ -77,11 +78,7 @@ export function applyProjectLocalSettings(input: {
 }
 
 function git(cwd: string, args: string[], quiet = false): string | null {
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd,
-    stdout: quiet ? 'ignore' : 'pipe',
-    stderr: 'ignore',
-  })
-  if (result.exitCode !== 0) return null
-  return quiet ? '' : result.stdout.toString().trim()
+  const result = gitAt(cwd, args)
+  if (result.code !== 0) return null
+  return quiet ? '' : result.stdout.trim()
 }

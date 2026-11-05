@@ -313,6 +313,19 @@ export type ClaudeMcpRegistrationPort = {
   bin: string
 }
 
+function claudeMcpReconcileAction(
+  current: McpReadback,
+  server: McpServer,
+  scope: 'user' | 'local',
+  present: boolean,
+  forceReplace: boolean,
+): 'none' | 'add' | 'remove' | 'replace' {
+  const atScope = current.status === 'registered' && (current.scope ?? 'user') === scope
+  if (!present) return atScope ? 'remove' : 'none'
+  if (!forceReplace && atScope && sameMcpRegistration(current, server)) return 'none'
+  return atScope ? 'replace' : 'add'
+}
+
 /** Read and reconcile one Claude MCP scope without editing Claude-owned JSON. */
 export function reconcileClaudeMcpRegistration(input: {
   port: ClaudeMcpRegistrationPort
@@ -329,11 +342,16 @@ export function reconcileClaudeMcpRegistration(input: {
     ? { status: 'registered', command: server.command, args: server.args, scope }
     : readMcpRegistration('claude', port.bin, server.name, port.runner, { cwd: commandCwd })
   if (current.status === 'unreadable') throw new Error(current.detail)
-  const atScope = current.status === 'registered' && (current.scope ?? 'user') === scope
-  const matches = !input.forceReplace && atScope && sameMcpRegistration(current, server)
-  if ((input.present && matches) || (!input.present && !atScope)) return { changed: false }
+  const action = claudeMcpReconcileAction(
+    current,
+    server,
+    scope,
+    input.present,
+    input.forceReplace === true,
+  )
+  if (action === 'none') return { changed: false }
   if (input.check) return { changed: true, detail: 'would apply' }
-  if (atScope) {
+  if (action === 'remove' || action === 'replace') {
     const removed = port.runner(
       mcpRemoveArgv('claude', port.bin, server.name, scope),
       SETUP_COMMAND_TIMEOUT_MS,
@@ -342,7 +360,7 @@ export function reconcileClaudeMcpRegistration(input: {
     const failure = resultFailure(removed)
     if (failure) throw new Error(`claude refused MCP remove: ${failure}`)
   }
-  if (input.present) {
+  if (action === 'add' || action === 'replace') {
     const added = port.runner(
       mcpAddArgv('claude', port.bin, server, scope),
       SETUP_COMMAND_TIMEOUT_MS,

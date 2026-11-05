@@ -131,6 +131,7 @@ export const settingsModules: SettingsModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/git.ts',
+    '../../../shared/git-path-list.ts',
     './settings.ts',
     './settings-files.ts',
     './settings-render.ts',
