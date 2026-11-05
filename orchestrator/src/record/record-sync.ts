@@ -9,7 +9,7 @@ import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { db, nowIso } from '../database/db.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
@@ -31,7 +31,7 @@ import {
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
-import { RECORD_BUILT_INS_IDENTITY } from './record-built-ins-identity.ts'
+import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
 import {
@@ -537,22 +537,9 @@ async function ensureActiveSpaceBuiltIns(
 ): Promise<Awaited<ReturnType<typeof client.whoami>>> {
   const session = await client.whoami()
   if (session.activeSpaceId && client.ensureSpaceBuiltIns) {
-    const key = `record_built_ins:${session.activeSpaceId}`
-    const ensured = local
-      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-      .get(key)?.value
-    if (ensured === RECORD_BUILT_INS_IDENTITY) return session
+    if (builtInsEnsured(local, session.activeSpaceId)) return session
     await client.ensureSpaceBuiltIns({ destinationSpaceId: session.activeSpaceId })
-    writeTransaction(
-      () =>
-        local
-          .query(
-            `INSERT INTO schema_meta (key,value) VALUES (?,?)
-             ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-          )
-          .run(key, RECORD_BUILT_INS_IDENTITY),
-      local,
-    )
+    recordBuiltInsEnsured(local, session.activeSpaceId)
   }
   return session
 }

@@ -19,7 +19,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-render-boundary',
     file: `${source}settings-render.ts`,
-    allowed: ['node:crypto', `${source}settings.ts`],
+    allowed: ['node:crypto', 'shared/canonical-json.ts', `${source}settings.ts`],
     typeOnlyAllowed: [],
     reason: 'Keep settings file render and drift pure.',
   },

@@ -292,6 +292,9 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-built-ins-identity.ts', [
+    '../../../shared/canonical-json.ts',
+    '../database/db.ts',
+    'bun:sqlite',
     'node:crypto',
     '../lens/lens-built-ins.ts',
     '../workflow/workflow-built-ins.ts',
