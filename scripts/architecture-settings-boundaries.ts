@@ -64,6 +64,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'shared/brand.ts',
       'node:fs',
+      'shared/git.ts',
       'shared/install-root.ts',
       'shared/machine-config.ts',
       'shared/state-directory.ts',

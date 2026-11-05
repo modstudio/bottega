@@ -347,8 +347,7 @@ function claudeMcpReconcileAction(
   return atScope ? 'replace' : 'add'
 }
 
-/** Read and reconcile one Claude MCP scope without editing Claude-owned JSON. */
-export function reconcileClaudeMcpRegistration(input: {
+type ClaudeMcpReconcileInput = {
   port: ClaudeMcpRegistrationPort
   server: McpServer
   scope: 'user' | 'local'
@@ -358,14 +357,67 @@ export function reconcileClaudeMcpRegistration(input: {
   forceReplace?: boolean
   refuseChangedBeforeAdd?: boolean
   removeName?: LegacyMcpServerName
-}): { changed: boolean; detail?: string } {
-  const { port, server, scope, cwd } = input
+}
+
+function currentClaudeMcpRegistration(
+  input: ClaudeMcpReconcileInput,
+  commandCwd: string | undefined,
+): McpReadback {
+  if (input.removeName) return { status: 'absent' }
+  if (input.forceReplace) {
+    return {
+      status: 'registered',
+      command: input.server.command,
+      args: input.server.args,
+      scope: input.scope,
+    }
+  }
+  return readMcpRegistration('claude', input.port.bin, input.server.name, input.port.runner, {
+    cwd: commandCwd,
+  })
+}
+
+function runClaudeMcpMutation(
+  input: ClaudeMcpReconcileInput,
+  action: 'add' | 'remove' | 'replace',
+  commandCwd: string | undefined,
+): void {
+  const { port, server, scope } = input
+  const removeName = input.removeName ?? server.name
+  if (input.removeName || action === 'remove' || action === 'replace') {
+    const removed = port.runner(
+      mcpRemoveArgv('claude', port.bin, removeName, scope),
+      SETUP_COMMAND_TIMEOUT_MS,
+      { cwd: commandCwd },
+    )
+    const failure = resultFailure(removed)
+    if (failure) throw new Error(`claude refused MCP remove: ${failure}`)
+  }
+  if (action !== 'add' && action !== 'replace') return
+  const added = port.runner(
+    mcpAddArgv('claude', port.bin, server, scope),
+    SETUP_COMMAND_TIMEOUT_MS,
+    {
+      cwd: commandCwd,
+    },
+  )
+  const failure = resultFailure(added)
+  if (failure) throw new Error(`claude refused MCP add: ${failure}`)
+  const readback = readMcpRegistration('claude', port.bin, server.name, port.runner, {
+    cwd: commandCwd,
+  })
+  if (!sameMcpRegistration(readback, server))
+    throw new Error('claude MCP registration did not match after add')
+}
+
+/** Read and reconcile one Claude MCP scope without editing Claude-owned JSON. */
+export function reconcileClaudeMcpRegistration(input: ClaudeMcpReconcileInput): {
+  changed: boolean
+  detail?: string
+} {
+  const { server, scope, cwd } = input
   const commandCwd = cwd ?? process.env.HOME
-  const current: McpReadback = input.removeName
-    ? { status: 'absent' }
-    : input.forceReplace
-    ? { status: 'registered', command: server.command, args: server.args, scope }
-    : readMcpRegistration('claude', port.bin, server.name, port.runner, { cwd: commandCwd })
+  const current = currentClaudeMcpRegistration(input, commandCwd)
   if (current.status === 'unreadable') throw new Error(current.detail)
   if (
     input.refuseChangedBeforeAdd &&
@@ -386,40 +438,7 @@ export function reconcileClaudeMcpRegistration(input: {
   )
   if (action === 'none') return { changed: false }
   if (input.check) return { changed: true, detail: 'would apply' }
-  if (input.removeName) {
-    const removed = port.runner(
-      mcpRemoveArgv('claude', port.bin, input.removeName, scope),
-      SETUP_COMMAND_TIMEOUT_MS,
-      { cwd: commandCwd },
-    )
-    const failure = resultFailure(removed)
-    if (failure) throw new Error(`claude refused MCP remove: ${failure}`)
-  }
-  if (action === 'remove' || action === 'replace') {
-    const removed = port.runner(
-      mcpRemoveArgv('claude', port.bin, server.name, scope),
-      SETUP_COMMAND_TIMEOUT_MS,
-      { cwd: commandCwd },
-    )
-    const failure = resultFailure(removed)
-    if (failure) throw new Error(`claude refused MCP remove: ${failure}`)
-  }
-  if (action === 'add' || action === 'replace') {
-    const added = port.runner(
-      mcpAddArgv('claude', port.bin, server, scope),
-      SETUP_COMMAND_TIMEOUT_MS,
-      {
-        cwd: commandCwd,
-      },
-    )
-    const failure = resultFailure(added)
-    if (failure) throw new Error(`claude refused MCP add: ${failure}`)
-    const readback = readMcpRegistration('claude', port.bin, server.name, port.runner, {
-      cwd: commandCwd,
-    })
-    if (!sameMcpRegistration(readback, server))
-      throw new Error('claude MCP registration did not match after add')
-  }
+  runClaudeMcpMutation(input, action, commandCwd)
   return { changed: true }
 }
 

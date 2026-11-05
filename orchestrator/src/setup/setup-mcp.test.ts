@@ -313,14 +313,7 @@ test('reconcile removes a registered Claude user-scope entry', () => {
       check: false,
     }),
   ).toEqual({ changed: true })
-  expect(calls.at(-1)).toEqual([
-    '/bin/claude',
-    'mcp',
-    'remove',
-    '--scope',
-    'user',
-    MCP_SERVER_NAME,
-  ])
+  expect(calls.at(-1)).toEqual(['/bin/claude', 'mcp', 'remove', '--scope', 'user', MCP_SERVER_NAME])
 })
 
 test('forced reconcile replaces a Claude entry and refuses a differing post-add readback', () => {

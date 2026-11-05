@@ -77,7 +77,7 @@ export function decideClaudeMcpPlacementCalls(
       initial,
       desired,
       calls: [
-        { action: 'remove', scope: 'user' },
+        { action: 'inspect-and-remove-user', scope: 'user' },
         ...desired.projectPaths.map(
           (projectPath): ClaudeMcpPlacementCall => ({ action: 'add', scope: 'local', projectPath }),
         ),
@@ -92,7 +92,7 @@ export function decideClaudeMcpPlacementCalls(
       initial,
       desired,
       calls: [
-        { action: 'inspect-and-remove-user', scope: 'user' },
+        { action: 'remove', scope: 'user' },
         ...desired.projectPaths.map(
           (projectPath): ClaudeMcpPlacementCall => ({ action: 'add', scope: 'local', projectPath }),
         ),

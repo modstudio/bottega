@@ -204,5 +204,4 @@ describe('diffOwnedSettings', () => {
     expect(diffOwnedSettings(file, store).hooks.added).toEqual([])
     expect(diffOwnedSettings(file, store).hooks.removed).toEqual([])
   })
-
 })

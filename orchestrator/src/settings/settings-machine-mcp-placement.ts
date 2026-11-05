@@ -90,9 +90,9 @@ export function writeClaudeMcpPlacement(
   }
 }
 
-export type ClaudeMcpPlacementTarget = { kind: 'user' } | { kind: 'project'; path: string }
+type ClaudeMcpPlacementTarget = { kind: 'user' } | { kind: 'project'; path: string }
 
-export function claudeMcpPlacementTargetName(target: ClaudeMcpPlacementTarget): string {
+function claudeMcpPlacementTargetName(target: ClaudeMcpPlacementTarget): string {
   return target.kind === 'user' ? 'MCP claude user' : `MCP claude project ${target.path}`
 }
 
@@ -168,6 +168,43 @@ function checkPlacement(
   })
 }
 
+function applyPlacementCall(
+  call: ClaudeMcpPlacementCall,
+  port: ClaudeMcpRegistrationPort,
+  deps: PlacementDependencies,
+): { changed: boolean; detail?: string } {
+  if (call.action === 'inspect-and-remove-user') {
+    return deps.reconcile({
+      port,
+      server: deps.server,
+      scope: 'user',
+      present: false,
+      check: false,
+    })
+  }
+  const scoped = call.scope === 'local' ? { cwd: call.projectPath } : {}
+  try {
+    deps.mutate({
+      port,
+      server: deps.server,
+      action: call.action,
+      scope: call.scope,
+      ...scoped,
+    })
+    return { changed: true }
+  } catch {
+    const reconciled = deps.reconcile({
+      port,
+      server: deps.server,
+      scope: call.scope,
+      ...scoped,
+      present: call.action === 'add',
+      check: false,
+    })
+    return { changed: true, detail: reconciled.detail }
+  }
+}
+
 function applyPlacementCalls(
   decision: ClaudeMcpPlacementDecision,
   deps: PlacementDependencies,
@@ -176,7 +213,8 @@ function applyPlacementCalls(
   const port = deps.port()
   if (!port) {
     for (const call of decision.calls) {
-      results.set(target(call), refused(target(call), 'Claude executable was not found'))
+      const name = claudeMcpPlacementTargetName(callTarget(call))
+      results.set(name, refused(name, 'Claude executable was not found'))
     }
     return [...results.values()]
   }
@@ -184,38 +222,8 @@ function applyPlacementCalls(
   for (const [index, call] of decision.calls.entries()) {
     const name = claudeMcpPlacementTargetName(callTarget(call))
     try {
-      if (call.action === 'inspect-and-remove-user') {
-        const reconciled = deps.reconcile({
-          port,
-          server: deps.server,
-          scope: 'user',
-          present: false,
-          check: false,
-        })
-        results.set(name, result(name, reconciled.changed, reconciled.detail))
-      } else {
-        const mutation = {
-          port,
-          server: deps.server,
-          action: call.action,
-          scope: call.scope,
-          ...(call.scope === 'local' ? { cwd: call.projectPath } : {}),
-        } as MutateInput
-        try {
-          deps.mutate(mutation)
-          results.set(name, result(name, true))
-        } catch {
-          const reconciled = deps.reconcile({
-            port,
-            server: deps.server,
-            scope: call.scope,
-            ...(call.scope === 'local' ? { cwd: call.projectPath } : {}),
-            present: call.action === 'add',
-            check: false,
-          })
-          results.set(name, result(name, true, reconciled.detail))
-        }
-      }
+      const applied = applyPlacementCall(call, port, deps)
+      results.set(name, result(name, applied.changed, applied.detail))
       current = placementAfterClaudeMcpCall(current, call)
       deps.write(deps.environment, current)
     } catch (error) {

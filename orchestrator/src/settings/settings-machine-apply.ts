@@ -210,10 +210,7 @@ function applyUserSettings(
   }
 }
 
-function applyClaudeMcpPlacement(
-  check: boolean,
-  deps: Dependencies,
-): MachineSettingsApplyResult[] {
+function applyClaudeMcpPlacement(check: boolean, deps: Dependencies): MachineSettingsApplyResult[] {
   const globalUse = readMachineValue('machine.global_use', deps.environment) as 'on' | 'off'
   const scope = decideMachineSettingsScope(globalUse, deps.projectPaths().map(deps.projectFact))
   const server = stableMcpServers().find((candidate) => candidate.name === MCP_SERVER_NAME)
