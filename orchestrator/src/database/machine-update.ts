@@ -1,7 +1,7 @@
-// concern: main-checkout database update
-/** Adapts Git, the live store, and migration execution around the drain decision. */
+// concern: checkout and installed-release database update
+/** Updates either installation kind while holding its migration drain or window. */
 
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   INSTALL_HOME_ENV,
@@ -32,9 +32,13 @@ import { decideMigrationDrain } from './migration-drain-decision.ts'
 import { waitForMigrationDrain } from './migration-drain-wait.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
-import { migrationState, storeJournalPosition } from './migrations.ts'
-import { prepareReleaseUpdate } from './release-update.ts'
-import { decideUpdatePath } from './release-update-decision.ts'
+import { migrationJournal, migrationState, storeJournalPosition } from './migrations.ts'
+import { migrateInstalledBinary, prepareReleaseUpdate } from './release-update.ts'
+import {
+  decideCurrentReleaseUpdate,
+  decideUpdatePath,
+  normalizeReleaseVersion,
+} from './release-update-decision.ts'
 
 type Presentation = { log(value: string): void }
 
@@ -187,13 +191,46 @@ export async function machineUpdateCommand(
   const path = decideUpdatePath(identity.kind, requestedVersion)
   if (path.action === 'refuse') throw new Error(path.reason)
   if (identity.kind === 'distribution') {
+    const requested = requestedVersion ? normalizeReleaseVersion(requestedVersion) : undefined
+    const runningState = withSynchronousDatabaseForMigrationStep((database) =>
+      migrationState(database),
+    )
+    if (runningState.ahead) throw new Error(`store is ahead at migration ${runningState.ahead}`)
     const prepared = await prepareReleaseUpdate({
       manifest: identity.manifest,
-      requestedVersion,
+      requestedVersion: requested,
       presentation,
     })
     if (prepared.action === 'current') {
-      presentation.log(prepared.message)
+      const current = decideCurrentReleaseUpdate(
+        prepared.version,
+        runningState.pending.length > 0,
+      )
+      if (current.action === 'no-op') {
+        presentation.log(current.message)
+        return
+      }
+      const runningJournal = migrationJournal()
+      const migration = withSynchronousDatabaseForMigrationStep((database) => {
+        const position = storeJournalPosition(database, runningJournal)
+        if (position.state === 'pending-not-found') {
+          throw new Error(`running journal does not contain pending migration ${position.migration}`)
+        }
+        return {
+          decision: decideMigrationDrain({ journal: runningJournal, storeVersion: position.index }),
+          pendingMigration: runningJournal[position.index]?.tag ?? null,
+          activeDrain: migrationDrainForUpdate(database),
+        }
+      })
+      assertNoActiveDrain(migration.activeDrain)
+      await applyWithMigrationGuard({
+        presentation,
+        decision: migration.decision,
+        pendingMigration: migration.pendingMigration,
+        apply: () => migrateInstalledBinary(realpathSync(process.execPath)),
+        deps,
+      })
+      presentation.log(current.message)
       return
     }
     try {

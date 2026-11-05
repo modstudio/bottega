@@ -1,7 +1,6 @@
 // concern: installed release update adapter
 /** Downloads, verifies, probes, stages, swaps, and migrates one installed release. */
 
-import { createHash } from 'node:crypto'
 import {
   chmodSync,
   mkdtempSync,
@@ -20,44 +19,54 @@ import type { DistributionManifest } from '../../../shared/install-root.ts'
 import {
   DEFAULT_RELEASE_DOWNLOAD_ROOT,
   DOWNLOAD_BASE_URL_ENV,
+  releaseChannelPath,
   releaseTarget,
 } from '../../../shared/release-artifacts.ts'
-import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import { MACHINE_JOURNAL_SCHEMA } from '../machine-journal.ts'
-import { withSynchronousDatabaseForMigrationStep } from './db.ts'
-import type { MigrationJournalEntry } from './migration-compatibility.ts'
 import {
+  HUB_DATABASE_ENV,
+  ORCHESTRATOR_DATABASE_ENV,
+  ORCHESTRATOR_DATABASE_WRITE_ENV,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
+import {
+  MACHINE_JOURNAL_SCHEMA,
+  MACHINE_JOURNAL_SCHEMA_VERSION,
+} from '../machine-journal.ts'
+import { withSynchronousDatabaseForMigrationStep } from './db.ts'
+import {
+  type CandidateMigration,
+  type CandidateStoreDecision,
   candidateStoreDecision,
-  digestMismatchRefusal,
-  normalizeReleaseVersion,
+  downloadBaseUrlRefusal,
   predatesUpdateRefusal,
   resolveReleaseVersion,
   storeAheadRefusal,
-  unsupportedDownloadSchemeRefusal,
+  unreadableJournalSchemaRefusal,
+  unsupportedTargetRefusal,
+  verifyArchiveDigest,
 } from './release-update-decision.ts'
 
 type Presentation = { log(value: string): void }
 
 type PreparedReleaseUpdate = {
-  decision: ReturnType<typeof candidateStoreDecision> & { state: 'positioned' }
+  decision: Extract<CandidateStoreDecision, { state: 'positioned' }>
   pendingMigration: string | null
   apply(): void
   cleanup(): void
 }
 
 export type ReleaseUpdatePreparation =
-  | { action: 'current'; message: string }
+  | { action: 'current'; version: string }
   | { action: 'prepared'; update: PreparedReleaseUpdate }
 
-function releaseUrl(root: string, path: string): URL {
-  return new URL(path, `${root.replace(/\/+$/, '')}/`)
+function releaseUrl(root: URL, path: string): URL {
+  return new URL(path, `${root.toString().replace(/\/+$/, '')}/`)
 }
 
 async function readDownload(url: URL): Promise<Uint8Array> {
+  const schemeRefusal = downloadBaseUrlRefusal(url.toString())
+  if (schemeRefusal) throw new Error(schemeRefusal)
   if (url.protocol === 'file:') return readFileSync(fileURLToPath(url))
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(unsupportedDownloadSchemeRefusal(url.protocol))
-  }
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(
@@ -74,32 +83,61 @@ function removeStaleStages(directory: string): void {
   }
 }
 
-function candidateJournal(staged: string): MigrationJournalEntry[] {
+const RELEASE_UPDATE_DATABASE_OVERRIDE_ENVS = [
+  ORCHESTRATOR_DATABASE_ENV,
+  ORCHESTRATOR_DATABASE_WRITE_ENV,
+  HUB_DATABASE_ENV,
+] as const
+
+function databaseOverrideFreeEnvironment(
+  additions: Record<string, string> = {},
+): Record<string, string | undefined> {
+  const env = { ...process.env, ...additions }
+  for (const name of RELEASE_UPDATE_DATABASE_OVERRIDE_ENVS) delete env[name]
+  return env
+}
+
+function candidateJournal(staged: string, version: string): CandidateMigration[] {
   const state = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-update-probe.`))
   try {
-    const env = { ...process.env, [STATE_HOME_ENV]: state }
-    delete env.BOTTEGA_ORCHESTRATOR_DB
-    delete env.BOTTEGA_ORCHESTRATOR_DB_WRITE
-    delete env.BOTTEGA_HUB_DB
     const result = Bun.spawnSync([staged, 'machine', 'journal', '--json'], {
-      env,
+      env: databaseOverrideFreeEnvironment({ [STATE_HOME_ENV]: state }),
       stdout: 'pipe',
       stderr: 'pipe',
     })
-    if (result.exitCode !== 0) throw new Error('probe exited nonzero')
-    const parsed = MACHINE_JOURNAL_SCHEMA.parse(JSON.parse(result.stdout.toString()))
+    const stderr = result.stderr.toString()
+    if (result.exitCode !== 0) {
+      throw new Error(predatesUpdateRefusal(version, result.exitCode, stderr))
+    }
+    let output: unknown
+    try {
+      output = JSON.parse(result.stdout.toString())
+    } catch {
+      throw new Error(predatesUpdateRefusal(version, result.exitCode, stderr))
+    }
+    if (
+      typeof output !== 'object' ||
+      output === null ||
+      (output as { schemaVersion?: unknown }).schemaVersion !== MACHINE_JOURNAL_SCHEMA_VERSION
+    ) {
+      throw new Error(unreadableJournalSchemaRefusal(version, result.exitCode, stderr))
+    }
+    let parsed: ReturnType<typeof MACHINE_JOURNAL_SCHEMA.parse>
+    try {
+      parsed = MACHINE_JOURNAL_SCHEMA.parse(output)
+    } catch {
+      throw new Error(predatesUpdateRefusal(version, result.exitCode, stderr))
+    }
     return parsed.orchestratorJournal.map((entry) => ({
       ...entry,
       compatibility: entry.compatibility ?? undefined,
     }))
-  } catch {
-    throw new Error(predatesUpdateRefusal('the requested version'))
   } finally {
     rmSync(state, { recursive: true, force: true })
   }
 }
 
-function appliedMigrations(): { when: number; tag: string | null }[] {
+function appliedMigrations(): { when: number; hash: string }[] {
   return withSynchronousDatabaseForMigrationStep((database) => {
     const table = database
       .query<{ present: number }, []>(
@@ -108,16 +146,17 @@ function appliedMigrations(): { when: number; tag: string | null }[] {
       .get()
     if (!table) return []
     return database
-      .query<{ created_at: number; version: string | null }, []>(
-        'SELECT created_at,version FROM orch_migrations ORDER BY id',
+      .query<{ created_at: number; hash: string }, []>(
+        'SELECT created_at,hash FROM orch_migrations ORDER BY id',
       )
       .all()
-      .map((row) => ({ when: Number(row.created_at), tag: row.version }))
+      .map((row) => ({ when: Number(row.created_at), hash: row.hash }))
   })
 }
 
-function migrateInstalledBinary(target: string): void {
+export function migrateInstalledBinary(target: string): void {
   const result = Bun.spawnSync([target, 'machine', 'migrate'], {
+    env: databaseOverrideFreeEnvironment(),
     stdout: 'inherit',
     stderr: 'inherit',
   })
@@ -134,16 +173,12 @@ export async function prepareReleaseUpdate(input: {
   presentation: Presentation
 }): Promise<ReleaseUpdatePreparation> {
   const targetName = releaseTarget(process.platform, process.arch)
-  if (!targetName) {
-    throw new Error(
-      `unsupported release target ${process.platform}-${process.arch}; install on a supported platform`,
-    )
-  }
-  const root = process.env[DOWNLOAD_BASE_URL_ENV] ?? DEFAULT_RELEASE_DOWNLOAD_ROOT
-  const requested = input.requestedVersion
-    ? normalizeReleaseVersion(input.requestedVersion)
-    : undefined
-  const releasePath = requested ? `download/v${requested}/` : 'latest/download/'
+  if (!targetName) throw new Error(unsupportedTargetRefusal(process.platform, process.arch))
+  const rootValue = process.env[DOWNLOAD_BASE_URL_ENV] ?? DEFAULT_RELEASE_DOWNLOAD_ROOT
+  const rootRefusal = downloadBaseUrlRefusal(rootValue)
+  if (rootRefusal) throw new Error(rootRefusal)
+  const root = new URL(rootValue)
+  const releasePath = releaseChannelPath(input.requestedVersion)
   const sumsUrl = releaseUrl(root, `${releasePath}SHA256SUMS`)
   const sums = new TextDecoder().decode(await readDownload(sumsUrl))
   const resolution = resolveReleaseVersion({
@@ -153,14 +188,12 @@ export async function prepareReleaseUpdate(input: {
     currentVersion: input.manifest.version,
     sumsUrl: sumsUrl.toString(),
   })
-  if (resolution.action === 'current') return { action: 'current', message: resolution.message }
+  if (resolution.action === 'current') return resolution
 
   const archiveUrl = releaseUrl(root, `${releasePath}${resolution.asset}`)
   const archive = await readDownload(archiveUrl)
-  const received = createHash('sha256').update(archive).digest('hex')
-  if (received !== resolution.digest) {
-    throw new Error(digestMismatchRefusal(resolution.asset, resolution.digest, received))
-  }
+  const digestRefusal = verifyArchiveDigest(archive, resolution)
+  if (digestRefusal) throw new Error(digestRefusal)
 
   const target = realpathSync(process.execPath)
   const directory = dirname(target)
@@ -182,14 +215,11 @@ export async function prepareReleaseUpdate(input: {
       throw new Error(`${resolution.asset} does not contain ${PLATFORM_SLUG}; retry the update`)
     }
     chmodSync(staged, 0o755)
-    let journal: MigrationJournalEntry[]
-    try {
-      journal = candidateJournal(staged)
-    } catch {
-      throw new Error(predatesUpdateRefusal(resolution.version))
-    }
+    const journal = candidateJournal(staged, resolution.version)
     const decision = candidateStoreDecision(appliedMigrations(), journal)
-    if (decision.state === 'ahead') throw new Error(storeAheadRefusal(resolution.version))
+    if (decision.state === 'ahead') {
+      throw new Error(storeAheadRefusal(resolution.version, input.manifest.version))
+    }
     retained = true
     return {
       action: 'prepared',

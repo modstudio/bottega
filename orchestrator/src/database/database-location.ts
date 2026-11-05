@@ -10,6 +10,7 @@ import {
 } from '../../../shared/install-root.ts'
 import {
   LEGACY_ORCHESTRATOR_DATABASE,
+  ORCHESTRATOR_DATABASE_ENV,
   legacyStoreRefusal,
   realPathForPotentialPath,
   resolveOrchestratorDatabase,
@@ -134,7 +135,7 @@ export function resolveDatabase(
     }
   }
   const path = resolveOrchestratorDatabase(env)
-  if (env.BOTTEGA_ORCHESTRATOR_DB) {
+  if (env[ORCHESTRATOR_DATABASE_ENV]) {
     // BOTTEGA_ORCHESTRATOR_DB is independently sufficient. When HOME is available, retaining
     // the default path lets linked-worktree binaries still recognize an
     // override that points back at the shared store.

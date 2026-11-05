@@ -1,6 +1,7 @@
 // concern: release update decisions
 /** Pure path, channel, compatibility, and refusal decisions for an installed update. */
 
+import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   artifactName,
@@ -43,7 +44,7 @@ export function normalizeReleaseVersion(value: string): string {
 
 export type ReleaseResolution =
   | { action: 'install'; version: string; asset: string; digest: string }
-  | { action: 'current'; version: string; message: string }
+  | { action: 'current'; version: string }
 
 export function resolveReleaseVersion(input: {
   sums: string
@@ -56,7 +57,7 @@ export function resolveReleaseVersion(input: {
   let version: string
   let asset: string
   if (input.requestedVersion) {
-    version = normalizeReleaseVersion(input.requestedVersion)
+    version = input.requestedVersion
     asset = artifactName(version, input.target)
     if (!entries.has(asset)) {
       throw new Error(
@@ -85,16 +86,14 @@ export function resolveReleaseVersion(input: {
     }
   }
   if (version === input.currentVersion) {
-    return {
-      action: 'current',
-      version,
-      message: `already at ${version}; name a version to install another`,
-    }
+    return { action: 'current', version }
   }
   return { action: 'install', version, asset, digest: entries.get(asset)! }
 }
 
-export type AppliedMigration = { when: number; tag: string | null }
+export type CandidateMigration = MigrationJournalEntry & { hash: string }
+
+export type AppliedMigration = { when: number; hash: string }
 
 export type CandidateStoreDecision =
   | { state: 'ahead' }
@@ -102,16 +101,12 @@ export type CandidateStoreDecision =
 
 export function candidateStoreDecision(
   applied: readonly AppliedMigration[],
-  journal: MigrationJournalEntry[],
+  journal: CandidateMigration[],
 ): CandidateStoreDecision {
   if (applied.length > journal.length) return { state: 'ahead' }
   for (const [index, row] of applied.entries()) {
     const candidate = journal[index]
-    if (
-      !candidate ||
-      candidate.when !== row.when ||
-      (row.tag !== null && candidate.tag !== row.tag)
-    ) {
+    if (!candidate || candidate.when !== row.when || candidate.hash !== row.hash) {
       return { state: 'ahead' }
     }
   }
@@ -123,17 +118,38 @@ export function candidateStoreDecision(
   }
 }
 
-export function predatesUpdateRefusal(version: string): string {
+function probeDetail(exitStatus: number, stderr: string): string {
+  return `probe exit ${exitStatus}; stderr: ${stderr.split(/\r?\n/, 1)[0] || '<empty>'}`
+}
+
+export function predatesUpdateRefusal(
+  version: string,
+  exitStatus: number,
+  stderr: string,
+): string {
   return (
-    `release ${version} predates in-place update; install it with the installer: ` +
+    `release ${version} predates in-place update (${probeDetail(exitStatus, stderr)}); ` +
+    `install it with the installer: ` +
     `curl -fsSL ${INSTALL_SCRIPT_URL} | sh -s -- ${version}`
   )
 }
 
-export function storeAheadRefusal(currentVersion: string): string {
+export function unreadableJournalSchemaRefusal(
+  version: string,
+  exitStatus: number,
+  stderr: string,
+): string {
   return (
-    `the store is ahead of release ${currentVersion}; ` +
-    `update to ${currentVersion} or newer before retrying`
+    `release ${version} has a machine journal format this binary cannot read ` +
+    `(${probeDetail(exitStatus, stderr)}); install it with the installer: ` +
+    `curl -fsSL ${INSTALL_SCRIPT_URL} | sh -s -- ${version}`
+  )
+}
+
+export function storeAheadRefusal(targetVersion: string, runningVersion: string): string {
+  return (
+    `the store is ahead of release ${targetVersion}; ` +
+    `install ${runningVersion} or newer before retrying`
   )
 }
 
@@ -149,4 +165,46 @@ export function unsupportedDownloadSchemeRefusal(scheme: string): string {
     `unsupported download URL scheme ${scheme}; ` +
     `set ${DOWNLOAD_BASE_URL_ENV} to an http:, https:, or file: URL`
   )
+}
+
+export function downloadBaseUrlRefusal(value: string): string | null {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return (
+      `${DOWNLOAD_BASE_URL_ENV} must be an absolute download URL; ` +
+      `set it to an http:, https:, or file: URL`
+    )
+  }
+  return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'file:'
+    ? null
+    : unsupportedDownloadSchemeRefusal(url.protocol)
+}
+
+export function unsupportedTargetRefusal(platform: string, arch: string): string {
+  return `unsupported release target ${platform}-${arch}; install on a supported platform`
+}
+
+export function verifyArchiveDigest(
+  bytes: Uint8Array,
+  expected: { asset: string; digest: string },
+): string | null {
+  const received = createHash('sha256').update(bytes).digest('hex')
+  return received === expected.digest
+    ? null
+    : digestMismatchRefusal(expected.asset, expected.digest, received)
+}
+
+export type CurrentReleaseDecision =
+  | { action: 'no-op'; message: string }
+  | { action: 'migrate'; message: string }
+
+export function decideCurrentReleaseUpdate(
+  version: string,
+  hasPendingMigrations: boolean,
+): CurrentReleaseDecision {
+  return hasPendingMigrations
+    ? { action: 'migrate', message: `migrated the store to ${version}` }
+    : { action: 'no-op', message: `already at ${version}; name a version to install another` }
 }

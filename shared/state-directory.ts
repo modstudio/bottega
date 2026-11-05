@@ -38,6 +38,9 @@ export function temporaryStateStoreMigrationAllowed(
 
 /** The platform-specific override name is derived from the one canonical slug. */
 export const STATE_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`
+export const ORCHESTRATOR_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_ORCHESTRATOR_DB`
+export const ORCHESTRATOR_DATABASE_WRITE_ENV = `${ORCHESTRATOR_DATABASE_ENV}_WRITE`
+export const HUB_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
 
 /** Resolve the per-user state root using only the supplied environment. */
 export function resolveStateRoot(env: StateEnvironment): string {
@@ -155,8 +158,8 @@ export function ensureHubLoginTokenDirectory(env: StateEnvironment): string {
 }
 
 export function resolveOrchestratorDatabase(env: StateEnvironment): string {
-  return env.BOTTEGA_ORCHESTRATOR_DB
-    ? resolve(env.BOTTEGA_ORCHESTRATOR_DB)
+  return env[ORCHESTRATOR_DATABASE_ENV]
+    ? resolve(env[ORCHESTRATOR_DATABASE_ENV])
     : resolveStatePaths(env).orchestratorDatabase
 }
 
@@ -165,13 +168,18 @@ export const LEGACY_ORCHESTRATOR_DATABASE = ['orch', 'db'].join('.')
 
 export function resolveRunsDirectory(env: StateEnvironment): string {
   if (env.BOTTEGA_RUNS) return resolve(env.BOTTEGA_RUNS)
-  if (env.BOTTEGA_ORCHESTRATOR_DB)
-    return join(dirname(resolve(env.BOTTEGA_ORCHESTRATOR_DB)), FROZEN_STATE_NAMES.runsDirectory)
+  if (env[ORCHESTRATOR_DATABASE_ENV])
+    return join(
+      dirname(resolve(env[ORCHESTRATOR_DATABASE_ENV])),
+      FROZEN_STATE_NAMES.runsDirectory,
+    )
   return resolveStatePaths(env).orchestratorRuns
 }
 
 export function resolveHubDatabase(env: StateEnvironment): string {
-  return env.BOTTEGA_HUB_DB ? resolve(env.BOTTEGA_HUB_DB) : resolveStatePaths(env).hubDatabase
+  return env[HUB_DATABASE_ENV]
+    ? resolve(env[HUB_DATABASE_ENV])
+    : resolveStatePaths(env).hubDatabase
 }
 
 export function resolveRetrievalDatabase(env: StateEnvironment): string {

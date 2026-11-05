@@ -11,6 +11,10 @@ export const DEFAULT_RELEASE_DOWNLOAD_ROOT = `https://github.com/${RELEASE_REPOS
 export const DOWNLOAD_BASE_URL_ENV = `${PLATFORM_SLUG.toUpperCase()}_DOWNLOAD_BASE_URL`
 export const INSTALL_SCRIPT_URL = `https://raw.githubusercontent.com/${RELEASE_REPOSITORY}/main/install.sh`
 
+export function releaseChannelPath(version?: string): string {
+  return version ? `download/v${version}/` : 'latest/download/'
+}
+
 export function artifactName(version: string, target: string): string {
   return `${PLATFORM_SLUG}-${version}-${target}.tar.gz`
 }

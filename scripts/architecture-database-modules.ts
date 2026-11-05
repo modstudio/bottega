@@ -10,6 +10,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 
 export const databaseModules: ArchitectureModule[] = [
   module('orchestrator/src/database/release-update-decision.ts', [
+    'node:crypto',
     '../../../shared/brand.ts',
     '../../../shared/release-artifacts.ts',
     './migration-compatibility.ts',

@@ -1,52 +1,25 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  artifactName,
-  DOWNLOAD_BASE_URL_ENV,
-  parseSha256Sums,
-  releaseTarget,
-} from '../../../shared/release-artifacts.ts'
+import { artifactName } from '../../../shared/release-artifacts.ts'
 import {
   candidateStoreDecision,
-  decideUpdatePath,
-  digestMismatchRefusal,
+  decideCurrentReleaseUpdate,
+  downloadBaseUrlRefusal,
+  normalizeReleaseVersion,
   predatesUpdateRefusal,
   resolveReleaseVersion,
   storeAheadRefusal,
-  unsupportedDownloadSchemeRefusal,
+  unreadableJournalSchemaRefusal,
+  unsupportedTargetRefusal,
+  verifyArchiveDigest,
 } from './release-update-decision.ts'
 
 const target = 'linux-x64'
 const digest = 'a'.repeat(64)
 const sums = (names: string[]) => names.map((name) => `${digest}  ${name}`).join('\n')
 const journal = [
-  { idx: 0, when: 10, tag: 'first', compatibility: 'additive' },
-  { idx: 1, when: 20, tag: 'second', compatibility: 'additive' },
+  { idx: 0, when: 10, tag: 'first', hash: '1'.repeat(64), compatibility: 'additive' },
+  { idx: 1, when: 20, tag: 'second', hash: '2'.repeat(64), compatibility: 'additive' },
 ]
-
-test('update path chooses checkout and distribution and refuses a checkout version', () => {
-  expect(decideUpdatePath('checkout')).toEqual({ action: 'checkout' })
-  expect(decideUpdatePath('distribution')).toEqual({ action: 'distribution' })
-  expect(decideUpdatePath('checkout', '1.2.3')).toEqual({
-    action: 'refuse',
-    reason: expect.stringContaining(`run ${PLATFORM_SLUG} machine update`),
-  })
-})
-
-test('release targets cover supported hosts and reject unsupported hosts', () => {
-  expect(releaseTarget('darwin', 'arm64')).toBe('darwin-arm64')
-  expect(releaseTarget('darwin', 'x64')).toBe('darwin-x64')
-  expect(releaseTarget('linux', 'x64')).toBe('linux-x64')
-  expect(releaseTarget('linux', 'arm64')).toBe('linux-arm64')
-  expect(releaseTarget('win32', 'x64')).toBeNull()
-})
-
-test('SHA256SUMS parser accepts valid text and refuses malformed lines', () => {
-  expect(parseSha256Sums(`${digest.toUpperCase()}  file.tar.gz\n`)).toEqual(
-    new Map([['file.tar.gz', digest]]),
-  )
-  expect(() => parseSha256Sums(`${digest} file.tar.gz`)).toThrow('invalid SHA256SUMS line')
-})
 
 test('latest release resolution requires exactly one target artifact', () => {
   const asset = artifactName('1.2.3', target)
@@ -81,13 +54,14 @@ test('latest release resolution requires exactly one target artifact', () => {
   ).toThrow('exactly one')
 })
 
-test('named release resolution normalizes v and requires the named artifact', () => {
+test('named release resolution accepts an edge-normalized version and requires its artifact', () => {
   const asset = artifactName('1.2.3', target)
+  expect(normalizeReleaseVersion('v1.2.3')).toBe('1.2.3')
   expect(
     resolveReleaseVersion({
       sums: sums([asset]),
       target,
-      requestedVersion: 'v1.2.3',
+      requestedVersion: '1.2.3',
       currentVersion: '1.0.0',
       sumsUrl: 'https://example/sums',
     }),
@@ -115,47 +89,70 @@ test('same version is a no-op with a remedy', () => {
   ).toEqual({
     action: 'current',
     version: '1.2.3',
-    message: 'already at 1.2.3; name a version to install another',
   })
 })
 
-test('release refusals name remedies', () => {
-  const refusals = [
-    predatesUpdateRefusal('1.2.3'),
-    storeAheadRefusal('1.2.3'),
-    digestMismatchRefusal('asset', digest, 'b'.repeat(64)),
-    'already at 1.2.3; name a version to install another',
-    unsupportedDownloadSchemeRefusal('ftp:'),
-  ]
-  expect(
-    refusals.every((value) =>
-      /install|update|retry|name a version|set BOTTEGA_DOWNLOAD_BASE_URL/.test(value),
-    ),
-  ).toBe(true)
-  expect(refusals.at(-1)).toContain(DOWNLOAD_BASE_URL_ENV)
+test('current release chooses a no-op or interrupted-update migration', () => {
+  expect(decideCurrentReleaseUpdate('1.2.3', false)).toEqual({
+    action: 'no-op',
+    message: 'already at 1.2.3; name a version to install another',
+  })
+  expect(decideCurrentReleaseUpdate('1.2.3', true)).toEqual({
+    action: 'migrate',
+    message: 'migrated the store to 1.2.3',
+  })
+})
+
+test('download URLs require an absolute supported scheme', () => {
+  expect(downloadBaseUrlRefusal('file:///tmp/releases')).toBeNull()
+  expect(downloadBaseUrlRefusal('/tmp/releases')).toContain('absolute download URL')
+  expect(downloadBaseUrlRefusal('ftp://example.test/releases')).toContain('ftp:')
+})
+
+test('archive digest verification accepts a match and refuses a mismatch', () => {
+  const bytes = new TextEncoder().encode('release')
+  const expected = 'a4d451ec23463726f72c43d64c710968f6b602cd653b4de8adee1b556240a829'
+  expect(verifyArchiveDigest(bytes, { asset: 'release.tar.gz', digest: expected })).toBeNull()
+  expect(verifyArchiveDigest(bytes, { asset: 'release.tar.gz', digest })).toContain(
+    'digest mismatch for release.tar.gz',
+  )
+})
+
+test('specific release refusals preserve diagnostics and remedies', () => {
+  expect(predatesUpdateRefusal('1.2.3', 2, 'missing command\nmore')).toContain(
+    'probe exit 2; stderr: missing command',
+  )
+  expect(unreadableJournalSchemaRefusal('1.2.3', 0, 'new schema\nmore')).toContain(
+    'probe exit 0; stderr: new schema',
+  )
+  expect(storeAheadRefusal('1.1.0', '1.2.0')).toContain('install 1.2.0 or newer')
+  expect(unsupportedTargetRefusal('win32', 'x64')).toContain('supported platform')
 })
 
 test('candidate store position handles prefix, equal, ahead, divergent, and empty stores', () => {
-  expect(candidateStoreDecision([{ when: 10, tag: 'first' }], journal)).toMatchObject({
+  expect(candidateStoreDecision([{ when: 10, hash: '1'.repeat(64) }], journal)).toMatchObject({
     state: 'positioned',
     position: 1,
   })
   expect(
     candidateStoreDecision(
       [
-        { when: 10, tag: 'first' },
-        { when: 20, tag: 'second' },
+        { when: 10, hash: '1'.repeat(64) },
+        { when: 20, hash: '2'.repeat(64) },
       ],
       journal,
     ),
   ).toMatchObject({ state: 'positioned', position: 2 })
   expect(
     candidateStoreDecision(
-      [...journal.map(({ when, tag }) => ({ when, tag })), { when: 30, tag: 'third' }],
+      [
+        ...journal.map(({ when, hash }) => ({ when, hash })),
+        { when: 30, hash: '3'.repeat(64) },
+      ],
       journal,
     ),
   ).toEqual({ state: 'ahead' })
-  expect(candidateStoreDecision([{ when: 10, tag: 'different' }], journal)).toEqual({
+  expect(candidateStoreDecision([{ when: 10, hash: '9'.repeat(64) }], journal)).toEqual({
     state: 'ahead',
   })
   expect(candidateStoreDecision([], journal)).toMatchObject({ state: 'positioned', position: 0 })
@@ -168,7 +165,7 @@ test('candidate journal drives additive, fenced, and no-pending drain decisions'
   })
   expect(
     candidateStoreDecision(
-      journal.map(({ when, tag }) => ({ when, tag })),
+      journal.map(({ when, hash }) => ({ when, hash })),
       journal,
     ),
   ).toMatchObject({ drain: { action: 'apply-now' } })

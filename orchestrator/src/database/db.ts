@@ -19,6 +19,7 @@ import { storedMachineId } from '../../../shared/machine-config.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { createReadOnlyDatabaseAccess } from '../../../shared/read-only-database-access.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { ORCHESTRATOR_DATABASE_WRITE_ENV } from '../../../shared/state-directory.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
 import {
   type CallerIdentityResolution,
@@ -143,7 +144,7 @@ const storeActorFacts: Omit<StoreActorFacts, 'brokerChannel'> = {
   linkedWorktreeBinary: DATABASE_RESOLUTION.linkedWorktreeBinary,
   namedStoreOverride: DATABASE_RESOLUTION.method === 'BOTTEGA_ORCHESTRATOR_DB',
   namedStoreIsMainStore: sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath),
-  operatorWriteInsistence: process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE === '1',
+  operatorWriteInsistence: process.env[ORCHESTRATOR_DATABASE_WRITE_ENV] === '1',
   workerCaller: classifyCaller(process.env).kind === 'worker',
 }
 

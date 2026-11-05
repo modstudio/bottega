@@ -4,7 +4,7 @@
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
-import { migrationJournal } from '../database/migrations.ts'
+import { migrationHash, migrationJournal } from '../database/migrations.ts'
 import { shapeMachineJournal } from '../machine-journal.ts'
 
 const JSON_ONLY_REFUSAL = `machine journal prints JSON only\ncleared by: ${PLATFORM_SLUG} machine journal --json`
@@ -17,9 +17,10 @@ export function machineJournalCommand(
   presentation: MachineJournalPresentation,
 ): void {
   if (!json) throw new Error(JSON_ONLY_REFUSAL)
+  const journal = migrationJournal()
   const result = shapeMachineJournal(
     installationIdentity(import.meta.dir, process.env),
-    migrationJournal(),
+    journal.map((entry) => ({ ...entry, hash: migrationHash(entry) })),
   )
   presentation.write(`${JSON.stringify(result)}\n`)
 }
