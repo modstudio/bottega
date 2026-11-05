@@ -32,7 +32,7 @@ export type SetupQuestion = {
   why: string
 }
 
-export type SetupNotice = { message: string; fix: string | null }
+export type SetupNotice = { message: string; fix: string | null; folderPath?: string }
 export type SetupAgent = {
   name: string
   harness: string
@@ -77,6 +77,7 @@ export type SetupPlan = {
   registrations: SetupRegistrationProposal[]
   questions: SetupQuestion[]
   notices: SetupNotice[]
+  folderSelection: { options: Array<{ path: string; name: string }>; defaults: string[] }
   mcpConfigMigrations?: McpConfigMigration[]
   legacyPathSymlinks?: LegacyPathSymlink[]
 }
@@ -106,6 +107,23 @@ function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
     ],
     recommendation: recommendedMachineLevel(machine),
     why: 'The install level controls whether this machine can dispatch external worker agents.',
+  }
+}
+
+function globalUseQuestion(machine: SetupFacts): SetupQuestion {
+  return {
+    id: 'machine:global-use',
+    question: `Should ${PLATFORM_NAME} act in every folder, or only in registered projects?`,
+    options: [
+      { id: 'on', label: 'Every folder', why: `Allows ${PLATFORM_NAME} to act globally.` },
+      {
+        id: 'off',
+        label: 'Registered projects only',
+        why: 'Limits actions to registered projects.',
+      },
+    ],
+    recommendation: machine.globalUse ?? 'on',
+    why: 'The declared default is every folder.',
   }
 }
 
@@ -311,12 +329,6 @@ export function deriveKeyPrefix(name: string, occupied: ReadonlySet<string>): st
 
 function machineNotices(machine: SetupFacts): SetupNotice[] {
   const notices: SetupNotice[] = []
-  if (!machine.recordApiUrl) {
-    notices.push({
-      message: 'hosted record address is not configured',
-      fix: `${PLATFORM_SLUG} record use <address>`,
-    })
-  }
   if (!machine.git.path) notices.push({ message: 'git is missing', fix: 'install git' })
   if (!machine.gh.path) notices.push({ message: 'gh is missing', fix: 'install gh' })
   else if (!machine.gh.loggedIn)
@@ -413,6 +425,7 @@ function proposeProjectToolchain(
     notices.push({
       message: `no gate was detected for ${repository.name}`,
       fix: `${PLATFORM_SLUG} project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
+      folderPath: repository.path,
     })
   }
   const recipeContent = inferredRecipeContent(repository)
@@ -430,6 +443,7 @@ function proposeProjectToolchain(
     notices.push({
       message: `refusing inferred worktree recipe ${INFERRED_RECIPE_PATH} for ${repository.name}: ${repository.inferredRecipeFile.reason}`,
       fix: `replace ${INFERRED_RECIPE_PATH} with a regular file inside ${repository.path}`,
+      folderPath: repository.path,
     })
     return {
       gate,
@@ -534,13 +548,14 @@ export function proposeSetup(
   agents: SetupAgent[],
   repositoryNotices: SetupNotice[] = [],
   servers: McpServer[] = [],
+  hostedProjectNames: readonly string[] = [],
 ): SetupPlan {
   const occupied = new Set(
     register
       .flatMap((project) => project.settings.keyPrefixes ?? [])
       .map((prefix) => prefix.toUpperCase()),
   )
-  const questions: SetupQuestion[] = [machineLevelQuestion(machine)]
+  const questions: SetupQuestion[] = [globalUseQuestion(machine), machineLevelQuestion(machine)]
   const notices = [
     ...machineNotices(machine),
     ...agentNotices(machine, agents),
@@ -552,6 +567,7 @@ export function proposeSetup(
       notices.push({
         message: `git inspection timed out for ${repository.name} at ${repository.path}`,
         fix: `git -C ${repository.path} status`,
+        folderPath: repository.path,
       })
     }
     const current = register.find((project) => project.path === repository.path) ?? null
@@ -610,6 +626,7 @@ export function proposeSetup(
         notices.push({
           message: `check out ${repository.remoteDefaultBranch} and re-run setup to declare it as trunk`,
           fix: `git -C ${repository.path} switch ${repository.remoteDefaultBranch}`,
+          folderPath: repository.path,
         })
       } else {
         proposedTrunk = repository.currentBranch
@@ -620,6 +637,7 @@ export function proposeSetup(
           ? `${repository.name} has detached HEAD; remote default is ${repository.remoteDefaultBranch}; leaving trunk unset`
           : `${repository.name} has detached HEAD; leaving trunk unset`,
         fix: null,
+        folderPath: repository.path,
       })
     }
     const { gate, recipeQuestionId, recipeContent, recoverRecipePointer, recipeActivationAnswer } =
@@ -650,5 +668,22 @@ export function proposeSetup(
       recipeContent,
     }
   })
-  return { facts: { machine, repositories }, proposals, registrations, questions, notices }
+  const hosted = new Set(hostedProjectNames)
+  return {
+    facts: { machine, repositories },
+    proposals,
+    registrations,
+    questions,
+    notices,
+    folderSelection: {
+      options: repositories.map(({ path, name }) => ({ path, name })),
+      defaults: repositories
+        .filter(
+          (repository) =>
+            register.some((project) => project.path === repository.path) ||
+            hosted.has(repository.name),
+        )
+        .map((repository) => repository.path),
+    },
+  }
 }

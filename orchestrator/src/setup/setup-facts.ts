@@ -35,6 +35,7 @@ export type CommandCapture = CliVersionCapture
 
 export type SetupFactsCapture = {
   machineLevel: MachineLevel | null
+  globalUse?: 'on' | 'off' | null
   installationKind?: InstallationKind | null
   schedules?: ScheduleSetupFact[]
   recordApiUrl: string | null
@@ -59,6 +60,7 @@ export type SetupFactsCapture = {
 
 export type SetupFacts = {
   machineLevel: MachineLevel | null
+  globalUse: 'on' | 'off' | null
   installationKind: InstallationKind | null
   schedules: ScheduleSetupFact[]
   recordApiUrl: string | null
@@ -82,6 +84,7 @@ export type SetupFacts = {
 export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
   return {
     machineLevel: capture.machineLevel,
+    globalUse: capture.globalUse ?? null,
     installationKind: capture.installationKind ?? null,
     schedules: capture.schedules ?? [],
     recordApiUrl: capture.recordApiUrl,
@@ -161,6 +164,10 @@ export function readSetupMachineLevel(): MachineLevel | null {
   return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
 }
 
+export function readSetupGlobalUse(): 'on' | 'off' | null {
+  return (readMachineFileValue('machine.global_use') as 'on' | 'off' | undefined) ?? null
+}
+
 /** The running installation's kind, or null when its identity is unreadable; doctor reports why. */
 function readInstallationKind(): InstallationKind | null {
   try {
@@ -203,6 +210,7 @@ export async function gatherSetupFacts(
   const installationKind = readInstallationKind()
   return classifySetupFacts({
     machineLevel: readSetupMachineLevel(),
+    globalUse: readSetupGlobalUse(),
     installationKind,
     schedules: installationKind === 'distribution' ? gatherScheduleSetupFacts() : [],
     recordApiUrl: resolveRecordApiUrl() ?? null,

@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineNames, writeMachineNames } from '../../../shared/machine-config.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
@@ -602,7 +602,7 @@ async function pullAfterSync(
 }
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
-  const configured = Boolean(resolveRecordApiUrl(process.env) || options.client)
+  const configured = recordApiConfigured(process.env) || Boolean(options.client)
   const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
   const identity = {
     ...requestedIdentity,

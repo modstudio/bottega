@@ -1,7 +1,18 @@
 // concern: setup-clack
 /** Adapts the interactive setup presentation port to the bought prompt library. */
 
-import { confirm, intro, isCancel, log, note, select, spinner } from '@clack/prompts'
+import {
+  confirm,
+  intro,
+  isCancel,
+  log,
+  multiselect,
+  note,
+  password,
+  select,
+  spinner,
+  text,
+} from '@clack/prompts'
 import { SETUP_CANCEL, type SetupPrompter, type SetupSelectOption } from './setup-interactive.ts'
 
 export const clackSetupPrompter: SetupPrompter = {
@@ -21,6 +32,23 @@ export const clackSetupPrompter: SetupPrompter = {
   },
   confirm: async (input) => {
     const answer = await confirm(input)
+    return isCancel(answer) ? SETUP_CANCEL : answer
+  },
+  multiselect: async (input) => {
+    const answer = await multiselect<string>({
+      message: input.message,
+      options: input.options,
+      initialValues: input.initialValues,
+      required: false,
+    })
+    return isCancel(answer) ? SETUP_CANCEL : answer
+  },
+  text: async (input) => {
+    const answer = await text(input)
+    return isCancel(answer) ? SETUP_CANCEL : answer
+  },
+  password: async (input) => {
+    const answer = await password(input)
     return isCancel(answer) ? SETUP_CANCEL : answer
   },
 }

@@ -5,9 +5,13 @@ import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectByName, projects } from '../project/projects.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { readHostedProjects } from '../record/record-cache-projects.ts'
+import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { gatherRepositoryFactsReport } from './repository-facts.ts'
@@ -24,6 +28,7 @@ import {
   setupEnvironmentService,
 } from './setup-environment-runtime.ts'
 import { gatherSetupFacts } from './setup-facts.ts'
+import { nonInteractiveSetupFolders, selectSetupFolders } from './setup-folder-selection.ts'
 import { captureLegacyPathSymlinks, pathDirectories } from './setup-legacy-path.ts'
 import { stableMcpServers } from './setup-mcp.ts'
 import { captureMcpConfigMigrations } from './setup-mcp-config-migration.ts'
@@ -59,7 +64,11 @@ export class SetupAnswersRefusedError extends Error {}
 
 export type SetupService = {
   plan(folders: string[]): Promise<SetupPlan>
-  dryRun(folders: string[], answers?: Partial<SetupAnswers>): Promise<SetupDryRun>
+  dryRun(
+    folders: string[],
+    answers?: Partial<SetupAnswers>,
+    included?: string[],
+  ): Promise<SetupDryRun>
   prepare(
     folders: string[],
   ): Promise<{ plan: SetupPlan; migration: PreparedStateFileMigration | null }>
@@ -72,10 +81,12 @@ export type SetupService = {
     folders: string[],
     answers: unknown,
     fixedAnswers?: Partial<SetupAnswers>,
+    included?: string[],
   ): Promise<SetupApplyOutcome>
   applyRecommended(
     folders: string[],
     fixedAnswers?: Partial<SetupAnswers>,
+    included?: string[],
   ): Promise<SetupApplyOutcome>
 }
 
@@ -96,6 +107,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     Promise.resolve(readSetupState()),
   ])
   const repositories = await gatherRepositoryFactsReport(folders)
+  const hostedProjectNames = await setupHostedProjectNames()
   const plan = proposeSetup(
     resolveWorktreeLifecycle,
     machine,
@@ -104,6 +116,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     state.agents,
     repositories.notices,
     stableMcpServers(),
+    hostedProjectNames,
   )
   addMcpConfigMigrations(
     plan,
@@ -112,6 +125,14 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
   )
   addLegacyPathSymlinkRemovals(plan, pathDirectories(process.env.PATH))
   return plan
+}
+
+async function setupHostedProjectNames(): Promise<string[]> {
+  if (!cachedSignedInRecordUser()) return []
+  const client = recordApiClient()
+  const identity = await client.whoami()
+  const spaces = parseRecordSpaceMemberships(identity.memberships).map(({ spaceId }) => spaceId)
+  return (await readHostedProjects(spaces, client)).map(({ name }) => name)
 }
 
 function addLegacyPathSymlinkRemovals(plan: SetupPlan, directories: readonly string[]): void {
@@ -193,11 +214,13 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
   async function apply(
     folders: string[],
     answersForPlan: (plan: SetupPlan) => SetupAnswers,
+    included: string[] = [],
   ): Promise<SetupApplyOutcome> {
     const migration = await (adapters.prepareStateFileMigration?.() ?? Promise.resolve(null))
     let plan: SetupPlan
     try {
-      plan = await adapters.plan(folders)
+      const gathered = await adapters.plan(folders)
+      plan = selectSetupFolders(gathered, nonInteractiveSetupFolders(gathered, included))
     } catch (error) {
       const reversed = await reverseStoppedMigration(migration)
       const detail = error instanceof Error ? error.message : String(error)
@@ -233,11 +256,12 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
 
   return {
     plan: adapters.plan,
-    async dryRun(folders, fixedAnswers = {}) {
+    async dryRun(folders, fixedAnswers = {}, included = []) {
       const stateFileMigration = await (adapters.inspectStateFileMigration?.() ??
         Promise.resolve(null))
       if (stateFileMigration) return { stateFileMigration, diff: [stateFileMigration] }
-      const plan = await adapters.plan(folders)
+      const gathered = await adapters.plan(folders)
+      const plan = selectSetupFolders(gathered, nonInteractiveSetupFolders(gathered, included))
       return {
         ...plan,
         diff: planSetupActions(plan, {
@@ -258,26 +282,33 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
     },
     cancel: reverseStoppedMigration,
     applyPreparedActions,
-    apply(folders, answerValue, fixedAnswers = {}) {
-      return apply(folders, (plan) => {
-        try {
-          const fixed = Object.keys(fixedAnswers).length > 0
-          const supplied =
-            answerValue && typeof answerValue === 'object' && !Array.isArray(answerValue)
-              ? { ...answerValue, ...fixedAnswers }
-              : fixed
-                ? fixedAnswers
-                : answerValue
-          return validateSetupAnswers(plan.questions, supplied)
-        } catch (error) {
-          throw new SetupAnswersRefusedError(error instanceof Error ? error.message : String(error))
-        }
-      })
+    apply(folders, answerValue, fixedAnswers = {}, included = []) {
+      return apply(
+        folders,
+        (plan) => {
+          try {
+            const fixed = Object.keys(fixedAnswers).length > 0
+            const supplied =
+              answerValue && typeof answerValue === 'object' && !Array.isArray(answerValue)
+                ? { ...answerValue, ...fixedAnswers }
+                : fixed
+                  ? fixedAnswers
+                  : answerValue
+            return validateSetupAnswers(plan.questions, supplied)
+          } catch (error) {
+            throw new SetupAnswersRefusedError(
+              error instanceof Error ? error.message : String(error),
+            )
+          }
+        },
+        included,
+      )
     },
-    applyRecommended(folders, fixedAnswers = {}) {
+    applyRecommended(folders, fixedAnswers = {}, included = []) {
       return apply(
         folders,
         (plan) => ({ ...recommendedAnswers(plan), ...fixedAnswers }) as SetupAnswers,
+        included,
       )
     },
   }

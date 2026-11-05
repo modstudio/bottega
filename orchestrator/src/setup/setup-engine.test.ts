@@ -29,7 +29,10 @@ const plannedAction = (
 ) => {
   const actions = planSetupActions(plan, answers)
   return actions.find(
-    (action) => action.kind !== 'migrate-environment' && action.kind !== 'set-machine-level',
+    (action) =>
+      action.kind !== 'migrate-environment' &&
+      action.kind !== 'set-machine-level' &&
+      action.kind !== 'set-global-use',
   )
 }
 
@@ -52,7 +55,9 @@ function proposeSetup(
   )
   return {
     ...plan,
-    questions: plan.questions.filter((question) => question.id !== 'machine:level'),
+    questions: plan.questions.filter(
+      (question) => !['machine:level', 'machine:global-use'].includes(question.id),
+    ),
   }
 }
 
@@ -62,6 +67,25 @@ const machine = {
   git: { path: '/bin/git', version: '1' },
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
 } as SetupFacts
+
+test('folder defaults include registered paths and names found in hosted spaces', () => {
+  const registeredProject = registered({}, { name: 'local', path: '/work/local' })
+  const plan = proposeSetupEngine(
+    resolveWorktreeLifecycle,
+    machine,
+    [
+      repository({ name: 'local', path: '/work/local' }),
+      repository({ name: 'hosted', path: '/work/hosted' }),
+      repository({ name: 'other', path: '/work/other' }),
+    ],
+    [registeredProject],
+    [],
+    [],
+    [],
+    ['hosted'],
+  )
+  expect(plan.folderSelection.defaults).toEqual(['/work/local', '/work/hosted'])
+})
 
 function machineWithMcp(
   harness: 'claude' | 'codex' | 'grok' | 'opencode' | 'goose',
@@ -84,12 +108,9 @@ function machineWithMcp(
   }
 }
 
-test('mentions record use when no hosted record address is configured', () => {
+test('does not notice a missing record address because setup has a built-in address', () => {
   const plan = proposeSetup({ ...machine, recordApiUrl: null }, [], [], [])
-  expect(plan.notices).toContainEqual({
-    message: 'hosted record address is not configured',
-    fix: `${PLATFORM_SLUG} record use <address>`,
-  })
+  expect(plan.notices.some(({ message }) => message.includes('record address'))).toBe(false)
 })
 
 const orchServer: McpServer = {
@@ -173,12 +194,19 @@ test('record plan skips the worker MCP server and still registers the main serve
     [],
     [orchServer, workerServer],
   )
-  expect(plan.questions[0]?.id).toBe('machine:level')
+  expect(plan.questions.slice(0, 2).map(({ id }) => id)).toEqual([
+    'machine:global-use',
+    'machine:level',
+  ])
   const actions = planSetupActions(plan, {
     ...recommendedAnswers(plan),
     'machine:level': 'record',
   })
-  expect(actions[1]).toEqual({ kind: 'set-machine-level', from: null, to: 'record' })
+  expect(actions.find((action) => action.kind === 'set-machine-level')).toEqual({
+    kind: 'set-machine-level',
+    from: null,
+    to: 'record',
+  })
   expect(actions).toContainEqual(
     expect.objectContaining({
       kind: 'mcp-skipped',

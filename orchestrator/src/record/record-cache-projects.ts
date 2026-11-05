@@ -18,15 +18,23 @@ export type ProjectRegisterPullResult = {
   warnings: string[]
 }
 
+export async function readHostedProjects(
+  spaces: readonly string[],
+  client: Pick<RecordApiClient, 'listProjects'>,
+): Promise<RecordProject[]> {
+  const hostedRows: RecordProject[] = []
+  for (const spaceId of spaces) {
+    hostedRows.push(...(await client.listProjects({ destinationSpaceId: spaceId })))
+  }
+  return hostedRows
+}
+
 export async function pullProjectRegister(
   local: Database,
   spaces: readonly string[],
   client: Pick<RecordApiClient, 'listProjects'>,
 ): Promise<ProjectRegisterPullResult> {
-  const hostedRows: RecordProject[] = []
-  for (const spaceId of spaces) {
-    hostedRows.push(...(await client.listProjects({ destinationSpaceId: spaceId })))
-  }
+  const hostedRows = await readHostedProjects(spaces, client)
   const localRows = [...projects(undefined, local), ...projects({ retired: true }, local)]
   const decisions = decideProjectRegisterPull(localRows, hostedRows)
   const updates = decisions.filter((decision) => decision.kind === 'update')

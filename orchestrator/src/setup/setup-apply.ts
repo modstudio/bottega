@@ -63,6 +63,7 @@ export type SetupEnvironmentService = {
     message: string | null
   }>
   setMachineLevel?(level: MachineLevel): void
+  setGlobalUse?(value: 'on' | 'off'): void
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
@@ -304,6 +305,11 @@ async function applySetupAction(
   if (action.kind === 'set-machine-level') {
     if (!environment.setMachineLevel) throw new Error('machine-level writer is unavailable')
     environment.setMachineLevel(action.to)
+    return { status: 'applied', message: null }
+  }
+  if (action.kind === 'set-global-use') {
+    if (!environment.setGlobalUse) throw new Error('global-use writer is unavailable')
+    environment.setGlobalUse(action.to)
     return { status: 'applied', message: null }
   }
   if (action.kind === 'migrate-mcp-config') {

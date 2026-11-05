@@ -16,9 +16,10 @@ export function currentRecordWriteDecision(
   database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): RecordWriteDecision {
+  const installBound = readRecordInstallBinding(database).bound
   return decideRecordWrite({
-    recordApiUrlSet: recordApiConfigured(environment),
-    installBound: readRecordInstallBinding(database).bound,
+    recordApiUrlSet: recordApiConfigured(environment) || installBound,
+    installBound,
   })
 }
 

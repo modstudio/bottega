@@ -20,6 +20,7 @@ export type SetupAction =
       from: MachineLevel | null
       to: MachineLevel
     }
+  | { kind: 'set-global-use'; from: 'on' | 'off' | null; to: 'on' | 'off' }
   | (SetupActionBase & {
       kind: 'add'
       name: string
@@ -78,6 +79,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'install-schedules':
     case 'migrate-environment':
     case 'set-machine-level':
+    case 'set-global-use':
       return true
     case 'unchanged':
     case 'mcp-unchanged':
@@ -100,6 +102,8 @@ export function setupActionLine(action: SetupAction): string {
       return 'Install scheduled sweep and record sync'
     case 'set-machine-level':
       return `Set machine install level to ${action.to}`
+    case 'set-global-use':
+      return `Set global use to ${action.to}`
     case 'add':
       return `Add project ${action.name} (${action.path})`
     case 'set':
@@ -215,6 +219,12 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     currentLevel === undefined || currentLevel === selectedLevel
       ? null
       : { kind: 'set-machine-level', from: currentLevel, to: selectedLevel }
+  const selectedGlobalUse = answers['machine:global-use'] as 'on' | 'off' | undefined
+  const currentGlobalUse = plan.facts.machine.globalUse
+  const globalUse: SetupAction | null =
+    selectedGlobalUse === undefined || currentGlobalUse === selectedGlobalUse
+      ? null
+      : { kind: 'set-global-use', from: currentGlobalUse, to: selectedGlobalUse }
   const schedules = plannedScheduleActions(plan, selectedLevel)
   const registrations = plannedRegistrations(plan, answers, selectedLevel)
   const projects: SetupAction[] = plan.proposals.map((proposal) => {
@@ -283,6 +293,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
   }))
   return [
     { kind: 'migrate-environment' },
+    ...(globalUse ? [globalUse] : []),
     ...(machineLevel ? [machineLevel] : []),
     ...schedules,
     ...registrations,

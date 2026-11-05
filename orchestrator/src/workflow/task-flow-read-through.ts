@@ -1,7 +1,7 @@
 // concern: keyed task-flow read-through
 /** Decides and applies the optional hosted cache refresh before keyed cursor selection. */
 import type { Database } from 'bun:sqlite'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { writeTransaction } from '../database/db.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
@@ -96,7 +96,7 @@ export async function readThroughTaskFlow(
   database: Database,
   input: { taskKey: string; taskRecordId: string },
 ): Promise<TaskFlowReadStatus> {
-  const configured = Boolean(resolveRecordApiUrl(process.env))
+  const configured = recordApiConfigured(process.env)
   try {
     const hosted = await recordApiClient().readTaskFlow!({ taskKey: input.taskKey })
     const local = database

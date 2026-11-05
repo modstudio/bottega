@@ -21,7 +21,7 @@ export type RepositoryFacts = ToolchainFacts & {
 
 type RepositoryGitCapture = { exitCode: number; stdout: string; timedOut: boolean }
 export type RepositoryGitRunner = (path: string, args: string[]) => RepositoryGitCapture
-type RepositoryFactsNotice = { message: string; fix: string | null }
+type RepositoryFactsNotice = { message: string; fix: string | null; folderPath: string }
 export type RepositoryFactsReport = {
   repositories: RepositoryFacts[]
   notices: RepositoryFactsNotice[]
@@ -136,6 +136,7 @@ export async function gatherRepositoryFactsReport(
         notices.push({
           message: `git inspection timed out for ${basename(candidate)} at ${candidate}`,
           fix: `git -C ${candidate} rev-parse --show-toplevel`,
+          folderPath: candidate,
         })
       }
       const top = inspected.root
