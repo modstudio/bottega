@@ -1,8 +1,16 @@
 import { expect, test } from 'bun:test'
-import { decideRecordWrite } from './record-write-decision.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { currentRecordWriteDecision } from './record-write-authority.ts'
 
-test('an unbound install without an explicit record address remains local-authoritative', () => {
-  expect(decideRecordWrite({ recordApiUrlSet: false, installBound: false })).toBe(
-    'local-authoritative',
-  )
+test('current write authority gathers binding and explicit-address facts', () => {
+  const database = migratedTestDatabase()
+  const environment = { HOME: '/tmp', BOTTEGA_HARNESS_ENV_FILE: '' }
+  expect(currentRecordWriteDecision(database, environment)).toBe('local-authoritative')
+  database
+    .query(
+      "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'2026-11-05',NULL)",
+    )
+    .run()
+  expect(currentRecordWriteDecision(database, environment)).toBe('hosted')
+  database.close()
 })

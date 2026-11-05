@@ -3,24 +3,40 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured, resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { db } from '../database/db.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
-export const BOUND_RECORD_WRITE_REFUSAL =
-  'this install is bound to a hosted record, but BOTTEGA_RECORD_API_URL is not set in this environment\n' +
-  `cleared by: ${PLATFORM_SLUG} record use <address>`
+
+function boundRecordWriteRefusal(boundOrigin: string, resolvedOrigin: string): string {
+  return (
+    `this install is bound to ${boundOrigin}, but the resolved record origin is ${resolvedOrigin}\n` +
+    `cleared by: ${PLATFORM_SLUG} record use ${boundOrigin}`
+  )
+}
 
 export function currentRecordWriteDecision(
   database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): RecordWriteDecision {
-  const installBound = readRecordInstallBinding(database).bound
+  const binding = readRecordInstallBinding(database)
+  const resolvedOrigin = new URL(resolveRecordApiUrl(environment)).origin
   return decideRecordWrite({
-    recordApiUrlSet: recordApiConfigured(environment) || installBound,
-    installBound,
+    recordApiConfigured: recordApiConfigured(environment),
+    installBound: binding.bound,
+    boundOrigin: binding.recordOrigin,
+    resolvedOrigin,
   })
+}
+
+export function currentRecordWriteRefusal(
+  database: Database = db(),
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  const binding = readRecordInstallBinding(database)
+  const resolvedOrigin = new URL(resolveRecordApiUrl(environment)).origin
+  return boundRecordWriteRefusal(binding.recordOrigin ?? resolvedOrigin, resolvedOrigin)
 }
 
 export function applyRecordWriteAuthority<T>(actions: {
@@ -28,7 +44,7 @@ export function applyRecordWriteAuthority<T>(actions: {
   hosted(): T | Promise<T>
 }): Promise<T> {
   const decision = currentRecordWriteDecision()
-  if (decision === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
+  if (decision === 'refused') throw new Error(currentRecordWriteRefusal())
   if (decision === 'local-authoritative') return Promise.resolve(actions.local())
   return Promise.resolve(actions.hosted()).then((result) => {
     rememberHostedRecord()
@@ -38,7 +54,7 @@ export function applyRecordWriteAuthority<T>(actions: {
 
 export function requireHostedRecord(command: string): void {
   const decision = currentRecordWriteDecision()
-  if (decision === 'refused') throw new Error(BOUND_RECORD_WRITE_REFUSAL)
+  if (decision === 'refused') throw new Error(currentRecordWriteRefusal())
   if (decision === 'local-authoritative') {
     throw new Error(
       `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${command}\``,

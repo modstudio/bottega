@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { RECORD_API_ORIGIN } from '../../../shared/brand.ts'
 import {
   type CommandCapture,
   classifySetupFacts,
@@ -23,7 +24,8 @@ function facts(overrides: Partial<Parameters<typeof classifySetupFacts>[0]> = {}
   ) as Record<HarnessName, { path: string; version: CommandCapture; auth: 'unknown' }>
   return classifySetupFacts({
     machineLevel: null,
-    recordApiUrl: null,
+    recordApiUrl: RECORD_API_ORIGIN,
+    recordApiConfigured: false,
     platform: 'linux',
     arch: 'x64',
     procVersion: 'Linux version 6.1.0-microsoft-standard-WSL2',

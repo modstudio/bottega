@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured, resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { runAgentAuthCheck } from '../agent/agent-auth.ts'
 import {
   type CliVersionCapture,
@@ -38,7 +38,8 @@ export type SetupFactsCapture = {
   globalUse?: 'on' | 'off' | null
   installationKind?: InstallationKind | null
   schedules?: ScheduleSetupFact[]
-  recordApiUrl: string | null
+  recordApiUrl: string
+  recordApiConfigured: boolean
   platform: NodeJS.Platform
   arch: NodeJS.Architecture
   procVersion: string | null
@@ -63,7 +64,8 @@ export type SetupFacts = {
   globalUse: 'on' | 'off' | null
   installationKind: InstallationKind | null
   schedules: ScheduleSetupFact[]
-  recordApiUrl: string | null
+  recordApiUrl: string
+  recordApiConfigured: boolean
   os: { platform: NodeJS.Platform; arch: NodeJS.Architecture; wsl: boolean }
   bun: { path: string; version: string }
   git: { path: string | null; version: string | null }
@@ -88,6 +90,7 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
     installationKind: capture.installationKind ?? null,
     schedules: capture.schedules ?? [],
     recordApiUrl: capture.recordApiUrl,
+    recordApiConfigured: capture.recordApiConfigured,
     os: {
       platform: capture.platform,
       arch: capture.arch,
@@ -213,7 +216,8 @@ export async function gatherSetupFacts(
     globalUse: readSetupGlobalUse(),
     installationKind,
     schedules: installationKind === 'distribution' ? gatherScheduleSetupFacts() : [],
-    recordApiUrl: resolveRecordApiUrl() ?? null,
+    recordApiUrl: resolveRecordApiUrl(),
+    recordApiConfigured: recordApiConfigured(),
     platform: process.platform,
     arch: process.arch,
     procVersion: procVersion(),

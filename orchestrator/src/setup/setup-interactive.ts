@@ -2,7 +2,12 @@
 /** Owns the interactive setup flow over a presentation port. Pure: no process, prompt library, store, or CLI. */
 
 import type { SetupActionResult } from './setup-apply.ts'
-import type { SetupPlan, SetupQuestion } from './setup-engine.ts'
+import {
+  MACHINE_GLOBAL_USE_QUESTION_ID,
+  MACHINE_LEVEL_QUESTION_ID,
+  type SetupPlan,
+  type SetupQuestion,
+} from './setup-engine.ts'
 import { selectSetupFolders } from './setup-folder-selection.ts'
 import { orderSetupNotices } from './setup-notice-order.ts'
 import {
@@ -135,9 +140,14 @@ export async function runInteractiveSetup(
   fixedAnswers: Record<string, string> = {},
 ): Promise<InteractiveSetupOutcome> {
   const answers: Record<string, string> = { ...fixedAnswers }
-  const globalQuestions = plan.questions.filter((question) =>
-    ['machine:global-use', 'machine:level'].includes(question.id),
-  )
+  const firstQuestionIds = [MACHINE_GLOBAL_USE_QUESTION_ID, MACHINE_LEVEL_QUESTION_ID]
+  const questionRank = (question: SetupQuestion) => {
+    const index = firstQuestionIds.indexOf(question.id)
+    return index < 0 ? firstQuestionIds.length : index
+  }
+  const globalQuestions = plan.questions
+    .filter((question) => !question.folderPath)
+    .sort((left, right) => questionRank(left) - questionRank(right))
   if (!(await askSetupQuestions(globalQuestions, answers, prompter)))
     return cancelled(prompter, changesAlreadyMade)
 
@@ -149,9 +159,7 @@ export async function runInteractiveSetup(
   if (selectedFolders === SETUP_CANCEL) return cancelled(prompter, changesAlreadyMade)
   plan = selectSetupFolders(plan, selectedFolders)
 
-  const projectQuestions = plan.questions.filter(
-    (question) => !['machine:global-use', 'machine:level'].includes(question.id),
-  )
+  const projectQuestions = plan.questions.filter((question) => question.folderPath)
   if (!(await askSetupQuestions(projectQuestions, answers, prompter)))
     return cancelled(prompter, changesAlreadyMade)
 

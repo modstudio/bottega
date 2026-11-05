@@ -85,7 +85,12 @@ test('fresh setup asks sign-in, global use, level, folders, then per-folder ques
     [
       question('machine:global-use', 'on', [{ id: 'on' }, { id: 'off' }]),
       question('machine:level', 'record', [{ id: 'record' }, { id: 'full' }]),
-      question('project:%2Fwork%2Falpha:key-prefix', 'ALPHA', [{ id: 'ALPHA' }, { id: 'ALT' }]),
+      question(
+        'project:%2Fwork%2Falpha:key-prefix',
+        'ALPHA',
+        [{ id: 'ALPHA' }, { id: 'ALT' }],
+        '/work/alpha',
+      ),
     ],
     [proposal('alpha', 'project:%2Fwork%2Falpha:key-prefix')],
   )
@@ -110,8 +115,10 @@ const question = (
   id: string,
   recommendation: string,
   options: Array<{ id: string; label?: string; why?: string }>,
+  folderPath?: string,
 ): SetupQuestion => ({
   id,
+  ...(folderPath ? { folderPath } : {}),
   question: `Choose ${id}`,
   why: `Why ${id}`,
   recommendation,

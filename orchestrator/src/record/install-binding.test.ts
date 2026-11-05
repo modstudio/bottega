@@ -3,11 +3,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrationsBefore } from '../database/migrations.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import {
-  NEVER_BOUND,
-  type RecordInstallBinding,
-  readRecordInstallBinding,
-} from './install-binding.ts'
+import { NEVER_BOUND, readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 
 test('the record install binding is monotonic and records its first binding time', () => {
@@ -29,14 +25,14 @@ function databaseBeforeBindingMigration(): Database {
   return database
 }
 
-function migratedBinding(seed: (database: Database) => void): RecordInstallBinding {
+function migratedBinding(seed: (database: Database) => void): boolean {
   const database = databaseBeforeBindingMigration()
   try {
     seed(database)
     expect(applyMigrationsBefore(database, '0080_hosted_board_cache')).toEqual([
       '0079_record_install_binding',
     ])
-    return readRecordInstallBinding(database)
+    return Boolean(database.query('SELECT 1 FROM record_install_binding WHERE id=1').get())
   } finally {
     database.close()
   }
@@ -64,10 +60,10 @@ test('the binding migration backfills only from successful hosted-record evidenc
       .run()
   })
 
-  expect(syncedOutbox.bound).toBe(true)
-  expect(hostedDoc.bound).toBe(true)
-  expect(cacheCursor.bound).toBe(true)
-  expect(migratedBinding(() => {})).toEqual(NEVER_BOUND)
+  expect(syncedOutbox).toBe(true)
+  expect(hostedDoc).toBe(true)
+  expect(cacheCursor).toBe(true)
+  expect(migratedBinding(() => {})).toBe(false)
   expect(
     migratedBinding((database) => {
       database
@@ -76,5 +72,5 @@ test('the binding migration backfills only from successful hosted-record evidenc
         )
         .run(newRecordId())
     }),
-  ).toEqual(NEVER_BOUND)
+  ).toBe(false)
 })

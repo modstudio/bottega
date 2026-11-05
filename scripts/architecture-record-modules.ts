@@ -99,6 +99,8 @@ export const recordModules: RecordModule[] = [
     '../project-space.ts',
     '../project/projects.ts',
     './record-api-client.ts',
+    './record-session.ts',
+    './record-space.ts',
     './record-auth.ts',
     './record-cache.ts',
     './record-lens-contract.ts',
@@ -544,7 +546,11 @@ export const recordModules: RecordModule[] = [
     './record-doc-audience-sql.ts',
   ]),
   module('orchestrator/src/record/install-binding.ts', ['bun:sqlite']),
-  module('orchestrator/src/record/install-binding-write.ts', ['bun:sqlite', '../database/db.ts']),
+  module('orchestrator/src/record/install-binding-write.ts', [
+    'bun:sqlite',
+    '../../../shared/record-api-url.ts',
+    '../database/db.ts',
+  ]),
   module('orchestrator/src/record/record-write-decision.ts', []),
   module('orchestrator/src/record/record-write-authority.ts', [
     '../../../shared/brand.ts',

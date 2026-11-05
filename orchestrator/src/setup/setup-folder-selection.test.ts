@@ -12,13 +12,13 @@ const plan = {
   ],
   questions: [
     { id: 'machine:level' },
-    { id: 'project:%2Fregistered:key-prefix' },
-    { id: 'project:%2Fother:key-prefix' },
+    { id: 'project:%2Fregistered:key-prefix', folderPath: '/registered' },
+    { id: 'project:%2Fother:key-prefix', folderPath: '/other' },
   ],
   notices: [
-    { message: 'global', fix: null },
-    { message: 'registered notice', fix: null, folderPath: '/registered' },
-    { message: 'other notice', fix: null, folderPath: '/other' },
+    { message: 'global', fix: null, blocking: false },
+    { message: 'registered notice', fix: null, blocking: false, folderPath: '/registered' },
+    { message: 'other notice', fix: null, blocking: false, folderPath: '/other' },
   ],
 } as unknown as SetupPlan
 

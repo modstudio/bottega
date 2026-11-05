@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import {
+  MCP_SERVER_NAME,
+  PLATFORM_SLUG,
+  RECORD_API_ORIGIN,
+  WORKER_MCP_SERVER_NAME,
+} from '../../../shared/brand.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
@@ -64,6 +69,7 @@ function proposeSetup(
 const machine = {
   machineLevel: 'full',
   recordApiUrl: 'https://api.example.test',
+  recordApiConfigured: true,
   git: { path: '/bin/git', version: '1' },
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
 } as SetupFacts
@@ -109,7 +115,12 @@ function machineWithMcp(
 }
 
 test('does not notice a missing record address because setup has a built-in address', () => {
-  const plan = proposeSetup({ ...machine, recordApiUrl: null }, [], [], [])
+  const plan = proposeSetup(
+    { ...machine, recordApiUrl: RECORD_API_ORIGIN, recordApiConfigured: false },
+    [],
+    [],
+    [],
+  )
   expect(plan.notices.some(({ message }) => message.includes('record address'))).toBe(false)
 })
 
@@ -797,6 +808,7 @@ test('notices when an enabled built-in agent harness is absent', () => {
     {
       message: 'codex agent is enabled but the codex harness is not installed',
       fix: `install codex, or ${PLATFORM_SLUG} agent set codex --enabled false --reason "codex is not installed on this machine"`,
+      blocking: true,
     },
   ])
 })
@@ -812,6 +824,7 @@ test('notices when an enabled built-in agent harness is not signed in', () => {
     {
       message: 'grok agent is enabled but the grok harness is not signed in',
       fix: `sign in to grok, or ${PLATFORM_SLUG} agent set grok --enabled false --reason "grok is not signed in on this machine"`,
+      blocking: false,
     },
   ])
 })
@@ -827,6 +840,7 @@ test('notices separately when an enabled built-in harness sign-in state is unkno
     {
       message: 'the sign-in state of codex could not be established',
       fix: `check codex sign-in and re-run ${PLATFORM_SLUG} machine setup plan`,
+      blocking: false,
     },
   ])
 })
@@ -852,6 +866,7 @@ test('notices when a ready built-in harness has a disabled agent', () => {
     {
       message: 'codex harness is installed and signed in but the codex agent is disabled',
       fix: `${PLATFORM_SLUG} agent set codex --enabled true`,
+      blocking: false,
     },
   ])
 })
@@ -878,6 +893,7 @@ test('notices when an installed signed-in built-in has not passed its probe', ()
       message:
         'codex harness is installed and signed in but the codex agent cannot take repository work until it is probed',
       fix: `${PLATFORM_SLUG} agent probe codex`,
+      blocking: false,
     },
   ])
 })
@@ -898,6 +914,7 @@ test('notices an installed unregistered non-built-in harness without guessing a 
     {
       message: 'goose harness is installed but unregistered',
       fix: `${PLATFORM_SLUG} agent add <name> --harness goose --backend <backend> --model <model>`,
+      blocking: false,
     },
   ])
 })

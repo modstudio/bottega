@@ -5,13 +5,10 @@ import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { DB_PATH } from '../database/db.ts'
 import { addProject, fillAbsentProjectSettings } from '../project/project-commands.ts'
 import { projectByName, projects } from '../project/projects.ts'
-import { recordApiClient } from '../record/record-api-client.ts'
-import { readHostedProjects } from '../record/record-cache-projects.ts'
-import { cachedSignedInRecordUser } from '../record/record-session.ts'
+import { readSignedInHostedProjectNames } from '../record/record-cache-projects.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { gatherRepositoryFactsReport } from './repository-facts.ts'
@@ -63,7 +60,7 @@ type SetupDryRun =
 export class SetupAnswersRefusedError extends Error {}
 
 export type SetupService = {
-  plan(folders: string[]): Promise<SetupPlan>
+  plan(folders: string[], included?: string[]): Promise<SetupPlan>
   dryRun(
     folders: string[],
     answers?: Partial<SetupAnswers>,
@@ -107,7 +104,17 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     Promise.resolve(readSetupState()),
   ])
   const repositories = await gatherRepositoryFactsReport(folders)
-  const hostedProjectNames = await setupHostedProjectNames()
+  let hostedProjectNames: string[] = []
+  let hostedReadNotice: SetupPlan['notices'][number] | null = null
+  try {
+    hostedProjectNames = await readSignedInHostedProjectNames()
+  } catch (error) {
+    hostedReadNotice = {
+      message: `hosted projects could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      fix: `${PLATFORM_SLUG} record sign-in`,
+      blocking: false,
+    }
+  }
   const plan = proposeSetup(
     resolveWorktreeLifecycle,
     machine,
@@ -118,6 +125,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     stableMcpServers(),
     hostedProjectNames,
   )
+  if (hostedReadNotice) plan.notices.push(hostedReadNotice)
   addMcpConfigMigrations(
     plan,
     homedir(),
@@ -125,14 +133,6 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
   )
   addLegacyPathSymlinkRemovals(plan, pathDirectories(process.env.PATH))
   return plan
-}
-
-async function setupHostedProjectNames(): Promise<string[]> {
-  if (!cachedSignedInRecordUser()) return []
-  const client = recordApiClient()
-  const identity = await client.whoami()
-  const spaces = parseRecordSpaceMemberships(identity.memberships).map(({ spaceId }) => spaceId)
-  return (await readHostedProjects(spaces, client)).map(({ name }) => name)
 }
 
 function addLegacyPathSymlinkRemovals(plan: SetupPlan, directories: readonly string[]): void {
@@ -150,6 +150,7 @@ export function addMcpConfigMigrations(
     ...configMigrations.notices.map(({ path, error }) => ({
       message: `MCP configuration ${path} could not be migrated: ${error}`,
       fix: `fix or remove ${path}, then re-run ${PLATFORM_SLUG} machine setup plan`,
+      blocking: false,
     })),
   )
 }
@@ -273,7 +274,9 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
   }
 
   return {
-    plan: adapters.plan,
+    async plan(folders, included = []) {
+      return selectedNonInteractivePlan(await adapters.plan(folders), included)
+    },
     async dryRun(folders, fixedAnswers = {}, included = []) {
       const stateFileMigration = await (adapters.inspectStateFileMigration?.() ??
         Promise.resolve(null))

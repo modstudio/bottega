@@ -9,6 +9,9 @@ import { decideProjectRegisterPull } from '../project/project-pull-decision.ts'
 import { applyLocalProjectRename } from '../project/project-rename.ts'
 import { projectSettingsForStorage, projects } from '../project/projects.ts'
 import type { RecordApiClient } from './record-api-client.ts'
+import { recordApiClient } from './record-api-client.ts'
+import { cachedSignedInRecordUser } from './record-session.ts'
+import { recordMemberships } from './record-space.ts'
 
 export type ProjectRegisterPullResult = {
   updated: number
@@ -18,7 +21,7 @@ export type ProjectRegisterPullResult = {
   warnings: string[]
 }
 
-export async function readHostedProjects(
+async function readHostedProjects(
   spaces: readonly string[],
   client: Pick<RecordApiClient, 'listProjects'>,
 ): Promise<RecordProject[]> {
@@ -27,6 +30,14 @@ export async function readHostedProjects(
     hostedRows.push(...(await client.listProjects({ destinationSpaceId: spaceId })))
   }
   return hostedRows
+}
+
+export async function readSignedInHostedProjectNames(
+  client: Pick<RecordApiClient, 'whoami' | 'listProjects'> = recordApiClient(),
+): Promise<string[]> {
+  if (!cachedSignedInRecordUser()) return []
+  const spaces = (await recordMemberships(client)).memberships.map(({ spaceId }) => spaceId)
+  return (await readHostedProjects(spaces, client)).map(({ name }) => name)
 }
 
 export async function pullProjectRegister(

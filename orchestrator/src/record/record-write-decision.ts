@@ -4,9 +4,14 @@
 export type RecordWriteDecision = 'hosted' | 'local-authoritative' | 'refused'
 
 export function decideRecordWrite(input: {
-  recordApiUrlSet: boolean
+  recordApiConfigured: boolean
   installBound: boolean
+  boundOrigin: string | null
+  resolvedOrigin: string
 }): RecordWriteDecision {
-  if (input.recordApiUrlSet) return 'hosted'
-  return input.installBound ? 'refused' : 'local-authoritative'
+  if (input.recordApiConfigured) return 'hosted'
+  if (!input.installBound) return 'local-authoritative'
+  return input.boundOrigin === null || input.boundOrigin === input.resolvedOrigin
+    ? 'hosted'
+    : 'refused'
 }

@@ -3,15 +3,15 @@ import { orderSetupNotices } from './setup-notice-order.ts'
 
 test('notices that stop setup capabilities working come before advisory notices', () => {
   const ordered = orderSetupNotices([
-    { message: 'no gate was detected for alpha', fix: 'set a gate' },
-    { message: 'gh is signed out', fix: 'sign in' },
-    { message: 'codex agent is enabled but the codex harness is not installed', fix: 'install it' },
-    { message: 'git inspection timed out for beta', fix: 'inspect it' },
+    { message: 'advisory', fix: 'set a gate', blocking: false },
+    { message: 'first blocking notice', fix: 'sign in', blocking: true },
+    { message: 'second blocking notice', fix: 'install it', blocking: true },
+    { message: 'third blocking notice', fix: 'inspect it', blocking: true },
   ])
   expect(ordered.map(({ message }) => message)).toEqual([
-    'gh is signed out',
-    'codex agent is enabled but the codex harness is not installed',
-    'git inspection timed out for beta',
-    'no gate was detected for alpha',
+    'first blocking notice',
+    'second blocking notice',
+    'third blocking notice',
+    'advisory',
   ])
 })

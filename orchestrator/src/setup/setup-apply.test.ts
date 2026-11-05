@@ -13,8 +13,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  BOUND_RECORD_WRITE_REFUSAL,
   currentRecordWriteDecision,
+  currentRecordWriteRefusal,
 } from '../record/record-write-authority.ts'
 import {
   applySetupActions as applySetupActionsWithService,
@@ -330,7 +330,7 @@ test('renames the injected process environment before the hosted record-write ga
       migrateEnvironment: async () => {
         const renamed = migrateProcessEnvironment(environment)
         if (currentRecordWriteDecision(database, environment) === 'refused') {
-          throw new Error(BOUND_RECORD_WRITE_REFUSAL)
+          throw new Error(currentRecordWriteRefusal(database, environment))
         }
         return { status: 'applied', message: `${renamed} environment name renamed in-process` }
       },

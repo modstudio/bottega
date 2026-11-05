@@ -25,6 +25,7 @@ afterEach(() => {
 
 const question: SetupQuestion = {
   id: 'project:alpha:prefix',
+  folderPath: `${folder}/alpha`,
   question: 'Which task prefix should alpha use?',
   why: 'The detected prefix has more than one reasonable spelling.',
   recommendation: 'ALPHA',
@@ -36,6 +37,7 @@ const question: SetupQuestion = {
 
 const trunkQuestion: SetupQuestion = {
   id: 'project:alpha:trunk',
+  folderPath: `${folder}/alpha`,
   question: 'Which trunk setting should alpha use?',
   why: 'The checked-out branch and remote default disagree.',
   recommendation: 'unset',
@@ -84,7 +86,14 @@ function fixturePlan(
     proposals,
     registrations: [],
     questions: [question],
-    notices: [{ message: 'One harness is signed out.', fix: 'Sign in to that harness.' }],
+    notices: [
+      {
+        message: 'One harness is signed out.',
+        fix: 'Sign in to that harness.',
+        blocking: false,
+        folderPath: `${folder}/alpha`,
+      },
+    ],
     folderSelection: {
       options: proposals.map((item) => ({ path: item.repository.path, name: item.project.name })),
       defaults: proposals.map((item) => item.repository.path),
@@ -133,7 +142,7 @@ describe('setup MCP tools', () => {
       },
     })
 
-    const outcome = await service.applyRecommended([folder])
+    const outcome = await service.applyRecommended([folder], {}, [`${folder}/alpha`])
 
     expect(planCalls).toBe(1)
     expect(applied).toHaveLength(1)
@@ -147,14 +156,25 @@ describe('setup MCP tools', () => {
 
   test('setup_plan returns ruling-shaped questions and only machine-changing actions', async () => {
     const result = await withClient(serviceFor(fixturePlan()), (client) =>
-      client.callTool({ name: 'setup_plan', arguments: { folders: [folder] } }),
+      client.callTool({
+        name: 'setup_plan',
+        arguments: { folders: [folder], include: [`${folder}/alpha`] },
+      }),
     )
 
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toEqual({
       questions: [question],
-      notices: [{ message: 'One harness is signed out.', fix: 'Sign in to that harness.' }],
+      notices: [
+        {
+          message: 'One harness is signed out.',
+          fix: 'Sign in to that harness.',
+          blocking: false,
+          folderPath: `${folder}/alpha`,
+        },
+      ],
       changes: ['Migrate operator environment names', `Add project alpha (${folder}/alpha)`],
+      folderSelection: fixturePlan().folderSelection,
     })
   })
 
@@ -164,7 +184,10 @@ describe('setup MCP tools', () => {
     plan.proposals[0]!.prefixQuestionId = null
     plan.proposals[0]!.trunkQuestionId = trunkQuestion.id
     const result = await withClient(serviceFor(plan), (client) =>
-      client.callTool({ name: 'setup_plan', arguments: { folders: [folder] } }),
+      client.callTool({
+        name: 'setup_plan',
+        arguments: { folders: [folder], include: [`${folder}/alpha`] },
+      }),
     )
 
     expect(result.isError).not.toBe(true)
@@ -197,7 +220,11 @@ describe('setup MCP tools', () => {
     const result = await withClient(service, (client) =>
       client.callTool({
         name: 'setup_apply',
-        arguments: { folders: [folder], answers: { [question.id]: 'ALT' } },
+        arguments: {
+          folders: [folder],
+          include: [`${folder}/alpha`],
+          answers: { [question.id]: 'ALT' },
+        },
       }),
     )
 
@@ -230,7 +257,10 @@ describe('setup MCP tools', () => {
     })
 
     const result = await withClient(service, (client) =>
-      client.callTool({ name: 'setup_apply', arguments: { folders: [folder], answers } }),
+      client.callTool({
+        name: 'setup_apply',
+        arguments: { folders: [folder], include: [`${folder}/alpha`], answers },
+      }),
     )
 
     expect(result.isError).toBe(true)
@@ -247,7 +277,11 @@ describe('setup MCP tools', () => {
     const result = await withClient(service, (client) =>
       client.callTool({
         name: 'setup_apply',
-        arguments: { folders: [folder], answers: { [question.id]: 'ALPHA' } },
+        arguments: {
+          folders: [folder],
+          include: [`${folder}/alpha`],
+          answers: { [question.id]: 'ALPHA' },
+        },
       }),
     )
 
@@ -270,7 +304,11 @@ describe('setup MCP tools', () => {
     const result = await withClient(service, (client) =>
       client.callTool({
         name: 'setup_apply',
-        arguments: { folders: [folder], answers: { [question.id]: 'ALPHA' } },
+        arguments: {
+          folders: [folder],
+          include: [`${folder}/alpha`],
+          answers: { [question.id]: 'ALPHA' },
+        },
       }),
     )
 

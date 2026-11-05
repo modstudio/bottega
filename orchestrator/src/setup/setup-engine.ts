@@ -21,6 +21,7 @@ import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './set
 
 export type SetupQuestion = {
   id: string
+  folderPath?: string
   question: string
   options: {
     id: string
@@ -32,7 +33,12 @@ export type SetupQuestion = {
   why: string
 }
 
-export type SetupNotice = { message: string; fix: string | null; folderPath?: string }
+export type SetupNotice = {
+  message: string
+  fix: string | null
+  blocking: boolean
+  folderPath?: string
+}
 export type SetupAgent = {
   name: string
   harness: string
@@ -89,9 +95,12 @@ export function recommendedMachineLevel(machine: SetupFacts): MachineLevel {
     : 'record'
 }
 
+export const MACHINE_LEVEL_QUESTION_ID = 'machine:level'
+export const MACHINE_GLOBAL_USE_QUESTION_ID = 'machine:global-use'
+
 function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
   return {
-    id: 'machine:level',
+    id: MACHINE_LEVEL_QUESTION_ID,
     question: 'Which install level should this machine use?',
     options: [
       {
@@ -112,7 +121,7 @@ function machineLevelQuestion(machine: SetupFacts): SetupQuestion {
 
 function globalUseQuestion(machine: SetupFacts): SetupQuestion {
   return {
-    id: 'machine:global-use',
+    id: MACHINE_GLOBAL_USE_QUESTION_ID,
     question: `Should ${PLATFORM_NAME} act in every folder, or only in registered projects?`,
     options: [
       { id: 'on', label: 'Every folder', why: `Allows ${PLATFORM_NAME} to act globally.` },
@@ -221,6 +230,7 @@ function proposeHarnessRegistrations(
     notices.push({
       message: `${harness} cannot register a local MCP server non-interactively through its CLI`,
       fix: manualMcpInstructions(harness),
+      blocking: false,
     })
     return []
   }
@@ -287,6 +297,7 @@ function proposeHarnessRegistrations(
       notices.push({
         message: `${harness} ${server.name} registration could not be read exactly: ${current.detail}`,
         fix: `${facts.path} ${harness === 'grok' ? 'mcp list --json' : `mcp get ${server.name}`}`,
+        blocking: false,
       })
     return {
       harness,
@@ -329,12 +340,15 @@ export function deriveKeyPrefix(name: string, occupied: ReadonlySet<string>): st
 
 function machineNotices(machine: SetupFacts): SetupNotice[] {
   const notices: SetupNotice[] = []
-  if (!machine.git.path) notices.push({ message: 'git is missing', fix: 'install git' })
-  if (!machine.gh.path) notices.push({ message: 'gh is missing', fix: 'install gh' })
+  if (!machine.git.path)
+    notices.push({ message: 'git is missing', fix: 'install git', blocking: true })
+  if (!machine.gh.path)
+    notices.push({ message: 'gh is missing', fix: 'install gh', blocking: true })
   else if (!machine.gh.loggedIn)
     notices.push({
       message: 'gh is signed out',
       fix: 'gh auth login --hostname github.com',
+      blocking: true,
     })
   return notices
 }
@@ -357,6 +371,7 @@ function builtInAgentNotice(
       ? {
           message: `${name} harness is installed and signed in but the ${name} agent is disabled`,
           fix: `${PLATFORM_SLUG} agent set ${name} --enabled true`,
+          blocking: false,
         }
       : null
   }
@@ -364,24 +379,28 @@ function builtInAgentNotice(
     return {
       message: `${name} agent is enabled but the ${name} harness is not installed`,
       fix: `install ${name}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
+      blocking: true,
     }
   }
   if (harness.auth === 'signed-out') {
     return {
       message: `${name} agent is enabled but the ${name} harness is not signed in`,
       fix: `sign in to ${name}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not signed in on this machine"`,
+      blocking: false,
     }
   }
   if (harness.auth === 'unknown') {
     return {
       message: `the sign-in state of ${name} could not be established`,
       fix: `check ${name} sign-in and re-run ${PLATFORM_SLUG} machine setup plan`,
+      blocking: false,
     }
   }
   return !agent.probePassed
     ? {
         message: `${name} harness is installed and signed in but the ${name} agent cannot take repository work until it is probed`,
         fix: `${PLATFORM_SLUG} agent probe ${name}`,
+        blocking: false,
       }
     : null
 }
@@ -401,10 +420,20 @@ function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] 
       notices.push({
         message: `${candidate.harness} harness is installed but unregistered`,
         fix: `${PLATFORM_SLUG} agent add <name> --harness ${candidate.harness} --backend <backend> --model <model>`,
+        blocking: false,
       })
     }
   }
   return notices
+}
+
+function unsafeRecipeNotice(repository: RepositoryFacts, reason: string): SetupNotice {
+  return {
+    message: `refusing inferred worktree recipe ${INFERRED_RECIPE_PATH} for ${repository.name}: ${reason}`,
+    fix: `replace ${INFERRED_RECIPE_PATH} with a regular file inside ${repository.path}`,
+    blocking: false,
+    folderPath: repository.path,
+  }
 }
 
 function proposeProjectToolchain(
@@ -425,6 +454,7 @@ function proposeProjectToolchain(
     notices.push({
       message: `no gate was detected for ${repository.name}`,
       fix: `${PLATFORM_SLUG} project set ${current?.name ?? repository.name} --settings '{"gate":"..."}'`,
+      blocking: false,
       folderPath: repository.path,
     })
   }
@@ -440,11 +470,7 @@ function proposeProjectToolchain(
     }
   }
   if (repository.inferredRecipeFile.status === 'unsafe') {
-    notices.push({
-      message: `refusing inferred worktree recipe ${INFERRED_RECIPE_PATH} for ${repository.name}: ${repository.inferredRecipeFile.reason}`,
-      fix: `replace ${INFERRED_RECIPE_PATH} with a regular file inside ${repository.path}`,
-      folderPath: repository.path,
-    })
+    notices.push(unsafeRecipeNotice(repository, repository.inferredRecipeFile.reason))
     return {
       gate,
       recipeQuestionId: null,
@@ -475,6 +501,7 @@ function proposeProjectToolchain(
     }
     questions.push({
       id: recipeQuestionId,
+      folderPath: repository.path,
       question: `${INFERRED_RECIPE_PATH} already exists for ${repository.name}. Activate it as written?\nCreate steps: ${createSteps}`,
       options: [
         {
@@ -502,6 +529,7 @@ function proposeProjectToolchain(
   const recipeQuestionId = questionId(repository.path, 'worktree-recipe')
   questions.push({
     id: recipeQuestionId,
+    folderPath: repository.path,
     question: `Write an inferred Files-level worktree recipe for ${repository.name}?`,
     options: [
       {
@@ -552,6 +580,7 @@ function proposePrefix(
   const prefixQuestionId = questionId(repository.path, 'key-prefix')
   questions.push({
     id: prefixQuestionId,
+    folderPath: repository.path,
     question: `Which task key prefix should ${repository.name} use?`,
     options: [
       {
@@ -580,6 +609,7 @@ function proposeTrunk(
         ? `${repository.name} has detached HEAD; remote default is ${repository.remoteDefaultBranch}; leaving trunk unset`
         : `${repository.name} has detached HEAD; leaving trunk unset`,
       fix: null,
+      blocking: false,
       folderPath: repository.path,
     })
     return { trunkQuestionId: null }
@@ -592,6 +622,7 @@ function proposeTrunk(
   const trunkQuestionId = questionId(repository.path, 'trunk')
   questions.push({
     id: trunkQuestionId,
+    folderPath: repository.path,
     question: `Which trunk setting should ${repository.name} use?`,
     options: [
       {
@@ -613,6 +644,7 @@ function proposeTrunk(
   notices.push({
     message: `check out ${repository.remoteDefaultBranch} and re-run setup to declare it as trunk`,
     fix: `git -C ${repository.path} switch ${repository.remoteDefaultBranch}`,
+    blocking: false,
     folderPath: repository.path,
   })
   return { trunkQuestionId }
@@ -630,6 +662,7 @@ function proposeRepository(
     notices.push({
       message: `git inspection timed out for ${repository.name} at ${repository.path}`,
       fix: `git -C ${repository.path} status`,
+      blocking: true,
       folderPath: repository.path,
     })
   const current = register.find((project) => project.path === repository.path) ?? null
