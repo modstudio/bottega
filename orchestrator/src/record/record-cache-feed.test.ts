@@ -6,6 +6,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordChangePage } from './record-api-client-changes.ts'
 import { pullRecordCache } from './record-cache.ts'
@@ -501,6 +502,15 @@ test('purge deletes child rows first and keeps a hosted parent referenced by a l
        VALUES (?,?,?,?,0,'a','a','lost-space')`,
     )
     .run(subject, registered.id, 'Related', 'Related subject.')
+  const localSubject = newRecordId()
+  const liveSubject = newRecordId()
+  db()
+    .query(
+      `INSERT INTO subject(id,project_record_id,name,definition,position,created_at,updated_at,space_id)
+       VALUES (?,?,'Local subject','Unpushed subject.',1,'a','a',NULL),
+              (?,?,'Live subject','Live subject.',2,'a','a','space-a')`,
+    )
+    .run(localSubject, registered.id, liveSubject, registered.id)
   db()
     .query(
       `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,parent_record_id,space_id)
@@ -539,6 +549,8 @@ test('purge deletes child rows first and keeps a hosted parent referenced by a l
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(freeParent)).toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(freeChild)).toBeNull()
   expect(db().query('SELECT 1 FROM subject WHERE id=?').get(subject)).toBeNull()
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(localSubject)).not.toBeNull()
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(liveSubject)).not.toBeNull()
 })
 
 test('a blocked tombstone is counted without pinning the feed cursor', async () => {
@@ -739,4 +751,93 @@ test('purge clears keyset cursors so a later rejoin pulls from the start', async
   installRecordApiClient(client)
   await pullRecordCache(db())
   expect(firstCursor).toBeUndefined()
+})
+
+test('a project tombstone re-pulls the register and no-op tombstones are not counted', async () => {
+  cursor('project-before')
+  spaces(['space-a'])
+  let registerReads = 0
+  const pages = [
+    {
+      changes: [
+        { table: 'project', id: newRecordId(), space: 'space-a', op: 'delete' as const },
+        { table: 'run_score', id: newRecordId(), space: 'space-a', op: 'delete' as const },
+      ],
+      cursor: 'project-after',
+      lag: 0,
+      more: false,
+    },
+    empty('project-after'),
+  ]
+  let request = 0
+  const client = feedClient(async () => pages[request++]!)
+  installRecordApiClient({
+    ...client,
+    listProjects: async (query) => {
+      registerReads++
+      return client.listProjects(query)
+    },
+  })
+  expect(await pullRecordCache(db())).toMatchObject({ changes: 0, deletesBlocked: 0 })
+  expect(registerReads).toBeGreaterThan(0)
+})
+
+test('a run_score feed entry writes the local score for a mirrored run', async () => {
+  const runId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO run
+        (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    )
+    .run(
+      8931,
+      runId,
+      '2026-11-05T00:00:00.000Z',
+      'codex',
+      'file-question',
+      'sha',
+      3,
+      'ask',
+      'ok',
+      fixtureProjectRecordId(db()),
+    )
+  cursor('score-before')
+  spaces(['space-a'])
+  const pages = [
+    {
+      changes: [
+        {
+          table: 'run_score',
+          id: runId,
+          space: 'space-a',
+          op: 'upsert' as const,
+          row: {
+            runId,
+            delivery: 'full',
+            quality: 'right',
+            fidelity: null,
+            note: 'from feed',
+            scoredAt: '2026-11-05T00:01:00.000Z',
+            scoredBy: 'architect',
+            updatedAt: '2026-11-05T00:01:00.000Z',
+          },
+        },
+      ],
+      cursor: 'score-after',
+      lag: 0,
+      more: false,
+    },
+    empty('score-after'),
+  ]
+  let request = 0
+  installRecordApiClient(feedClient(async () => pages[request++]!))
+  expect(await pullRecordCache(db())).toMatchObject({ scores: 1, changes: 1 })
+  expect(db().query('SELECT delivery, note FROM score WHERE run_record_id=?').get(runId)).toEqual({
+    delivery: 'full',
+    note: 'from feed',
+  })
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_cursor'").get(),
+  ).toEqual({ value: 'score-after' })
 })

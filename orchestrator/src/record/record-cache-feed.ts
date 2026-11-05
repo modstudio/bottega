@@ -299,6 +299,7 @@ function localRowSpace(local: Database, change: Change): string | null | undefin
 function deleteChange(local: Database, change: Change, deps: Dependencies): DeleteResult {
   const space = localRowSpace(local, change)
   if (space != null && space !== change.space) return 'skipped'
+  if (change.table === 'run_score' || change.table === 'project') return 'skipped'
   let deleted: boolean
   if (change.table === 'doc') {
     deleted = deps.deleteDoc(local, change.id)
@@ -306,8 +307,6 @@ function deleteChange(local: Database, change: Change, deps: Dependencies): Dele
     deleted = deleteSubjectRecord(local, change.id)
   } else if (change.table === 'routing_evidence') {
     deleted = deleteRoutingPoolRow(local, change.id)
-  } else if (change.table === 'run_score' || change.table === 'project') {
-    deleted = true
   } else if (lensTable(change.table)) {
     deleted = deleteLensCatalogueRow(local, change.table, change.id)
   } else if (workflowTable(change.table)) {
@@ -315,7 +314,7 @@ function deleteChange(local: Database, change: Change, deps: Dependencies): Dele
   } else if (portTable(change.table)) {
     deleted = deletePortCatalogueRow(local, change.table, change.id, change.space)
   } else {
-    deleted = true
+    return 'skipped'
   }
   return deleted ? 'deleted' : 'blocked'
 }
@@ -415,17 +414,16 @@ function applyFeedUpsert(
   result: RecordCachePullResult,
   fallbacks: Set<string>,
   orphans: Change[],
-): boolean {
+): void {
   const orphan = orphanFamily(local, change)
   if (orphan) {
     fallbacks.add(`${orphan}:${change.space}`)
     orphans.push(change)
-    return false
+    return
   }
-  if (change.op === 'delete') return false
+  if (change.op === 'delete') return
   upsertChange(local, change, deps, result)
   result.changes++
-  return change.table === 'project'
 }
 
 function applyPage(
@@ -447,10 +445,11 @@ function applyPage(
       else if (change.op === 'upsert' && change.table === 'subject') result.skippedSubjects++
       return false
     })
+    project = owned.some((change) => change.table === 'project')
     for (const change of owned
       .filter((entry): entry is UpsertChange => entry.op === 'upsert')
       .sort((a, b) => order(a) - order(b)))
-      project = applyFeedUpsert(local, change, deps, result, fallbacks, orphans) || project
+      applyFeedUpsert(local, change, deps, result, fallbacks, orphans)
     let pending: Change[] = owned
       .filter((entry) => entry.op === 'delete')
       .sort((a, b) => order(b) - order(a))
