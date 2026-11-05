@@ -1,10 +1,10 @@
 {
-  "id": "4f61d19d-8a4b-4128-8921-224357c4db77",
-  "prevIds": [
-    "96f0eb3b-e971-41d1-b007-328d2e2595e3"
-  ],
   "version": "8",
   "dialect": "postgres",
+  "id": "d8973299-e48d-4f06-a594-3a5d284851c6",
+  "prevIds": [
+    "52ad1224-29ff-48d8-9c3b-778d2d4874fd"
+  ],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -15247,6 +15247,19 @@
       "table": "port_skip"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "public.record_uuid_v7()",
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "record_change"
+    },
+    {
       "type": "bigint",
       "typeSchema": null,
       "notNull": true,
@@ -15358,6 +15371,19 @@
       "entityType": "columns",
       "schema": "public",
       "table": "record_change"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "public.record_uuid_v7()",
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "record_change_horizon"
     },
     {
       "type": "boolean",
@@ -21315,7 +21341,7 @@
         "id"
       ],
       "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
+      "onDelete": "CASCADE",
       "name": "record_change_space_id_space_id_fkey",
       "entityType": "fks",
       "schema": "public",
@@ -21332,7 +21358,7 @@
         "id"
       ],
       "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
+      "onDelete": "CASCADE",
       "name": "record_change_user_id_user_id_fkey",
       "entityType": "fks",
       "schema": "public",
@@ -22210,7 +22236,7 @@
     },
     {
       "columns": [
-        "seq"
+        "id"
       ],
       "nameExplicit": false,
       "name": "record_change_pkey",
@@ -22220,7 +22246,7 @@
     },
     {
       "columns": [
-        "singleton"
+        "id"
       ],
       "nameExplicit": false,
       "name": "record_change_horizon_pkey",
@@ -23034,6 +23060,28 @@
       "name": "session_token_key",
       "schema": "public",
       "table": "session",
+      "entityType": "uniques"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "seq"
+      ],
+      "nullsNotDistinct": false,
+      "name": "record_change_seq_key",
+      "schema": "public",
+      "table": "record_change",
+      "entityType": "uniques"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "singleton"
+      ],
+      "nullsNotDistinct": false,
+      "name": "record_change_horizon_singleton_key",
+      "schema": "public",
+      "table": "record_change_horizon",
       "entityType": "uniques"
     },
     {
