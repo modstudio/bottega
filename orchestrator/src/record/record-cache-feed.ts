@@ -325,6 +325,7 @@ function applyFeedUpsert(
   ownership: Ownership,
   result: RecordCachePullResult,
   fallbacks: Set<string>,
+  orphans: Change[],
 ): boolean {
   if (!feedEntryOwned(local, change, ownership)) {
     if (change.op === 'upsert' && change.table === 'doc') result.skippedDocs++
@@ -333,8 +334,8 @@ function applyFeedUpsert(
   }
   const orphan = orphanFamily(local, change)
   if (orphan) {
-    result.orphans++
     fallbacks.add(`${orphan}:${change.space}`)
+    orphans.push(change)
     return false
   }
   if (change.op === 'delete') return false
@@ -352,6 +353,7 @@ function applyPage(
 ) {
   const result = emptyRecordCachePullResult()
   const fallbacks = new Set<string>()
+  const orphans: Change[] = []
   let project = false
   const applied = writeTransaction(() => {
     if (readCursor(local, CURSOR) !== after) return false
@@ -364,7 +366,8 @@ function applyPage(
     for (const change of owned
       .filter((entry): entry is UpsertChange => entry.op === 'upsert')
       .sort((a, b) => order(a) - order(b)))
-      project = applyFeedUpsert(local, change, deps, ownership, result, fallbacks) || project
+      project =
+        applyFeedUpsert(local, change, deps, ownership, result, fallbacks, orphans) || project
     let pending: Change[] = owned
       .filter((entry) => entry.op === 'delete')
       .sort((a, b) => order(b) - order(a))
@@ -384,7 +387,35 @@ function applyPage(
     writeCursor(local, CURSOR, page.cursor)
     return true
   }, local)
-  return { applied, result, fallbacks, project }
+  return { applied, result, fallbacks, orphans, project }
+}
+
+function feedRowPresent(local: Database, change: Change): boolean {
+  const statements: Record<string, ReturnType<Database['query']>> = {
+    doc: local.query('SELECT 1 FROM doc WHERE record_id=?'),
+    subject: local.query('SELECT 1 FROM subject WHERE id=?'),
+    lens: local.query('SELECT 1 FROM lens WHERE record_id=?'),
+    lens_revision: local.query('SELECT 1 FROM lens_revision WHERE record_id=?'),
+    lens_profile: local.query('SELECT 1 FROM lens_profile WHERE record_id=?'),
+    lens_profile_revision: local.query('SELECT 1 FROM lens_profile_revision WHERE record_id=?'),
+    project_lens_profile: local.query('SELECT 1 FROM project_lens_profile WHERE record_id=?'),
+    project_lens_profile_revision: local.query(
+      'SELECT 1 FROM project_lens_profile_revision WHERE record_id=?',
+    ),
+    workflow: local.query('SELECT 1 FROM workflow WHERE record_id=?'),
+    workflow_version: local.query('SELECT 1 FROM workflow_version WHERE record_id=?'),
+    workflow_event: local.query('SELECT 1 FROM workflow_event WHERE record_id=?'),
+    step_catalogue: local.query('SELECT 1 FROM step_catalogue WHERE record_id=?'),
+    step_catalogue_version: local.query('SELECT 1 FROM step_catalogue_version WHERE record_id=?'),
+    step_catalogue_event: local.query('SELECT 1 FROM step_catalogue_event WHERE record_id=?'),
+    port_doctrine: local.query('SELECT 1 FROM port_doctrine WHERE record_id=?'),
+    port_pair: local.query('SELECT 1 FROM port_pair WHERE record_id=?'),
+    port_baseline: local.query('SELECT 1 FROM port_baseline WHERE record_id=?'),
+    port_ref: local.query('SELECT 1 FROM port_ref WHERE record_id=?'),
+    port_ref_source: local.query('SELECT 1 FROM port_ref_source WHERE record_id=?'),
+    port_skip: local.query('SELECT 1 FROM port_skip WHERE record_id=?'),
+  }
+  return Boolean(statements[change.table]?.get(change.id))
 }
 
 function addResult(target: RecordCachePullResult, value: Partial<RecordCachePullResult>) {
@@ -529,6 +560,7 @@ export async function pullRecordCacheFeed(
     }
     addResult(result, page.result)
     addResult(result, await runFallbacks(local, page.fallbacks, identity, deps))
+    result.orphans += page.orphans.filter((change) => !feedRowPresent(local, change)).length
     if (page.project) result.projectRegister = await pullProjectRegister(local, spaces, client)
     cursor = response.cursor
     if (!response.changes.length) return result
