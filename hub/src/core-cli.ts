@@ -8,11 +8,15 @@ import {
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
 import {
+  type CollectLegResult,
+  collectHostedOutboxOnce,
   collectIncremental,
   collectLease,
   collectOnce,
+  currentLiveWatcher,
   formatCollectLeg,
   releaseLease,
+  resolveHostedUrl,
   watch,
   withLease,
 } from './collect.ts'
@@ -69,6 +73,50 @@ export async function collectOneShot(
   console.log(`\ncollected in ${human(Date.now() - t0)}`)
   if (results.some((result) => !result.ok)) process.exitCode = 1
   return results
+}
+
+type OneShotCollectOptions = { since?: string; only?: string }
+
+export async function runOneShotCollect(
+  options: OneShotCollectOptions,
+  dependencies: {
+    watcher?: typeof currentLiveWatcher
+    outbox?: typeof collectHostedOutboxOnce
+    hosted?: typeof resolveHostedUrl
+    lease?: typeof withLease<CollectLegResult[]>
+    collect?: typeof collectOneShot
+  } = {},
+): Promise<void> {
+  const watcher =
+    options.since === undefined && options.only === undefined
+      ? (dependencies.watcher ?? currentLiveWatcher)()
+      : null
+  if (watcher) {
+    console.log(
+      `hub collection: left to the live watcher (holder ${watcher.holder}, heartbeat ${watcher.ageSeconds}s ago); force with ${PLATFORM_SLUG} record pull --only <runs|transcripts|git|tasks>`,
+    )
+    if ((dependencies.hosted ?? resolveHostedUrl)()) {
+      const outbox = await (dependencies.outbox ?? collectHostedOutboxOnce)()
+      console.log(formatCollectLeg(outbox))
+      if (!outbox.ok) process.exitCode = 1
+    }
+    return
+  }
+
+  const result = await (dependencies.lease ?? withLease)(
+    `collect:${process.pid}`,
+    (guard) => (dependencies.collect ?? collectOneShot)(guard, options.since, options.only),
+    undefined,
+    undefined,
+    (legs) => legs,
+  )
+  if (!result.ran) {
+    console.error(
+      `hub: ${result.heldBy ?? 'another process'} is collecting and did not ` +
+        'finish in 30s; nothing collected',
+    )
+    process.exitCode = 1
+  }
 }
 
 function printTasks(hours = '48'): void {
@@ -230,20 +278,7 @@ function registerCollectionCommands(program: Command): void {
         stop = watch(holder, (error) => console.error(`hub: collect failed: ${error.message}`))
         await new Promise(() => {})
       }
-      const result = await withLease(
-        `collect:${process.pid}`,
-        (guard) => collectOneShot(guard, options.since, options.only),
-        undefined,
-        undefined,
-        (legs) => legs,
-      )
-      if (!result.ran) {
-        console.error(
-          `hub: ${result.heldBy ?? 'another process'} is collecting and did not ` +
-            'finish in 30s; nothing collected',
-        )
-        process.exitCode = 1
-      }
+      await runOneShotCollect(options)
     })
   program
     .command('tasks')
