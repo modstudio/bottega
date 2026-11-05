@@ -187,8 +187,9 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
   const deleteProject = newRecordId()
   await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES (${deleteProject}::uuid,${SPACE_B}::uuid,'record-delete',ARRAY['RCD'],now())`
-  const inserted = await admin<{ seq: string }[]>`SELECT max(seq)::text AS seq FROM record_change
-    WHERE table_name='project' AND row_id=${deleteProject}::uuid`
+  const inserted = await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+    FROM record_change WHERE table_name='project' AND row_id=${deleteProject}::uuid
+    ORDER BY xid DESC, seq DESC LIMIT 1`
   await actor.begin(async (tx) => {
     await bindTenant(tx, identityB)
     await tx`DELETE FROM project WHERE id=${deleteProject}::uuid`
@@ -196,7 +197,7 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
   const deleted = await hostedChangeService.readRecordChanges(
     actorUrl,
     identityB,
-    BigInt(inserted[0]!.seq),
+    { xid: BigInt(inserted[0]!.xid), seq: BigInt(inserted[0]!.seq) },
     10,
   )
   if (deleted.resetRequired || deleted.changes[0]?.op !== 'delete')
@@ -205,19 +206,24 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
   const moveProject = newRecordId()
   await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
     VALUES (${moveProject}::uuid,${SPACE_B}::uuid,'record-move',ARRAY['RCM'],now())`
-  const beforeMove = await admin<{ seq: string }[]>`SELECT max(seq)::text AS seq FROM record_change
-    WHERE table_name='project' AND row_id=${moveProject}::uuid`
+  const beforeMove = await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+    FROM record_change WHERE table_name='project' AND row_id=${moveProject}::uuid
+    ORDER BY xid DESC, seq DESC LIMIT 1`
+  const beforeMoveCursor = {
+    xid: BigInt(beforeMove[0]!.xid),
+    seq: BigInt(beforeMove[0]!.seq),
+  }
   await admin`UPDATE project SET space_id=${SPACE_A}::uuid WHERE id=${moveProject}::uuid`
   const oldSpace = await hostedChangeService.readRecordChanges(
     actorUrl,
     identityB,
-    BigInt(beforeMove[0]!.seq),
+    beforeMoveCursor,
     10,
   )
   const newSpace = await hostedChangeService.readRecordChanges(
     actorUrl,
     identityA,
-    BigInt(beforeMove[0]!.seq),
+    beforeMoveCursor,
     10,
   )
   if (oldSpace.resetRequired || oldSpace.changes[0]?.op !== 'delete')
@@ -228,70 +234,189 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
   await admin`UPDATE record_change SET at=now()-interval '31 days'
     WHERE row_id=${moveProject}::uuid`
   await admin`SELECT record_change_prune()`
-  const horizonRows = await admin<{ seq: string }[]>`SELECT seq::text FROM record_change_horizon`
-  const horizon = BigInt(horizonRows[0]!.seq)
-  const reset = await hostedChangeService.readRecordChanges(actorUrl, identityA, horizon - 1n, 10)
-  if (!reset.resetRequired || reset.horizon !== horizon || reset.cursor !== horizon)
+  const horizonRows = await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+    FROM record_change_horizon`
+  const horizon = {
+    xid: BigInt(horizonRows[0]!.xid),
+    seq: BigInt(horizonRows[0]!.seq),
+  }
+  const reset = await hostedChangeService.readRecordChanges(
+    actorUrl,
+    identityA,
+    { xid: horizon.xid, seq: horizon.seq - 1n },
+    10,
+  )
+  if (
+    !reset.resetRequired ||
+    reset.horizon.xid !== horizon.xid ||
+    reset.horizon.seq !== horizon.seq ||
+    reset.cursor.xid !== horizon.xid ||
+    reset.cursor.seq !== horizon.seq
+  )
     throw new Error('record change pruning did not return the reset horizon')
 }
 
-async function proveRecordChangeOrdering(admin: SQL) {
+type EvidenceChangeCursor = { xid: bigint; seq: bigint }
+
+async function latestRecordChange(admin: SQL, rowId?: string): Promise<EvidenceChangeCursor> {
+  const found = rowId
+    ? await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+        FROM record_change WHERE table_name='project' AND row_id=${rowId}::uuid
+        ORDER BY xid DESC, seq DESC LIMIT 1`
+    : await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
+        FROM record_change WHERE space_id=${SPACE_A}::uuid ORDER BY xid DESC, seq DESC LIMIT 1`
+  return { xid: BigInt(found[0]!.xid), seq: BigInt(found[0]!.seq) }
+}
+
+async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB: SQL) {
   const identityA = { userId: USER, spaceId: SPACE_A }
-  const connectionA = new SQL(actorDatabaseUrl!, { max: 1 })
-  const connectionB = new SQL(actorDatabaseUrl!, { max: 1 })
-  let releaseA!: () => void
-  const held = new Promise<void>((resolve) => {
-    releaseA = resolve
-  })
-  let publishA!: (seq: bigint) => void
-  const sequenceA = new Promise<bigint>((resolve) => {
-    publishA = resolve
-  })
-  const transactionA = connectionA.begin(async (tx) => {
-    await bindTenant(tx, identityA)
-    await tx`UPDATE project SET color='#111111' WHERE id=${PROJECT_A}::uuid`
-    const found = await tx<{ seq: string }[]>`SELECT max(seq)::text AS seq FROM record_change
-      WHERE table_name='project' AND row_id=${PROJECT_A}::uuid`
-    publishA(BigInt(found[0]!.seq))
-    await held
-  })
+  let releaseA: () => void = () => undefined
+  let transactionA: Promise<unknown> | undefined
   try {
-    const seqA = await sequenceA
+    const baseline = await latestRecordChange(admin)
+    const heldA = new Promise<void>((resolve) => {
+      releaseA = resolve
+    })
+    let publishA!: (cursor: { xid: bigint; seq: bigint }) => void
+    const cursorA = new Promise<{ xid: bigint; seq: bigint }>((resolve) => {
+      publishA = resolve
+    })
+    transactionA = connectionA.begin(async (tx) => {
+      await bindTenant(tx, identityA)
+      await tx`UPDATE project SET color='#111111' WHERE id=${PROJECT_A}::uuid`
+      publishA(await latestRecordChange(tx, PROJECT_A))
+      await heldA
+    })
+    const changeA = await cursorA
     await connectionB.begin(async (tx) => {
       await bindTenant(tx, identityA)
       await tx`UPDATE project SET color='#222222' WHERE id=${PROJECT_A_OTHER}::uuid`
     })
-    const seqBRows = await admin<{ seq: string }[]>`SELECT max(seq)::text AS seq FROM record_change
-      WHERE table_name='project' AND row_id=${PROJECT_A_OTHER}::uuid`
-    const seqB = BigInt(seqBRows[0]!.seq)
-    if (seqB <= seqA) throw new Error('later record change did not receive a later sequence')
+    const changeB = await latestRecordChange(admin, PROJECT_A_OTHER)
+    if (changeB.seq <= changeA.seq)
+      throw new Error('later record change did not receive a later sequence')
 
-    const heldRead = await hostedChangeService.readRecordChanges(actorUrl, identityA, seqA - 1n, 10)
+    const heldRead = await hostedChangeService.readRecordChanges(actorUrl, identityA, baseline, 10)
     if (
       heldRead.resetRequired ||
       heldRead.changes.length !== 0 ||
-      heldRead.cursor !== seqA - 1n ||
+      heldRead.cursor.xid !== baseline.xid ||
+      heldRead.cursor.seq !== baseline.seq ||
       heldRead.lag < 2n
     )
-      throw new Error('open transaction did not hold back the record change prefix and grow lag')
+      throw new Error('open transaction did not hold back later xids and grow count lag')
 
     releaseA()
     await transactionA
-    const released = await hostedChangeService.readRecordChanges(actorUrl, identityA, seqA - 1n, 10)
+    const released = await hostedChangeService.readRecordChanges(actorUrl, identityA, baseline, 10)
     if (
       released.resetRequired ||
       released.changes.length < 2 ||
-      released.changes[0]?.seq !== seqA ||
-      released.changes[1]?.seq !== seqB
+      released.changes[0]?.xid !== changeA.xid ||
+      released.changes[0]?.seq !== changeA.seq ||
+      released.changes[1]?.xid !== changeB.xid ||
+      released.changes[1]?.seq !== changeB.seq
     )
-      throw new Error(
-        'record change prefix did not return interleaved transactions in sequence order',
-      )
-
-    await proveRecordChangeRows(admin, connectionB)
+      throw new Error('record change reader did not return released transactions in xid order')
+    return released.cursor
   } finally {
     releaseA()
-    await transactionA.catch(() => undefined)
+    await transactionA?.catch(() => undefined)
+  }
+}
+
+async function proveRecordChangePairCursor(
+  connectionA: SQL,
+  connectionB: SQL,
+  baseline: EvidenceChangeCursor,
+) {
+  const identityA = { userId: USER, spaceId: SPACE_A }
+  let continueX: () => void = () => undefined
+  let releaseY: () => void = () => undefined
+  let transactionX: Promise<unknown> | undefined
+  let transactionY: Promise<unknown> | undefined
+  try {
+    const yMayStart = new Promise<void>((resolve) => {
+      continueX = resolve
+    })
+    let publishXFirst!: (cursor: { xid: bigint; seq: bigint }) => void
+    const xFirst = new Promise<{ xid: bigint; seq: bigint }>((resolve) => {
+      publishXFirst = resolve
+    })
+    transactionX = connectionA.begin(async (tx) => {
+      await bindTenant(tx, identityA)
+      await tx`UPDATE project SET color='#333333' WHERE id=${PROJECT_A}::uuid`
+      publishXFirst(await latestRecordChange(tx, PROJECT_A))
+      await yMayStart
+      await tx`UPDATE project SET color='#444444' WHERE id=${PROJECT_A}::uuid`
+    })
+    const firstX = await xFirst
+
+    const heldY = new Promise<void>((resolve) => {
+      releaseY = resolve
+    })
+    let publishY!: (cursor: { xid: bigint; seq: bigint }) => void
+    const cursorY = new Promise<{ xid: bigint; seq: bigint }>((resolve) => {
+      publishY = resolve
+    })
+    transactionY = connectionB.begin(async (tx) => {
+      await bindTenant(tx, identityA)
+      await tx`UPDATE project SET color='#555555' WHERE id=${PROJECT_A_OTHER}::uuid`
+      publishY(await latestRecordChange(tx, PROJECT_A_OTHER))
+      await heldY
+    })
+    const changeY = await cursorY
+    continueX()
+    await transactionX
+
+    const whileYOpen = await hostedChangeService.readRecordChanges(
+      actorUrl,
+      identityA,
+      baseline,
+      10,
+    )
+    if (
+      whileYOpen.resetRequired ||
+      whileYOpen.changes.length !== 2 ||
+      whileYOpen.changes.some((change) => change.xid !== firstX.xid) ||
+      whileYOpen.cursor.xid !== firstX.xid ||
+      whileYOpen.cursor.seq <= changeY.seq ||
+      whileYOpen.lag < 1n
+    )
+      throw new Error(
+        'older transaction changes were not readable while the younger xid stayed open',
+      )
+
+    releaseY()
+    await transactionY
+    const afterYCommit = await hostedChangeService.readRecordChanges(
+      actorUrl,
+      identityA,
+      whileYOpen.cursor,
+      10,
+    )
+    if (
+      afterYCommit.resetRequired ||
+      afterYCommit.changes.length !== 1 ||
+      afterYCommit.changes[0]?.xid !== changeY.xid ||
+      afterYCommit.changes[0]?.seq !== changeY.seq
+    )
+      throw new Error('pair cursor skipped the younger xid with an earlier sequence')
+  } finally {
+    continueX()
+    releaseY()
+    await Promise.allSettled([transactionX, transactionY].filter(Boolean) as Promise<unknown>[])
+  }
+}
+
+async function proveRecordChangeOrdering(admin: SQL) {
+  const connectionA = new SQL(actorDatabaseUrl!, { max: 1 })
+  const connectionB = new SQL(actorDatabaseUrl!, { max: 1 })
+  try {
+    const baseline = await proveRecordChangeCutoff(admin, connectionA, connectionB)
+    await proveRecordChangePairCursor(connectionA, connectionB, baseline)
+    await proveRecordChangeRows(admin, connectionB)
+  } finally {
     await connectionA.close()
     await connectionB.close()
   }

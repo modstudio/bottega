@@ -78,6 +78,7 @@ export const recordChange = pgTable.withRLS(
     ),
     check('record_change_op_check', sql`${table.op} IN ('upsert','delete')`),
     index('record_change_space_seq_idx').on(table.spaceId, table.seq),
+    index('record_change_xid_seq_idx').on(table.xid, table.seq),
     pgPolicy('record_change_space_select', {
       for: 'select',
       to: RECORD_ACTOR_ROLE,
@@ -102,6 +103,7 @@ export const recordChangeHorizon = pgTable.withRLS(
   {
     id: uuid().primaryKey().default(sql`public.record_uuid_v7()`),
     singleton: boolean().notNull().unique().default(true),
+    xid: xid8().notNull().default(sql`'0'::xid8`),
     seq: bigint({ mode: 'bigint' }).notNull().default(0n),
   },
   (table) => [

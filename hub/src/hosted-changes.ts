@@ -228,6 +228,7 @@ export async function listHostedChanges(
 }
 
 type RecordChangeEntry = {
+  xid: bigint
   seq: bigint
   table: string
   rowId: string
@@ -236,78 +237,98 @@ type RecordChangeEntry = {
 }
 
 type RecordChangeLogRow = {
+  xid: string | number | bigint
   seq: string | number | bigint
   table_name: string
   row_id: string
   op: 'upsert' | 'delete'
   at: string | Date
-  below_cutoff: boolean
 }
 
 const asBigInt = (value: string | number | bigint) => BigInt(value)
 
-const changeLag = (newest: bigint, cursor: bigint) => (newest > cursor ? newest - cursor : 0n)
+export type RecordChangeCursor = { xid: bigint; seq: bigint }
+
+const cursorBefore = (left: RecordChangeCursor, right: RecordChangeCursor) =>
+  left.xid < right.xid || (left.xid === right.xid && left.seq < right.seq)
 
 /** A cursor below the pruning horizon cannot resume; the consumer resets to the horizon. */
-function recordChangeReset(after: bigint, horizon: bigint, newest: bigint) {
-  if (after >= horizon) return null
+export function recordChangeReset(
+  after: RecordChangeCursor | null,
+  horizon: RecordChangeCursor,
+  lag: bigint,
+) {
+  if (after !== null && !cursorBefore(after, horizon)) return null
   return {
     resetRequired: true as const,
     horizon,
     cursor: horizon,
-    lag: changeLag(newest, horizon),
+    lag,
   }
 }
 
-/**
- * Returns the contiguous prefix of committed-before-every-open-transaction rows. A row behind an
- * open transaction's position is withheld with everything after it, so a later commit never
- * passes a lower sequence that has yet to commit.
- */
+/** Shapes a page already restricted to transactions below the snapshot cutoff. */
 export function recordChangePage(
-  after: bigint,
-  newest: bigint,
+  after: RecordChangeCursor,
   candidates: readonly RecordChangeLogRow[],
+  lag: bigint,
 ) {
-  const blockedAt = candidates.findIndex((row) => !row.below_cutoff)
-  const selected = blockedAt === -1 ? candidates : candidates.slice(0, blockedAt)
-  const changes: RecordChangeEntry[] = selected.map((row) => ({
+  const changes: RecordChangeEntry[] = candidates.map((row) => ({
+    xid: asBigInt(row.xid),
     seq: asBigInt(row.seq),
     table: row.table_name,
     rowId: row.row_id,
     op: row.op,
     at: new Date(row.at).toISOString(),
   }))
-  const cursor = changes.at(-1)?.seq ?? after
-  return { resetRequired: false as const, changes, cursor, lag: changeLag(newest, cursor) }
+  const last = changes.at(-1)
+  const cursor = last === undefined ? after : { xid: last.xid, seq: last.seq }
+  return { resetRequired: false as const, changes, cursor, lag }
 }
 
-async function readRecordChangesInTransaction(tx: SQL, after: bigint, limit: number) {
-  const metadata = rows<{ horizon: string | number | bigint; newest: string | number | bigint }>(
-    await tx`SELECT
-      (SELECT seq FROM record_change_horizon WHERE singleton)::text AS horizon,
-      COALESCE((SELECT max(seq) FROM record_change), 0)::text AS newest`,
+async function recordChangeLag(tx: SQL, cursor: RecordChangeCursor) {
+  const result = rows<{ lag: string | number | bigint }>(
+    await tx`SELECT count(*)::text AS lag
+    FROM record_change
+    WHERE (xid, seq) > (${cursor.xid.toString()}::xid8, ${cursor.seq})`,
   )[0]!
-  const horizon = asBigInt(metadata.horizon)
-  const newest = asBigInt(metadata.newest)
-  const reset = recordChangeReset(after, horizon, newest)
+  return asBigInt(result.lag)
+}
+
+async function readRecordChangesInTransaction(
+  tx: SQL,
+  after: RecordChangeCursor | null,
+  limit: number,
+) {
+  const metadata = rows<{
+    horizon_xid: string | number | bigint
+    horizon_seq: string | number | bigint
+  }>(
+    await tx`SELECT xid::text AS horizon_xid, seq::text AS horizon_seq
+      FROM record_change_horizon WHERE singleton`,
+  )[0]!
+  const horizon = { xid: asBigInt(metadata.horizon_xid), seq: asBigInt(metadata.horizon_seq) }
+  const reset = recordChangeReset(after, horizon, await recordChangeLag(tx, horizon))
   if (reset) return reset
+  if (after === null) throw new Error('null record change cursor did not reset')
 
   const candidates = rows<RecordChangeLogRow>(
-    await tx`SELECT seq::text, table_name, row_id::text, op, at,
-      xid < pg_snapshot_xmin(pg_current_snapshot()) AS below_cutoff
+    await tx`SELECT xid::text, seq::text, table_name, row_id::text, op, at
     FROM record_change
-    WHERE seq > ${after}
-    ORDER BY seq
+    WHERE xid < pg_snapshot_xmin(pg_current_snapshot())
+      AND (xid, seq) > (${after.xid.toString()}::xid8, ${after.seq})
+    ORDER BY xid, seq
     LIMIT ${limit}`,
   )
-  return recordChangePage(after, newest, candidates)
+  const last = candidates.at(-1)
+  const cursor = last === undefined ? after : { xid: asBigInt(last.xid), seq: asBigInt(last.seq) }
+  return recordChangePage(after, candidates, await recordChangeLag(tx, cursor))
 }
 
 async function readRecordChanges(
   client: SQL,
   identity: TaskIdentity,
-  after: bigint,
+  after: RecordChangeCursor | null,
   limit: number,
 ) {
   return client.begin(async (tx) => {

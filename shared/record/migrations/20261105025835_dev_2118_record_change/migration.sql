@@ -16,12 +16,14 @@ ALTER TABLE "record_change" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "record_change_horizon" (
 	"id" uuid PRIMARY KEY DEFAULT public.record_uuid_v7(),
 	"singleton" boolean DEFAULT true NOT NULL UNIQUE,
+	"xid" xid8 DEFAULT '0' NOT NULL,
 	"seq" bigint DEFAULT 0 NOT NULL,
 	CONSTRAINT "record_change_horizon_singleton_check" CHECK ("singleton")
 );
 --> statement-breakpoint
 ALTER TABLE "record_change_horizon" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE INDEX "record_change_space_seq_idx" ON "record_change" ("space_id","seq");--> statement-breakpoint
+CREATE INDEX "record_change_xid_seq_idx" ON "record_change" ("xid","seq");--> statement-breakpoint
 ALTER TABLE "record_change" ADD CONSTRAINT "record_change_space_id_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "space"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "record_change" ADD CONSTRAINT "record_change_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE CASCADE;--> statement-breakpoint
 CREATE POLICY "record_change_space_select" ON "record_change" AS PERMISSIVE FOR SELECT TO "record_actor" USING ("record_change"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid);--> statement-breakpoint

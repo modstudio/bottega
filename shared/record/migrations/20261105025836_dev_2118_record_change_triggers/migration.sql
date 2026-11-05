@@ -1,8 +1,5 @@
--- The journal starts empty while the record already holds rows, so the horizon starts at a
--- consumed sequence value: a cursor of 0 is below it and resets to a full reload, and every
--- logged row sits above the cursor that reset returns.
-INSERT INTO public.record_change_horizon (singleton, seq)
-VALUES (true, nextval(pg_get_serial_sequence('public.record_change', 'seq')));
+INSERT INTO public.record_change_horizon (singleton, xid, seq)
+VALUES (true, '0'::xid8, 0);
 -- Keep project-space moves exhaustive without moving the global journal's historical rows.
 CREATE OR REPLACE FUNCTION record_move_project_space(
   source_space text,
@@ -704,19 +701,25 @@ AS $$
 DECLARE
   retention CONSTANT interval := interval '30 days';
   deleted_count bigint;
-  pruned_horizon bigint;
+  pruned_xid xid8;
+  pruned_seq bigint;
 BEGIN
   WITH deleted AS (
     DELETE FROM public.record_change
     WHERE at < now() - retention
-    RETURNING seq
+    RETURNING xid, seq
   )
-  SELECT count(*), max(seq) INTO deleted_count, pruned_horizon FROM deleted;
+  SELECT
+    count(*),
+    (array_agg(xid ORDER BY xid DESC, seq DESC))[1],
+    (array_agg(seq ORDER BY xid DESC, seq DESC))[1]
+  INTO deleted_count, pruned_xid, pruned_seq
+  FROM deleted;
 
-  IF pruned_horizon IS NOT NULL THEN
+  IF pruned_xid IS NOT NULL THEN
     UPDATE public.record_change_horizon
-    SET seq = greatest(seq, pruned_horizon)
-    WHERE singleton;
+    SET xid = pruned_xid, seq = pruned_seq
+    WHERE singleton AND (xid, seq) < (pruned_xid, pruned_seq);
   END IF;
   RETURN deleted_count;
 END

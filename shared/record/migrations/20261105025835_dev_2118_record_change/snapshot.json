@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d8973299-e48d-4f06-a594-3a5d284851c6",
+  "id": "1180b682-86b6-48b2-b0ab-236fcbd9ec98",
   "prevIds": [
     "52ad1224-29ff-48d8-9c3b-778d2d4874fd"
   ],
@@ -15399,6 +15399,19 @@
       "table": "record_change_horizon"
     },
     {
+      "type": "xid8",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'0'",
+      "generated": null,
+      "identity": null,
+      "name": "xid",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "record_change_horizon"
+    },
+    {
       "type": "bigint",
       "typeSchema": null,
       "notNull": true,
@@ -17528,6 +17541,34 @@
       "method": "btree",
       "concurrently": false,
       "name": "record_change_space_seq_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "record_change"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "xid",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "seq",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "record_change_xid_seq_idx",
       "entityType": "indexes",
       "schema": "public",
       "table": "record_change"
