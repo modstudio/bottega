@@ -317,7 +317,7 @@ async function readRecordChangesInTransaction(
     FROM record_change
     WHERE xid < pg_snapshot_xmin(pg_current_snapshot())
       AND (xid, seq) > (${after.xid.toString()}::xid8, ${after.seq})
-    ORDER BY xid, seq
+    ORDER BY record_change.xid, record_change.seq
     LIMIT ${limit}`,
   )
   const page = recordChangePage(after, candidates)

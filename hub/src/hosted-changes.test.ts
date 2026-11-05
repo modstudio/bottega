@@ -167,6 +167,26 @@ test('a first read resets to the horizon, then reads committed tenant changes af
   }
 })
 
+test('record change pages follow numeric order across a digit boundary', async () => {
+  await database.exec(`SELECT setval('record_change_seq_seq', 998);
+    BEGIN;
+    INSERT INTO project(id,space_id,name,key_prefixes,created_at) VALUES
+      ('01990000-0000-7000-8000-000000001320','${spaceA}','record-digit-a',ARRAY['RDA'],now()),
+      ('01990000-0000-7000-8000-000000001321','${spaceA}','record-digit-b',ARRAY['RDB'],now());
+    COMMIT;`)
+  const identity = { userId, spaceId: spaceA }
+  const client = pgliteClient(database)
+  let read = await hostedChangeService.readRecordChanges(client, identity, null, 1)
+  const seqs: bigint[] = []
+  for (let page = 0; page < 20; page += 1) {
+    read = await hostedChangeService.readRecordChanges(client, identity, read.cursor, 1)
+    if (read.resetRequired || read.changes.length === 0) break
+    seqs.push(...read.changes.map((change) => change.seq))
+  }
+  expect(seqs).toContain(999n)
+  expect(seqs.indexOf(1000n)).toBe(seqs.indexOf(999n) + 1)
+})
+
 test('a record change reset orders cursors by transaction before sequence', () => {
   const horizon = { xid: 12n, seq: 20n }
   expect(recordChangeResetRequired(null, horizon)).toBe(true)

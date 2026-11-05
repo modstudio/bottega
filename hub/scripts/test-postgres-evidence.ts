@@ -189,7 +189,7 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     VALUES (${deleteProject}::uuid,${SPACE_B}::uuid,'record-delete',ARRAY['RCD'],now())`
   const inserted = await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
     FROM record_change WHERE table_name='project' AND row_id=${deleteProject}::uuid
-    ORDER BY xid DESC, seq DESC LIMIT 1`
+    ORDER BY record_change.xid DESC, record_change.seq DESC LIMIT 1`
   await actor.begin(async (tx) => {
     await bindTenant(tx, identityB)
     await tx`DELETE FROM project WHERE id=${deleteProject}::uuid`
@@ -208,7 +208,7 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     VALUES (${moveProject}::uuid,${SPACE_B}::uuid,'record-move',ARRAY['RCM'],now())`
   const beforeMove = await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
     FROM record_change WHERE table_name='project' AND row_id=${moveProject}::uuid
-    ORDER BY xid DESC, seq DESC LIMIT 1`
+    ORDER BY record_change.xid DESC, record_change.seq DESC LIMIT 1`
   const beforeMoveCursor = {
     xid: BigInt(beforeMove[0]!.xid),
     seq: BigInt(beforeMove[0]!.seq),
@@ -262,9 +262,9 @@ async function latestRecordChange(admin: SQL, rowId?: string): Promise<EvidenceC
   const found = rowId
     ? await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
         FROM record_change WHERE table_name='project' AND row_id=${rowId}::uuid
-        ORDER BY xid DESC, seq DESC LIMIT 1`
+        ORDER BY record_change.xid DESC, record_change.seq DESC LIMIT 1`
     : await admin<{ xid: string; seq: string }[]>`SELECT xid::text, seq::text
-        FROM record_change WHERE space_id=${SPACE_A}::uuid ORDER BY xid DESC, seq DESC LIMIT 1`
+        FROM record_change WHERE space_id=${SPACE_A}::uuid ORDER BY record_change.xid DESC, record_change.seq DESC LIMIT 1`
   return { xid: BigInt(found[0]!.xid), seq: BigInt(found[0]!.seq) }
 }
 
