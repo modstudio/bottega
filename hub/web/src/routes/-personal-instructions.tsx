@@ -14,6 +14,7 @@ import { Markdown } from '@bottega/hub-views/markdown'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { USER_CANON_HOME_MAPPINGS } from '../../../../shared/user-canon-home.ts'
 
 const hosted = isHostedMode()
 
@@ -25,22 +26,25 @@ type CanonRow = {
   updated_at: string
 }
 
-const RULES_PREFIX = '.agents/rules/'
+const RULES_PREFIX = USER_CANON_HOME_MAPPINGS[0].rules.canonPrefix
 
 /**
  * Where each agent finds a user instruction file. The always-on entry reaches every agent;
  * a rule file reaches only Claude Code, which is the one agent with a rules directory.
  */
 function instructionReach(slug: string): InstructionReach[] {
-  if (slug === 'AGENTS.md')
+  return USER_CANON_HOME_MAPPINGS.flatMap((mapping) => {
+    if (slug === mapping.entry.canon)
+      return [{ agent: mapping.label, path: `~/${mapping.defaultDirectory}/${mapping.entry.home}` }]
+    if (!mapping.rules || !slug.startsWith(mapping.rules.canonPrefix)) return []
+    const name = slug.slice(mapping.rules.canonPrefix.length)
     return [
-      { agent: 'Claude Code', path: '~/.claude/CLAUDE.md' },
-      { agent: 'Codex', path: '~/.codex/AGENTS.md' },
-      { agent: 'Grok', path: '~/.grok/AGENTS.md' },
+      {
+        agent: mapping.label,
+        path: `~/${mapping.defaultDirectory}/${mapping.rules.homeDirectory}/${name}`,
+      },
     ]
-  if (slug.startsWith(RULES_PREFIX))
-    return [{ agent: 'Claude Code', path: `~/.claude/rules/${slug.slice(RULES_PREFIX.length)}` }]
-  return []
+  })
 }
 
 /**

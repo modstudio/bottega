@@ -272,7 +272,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
   {
     name: 'user-canon-home-boundary',
     file: `${source}user-canon-home.ts`,
-    allowed: ['node:path', 'shared/brand.ts'],
+    allowed: ['node:path', 'shared/brand.ts', 'shared/user-canon-home.ts'],
     typeOnlyAllowed: [],
     reason:
       'Keep user canon home mapping and hydration decisions pure and independent of filesystems, stores, commands, and processes.',

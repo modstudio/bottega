@@ -1,5 +1,6 @@
 import { hostedTrpc, queryClient, trpc } from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { useContextProjects } from '@bottega/hub-data/use-projects'
 import { Badge } from '@bottega/hub-ui/badge'
 import { TextButton } from '@bottega/hub-ui/button'
 import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
@@ -112,18 +113,9 @@ function PersonalFrame({
   )
 }
 
-function useProjects() {
-  const localProjects = useQuery({ ...trpc.context.projects.queryOptions(), enabled: !hosted })
-  const hostedProjects = useQuery({
-    ...hostedTrpc.context.projects.queryOptions(),
-    enabled: hosted,
-  })
-  return hosted ? hostedProjects : localProjects
-}
-
 export function PersonalAutonomyPage() {
   const phone = useMediaQuery(PHONE_QUERY)
-  const projects = useProjects()
+  const projects = useContextProjects()
   const [projectChoice, setProjectChoice] = useState('')
   const selectedProject = projectChoice || projects.data?.[0]?.name || ''
   const projectOptions = (projects.data ?? []).map((project) => ({

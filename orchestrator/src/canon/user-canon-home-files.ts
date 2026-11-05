@@ -52,6 +52,15 @@ export const EMPTY_USER_CANON_STORE_REFUSAL =
   'this store holds no user canon while the home has files another store marked as managed; ' +
   `keep them by importing with \`${PLATFORM_SLUG} doc canon import --user\`; or remove the files yourself`
 
+const HOME_OVERRIDE_ENVIRONMENT = {
+  codex: 'CODEX_HOME',
+  grok: 'GROK_HOME',
+} as const
+
+function homeOverrideEnvironment(mapping: UserCanonHomeMapping): string | null {
+  return mapping.harness === 'claude' ? null : HOME_OVERRIDE_ENVIRONMENT[mapping.harness]
+}
+
 type CollectedFileState = { collectedText: string; collectedMode: number }
 type PlannedUserCanonWriteBase = {
   slug: string
@@ -88,7 +97,8 @@ export function userCanonHomesFromEnvironment(
   if (!home) throw new Error('HOME is required to locate user canon homes')
   const runs = resolve(orchestratorRuns)
   return USER_CANON_HOME_MAPPINGS.map((mapping) => {
-    const override = mapping.environment ? env[mapping.environment] : undefined
+    const environment = homeOverrideEnvironment(mapping)
+    const override = environment ? env[environment] : undefined
     const resolvedOverride = override && override.length > 0 ? resolve(override) : null
     const ignoredRunOverride = resolvedOverride !== null && pathIsWithin(runs, resolvedOverride)
     const path =
@@ -101,7 +111,7 @@ export function userCanonHomesFromEnvironment(
 
 export function userCanonHomeOverridesStatus(targets: UserCanonHomeTarget[]): string | null {
   const ignored = targets.flatMap((target) =>
-    target.ignoredRunOverride && target.mapping.environment ? [target.mapping.environment] : [],
+    target.ignoredRunOverride ? [homeOverrideEnvironment(target.mapping)].filter(Boolean) : [],
   )
   return ignored.length
     ? `ignored harness home overrides inside the orchestrator run-state directory: ${ignored.join(', ')}; using operator defaults`

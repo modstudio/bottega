@@ -1,5 +1,10 @@
 import { hostedTrpc, queryClient, trpc } from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import {
+  type MachinePermissionChange,
+  useMachinePermissionChange,
+} from '@bottega/hub-data/use-machine-permission'
+import { useContextProjects } from '@bottega/hub-data/use-projects'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-layout'
@@ -16,27 +21,33 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import type { MachinePermissionOverlay } from '../../../../shared/machine-config.ts'
+import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from '../../../../shared/settings-summary.ts'
 
 const hosted = isHostedMode()
 
-type List = 'allow' | 'ask' | 'deny'
-type Lists = Record<List, string[]>
+type PermissionLists = Record<SettingsPermissionList, string[]>
 type Target = { user: true } | { project: string }
-type Overlay = { additions: Lists; drop: Lists }
 
-const LISTS: List[] = ['deny', 'ask', 'allow']
-const isList = (value: MatrixValue): value is List =>
-  value === 'allow' || value === 'ask' || value === 'deny'
+const LISTS = [...SETTINGS_PERMISSION_LISTS].reverse()
+const isList = (value: MatrixValue): value is SettingsPermissionList =>
+  SETTINGS_PERMISSION_LISTS.includes(value as SettingsPermissionList)
 
-function listOf(lists: Lists | undefined, rule: string): List | undefined {
+function listOf(
+  lists: PermissionLists | undefined,
+  rule: string,
+): SettingsPermissionList | undefined {
   return lists ? LISTS.find((list) => lists[list].includes(rule)) : undefined
 }
 
 /** One row per rule any shown layer names, with where it stands in each layer. */
 export function matrixRows(layers: {
-  account?: Lists
-  project?: Lists
-  machine?: Overlay
+  account?: PermissionLists
+  project?: PermissionLists
+  machine?: MachinePermissionOverlay
 }): MatrixRow[] {
   const rules = new Set<string>()
   for (const lists of [
@@ -51,9 +62,9 @@ export function matrixRows(layers: {
     if (layers.account) values.account = listOf(layers.account, rule) ?? 'none'
     if (layers.project) values.project = listOf(layers.project, rule) ?? 'none'
     if (layers.machine)
-      values.machine = listOf(layers.machine.drop, rule)
-        ? 'drop'
-        : (listOf(layers.machine.additions, rule) ?? 'inherit')
+      values.machine =
+        listOf(layers.machine.additions, rule) ??
+        (listOf(layers.machine.drop, rule) ? 'drop' : 'inherit')
     return { rule, values }
   })
 }
@@ -61,17 +72,13 @@ export function matrixRows(layers: {
 type CanonicalStep = {
   kind: 'canonical'
   target: Target
-  list: List
+  list: SettingsPermissionList
   rule: string
   operation: 'add' | 'remove'
 }
-type MachineStep = {
-  kind: 'machine'
-  list: List
-  rule: string
-  operation: 'add' | 'remove' | 'drop' | 'undrop'
-}
-export type SaveStep = CanonicalStep | MachineStep
+type MachineStep = MachinePermissionChange & { kind: 'machine' }
+type RefusalStep = { kind: 'refusal'; message: string }
+export type SaveStep = CanonicalStep | MachineStep | RefusalStep
 
 /**
  * The writes one cell change needs, removals first so a rule never sits in two lists. A machine
@@ -79,7 +86,11 @@ export type SaveStep = CanonicalStep | MachineStep
  */
 export function saveSteps(
   edit: PermissionEdit,
-  context: { project: string; accountList: (rule: string) => List | undefined },
+  context: {
+    project: string
+    accountList: (rule: string) => SettingsPermissionList | undefined
+    machineDropList: (rule: string) => SettingsPermissionList | undefined
+  },
 ): SaveStep[] {
   const { rule, from, to } = edit
   if (edit.layer !== 'machine') {
@@ -93,14 +104,22 @@ export function saveSteps(
         : []),
     ]
   }
-  const dropped = context.accountList(rule)
+  const accountList = context.accountList(rule)
+  const droppedList = context.machineDropList(rule)
   const steps: SaveStep[] = []
   if (isList(from)) steps.push({ kind: 'machine', list: from, rule, operation: 'remove' })
-  if (from === 'drop' && dropped)
-    steps.push({ kind: 'machine', list: dropped, rule, operation: 'undrop' })
+  if (from === 'drop' && droppedList)
+    steps.push({ kind: 'machine', list: droppedList, rule, operation: 'undrop' })
   if (isList(to)) steps.push({ kind: 'machine', list: to, rule, operation: 'add' })
-  if (to === 'drop' && dropped)
-    steps.push({ kind: 'machine', list: dropped, rule, operation: 'drop' })
+  if (to === 'drop')
+    steps.push(
+      accountList
+        ? { kind: 'machine', list: accountList, rule, operation: 'drop' }
+        : {
+            kind: 'refusal',
+            message: `Cannot drop ${rule} on this machine: save the account rule first.`,
+          },
+    )
   return steps
 }
 
@@ -116,12 +135,6 @@ function useSettings(target: Target, enabled: boolean) {
   return hosted ? remote : local
 }
 
-function useProjects() {
-  const local = useQuery({ ...trpc.context.projects.queryOptions(), enabled: !hosted })
-  const remote = useQuery({ ...hostedTrpc.context.projects.queryOptions(), enabled: hosted })
-  return hosted ? remote : local
-}
-
 /**
  * Saves every held change in order, carrying each target's new revision into its next write.
  * The store has no batch write, so a refusal partway leaves the earlier changes saved; the
@@ -131,7 +144,7 @@ function useMatrixSave(revisions: { account: string | null; project: string | nu
   const localCanonical = useMutation(trpc.context.settings.permission.mutationOptions())
   const hostedCanonical = useMutation(hostedTrpc.context.settings.permission.mutationOptions())
   const canonical = hosted ? hostedCanonical : localCanonical
-  const machine = useMutation(trpc.context.settings.machinePermission.mutationOptions())
+  const machine = useMachinePermissionChange()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const settingsKey = hosted
@@ -144,9 +157,20 @@ function useMatrixSave(revisions: { account: string | null; project: string | nu
     const revision = { ...revisions }
     let done = 0
     try {
-      for (const step of steps) {
+      for (let index = 0; index < steps.length; index += 1) {
+        const step = steps[index]!
+        if (step.kind === 'refusal') throw new Error(step.message)
         if (step.kind === 'machine') {
-          await machine.mutateAsync({ list: step.list, rule: step.rule, operation: step.operation })
+          const batch: MachinePermissionChange[] = []
+          while (index < steps.length && steps[index]?.kind === 'machine') {
+            const { kind: _kind, ...change } = steps[index] as MachineStep
+            batch.push(change)
+            index += 1
+          }
+          index -= 1
+          const result = await machine.run(batch)
+          done += result.saved
+          if (result.error) throw new Error(result.error)
         } else {
           const layer = 'user' in step.target ? 'account' : 'project'
           const result = await canonical.mutateAsync({
@@ -158,8 +182,8 @@ function useMatrixSave(revisions: { account: string | null; project: string | nu
             expectedRevision: revision[layer] ?? '',
           })
           revision[layer] = result.revision
+          done += 1
         }
-        done += 1
       }
       return true
     } catch (failure) {
@@ -295,13 +319,15 @@ function matrixColumns({
 }
 
 export function PersonalPermissionsPage() {
-  const projects = useProjects()
+  const projects = useContextProjects()
   const managed = (projects.data ?? []).filter((project) => project.managedContext)
   const [projectChoice, setProjectChoice] = useState('')
   const project = projectChoice || managed[0]?.name || ''
   const account = useSettings({ user: true }, true)
   const projectSettings = useSettings({ project: project || '_' }, Boolean(project))
-  const machine = hosted ? undefined : (account.data as { machine?: Overlay } | undefined)?.machine
+  const machine = hosted
+    ? undefined
+    : (account.data as { machine?: MachinePermissionOverlay } | undefined)?.machine
   const save = useMatrixSave({
     account: account.data?.revision ?? null,
     project: projectSettings.data?.revision ?? null,
@@ -319,6 +345,7 @@ export function PersonalPermissionsPage() {
     machine,
   })
   const accountList = (rule: string) => listOf(account.data?.settings.permissions, rule)
+  const machineDropList = (rule: string) => listOf(machine?.drop, rule)
   const findings = [...(account.data?.findings ?? []), ...(projectSettings.data?.findings ?? [])]
   const loadError = account.error ?? projectSettings.error
 
@@ -352,7 +379,7 @@ export function PersonalPermissionsPage() {
               : 'These settings have no stored revision to change yet.',
             run: (edits, reason) =>
               save.run(
-                edits.flatMap((edit) => saveSteps(edit, { project, accountList })),
+                edits.flatMap((edit) => saveSteps(edit, { project, accountList, machineDropList })),
                 reason,
               ),
           }}

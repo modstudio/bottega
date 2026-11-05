@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { UserCanonSection } from '@/routes/-personal-instructions'
 import { PersonalPermissionsPage } from '@/routes/-personal-permissions'
-import { autonomyLayers, PersonalAutonomyPage } from '@/routes/-personal-settings'
+import { autonomyLayers, PersonalAutonomyPage } from '@/routes/-personal-autonomy'
 
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
