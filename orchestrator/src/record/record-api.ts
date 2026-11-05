@@ -26,9 +26,9 @@ import { recordDocumentScopes } from './record-api-doc-tenant.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
-import { registerPublicDocRoutes } from './record-api-public-docs.ts'
-import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
+import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { registerRecordReadRoutes } from './record-api-read-routes.ts'
+import type { RecordReleaseRouteDeps } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
 import {
   type RecordSessionRouteDeps,
@@ -359,6 +359,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     return requestTenant(identity, context.get('destinationSpaceId'), deps.recordUrl)
   }
   const { docScope, docIdScope } = recordDocumentScopes({ scope, readDoc: deps.readDoc })
+  registerSignedDocSearchRoute(app, deps, { scope, noSpace })
   registerRecordReadRoutes(app, deps, { scope, noSpace })
   app.get('/v1/runs', async (context) => {
     const tenant = scope(context)

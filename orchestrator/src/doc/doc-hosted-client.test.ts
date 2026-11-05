@@ -182,6 +182,9 @@ test('a non-project document client binds every call to the personal space', asy
     slug: 'settings',
     title: 'Settings',
     body: '{}',
+    delivery: 'demand',
+    audiences: ['technical'],
+    position: 0,
     reason: 'test',
     author: 'user-a',
   })

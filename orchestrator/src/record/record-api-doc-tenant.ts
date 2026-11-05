@@ -32,7 +32,7 @@ function tenantAt(input: RecordDocumentTenant, spaceId: string): RecordDocumentT
   return { ...input, spaceId, spaceIds: [spaceId] }
 }
 
-export function recordDocumentTenant(
+function recordDocumentTenant(
   tenant: RecordDocumentTenant,
   identity: RecordIdentity,
   explicitDestination: boolean,
@@ -44,7 +44,7 @@ export function recordDocumentTenant(
   return spaceId === tenant.spaceId ? tenant : tenantAt(tenant, spaceId)
 }
 
-export async function recordDocumentIdTenant(
+async function recordDocumentIdTenant(
   tenant: RecordDocumentTenant,
   identity: RecordIdentity,
   explicitDestination: boolean,

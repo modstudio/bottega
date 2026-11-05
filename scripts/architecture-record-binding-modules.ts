@@ -12,6 +12,25 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordBindingModules: RecordModule[] = [
+  module('orchestrator/src/record/record-api-read-routes.ts', [
+    './record-api-releases.ts',
+    './record-api-subjects.ts',
+  ]),
+  module('orchestrator/src/record/record-api-write-routes.ts', [
+    'hono',
+    './record-api-board.ts',
+    './record-api-config-access-routes.ts',
+    './record-api-doc-order.ts',
+    './record-api-doc-counts.ts',
+    './record-api-doc-rename.ts',
+    './record-api-machine-key-claim-routes.ts',
+    './record-api-moderation-routes.ts',
+    './record-api-outside-block-routes.ts',
+    './record-api-outside-intake-routes.ts',
+    './record-api-projects.ts',
+    './record-api-settings.ts',
+    './record-auth.ts',
+  ]),
   module('orchestrator/src/record/record-api-doc-counts.ts', [
     'hono',
     './record-api-doc-tenant.ts',

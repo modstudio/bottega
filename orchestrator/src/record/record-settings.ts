@@ -115,7 +115,7 @@ async function applyRecordSettingsEdit<
     {
       userId: input.userId,
       activeSpaceId: input.spaceId,
-      personalSpaceId: input.personalSpaceId,
+      personalSpaceId: input.personalSpaceId ?? null,
     },
     { kind: 'document', scope: SETTINGS_SCOPE, subject, ownerUserId: owner },
   )

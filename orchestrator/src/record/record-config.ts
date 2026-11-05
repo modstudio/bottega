@@ -78,7 +78,7 @@ function configTenant(input: ConfigTenant, scope: ConfigScope): ConfigTenant {
     {
       userId: input.userId,
       activeSpaceId: input.spaceId,
-      personalSpaceId: input.personalSpaceId,
+      personalSpaceId: input.personalSpaceId ?? null,
     },
     { kind: 'config-entry', scope },
   )
