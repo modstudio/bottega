@@ -74,6 +74,37 @@ function clientWith(fetch: RecordFetch, headers: { cookie?: string; authorizatio
 }
 
 describe('record client', () => {
+  test('secret listing keeps names and drops any value or envelope the record sends', async () => {
+    const urls: string[] = []
+    const client = clientWith(async (url) => {
+      urls.push(String(url))
+      return jsonResponse({
+        items: [
+          {
+            key: 'token',
+            environment: 'default',
+            scope: 'space',
+            updatedAt: '2026-11-05T12:00:00.000Z',
+            value: 'plain-text-leak',
+            envelope: 'opaque-envelope',
+          },
+        ],
+      })
+    })
+
+    const secrets = await client.configSecrets()
+
+    expect(urls).toEqual(['https://api.example.test/v1/config/secrets?environment=default'])
+    expect(secrets).toEqual([
+      {
+        key: 'token',
+        environment: 'default',
+        scope: 'space',
+        updatedAt: '2026-11-05T12:00:00.000Z',
+      },
+    ])
+  })
+
   test('runs view refuses when the hosted request does not answer before its deadline', async () => {
     let requestSignal: AbortSignal | null | undefined
     const client = createRecordClient({

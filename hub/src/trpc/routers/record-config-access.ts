@@ -8,6 +8,7 @@ const t = initTRPC.context<Context>().create()
 const emailInput = z.object({ email })
 
 export const recordConfigAccessRouter = t.router({
+  configSecrets: t.procedure.query(({ ctx }) => recordClient(ctx).configSecrets()),
   configAccess: t.procedure.query(({ ctx }) => recordClient(ctx).configAccess()),
   grantConfigAccess: t.procedure
     .input(emailInput)

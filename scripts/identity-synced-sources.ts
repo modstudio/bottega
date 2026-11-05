@@ -310,6 +310,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'boardThread',
     'configEntries',
     'configAccess',
+    'configSecrets',
     'doc',
     'docRevisions',
     'docSearch',

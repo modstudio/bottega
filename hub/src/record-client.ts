@@ -441,6 +441,13 @@ const configEntrySchema = z.object({
   rowVersion: z.number().int().positive(),
   updatedAt: z.string().datetime({ offset: true }),
 })
+/** A sealed secret's metadata; the listing carries no value and no envelope. */
+const configSecretSchema = z.object({
+  key: z.string(),
+  environment: z.string(),
+  scope: z.enum(['user', 'space']),
+  updatedAt: z.string().datetime({ offset: true }),
+})
 const settingsPermissionResultSchema = z.object({
   revision: z.string().uuid(),
   permissions: z.object({
@@ -736,8 +743,21 @@ function recordSettingsClient(options: RecordClientOptions) {
   }
 }
 
+/** Sealed secret metadata only; no method here reads a value or an envelope. */
+function recordConfigSecretsClient(options: RecordClientOptions) {
+  return {
+    configSecrets: () =>
+      request(
+        options,
+        query('/v1/config/secrets', { environment: 'default' }),
+        z.object({ items: z.array(configSecretSchema) }),
+      ).then(({ items }) => items),
+  }
+}
+
 function recordConfigAccessClient(options: RecordClientOptions) {
   return {
+    ...recordConfigSecretsClient(options),
     configAccess: () => request(options, '/v1/config-access', configAccessListSchema),
     grantConfigAccess: (email: string) =>
       request(options, '/v1/config-access/grant', configAccessGrantSchema, {

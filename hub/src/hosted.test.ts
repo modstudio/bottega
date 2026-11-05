@@ -96,6 +96,7 @@ describe('hostedRouter', () => {
       'record.agents',
       'record.board',
       'record.configAccess',
+      'record.configSecrets',
       'record.createReportSubscription',
       'record.deleteDoc',
       'record.doc',

@@ -30,6 +30,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ReviewsRouteImport } from './routes/reviews'
 import { Route as RoutingRouteImport } from './routes/routing'
 import { Route as RunsRouteImport } from './routes/runs'
+import { Route as SecretsRouteImport } from './routes/secrets'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SpendRouteImport } from './routes/spend'
@@ -158,6 +159,11 @@ const RoutingRoute = RoutingRouteImport.update({
 const RunsRoute = RunsRouteImport.update({
   id: '/runs',
   path: '/runs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SecretsRoute = SecretsRouteImport.update({
+  id: '/secrets',
+  path: '/secrets',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -303,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
+  '/secrets': typeof SecretsRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
@@ -350,6 +357,7 @@ export interface FileRoutesByTo {
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
+  '/secrets': typeof SecretsRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
@@ -398,6 +406,7 @@ export interface FileRoutesById {
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
+  '/secrets': typeof SecretsRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
@@ -447,6 +456,7 @@ export interface FileRouteTypes {
     | '/reviews'
     | '/routing'
     | '/runs'
+    | '/secrets'
     | '/settings'
     | '/sign-in'
     | '/spend'
@@ -494,6 +504,7 @@ export interface FileRouteTypes {
     | '/reviews'
     | '/routing'
     | '/runs'
+    | '/secrets'
     | '/settings'
     | '/sign-in'
     | '/spend'
@@ -541,6 +552,7 @@ export interface FileRouteTypes {
     | '/reviews'
     | '/routing'
     | '/runs'
+    | '/secrets'
     | '/settings'
     | '/sign-in'
     | '/spend'
@@ -589,6 +601,7 @@ export interface RootRouteChildren {
   ReviewsRoute: typeof ReviewsRouteWithChildren
   RoutingRoute: typeof RoutingRoute
   RunsRoute: typeof RunsRouteWithChildren
+  SecretsRoute: typeof SecretsRoute
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
@@ -754,6 +767,13 @@ declare module '@tanstack/react-router' {
       path: '/runs'
       fullPath: '/runs'
       preLoaderRoute: typeof RunsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/secrets': {
+      id: '/secrets'
+      path: '/secrets'
+      fullPath: '/secrets'
+      preLoaderRoute: typeof SecretsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -1035,6 +1055,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReviewsRoute: ReviewsRouteWithChildren,
   RoutingRoute: RoutingRoute,
   RunsRoute: RunsRouteWithChildren,
+  SecretsRoute: SecretsRoute,
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,
