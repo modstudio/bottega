@@ -13,6 +13,7 @@ import {
   mcpAddArgv,
   mcpRemoveArgv,
   readMcpRegistration,
+  reconcileClaudeMcpRegistration,
   runSetupCommand,
   SETUP_COMMAND_TIMEOUT_MS,
   type SetupCommandRunner,
@@ -157,6 +158,17 @@ export function applyMcpRegistration(
   action: RegistrationAction,
   runner: SetupCommandRunner = runSetupCommand,
 ): 'applied' | 'unchanged' {
+  if (action.harness === 'claude' && !action.legacyName) {
+    const result = reconcileClaudeMcpRegistration({
+      port: { runner, bin: action.bin },
+      server: action.server,
+      scope: 'user',
+      present: true,
+      check: false,
+      forceReplace: action.replace,
+    })
+    return result.changed ? 'applied' : 'unchanged'
+  }
   if (!action.replace && guardRegistrationAdd(action, runner)) return 'unchanged'
   if (action.legacyName) removeMcpRegistration(action, action.legacyName, runner)
   else if (action.harness === 'claude' && action.replace)

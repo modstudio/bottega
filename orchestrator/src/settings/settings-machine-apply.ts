@@ -28,6 +28,12 @@ import { pullRecordCache } from '../record/record-cache.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
+  type ClaudeMcpRegistrationPort,
+  reconcileClaudeMcpRegistration,
+  runSetupCommand,
+  stableMcpServers,
+} from '../setup/setup-mcp.ts'
+import {
   ownedEnvironmentNames,
   parseStoredOwnedSettings,
   SETTINGS_SCOPE,
@@ -40,9 +46,14 @@ import {
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
+import {
+  applyProjectLocalSettings,
+  registeredProjectScopeFact,
+} from './settings-machine-projects.ts'
+import { decideMachineSettingsScope, scopedProjectHasDrift } from './settings-machine-scope.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
-import { renderedSettingsEnvironment, renderOwnedSettingsFile } from './settings-render.ts'
+import { renderedSettingsEnvironment, renderScopedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
 
 export type MachineSettingsApplyResult = {
@@ -62,6 +73,11 @@ type Dependencies = {
   runsDirectory: string
   applySettings: typeof applySettingsWrite
   applyCanon: typeof applyUserCanonHomePlans
+  projectPaths(): string[]
+  projectFact: typeof registeredProjectScopeFact
+  applyProjectSettings: typeof applyProjectLocalSettings
+  claudeMcpPort(): ClaudeMcpRegistrationPort | null
+  reconcileMcp: typeof reconcileClaudeMcpRegistration
 }
 
 type ApplyOverrides = Partial<Dependencies> & {
@@ -82,6 +98,20 @@ function dependencies(overrides: Partial<Dependencies>): Dependencies {
     runsDirectory: resolveRunsDirectory(process.env),
     applySettings: applySettingsWrite,
     applyCanon: applyUserCanonHomePlans,
+    projectPaths: () =>
+      local
+        .query<{ path: string }, []>(
+          'SELECT path FROM project WHERE retired_at IS NULL ORDER BY name',
+        )
+        .all()
+        .map((row) => row.path),
+    projectFact: registeredProjectScopeFact,
+    applyProjectSettings: applyProjectLocalSettings,
+    claudeMcpPort: () => {
+      const bin = Bun.which('claude')
+      return bin ? { bin, runner: runSetupCommand } : null
+    },
+    reconcileMcp: reconcileClaudeMcpRegistration,
     ...overrides,
   }
 }
@@ -99,6 +129,7 @@ function applyUserSettings(
   owner: string,
   check: boolean,
   deps: Dependencies,
+  scope: 'all' | 'hooks',
 ): MachineSettingsApplyResult {
   const home = claudeHomeFromEnvironment(deps.environment)
   const path = userSettingsPath(home)
@@ -133,7 +164,7 @@ function applyUserSettings(
       owned,
       selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
     )
-    const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
+    const rendered = renderScopedSettingsFile(parsed.text, owned, environment, scope)
     const plan = planSettingsWrite(path, rendered)
     if (plan.currentText === plan.renderedText) {
       return {
@@ -171,6 +202,101 @@ function applyUserSettings(
   } catch (error) {
     return refusal(target, error)
   }
+}
+
+function applyScopedClaudeSurfaces(
+  owner: string,
+  check: boolean,
+  deps: Dependencies,
+): MachineSettingsApplyResult[] {
+  const globalUse = readMachineValue('machine.global_use', deps.environment) as 'on' | 'off'
+  const scope = decideMachineSettingsScope(globalUse, deps.projectPaths().map(deps.projectFact))
+  const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
+  if (!row) return [refusal('project settings', 'no settings row for user')]
+  const merged = mergeMachinePermissionOverlay(
+    parseStoredOwnedSettings(row.body),
+    readMachinePermissions(deps.environment),
+  )
+  const owned = withMachineProductHooks(
+    merged.settings,
+    assetPath(),
+    resolveOrchestratorDatabase(deps.environment),
+    globalUse,
+  ).settings
+  const home = claudeHomeFromEnvironment(deps.environment)
+  const secretsPath = userSettingsEnvPath(home)
+  const environment = renderedSettingsEnvironment(
+    owned,
+    selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
+  )
+  const server = stableMcpServers()[0]!
+  const port = deps.claudeMcpPort()
+  const results: MachineSettingsApplyResult[] = []
+  const reconcile = (
+    target: string,
+    present: boolean,
+    mcpScope: 'user' | 'local',
+    cwd?: string,
+  ): MachineSettingsApplyResult => {
+    if (!port) return refusal(target, 'Claude executable was not found')
+    try {
+      const result = deps.reconcileMcp({ port, server, scope: mcpScope, cwd, present, check })
+      return {
+        target,
+        outcome: result.changed ? 'applied' : 'current',
+        changed: result.changed,
+        detail: result.detail,
+      }
+    } catch (error) {
+      return refusal(target, error)
+    }
+  }
+  results.push(reconcile('MCP claude user', scope.user.mcp, 'user'))
+  for (const project of scope.projects) {
+    if (project.action === 'skip') {
+      results.push({
+        target: `project ${project.path}`,
+        outcome: 'skipped',
+        detail: project.reason,
+        changed: false,
+      })
+      continue
+    }
+    let settingsResult: MachineSettingsApplyResult
+    try {
+      const rendered = deps.applyProjectSettings({
+        project: project.path,
+        owned,
+        environment,
+        scope: project.action === 'render-and-register' ? 'project' : 'none',
+        check,
+        stateEnvironment: deps.environment,
+      })
+      settingsResult = {
+        target: `settings ${project.path}/.claude/settings.local.json`,
+        outcome: rendered.changed ? 'applied' : 'current',
+        changed: rendered.changed,
+        detail: rendered.detail,
+      }
+    } catch (error) {
+      settingsResult = refusal(`settings ${project.path}/.claude/settings.local.json`, error)
+    }
+    const mcpResult = reconcile(
+      `MCP claude project ${project.path}`,
+      project.action === 'render-and-register',
+      'local',
+      project.path,
+    )
+    const refused = [settingsResult, mcpResult].filter((result) => result.outcome === 'refused')
+    const changed = scopedProjectHasDrift(!settingsResult.changed, !mcpResult.changed)
+    results.push({
+      target: `project ${project.path}`,
+      outcome: refused.length ? 'refused' : changed ? 'applied' : 'current',
+      changed,
+      detail: [settingsResult.detail, mcpResult.detail].filter(Boolean).join('; ') || undefined,
+    })
+  }
+  return results
 }
 
 function unmatchedDropDetail(drops: { list: string; rule: string }[]): string | undefined {
@@ -303,9 +429,16 @@ export async function applyMachineSettings(
   try {
     await applyRecordWriteAuthority({ local: () => undefined, hosted: deps.pull })
     const owner = await deps.owner()
+    const globalUse = readMachineValue('machine.global_use', deps.environment) as 'on' | 'off'
     return [
-      applyUserSettings(owner, input.check, deps),
+      applyUserSettings(
+        owner,
+        input.check,
+        deps,
+        decideMachineSettingsScope(globalUse, []).user.rendered,
+      ),
       ...applyUserCanon(owner, input.check, deps),
+      ...applyScopedClaudeSurfaces(owner, input.check, deps),
     ]
   } finally {
     lease.release()

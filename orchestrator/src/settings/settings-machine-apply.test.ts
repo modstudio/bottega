@@ -78,6 +78,18 @@ function deps() {
     pull: async () => {
       pulls++
     },
+    projectPaths: () => [],
+    claudeMcpPort: () => ({
+      bin: 'claude',
+      runner: () => ({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        error: null,
+      }),
+    }),
+    reconcileMcp: () => ({ changed: false }),
   }
 }
 
@@ -238,7 +250,9 @@ describe('settings apply', () => {
       detail: expect.stringContaining('unmatched drop(s): allow Bash(missing)'),
     })
     const applied = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'))
-    expect(applied.permissions).toEqual({ allow: ['Bash(git status)'] })
+    expect(applied.permissions).toBeUndefined()
+    expect(applied.autoMode).toBeUndefined()
+    expect(applied.env).toBeUndefined()
     const productHookCommands = Object.values(
       applied.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>,
     )
@@ -335,7 +349,7 @@ describe('settings apply', () => {
       outcome: 'refused',
       detail: expect.stringContaining('changed after planning'),
     })
-    expect(results.slice(1).every((result) => result.outcome === 'applied')).toBe(true)
+    expect(results.slice(1, -1).every((result) => result.outcome === 'applied')).toBe(true)
   })
 
   test('refuses from an orchestrator worker before pulling or opening writable state', async () => {

@@ -8,6 +8,7 @@ import {
   mcpAddArgv,
   mcpRemoveArgv,
   readMcpRegistration,
+  reconcileClaudeMcpRegistration,
   registeredCommandResolves,
   SETUP_COMMAND_TIMEOUT_MS,
   type SetupCommandResult,
@@ -254,4 +255,31 @@ test('uses each harness exact user-scope add form', () => {
     'user',
     'orch',
   ])
+})
+
+test('reconciles Claude local scope through the project cwd and reports check drift', () => {
+  const calls: Array<{ argv: string[]; cwd: string | undefined }> = []
+  const runner = (argv: string[], _timeout: number, options?: { cwd?: string }) => {
+    calls.push({ argv, cwd: options?.cwd })
+    return result(`No MCP server named "${MCP_SERVER_NAME}".\n`, 1)
+  }
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  expect(
+    reconcileClaudeMcpRegistration({
+      port: { bin: '/bin/claude', runner },
+      server,
+      scope: 'local',
+      cwd: '/projects/one',
+      present: true,
+      check: true,
+    }),
+  ).toEqual({ changed: true, detail: 'would apply' })
+  expect(calls).toEqual([
+    {
+      argv: ['/bin/claude', 'mcp', 'get', MCP_SERVER_NAME],
+      cwd: '/projects/one',
+    },
+  ])
+  expect(mcpAddArgv('claude', '/bin/claude', server, 'local')).toContain('local')
+  expect(mcpRemoveArgv('claude', '/bin/claude', MCP_SERVER_NAME, 'local')).toContain('local')
 })
