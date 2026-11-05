@@ -147,7 +147,7 @@ export function splitMigrationSource(source: string): { ddl: string; backfill: s
   return { ddl, backfill: blocks.join('\n') }
 }
 
-function migrationHash(entry: MigrationJournalEntry, folder = MIGRATIONS_FOLDER): string {
+export function migrationHash(entry: MigrationJournalEntry, folder = MIGRATIONS_FOLDER): string {
   return createHash('sha256')
     .update(splitMigrationSource(migrationSource(entry, folder)).ddl)
     .digest('hex')
@@ -209,7 +209,11 @@ export type StoreJournalPosition =
   | { state: 'positioned'; index: number }
   | { state: 'pending-not-found'; migration: string }
 
-/** Locate the store's first pending migration in one candidate journal. */
+/**
+ * Locate the store's first pending migration in the running binary's journal.
+ * Candidate release journals use a positional when/hash match instead, because
+ * their migration sources and hashes may differ from the running binary's.
+ */
 export function storeJournalPosition(
   d: Database,
   journal: MigrationJournalEntry[],

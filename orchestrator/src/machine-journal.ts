@@ -3,7 +3,7 @@
 
 import { z } from 'zod'
 import type { InstallationIdentity } from '../../shared/install-root.ts'
-import type { MigrationJournalEntry } from './database/migration-compatibility.ts'
+import type { MigrationJournalEntryWithHash } from './database/migration-compatibility.ts'
 
 export const MACHINE_JOURNAL_SCHEMA_VERSION = 1
 
@@ -31,6 +31,7 @@ const journalEntrySchema = z
     idx: z.number().int().nonnegative(),
     when: z.number().int().nonnegative(),
     tag: z.string().min(1),
+    hash: z.string().regex(/^[0-9a-f]{64}$/),
     compatibility: z.string().min(1).nullable(),
   })
   .strict()
@@ -48,7 +49,7 @@ export type MachineJournal = z.infer<typeof MACHINE_JOURNAL_SCHEMA>
 /** Shape install identity and embedded migration metadata without consulting machine state. */
 export function shapeMachineJournal(
   identity: InstallationIdentity,
-  entries: readonly MigrationJournalEntry[],
+  entries: readonly MigrationJournalEntryWithHash[],
 ): MachineJournal {
   const installation =
     identity.kind === 'distribution'
@@ -68,6 +69,7 @@ export function shapeMachineJournal(
       idx: entry.idx,
       when: entry.when,
       tag: entry.tag,
+      hash: entry.hash,
       compatibility: entry.compatibility ?? null,
     })),
   }

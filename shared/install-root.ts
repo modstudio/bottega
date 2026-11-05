@@ -80,6 +80,14 @@ function runningInstallEnvironment(env: InstallEnvironment): InstallEnvironment 
   return runningEnvironment
 }
 
+/** Read the running code's identity without following an installation target override. */
+export function runningInstallationIdentity(
+  fromDirectory: string,
+  env: InstallEnvironment,
+): InstallationIdentity {
+  return installationIdentity(fromDirectory, runningInstallEnvironment(env))
+}
+
 /** Resolve the running code's own distribution or checkout, ignoring a designated install. */
 export function runningInstallRoot(fromDirectory: string, env: InstallEnvironment): string {
   return resolveInstallRoot(fromDirectory, runningInstallEnvironment(env))
@@ -174,7 +182,7 @@ export function optionalCheckoutRoot(
   fromDirectory: string,
   env: InstallEnvironment,
 ): string | null {
-  const identity = installationIdentity(fromDirectory, runningInstallEnvironment(env))
+  const identity = runningInstallationIdentity(fromDirectory, env)
   return identity.kind === 'distribution' ? null : identity.root
 }
 

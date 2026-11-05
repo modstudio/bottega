@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
 import type { InstallationIdentity } from '../../shared/install-root.ts'
-import type { MigrationJournalEntry } from './database/migration-compatibility.ts'
+import type { MigrationJournalEntryWithHash } from './database/migration-compatibility.ts'
 import {
   MACHINE_JOURNAL_SCHEMA,
   MACHINE_JOURNAL_SCHEMA_VERSION,
@@ -38,14 +38,21 @@ test.each([
   },
   { identity: checkout, expected: checkout },
 ])('shapes and validates a $identity.kind installation journal', ({ identity, expected }) => {
-  const entries: MigrationJournalEntry[] = [
-    { idx: 0, when: 1_700_000_000_000, tag: '0000_x' },
-    { idx: 1, when: 1_700_000_000_001, tag: '0001_y', compatibility: 'additive' },
+  const entries: MigrationJournalEntryWithHash[] = [
+    { idx: 0, when: 1_700_000_000_000, tag: '0000_x', hash: 'a'.repeat(64) },
+    {
+      idx: 1,
+      when: 1_700_000_000_001,
+      tag: '0001_y',
+      hash: 'b'.repeat(64),
+      compatibility: 'additive',
+    },
   ]
   const expectedEntries = entries.map((entry) => ({
     idx: entry.idx,
     when: entry.when,
     tag: entry.tag,
+    hash: entry.hash,
     compatibility: entry.compatibility ?? null,
   }))
 

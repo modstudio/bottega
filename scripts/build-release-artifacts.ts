@@ -11,7 +11,8 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { BINARY_TARGETS, buildBinary } from './build-binary.ts'
+import { artifactName, BINARY_TARGETS } from '../shared/release-artifacts.ts'
+import { buildBinary } from './build-binary.ts'
 import { RELEASE_BUN_VERSION, requireReleaseBun } from './release-config.ts'
 import { releaseVersion, run } from './release-support.ts'
 
@@ -46,9 +47,7 @@ const productionPorts: ArtifactPorts = {
   git: (argv) => command(['git', ...argv]),
 }
 
-export function artifactName(version: string, target: string): string {
-  return `${PLATFORM_SLUG}-${version}-${target}.tar.gz`
-}
+export { artifactName }
 
 export function sha256Line(filename: string, bytes: Uint8Array): string {
   return `${createHash('sha256').update(bytes).digest('hex')}  ${filename}`

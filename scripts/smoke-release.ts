@@ -3,9 +3,9 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { artifactName } from '../shared/release-artifacts.ts'
 import { parseBinaryTarget } from './build-binary.ts'
 import {
-  artifactName,
   buildReleaseArtifact,
   writeChecksumSet,
   writeReleaseManifest,
