@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
+import { rememberActiveRecordSpace } from '../project-space.ts'
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordChangePage } from './record-api-client-changes.ts'
@@ -30,8 +31,10 @@ import {
   type RecordPortRow,
   type RecordPortTable,
 } from './record-port-contract.ts'
+import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 import { upsertPoolRun } from './record-routing-pool.ts'
+import { rememberSignedInRecordUser } from './record-session.ts'
 import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workflow-contract.ts'
 
 const CURSOR = 'record_change_cursor'
@@ -67,6 +70,10 @@ export type RecordCachePullResult = ReturnType<typeof emptyRecordCachePullResult
 
 type KeysetResult = Omit<RecordCachePullResult, 'changes' | 'orphans' | 'reset'>
 type Dependencies = {
+  cacheSpaces(
+    identity: RecordIdentity,
+    local: Database,
+  ): { projectSpaces: ReadonlyMap<string, string | null> }
   pullKeysets(
     local: Database,
     identity: RecordIdentity,
@@ -95,7 +102,9 @@ type Change = RecordChangePage['changes'][number]
 type FallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
 
 const membershipSpaces = (identity: RecordIdentity) =>
-  [...parseRecordSpaceMemberships(identity.memberships).keys()].sort()
+  parseRecordSpaceMemberships(identity.memberships)
+    .map((membership) => membership.spaceId)
+    .sort()
 const rememberedSpaces = (local: Database): string[] => {
   const value = readMeta(local, SPACES)
   if (!value) return []
@@ -170,10 +179,14 @@ function orphanFamily(local: Database, change: Change): FallbackFamily | null {
   const row = change.row as Record<string, unknown>
   const direct = directOrphanFamily(local, change.table, row)
   if (direct) return direct
-  if (lensTable(change.table) && !lensCatalogueParentPresent(local, change.table, row)) return 'lens'
+  if (lensTable(change.table) && !lensCatalogueParentPresent(local, change.table, row))
+    return 'lens'
   if (workflowTable(change.table) && !workflowCatalogueParentPresent(local, change.table, row))
     return 'workflow'
-  if (portTable(change.table) && !portCatalogueParentPresent(local, change.table, row as RecordPortRow))
+  if (
+    portTable(change.table) &&
+    !portCatalogueParentPresent(local, change.table, row as RecordPortRow)
+  )
     return 'port'
   return null
 }
@@ -226,7 +239,10 @@ function deleteChange(local: Database, change: Change, deps: Dependencies): void
     return
   }
   if (change.table === 'run_score' || change.table === 'project') return
-  if (portTable(change.table) && (change.table === 'port_ref' || change.table === 'port_ref_source')) {
+  if (
+    portTable(change.table) &&
+    (change.table === 'port_ref' || change.table === 'port_ref_source')
+  ) {
     applyPortCatalogueRow(local, change.table, {
       id: change.id,
       spaceId: change.space,
@@ -338,18 +354,23 @@ async function runFallbacks(
   fallbacks: Set<string>,
   identity: RecordIdentity,
   deps: Dependencies,
-) {
-  const cache = (await import('./record-cache.ts')).recordCacheSpaces(identity, local)
+): Promise<RecordCachePullResult> {
+  const result = emptyRecordCachePullResult()
+  const cache = deps.cacheSpaces(identity, local)
   for (const value of fallbacks) {
     const split = value.indexOf(':')
     const family = value.slice(0, split) as FallbackFamily
     const space = value.slice(split + 1)
-    if (family === 'doc') await deps.pullDocs(local, identity, [space], cache.projectSpaces)
-    else if (family === 'subject') await deps.pullSubjects(local, [space], cache.projectSpaces)
-    else if (family === 'lens') await pullLensCatalogue(local, [space])
-    else if (family === 'workflow') await pullWorkflowCatalogue(local, [space])
-    else await pullPortCatalogue(local, [space])
+    if (family === 'doc')
+      addResult(result, await deps.pullDocs(local, identity, [space], cache.projectSpaces))
+    else if (family === 'subject')
+      addResult(result, await deps.pullSubjects(local, [space], cache.projectSpaces))
+    else if (family === 'lens') result.lensCatalogue += await pullLensCatalogue(local, [space])
+    else if (family === 'workflow')
+      result.workflowCatalogue += (await pullWorkflowCatalogue(local, [space])).count
+    else result.portCatalogue += (await pullPortCatalogue(local, [space])).count
   }
+  return result
 }
 
 async function resetAt(
@@ -376,6 +397,9 @@ export async function pullRecordCacheFeed(
     return emptyRecordCachePullResult()
   const client: RecordApiClient = recordApiClient()
   const identity = suppliedIdentity ?? (await client.whoami())
+  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
+  rememberSignedInRecordUser(identity.user, local)
+  rememberActiveRecordSpace(local, identity.activeSpaceId)
   const spaces = membershipSpaces(identity)
   const previous = rememberedSpaces(local)
   purgeLostSpaces(
@@ -401,7 +425,7 @@ export async function pullRecordCacheFeed(
       continue
     }
     addResult(result, page.result)
-    await runFallbacks(local, page.fallbacks, identity, deps)
+    addResult(result, await runFallbacks(local, page.fallbacks, identity, deps))
     if (page.project) result.projectRegister = await pullProjectRegister(local, spaces, client)
     cursor = response.cursor
     if (!response.changes.length) return result

@@ -52,14 +52,14 @@ import {
   recordRoutingEvidenceClient,
 } from './record-api-client-routing-evidence.ts'
 import {
-  recordIdentityResponse,
+  recordIdentityResponse as parseRecordIdentityResponse,
   type RecordSessionClient,
   recordSessionClient,
 } from './record-api-client-session.ts'
-export { recordIdentityResponse } from './record-api-client-session.ts'
+
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
-import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
+import { bearerHeaders, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
 import {
   type HostedBoardAcceptInput,
   type HostedBoardChanges,
@@ -465,6 +465,9 @@ function recordApiUnreachable(error: unknown): Error {
   )
 }
 
+export const recordIdentityResponse = (body: unknown) =>
+  parseRecordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message)))
+
 function recordApiServerError(message: string, status: number): RecordApiRequestError {
   const fallback = recordApiStatus(status)
   const statusMessage = message === fallback ? message : `${fallback}: ${message}`
@@ -717,9 +720,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     ...recordConfigAccessClient(request),
     ...recordModerationClient(request),
     ...recordOutsideClient(request),
-    ...recordSessionClient(request, (body) =>
-      recordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message))),
-    ),
+    ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
     ...recordSnapshotAndPublicDocClient(request),
     ...recordDocReadClient(request),

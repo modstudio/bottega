@@ -3,13 +3,15 @@
 import { z } from 'zod'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 
-const entry = z.object({
+const entryBase = {
   table: z.string(),
   id: z.string(),
   space: z.string(),
-  op: z.enum(['upsert', 'delete']),
-  row: z.unknown().optional(),
-})
+}
+const entry = z.discriminatedUnion('op', [
+  z.object({ ...entryBase, op: z.literal('upsert'), row: z.record(z.string(), z.unknown()) }),
+  z.object({ ...entryBase, op: z.literal('delete') }),
+])
 const page = z.object({
   changes: z.array(entry),
   cursor: z.string(),
@@ -19,9 +21,7 @@ const page = z.object({
 const reset = z.object({ reset: z.literal(true), cursor: z.string(), tables: z.array(z.string()) })
 
 export type RecordChangePage = z.infer<typeof page>
-type RecordChangeListResult =
-  | RecordChangePage
-  | { reset: { cursor: string; tables: string[] } }
+type RecordChangeListResult = RecordChangePage | { reset: { cursor: string; tables: string[] } }
 
 const invalid = () => new Error('record API returned an invalid change page')
 const parsePage = (body: unknown): RecordChangePage => {

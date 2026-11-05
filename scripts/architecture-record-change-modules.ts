@@ -19,6 +19,7 @@ export const recordChangeModules = [
     'bun:sqlite',
     '../../../shared/record-space-membership.ts',
     '../database/db.ts',
+    '../project-space.ts',
     '../project/projects.ts',
     '../subject/subjects.ts',
     './record-api-client.ts',
@@ -30,8 +31,10 @@ export const recordChangeModules = [
     './record-cache-workflow.ts',
     './record-lens-contract.ts',
     './record-port-contract.ts',
+    './record-project-destination.ts',
     './record-routing-evidence-contract.ts',
     './record-routing-pool.ts',
+    './record-session.ts',
     './record-workflow-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-changes.ts', [

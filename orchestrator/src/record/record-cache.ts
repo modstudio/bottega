@@ -41,7 +41,7 @@ function deleteCursor(local: Database, key: string): void {
   local.query('DELETE FROM schema_meta WHERE key=?').run(key)
 }
 
-export function recordCacheSpaces(
+function recordCacheSpaces(
   identity: RecordIdentity,
   local: Database,
 ): {
@@ -152,7 +152,7 @@ async function pullDocsForSpace(
   return { docs, skippedDocs, cursorKey, cursor }
 }
 
-export async function pullDocs(
+async function pullDocs(
   local: Database,
   identity: RecordIdentity,
   spaces: readonly string[],
@@ -186,7 +186,7 @@ export async function pullDocs(
   return { docs, skippedDocs }
 }
 
-export async function pullRecordCacheKeysets(
+async function pullRecordCacheKeysets(
   local: Database = db(),
   suppliedIdentity?: RecordIdentity,
   requestedSpaces?: readonly string[],
@@ -268,7 +268,7 @@ export async function pullRecordCacheKeysets(
   }
 }
 
-export async function pullSubjects(
+async function pullSubjects(
   local: Database,
   spaces: readonly string[],
   projectSpaces: ReadonlyMap<string, string | null>,
@@ -411,7 +411,7 @@ const hostedDocInsertIdentity = (recordId: string, spaceId: string | undefined) 
   spaceId ?? null,
 ]
 
-export function applyDoc(
+function applyDoc(
   local: Database,
   item: Record<string, unknown>,
   unresolvedParents: Map<string, string>,
@@ -518,7 +518,7 @@ export function applyDoc(
   syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
 }
 
-export function applyScore(local: Database, item: Record<string, unknown>): void {
+function applyScore(local: Database, item: Record<string, unknown>): void {
   const runId = String(item.runId)
   const localRun = local
     .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
@@ -555,6 +555,7 @@ export async function pullRecordCache(local: Database = db(), suppliedIdentity?:
   if (recordApiClientInjected() && typeof recordApiClient().listChanges !== 'function')
     return pullRecordCacheKeysets(local, suppliedIdentity)
   return pullRecordCacheFeed(local, suppliedIdentity, {
+    cacheSpaces: recordCacheSpaces,
     pullKeysets: pullRecordCacheKeysets,
     pullDocs,
     pullSubjects,

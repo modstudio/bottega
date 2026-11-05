@@ -222,6 +222,8 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-cache-catalogues.ts', [
     'bun:sqlite',
+    '../../../shared/record-api-url.ts',
+    './record-api-client.ts',
     './record-cache-lens.ts',
     './record-cache-port.ts',
     './record-cache-workflow.ts',
