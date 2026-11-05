@@ -23,6 +23,7 @@ import {
   reapHostedNotes,
 } from '../src/hosted-notes.ts'
 import { applyHostedPushChanges } from '../src/hosted-push-changes.ts'
+import { readHostedRecordChanges } from '../src/hosted-record-changes.ts'
 import { hostedGatherReport } from '../src/hosted-report-gather.ts'
 import {
   appendHostedSend,
@@ -262,6 +263,44 @@ async function proveRecordChangeRows(admin: SQL, actor: SQL) {
     throw new Error('record change pruning did not return the reset horizon')
 }
 
+async function proveHostedRecordChangeFeed(admin: SQL) {
+  const identity = { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A, SPACE_B] }
+  const first = await readHostedRecordChanges(actorUrl, identity, { after: null, limit: 500 })
+  if (!first.resetRequired) throw new Error('hosted change feed did not reset without a cursor')
+  const task = newRecordId()
+  const note = newRecordId()
+  const hidden = newRecordId()
+  await admin`INSERT INTO hub_task
+    (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    VALUES (${task}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-699',${PLATFORM_SLUG},'feed task','local',now(),now(),now(),now())`
+  await admin`INSERT INTO hub_note
+    (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at)
+    VALUES (${note}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},698,${PLATFORM_SLUG},'feed note','[]',1,now(),now(),now())`
+  await admin`INSERT INTO hub_note
+    (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at,
+      author_user_id)
+    VALUES (${hidden}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},699,${PLATFORM_SLUG},'hidden feed note','[]',1,now(),now(),now(),
+      ${SECOND_USER}::uuid)`
+  await actorUrl.begin(async (tx) => {
+    await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
+    await tx`SELECT public.hub_note_set_hidden(${hidden}::uuid,'spam',${OWNER_USER}::uuid)`
+  })
+  const page = await readHostedRecordChanges(actorUrl, identity, {
+    after: first.cursor,
+    limit: 500,
+  })
+  if (page.resetRequired) throw new Error('hosted change feed reset after its horizon')
+  const byId = new Map(page.changes.map((change) => [change.id, change]))
+  if (byId.get(task)?.space !== SPACE_A || byId.get(task)?.op !== 'upsert')
+    throw new Error('hosted change feed did not return the task from the first space')
+  if (byId.get(note)?.space !== SPACE_B || byId.get(note)?.op !== 'upsert')
+    throw new Error('hosted change feed did not return the note from the second space')
+  if (byId.get(hidden)?.op !== 'delete')
+    throw new Error('hosted change feed did not hide a non-author note as a delete')
+  await admin`DELETE FROM hub_note WHERE id=ANY(${admin.array([note, hidden], 'uuid')})`
+  await admin`DELETE FROM hub_task WHERE id=${task}::uuid`
+}
+
 type EvidenceChangeCursor = { xid: bigint; seq: bigint }
 
 async function latestRecordChange(admin: SQL, rowId?: string): Promise<EvidenceChangeCursor> {
@@ -440,6 +479,7 @@ async function proveRecordChangeOrdering(admin: SQL) {
     const baseline = await proveRecordChangeCutoff(admin, connectionA, connectionB)
     await proveRecordChangePairCursor(connectionA, connectionB, baseline)
     await proveRecordChangeRows(admin, connectionB)
+    await proveHostedRecordChangeFeed(admin)
   } finally {
     await connectionA.close()
     await connectionB.close()

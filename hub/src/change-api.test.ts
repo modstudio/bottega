@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { encodeRecordChangeCursor } from '../../shared/record/record-changes.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { changeApi } from './change-api.ts'
 import { hostedPushChanges } from './task-client.ts'
@@ -56,6 +57,70 @@ test('change route binds a requested member space and parses its bounded request
     },
     input: { after: 0, limit: 500, tables: ['hub_task', 'hub_note'] },
   })
+})
+
+test('change route serves the feed dialect without tables and keeps tables on the legacy route', async () => {
+  const cursor = encodeRecordChangeCursor({ xid: 7n, seq: 9n })
+  let feedReads = 0
+  let legacyReads = 0
+  const dependencies = {
+    fetch: whoami,
+    feed: async (_client: never, identity: { spaceIds: string[] }, input: unknown) => {
+      feedReads++
+      expect(identity.spaceIds).toEqual(['space-a', 'space-b'])
+      expect(input).toEqual({ after: { xid: 7n, seq: 9n }, limit: 12 })
+      return {
+        resetRequired: false as const,
+        changes: [],
+        cursor: { xid: 7n, seq: 10n },
+        lag: 0,
+        more: false,
+      }
+    },
+    list: async () => {
+      legacyReads++
+      return {
+        head: 0,
+        oldest: null,
+        next: 0,
+        more: false,
+        resetRequired: false as const,
+        changes: [],
+      }
+    },
+  }
+  const feed = await changeApi(request(`after=${cursor}&limit=12`), config, dependencies as never)
+  expect(feed?.status).toBe(200)
+  expect(await feed?.json()).toEqual({
+    changes: [],
+    cursor: encodeRecordChangeCursor({ xid: 7n, seq: 10n }),
+    lag: 0,
+    more: false,
+  })
+  expect(
+    (await changeApi(request('after=0&tables=hub_task'), config, dependencies as never))?.status,
+  ).toBe(200)
+  expect({ feedReads, legacyReads }).toEqual({ feedReads: 1, legacyReads: 1 })
+})
+
+test('feed route resets without a cursor and refuses wait', async () => {
+  const cursor = { xid: 3n, seq: 4n }
+  const reset = await changeApi(request(''), config, {
+    fetch: whoami,
+    feed: async () => ({ resetRequired: true, horizon: cursor, cursor, lag: 2 }),
+  })
+  expect(reset?.status).toBe(410)
+  expect(await reset?.json()).toEqual(
+    expect.objectContaining({ reset: true, cursor: encodeRecordChangeCursor(cursor) }),
+  )
+  const wait = await changeApi(request('wait=1'), config, {
+    fetch: whoami,
+    feed: async () => {
+      throw new Error('unreached')
+    },
+  })
+  expect(wait?.status).toBe(400)
+  expect(await wait?.json()).toEqual({ error: 'wait is unsupported by the hub change feed' })
 })
 
 test('push route authorizes the requested space and refuses unaccepted tables', async () => {

@@ -401,6 +401,7 @@ describe('hosted-only task safety', () => {
         targetSpaceNotes: true,
         noteTriageStaleness: true,
         spaceChanges: true,
+        recordChanges: true,
         spacePush: true,
         spacePushTables: [
           'hub_task',

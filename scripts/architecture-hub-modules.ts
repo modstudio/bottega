@@ -58,14 +58,30 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/brand.ts',
       '../../shared/record-space-request.ts',
+      '../../shared/record/record-changes.ts',
       './hosted-changes.ts',
       './hosted-identity-set.ts',
       './hosted-push-changes.ts',
+      './hosted-record-changes.ts',
       './hosted-route-config.ts',
       './hosted-route-identity.ts',
       './identity-set-contract.ts',
       './push-contract.ts',
     ],
+  },
+  {
+    file: 'hub/src/hosted-record-changes.ts',
+    allowed: [
+      'bun',
+      '../../shared/record/record-changes.ts',
+      './hosted-changes.ts',
+      './hosted-record-change-wire.ts',
+      './hosted-tenant.ts',
+    ],
+  },
+  {
+    file: 'hub/src/hosted-record-change-wire.ts',
+    allowed: ['./hosted-notes.ts', './hosted-reports.ts', './hosted-tasks.ts'],
   },
   {
     file: 'hub/src/hosted-identity-set.ts',

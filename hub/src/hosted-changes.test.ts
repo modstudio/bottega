@@ -10,12 +10,14 @@ import { readRecordChanges } from '../../shared/record/record-changes.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
 import { RECORD_CHANGE_LOGGED_TABLES } from '../../shared/record/schema-record-change.ts'
+import { bindTenant } from '../../shared/record/tenant.ts'
 import {
   hubChangeReadability,
   laterRowKeys,
   READABLE_HUB_CHANGES,
   readHostedChangesInTransaction,
 } from './hosted-changes.ts'
+import { materializeHostedRecordChangePage } from './hosted-record-changes.ts'
 
 const migrationsFolder = join(
   fileURLToPath(new URL('../../shared/record/migrations', import.meta.url)),
@@ -241,6 +243,122 @@ test('every logged table is readable or explicitly deferred', () => {
     ['hub_note_acknowledgement', 'readable'],
   ])
   expect(hubChangeReadability('future_logged_table')).toBeNull()
+})
+
+test('record feed materialization collapses entries, reads each space, and preserves hidden-note deletes', async () => {
+  const taskA = '01990000-0000-7000-8000-000000001360'
+  const taskB = '01990000-0000-7000-8000-000000001361'
+  const hiddenNote = '01990000-0000-7000-8000-000000001362'
+  const invisibleTask = '01990000-0000-7000-8000-000000001363'
+  const owner = '01990000-0000-7000-8000-000000001364'
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    VALUES
+      ('${taskA}','${spaceA}','${PLATFORM_NAME}','DEV-1360','${PLATFORM_NAME}','old','local',now(),now(),now(),now()),
+      ('${taskB}','${spaceB}','${PLATFORM_NAME}','DEV-1361','${PLATFORM_NAME}','space b','local',now(),now(),now(),now());
+    UPDATE hub_task SET title='last' WHERE id='${taskA}';
+    INSERT INTO "user" (id,email,name,created_at) VALUES
+      ('${owner}','feed-owner@example.test','Feed owner',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at) VALUES
+      ('01990000-0000-7000-8000-000000001365','${spaceA}','${owner}','owner','write',now());
+    INSERT INTO hub_note
+      (id,space_id,project_name,number,project,text,anchors,sightings,created_at,last_seen_at,updated_at)
+    VALUES ('${hiddenNote}','${spaceA}','${PLATFORM_NAME}',1362,'${PLATFORM_NAME}','hidden','[]',1,now(),now(),now());
+  `)
+  await database.transaction(async (transaction) => {
+    const tx = pgliteSql(transaction)
+    await tx`SET ROLE ${tx.unsafe(RECORD_ACTOR_ROLE)}`
+    await bindTenant(tx, { userId: owner, spaceId: spaceA })
+    await tx`SELECT public.hub_note_set_hidden(${hiddenNote}::uuid,'spam',${owner}::uuid)`
+  })
+  const result = await database.transaction(async (transaction) => {
+    const tx = pgliteSql(transaction)
+    await tx`SET ROLE ${tx.unsafe(RECORD_ACTOR_ROLE)}`
+    await bindTenant(tx, { userId, spaceId: spaceA, spaceIds: [spaceA, spaceB] })
+    return materializeHostedRecordChangePage(tx, {
+      resetRequired: false,
+      cursor: { xid: 9n, seq: 9n },
+      lag: 0,
+      more: false,
+      changes: [
+        { xid: 1n, seq: 1n, table: 'hub_task', id: taskA, space: spaceA, op: 'upsert' },
+        { xid: 2n, seq: 2n, table: 'hub_task', id: taskA, space: spaceA, op: 'upsert' },
+        { xid: 3n, seq: 3n, table: 'hub_task', id: taskB, space: spaceB, op: 'upsert' },
+        { xid: 4n, seq: 4n, table: 'hub_note', id: hiddenNote, space: spaceA, op: 'upsert' },
+        { xid: 5n, seq: 5n, table: 'hub_task', id: invisibleTask, space: spaceA, op: 'upsert' },
+      ],
+    })
+  })
+  expect(result.changes).toEqual([
+    expect.objectContaining({
+      table: 'hub_task',
+      id: taskA,
+      space: spaceA,
+      row: expect.objectContaining({ title: 'last' }),
+    }),
+    expect.objectContaining({
+      table: 'hub_task',
+      id: taskB,
+      space: spaceB,
+      row: expect.objectContaining({ title: 'space b' }),
+    }),
+    { table: 'hub_note', id: hiddenNote, space: spaceA, op: 'delete' },
+  ])
+  await database.exec(`
+    RESET ROLE;
+    DELETE FROM hub_note WHERE id='${hiddenNote}';
+    DELETE FROM hub_task WHERE id IN ('${taskA}','${taskB}');
+    DELETE FROM record_change WHERE row_id=ANY(ARRAY['${hiddenNote}','${taskA}','${taskB}']::uuid[]);
+    DELETE FROM hub_change WHERE row_id=ANY(ARRAY['${hiddenNote}','${taskA}','${taskB}']::uuid[]);
+    DELETE FROM hub_change_head WHERE space_id IN ('${spaceA}','${spaceB}');
+    DELETE FROM membership WHERE user_id='${owner}';
+    DELETE FROM "user" WHERE id='${owner}';
+  `)
+})
+
+test('record feed materialization preserves both sides of a cross-space move', async () => {
+  const movedTask = '01990000-0000-7000-8000-000000001366'
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at)
+    VALUES
+      ('${movedTask}','${spaceB}','${PLATFORM_NAME}','DEV-1366','${PLATFORM_NAME}','moved','local',now(),now(),now(),now());
+  `)
+  const result = await database.transaction(async (transaction) => {
+    const tx = pgliteSql(transaction)
+    await tx`SET ROLE ${tx.unsafe(RECORD_ACTOR_ROLE)}`
+    await bindTenant(tx, { userId, spaceId: spaceA, spaceIds: [spaceA, spaceB] })
+    return materializeHostedRecordChangePage(tx, {
+      resetRequired: false,
+      cursor: { xid: 2n, seq: 2n },
+      lag: 0,
+      more: false,
+      changes: [
+        { xid: 1n, seq: 1n, table: 'hub_task', id: movedTask, space: spaceA, op: 'delete' },
+        { xid: 1n, seq: 2n, table: 'hub_task', id: movedTask, space: spaceB, op: 'upsert' },
+      ],
+    })
+  })
+  expect(result.changes).toEqual([
+    { table: 'hub_task', id: movedTask, space: spaceA, op: 'delete' },
+    expect.objectContaining({
+      table: 'hub_task',
+      id: movedTask,
+      space: spaceB,
+      op: 'upsert',
+      row: expect.objectContaining({ title: 'moved' }),
+    }),
+  ])
+  await database.exec(`
+    RESET ROLE;
+    DELETE FROM hub_task WHERE id='${movedTask}';
+    DELETE FROM record_change WHERE row_id='${movedTask}';
+    DELETE FROM hub_change WHERE row_id='${movedTask}';
+    DELETE FROM hub_change_head WHERE space_id='${spaceB}';
+  `)
 })
 
 test('later row suppression returns one key for many later changes to the same row', async () => {

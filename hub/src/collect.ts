@@ -4,7 +4,10 @@ import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
+  type HostedChangesReport,
   hostedChangeLegLine,
+  hostedChangesLines,
+  pullHostedChanges,
   pullHostedNoteChanges,
   pullHostedSendChanges,
   pullHostedTaskChanges,
@@ -160,7 +163,7 @@ export type CollectLegResult =
       ok: true
       durationMs: number
       metrics?: CollectLegMetrics
-      hostedChanges?: HostedChangeLegReport
+      hostedChanges?: HostedChangeLegReport | HostedChangesReport
       hostedOutbox?: HostedOutboxReport
       trackerCounts?: { read: number; skippedFresh: number; leftToWatcher: number }
     }
@@ -191,7 +194,11 @@ export function formatCollectLeg(result: CollectLegResult): string {
   const separator = result.source.length >= 18 ? ' ' : ''
   if (!result.ok) return `${result.source.padEnd(18)}${separator}FAILED: ${result.error}`
   if (result.hostedChanges)
-    return `${result.source.padEnd(18)}${separator}${hostedChangeLegLine(result.hostedChanges)}`
+    return `${result.source.padEnd(18)}${separator}${
+      'families' in result.hostedChanges
+        ? hostedChangesLines(result.hostedChanges)
+        : hostedChangeLegLine(result.hostedChanges)
+    }`
   if (result.hostedOutbox)
     return `${result.source.padEnd(18)}${separator}${hostedOutboxLine(result.hostedOutbox)}`
   if (result.trackerCounts) {
@@ -239,7 +246,7 @@ async function settleLeg<T>(
 type HostedCollectDependencies = {
   outbox?: () => Promise<HostedOutboxReport>
   correctIntervals?: () => void
-  changes?: () => Promise<HostedChangeLegReport | null | undefined>
+  changes?: () => Promise<HostedChangesReport | HostedChangeLegReport | null | undefined>
   noteChanges?: () => Promise<HostedChangeLegReport | null | undefined>
   sendChanges?: () => Promise<HostedChangeLegReport | null | undefined>
 }
@@ -249,48 +256,42 @@ export async function hostedCollectLegs(
   dependencies: HostedCollectDependencies = {},
 ): Promise<CollectLegResult[]> {
   ;(dependencies.correctIntervals ?? correctStoredIntervalProjects)()
-  const legs = [
-    {
-      name: 'hosted outbox',
-      work: dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
-    },
-    {
-      name: 'hosted task changes',
-      work: dependencies.changes ?? pullHostedTaskChanges,
-    },
-    {
-      name: 'hosted note changes',
-      work: dependencies.noteChanges ?? pullHostedNoteChanges,
-    },
-    {
-      name: 'hosted send changes',
-      work: dependencies.sendChanges ?? pullHostedSendChanges,
-    },
-  ] as const
+  const legacyInjected =
+    dependencies.noteChanges !== undefined || dependencies.sendChanges !== undefined
   const results: CollectLegResult[] = []
-  let previous: string | undefined
-  for (const { name: source, work } of legs) {
+  guard?.assertHeld()
+  results.push(
+    (await settleTimedLeg(
+      'hosted outbox',
+      dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
+      (report) => ({ ok: true, hostedOutbox: report }),
+    ))!,
+  )
+  guard?.assertHeld('hosted outbox')
+  const changeLegs: Array<{
+    source: string
+    work: () => Promise<HostedChangesReport | HostedChangeLegReport | null | undefined>
+  }> = legacyInjected
+    ? [
+        { source: 'hosted task changes', work: dependencies.changes ?? pullHostedTaskChanges },
+        { source: 'hosted note changes', work: dependencies.noteChanges ?? pullHostedNoteChanges },
+        { source: 'hosted send changes', work: dependencies.sendChanges ?? pullHostedSendChanges },
+      ]
+    : [{ source: 'hosted changes', work: dependencies.changes ?? pullHostedChanges }]
+  let previous = 'hosted outbox'
+  for (const { source, work } of changeLegs) {
     guard?.assertHeld(previous)
-    if (source === 'hosted outbox') {
-      results.push(
-        (await settleTimedLeg(source, work, (report) => ({
-          ok: true,
-          hostedOutbox: report as HostedOutboxReport,
-        })))!,
-      )
-    } else {
-      const changeResult = await settleChangeLeg(source, work)
-      if (changeResult) results.push(changeResult)
-    }
+    const result = await settleChangeLeg(source, work)
+    if (result) results.push(result)
     previous = source
-    guard?.assertHeld(source)
+    guard?.assertHeld(previous)
   }
   return results
 }
 
 async function settleChangeLeg(
   source: string,
-  work: () => Promise<HostedChangeLegReport | null | undefined>,
+  work: () => Promise<HostedChangesReport | HostedChangeLegReport | null | undefined>,
 ): Promise<CollectLegResult | null> {
   return settleTimedLeg(source, work, (report) =>
     report == null ? null : { ok: true, hostedChanges: report },
