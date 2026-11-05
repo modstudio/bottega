@@ -85,6 +85,38 @@ describe('run ingest', () => {
     }
   })
 
+  test('an open run is written again each pass as its end advances', async () => {
+    const run = runFixture({ id: 9911 })
+    const first = Date.parse('2026-09-03T01:00:00.000Z')
+    const later = first + 60_000
+    let now = first
+    const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    const pass = () =>
+      collectFast(
+        { runs: async () => ({ examined: 1, ...(await ingestRunFixtures(run)) }) },
+        undefined,
+        'runs',
+      )
+    const storedEnd = () =>
+      db()
+        .query<{ end_at: string }, []>(`SELECT end_at FROM interval WHERE source = 'orch'`)
+        .all()
+        .map((row) => row.end_at)
+
+    try {
+      await pass()
+      now = later
+      expect((await pass())[0]).toMatchObject({
+        ok: true,
+        metrics: { written: 1, unchanged: 0 },
+      })
+      expect(storedEnd()).toEqual([new Date(later).toISOString()])
+    } finally {
+      clock.mockRestore()
+      resetFixtureStore()
+    }
+  })
+
   test('run changes ingest rows after the stored cursor and write nothing once caught up', async () => {
     writeTransaction((conn) =>
       conn
