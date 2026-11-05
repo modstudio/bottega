@@ -15,8 +15,8 @@ import {
   type AutonomyChoice,
   type AutonomyColumn,
   type AutonomyEdit,
-  type AutonomyLayer,
   AutonomyLayers,
+  type AutonomyLayerView,
 } from '@bottega/hub-views/machine-permissions/autonomy-layers'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { inferRouterOutputs } from '@trpc/server'
@@ -246,7 +246,7 @@ function accountChoices(
  * The session layer is hidden when it says nothing, since the hub never runs in a session.
  * This machine is editable here; your account is editable once you have signed in.
  */
-export function autonomyLayers(data: RegisteredAutonomy): AutonomyLayer[] {
+export function autonomyLayers(data: RegisteredAutonomy): AutonomyLayerView[] {
   return (data.layers ?? [])
     .filter((layer) => layer.scope !== 'session' || Object.values(layerValues(layer)).some(Boolean))
     .map((layer) => {

@@ -15,7 +15,7 @@ import { autonomyLayersStyles } from './autonomy-layers.styles.ts'
 export type AutonomyColumn = { id: string; label: string }
 
 /** What one layer says, by column id; `null` means it says nothing and the next layer decides. */
-export type AutonomyLayer = {
+export type AutonomyLayerView = {
   scope: string
   label: string
   hint: string
@@ -49,7 +49,7 @@ function Cell({
   wins,
   edit,
 }: {
-  layer: AutonomyLayer
+  layer: AutonomyLayerView
   column: AutonomyColumn
   wins: boolean
   edit: AutonomyEdit
@@ -90,7 +90,7 @@ export function AutonomyLayers({
   edit,
   heading,
 }: {
-  layers: readonly AutonomyLayer[]
+  layers: readonly AutonomyLayerView[]
   columns: readonly AutonomyColumn[]
   edit: AutonomyEdit
   heading?: React.ReactNode

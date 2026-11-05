@@ -9,6 +9,7 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
+import type { AutonomyLayerRow } from './autonomy.ts'
 import { sessionContextCommand, staleSessionContext } from './session-context.ts'
 import type { CachedSessionContext } from './session-context-cache.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
@@ -471,6 +472,9 @@ test('a hosted-read failure combines live local layers with cached hosted layers
   expect(stale.text).toContain(
     'ship to: branch (push the branch only; nothing is merged) (hosted space (stale))',
   )
+  expect(
+    (stale.layers as AutonomyLayerRow[]).find((layer) => layer.scope === 'hosted user (stale)'),
+  ).toMatchObject({ preset: null, rulings: 'user', stages: { review: 'review' } })
 })
 
 test('a machine auto winner stays auto and does not make the context stale', async () => {

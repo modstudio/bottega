@@ -19,7 +19,7 @@ export const autonomyPresets = AUTONOMY_PRESETS
 export const builtInAutonomyPreset: AutonomyPreset = 'guided'
 const builtInShipTo: ShipToValue = 'trunk'
 
-export type { AutonomyPreset, AutonomyStage, AutonomyValue, StageAutonomyValue }
+export type { AutonomyLayerRow, AutonomyPreset, AutonomyStage, AutonomyValue, StageAutonomyValue }
 export type ShipTo = ShipToValue
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
 type WorkflowAutonomySettings = {
@@ -39,11 +39,10 @@ export type StoredAutonomySettings = Omit<AutonomySettings, 'shipTo'> & {
 export type WrittenAutonomySettings = Omit<AutonomySettings, 'shipTo'> & {
   'ship-to'?: ShipTo
 }
-export type AutonomyLayer = AutonomyLayerRow
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
   stages?: Partial<Record<AutonomyStage, { value: StageAutonomyValue; scope: string }>>
-  layers: AutonomyLayer[]
+  layers: AutonomyLayerRow[]
   rulings: RulingsResolution
   shipTo: {
     value: ShipTo
@@ -65,7 +64,7 @@ type LegacyReleaseResolution = Omit<AutonomyResolution['shipTo'], 'value'> & {
   value: unknown
 }
 export type StoredAutonomyResolution = Omit<AutonomyResolution, 'shipTo' | 'layers'> & {
-  layers?: AutonomyLayer[]
+  layers?: AutonomyLayerRow[]
   shipTo?: AutonomyResolution['shipTo']
   release?: LegacyReleaseResolution
 }
@@ -345,7 +344,7 @@ export function resolveAutonomy(
     stages.map((stage) => [stage, resolveSubject({ stage }, checked, workflow)]),
   ) as AutonomyResolution['stages']
   const layers = checked.map(
-    ({ name, settings }): AutonomyLayer => ({
+    ({ name, settings }): AutonomyLayerRow => ({
       scope: name,
       preset:
         (workflow ? settings.workflows?.[workflow]?.preset : undefined) ?? settings.preset ?? null,
@@ -356,7 +355,7 @@ export function resolveAutonomy(
           stage,
           scopeAutonomyValue({ stage }, settings, workflow) ?? null,
         ]),
-      ) as AutonomyLayer['stages'],
+      ) as AutonomyLayerRow['stages'],
     }),
   )
   const ruling = checked

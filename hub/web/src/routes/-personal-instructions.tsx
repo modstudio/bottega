@@ -15,7 +15,10 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { canonFrontmatter } from '../../../../shared/canon-frontmatter.ts'
-import { USER_CANON_HOME_MAPPINGS } from '../../../../shared/user-canon-home.ts'
+import {
+  mapUserCanonHomePath,
+  USER_CANON_HOME_MAPPINGS,
+} from '../../../../shared/user-canon-home.ts'
 
 const hosted = isHostedMode()
 
@@ -35,14 +38,12 @@ const RULES_PREFIX = USER_CANON_HOME_MAPPINGS[0].rules.canonPrefix
  */
 function instructionReach(slug: string, paths: readonly string[] = []): InstructionReach[] {
   return USER_CANON_HOME_MAPPINGS.flatMap((mapping) => {
-    if (slug === mapping.entry.canon)
-      return [{ agent: mapping.label, path: `~/${mapping.defaultDirectory}/${mapping.entry.home}` }]
-    if (!mapping.rules || !slug.startsWith(mapping.rules.canonPrefix)) return []
-    const name = slug.slice(mapping.rules.canonPrefix.length)
+    const homePath = mapUserCanonHomePath(mapping, slug)
+    if (!homePath) return []
     return [
       {
         agent: mapping.label,
-        path: `~/${mapping.defaultDirectory}/${mapping.rules.homeDirectory}/${name}`,
+        path: `~/${mapping.defaultDirectory}/${homePath}`,
         ...(paths.length ? { paths } : {}),
       },
     ]
@@ -55,9 +56,10 @@ function instructionReach(slug: string, paths: readonly string[] = []): Instruct
  */
 export function instructionItem(row: CanonRow): InstructionItem {
   const frontmatter = canonFrontmatter(row.body)
-  const rule = USER_CANON_HOME_MAPPINGS.some(
-    (mapping) => mapping.rules && row.slug.startsWith(mapping.rules.canonPrefix),
-  )
+  const rule = USER_CANON_HOME_MAPPINGS.some((mapping) => {
+    const homePath = mapUserCanonHomePath(mapping, row.slug)
+    return Boolean(mapping.rules && homePath?.startsWith(`${mapping.rules.homeDirectory}/`))
+  })
   const pathScoped = rule && frontmatter?.declaresPaths === true
   const reach = instructionReach(row.slug, pathScoped ? frontmatter.paths : [])
   return {

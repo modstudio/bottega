@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test'
-import { applySaveSteps, matrixRows, saveSteps } from '@/routes/-personal-permissions'
+import {
+  applySaveSteps,
+  matrixRows,
+  projectRevisionRefusal,
+  saveSteps,
+} from '@/routes/-personal-permissions'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
 const accountList = (rule: string) => (rule === 'Read' ? ('allow' as const) : undefined)
 const machineDropList = (rule: string) => (rule === 'Read' ? ('deny' as const) : undefined)
@@ -80,6 +86,31 @@ test('a refusal stops the save before any canonical or machine write', async () 
       () => undefined,
     ),
   ).rejects.toThrow('Cannot drop Write on this machine: save the account rule first.')
+  expect(canonicalCalls).toBe(0)
+  expect(machineCalls).toBe(0)
+})
+
+test('a project with no stored revision refuses before any write', async () => {
+  const steps = saveSteps({ rule: 'Read', layer: 'project', from: 'allow', to: 'deny' }, context)
+  const refusal = projectRevisionRefusal(steps, null, 'alpha')
+  let canonicalCalls = 0
+  let machineCalls = 0
+
+  await expect(
+    applySaveSteps(
+      refusal ? [refusal, ...steps] : steps,
+      async () => {
+        canonicalCalls += 1
+      },
+      async () => {
+        machineCalls += 1
+        return { saved: 0, error: null }
+      },
+      () => undefined,
+    ),
+  ).rejects.toThrow(
+    `Cannot save project permissions because alpha has no stored settings revision. Run \`${PLATFORM_SLUG} machine settings render --write --project alpha --yes\` first.`,
+  )
   expect(canonicalCalls).toBe(0)
   expect(machineCalls).toBe(0)
 })

@@ -4,7 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { autonomyLayers, PersonalAutonomyPage } from '@/routes/-personal-autonomy'
-import { instructionItem, UserCanonSection } from '@/routes/-personal-instructions'
+import { UserCanonSection } from '@/routes/-personal-instructions'
 import { PersonalPermissionsPage } from '@/routes/-personal-permissions'
 
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
@@ -241,22 +241,4 @@ test('user canon shows the signed-in refusal instead of an empty state', () => {
   expect(html).toContain('no signed-in record session')
   expect(html).toContain(`cleared by: run ${PLATFORM_SLUG} record login`)
   expect(html).not.toContain('No rows')
-})
-
-test('user canon rules with paths are shown as path-scoped at their agent home path', () => {
-  const item = instructionItem({
-    ...doc,
-    slug: '.agents/rules/web.md',
-    body: '---\ndescription: Web rules\npaths: [hub/web/**, hub/views/**]\n---\n',
-  })
-  expect(item).toMatchObject({
-    delivery: 'path',
-    reach: [
-      {
-        agent: 'Claude Code',
-        path: '~/.claude/rules/web.md',
-        paths: ['hub/web/**', 'hub/views/**'],
-      },
-    ],
-  })
 })

@@ -15,6 +15,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import {
+  mapUserCanonHomePath,
   USER_CANON_HOME_MAPPINGS,
   type UserCanonHomeMapping,
 } from '../../../shared/user-canon-home.ts'
@@ -26,11 +27,7 @@ import {
   restoreSettingsBackup,
   writeNewSettingsFileAtomically,
 } from '../settings/settings-write.ts'
-import {
-  decideUserCanonHydration,
-  mapUserCanonHomePath,
-  USER_CANON_MANAGED_MARKER,
-} from './user-canon-home.ts'
+import { decideUserCanonHydration, USER_CANON_MANAGED_MARKER } from './user-canon-home.ts'
 
 export type UserCanonHomeFile = { slug: string; path: string; text: string; mode: number }
 export type UserCanonHomeTarget = {

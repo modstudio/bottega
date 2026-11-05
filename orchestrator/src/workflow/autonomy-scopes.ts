@@ -13,7 +13,7 @@ import { readMachineAutonomy } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import {
-  type AutonomyLayer,
+  type AutonomyLayerRow,
   type AutonomyPreset,
   type AutonomyResolution,
   type AutonomySettings,
@@ -133,18 +133,19 @@ function validateSessionAutonomy(session: AutonomySettings): void {
   )
 }
 
-function staleAutonomyLayer(layer: AutonomyLayer): AutonomyLayer {
+function staleAutonomyLayer(layer: AutonomyLayerRow): AutonomyLayerRow {
   const scope = staleHostedScope(layer.scope)
   if (scope === layer.scope) return layer
   return {
     ...layer,
     scope,
+    preset: null,
     stages: Object.fromEntries(
       Object.entries(layer.stages).map(([stage, value]) => [
         stage,
         value === null ? null : staleHostedAutonomyWinner({ value, scope: layer.scope }).value,
       ]),
-    ) as AutonomyLayer['stages'],
+    ) as AutonomyLayerRow['stages'],
   }
 }
 

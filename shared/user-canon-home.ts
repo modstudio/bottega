@@ -27,3 +27,11 @@ export const USER_CANON_HOME_MAPPINGS = [
 ] as const
 
 export type UserCanonHomeMapping = (typeof USER_CANON_HOME_MAPPINGS)[number]
+
+/** Maps one canon slug to the relative file path read by a supported harness. */
+export function mapUserCanonHomePath(mapping: UserCanonHomeMapping, slug: string): string | null {
+  if (slug === mapping.entry.canon) return mapping.entry.home
+  if (!mapping.rules || !slug.startsWith(mapping.rules.canonPrefix)) return null
+  const name = slug.slice(mapping.rules.canonPrefix.length)
+  return /^[^/]+\.md$/.test(name) ? `${mapping.rules.homeDirectory}/${name}` : null
+}

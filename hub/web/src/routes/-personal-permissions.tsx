@@ -171,12 +171,34 @@ export async function applySaveSteps(
   }
 }
 
+/** A project row must exist before its optimistic revision can protect an edit. */
+export function projectRevisionRefusal(
+  steps: readonly SaveStep[],
+  revision: string | null,
+  project: string,
+): RefusalStep | null {
+  if (
+    revision !== null ||
+    !steps.some((step) => step.kind === 'canonical' && 'project' in step.target)
+  )
+    return null
+  return {
+    kind: 'refusal',
+    message:
+      `Cannot save project permissions because ${project} has no stored settings revision. ` +
+      `Run \`${PLATFORM_SLUG} machine settings render --write --project ${project} --yes\` first.`,
+  }
+}
+
 /**
  * Saves every held change in order, carrying each target's new revision into its next write.
  * Refusals stop the whole save before the first write. The store has no batch write, so a
  * write failure can still leave earlier changes saved; the message says how many went through.
  */
-function useMatrixSave(revisions: { account: string | null; project: string | null }) {
+function useMatrixSave(
+  revisions: { account: string | null; project: string | null },
+  project: string,
+) {
   const localCanonical = useMutation(trpc.context.settings.permission.mutationOptions())
   const hostedCanonical = useMutation(hostedTrpc.context.settings.permission.mutationOptions())
   const canonical = hosted ? hostedCanonical : localCanonical
@@ -193,17 +215,21 @@ function useMatrixSave(revisions: { account: string | null; project: string | nu
     const revision = { ...revisions }
     let done = 0
     try {
+      const projectRefusal = projectRevisionRefusal(steps, revision.project, project)
       await applySaveSteps(
-        steps,
+        projectRefusal ? [projectRefusal, ...steps] : steps,
         async (step) => {
           const layer = 'user' in step.target ? 'account' : 'project'
+          const expectedRevision = revision[layer]
+          if (!expectedRevision)
+            throw new Error('These settings have no stored revision to change yet.')
           const result = await canonical.mutateAsync({
             target: step.target,
             list: step.list,
             rule: step.rule,
             operation: step.operation,
             reason,
-            expectedRevision: revision[layer] ?? '',
+            expectedRevision,
           })
           revision[layer] = result.revision
         },
@@ -244,7 +270,7 @@ type SettingsData = NonNullable<ReturnType<typeof useSettings>['data']>
 
 function driftText(drift: NonNullable<SettingsData['drift']>) {
   const lines: string[] = []
-  for (const name of ['allow', 'ask', 'deny'] as const) {
+  for (const name of SETTINGS_PERMISSION_LISTS) {
     lines.push(
       ...drift.rules[name].added.map((rule) => `Added to ${permissionListLabel(name)}: ${rule}`),
     )
@@ -355,10 +381,13 @@ export function PersonalPermissionsPage() {
   const machine = hosted
     ? undefined
     : (account.data as { machine?: MachinePermissionOverlay } | undefined)?.machine
-  const save = useMatrixSave({
-    account: account.data?.revision ?? null,
-    project: projectSettings.data?.revision ?? null,
-  })
+  const save = useMatrixSave(
+    {
+      account: account.data?.revision ?? null,
+      project: projectSettings.data?.revision ?? null,
+    },
+    project,
+  )
 
   const columns = matrixColumns({
     project,
