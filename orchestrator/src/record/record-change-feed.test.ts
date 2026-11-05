@@ -314,9 +314,7 @@ test('materialized changes reuse pull rows and preserve child mappings and tombs
   expect(afterReviewLens.resetRequired).toBe(false)
   if (afterReviewLens.resetRequired) return
   const { evidenceSequence: _routingAfterLensCursor, ...routingAfterLens } =
-    mapRecordRoutingEvidenceRow(
-    (await recordRoutingEvidenceRows(sql, { ids: [scoredRunId] }))[0]!,
-    )
+    mapRecordRoutingEvidenceRow((await recordRoutingEvidenceRows(sql, { ids: [scoredRunId] }))[0]!)
   const scoreAfterLens = mapRecordScoreRow((await recordScoreRows(sql, { ids: [scoredRunId] }))[0]!)
   expect(afterReviewLens.changes).toEqual(
     expect.arrayContaining([

@@ -148,14 +148,10 @@ async function rowsByFamily(
     add('run_score', await recordScoreRows(tx, { ids: scores }), mapRecordScoreRow, 'run_id')
   const evidence = ids('routing_evidence')
   if (evidence.length)
-    add(
-      'routing_evidence',
-      await recordRoutingEvidenceRows(tx, { ids: evidence }),
-      (row) => {
-        const { evidenceSequence: _cursor, ...item } = mapRecordRoutingEvidenceRow(row)
-        return item
-      },
-    )
+    add('routing_evidence', await recordRoutingEvidenceRows(tx, { ids: evidence }), (row) => {
+      const { evidenceSequence: _cursor, ...item } = mapRecordRoutingEvidenceRow(row)
+      return item
+    })
   return result
 }
 

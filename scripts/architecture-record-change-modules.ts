@@ -26,6 +26,7 @@ export const recordChangeModules = [
     './record-api-client-changes.ts',
     './record-auth.ts',
     './record-cache-lens.ts',
+    './record-cache-ownership.ts',
     './record-cache-port.ts',
     './record-cache-projects.ts',
     './record-cache-workflow.ts',

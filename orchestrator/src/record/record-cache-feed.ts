@@ -14,6 +14,7 @@ import {
   lensCatalogueParentPresent,
   pullLensCatalogue,
 } from './record-cache-lens.ts'
+import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import {
   applyPortCatalogueRow,
   portCatalogueParentPresent,
@@ -310,24 +311,84 @@ const order = (change: Change): number => {
   return 42
 }
 
-function applyPage(local: Database, after: string, page: RecordChangePage, deps: Dependencies) {
+type Ownership = {
+  activeSpaceId: string
+  projectSpaces: ReadonlyMap<string, string | null>
+}
+
+function feedEntryOwned(local: Database, change: Change, ownership: Ownership): boolean {
+  if (change.table === 'doc') {
+    const row =
+      change.op === 'upsert'
+        ? change.row
+        : local
+            .query<{ scope: string; subject: string | null }, [string]>(
+              'SELECT scope,subject FROM doc WHERE record_id=?',
+            )
+            .get(change.id)
+    return (
+      !row ||
+      recordCacheSpaceOwnsAddress({
+        scope: String(row.scope),
+        subject: row.subject == null ? null : String(row.subject),
+        pullingSpaceId: change.space,
+        ...ownership,
+      })
+    )
+  }
+  if (change.table === 'subject') {
+    const project =
+      change.op === 'upsert'
+        ? String(change.row.project)
+        : local
+            .query<{ name: string }, [string]>(
+              'SELECT project.name FROM subject JOIN project ON project.record_id=subject.project_record_id WHERE subject.id=?',
+            )
+            .get(change.id)?.name
+    return project === undefined || ownership.projectSpaces.get(project) === change.space
+  }
+  return true
+}
+
+function applyFeedChange(
+  local: Database,
+  change: Change,
+  deps: Dependencies,
+  ownership: Ownership,
+  result: RecordCachePullResult,
+  fallbacks: Set<string>,
+): boolean {
+  if (!feedEntryOwned(local, change, ownership)) {
+    if (change.op === 'upsert' && change.table === 'doc') result.skippedDocs++
+    else if (change.op === 'upsert' && change.table === 'subject') result.skippedSubjects++
+    return false
+  }
+  const orphan = orphanFamily(local, change)
+  if (orphan) {
+    result.orphans++
+    fallbacks.add(`${orphan}:${change.space}`)
+    return false
+  }
+  if (change.op === 'delete') deleteChange(local, change, deps)
+  else upsertChange(local, change, deps, result)
+  result.changes++
+  return change.table === 'project'
+}
+
+function applyPage(
+  local: Database,
+  after: string,
+  page: RecordChangePage,
+  deps: Dependencies,
+  ownership: Ownership,
+) {
   const result = emptyRecordCachePullResult()
   const fallbacks = new Set<string>()
   let project = false
   const applied = writeTransaction(() => {
     if (readMeta(local, CURSOR) !== after) return false
-    for (const change of [...page.changes].sort((a, b) => order(a) - order(b))) {
-      const orphan = orphanFamily(local, change)
-      if (orphan) {
-        result.orphans++
-        fallbacks.add(`${orphan}:${change.space}`)
-        continue
-      }
-      if (change.op === 'delete') deleteChange(local, change, deps)
-      else upsertChange(local, change, deps, result)
-      result.changes++
-      if (change.table === 'project') project = true
-    }
+    for (const change of [...page.changes].sort((a, b) => order(a) - order(b)))
+      project = applyFeedChange(local, change, deps, ownership, result, fallbacks) || project
     writeMeta(local, CURSOR, page.cursor)
     return true
   }, local)
@@ -407,6 +468,7 @@ export async function pullRecordCacheFeed(
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   rememberSignedInRecordUser(identity.user, local)
   rememberActiveRecordSpace(local, identity.activeSpaceId)
+  const cache = deps.cacheSpaces(identity, local)
   const spaces = membershipSpaces(identity)
   const previous = rememberedSpaces(local)
   purgeLostSpaces(
@@ -426,7 +488,10 @@ export async function pullRecordCacheFeed(
   for (;;) {
     const response = await client.listChanges!({ after: cursor, wait: 0 })
     if ('reset' in response) return resetAt(local, identity, spaces, response.reset.cursor, deps)
-    const page = applyPage(local, cursor, response, deps)
+    const page = applyPage(local, cursor, response, deps, {
+      activeSpaceId: identity.activeSpaceId,
+      projectSpaces: cache.projectSpaces,
+    })
     if (!page.applied) {
       cursor = readMeta(local, CURSOR) ?? cursor
       continue
