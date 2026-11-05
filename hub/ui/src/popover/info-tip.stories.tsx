@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { InfoTip } from './info-tip'
 
 const meta: Meta<typeof InfoTip> = { title: 'Overlays/InfoTip', component: InfoTip }
@@ -13,6 +13,8 @@ export const OpensOnClick: StoryObj<typeof meta> = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'About permissions' }))
-    await expect(canvas.getByRole('dialog', { name: 'About permissions' })).toBeVisible()
+    await waitFor(() =>
+      expect(canvas.getByRole('dialog', { name: 'About permissions' })).toBeVisible(),
+    )
   },
 }
