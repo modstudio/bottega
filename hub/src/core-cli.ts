@@ -49,6 +49,9 @@ import {
 import { startRevisionMonitor } from './service-revision.ts'
 import { hoursAgo } from './time.ts'
 
+/** The legs `--only` may name. */
+const COLLECT_LEGS = ['runs', 'transcripts', 'git', 'tasks']
+
 export async function collectOneShot(
   guard: import('./collect.ts').LeaseGuard | undefined,
   since?: string,
@@ -207,6 +210,13 @@ function registerCollectionCommands(program: Command): void {
     .option('--watch', 'keep collecting on a clock; what launchd runs')
     .action(async (options: { since?: string; only?: string; watch?: boolean }) => {
       requireDatabase()
+      if (options.only && !COLLECT_LEGS.includes(options.only)) {
+        console.error(
+          `hub: --only ${options.only} names no collect leg; use one of ${COLLECT_LEGS.join(', ')}`,
+        )
+        process.exitCode = 2
+        return
+      }
       if (options.watch) {
         console.log(`hub: collecting every ${20}s (fast) and ${300}s (slow); ctrl-c to stop`)
         const holder = `collect:${process.pid}`
