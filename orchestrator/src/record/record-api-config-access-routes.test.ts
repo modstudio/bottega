@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
 import { registerRecordConfigAccessRoutes } from './record-api-config-access-routes.ts'
+import type { RecordIdentity } from './record-auth.ts'
 
 const tenant = {
   url: 'postgres://record.test/record',
@@ -10,7 +11,9 @@ const tenant = {
 }
 
 function appWith(setSpaceMemberPermission: ReturnType<typeof mock>) {
-  const app = new Hono()
+  const app = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
   registerRecordConfigAccessRoutes(
     app,
     {
