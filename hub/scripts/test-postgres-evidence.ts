@@ -302,7 +302,7 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
       heldRead.changes.length !== 0 ||
       heldRead.cursor.xid !== baseline.xid ||
       heldRead.cursor.seq !== baseline.seq ||
-      heldRead.lag < 2n
+      heldRead.lag !== 1n
     )
       throw new Error('open transaction did not hold back later xids and grow count lag')
 
