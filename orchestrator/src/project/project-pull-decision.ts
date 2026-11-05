@@ -17,15 +17,23 @@ export type ProjectPullDecision =
       nextTrunk: string | null
     }
 
+/**
+ * Overlays the values the hosted row holds. A hosted value that is absent or null keeps the
+ * local one, so a row the hosted record never received cannot erase local settings.
+ */
 function mergedSettings(
   local: ProjectSettings,
   hosted: NonNullable<RecordProject['settings']>,
 ): ProjectSettings {
   const localOnly = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
-  return Object.fromEntries([
-    ...Object.entries(local).filter(([key]) => localOnly.has(key)),
-    ...Object.entries(hosted).filter(([key]) => !localOnly.has(key)),
-  ]) as ProjectSettings
+  return {
+    ...local,
+    ...Object.fromEntries(
+      Object.entries(hosted).filter(
+        ([key, value]) => !localOnly.has(key) && value !== null && value !== undefined,
+      ),
+    ),
+  } as ProjectSettings
 }
 
 function trunk(settings: ProjectSettings): string | null {
@@ -105,7 +113,7 @@ function decideEachProject(
     const candidate: Project = {
       ...local,
       name: hosted.name,
-      stack: hosted.stack,
+      stack: hosted.stack ?? local.stack,
       canon: hosted.canon ?? local.canon,
       settings,
       retiredAt: hosted.retiredAt,

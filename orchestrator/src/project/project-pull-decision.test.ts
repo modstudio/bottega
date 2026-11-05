@@ -57,6 +57,7 @@ describe('decideProjectRegisterPull', () => {
           retiredAt: '2026-11-04T12:00:00.000Z',
           settings: {
             trunk: 'main',
+            gate: 'old gate',
             workerCheck: 'bun test',
             checks: { spelling: true },
             space: 'alpha',
@@ -64,6 +65,17 @@ describe('decideProjectRegisterPull', () => {
         },
       },
     ])
+  })
+
+  test('keeps local values a bare hosted row never received', () => {
+    const [decision] = decideProjectRegisterPull(
+      [local({ stack: 'bun' })],
+      [hosted({ name: 'local-name', stack: null, retiredAt: null, settings: { gate: null } })],
+    )
+    expect(decision).toMatchObject({
+      kind: 'update',
+      project: { stack: 'bun', settings: { trunk: 'old', gate: 'old gate' } },
+    })
   })
 
   test('skips a hosted row without settings rather than clearing local settings', () => {
