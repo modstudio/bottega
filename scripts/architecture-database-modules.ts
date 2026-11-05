@@ -9,6 +9,27 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const databaseModules: ArchitectureModule[] = [
+  module('orchestrator/src/database/release-update-decision.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/release-artifacts.ts',
+    './migration-compatibility.ts',
+    './migration-drain-decision.ts',
+  ]),
+  module('orchestrator/src/database/release-update.ts', [
+    'node:crypto',
+    'node:fs',
+    'node:os',
+    'node:path',
+    'node:url',
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+    '../../../shared/release-artifacts.ts',
+    '../../../shared/state-directory.ts',
+    '../machine-journal.ts',
+    './db.ts',
+    './migration-compatibility.ts',
+    './release-update-decision.ts',
+  ]),
   module('orchestrator/src/database/tolerant-delete.ts', ['bun:sqlite']),
   module('orchestrator/src/database/task-flow-migration-preflight.ts', ['bun:sqlite']),
   module('orchestrator/src/database/machine-update-mover.ts', [

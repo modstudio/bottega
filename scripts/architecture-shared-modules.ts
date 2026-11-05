@@ -95,5 +95,6 @@ export const sharedModules: ArchitectureModule[] = [
     './machine-key-id.ts',
   ]),
   module('shared/state-directory.ts', ['./brand.ts']),
+  module('shared/release-artifacts.ts', ['./brand.ts']),
   module('shared/sandbox-runtime-assets.ts', []),
 ]

@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { BINARY_TARGETS } from './build-binary.ts'
-import { artifactName, type ReleaseManifest } from './build-release-artifacts.ts'
+import {
+  artifactName,
+  BINARY_TARGETS,
+  parseSha256Sums,
+  RELEASE_REPOSITORY,
+} from '../shared/release-artifacts.ts'
+import type { ReleaseManifest } from './build-release-artifacts.ts'
 import { RELEASE_BUN_VERSION } from './release-config.ts'
 import { releaseVersion } from './release-support.ts'
 
@@ -32,12 +36,7 @@ const productionPorts: PublishPorts = {
 function verifySha256Sums(outputDirectory: string, expectedNames: string[]): void {
   const sumsPath = join(outputDirectory, 'SHA256SUMS')
   if (!existsSync(sumsPath)) throw new Error(`missing ${sumsPath}`)
-  const entries = new Map<string, string>()
-  for (const line of readFileSync(sumsPath, 'utf8').trimEnd().split('\n')) {
-    const match = /^([0-9a-f]{64}) {2}([^/]+)$/.exec(line)
-    if (!match) throw new Error(`invalid SHA256SUMS line: ${JSON.stringify(line)}`)
-    entries.set(match[2]!, match[1]!)
-  }
+  const entries = parseSha256Sums(readFileSync(sumsPath, 'utf8'))
   for (const name of expectedNames) {
     const expected = entries.get(name)
     if (!expected) throw new Error(`SHA256SUMS has no entry for ${name}`)
@@ -140,8 +139,7 @@ export async function publishRelease(
   if (JSON.stringify(manifest.artifacts) !== JSON.stringify(names)) {
     throw new Error('release manifest artifact names do not match the release tag')
   }
-  const repository = `modstudio/${PLATFORM_SLUG}`
-  const release = await ports.gh(['release', 'view', tag, '--repo', repository])
+  const release = await ports.gh(['release', 'view', tag, '--repo', RELEASE_REPOSITORY])
   if (release.exitCode === 0) throw new Error(`GitHub release ${tag} already exists`)
   verifySha256Sums(output, names)
   const created = await ports.gh([
@@ -149,7 +147,7 @@ export async function publishRelease(
     'create',
     tag,
     '--repo',
-    repository,
+    RELEASE_REPOSITORY,
     '--title',
     tag,
     '--generate-notes',

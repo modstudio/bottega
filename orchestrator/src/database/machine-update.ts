@@ -3,7 +3,11 @@
 
 import { existsSync } from 'node:fs'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
+import {
+  INSTALL_HOME_ENV,
+  installationIdentity,
+  installRoot,
+} from '../../../shared/install-root.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
@@ -29,6 +33,8 @@ import { waitForMigrationDrain } from './migration-drain-wait.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationState, storeJournalPosition } from './migrations.ts'
+import { prepareReleaseUpdate } from './release-update.ts'
+import { decideUpdatePath } from './release-update-decision.ts'
 
 type Presentation = { log(value: string): void }
 
@@ -84,48 +90,90 @@ function runMigration(cwd: string): void {
     throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
 }
 
-function applyImmediateUpdate(input: {
-  target: string
-  branch: string
-  migration: string | null
-  runGit: (cwd: string, args: string[]) => string
-  migrate: (cwd: string) => void
-}): void {
+function applyImmediateUpdate(input: { migration: string | null; apply: () => void }): void {
   const migration = input.migration
   if (!migration) {
-    input.runGit(input.target, ['pull', '--ff-only', 'origin', input.branch])
-    input.migrate(input.target)
+    input.apply()
     return
   }
   withSynchronousDatabaseForMigrationStep((database) => claimMigrationWindow(database, migration))
   try {
-    input.runGit(input.target, ['pull', '--ff-only', 'origin', input.branch])
-    input.migrate(input.target)
+    input.apply()
   } finally {
     withSynchronousDatabaseForMigrationStep((database) => clearMigrationWindow(database))
   }
 }
 
+type UpdateDependencies = {
+  now?: () => number
+  sleep?: (ms: number) => Promise<void>
+  cwd?: string
+  callerCwd?: string
+  authorityRefusal?: () => string | null
+  git?: (cwd: string, args: string[]) => string
+  migrate?: (cwd: string) => void
+  afterDrainPromoted?: () => void
+  project?: (
+    cwd: string,
+    database: import('bun:sqlite').Database,
+  ) => {
+    name: string
+    path: string
+    settings: { trunk?: string }
+  } | null
+}
+
+async function applyWithMigrationGuard(input: {
+  presentation: Presentation
+  decision: ReturnType<typeof decideMigrationDrain>
+  pendingMigration: string | null
+  apply: () => void
+  deps: UpdateDependencies
+}): Promise<void> {
+  const { deps, presentation } = input
+  if (input.decision.action === 'fence') {
+    const migration = input.decision.migration
+    withSynchronousDatabaseForMigrationStep((database) =>
+      setMigrationDrain(database, migration, 'draining'),
+    )
+    try {
+      const now = deps.now ?? Date.now
+      const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
+      const drainStartedAt = now()
+      const inFlight = () =>
+        withSynchronousDatabaseForMigrationStep((database) => migrationInFlightRuns(database))
+      for (;;) {
+        await waitForMigrationDrain({
+          migration,
+          presentation,
+          startedAt: drainStartedAt,
+          now,
+          sleep,
+          inFlight,
+        })
+        withSynchronousDatabaseForMigrationStep((database) =>
+          setMigrationDrainPhase(database, 'migrating'),
+        )
+        deps.afterDrainPromoted?.()
+        const raced = inFlight()
+        if (raced.length === 0) break
+        withSynchronousDatabaseForMigrationStep((database) =>
+          setMigrationDrainPhase(database, 'draining'),
+        )
+      }
+      input.apply()
+    } finally {
+      withSynchronousDatabaseForMigrationStep((database) => clearMigrationDrain(database))
+    }
+    return
+  }
+  applyImmediateUpdate({ migration: input.pendingMigration, apply: input.apply })
+}
+
 export async function machineUpdateCommand(
   presentation: Presentation,
-  deps: {
-    now?: () => number
-    sleep?: (ms: number) => Promise<void>
-    cwd?: string
-    callerCwd?: string
-    authorityRefusal?: () => string | null
-    git?: (cwd: string, args: string[]) => string
-    migrate?: (cwd: string) => void
-    afterDrainPromoted?: () => void
-    project?: (
-      cwd: string,
-      database: import('bun:sqlite').Database,
-    ) => {
-      name: string
-      path: string
-      settings: { trunk?: string }
-    } | null
-  } = {},
+  deps: UpdateDependencies = {},
+  requestedVersion?: string,
 ): Promise<void> {
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   if (!deps.authorityRefusal && DATABASE_RESOLUTION.method === 'BOTTEGA_ORCHESTRATOR_DB') {
@@ -135,6 +183,35 @@ export async function machineUpdateCommand(
   }
   const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
+  const identity = installationIdentity(import.meta.dir, process.env)
+  const path = decideUpdatePath(identity.kind, requestedVersion)
+  if (path.action === 'refuse') throw new Error(path.reason)
+  if (identity.kind === 'distribution') {
+    const prepared = await prepareReleaseUpdate({
+      manifest: identity.manifest,
+      requestedVersion,
+      presentation,
+    })
+    if (prepared.action === 'current') {
+      presentation.log(prepared.message)
+      return
+    }
+    try {
+      assertNoActiveDrain(
+        withSynchronousDatabaseForMigrationStep((database) => migrationDrainForUpdate(database)),
+      )
+      await applyWithMigrationGuard({
+        presentation,
+        decision: prepared.update.decision.drain,
+        pendingMigration: prepared.update.pendingMigration,
+        apply: prepared.update.apply,
+        deps,
+      })
+    } finally {
+      prepared.update.cleanup()
+    }
+    return
+  }
   const target = deps.cwd ?? installRoot()
   const callerCwd = deps.callerCwd ?? process.cwd()
   const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
@@ -173,48 +250,14 @@ export async function machineUpdateCommand(
     }
   })
   assertNoActiveDrain(initial.activeDrain)
-  if (initial.decision.action === 'fence') {
-    const migration = initial.decision.migration
-    withSynchronousDatabaseForMigrationStep((database) =>
-      setMigrationDrain(database, migration, 'draining'),
-    )
-    try {
-      const now = deps.now ?? Date.now
-      const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
-      const drainStartedAt = now()
-      const inFlight = () =>
-        withSynchronousDatabaseForMigrationStep((database) => migrationInFlightRuns(database))
-      for (;;) {
-        await waitForMigrationDrain({
-          migration,
-          presentation,
-          startedAt: drainStartedAt,
-          now,
-          sleep,
-          inFlight,
-        })
-        withSynchronousDatabaseForMigrationStep((database) =>
-          setMigrationDrainPhase(database, 'migrating'),
-        )
-        deps.afterDrainPromoted?.()
-        const raced = inFlight()
-        if (raced.length === 0) break
-        withSynchronousDatabaseForMigrationStep((database) =>
-          setMigrationDrainPhase(database, 'draining'),
-        )
-      }
+  await applyWithMigrationGuard({
+    presentation,
+    decision: initial.decision,
+    pendingMigration: initial.pendingMigration,
+    deps,
+    apply: () => {
       runGit(target, ['pull', '--ff-only', 'origin', branch])
       migrate(target)
-    } finally {
-      withSynchronousDatabaseForMigrationStep((database) => clearMigrationDrain(database))
-    }
-    return
-  }
-  applyImmediateUpdate({
-    target,
-    branch,
-    migration: initial.pendingMigration,
-    runGit,
-    migrate,
+    },
   })
 }

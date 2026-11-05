@@ -5,6 +5,7 @@ import { commentParserAssets } from '../orchestrator/src/check/check-comment-par
 import { LAUNCHD_TEMPLATE_OWNERS } from '../orchestrator/src/setup/launchd-owners.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
+import { BINARY_TARGETS, type BinaryTarget } from '../shared/release-artifacts.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
 import { requireReleaseBun } from './release-config.ts'
 import { distributionManifest, releaseVersion, run } from './release-support.ts'
@@ -86,8 +87,7 @@ async function webAssetPaths(): Promise<string[]> {
   return paths
 }
 
-export const BINARY_TARGETS = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64'] as const
-export type BinaryTarget = (typeof BINARY_TARGETS)[number]
+export { BINARY_TARGETS }
 
 export function parseBinaryTarget(value: string): BinaryTarget {
   if ((BINARY_TARGETS as readonly string[]).includes(value)) return value as BinaryTarget

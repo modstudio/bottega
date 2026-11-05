@@ -19,10 +19,10 @@ export function registerDatabaseCommands(
     .allowExcessArguments(false)
     .action((options) => writeGateFacts(options.out))
   program
-    .command('update')
-    .description('fetch, drain when required, and update the registered main checkout')
+    .command('update [version]')
+    .description('update the installed release, or update a checkout from its landing branch')
     .allowExcessArguments(false)
-    .action(() => machineUpdateCommand(presentation))
+    .action((version?: string) => machineUpdateCommand(presentation, {}, version))
   program
     .command('migrate')
     .description('apply pending orchestrator store migrations')

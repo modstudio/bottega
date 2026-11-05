@@ -364,6 +364,14 @@ test('machine update refuses the BOTTEGA_ORCHESTRATOR_DB override', async () => 
   )
 })
 
+test('machine update refuses a version argument for a checkout', async () => {
+  await expect(
+    machineUpdateCommand({ log: () => {} }, { authorityRefusal: () => null }, 'v1.2.3'),
+  ).rejects.toThrow(
+    `a checkout updates to its registered landing branch; run ${PLATFORM_SLUG} machine update`,
+  )
+})
+
 test('machine update refuses an installation that is not a registered main checkout', async () => {
   await expect(
     machineUpdateCommand(

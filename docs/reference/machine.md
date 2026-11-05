@@ -1112,9 +1112,9 @@ release terminal runs and reclaim safe stale resources
 
 ## bottega machine update
 
-**Synopsis:** `bottega machine update`
+**Synopsis:** `bottega machine update [version]`
 
-update the main checkout after draining runs
+update the installed release, or update a checkout after draining runs
 
 ### Related
 
