@@ -391,6 +391,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'hostedSignedInUser',
     'hostedSignedInUserId',
     'hostedSpaceChanges',
+    'hostedRecordChanges',
     'hostedTaskChanges',
     'hostedTaskIdentity',
     'isMissingHostedTask',

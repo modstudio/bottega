@@ -1,4 +1,10 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import {
+  decodeRecordChangeCursor,
+  encodeRecordChangeCursor,
+  MAX_RECORD_CHANGE_PAGE_SIZE,
+  type RecordChangeCursor,
+} from '../../shared/record/record-changes.ts'
 import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import {
   listHostedChanges,
@@ -8,6 +14,11 @@ import {
 } from './hosted-changes.ts'
 import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
+import {
+  HOSTED_RECORD_CHANGE_TABLES,
+  type HostedRecordChangeReadResult,
+  readHostedRecordChanges,
+} from './hosted-record-changes.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
 import {
   assertAuthenticatedIdentity,
@@ -29,6 +40,11 @@ type Dependencies = {
   list?: typeof listHostedChanges
   ids?: typeof listHostedIdentitySet
   push?: typeof applyHostedPushChanges
+  feed?: (
+    client: HostedRouteConfig['recordDatabaseUrl'],
+    identity: ChangeIdentity,
+    input: { after: RecordChangeCursor | null; limit: number },
+  ) => Promise<HostedRecordChangeReadResult>
 }
 type ChangeIdentity = Exclude<
   Awaited<ReturnType<typeof taskSpaceIdentity>>,
@@ -67,6 +83,23 @@ function requestInput(url: URL) {
   return { after, limit, tables: [...new Set(tables)] as ReadableHubChangeTable[] }
 }
 
+function feedInput(url: URL) {
+  if (url.searchParams.has('wait')) throw new Error('wait is unsupported by the hub change feed')
+  const limitValue = url.searchParams.get('limit')
+  const limit = limitValue === null ? MAX_RECORD_CHANGE_PAGE_SIZE : Number(limitValue)
+  if (
+    (limitValue !== null && !/^[1-9]\d*$/.test(limitValue)) ||
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > MAX_RECORD_CHANGE_PAGE_SIZE
+  )
+    throw new Error(`limit must be an integer from 1 through ${MAX_RECORD_CHANGE_PAGE_SIZE}`)
+  const afterValue = url.searchParams.get('after')
+  let after: RecordChangeCursor | null = null
+  if (afterValue !== null) after = decodeRecordChangeCursor(afterValue)
+  return { after, limit }
+}
+
 function hasTestDependencies(
   pathname: string,
   method: string,
@@ -74,7 +107,9 @@ function hasTestDependencies(
 ): boolean {
   if (!dependencies.fetch) return false
   if (pathname === '/v1/changes/ids') return Boolean(dependencies.ids)
-  return method === 'GET' ? Boolean(dependencies.list) : Boolean(dependencies.push)
+  return method === 'GET'
+    ? Boolean(dependencies.list || dependencies.feed)
+    : Boolean(dependencies.push)
 }
 
 function pushInput(
@@ -187,15 +222,42 @@ async function changeLogResponse(
   if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
   assertAuthenticatedIdentity(who)
   if (request.method === 'POST') return pushResponse(request, config, dependencies, who)
-  let input: ReturnType<typeof requestInput>
+  const legacy = url.searchParams.has('tables')
+  let input: ReturnType<typeof requestInput> | ReturnType<typeof feedInput>
   try {
-    input = requestInput(url)
+    input = legacy ? requestInput(url) : feedInput(url)
   } catch (error) {
     return json({ error: (error as Error).message }, 400)
   }
   try {
+    if (!legacy) {
+      const result = await (dependencies.feed ?? readHostedRecordChanges)(
+        config.recordDatabaseUrl,
+        who,
+        input as ReturnType<typeof feedInput>,
+      )
+      if (result.resetRequired)
+        return json(
+          {
+            reset: true,
+            cursor: encodeRecordChangeCursor(result.cursor),
+            tables: HOSTED_RECORD_CHANGE_TABLES,
+          },
+          410,
+        )
+      return json({
+        changes: result.changes,
+        cursor: encodeRecordChangeCursor(result.cursor),
+        lag: result.lag,
+        more: result.more,
+      })
+    }
     return json(
-      await (dependencies.list ?? listHostedChanges)(config.recordDatabaseUrl, who, input),
+      await (dependencies.list ?? listHostedChanges)(
+        config.recordDatabaseUrl,
+        who,
+        input as ReturnType<typeof requestInput>,
+      ),
     )
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
