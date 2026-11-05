@@ -165,10 +165,10 @@ test('a bearer is not sent when the install is pinned to another record origin',
           token: () => 'stored-bearer',
           tokenAsync: async () => 'stored-bearer',
         },
-        async () => {
+        (async () => {
           requests += 1
           return Response.json({})
-        },
+        }) as unknown as typeof fetch,
       ),
     ).rejects.toThrow('record use https://staging.example.test')
     expect(requests).toBe(0)
