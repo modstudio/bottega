@@ -7,6 +7,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/autonomy.ts',
   '../../../shared/brand.ts',
   '../../../shared/built-commit.ts',
+  '../../../shared/canonical-json.ts',
   '../../../shared/config-directory.ts',
   '../../../shared/delegation-mode.ts',
   '../../../shared/embedded-assets.ts',

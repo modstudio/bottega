@@ -11,6 +11,7 @@ import {
 import { newRecordId } from '../../../shared/record-id.ts'
 import { defaultShortName } from './machine-name.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
+import { BUILT_INS_REVALIDATE_MS } from './record-built-ins-identity.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
 
@@ -30,7 +31,8 @@ function localOutbox(count: number): Database {
     id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
-  ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
+  ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL);
+  CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
   for (let id = 1; id <= count; id++) {
     local
       .query(
@@ -82,6 +84,37 @@ test('sync sends an empty batch to register and refresh its machine', async () =
       rows: [],
     },
   ])
+})
+
+test('sync ensures built-ins once per content identity, and again once the marker expires', async () => {
+  using local = localOutbox(0)
+  let ensured = 0
+  const client = {
+    whoami,
+    sync: async () => ({ results: [] }),
+    ensureSpaceBuiltIns: async () => {
+      ensured++
+      return { inserted: 1, alreadyPresent: 0 }
+    },
+  }
+
+  await syncRecord({ ...options(local), client })
+  const marker = local
+    .query<{ value: string }, []>(
+      `SELECT value FROM schema_meta WHERE key='record_built_ins:${SPACE_ID}'`,
+    )
+    .get()?.value
+  expect(marker).toMatch(/^[0-9a-f]{64}@/)
+  await syncRecord({ ...options(local), client })
+  expect(ensured).toBe(1)
+
+  const identity = marker!.split('@')[0]
+  const expired = new Date(Date.now() - BUILT_INS_REVALIDATE_MS - 60_000).toISOString()
+  local
+    .query(`UPDATE schema_meta SET value=? WHERE key='record_built_ins:${SPACE_ID}'`)
+    .run(`${identity}@${expired}`)
+  await syncRecord({ ...options(local), client })
+  expect(ensured).toBe(2)
 })
 
 test('sync sends ordered bounded batches and applies each response before continuing', async () => {

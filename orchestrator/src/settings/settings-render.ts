@@ -1,6 +1,7 @@
 // concern: settings-render
 /** Pure settings-file parse, render, and drift. Must not know filesystems, stores, commands, or transports. */
 import { createHash } from 'node:crypto'
+import { canonicalJson } from '../../../shared/canonical-json.ts'
 import {
   AUTO_MODE_LISTS,
   type AutoModeList,
@@ -254,20 +255,6 @@ function hookFingerprint(item: unknown): string {
     .update(canonicalJson(item))
     .digest('hex')
     .slice(0, HOOK_FINGERPRINT_LENGTH)
-}
-
-function canonicalJson(value: unknown): string {
-  return JSON.stringify(canonicalize(value))
-}
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize)
-  if (!isPlainObject(value)) return value
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, canonicalize(value[key])]),
-  )
 }
 
 function subtract(left: string[], right: string[]): string[] {
