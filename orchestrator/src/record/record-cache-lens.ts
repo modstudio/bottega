@@ -13,14 +13,10 @@ export async function pullLensCatalogue(
   local: Database,
   spaces: readonly string[],
 ): Promise<number> {
-  const counts = await Promise.all(
-    spaces.map(async (spaceId) => {
-      let count = 0
-      for (const table of RECORD_LENS_TABLES) count += await pullLensTable(local, spaceId, table)
-      return count
-    }),
-  )
-  return counts.reduce((sum, count) => sum + count, 0)
+  let count = 0
+  for (const spaceId of spaces)
+    for (const table of RECORD_LENS_TABLES) count += await pullLensTable(local, spaceId, table)
+  return count
 }
 
 async function pullLensTable(local: Database, spaceId: string, table: RecordLensTable) {

@@ -23,9 +23,10 @@ export async function pullProjectRegister(
   spaces: readonly string[],
   client: Pick<RecordApiClient, 'listProjects'>,
 ): Promise<ProjectRegisterPullResult> {
-  const hostedRows = (
-    await Promise.all(spaces.map((spaceId) => client.listProjects({ destinationSpaceId: spaceId })))
-  ).flat()
+  const hostedRows: RecordProject[] = []
+  for (const spaceId of spaces) {
+    hostedRows.push(...(await client.listProjects({ destinationSpaceId: spaceId })))
+  }
   const localRows = [...projects(undefined, local), ...projects({ retired: true }, local)]
   const decisions = decideProjectRegisterPull(localRows, hostedRows)
   const updates = decisions.filter((decision) => decision.kind === 'update')

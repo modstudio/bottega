@@ -81,48 +81,43 @@ export async function pullRoutingPool(
   spaces: readonly string[],
 ): Promise<RoutingPoolPullResult> {
   const client = recordApiClient()
-  const results = await Promise.all(
-    spaces.map(async (spaceId) => {
-      let added = 0
-      let updated = 0
-      const cursorKey = `${ROUTING_POOL_CURSOR}:${spaceId}`
-      let requestCursor = readCursor(local, cursorKey)
-      let spaceCaughtUp = false
-      for (let pageNumber = 0; pageNumber < ROUTING_POOL_PAGES_PER_SYNC; pageNumber++) {
-        const page = await client.listRoutingEvidence({
-          spaceId,
-          cursor: requestCursor,
-          limit: ROUTING_POOL_PAGE_LIMIT,
-        })
-        writeTransaction(() => {
-          const pulledAt = nowIso()
-          for (const row of page.items) {
-            const exists = local
-              .query<{ present: number }, [string]>(
-                'SELECT 1 AS present FROM routing_pool_run WHERE record_id=?',
-              )
-              .get(row.id)
-            upsertPoolRun(local, row, pulledAt)
-            if (exists) updated++
-            else added++
-          }
-          const pageCursor = page.endCursor ?? page.nextCursor
-          if (pageCursor) {
-            writeCursor(local, cursorKey, pageCursor)
-          }
-        }, local)
-        if (!page.nextCursor) {
-          spaceCaughtUp = true
-          break
+  let added = 0
+  let updated = 0
+  let caughtUp = true
+  for (const spaceId of spaces) {
+    const cursorKey = `${ROUTING_POOL_CURSOR}:${spaceId}`
+    let requestCursor = readCursor(local, cursorKey)
+    let spaceCaughtUp = false
+    for (let pageNumber = 0; pageNumber < ROUTING_POOL_PAGES_PER_SYNC; pageNumber++) {
+      const page = await client.listRoutingEvidence({
+        spaceId,
+        cursor: requestCursor,
+        limit: ROUTING_POOL_PAGE_LIMIT,
+      })
+      writeTransaction(() => {
+        const pulledAt = nowIso()
+        for (const row of page.items) {
+          const exists = local
+            .query<{ present: number }, [string]>(
+              'SELECT 1 AS present FROM routing_pool_run WHERE record_id=?',
+            )
+            .get(row.id)
+          upsertPoolRun(local, row, pulledAt)
+          if (exists) updated++
+          else added++
         }
-        requestCursor = page.nextCursor
+        const pageCursor = page.endCursor ?? page.nextCursor
+        if (pageCursor) {
+          writeCursor(local, cursorKey, pageCursor)
+        }
+      }, local)
+      if (!page.nextCursor) {
+        spaceCaughtUp = true
+        break
       }
-      return { added, updated, caughtUp: spaceCaughtUp }
-    }),
-  )
-  return {
-    added: results.reduce((sum, result) => sum + result.added, 0),
-    updated: results.reduce((sum, result) => sum + result.updated, 0),
-    caughtUp: results.every((result) => result.caughtUp),
+      requestCursor = page.nextCursor
+    }
+    if (!spaceCaughtUp) caughtUp = false
   }
+  return { added, updated, caughtUp }
 }

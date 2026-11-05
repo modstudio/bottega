@@ -291,6 +291,11 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-generator.ts',
   ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/record/record-built-ins-identity.ts', [
+    'node:crypto',
+    '../lens/lens-built-ins.ts',
+    '../workflow/workflow-built-ins.ts',
+  ]),
   module('orchestrator/src/record/record-sync-contract.ts', []),
   module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-sync-results.ts', [

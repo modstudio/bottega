@@ -160,17 +160,13 @@ async function pullDocs(
   let skippedDocs = 0
   const cursors = new Map<string, RecordCursor>()
   const unresolvedParents = new Map<string, string>()
-  const pulledSpaces = await Promise.all(
-    spaces.map(async (spaceId) => {
-      return pullDocsForSpace(local, {
-        spaceId,
-        activeSpaceId: identity.activeSpaceId as string,
-        projectSpaces,
-        unresolvedParents,
-      })
-    }),
-  )
-  for (const pulled of pulledSpaces) {
+  for (const spaceId of spaces) {
+    const pulled = await pullDocsForSpace(local, {
+      spaceId,
+      activeSpaceId: identity.activeSpaceId as string,
+      projectSpaces,
+      unresolvedParents,
+    })
     docs += pulled.docs
     skippedDocs += pulled.skippedDocs
     if (pulled.cursor) cursors.set(pulled.cursorKey, pulled.cursor)
@@ -274,47 +270,41 @@ async function pullSubjects(
   projectSpaces: ReadonlyMap<string, string | null>,
 ): Promise<{ subjects: number; skippedSubjects: number }> {
   const client = recordApiClient()
-  const results = await Promise.all(
-    spaces.map(async (spaceId) => {
-      let subjects = 0
-      let skippedSubjects = 0
-      const cursorKey = `${SUBJECTS_CURSOR}:${spaceId}`
-      let cursor = readRecordCursor(local, cursorKey)
-      let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
-      for (;;) {
-        const page = await client.listProjectSubjects(
-          {
-            includeRetired: true,
-            order: 'updated',
-            cursor: requestCursor,
-            limit: 100,
-          },
-          { destinationSpaceId: spaceId },
-        )
-        if (!page.items.length) break
-        writeTransaction(() => {
-          for (const row of page.items) {
-            if (projectSpaces.get(row.project) !== spaceId) {
-              skippedSubjects++
-            } else {
-              applySubjectRecord(row, local)
-              subjects++
-            }
-            cursor = { at: row.updatedAt, id: row.id }
+  let subjects = 0
+  let skippedSubjects = 0
+  for (const spaceId of spaces) {
+    const cursorKey = `${SUBJECTS_CURSOR}:${spaceId}`
+    let cursor = readRecordCursor(local, cursorKey)
+    let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
+    for (;;) {
+      const page = await client.listProjectSubjects(
+        {
+          includeRetired: true,
+          order: 'updated',
+          cursor: requestCursor,
+          limit: 100,
+        },
+        { destinationSpaceId: spaceId },
+      )
+      if (!page.items.length) break
+      writeTransaction(() => {
+        for (const row of page.items) {
+          if (projectSpaces.get(row.project) !== spaceId) {
+            skippedSubjects++
+          } else {
+            applySubjectRecord(row, local)
+            subjects++
           }
-          if (page.endCursor) cursor = decodeRecordCursor(page.endCursor)
-          if (cursor) writeRecordCursor(local, cursorKey, cursor)
-        }, local)
-        if (!page.nextCursor) break
-        requestCursor = page.nextCursor
-      }
-      return { subjects, skippedSubjects }
-    }),
-  )
-  return {
-    subjects: results.reduce((sum, result) => sum + result.subjects, 0),
-    skippedSubjects: results.reduce((sum, result) => sum + result.skippedSubjects, 0),
+          cursor = { at: row.updatedAt, id: row.id }
+        }
+        if (page.endCursor) cursor = decodeRecordCursor(page.endCursor)
+        if (cursor) writeRecordCursor(local, cursorKey, cursor)
+      }, local)
+      if (!page.nextCursor) break
+      requestCursor = page.nextCursor
+    }
   }
+  return { subjects, skippedSubjects }
 }
 
 function resolveRememberedParents(local: Database, unresolved: Map<string, string>): void {

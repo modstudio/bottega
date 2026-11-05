@@ -19,6 +19,7 @@ function canonical(value: unknown): unknown {
   return value
 }
 
+const workflowBuiltIns = builtInWorkflowCatalogue()
 export const RECORD_BUILT_INS_IDENTITY = createHash('sha256')
   .update(
     JSON.stringify(
@@ -26,19 +27,16 @@ export const RECORD_BUILT_INS_IDENTITY = createHash('sha256')
         lenses: BUILT_IN_LENSES,
         lensSlots: JSON.parse(BUILT_IN_LENS_SLOTS),
         lensDefaultProfile: JSON.parse(BUILT_IN_LENS_DEFAULT_PROFILE),
-        workflows: (() => {
-          const catalogue = builtInWorkflowCatalogue()
-          return {
-            stepCatalogue: {
-              ...catalogue.stepCatalogue,
-              definition: JSON.parse(catalogue.stepCatalogue.definition),
-            },
-            workflows: catalogue.workflows.map((workflow) => ({
-              ...workflow,
-              definition: JSON.parse(workflow.definition),
-            })),
-          }
-        })(),
+        workflows: {
+          stepCatalogue: {
+            ...workflowBuiltIns.stepCatalogue,
+            definition: JSON.parse(workflowBuiltIns.stepCatalogue.definition),
+          },
+          workflows: workflowBuiltIns.workflows.map((workflow) => ({
+            ...workflow,
+            definition: JSON.parse(workflow.definition),
+          })),
+        },
       }),
     ),
   )

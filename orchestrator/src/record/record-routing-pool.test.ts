@@ -139,30 +139,16 @@ test('routing pool overwrites hosted rows and replaces their lenses', async () =
 })
 
 test('routing pool keeps a separate cursor for every readable space', async () => {
-  let inFlight = 0
-  let overlap = 0
-  let release!: () => void
-  const bothStarted = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  installRoutingClient(async ({ spaceId, cursor }) => {
-    inFlight++
-    overlap = Math.max(overlap, inFlight)
-    if (inFlight === 2) release()
-    await bothStarted
-    inFlight--
-    return {
-      items: [evidence(`run-${spaceId}`, spaceId)],
-      nextCursor: null,
-      endCursor: cursor ?? routingCursor(spaceId === 'space-a' ? 0 : 1),
-    }
-  })
+  installRoutingClient(async ({ spaceId, cursor }) => ({
+    items: [evidence(`run-${spaceId}`, spaceId)],
+    nextCursor: null,
+    endCursor: cursor ?? routingCursor(spaceId === 'space-a' ? 0 : 1),
+  }))
   expect(await pullRoutingPool(db(), ['space-a', 'space-b'])).toEqual({
     added: 2,
     updated: 0,
     caughtUp: true,
   })
-  expect(overlap).toBe(2)
   expect(
     db()
       .query<{ key: string; value: string }, []>(

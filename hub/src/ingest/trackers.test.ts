@@ -12,8 +12,8 @@ import {
   trackerCredentials,
   trackerLegError,
   trackerObservationTimes,
-  trackerRegistrations,
   trackerProjectsReadSince,
+  trackerRegistrations,
   writeTrackerCache,
 } from './trackers.ts'
 
