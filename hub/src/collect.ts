@@ -68,6 +68,11 @@ export type WatcherAlive = {
   at: string
 }
 
+export type LiveWatcherHeartbeat = {
+  holder: string
+  ageSeconds: number
+}
+
 const QUIET_MAX_MS = 15 * 60_000
 const FAILURE_MAX_MS = 60 * 60_000
 
@@ -138,23 +143,31 @@ export function oneShotTrackerSelection(
   }
 }
 
-export function watcherLive(alive: string | null | undefined, now: number): boolean {
-  if (!alive) return false
+function liveWatcherHeartbeat(
+  alive: string | null | undefined,
+  now: number,
+): LiveWatcherHeartbeat | null {
+  if (!alive) return null
   try {
     const parsed: unknown = JSON.parse(alive)
-    if (!parsed || typeof parsed !== 'object') return false
+    if (!parsed || typeof parsed !== 'object') return null
     const value = parsed as Partial<WatcherAlive>
     if (
       typeof value.holder !== 'string' ||
       typeof value.pid !== 'number' ||
       typeof value.at !== 'string'
     )
-      return false
+      return null
     const at = Date.parse(value.at)
-    return Number.isFinite(at) && now - at <= WATCH_LIVE_MS
+    if (!Number.isFinite(at) || now - at > WATCH_LIVE_MS) return null
+    return { holder: value.holder, ageSeconds: Math.max(0, Math.floor((now - at) / 1000)) }
   } catch {
-    return false
+    return null
   }
+}
+
+export function watcherLive(alive: string | null | undefined, now: number): boolean {
+  return liveWatcherHeartbeat(alive, now) !== null
 }
 
 export type CollectLegResult =
@@ -196,7 +209,7 @@ export function formatCollectLeg(result: CollectLegResult): string {
   if (result.hostedChanges)
     return `${result.source.padEnd(18)}${separator}${
       'families' in result.hostedChanges
-        ? hostedChangesLines(result.hostedChanges)
+        ? hostedChangesLines(result.hostedChanges) || 'ok'
         : hostedChangeLegLine(result.hostedChanges)
     }`
   if (result.hostedOutbox)
@@ -205,7 +218,7 @@ export function formatCollectLeg(result: CollectLegResult): string {
     const counts = [`${result.trackerCounts.read} trackers read`]
     if (result.trackerCounts.leftToWatcher)
       counts.push(
-        `${result.trackerCounts.leftToWatcher} left to the watcher; force with ${PLATFORM_SLUG} collect --only tasks`,
+        `${result.trackerCounts.leftToWatcher} left to the watcher; force with ${PLATFORM_SLUG} record pull --only tasks`,
       )
     if (result.trackerCounts.skippedFresh)
       counts.push(`${result.trackerCounts.skippedFresh} skipped fresh`)
@@ -260,13 +273,7 @@ export async function hostedCollectLegs(
     dependencies.noteChanges !== undefined || dependencies.sendChanges !== undefined
   const results: CollectLegResult[] = []
   guard?.assertHeld()
-  results.push(
-    (await settleTimedLeg(
-      'hosted outbox',
-      dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
-      (report) => ({ ok: true, hostedOutbox: report }),
-    ))!,
-  )
+  results.push(await collectHostedOutboxOnce(dependencies.outbox))
   guard?.assertHeld('hosted outbox')
   const changeLegs: Array<{
     source: string
@@ -287,6 +294,15 @@ export async function hostedCollectLegs(
     guard?.assertHeld(previous)
   }
   return results
+}
+
+export async function collectHostedOutboxOnce(
+  outbox: () => Promise<HostedOutboxReport> = () => drainHostedOutbox({ processKind: 'collector' }),
+): Promise<CollectLegResult> {
+  return (await settleTimedLeg('hosted outbox', outbox, (report) => ({
+    ok: true,
+    hostedOutbox: report,
+  })))!
 }
 
 async function settleChangeLeg(
@@ -521,6 +537,10 @@ function watcherAliveValue(): string | null {
       .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key = ?')
       .get(WATCH_ALIVE_KEY)?.value ?? null
   )
+}
+
+export function currentLiveWatcher(now = Date.now()): LiveWatcherHeartbeat | null {
+  return liveWatcherHeartbeat(watcherAliveValue(), now)
 }
 
 function writeWatcherAlive(holder: WatcherAlive['holder']) {
