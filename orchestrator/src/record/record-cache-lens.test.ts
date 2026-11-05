@@ -475,7 +475,7 @@ test('pullRecordCache pages six parent-first streams with independent space and 
   })
 
   expect((await pullRecordCache(local)).lensCatalogue).toBe(13)
-  expect(calls).toEqual([
+  expect(calls.filter((call) => call.startsWith(spaceA))).toEqual([
     `${spaceA}:lens:start`,
     `${spaceA}:lens:resume`,
     ...[
@@ -485,6 +485,8 @@ test('pullRecordCache pages six parent-first streams with independent space and 
       'project_lens_profile',
       'project_lens_profile_revision',
     ].map((table) => `${spaceA}:${table}:start`),
+  ])
+  expect(calls.filter((call) => call.startsWith(spaceB))).toEqual([
     ...[
       'lens',
       'lens_revision',

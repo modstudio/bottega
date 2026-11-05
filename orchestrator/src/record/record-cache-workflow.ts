@@ -14,21 +14,24 @@ export async function pullWorkflowCatalogue(
   local: Database,
   spaces: readonly string[],
 ): Promise<{ count: number; completedSpaces: ReadonlySet<string> }> {
-  let count = 0
   const completedSpaces = new Set<string>()
-  for (const spaceId of spaces) {
-    let completed = true
-    for (const table of RECORD_WORKFLOW_TABLES) {
-      const pulled = await pullTable(local, spaceId, table)
-      count += pulled.count
-      if (!pulled.completed) {
-        completed = false
-        break
+  const results = await Promise.all(
+    spaces.map(async (spaceId) => {
+      let count = 0
+      let completed = true
+      for (const table of RECORD_WORKFLOW_TABLES) {
+        const pulled = await pullTable(local, spaceId, table)
+        count += pulled.count
+        if (!pulled.completed) {
+          completed = false
+          break
+        }
       }
-    }
-    if (completed) completedSpaces.add(spaceId)
-  }
-  return { count, completedSpaces }
+      return { spaceId, count, completed }
+    }),
+  )
+  for (const result of results) if (result.completed) completedSpaces.add(result.spaceId)
+  return { count: results.reduce((sum, result) => sum + result.count, 0), completedSpaces }
 }
 
 async function pullTable(

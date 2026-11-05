@@ -9,7 +9,7 @@ import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import { db, nowIso } from '../database/db.ts'
+import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillQuestionRecords } from '../run/question-outbox.ts'
@@ -31,6 +31,8 @@ import {
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
+import type { RecordIdentity } from './record-auth.ts'
+import { RECORD_BUILT_INS_IDENTITY } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
 import {
@@ -532,10 +534,27 @@ async function sendSyncBatch(input: {
 
 async function ensureActiveSpaceBuiltIns(
   client: Pick<ReturnType<typeof recordApiClient>, 'whoami' | 'ensureSpaceBuiltIns'>,
+  local: Database,
 ): Promise<Awaited<ReturnType<typeof client.whoami>>> {
   const session = await client.whoami()
-  if (session.activeSpaceId && client.ensureSpaceBuiltIns)
+  if (session.activeSpaceId && client.ensureSpaceBuiltIns) {
+    const key = `record_built_ins:${session.activeSpaceId}`
+    const ensured = local
+      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+      .get(key)?.value
+    if (ensured === RECORD_BUILT_INS_IDENTITY) return session
     await client.ensureSpaceBuiltIns({ destinationSpaceId: session.activeSpaceId })
+    writeTransaction(
+      () =>
+        local
+          .query(
+            `INSERT INTO schema_meta (key,value) VALUES (?,?)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+          )
+          .run(key, RECORD_BUILT_INS_IDENTITY),
+      local,
+    )
+  }
   return session
 }
 
@@ -595,9 +614,10 @@ function cacheFirstSyncedMachineNames(
 async function pullAfterSync(
   options: RecordSyncOptions,
   local: Database,
+  identity: RecordIdentity,
 ): Promise<Pick<RecordSyncResult, 'routingPool' | 'projectRegister'>> {
   if (options.client) return {}
-  const pull = await pullRecordCache(local)
+  const pull = await pullRecordCache(local, identity)
   return { routingPool: pull.routingPool, projectRegister: pull.projectRegister }
 }
 
@@ -633,7 +653,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
-  const session = await ensureActiveSpaceBuiltIns(client)
+  const session = await ensureActiveSpaceBuiltIns(client, writableLocal)
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0
@@ -675,7 +695,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     if (!batch.request.rows.length) break
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
-  const { routingPool, projectRegister } = await pullAfterSync(options, writableLocal)
+  const { routingPool, projectRegister } = await pullAfterSync(options, writableLocal, session)
   rememberHostedRecord(writableLocal)
   return completedSyncResult({
     pushed,
