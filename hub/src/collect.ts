@@ -13,6 +13,9 @@ import {
   pullHostedTaskChanges,
 } from './hosted-change-cache.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
+
+export { resolveHostedUrl }
+
 import type { IngestReport } from './ingest/batches.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'

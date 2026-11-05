@@ -8,6 +8,7 @@ import {
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
 import {
+  type CollectLegResult,
   collectHostedOutboxOnce,
   collectIncremental,
   collectLease,
@@ -15,6 +16,7 @@ import {
   currentLiveWatcher,
   formatCollectLeg,
   releaseLease,
+  resolveHostedUrl,
   watch,
   withLease,
 } from './collect.ts'
@@ -80,7 +82,8 @@ export async function runOneShotCollect(
   dependencies: {
     watcher?: typeof currentLiveWatcher
     outbox?: typeof collectHostedOutboxOnce
-    lease?: typeof withLease
+    hosted?: typeof resolveHostedUrl
+    lease?: typeof withLease<CollectLegResult[]>
     collect?: typeof collectOneShot
   } = {},
 ): Promise<void> {
@@ -92,9 +95,11 @@ export async function runOneShotCollect(
     console.log(
       `hub collection: left to the live watcher (holder ${watcher.holder}, heartbeat ${watcher.ageSeconds}s ago); force with ${PLATFORM_SLUG} record pull --only <runs|transcripts|git|tasks>`,
     )
-    const outbox = await (dependencies.outbox ?? collectHostedOutboxOnce)()
-    console.log(formatCollectLeg(outbox))
-    if (!outbox.ok) process.exitCode = 1
+    if ((dependencies.hosted ?? resolveHostedUrl)()) {
+      const outbox = await (dependencies.outbox ?? collectHostedOutboxOnce)()
+      console.log(formatCollectLeg(outbox))
+      if (!outbox.ok) process.exitCode = 1
+    }
     return
   }
 

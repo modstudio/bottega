@@ -56,17 +56,18 @@ test('a live watcher leaves collection alone without acquiring its lease and sti
       {},
       {
         watcher: () => ({ holder: 'dashboard:42', ageSeconds: 3 }),
+        hosted: () => 'https://hub.example.test',
         outbox: async () => {
           outboxDrains++
           return { source: 'hosted outbox', ok: true, durationMs: 0, hostedOutbox: outboxReport }
         },
-        lease: (async () => {
+        lease: async () => {
           leaseAttempts++
           throw new Error('collect lease must not be acquired')
-        }) as never,
-        collect: (async () => {
+        },
+        collect: async () => {
           throw new Error('collection legs must not run')
-        }) as never,
+        },
       },
     )
   } finally {
@@ -80,6 +81,35 @@ test('a live watcher leaves collection alone without acquiring its lease and sti
   ])
 })
 
+test('a live watcher without a hosted record does not drain outbox', async () => {
+  const output: string[] = []
+  const log = spyOn(console, 'log').mockImplementation((value) => output.push(String(value)))
+  const previousExitCode = process.exitCode
+  let outboxDrains = 0
+  process.exitCode = 0
+  try {
+    await runOneShotCollect(
+      {},
+      {
+        watcher: () => ({ holder: 'dashboard:42', ageSeconds: 3 }),
+        hosted: () => undefined,
+        outbox: async () => {
+          outboxDrains++
+          throw new Error('hosted outbox must not drain without a hosted record')
+        },
+      },
+    )
+    expect(process.exitCode).toBe(0)
+  } finally {
+    process.exitCode = previousExitCode
+    log.mockRestore()
+  }
+  expect(outboxDrains).toBe(0)
+  expect(output).toEqual([
+    `hub collection: left to the live watcher (holder dashboard:42, heartbeat 3s ago); force with ${PLATFORM_SLUG} record pull --only <runs|transcripts|git|tasks>`,
+  ])
+})
+
 test('a stale watcher takes the existing leased collection path', async () => {
   let leaseAttempts = 0
   let collections = 0
@@ -89,17 +119,40 @@ test('a stale watcher takes the existing leased collection path', async () => {
       {},
       {
         watcher: () => null,
-        lease: (async (
-          _holder: string,
-          work: (guard: { assertHeld(): void }) => Promise<unknown>,
-        ) => {
+        lease: async (_holder, work) => {
           leaseAttempts++
           return { ran: true, value: await work({ assertHeld() {} }) }
-        }) as never,
-        collect: (async () => {
+        },
+        collect: async () => {
           collections++
           return result
-        }) as never,
+        },
+      },
+    )
+  } finally {
+    log.mockRestore()
+  }
+  expect(leaseAttempts).toBe(1)
+  expect(collections).toBe(1)
+})
+
+test('--since takes the existing leased collection path despite a live watcher', async () => {
+  let leaseAttempts = 0
+  let collections = 0
+  const log = spyOn(console, 'log').mockImplementation(() => {})
+  try {
+    await runOneShotCollect(
+      { since: '2026-11-01T00:00:00.000Z' },
+      {
+        watcher: () => ({ holder: 'dashboard:42', ageSeconds: 1 }),
+        lease: async (_holder, work) => {
+          leaseAttempts++
+          return { ran: true, value: await work({ assertHeld() {} }) }
+        },
+        collect: async () => {
+          collections++
+          return result
+        },
       },
     )
   } finally {
@@ -111,39 +164,27 @@ test('a stale watcher takes the existing leased collection path', async () => {
 
 test('--only tasks forces tracker collection despite a live watcher', async () => {
   const selected: string[] = []
-  let watcherReads = 0
   const log = spyOn(console, 'log').mockImplementation(() => {})
   try {
     await runOneShotCollect(
       { only: 'tasks' },
       {
-        watcher: () => {
-          watcherReads++
-          return { holder: 'dashboard:42', ageSeconds: 1 }
-        },
-        lease: (async (
-          _holder: string,
-          work: (guard: { assertHeld(): void }) => Promise<unknown>,
-        ) => ({
+        watcher: () => ({ holder: 'dashboard:42', ageSeconds: 1 }),
+        lease: async (_holder, work) => ({
           ran: true,
           value: await work({ assertHeld() {} }),
-        })) as never,
-        collect: ((
-          guard: Parameters<typeof collectOneShot>[0],
-          since: Parameters<typeof collectOneShot>[1],
-          only: Parameters<typeof collectOneShot>[2],
-        ) =>
+        }),
+        collect: (guard, since, only) =>
           collectOneShot(guard, since, only, {
             incremental: async (selectedOnly) => {
               selected.push(selectedOnly ?? '')
               return [{ source: 'tasks', ok: true, durationMs: 0 }]
             },
-          })) as never,
+          }),
       },
     )
   } finally {
     log.mockRestore()
   }
-  expect(watcherReads).toBe(0)
   expect(selected).toEqual(['tasks'])
 })
