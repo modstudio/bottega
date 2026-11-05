@@ -262,6 +262,7 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     to: item.to,
     label: item.label,
     icon: item.icon,
+    attention: item.count === 'inbox',
     count:
       item.count === 'inbox'
         ? waitingInboxEntries(waiting.data ?? []).length || undefined

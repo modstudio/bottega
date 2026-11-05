@@ -39,28 +39,18 @@ const destinations = (mode: 'hosted' | 'local') =>
     section.entries.flatMap((entry) => ('items' in entry ? entry.items : [entry])),
   )
 
-test('hosted mode exposes its hosted routes in team-work order', () => {
-  const navigation = navForMode('hosted')
-  expect(
-    navigation
-      .find((section) => section.id === 'work')
-      ?.entries.flatMap((entry) => ('items' in entry ? [] : entry.to)),
-  ).toEqual([
-    '/flight',
-    '/board',
-    '/done',
-    '/messages',
-    '/notes',
-    '/runs',
-    '/reviews',
-    '/projects',
-    '/docs',
-  ])
+test('hosted mode exposes its hosted routes with only the dashboard outside a group', () => {
+  for (const mode of ['hosted', 'local'] as const)
+    expect(
+      navForMode(mode).flatMap((section) =>
+        section.entries.flatMap((entry) => ('items' in entry ? [] : entry.to)),
+      ),
+    ).toEqual(['/flight'])
   const hosted = destinations('hosted')
   for (const item of hosted) expect(isHostedPath(item.to)).toBe(true)
   expect(hosted.map((item) => item.label)).toContain('Flight')
   expect(destinations('local').map((item) => item.to)).toContain('/flight')
-  expect(destinations('local').map((item) => item.to)).toContain('/context')
+  expect(destinations('local').map((item) => item.to)).toContain('/personal/instructions')
   expect(destinations('local').map((item) => item.to)).toContain('/messages')
   expect(hosted.map((item) => item.to)).toContain('/messages')
   expect(isHostedPath('/messages')).toBe(true)
