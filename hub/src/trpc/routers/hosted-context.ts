@@ -53,12 +53,31 @@ async function allDocs(client: RecordClient, input: { scope: string; subject?: s
   return rows
 }
 
-async function currentRevision(client: RecordClient, id: string) {
-  const revisions = await client.docRevisions(id)
+async function personalSpace(client: RecordClient): Promise<{ userId: string; spaceId: string }> {
+  const identity = await client.whoami()
+  if (!identity.personalSpaceId)
+    throw new TRPCError({ code: 'CONFLICT', message: 'personal space is not provisioned' })
+  return { userId: identity.user.id, spaceId: identity.personalSpaceId }
+}
+
+async function allPersonalDocs(client: RecordClient, input: { scope: string; subject?: string }) {
+  const personal = await personalSpace(client)
+  const rows: RecordDoc[] = []
+  let cursor: string | undefined
+  do {
+    const page = await client.docs({ ...input, limit: 100, cursor }, personal.spaceId)
+    rows.push(...page.items)
+    cursor = page.nextCursor ?? undefined
+  } while (cursor)
+  return { personal, rows }
+}
+
+async function currentRevision(client: RecordClient, id: string, destinationSpaceId?: string) {
+  const revisions = await client.docRevisions(id, undefined, destinationSpaceId)
   return revisions.items[0]?.id ?? null
 }
 
-async function canonRow(client: RecordClient, row: RecordDoc) {
+async function canonRow(client: RecordClient, row: RecordDoc, destinationSpaceId?: string) {
   return {
     id: row.id,
     scope: row.scope,
@@ -67,18 +86,19 @@ async function canonRow(client: RecordClient, row: RecordDoc) {
     title: row.title,
     body: row.body,
     delivery: row.delivery,
-    revision: await currentRevision(client, row.id),
+    revision: await currentRevision(client, row.id, destinationSpaceId),
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   }
 }
 
 async function userCanonRows(client: RecordClient) {
-  const [{ user }, rows] = await Promise.all([
-    client.whoami(),
-    allDocs(client, { scope: 'canon', subject: '' }),
-  ])
-  return { user, rows: rows.filter((row) => row.subject === null && row.owner === user.id) }
+  const { personal, rows } = await allPersonalDocs(client, { scope: 'canon', subject: '' })
+  return {
+    user: { id: personal.userId },
+    spaceId: personal.spaceId,
+    rows: rows.filter((row) => row.subject === null && row.owner === personal.userId),
+  }
 }
 
 const leaf = (entry: RecordConfigEntry | undefined) =>
@@ -183,19 +203,41 @@ async function settingsRow(
   address: z.infer<typeof target>,
 ): Promise<RecordDoc> {
   const subject = 'user' in address ? '' : address.project
-  const [{ user }, rows] = await Promise.all([
-    client.whoami(),
-    allDocs(client, { scope: 'settings', subject }),
-  ])
+  const identity = await client.whoami()
+  const destination = 'user' in address ? identity.personalSpaceId : undefined
+  if ('user' in address && !destination)
+    throw new TRPCError({ code: 'CONFLICT', message: 'personal space is not provisioned' })
+  const rows = destination
+    ? (await client.docs({ scope: 'settings', subject, limit: 100 }, destination)).items
+    : await allDocs(client, { scope: 'settings', subject })
   const row = rows.find((candidate) =>
     'user' in address
-      ? candidate.subject === null && candidate.owner === user.id && candidate.slug === 'settings'
+      ? candidate.subject === null &&
+        candidate.owner === identity.user.id &&
+        candidate.slug === 'settings'
       : candidate.subject === address.project &&
         candidate.owner === null &&
         candidate.slug === 'settings',
   )
   if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'settings doc not found' })
   return row
+}
+
+async function hostedSettingsGet(client: RecordClient, input: z.infer<typeof target>) {
+  const row = await settingsRow(client, input)
+  const destination = 'user' in input ? (await personalSpace(client)).spaceId : undefined
+  return {
+    mode: 'hosted' as const,
+    target:
+      'user' in input
+        ? { kind: 'user' as const }
+        : { kind: 'project' as const, name: input.project },
+    file: { path: null, exists: null },
+    revision: await currentRevision(client, row.id, destination),
+    settings: summarizeSettings(parseStoredSettings(row.body)),
+    drift: null,
+    findings: null,
+  }
 }
 
 export function createHostedContextRouter(clientFor: ClientFactory = defaultClient) {
@@ -211,15 +253,15 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
     userCanon: t.router({
       list: t.procedure.query(async ({ ctx }) => {
         const client = clientFor(ctx)
-        const { rows } = await userCanonRows(client)
-        return Promise.all(rows.map((row) => canonRow(client, row)))
+        const { rows, spaceId } = await userCanonRows(client)
+        return Promise.all(rows.map((row) => canonRow(client, row, spaceId)))
       }),
       get: t.procedure.input(z.object({ slug })).query(async ({ ctx, input }) => {
         const client = clientFor(ctx)
-        const { rows } = await userCanonRows(client)
+        const { rows, spaceId } = await userCanonRows(client)
         const row = rows.find((candidate) => candidate.slug === input.slug)
         if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'canon doc not found' })
-        return canonRow(client, row)
+        return canonRow(client, row, spaceId)
       }),
       set: t.procedure
         .input(
@@ -233,33 +275,40 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
         )
         .mutation(async ({ ctx, input }) => {
           const client = clientFor(ctx)
-          const { user } = await client.whoami()
-          const written = await client.putDoc({
-            scope: 'canon',
-            subject: null,
-            owner: user.id,
-            slug: input.slug,
-            title: input.title,
-            body: input.body,
-            delivery: 'inject',
-            reason: input.reason,
-            author: user.id,
-            expectedRevision: input.expectedRevision,
-          })
-          return canonRow(client, await client.doc(written.id))
+          const { userId, spaceId } = await personalSpace(client)
+          const written = await client.putDoc(
+            {
+              scope: 'canon',
+              subject: null,
+              owner: userId,
+              slug: input.slug,
+              title: input.title,
+              body: input.body,
+              delivery: 'inject',
+              reason: input.reason,
+              author: userId,
+              expectedRevision: input.expectedRevision,
+            },
+            spaceId,
+          )
+          return canonRow(client, await client.doc(written.id, undefined, spaceId), spaceId)
         }),
       remove: t.procedure
         .input(z.object({ slug, reason, expectedRevision }))
         .mutation(async ({ ctx, input }) => {
           const client = clientFor(ctx)
-          const { user, rows } = await userCanonRows(client)
+          const { user, rows, spaceId } = await userCanonRows(client)
           const row = rows.find((candidate) => candidate.slug === input.slug)
           if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'canon doc not found' })
-          await client.deleteDoc(row.id, {
-            reason: input.reason,
-            author: user.id,
-            expectedRevision: input.expectedRevision,
-          })
+          await client.deleteDoc(
+            row.id,
+            {
+              reason: input.reason,
+              author: user.id,
+              expectedRevision: input.expectedRevision,
+            },
+            spaceId,
+          )
           return { removed: true }
         }),
     }),
@@ -355,22 +404,9 @@ export function createHostedContextRouter(clientFor: ClientFactory = defaultClie
         }),
     }),
     settings: t.router({
-      get: t.procedure.input(target).query(async ({ ctx, input }) => {
-        const client = clientFor(ctx)
-        const row = await settingsRow(client, input)
-        return {
-          mode: 'hosted' as const,
-          target:
-            'user' in input
-              ? { kind: 'user' as const }
-              : { kind: 'project' as const, name: input.project },
-          file: { path: null, exists: null },
-          revision: await currentRevision(client, row.id),
-          settings: summarizeSettings(parseStoredSettings(row.body)),
-          drift: null,
-          findings: null,
-        }
-      }),
+      get: t.procedure
+        .input(target)
+        .query(({ ctx, input }) => hostedSettingsGet(clientFor(ctx), input)),
       permission: t.procedure
         .input(
           z.object({

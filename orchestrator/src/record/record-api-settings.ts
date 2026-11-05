@@ -11,7 +11,13 @@ import type {
 } from './record-settings.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
-type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = {
+  url: string
+  userId: string
+  spaceId: string
+  spaceIds: string[]
+  personalSpaceId?: string | null
+}
 
 const targetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user') }).strict(),

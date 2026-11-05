@@ -86,7 +86,13 @@ import type { RecordScore } from './record-verdicts.ts'
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
-type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = {
+  url: string
+  userId: string
+  spaceId: string
+  spaceIds: string[]
+  personalSpaceId: string | null
+}
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordLensRouteDeps &
@@ -297,6 +303,27 @@ const inputWrap = (wrap: z.infer<typeof wrapSchema>): ConfigWrapInput => ({
 const configAddress = z.object({ environment: z.string().min(1), scope: configScopeSchema })
 const configList = z.object({ environment: z.string().min(1).optional() })
 
+function requestTenant(
+  identity: RecordIdentity,
+  destinationSpaceId: string | undefined,
+  url: string,
+): Tenant | null {
+  if (!identity.activeSpaceId) return null
+  const memberships = identity.memberships.map((row) => String(row.space_id))
+  return {
+    url,
+    userId: identity.user.id,
+    personalSpaceId: identity.personalSpaceId,
+    spaceId: destinationSpaceId ?? identity.activeSpaceId,
+    spaceIds:
+      destinationSpaceId != null
+        ? [destinationSpaceId]
+        : identity.activeSpaceId === identity.personalSpaceId
+          ? memberships
+          : [identity.activeSpaceId],
+  }
+}
+
 export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   const app = new Hono<ApiEnvironment>()
   app.onError((error, context) => {
@@ -344,20 +371,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   })
   const scope = (context: Context<ApiEnvironment>): Tenant | null => {
     const identity = context.get('identity') as RecordIdentity
-    if (!identity.activeSpaceId) return null
-    const memberships = identity.memberships.map((row) => String(row.space_id))
-    const destinationSpaceId = context.get('destinationSpaceId')
-    return {
-      url: deps.recordUrl,
-      userId: identity.user.id,
-      spaceId: destinationSpaceId ?? identity.activeSpaceId,
-      spaceIds:
-        destinationSpaceId != null
-          ? [destinationSpaceId]
-          : identity.activeSpaceId === identity.personalSpaceId
-            ? memberships
-            : [identity.activeSpaceId],
-    }
+    return requestTenant(identity, context.get('destinationSpaceId'), deps.recordUrl)
   }
   registerSignedDocSearchRoute(app, deps, { scope, noSpace })
   registerRecordSubjectRoutes(app, deps, { scope, noSpace })

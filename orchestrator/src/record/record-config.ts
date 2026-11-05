@@ -10,13 +10,14 @@ import {
   KEY_SIZE,
   sealClaimChallenge,
 } from '../../../shared/secret-envelope.ts'
+import { resolvePersonalItemSpace } from './personal-item-space.ts'
 import { assertConfigAccessRemovalSafe } from './record-config-access-removal.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 
 export const CONFIG_SCOPES = ['user', 'space'] as const
 export type ConfigScope = (typeof CONFIG_SCOPES)[number]
-export type ConfigTenant = { url: string } & TenantPrincipal
+export type ConfigTenant = { url: string; personalSpaceId?: string | null } & TenantPrincipal
 export type ConfigWrapInput = {
   recipientKeyId: string
   senderKeyId: string
@@ -71,6 +72,19 @@ const rowScope = (row: Record<string, unknown>): ConfigScope =>
   row.user_id == null ? 'space' : 'user'
 const scopedUser = (input: ConfigTenant, scope: ConfigScope) =>
   scope === 'user' ? input.userId : null
+
+function configTenant(input: ConfigTenant, scope: ConfigScope): ConfigTenant {
+  const spaceId = resolvePersonalItemSpace(
+    {
+      userId: input.userId,
+      activeSpaceId: input.spaceId,
+      personalSpaceId: input.personalSpaceId ?? input.spaceId,
+    },
+    { kind: 'config-entry', scope },
+  )
+  if (!spaceId) throw new ConfigServiceError('personal space is not provisioned', 409)
+  return { ...input, spaceId, spaceIds: [spaceId] }
+}
 
 async function tenant<T>(input: ConfigTenant, operation: (tx: SQL) => Promise<T>): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
@@ -225,11 +239,14 @@ async function scopedRow(
 export async function listConfigEntries(
   input: ConfigTenant & { environment?: string },
 ): Promise<ConfigEntry[]> {
-  return tenant(input, async (tx) => {
+  const personal = configTenant(input, 'user')
+  const spaces = [...new Set([input.spaceId, personal.spaceId])]
+  return tenant({ ...input, spaceIds: spaces }, async (tx) => {
     const rows = await tx`
       SELECT key, environment, user_id, value, row_version, updated_at
       FROM config_entry
-      WHERE space_id=${input.spaceId}::uuid
+      WHERE ((space_id=${input.spaceId}::uuid AND user_id IS NULL)
+          OR (space_id=${personal.spaceId}::uuid AND user_id=${input.userId}::uuid))
         AND (${input.environment ?? null}::text IS NULL OR environment=${input.environment ?? null})
       ORDER BY key, environment, user_id NULLS FIRST
     `
@@ -244,11 +261,12 @@ export async function getConfigEntry(
     scope: ConfigScope
   },
 ): Promise<ConfigEntry | null> {
-  return tenant(input, async (tx) => {
+  const resolved = configTenant(input, input.scope)
+  return tenant(resolved, async (tx) => {
     const row = await scopedRow(
       tx,
       'config_entry',
-      input,
+      resolved,
       input.key,
       input.environment,
       input.scope,
@@ -266,12 +284,13 @@ export async function putConfigEntry(
     expectedRowVersion: number | null
   },
 ): Promise<ConfigEntry> {
+  const resolved = configTenant(input, input.scope)
   try {
-    return await tenant(input, async (tx) => {
+    return await tenant(resolved, async (tx) => {
       const existing = await scopedRow(
         tx,
         'config_entry',
-        input,
+        resolved,
         input.key,
         input.environment,
         input.scope,
@@ -288,7 +307,7 @@ export async function putConfigEntry(
           INSERT INTO config_entry
             (id, space_id, user_id, key, environment, value, row_version, updated_at)
           VALUES
-            (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${scopedUser(input, input.scope)}::uuid,
+            (${newRecordId()}::uuid, ${resolved.spaceId}::uuid, ${scopedUser(resolved, input.scope)}::uuid,
              ${input.key}, ${input.environment}, ${input.value}, 1, now())
           RETURNING *
         `
@@ -323,11 +342,12 @@ export async function deleteConfigEntry(
     expectedRowVersion: number
   },
 ): Promise<void> {
-  return tenant(input, async (tx) => {
+  const resolved = configTenant(input, input.scope)
+  return tenant(resolved, async (tx) => {
     const existing = await scopedRow(
       tx,
       'config_entry',
-      input,
+      resolved,
       input.key,
       input.environment,
       input.scope,

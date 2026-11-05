@@ -8,6 +8,8 @@ const userId = '01990000-0000-7000-8000-000000000001'
 const docId = '01990000-0000-7000-8000-000000000002'
 const revisionId = '01990000-0000-7000-8000-000000000003'
 const nextRevisionId = '01990000-0000-7000-8000-000000000004'
+const personalSpaceId = '01990000-0000-7000-8000-000000000010'
+const organizationSpaceId = '01990000-0000-7000-8000-000000000011'
 const at = '2026-09-28T12:00:00.000Z'
 
 const canonDoc: RecordDoc = {
@@ -49,12 +51,12 @@ const settingsDoc: RecordDoc = {
   }),
 }
 
-function fakeClient(overrides: Partial<RecordClient> = {}) {
+function fakeClient(overrides: Partial<RecordClient> = {}, activeSpaceId = personalSpaceId) {
   const client = {
     whoami: mock(async () => ({
       user: { id: userId },
-      activeSpaceId: '01990000-0000-7000-8000-000000000010',
-      personalSpaceId: '01990000-0000-7000-8000-000000000010',
+      activeSpaceId,
+      personalSpaceId,
       memberships: [],
     })),
     projects: mock(async () => [
@@ -171,6 +173,19 @@ describe('hosted context router', () => {
     expect(rows[0]).toMatchObject({ slug: 'preferences', revision: revisionId, updated_at: at })
   })
 
+  test.each([personalSpaceId, organizationSpaceId])(
+    'user canon reads the personal space while %s is active',
+    async (activeSpaceId) => {
+      const client = fakeClient({}, activeSpaceId)
+      await caller(client).userCanon.list()
+      expect(client.docs).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: 'canon' }),
+        personalSpaceId,
+      )
+      expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
+    },
+  )
+
   test('userCanon.get finds one owner-scoped row', async () => {
     await expect(
       caller(fakeClient()).userCanon.get({ slug: 'preferences' }),
@@ -191,6 +206,7 @@ describe('hosted context router', () => {
     })
     expect(client.putDoc).toHaveBeenCalledWith(
       expect.objectContaining({ owner: userId, expectedRevision: revisionId }),
+      personalSpaceId,
     )
   })
 
@@ -206,6 +222,7 @@ describe('hosted context router', () => {
     expect(client.deleteDoc).toHaveBeenCalledWith(
       docId,
       expect.objectContaining({ expectedRevision: revisionId }),
+      personalSpaceId,
     )
   })
 
@@ -418,6 +435,19 @@ describe('hosted context router', () => {
     expect(serialized).not.toContain('command')
     expect(result.settings.hooks[0]?.matcher).toBe('secret-shaped')
   })
+
+  test.each([personalSpaceId, organizationSpaceId])(
+    'user settings reads the personal space while %s is active',
+    async (activeSpaceId) => {
+      const client = fakeClient({}, activeSpaceId)
+      await caller(client).settings.get({ user: true })
+      expect(client.docs).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: 'settings', subject: '' }),
+        personalSpaceId,
+      )
+      expect(client.docRevisions).toHaveBeenCalledWith(docId, undefined, personalSpaceId)
+    },
+  )
 
   test('settings.get accepts the owned settings shape but refuses undeclared keys', async () => {
     const ownedSettings = {

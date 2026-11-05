@@ -2,6 +2,7 @@
 /** Binds project-addressed hosted document operations to the register's destination. */
 
 import { projectRowByName } from '../project/projects.ts'
+import { resolvePersonalItemSpace } from '../record/personal-item-space.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
@@ -37,7 +38,18 @@ export async function hostedDocClient(
           client,
         ),
       }
-    : undefined
+    : await (async () => {
+        const identity = await client.whoami()
+        const spaceId = resolvePersonalItemSpace(
+          {
+            userId: identity.user.id,
+            activeSpaceId: identity.activeSpaceId,
+            personalSpaceId: identity.personalSpaceId,
+          },
+          { kind: 'document', scope, subject, ownerUserId: identity.user.id },
+        )
+        return spaceId ? { destinationSpaceId: spaceId } : undefined
+      })()
   return {
     listDocs: (query) => client.listDocs(query, destination),
     getDoc: (id) => client.getDoc(id, destination),

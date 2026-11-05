@@ -1,5 +1,6 @@
 // concern: record-settings
 /** Applies tenant-bound settings edits through the hosted document service. Must not know HTTP or local stores. */
+
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import {
   type AutoModeList,
@@ -17,6 +18,7 @@ import {
   editSettingsPermission,
   type SettingsPermissionOperation,
 } from '../settings/settings-permission.ts'
+import { resolvePersonalItemSpace } from './personal-item-space.ts'
 import {
   listRecordDocRevisions,
   listRecordDocs,
@@ -24,7 +26,13 @@ import {
   upsertRecordDoc,
 } from './record-docs.ts'
 
-type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = {
+  url: string
+  userId: string
+  spaceId: string
+  spaceIds: string[]
+  personalSpaceId?: string | null
+}
 export type RecordSettingsPermissionInput = Tenant & {
   target: { kind: 'user' } | { kind: 'project'; project: string }
   list: PermissionList
@@ -103,8 +111,18 @@ async function applyRecordSettingsEdit<
 ): Promise<Result> {
   const subject = input.target.kind === 'project' ? input.target.project : null
   const owner = input.target.kind === 'user' ? input.userId : null
+  const spaceId = resolvePersonalItemSpace(
+    {
+      userId: input.userId,
+      activeSpaceId: input.spaceId,
+      personalSpaceId: input.personalSpaceId ?? input.spaceId,
+    },
+    { kind: 'document', scope: SETTINGS_SCOPE, subject, ownerUserId: owner },
+  )
+  if (!spaceId) throw new RecordDocError('personal space is not provisioned', 409)
+  const tenant = { ...input, spaceId, spaceIds: [spaceId] }
   const rows = await dependencies.listDocs({
-    ...input,
+    ...tenant,
     scope: SETTINGS_SCOPE,
     subject,
     limit: 2,
@@ -119,7 +137,7 @@ async function applyRecordSettingsEdit<
       candidate.subject === subject,
   )
   if (!row) throw new RecordDocError('settings doc not found', 404)
-  const revisions = await dependencies.listRevisions({ ...input, id: row.id })
+  const revisions = await dependencies.listRevisions({ ...tenant, id: row.id })
   const current = revisions?.[0]?.id ?? null
   const decision = decideDocRevisionWrite({
     expected: input.expectedRevision,
@@ -131,7 +149,7 @@ async function applyRecordSettingsEdit<
   const edit = editSettings(parseStoredOwnedSettings(row.body))
   if (!edit.changed) return result(current!, edit)
   const written = await dependencies.upsertDoc({
-    ...input,
+    ...tenant,
     scope: SETTINGS_SCOPE,
     subject,
     owner,
