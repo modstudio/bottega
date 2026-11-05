@@ -55,7 +55,7 @@ type RecordDocRowSelection = { ids?: readonly string[] } & Partial<RecordDocList
 function recordDocRowParameters(input: RecordDocRowSelection) {
   if (input.ids) return { byIds: true, ids: input.ids.join(','), spaces: '', input: {} }
   const spaces = input.acrossReadableSpaces ? input.spaceIds : [input.spaceId]
-  return { byIds: false, ids: '', spaces: spaces.join(','), input }
+  return { byIds: false, ids: '', spaces: (spaces ?? []).filter(Boolean).join(','), input }
 }
 
 export async function recordDocRows(

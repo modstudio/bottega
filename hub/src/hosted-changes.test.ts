@@ -206,15 +206,15 @@ test('record change pages follow numeric order across a digit boundary', async (
 })
 
 test('an underfull page advances past unserved rows and leaves no served lag', async () => {
-  const before = await database.query<{ xid: string; seq: string }>(
-    'SELECT xid::text,seq::text FROM record_change ORDER BY seq DESC LIMIT 1',
-  )
-  const after = { xid: BigInt(before.rows[0]!.xid), seq: BigInt(before.rows[0]!.seq) }
-  const inserted = await database.query<{ seq: string }>(
+  const inserted = await database.query<{ xid: string; seq: string }>(
     `INSERT INTO record_change(space_id,table_name,row_id,op)
-     VALUES ($1,'hub_task',$2,'upsert') RETURNING seq::text`,
+     VALUES ($1,'hub_task',$2,'upsert') RETURNING xid::text,seq::text`,
     [spaceA, '01990000-0000-7000-8000-000000001322'],
   )
+  const after = {
+    xid: BigInt(inserted.rows[0]!.xid),
+    seq: BigInt(inserted.rows[0]!.seq) - 1n,
+  }
   const page = await readRecordChanges(pgliteClient(database), identity(spaceA), after, 10, [
     'project',
   ])
