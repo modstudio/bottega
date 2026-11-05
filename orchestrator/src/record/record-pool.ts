@@ -1,6 +1,7 @@
 // concern: record-pool
 /** Owns bounded, process-wide record Postgres pools. Must not know tenant or query policy. */
 import { SQL } from 'bun'
+import { recordServiceUrl } from '../../../shared/record/service-connection.ts'
 
 const RECORD_POOL_MAX = 10
 export const RECORD_POOL_IDLE_TIMEOUT_SECONDS = 30
@@ -17,7 +18,10 @@ export function recordPool(url: string, max = RECORD_POOL_MAX): SQL {
     }
     return existing.pool
   }
-  const pool = new SQL(url, { max, idleTimeout: RECORD_POOL_IDLE_TIMEOUT_SECONDS })
+  const pool = new SQL(recordServiceUrl(url), {
+    max,
+    idleTimeout: RECORD_POOL_IDLE_TIMEOUT_SECONDS,
+  })
   pools.set(url, { pool, max })
   return pool
 }

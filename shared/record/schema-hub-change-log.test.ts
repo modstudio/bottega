@@ -6,6 +6,7 @@ import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { migrationSessionStatements } from './migration-session.ts'
 import { newRecordId, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
 import { HUB_CHANGE_SOURCE_EXCLUSIONS, HUB_CHANGE_SOURCES } from './schema-hub.ts'
+import { RECORD_CHANGE_REPLICATED_TABLES } from './schema-record-change.ts'
 
 const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
 const spaceA = '01990000-0000-7000-8000-000000001240'
@@ -178,6 +179,26 @@ test('change-log triggers cover every synced table and recipient changes map to 
       trigger_type: 29,
     })
   }
+})
+
+test('record change triggers cover every replicated table', async () => {
+  const triggers = (
+    await database.query<{ table_name: string; enabled: string; trigger_type: number }>(
+      `SELECT c.relname table_name,t.tgenabled enabled,t.tgtype::int trigger_type
+       FROM pg_trigger t
+       JOIN pg_class c ON c.oid=t.tgrelid
+       JOIN pg_proc p ON p.oid=t.tgfoid
+       WHERE NOT t.tgisinternal
+         AND p.proname='record_change_log_row'
+       ORDER BY c.relname`,
+    )
+  ).rows
+  expect(triggers.map(({ table_name }) => table_name)).toEqual(
+    [...RECORD_CHANGE_REPLICATED_TABLES].toSorted(),
+  )
+  expect(triggers.every(({ enabled, trigger_type }) => enabled === 'O' && trigger_type === 29)).toBe(
+    true,
+  )
 })
 
 test('portable record UUID function orders version-7 UUIDs from distinct timestamps', async () => {
