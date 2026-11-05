@@ -8,7 +8,7 @@ test('one-shot collection selects incremental work unless a rebuild window is ex
   const calls: string[] = []
   const log = spyOn(console, 'log').mockImplementation(() => {})
   try {
-    await collectOneShot(undefined, undefined, 'runs', false, {
+    await collectOneShot(undefined, undefined, 'runs', {
       incremental: async (only) => {
         calls.push(`incremental:${only ?? ''}`)
         return result
@@ -18,7 +18,7 @@ test('one-shot collection selects incremental work unless a rebuild window is ex
         return result
       },
     })
-    await collectOneShot(undefined, '2026-11-01T00:00:00.000Z', 'runs', false, {
+    await collectOneShot(undefined, '2026-11-01T00:00:00.000Z', 'runs', {
       incremental: async () => {
         calls.push('incremental')
         return result
@@ -31,8 +31,5 @@ test('one-shot collection selects incremental work unless a rebuild window is ex
   } finally {
     log.mockRestore()
   }
-  expect(calls).toEqual([
-    'incremental:runs',
-    'rebuild:2026-11-01T00:00:00.000Z:runs',
-  ])
+  expect(calls).toEqual(['incremental:runs', 'rebuild:2026-11-01T00:00:00.000Z:runs'])
 })

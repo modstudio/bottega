@@ -143,7 +143,7 @@ export const ROUTES = (
     {
       command: ['record', 'sync'],
       owner: 'composite',
-      description: 'incrementally synchronize both records; --since or --backfill rebuilds a window',
+      description: 'incrementally synchronize both records; --since rebuilds the hub window',
       composite: [
         {
           owner: 'orch',
@@ -155,7 +155,7 @@ export const ROUTES = (
           owner: 'hub',
           argv: ['collect'],
           label: 'hub collection',
-          options: { '--backfill': false, '--since': true, '--only': true },
+          options: { '--since': true, '--only': true },
         },
       ],
     },
@@ -163,7 +163,7 @@ export const ROUTES = (
       'record pull',
       'hub',
       'collect',
-      'incrementally ingest every source; --since or --backfill rebuilds a window',
+      'incrementally ingest every source; --since rebuilds a window',
     ),
     route('record lease', 'hub', 'lease', 'show the current local collect lease'),
     route('record push', 'orch', 'sync', "push this machine's orchestrator record"),

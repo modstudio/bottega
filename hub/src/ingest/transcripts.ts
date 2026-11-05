@@ -296,12 +296,7 @@ export function replaceTranscriptWindow(
   const decision = decideCollectorReplace<
     ComparableTranscriptIntervalRow,
     StoredTranscriptIntervalRow
-  >(
-    existing,
-    valid,
-    new Set(skipped.map((row) => row.ref)),
-    sameTranscriptInterval,
-  )
+  >(existing, valid, new Set(skipped.map((row) => row.ref)), sameTranscriptInterval)
   const update = conn.query(
     `UPDATE interval SET task_key=?, task_record_id=?, project=?, project_record_id=?, agent=NULL, end_at=?, claude_tokens=?,
        vendor_tokens=0, vendor_cost_usd=NULL, via=?, session_id=?, user_id=?

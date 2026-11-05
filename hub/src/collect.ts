@@ -500,21 +500,23 @@ export async function collectFast(
   const runsFastLeg = selected('runs') || selected('transcripts')
   const results = [] as CollectLegResult[]
   guard?.assertHeld()
-  if (selected('runs')) results.push(
-    await settleLeg(
-      'runs',
-      () => (dependencies.runs ?? ingestRunChanges)(runsSince()),
-      collectLegMetrics,
-    ),
-  )
+  if (selected('runs'))
+    results.push(
+      await settleLeg(
+        'runs',
+        () => (dependencies.runs ?? ingestRunChanges)(runsSince()),
+        collectLegMetrics,
+      ),
+    )
   guard?.assertHeld(selected('runs') ? 'runs' : undefined)
-  if (selected('transcripts')) results.push(
-    await settleLeg(
-      'transcripts',
-      () => (dependencies.transcripts ?? ingestTranscripts)(hoursAgo(2)),
-      collectLegMetrics,
-    ),
-  )
+  if (selected('transcripts'))
+    results.push(
+      await settleLeg(
+        'transcripts',
+        () => (dependencies.transcripts ?? ingestTranscripts)(hoursAgo(2)),
+        collectLegMetrics,
+      ),
+    )
   guard?.assertHeld(selected('transcripts') ? 'transcripts' : undefined)
   if (runsFastLeg) {
     rollUpDays()
@@ -567,37 +569,51 @@ export async function deliverOperatorNotifications(
   }
 }
 
+async function collectSlowSourceLegs(
+  scheduled: boolean,
+  guard: LeaseGuard | undefined,
+  only?: string,
+) {
+  const collectGit = !only || only === 'git'
+  const collectTasks = !only || only === 'tasks'
+  const results = [] as CollectLegResult[]
+  let lastCompleted = 'project identity'
+  if (collectGit) {
+    results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
+    lastCompleted = 'git'
+  }
+  guard?.assertHeld(lastCompleted)
+  const due = scheduled && collectTasks ? trackerSchedule.due(trackerProjects()) : null
+  let trackerResults: TrackerResult[] = []
+  if (collectTasks) {
+    results.push(
+      await settleLeg('tasks', async () => {
+        trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
+        if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
+        const error = trackerLegError(trackerResults)
+        if (error) throw new Error(error)
+      }),
+    )
+    lastCompleted = 'tasks'
+  }
+  guard?.assertHeld(lastCompleted)
+  return { results, lastCompleted, ran: collectGit || collectTasks }
+}
+
 /** The remote and commit-shaped legs. */
-export async function collectSlow(
+async function collectSlow(
   scheduled = false,
   guard?: LeaseGuard,
   outboxSchedule?: HostedOutboxDrainSchedule<HostedOutboxReport>,
   only?: string,
 ) {
-  const selected = (source: string) => !only || only === source
-  const runsSlowLeg = selected('git') || selected('tasks')
-  const results = [] as CollectLegResult[]
-  let lastCompleted = 'project identity'
   guard?.assertHeld()
   writeTransaction((conn) => applyProjectRegisterNames(conn))
   guard?.assertHeld('project identity')
-  if (selected('git'))
-    results.push(await settleLeg('git', () => ingestGit(hoursAgo(24 * 7).slice(0, 10))))
-  if (selected('git')) lastCompleted = 'git'
-  guard?.assertHeld(selected('git') ? 'git' : 'project identity')
-  const due = scheduled && selected('tasks') ? trackerSchedule.due(trackerProjects()) : null
-  let trackerResults: TrackerResult[] = []
-  if (selected('tasks')) results.push(
-    await settleLeg('tasks', async () => {
-      trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
-      if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
-      const error = trackerLegError(trackerResults)
-      if (error) throw new Error(error)
-    }),
-  )
-  if (selected('tasks')) lastCompleted = 'tasks'
-  guard?.assertHeld(selected('tasks') ? 'tasks' : selected('git') ? 'git' : 'project identity')
-  if (runsSlowLeg) {
+  const slow = await collectSlowSourceLegs(scheduled, guard, only)
+  const results = slow.results
+  let lastCompleted = slow.lastCompleted
+  if (slow.ran) {
     stamp('collect.slow.at')
     pruneOutboxTrace()
   }
@@ -612,7 +628,7 @@ export async function collectSlow(
     guard?.assertHeld('hosted')
   }
   guard?.assertHeld(lastCompleted)
-  if (runsSlowLeg) {
+  if (slow.ran) {
     if (only) {
       rollUpDays()
       guard?.assertHeld('roll up days')

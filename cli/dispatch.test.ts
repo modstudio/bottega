@@ -226,7 +226,7 @@ test('composite options reach only the owner that declares them', async () => {
   ).toBe(0)
   expect(calls).toEqual([
     'orchestrator: sync --backfill',
-    'hub: collect --backfill --since 2026-01-01T00:00:00Z',
+    'hub: collect --since 2026-01-01T00:00:00Z',
   ])
 })
 

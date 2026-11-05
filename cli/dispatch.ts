@@ -179,21 +179,19 @@ async function composite(
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index]!
     const option = argument.includes('=') ? argument.slice(0, argument.indexOf('=')) : argument
-    const ownerIndexes = parts.flatMap((part, partIndex) =>
-      part.options?.[option] === undefined ? [] : [partIndex],
-    )
-    if (ownerIndexes.length === 0) {
+    const ownerIndex = parts.findIndex((part) => part.options?.[option] !== undefined)
+    if (ownerIndex < 0) {
       console.error(`unknown composite option: ${argument}`)
       return 2
     }
-    for (const ownerIndex of ownerIndexes) partArguments[ownerIndex]!.push(argument)
-    if (parts[ownerIndexes[0]!]!.options?.[option] && !argument.includes('=')) {
+    partArguments[ownerIndex]!.push(argument)
+    if (parts[ownerIndex]!.options?.[option] && !argument.includes('=')) {
       const value = rest[++index]
       if (value === undefined) {
         console.error(`option requires an argument: ${option}`)
         return 2
       }
-      for (const ownerIndex of ownerIndexes) partArguments[ownerIndex]!.push(value)
+      partArguments[ownerIndex]!.push(value)
     }
   }
   let result = 0
