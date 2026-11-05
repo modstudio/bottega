@@ -12,7 +12,12 @@ import { BOARD_CACHE_OWNER_KEY } from '../board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
-import { formatHostAdmissionsLine, formatHostLoadLine, monitorCommand } from './monitor-commands.ts'
+import {
+  formatHostAdmissionsLine,
+  formatHostLoadLine,
+  monitorCommand,
+  shouldReportReleasedMonitorHistory,
+} from './monitor-commands.ts'
 import type { MonitorHostLoad } from './monitor-types.ts'
 
 const hostLoad: MonitorHostLoad = {
@@ -60,6 +65,12 @@ test('the host admission line reports the recent decision summary', () => {
   expect(line).toContain('4 admitted (2 after a hold)')
   expect(line).toContain('peak load 7.50, CPU 6.25')
   expect(line).toContain('pressure normal,warning')
+})
+
+test('short monitor history reports retention only after a release', () => {
+  expect(shouldReportReleasedMonitorHistory(3, 20, null)).toBe(false)
+  expect(shouldReportReleasedMonitorHistory(3, 20, '2026-09-01T00:00:00.000Z')).toBe(true)
+  expect(shouldReportReleasedMonitorHistory(20, 20, '2026-09-01T00:00:00.000Z')).toBe(false)
 })
 
 test('notice command maps skip-board-refresh to hosted refresh behavior', async () => {

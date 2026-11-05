@@ -61,12 +61,26 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
             throw new Error('vacuum busy')
           },
         },
+        telemetryMaintenance: {
+          rollupContention: () => {
+            throw new Error('rollup busy')
+          },
+          pruneContention: () => {
+            throw new Error('contention prune busy')
+          },
+          pruneMonitor: () => {
+            throw new Error('monitor prune busy')
+          },
+        },
       },
     )
     expect(db().query('SELECT close_out_outcome FROM run WHERE record_id=?').get(run)).toEqual({
       close_out_outcome: 'absent',
     })
     expect(lines).toContain('outbox prune failed: prune busy')
+    expect(lines).toContain('contention rollup failed: rollup busy')
+    expect(lines).toContain('contention prune failed: contention prune busy')
+    expect(lines).toContain('monitor prune failed: monitor prune busy')
     expect(lines).toContain('outbox space release failed: vacuum busy')
   } finally {
     rmSync(projectPath, { recursive: true, force: true })

@@ -7,6 +7,8 @@ import type { RunHostCapacityQueue } from '../run/run-host-capacity.ts'
 import type { HostAdmissionSummary } from './host-admission-summary.ts'
 
 export const MONITOR_DETAIL_CHARS = 512
+export const MONITOR_HISTORY_DEFAULT_LIMIT = 20
+export const MONITOR_RAW_WINDOW_MS = 7 * 24 * 60 * 60_000
 
 export function boundToChars(text: string, chars: number): string {
   return text.length <= chars ? text : `${text.slice(0, chars - 1)}…`

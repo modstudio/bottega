@@ -112,6 +112,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   planned('orchestrator', 'check_execution', 'DEV-1214', 'Check execution awaits a hosted home'),
   planned('orchestrator', 'compared_pair', 'DEV-1214', 'Comparison work awaits a hosted home'),
   evidence('contention', 'Outbox source for contention'),
+  local('orchestrator', 'contention_day', "This machine's contention rollup", PORTABLE_RULING),
   hosted('orchestrator', 'doc', 'doc', 'Local document write source'),
   hosted(
     'orchestrator',
@@ -165,6 +166,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   local('orchestrator', 'metric', "This machine's token metric", PORTABLE_RULING),
   local('orchestrator', 'monitor_condition', "This machine's monitor condition", PORTABLE_RULING),
   local('orchestrator', 'monitor_invocation', "This machine's monitor invocation", PORTABLE_RULING),
+  local(
+    'orchestrator',
+    'monitor_issue',
+    "This machine's filed monitor issue keys",
+    PORTABLE_RULING,
+  ),
   planned(
     'orchestrator',
     'operator_notification',

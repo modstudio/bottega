@@ -10,12 +10,14 @@ import { pruneExpiredBranchDisposalArchives } from '../branch/branch-disposal.ts
 import { closeOutRun } from '../close/close-out.ts'
 import { namedProjectTreePaths } from '../close/tree-keep.ts'
 import { treeProcessCwdHold } from '../close/tree-process-cwd-hold.ts'
+import { pruneContentionRows, rollupContentionDays } from '../database/contention-retention.ts'
 import { releaseIncrementalVacuumPages } from '../database/database-commands.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { filedIssueLoopRun } from '../issue/issue-queue.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
+import { pruneMonitorRows } from '../monitor/monitor-retention.ts'
 import {
   isProjectRepository,
   type Project,
@@ -152,13 +154,24 @@ export type SweepHelpers = {
     drain: typeof drainSupersededOutboxRows
     releasePages: typeof releaseIncrementalVacuumPages
   }
+  telemetryMaintenance?: {
+    rollupContention: typeof rollupContentionDays
+    pruneContention: typeof pruneContentionRows
+    pruneMonitor: typeof pruneMonitorRows
+  }
 }
 
 const KEPT_ROW_LIMIT = 10
 const OUTBOX_PRUNE_TIME_BOUND_MS = 2_000
+const TELEMETRY_MAINTENANCE_TIME_BOUND_MS = 2_000
 const DEFAULT_OUTBOX_MAINTENANCE: NonNullable<SweepHelpers['outboxMaintenance']> = {
   drain: drainSupersededOutboxRows,
   releasePages: releaseIncrementalVacuumPages,
+}
+const DEFAULT_TELEMETRY_MAINTENANCE: NonNullable<SweepHelpers['telemetryMaintenance']> = {
+  rollupContention: rollupContentionDays,
+  pruneContention: pruneContentionRows,
+  pruneMonitor: pruneMonitorRows,
 }
 
 function pruneOutboxForSweep(
@@ -187,6 +200,61 @@ function pruneOutboxForSweep(
   } catch (error) {
     presentation.error(`outbox prune failed: ${error instanceof Error ? error.message : error}`)
   }
+}
+
+function reportMaintenanceStep<T>(
+  label: string,
+  presentation: CleanupPresentation,
+  run: () => T,
+  line: (result: T) => string,
+): void {
+  try {
+    presentation.log(line(run()))
+  } catch (error) {
+    presentation.error(`${label} failed: ${error instanceof Error ? error.message : error}`)
+  }
+}
+
+function maintainTelemetryForSweep(
+  dryRun: boolean,
+  presentation: CleanupPresentation,
+  maintenance: NonNullable<SweepHelpers['telemetryMaintenance']>,
+): void {
+  const database = dryRun ? db() : writableDb()
+  const options = { dryRun, timeBoundMs: TELEMETRY_MAINTENANCE_TIME_BOUND_MS }
+  reportMaintenanceStep(
+    'contention rollup',
+    presentation,
+    () => maintenance.rollupContention(database, options),
+    (result) =>
+      dryRun
+        ? `contention would roll up ${result.days} days`
+        : `contention rolled up ${result.days} days; backlog remains ${result.more ? 'yes' : 'no'}`,
+  )
+  reportMaintenanceStep(
+    'contention prune',
+    presentation,
+    () => maintenance.pruneContention(database, options),
+    (result) =>
+      dryRun
+        ? `contention would prune ${result.rows} rows`
+        : `contention pruned ${result.rows} rows; backlog remains ${result.more ? 'yes' : 'no'}`,
+  )
+  reportMaintenanceStep(
+    'monitor prune',
+    presentation,
+    () => maintenance.pruneMonitor(database, options),
+    (result) =>
+      dryRun
+        ? `monitor would prune ${result.invocations} invocations (${result.conditions} conditions)`
+        : `monitor pruned ${result.invocations} invocations (${result.conditions} conditions); backlog remains ${result.more ? 'yes' : 'no'}`,
+  )
+}
+
+function releaseMaintenancePages(
+  presentation: CleanupPresentation,
+  maintenance: NonNullable<SweepHelpers['outboxMaintenance']>,
+): void {
   try {
     if (maintenance.releasePages() === 'not-incremental') {
       presentation.log(
@@ -204,10 +272,26 @@ function prepareSweep(
   dryRun: boolean,
   presentation: CleanupPresentation,
   maintenance: NonNullable<SweepHelpers['outboxMaintenance']>,
+  telemetry: NonNullable<SweepHelpers['telemetryMaintenance']>,
 ): void {
   if (!dryRun) writableDb()
   pruneOutboxForSweep(dryRun, presentation, maintenance)
+  maintainTelemetryForSweep(dryRun, presentation, telemetry)
+  if (!dryRun) releaseMaintenancePages(presentation, maintenance)
   reapExpiredBoardMessages(dryRun)
+}
+
+function prepareSweepWithHelpers(
+  dryRun: boolean,
+  presentation: CleanupPresentation,
+  helpers: SweepHelpers,
+): void {
+  prepareSweep(
+    dryRun,
+    presentation,
+    helpers.outboxMaintenance ?? DEFAULT_OUTBOX_MAINTENANCE,
+    helpers.telemetryMaintenance ?? DEFAULT_TELEMETRY_MAINTENANCE,
+  )
 }
 
 function worktreeSharerList(rows: { record_id: string; status: string }[]): string {
@@ -711,7 +795,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const sweepProjects = (selectedProject ? [selectedProject] : projects()).filter(
     isProjectRepository,
   )
-  prepareSweep(dry, options.presentation, helpers.outboxMaintenance ?? DEFAULT_OUTBOX_MAINTENANCE)
+  prepareSweepWithHelpers(dry, options.presentation, helpers)
   const archiveRetention = pruneArchives(options)
   const trustObservation = helpers.observeGrokTrustHeadings()
   reconcileAbsentClaims({

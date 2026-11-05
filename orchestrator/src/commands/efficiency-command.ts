@@ -3,17 +3,20 @@
 
 import type { Database } from 'bun:sqlite'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import type { CycleCostMetricAggregate, CycleCostWindowReport } from '../evidence/cycle-cost.ts'
 import { loadCycleCostReport } from '../evidence/cycle-cost-service.ts'
 import { loadWastedTimeReport } from '../health/wasted-time-report.ts'
-import { HOST_PRESSURE_SAMPLE_RETENTION_MS } from '../host-pressure/host-pressure-decision.ts'
+import {
+  DEFAULT_EFFICIENCY_WINDOW_MS,
+  HOST_PRESSURE_SAMPLE_RETENTION_MS,
+} from '../host-pressure/host-pressure-decision.ts'
 import { loadHostPressureReport } from '../host-pressure/host-pressure-report.ts'
 import { loadProvisioningReport } from '../monitor/provisioning-report.ts'
 import { loadRunResourceReport } from '../monitor/run-resource-report.ts'
 import { loadReviewYieldEfficiencyReport } from '../review/review-yield-efficiency-report.ts'
 
-const DEFAULT_EFFICIENCY_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000
 type Window = { start: string; end: string }
 type Windows = { currentWindow: Window; previousWindow: Window }
 
@@ -257,6 +260,12 @@ const sectionDescriptors = [
     load: ({ database, windows }) => loadHostPressureReport(database, windows),
     format: (report, context) => [
       ...(context.project ? ['Project filtering is unavailable for host-pressure evidence.'] : []),
+      ...(report.contentionRawHorizon &&
+      Date.parse(context.windows.previousWindow.start) < Date.parse(report.contentionRawHorizon)
+        ? [
+            `Contention waits before ${report.contentionRawHorizon} are outside the raw window; ${PLATFORM_SLUG} machine health still totals the older days.`,
+          ]
+        : []),
       ...pairLines(report, formatHostPressure),
     ],
   }),

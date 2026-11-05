@@ -12,6 +12,20 @@ const module = (file: string, allowed: string[]): MonitorModule => ({
 })
 
 export const monitorModules: MonitorModule[] = [
+  module('orchestrator/src/monitor/monitor-retention.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../database/retention-chunks.ts',
+    './monitor-retention-state.ts',
+    './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-retention-state.ts', ['bun:sqlite']),
+  module('orchestrator/src/monitor/monitor-history.ts', [
+    '../database/db.ts',
+    '../review/review-vocabulary.ts',
+    './monitor-retention-state.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/monitor/reader-tree-conditions.ts', [
     'node:fs',
     '../../../shared/brand.ts',
@@ -47,6 +61,7 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/bounded-json-lines-log.ts',
     '../../../shared/brand.ts',
     '../../../shared/state-directory.ts',
+    '../database/contention-retention.ts',
     '../database/db.ts',
     '../host-load-series.ts',
     './support.ts',
@@ -122,6 +137,7 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-issue-filing.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     '../mcp/mcp.ts',
     './monitor-types.ts',
   ]),
@@ -163,6 +179,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-gate-tooling.ts',
     './host-pressure-conditions.ts',
     './monitor-hosted-pressure.ts',
+    './monitor-history.ts',
     './monitor-record-tunnel.ts',
     './monitor-result.ts',
     './monitor-retrieval-pins.ts',

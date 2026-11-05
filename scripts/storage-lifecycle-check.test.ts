@@ -30,10 +30,46 @@ test('a stale declaration is refused', async () => {
   )
 })
 
-test('kept is refused on a class other than record or machine', async () => {
+test('kept is refused outside record, bounded machine rows, and telemetry rollups', async () => {
   expect(
     await storageLifecycleRefusals(tables, [{ ...declaration, remover: 'kept' }], resolves),
-  ).toContain('hub.task: kept lifecycle marker is valid only for record or bounded machine rows')
+  ).toContain(
+    'hub.task: kept lifecycle marker is valid only for record, bounded machine rows, or telemetry rollups',
+  )
+})
+
+test('a kept telemetry rollup must replace the raw telemetry keep rule', async () => {
+  expect(
+    await storageLifecycleRefusals(
+      tables,
+      [
+        {
+          ...declaration,
+          class: 'telemetry',
+          keep: 'Raw samples stay for the telemetry window, followed by daily rollups.',
+          remover: 'kept',
+        },
+      ],
+      resolves,
+    ),
+  ).toContain('hub.task: kept telemetry rollup must declare its own keep rule')
+})
+
+test('a kept telemetry rollup with an explicit growth rule is accepted', async () => {
+  expect(
+    await storageLifecycleRefusals(
+      tables,
+      [
+        {
+          ...declaration,
+          class: 'telemetry',
+          keep: 'The daily rollup is kept indefinitely and grows by one row per day.',
+          remover: 'kept',
+        },
+      ],
+      resolves,
+    ),
+  ).toEqual([])
 })
 
 test('a duplicated declaration is refused', async () => {

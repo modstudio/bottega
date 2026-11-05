@@ -1554,6 +1554,14 @@
       "tag": "0203_record_cache_hosted_space",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 204,
+      "version": "6",
+      "when": 1793894400000,
+      "tag": "0204_telemetry_rollups",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }
