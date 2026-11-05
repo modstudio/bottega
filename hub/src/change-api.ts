@@ -16,7 +16,7 @@ import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import {
   HOSTED_RECORD_CHANGE_TABLES,
-  type HostedRecordChangeResult,
+  type HostedRecordChangeReadResult,
   readHostedRecordChanges,
 } from './hosted-record-changes.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
@@ -44,7 +44,7 @@ type Dependencies = {
     client: HostedRouteConfig['recordDatabaseUrl'],
     identity: ChangeIdentity,
     input: { after: RecordChangeCursor | null; limit: number },
-  ) => Promise<HostedRecordChangeResult>
+  ) => Promise<HostedRecordChangeReadResult>
 }
 type ChangeIdentity = Exclude<
   Awaited<ReturnType<typeof taskSpaceIdentity>>,

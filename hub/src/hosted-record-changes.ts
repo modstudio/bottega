@@ -8,6 +8,7 @@ import {
   readRecordChanges,
 } from '../../shared/record/record-changes.ts'
 import { READABLE_HUB_CHANGES, type ReadableHubChangeTable } from './hosted-changes.ts'
+import type { HostedChangeRow, HostedRecordChange } from './hosted-record-change-wire.ts'
 import type { TaskIdentity } from './hosted-tenant.ts'
 
 export const HOSTED_RECORD_CHANGE_TABLES = Object.keys(
@@ -15,13 +16,6 @@ export const HOSTED_RECORD_CHANGE_TABLES = Object.keys(
 ) as ReadableHubChangeTable[]
 
 type FeedPage = Exclude<RecordChangeReadPage, { resetRequired: true }>
-export type HostedRecordChange = {
-  table: ReadableHubChangeTable
-  id: string
-  space: string
-  op: 'upsert' | 'delete'
-  row?: unknown
-}
 
 function collapsedEntries(changes: readonly RecordChangeEntry[]) {
   const collapsed = new Map<string, RecordChangeEntry>()
@@ -35,7 +29,7 @@ export async function materializeHostedRecordChangePage(tx: SQL, page: FeedPage)
   const entries = collapsedEntries(page.changes).filter((entry) =>
     HOSTED_RECORD_CHANGE_TABLES.includes(entry.table as ReadableHubChangeTable),
   )
-  const current = new Map<string, unknown>()
+  const current = new Map<string, HostedChangeRow>()
   for (const table of HOSTED_RECORD_CHANGE_TABLES) {
     const spaces = new Set(
       entries.filter((entry) => entry.table === table).map((entry) => entry.space),
@@ -79,4 +73,4 @@ export async function readHostedRecordChanges(
   )
 }
 
-export type HostedRecordChangeResult = Awaited<ReturnType<typeof readHostedRecordChanges>>
+export type HostedRecordChangeReadResult = Awaited<ReturnType<typeof readHostedRecordChanges>>

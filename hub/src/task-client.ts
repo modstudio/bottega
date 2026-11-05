@@ -2,9 +2,12 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
-import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import type {
+  HostedChangeRow,
+  HostedRecordChange,
+  HostedRecordChangeResult,
+} from './hosted-record-change-wire.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
-import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -325,14 +328,7 @@ export type HostedSpaceChange = {
   table: string
   id: string
   op: 'upsert' | 'delete'
-  row?:
-    | HostedTask
-    | HostedComment
-    | HostedDocument
-    | import('./hosted-tasks.ts').HostedStatusEvent
-    | HostedNote
-    | HostedAcknowledgement
-    | HostedSend
+  row?: HostedChangeRow
 }
 
 export type HostedSpaceChangePage = {
@@ -466,16 +462,11 @@ export async function hostedSpaceChanges(after: number, options: HostedSpaceChan
   return parseHostedSpaceChangePage(page, after, new Set(options.tables.split(',')))
 }
 
-export type HostedRecordChange = Omit<HostedSpaceChange, 'sequence'> & { space: string }
-export type HostedRecordChangePage = {
-  changes: HostedRecordChange[]
-  cursor: string
-  lag: number
-  more: boolean
-}
-export type HostedRecordChangeResult =
-  | HostedRecordChangePage
-  | { reset: { cursor: string; tables: string[] } }
+export type {
+  HostedRecordChange,
+  HostedRecordChangePage,
+  HostedRecordChangeResult,
+} from './hosted-record-change-wire.ts'
 
 function parseRecordChangeEntry(value: unknown, index: number): HostedRecordChange {
   if (!value || typeof value !== 'object' || Array.isArray(value))

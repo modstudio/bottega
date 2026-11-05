@@ -75,8 +75,13 @@ export const hubModuleSpecs = [
       'bun',
       '../../shared/record/record-changes.ts',
       './hosted-changes.ts',
+      './hosted-record-change-wire.ts',
       './hosted-tenant.ts',
     ],
+  },
+  {
+    file: 'hub/src/hosted-record-change-wire.ts',
+    allowed: ['./hosted-notes.ts', './hosted-reports.ts', './hosted-tasks.ts'],
   },
   {
     file: 'hub/src/hosted-identity-set.ts',
