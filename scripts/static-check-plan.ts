@@ -162,6 +162,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     }),
   ),
   script('scripts/check-bun-serve-timeout.ts', run),
+  script('scripts/check-bun-versions.ts', run),
   script('scripts/check-hosted-hub-server-boundary.ts', run),
   script(HOSTED_REFUSAL_TEXT_CHECK, run),
   script('scripts/check-remedy-text.ts', run),
