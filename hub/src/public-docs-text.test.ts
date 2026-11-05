@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME, PUBLIC_SITE_ORIGIN } from '../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG, PUBLIC_SITE_ORIGIN } from '../../shared/brand.ts'
 import {
   docsHtmlInsert,
   orderedPublicDocs,
@@ -17,7 +17,7 @@ const docs: PublicTextDoc[] = [
     parentId: null,
     position: 2,
     scope: 'project',
-    subject: 'bottega',
+    subject: PLATFORM_SLUG,
     summary: 'Begin here',
   },
   {
@@ -27,7 +27,7 @@ const docs: PublicTextDoc[] = [
     parentId: 'start',
     position: 2,
     scope: 'project',
-    subject: 'bottega',
+    subject: PLATFORM_SLUG,
     summary: '',
   },
   {
@@ -37,7 +37,7 @@ const docs: PublicTextDoc[] = [
     parentId: 'start',
     position: 1,
     scope: 'project',
-    subject: 'bottega',
+    subject: PLATFORM_SLUG,
     summary: 'Delegate a job',
   },
   {
@@ -47,7 +47,7 @@ const docs: PublicTextDoc[] = [
     parentId: 'first',
     position: 1,
     scope: 'project',
-    subject: 'bottega',
+    subject: PLATFORM_SLUG,
     summary: 'Review the result',
   },
   {
@@ -57,7 +57,7 @@ const docs: PublicTextDoc[] = [
     parentId: null,
     position: 1,
     scope: 'project',
-    subject: 'bottega',
+    subject: PLATFORM_SLUG,
     summary: 'Understand the model',
   },
 ]
@@ -77,12 +77,14 @@ describe('public docs text decisions', () => {
     const text = renderLlmsTxt(docs)
     expect(text).toStartWith(`# ${PLATFORM_NAME}\n\n>`)
     expect(text).toContain(
-      `## Getting started\n\n- [Getting started](${PUBLIC_SITE_ORIGIN}/docs/project/bottega/getting-started.md): Begin here`,
+      `## Getting started\n\n- [Getting started](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/getting-started.md): Begin here`,
     )
     expect(text).toContain(
-      `- [First job](${PUBLIC_SITE_ORIGIN}/docs/project/bottega/first-job.md): Delegate a job`,
+      `- [First job](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/first-job.md): Delegate a job`,
     )
-    expect(text).toContain(`- [Install](${PUBLIC_SITE_ORIGIN}/docs/project/bottega/install.md)\n`)
+    expect(text).toContain(
+      `- [Install](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/install.md)\n`,
+    )
     expect(text).not.toContain('install.md):')
   })
 
@@ -94,14 +96,14 @@ describe('public docs text decisions', () => {
 
   test('parses only one- and three-segment Markdown paths', () => {
     expect(parsePublicMarkdownPath('/docs/install.md')).toEqual({ kind: 'slug', slug: 'install' })
-    expect(parsePublicMarkdownPath('/docs/project/bottega/install.md')).toEqual({
+    expect(parsePublicMarkdownPath(`/docs/project/${PLATFORM_SLUG}/install.md`)).toEqual({
       kind: 'article',
       scope: 'project',
-      subject: 'bottega',
+      subject: PLATFORM_SLUG,
       slug: 'install',
     })
     expect(parsePublicMarkdownPath('/docs/project/install.md')).toBeNull()
-    expect(parsePublicMarkdownPath('/docs/project/bottega/install')).toBeNull()
+    expect(parsePublicMarkdownPath(`/docs/project/${PLATFORM_SLUG}/install`)).toBeNull()
   })
 
   test('describes the HTML inserts for the index, short path, and article path', () => {
@@ -115,10 +117,10 @@ describe('public docs text decisions', () => {
         '<noscript>This page needs JavaScript. Read it as Markdown at <a href="/docs/install.md">/docs/install.md</a>; every public page is listed at <a href="/llms.txt">/llms.txt</a>.</noscript>',
       alternateHref: null,
     })
-    expect(docsHtmlInsert('/docs/project/bottega/install')).toEqual({
-      noscript:
-        '<noscript>This page needs JavaScript. Read it as Markdown at <a href="/docs/project/bottega/install.md">/docs/project/bottega/install.md</a>; every public page is listed at <a href="/llms.txt">/llms.txt</a>.</noscript>',
-      alternateHref: '/docs/project/bottega/install.md',
+    const articlePath = `/docs/project/${PLATFORM_SLUG}/install`
+    expect(docsHtmlInsert(articlePath)).toEqual({
+      noscript: `<noscript>This page needs JavaScript. Read it as Markdown at <a href="${articlePath}.md">${articlePath}.md</a>; every public page is listed at <a href="/llms.txt">/llms.txt</a>.</noscript>`,
+      alternateHref: `${articlePath}.md`,
     })
     expect(docsHtmlInsert('/tasks')).toBeNull()
   })

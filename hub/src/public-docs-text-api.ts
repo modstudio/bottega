@@ -76,48 +76,58 @@ async function fullText(
     .join('\n\n')}\n`
 }
 
+function recognizedPath(pathname: string): boolean {
+  return (
+    pathname === '/llms.txt' ||
+    pathname === '/llms-full.txt' ||
+    (pathname.startsWith('/docs/') && pathname.endsWith('.md')) ||
+    /^\/docs\/[^/]+$/.test(pathname)
+  )
+}
+
+async function textRouteResponse(
+  request: Request,
+  url: URL,
+  items: readonly PublicTextDoc[],
+  read: Dependencies['doc'],
+): Promise<Response | null> {
+  if (url.pathname === '/llms.txt')
+    return response(request, renderLlmsTxt(items), 'text/plain; charset=utf-8')
+  if (url.pathname === '/llms-full.txt')
+    return response(request, await fullText(items, read), 'text/plain; charset=utf-8')
+  const markdownPath = parsePublicMarkdownPath(url.pathname)
+  if (!url.pathname.endsWith('.md')) {
+    const slug = decoded(url.pathname.slice('/docs/'.length))
+    const doc = slug ? uniquePublicDocBySlug(items, slug) : null
+    const path = doc ? publicDocPath(doc) : null
+    return path
+      ? new Response(null, { status: 308, headers: { location: `${path}${url.search}` } })
+      : null
+  }
+  const doc = matchingDoc(items, markdownPath)
+  if (!doc) {
+    return new Response(
+      `no public doc at ${url.pathname}\nevery public page is listed at /llms.txt`,
+      { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    )
+  }
+  const found = await read(doc.id)
+  return response(request, found.body, 'text/markdown; charset=utf-8')
+}
+
 export async function publicDocsTextApi(
   request: Request,
   dependencies: Partial<Dependencies> = {},
 ): Promise<Response | null> {
   if (request.method !== 'GET' && request.method !== 'HEAD') return null
   const url = new URL(request.url)
-  const markdownPath = parsePublicMarkdownPath(url.pathname)
-  const shortMatch = /^\/docs\/([^/]+)$/.exec(url.pathname)
-  const recognized =
-    url.pathname === '/llms.txt' ||
-    url.pathname === '/llms-full.txt' ||
-    (url.pathname.startsWith('/docs/') && url.pathname.endsWith('.md')) ||
-    shortMatch
-  if (!recognized) return null
+  if (!recognizedPath(url.pathname)) return null
 
   const tree = dependencies.tree ?? publicDocsTree
   const read = dependencies.doc ?? publicDoc
   try {
     const { items } = await tree()
-    if (url.pathname === '/llms.txt')
-      return response(request, renderLlmsTxt(items), 'text/plain; charset=utf-8')
-    if (url.pathname === '/llms-full.txt')
-      return response(request, await fullText(items, read), 'text/plain; charset=utf-8')
-    if (shortMatch && !url.pathname.endsWith('.md')) {
-      const slug = decoded(shortMatch[1]!)
-      const doc = slug ? uniquePublicDocBySlug(items, slug) : null
-      const path = doc ? publicDocPath(doc) : null
-      if (!path) return null
-      return new Response(null, {
-        status: 308,
-        headers: { location: `${path}${url.search}` },
-      })
-    }
-    const doc = matchingDoc(items, markdownPath)
-    if (!doc) {
-      return new Response(
-        `no public doc at ${url.pathname}\nevery public page is listed at /llms.txt`,
-        { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } },
-      )
-    }
-    const found = await read(doc.id)
-    return response(request, found.body, 'text/markdown; charset=utf-8')
+    return await textRouteResponse(request, url, items, read)
   } catch (error) {
     return failure(error)
   }

@@ -30,6 +30,27 @@ type HostedRouteDependencies = {
   publicDocsText?: Parameters<typeof publicDocsTextApi>[1]
 }
 
+function transformDocsIndex(response: Response, pathname: string): Response {
+  const insert = docsHtmlInsert(pathname)
+  if (!insert) return response
+  const rewriter = new HTMLRewriter().on('body', {
+    element(element) {
+      element.prepend(insert.noscript, { html: true })
+    },
+  })
+  if (insert.alternateHref) {
+    rewriter.on('head', {
+      element(element) {
+        element.append(
+          `<link rel="alternate" type="text/markdown" href="${insert.alternateHref}">`,
+          { html: true },
+        )
+      },
+    })
+  }
+  return rewriter.transform(response)
+}
+
 export function hostedServerConfig(environment: ServerEnvironment = process.env) {
   const recordApiUrl = hostedServer.resolveRecordApiUrl(environment)
   if (!hostedServer.recordApiConfigured(environment))
@@ -95,24 +116,7 @@ export function hostedRequestHandler(
           })
     }
     const response = new Response(file)
-    const insert = resolved.kind === 'index' ? docsHtmlInsert(url.pathname) : null
-    if (!insert) return response
-    const rewriter = new HTMLRewriter().on('body', {
-      element(element) {
-        element.prepend(insert.noscript, { html: true })
-      },
-    })
-    if (insert.alternateHref) {
-      rewriter.on('head', {
-        element(element) {
-          element.append(
-            `<link rel="alternate" type="text/markdown" href="${insert.alternateHref}">`,
-            { html: true },
-          )
-        },
-      })
-    }
-    return rewriter.transform(response)
+    return resolved.kind === 'index' ? transformDocsIndex(response, url.pathname) : response
   }
 }
 

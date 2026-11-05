@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { PublicTextDoc } from './public-docs-text.ts'
 import { publicDocsTextApi } from './public-docs-text-api.ts'
 
@@ -9,7 +10,7 @@ const install: PublicTextDoc = {
   parentId: null,
   position: 1,
   scope: 'project',
-  subject: 'bottega',
+  subject: PLATFORM_SLUG,
   summary: 'Install the tool',
 }
 
@@ -17,6 +18,7 @@ const dependencies = {
   tree: async () => ({ items: [install] }),
   doc: async () => ({ body: '# Install\n\nRun the installer.' }),
 }
+const articlePath = `/docs/project/${PLATFORM_SLUG}/install`
 
 describe('public docs text API', () => {
   test('serves llms.txt as cached plain text', async () => {
@@ -32,7 +34,7 @@ describe('public docs text API', () => {
 
   test('serves an article Markdown body', async () => {
     const response = await publicDocsTextApi(
-      new Request('https://hub.example.test/docs/project/bottega/install.md'),
+      new Request(`https://hub.example.test${articlePath}.md`),
       dependencies,
     )
     expect(response?.status).toBe(200)
@@ -46,7 +48,7 @@ describe('public docs text API', () => {
       dependencies,
     )
     expect(response?.status).toBe(308)
-    expect(response?.headers.get('location')).toBe('/docs/project/bottega/install?source=reader')
+    expect(response?.headers.get('location')).toBe(`${articlePath}?source=reader`)
   })
 
   test('lets the SPA handle an ambiguous short address', async () => {
@@ -59,12 +61,12 @@ describe('public docs text API', () => {
 
   test('returns a remedial 404 for an unknown Markdown path', async () => {
     const response = await publicDocsTextApi(
-      new Request('https://hub.example.test/docs/project/bottega/missing.md'),
+      new Request(`https://hub.example.test/docs/project/${PLATFORM_SLUG}/missing.md`),
       dependencies,
     )
     expect(response?.status).toBe(404)
     expect(await response?.text()).toBe(
-      'no public doc at /docs/project/bottega/missing.md\nevery public page is listed at /llms.txt',
+      `no public doc at /docs/project/${PLATFORM_SLUG}/missing.md\nevery public page is listed at /llms.txt`,
     )
   })
 
