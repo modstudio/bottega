@@ -105,6 +105,7 @@ export const docModules: DocModule[] = [
     '../project/projects.ts',
     '../record/record-api-client.ts',
     '../record/record-project-destination-client.ts',
+    '../record/personal-item-space.ts',
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/doc/doc-history-source.ts', []),

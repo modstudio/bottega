@@ -299,6 +299,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../../../shared/secret-envelope.ts',
       './record-config-access-removal.ts',
       './record-config-error.ts',
+      './personal-item-space.ts',
       './record-pool.ts',
     ],
     'Enforce the hosted config service concern boundary.',

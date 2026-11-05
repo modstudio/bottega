@@ -875,7 +875,9 @@ export const recordModules: RecordModule[] = [
     '../settings/settings-auto-mode.ts',
     '../settings/settings-permission.ts',
     './record-docs.ts',
+    './personal-item-space.ts',
   ]),
+  module('orchestrator/src/record/personal-item-space.ts', []),
   module('orchestrator/src/record/record-space-move.ts', [
     '../../../shared/brand.ts',
     'bun',

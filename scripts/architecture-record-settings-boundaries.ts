@@ -22,6 +22,7 @@ export const recordSettingsBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/settings/settings-auto-mode.ts',
       'orchestrator/src/settings/settings-permission.ts',
       'orchestrator/src/record/record-docs.ts',
+      'orchestrator/src/record/personal-item-space.ts',
     ],
     typeOnlyAllowed: [],
     reason: 'Keep hosted settings edits independent of HTTP and local stores.',

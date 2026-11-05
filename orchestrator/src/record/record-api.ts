@@ -47,6 +47,7 @@ import type {
   ConfigScope,
   ConfigSecret,
   ConfigSecretMetadata,
+  ConfigTenant,
   ConfigWrapInput,
   DataKey,
   MachineKey,
@@ -86,13 +87,7 @@ import type { RecordScore } from './record-verdicts.ts'
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
-type Tenant = {
-  url: string
-  userId: string
-  spaceId: string
-  spaceIds: string[]
-  personalSpaceId: string | null
-}
+type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordLensRouteDeps &
