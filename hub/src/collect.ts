@@ -59,6 +59,12 @@ export const WATCH_LIVE_MS = 3 * FAST_MS
 export const SLOW_MS = 5 * 60_000
 const WATCH_ALIVE_KEY = 'collect.watch.alive'
 
+export type WatcherAlive = {
+  holder: string
+  pid: number
+  at: string
+}
+
 const QUIET_MAX_MS = 15 * 60_000
 const FAILURE_MAX_MS = 60 * 60_000
 
@@ -134,7 +140,7 @@ export function watcherLive(alive: string | null | undefined, now: number): bool
   try {
     const parsed: unknown = JSON.parse(alive)
     if (!parsed || typeof parsed !== 'object') return false
-    const value = parsed as { holder?: unknown; pid?: unknown; at?: unknown }
+    const value = parsed as Partial<WatcherAlive>
     if (
       typeof value.holder !== 'string' ||
       typeof value.pid !== 'number' ||
@@ -516,30 +522,20 @@ function watcherAliveValue(): string | null {
   )
 }
 
-function writeWatcherAlive(holder: string) {
+function writeWatcherAlive(holder: WatcherAlive['holder']) {
+  const alive: WatcherAlive = { holder, pid: process.pid, at: nowIso() }
   writeTransaction((conn) =>
     conn
       .query(
         `INSERT INTO setting (key, value) VALUES (?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       )
-      .run(WATCH_ALIVE_KEY, JSON.stringify({ holder, pid: process.pid, at: nowIso() })),
+      .run(WATCH_ALIVE_KEY, JSON.stringify(alive)),
   )
 }
 
-function deleteWatcherAlive(holder: string) {
-  writeTransaction((conn) => {
-    const alive = conn
-      .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key = ?')
-      .get(WATCH_ALIVE_KEY)?.value
-    if (!alive) return
-    try {
-      if ((JSON.parse(alive) as { holder?: unknown }).holder === holder)
-        conn.query('DELETE FROM setting WHERE key = ?').run(WATCH_ALIVE_KEY)
-    } catch {
-      // A later heartbeat replaces malformed state.
-    }
-  })
+function deleteWatcherAlive(holder: WatcherAlive['holder']) {
+  releaseStoredLease(WATCH_ALIVE_KEY, holder)
 }
 
 function attemptWatcherAliveWrite(action: () => void, onError: (error: Error) => void) {
@@ -548,6 +544,15 @@ function attemptWatcherAliveWrite(action: () => void, onError: (error: Error) =>
   } catch (e) {
     onError(e as Error)
   }
+}
+
+function refreshWatcherAliveIfHeld(
+  enabled: boolean,
+  holder: string,
+  onError: (error: Error) => void,
+) {
+  if (enabled && leaseHolder() === holder)
+    attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
 }
 
 /**
@@ -905,7 +910,9 @@ export function watch(
       heartbeat = false,
     ) =>
     async () => {
-      if (stopping || busy || !acquireLease(holder)) return
+      if (stopping) return
+      if (busy) return refreshWatcherAliveIfHeld(heartbeat, holder, onError)
+      if (!acquireLease(holder)) return
       busy = true
       if (heartbeat) attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
       // A failed collect must not stop the loop or take the server down: the

@@ -7,6 +7,7 @@
 import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
+import { trackerProjects } from './ingest/trackers.ts'
 import type { HostedOutboxReport } from './outbox.ts'
 import { acquireStoredLeaseIntent, releaseStoredLease } from './store-lease.ts'
 import { hostedCreateTask } from './task-client.ts'
@@ -15,13 +16,16 @@ const {
   COLLECT_LEASE_MS,
   acquireLease,
   collectFastHostedOutbox,
+  collectIncremental,
   explicitRequestMayAcquire,
   releaseLease,
   leaseHolder,
   watch,
+  watcherLive,
   watcherMayStartCycle,
   withLease,
 } = await import('./collect.ts')
+type WatcherAlive = import('./collect.ts').WatcherAlive
 
 beforeAll(resetFixtureStore)
 
@@ -47,7 +51,7 @@ function intentHolder(): string | null {
   return row ? (JSON.parse(row.value) as { holder: string }).holder : null
 }
 
-function watcherAlive(): { holder: string; pid: number; at: string } | null {
+function watcherAlive(): WatcherAlive | null {
   const row = db()
     .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.watch.alive'`)
     .get()
@@ -266,6 +270,64 @@ describe('collect lease', () => {
     expect(Date.parse(watcherAlive()!.at)).toBeGreaterThanOrEqual(before)
     await stop()
     expect(watcherAlive()).toBeNull()
+  })
+
+  test('a busy watch cycle refreshes its heartbeat on a later fast tick', async () => {
+    const callbacks: Array<() => void> = []
+    const interval = spyOn(globalThis, 'setInterval').mockImplementation(((
+      callback: () => void,
+    ) => {
+      callbacks.push(callback)
+      return callbacks.length as unknown as ReturnType<typeof setInterval>
+    }) as unknown as typeof setInterval)
+    let started!: () => void
+    const didStart = new Promise<void>((resolve) => (started = resolve))
+    let finish!: () => void
+    const canFinish = new Promise<void>((resolve) => (finish = resolve))
+    const stop = watch('busy-heartbeat-watch', undefined, {
+      initial: async (): Promise<undefined> => {
+        started()
+        await canFinish
+      },
+      fast: async () => undefined,
+      slow: async () => undefined,
+    })
+    try {
+      await didStart
+      const firstAt = watcherAlive()!.at
+      await Bun.sleep(2)
+      callbacks[1]!()
+      await waitFor(() => watcherAlive()?.at !== firstAt)
+      expect(Date.parse(watcherAlive()!.at)).toBeGreaterThan(Date.parse(firstAt))
+    } finally {
+      finish()
+      await stop()
+      interval.mockRestore()
+    }
+  })
+
+  test('a watch heartbeat leaves every one-shot tracker to the watcher', async () => {
+    let cycleFinished!: () => void
+    const finished = new Promise<void>((resolve) => (cycleFinished = resolve))
+    const stop = watch('selection-watch', undefined, {
+      initial: async (): Promise<undefined> => {
+        cycleFinished()
+      },
+      fast: async () => undefined,
+      slow: async () => undefined,
+    })
+    try {
+      await finished
+      await waitFor(() => leaseHolder() === null)
+      expect(watcherLive(JSON.stringify(watcherAlive()), Date.now())).toBeTrue()
+      const tasks = (await collectIncremental()).find((leg) => leg.source === 'tasks')
+      expect(tasks).toMatchObject({
+        ok: true,
+        trackerCounts: { read: 0, skippedFresh: 0, leftToWatcher: trackerProjects().length },
+      })
+    } finally {
+      await stop()
+    }
   })
 
   test('watch reports a failed heartbeat write and still runs the cycle', async () => {
