@@ -96,6 +96,8 @@ function sumCounts(spaces: SpaceCounts[], reportAbsentParentSkips: boolean): Hos
       deletesSkipped: totals.deletesSkipped + space.deletesSkipped,
       absentParentSkipped: totals.absentParentSkipped + space.absentParentSkipped,
       resets: totals.resets + space.resets,
+      outsidePullSetSkipped:
+        (totals.outsidePullSetSkipped ?? 0) + (space.outsidePullSetSkipped ?? 0),
       spaces,
     }),
     {
@@ -474,6 +476,8 @@ type FeedFamily = { name: FamilyName; family: HostedChangeFamily; spaces: string
 
 const setting = (key: string): string | undefined =>
   db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?').get(key)?.value
+const transactionSetting = (conn: Database, key: string): string | undefined =>
+  conn.query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?').get(key)?.value
 const putSetting = (conn: Database, key: string, value: string) =>
   conn
     .query(
@@ -582,7 +586,7 @@ async function applyFeedPage(
     }
   }
   writeTransaction((conn) => {
-    if (setting(FEED_CURSOR) !== after)
+    if (transactionSetting(conn, FEED_CURSOR) !== after)
       throw new Error(
         'hosted change cursor changed while applying a page; another collector is writing this store',
       )
@@ -613,7 +617,16 @@ async function applyFeedPage(
   })
 }
 
-export async function pullHostedChanges(options: PullOptions = {}): Promise<HostedChangesReport> {
+type FeedPass = {
+  shared: PullOptions
+  families: FeedFamily[]
+  remembered: Record<string, string[]>
+  pending: Set<string>
+  counts: Map<string, SpaceCounts>
+  cursor: string | undefined
+}
+
+async function prepareFeedPass(options: PullOptions): Promise<FeedPass> {
   const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
   const identity = await hostedTaskIdentity(shared)
   if (identity.capabilities?.spaceChanges !== true)
@@ -633,78 +646,134 @@ export async function pullHostedChanges(options: PullOptions = {}): Promise<Host
   for (const feed of families)
     for (const space of feed.spaces)
       if (!(previous[feed.name] ?? []).includes(space)) pending.add(pair(feed.name, space))
-  const counts = new Map<string, SpaceCounts>()
-  let cursor = setting(FEED_CURSOR)
+  return { shared, families, remembered, pending, counts: new Map(), cursor: setting(FEED_CURSOR) }
+}
+
+async function establishFeedCursor(pass: FeedPass) {
+  if (pass.cursor) return
+  const reset = await hostedRecordChanges(undefined, pass.shared)
+  if (!('reset' in reset))
+    throw new Error('hosted change feed did not provide a reset cursor for an uninitialized cache')
+  pass.cursor = reset.reset.cursor
+  pass.pending.clear()
+  for (const feed of pass.families)
+    for (const space of feed.spaces) {
+      pass.pending.add(pair(feed.name, space))
+      countFor(pass.counts, feed.name, space).resets += 1
+    }
+}
+
+async function runPendingPulls(pass: FeedPass): Promise<string[]> {
+  const failures: string[] = []
+  for (const value of [...pass.pending]) {
+    const split = value.indexOf(':')
+    const name = value.slice(0, split) as FamilyName
+    const space = value.slice(split + 1)
+    const feed = pass.families.find((item) => item.name === name)!
+    try {
+      await runFullPull(feed, space, pass.shared)
+      pass.pending.delete(value)
+      writeTransaction((conn) =>
+        putSetting(conn, FEED_PENDING, JSON.stringify([...pass.pending].sort())),
+      )
+    } catch (cause) {
+      failures.push(`${value}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
+  return failures
+}
+
+function storeInitialFeedState(pass: FeedPass) {
+  if (setting(FEED_CURSOR) !== undefined) return
+  writeTransaction((conn) => {
+    putSetting(conn, FEED_PENDING, JSON.stringify([...pass.pending].sort()))
+    putSetting(conn, FEED_SPACES, JSON.stringify(pass.remembered))
+    putSetting(conn, FEED_CURSOR, pass.cursor!)
+  })
+}
+
+async function followFeed(pass: FeedPass): Promise<'done' | 'reset'> {
+  for (let page = 0; page < MAX_HOSTED_CHANGE_PAGES_PER_PASS; page++) {
+    const response = await hostedRecordChanges(pass.cursor!, pass.shared)
+    if ('reset' in response) {
+      writeTransaction((conn) => {
+        conn.query('DELETE FROM setting WHERE key IN (?,?)').run(FEED_CURSOR, FEED_PENDING)
+      })
+      pass.cursor = undefined
+      return 'reset'
+    }
+    await applyFeedPage(
+      response,
+      pass.cursor!,
+      pass.families,
+      pass.pending,
+      pass.counts,
+      pass.shared,
+      pass.remembered,
+    )
+    pass.cursor = response.cursor
+    if (!response.more) return 'done'
+  }
+  return 'done'
+}
+
+function finishFeed(pass: FeedPass): HostedChangesReport {
+  writeTransaction((conn) => {
+    for (const feed of pass.families) feed.family.finish?.(conn)
+  })
+  return {
+    families: pass.families.map((feed) => ({
+      name: feed.name,
+      report: sumCounts(
+        [...pass.counts.entries()]
+          .filter(([key]) => key.startsWith(`${feed.name}:`))
+          .map(([, counts]) => counts),
+        feed.family.reportAbsentParentSkips === true,
+      ),
+    })),
+  }
+}
+
+export async function pullHostedChanges(options: PullOptions = {}): Promise<HostedChangesReport> {
+  const pass = await prepareFeedPass(options)
   let restarted = false
   for (;;) {
-    if (!cursor) {
-      const reset = await hostedRecordChanges(undefined, shared)
-      if (!('reset' in reset))
-        throw new Error(
-          'hosted change feed did not provide a reset cursor for an uninitialized cache',
-        )
-      cursor = reset.reset.cursor
-      pending.clear()
-      for (const value of validPairs) pending.add(value)
-      for (const feed of families)
-        for (const space of feed.spaces) countFor(counts, feed.name, space).resets += 1
+    await establishFeedCursor(pass)
+    const failures = await runPendingPulls(pass)
+    storeInitialFeedState(pass)
+    if ((await followFeed(pass)) === 'reset') {
+      if (restarted) throw new Error('hosted change feed reset more than once in one pass')
+      restarted = true
+      continue
     }
-    const failures: string[] = []
-    for (const value of [...pending]) {
-      const split = value.indexOf(':')
-      const name = value.slice(0, split) as FamilyName
-      const space = value.slice(split + 1)
-      const feed = families.find((item) => item.name === name)!
-      try {
-        await runFullPull(feed, space, shared)
-        pending.delete(value)
-        writeTransaction((conn) =>
-          putSetting(conn, FEED_PENDING, JSON.stringify([...pending].sort())),
-        )
-      } catch (cause) {
-        failures.push(`${value}: ${cause instanceof Error ? cause.message : String(cause)}`)
-      }
-    }
-    if (setting(FEED_CURSOR) === undefined)
-      writeTransaction((conn) => {
-        putSetting(conn, FEED_PENDING, JSON.stringify([...pending].sort()))
-        putSetting(conn, FEED_SPACES, JSON.stringify(remembered))
-        putSetting(conn, FEED_CURSOR, cursor!)
-      })
-    for (let page = 0; page < MAX_HOSTED_CHANGE_PAGES_PER_PASS; page++) {
-      const response = await hostedRecordChanges(cursor, shared)
-      if ('reset' in response) {
-        if (restarted) throw new Error('hosted change feed reset more than once in one pass')
-        restarted = true
-        writeTransaction((conn) => {
-          conn.query('DELETE FROM setting WHERE key IN (?,?)').run(FEED_CURSOR, FEED_PENDING)
-        })
-        cursor = undefined
-        break
-      }
-      await applyFeedPage(response, cursor, families, pending, counts, shared, remembered)
-      cursor = response.cursor
-      if (!response.more) break
-    }
-    if (!cursor) continue
-    writeTransaction((conn) => {
-      for (const feed of families) feed.family.finish?.(conn)
-    })
+    const result = finishFeed(pass)
     if (failures.length) throw new Error(`hosted full pulls failed: ${failures.join('; ')}`)
-    return {
-      families: families.map((feed) => ({
-        name: feed.name,
-        report: sumCounts(
-          feed.spaces.map((space) => countFor(counts, feed.name, space)),
-          feed.family.reportAbsentParentSkips === true,
-        ),
-      })),
-    }
+    return result
   }
 }
 
 export function hostedChangesLines(report: HostedChangesReport): string {
   return report.families
-    .map(({ name, report: family }) => `${name}: ${hostedChangeLegLine(family)}`)
+    .map(({ name, report: family }) =>
+      family.spaces
+        .map((space) => {
+          const values = [
+            space.upsertsChanged ? `${space.upsertsChanged} changed` : '',
+            space.upsertsNoop ? `${space.upsertsNoop} no-op` : '',
+            space.deletesApplied ? `${space.deletesApplied} deleted` : '',
+            space.deletesSkipped ? `${space.deletesSkipped} skipped` : '',
+            space.absentParentSkipped ? `${space.absentParentSkipped} absent-parent skipped` : '',
+            space.resets ? `${space.resets} reset` : '',
+            space.outsidePullSetSkipped
+              ? `${space.outsidePullSetSkipped} outside-pull-set skipped`
+              : '',
+          ].filter(Boolean)
+          return values.length ? `${space.spaceId} ${values.join(', ')}` : ''
+        })
+        .filter(Boolean)
+        .map((line) => `${name}: ${line}`)
+        .join('\n'),
+    )
+    .filter(Boolean)
     .join('\n')
 }

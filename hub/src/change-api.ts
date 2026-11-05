@@ -15,8 +15,8 @@ import {
 import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import {
+  HOSTED_RECORD_CHANGE_TABLES,
   type HostedRecordChangeResult,
-  HUB_FEED_TABLES,
   readHostedRecordChanges,
 } from './hosted-record-changes.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
@@ -238,7 +238,11 @@ async function changeLogResponse(
       )
       if (result.resetRequired)
         return json(
-          { reset: true, cursor: encodeRecordChangeCursor(result.cursor), tables: HUB_FEED_TABLES },
+          {
+            reset: true,
+            cursor: encodeRecordChangeCursor(result.cursor),
+            tables: HOSTED_RECORD_CHANGE_TABLES,
+          },
           410,
         )
       return json({
