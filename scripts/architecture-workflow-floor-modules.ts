@@ -249,8 +249,6 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/secret-shaped.ts',
     '../caller-classification.ts',
     '../database/db.ts',
-    '../database/migration-compatibility.ts',
-    '../database/migrations.ts',
     '../gate/gate-decision.ts',
     '../sandbox/sandbox.ts',
     '../sandbox/sandbox-runtime.ts',

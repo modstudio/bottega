@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import ts from 'typescript'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
+import { MIGRATIONS_TABLE } from '../orchestrator/src/database/applied-migration-compatibilities.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
 import {
   LOCAL_PIN_VERSION_SQL,
@@ -156,6 +157,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
       '2847caa2831bb631',
     ],
     'schema introspection interpolates a quoted runtime identifier',
+  ),
+  ...exempt(
+    'orchestrator/src/database/migrations.ts',
+    ['30e4139155a55f2d'],
+    'migration metadata repair adds compatibility only when schema introspection found it absent',
   ),
   ...exempt(
     'orchestrator/src/database/migrations.ts',
@@ -719,6 +725,9 @@ function checkSqlLiteralSchema() {
     ],
     exemptions: SQL_PREPARE_EXEMPTIONS,
     catalogues: {
+      'orchestrator/src/database/migrations.ts': {
+        MIGRATIONS_TABLE: [MIGRATIONS_TABLE],
+      },
       'orchestrator/src/project/project-reference-counts.ts': {
         $statements: referenceStatements,
       },

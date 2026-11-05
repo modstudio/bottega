@@ -10,6 +10,10 @@ import {
   leaveMigrationConnectionPolicy,
 } from '../../../shared/migration-connection-policy.ts'
 import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
+import {
+  hasMigrationCompatibilityColumn,
+  MIGRATIONS_TABLE,
+} from './applied-migration-compatibilities.ts'
 import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
   lensPortReferenceOrphanCounts,
@@ -38,7 +42,6 @@ import {
 } from './workflow-uuid-migration-preflight.ts'
 import { isWriteProbeTable } from './write-probe.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
-const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
 const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
@@ -842,8 +845,12 @@ function createMigrationsTable(d: Database): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hash TEXT NOT NULL,
     created_at NUMERIC,
-    version TEXT
+    version TEXT,
+    compatibility TEXT
   )`)
+  if (!hasMigrationCompatibilityColumn(d)) {
+    d.exec(`ALTER TABLE ${MIGRATIONS_TABLE} ADD COLUMN compatibility TEXT`)
+  }
 }
 
 function ensureSchemaLock(d: Database): void {
@@ -854,11 +861,24 @@ function ensureSchemaLock(d: Database): void {
 }
 
 function recordMigration(d: Database, entry: MigrationJournalEntry, folder: string): void {
-  d.query(`INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version) VALUES (?,?,?)`).run(
-    migrationHash(entry, folder),
-    entry.when,
-    entry.tag,
+  d.query(
+    `INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version,compatibility) VALUES (?,?,?,?)`,
+  ).run(migrationHash(entry, folder), entry.when, entry.tag, entry.compatibility ?? null)
+}
+
+function backfillMigrationCompatibilities(
+  d: Database,
+  journal: MigrationJournalEntry[],
+  folder: string,
+): void {
+  const update = d.query(
+    `UPDATE ${MIGRATIONS_TABLE} SET compatibility=?
+     WHERE compatibility IS NULL AND created_at=? AND hash=?`,
   )
+  for (const entry of journal) {
+    if (entry.compatibility === undefined) continue
+    update.run(entry.compatibility, entry.when, migrationHash(entry, folder))
+  }
 }
 
 function adoptBaseline(d: Database, folder: string): string[] {
@@ -971,6 +991,8 @@ function applyMigrationRange(
     ensureSchemaLock(d)
     d.exec(`UPDATE ${SCHEMA_LOCK_TABLE} SET id = 1 WHERE id = 1`)
     const versions = adoptBaseline(d, folder)
+    createMigrationsTable(d)
+    backfillMigrationCompatibilities(d, journal, folder)
     const state = migrationState(d, folder)
     if (state.ahead) {
       throw new Error(
