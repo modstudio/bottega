@@ -66,6 +66,7 @@ import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
 import { registerHostLoadCommands } from './host-load.ts'
 import { registerLensCommands } from './lens.ts'
+import { registerMachineJournalCommand } from './machine-journal.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
 
@@ -257,9 +258,14 @@ function registerEfficiencyCommands(program: Command): void {
     )
 }
 
-function registerMachineAttentionCommands(program: Command): void {
+function registerMachineInspectionCommands(program: Command): void {
   registerEfficiencyCommands(program)
   registerHostLoadCommands(program)
+  registerMachineJournalCommand(program, { write })
+}
+
+function registerMachineAttentionCommands(program: Command): void {
+  registerMachineInspectionCommands(program)
   program
     .command('rename')
     .description('change this machine name')

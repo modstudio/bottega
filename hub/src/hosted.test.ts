@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
+import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import { hostedRequestHandler, hostedServerConfig } from './hosted.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
@@ -134,5 +136,51 @@ describe('hostedRouter', () => {
     expect(procedures).not.toContain('context.autonomy.setMachine')
     expect(procedures).not.toContain('context.autonomy.clearMachine')
     expect(procedures).not.toContain('context.settings.machinePermission')
+  })
+})
+
+describe('hosted index', () => {
+  test('adds public-doc discovery only to docs index responses and keeps HTML content types', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hosted-docs-index-'))
+    const previousInstallHome = process.env[INSTALL_HOME_ENV]
+    try {
+      const dist = join(root, 'hub/web/dist')
+      mkdirSync(dist, { recursive: true })
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: PLATFORM_SLUG }))
+      writeFileSync(
+        join(dist, 'index.html'),
+        '<html><head></head><body><main>App</main></body></html>',
+      )
+      process.env[INSTALL_HOME_ENV] = root
+      const handler = hostedRequestHandler(
+        { recordApiUrl: 'https://api.example.test', recordDatabaseUrl: {} as never },
+        {
+          publicDocsText: {
+            tree: async () => ({ items: [] }),
+            doc: async () => ({ body: '' }),
+          },
+        },
+      )
+
+      const docs = await handler(
+        new Request(`https://hub.example.test/docs/project/${PLATFORM_SLUG}/install`),
+      )
+      const docsHtml = await docs.text()
+      expect(docs.headers.get('content-type')).toStartWith('text/html')
+      expect(docsHtml).toContain('<body><noscript>')
+      expect(docsHtml).toContain(
+        `<head><link rel="alternate" type="text/markdown" href="/docs/project/${PLATFORM_SLUG}/install.md">`,
+      )
+
+      const home = await handler(new Request('https://hub.example.test/'))
+      const homeHtml = await home.text()
+      expect(home.headers.get('content-type')).toStartWith('text/html')
+      expect(homeHtml).not.toContain('<noscript>')
+      expect(homeHtml).not.toContain('rel="alternate"')
+    } finally {
+      if (previousInstallHome === undefined) delete process.env[INSTALL_HOME_ENV]
+      else process.env[INSTALL_HOME_ENV] = previousInstallHome
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

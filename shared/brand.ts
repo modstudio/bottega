@@ -41,7 +41,7 @@ export const PLATFORM_NAME = 'Bottega'
 export const PLATFORM_SLUG = 'bottega'
 
 /** Public documentation addresses follow the platform's rename boundary. */
-const PUBLIC_SITE_ORIGIN = `https://${PLATFORM_SLUG}.run`
+export const PUBLIC_SITE_ORIGIN = `https://${PLATFORM_SLUG}.run`
 export const INSTALL_GUIDE_URL = `${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/install`
 export const RECORD_API_ORIGIN = `https://api.${PLATFORM_SLUG}.run`
 
