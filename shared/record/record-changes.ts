@@ -1,7 +1,8 @@
 // concern: record-changes
 /** Reads the global record_change log on an (xid8, seq) cursor, with the horizon as its reset watermark. Knows nothing of hub_change, HTTP, or any table's wire form. */
-import type { SQL } from 'bun'
+
 import { Buffer } from 'node:buffer'
+import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from './tenant.ts'
 
 export const MAX_RECORD_CHANGE_PAGE_SIZE = 500
@@ -30,8 +31,9 @@ const before = (left: RecordChangeCursor, right: RecordChangeCursor) =>
   left.xid < right.xid || (left.xid === right.xid && left.seq < right.seq)
 
 export function encodeRecordChangeCursor(cursor: RecordChangeCursor): string {
-  return Buffer.from(JSON.stringify({ xid: cursor.xid.toString(), seq: cursor.seq.toString() }))
-    .toString('base64url')
+  return Buffer.from(
+    JSON.stringify({ xid: cursor.xid.toString(), seq: cursor.seq.toString() }),
+  ).toString('base64url')
 }
 
 export function decodeRecordChangeCursor(value: string): RecordChangeCursor {
@@ -74,7 +76,7 @@ export function recordChangePage(after: RecordChangeCursor, candidates: readonly
   return { changes, cursor: last ? { xid: last.xid, seq: last.seq } : after }
 }
 
-export async function recordChangeLag(tx: SQL, cursor: RecordChangeCursor): Promise<number> {
+async function recordChangeLag(tx: SQL, cursor: RecordChangeCursor): Promise<number> {
   const result = rows<{ lag: string | number | bigint }>(
     await tx`SELECT count(*)::text AS lag FROM record_change
       WHERE (xid,seq)>(${cursor.xid.toString()}::xid8,${cursor.seq})`,
@@ -90,13 +92,21 @@ export async function readRecordChangesInTransaction(
   limit: number,
   tables: readonly string[],
 ) {
-  const metadata = rows<{ horizon_xid: string | number | bigint; horizon_seq: string | number | bigint }>(
+  const metadata = rows<{
+    horizon_xid: string | number | bigint
+    horizon_seq: string | number | bigint
+  }>(
     await tx`SELECT xid::text AS horizon_xid,seq::text AS horizon_seq
       FROM record_change_horizon WHERE singleton`,
   )[0]!
   const horizon = { xid: asBigInt(metadata.horizon_xid), seq: asBigInt(metadata.horizon_seq) }
   if (recordChangeResetRequired(after, horizon))
-    return { resetRequired: true as const, horizon, cursor: horizon, lag: await recordChangeLag(tx, horizon) }
+    return {
+      resetRequired: true as const,
+      horizon,
+      cursor: horizon,
+      lag: await recordChangeLag(tx, horizon),
+    }
   const candidates = rows<LogRow>(
     await tx`SELECT xid::text,seq::text,table_name,row_id::text,space_id::text,op
       FROM record_change
@@ -120,10 +130,15 @@ export async function readRecordChanges(
   after: RecordChangeCursor | null,
   limit: number,
   tables: readonly string[],
+  materialize?: (
+    tx: SQL,
+    page: Awaited<ReturnType<typeof readRecordChangesInTransaction>>,
+  ) => Promise<unknown>,
 ) {
   return client.begin(async (tx) => {
     await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`
     await bindTenant(tx, { ...principal, spaceIds: principal.spaceIds ?? [principal.spaceId] })
-    return readRecordChangesInTransaction(tx, after, limit, tables)
+    const page = await readRecordChangesInTransaction(tx, after, limit, tables)
+    return materialize ? materialize(tx, page) : page
   })
 }

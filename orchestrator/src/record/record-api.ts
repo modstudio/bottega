@@ -13,8 +13,8 @@ import type { DocGenerator } from '../doc/doc-generator.ts'
 import { VERDICT_INPUT_SCHEMA, type VerdictInput } from '../verdict/verdict-payload.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
-import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
+import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
 import { hostedDocUpsert } from './record-api-doc-prose.ts'
 import {
   docWriteContextSchema,
@@ -279,6 +279,10 @@ const catalogueRoutes = [
   registerRecordPortRoutes,
   registerRecordWorkflowRoutes,
 ]
+const registerRecordIdentityRoutes = (app: Hono<ApiEnvironment>, deps: Deps) => {
+  app.get('/v1/whoami', (context) => context.json(context.get('identity')))
+  registerRecordChangeRoute(app, deps)
+}
 
 const jsonWrap = (wrap: ConfigWrapInput) => ({
   ...wrap,
@@ -321,8 +325,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     context.set('identity', identity)
     await next()
   })
-  app.get('/v1/whoami', (context) => context.json(context.get('identity')))
-  registerRecordChangeRoute(app, deps)
+  registerRecordIdentityRoutes(app, deps)
   registerRecordSessionRoutes(app, deps)
   registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {

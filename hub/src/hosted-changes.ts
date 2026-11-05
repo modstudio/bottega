@@ -226,4 +226,3 @@ export async function listHostedChanges(
     return readHostedChangesInTransaction(tx, identity, input)
   })
 }
-

@@ -1,12 +1,17 @@
 // concern: record-change-wake
 /** Owns the lazy process-wide LISTEN connection shared by record-change waiters. */
 import { SQL } from 'bun'
+import { recordServiceUrl } from '../../../shared/record/service-connection.ts'
 
-export const RECORD_CHANGE_SAFETY_POLL_MS = 2_000
-export const RECORD_CHANGE_NOTIFY_CHANNEL = 'record_change_advanced'
+const RECORD_CHANGE_SAFETY_POLL_MS = 2_000
+const RECORD_CHANGE_NOTIFY_CHANNEL = 'record_change_advanced'
 
 type Listener = {
-  listen(channel: string, notify: () => void, listening: () => void): Promise<{ unlisten(): Promise<void> }>
+  listen(
+    channel: string,
+    notify: () => void,
+    listening: () => void,
+  ): Promise<{ unlisten(): Promise<void> }>
   close(): Promise<void>
 }
 
@@ -15,11 +20,14 @@ export function createRecordChangeWakeSource(recordUrl: string, supplied?: Liste
   let client: Listener | undefined = supplied
   let opening: Promise<void> | undefined
   let subscription: { unlisten(): Promise<void> } | undefined
-  const wake = () => { for (const waiter of waiters) waiter() }
-  const open = () => opening ??= (async () => {
-    client ??= new SQL(recordUrl)
-    subscription = await client.listen(RECORD_CHANGE_NOTIFY_CHANNEL, wake, wake)
-  })()
+  const wake = () => {
+    for (const waiter of waiters) waiter()
+  }
+  const open = () =>
+    (opening ??= (async () => {
+      client ??= new SQL(recordServiceUrl(recordUrl))
+      subscription = await client.listen(RECORD_CHANGE_NOTIFY_CHANNEL, wake, wake)
+    })())
   return {
     async wait(milliseconds: number, signal?: AbortSignal): Promise<void> {
       if (signal?.aborted) return

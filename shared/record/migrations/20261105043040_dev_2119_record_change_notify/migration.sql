@@ -47,4 +47,4 @@ FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row('doc_id','doc');
 DROP TRIGGER record_change_review_lens ON public.review_lens;
 CREATE TRIGGER record_change_review_lens
 AFTER INSERT OR UPDATE OR DELETE ON public.review_lens
-FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row('review_id','review');
+FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row('run_id','run');

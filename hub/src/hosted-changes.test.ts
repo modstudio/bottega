@@ -12,8 +12,8 @@ import {
   recordChangeResetRequired,
 } from '../../shared/record/record-changes.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
-import { RECORD_CHANGE_REPLICATED_TABLES } from '../../shared/record/schema-record-change.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
+import { RECORD_CHANGE_REPLICATED_TABLES } from '../../shared/record/schema-record-change.ts'
 import {
   hubChangeReadability,
   laterRowKeys,
@@ -181,10 +181,25 @@ test('record change pages follow numeric order across a digit boundary', async (
     COMMIT;`)
   const identity = { userId, spaceId: spaceA }
   const client = pgliteClient(database)
-  let read = await readRecordChanges(client, identity, null, 1, RECORD_CHANGE_REPLICATED_TABLES)
-  const seqs: bigint[] = []
+  const inserted = await database.query<{ xid: string }>(
+    `SELECT xid::text FROM record_change WHERE row_id='01990000-0000-7000-8000-000000001320'`,
+  )
+  let read = await readRecordChanges(
+    client,
+    identity,
+    { xid: BigInt(inserted.rows[0]!.xid), seq: 998n },
+    1,
+    RECORD_CHANGE_REPLICATED_TABLES,
+  )
+  const seqs: bigint[] = read.resetRequired ? [] : read.changes.map((change) => change.seq)
   for (let page = 0; page < 20; page += 1) {
-    read = await readRecordChanges(client, identity, read.cursor, 1, RECORD_CHANGE_REPLICATED_TABLES)
+    read = await readRecordChanges(
+      client,
+      identity,
+      read.cursor,
+      1,
+      RECORD_CHANGE_REPLICATED_TABLES,
+    )
     if (read.resetRequired || read.changes.length === 0) break
     seqs.push(...read.changes.map((change) => change.seq))
   }

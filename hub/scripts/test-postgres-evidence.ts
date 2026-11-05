@@ -2,15 +2,15 @@
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OUTSIDE_WRITES_PER_HOUR } from '../../shared/outside-write-decision.ts'
+import { readRecordChanges } from '../../shared/record/record-changes.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { RECORD_CHANGE_REPLICATED_TABLES } from '../../shared/record/schema-record-change.ts'
 import {
   RECORD_SERVICE_IDLE_IN_TRANSACTION_TIMEOUT,
   RECORD_SERVICE_STATEMENT_TIMEOUT,
   recordServiceUrl,
 } from '../../shared/record/service-connection.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import { readRecordChanges } from '../../shared/record/record-changes.ts'
-import { RECORD_CHANGE_REPLICATED_TABLES } from '../../shared/record/schema-record-change.ts'
 import { listHostedChanges } from '../src/hosted-changes.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
@@ -302,7 +302,13 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
     if (changeB.seq <= changeA.seq)
       throw new Error('later record change did not receive a later sequence')
 
-    const heldRead = await readRecordChanges(actorUrl, identityA, baseline, 10, RECORD_CHANGE_REPLICATED_TABLES)
+    const heldRead = await readRecordChanges(
+      actorUrl,
+      identityA,
+      baseline,
+      10,
+      RECORD_CHANGE_REPLICATED_TABLES,
+    )
     if (
       heldRead.resetRequired ||
       heldRead.changes.length !== 0 ||
@@ -314,7 +320,13 @@ async function proveRecordChangeCutoff(admin: SQL, connectionA: SQL, connectionB
 
     releaseA()
     await transactionA
-    const released = await readRecordChanges(actorUrl, identityA, baseline, 10, RECORD_CHANGE_REPLICATED_TABLES)
+    const released = await readRecordChanges(
+      actorUrl,
+      identityA,
+      baseline,
+      10,
+      RECORD_CHANGE_REPLICATED_TABLES,
+    )
     if (
       released.resetRequired ||
       released.changes.length < 2 ||
@@ -434,6 +446,56 @@ async function proveRecordChangeOrdering(admin: SQL) {
   }
 }
 
+async function proveRecordChangeMultiSpacePolicyAndNotify(admin: SQL) {
+  const actor = new SQL(actorDatabaseUrl!, { max: 1 })
+  try {
+    const visible = await actor.begin(async (tx) => {
+      await bindTenant(tx, { userId: USER, spaceId: SPACE_A, spaceIds: [SPACE_A, SPACE_B] })
+      return tx<{ space_id: string }[]>`SELECT DISTINCT space_id::text FROM record_change
+        WHERE space_id=ANY(string_to_array(${`${SPACE_A},${SPACE_B}`},',')::uuid[])`
+    })
+    if (
+      !visible.some((row) => row.space_id === SPACE_A) ||
+      !visible.some((row) => row.space_id === SPACE_B)
+    )
+      throw new Error('record change multi-space policy did not expose both member spaces')
+    const hidden = await actor.begin(async (tx) => {
+      await bindTenant(tx, { userId: SECOND_USER, spaceId: SPACE_A, spaceIds: [SPACE_B, SPACE_C] })
+      return tx`SELECT 1 FROM record_change WHERE space_id=ANY(string_to_array(${`${SPACE_B},${SPACE_C}`},',')::uuid[]) LIMIT 1`
+    })
+    if (hidden.length)
+      throw new Error('record change multi-space policy exposed a non-member space')
+
+    const listener = new SQL(actorDatabaseUrl!, { max: 1 })
+    let notifications = 0
+    const notified = new Promise<void>((resolve) => {
+      void listener.listen('record_change_advanced', () => {
+        notifications++
+        resolve()
+      })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await admin.begin(async (tx) => {
+      await tx`UPDATE project SET color='#121212' WHERE id=${PROJECT_A}::uuid`
+      await tx`UPDATE project SET color='#131313' WHERE id=${PROJECT_A_OTHER}::uuid`
+    })
+    await Promise.race([
+      notified,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('record change notification did not fire')), 2_000),
+      ),
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await listener.close()
+    if (notifications !== 1)
+      throw new Error(
+        `record change transaction sent ${notifications} notifications instead of one`,
+      )
+  } finally {
+    await actor.close()
+  }
+}
+
 const admin = new SQL(adminUrl)
 try {
   await admin`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
@@ -474,6 +536,7 @@ try {
     throw new Error('hosted service pool did not apply both record transaction bounds')
 
   await proveRecordChangeOrdering(admin)
+  await proveRecordChangeMultiSpacePolicyAndNotify(admin)
 
   const intakeId = newRecordId()
   const outsideTokens = new Map([
