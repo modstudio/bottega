@@ -308,14 +308,24 @@ function writeAccount(
   else if (stage && value) mutations.set.mutate({ project, stage, value: value as AutonomyValue })
 }
 
+/** One table's write state: pending while any of its writes runs, and the first write's error. */
+function mutationState(
+  mutations: Record<string, { isPending: boolean; error: { message: string } | null }>,
+) {
+  const all = Object.values(mutations)
+  return {
+    pending: all.some((mutation) => mutation.isPending),
+    error: all.find((mutation) => mutation.error)?.error?.message ?? null,
+  }
+}
+
 /** Routes a table edit to the write for its layer: this machine's config, or your account. */
 function useAutonomyEdit(project: string): AutonomyEdit {
   const mutations = useAutonomyMutations()
-  const all = Object.values(mutations)
-  const pending = all.some((mutation) => mutation.isPending)
+  const { pending, error } = mutationState(mutations)
   return {
     pending,
-    error: all.find((mutation) => mutation.error)?.error?.message ?? null,
+    error,
     run(scope, column, value) {
       if (pending) return
       if (scope === 'local user') writeMachine(mutations, project, column, value)
@@ -453,12 +463,11 @@ function HostedAutonomySection({ project, options, onProject, showChooser }: Aut
     enabled: Boolean(project),
   })
   const mutations = useHostedAutonomyMutations()
-  const all = Object.values(mutations)
-  const pending = all.some((mutation) => mutation.isPending)
+  const { pending, error } = mutationState(mutations)
   const user = autonomy.data?.user
   const edit: AutonomyEdit = {
     pending,
-    error: all.find((mutation) => mutation.error)?.error?.message ?? null,
+    error,
     run(scope, column, value) {
       if (!pending && user && scope === 'hosted user')
         writeHostedAccount(mutations, project, user, column, value)

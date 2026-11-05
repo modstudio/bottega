@@ -19,8 +19,8 @@ type PageHeaderProps = {
  * The page's name, a line of standing context, and the page's own controls.
  * On a desk they sit in the app's top bar, so the page opens on its content. On
  * a phone the top bar already names the page beside the menu, so the name is
- * kept for assistive technology only and the controls open the page; the about tip is left
- * out there, since no visible heading would carry it.
+ * kept for assistive technology only and the about tip leads the row of controls that opens
+ * the page.
  */
 export function PageHeader({ title, subtitle, subtitleTitle, about, actions }: PageHeaderProps) {
   const slot = useTopbarSlot()
@@ -47,9 +47,16 @@ export function PageHeader({ title, subtitle, subtitleTitle, about, actions }: P
   }
   if (phone) {
     return (
-      <header className={pageHeaderStyles({ bare: !actions }).phoneHeader()}>
+      <header className={pageHeaderStyles({ bare: !actions && !tip }).phoneHeader()}>
         <h1 className={pageHeaderStyles().phoneTitle()}>{title}</h1>
-        {actions}
+        {tip ? (
+          <div className={pageHeaderStyles().phoneRow()}>
+            {tip}
+            {actions ? <div className={pageHeaderStyles().phoneActions()}>{actions}</div> : null}
+          </div>
+        ) : (
+          actions
+        )}
       </header>
     )
   }

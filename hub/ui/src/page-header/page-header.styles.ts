@@ -4,6 +4,8 @@ export const pageHeaderStyles = variant({
   slots: {
     phoneTitle: 'sr-only',
     phoneHeader: 'pt-4 pb-4',
+    phoneRow: 'flex min-w-0 items-center gap-2',
+    phoneActions: 'min-w-0 flex-1',
     portalRoot: 'flex min-w-0 flex-1 items-center gap-4',
     portalHeading: 'flex min-w-0 items-center gap-2',
     portalTitle: 'shrink-0 font-normal font-serif text-xl',
@@ -19,7 +21,7 @@ export const pageHeaderStyles = variant({
     sectionDetail: 'text-right text-sm text-text-muted',
   },
   variants: {
-    // A phone header with no controls keeps only its hidden name and the gap above the page.
+    // A phone header with no tip and no controls keeps only its hidden name and the gap above the page.
     bare: { true: { phoneHeader: 'pb-0' } },
   },
 })
