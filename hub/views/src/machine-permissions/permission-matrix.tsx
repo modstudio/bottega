@@ -15,7 +15,7 @@ import { TableCard } from '@bottega/hub-ui/table-card'
 import { permissionListLabel } from '@bottega/hub-util/format'
 import { ChevronDown, Plus, Save, Undo2 } from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
-import { SETTINGS_PERMISSION_LISTS } from '../../../../shared/settings-summary.ts'
+import { SETTINGS_PERMISSION_LISTS } from '../../../../shared/settings-permission-lists.ts'
 import { CAPABILITY_ORDER, readablePermission } from './permission-capability.ts'
 import { permissionMatrixStyles } from './permission-matrix.styles.ts'
 

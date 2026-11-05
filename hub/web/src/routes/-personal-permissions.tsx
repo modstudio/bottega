@@ -25,7 +25,7 @@ import type { MachinePermissionOverlay } from '../../../../shared/machine-config
 import {
   SETTINGS_PERMISSION_LISTS,
   type SettingsPermissionList,
-} from '../../../../shared/settings-summary.ts'
+} from '../../../../shared/settings-permission-lists.ts'
 
 const hosted = isHostedMode()
 

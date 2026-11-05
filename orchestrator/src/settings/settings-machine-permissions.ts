@@ -9,7 +9,7 @@ import {
 import {
   SETTINGS_PERMISSION_LISTS,
   type SettingsPermissionList,
-} from '../../../shared/settings-summary.ts'
+} from '../../../shared/settings-permission-lists.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 
 export function machinePermissionListPresentation(

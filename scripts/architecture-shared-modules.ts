@@ -42,7 +42,7 @@ export const sharedModules: ArchitectureModule[] = [
     './delegation-mode.ts',
     './ship-to.ts',
     './secret-shaped.ts',
-    './settings-summary.ts',
+    './settings-permission-lists.ts',
   ]),
   module('shared/config-client.ts', [
     './http-json.ts',

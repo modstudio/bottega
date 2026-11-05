@@ -22,7 +22,10 @@ import {
   type DelegationSettings,
 } from './delegation-mode.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
-import { SETTINGS_PERMISSION_LISTS, type SettingsPermissionList } from './settings-summary.ts'
+import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from './settings-permission-lists.ts'
 import {
   isShipToConfigKey,
   readStoredShipTo,

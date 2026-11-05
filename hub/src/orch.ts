@@ -82,7 +82,7 @@ import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
   type SettingsPermissionList,
-} from '../../shared/settings-summary.ts'
+} from '../../shared/settings-permission-lists.ts'
 import { SHIP_TO_VALUES } from '../../shared/ship-to.ts'
 import type { ContractDocRow } from './doc-contract.ts'
 

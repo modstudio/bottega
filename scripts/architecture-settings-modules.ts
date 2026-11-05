@@ -14,10 +14,12 @@ const module = (file: string, allowed: string[]): SettingsModule => ({
 export const settingsModules: SettingsModule[] = [
   module('shared/config-contract.ts', ['zod', './config-client.ts', './machine-config.ts']),
   module('shared/canonical-json.ts', []),
+  module('shared/settings-permission-lists.ts', []),
   module('shared/settings-summary.ts', [
     'node:crypto',
     './canonical-json.ts',
     './secret-shaped.ts',
+    './settings-permission-lists.ts',
     './stored-settings.ts',
   ]),
   module('orchestrator/src/project/project-injection.ts', [
@@ -98,12 +100,12 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-permission-overlay.ts', [
     '../../../shared/machine-config.ts',
-    '../../../shared/settings-summary.ts',
+    '../../../shared/settings-permission-lists.ts',
     './settings.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-permissions.ts', [
     '../../../shared/machine-config.ts',
-    '../../../shared/settings-summary.ts',
+    '../../../shared/settings-permission-lists.ts',
     '../run/run-process.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-apply.ts', [

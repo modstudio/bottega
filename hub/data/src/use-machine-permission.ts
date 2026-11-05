@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { MachinePermissionOperation } from '../../../shared/machine-config.ts'
-import type { SettingsPermissionList } from '../../../shared/settings-summary.ts'
+import type { SettingsPermissionList } from '../../../shared/settings-permission-lists.ts'
 import { queryClient, trpc } from './client.ts'
 
 export type MachinePermissionChange = {
