@@ -238,34 +238,15 @@ function catalogueLocalRow(
   table: string,
   recordId: string,
 ): { space_id: string | null } | null | undefined {
-  const tables = [
+  const tables: readonly string[] = [
     ...RECORD_LENS_TABLES,
     ...RECORD_WORKFLOW_TABLES,
     ...RECORD_PORT_TABLES,
-  ] as readonly string[]
-  const statements = [
-    local.query('SELECT space_id FROM lens WHERE record_id=?'),
-    local.query('SELECT space_id FROM lens_revision WHERE record_id=?'),
-    local.query('SELECT space_id FROM lens_profile WHERE record_id=?'),
-    local.query('SELECT space_id FROM lens_profile_revision WHERE record_id=?'),
-    local.query('SELECT space_id FROM project_lens_profile WHERE record_id=?'),
-    local.query('SELECT space_id FROM project_lens_profile_revision WHERE record_id=?'),
-    local.query('SELECT space_id FROM step_catalogue WHERE record_id=?'),
-    local.query('SELECT space_id FROM step_catalogue_version WHERE record_id=?'),
-    local.query('SELECT space_id FROM step_catalogue_event WHERE record_id=?'),
-    local.query('SELECT space_id FROM workflow WHERE record_id=?'),
-    local.query('SELECT space_id FROM workflow_version WHERE record_id=?'),
-    local.query('SELECT space_id FROM workflow_event WHERE record_id=?'),
-    local.query('SELECT space_id FROM port_doctrine WHERE record_id=?'),
-    local.query('SELECT space_id FROM port_pair WHERE record_id=?'),
-    local.query('SELECT space_id FROM port_baseline WHERE record_id=?'),
-    local.query('SELECT space_id FROM port_ref WHERE record_id=?'),
-    local.query('SELECT space_id FROM port_ref_source WHERE record_id=?'),
-    local.query('SELECT space_id FROM port_skip WHERE record_id=?'),
   ]
-  const index = tables.indexOf(table)
-  if (index < 0) return undefined
-  return statements[index]!.get(recordId) as { space_id: string | null } | null
+  if (!tables.includes(table)) return undefined
+  return local
+    .query<{ space_id: string | null }, [string]>(`SELECT space_id FROM ${table} WHERE record_id=?`)
+    .get(recordId)
 }
 
 function localRowSpace(local: Database, change: Change): string | null | undefined {
