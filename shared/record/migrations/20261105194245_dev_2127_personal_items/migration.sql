@@ -2,6 +2,7 @@ ALTER TABLE record_change NO FORCE ROW LEVEL SECURITY;
 ALTER TABLE doc_revision NO FORCE ROW LEVEL SECURITY;
 ALTER TABLE doc NO FORCE ROW LEVEL SECURITY;
 ALTER TABLE config_entry NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE doc_related_subject NO FORCE ROW LEVEL SECURITY;
 
 DO $$
 DECLARE
@@ -56,6 +57,18 @@ BEGIN
   IF duplicates IS NOT NULL THEN
     RAISE EXCEPTION 'users with personal items have no personal space: %', duplicates;
   END IF;
+
+  -- Related subjects name subjects of the source space, so a personal document carrying them
+  -- cannot move without losing them; refuse rather than orphan the rows.
+  SELECT string_agg(DISTINCT d.id::text, ', ') INTO duplicates
+  FROM doc d
+  JOIN doc_related_subject r ON r.doc_id=d.id AND r.space_id=d.space_id
+  JOIN "user" u ON u.id=d.owner_user_id
+  WHERE d.subject IS NULL AND d.scope IN ('settings','canon')
+    AND u.personal_space_id IS NOT NULL AND d.space_id<>u.personal_space_id;
+  IF duplicates IS NOT NULL THEN
+    RAISE EXCEPTION 'personal documents carry related subjects of their source space: %', duplicates;
+  END IF;
 END
 $$;
 
@@ -105,3 +118,4 @@ ALTER TABLE record_change FORCE ROW LEVEL SECURITY;
 ALTER TABLE doc_revision FORCE ROW LEVEL SECURITY;
 ALTER TABLE doc FORCE ROW LEVEL SECURITY;
 ALTER TABLE config_entry FORCE ROW LEVEL SECURITY;
+ALTER TABLE doc_related_subject FORCE ROW LEVEL SECURITY;
