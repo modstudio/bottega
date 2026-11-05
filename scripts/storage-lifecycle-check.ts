@@ -49,7 +49,7 @@ export async function storageLifecycleRefusals(
       values.map((table) => `${store}.${table.name}`),
     ),
   )
-  const columns = new Map(
+  const columns = new Map<string, ReadonlySet<string>>(
     Object.entries(tables).flatMap(([store, values]) =>
       values.map((table) => [`${store}.${table.name}`, new Set(table.columns)] as const),
     ),

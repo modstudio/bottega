@@ -74,15 +74,13 @@ checkout follows it. Never fast-forward local trunk and call that landed, and do
 not invent a local admission queue.
 
 The full suite runs in GitHub Actions, sharded, on every pull request and in the
-merge queue. The aggregate `ci` check is the proof a commit has, and the merge
-queue tests each pull request on top of the current trunk before it lands. The
-local gate, `bun run check`, runs the fast static checks; run it before opening
-the pull request.
+merge queue, which tests each pull request on top of the current trunk. The
+local gate, `bun run check`, runs the fast static checks.
 
 A ruleset on the landing branch requires the merge queue and the `ci` check, so
 no change reaches trunk outside a pull request.
 
-CI proves the commit; the merge queue admits it. A check that skips what it
+A check that skips what it
 cannot provision is informational, not a gate, because running nothing proves
 nothing. Attribute each failure before aggregating it; an unattributed count is
 not a rate.
@@ -143,16 +141,22 @@ data because architect attention is the scarce resource.
 
 ## Design from the multi-space hosted platform
 
-Design starts from the hosted, multi-space platform; the CLI stays useful
-without a record. All work, from space down to run, is portable between
-machines. Machine-only is only state another machine would never care about;
-everything else is space data. A table whose hosted home is unbuilt is
-hosted-first and names the task that builds it. The seam is doc-store record
-`design-machine-hosted-seam`.
+Design starts from the hosted, multi-space platform. Hosted is the record;
+the local store is a working set. Local keeps pending writes, machine-only
+state, and the window its hot paths read; everything else is fetched from the
+record. A local-only install keeps everything locally and offers the features
+that fit. All work, from space down to run, is portable between machines;
+machine-only is state another machine would never care about. A table whose
+hosted home is unbuilt is hosted-first and names the task that builds it. The
+seam is doc-store record `design-machine-hosted-seam`.
 
-Every local table declares `hosted-first`, `evidence` or `machine-only` in
-`scripts/identity-state-classes.ts`; a machine-only declaration names Shmuel
-Barkin's ruling. `scripts/check-identity-inventory.ts` enforces this.
+Every table declares a lifecycle: what it is, where its authoritative copy
+lives, how long each copy is kept, and what removes it. Nothing is kept because
+nobody decided. Each local table also declares `hosted-first`, `evidence` or
+`machine-only` in `scripts/identity-state-classes.ts`, a machine-only one
+naming Shmuel Barkin's ruling. The lifecycle classes are in doc-store record
+`design-data-lifecycle`; `scripts/check-identity-inventory.ts` enforces both
+declarations.
 
 ## Delegation costs nothing in judgment
 
@@ -637,7 +641,7 @@ Never continue or land a chain while its worker has an unanswered question, beca
 
 ## Admit through a pull request
 
-Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. `bottega pr create` refuses while the change's review triage is incomplete and records the evidence it admitted on; an override requires the operator and is recorded. `bottega pr merge` repeats that review-admission check for the head commit and refuses when it does not hold. It also refuses until the head commit is proven: by every required check the project declares, or, where it declares none, by a passing gate recorded for that commit with the landing branch not moved past it. Where the project declares a merge queue, it enqueues the admitted head, waits for the queue to land it, and does not apply the landing-branch freshness refusal, because the queue tests each pull request on top of the current trunk. CI proves the commit; the merge queue admits it to trunk.
+Run `bun run check` on the reviewed branch, open the pull request with `bottega pr create`, and land it with `bottega pr merge`. Both refuse until the change's review admission holds for the head commit; an override requires the operator and is recorded. Merge also refuses until that commit is proven by every required check the project declares, or by a recorded passing gate where it declares none. Where the project declares a merge queue, merge enqueues the admitted head and waits for it to land: CI proves the commit; the merge queue admits it to trunk.
 
 ## Keep development on the landing branch when releasing
 
