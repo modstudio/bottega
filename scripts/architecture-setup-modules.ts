@@ -28,10 +28,14 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       'node:fs',
       'node:os',
       '../../../shared/brand.ts',
+      '../../../shared/record-space-membership.ts',
       '../../../shared/self-spawn.ts',
       '../database/db.ts',
       '../project/project-commands.ts',
       '../project/projects.ts',
+      '../record/record-api-client.ts',
+      '../record/record-cache-projects.ts',
+      '../record/record-session.ts',
       '../record/record-space.ts',
       '../worktree/worktree-lifecycle.ts',
       './repository-facts.ts',
@@ -40,6 +44,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-environment.ts',
       './setup-environment-runtime.ts',
       './setup-facts.ts',
+      './setup-folder-selection.ts',
       './setup-mcp.ts',
       './setup-mcp-config.ts',
       './setup-mcp-config-migration.ts',
@@ -51,6 +56,20 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     typeOnlyAllowed: [],
     reason:
       'Keep shared setup assembly and application independent of CLI and MCP presentation grammar.',
+  },
+  {
+    name: 'setup-folder-selection-boundary',
+    file: 'orchestrator/src/setup/setup-folder-selection.ts',
+    allowed: [],
+    typeOnlyAllowed: ['./setup-engine.ts'],
+    reason: 'Keep folder selection pure and independent of setup adapters and presentation.',
+  },
+  {
+    name: 'setup-notice-order-boundary',
+    file: 'orchestrator/src/setup/setup-notice-order.ts',
+    allowed: [],
+    typeOnlyAllowed: ['./setup-engine.ts'],
+    reason: 'Keep notice priority pure and independent of setup adapters and presentation.',
   },
   {
     name: 'setup-environment-boundary',
@@ -237,7 +256,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-interactive-boundary',
     file: 'orchestrator/src/setup/setup-interactive.ts',
-    allowed: ['./setup-planner.ts'],
+    allowed: ['./setup-folder-selection.ts', './setup-notice-order.ts', './setup-planner.ts'],
     typeOnlyAllowed: ['./setup-apply.ts', './setup-engine.ts'],
     reason:
       'Keep interactive setup decisions independent of prompt adapters, stores, and commands.',

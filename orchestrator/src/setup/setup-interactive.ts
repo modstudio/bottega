@@ -93,6 +93,40 @@ function cancelled(prompter: SetupPrompter, changesAlreadyMade: boolean): Intera
   return { kind: 'cancelled' }
 }
 
+async function askSetupQuestions(
+  questions: readonly SetupQuestion[],
+  answers: Record<string, string>,
+  prompter: SetupPrompter,
+): Promise<boolean> {
+  for (const question of questions.filter((item) => !Object.hasOwn(answers, item.id))) {
+    if (question.options.length === 1) {
+      const option = question.options[0]!
+      answers[question.id] = option.id
+      prompter.line(`${question.question} ${option.label} — ${option.why}`)
+      continue
+    }
+    const answer = await prompter.select({
+      message: questionMessage(question),
+      options: questionOptions(question),
+      initialValue: question.recommendation,
+    })
+    if (answer === SETUP_CANCEL) return false
+    answers[question.id] = answer
+  }
+  return true
+}
+
+function presentSetupNotices(plan: SetupPlan, prompter: SetupPrompter): void {
+  const notices = orderSetupNotices(plan.notices)
+  if (!notices.length) return
+  prompter.note(
+    notices
+      .map((notice) => (notice.fix ? `${notice.message} — Fix: ${notice.fix}` : notice.message))
+      .join('\n'),
+    'Needs attention',
+  )
+}
+
 export async function runInteractiveSetup(
   plan: SetupPlan,
   prompter: SetupPrompter,
@@ -104,23 +138,8 @@ export async function runInteractiveSetup(
   const globalQuestions = plan.questions.filter((question) =>
     ['machine:global-use', 'machine:level'].includes(question.id),
   )
-  for (const question of globalQuestions.filter(
-    (question) => !Object.hasOwn(answers, question.id),
-  )) {
-    if (question.options.length === 1) {
-      const option = question.options[0]!
-      answers[question.id] = option.id
-      prompter.line(`${question.question} ${option.label} — ${option.why}`)
-      continue
-    }
-    const answer = await prompter.select({
-      message: questionMessage(question),
-      options: questionOptions(question),
-      initialValue: question.recommendation,
-    })
-    if (answer === SETUP_CANCEL) return cancelled(prompter, changesAlreadyMade)
-    answers[question.id] = answer
-  }
+  if (!(await askSetupQuestions(globalQuestions, answers, prompter)))
+    return cancelled(prompter, changesAlreadyMade)
 
   const selectedFolders = await prompter.multiselect({
     message: 'Which folders should be projects on this machine?',
@@ -130,37 +149,16 @@ export async function runInteractiveSetup(
   if (selectedFolders === SETUP_CANCEL) return cancelled(prompter, changesAlreadyMade)
   plan = selectSetupFolders(plan, selectedFolders)
 
-  for (const question of plan.questions.filter(
-    (question) =>
-      !['machine:global-use', 'machine:level'].includes(question.id) &&
-      !Object.hasOwn(answers, question.id),
-  )) {
-    if (question.options.length === 1) {
-      const option = question.options[0]!
-      answers[question.id] = option.id
-      prompter.line(`${question.question} ${option.label} — ${option.why}`)
-      continue
-    }
-    const answer = await prompter.select({
-      message: questionMessage(question),
-      options: questionOptions(question),
-      initialValue: question.recommendation,
-    })
-    if (answer === SETUP_CANCEL) return cancelled(prompter, changesAlreadyMade)
-    answers[question.id] = answer
-  }
+  const projectQuestions = plan.questions.filter(
+    (question) => !['machine:global-use', 'machine:level'].includes(question.id),
+  )
+  if (!(await askSetupQuestions(projectQuestions, answers, prompter)))
+    return cancelled(prompter, changesAlreadyMade)
 
   const validated = validateSetupAnswers(plan.questions, answers)
   const actions = planSetupActions(plan, validated)
   const summary = actions.filter(setupActionChangesMachine).map(setupActionLine)
-  const notices = orderSetupNotices(plan.notices)
-  if (notices.length)
-    prompter.note(
-      notices
-        .map((notice) => (notice.fix ? `${notice.message} — Fix: ${notice.fix}` : notice.message))
-        .join('\n'),
-      'Needs attention',
-    )
+  presentSetupNotices(plan, prompter)
   if (summary.length === 0) {
     prompter.line('The machine and projects are already set up.')
     return { kind: 'nothing-to-do' }

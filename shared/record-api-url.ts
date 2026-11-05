@@ -3,7 +3,7 @@ import type { ConfigEnvironment } from './config-directory.ts'
 import { readEnvValues } from './env-values.ts'
 
 /** Resolve only an endpoint explicitly chosen by this install. */
-export function configuredRecordApiUrl(env: ConfigEnvironment = process.env): string | undefined {
+function configuredRecordApiUrl(env: ConfigEnvironment = process.env): string | undefined {
   return readEnvValues(['BOTTEGA_RECORD_API_URL'], env).BOTTEGA_RECORD_API_URL
 }
 

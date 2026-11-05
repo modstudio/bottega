@@ -974,7 +974,7 @@ set up this machine: level and projects
 
 ## bottega machine setup apply
 
-**Synopsis:** `bottega machine setup apply [--in <folder>] [--yes] [--answers <file>] [--json] [--level <record|full>]`
+**Synopsis:** `bottega machine setup apply [--in <folder>] [--yes] [--answers <file>] [--json] [--level <record|full>] [--include <folder>]`
 
 apply a machine setup plan without prompts
 
@@ -985,6 +985,7 @@ apply a machine setup plan without prompts
 - `--answers <file>`: JSON file containing explicit setup answers
 - `--json`: write the setup result as compact JSON
 - `--level <record|full>`: answer the install-level question
+- `--include <folder>`: include an unregistered project folder
 
 ### Related
 
@@ -1006,7 +1007,7 @@ inspect machine setup facts
 
 ## bottega machine setup plan
 
-**Synopsis:** `bottega machine setup plan [--in <folder>] [--json] [--level <record|full>]`
+**Synopsis:** `bottega machine setup plan [--in <folder>] [--json] [--level <record|full>] [--include <folder>]`
 
 plan recommended machine setup actions
 
@@ -1015,6 +1016,7 @@ plan recommended machine setup actions
 - `--in <folder>`: folder to inspect
 - `--json`: write the setup plan as compact JSON
 - `--level <record|full>`: answer the install-level question
+- `--include <folder>`: include an unregistered project folder
 
 ### Related
 

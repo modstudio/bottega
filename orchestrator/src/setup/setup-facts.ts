@@ -164,7 +164,7 @@ export function readSetupMachineLevel(): MachineLevel | null {
   return (readMachineFileValue('machine.level') as MachineLevel | undefined) ?? null
 }
 
-export function readSetupGlobalUse(): 'on' | 'off' | null {
+function readSetupGlobalUse(): 'on' | 'off' | null {
   return (readMachineFileValue('machine.global_use') as 'on' | 'off' | undefined) ?? null
 }
 

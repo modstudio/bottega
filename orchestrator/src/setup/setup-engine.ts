@@ -540,6 +540,135 @@ function recoveredWorktreeSettings(
   }
 }
 
+function proposePrefix(
+  repository: RepositoryFacts,
+  current: Project | null,
+  occupied: Set<string>,
+  questions: SetupQuestion[],
+): { prefixQuestionId: string | null; proposedPrefix?: string } {
+  if ((current?.settings.keyPrefixes ?? []).length > 0) return { prefixQuestionId: null }
+  const proposedPrefix = deriveKeyPrefix(repository.name, occupied)
+  occupied.add(proposedPrefix)
+  const prefixQuestionId = questionId(repository.path, 'key-prefix')
+  questions.push({
+    id: prefixQuestionId,
+    question: `Which task key prefix should ${repository.name} use?`,
+    options: [
+      {
+        id: proposedPrefix,
+        label: proposedPrefix,
+        why: 'Uppercase letters and digits derived from the repository name and unique in the register.',
+      },
+    ],
+    recommendation: proposedPrefix,
+    why: 'Every project needs a short, unique task key prefix for attribution.',
+  })
+  return { prefixQuestionId, proposedPrefix }
+}
+
+function proposeTrunk(
+  repository: RepositoryFacts,
+  current: Project | null,
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+): { trunkQuestionId: string | null; proposedTrunk?: string } {
+  if (current?.settings.trunk)
+    return { trunkQuestionId: null, proposedTrunk: current.settings.trunk }
+  if (!repository.currentBranch) {
+    notices.push({
+      message: repository.remoteDefaultBranch
+        ? `${repository.name} has detached HEAD; remote default is ${repository.remoteDefaultBranch}; leaving trunk unset`
+        : `${repository.name} has detached HEAD; leaving trunk unset`,
+      fix: null,
+      folderPath: repository.path,
+    })
+    return { trunkQuestionId: null }
+  }
+  if (
+    !repository.remoteDefaultBranch ||
+    repository.remoteDefaultBranch === repository.currentBranch
+  )
+    return { trunkQuestionId: null, proposedTrunk: repository.currentBranch }
+  const trunkQuestionId = questionId(repository.path, 'trunk')
+  questions.push({
+    id: trunkQuestionId,
+    question: `Which trunk setting should ${repository.name} use?`,
+    options: [
+      {
+        id: 'unset',
+        label: 'Leave trunk unset',
+        why: `The register requires trunk to be the checked-out branch, and the remote default is ${repository.remoteDefaultBranch}.`,
+        effect: { trunk: null },
+      },
+      {
+        id: 'current',
+        label: `Use the current branch ${repository.currentBranch} as trunk`,
+        why: 'The current symbolic HEAD is the only branch the register can accept now.',
+        effect: { trunk: repository.currentBranch },
+      },
+    ],
+    recommendation: 'unset',
+    why: 'The checked-out branch and remote default disagree.',
+  })
+  notices.push({
+    message: `check out ${repository.remoteDefaultBranch} and re-run setup to declare it as trunk`,
+    fix: `git -C ${repository.path} switch ${repository.remoteDefaultBranch}`,
+    folderPath: repository.path,
+  })
+  return { trunkQuestionId }
+}
+
+function proposeRepository(
+  repository: RepositoryFacts,
+  register: Project[],
+  occupied: Set<string>,
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+  resolveLifecycle: SetupLifecycleResolver,
+): SetupProposal {
+  if (repository.inspectionTimedOut)
+    notices.push({
+      message: `git inspection timed out for ${repository.name} at ${repository.path}`,
+      fix: `git -C ${repository.path} status`,
+      folderPath: repository.path,
+    })
+  const current = register.find((project) => project.path === repository.path) ?? null
+  const { prefixQuestionId, proposedPrefix } = proposePrefix(
+    repository,
+    current,
+    occupied,
+    questions,
+  )
+  const { trunkQuestionId, proposedTrunk } = proposeTrunk(repository, current, questions, notices)
+  const { gate, recipeQuestionId, recipeContent, recoverRecipePointer, recipeActivationAnswer } =
+    proposeProjectToolchain(repository, current, questions, notices, resolveLifecycle)
+  const settings: ProjectSettings = {
+    ...current?.settings,
+    ...(proposedPrefix ? { keyPrefixes: [proposedPrefix] } : {}),
+    ...(current?.settings.tracker
+      ? { tracker: current.settings.tracker }
+      : { tracker: { kind: 'hub', protocol: 'hub' } }),
+    ...(proposedTrunk ? { trunk: proposedTrunk } : {}),
+    ...(gate ? { gate } : {}),
+    ...recoveredWorktreeSettings(current, recoverRecipePointer),
+  }
+  return {
+    repository,
+    current,
+    project: {
+      name: current?.name ?? repository.name,
+      path: repository.path,
+      stack: current?.stack ?? repository.stack,
+      settings,
+    },
+    prefixQuestionId,
+    trunkQuestionId,
+    recipeQuestionId,
+    recipeActivationAnswer,
+    recipeContent,
+  }
+}
+
 export function proposeSetup(
   resolveLifecycle: SetupLifecycleResolver,
   machine: SetupFacts,
@@ -562,112 +691,9 @@ export function proposeSetup(
     ...repositoryNotices,
   ]
   const registrations = proposeMcpRegistrations(machine, servers, questions, notices)
-  const proposals = repositories.map((repository) => {
-    if (repository.inspectionTimedOut) {
-      notices.push({
-        message: `git inspection timed out for ${repository.name} at ${repository.path}`,
-        fix: `git -C ${repository.path} status`,
-        folderPath: repository.path,
-      })
-    }
-    const current = register.find((project) => project.path === repository.path) ?? null
-    const currentPrefixes = current?.settings.keyPrefixes ?? []
-    let prefixQuestionId: string | null = null
-    let proposedPrefix: string | undefined
-    if (currentPrefixes.length === 0) {
-      proposedPrefix = deriveKeyPrefix(repository.name, occupied)
-      occupied.add(proposedPrefix)
-      prefixQuestionId = questionId(repository.path, 'key-prefix')
-      questions.push({
-        id: prefixQuestionId,
-        question: `Which task key prefix should ${repository.name} use?`,
-        options: [
-          {
-            id: proposedPrefix,
-            label: proposedPrefix,
-            why: 'Uppercase letters and digits derived from the repository name and unique in the register.',
-          },
-        ],
-        recommendation: proposedPrefix,
-        why: 'Every project needs a short, unique task key prefix for attribution.',
-      })
-    }
-
-    let trunkQuestionId: string | null = null
-    let proposedTrunk: string | undefined
-    if (current?.settings.trunk) {
-      proposedTrunk = current.settings.trunk
-    } else if (repository.currentBranch) {
-      if (
-        repository.remoteDefaultBranch &&
-        repository.remoteDefaultBranch !== repository.currentBranch
-      ) {
-        trunkQuestionId = questionId(repository.path, 'trunk')
-        questions.push({
-          id: trunkQuestionId,
-          question: `Which trunk setting should ${repository.name} use?`,
-          options: [
-            {
-              id: 'unset',
-              label: 'Leave trunk unset',
-              why: `The register requires trunk to be the checked-out branch, and the remote default is ${repository.remoteDefaultBranch}.`,
-              effect: { trunk: null },
-            },
-            {
-              id: 'current',
-              label: `Use the current branch ${repository.currentBranch} as trunk`,
-              why: 'The current symbolic HEAD is the only branch the register can accept now.',
-              effect: { trunk: repository.currentBranch },
-            },
-          ],
-          recommendation: 'unset',
-          why: 'The checked-out branch and remote default disagree.',
-        })
-        notices.push({
-          message: `check out ${repository.remoteDefaultBranch} and re-run setup to declare it as trunk`,
-          fix: `git -C ${repository.path} switch ${repository.remoteDefaultBranch}`,
-          folderPath: repository.path,
-        })
-      } else {
-        proposedTrunk = repository.currentBranch
-      }
-    } else {
-      notices.push({
-        message: repository.remoteDefaultBranch
-          ? `${repository.name} has detached HEAD; remote default is ${repository.remoteDefaultBranch}; leaving trunk unset`
-          : `${repository.name} has detached HEAD; leaving trunk unset`,
-        fix: null,
-        folderPath: repository.path,
-      })
-    }
-    const { gate, recipeQuestionId, recipeContent, recoverRecipePointer, recipeActivationAnswer } =
-      proposeProjectToolchain(repository, current, questions, notices, resolveLifecycle)
-    const settings: ProjectSettings = {
-      ...current?.settings,
-      ...(proposedPrefix ? { keyPrefixes: [proposedPrefix] } : {}),
-      ...(current?.settings.tracker
-        ? { tracker: current.settings.tracker }
-        : { tracker: { kind: 'hub', protocol: 'hub' } }),
-      ...(proposedTrunk ? { trunk: proposedTrunk } : {}),
-      ...(gate ? { gate } : {}),
-      ...recoveredWorktreeSettings(current, recoverRecipePointer),
-    }
-    return {
-      repository,
-      current,
-      project: {
-        name: current?.name ?? repository.name,
-        path: repository.path,
-        stack: current?.stack ?? repository.stack,
-        settings,
-      },
-      prefixQuestionId,
-      trunkQuestionId,
-      recipeQuestionId,
-      recipeActivationAnswer,
-      recipeContent,
-    }
-  })
+  const proposals = repositories.map((repository) =>
+    proposeRepository(repository, register, occupied, questions, notices, resolveLifecycle),
+  )
   const hosted = new Set(hostedProjectNames)
   return {
     facts: { machine, repositories },

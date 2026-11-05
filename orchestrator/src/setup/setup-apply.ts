@@ -279,6 +279,23 @@ async function applyScheduleAction(): Promise<{
   }
 }
 
+function applyMachineSettingAction(
+  action: SetupAction,
+  environment: SetupEnvironmentService,
+): { status: SetupAppliedActionStatus; message: null } | null {
+  if (action.kind === 'set-machine-level') {
+    if (!environment.setMachineLevel) throw new Error('machine-level writer is unavailable')
+    environment.setMachineLevel(action.to)
+    return { status: 'applied', message: null }
+  }
+  if (action.kind === 'set-global-use') {
+    if (!environment.setGlobalUse) throw new Error('global-use writer is unavailable')
+    environment.setGlobalUse(action.to)
+    return { status: 'applied', message: null }
+  }
+  return null
+}
+
 async function applySetupAction(
   action: SetupAction,
   service: SetupProjectService,
@@ -302,16 +319,8 @@ async function applySetupAction(
       message: action.kind === 'mcp-skipped' ? (action.reason ?? null) : null,
     }
   }
-  if (action.kind === 'set-machine-level') {
-    if (!environment.setMachineLevel) throw new Error('machine-level writer is unavailable')
-    environment.setMachineLevel(action.to)
-    return { status: 'applied', message: null }
-  }
-  if (action.kind === 'set-global-use') {
-    if (!environment.setGlobalUse) throw new Error('global-use writer is unavailable')
-    environment.setGlobalUse(action.to)
-    return { status: 'applied', message: null }
-  }
+  const machineSetting = applyMachineSettingAction(action, environment)
+  if (machineSetting) return machineSetting
   if (action.kind === 'migrate-mcp-config') {
     const current = await readFile(action.path, 'utf8')
     const migrated = migrateMcpConfigText(current, {

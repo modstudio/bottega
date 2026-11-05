@@ -200,6 +200,24 @@ function applySetupPlan(
   )
 }
 
+const selectedNonInteractivePlan = (plan: SetupPlan, included: string[]): SetupPlan =>
+  selectSetupFolders(plan, nonInteractiveSetupFolders(plan, included))
+
+function suppliedSetupAnswers(
+  plan: SetupPlan,
+  answerValue: unknown,
+  fixedAnswers: Partial<SetupAnswers>,
+): SetupAnswers {
+  const fixed = Object.keys(fixedAnswers).length > 0
+  const supplied =
+    answerValue && typeof answerValue === 'object' && !Array.isArray(answerValue)
+      ? { ...answerValue, ...fixedAnswers }
+      : fixed
+        ? fixedAnswers
+        : answerValue
+  return validateSetupAnswers(plan.questions, supplied)
+}
+
 export function createSetupService(adapters: SetupServiceAdapters): SetupService {
   async function reverseStoppedMigration(
     migration: PreparedStateFileMigration | null,
@@ -220,7 +238,7 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
     let plan: SetupPlan
     try {
       const gathered = await adapters.plan(folders)
-      plan = selectSetupFolders(gathered, nonInteractiveSetupFolders(gathered, included))
+      plan = selectedNonInteractivePlan(gathered, included)
     } catch (error) {
       const reversed = await reverseStoppedMigration(migration)
       const detail = error instanceof Error ? error.message : String(error)
@@ -261,7 +279,7 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
         Promise.resolve(null))
       if (stateFileMigration) return { stateFileMigration, diff: [stateFileMigration] }
       const gathered = await adapters.plan(folders)
-      const plan = selectSetupFolders(gathered, nonInteractiveSetupFolders(gathered, included))
+      const plan = selectedNonInteractivePlan(gathered, included)
       return {
         ...plan,
         diff: planSetupActions(plan, {
@@ -287,14 +305,7 @@ export function createSetupService(adapters: SetupServiceAdapters): SetupService
         folders,
         (plan) => {
           try {
-            const fixed = Object.keys(fixedAnswers).length > 0
-            const supplied =
-              answerValue && typeof answerValue === 'object' && !Array.isArray(answerValue)
-                ? { ...answerValue, ...fixedAnswers }
-                : fixed
-                  ? fixedAnswers
-                  : answerValue
-            return validateSetupAnswers(plan.questions, supplied)
+            return suppliedSetupAnswers(plan, answerValue, fixedAnswers)
           } catch (error) {
             throw new SetupAnswersRefusedError(
               error instanceof Error ? error.message : String(error),
