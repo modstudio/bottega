@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { installOutboxPruneFixtureSchema } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from '../release/release-ledger.ts'
@@ -26,6 +27,7 @@ function senderStore(row: LocalOutboxRow): Database {
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL);
   CREATE TABLE project (name TEXT PRIMARY KEY, record_id TEXT NOT NULL, settings TEXT NOT NULL);`)
+  installOutboxPruneFixtureSchema(database)
   database
     .query("INSERT INTO project VALUES (?,'01990000-0000-7000-8000-000000000088','{}')")
     .run(PLATFORM_SLUG)

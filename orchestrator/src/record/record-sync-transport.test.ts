@@ -9,6 +9,7 @@ import {
   storedMachineNames,
 } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { installOutboxPruneFixtureSchema } from '../../test/fixtures/record-sync.ts'
 import { defaultShortName } from './machine-name.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import { BUILT_INS_REVALIDATE_MS } from './record-built-ins-identity.ts'
@@ -33,6 +34,7 @@ function localOutbox(count: number): Database {
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL);
   CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+  installOutboxPruneFixtureSchema(local)
   for (let id = 1; id <= count; id++) {
     local
       .query(

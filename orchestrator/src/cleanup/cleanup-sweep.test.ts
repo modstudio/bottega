@@ -41,22 +41,33 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
   }) as typeof Bun.spawnSync)
 
   try {
+    const lines: string[] = []
     await sweepRuns(
       {
         dryRun: false,
         project: name,
         force: false,
-        presentation: presentation([], () => {}),
+        presentation: presentation(lines, () => {}),
       },
       {
         observeGrokTrustHeadings: () => ({ succeeded: true, headings: [] }),
         grokTrustPathFromHeading: () => null,
         hubTaskReader: async () => [],
+        outboxMaintenance: {
+          drain: () => {
+            throw new Error('prune busy')
+          },
+          releasePages: () => {
+            throw new Error('vacuum busy')
+          },
+        },
       },
     )
     expect(db().query('SELECT close_out_outcome FROM run WHERE record_id=?').get(run)).toEqual({
       close_out_outcome: 'absent',
     })
+    expect(lines).toContain('outbox prune failed: prune busy')
+    expect(lines).toContain('outbox space release failed: vacuum busy')
   } finally {
     rmSync(projectPath, { recursive: true, force: true })
   }

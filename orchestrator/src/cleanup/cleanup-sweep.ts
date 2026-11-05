@@ -10,6 +10,7 @@ import { pruneExpiredBranchDisposalArchives } from '../branch/branch-disposal.ts
 import { closeOutRun } from '../close/close-out.ts'
 import { namedProjectTreePaths } from '../close/tree-keep.ts'
 import { treeProcessCwdHold } from '../close/tree-process-cwd-hold.ts'
+import { releaseIncrementalVacuumPages } from '../database/database-commands.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
@@ -28,6 +29,11 @@ import {
   orphansWithOwnershipEvidence,
   reclaimOrphanProcess,
 } from '../reclaim/orphan-process-reclaim.ts'
+import {
+  drainSupersededOutboxRows,
+  OUTBOX_PRUNE_CHUNK_SIZE,
+  pruneSupersededOutboxRows,
+} from '../record/outbox-prune.ts'
 import type { DockerResource } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -142,9 +148,67 @@ export type SweepHelpers = {
   observeGrokTrustHeadings: () => GrokTrustObservation
   grokTrustPathFromHeading: (heading: string) => string | null
   hubTaskReader: HubTaskReader
+  outboxMaintenance?: {
+    drain: typeof drainSupersededOutboxRows
+    releasePages: typeof releaseIncrementalVacuumPages
+  }
 }
 
 const KEPT_ROW_LIMIT = 10
+const OUTBOX_PRUNE_TIME_BOUND_MS = 2_000
+const DEFAULT_OUTBOX_MAINTENANCE: NonNullable<SweepHelpers['outboxMaintenance']> = {
+  drain: drainSupersededOutboxRows,
+  releasePages: releaseIncrementalVacuumPages,
+}
+
+function pruneOutboxForSweep(
+  dryRun: boolean,
+  presentation: CleanupPresentation,
+  maintenance: NonNullable<SweepHelpers['outboxMaintenance']>,
+): void {
+  const database = dryRun ? db() : writableDb()
+  if (dryRun) {
+    try {
+      const result = pruneSupersededOutboxRows(database, {
+        limit: OUTBOX_PRUNE_CHUNK_SIZE,
+        dryRun: true,
+      })
+      presentation.log(`outbox would prune ${result.deleted} rows`)
+    } catch (error) {
+      presentation.error(`outbox prune failed: ${error instanceof Error ? error.message : error}`)
+    }
+    return
+  }
+  try {
+    const result = maintenance.drain(database, { timeBoundMs: OUTBOX_PRUNE_TIME_BOUND_MS })
+    presentation.log(
+      `outbox pruned ${result.deleted} rows; backlog remains ${result.more ? 'yes' : 'no'}`,
+    )
+  } catch (error) {
+    presentation.error(`outbox prune failed: ${error instanceof Error ? error.message : error}`)
+  }
+  try {
+    if (maintenance.releasePages() === 'not-incremental') {
+      presentation.log(
+        `outbox space not returned: store is not yet incremental; run ${PLATFORM_SLUG} machine update`,
+      )
+    }
+  } catch (error) {
+    presentation.error(
+      `outbox space release failed: ${error instanceof Error ? error.message : error}`,
+    )
+  }
+}
+
+function prepareSweep(
+  dryRun: boolean,
+  presentation: CleanupPresentation,
+  maintenance: NonNullable<SweepHelpers['outboxMaintenance']>,
+): void {
+  if (!dryRun) writableDb()
+  pruneOutboxForSweep(dryRun, presentation, maintenance)
+  reapExpiredBoardMessages(dryRun)
+}
 
 function worktreeSharerList(rows: { record_id: string; status: string }[]): string {
   return rows.map((owner) => `${owner.record_id} (${owner.status})`).join(', ')
@@ -647,8 +711,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const sweepProjects = (selectedProject ? [selectedProject] : projects()).filter(
     isProjectRepository,
   )
-  if (!dry) writableDb()
-  reapExpiredBoardMessages(dry)
+  prepareSweep(dry, options.presentation, helpers.outboxMaintenance ?? DEFAULT_OUTBOX_MAINTENANCE)
   const archiveRetention = pruneArchives(options)
   const trustObservation = helpers.observeGrokTrustHeadings()
   reconcileAbsentClaims({

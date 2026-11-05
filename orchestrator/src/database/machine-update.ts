@@ -13,6 +13,7 @@ import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
+import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
 import { DATABASE_RESOLUTION, missingDatabaseMessage } from './database-location.ts'
 import {
   DB_PATH,
@@ -118,6 +119,7 @@ type UpdateDependencies = {
   git?: (cwd: string, args: string[]) => string
   migrate?: (cwd: string) => void
   afterDrainPromoted?: () => void
+  maintainStore?: (presentation: Presentation) => void
   project?: (
     cwd: string,
     database: import('bun:sqlite').Database,
@@ -126,6 +128,20 @@ type UpdateDependencies = {
     path: string
     settings: { trunk?: string }
   } | null
+}
+
+function maintainStoreAfterUpdate(
+  presentation: Presentation,
+  maintainStore: (presentation: Presentation) => void,
+): void {
+  try {
+    maintainStore(presentation)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    presentation.log(
+      `incremental vacuum setup skipped: ${message}; retry with ${PLATFORM_SLUG} machine update`,
+    )
+  }
 }
 
 async function applyWithMigrationGuard(input: {
@@ -261,6 +277,8 @@ export async function machineUpdateCommand(
       presentation,
       deps,
     })
+    const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
+    maintainStoreAfterUpdate(presentation, maintainStore)
     return
   }
   const target = deps.cwd ?? installRoot()
@@ -311,4 +329,6 @@ export async function machineUpdateCommand(
       migrate(target)
     },
   })
+  const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
+  maintainStoreAfterUpdate(presentation, maintainStore)
 }

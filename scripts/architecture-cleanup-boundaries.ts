@@ -249,9 +249,11 @@ export const cleanupBoundarySpecs = [
       '../board/board-claim-service.ts',
       '../board/board-reach.ts',
       '../branch/branch-disposal.ts',
+      '../database/database-commands.ts',
       '../database/db.ts',
       '../evidence/unjudged-expiry.ts',
       '../issue/issue-queue.ts',
+      '../record/outbox-prune.ts',
       '../resources/docker-resources.ts',
       '../hook-tree/hook-tree.ts',
       '../landing-tree/release-observation.ts',
@@ -277,7 +279,7 @@ export const cleanupBoundarySpecs = [
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep cleanup-sweep independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+      'Keep cleanup-sweep independent of transports, routing, reviews, contracts, and the CLI; database maintenance stays behind the database command owner.',
   },
   {
     name: 'cleanup-sweep-orphan-candidate-boundary',

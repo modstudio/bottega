@@ -94,7 +94,6 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
       'worker_note_request',
       'board_hosted_adoption_receipt',
       'board_reach_recording',
-      'outbox',
       'outbox_quarantine_audit',
       'outbox_redaction_audit',
     ],
@@ -141,6 +140,14 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
     'orchestrator/src/board/board-reach.ts#reapBoardReach',
   ),
   ...entries(['board_hosted_adoption_ledger'], 'journal', null, 'outbox'),
+  {
+    store: 'orchestrator',
+    table: 'outbox',
+    class: 'journal',
+    keep: 'A delivered row stays until a later delivered row for the same kind and row identity exists; pending, quarantined, retired, latest-delivered, and audited rows stay.',
+    remover: 'orchestrator/src/record/outbox-prune.ts#pruneSupersededOutboxRows',
+    slice: 'outbox',
+  },
   {
     store: 'orchestrator',
     table: 'host_pressure_sample',

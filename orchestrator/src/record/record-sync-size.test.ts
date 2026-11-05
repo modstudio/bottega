@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, mock, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { installOutboxPruneFixtureSchema } from '../../test/fixtures/record-sync.ts'
 import { syncRecord } from './record-sync.ts'
 import {
   RECORD_SYNC_CLIENT_MAX_REQUEST_BYTES,
@@ -27,6 +28,7 @@ function localOutbox(
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
+  installOutboxPruneFixtureSchema(local)
   const insert = local.query(
     'INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,?,?,?,?,?)',
   )

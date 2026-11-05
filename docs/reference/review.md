@@ -387,7 +387,7 @@ Options are documented by `--help`.
 
 **Synopsis:** `bottega review restore-findings [--json] [--write] [--confirm-restore] [--confirm-live-store <path>]`
 
-report or restore missing review findings from structured outbox rows
+report or restore missing review findings from retained outbox rows; superseded delivered history is pruned
 
 ### Options
 

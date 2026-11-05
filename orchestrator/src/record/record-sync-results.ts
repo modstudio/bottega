@@ -1,8 +1,10 @@
 // concern: record-sync-results
 /** Validates and applies authoritative hosted-record row results to the local outbox. */
 import type { Database } from 'bun:sqlite'
+import { writeTransaction } from '../database/db.ts'
 import { markOutboxRowSynced } from './outbox-dependency.ts'
 import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
+import { pruneSupersededOutboxRows } from './outbox-prune.ts'
 import { quarantineOutboxRow } from './outbox-quarantine.ts'
 import type {
   RecordSyncRequestRow,
@@ -77,7 +79,18 @@ export function applyRecordSyncBatchResults(input: {
     input.attempted.add(row.id)
     if (treatment.treatment === 'pending') continue
     if (result.status === 'synced') {
-      markOutboxRowSynced(input.local, input.localRows.get(row.id)!, input.now())
+      const source = input.localRows.get(row.id)!
+      const acknowledge = () => {
+        const changed = markOutboxRowSynced(input.local, source, input.now())
+        if (changed) {
+          pruneSupersededOutboxRows(input.local, {
+            limit: Number.MAX_SAFE_INTEGER,
+            identity: { kind: source.kind, rowId: source.row_id },
+          })
+        }
+      }
+      if (input.local.inTransaction) acknowledge()
+      else writeTransaction(acknowledge, input.local)
       pushed++
     } else if (result.status === 'quarantined') {
       quarantineOutboxRow(

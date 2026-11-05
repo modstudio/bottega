@@ -8,7 +8,12 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PRELOAD_RUNS } from '../../test/preload.ts'
 import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
-import { applyRunFilesystemIdentityCutover, migrateCommand } from './database-commands.ts'
+import {
+  applyRunFilesystemIdentityCutover,
+  decideIncrementalVacuumSetup,
+  migrateCommand,
+  setupIncrementalVacuumAfterMachineUpdate,
+} from './database-commands.ts'
 import { closeDatabaseForFixture, db } from './db.ts'
 import type { MigrationDrainDecision } from './migration-drain-decision.ts'
 import { migrationDrain } from './migration-drain-state.ts'
@@ -55,6 +60,95 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
     },
   }
 }
+
+test('incremental vacuum setup waits for twice the store size in free space', () => {
+  const lines: string[] = []
+  setupIncrementalVacuumAfterMachineUpdate(
+    { log: (line) => lines.push(line) },
+    { freeBytes: () => 0, inFlightRuns: () => [] },
+  )
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toMatch(
+    new RegExp(
+      `^incremental vacuum setup skipped: \\d+ bytes short; retry with ${PLATFORM_SLUG} machine update$`,
+    ),
+  )
+  expect(db().query<{ auto_vacuum: number }, []>('PRAGMA auto_vacuum').get()).not.toEqual({
+    auto_vacuum: 2,
+  })
+})
+
+test('incremental vacuum setup converts once and reports size and elapsed time', () => {
+  const lines: string[] = []
+  const times = [10, 15]
+  db()
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+     VALUES (?,'run','vacuum-prune','{}','2026-11-05','2026-11-05'),
+            (?,'run','vacuum-prune','{}','2026-11-05','2026-11-05')`,
+    )
+    .run(randomUUID(), randomUUID())
+  setupIncrementalVacuumAfterMachineUpdate(
+    { log: (line) => lines.push(line) },
+    {
+      freeBytes: () => Number.MAX_SAFE_INTEGER,
+      now: () => times.shift()!,
+      inFlightRuns: () => [],
+    },
+  )
+  expect(db().query<{ auto_vacuum: number }, []>('PRAGMA auto_vacuum').get()).toEqual({
+    auto_vacuum: 2,
+  })
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toMatch(
+    /^incremental vacuum setup: pruned 1 rows, \d+ bytes before, \d+ bytes after, 5ms elapsed$/,
+  )
+  expect(db().query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()).toEqual({
+    count: 1,
+  })
+  setupIncrementalVacuumAfterMachineUpdate(
+    { log: (line) => lines.push(line) },
+    { inFlightRuns: () => [] },
+  )
+  expect(lines[1]).toBe(
+    `incremental vacuum setup skipped: store is already incremental; retry with ${PLATFORM_SLUG} machine update`,
+  )
+})
+
+test('incremental vacuum conversion decision covers every store fact', () => {
+  expect(
+    decideIncrementalVacuumSetup({
+      autoVacuumMode: 2,
+      storeBytes: 100,
+      freeBytes: 0,
+      inFlightRuns: 3,
+    }),
+  ).toEqual({ action: 'skip:already-incremental' })
+  expect(
+    decideIncrementalVacuumSetup({
+      autoVacuumMode: 0,
+      storeBytes: 100,
+      freeBytes: 1_000,
+      inFlightRuns: 3,
+    }),
+  ).toEqual({ action: 'skip:runs-in-flight', inFlightRuns: 3 })
+  expect(
+    decideIncrementalVacuumSetup({
+      autoVacuumMode: 0,
+      storeBytes: 100,
+      freeBytes: 150,
+      inFlightRuns: 0,
+    }),
+  ).toEqual({ action: 'skip:insufficient-space', shortfallBytes: 50 })
+  expect(
+    decideIncrementalVacuumSetup({
+      autoVacuumMode: 0,
+      storeBytes: 100,
+      freeBytes: 200,
+      inFlightRuns: 0,
+    }),
+  ).toEqual({ action: 'convert' })
+})
 
 test('migrate contracts only after identity fill succeeds', async () => {
   const scenario = actions(async () => undefined)

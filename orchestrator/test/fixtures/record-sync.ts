@@ -13,6 +13,16 @@ export const PROJECT_ID = '01990000-0000-7000-8000-000000000088'
 export const MACHINE_ID = machineId()
 export const STAMP = '2026-09-15T01:01:00.000Z'
 
+export function installOutboxPruneFixtureSchema(database: Database): void {
+  database.exec(`CREATE INDEX outbox_latest_synced_row
+    ON outbox(kind, row_id, id DESC) WHERE synced_at IS NOT NULL;
+  CREATE INDEX outbox_row_history ON outbox(kind, row_id, id);
+  CREATE TABLE outbox_redaction_audit (
+    id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
+    rules TEXT NOT NULL, withheld_paths TEXT NOT NULL, actor_session TEXT, at TEXT NOT NULL
+  )`)
+}
+
 export function localOutbox(
   count: number,
   projectName: string | null = PLATFORM_SLUG,
@@ -29,6 +39,7 @@ export function localOutbox(
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
+  installOutboxPruneFixtureSchema(local)
   for (let id = 1; id <= count; id++) {
     const values = Object.fromEntries(RUN_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]))
     Object.assign(values, {

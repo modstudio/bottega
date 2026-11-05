@@ -9,11 +9,11 @@ export async function exerciseQuarantinedRedactionSync<T>(
   local: Database,
   sync: () => Promise<T>,
 ): Promise<{ planted: string; redaction: ReturnType<typeof redactSyncedOutbox>; syncResult: T }> {
-  local.exec(`CREATE TABLE outbox_redaction_audit (
+  local.exec(`CREATE TABLE IF NOT EXISTS outbox_redaction_audit (
     id INTEGER PRIMARY KEY, outbox_id INTEGER NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, row_id TEXT NOT NULL,
     rules TEXT NOT NULL, withheld_paths TEXT NOT NULL, actor_session TEXT, at TEXT NOT NULL
   );
-  CREATE INDEX outbox_latest_synced_row
+  CREATE INDEX IF NOT EXISTS outbox_latest_synced_row
     ON outbox(kind, row_id, id DESC) WHERE synced_at IS NOT NULL`)
   const planted = ['https://fixture-user', ':fixture-pass@', 'example.test'].join('')
   const row = local.query<{ payload: string }, []>('SELECT payload FROM outbox WHERE id=1').get()!
