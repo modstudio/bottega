@@ -267,6 +267,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       '../../../shared/record-remedies.ts',
       '../../../shared/record/schema-auth.ts',
+      '../../../shared/record/service-connection.ts',
       '../mail/email-verification-mailer.ts',
       '../mail/invitation-mailer.ts',
       '../mail/password-reset-mailer.ts',
