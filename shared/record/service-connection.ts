@@ -1,7 +1,7 @@
 // concern: hosted-record-service-connection
 /** Supplies transaction bounds for long-lived hosted service connections. */
 
-export const RECORD_SERVICE_STATEMENT_TIMEOUT = '60s'
+export const RECORD_SERVICE_STATEMENT_TIMEOUT = '1min'
 export const RECORD_SERVICE_IDLE_IN_TRANSACTION_TIMEOUT = '30s'
 
 // No service code may hold a transaction open across a network await or wait. The later
