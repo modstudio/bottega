@@ -499,6 +499,8 @@ export const importBoundaries: ImportBoundary[] = [
       './hosted-version.ts',
       './note-api.ts',
       './operator-waiting-email-api.ts',
+      './public-docs-text-api.ts',
+      './public-docs-text.ts',
       './report-api.ts',
       './task-api.ts',
       './trpc/context.ts',
