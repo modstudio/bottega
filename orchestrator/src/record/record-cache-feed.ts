@@ -5,25 +5,32 @@ import { parseRecordSpaceMemberships } from '../../../shared/record-space-member
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
-import { applySubjectRecord } from '../subject/subjects.ts'
+import { applySubjectRecord, deleteSubjectRecord, purgeSubjectSpace } from '../subject/subjects.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordChangePage } from './record-api-client-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { readCursor, writeCursor } from './record-cache-cursor.ts'
 import {
   applyLensCatalogueRow,
+  deleteLensCatalogueRow,
   lensCatalogueParentPresent,
   pullLensCatalogue,
+  purgeLensCatalogueSpace,
 } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import {
   applyPortCatalogueRow,
+  deletePortCatalogueRow,
   portCatalogueParentPresent,
   pullPortCatalogue,
+  purgePortCatalogueSpace,
 } from './record-cache-port.ts'
 import { type ProjectRegisterPullResult, pullProjectRegister } from './record-cache-projects.ts'
 import {
   applyWorkflowCatalogueRow,
+  deleteWorkflowCatalogueRow,
   pullWorkflowCatalogue,
+  purgeWorkflowCatalogueSpace,
   workflowCatalogueParentPresent,
 } from './record-cache-workflow.ts'
 import { RECORD_LENS_TABLES, type RecordLensTable } from './record-lens-contract.ts'
@@ -34,21 +41,17 @@ import {
 } from './record-port-contract.ts'
 import { noActiveRecordSpaceRefusal } from './record-project-destination.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
-import { type RoutingPoolPullResult, upsertPoolRun } from './record-routing-pool.ts'
+import {
+  deleteRoutingPoolRow,
+  purgeRoutingPoolSpace,
+  type RoutingPoolPullResult,
+  upsertPoolRun,
+} from './record-routing-pool.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workflow-contract.ts'
 
 const CURSOR = 'record_change_cursor'
 const SPACES = 'record_change_spaces'
-const readMeta = (local: Database, key: string) =>
-  local.query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?').get(key)
-    ?.value ?? null
-const writeMeta = (local: Database, key: string, value: string) =>
-  local
-    .query(
-      'INSERT INTO schema_meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-    )
-    .run(key, value)
 
 const emptyProject = (): ProjectRegisterPullResult => ({
   updated: 0,
@@ -71,11 +74,17 @@ export const emptyRecordCachePullResult = () => ({
   routingPool: emptyRouting(),
   changes: 0,
   orphans: 0,
+  deletesBlocked: 0,
+  purgeKept: 0,
+  purgeWarning: null as string | null,
   reset: false,
 })
 export type RecordCachePullResult = ReturnType<typeof emptyRecordCachePullResult>
 
-type KeysetResult = Omit<RecordCachePullResult, 'changes' | 'orphans' | 'reset'>
+type KeysetResult = Omit<
+  RecordCachePullResult,
+  'changes' | 'orphans' | 'deletesBlocked' | 'purgeKept' | 'purgeWarning' | 'reset'
+>
 type Dependencies = {
   cacheSpaces(
     identity: RecordIdentity,
@@ -103,6 +112,9 @@ type Dependencies = {
     unresolved: Map<string, string>,
     space?: string,
   ): void
+  deleteDoc(local: Database, recordId: string): boolean
+  prepareDocSpacePurge(local: Database, spaceId: string): void
+  purgeDocSpace(local: Database, spaceId: string): number
   applyScore(local: Database, row: Record<string, unknown>): void
 }
 type Change = RecordChangePage['changes'][number]
@@ -110,11 +122,14 @@ type UpsertChange = Extract<Change, { op: 'upsert' }>
 type FallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
 
 const membershipSpaces = (identity: RecordIdentity) =>
-  parseRecordSpaceMemberships(identity.memberships)
-    .map((membership) => membership.spaceId)
-    .sort()
+  [
+    ...new Set([
+      ...parseRecordSpaceMemberships(identity.memberships).map((membership) => membership.spaceId),
+      ...(identity.activeSpaceId ? [identity.activeSpaceId] : []),
+    ]),
+  ].sort()
 const rememberedSpaces = (local: Database): string[] => {
-  const value = readMeta(local, SPACES)
+  const value = readCursor(local, SPACES)
   if (!value) return []
   try {
     const parsed = JSON.parse(value)
@@ -124,32 +139,20 @@ const rememberedSpaces = (local: Database): string[] => {
   }
 }
 
-function purgeLostSpaces(local: Database, spaces: readonly string[]): void {
-  if (!spaces.length) return
-  writeTransaction(() => {
+function purgeLostSpaces(local: Database, spaces: readonly string[], deps: Dependencies): number {
+  if (!spaces.length) return 0
+  return writeTransaction(() => {
+    let kept = 0
     for (const space of spaces) {
-      local.query('DELETE FROM doc WHERE space_id=?').run(space)
-      local.query('DELETE FROM subject WHERE space_id=?').run(space)
-      local.query('DELETE FROM lens_revision WHERE space_id=?').run(space)
-      local.query('DELETE FROM lens_profile_revision WHERE space_id=?').run(space)
-      local.query('DELETE FROM project_lens_profile_revision WHERE space_id=?').run(space)
-      local.query('DELETE FROM project_lens_profile WHERE space_id=?').run(space)
-      local.query('DELETE FROM lens_profile WHERE space_id=?').run(space)
-      local.query('DELETE FROM lens WHERE space_id=?').run(space)
-      local.query('DELETE FROM workflow_event WHERE space_id=?').run(space)
-      local.query('DELETE FROM workflow_version WHERE space_id=?').run(space)
-      local.query('DELETE FROM workflow WHERE space_id=?').run(space)
-      local.query('DELETE FROM step_catalogue_event WHERE space_id=?').run(space)
-      local.query('DELETE FROM step_catalogue_version WHERE space_id=?').run(space)
-      local.query('DELETE FROM step_catalogue WHERE space_id=?').run(space)
-      local.query('DELETE FROM port_ref_source WHERE space_id=?').run(space)
-      local.query('DELETE FROM port_ref WHERE space_id=?').run(space)
-      local.query('DELETE FROM port_skip WHERE space_id=?').run(space)
-      local.query('DELETE FROM port_baseline WHERE space_id=?').run(space)
-      local.query('DELETE FROM port_pair WHERE space_id=?').run(space)
-      local.query('DELETE FROM port_doctrine WHERE space_id=?').run(space)
-      local.query('DELETE FROM routing_pool_run WHERE space_id=?').run(space)
+      deps.prepareDocSpacePurge(local, space)
+      kept += deps.purgeDocSpace(local, space)
+      kept += purgeSubjectSpace(local, space)
+      kept += purgeLensCatalogueSpace(local, space)
+      kept += purgeWorkflowCatalogueSpace(local, space)
+      kept += purgePortCatalogueSpace(local, space)
+      kept += purgeRoutingPoolSpace(local, space)
     }
+    return kept
   }, local)
 }
 
@@ -209,57 +212,22 @@ function directOrphanFamily(
   return null
 }
 
-function deleteCatalogueRow(local: Database, table: string, id: string): void {
-  const statements: Record<string, ReturnType<Database['query']>> = {
-    lens: local.query('DELETE FROM lens WHERE record_id=?'),
-    lens_revision: local.query('DELETE FROM lens_revision WHERE record_id=?'),
-    lens_profile: local.query('DELETE FROM lens_profile WHERE record_id=?'),
-    lens_profile_revision: local.query('DELETE FROM lens_profile_revision WHERE record_id=?'),
-    project_lens_profile: local.query('DELETE FROM project_lens_profile WHERE record_id=?'),
-    project_lens_profile_revision: local.query(
-      'DELETE FROM project_lens_profile_revision WHERE record_id=?',
-    ),
-    workflow: local.query('DELETE FROM workflow WHERE record_id=?'),
-    workflow_version: local.query('DELETE FROM workflow_version WHERE record_id=?'),
-    workflow_event: local.query('DELETE FROM workflow_event WHERE record_id=?'),
-    step_catalogue: local.query('DELETE FROM step_catalogue WHERE record_id=?'),
-    step_catalogue_version: local.query('DELETE FROM step_catalogue_version WHERE record_id=?'),
-    step_catalogue_event: local.query('DELETE FROM step_catalogue_event WHERE record_id=?'),
-    port_doctrine: local.query('DELETE FROM port_doctrine WHERE record_id=?'),
-    port_pair: local.query('DELETE FROM port_pair WHERE record_id=?'),
-    port_baseline: local.query('DELETE FROM port_baseline WHERE record_id=?'),
-    port_skip: local.query('DELETE FROM port_skip WHERE record_id=?'),
-  }
-  statements[table]?.run(id)
-}
-
-function deleteChange(local: Database, change: Change, deps: Dependencies): void {
+function deleteChange(local: Database, change: Change, deps: Dependencies): boolean {
   if (change.table === 'doc') {
-    deps.applyDoc(local, { id: change.id, deletedAt: nowIso() }, new Map())
-    return
+    return deps.deleteDoc(local, change.id)
   }
   if (change.table === 'subject') {
-    local.query('DELETE FROM subject WHERE id=?').run(change.id)
-    return
+    return deleteSubjectRecord(local, change.id)
   }
   if (change.table === 'routing_evidence') {
-    local.query('DELETE FROM routing_pool_run WHERE record_id=?').run(change.id)
-    return
+    return deleteRoutingPoolRow(local, change.id)
   }
-  if (change.table === 'run_score' || change.table === 'project') return
-  if (
-    portTable(change.table) &&
-    (change.table === 'port_ref' || change.table === 'port_ref_source')
-  ) {
-    applyPortCatalogueRow(local, change.table, {
-      id: change.id,
-      spaceId: change.space,
-      deletedAt: nowIso(),
-    } as never)
-    return
-  }
-  if (lensTable(change.table) || workflowTable(change.table) || portTable(change.table))
-    deleteCatalogueRow(local, change.table, change.id)
+  if (change.table === 'run_score' || change.table === 'project') return true
+  if (lensTable(change.table)) return deleteLensCatalogueRow(local, change.table, change.id)
+  if (workflowTable(change.table)) return deleteWorkflowCatalogueRow(local, change.table, change.id)
+  if (portTable(change.table))
+    return deletePortCatalogueRow(local, change.table, change.id, change.space)
+  return true
 }
 
 function upsertChange(
@@ -350,7 +318,7 @@ function feedEntryOwned(local: Database, change: Change, ownership: Ownership): 
   return true
 }
 
-function applyFeedChange(
+function applyFeedUpsert(
   local: Database,
   change: Change,
   deps: Dependencies,
@@ -369,8 +337,8 @@ function applyFeedChange(
     fallbacks.add(`${orphan}:${change.space}`)
     return false
   }
-  if (change.op === 'delete') deleteChange(local, change, deps)
-  else upsertChange(local, change, deps, result)
+  if (change.op === 'delete') return false
+  upsertChange(local, change, deps, result)
   result.changes++
   return change.table === 'project'
 }
@@ -386,10 +354,32 @@ function applyPage(
   const fallbacks = new Set<string>()
   let project = false
   const applied = writeTransaction(() => {
-    if (readMeta(local, CURSOR) !== after) return false
-    for (const change of [...page.changes].sort((a, b) => order(a) - order(b)))
-      project = applyFeedChange(local, change, deps, ownership, result, fallbacks) || project
-    writeMeta(local, CURSOR, page.cursor)
+    if (readCursor(local, CURSOR) !== after) return false
+    const owned = page.changes.filter((change) => {
+      if (feedEntryOwned(local, change, ownership)) return true
+      if (change.op === 'upsert' && change.table === 'doc') result.skippedDocs++
+      else if (change.op === 'upsert' && change.table === 'subject') result.skippedSubjects++
+      return false
+    })
+    for (const change of owned
+      .filter((entry): entry is UpsertChange => entry.op === 'upsert')
+      .sort((a, b) => order(a) - order(b)))
+      project = applyFeedUpsert(local, change, deps, ownership, result, fallbacks) || project
+    let pending = owned.filter((entry) => entry.op === 'delete').sort((a, b) => order(b) - order(a))
+    for (;;) {
+      const blocked: Change[] = []
+      let deleted = 0
+      for (const change of pending) {
+        if (deleteChange(local, change, deps)) {
+          result.changes++
+          deleted++
+        } else blocked.push(change)
+      }
+      pending = blocked
+      if (!deleted || !pending.length) break
+    }
+    result.deletesBlocked += pending.length
+    writeCursor(local, CURSOR, page.cursor)
     return true
   }, local)
   return { applied, result, fallbacks, project }
@@ -407,6 +397,8 @@ function addResult(target: RecordCachePullResult, value: Partial<RecordCachePull
     'portCatalogue',
     'changes',
     'orphans',
+    'deletesBlocked',
+    'purgeKept',
   ] as const)
     target[key] += value[key] ?? 0
   if (value.routingPool) {
@@ -415,6 +407,7 @@ function addResult(target: RecordCachePullResult, value: Partial<RecordCachePull
     target.routingPool.caughtUp &&= value.routingPool.caughtUp
   }
   if (value.projectRegister) target.projectRegister = value.projectRegister
+  if (value.purgeWarning) target.purgeWarning = value.purgeWarning
 }
 
 async function runFallbacks(
@@ -450,10 +443,36 @@ async function resetAt(
 ) {
   const result = await deps.pullKeysets(local, identity, spaces)
   writeTransaction(() => {
-    writeMeta(local, CURSOR, cursor)
-    writeMeta(local, SPACES, JSON.stringify(spaces))
+    writeCursor(local, CURSOR, cursor)
+    writeCursor(local, SPACES, JSON.stringify(spaces))
   }, local)
-  return { ...result, changes: 0, orphans: 0, reset: true }
+  return {
+    ...emptyRecordCachePullResult(),
+    ...result,
+    reset: true,
+  }
+}
+
+async function prepareFeedIdentity(
+  local: Database,
+  suppliedIdentity: RecordIdentity | undefined,
+  client: RecordApiClient,
+): Promise<
+  | { stopped: RecordCachePullResult }
+  | { identity: RecordIdentity; spaces: string[]; previous: string[] }
+> {
+  const identity = suppliedIdentity ?? (await client.whoami())
+  rememberSignedInRecordUser(identity.user, local)
+  if (identity.activeSpaceId) rememberActiveRecordSpace(local, identity.activeSpaceId)
+  const spaces = membershipSpaces(identity)
+  const previous = rememberedSpaces(local)
+  if (!spaces.length && previous.length) {
+    const stopped = emptyRecordCachePullResult()
+    stopped.purgeWarning = 'record spaces could not be confirmed; remembered spaces were not purged'
+    return { stopped }
+  }
+  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
+  return { identity, spaces, previous }
 }
 
 export async function pullRecordCacheFeed(
@@ -464,36 +483,34 @@ export async function pullRecordCacheFeed(
   if (!local.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'").get())
     return emptyRecordCachePullResult()
   const client: RecordApiClient = recordApiClient()
-  const identity = suppliedIdentity ?? (await client.whoami())
-  if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
-  rememberSignedInRecordUser(identity.user, local)
-  rememberActiveRecordSpace(local, identity.activeSpaceId)
+  const prepared = await prepareFeedIdentity(local, suppliedIdentity, client)
+  if ('stopped' in prepared) return prepared.stopped
+  const { identity, spaces, previous } = prepared
   const cache = deps.cacheSpaces(identity, local)
-  const spaces = membershipSpaces(identity)
-  const previous = rememberedSpaces(local)
-  purgeLostSpaces(
+  const result = emptyRecordCachePullResult()
+  result.purgeKept += purgeLostSpaces(
     local,
     previous.filter((space) => !spaces.includes(space)),
+    deps,
   )
-  let cursor = readMeta(local, CURSOR)
+  let cursor = readCursor(local, CURSOR)
   if (!cursor) {
-    const first = await client.listChanges!({ wait: 0 })
+    const first = await client.listChanges({ wait: 0 })
     if ('reset' in first) return resetAt(local, identity, spaces, first.reset.cursor, deps)
     throw new Error('record change feed did not provide a reset cursor for an uninitialized cache')
   }
   const joined = spaces.filter((space) => !previous.includes(space))
-  const result = emptyRecordCachePullResult()
   if (joined.length) addResult(result, await deps.pullKeysets(local, identity, joined))
-  writeMeta(local, SPACES, JSON.stringify(spaces))
+  writeCursor(local, SPACES, JSON.stringify(spaces))
   for (;;) {
-    const response = await client.listChanges!({ after: cursor, wait: 0 })
+    const response = await client.listChanges({ after: cursor, wait: 0 })
     if ('reset' in response) return resetAt(local, identity, spaces, response.reset.cursor, deps)
     const page = applyPage(local, cursor, response, deps, {
       activeSpaceId: identity.activeSpaceId,
       projectSpaces: cache.projectSpaces,
     })
     if (!page.applied) {
-      cursor = readMeta(local, CURSOR) ?? cursor
+      cursor = readCursor(local, CURSOR) ?? cursor
       continue
     }
     addResult(result, page.result)

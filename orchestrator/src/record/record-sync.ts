@@ -554,16 +554,28 @@ function completedSyncResult(input: {
   readOnlyDeferred: Map<string, number>
   backfill: RecordSyncResult['backfill']
   machineNameRefusal?: string
-  routingPool?: RecordSyncResult['routingPool']
-  projectRegister?: RecordSyncResult['projectRegister']
+  cachePull?: Pick<
+    RecordSyncResult,
+    | 'routingPool'
+    | 'projectRegister'
+    | 'orphans'
+    | 'deletesBlocked'
+    | 'purgeKept'
+    | 'skippedDocs'
+    | 'skippedSubjects'
+    | 'purgeWarning'
+  >
 }): RecordSyncResult {
   return {
     pushed: input.pushed,
     failed: input.failed,
     pending: pendingCount(input.local),
     configured: true,
-    ...(input.routingPool ? { routingPool: input.routingPool } : {}),
-    ...(input.projectRegister ? { projectRegister: input.projectRegister } : {}),
+    ...(input.cachePull?.routingPool ? { routingPool: input.cachePull.routingPool } : {}),
+    ...(input.cachePull?.projectRegister
+      ? { projectRegister: input.cachePull.projectRegister }
+      : {}),
+    ...input.cachePull,
     quarantined: quarantinedOutboxRows(input.local),
     blocked: input.blocked,
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
@@ -601,10 +613,31 @@ async function pullAfterSync(
   options: RecordSyncOptions,
   local: Database,
   identity: NonNullable<Parameters<typeof pullRecordCache>[1]>,
-): Promise<Pick<RecordSyncResult, 'routingPool' | 'projectRegister'>> {
+): Promise<
+  Pick<
+    RecordSyncResult,
+    | 'routingPool'
+    | 'projectRegister'
+    | 'orphans'
+    | 'deletesBlocked'
+    | 'purgeKept'
+    | 'skippedDocs'
+    | 'skippedSubjects'
+    | 'purgeWarning'
+  >
+> {
   if (options.client) return {}
   const pull = await pullRecordCache(local, identity)
-  return { routingPool: pull.routingPool, projectRegister: pull.projectRegister }
+  return {
+    routingPool: pull.routingPool,
+    projectRegister: pull.projectRegister,
+    orphans: pull.orphans,
+    deletesBlocked: pull.deletesBlocked,
+    purgeKept: pull.purgeKept,
+    skippedDocs: pull.skippedDocs,
+    skippedSubjects: pull.skippedSubjects,
+    ...(pull.purgeWarning ? { purgeWarning: pull.purgeWarning } : {}),
+  }
 }
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
@@ -681,7 +714,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     if (!batch.request.rows.length) break
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
-  const { routingPool, projectRegister } = await pullAfterSync(options, writableLocal, session)
+  const cachePull = await pullAfterSync(options, writableLocal, session)
   rememberHostedRecord(writableLocal)
   return completedSyncResult({
     pushed,
@@ -693,7 +726,6 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     readOnlyDeferred,
     backfill,
     machineNameRefusal,
-    routingPool,
-    projectRegister,
+    cachePull,
   })
 }

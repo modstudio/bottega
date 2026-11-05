@@ -16,6 +16,58 @@ import {
 
 const CURSOR = 'record_port_cursor'
 
+export function deletePortCatalogueRow(
+  local: Database,
+  table: RecordPortTable,
+  recordId: string,
+  spaceId: string,
+): boolean {
+  if (table === 'port_ref' || table === 'port_ref_source') {
+    applyPortCatalogueRow(local, table, {
+      id: recordId,
+      spaceId,
+      deletedAt: new Date().toISOString(),
+    } as never)
+    return true
+  }
+  const statements: Partial<Record<RecordPortTable, ReturnType<Database['query']>>> = {
+    port_doctrine: local.query('DELETE FROM port_doctrine WHERE record_id=?'),
+    port_pair: local.query('DELETE FROM port_pair WHERE record_id=?'),
+    port_baseline: local.query('DELETE FROM port_baseline WHERE record_id=?'),
+    port_skip: local.query('DELETE FROM port_skip WHERE record_id=?'),
+  }
+  try {
+    statements[table]!.run(recordId)
+    return true
+  } catch (error) {
+    if (String(error).includes('FOREIGN KEY constraint failed')) return false
+    throw error
+  }
+}
+
+export function purgePortCatalogueSpace(local: Database, spaceId: string): number {
+  let kept = 0
+  const rows: Record<RecordPortTable, ReturnType<Database['query']>> = {
+    port_doctrine: local.query('SELECT record_id FROM port_doctrine WHERE space_id=?'),
+    port_pair: local.query('SELECT record_id FROM port_pair WHERE space_id=?'),
+    port_baseline: local.query('SELECT record_id FROM port_baseline WHERE space_id=?'),
+    port_ref: local.query('SELECT record_id FROM port_ref WHERE space_id=?'),
+    port_ref_source: local.query('SELECT record_id FROM port_ref_source WHERE space_id=?'),
+    port_skip: local.query('SELECT record_id FROM port_skip WHERE space_id=?'),
+  }
+  for (const table of [...RECORD_PORT_TABLES].reverse()) {
+    const ids = rows[table].all(spaceId) as { record_id: string }[]
+    for (const { record_id } of ids)
+      if (!deletePortCatalogueRow(local, table, record_id, spaceId)) kept++
+  }
+  local
+    .query("DELETE FROM schema_meta WHERE key LIKE ? ESCAPE '\\'")
+    .run(
+      `${CURSOR}:${spaceId.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}:%`,
+    )
+  return kept
+}
+
 export async function pullPortCatalogue(
   local: Database,
   spaces: readonly string[],

@@ -36,7 +36,7 @@ const parseReset = (body: unknown): RecordChangeListResult => {
 }
 
 export type RecordChangesClient = {
-  listChanges?(input: { after?: string; wait: number }): Promise<RecordChangeListResult>
+  listChanges(input: { after?: string; wait: number }): Promise<RecordChangeListResult>
 }
 
 export const recordChangesClient = (request: RecordClientRequest): RecordChangesClient => ({

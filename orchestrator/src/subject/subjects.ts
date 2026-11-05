@@ -16,6 +16,31 @@ import { subjectClient } from './subject-client.ts'
 
 export type Subject = SubjectOutput
 
+export function deleteSubjectRecord(database: Database, recordId: string): boolean {
+  try {
+    database.query('DELETE FROM subject WHERE id=?').run(recordId)
+    return true
+  } catch (error) {
+    if (String(error).includes('FOREIGN KEY constraint failed')) return false
+    throw error
+  }
+}
+
+export function purgeSubjectSpace(database: Database, spaceId: string): number {
+  let progress = true
+  while (progress) {
+    progress = false
+    const ids = database
+      .query<{ id: string }, [string]>('SELECT id FROM subject WHERE space_id=?')
+      .all(spaceId)
+    for (const { id } of ids) if (deleteSubjectRecord(database, id)) progress = true
+  }
+  database.query('DELETE FROM schema_meta WHERE key=?').run(`record_subjects_cursor:${spaceId}`)
+  return database
+    .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM subject WHERE space_id=?')
+    .get(spaceId)!.n
+}
+
 type LocalRow = {
   id: string
   project: string

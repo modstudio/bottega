@@ -46,6 +46,24 @@ const docRow = (id: string) => ({
   updatedAt: '2026-11-05T00:00:00.000Z',
   deletedAt: null,
 })
+const project = (name = 'feed-project') => {
+  const id = newRecordId()
+  db()
+    .query("INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?, '{}')")
+    .run(id, name, `/tmp/${name}`)
+  return { id, name }
+}
+const subjectRow = (id: string, projectName: string) => ({
+  id,
+  project: projectName,
+  name: `Subject ${id}`,
+  definition: 'Feed subject.',
+  position: 0,
+  parentId: null,
+  retiredAt: null,
+  createdAt: '2026-11-05T00:00:00.000Z',
+  updatedAt: '2026-11-05T00:00:00.000Z',
+})
 
 function feedClient(
   listChanges: RecordApiClient['listChanges'],
@@ -203,4 +221,233 @@ test('record cache resets on 410 and purges only hosted rows from a lost space',
   expect(db().query('SELECT record_id FROM doc WHERE record_id=?').get(hosted)).toBeNull()
   expect(db().query('SELECT record_id FROM doc WHERE record_id=?').get(local)).not.toBeNull()
   expect(db().query('SELECT record_id FROM run WHERE record_id=?').get(run)).not.toBeNull()
+})
+
+test('non-owned docs and subjects, including tombstones, are skipped while the cursor advances', async () => {
+  const registered = project()
+  const doc = newRecordId()
+  const subject = newRecordId()
+  cursor('owned-before')
+  spaces(['space-a', 'space-b'])
+  let request = 0
+  installRecordApiClient(
+    feedClient(async () =>
+      request++ === 0
+        ? {
+            changes: [
+              { table: 'doc', id: doc, space: 'space-b', op: 'upsert', row: docRow(doc) },
+              {
+                table: 'subject',
+                id: subject,
+                space: 'space-b',
+                op: 'upsert',
+                row: subjectRow(subject, registered.name),
+              },
+              { table: 'doc', id: newRecordId(), space: 'space-b', op: 'delete' },
+            ],
+            cursor: 'owned-after',
+            lag: 0,
+            more: false,
+          }
+        : empty('owned-after'),
+    ),
+  )
+  expect(await pullRecordCache(db())).toMatchObject({ skippedDocs: 1, skippedSubjects: 1 })
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(doc)).toBeNull()
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(subject)).toBeNull()
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_cursor'").get(),
+  ).toEqual({
+    value: 'owned-after',
+  })
+})
+
+test('hosted feed upserts attach space ownership to existing null-space docs and subjects', async () => {
+  const registered = project()
+  const doc = newRecordId()
+  const subject = newRecordId()
+  db()
+    .query(
+      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at)
+       VALUES (?,'global',NULL,?,'Local','Body','demand','["technical"]','a','a')`,
+    )
+    .run(doc, `feed-${doc}`)
+  db()
+    .query(
+      `INSERT INTO subject(id,project_record_id,name,definition,position,created_at,updated_at)
+       VALUES (?,?,?,?,0,'a','a')`,
+    )
+    .run(subject, registered.id, `Subject ${subject}`, 'Local subject.')
+  cursor('null-before')
+  spaces(['space-a'])
+  let request = 0
+  installRecordApiClient(
+    feedClient(async () =>
+      request++ === 0
+        ? {
+            changes: [
+              { table: 'doc', id: doc, space: 'space-a', op: 'upsert', row: docRow(doc) },
+              {
+                table: 'subject',
+                id: subject,
+                space: 'space-a',
+                op: 'upsert',
+                row: subjectRow(subject, registered.name),
+              },
+            ],
+            cursor: 'null-after',
+            lag: 0,
+            more: false,
+          }
+        : empty('null-after'),
+    ),
+  )
+  await pullRecordCache(db())
+  expect(db().query('SELECT space_id FROM doc WHERE record_id=?').get(doc)).toEqual({
+    space_id: 'space-a',
+  })
+  expect(db().query('SELECT space_id FROM subject WHERE id=?').get(subject)).toEqual({
+    space_id: 'space-a',
+  })
+})
+
+test('purge deletes child rows first and keeps a hosted parent referenced by a local row', async () => {
+  const registered = project()
+  const parent = newRecordId()
+  const child = newRecordId()
+  const local = newRecordId()
+  const subject = newRecordId()
+  db()
+    .query(
+      `INSERT INTO subject(id,project_record_id,name,definition,position,created_at,updated_at,space_id)
+       VALUES (?,?,?,?,0,'a','a','lost-space')`,
+    )
+    .run(subject, registered.id, 'Related', 'Related subject.')
+  db()
+    .query(
+      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,parent_record_id,space_id)
+       VALUES (?,'global',NULL,?,'Parent','Body','demand','["technical"]','a','a',NULL,'lost-space'),
+              (?,'global',NULL,?,'Child','Body','demand','["technical"]','a','a',?,'lost-space'),
+              (?,'global',NULL,?,'Local','Body','demand','["technical"]','a','a',?,NULL)`,
+    )
+    .run(
+      parent,
+      `parent-${parent}`,
+      child,
+      `child-${child}`,
+      parent,
+      local,
+      `local-${local}`,
+      parent,
+    )
+  db()
+    .query('INSERT INTO doc_related_subject(record_id,doc_record_id,subject_id) VALUES (?,?,?)')
+    .run(newRecordId(), child, subject)
+  cursor('purge-before')
+  spaces(['lost-space'])
+  installRecordApiClient(feedClient(async () => empty('purge-before')))
+  const result = await pullRecordCache(db())
+  expect(result.purgeKept).toBe(1)
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(parent)).not.toBeNull()
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(child)).toBeNull()
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(local)).not.toBeNull()
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(subject)).toBeNull()
+})
+
+test('a blocked tombstone is counted without pinning the feed cursor', async () => {
+  const parent = newRecordId()
+  const child = newRecordId()
+  db()
+    .query(
+      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,parent_record_id,space_id)
+       VALUES (?,'global',NULL,?,'Parent','Body','demand','["technical"]','a','a',NULL,'space-a'),
+              (?,'global',NULL,?,'Child','Body','demand','["technical"]','a','a',?,NULL)`,
+    )
+    .run(parent, `parent-${parent}`, child, `child-${child}`, parent)
+  cursor('blocked-before')
+  spaces(['space-a'])
+  let request = 0
+  installRecordApiClient(
+    feedClient(async () =>
+      request++ === 0
+        ? {
+            changes: [{ table: 'doc', id: parent, space: 'space-a', op: 'delete' }],
+            cursor: 'blocked-after',
+            lag: 0,
+            more: false,
+          }
+        : empty('blocked-after'),
+    ),
+  )
+  expect(await pullRecordCache(db())).toMatchObject({ deletesBlocked: 1 })
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(parent)).not.toBeNull()
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_cursor'").get(),
+  ).toEqual({
+    value: 'blocked-after',
+  })
+})
+
+test('an empty live-space set leaves remembered spaces untouched and reports a warning', async () => {
+  const hosted = newRecordId()
+  cursor('empty-before')
+  spaces(['remembered-space'])
+  db()
+    .query(
+      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,space_id)
+       VALUES (?,'global',NULL,?,'Hosted','Body','demand','["technical"]','a','a','remembered-space')`,
+    )
+    .run(hosted, `hosted-${hosted}`)
+  let changes = 0
+  installRecordApiClient(
+    feedClient(
+      async () => {
+        changes++
+        return empty('empty-before')
+      },
+      async () => ({ ...identity, activeSpaceId: null, memberships: [] }),
+    ),
+  )
+  const result = await pullRecordCache(db())
+  expect(result.purgeWarning).toContain('not purged')
+  expect(changes).toBe(0)
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(hosted)).not.toBeNull()
+})
+
+test('purge clears keyset cursors so a later rejoin pulls from the start', async () => {
+  cursor('rejoin-before')
+  spaces(['lost-space'])
+  db()
+    .query("INSERT INTO schema_meta(key,value) VALUES ('record_docs_cursor:lost-space','old')")
+    .run()
+  installRecordApiClient(feedClient(async () => empty('rejoin-before')))
+  await pullRecordCache(db())
+  expect(
+    db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor:lost-space'").get(),
+  ).toBeNull()
+
+  let firstCursor: unknown = 'not-called'
+  const client = feedClient(
+    async () => empty('rejoin-before'),
+    async () => ({
+      ...identity,
+      activeSpaceId: 'lost-space',
+      memberships: [
+        {
+          space_id: 'lost-space',
+          name: 'Lost',
+          slug: 'lost',
+          role: 'member',
+          permission: 'write',
+        },
+      ],
+    }),
+  )
+  client.listDocs = async (input) => {
+    firstCursor = input.cursor
+    return { items: [], nextCursor: null }
+  }
+  installRecordApiClient(client)
+  await pullRecordCache(db())
+  expect(firstCursor).toBeUndefined()
 })

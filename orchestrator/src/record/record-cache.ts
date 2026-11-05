@@ -207,19 +207,7 @@ async function pullRecordCacheKeysets(
       "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='schema_meta'",
     )
     .get()
-  if (!hasMeta)
-    return {
-      docs: 0,
-      skippedDocs: 0,
-      subjects: 0,
-      skippedSubjects: 0,
-      scores: 0,
-      lensCatalogue: 0,
-      workflowCatalogue: 0,
-      portCatalogue: 0,
-      projectRegister: { updated: 0, retired: 0, unretired: 0, skipped: 0, warnings: [] },
-      routingPool: { added: 0, updated: 0, caughtUp: true },
-    }
+  if (!hasMeta) return emptyRecordCachePullResult()
   const client = recordApiClient()
   const identity = suppliedIdentity ?? (await client.whoami())
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
@@ -518,6 +506,41 @@ function applyDoc(
   syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
 }
 
+function deleteDocRecord(local: Database, recordId: string): boolean {
+  try {
+    local.query('DELETE FROM doc WHERE record_id=?').run(recordId)
+    return true
+  } catch (error) {
+    if (String(error).includes('FOREIGN KEY constraint failed')) return false
+    throw error
+  }
+}
+
+function prepareDocSpacePurge(local: Database, spaceId: string): void {
+  local
+    .query(
+      `DELETE FROM doc_related_subject
+       WHERE doc_record_id IN (SELECT record_id FROM doc WHERE space_id=?)
+          OR subject_id IN (SELECT id FROM subject WHERE space_id=?)`,
+    )
+    .run(spaceId, spaceId)
+}
+
+function purgeDocSpace(local: Database, spaceId: string): number {
+  let progress = true
+  while (progress) {
+    progress = false
+    const ids = local
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM doc WHERE space_id=?')
+      .all(spaceId)
+    for (const { record_id } of ids) if (deleteDocRecord(local, record_id)) progress = true
+  }
+  local.query('DELETE FROM schema_meta WHERE key=?').run(`${DOCS_CURSOR}:${spaceId}`)
+  return local
+    .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM doc WHERE space_id=?')
+    .get(spaceId)!.n
+}
+
 function applyScore(local: Database, item: Record<string, unknown>): void {
   const runId = String(item.runId)
   const localRun = local
@@ -552,19 +575,15 @@ function applyScore(local: Database, item: Record<string, unknown>): void {
 export async function pullRecordCache(local: Database = db(), suppliedIdentity?: RecordIdentity) {
   if (!recordApiConfigured() && !recordApiClientInjected() && !suppliedIdentity)
     return emptyRecordCachePullResult()
-  if (recordApiClientInjected() && typeof recordApiClient().listChanges !== 'function')
-    return {
-      ...(await pullRecordCacheKeysets(local, suppliedIdentity)),
-      changes: 0,
-      orphans: 0,
-      reset: true,
-    }
   return pullRecordCacheFeed(local, suppliedIdentity, {
     cacheSpaces: recordCacheSpaces,
     pullKeysets: pullRecordCacheKeysets,
     pullDocs,
     pullSubjects,
     applyDoc,
+    deleteDoc: deleteDocRecord,
+    prepareDocSpacePurge,
+    purgeDocSpace,
     applyScore,
   })
 }
