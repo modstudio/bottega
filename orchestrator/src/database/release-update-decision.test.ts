@@ -145,10 +145,7 @@ test('candidate store position handles prefix, equal, ahead, divergent, and empt
   ).toMatchObject({ state: 'positioned', position: 2 })
   expect(
     candidateStoreDecision(
-      [
-        ...journal.map(({ when, hash }) => ({ when, hash })),
-        { when: 30, hash: '3'.repeat(64) },
-      ],
+      [...journal.map(({ when, hash }) => ({ when, hash })), { when: 30, hash: '3'.repeat(64) }],
       journal,
     ),
   ).toEqual({ state: 'ahead' })

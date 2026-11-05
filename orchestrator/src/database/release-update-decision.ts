@@ -122,11 +122,7 @@ function probeDetail(exitStatus: number, stderr: string): string {
   return `probe exit ${exitStatus}; stderr: ${stderr.split(/\r?\n/, 1)[0] || '<empty>'}`
 }
 
-export function predatesUpdateRefusal(
-  version: string,
-  exitStatus: number,
-  stderr: string,
-): string {
+export function predatesUpdateRefusal(version: string, exitStatus: number, stderr: string): string {
   return (
     `release ${version} predates in-place update (${probeDetail(exitStatus, stderr)}); ` +
     `install it with the installer: ` +
@@ -153,14 +149,14 @@ export function storeAheadRefusal(targetVersion: string, runningVersion: string)
   )
 }
 
-export function digestMismatchRefusal(asset: string, expected: string, received: string): string {
+function digestMismatchRefusal(asset: string, expected: string, received: string): string {
   return (
     `digest mismatch for ${asset}: expected ${expected}, received ${received}; ` +
     `retry, or check ${DOWNLOAD_BASE_URL_ENV}`
   )
 }
 
-export function unsupportedDownloadSchemeRefusal(scheme: string): string {
+function unsupportedDownloadSchemeRefusal(scheme: string): string {
   return (
     `unsupported download URL scheme ${scheme}; ` +
     `set ${DOWNLOAD_BASE_URL_ENV} to an http:, https:, or file: URL`

@@ -10,14 +10,17 @@ import {
 } from '../../../shared/install-root.ts'
 import {
   LEGACY_ORCHESTRATOR_DATABASE,
-  ORCHESTRATOR_DATABASE_ENV,
   legacyStoreRefusal,
+  ORCHESTRATOR_DATABASE_ENV,
+  ORCHESTRATOR_DATABASE_WRITE_ENV,
   realPathForPotentialPath,
   resolveOrchestratorDatabase,
   resolveStatePaths,
   type StateEnvironment,
   temporaryStateStoreMigrationAllowed,
 } from '../../../shared/state-directory.ts'
+
+export { ORCHESTRATOR_DATABASE_WRITE_ENV }
 
 export type DatabaseResolutionMethod = 'BOTTEGA_ORCHESTRATOR_DB' | 'state-root'
 

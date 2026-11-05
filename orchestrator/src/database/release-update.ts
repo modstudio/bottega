@@ -23,15 +23,12 @@ import {
   releaseTarget,
 } from '../../../shared/release-artifacts.ts'
 import {
-  HUB_DATABASE_ENV,
+  DATABASE_HUB_ENV,
   ORCHESTRATOR_DATABASE_ENV,
   ORCHESTRATOR_DATABASE_WRITE_ENV,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
-import {
-  MACHINE_JOURNAL_SCHEMA,
-  MACHINE_JOURNAL_SCHEMA_VERSION,
-} from '../machine-journal.ts'
+import { MACHINE_JOURNAL_SCHEMA, MACHINE_JOURNAL_SCHEMA_VERSION } from '../machine-journal.ts'
 import { withSynchronousDatabaseForMigrationStep } from './db.ts'
 import {
   type CandidateMigration,
@@ -86,7 +83,7 @@ function removeStaleStages(directory: string): void {
 const RELEASE_UPDATE_DATABASE_OVERRIDE_ENVS = [
   ORCHESTRATOR_DATABASE_ENV,
   ORCHESTRATOR_DATABASE_WRITE_ENV,
-  HUB_DATABASE_ENV,
+  DATABASE_HUB_ENV,
 ] as const
 
 function databaseOverrideFreeEnvironment(

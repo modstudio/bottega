@@ -40,7 +40,7 @@ export function temporaryStateStoreMigrationAllowed(
 export const STATE_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`
 export const ORCHESTRATOR_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_ORCHESTRATOR_DB`
 export const ORCHESTRATOR_DATABASE_WRITE_ENV = `${ORCHESTRATOR_DATABASE_ENV}_WRITE`
-export const HUB_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
+export const DATABASE_HUB_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
 
 /** Resolve the per-user state root using only the supplied environment. */
 export function resolveStateRoot(env: StateEnvironment): string {
@@ -158,9 +158,8 @@ export function ensureHubLoginTokenDirectory(env: StateEnvironment): string {
 }
 
 export function resolveOrchestratorDatabase(env: StateEnvironment): string {
-  return env[ORCHESTRATOR_DATABASE_ENV]
-    ? resolve(env[ORCHESTRATOR_DATABASE_ENV])
-    : resolveStatePaths(env).orchestratorDatabase
+  const override = env[ORCHESTRATOR_DATABASE_ENV]
+  return override ? resolve(override) : resolveStatePaths(env).orchestratorDatabase
 }
 
 /** The retired default filename, retained only for the one-way setup migration and refusal. */
@@ -168,18 +167,15 @@ export const LEGACY_ORCHESTRATOR_DATABASE = ['orch', 'db'].join('.')
 
 export function resolveRunsDirectory(env: StateEnvironment): string {
   if (env.BOTTEGA_RUNS) return resolve(env.BOTTEGA_RUNS)
-  if (env[ORCHESTRATOR_DATABASE_ENV])
-    return join(
-      dirname(resolve(env[ORCHESTRATOR_DATABASE_ENV])),
-      FROZEN_STATE_NAMES.runsDirectory,
-    )
+  const databaseOverride = env[ORCHESTRATOR_DATABASE_ENV]
+  if (databaseOverride)
+    return join(dirname(resolve(databaseOverride)), FROZEN_STATE_NAMES.runsDirectory)
   return resolveStatePaths(env).orchestratorRuns
 }
 
 export function resolveHubDatabase(env: StateEnvironment): string {
-  return env[HUB_DATABASE_ENV]
-    ? resolve(env[HUB_DATABASE_ENV])
-    : resolveStatePaths(env).hubDatabase
+  const override = env[DATABASE_HUB_ENV]
+  return override ? resolve(override) : resolveStatePaths(env).hubDatabase
 }
 
 export function resolveRetrievalDatabase(env: StateEnvironment): string {

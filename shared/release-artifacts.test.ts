@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import {
   artifactName,
   parseSha256Sums,
@@ -9,7 +10,7 @@ import {
 const digest = 'a'.repeat(64)
 
 test('release artifact names and channel paths are canonical', () => {
-  expect(artifactName('1.2.3', 'linux-x64')).toBe('bottega-1.2.3-linux-x64.tar.gz')
+  expect(artifactName('1.2.3', 'linux-x64')).toBe(`${PLATFORM_SLUG}-1.2.3-linux-x64.tar.gz`)
   expect(releaseChannelPath()).toBe('latest/download/')
   expect(releaseChannelPath('1.2.3')).toBe('download/v1.2.3/')
 })
