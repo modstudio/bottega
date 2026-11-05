@@ -60,7 +60,8 @@ export const RECORD_CHANGE_REPLICATED_TABLES = [
 export const recordChange = pgTable.withRLS(
   'record_change',
   {
-    seq: bigint({ mode: 'bigint' }).primaryKey().generatedAlwaysAsIdentity(),
+    id: uuid().primaryKey().default(sql`public.record_uuid_v7()`),
+    seq: bigint({ mode: 'bigint' }).notNull().unique().generatedAlwaysAsIdentity(),
     xid: xid8().notNull().default(sql`pg_current_xact_id()`),
     spaceId: uuid('space_id').references(() => space.id),
     userId: uuid('user_id').references(() => user.id),
@@ -99,7 +100,8 @@ export const recordChange = pgTable.withRLS(
 export const recordChangeHorizon = pgTable.withRLS(
   'record_change_horizon',
   {
-    singleton: boolean().primaryKey().default(true),
+    id: uuid().primaryKey().default(sql`public.record_uuid_v7()`),
+    singleton: boolean().notNull().unique().default(true),
     seq: bigint({ mode: 'bigint' }).notNull().default(0n),
   },
   (table) => [

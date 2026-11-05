@@ -261,6 +261,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'doc.position',
     'doc_revision.position',
     'hub_change.sequence',
+    'record_change.seq',
     'record_change_horizon.seq',
     'routing_evidence_head.sequence',
     'rate_limit.count',
@@ -464,11 +465,6 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
 ]
 
 const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
-  {
-    store: 'hosted',
-    table: 'record_change',
-    reason: 'global ordered replication-log sequence',
-  },
   {
     store: 'orchestrator',
     table: 'collect_change_counter',

@@ -103,14 +103,17 @@ afterAll(async () => {
   if (database) await database.close()
 })
 
-test('hosted id columns declare no default', async () => {
-  const defaults = await database.query<{ table_name: string }>(`
-    SELECT table_name
+test('only trigger-written record change tables default their ids', async () => {
+  const defaults = await database.query<{ table_name: string; column_default: string }>(`
+    SELECT table_name,column_default
     FROM information_schema.columns
     WHERE table_schema='public' AND column_name='id' AND column_default IS NOT NULL
     ORDER BY table_name
   `)
-  expect(defaults.rows).toEqual([])
+  expect(defaults.rows).toEqual([
+    { table_name: 'record_change', column_default: 'record_uuid_v7()' },
+    { table_name: 'record_change_horizon', column_default: 'record_uuid_v7()' },
+  ])
 })
 
 test('change-log triggers cover every synced table and recipient changes map to sends', async () => {

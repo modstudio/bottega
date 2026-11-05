@@ -181,9 +181,62 @@ const pushIntervalDeletes = (
     ids.map((id) => ({ table: 'hub_interval', id, op: 'delete' })),
   )
 
-async function proveRecordChangeOrdering(admin: SQL) {
+async function proveRecordChangeRows(admin: SQL, actor: SQL) {
   const identityA = { userId: USER, spaceId: SPACE_A }
   const identityB = { userId: USER, spaceId: SPACE_B }
+  const deleteProject = newRecordId()
+  await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+    VALUES (${deleteProject}::uuid,${SPACE_B}::uuid,'record-delete',ARRAY['RCD'],now())`
+  const inserted = await admin<{ seq: string }[]>`SELECT max(seq)::text AS seq FROM record_change
+    WHERE table_name='project' AND row_id=${deleteProject}::uuid`
+  await actor.begin(async (tx) => {
+    await bindTenant(tx, identityB)
+    await tx`DELETE FROM project WHERE id=${deleteProject}::uuid`
+  })
+  const deleted = await hostedChangeService.readRecordChanges(
+    actorUrl,
+    identityB,
+    BigInt(inserted[0]!.seq),
+    10,
+  )
+  if (deleted.resetRequired || deleted.changes[0]?.op !== 'delete')
+    throw new Error('record change reader did not return a delete tombstone')
+
+  const moveProject = newRecordId()
+  await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
+    VALUES (${moveProject}::uuid,${SPACE_B}::uuid,'record-move',ARRAY['RCM'],now())`
+  const beforeMove = await admin<{ seq: string }[]>`SELECT max(seq)::text AS seq FROM record_change
+    WHERE table_name='project' AND row_id=${moveProject}::uuid`
+  await admin`UPDATE project SET space_id=${SPACE_A}::uuid WHERE id=${moveProject}::uuid`
+  const oldSpace = await hostedChangeService.readRecordChanges(
+    actorUrl,
+    identityB,
+    BigInt(beforeMove[0]!.seq),
+    10,
+  )
+  const newSpace = await hostedChangeService.readRecordChanges(
+    actorUrl,
+    identityA,
+    BigInt(beforeMove[0]!.seq),
+    10,
+  )
+  if (oldSpace.resetRequired || oldSpace.changes[0]?.op !== 'delete')
+    throw new Error('space move did not write a tombstone for the old space')
+  if (newSpace.resetRequired || newSpace.changes[0]?.op !== 'upsert')
+    throw new Error('space move did not write an upsert for the new space')
+
+  await admin`UPDATE record_change SET at=now()-interval '31 days'
+    WHERE row_id=${moveProject}::uuid`
+  await admin`SELECT record_change_prune()`
+  const horizonRows = await admin<{ seq: string }[]>`SELECT seq::text FROM record_change_horizon`
+  const horizon = BigInt(horizonRows[0]!.seq)
+  const reset = await hostedChangeService.readRecordChanges(actorUrl, identityA, horizon - 1n, 10)
+  if (!reset.resetRequired || reset.horizon !== horizon || reset.cursor !== horizon)
+    throw new Error('record change pruning did not return the reset horizon')
+}
+
+async function proveRecordChangeOrdering(admin: SQL) {
+  const identityA = { userId: USER, spaceId: SPACE_A }
   const connectionA = new SQL(actorDatabaseUrl!, { max: 1 })
   const connectionB = new SQL(actorDatabaseUrl!, { max: 1 })
   let releaseA!: () => void
@@ -235,57 +288,7 @@ async function proveRecordChangeOrdering(admin: SQL) {
         'record change prefix did not return interleaved transactions in sequence order',
       )
 
-    const deleteProject = newRecordId()
-    await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
-      VALUES (${deleteProject}::uuid,${SPACE_B}::uuid,'record-delete',ARRAY['RCD'],now())`
-    const inserted = await admin<{ seq: string }[]>`SELECT max(seq)::text AS seq FROM record_change
-      WHERE table_name='project' AND row_id=${deleteProject}::uuid`
-    await connectionB.begin(async (tx) => {
-      await bindTenant(tx, identityB)
-      await tx`DELETE FROM project WHERE id=${deleteProject}::uuid`
-    })
-    const deleted = await hostedChangeService.readRecordChanges(
-      actorUrl,
-      identityB,
-      BigInt(inserted[0]!.seq),
-      10,
-    )
-    if (deleted.resetRequired || deleted.changes[0]?.op !== 'delete')
-      throw new Error('record change reader did not return a delete tombstone')
-
-    const moveProject = newRecordId()
-    await admin`INSERT INTO project(id,space_id,name,key_prefixes,created_at)
-      VALUES (${moveProject}::uuid,${SPACE_B}::uuid,'record-move',ARRAY['RCM'],now())`
-    const beforeMove = await admin<
-      { seq: string }[]
-    >`SELECT max(seq)::text AS seq FROM record_change
-      WHERE table_name='project' AND row_id=${moveProject}::uuid`
-    await admin`UPDATE project SET space_id=${SPACE_A}::uuid WHERE id=${moveProject}::uuid`
-    const oldSpace = await hostedChangeService.readRecordChanges(
-      actorUrl,
-      identityB,
-      BigInt(beforeMove[0]!.seq),
-      10,
-    )
-    const newSpace = await hostedChangeService.readRecordChanges(
-      actorUrl,
-      identityA,
-      BigInt(beforeMove[0]!.seq),
-      10,
-    )
-    if (oldSpace.resetRequired || oldSpace.changes[0]?.op !== 'delete')
-      throw new Error('space move did not write a tombstone for the old space')
-    if (newSpace.resetRequired || newSpace.changes[0]?.op !== 'upsert')
-      throw new Error('space move did not write an upsert for the new space')
-
-    await admin`UPDATE record_change SET at=now()-interval '31 days'
-      WHERE row_id=${moveProject}::uuid`
-    await admin`SELECT record_change_prune()`
-    const horizonRows = await admin<{ seq: string }[]>`SELECT seq::text FROM record_change_horizon`
-    const horizon = BigInt(horizonRows[0]!.seq)
-    const reset = await hostedChangeService.readRecordChanges(actorUrl, identityA, horizon - 1n, 10)
-    if (!reset.resetRequired || reset.horizon !== horizon || reset.cursor !== horizon)
-      throw new Error('record change pruning did not return the reset horizon')
+    await proveRecordChangeRows(admin, connectionB)
   } finally {
     releaseA()
     await transactionA.catch(() => undefined)
