@@ -1,6 +1,7 @@
 // concern: architecture-manifest
 /** The hosted-record command module allowlists, kept beside the root manifest so it stays within its file ceiling. */
 import { dirname, normalize } from 'node:path'
+import { recordBindingModules } from './architecture-record-binding-modules.ts'
 
 type RecordModule = { file: string; allowed: string[] }
 
@@ -551,22 +552,7 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-write-allowed.ts',
     './record-doc-audience-sql.ts',
   ]),
-  module('orchestrator/src/record/install-binding.ts', ['bun:sqlite']),
-  module('orchestrator/src/record/install-binding-write.ts', [
-    'bun:sqlite',
-    '../../../shared/record-api-url.ts',
-    '../database/db.ts',
-    './install-binding.ts',
-  ]),
-  module('orchestrator/src/record/record-write-decision.ts', ['../../../shared/brand.ts']),
-  module('orchestrator/src/record/record-write-authority.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-api-url.ts',
-    '../database/db.ts',
-    './install-binding.ts',
-    './install-binding-write.ts',
-    './record-write-decision.ts',
-  ]),
+  ...recordBindingModules,
   module('orchestrator/src/run/question-delivery.ts', [
     '../../../shared/record-id.ts',
     '../database/db.ts',
