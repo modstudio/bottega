@@ -5,17 +5,18 @@ import type { SQL } from 'bun'
 
 const rows = <T>(value: unknown) => value as T[]
 
+// Each journal prunes in its own statement, so hub retention commits even when the hub binary
+// runs before the record migration that adds record_change_prune.
 export async function pruneHostedChanges(client: SQL) {
-  const result = rows<{
-    hub_deleted: number | bigint | string
-    record_deleted: number | bigint | string
-  }>(
-    await client`SELECT hub_change_prune() AS hub_deleted,
-      record_change_prune() AS record_deleted`,
+  const hub = rows<{ deleted: number | bigint | string }>(
+    await client`SELECT hub_change_prune() AS deleted`,
   )[0]
-  if (!result)
+  const record = rows<{ deleted: number | bigint | string }>(
+    await client`SELECT record_change_prune() AS deleted`,
+  )[0]
+  if (!hub || !record)
     throw new Error(
       'change journal pruning returned no result; verify the hub and record change migrations',
     )
-  return { hub: Number(result.hub_deleted), record: Number(result.record_deleted) }
+  return { hub: Number(hub.deleted), record: Number(record.deleted) }
 }
