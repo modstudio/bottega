@@ -79,23 +79,33 @@ export async function recordSubjectRows(
         limit: number
       },
 ): Promise<Record<string, unknown>[]> {
-  const ids = 'ids' in input ? input.ids : null
-  const page = ids === null ? (input as Exclude<typeof input, { ids: readonly string[] }>) : null
-  return (await tx`
-    SELECT s.*,p.name AS project,
+  const from = `SELECT s.*,p.name AS project,
       to_char(s.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
-    FROM subject s JOIN project p ON p.space_id=s.space_id AND p.id=s.project_id
-    WHERE (${ids !== null} AND s.id=ANY(string_to_array(${ids?.join(',') ?? ''}, ',')::uuid[]))
-      OR (${ids === null} AND s.space_id=${page?.spaceId ?? null}::uuid
-        AND (${page?.projectId ?? null}::uuid IS NULL OR p.id=${page?.projectId ?? null}::uuid)
-        AND (${page?.includeRetired ?? true} OR s.retired_at IS NULL)
-        AND (${page?.cursor?.at ?? null}::timestamptz IS NULL OR
-          (s.updated_at,s.id)>(${page?.cursor?.at ?? null}::timestamptz,${page?.cursor?.id ?? null}::uuid)))
-    ORDER BY CASE WHEN ${page?.order === 'updated'} THEN s.updated_at END,
-      CASE WHEN ${page?.order === 'updated'} THEN s.id END,
-      CASE WHEN ${page?.order === 'catalog'} THEN s.position END,s.id
-    LIMIT ${ids?.length ?? page?.limit ?? 0}
-  `) as Record<string, unknown>[]
+    FROM subject s JOIN project p ON p.space_id=s.space_id AND p.id=s.project_id`
+  if ('ids' in input)
+    return tx.unsafe(
+      `${from} WHERE s.id=ANY(string_to_array($1, ',')::uuid[])
+       ORDER BY s.updated_at,s.id LIMIT $2`,
+      [input.ids.join(','), input.ids.length],
+    ) as Promise<Record<string, unknown>[]>
+  return tx.unsafe(
+    `${from} WHERE s.space_id=$1::uuid
+      AND ($2::uuid IS NULL OR p.id=$2::uuid)
+      AND ($3::boolean OR s.retired_at IS NULL)
+      AND ($4::timestamptz IS NULL OR (s.updated_at,s.id)>($4::timestamptz,$5::uuid))
+     ORDER BY CASE WHEN $6::boolean THEN s.updated_at END,
+       CASE WHEN $6::boolean THEN s.id END,
+       CASE WHEN NOT $6::boolean THEN s.position END,s.id LIMIT $7`,
+    [
+      input.spaceId,
+      input.projectId,
+      input.includeRetired,
+      input.cursor?.at ?? null,
+      input.cursor?.id ?? null,
+      input.order === 'updated',
+      input.limit,
+    ],
+  ) as Promise<Record<string, unknown>[]>
 }
 
 async function projectId(

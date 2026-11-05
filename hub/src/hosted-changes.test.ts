@@ -203,13 +203,18 @@ test('record change pages follow numeric order across a digit boundary', async (
   }
   expect(seqs).toEqual(inserted.rows.map((row) => BigInt(row.seq)))
   expect(seqs).toEqual([999n, 1000n])
+  await database.query('DELETE FROM record_change WHERE seq=ANY($1::bigint[])', [
+    inserted.rows.map((row) => row.seq),
+  ])
 })
 
 test('an underfull page advances past unserved rows and leaves no served lag', async () => {
+  await database.exec(`SELECT setval('record_change_seq_seq', 998)`)
   const inserted = await database.query<{ xid: string; seq: string }>(
     `INSERT INTO record_change(space_id,table_name,row_id,op)
-     VALUES ($1,'hub_task',$2,'upsert') RETURNING xid::text,seq::text`,
-    [spaceA, '01990000-0000-7000-8000-000000001322'],
+     VALUES ($1,'hub_task',$2,'upsert'),($1,'hub_task',$3,'upsert')
+     RETURNING xid::text,seq::text`,
+    [spaceA, '01990000-0000-7000-8000-000000001322', '01990000-0000-7000-8000-000000001323'],
   )
   const after = {
     xid: BigInt(inserted.rows[0]!.xid),
@@ -221,10 +226,12 @@ test('an underfull page advances past unserved rows and leaves no served lag', a
   expect(page.resetRequired).toBe(false)
   if (!page.resetRequired) {
     expect(page.changes).toEqual([])
-    expect(page.cursor.xid > after.xid || page.cursor.seq > after.seq).toBe(true)
+    expect(page.cursor).toEqual({ xid: BigInt(inserted.rows[1]!.xid), seq: 1000n })
     expect(page.lag).toBe(0)
   }
-  await database.query('DELETE FROM record_change WHERE seq=$1', [inserted.rows[0]!.seq])
+  await database.query('DELETE FROM record_change WHERE seq=ANY($1::bigint[])', [
+    inserted.rows.map((row) => row.seq),
+  ])
 })
 
 test('every logged table is readable or explicitly deferred', () => {

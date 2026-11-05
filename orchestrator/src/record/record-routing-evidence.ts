@@ -70,27 +70,29 @@ export async function recordRoutingEvidenceRows(
   tx: SQL,
   select: { ids: readonly string[] } | { spaceId: string; limit: number; cursor: bigint | null },
 ): Promise<Record<string, unknown>[]> {
-  const ids = 'ids' in select ? select.ids : null
-  const page =
-    ids === null ? (select as { spaceId: string; limit: number; cursor: bigint | null }) : null
-  return (await tx`
-    SELECT r.id,r.space_id,r.agent,r.model,r.job,r.stack,r.prompt_bytes,r.status,r.failure_kind,
+  const from = `SELECT r.id,r.space_id,r.agent,r.model,r.job,r.stack,r.prompt_bytes,r.status,r.failure_kind,
       COALESCE(r.executor,'external') AS executor,r.evidence_excluded,r.started_at,r.latency_ms,r.vendor_tokens,r.model_calls,
       r.peak_call_tokens,s.delivery,s.quality,s.fidelity,r.evidence_seq,
       COALESCE((SELECT array_agg(DISTINCT lens.lens ORDER BY lens.lens) FROM review_lens lens WHERE lens.run_id=r.id),ARRAY[]::text[]) AS lenses
-    FROM run r LEFT JOIN run_score s ON s.run_id=r.id AND s.space_id=r.space_id
-    WHERE (${ids !== null} AND r.id=ANY(string_to_array(${ids?.join(',') ?? ''}, ',')::uuid[])
-      OR (${ids === null} AND r.space_id=${page?.spaceId ?? null}::uuid
-        AND r.evidence_seq>${page?.cursor ?? 0}))
+    FROM run r LEFT JOIN run_score s ON s.run_id=r.id AND s.space_id=r.space_id`
+  const visible = (runFields: number, scoreFields: number) => `
       AND EXISTS (SELECT 1 FROM membership member WHERE member.space_id=r.space_id
         AND member.user_id=nullif(current_setting('app.user_id',true),'')::uuid)
       AND r.probe=false AND r.parent_run_id IS NULL AND r.status IN ('ok','failed','stale')
-      AND NOT (COALESCE(r.withheld_fields,'[]'::jsonb) ?| ${tx.array([...ROUTING_EVIDENCE_RUN_FIELDS], 'text')})
-      AND (s.run_id IS NULL OR NOT (COALESCE(s.withheld_fields,'[]'::jsonb) ?| ${tx.array([...ROUTING_EVIDENCE_SCORE_FIELDS], 'text')}))
+      AND NOT (COALESCE(r.withheld_fields,'[]'::jsonb) ?| string_to_array($${runFields},','))
+      AND (s.run_id IS NULL OR NOT (COALESCE(s.withheld_fields,'[]'::jsonb) ?| string_to_array($${scoreFields},',')))
       AND NOT EXISTS (SELECT 1 FROM review_lens withheld_lens WHERE withheld_lens.run_id=r.id
-        AND COALESCE(withheld_lens.withheld_fields,'[]'::jsonb) ? 'lens')
-    ORDER BY r.evidence_seq LIMIT ${ids?.length ?? (page?.limit ?? -1) + 1}
-  `) as Record<string, unknown>[]
+        AND COALESCE(withheld_lens.withheld_fields,'[]'::jsonb) ? 'lens')`
+  const fields = [ROUTING_EVIDENCE_RUN_FIELDS.join(','), ROUTING_EVIDENCE_SCORE_FIELDS.join(',')]
+  if ('ids' in select)
+    return tx.unsafe(
+      `${from} WHERE r.id=ANY(string_to_array($1, ',')::uuid[])${visible(2, 3)} ORDER BY r.evidence_seq LIMIT $4`,
+      [select.ids.join(','), ...fields, select.ids.length],
+    ) as Promise<Record<string, unknown>[]>
+  return tx.unsafe(
+    `${from} WHERE r.space_id=$1::uuid AND r.evidence_seq>$2${visible(3, 4)} ORDER BY r.evidence_seq LIMIT $5`,
+    [select.spaceId, select.cursor ?? 0n, ...fields, select.limit + 1],
+  ) as Promise<Record<string, unknown>[]>
 }
 
 export async function listRecordRoutingEvidence(

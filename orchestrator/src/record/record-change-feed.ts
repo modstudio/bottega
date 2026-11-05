@@ -49,17 +49,18 @@ type MaterializedChange = {
 }
 type FamilyKey = Omit<MaterializedChange, 'row'> & { position: number }
 function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
-  const keyed: FamilyKey[] = []
+  const keyed = new Map<string, FamilyKey>()
+  const keep = (key: FamilyKey) => keyed.set(`${key.table}:${key.id}`, key)
   for (const [position, change] of changes.entries()) {
     if (change.table === 'run') {
-      keyed.push({
+      keep({
         table: 'routing_evidence',
         id: change.id,
         space: change.space,
         op: change.op,
         position,
       })
-      keyed.push({
+      keep({
         table: 'run_score',
         id: change.id,
         space: change.space,
@@ -67,14 +68,14 @@ function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
         position,
       })
     } else if (change.table === 'run_score') {
-      keyed.push({
+      keep({
         table: 'run_score',
         id: change.id,
         space: change.space,
         op: change.op,
         position,
       })
-      keyed.push({
+      keep({
         table: 'routing_evidence',
         id: change.id,
         space: change.space,
@@ -82,7 +83,7 @@ function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
         position,
       })
     } else if ((RECORD_CHANGE_SERVED_TABLES as readonly string[]).includes(change.table))
-      keyed.push({
+      keep({
         table: change.table as RecordChangeServedTable,
         id: change.id,
         space: change.space,
@@ -90,7 +91,7 @@ function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
         position,
       })
   }
-  return keyed
+  return [...keyed.values()].sort((left, right) => left.position - right.position)
 }
 
 async function rowsByFamily(tx: SQL, keys: readonly FamilyKey[]): Promise<Map<string, unknown>> {

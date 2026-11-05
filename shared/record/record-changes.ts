@@ -127,7 +127,7 @@ async function readRecordChangesInTransaction(
       await tx`SELECT xid::text,seq::text FROM record_change
         WHERE xid<pg_snapshot_xmin(pg_current_snapshot())
           AND (xid,seq)>(${after.xid.toString()}::xid8,${after.seq})
-        ORDER BY xid DESC,seq DESC LIMIT 1`,
+        ORDER BY record_change.xid DESC,record_change.seq DESC LIMIT 1`,
     )[0]
     if (bound) {
       const final = { xid: asBigInt(bound.xid), seq: asBigInt(bound.seq) }

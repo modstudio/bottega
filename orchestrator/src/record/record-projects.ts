@@ -233,9 +233,13 @@ export async function recordProjectRows(
   tx: SQL,
   ids: readonly string[] | null,
 ): Promise<Record<string, unknown>[]> {
-  return tx`SELECT p.*,s.name AS space_name FROM project p JOIN space s ON s.id=p.space_id
-    WHERE (${ids === null} OR p.id=ANY(string_to_array(${ids?.join(',') ?? ''}, ',')::uuid[]))
-    ORDER BY s.name,p.name` as Promise<Record<string, unknown>[]>
+  const from = 'SELECT p.*,s.name AS space_name FROM project p JOIN space s ON s.id=p.space_id'
+  return ids === null
+    ? (tx.unsafe(`${from} ORDER BY s.name,p.name`) as Promise<Record<string, unknown>[]>)
+    : (tx.unsafe(
+        `${from} WHERE p.id=ANY(string_to_array($1, ',')::uuid[]) ORDER BY s.name,p.name`,
+        [ids.join(',')],
+      ) as Promise<Record<string, unknown>[]>)
 }
 
 export async function listRecordProjects(

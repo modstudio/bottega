@@ -62,18 +62,23 @@ async function selectionRows(
     versionId: 'selection.selected_version_id',
     label: 'selected_version',
   })
-  return tx.unsafe(
-    `SELECT selection.*,
+  const from = `SELECT selection.*,
       ${pinVersion.projection},
       to_char(selection.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM project_lens_profile selection
-    ${pinVersion.joins}
-    WHERE ($1::uuid IS NULL OR selection.space_id=$1::uuid)
-      AND ($2::text IS NULL OR selection.id=ANY(string_to_array($2,',')::uuid[]))
-      AND ($3::timestamptz IS NULL OR (selection.updated_at,selection.id)>($3::timestamptz,$4::uuid))
-    ORDER BY selection.updated_at,selection.id LIMIT $5`,
-    [spaceId, after.rowIds?.join(',') ?? null, after.at, after.id, after.limit],
-  )
+    ${pinVersion.joins}`
+  return after.rowIds
+    ? tx.unsafe(
+        `${from} WHERE selection.id=ANY(string_to_array($1,',')::uuid[])
+         ORDER BY selection.updated_at,selection.id LIMIT $2`,
+        [after.rowIds.join(','), after.limit],
+      )
+    : tx.unsafe(
+        `${from} WHERE selection.space_id=$1::uuid
+          AND ($2::timestamptz IS NULL OR (selection.updated_at,selection.id)>($2::timestamptz,$3::uuid))
+         ORDER BY selection.updated_at,selection.id LIMIT $4`,
+        [spaceId, after.at, after.id, after.limit],
+      )
 }
 
 async function selectionRevisionRows(
@@ -88,20 +93,25 @@ async function selectionRevisionRows(
     versionId: 'history.prior_selected_version_id',
     label: 'prior_selected_version',
   })
-  return tx.unsafe(
-    `SELECT history.*,
+  const from = `SELECT history.*,
       ${pinVersion.projection},
       to_char(history.at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM project_lens_profile_revision history
     JOIN project_lens_profile selection
       ON selection.space_id=history.space_id AND selection.id=history.selection_id
-    ${pinVersion.joins}
-    WHERE ($1::uuid IS NULL OR history.space_id=$1::uuid)
-      AND ($2::text IS NULL OR history.id=ANY(string_to_array($2,',')::uuid[]))
-      AND ($3::timestamptz IS NULL OR (history.at,history.id)>($3::timestamptz,$4::uuid))
-    ORDER BY history.at,history.id LIMIT $5`,
-    [spaceId, after.rowIds?.join(',') ?? null, after.at, after.id, after.limit],
-  )
+    ${pinVersion.joins}`
+  return after.rowIds
+    ? tx.unsafe(
+        `${from} WHERE history.id=ANY(string_to_array($1,',')::uuid[])
+         ORDER BY history.at,history.id LIMIT $2`,
+        [after.rowIds.join(','), after.limit],
+      )
+    : tx.unsafe(
+        `${from} WHERE history.space_id=$1::uuid
+          AND ($2::timestamptz IS NULL OR (history.at,history.id)>($2::timestamptz,$3::uuid))
+         ORDER BY history.at,history.id LIMIT $4`,
+        [spaceId, after.at, after.id, after.limit],
+      )
 }
 
 function mapped(
@@ -199,10 +209,7 @@ export async function recordLensRows(
     | { spaceId: string; cursor: RecordCursor | null; limit: number },
 ): Promise<Record<string, unknown>[]> {
   const ids = 'ids' in select ? select.ids : null
-  const page =
-    ids === null
-      ? (select as { spaceId: string; cursor: RecordCursor | null; limit: number })
-      : null
+  const page = 'ids' in select ? null : select
   const args = {
     at: page?.cursor?.at ?? null,
     id: page?.cursor?.id ?? null,
@@ -213,14 +220,16 @@ export async function recordLensRows(
   if (table === 'project_lens_profile_revision')
     return selectionRevisionRows(tx, page?.spaceId ?? null, args)
   const column = lensCursorColumn(table)
-  return tx.unsafe(
-    `SELECT *,to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
-     FROM ${table}
-     WHERE ($1::boolean AND id=ANY(string_to_array($2,',')::uuid[]))
-       OR (NOT $1::boolean AND space_id=$3::uuid AND ($4::timestamptz IS NULL OR (${column},id)>($4::timestamptz,$5::uuid)))
-     ORDER BY ${column},id LIMIT $6`,
-    [ids !== null, ids?.join(',') ?? '', page?.spaceId ?? null, args.at, args.id, args.limit],
-  ) as Promise<Record<string, unknown>[]>
+  const from = `SELECT *,to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM ${table}`
+  return ids
+    ? (tx.unsafe(
+        `${from} WHERE id=ANY(string_to_array($1,',')::uuid[]) ORDER BY ${column},id LIMIT $2`,
+        [ids.join(','), args.limit],
+      ) as Promise<Record<string, unknown>[]>)
+    : (tx.unsafe(
+        `${from} WHERE space_id=$1::uuid AND ($2::timestamptz IS NULL OR (${column},id)>($2::timestamptz,$3::uuid)) ORDER BY ${column},id LIMIT $4`,
+        [page!.spaceId, args.at, args.id, args.limit],
+      ) as Promise<Record<string, unknown>[]>)
 }
 
 export async function listRecordLensCatalogue(

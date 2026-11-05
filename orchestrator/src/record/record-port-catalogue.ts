@@ -119,25 +119,15 @@ export async function recordPortRows(
     | { spaceId: string; cursor: RecordCursor | null; limit: number },
 ): Promise<Record<string, unknown>[]> {
   const column = RECORD_PORT_CURSORS[table].column
-  const ids = 'ids' in select ? select.ids : null
-  const page =
-    ids === null
-      ? (select as { spaceId: string; cursor: RecordCursor | null; limit: number })
-      : null
+  const from = `SELECT *,to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM ${table}`
+  if ('ids' in select)
+    return tx.unsafe(
+      `${from} WHERE id=ANY(string_to_array($1,',')::uuid[]) ORDER BY ${column},id LIMIT $2`,
+      [select.ids.join(','), select.ids.length],
+    ) as Promise<Record<string, unknown>[]>
   return tx.unsafe(
-    `SELECT *,to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
-     FROM ${table}
-     WHERE ($1::boolean AND id=ANY(string_to_array($2,',')::uuid[]))
-       OR (NOT $1::boolean AND space_id=$3::uuid AND ($4::timestamptz IS NULL OR (${column},id)>($4::timestamptz,$5::uuid)))
-     ORDER BY ${column},id LIMIT $6`,
-    [
-      ids !== null,
-      ids?.join(',') ?? '',
-      page?.spaceId ?? null,
-      page?.cursor?.at ?? null,
-      page?.cursor?.id ?? null,
-      ids?.length ?? (page?.limit ?? -1) + 1,
-    ],
+    `${from} WHERE space_id=$1::uuid AND ($2::timestamptz IS NULL OR (${column},id)>($2::timestamptz,$3::uuid)) ORDER BY ${column},id LIMIT $4`,
+    [select.spaceId, select.cursor?.at ?? null, select.cursor?.id ?? null, select.limit + 1],
   ) as Promise<Record<string, unknown>[]>
 }
 
