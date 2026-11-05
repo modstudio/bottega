@@ -578,11 +578,7 @@ export async function recordApiRequest<T>(
   authentication?: RecordApiAuthentication,
   transport: typeof fetch = fetch,
 ): Promise<T> {
-  const baseUrl = recordApiBaseUrl()
-  const authority = currentRecordWriteDecision()
-  if (authority.verdict === 'refused' && authority.boundOrigin !== null) {
-    throw new RecordApiRequestError(authority.refusal, 'refused')
-  }
+  throwIfRecordApiRequestRefused()
   const token = init.signal
     ? await (authentication
         ? authentication.tokenAsync(init.signal)
@@ -597,13 +593,20 @@ export async function recordApiRequest<T>(
   if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
   let response: Response
   try {
-    response = await transport(`${baseUrl}${path}`, { ...init, headers })
+    response = await transport(`${recordApiBaseUrl()}${path}`, { ...init, headers })
   } catch (error) {
     throw recordApiUnreachable(error)
   }
   const body = await response.json().catch(() => null)
   if (!response.ok) throw recordApiError(body, response.status, response.headers)
   return (init.schema ? init.schema(body) : (body as T)) as T
+}
+
+function throwIfRecordApiRequestRefused(): void {
+  const authority = currentRecordWriteDecision()
+  if (authority.verdict === 'refused') {
+    throw new RecordApiRequestError(authority.refusal, 'refused')
+  }
 }
 
 const defaultRequest = recordApiRequest
@@ -1018,6 +1021,7 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
     connection.abort()
   }
   try {
+    throwIfRecordApiRequestRefused()
     const response = await fetch(`${recordApiBaseUrl()}/v1/board/stream`, {
       method: 'GET',
       headers: boardStreamHeaders(token),

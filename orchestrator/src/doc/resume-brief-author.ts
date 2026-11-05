@@ -3,7 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import type { RecordWriteDecision } from '../record/record-write-decision.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import {
@@ -29,7 +32,7 @@ export async function resumeBriefAuthorSession(
   options: ResumeBriefAuthorOptions = {},
 ): Promise<string | null> {
   const writeDecision = options.writeDecision ?? currentRecordWriteDecision(database)
-  if (writeDecision.verdict === 'refused') throw new Error(writeDecision.refusal)
+  throwIfRecordRefused(writeDecision)
   if (writeDecision.verdict !== 'hosted') {
     return latestStoredDocAuthorSession(doc.record_id, database)
   }

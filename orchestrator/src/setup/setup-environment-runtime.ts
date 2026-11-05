@@ -17,7 +17,10 @@ import {
   restoreMigratedProjectRows,
 } from '../project/project-commands.ts'
 import { projects } from '../project/projects.ts'
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
   assertStoredSettingsEnvironmentMigration,
@@ -137,12 +140,10 @@ export const setupEnvironmentService = {
         backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
         migrateSecrets: async (record) => {
           const authority = currentRecordWriteDecision()
+          throwIfRecordRefused(authority)
           if (authority.verdict === 'local-authoritative') {
             notes.push('no hosted record: nothing to migrate')
             return []
-          }
-          if (authority.verdict === 'refused') {
-            throw new Error(authority.refusal)
           }
           return migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
         },

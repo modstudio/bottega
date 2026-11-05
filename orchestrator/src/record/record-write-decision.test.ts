@@ -13,25 +13,35 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
   ).toEqual({ verdict: 'hosted' })
   expect(
     decideRecordWrite({
+      recordApiConfigured: true,
+      installBound: true,
+      boundOrigin: 'https://staging.example.test',
+      resolvedOrigin,
+    }),
+  ).toEqual({ verdict: 'hosted' })
+  expect(
+    decideRecordWrite({
       recordApiConfigured: false,
       installBound: false,
       boundOrigin: null,
       resolvedOrigin,
     }),
   ).toEqual({ verdict: 'local-authoritative' })
-  expect(
-    decideRecordWrite({
-      recordApiConfigured: false,
-      installBound: true,
-      boundOrigin: null,
-      resolvedOrigin,
-    }),
-  ).toMatchObject({
+  const unknownOrigin = decideRecordWrite({
+    recordApiConfigured: false,
+    installBound: true,
+    boundOrigin: null,
+    resolvedOrigin,
+  })
+  expect(unknownOrigin).toMatchObject({
     verdict: 'refused',
     boundOrigin: null,
     resolvedOrigin,
-    refusal: expect.stringContaining('no recorded address'),
   })
+  if (unknownOrigin.verdict !== 'refused') throw new Error('expected a refusal')
+  expect(unknownOrigin.refusal).toContain('no recorded address')
+  expect(unknownOrigin.refusal).toContain('record use <address>')
+  expect(unknownOrigin.refusal).not.toContain('sign in')
   expect(
     decideRecordWrite({
       recordApiConfigured: false,

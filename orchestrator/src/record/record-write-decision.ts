@@ -18,6 +18,7 @@ export function decideRecordWrite(input: {
   boundOrigin: string | null
   resolvedOrigin: string
 }): RecordWriteDecision {
+  // An explicitly configured address overrides the pin: record use is how an install switches records.
   if (input.recordApiConfigured) return { verdict: 'hosted' }
   if (!input.installBound) return { verdict: 'local-authoritative' }
   if (input.boundOrigin === null) {
@@ -27,7 +28,7 @@ export function decideRecordWrite(input: {
       resolvedOrigin: input.resolvedOrigin,
       refusal:
         'this install is bound to a hosted record with no recorded address\n' +
-        `cleared by: ${PLATFORM_SLUG} record use <address>, or sign in again to record the address`,
+        `cleared by: ${PLATFORM_SLUG} record use <address>`,
     }
   }
   if (input.boundOrigin === input.resolvedOrigin) return { verdict: 'hosted' }

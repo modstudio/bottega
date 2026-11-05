@@ -179,6 +179,39 @@ test('a bearer is not sent when the install is pinned to another record origin',
   }
 })
 
+test('a bearer is not sent when the bound install has no recorded origin', async () => {
+  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+  delete process.env.BOTTEGA_RECORD_API_URL
+  db().query('DELETE FROM record_install_binding').run()
+  db()
+    .query(
+      "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'2026-11-05',NULL)",
+    )
+    .run()
+  let requests = 0
+  try {
+    await expect(
+      recordApiRequest(
+        '/v1/whoami',
+        {},
+        {
+          token: () => 'stored-bearer',
+          tokenAsync: async () => 'stored-bearer',
+        },
+        (async () => {
+          requests += 1
+          return Response.json({})
+        }) as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow('record use <address>')
+    expect(requests).toBe(0)
+  } finally {
+    db().query('DELETE FROM record_install_binding').run()
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+  }
+})
+
 describe('record API client test safety', () => {
   test('sync preserves the active-space remedy from a client refusal', async () => {
     const session = memoryRecordSession()

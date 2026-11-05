@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordApiConfigured, resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordApiConfigured, resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { db } from '../database/db.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
@@ -14,7 +14,7 @@ export function currentRecordWriteDecision(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): RecordWriteDecision {
   const binding = readRecordInstallBinding(database)
-  const resolvedOrigin = new URL(resolveRecordApiUrl(environment)).origin
+  const resolvedOrigin = resolvedRecordOrigin(environment)
   return decideRecordWrite({
     recordApiConfigured: recordApiConfigured(environment),
     installBound: binding.bound,
@@ -23,12 +23,22 @@ export function currentRecordWriteDecision(
   })
 }
 
+export function throwIfRecordRefused(
+  decision: Extract<RecordWriteDecision, { verdict: 'refused' }>,
+): never
+export function throwIfRecordRefused(
+  decision: RecordWriteDecision,
+): asserts decision is Exclude<RecordWriteDecision, { verdict: 'refused' }>
+export function throwIfRecordRefused(decision: RecordWriteDecision): void {
+  if (decision.verdict === 'refused') throw new Error(decision.refusal)
+}
+
 export function applyRecordWriteAuthority<T>(actions: {
   local(): T | Promise<T>
   hosted(): T | Promise<T>
 }): Promise<T> {
   const decision = currentRecordWriteDecision()
-  if (decision.verdict === 'refused') throw new Error(decision.refusal)
+  throwIfRecordRefused(decision)
   if (decision.verdict === 'local-authoritative') return Promise.resolve(actions.local())
   return Promise.resolve(actions.hosted()).then((result) => {
     rememberHostedRecord()
@@ -38,7 +48,7 @@ export function applyRecordWriteAuthority<T>(actions: {
 
 export function requireHostedRecord(command: string): void {
   const decision = currentRecordWriteDecision()
-  if (decision.verdict === 'refused') throw new Error(decision.refusal)
+  throwIfRecordRefused(decision)
   if (decision.verdict === 'local-authoritative') {
     throw new Error(
       `no hosted record is configured for this install; run \`${PLATFORM_SLUG} record use <address>\` before running \`${command}\``,

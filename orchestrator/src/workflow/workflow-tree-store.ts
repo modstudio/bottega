@@ -3,7 +3,10 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import {
+  currentRecordWriteDecision,
+  throwIfRecordRefused,
+} from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
   type CatalogueStep,
@@ -246,7 +249,7 @@ export async function promoteMatchingWorkflowTreeDrafts(
   })
   for (const item of decision.promotions) {
     const authority = currentRecordWriteDecision(database)
-    if (authority.verdict === 'refused') throw new Error(authority.refusal)
+    throwIfRecordRefused(authority)
     const local = authority.verdict === 'local-authoritative'
     if (item.kind === 'catalogue')
       await promoteCatalogueTreeDraft(item, input, database, decision, local)
@@ -697,7 +700,7 @@ export function importWorkflowTree(
         ...(plan.warnings.length ? { warnings: plan.warnings } : {}),
       }
     const authority = currentRecordWriteDecision(database)
-    if (authority.verdict === 'refused') throw new Error(authority.refusal)
+    throwIfRecordRefused(authority)
     if (authority.verdict === 'hosted')
       return writeHostedImport(plan, reason, author, database, project)
     return writeLocalImport(plan, reason, author, database)

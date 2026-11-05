@@ -12,6 +12,11 @@ export function resolveRecordApiUrl(env: ConfigEnvironment = process.env): strin
   return configuredRecordApiUrl(env)?.trim() || RECORD_API_ORIGIN
 }
 
+/** Resolve the normalized origin used to pin an install to its hosted record. */
+export function resolvedRecordOrigin(env: ConfigEnvironment = process.env): string {
+  return new URL(resolveRecordApiUrl(env)).origin
+}
+
 /** Whether a non-empty hosted record endpoint is configured. */
 export function recordApiConfigured(env: ConfigEnvironment = process.env): boolean {
   return Boolean(configuredRecordApiUrl(env)?.trim())

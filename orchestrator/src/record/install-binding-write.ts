@@ -2,12 +2,12 @@
 /** Records the first successful attachment to a hosted record. */
 
 import type { Database } from 'bun:sqlite'
-import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { recordInstallBindingHasOrigin } from './install-binding.ts'
 
 export function rememberHostedRecord(database: Database = db()): void {
-  const recordOrigin = new URL(resolveRecordApiUrl()).origin
+  const recordOrigin = resolvedRecordOrigin()
   writeTransaction(() => {
     const hasOrigin = recordInstallBindingHasOrigin(database)
     if (!hasOrigin) {
