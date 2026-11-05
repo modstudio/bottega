@@ -40,6 +40,7 @@ export const recordBindingModules: RecordModule[] = [
     '../../../shared/personal-item-space.ts',
     './record-auth.ts',
     './record-docs.ts',
+    './record-settings.ts',
   ]),
   module('orchestrator/src/record/record-api-doc-rename.ts', [
     'hono',

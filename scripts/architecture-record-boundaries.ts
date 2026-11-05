@@ -127,6 +127,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       'zod',
       '../../../shared/built-commit.ts',
       '../../../shared/docs.ts',
+      '../../../shared/personal-item-space.ts',
       '../../../shared/record-client-addresses.ts',
       '../../../shared/record-project-contract.ts',
       '../../../shared/storage-lifecycle.ts',
