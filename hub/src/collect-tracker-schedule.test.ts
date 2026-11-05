@@ -109,7 +109,7 @@ test('tasks output names only the reasons that skipped trackers', () => {
       trackerCounts: { read: 0, skippedFresh: 0, leftToWatcher: 4 },
     }),
   ).toBe(
-    `tasks             ok (0 trackers read, 4 left to the watcher; force with ${PLATFORM_SLUG} collect --only tasks)`,
+    `tasks             ok (0 trackers read, 4 left to the watcher; force with ${PLATFORM_SLUG} record pull --only tasks)`,
   )
   expect(
     formatCollectLeg({
@@ -119,4 +119,40 @@ test('tasks output names only the reasons that skipped trackers', () => {
       trackerCounts: { read: 2, skippedFresh: 1, leftToWatcher: 0 },
     }),
   ).toBe('tasks             ok (2 trackers read, 1 skipped fresh)')
+})
+
+test('an all-zero hosted changes report formats as ok', () => {
+  expect(
+    formatCollectLeg({
+      source: 'hosted changes',
+      ok: true,
+      durationMs: 1,
+      hostedChanges: {
+        families: [
+          {
+            name: 'tasks',
+            report: {
+              upsertsChanged: 0,
+              upsertsNoop: 0,
+              deletesApplied: 0,
+              deletesSkipped: 0,
+              absentParentSkipped: 0,
+              resets: 0,
+              spaces: [
+                {
+                  spaceId: 'space-one',
+                  upsertsChanged: 0,
+                  upsertsNoop: 0,
+                  deletesApplied: 0,
+                  deletesSkipped: 0,
+                  absentParentSkipped: 0,
+                  resets: 0,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+  ).toBe('hosted changes    ok')
 })
