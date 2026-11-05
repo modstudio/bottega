@@ -70,7 +70,7 @@ type PollState = { nextAt: number; quiet: number; failures: number }
  * process-local: restarting the watch means "fresh now", not "honor an old
  * delay". A one-shot collect instead skips a tracker whose last successful
  * read, persisted by any process, falls within `SLOW_MS`; collecting tasks
- * explicitly reads every tracker. The injected clock keeps this policy
+ * explicitly, or rebuilding with `--since`, reads every tracker. The injected clock keeps this policy
  * deterministic in tests.
  */
 export class TrackerPollSchedule {
