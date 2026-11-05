@@ -75,6 +75,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       `${source}settings-env.ts`,
       `${source}settings-files.ts`,
       `${source}settings-machine-hooks.ts`,
+      `${source}settings-machine-mcp-placement.ts`,
       `${source}settings-machine-write-authority.ts`,
       `${source}settings-render.ts`,
       `${source}settings-permission-overlay.ts`,
@@ -177,6 +178,20 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     typeOnlyAllowed: [],
     reason:
       'Keep machine settings application independent of CLI grammar, scheduling, and run lifecycle.',
+  },
+  {
+    name: 'settings-machine-mcp-placement-boundary',
+    file: `${source}settings-machine-mcp-placement.ts`,
+    allowed: [
+      'node:crypto',
+      'node:fs',
+      'node:path',
+      'shared/state-directory.ts',
+      'orchestrator/src/setup/setup-mcp.ts',
+      `${source}settings-machine-scope.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep Claude MCP placement state independent of docs, projects, and commands.',
   },
   {
     name: 'settings-machine-write-authority-boundary',

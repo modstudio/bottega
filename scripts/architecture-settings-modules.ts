@@ -122,6 +122,7 @@ export const settingsModules: SettingsModule[] = [
     './settings-render.ts',
     './settings-permission-overlay.ts',
     './settings-machine-hooks.ts',
+    './settings-machine-mcp-placement.ts',
     './settings-machine-projects.ts',
     './settings-machine-scope.ts',
     './settings-machine-write-authority.ts',
@@ -136,6 +137,14 @@ export const settingsModules: SettingsModule[] = [
     './settings-files.ts',
     './settings-render.ts',
     './settings-write.ts',
+  ]),
+  module('orchestrator/src/settings/settings-machine-mcp-placement.ts', [
+    'node:crypto',
+    'node:fs',
+    'node:path',
+    '../../../shared/state-directory.ts',
+    '../setup/setup-mcp.ts',
+    './settings-machine-scope.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-scope.ts', []),
   module('orchestrator/src/settings/settings-machine-write-authority.ts', [

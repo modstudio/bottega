@@ -313,6 +313,27 @@ export type ClaudeMcpRegistrationPort = {
   bin: string
 }
 
+/** Apply one already-decided Claude MCP mutation without paying for a CLI readback. */
+export function mutateClaudeMcpRegistration(input: {
+  port: ClaudeMcpRegistrationPort
+  server: McpServer
+  action: 'add' | 'remove'
+  scope: 'user' | 'local'
+  cwd?: string
+}): void {
+  const { port, server, action, scope } = input
+  const commandCwd = input.cwd ?? process.env.HOME
+  const result = port.runner(
+    action === 'add'
+      ? mcpAddArgv('claude', port.bin, server, scope)
+      : mcpRemoveArgv('claude', port.bin, server.name, scope),
+    SETUP_COMMAND_TIMEOUT_MS,
+    { cwd: commandCwd },
+  )
+  const failure = resultFailure(result)
+  if (failure) throw new Error(`claude refused MCP ${action}: ${failure}`)
+}
+
 function claudeMcpReconcileAction(
   current: McpReadback,
   server: McpServer,

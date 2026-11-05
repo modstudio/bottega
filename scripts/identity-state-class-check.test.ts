@@ -132,4 +132,21 @@ describe('stateClassRefusals', () => {
       'orchestrator.local_row: machine-only declaration needs a non-empty reason and ruling; remedy: edit scripts/identity-state-classes.ts',
     )
   })
+
+  test('refuses machine-only state files without their ruling', () => {
+    expect(
+      refusals([
+        hosted('local_row'),
+        {
+          store: 'state-directory',
+          path: 'orchestrator/local-state.json',
+          class: 'machine-only',
+          reason: 'Local state',
+          ruling: '',
+        },
+      ]),
+    ).toContain(
+      'state-directory.orchestrator/local-state.json: machine-only declaration needs a non-empty reason and ruling; remedy: edit scripts/identity-state-classes.ts',
+    )
+  })
 })

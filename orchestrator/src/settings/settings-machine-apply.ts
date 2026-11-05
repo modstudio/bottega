@@ -29,6 +29,7 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
   type ClaudeMcpRegistrationPort,
+  mutateClaudeMcpRegistration,
   reconcileClaudeMcpRegistration,
   runSetupCommand,
   stableMcpServers,
@@ -46,6 +47,11 @@ import {
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
+import {
+  readClaudeMcpPlacement,
+  reconcileClaudeMcpPlacementPlan,
+  writeClaudeMcpPlacement,
+} from './settings-machine-mcp-placement.ts'
 import {
   applyProjectLocalSettings,
   registeredProjectScopeFact,
@@ -78,6 +84,9 @@ type Dependencies = {
   applyProjectSettings: typeof applyProjectLocalSettings
   claudeMcpPort(): ClaudeMcpRegistrationPort | null
   reconcileMcp: typeof reconcileClaudeMcpRegistration
+  mutateMcp: typeof mutateClaudeMcpRegistration
+  readMcpPlacement: typeof readClaudeMcpPlacement
+  writeMcpPlacement: typeof writeClaudeMcpPlacement
 }
 
 type ApplyOverrides = Partial<Dependencies> & {
@@ -112,6 +121,9 @@ function dependencies(overrides: Partial<Dependencies>): Dependencies {
       return bin ? { bin, runner: runSetupCommand } : null
     },
     reconcileMcp: reconcileClaudeMcpRegistration,
+    mutateMcp: mutateClaudeMcpRegistration,
+    readMcpPlacement: readClaudeMcpPlacement,
+    writeMcpPlacement: writeClaudeMcpPlacement,
     ...overrides,
   }
 }
@@ -230,28 +242,19 @@ function applyScopedClaudeSurfaces(
     selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
   )
   const server = stableMcpServers()[0]!
-  const port = deps.claudeMcpPort()
   const results: MachineSettingsApplyResult[] = []
-  const reconcile = (
-    target: string,
-    present: boolean,
-    mcpScope: 'user' | 'local',
-    cwd?: string,
-  ): MachineSettingsApplyResult => {
-    if (!port) return refusal(target, 'Claude executable was not found')
-    try {
-      const result = deps.reconcileMcp({ port, server, scope: mcpScope, cwd, present, check })
-      return {
-        target,
-        outcome: result.changed ? 'applied' : 'current',
-        changed: result.changed,
-        detail: result.detail,
-      }
-    } catch (error) {
-      return refusal(target, error)
-    }
-  }
-  results.push(reconcile('MCP claude user', scope.user.mcp, 'user'))
+  const mcpResults = reconcileClaudeMcpPlacementPlan(check, scope, {
+    environment: deps.environment,
+    port: deps.claudeMcpPort,
+    server,
+    read: deps.readMcpPlacement,
+    write: deps.writeMcpPlacement,
+    reconcile: deps.reconcileMcp,
+    mutate: deps.mutateMcp,
+  })
+  const mcpByTarget = new Map(mcpResults.map((result) => [result.target, result]))
+  const consumedMcpTargets = new Set<string>(['MCP claude user'])
+  results.push(mcpByTarget.get('MCP claude user')!)
   for (const project of scope.projects) {
     if (project.action === 'skip') {
       results.push({
@@ -281,12 +284,9 @@ function applyScopedClaudeSurfaces(
     } catch (error) {
       settingsResult = refusal(`settings ${project.path}/.claude/settings.local.json`, error)
     }
-    const mcpResult = reconcile(
-      `MCP claude project ${project.path}`,
-      project.action === 'render-and-register',
-      'local',
-      project.path,
-    )
+    const mcpTarget = `MCP claude project ${project.path}`
+    consumedMcpTargets.add(mcpTarget)
+    const mcpResult = mcpByTarget.get(mcpTarget)!
     const refused = [settingsResult, mcpResult].filter((result) => result.outcome === 'refused')
     const changed = scopedProjectHasDrift(!settingsResult.changed, !mcpResult.changed)
     results.push({
@@ -296,6 +296,7 @@ function applyScopedClaudeSurfaces(
       detail: [settingsResult.detail, mcpResult.detail].filter(Boolean).join('; ') || undefined,
     })
   }
+  results.push(...mcpResults.filter((result) => !consumedMcpTargets.has(result.target)))
   return results
 }
 

@@ -1,6 +1,7 @@
 import type { StateClassStore } from './identity-inventory.ts'
+import { PLATFORM_NAME } from '../shared/brand.ts'
 
-export type StateClassDeclaration = {
+export type TableStateClassDeclaration = {
   store: StateClassStore
   table: string
   class: 'hosted-first' | 'evidence' | 'machine-only'
@@ -10,11 +11,21 @@ export type StateClassDeclaration = {
   ruling?: string
 }
 
+type MachineOnlyStateFileDeclaration = {
+  store: 'state-directory'
+  path: string
+  class: 'machine-only'
+  reason: string
+  ruling: string
+}
+
+export type StateClassDeclaration = TableStateClassDeclaration | MachineOnlyStateFileDeclaration
+
 const PORTABLE_RULING =
   'Shmuel Barkin, 2026-11-01: all work is portable; machine-only only for state another machine would never care about'
 const LABEL_RULING = 'Shmuel Barkin, DEV-1214/15 option (a): machine-scoped labels'
 
-const evidence = (table: string, reason: string): StateClassDeclaration => ({
+const evidence = (table: string, reason: string): TableStateClassDeclaration => ({
   store: 'orchestrator',
   table,
   class: 'evidence',
@@ -22,27 +33,35 @@ const evidence = (table: string, reason: string): StateClassDeclaration => ({
 })
 
 const hosted = (
-  store: StateClassDeclaration['store'],
+  store: StateClassStore,
   table: string,
   counterpart: string,
   reason: string,
-): StateClassDeclaration => ({ store, table, class: 'hosted-first', reason, counterpart })
+): TableStateClassDeclaration => ({ store, table, class: 'hosted-first', reason, counterpart })
 
 const planned = (
-  store: StateClassDeclaration['store'],
+  store: StateClassStore,
   table: string,
   task: string,
   reason: string,
-): StateClassDeclaration => ({ store, table, class: 'hosted-first', reason, task })
+): TableStateClassDeclaration => ({ store, table, class: 'hosted-first', reason, task })
 
 const local = (
-  store: StateClassDeclaration['store'],
+  store: StateClassStore,
   table: string,
   reason: string,
   ruling: string,
-): StateClassDeclaration => ({ store, table, class: 'machine-only', reason, ruling })
+): TableStateClassDeclaration => ({ store, table, class: 'machine-only', reason, ruling })
 
 export const STATE_CLASSES: readonly StateClassDeclaration[] = [
+  {
+    store: 'state-directory',
+    path: 'orchestrator/claude-mcp-placement.json',
+    class: 'machine-only',
+    reason:
+      'Records the Claude MCP scopes applied on this machine to avoid session-start CLI reads',
+    ruling: `Shmuel Barkin, DEV-2089, 2026-11-04: keep a machine-only record of the Claude MCP placement ${PLATFORM_NAME} last applied`,
+  },
   local(
     'orchestrator',
     'collect_change_counter',

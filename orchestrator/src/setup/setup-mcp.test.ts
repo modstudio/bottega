@@ -7,6 +7,7 @@ import {
   type McpServer,
   mcpAddArgv,
   mcpRemoveArgv,
+  mutateClaudeMcpRegistration,
   readMcpRegistration,
   reconcileClaudeMcpRegistration,
   registeredCommandResolves,
@@ -292,4 +293,25 @@ test('reconciles Claude local scope through the project cwd and reports check dr
   ])
   expect(mcpAddArgv('claude', '/bin/claude', server, 'local')).toContain('local')
   expect(mcpRemoveArgv('claude', '/bin/claude', MCP_SERVER_NAME, 'local')).toContain('local')
+})
+
+test('mutates a decided Claude scope without a CLI readback', () => {
+  const calls: string[][] = []
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  mutateClaudeMcpRegistration({
+    port: {
+      bin: '/bin/claude',
+      runner: (argv) => {
+        calls.push(argv)
+        return result('')
+      },
+    },
+    server,
+    action: 'add',
+    scope: 'local',
+    cwd: '/projects/one',
+  })
+  expect(calls).toEqual([
+    ['/bin/claude', 'mcp', 'add', '--scope', 'local', MCP_SERVER_NAME, '--', FRONT_DOOR, 'mcp'],
+  ])
 })

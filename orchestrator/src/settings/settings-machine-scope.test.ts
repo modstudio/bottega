@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { decideMachineSettingsScope, scopedProjectHasDrift } from './settings-machine-scope.ts'
+import {
+  decideClaudeMcpPlacementCalls,
+  decideMachineSettingsScope,
+  desiredClaudeMcpPlacement,
+  scopedProjectHasDrift,
+} from './settings-machine-scope.ts'
 
 const facts = [
   { path: '/projects/ready', exists: true, gitMainCheckout: true },
@@ -33,4 +38,41 @@ test('drift is classified at the selected user and project scopes', () => {
   expect(scopedProjectHasDrift(true, true)).toBe(false)
   expect(scopedProjectHasDrift(false, true)).toBe(true)
   expect(scopedProjectHasDrift(true, false)).toBe(true)
+})
+
+test('unchanged Claude MCP placement makes no calls', () => {
+  const placement = { scope: 'local' as const, projectPaths: ['/projects/ready'] }
+  expect(decideClaudeMcpPlacementCalls(placement, placement).calls).toEqual([])
+})
+
+test('a global-use flip removes user scope and adds each project scope', () => {
+  const desired = desiredClaudeMcpPlacement(decideMachineSettingsScope('off', facts))
+  expect(decideClaudeMcpPlacementCalls({ scope: 'user', projectPaths: [] }, desired).calls).toEqual(
+    [
+      { action: 'remove', scope: 'user' },
+      { action: 'add', scope: 'local', projectPath: '/projects/ready' },
+    ],
+  )
+})
+
+test('a newly registered project needs one local add', () => {
+  expect(
+    decideClaudeMcpPlacementCalls(
+      { scope: 'local', projectPaths: ['/projects/one'] },
+      { scope: 'local', projectPaths: ['/projects/one', '/projects/two'] },
+    ).calls,
+  ).toEqual([{ action: 'add', scope: 'local', projectPath: '/projects/two' }])
+})
+
+test('first local placement inspects user scope once before adding projects', () => {
+  expect(
+    decideClaudeMcpPlacementCalls(null, {
+      scope: 'local',
+      projectPaths: ['/projects/one', '/projects/two'],
+    }).calls,
+  ).toEqual([
+    { action: 'inspect-and-remove-user', scope: 'user' },
+    { action: 'add', scope: 'local', projectPath: '/projects/one' },
+    { action: 'add', scope: 'local', projectPath: '/projects/two' },
+  ])
 })
