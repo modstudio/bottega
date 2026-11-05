@@ -2,10 +2,12 @@ import { PUBLIC_SITE_ORIGIN } from '../../shared/brand.ts'
 import { publicDoc, publicDocsTree } from './public-docs.ts'
 import {
   orderedPublicDocs,
+  type PublicDocsRequest,
   type PublicTextDoc,
-  parsePublicMarkdownPath,
+  parsePublicDocsRequest,
   publicDocPath,
   renderLlmsTxt,
+  rewritePublicDocLinks,
   uniquePublicDocBySlug,
 } from './public-docs-text.ts'
 
@@ -36,10 +38,9 @@ function failure(error: unknown): Response {
 
 function matchingDoc(
   items: readonly PublicTextDoc[],
-  path: ReturnType<typeof parsePublicMarkdownPath>,
+  path: Extract<PublicDocsRequest, { kind: 'markdown-slug' | 'markdown-article' }>,
 ) {
-  if (!path) return null
-  if (path.kind === 'slug') return uniquePublicDocBySlug(items, path.slug)
+  if (path.kind === 'markdown-slug') return uniquePublicDocBySlug(items, path.slug)
   return (
     items.find(
       (item) =>
@@ -69,42 +70,34 @@ async function fullText(
   items: readonly PublicTextDoc[],
   read: Dependencies['doc'],
 ): Promise<string> {
-  const docs = orderedPublicDocs(items).filter((item) => publicDocPath(item) !== null)
-  const bodies = await mapWithLimit(docs, 8, async (doc) => (await read(doc.id)).body)
+  const docs = orderedPublicDocs(items)
+  const bodies = await mapWithLimit(docs, 8, async (doc) =>
+    rewritePublicDocLinks((await read(doc.id)).body),
+  )
   return `${docs
     .map((doc, index) => `Source: ${PUBLIC_SITE_ORIGIN}${publicDocPath(doc)}\n\n${bodies[index]}`)
     .join('\n\n')}\n`
 }
 
-function recognizedPath(pathname: string): boolean {
-  return (
-    pathname === '/llms.txt' ||
-    pathname === '/llms-full.txt' ||
-    (pathname.startsWith('/docs/') && pathname.endsWith('.md')) ||
-    /^\/docs\/[^/]+$/.test(pathname)
-  )
-}
-
 async function textRouteResponse(
   request: Request,
   url: URL,
+  route: PublicDocsRequest,
   items: readonly PublicTextDoc[],
   read: Dependencies['doc'],
 ): Promise<Response | null> {
-  if (url.pathname === '/llms.txt')
+  if (route.kind === 'llms')
     return response(request, renderLlmsTxt(items), 'text/plain; charset=utf-8')
-  if (url.pathname === '/llms-full.txt')
+  if (route.kind === 'llms-full')
     return response(request, await fullText(items, read), 'text/plain; charset=utf-8')
-  const markdownPath = parsePublicMarkdownPath(url.pathname)
-  if (!url.pathname.endsWith('.md')) {
-    const slug = decoded(url.pathname.slice('/docs/'.length))
-    const doc = slug ? uniquePublicDocBySlug(items, slug) : null
+  if (route.kind === 'short') {
+    const doc = uniquePublicDocBySlug(items, route.slug)
     const path = doc ? publicDocPath(doc) : null
     return path
       ? new Response(null, { status: 308, headers: { location: `${path}${url.search}` } })
       : null
   }
-  const doc = matchingDoc(items, markdownPath)
+  const doc = matchingDoc(items, route)
   if (!doc) {
     return new Response(
       `no public doc at ${url.pathname}\nevery public page is listed at /llms.txt`,
@@ -112,7 +105,7 @@ async function textRouteResponse(
     )
   }
   const found = await read(doc.id)
-  return response(request, found.body, 'text/markdown; charset=utf-8')
+  return response(request, rewritePublicDocLinks(found.body), 'text/markdown; charset=utf-8')
 }
 
 export async function publicDocsTextApi(
@@ -121,22 +114,16 @@ export async function publicDocsTextApi(
 ): Promise<Response | null> {
   if (request.method !== 'GET' && request.method !== 'HEAD') return null
   const url = new URL(request.url)
-  if (!recognizedPath(url.pathname)) return null
+  const route = parsePublicDocsRequest(url.pathname)
+  if (!route) return null
 
   const tree = dependencies.tree ?? publicDocsTree
   const read = dependencies.doc ?? publicDoc
   try {
     const { items } = await tree()
-    return await textRouteResponse(request, url, items, read)
+    return await textRouteResponse(request, url, route, items, read)
   } catch (error) {
+    if (route.kind === 'short') return null
     return failure(error)
-  }
-}
-
-function decoded(value: string): string | null {
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return null
   }
 }

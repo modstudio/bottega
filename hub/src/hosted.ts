@@ -115,7 +115,10 @@ export function hostedRequestHandler(
             headers: { 'content-type': 'text/plain; charset=utf-8' },
           })
     }
-    const response = new Response(file)
+    const response = new Response(file, {
+      headers:
+        resolved.kind === 'index' ? { 'content-type': 'text/html; charset=utf-8' } : undefined,
+    })
     return resolved.kind === 'index' ? transformDocsIndex(response, url.pathname) : response
   }
 }

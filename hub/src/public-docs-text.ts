@@ -11,9 +11,12 @@ export type PublicTextDoc = {
   summary?: string
 }
 
-export type PublicMarkdownPath =
-  | { kind: 'slug'; slug: string }
-  | { kind: 'article'; scope: string; subject: string; slug: string }
+export type PublicDocsRequest =
+  | { kind: 'llms' }
+  | { kind: 'llms-full' }
+  | { kind: 'short'; slug: string }
+  | { kind: 'markdown-slug'; slug: string }
+  | { kind: 'markdown-article'; scope: string; subject: string | null; slug: string }
 
 export type DocsHtmlInsert = { noscript: string; alternateHref: string | null }
 
@@ -51,9 +54,10 @@ function encoded(value: string): string {
   return encodeURIComponent(value)
 }
 
-export function publicDocPath(doc: PublicTextDoc, markdown = false): string | null {
-  if (doc.subject === null) return null
-  return `/docs/${encoded(doc.scope)}/${encoded(doc.subject)}/${encoded(doc.slug)}${markdown ? '.md' : ''}`
+export function publicDocPath(doc: PublicTextDoc, markdown = false): string {
+  // Mirrors hub/data/src/docs/location.ts:docsLocation for subject-less docs.
+  const subject = doc.subject ?? '_'
+  return `/docs/${encoded(doc.scope)}/${encoded(subject)}/${encoded(doc.slug)}${markdown ? '.md' : ''}`
 }
 
 export function renderLlmsTxt(items: readonly PublicTextDoc[]): string {
@@ -67,7 +71,6 @@ export function renderLlmsTxt(items: readonly PublicTextDoc[]): string {
   ]
   for (const doc of ordered) {
     const path = publicDocPath(doc, true)
-    if (!path) continue
     if (doc.parentId === null) lines.push('', `## ${doc.title}`, '')
     lines.push(
       `- [${doc.title}](${PUBLIC_SITE_ORIGIN}${path})${doc.summary ? `: ${doc.summary}` : ''}`,
@@ -92,14 +95,34 @@ function decoded(value: string): string | null {
   }
 }
 
-export function parsePublicMarkdownPath(pathname: string): PublicMarkdownPath | null {
-  if (!pathname.startsWith('/docs/') || !pathname.endsWith('.md')) return null
-  const segments = pathname.slice('/docs/'.length, -'.md'.length).split('/')
-  if (segments.length !== 1 && segments.length !== 3) return null
+export function parsePublicDocsRequest(pathname: string): PublicDocsRequest | null {
+  if (pathname === '/llms.txt') return { kind: 'llms' }
+  if (pathname === '/llms-full.txt') return { kind: 'llms-full' }
+  if (!pathname.startsWith('/docs/')) return null
+
+  const markdown = pathname.endsWith('.md')
+  const suffix = markdown ? pathname.slice('/docs/'.length, -'.md'.length) : pathname.slice(6)
+  const segments = suffix.split('/')
+  if ((!markdown && segments.length !== 1) || (markdown && ![1, 3].includes(segments.length)))
+    return null
   const values = segments.map(decoded)
   if (values.some((value) => !value)) return null
-  if (values.length === 1) return { kind: 'slug', slug: values[0]! }
-  return { kind: 'article', scope: values[0]!, subject: values[1]!, slug: values[2]! }
+  if (!markdown) return { kind: 'short', slug: values[0]! }
+  if (values.length === 1) return { kind: 'markdown-slug', slug: values[0]! }
+  return {
+    kind: 'markdown-article',
+    scope: values[0]!,
+    subject: values[1] === '_' ? null : values[1]!,
+    slug: values[2]!,
+  }
+}
+
+export function rewritePublicDocLinks(body: string): string {
+  return body.replace(
+    /\]\(\.\/([^/#?\s)]+)(#[^\s)]+)?\)/g,
+    (_match, slug: string, fragment: string | undefined) =>
+      `](${PUBLIC_SITE_ORIGIN}/docs/${slug}.md${fragment ?? ''})`,
+  )
 }
 
 function escapeHtml(value: string): string {
@@ -112,12 +135,12 @@ function escapeHtml(value: string): string {
 
 export function docsHtmlInsert(pathname: string): DocsHtmlInsert | null {
   if (pathname !== '/docs' && !pathname.startsWith('/docs/')) return null
-  const segments = pathname.split('/').filter(Boolean)
-  const canCarryMarkdown = pathname !== '/docs' && !pathname.endsWith('/')
-  const alternateHref = segments.length === 4 && canCarryMarkdown ? `${pathname}.md` : null
-  const markdown = `${pathname}.md`
-  const direction = canCarryMarkdown
-    ? `Read it as Markdown at <a href="${escapeHtml(markdown)}">${escapeHtml(markdown)}</a>; every public page is listed at `
+  const markdown = parsePublicDocsRequest(`${pathname}.md`)
+  const article = markdown?.kind === 'markdown-article'
+  const alternateHref = article ? `${pathname}.md` : null
+  const markdownPath = `${pathname}.md`
+  const direction = article
+    ? `Read it as Markdown at <a href="${escapeHtml(markdownPath)}">${escapeHtml(markdownPath)}</a>; every public page is listed at `
     : 'Every public page is listed at '
   return {
     noscript: `<noscript>This page needs JavaScript. ${direction}<a href="/llms.txt">/llms.txt</a>.</noscript>`,

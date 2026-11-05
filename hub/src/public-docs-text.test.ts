@@ -4,8 +4,9 @@ import {
   docsHtmlInsert,
   orderedPublicDocs,
   type PublicTextDoc,
-  parsePublicMarkdownPath,
+  parsePublicDocsRequest,
   renderLlmsTxt,
+  rewritePublicDocLinks,
   uniquePublicDocBySlug,
 } from './public-docs-text.ts'
 
@@ -94,16 +95,47 @@ describe('public docs text decisions', () => {
     expect(uniquePublicDocBySlug(docs, 'missing')).toBeNull()
   })
 
-  test('parses only one- and three-segment Markdown paths', () => {
-    expect(parsePublicMarkdownPath('/docs/install.md')).toEqual({ kind: 'slug', slug: 'install' })
-    expect(parsePublicMarkdownPath(`/docs/project/${PLATFORM_SLUG}/install.md`)).toEqual({
-      kind: 'article',
+  test('classifies text and short public-docs requests', () => {
+    expect(parsePublicDocsRequest('/llms.txt')).toEqual({ kind: 'llms' })
+    expect(parsePublicDocsRequest('/llms-full.txt')).toEqual({ kind: 'llms-full' })
+    expect(parsePublicDocsRequest('/docs/install')).toEqual({ kind: 'short', slug: 'install' })
+    expect(parsePublicDocsRequest('/docs/install.md')).toEqual({
+      kind: 'markdown-slug',
+      slug: 'install',
+    })
+    expect(parsePublicDocsRequest(`/docs/project/${PLATFORM_SLUG}/install.md`)).toEqual({
+      kind: 'markdown-article',
       scope: 'project',
       subject: PLATFORM_SLUG,
       slug: 'install',
     })
-    expect(parsePublicMarkdownPath('/docs/project/install.md')).toBeNull()
-    expect(parsePublicMarkdownPath(`/docs/project/${PLATFORM_SLUG}/install`)).toBeNull()
+    expect(parsePublicDocsRequest('/docs/project/_/overview.md')).toEqual({
+      kind: 'markdown-article',
+      scope: 'project',
+      subject: null,
+      slug: 'overview',
+    })
+    expect(parsePublicDocsRequest('/docs/project/install.md')).toBeNull()
+    expect(parsePublicDocsRequest(`/docs/project/${PLATFORM_SLUG}/install`)).toBeNull()
+  })
+
+  test('rewrites relative sibling links and preserves fragments, absolute links, and fences', () => {
+    const body = [
+      '[Join](./join-record#permissions)',
+      '[Site](https://example.test/page)',
+      '```md',
+      '[Inside](./inside)',
+      '```',
+    ].join('\n')
+    expect(rewritePublicDocLinks(body)).toBe(
+      [
+        `[Join](${PUBLIC_SITE_ORIGIN}/docs/join-record.md#permissions)`,
+        '[Site](https://example.test/page)',
+        '```md',
+        `[Inside](${PUBLIC_SITE_ORIGIN}/docs/inside.md)`,
+        '```',
+      ].join('\n'),
+    )
   })
 
   test('describes the HTML inserts for the index, short path, and article path', () => {
@@ -114,7 +146,7 @@ describe('public docs text decisions', () => {
     })
     expect(docsHtmlInsert('/docs/install')).toEqual({
       noscript:
-        '<noscript>This page needs JavaScript. Read it as Markdown at <a href="/docs/install.md">/docs/install.md</a>; every public page is listed at <a href="/llms.txt">/llms.txt</a>.</noscript>',
+        '<noscript>This page needs JavaScript. Every public page is listed at <a href="/llms.txt">/llms.txt</a>.</noscript>',
       alternateHref: null,
     })
     const articlePath = `/docs/project/${PLATFORM_SLUG}/install`
