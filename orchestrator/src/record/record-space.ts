@@ -24,6 +24,13 @@ export type RecordMembership = {
   permission: string
 }
 
+export type ActiveRecordSpace = {
+  id: string | null
+  slug: string | null
+}
+
+export type CreatedRecordSpace = { id: string; slug: string }
+
 export function recordSpaceRole(value: string): RecordSpaceRole {
   if (value === 'member' || value === 'admin' || value === 'owner') return value
   throw new Error('record invitation role must be member, admin, or owner')
@@ -202,16 +209,58 @@ export function refuseDuplicateRecordSpaceSlug(
   if (duplicate) throw new Error(`record space slug ${slug} already exists: ${duplicate.spaceId}`)
 }
 
+function activeRecordSpace(
+  activeSpaceId: string | null,
+  memberships: readonly RecordMembership[],
+): ActiveRecordSpace {
+  return {
+    id: activeSpaceId,
+    slug: memberships.find(({ spaceId }) => spaceId === activeSpaceId)?.slug ?? null,
+  }
+}
+
+export function recordSpaceCreateReport(
+  before: ActiveRecordSpace,
+  after: ActiveRecordSpace,
+  created: CreatedRecordSpace,
+): string[] {
+  const beforeName = before.slug ?? before.id ?? 'none'
+  const afterName = after.slug ?? after.id ?? 'none'
+  if (before.id === after.id) return [`active record space unchanged: ${afterName}`]
+  if (after.id === created.id && before.id === null) {
+    return [`active record space is now ${afterName}`]
+  }
+  const lines = [
+    `active record space switched from ${beforeName} to ${afterName} for every lane on this machine`,
+  ]
+  if (before.id !== null) {
+    lines.push(`switch back: ${PLATFORM_SLUG} record space switch ${beforeName}`)
+  }
+  return lines
+}
+
 export async function createRecordSpace(
   name: string,
   slug: string,
   client: Pick<RecordApiClient, 'whoami' | 'createOrganization'> = recordApiClient(),
-): Promise<{ id: string; slug: string }> {
+): Promise<
+  {
+    before: ActiveRecordSpace
+    after: ActiveRecordSpace
+  } & CreatedRecordSpace
+> {
   if (!name.trim()) throw new Error('record space name must be non-empty')
   if (!slug.trim()) throw new Error('record space slug must be non-empty')
   const listed = await recordMemberships(client)
   refuseDuplicateRecordSpaceSlug(slug, listed.memberships)
-  return client.createOrganization({ name, slug })
+  const before = activeRecordSpace(listed.activeSpaceId, listed.memberships)
+  const created = await client.createOrganization({ name, slug })
+  const afterIdentity = await recordMemberships(client)
+  return {
+    ...created,
+    before,
+    after: activeRecordSpace(afterIdentity.activeSpaceId, afterIdentity.memberships),
+  }
 }
 
 export async function inviteToActiveRecordSpace(
