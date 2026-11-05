@@ -22,6 +22,7 @@ export const subjectModules = [
     '../../../shared/record/schema.ts',
     '../../../shared/subjects.ts',
     '../database/db.ts',
+    '../database/tolerant-delete.ts',
     '../project/projects.ts',
     '../record/record-subjects.ts',
     '../record/record-write-authority.ts',

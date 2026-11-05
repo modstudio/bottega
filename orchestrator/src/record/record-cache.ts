@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { encodeStoredDocAudiences } from '../doc/doc-audiences-codec.ts'
 import { projects } from '../project/projects.ts'
 import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-space.ts'
@@ -507,13 +508,7 @@ function applyDoc(
 }
 
 function deleteDocRecord(local: Database, recordId: string): boolean {
-  try {
-    local.query('DELETE FROM doc WHERE record_id=?').run(recordId)
-    return true
-  } catch (error) {
-    if (String(error).includes('FOREIGN KEY constraint failed')) return false
-    throw error
-  }
+  return tolerantDelete(local.query('DELETE FROM doc WHERE record_id=?'), recordId)
 }
 
 function prepareDocSpacePurge(local: Database, spaceId: string): void {
@@ -536,6 +531,7 @@ function purgeDocSpace(local: Database, spaceId: string): number {
     for (const { record_id } of ids) if (deleteDocRecord(local, record_id)) progress = true
   }
   local.query('DELETE FROM schema_meta WHERE key=?').run(`${DOCS_CURSOR}:${spaceId}`)
+  local.query('DELETE FROM schema_meta WHERE key=?').run(`${SUBJECTS_CURSOR}:${spaceId}`)
   return local
     .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM doc WHERE space_id=?')
     .get(spaceId)!.n

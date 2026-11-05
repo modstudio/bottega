@@ -53,6 +53,7 @@ import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workf
 const CURSOR = 'record_change_cursor'
 const SPACES = 'record_change_spaces'
 const PULL_SPACES = 'record_change_pull_spaces'
+const FALLBACKS = 'record_change_fallbacks'
 
 const emptyProject = (): ProjectRegisterPullResult => ({
   updated: 0,
@@ -122,6 +123,13 @@ type Change = RecordChangePage['changes'][number]
 type UpsertChange = Extract<Change, { op: 'upsert' }>
 type FallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
 
+const pendingFallbacks = (local: Database): Set<string> => new Set(storedSpaces(local, FALLBACKS))
+
+const writePendingFallbacks = (local: Database, values: ReadonlySet<string>): void =>
+  writeCursor(local, FALLBACKS, JSON.stringify([...values].sort()))
+
+const fallbackSpace = (value: string): string => value.slice(value.indexOf(':') + 1)
+
 const storedSpaces = (local: Database, key: string): string[] => {
   const value = readCursor(local, key)
   if (!value) return []
@@ -160,6 +168,9 @@ function purgeLostSpaces(local: Database, spaces: readonly string[], deps: Depen
       kept += purgePortCatalogueSpace(local, space)
       kept += purgeRoutingPoolSpace(local, space)
     }
+    const pending = pendingFallbacks(local)
+    for (const value of pending) if (spaces.includes(fallbackSpace(value))) pending.delete(value)
+    writePendingFallbacks(local, pending)
     return kept
   }, local)
 }
@@ -220,22 +231,86 @@ function directOrphanFamily(
   return null
 }
 
-function deleteChange(local: Database, change: Change, deps: Dependencies): boolean {
+type DeleteResult = 'deleted' | 'blocked' | 'skipped'
+
+function catalogueLocalRow(
+  local: Database,
+  table: string,
+  recordId: string,
+): { space_id: string | null } | null | undefined {
+  const tables = [
+    ...RECORD_LENS_TABLES,
+    ...RECORD_WORKFLOW_TABLES,
+    ...RECORD_PORT_TABLES,
+  ] as readonly string[]
+  const statements = [
+    local.query('SELECT space_id FROM lens WHERE record_id=?'),
+    local.query('SELECT space_id FROM lens_revision WHERE record_id=?'),
+    local.query('SELECT space_id FROM lens_profile WHERE record_id=?'),
+    local.query('SELECT space_id FROM lens_profile_revision WHERE record_id=?'),
+    local.query('SELECT space_id FROM project_lens_profile WHERE record_id=?'),
+    local.query('SELECT space_id FROM project_lens_profile_revision WHERE record_id=?'),
+    local.query('SELECT space_id FROM step_catalogue WHERE record_id=?'),
+    local.query('SELECT space_id FROM step_catalogue_version WHERE record_id=?'),
+    local.query('SELECT space_id FROM step_catalogue_event WHERE record_id=?'),
+    local.query('SELECT space_id FROM workflow WHERE record_id=?'),
+    local.query('SELECT space_id FROM workflow_version WHERE record_id=?'),
+    local.query('SELECT space_id FROM workflow_event WHERE record_id=?'),
+    local.query('SELECT space_id FROM port_doctrine WHERE record_id=?'),
+    local.query('SELECT space_id FROM port_pair WHERE record_id=?'),
+    local.query('SELECT space_id FROM port_baseline WHERE record_id=?'),
+    local.query('SELECT space_id FROM port_ref WHERE record_id=?'),
+    local.query('SELECT space_id FROM port_ref_source WHERE record_id=?'),
+    local.query('SELECT space_id FROM port_skip WHERE record_id=?'),
+  ]
+  const index = tables.indexOf(table)
+  if (index < 0) return undefined
+  return statements[index]!.get(recordId) as { space_id: string | null } | null
+}
+
+function localRowSpace(local: Database, change: Change): string | null | undefined {
+  let row: { space_id: string | null } | null = null
+  if (change.table === 'doc')
+    row = local
+      .query<{ space_id: string | null }, [string]>('SELECT space_id FROM doc WHERE record_id=?')
+      .get(change.id)
+  else if (change.table === 'subject')
+    row = local
+      .query<{ space_id: string | null }, [string]>('SELECT space_id FROM subject WHERE id=?')
+      .get(change.id)
+  else if (change.table === 'routing_evidence')
+    row = local
+      .query<{ space_id: string | null }, [string]>(
+        'SELECT space_id FROM routing_pool_run WHERE record_id=?',
+      )
+      .get(change.id)
+  else if (lensTable(change.table) || workflowTable(change.table) || portTable(change.table))
+    row = catalogueLocalRow(local, change.table, change.id) ?? null
+  return row?.space_id
+}
+
+function deleteChange(local: Database, change: Change, deps: Dependencies): DeleteResult {
+  const space = localRowSpace(local, change)
+  if (space != null && space !== change.space) return 'skipped'
+  let deleted: boolean
   if (change.table === 'doc') {
-    return deps.deleteDoc(local, change.id)
+    deleted = deps.deleteDoc(local, change.id)
+  } else if (change.table === 'subject') {
+    deleted = deleteSubjectRecord(local, change.id)
+  } else if (change.table === 'routing_evidence') {
+    deleted = deleteRoutingPoolRow(local, change.id)
+  } else if (change.table === 'run_score' || change.table === 'project') {
+    deleted = true
+  } else if (lensTable(change.table)) {
+    deleted = deleteLensCatalogueRow(local, change.table, change.id)
+  } else if (workflowTable(change.table)) {
+    deleted = deleteWorkflowCatalogueRow(local, change.table, change.id)
+  } else if (portTable(change.table)) {
+    deleted = deletePortCatalogueRow(local, change.table, change.id, change.space)
+  } else {
+    deleted = true
   }
-  if (change.table === 'subject') {
-    return deleteSubjectRecord(local, change.id)
-  }
-  if (change.table === 'routing_evidence') {
-    return deleteRoutingPoolRow(local, change.id)
-  }
-  if (change.table === 'run_score' || change.table === 'project') return true
-  if (lensTable(change.table)) return deleteLensCatalogueRow(local, change.table, change.id)
-  if (workflowTable(change.table)) return deleteWorkflowCatalogueRow(local, change.table, change.id)
-  if (portTable(change.table))
-    return deletePortCatalogueRow(local, change.table, change.id, change.space)
-  return true
+  return deleted ? 'deleted' : 'blocked'
 }
 
 function upsertChange(
@@ -383,15 +458,19 @@ function applyPage(
       const blocked: Change[] = []
       let deleted = 0
       for (const change of pending) {
-        if (deleteChange(local, change, deps)) {
+        const outcome = deleteChange(local, change, deps)
+        if (outcome === 'deleted') {
           result.changes++
           deleted++
-        } else blocked.push(change)
+        } else if (outcome === 'blocked') blocked.push(change)
       }
       pending = blocked
       if (!deleted || !pending.length) break
     }
     result.deletesBlocked += pending.length
+    const scheduled = pendingFallbacks(local)
+    for (const value of fallbacks) scheduled.add(value)
+    writePendingFallbacks(local, scheduled)
     writeCursor(local, CURSOR, page.cursor)
     return true
   }, local)
@@ -399,31 +478,15 @@ function applyPage(
 }
 
 function feedRowPresent(local: Database, change: Change): boolean {
-  const statements: Record<string, ReturnType<Database['query']>> = {
-    doc: local.query('SELECT 1 FROM doc WHERE record_id=?'),
-    subject: local.query('SELECT 1 FROM subject WHERE id=?'),
-    lens: local.query('SELECT 1 FROM lens WHERE record_id=?'),
-    lens_revision: local.query('SELECT 1 FROM lens_revision WHERE record_id=?'),
-    lens_profile: local.query('SELECT 1 FROM lens_profile WHERE record_id=?'),
-    lens_profile_revision: local.query('SELECT 1 FROM lens_profile_revision WHERE record_id=?'),
-    project_lens_profile: local.query('SELECT 1 FROM project_lens_profile WHERE record_id=?'),
-    project_lens_profile_revision: local.query(
-      'SELECT 1 FROM project_lens_profile_revision WHERE record_id=?',
-    ),
-    workflow: local.query('SELECT 1 FROM workflow WHERE record_id=?'),
-    workflow_version: local.query('SELECT 1 FROM workflow_version WHERE record_id=?'),
-    workflow_event: local.query('SELECT 1 FROM workflow_event WHERE record_id=?'),
-    step_catalogue: local.query('SELECT 1 FROM step_catalogue WHERE record_id=?'),
-    step_catalogue_version: local.query('SELECT 1 FROM step_catalogue_version WHERE record_id=?'),
-    step_catalogue_event: local.query('SELECT 1 FROM step_catalogue_event WHERE record_id=?'),
-    port_doctrine: local.query('SELECT 1 FROM port_doctrine WHERE record_id=?'),
-    port_pair: local.query('SELECT 1 FROM port_pair WHERE record_id=?'),
-    port_baseline: local.query('SELECT 1 FROM port_baseline WHERE record_id=?'),
-    port_ref: local.query('SELECT 1 FROM port_ref WHERE record_id=?'),
-    port_ref_source: local.query('SELECT 1 FROM port_ref_source WHERE record_id=?'),
-    port_skip: local.query('SELECT 1 FROM port_skip WHERE record_id=?'),
-  }
-  return Boolean(statements[change.table]?.get(change.id))
+  if (change.table === 'doc')
+    return Boolean(local.query('SELECT 1 FROM doc WHERE record_id=?').get(change.id))
+  if (change.table === 'subject')
+    return Boolean(local.query('SELECT 1 FROM subject WHERE id=?').get(change.id))
+  if (change.table === 'routing_evidence')
+    return Boolean(local.query('SELECT 1 FROM routing_pool_run WHERE record_id=?').get(change.id))
+  const catalogue = catalogueLocalRow(local, change.table, change.id)
+  if (catalogue !== undefined) return Boolean(catalogue)
+  throw new Error(`record feed row presence is not defined for table ${change.table}`)
 }
 
 function addResult(target: RecordCachePullResult, value: Partial<RecordCachePullResult>) {
@@ -463,14 +526,27 @@ async function runFallbacks(
     const split = value.indexOf(':')
     const family = value.slice(0, split) as FallbackFamily
     const space = value.slice(split + 1)
+    let completed = true
     if (family === 'doc')
       addResult(result, await deps.pullDocs(local, identity, [space], cache.projectSpaces))
     else if (family === 'subject')
       addResult(result, await deps.pullSubjects(local, [space], cache.projectSpaces))
     else if (family === 'lens') result.lensCatalogue += await pullLensCatalogue(local, [space])
-    else if (family === 'workflow')
-      result.workflowCatalogue += (await pullWorkflowCatalogue(local, [space])).count
-    else result.portCatalogue += (await pullPortCatalogue(local, [space])).count
+    else if (family === 'workflow') {
+      const pulled = await pullWorkflowCatalogue(local, [space])
+      result.workflowCatalogue += pulled.count
+      completed = pulled.completedSpaces.has(space)
+    } else {
+      const pulled = await pullPortCatalogue(local, [space])
+      result.portCatalogue += pulled.count
+      completed = pulled.completedSpaces.has(space)
+    }
+    if (completed)
+      writeTransaction(() => {
+        const pending = pendingFallbacks(local)
+        pending.delete(value)
+        writePendingFallbacks(local, pending)
+      }, local)
   }
   return result
 }
@@ -573,6 +649,7 @@ export async function pullRecordCacheFeed(
   }
   const joined = spaces.filter((space) => !previousPull.includes(space))
   if (joined.length) addResult(result, await deps.pullKeysets(local, identity, joined))
+  addResult(result, await runFallbacks(local, pendingFallbacks(local), identity, deps))
   writeTransaction(() => {
     writeCursor(local, SPACES, JSON.stringify(nextRemembered))
     writeCursor(local, PULL_SPACES, JSON.stringify(spaces))

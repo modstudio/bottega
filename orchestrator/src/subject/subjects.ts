@@ -9,6 +9,7 @@ import {
   subjectState,
 } from '../../../shared/subjects.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { projectByName, projectRowByName } from '../project/projects.ts'
 import type { RecordSubject } from '../record/record-subjects.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
@@ -17,13 +18,7 @@ import { subjectClient } from './subject-client.ts'
 export type Subject = SubjectOutput
 
 export function deleteSubjectRecord(database: Database, recordId: string): boolean {
-  try {
-    database.query('DELETE FROM subject WHERE id=?').run(recordId)
-    return true
-  } catch (error) {
-    if (String(error).includes('FOREIGN KEY constraint failed')) return false
-    throw error
-  }
+  return tolerantDelete(database.query('DELETE FROM subject WHERE id=?'), recordId)
 }
 
 export function purgeSubjectSpace(database: Database, spaceId: string): number {
@@ -35,7 +30,6 @@ export function purgeSubjectSpace(database: Database, spaceId: string): number {
       .all(spaceId)
     for (const { id } of ids) if (deleteSubjectRecord(database, id)) progress = true
   }
-  database.query('DELETE FROM schema_meta WHERE key=?').run(`record_subjects_cursor:${spaceId}`)
   return database
     .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM subject WHERE space_id=?')
     .get(spaceId)!.n

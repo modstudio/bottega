@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readCursor, writeCursor } from './record-cache-cursor.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
@@ -13,13 +14,7 @@ export const ROUTING_POOL_PAGES_PER_SYNC = 5
 const ROUTING_POOL_CURSOR = 'record_routing_pool_seq'
 
 export function deleteRoutingPoolRow(local: Database, recordId: string): boolean {
-  try {
-    local.query('DELETE FROM routing_pool_run WHERE record_id=?').run(recordId)
-    return true
-  } catch (error) {
-    if (String(error).includes('FOREIGN KEY constraint failed')) return false
-    throw error
-  }
+  return tolerantDelete(local.query('DELETE FROM routing_pool_run WHERE record_id=?'), recordId)
 }
 
 export function purgeRoutingPoolSpace(local: Database, spaceId: string): number {

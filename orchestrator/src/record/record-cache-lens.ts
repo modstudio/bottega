@@ -2,6 +2,7 @@
 /** Pulls and reconciles the six hosted lens catalogue streams. */
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
 import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
@@ -23,13 +24,7 @@ export function deleteLensCatalogueRow(
   table: RecordLensTable,
   recordId: string,
 ): boolean {
-  try {
-    local.query(deleteLensRowStatements[table]).run(recordId)
-    return true
-  } catch (error) {
-    if (String(error).includes('FOREIGN KEY constraint failed')) return false
-    throw error
-  }
+  return tolerantDelete(local.query(deleteLensRowStatements[table]), recordId)
 }
 
 export function purgeLensCatalogueSpace(local: Database, spaceId: string): number {

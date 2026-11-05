@@ -2,6 +2,7 @@
 /** Pulls and reconciles the six hosted port item streams. */
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
 import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
@@ -36,13 +37,7 @@ export function deletePortCatalogueRow(
     port_baseline: local.query('DELETE FROM port_baseline WHERE record_id=?'),
     port_skip: local.query('DELETE FROM port_skip WHERE record_id=?'),
   }
-  try {
-    statements[table]!.run(recordId)
-    return true
-  } catch (error) {
-    if (String(error).includes('FOREIGN KEY constraint failed')) return false
-    throw error
-  }
+  return tolerantDelete(statements[table]!, recordId)
 }
 
 export function purgePortCatalogueSpace(local: Database, spaceId: string): number {

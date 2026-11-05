@@ -2,6 +2,7 @@
 /** Pulls and reconciles the six hosted workflow catalogue streams. */
 import type { Database } from 'bun:sqlite'
 import { nowIso, writeTransaction } from '../database/db.ts'
+import { tolerantDelete } from '../database/tolerant-delete.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
 import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
@@ -23,13 +24,7 @@ export function deleteWorkflowCatalogueRow(
     step_catalogue_version: local.query('DELETE FROM step_catalogue_version WHERE record_id=?'),
     step_catalogue_event: local.query('DELETE FROM step_catalogue_event WHERE record_id=?'),
   }
-  try {
-    statements[table].run(recordId)
-    return true
-  } catch (error) {
-    if (String(error).includes('FOREIGN KEY constraint failed')) return false
-    throw error
-  }
+  return tolerantDelete(statements[table], recordId)
 }
 
 export function purgeWorkflowCatalogueSpace(local: Database, spaceId: string): number {

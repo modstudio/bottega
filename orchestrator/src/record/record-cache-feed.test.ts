@@ -182,6 +182,95 @@ test('record cache advances past an orphan and runs that family keyset fallback'
   ).toEqual({ value: 'after-orphan' })
 })
 
+test('a resolved doc fallback clears the orphan count and applies the child', async () => {
+  const parent = newRecordId()
+  const child = newRecordId()
+  cursor('resolved-before')
+  spaces(['space-a'])
+  let request = 0
+  const client = feedClient(async () =>
+    request++ === 0
+      ? {
+          changes: [
+            {
+              table: 'doc',
+              id: child,
+              space: 'space-a',
+              op: 'upsert',
+              row: { ...docRow(child), parentId: parent },
+            },
+          ],
+          cursor: 'resolved-after',
+          lag: 0,
+          more: false,
+        }
+      : empty('resolved-after'),
+  )
+  client.listDocs = async () => ({
+    items: [docRow(parent), { ...docRow(child), parentId: parent }],
+    nextCursor: null,
+  })
+  installRecordApiClient(client)
+
+  expect(await pullRecordCache(db())).toMatchObject({ orphans: 0 })
+  expect(db().query('SELECT parent_record_id FROM doc WHERE record_id=?').get(child)).toEqual({
+    parent_record_id: parent,
+  })
+})
+
+test('a failed doc fallback remains pending and is retried on the next sync', async () => {
+  const parent = newRecordId()
+  const child = newRecordId()
+  cursor('pending-before')
+  spaces(['space-a'])
+  let request = 0
+  const failing = feedClient(async () =>
+    request++ === 0
+      ? {
+          changes: [
+            {
+              table: 'doc',
+              id: child,
+              space: 'space-a',
+              op: 'upsert',
+              row: { ...docRow(child), parentId: parent },
+            },
+          ],
+          cursor: 'pending-after',
+          lag: 0,
+          more: false,
+        }
+      : empty('pending-after'),
+  )
+  failing.listDocs = async () => ({
+    items: [{ ...docRow(child), parentId: parent }],
+    nextCursor: null,
+  })
+  installRecordApiClient(failing)
+  await expect(pullRecordCache(db())).rejects.toThrow('could not resolve document parent links')
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_cursor'").get(),
+  ).toEqual({ value: 'pending-after' })
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_fallbacks'").get(),
+  ).toEqual({ value: '["doc:space-a"]' })
+
+  const retry = feedClient(async () => empty('pending-after'))
+  retry.listDocs = async () => ({
+    items: [docRow(parent), { ...docRow(child), parentId: parent }],
+    nextCursor: null,
+  })
+  installRecordApiClient(retry)
+  await pullRecordCache(db())
+
+  expect(db().query('SELECT parent_record_id FROM doc WHERE record_id=?').get(child)).toEqual({
+    parent_record_id: parent,
+  })
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_fallbacks'").get(),
+  ).toEqual({ value: '[]' })
+})
+
 test('record cache resets on 410 and purges only hosted rows from a lost space', async () => {
   const hosted = newRecordId()
   const local = newRecordId()
@@ -235,6 +324,13 @@ test('non-owned docs and subjects, including tombstones, are skipped while the c
   const registered = project()
   const doc = newRecordId()
   const subject = newRecordId()
+  const tombstone = newRecordId()
+  db()
+    .query(
+      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,space_id)
+       VALUES (?,'global',NULL,?,'Owned','Body','demand','["technical"]','a','a','space-a')`,
+    )
+    .run(tombstone, `owned-${tombstone}`)
   cursor('owned-before')
   spaces(['space-a', 'space-b'])
   let request = 0
@@ -251,7 +347,7 @@ test('non-owned docs and subjects, including tombstones, are skipped while the c
                 op: 'upsert',
                 row: subjectRow(subject, registered.name),
               },
-              { table: 'doc', id: newRecordId(), space: 'space-b', op: 'delete' },
+              { table: 'doc', id: tombstone, space: 'space-b', op: 'delete' },
             ],
             cursor: 'owned-after',
             lag: 0,
@@ -263,10 +359,82 @@ test('non-owned docs and subjects, including tombstones, are skipped while the c
   expect(await pullRecordCache(db())).toMatchObject({ skippedDocs: 1, skippedSubjects: 1 })
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(doc)).toBeNull()
   expect(db().query('SELECT 1 FROM subject WHERE id=?').get(subject)).toBeNull()
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(tombstone)).not.toBeNull()
   expect(
     db().query("SELECT value FROM schema_meta WHERE key='record_change_cursor'").get(),
   ).toEqual({
     value: 'owned-after',
+  })
+})
+
+test('move tombstones do not delete rows already upserted into another space', async () => {
+  const doc = newRecordId()
+  const workflow = newRecordId()
+  db()
+    .query(
+      `INSERT INTO doc(record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,space_id)
+       VALUES (?,'global',NULL,?,'Moved','Body','demand','["technical"]','a','a','space-b')`,
+    )
+    .run(doc, `feed-${doc}`)
+  db()
+    .query(
+      "INSERT INTO workflow(record_id,space_id,slug,generation,created_at) VALUES (?,'space-b',?,1,'a')",
+    )
+    .run(workflow, `workflow-${workflow}`)
+  cursor('move-before')
+  spaces(['space-a', 'space-b'])
+  let request = 0
+  installRecordApiClient(
+    feedClient(
+      async () =>
+        request++ === 0
+          ? {
+              changes: [
+                { table: 'doc', id: doc, space: 'space-b', op: 'upsert', row: docRow(doc) },
+                { table: 'doc', id: doc, space: 'space-a', op: 'delete' },
+                {
+                  table: 'workflow',
+                  id: workflow,
+                  space: 'space-b',
+                  op: 'upsert',
+                  row: {
+                    id: workflow,
+                    spaceId: 'space-b',
+                    slug: `workflow-${workflow}`,
+                    generation: 1,
+                    createdAt: 'a',
+                  },
+                },
+                { table: 'workflow', id: workflow, space: 'space-a', op: 'delete' },
+              ],
+              cursor: 'move-after',
+              lag: 0,
+              more: false,
+            }
+          : empty('move-after'),
+      async () => ({
+        ...identity,
+        activeSpaceId: 'space-b',
+        memberships: [
+          ...identity.memberships,
+          {
+            space_id: 'space-b',
+            name: 'Space B',
+            slug: 'space-b',
+            role: 'member',
+            permission: 'write',
+          },
+        ],
+      }),
+    ),
+  )
+
+  await pullRecordCache(db())
+  expect(db().query('SELECT space_id FROM doc WHERE record_id=?').get(doc)).toEqual({
+    space_id: 'space-b',
+  })
+  expect(db().query('SELECT space_id FROM workflow WHERE record_id=?').get(workflow)).toEqual({
+    space_id: 'space-b',
   })
 })
 
