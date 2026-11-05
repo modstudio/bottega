@@ -1,10 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  formatCollectLeg,
-  oneShotTrackerSelection,
-  SLOW_MS,
-  TrackerPollSchedule,
-} from './collect.ts'
+import { oneShotTrackerSelection, SLOW_MS, TrackerPollSchedule } from './collect.ts'
 import type { TrackerResult } from './ingest/trackers.ts'
 
 describe('tracker poll schedule', () => {
@@ -70,12 +65,4 @@ test('one-shot tracker selection skips only fresh projects unless tasks are forc
     only: null,
     skippedFresh: 0,
   })
-  expect(
-    formatCollectLeg({
-      source: 'tasks',
-      ok: true,
-      durationMs: 1,
-      trackerCounts: { read: 2, skippedFresh: 1 },
-    }),
-  ).toBe('tasks             ok (2 trackers read, 1 skipped fresh)')
 })

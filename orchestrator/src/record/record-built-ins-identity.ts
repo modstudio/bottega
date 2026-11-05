@@ -19,25 +19,41 @@ function canonical(value: unknown): unknown {
   return value
 }
 
-const workflowBuiltIns = builtInWorkflowCatalogue()
-export const RECORD_BUILT_INS_IDENTITY = createHash('sha256')
-  .update(
-    JSON.stringify(
-      canonical({
-        lenses: BUILT_IN_LENSES,
-        lensSlots: JSON.parse(BUILT_IN_LENS_SLOTS),
-        lensDefaultProfile: JSON.parse(BUILT_IN_LENS_DEFAULT_PROFILE),
-        workflows: {
-          stepCatalogue: {
-            ...workflowBuiltIns.stepCatalogue,
-            definition: JSON.parse(workflowBuiltIns.stepCatalogue.definition),
+type BuiltInsCatalogue = {
+  lenses: unknown
+  lensSlots: string
+  lensDefaultProfile: string
+  workflows: ReturnType<typeof builtInWorkflowCatalogue>
+}
+
+/** Hashes the catalogue with sorted keys, so content changes it and key order never does. */
+export function builtInsIdentity(catalogue: BuiltInsCatalogue): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        canonical({
+          lenses: catalogue.lenses,
+          lensSlots: JSON.parse(catalogue.lensSlots),
+          lensDefaultProfile: JSON.parse(catalogue.lensDefaultProfile),
+          workflows: {
+            stepCatalogue: {
+              ...catalogue.workflows.stepCatalogue,
+              definition: JSON.parse(catalogue.workflows.stepCatalogue.definition),
+            },
+            workflows: catalogue.workflows.workflows.map((workflow) => ({
+              ...workflow,
+              definition: JSON.parse(workflow.definition),
+            })),
           },
-          workflows: workflowBuiltIns.workflows.map((workflow) => ({
-            ...workflow,
-            definition: JSON.parse(workflow.definition),
-          })),
-        },
-      }),
-    ),
-  )
-  .digest('hex')
+        }),
+      ),
+    )
+    .digest('hex')
+}
+
+export const RECORD_BUILT_INS_IDENTITY = builtInsIdentity({
+  lenses: BUILT_IN_LENSES,
+  lensSlots: BUILT_IN_LENS_SLOTS,
+  lensDefaultProfile: BUILT_IN_LENS_DEFAULT_PROFILE,
+  workflows: builtInWorkflowCatalogue(),
+})

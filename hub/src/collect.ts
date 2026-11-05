@@ -65,9 +65,12 @@ type PollState = { nextAt: number; quiet: number; failures: number }
  *
  * A changing tracker stays on the five-minute floor. Quiet trackers step to
  * ten and then fifteen minutes. Failures double out to an hour, so an outage
- * cannot produce a request every tick. State is deliberately process-local:
- * restarting or explicitly collecting means "fresh now", not "honor an old
- * delay". The injected clock keeps this policy deterministic in tests.
+ * cannot produce a request every tick. This schedule is deliberately
+ * process-local: restarting the watch means "fresh now", not "honor an old
+ * delay". A one-shot collect instead skips a tracker whose last successful
+ * read, persisted by any process, falls within `SLOW_MS`; collecting tasks
+ * explicitly reads every tracker. The injected clock keeps this policy
+ * deterministic in tests.
  */
 export class TrackerPollSchedule {
   private state = new Map<string, PollState>()
