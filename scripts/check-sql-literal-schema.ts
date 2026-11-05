@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import ts from 'typescript'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
+import { MIGRATIONS_TABLE } from '../orchestrator/src/database/applied-migration-compatibilities.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
 import {
   LOCAL_PIN_VERSION_SQL,
@@ -724,6 +725,9 @@ function checkSqlLiteralSchema() {
     ],
     exemptions: SQL_PREPARE_EXEMPTIONS,
     catalogues: {
+      'orchestrator/src/database/migrations.ts': {
+        MIGRATIONS_TABLE: [MIGRATIONS_TABLE],
+      },
       'orchestrator/src/project/project-reference-counts.ts': {
         $statements: referenceStatements,
       },

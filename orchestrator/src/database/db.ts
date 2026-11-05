@@ -41,8 +41,8 @@ import {
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
   decideInFlightMigration,
-  inFlightAppliedMigrationCompatibility,
   type InFlightMigrationCompatibility,
+  inFlightAppliedMigrationCompatibility,
 } from './migration-compatibility.ts'
 import { activeMigrationDrain } from './migration-drain-state.ts'
 import {

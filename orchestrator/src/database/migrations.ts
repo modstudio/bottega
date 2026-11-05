@@ -9,11 +9,11 @@ import {
   enterMigrationConnectionPolicy,
   leaveMigrationConnectionPolicy,
 } from '../../../shared/migration-connection-policy.ts'
+import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import {
   hasMigrationCompatibilityColumn,
   MIGRATIONS_TABLE,
 } from './applied-migration-compatibilities.ts'
-import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
   lensPortReferenceOrphanCounts,
