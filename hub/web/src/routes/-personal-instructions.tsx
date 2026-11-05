@@ -14,6 +14,7 @@ import { Markdown } from '@bottega/hub-views/markdown'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { canonFrontmatter } from '../../../../shared/canon-frontmatter.ts'
 import { USER_CANON_HOME_MAPPINGS } from '../../../../shared/user-canon-home.ts'
 
 const hosted = isHostedMode()
@@ -32,7 +33,7 @@ const RULES_PREFIX = USER_CANON_HOME_MAPPINGS[0].rules.canonPrefix
  * Where each agent finds a user instruction file. The always-on entry reaches every agent;
  * a rule file reaches only Claude Code, which is the one agent with a rules directory.
  */
-function instructionReach(slug: string): InstructionReach[] {
+function instructionReach(slug: string, paths: readonly string[] = []): InstructionReach[] {
   return USER_CANON_HOME_MAPPINGS.flatMap((mapping) => {
     if (slug === mapping.entry.canon)
       return [{ agent: mapping.label, path: `~/${mapping.defaultDirectory}/${mapping.entry.home}` }]
@@ -42,6 +43,7 @@ function instructionReach(slug: string): InstructionReach[] {
       {
         agent: mapping.label,
         path: `~/${mapping.defaultDirectory}/${mapping.rules.homeDirectory}/${name}`,
+        ...(paths.length ? { paths } : {}),
       },
     ]
   })
@@ -51,12 +53,17 @@ function instructionReach(slug: string): InstructionReach[] {
  * A file copied into an agent's home is read at every session start whatever its stored
  * delivery says, so where it lands decides the group it is shown in.
  */
-function instructionItem(row: CanonRow): InstructionItem {
-  const reach = instructionReach(row.slug)
+export function instructionItem(row: CanonRow): InstructionItem {
+  const frontmatter = canonFrontmatter(row.body)
+  const rule = USER_CANON_HOME_MAPPINGS.some(
+    (mapping) => mapping.rules && row.slug.startsWith(mapping.rules.canonPrefix),
+  )
+  const pathScoped = rule && frontmatter?.declaresPaths === true
+  const reach = instructionReach(row.slug, pathScoped ? frontmatter.paths : [])
   return {
     slug: row.slug,
     title: row.title,
-    delivery: reach.length ? 'inject' : 'demand',
+    delivery: pathScoped ? 'path' : reach.length ? 'inject' : 'demand',
     updatedAt: row.updated_at,
     reach,
   }

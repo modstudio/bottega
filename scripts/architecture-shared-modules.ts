@@ -15,6 +15,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/note-label.ts', []),
   module('shared/record/postgres-error.ts', []),
   ...proseModules,
+  module('shared/canon-frontmatter.ts', []),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', [
     './config-client.ts',
@@ -51,7 +52,7 @@ export const sharedModules: ArchitectureModule[] = [
   ]),
   module('shared/record-api-url.ts', ['./config-directory.ts', './env-values.ts']),
   module('shared/http-json.ts', []),
-  module('shared/autonomy.ts', []),
+  module('shared/autonomy.ts', ['./ship-to.ts']),
   module('shared/user-canon-home.ts', []),
   module('shared/caller-classification.ts', []),
   module('shared/keychain.ts', []),

@@ -17,7 +17,8 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { composeCanonRows } from './canon-hydrate.ts'
-import { canonFrontmatter, classifyCanonFile } from './canon-lint.ts'
+import { canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
+import { classifyCanonFile } from './canon-lint.ts'
 
 function canonCheckoutRoot(): string | null {
   return optionalCheckoutRoot(import.meta.dir, process.env)

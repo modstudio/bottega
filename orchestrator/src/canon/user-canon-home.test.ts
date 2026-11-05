@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { USER_CANON_HOME_MAPPINGS } from '../../../shared/user-canon-home.ts'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import {
   decideUserCanonHydration,
   mapUserCanonHomePath,
   mapUserCanonPath,
   stripUserCanonManagedMarker,
-  USER_CANON_HOME_MAPPINGS,
   USER_CANON_MANAGED_MARKER,
   userCanonHomeImportDeletionSlugs,
 } from './user-canon-home.ts'

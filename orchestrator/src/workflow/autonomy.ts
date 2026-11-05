@@ -8,6 +8,8 @@ import {
   type AutonomyPreset,
   type AutonomyStage,
   type AutonomyValue,
+  type AutonomyLayerRow,
+  type StageAutonomyValue,
 } from '../../../shared/autonomy.ts'
 import { readStoredShipTo, SHIP_TO_VALUES, type ShipToValue } from '../../../shared/ship-to.ts'
 
@@ -17,8 +19,7 @@ export const autonomyPresets = AUTONOMY_PRESETS
 export const builtInAutonomyPreset: AutonomyPreset = 'guided'
 const builtInShipTo: ShipToValue = 'trunk'
 
-export type { AutonomyPreset, AutonomyStage, AutonomyValue }
-export type StageAutonomyValue = AutonomyValue | 'per step'
+export type { AutonomyPreset, AutonomyStage, AutonomyValue, StageAutonomyValue }
 export type ShipTo = ShipToValue
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
 type WorkflowAutonomySettings = {
@@ -38,13 +39,7 @@ export type StoredAutonomySettings = Omit<AutonomySettings, 'shipTo'> & {
 export type WrittenAutonomySettings = Omit<AutonomySettings, 'shipTo'> & {
   'ship-to'?: ShipTo
 }
-export type AutonomyLayer = {
-  scope: string
-  preset: AutonomyPreset | null
-  rulings: 'agent' | 'user' | null
-  shipTo: ShipTo | null
-  stages: Record<AutonomyStage, StageAutonomyValue | null>
-}
+export type AutonomyLayer = AutonomyLayerRow
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
   stages?: Partial<Record<AutonomyStage, { value: StageAutonomyValue; scope: string }>>

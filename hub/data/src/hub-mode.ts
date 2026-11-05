@@ -76,7 +76,7 @@ export function sameLocationOn(
 }
 
 type Counted = 'flight' | 'done' | 'runs' | 'inbox'
-type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted }
+type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted; attention?: boolean }
 type NavGroup = { label: string; icon: LucideIcon; items: NavLink[] }
 export type NavSection = { id: string; entries: (NavLink | NavGroup)[] }
 
@@ -94,7 +94,7 @@ const LOCAL_NAV: NavSection[] = [
         label: 'Work',
         icon: Kanban,
         items: [
-          { to: '/inbox', label: 'Inbox', icon: Inbox, count: 'inbox' },
+          { to: '/inbox', label: 'Inbox', icon: Inbox, count: 'inbox', attention: true },
           { to: '/board', label: 'Board', icon: Kanban },
           { to: '/done', label: 'Done', icon: CheckCircle2, count: 'done' },
           { to: '/runs', label: 'Runs', icon: Play, count: 'runs' },

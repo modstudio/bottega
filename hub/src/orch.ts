@@ -23,6 +23,8 @@ import {
   AUTONOMY_PRESETS,
   AUTONOMY_STAGES,
   AUTONOMY_VALUES,
+  STAGE_AUTONOMY_VALUES,
+  type AutonomyLayerRow,
   type AutonomyStage,
 } from '../../shared/autonomy.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -720,7 +722,7 @@ export const MachinePermissionOverlaySchema = z.object({
 
 const AutonomyStageSchema = z.enum(AUTONOMY_STAGES)
 const AutonomyValueSchema = z.enum(AUTONOMY_VALUES)
-const LayerAutonomyValueSchema = z.enum([...AUTONOMY_VALUES, 'per step'])
+const LayerAutonomyValueSchema = z.enum(STAGE_AUTONOMY_VALUES)
 const LayerAutonomyStagesSchema = z.object(
   Object.fromEntries(
     AUTONOMY_STAGES.map((stage) => [stage, LayerAutonomyValueSchema.nullable()]),
@@ -740,7 +742,7 @@ const ContextSchema = z.discriminatedUnion('registered', [
           rulings: z.enum(['agent', 'user']).nullable(),
           shipTo: z.enum(SHIP_TO_VALUES).nullable(),
           stages: LayerAutonomyStagesSchema,
-        }),
+        }) satisfies z.ZodType<AutonomyLayerRow>,
       )
       .optional(),
     rulings: z.object({ value: z.enum(['agent', 'user']), scope: z.string() }),

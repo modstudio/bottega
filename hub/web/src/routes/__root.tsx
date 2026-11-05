@@ -258,11 +258,12 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     label: string
     icon: NavItem['icon']
     count?: 'flight' | 'done' | 'runs' | 'inbox'
+    attention?: boolean
   }): NavItem => ({
     to: item.to,
     label: item.label,
     icon: item.icon,
-    attention: item.count === 'inbox',
+    attention: item.attention,
     count:
       item.count === 'inbox'
         ? waitingInboxEntries(waiting.data ?? []).length || undefined

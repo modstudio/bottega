@@ -7,11 +7,12 @@ import { KeyLine } from '../key-line/key-line.tsx'
 import { Markdown } from '../markdown/markdown.tsx'
 import { readingBody } from './body.ts'
 import { instructionsViewStyles } from './instructions-view.styles.ts'
+import type { DocsDelivery } from './types.ts'
 
-type InstructionDelivery = 'inject' | 'demand'
+type InstructionDelivery = DocsDelivery | 'path'
 
 /** One agent that reads an instruction file, and where that agent finds it. */
-export type InstructionReach = { agent: string; path: string }
+export type InstructionReach = { agent: string; path: string; paths?: readonly string[] }
 
 export type InstructionItem = {
   slug: string
@@ -29,6 +30,12 @@ const GROUPS: { delivery: InstructionDelivery; heading: string; hint: string; em
     heading: 'Always on',
     hint: 'Every agent reads these at the start of every session.',
     empty: 'Nothing is always on yet.',
+  },
+  {
+    delivery: 'path',
+    heading: 'Path-scoped',
+    hint: 'An agent reads these when it works on matching files.',
+    empty: 'Nothing is path-scoped yet.',
   },
   {
     delivery: 'demand',
@@ -104,14 +111,21 @@ function reachLine(doc: InstructionDocument) {
   const delivery =
     doc.delivery === 'inject'
       ? { key: 'delivery', icon: <Zap size={14} />, content: 'Always on' }
-      : { key: 'delivery', icon: <BookOpen size={14} />, content: 'On demand' }
+      : {
+          key: 'delivery',
+          icon: <BookOpen size={14} />,
+          content: doc.delivery === 'path' ? 'Path-scoped' : 'On demand',
+        }
   const reach = doc.reach.length
     ? doc.reach.map((target) => ({
         key: `reach-${target.agent}`,
         content: (
           <span className={instructionsViewStyles().reach()}>
             <span className={instructionsViewStyles().reachAgent()}>{target.agent}</span>
-            <span className={instructionsViewStyles().reachPath()}>{target.path}</span>
+            <span className={instructionsViewStyles().reachPath()}>
+              {target.path}
+              {target.paths?.length ? ` · ${target.paths.join(', ')}` : ''}
+            </span>
           </span>
         ),
       }))

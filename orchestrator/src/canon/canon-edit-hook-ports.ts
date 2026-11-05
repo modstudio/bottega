@@ -9,7 +9,7 @@ import {
 import type { EnforcedContext } from './canon-edit-guard.ts'
 import type { CanonEditHookPorts } from './canon-edit-hook-handler.ts'
 import type { TranscriptWatermark } from './canon-edit-transcript.ts'
-import { canonFrontmatter } from './canon-lint.ts'
+import { canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
 
 function transcriptLines(path: string): string[] {
   const lines = readFileSync(path, 'utf8').split(/\r?\n/)

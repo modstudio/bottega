@@ -62,8 +62,8 @@ const canonEditGuardBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'node:fs',
       'node:path',
+      'shared/canon-frontmatter.ts',
       'shared/state-directory.ts',
-      `${source}canon-lint.ts`,
       'orchestrator/src/database/db.ts',
       'orchestrator/src/project/projects.ts',
     ],

@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '@bottega/hub-ui/table'
 import { TableCard } from '@bottega/hub-ui/table-card'
+import { permissionListLabel } from '@bottega/hub-util/format'
 import { ChevronDown, Plus, Save, Undo2 } from 'lucide-react'
 import { type ReactNode, useMemo, useState } from 'react'
 import { CAPABILITY_ORDER, readablePermission } from './permission-capability.ts'
@@ -49,9 +50,10 @@ export type MatrixSave = {
 
 const LIST_OPTIONS: SelectOption[] = [
   { value: 'none', label: 'Not set' },
-  { value: 'allow', label: 'Allowed' },
-  { value: 'ask', label: 'Asks first' },
-  { value: 'deny', label: 'Blocked' },
+  ...(['allow', 'ask', 'deny'] as const).map((value) => ({
+    value,
+    label: permissionListLabel(value),
+  })),
 ]
 
 function machineOptions(accountValue: MatrixValue | undefined): SelectOption[] {
