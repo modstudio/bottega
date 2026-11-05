@@ -453,7 +453,10 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
       migrate: () => {},
     },
   )
-  expect(lines).toEqual([`updating the ${PLATFORM_NAME} checkout at ${target}`])
+  expect(lines[0]).toBe(`updating the ${PLATFORM_NAME} checkout at ${target}`)
+  expect(lines[1]).toMatch(
+    /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
+  )
   expect(projectPaths).toEqual([target])
   expect(gitCwds).toEqual([target, target, target, target])
 })
@@ -511,5 +514,40 @@ test('machine update does not name the checkout when the caller is already there
       migrate: () => {},
     },
   )
-  expect(lines).toEqual([])
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toMatch(
+    /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
+  )
+})
+
+test('machine update keeps its successful result when store maintenance fails', async () => {
+  const lines: string[] = []
+  await expect(
+    machineUpdateCommand(
+      { log: (line) => lines.push(line) },
+      {
+        cwd: dir,
+        callerCwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) =>
+          args[0] === 'branch'
+            ? 'main'
+            : args[0] === 'show'
+              ? JSON.stringify({ entries: migrationJournal() })
+              : '',
+        migrate: () => {},
+        maintainStore: () => {
+          throw new Error('store busy')
+        },
+      },
+    ),
+  ).resolves.toBeUndefined()
+  expect(lines).toEqual([
+    `incremental vacuum setup skipped: store busy; retry with ${PLATFORM_SLUG} machine update`,
+  ])
 })

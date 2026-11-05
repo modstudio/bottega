@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { exerciseQuarantinedRedactionSync } from '../../test/fixtures/outbox-redaction.ts'
 import {
+  installOutboxPruneFixtureSchema,
   localOutbox,
   MACHINE_ID,
   options,
@@ -42,6 +43,7 @@ function localPullRequestCiOutbox(): Database {
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
+  installOutboxPruneFixtureSchema(local)
   const payload = Object.fromEntries(
     PULL_REQUEST_CI_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]),
   )
@@ -86,6 +88,7 @@ function localTriageSnapshotOutbox(mutate: (payload: Record<string, unknown>) =>
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
+  installOutboxPruneFixtureSchema(local)
   const payload = Object.fromEntries(
     LANDING_TRIAGE_SNAPSHOT_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]),
   )
@@ -132,6 +135,7 @@ function localLandingOverrideOutbox(mutate: (payload: Record<string, unknown>) =
     error TEXT, attempts INTEGER NOT NULL, disposition TEXT NOT NULL, actor_session TEXT,
     at TEXT NOT NULL, reason TEXT
   ); CREATE TABLE record_install_binding (id INTEGER PRIMARY KEY, bound_at TEXT NOT NULL)`)
+  installOutboxPruneFixtureSchema(local)
   const payload = Object.fromEntries(
     LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS.map((column) => [column, null]),
   )

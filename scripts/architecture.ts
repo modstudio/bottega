@@ -42,6 +42,7 @@ import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
 import { ratchetModules } from './architecture-ratchet-modules.ts'
 import { recipeModules } from './architecture-recipe-modules.ts'
 import { recordModules } from './architecture-record-modules.ts'
+import { recordOutboxModules } from './architecture-record-outbox-modules.ts'
 import { releaseModules } from './architecture-release.ts'
 import { retrievalModules } from './architecture-retrieval.ts'
 import { reviewModuleSpecs } from './architecture-review-boundaries.ts'
@@ -431,6 +432,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/record/migration-session.ts', []),
   ...settingsModules,
   ...recordModules,
+  ...recordOutboxModules,
   ...databaseModules,
   ...reviewModuleSpecs.map((spec) =>
     module(spec.file, [

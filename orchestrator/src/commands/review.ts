@@ -301,7 +301,9 @@ function registerReviewRestore(
 ): void {
   review
     .command('restore-findings')
-    .description('report or restore missing review findings from structured outbox rows')
+    .description(
+      'report or restore missing review findings from retained outbox rows; superseded delivered history is pruned',
+    )
     .allowExcessArguments(true)
     .option('--json', 'write the restore report as JSON')
     .option('--write', 'apply the reported finding restores')

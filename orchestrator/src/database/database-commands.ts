@@ -2,9 +2,10 @@
 /** Owns database maintenance command behavior. Must not know CLI grammar. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
+import { existsSync, statfsSync, statSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
+import { drainSupersededOutboxRows } from '../record/outbox-prune.ts'
 import {
   formatMigrationInFlightRun,
   type MigrationInFlightRun,
@@ -69,6 +70,97 @@ type MigrateCommandOptions = {
 }
 
 export const MIGRATION_DRAIN_REFUSAL_EXIT_CODE = 75
+
+type IncrementalVacuumSetupDependencies = {
+  databasePath?: string
+  freeBytes?: (path: string) => number
+  now?: () => number
+  inFlightRuns?: (database: Database) => MigrationInFlightRun[]
+}
+
+export type IncrementalVacuumSetupDecision =
+  | { action: 'convert' }
+  | {
+      action: 'skip:already-incremental' | 'skip:insufficient-space' | 'skip:runs-in-flight'
+      shortfallBytes?: number
+      inFlightRuns?: number
+    }
+
+export function decideIncrementalVacuumSetup(input: {
+  autoVacuumMode: number
+  storeBytes: number
+  freeBytes: number
+  inFlightRuns: number
+}): IncrementalVacuumSetupDecision {
+  if (input.autoVacuumMode === 2) return { action: 'skip:already-incremental' }
+  if (input.inFlightRuns > 0)
+    return { action: 'skip:runs-in-flight', inFlightRuns: input.inFlightRuns }
+  const shortfallBytes = input.storeBytes * 2 - input.freeBytes
+  if (shortfallBytes > 0) return { action: 'skip:insufficient-space', shortfallBytes }
+  return { action: 'convert' }
+}
+
+const OUTBOX_INCREMENTAL_VACUUM_PAGES = 1_000
+
+export function releaseIncrementalVacuumPages(): 'released' | 'not-incremental' {
+  return withSynchronousDatabaseForMigrationStep((database) => {
+    const mode = database
+      .query<{ auto_vacuum: number }, []>('PRAGMA auto_vacuum')
+      .get()!.auto_vacuum
+    if (mode !== 2) return 'not-incremental'
+    database.exec(`PRAGMA incremental_vacuum(${OUTBOX_INCREMENTAL_VACUUM_PAGES})`)
+    return 'released'
+  })
+}
+
+export function setupIncrementalVacuumAfterMachineUpdate(
+  presentation: DatabaseCommandPresentation,
+  dependencies: IncrementalVacuumSetupDependencies = {},
+): void {
+  const path = dependencies.databasePath ?? DB_PATH
+  const before = statSync(path).size
+  const freeBytes =
+    dependencies.freeBytes?.(path) ??
+    (() => {
+      const volume = statfsSync(path)
+      return Number(volume.bavail) * Number(volume.bsize)
+    })()
+  const facts = withSynchronousDatabaseForMigrationStep((database) => ({
+    autoVacuumMode: database.query<{ auto_vacuum: number }, []>('PRAGMA auto_vacuum').get()!
+      .auto_vacuum,
+    inFlightRuns: (dependencies.inFlightRuns ?? migrationInFlightRuns)(database).length,
+  }))
+  const decision = decideIncrementalVacuumSetup({
+    ...facts,
+    storeBytes: before,
+    freeBytes,
+  })
+  if (decision.action !== 'convert') {
+    const reason =
+      decision.action === 'skip:already-incremental'
+        ? 'store is already incremental'
+        : decision.action === 'skip:runs-in-flight'
+          ? `${decision.inFlightRuns} runs are in flight`
+          : `${decision.shortfallBytes} bytes short`
+    presentation.log(
+      `incremental vacuum setup skipped: ${reason}; retry with ${PLATFORM_SLUG} machine update`,
+    )
+    return
+  }
+  const now = dependencies.now ?? performance.now.bind(performance)
+  const started = now()
+  let pruned = 0
+  withSynchronousDatabaseForMigrationStep((database) => {
+    pruned = drainSupersededOutboxRows(database).deleted
+    database.exec('PRAGMA auto_vacuum=INCREMENTAL')
+    database.exec('VACUUM')
+    database.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+  })
+  const after = statSync(path).size
+  presentation.log(
+    `incremental vacuum setup: pruned ${pruned} rows, ${before} bytes before, ${after} bytes after, ${Math.round(now() - started)}ms elapsed`,
+  )
+}
 
 export class MigrationDrainRefusalError extends Error {
   readonly exitCode = MIGRATION_DRAIN_REFUSAL_EXIT_CODE
