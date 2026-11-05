@@ -1,0 +1,462 @@
+import { hostedTrpc, queryClient, trpc } from '@bottega/hub-data/client'
+import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import {
+  type MachinePermissionChange,
+  useMachinePermissionChange,
+} from '@bottega/hub-data/use-machine-permission'
+import { useContextProjects } from '@bottega/hub-data/use-projects'
+import { EmptyState } from '@bottega/hub-ui/empty-state'
+import { ErrorState } from '@bottega/hub-ui/error-state'
+import { Copyable, DisplayRow, FieldSection, SettingBlock } from '@bottega/hub-ui/form-layout'
+import { Select } from '@bottega/hub-ui/listbox/select'
+import { PageHeader } from '@bottega/hub-ui/page-header'
+import { permissionListLabel } from '@bottega/hub-util/format'
+import {
+  type MatrixColumn,
+  type MatrixRow,
+  type MatrixValue,
+  type PermissionEdit,
+  PermissionMatrix,
+} from '@bottega/hub-views/machine-permissions/permission-matrix'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import type { MachinePermissionOverlay } from '../../../../shared/machine-config.ts'
+import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from '../../../../shared/settings-permission-lists.ts'
+
+const hosted = isHostedMode()
+
+type PermissionLists = Record<SettingsPermissionList, string[]>
+type Target = { user: true } | { project: string }
+
+const LISTS = [...SETTINGS_PERMISSION_LISTS].reverse()
+const isList = (value: MatrixValue): value is SettingsPermissionList =>
+  SETTINGS_PERMISSION_LISTS.includes(value as SettingsPermissionList)
+
+function listOf(
+  lists: PermissionLists | undefined,
+  rule: string,
+): SettingsPermissionList | undefined {
+  return lists ? LISTS.find((list) => lists[list].includes(rule)) : undefined
+}
+
+/** One row per rule any shown layer names, with where it stands in each layer. */
+export function matrixRows(layers: {
+  account?: PermissionLists
+  project?: PermissionLists
+  machine?: MachinePermissionOverlay
+}): MatrixRow[] {
+  const rules = new Set<string>()
+  for (const lists of [
+    layers.account,
+    layers.project,
+    layers.machine?.additions,
+    layers.machine?.drop,
+  ])
+    if (lists) for (const list of LISTS) for (const rule of lists[list]) rules.add(rule)
+  return [...rules].map((rule) => {
+    const values: MatrixRow['values'] = {}
+    if (layers.account) values.account = listOf(layers.account, rule) ?? 'none'
+    if (layers.project) values.project = listOf(layers.project, rule) ?? 'none'
+    if (layers.machine)
+      values.machine =
+        listOf(layers.machine.additions, rule) ??
+        (listOf(layers.machine.drop, rule) ? 'drop' : 'inherit')
+    return { rule, values }
+  })
+}
+
+type CanonicalStep = {
+  kind: 'canonical'
+  target: Target
+  list: SettingsPermissionList
+  rule: string
+  operation: 'add' | 'remove'
+}
+type MachineStep = MachinePermissionChange & { kind: 'machine' }
+type RefusalStep = { kind: 'refusal'; message: string }
+export type SaveStep = CanonicalStep | MachineStep | RefusalStep
+type MachineBatchResult = { saved: number; error: string | null }
+
+/**
+ * The writes one cell change needs, removals first so a rule never sits in two lists. A machine
+ * drop names the account list it suppresses.
+ */
+export function saveSteps(
+  edit: PermissionEdit,
+  context: {
+    project: string
+    accountList: (rule: string) => SettingsPermissionList | undefined
+    machineDropList: (rule: string) => SettingsPermissionList | undefined
+  },
+): SaveStep[] {
+  const { rule, from, to } = edit
+  if (edit.layer !== 'machine') {
+    const target: Target = edit.layer === 'account' ? { user: true } : { project: context.project }
+    return [
+      ...(isList(from)
+        ? [{ kind: 'canonical', target, list: from, rule, operation: 'remove' } as const]
+        : []),
+      ...(isList(to)
+        ? [{ kind: 'canonical', target, list: to, rule, operation: 'add' } as const]
+        : []),
+    ]
+  }
+  const accountList = context.accountList(rule)
+  const droppedList = context.machineDropList(rule)
+  const steps: SaveStep[] = []
+  if (isList(from)) steps.push({ kind: 'machine', list: from, rule, operation: 'remove' })
+  if (from === 'drop' && droppedList)
+    steps.push({ kind: 'machine', list: droppedList, rule, operation: 'undrop' })
+  if (isList(to)) steps.push({ kind: 'machine', list: to, rule, operation: 'add' })
+  if (to === 'drop')
+    steps.push(
+      accountList
+        ? { kind: 'machine', list: accountList, rule, operation: 'drop' }
+        : {
+            kind: 'refusal',
+            message: `Cannot drop ${rule} on this machine: save the account rule first.`,
+          },
+    )
+  return steps
+}
+
+function useSettings(target: Target, enabled: boolean) {
+  const local = useQuery({
+    ...trpc.context.settings.get.queryOptions(target),
+    enabled: enabled && !hosted,
+  })
+  const remote = useQuery({
+    ...hostedTrpc.context.settings.get.queryOptions(target),
+    enabled: enabled && hosted,
+  })
+  return hosted ? remote : local
+}
+
+function machineBatchAt(steps: SaveStep[], start: number) {
+  const batch: MachinePermissionChange[] = []
+  let next = start
+  while (next < steps.length && steps[next]?.kind === 'machine') {
+    const { kind: _kind, ...change } = steps[next] as MachineStep
+    batch.push(change)
+    next += 1
+  }
+  return { batch, next }
+}
+
+export async function applySaveSteps(
+  steps: SaveStep[],
+  applyCanonical: (step: CanonicalStep) => Promise<void>,
+  applyMachine: (steps: readonly MachinePermissionChange[]) => Promise<MachineBatchResult>,
+  onSaved: (count: number) => void,
+) {
+  const refusal = steps.find((step): step is RefusalStep => step.kind === 'refusal')
+  if (refusal) throw new Error(refusal.message)
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index]!
+    if (step.kind === 'refusal') continue
+    if (step.kind === 'canonical') {
+      await applyCanonical(step)
+      onSaved(1)
+      continue
+    }
+    const machine = machineBatchAt(steps, index)
+    const result = await applyMachine(machine.batch)
+    onSaved(result.saved)
+    if (result.error) throw new Error(result.error)
+    index = machine.next - 1
+  }
+}
+
+/** A project row must exist before its optimistic revision can protect an edit. */
+export function projectRevisionRefusal(
+  steps: readonly SaveStep[],
+  revision: string | null,
+  project: string,
+): RefusalStep | null {
+  if (
+    revision !== null ||
+    !steps.some((step) => step.kind === 'canonical' && 'project' in step.target)
+  )
+    return null
+  return {
+    kind: 'refusal',
+    message:
+      `Cannot save project permissions because ${project} has no stored settings revision. ` +
+      `Run \`${PLATFORM_SLUG} machine settings render --write --project ${project} --yes\` first.`,
+  }
+}
+
+/**
+ * Saves every held change in order, carrying each target's new revision into its next write.
+ * Refusals stop the whole save before the first write. The store has no batch write, so a
+ * write failure can still leave earlier changes saved; the message says how many went through.
+ */
+function useMatrixSave(
+  revisions: { account: string | null; project: string | null },
+  project: string,
+) {
+  const localCanonical = useMutation(trpc.context.settings.permission.mutationOptions())
+  const hostedCanonical = useMutation(hostedTrpc.context.settings.permission.mutationOptions())
+  const canonical = hosted ? hostedCanonical : localCanonical
+  const machine = useMachinePermissionChange()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const settingsKey = hosted
+    ? hostedTrpc.context.settings.pathKey()
+    : trpc.context.settings.pathKey()
+
+  async function run(steps: SaveStep[], reason: string) {
+    setPending(true)
+    setError(null)
+    const revision = { ...revisions }
+    let done = 0
+    try {
+      const projectRefusal = projectRevisionRefusal(steps, revision.project, project)
+      await applySaveSteps(
+        projectRefusal ? [projectRefusal, ...steps] : steps,
+        async (step) => {
+          const layer = 'user' in step.target ? 'account' : 'project'
+          const expectedRevision = revision[layer]
+          if (!expectedRevision)
+            throw new Error('These settings have no stored revision to change yet.')
+          const result = await canonical.mutateAsync({
+            target: step.target,
+            list: step.list,
+            rule: step.rule,
+            operation: step.operation,
+            reason,
+            expectedRevision,
+          })
+          revision[layer] = result.revision
+        },
+        machine.run,
+        (count) => {
+          done += count
+        },
+      )
+      return true
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : String(failure)
+      setError(
+        done ? `${done} of ${steps.length} changes were saved before this: ${message}` : message,
+      )
+      return false
+    } finally {
+      setPending(false)
+      await queryClient.invalidateQueries({ queryKey: settingsKey }).catch(() => undefined)
+    }
+  }
+  return { run, pending, error }
+}
+
+function Lines({ children }: { children: string }) {
+  return <span className="whitespace-pre-wrap">{children}</span>
+}
+
+type ProjectRow = { name: string; managedContext: boolean; worktreeNote: string | null }
+
+function applyCommand(target: string, projects: ProjectRow[]) {
+  if (target === 'user') return `${PLATFORM_SLUG} machine settings render --write --user --yes`
+  const note = projects.find((row) => row.name === target)?.worktreeNote
+  const command = `${PLATFORM_SLUG} machine settings render --write --project ${target} --yes`
+  return note ? `${command}\n\nWorktree note:\n${note}` : command
+}
+
+type SettingsData = NonNullable<ReturnType<typeof useSettings>['data']>
+
+function driftText(drift: NonNullable<SettingsData['drift']>) {
+  const lines: string[] = []
+  for (const name of SETTINGS_PERMISSION_LISTS) {
+    lines.push(
+      ...drift.rules[name].added.map((rule) => `Added to ${permissionListLabel(name)}: ${rule}`),
+    )
+    lines.push(
+      ...drift.rules[name].removed.map(
+        (rule) => `Removed from ${permissionListLabel(name)}: ${rule}`,
+      ),
+    )
+  }
+  const hook = (h: { event: string; matcher: string; fingerprint: string }) =>
+    `${h.event} · ${h.matcher} · ${h.fingerprint}`
+  lines.push(...drift.hooks.added.map((h) => `added hook: ${hook(h)}`))
+  lines.push(...drift.hooks.removed.map((h) => `removed hook: ${hook(h)}`))
+  lines.push(...drift.envKeys.added.map((name) => `added env key: ${name}`))
+  lines.push(...drift.envKeys.removed.map((name) => `removed env key: ${name}`))
+  return lines.join('\n')
+}
+
+/** What a layer carries besides permission rules, and how to apply it from a terminal. */
+function LayerDetails({
+  title,
+  target,
+  data,
+  projects,
+}: {
+  title: string
+  target: string
+  data: SettingsData
+  projects: ProjectRow[]
+}) {
+  const drift = data.drift ? driftText(data.drift) : ''
+  return (
+    <FieldSection title={title}>
+      {hosted ? null : (
+        <DisplayRow
+          label="Available on this machine"
+          value={data.file.exists ? 'Yes' : 'Not yet'}
+        />
+      )}
+      <DisplayRow
+        label={`Hooks (${data.settings.hooks.length})`}
+        value={
+          <span className="flex flex-col gap-1.5">
+            <span className="text-sm text-text-muted">
+              A hook runs an automatic check or action when an agent reaches a matching event.
+            </span>
+            <Lines>
+              {data.settings.hooks
+                .map((hook) => `${hook.event} · ${hook.matcher} · ${hook.fingerprint}`)
+                .join('\n') || '—'}
+            </Lines>
+          </span>
+        }
+      />
+      <DisplayRow
+        label={`Environment keys (${data.settings.envKeys.length})`}
+        value={data.settings.envKeys.join(', ') || '—'}
+      />
+      {drift ? <DisplayRow label="Differs on this machine" value={<Lines>{drift}</Lines>} /> : null}
+      {hosted ? null : (
+        <SettingBlock
+          label="Apply now from a terminal"
+          control={<Copyable value={applyCommand(target, projects)} />}
+          hint="This page stores the settings; the machine writes its settings file when it applies them."
+        />
+      )}
+    </FieldSection>
+  )
+}
+
+function matrixColumns({
+  project,
+  projects,
+  onProject,
+  machine,
+}: {
+  project: string
+  projects: string[]
+  onProject(name: string): void
+  machine: boolean
+}): MatrixColumn[] {
+  const columns: MatrixColumn[] = [{ layer: 'account', label: 'Your account' }]
+  if (project)
+    columns.push({
+      layer: 'project',
+      label: project,
+      heading: (
+        <Select
+          size="sm"
+          label="Project"
+          value={project}
+          options={projects.map((name) => ({ value: name, label: name }))}
+          onChange={onProject}
+        />
+      ),
+    })
+  if (machine) columns.push({ layer: 'machine', label: 'This machine' })
+  return columns
+}
+
+export function PersonalPermissionsPage() {
+  const projects = useContextProjects()
+  const managed = (projects.data ?? []).filter((project) => project.managedContext)
+  const [projectChoice, setProjectChoice] = useState('')
+  const project = projectChoice || managed[0]?.name || ''
+  const account = useSettings({ user: true }, true)
+  const projectSettings = useSettings({ project: project || '_' }, Boolean(project))
+  const machine = hosted
+    ? undefined
+    : (account.data as { machine?: MachinePermissionOverlay } | undefined)?.machine
+  const save = useMatrixSave(
+    {
+      account: account.data?.revision ?? null,
+      project: projectSettings.data?.revision ?? null,
+    },
+    project,
+  )
+
+  const columns = matrixColumns({
+    project,
+    projects: managed.map((row) => row.name),
+    onProject: setProjectChoice,
+    machine: Boolean(machine),
+  })
+  const rows = matrixRows({
+    account: account.data?.settings.permissions,
+    project: project ? projectSettings.data?.settings.permissions : undefined,
+    machine,
+  })
+  const accountList = (rule: string) => listOf(account.data?.settings.permissions, rule)
+  const machineDropList = (rule: string) => listOf(machine?.drop, rule)
+  const findings = [...(account.data?.findings ?? []), ...(projectSettings.data?.findings ?? [])]
+  const loadError = account.error ?? projectSettings.error
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-8 px-5 pb-12">
+      <PageHeader
+        title="Permissions"
+        subtitle="What agents may do without asking, on your account, in a project and on this machine. Applied to every agent when a session starts."
+      />
+      {loadError ? (
+        <ErrorState title="Could not load permissions" message={loadError.message} />
+      ) : null}
+      {account.data || loadError ? null : <EmptyState title="Loading permissions..." />}
+      {account.data ? (
+        <PermissionMatrix
+          key={`${project}:${account.data.revision}:${projectSettings.data?.revision ?? ''}`}
+          rows={rows}
+          columns={columns}
+          notice={findings.map((finding) => (
+            <ErrorState
+              key={`${finding.rule}-${finding.message}`}
+              title="Check these permissions"
+              message={`${finding.rule}: ${finding.message}`}
+            />
+          ))}
+          save={{
+            pending: save.pending,
+            error: save.error,
+            refusal: account.data.revision
+              ? null
+              : 'These settings have no stored revision to change yet.',
+            run: (edits, reason) =>
+              save.run(
+                edits.flatMap((edit) => saveSteps(edit, { project, accountList, machineDropList })),
+                reason,
+              ),
+          }}
+        />
+      ) : null}
+      {account.data ? (
+        <LayerDetails
+          title="Your account: hooks and environment"
+          target="user"
+          data={account.data}
+          projects={managed}
+        />
+      ) : null}
+      {project && projectSettings.data ? (
+        <LayerDetails
+          title={`${project}: hooks and environment`}
+          target={project}
+          data={projectSettings.data}
+          projects={managed}
+        />
+      ) : null}
+    </div>
+  )
+}

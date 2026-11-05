@@ -27,6 +27,7 @@ const pinnedAutonomy = (): CursorAutonomyResolution => ({
 })
 
 const liveAutonomy = (): AutonomyResolution => ({
+  layers: [],
   steps: { lens: { value: 'ask', scope: 'live step' } },
   stages: { review: { value: 'ask', scope: 'live stage' } },
   rulings: { value: 'user', scope: 'live rulings' },
@@ -100,6 +101,7 @@ function composeShipToFlow(d: Database) {
     {},
     {
       resolution: {
+        layers: [],
         steps: Object.fromEntries(composed.steps.map((step) => [step.slug, step.resolvedAutonomy])),
         rulings: composed.rulings,
         shipTo: { value: 'trunk', scope: 'test' },

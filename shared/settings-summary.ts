@@ -2,10 +2,11 @@
 import { createHash } from 'node:crypto'
 import { canonicalJson } from './canonical-json.ts'
 import { containsSecretShaped, redactSecretShaped } from './secret-shaped.ts'
+import {
+  SETTINGS_PERMISSION_LISTS,
+  type SettingsPermissionList,
+} from './settings-permission-lists.ts'
 import type { OwnedSettings } from './stored-settings.ts'
-
-export const SETTINGS_PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
-export type SettingsPermissionList = (typeof SETTINGS_PERMISSION_LISTS)[number]
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)

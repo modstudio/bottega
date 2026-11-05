@@ -15,6 +15,11 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import {
+  mapUserCanonHomePath,
+  USER_CANON_HOME_MAPPINGS,
+  type UserCanonHomeMapping,
+} from '../../../shared/user-canon-home.ts'
+import {
   applyBackedUpSettingsWrites,
   backupSettingsWrites,
   planSettingsWrite,
@@ -22,13 +27,7 @@ import {
   restoreSettingsBackup,
   writeNewSettingsFileAtomically,
 } from '../settings/settings-write.ts'
-import {
-  decideUserCanonHydration,
-  mapUserCanonHomePath,
-  USER_CANON_HOME_MAPPINGS,
-  USER_CANON_MANAGED_MARKER,
-  type UserCanonHomeMapping,
-} from './user-canon-home.ts'
+import { decideUserCanonHydration, USER_CANON_MANAGED_MARKER } from './user-canon-home.ts'
 
 export type UserCanonHomeFile = { slug: string; path: string; text: string; mode: number }
 export type UserCanonHomeTarget = {
@@ -88,7 +87,8 @@ export function userCanonHomesFromEnvironment(
   if (!home) throw new Error('HOME is required to locate user canon homes')
   const runs = resolve(orchestratorRuns)
   return USER_CANON_HOME_MAPPINGS.map((mapping) => {
-    const override = mapping.environment ? env[mapping.environment] : undefined
+    const environment = mapping.homeOverrideEnvironment
+    const override = environment ? env[environment] : undefined
     const resolvedOverride = override && override.length > 0 ? resolve(override) : null
     const ignoredRunOverride = resolvedOverride !== null && pathIsWithin(runs, resolvedOverride)
     const path =
@@ -101,7 +101,7 @@ export function userCanonHomesFromEnvironment(
 
 export function userCanonHomeOverridesStatus(targets: UserCanonHomeTarget[]): string | null {
   const ignored = targets.flatMap((target) =>
-    target.ignoredRunOverride && target.mapping.environment ? [target.mapping.environment] : [],
+    target.ignoredRunOverride ? [target.mapping.homeOverrideEnvironment].filter(Boolean) : [],
   )
   return ignored.length
     ? `ignored harness home overrides inside the orchestrator run-state directory: ${ignored.join(', ')}; using operator defaults`

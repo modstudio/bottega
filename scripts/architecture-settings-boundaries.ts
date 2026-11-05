@@ -10,7 +10,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'zod',
       'shared/brand.ts',
       'shared/secret-shaped.ts',
-      'shared/settings-summary.ts',
+      'shared/settings-permission-lists.ts',
       'shared/stored-settings.ts',
     ],
     typeOnlyAllowed: [],
@@ -128,7 +128,11 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-permission-overlay-boundary',
     file: `${source}settings-permission-overlay.ts`,
-    allowed: ['shared/machine-config.ts', 'shared/settings-summary.ts', `${source}settings.ts`],
+    allowed: [
+      'shared/machine-config.ts',
+      'shared/settings-permission-lists.ts',
+      `${source}settings.ts`,
+    ],
     typeOnlyAllowed: [],
     reason: 'Keep hosted and machine permission merging pure.',
   },
@@ -137,7 +141,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     file: `${source}settings-machine-permissions.ts`,
     allowed: [
       'shared/machine-config.ts',
-      'shared/settings-summary.ts',
+      'shared/settings-permission-lists.ts',
       'orchestrator/src/run/run-process.ts',
     ],
     typeOnlyAllowed: [],

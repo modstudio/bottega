@@ -1,8 +1,11 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { queryClient, trpc } from '@bottega/hub-data/client'
 import { QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { ManagedContextPage, UserCanonSection } from '@/routes/context'
+import { autonomyLayers, PersonalAutonomyPage } from '@/routes/-personal-autonomy'
+import { UserCanonSection } from '@/routes/-personal-instructions'
+import { PersonalPermissionsPage } from '@/routes/-personal-permissions'
 
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
@@ -24,10 +27,11 @@ const doc = {
   updated_at: '2026-09-25T12:00:00.000Z',
 }
 
-function render() {
+function render(page: () => ReactNode) {
+  const Page = page
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <ManagedContextPage />
+      <Page />
     </QueryClientProvider>,
   )
 }
@@ -48,7 +52,9 @@ function seedBase() {
     project: 'alpha',
     rulings: { value: 'user', scope: 'hosted user' },
     shipTo: { value: 'trunk', scope: 'hosted user', landing: 'main', production: null },
-    stages: [{ stage: 'review', agreed: true, value: 'review', scope: 'hosted user', steps: 2 }],
+    stages: [
+      { stage: 'review', agreed: true as const, value: 'review', scope: 'hosted user', steps: 2 },
+    ],
     text: 'Autonomy for alpha\nship to: trunk (merge into main) (hosted user)',
   }
   queryClient.setQueryData(autonomyOptions.queryKey, autonomy)
@@ -84,7 +90,7 @@ test('managed settings never renders an env value from a crafted payload', () =>
     ...seeded,
     settings: { ...seeded.settings, env: { BOTTEGA_TOKEN: 'ENV_VALUE_SENTINEL' } },
   } as unknown as typeof seeded)
-  const html = render()
+  const html = render(PersonalPermissionsPage)
   expect(html).toContain('BOTTEGA_TOKEN')
   expect(html).not.toContain('ENV_VALUE_SENTINEL')
 })
@@ -107,42 +113,119 @@ test('managed hooks render fingerprints and never command text', () => {
       ],
     },
   } as unknown as typeof seeded)
-  const html = render()
+  const html = render(PersonalPermissionsPage)
   expect(html).toContain('PreToolUse · Bash · 123456abcdef')
   expect(html).not.toContain('HOOK_COMMAND_SENTINEL')
 })
 
 test('managed settings shows the apply command without a write control', () => {
   seedBase()
-  const html = render()
+  const html = render(PersonalPermissionsPage)
   expect(html).toContain(`${PLATFORM_SLUG} machine settings render --write --user --yes`)
   expect(html).not.toContain('>Write settings<')
 })
 
-test('autonomy shows the resolved ship-to line and user-scope control', () => {
-  seedBase()
-  const html = render()
-  expect(html).toContain('ship to: trunk (merge into main) (hosted user)')
-  expect(html).toContain('ship to')
+const quiet = { plan: null, implement: null, review: null, docs: null, canon: null, ship: null }
+const silent = (scope: string) => ({
+  scope,
+  preset: null,
+  rulings: null,
+  shipTo: null,
+  stages: quiet,
+})
+const auto = {
+  plan: 'auto',
+  implement: 'auto',
+  review: 'auto',
+  docs: 'auto',
+  canon: 'auto',
+  ship: 'auto',
+} as const
+
+function resolution(hostedScope: string, userPreset: 'autonomous' | null | undefined) {
+  return {
+    registered: true as const,
+    project: 'alpha',
+    rulings: { value: 'agent' as const, scope: hostedScope },
+    shipTo: { value: 'trunk' as const, scope: hostedScope, landing: 'main', production: null },
+    stages: [
+      {
+        stage: 'plan' as const,
+        agreed: true as const,
+        value: 'auto' as const,
+        scope: hostedScope,
+        steps: 1,
+        overridden: false,
+      },
+      {
+        stage: 'canon' as const,
+        agreed: true as const,
+        value: 'ask' as const,
+        scope: 'local user',
+        steps: 1,
+        overridden: true,
+      },
+    ],
+    text: '',
+    userPreset,
+    layers: [
+      silent('session'),
+      silent('project'),
+      { ...silent('local user'), stages: { ...quiet, canon: 'ask' as const } },
+      {
+        scope: hostedScope,
+        preset: 'autonomous' as const,
+        rulings: 'agent' as const,
+        shipTo: 'trunk' as const,
+        stages: { ...auto, canon: 'review' as const },
+      },
+      silent('built-in'),
+    ],
+  }
+}
+
+test('autonomy rows keep the resolver order and edit only this machine and your account', () => {
+  const layers = autonomyLayers(resolution('hosted user', 'autonomous'))
+  expect(layers.map((layer) => layer.label)).toEqual([
+    'Project settings',
+    'This machine',
+    'Your account',
+    'Built-in',
+  ])
+  const [project, machine, account] = layers
+  expect(project!.editable).toBeUndefined()
+  expect(machine!.editable?.canon?.selected).toBe('ask')
+  expect(machine!.editable?.plan?.selected).toBeNull()
+  // A stage that follows the preset has a value but no choice of its own.
+  expect(account!.values.plan).toBe('auto')
+  expect(account!.editable?.plan).toMatchObject({
+    selected: null,
+    unset: { label: 'Preset (auto)' },
+  })
+  expect(account!.editable?.canon?.selected).toBe('review')
+  expect(account!.editable?.rulings).toBeUndefined()
 })
 
-test('a machine override shows only on the row that has one', () => {
-  seedBase()
-  const absent = render()
-  expect(absent).toContain('Override on this machine')
-  expect(absent).not.toContain('Review on this machine')
+test('a stale or signed-out account row reads only', () => {
+  const stale = autonomyLayers(resolution('hosted user (stale)', 'autonomous'))
+  const staleAccount = stale.find((layer) => layer.scope === 'hosted user (stale)')!
+  expect(staleAccount.label).toBe('Your account')
+  expect(staleAccount.hint).toContain('Read from the cache')
+  expect(staleAccount.editable).toBeUndefined()
+  const signedOut = autonomyLayers(resolution('hosted user', undefined))
+  expect(signedOut.find((layer) => layer.scope === 'hosted user')!.editable).toBeUndefined()
+})
 
-  const options = trpc.context.autonomy.get.queryOptions({ project: 'alpha' })
-  const seeded = queryClient.getQueryData(options.queryKey)!
-  if (!seeded.registered) throw new Error('expected a registered project')
-  queryClient.setQueryData(options.queryKey, {
-    ...seeded,
-    stages: seeded.stages.map((stage) => ({ ...stage, machineValue: 'ask' as const })),
-  } as typeof seeded)
-  const present = render()
-  expect(present).toContain('Review on this machine')
-  expect(present).not.toContain('Release on this machine')
-  expect(present).not.toContain('Rulings on this machine')
+test('the autonomy page marks what is in effect and where it came from', () => {
+  seedBase()
+  queryClient.setQueryData(
+    trpc.context.autonomy.get.queryOptions({ project: 'alpha' }).queryKey,
+    resolution('hosted user', 'autonomous'),
+  )
+  const html = render(PersonalAutonomyPage)
+  expect(html).toContain('In effect')
+  expect(html).toContain('Where each setting comes from')
+  expect(html).not.toContain('This session')
 })
 
 test('user canon shows the signed-in refusal instead of an empty state', () => {

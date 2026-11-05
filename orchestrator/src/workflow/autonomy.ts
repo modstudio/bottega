@@ -5,9 +5,11 @@ import {
   AUTONOMY_PRESETS,
   AUTONOMY_STAGES,
   AUTONOMY_VALUES,
+  type AutonomyLayerRow,
   type AutonomyPreset,
   type AutonomyStage,
   type AutonomyValue,
+  type StageAutonomyValue,
 } from '../../../shared/autonomy.ts'
 import { readStoredShipTo, SHIP_TO_VALUES, type ShipToValue } from '../../../shared/ship-to.ts'
 
@@ -17,8 +19,7 @@ export const autonomyPresets = AUTONOMY_PRESETS
 export const builtInAutonomyPreset: AutonomyPreset = 'guided'
 const builtInShipTo: ShipToValue = 'trunk'
 
-export type { AutonomyPreset, AutonomyStage, AutonomyValue }
-export type StageAutonomyValue = AutonomyValue | 'per step'
+export type { AutonomyLayerRow, AutonomyPreset, AutonomyStage, AutonomyValue, StageAutonomyValue }
 export type ShipTo = ShipToValue
 type CatalogueStep = { slug: string; stage?: AutonomyStage; autonomy: AutonomyValue }
 type WorkflowAutonomySettings = {
@@ -41,6 +42,7 @@ export type WrittenAutonomySettings = Omit<AutonomySettings, 'shipTo'> & {
 export type AutonomyResolution = {
   steps: Record<string, { value: AutonomyValue; scope: string }>
   stages?: Partial<Record<AutonomyStage, { value: StageAutonomyValue; scope: string }>>
+  layers: AutonomyLayerRow[]
   rulings: RulingsResolution
   shipTo: {
     value: ShipTo
@@ -61,7 +63,8 @@ export type AutonomyResolution = {
 type LegacyReleaseResolution = Omit<AutonomyResolution['shipTo'], 'value'> & {
   value: unknown
 }
-export type StoredAutonomyResolution = Omit<AutonomyResolution, 'shipTo'> & {
+export type StoredAutonomyResolution = Omit<AutonomyResolution, 'shipTo' | 'layers'> & {
+  layers?: AutonomyLayerRow[]
   shipTo?: AutonomyResolution['shipTo']
   release?: LegacyReleaseResolution
 }
@@ -271,6 +274,32 @@ function resolvedAutonomyValue(
   return undefined
 }
 
+const presetRuling = (preset: AutonomySettings['preset']): 'agent' | 'user' =>
+  preset === 'manual' ? 'user' : 'agent'
+
+function resolvedRuling(settings: WorkflowAutonomySettings): 'agent' | 'user' | undefined {
+  return (
+    settings.rulings ?? (settings.preset === undefined ? undefined : presetRuling(settings.preset))
+  )
+}
+
+function scopeAutonomyValue(
+  subject: Pick<CatalogueStep, 'stage'> & { slug?: string; autonomy?: AutonomyValue },
+  settings: AutonomySettings,
+  workflow?: string,
+): StageAutonomyValue | undefined {
+  return (
+    (workflow && resolvedAutonomyValue(subject, settings.workflows?.[workflow] ?? {})) ||
+    resolvedAutonomyValue(subject, settings)
+  )
+}
+
+function scopeRuling(settings: AutonomySettings, workflow?: string): 'agent' | 'user' | undefined {
+  return (
+    (workflow && resolvedRuling(settings.workflows?.[workflow] ?? {})) || resolvedRuling(settings)
+  )
+}
+
 function resolveSubject(
   subject: Pick<CatalogueStep, 'stage' | 'autonomy'> & { slug?: string },
   scopes: { name: string; settings: AutonomySettings }[],
@@ -287,9 +316,7 @@ function resolveSubject(
   workflow?: string,
 ): { value: StageAutonomyValue; scope: string } {
   for (const scope of scopes) {
-    const value =
-      (workflow && resolvedAutonomyValue(subject, scope.settings.workflows?.[workflow] ?? {})) ||
-      resolvedAutonomyValue(subject, scope.settings)
+    const value = scopeAutonomyValue(subject, scope.settings, workflow)
     if (value) return { value, scope: scope.name }
   }
   return { value: subject.autonomy ?? 'per step', scope: 'built-in' }
@@ -316,17 +343,23 @@ export function resolveAutonomy(
   const resolvedStages = Object.fromEntries(
     stages.map((stage) => [stage, resolveSubject({ stage }, checked, workflow)]),
   ) as AutonomyResolution['stages']
-  const presetRuling = (preset: AutonomySettings['preset']): 'agent' | 'user' =>
-    preset === 'manual' ? 'user' : 'agent'
-  const resolvedRuling = (settings: WorkflowAutonomySettings): 'agent' | 'user' | undefined =>
-    settings.rulings ?? (settings.preset === undefined ? undefined : presetRuling(settings.preset))
+  const layers = checked.map(
+    ({ name, settings }): AutonomyLayerRow => ({
+      scope: name,
+      preset:
+        (workflow ? settings.workflows?.[workflow]?.preset : undefined) ?? settings.preset ?? null,
+      rulings: scopeRuling(settings, workflow) ?? null,
+      shipTo: settings.shipTo ?? null,
+      stages: Object.fromEntries(
+        autonomyStages.map((stage) => [
+          stage,
+          scopeAutonomyValue({ stage }, settings, workflow) ?? null,
+        ]),
+      ) as AutonomyLayerRow['stages'],
+    }),
+  )
   const ruling = checked
-    .map((scope) => ({
-      name: scope.name,
-      value:
-        (workflow && resolvedRuling(scope.settings.workflows?.[workflow] ?? {})) ||
-        resolvedRuling(scope.settings),
-    }))
+    .map((scope) => ({ name: scope.name, value: scopeRuling(scope.settings, workflow) }))
     .find(({ value }) => value !== undefined)
   const shipTo = checked
     .map((scope) => ({ name: scope.name, value: scope.settings.shipTo }))
@@ -334,6 +367,7 @@ export function resolveAutonomy(
   return {
     steps: resolved,
     ...(stages.length ? { stages: resolvedStages } : {}),
+    layers,
     rulings: ruling
       ? {
           value: ruling.value!,

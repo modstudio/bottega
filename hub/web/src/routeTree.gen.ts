@@ -35,6 +35,9 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SpendRouteImport } from './routes/spend'
 import { Route as AcceptInvitationIdRouteImport } from './routes/accept-invitation.$id'
 import { Route as MessagesIdRouteImport } from './routes/messages.$id'
+import { Route as PersonalAutonomyRouteImport } from './routes/personal.autonomy'
+import { Route as PersonalInstructionsRouteImport } from './routes/personal.instructions'
+import { Route as PersonalPermissionsRouteImport } from './routes/personal.permissions'
 import { Route as ProductBoardRouteImport } from './routes/product.board'
 import { Route as ProductContextRouteImport } from './routes/product.context'
 import { Route as ProductDocStoreRouteImport } from './routes/product.doc-store'
@@ -182,6 +185,21 @@ const MessagesIdRoute = MessagesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => MessagesRoute,
 } as any)
+const PersonalAutonomyRoute = PersonalAutonomyRouteImport.update({
+  id: '/personal/autonomy',
+  path: '/personal/autonomy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PersonalInstructionsRoute = PersonalInstructionsRouteImport.update({
+  id: '/personal/instructions',
+  path: '/personal/instructions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PersonalPermissionsRoute = PersonalPermissionsRouteImport.update({
+  id: '/personal/permissions',
+  path: '/personal/permissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProductBoardRoute = ProductBoardRouteImport.update({
   id: '/product/board',
   path: '/product/board',
@@ -290,6 +308,9 @@ export interface FileRoutesByFullPath {
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/messages/$id': typeof MessagesIdRoute
+  '/personal/autonomy': typeof PersonalAutonomyRoute
+  '/personal/instructions': typeof PersonalInstructionsRoute
+  '/personal/permissions': typeof PersonalPermissionsRoute
   '/product/board': typeof ProductBoardRoute
   '/product/context': typeof ProductContextRoute
   '/product/doc-store': typeof ProductDocStoreRoute
@@ -334,6 +355,9 @@ export interface FileRoutesByTo {
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/messages/$id': typeof MessagesIdRoute
+  '/personal/autonomy': typeof PersonalAutonomyRoute
+  '/personal/instructions': typeof PersonalInstructionsRoute
+  '/personal/permissions': typeof PersonalPermissionsRoute
   '/product/board': typeof ProductBoardRoute
   '/product/context': typeof ProductContextRoute
   '/product/doc-store': typeof ProductDocStoreRoute
@@ -379,6 +403,9 @@ export interface FileRoutesById {
   '/spend': typeof SpendRoute
   '/accept-invitation/$id': typeof AcceptInvitationIdRoute
   '/messages/$id': typeof MessagesIdRoute
+  '/personal/autonomy': typeof PersonalAutonomyRoute
+  '/personal/instructions': typeof PersonalInstructionsRoute
+  '/personal/permissions': typeof PersonalPermissionsRoute
   '/product/board': typeof ProductBoardRoute
   '/product/context': typeof ProductContextRoute
   '/product/doc-store': typeof ProductDocStoreRoute
@@ -425,6 +452,9 @@ export interface FileRouteTypes {
     | '/spend'
     | '/accept-invitation/$id'
     | '/messages/$id'
+    | '/personal/autonomy'
+    | '/personal/instructions'
+    | '/personal/permissions'
     | '/product/board'
     | '/product/context'
     | '/product/doc-store'
@@ -469,6 +499,9 @@ export interface FileRouteTypes {
     | '/spend'
     | '/accept-invitation/$id'
     | '/messages/$id'
+    | '/personal/autonomy'
+    | '/personal/instructions'
+    | '/personal/permissions'
     | '/product/board'
     | '/product/context'
     | '/product/doc-store'
@@ -513,6 +546,9 @@ export interface FileRouteTypes {
     | '/spend'
     | '/accept-invitation/$id'
     | '/messages/$id'
+    | '/personal/autonomy'
+    | '/personal/instructions'
+    | '/personal/permissions'
     | '/product/board'
     | '/product/context'
     | '/product/doc-store'
@@ -557,6 +593,9 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
   AcceptInvitationIdRoute: typeof AcceptInvitationIdRoute
+  PersonalAutonomyRoute: typeof PersonalAutonomyRoute
+  PersonalInstructionsRoute: typeof PersonalInstructionsRoute
+  PersonalPermissionsRoute: typeof PersonalPermissionsRoute
   ProductBoardRoute: typeof ProductBoardRoute
   ProductContextRoute: typeof ProductContextRoute
   ProductDocStoreRoute: typeof ProductDocStoreRoute
@@ -751,6 +790,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/messages/$id'
       preLoaderRoute: typeof MessagesIdRouteImport
       parentRoute: typeof MessagesRoute
+    }
+    '/personal/autonomy': {
+      id: '/personal/autonomy'
+      path: '/personal/autonomy'
+      fullPath: '/personal/autonomy'
+      preLoaderRoute: typeof PersonalAutonomyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/personal/instructions': {
+      id: '/personal/instructions'
+      path: '/personal/instructions'
+      fullPath: '/personal/instructions'
+      preLoaderRoute: typeof PersonalInstructionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/personal/permissions': {
+      id: '/personal/permissions'
+      path: '/personal/permissions'
+      fullPath: '/personal/permissions'
+      preLoaderRoute: typeof PersonalPermissionsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/product/board': {
       id: '/product/board'
@@ -979,6 +1039,9 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,
   AcceptInvitationIdRoute: AcceptInvitationIdRoute,
+  PersonalAutonomyRoute: PersonalAutonomyRoute,
+  PersonalInstructionsRoute: PersonalInstructionsRoute,
+  PersonalPermissionsRoute: PersonalPermissionsRoute,
   ProductBoardRoute: ProductBoardRoute,
   ProductContextRoute: ProductContextRoute,
   ProductDocStoreRoute: ProductDocStoreRoute,

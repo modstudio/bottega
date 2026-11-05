@@ -1,37 +1,45 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
+import type { MachinePermissionOperation } from '../../../shared/machine-config.ts'
+import type { SettingsPermissionList } from '../../../shared/settings-permission-lists.ts'
 import { queryClient, trpc } from './client.ts'
 
 export type MachinePermissionChange = {
-  operation: 'add' | 'remove' | 'drop' | 'undrop'
-  list: 'allow' | 'ask' | 'deny'
+  operation: MachinePermissionOperation
+  list: SettingsPermissionList
   rule: string
 }
 
 export function useMachinePermissionChange() {
   const mutation = useMutation(trpc.context.settings.machinePermission.mutationOptions())
   const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   return {
-    async run(input: MachinePermissionChange, { onApplied }: { onApplied(): void }) {
+    async run(input: readonly MachinePermissionChange[]) {
       setPending(true)
+      setError(null)
+      let saved = 0
       try {
-        await mutation.mutateAsync(input)
-      } catch {
-        setPending(false)
-        return false
-      }
-
-      onApplied()
-      try {
-        await queryClient.invalidateQueries({ queryKey: trpc.context.settings.pathKey() })
-      } catch {
-        // The write was committed. A failed refresh must not report it as failed.
+        for (const step of input) {
+          await mutation.mutateAsync(step)
+          saved += 1
+        }
+      } catch (failure) {
+        const message = failure instanceof Error ? failure.message : String(failure)
+        setError(message)
+        return { saved, error: message }
       } finally {
-        setPending(false)
+        try {
+          await queryClient.invalidateQueries({ queryKey: trpc.context.settings.pathKey() })
+        } catch {
+          // The writes were committed. A failed refresh must not report them as failed.
+        } finally {
+          setPending(false)
+        }
       }
-      return true
+      return { saved, error: null }
     },
     pending,
-    error: mutation.error?.message ?? null,
+    error,
   }
 }
