@@ -41,7 +41,7 @@ export function builtInsIdentity(catalogue: BuiltInsCatalogue): string {
     .digest('hex')
 }
 
-export const RECORD_BUILT_INS_IDENTITY = builtInsIdentity({
+const RECORD_BUILT_INS_IDENTITY = builtInsIdentity({
   lenses: BUILT_IN_LENSES,
   lensSlots: BUILT_IN_LENS_SLOTS,
   lensDefaultProfile: BUILT_IN_LENS_DEFAULT_PROFILE,

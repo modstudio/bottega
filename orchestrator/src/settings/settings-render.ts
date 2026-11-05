@@ -257,7 +257,6 @@ function hookFingerprint(item: unknown): string {
     .slice(0, HOOK_FINGERPRINT_LENGTH)
 }
 
-
 function subtract(left: string[], right: string[]): string[] {
   const remaining = new Map<string, number>()
   for (const value of right) remaining.set(value, (remaining.get(value) ?? 0) + 1)
