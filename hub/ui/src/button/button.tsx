@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactElement, Ref } from 'react'
 import { renderAs } from '../dom/render'
+import { useControlSize } from '../field/control-size'
 import { buttonStyles, iconButtonStyles, textButtonStyles } from './button.styles.ts'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
@@ -17,12 +18,13 @@ type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & 
 
 export function Button({
   variant = 'secondary',
-  size = 'md',
+  size: own,
   render,
   className,
   type = 'button',
   ...props
 }: ButtonProps) {
+  const size = useControlSize(own, 'md')
   return renderAs(
     render,
     <button
@@ -43,13 +45,14 @@ type IconButtonProps = Omit<ButtonProps, 'children' | 'aria-label'> & {
 /** A square button holding only an icon; `label` names it. */
 export function IconButton({
   variant = 'ghost',
-  size = 'md',
+  size: own,
   label,
   render,
   className,
   type = 'button',
   ...props
 }: IconButtonProps) {
+  const size = useControlSize(own, 'md')
   return renderAs(
     render,
     <button

@@ -265,6 +265,19 @@ export const contextRouter = t.router({
         await fromOrch(() => configSet(SHIP_TO_CONFIG_KEY, input.value))
         return localAutonomy(input.project)
       }),
+    setRulings: mutation
+      .input(
+        z.object({
+          project: z.string().min(1),
+          value: rulingsValue,
+          expectedRowVersion: z.number().int().positive().nullable().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        projectPath(input.project)
+        await fromOrch(() => configSet('autonomy.rulings', input.value, input.expectedRowVersion))
+        return localAutonomy(input.project)
+      }),
     setPreset: mutation
       .input(
         z.object({

@@ -710,7 +710,7 @@ export function SettingsPage() {
     <section>
       <PageHeader
         title="Report email"
-        subtitle="Send a summary of this space's work by email, daily or weekly, to the members and addresses you choose."
+        about="Send a summary of this space's work by email, daily or weekly, to the members and addresses you choose."
       />
       <OperatorEmailSettings />
       {query.error ? (

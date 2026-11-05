@@ -107,7 +107,7 @@ function PersonalFrame({
 }) {
   return (
     <div className="mx-auto max-w-[96rem] space-y-8 px-5 pb-12">
-      <PageHeader title={title} subtitle={PERSONAL_SUBTITLE} actions={actions} />
+      <PageHeader title={title} about={PERSONAL_SUBTITLE} actions={actions} />
       {children}
     </div>
   )
@@ -132,7 +132,6 @@ export function PersonalAutonomyPage() {
             filters={
               <Select
                 label="Project"
-                hint="Chooses the project whose autonomy values are shown."
                 value={selectedProject}
                 options={projectOptions}
                 onChange={setProjectChoice}
@@ -161,8 +160,8 @@ type AutonomySectionProps = {
 function ProjectChooser(props: AutonomySectionProps) {
   return props.showChooser ? (
     <Select
+      size="sm"
       label="Project"
-      hint="Chooses the project whose autonomy values are shown."
       value={props.project}
       options={props.options}
       onChange={props.onProject}
@@ -191,10 +190,18 @@ const LAYER_TEXT: Record<string, { label: string; hint: string }> = {
 }
 
 const AUTONOMY_COLUMNS: AutonomyColumn[] = [
-  { id: 'preset', label: 'Preset' },
-  { id: 'rulings', label: 'Rulings' },
-  { id: 'shipTo', label: 'Ship to' },
-  ...AUTONOMY_STAGES.map((stage) => ({ id: stage, label: capitalized(stage) })),
+  {
+    id: 'preset',
+    label: 'Preset',
+    hint: 'The default independence for every stage. Changing your account preset clears its stage choices; a stricter preset applies to workflows already running, a looser one only to workflows started afterwards.',
+  },
+  { id: 'rulings', label: 'Rulings', hint: 'Who rules on the decisions workers raise.' },
+  { id: 'shipTo', label: 'Ship to', hint: 'Where completed work is sent.' },
+  ...AUTONOMY_STAGES.map((stage) => ({
+    id: stage,
+    label: capitalized(stage),
+    hint: `How independently agents run the ${capitalized(stage)} stage.`,
+  })),
 ]
 
 function layerValues(layer: ResolvedLayer): Record<string, string | null> {
@@ -223,6 +230,7 @@ function accountChoices(
 ): Record<string, AutonomyChoice> {
   return {
     preset: { options: presetOptions, selected: data.userPreset ?? null, unset: KEEP },
+    rulings: { options: rulingsValues, selected: layer.rulings, unset: KEEP },
     shipTo: { options: shipToValues, selected: layer.shipTo, unset: KEEP },
     ...Object.fromEntries(
       data.stages.map((stage) => {
@@ -280,6 +288,7 @@ function useAutonomyMutations() {
     set: useMutation(api.set.mutationOptions(refreshed)),
     setShipTo: useMutation(api.setShipTo.mutationOptions(refreshed)),
     setPreset: useMutation(api.setPreset.mutationOptions(refreshed)),
+    setRulings: useMutation(api.setRulings.mutationOptions(refreshed)),
     clearStage: useMutation(api.clearStage.mutationOptions(refreshed)),
     setMachine: useMutation(api.setMachine.mutationOptions(refreshed)),
     clearMachine: useMutation(api.clearMachine.mutationOptions(refreshed)),
@@ -322,6 +331,8 @@ function writeAccount(
   const stage = stageOf(column)
   if (column === 'preset' && value)
     mutations.setPreset.mutate({ project, value: value as AutonomyPreset })
+  else if (column === 'rulings' && (value === 'agent' || value === 'user'))
+    mutations.setRulings.mutate({ project, value })
   else if (column === 'shipTo' && value && isShipToValue(value))
     mutations.setShipTo.mutate({ project, value })
   else if (stage && value === null) mutations.clearStage.mutate({ project, stage })
@@ -352,11 +363,7 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
   const edit = useAutonomyEdit(project)
   const data = autonomy.data?.registered ? autonomy.data : null
   return (
-    <FieldSection
-      title="Where each setting comes from"
-      description="Agents consult these layers from the top down and use the first one that says something; that cell is marked. Changing your account's preset clears its stage choices. A stricter preset applies to workflows already running; a looser one applies only to workflows started afterwards."
-    >
-      <ProjectChooser {...{ project, options, onProject, showChooser }} />
+    <>
       <LoadError title="autonomy settings" error={autonomy.error} />
       {autonomy.isLoading ? <EmptyState title="Loading autonomy..." /> : null}
       {data?.warnings?.map((warning) => (
@@ -369,9 +376,14 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
         />
       ) : null}
       {data?.layers ? (
-        <AutonomyLayers layers={autonomyLayers(data)} columns={AUTONOMY_COLUMNS} edit={edit} />
+        <AutonomyLayers
+          layers={autonomyLayers(data)}
+          columns={AUTONOMY_COLUMNS}
+          edit={edit}
+          scope={<ProjectChooser {...{ project, options, onProject, showChooser }} />}
+        />
       ) : null}
-    </FieldSection>
+    </>
   )
 }
 

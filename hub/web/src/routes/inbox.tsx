@@ -69,7 +69,7 @@ function InboxPage() {
     <section>
       <PageHeader
         title="Waiting on you"
-        subtitle="Questions and workflow rulings that need an operator."
+        about="Questions and workflow rulings that need an operator."
       />
       {waiting.error ? (
         <ErrorState title="Could not load the inbox" message={waiting.error.message} />

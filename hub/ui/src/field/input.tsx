@@ -1,5 +1,6 @@
 import type { InputHTMLAttributes, ReactNode, Ref } from 'react'
 import { ControlWithHint, useFieldHint } from './control.ts'
+import { useControlSize } from './control-size'
 import { inputStyles } from './input.styles.ts'
 
 type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'size'> & {
@@ -12,7 +13,8 @@ type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'siz
   className?: string
 }
 
-export function Input({ size = 'md', hint, className, type = 'text', ...props }: InputProps) {
+export function Input({ size: own, hint, className, type = 'text', ...props }: InputProps) {
+  const size = useControlSize(own, 'md')
   const { hintId, describedBy } = useFieldHint(hint, props['aria-describedby'])
   const control = (
     <input

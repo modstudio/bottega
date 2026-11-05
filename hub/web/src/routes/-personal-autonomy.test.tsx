@@ -203,7 +203,7 @@ test('autonomy rows keep the resolver order and edit only this machine and your 
     unset: { label: 'Preset (auto)' },
   })
   expect(account!.editable?.canon?.selected).toBe('review')
-  expect(account!.editable?.rulings).toBeUndefined()
+  expect(account!.editable?.rulings?.selected).toBe('agent')
 })
 
 test('a stale or signed-out account row reads only', () => {
@@ -224,7 +224,7 @@ test('the autonomy page marks what is in effect and where it came from', () => {
   )
   const html = render(PersonalAutonomyPage)
   expect(html).toContain('In effect')
-  expect(html).toContain('Where each setting comes from')
+  expect(html).toContain('Your account')
   expect(html).not.toContain('This session')
 })
 

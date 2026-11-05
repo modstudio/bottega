@@ -1,16 +1,18 @@
 import {
-  Activity,
   BarChart3,
   BookOpen,
   Bot,
   BriefcaseBusiness,
+  Building2,
   CheckCircle2,
   CircleDollarSign,
+  CircleUserRound,
   FolderGit2,
   Gauge,
   GitCompareArrows,
   Inbox,
   Kanban,
+  Laptop,
   type LucideIcon,
   Mail,
   MessageSquareText,
@@ -20,7 +22,6 @@ import {
   Route as RouteIcon,
   ScanSearch,
   ScrollText,
-  Settings,
   ShieldCheck,
   Users,
 } from 'lucide-react'
@@ -80,129 +81,98 @@ type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted; a
 type NavGroup = { label: string; icon: LucideIcon; items: NavLink[] }
 export type NavSection = { id: string; entries: (NavLink | NavGroup)[] }
 
-// The dashboard stays one click away; every other page sits in a group that
-// unfolds in place in the open rail and beside it in the collapsed one.
-const LOCAL_NAV: NavSection[] = [
+type Mode = 'hosted' | 'local'
+type ModeLink = NavLink & { only?: Mode }
+
+/**
+ * One tree for both modes; a link marked `only` exists in that mode alone, so local shows the
+ * same groups in the same order with fewer items. The dashboard stays one click away; every
+ * other page sits in a group that unfolds in place in the open rail and beside it in the
+ * collapsed one. You holds what follows the user to every machine and space; Space holds what
+ * the space shares.
+ */
+const NAV_TREE: { label: string; icon: LucideIcon; items: ModeLink[] }[] = [
   {
-    id: 'home',
-    entries: [{ to: '/flight', label: 'Flight', icon: Plane, count: 'flight' }],
+    label: 'Work',
+    icon: Kanban,
+    items: [
+      { to: '/board', label: 'Board', icon: Kanban },
+      { to: '/inbox', label: 'Inbox', icon: Inbox, count: 'inbox', attention: true, only: 'local' },
+      { to: '/done', label: 'Done', icon: CheckCircle2, count: 'done' },
+      { to: '/messages', label: 'Messages', icon: MessageSquareText },
+      { to: '/runs', label: 'Runs', icon: Play, count: 'runs' },
+      { to: '/reviews', label: 'Reviews', icon: ScanSearch, only: 'hosted' },
+    ],
   },
   {
-    id: 'groups',
-    entries: [
-      {
-        label: 'Work',
-        icon: Kanban,
-        items: [
-          { to: '/inbox', label: 'Inbox', icon: Inbox, count: 'inbox', attention: true },
-          { to: '/board', label: 'Board', icon: Kanban },
-          { to: '/done', label: 'Done', icon: CheckCircle2, count: 'done' },
-          { to: '/runs', label: 'Runs', icon: Play, count: 'runs' },
-        ],
-      },
-      {
-        label: 'Knowledge',
-        icon: BookOpen,
-        items: [
-          { to: '/projects', label: 'Projects', icon: FolderGit2 },
-          { to: '/docs', label: 'Docs', icon: BookOpen },
-          { to: '/notes', label: 'Notes', icon: NotebookPen },
-          { to: '/messages', label: 'Messages', icon: MessageSquareText },
-        ],
-      },
-      {
-        label: 'Agents',
-        icon: Bot,
-        items: [
-          { to: '/agents', label: 'Agents', icon: Bot },
-          { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
-          { to: '/routing', label: 'Routing', icon: RouteIcon },
-        ],
-      },
-      {
-        label: 'Measures',
-        icon: BarChart3,
-        items: [
-          { to: '/health', label: 'Health', icon: Activity },
-          { to: '/spend', label: 'Spend', icon: CircleDollarSign },
-          { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
-        ],
-      },
-      {
-        label: 'Settings',
-        icon: Settings,
-        items: [
-          { to: '/personal/instructions', label: 'Instructions', icon: ScrollText },
-          { to: '/personal/autonomy', label: 'Autonomy', icon: Gauge },
-          { to: '/personal/permissions', label: 'Permissions', icon: ShieldCheck },
-          { to: '/settings', label: 'Report email', icon: Mail },
-        ],
-      },
+    label: 'Knowledge',
+    icon: BookOpen,
+    items: [
+      { to: '/docs', label: 'Docs', icon: BookOpen },
+      { to: '/notes', label: 'Notes', icon: NotebookPen },
+    ],
+  },
+  {
+    label: 'Agents',
+    icon: Bot,
+    items: [
+      { to: '/agents', label: 'Agents', icon: Bot },
+      { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
+      { to: '/routing', label: 'Routing', icon: RouteIcon },
+    ],
+  },
+  {
+    label: 'Measures',
+    icon: BarChart3,
+    items: [
+      { to: '/reports', label: 'Reports', icon: BarChart3, only: 'hosted' },
+      { to: '/spend', label: 'Spend', icon: CircleDollarSign },
+      { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
+    ],
+  },
+  {
+    label: 'You',
+    icon: CircleUserRound,
+    items: [
+      { to: '/personal/instructions', label: 'Instructions', icon: ScrollText },
+      { to: '/personal/autonomy', label: 'Autonomy', icon: Gauge },
+      { to: '/personal/permissions', label: 'Permissions', icon: ShieldCheck },
+      { to: '/health', label: 'Machines', icon: Laptop },
+    ],
+  },
+  {
+    label: 'Space',
+    icon: Building2,
+    items: [
+      { to: '/projects', label: 'Projects', icon: FolderGit2 },
+      { to: '/members', label: 'Members', icon: Users, only: 'hosted' },
+      { to: '/settings', label: 'Report email', icon: Mail },
     ],
   },
 ]
 
-const HOSTED_NAV: NavSection[] = [
-  {
-    id: 'home',
-    entries: [{ to: '/flight', label: 'Flight', icon: Plane }],
-  },
-  {
-    id: 'groups',
-    entries: [
-      {
-        label: 'Work',
-        icon: Kanban,
-        items: [
-          { to: '/board', label: 'Board', icon: Kanban },
-          { to: '/done', label: 'Done', icon: CheckCircle2 },
-          { to: '/runs', label: 'Runs', icon: Play },
-          { to: '/reviews', label: 'Reviews', icon: ScanSearch },
-        ],
-      },
-      {
-        label: 'Knowledge',
-        icon: BookOpen,
-        items: [
-          { to: '/projects', label: 'Projects', icon: FolderGit2 },
-          { to: '/docs', label: 'Docs', icon: BookOpen },
-          { to: '/notes', label: 'Notes', icon: NotebookPen },
-          { to: '/messages', label: 'Messages', icon: MessageSquareText },
-        ],
-      },
-      {
-        label: 'Agents',
-        icon: Bot,
-        items: [
-          { to: '/agents', label: 'Agents', icon: Bot },
-          { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
-          { to: '/routing', label: 'Routing', icon: RouteIcon },
-        ],
-      },
-      {
-        label: 'Measures',
-        icon: BarChart3,
-        items: [
-          { to: '/reports', label: 'Reports', icon: BarChart3 },
-          { to: '/health', label: 'Machines', icon: Activity },
-          { to: '/spend', label: 'Spend', icon: CircleDollarSign },
-          { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
-        ],
-      },
-      {
-        label: 'Settings',
-        icon: Settings,
-        items: [
-          { to: '/personal/instructions', label: 'Instructions', icon: ScrollText },
-          { to: '/personal/autonomy', label: 'Autonomy', icon: Gauge },
-          { to: '/personal/permissions', label: 'Permissions', icon: ShieldCheck },
-          { to: '/members', label: 'Members', icon: Users },
-          { to: '/settings', label: 'Report email', icon: Mail },
-        ],
-      },
-    ],
-  },
-]
+function navFor(mode: Mode): NavSection[] {
+  // Live counts come from the local store, so the hosted rail shows none.
+  const link = ({ only: _only, count, ...item }: ModeLink): NavLink =>
+    mode === 'hosted' ? item : { ...item, count }
+  return [
+    {
+      id: 'home',
+      entries: [link({ to: '/flight', label: 'Flight', icon: Plane, count: 'flight' })],
+    },
+    {
+      id: 'groups',
+      entries: NAV_TREE.map((group) => ({
+        label: group.label,
+        icon: group.icon,
+        items: group.items.filter((item) => !item.only || item.only === mode).map(link),
+      })),
+    },
+  ]
+}
+
+const LOCAL_NAV = navFor('local')
+const HOSTED_NAV = navFor('hosted')
 
 export function navForMode(mode: 'hosted' | 'local'): NavSection[] {
   return mode === 'hosted' ? HOSTED_NAV : LOCAL_NAV

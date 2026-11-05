@@ -215,7 +215,7 @@ function MembersPage() {
   ) : null
   return (
     <section>
-      <PageHeader title="Members" subtitle="Manage this space" />
+      <PageHeader title="Members" />
       <p className="mb-8 text-text-muted">
         Config access lets a member read and change this space's sealed configuration and secrets
         from their machines.

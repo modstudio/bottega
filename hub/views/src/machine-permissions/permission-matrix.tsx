@@ -1,7 +1,9 @@
 import { Button } from '@bottega/hub-ui/button'
+import { Dialog } from '@bottega/hub-ui/dialog'
 import { ErrorState } from '@bottega/hub-ui/error-state'
 import { Input } from '@bottega/hub-ui/field/input'
 import { Select, type SelectOption } from '@bottega/hub-ui/listbox/select'
+import { InfoTip } from '@bottega/hub-ui/popover/info-tip'
 import { Segmented } from '@bottega/hub-ui/segmented'
 import {
   Table,
@@ -28,8 +30,6 @@ export type MatrixValue = 'none' | 'allow' | 'ask' | 'deny' | 'inherit' | 'drop'
 export type MatrixColumn = {
   layer: MatrixLayer
   label: string
-  /** Replaces the plain label, for a column that chooses what it shows. */
-  heading?: ReactNode
 }
 
 export type MatrixRow = { rule: string; values: Partial<Record<MatrixLayer, MatrixValue>> }
@@ -146,27 +146,50 @@ function useMatrixState(rows: readonly MatrixRow[], columns: readonly MatrixColu
 }
 
 function AddRule({ onAdd }: { onAdd(rule: string): void }) {
+  const [open, setOpen] = useState(false)
   const [rule, setRule] = useState('')
+  const close = () => {
+    setOpen(false)
+    setRule('')
+  }
   const submit = () => {
     if (!rule.trim()) return
     onAdd(rule.trim())
-    setRule('')
+    close()
   }
   return (
-    <div className={permissionMatrixStyles().add()}>
-      <Input
-        aria-label="New rule"
-        placeholder="New rule, such as Bash(make test:*)"
-        value={rule}
-        onChange={(event) => setRule(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') submit()
-        }}
-      />
-      <Button size="sm" disabled={!rule.trim()} onClick={submit}>
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}>
         <Plus /> Add rule
       </Button>
-    </div>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => (next ? setOpen(true) : close())}
+        title="Add rule"
+        size="sm"
+        footer={
+          <>
+            <Button size="sm" variant="ghost" onClick={close}>
+              Cancel
+            </Button>
+            <Button size="sm" disabled={!rule.trim()} onClick={submit}>
+              Add rule
+            </Button>
+          </>
+        }
+      >
+        <Input
+          aria-label="Rule"
+          placeholder="Bash(make test:*)"
+          autoFocus
+          value={rule}
+          onChange={(event) => setRule(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') submit()
+          }}
+        />
+      </Dialog>
+    </>
   )
 }
 
@@ -322,20 +345,22 @@ function GroupRow({
   return (
     <TableRow>
       <TableCell colSpan={span}>
-        <button
-          type="button"
-          aria-expanded={open}
-          className={permissionMatrixStyles(group).groupButton()}
-          onClick={onToggle}
-        >
-          <ChevronDown aria-hidden className={permissionMatrixStyles(group).groupChevron()} />
-          <span className={permissionMatrixStyles(group).groupLabel()}>{label}</span>
-          <span className={permissionMatrixStyles(group).groupHint()}>{hint}</span>
+        <div className={permissionMatrixStyles(group).groupLine()}>
+          <button
+            type="button"
+            aria-expanded={open}
+            className={permissionMatrixStyles(group).groupButton()}
+            onClick={onToggle}
+          >
+            <ChevronDown aria-hidden className={permissionMatrixStyles(group).groupChevron()} />
+            <span className={permissionMatrixStyles(group).groupLabel()}>{label}</span>
+          </button>
+          <InfoTip label={`About ${label}`}>{hint}</InfoTip>
           <span className={permissionMatrixStyles(group).groupSummary()}>
             {unsaved ? 'Unsaved changes · ' : ''}
             {summary}
           </span>
-        </button>
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -350,10 +375,13 @@ export function PermissionMatrix({
   columns,
   save,
   notice,
+  scope,
 }: {
   rows: readonly MatrixRow[]
   columns: readonly MatrixColumn[]
   save: MatrixSave
+  /** Toolbar controls that choose what the columns show, such as the project. */
+  scope?: ReactNode
   /** Shown above the rows, such as a check the stored rules failed. */
   notice?: ReactNode
 }) {
@@ -368,7 +396,7 @@ export function PermissionMatrix({
 
   return (
     <TableCard
-      heading={<AddRule onAdd={state.add} />}
+      actions={<AddRule onAdd={state.add} />}
       search={
         <Input
           aria-label="Search permissions"
@@ -377,15 +405,17 @@ export function PermissionMatrix({
           onChange={(event) => setQuery(event.target.value)}
         />
       }
-      filters={
+      filters={[
+        scope,
         <Segmented
+          key="show"
           label="Show"
           size="sm"
           value={filter}
           options={FILTERS}
           onChange={(value) => setFilter(value as Filter)}
-        />
-      }
+        />,
+      ]}
       filtersActive={filter === 'all' ? 0 : 1}
       footer={
         <div className={permissionMatrixStyles().footer()}>
@@ -410,7 +440,7 @@ export function PermissionMatrix({
             <TableHead>Permission</TableHead>
             {columns.map((column) => (
               <TableHead key={column.layer} className={permissionMatrixStyles().column()}>
-                {column.heading ?? column.label}
+                {column.label}
               </TableHead>
             ))}
           </TableRow>

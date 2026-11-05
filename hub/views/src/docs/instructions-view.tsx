@@ -1,5 +1,6 @@
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { ErrorState } from '@bottega/hub-ui/error-state'
+import { InfoTip } from '@bottega/hub-ui/popover/info-tip'
 import { BookOpen, Zap } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { DocumentSurface, DocumentTitle } from '../document-surface/document-surface.tsx'
@@ -82,8 +83,10 @@ function InstructionsRail({
         const rows = items.filter((item) => item.delivery === group.delivery)
         return (
           <section key={group.delivery} className={instructionsViewStyles().group()}>
-            <h2 className={instructionsViewStyles().groupHeading()}>{group.heading}</h2>
-            <p className={instructionsViewStyles().groupHint()}>{group.hint}</p>
+            <h2 className={instructionsViewStyles().groupHeading()}>
+              {group.heading}
+              <InfoTip label={`About ${group.heading}`}>{group.hint}</InfoTip>
+            </h2>
             {rows.length === 0 ? (
               <p className={instructionsViewStyles().empty()}>{group.empty}</p>
             ) : null}

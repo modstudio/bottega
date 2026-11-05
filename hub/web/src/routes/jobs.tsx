@@ -90,9 +90,7 @@ function JobsView({
     void navigate({ to: '/jobs', search: { job: undefined }, replace: true, resetScroll: false })
   return (
     <section>
-      {header ?? (
-        <PageHeader title="Jobs" subtitle="Code-declared work the orchestrator can route" />
-      )}
+      {header ?? <PageHeader title="Jobs" about="Code-declared work the orchestrator can route" />}
       {error ? <ErrorState title="Could not load jobs" message={error.message} /> : null}
       <Collection
         title="Job types"
