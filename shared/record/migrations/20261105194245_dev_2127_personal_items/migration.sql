@@ -35,6 +35,7 @@ BEGIN
     SELECT c.user_id, c.environment, c.key,
       string_agg(DISTINCT c.space_id::text, ', ' ORDER BY c.space_id::text) AS spaces
     FROM config_entry c
+    WHERE c.user_id IS NOT NULL
     GROUP BY c.user_id, c.environment, c.key
     HAVING count(DISTINCT c.space_id) > 1
   ) grouped;
