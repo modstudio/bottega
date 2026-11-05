@@ -47,7 +47,7 @@ async function pullTable(
       { destinationSpaceId: spaceId },
     )
     if (!page.items.length) return { count, completed: true }
-    if (page.items.some((item) => !parentPresent(local, table, item)))
+    if (page.items.some((item) => !workflowCatalogueParentPresent(local, table, item)))
       return { count, completed: false }
     writeTransaction(() => {
       for (const item of page.items) {
@@ -79,7 +79,7 @@ function names(table: RecordWorkflowTable) {
     eventForeign: workflow ? 'workflow_version_record_id' : 'catalogue_version_record_id',
   }
 }
-function parentPresent(
+export function workflowCatalogueParentPresent(
   local: Database,
   table: RecordWorkflowTable,
   item: Record<string, unknown>,
@@ -101,7 +101,7 @@ function parentPresent(
   return true
 }
 
-function applyWorkflowCatalogueRow(
+export function applyWorkflowCatalogueRow(
   local: Database,
   table: RecordWorkflowTable,
   item: Record<string, unknown>,

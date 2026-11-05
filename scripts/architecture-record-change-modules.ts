@@ -11,6 +11,29 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const recordChangeModules = [
+  module('orchestrator/src/record/record-api-client-changes.ts', [
+    'zod',
+    './record-api-client-paths.ts',
+  ]),
+  module('orchestrator/src/record/record-cache-feed.ts', [
+    'bun:sqlite',
+    '../../../shared/record-space-membership.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../subject/subjects.ts',
+    './record-api-client.ts',
+    './record-api-client-changes.ts',
+    './record-auth.ts',
+    './record-cache-lens.ts',
+    './record-cache-port.ts',
+    './record-cache-projects.ts',
+    './record-cache-workflow.ts',
+    './record-lens-contract.ts',
+    './record-port-contract.ts',
+    './record-routing-evidence-contract.ts',
+    './record-routing-pool.ts',
+    './record-workflow-contract.ts',
+  ]),
   module('orchestrator/src/record/record-api-changes.ts', [
     'hono',
     'zod',

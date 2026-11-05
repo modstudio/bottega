@@ -197,6 +197,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-client-machine.ts', ['./record-api-client-paths.ts']),
   module('orchestrator/src/record/record-api-client-session.ts', [
     './record-api-client-paths.ts',
+    './record-api-client-response.ts',
     './record-auth.ts',
     './record-sync-contract.ts',
   ]),

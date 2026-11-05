@@ -20,6 +20,7 @@ import {
   classifyBoardStreamResponse,
   releaseUnopenedStream,
 } from './record-api-client-board-stream.ts'
+import { type RecordChangesClient, recordChangesClient } from './record-api-client-changes.ts'
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
 import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
@@ -50,7 +51,12 @@ import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
 } from './record-api-client-routing-evidence.ts'
-import { type RecordSessionClient, recordSessionClient } from './record-api-client-session.ts'
+import {
+  recordIdentityResponse,
+  type RecordSessionClient,
+  recordSessionClient,
+} from './record-api-client-session.ts'
+export { recordIdentityResponse } from './record-api-client-session.ts'
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
@@ -210,6 +216,7 @@ export type {
 } from './record-api-client-paths.ts'
 
 export type RecordApiClient = ProjectIdentityClient &
+  RecordChangesClient &
   RecordLensClient &
   RecordMachineClient &
   RecordSessionClient &
@@ -431,6 +438,7 @@ function injectSlot(): InjectSlot {
 }
 
 const injectedClient = (): RecordApiClient | null => injectSlot().current
+export const recordApiClientInjected = (): boolean => injectedClient() !== null
 
 export class RecordApiRequestError extends Error {
   readonly kind: 'unreachable' | 'server' | 'refused'
@@ -531,34 +539,6 @@ export const recordApiSignIn = (email: string, password: string) =>
 export const recordApiSignUp = (email: string, name: string, password: string) =>
   recordEmailAuthRequest('/api/auth/sign-up/email', { email, name, password })
 
-export function recordIdentityResponse(body: unknown): RecordIdentity {
-  const value = responseRecord(body)
-  const user = responseRecord(value.user)
-  const memberships = Array.isArray(value.memberships)
-    ? value.memberships.map((membership) => responseRecord(membership))
-    : null
-  if (
-    !['id', 'email'].every((field) => typeof user[field] === 'string') ||
-    typeof user.emailVerified !== 'boolean' ||
-    (value.activeSpaceId !== null && typeof value.activeSpaceId !== 'string') ||
-    (value.personalSpaceId !== null && typeof value.personalSpaceId !== 'string') ||
-    !memberships ||
-    memberships.some((membership) =>
-      ['space_id', 'name', 'slug', 'role', 'permission'].some(
-        (field) => typeof membership[field] !== 'string',
-      ),
-    )
-  ) {
-    throw recordApiUnreachable(new Error('record API returned an invalid identity'))
-  }
-  return {
-    user: user as RecordIdentity['user'],
-    activeSpaceId: value.activeSpaceId,
-    personalSpaceId: value.personalSpaceId,
-    memberships,
-  }
-}
-
 export function recordApiBaseUrl(
   environment: Record<string, string | undefined> = process.env,
 ): string {
@@ -574,7 +554,11 @@ export function recordApiBaseUrl(
 
 export async function recordApiRequest<T>(
   path: string,
-  init: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string } = {},
+  init: RequestInit & {
+    schema?: (body: unknown) => T
+    acceptedError?: { status: number; schema: (body: unknown) => T }
+    destinationSpaceId?: string
+  } = {},
   authentication?: RecordApiAuthentication,
   transport: typeof fetch = fetch,
 ): Promise<T> {
@@ -598,7 +582,10 @@ export async function recordApiRequest<T>(
     throw recordApiUnreachable(error)
   }
   const body = await response.json().catch(() => null)
-  if (!response.ok) throw recordApiError(body, response.status, response.headers)
+  if (!response.ok) {
+    if (init.acceptedError?.status === response.status) return init.acceptedError.schema(body)
+    throw recordApiError(body, response.status, response.headers)
+  }
   return (init.schema ? init.schema(body) : (body as T)) as T
 }
 
@@ -725,11 +712,14 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return {
+    ...recordChangesClient(request),
     ...recordMachineClient(request),
     ...recordConfigAccessClient(request),
     ...recordModerationClient(request),
     ...recordOutsideClient(request),
-    ...recordSessionClient(request, recordIdentityResponse),
+    ...recordSessionClient(request, (body) =>
+      recordIdentityResponse(body, (message) => recordApiUnreachable(new Error(message))),
+    ),
     ...recordIdentityAndSpaceClient(request),
     ...recordSnapshotAndPublicDocClient(request),
     ...recordDocReadClient(request),

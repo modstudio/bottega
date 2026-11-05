@@ -53,7 +53,7 @@ async function pullTable(
       { destinationSpaceId: spaceId },
     )
     if (!page.items.length) return { count, completed: true }
-    if (page.items.some((item) => !parentPresent(local, table, item)))
+    if (page.items.some((item) => !portCatalogueParentPresent(local, table, item)))
       return { count, completed: false }
     writeTransaction(() => {
       for (const item of page.items) {
@@ -87,7 +87,11 @@ const hasRef = (local: Database, id: unknown, spaceId: unknown) =>
       .query('SELECT 1 FROM port_ref WHERE record_id=? AND space_id=?')
       .get(String(id), String(spaceId)),
   )
-function parentPresent(local: Database, table: RecordPortTable, item: RecordPortRow) {
+export function portCatalogueParentPresent(
+  local: Database,
+  table: RecordPortTable,
+  item: RecordPortRow,
+) {
   switch (table) {
     case 'port_pair': {
       return true

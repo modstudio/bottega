@@ -60,6 +60,31 @@ export function applyLensCatalogueRow(
   lensRowApplicators[table](local, item)
 }
 
+export function lensCatalogueParentPresent(
+  local: Database,
+  table: RecordLensTable,
+  item: Record<string, unknown>,
+): boolean {
+  const spaceId = String(item.spaceId)
+  let parent: { table: string; id: unknown } | null = null
+  if (table === 'lens_revision' || table === 'lens_profile')
+    parent = { table: 'lens', id: item.lensId }
+  else if (table === 'lens_profile_revision') parent = { table: 'lens_profile', id: item.profileId }
+  else if (table === 'project_lens_profile' && item.lensId != null)
+    parent = { table: 'lens', id: item.lensId }
+  else if (table === 'project_lens_profile_revision')
+    parent = { table: 'project_lens_profile', id: item.selectionId }
+  if (!parent) return true
+  const queries: Record<string, ReturnType<Database['query']>> = {
+    lens: local.query('SELECT 1 FROM lens WHERE record_id=? AND space_id=?'),
+    lens_profile: local.query('SELECT 1 FROM lens_profile WHERE record_id=? AND space_id=?'),
+    project_lens_profile: local.query(
+      'SELECT 1 FROM project_lens_profile WHERE record_id=? AND space_id=?',
+    ),
+  }
+  return Boolean(queries[parent.table]?.get(String(parent.id), spaceId))
+}
+
 const nullableText = (value: unknown) => (value == null ? null : String(value))
 
 function applyLensRow(local: Database, item: Record<string, unknown>): void {

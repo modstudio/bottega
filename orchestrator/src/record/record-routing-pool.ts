@@ -18,7 +18,7 @@ export type RoutingPoolPullResult = {
   caughtUp: boolean
 }
 
-function upsertPoolRun(local: Database, row: RecordRoutingEvidence, pulledAt: string): void {
+export function upsertPoolRun(local: Database, row: RecordRoutingEvidence, pulledAt: string): void {
   local
     .query(
       `INSERT INTO routing_pool_run (
