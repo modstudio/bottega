@@ -8,6 +8,7 @@ import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { projectAt } from '../project/projects.ts'
 import {
+  type AutonomyLayerRow,
   type AutonomyStage,
   type AutonomyValue,
   autonomyStages,
@@ -29,6 +30,7 @@ type ArchitectSessionContext =
   | {
       registered: true
       project: string
+      layers: AutonomyLayerRow[]
       rulings: { value: 'agent' | 'user'; scope: string }
       stages: StageSlice[]
       shipTo: ShipToSlice
@@ -230,6 +232,7 @@ async function architectSessionContext(
   const slice = {
     registered: true,
     project: project.name,
+    layers: resolution.layers,
     rulings,
     stages,
     shipTo,

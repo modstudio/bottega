@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
 import {
   ALWAYS_ON_TOTAL_BYTES,
   CARD_BYTES,
@@ -12,7 +13,6 @@ import {
   type CanonFile,
   type CanonFinding,
   type CanonLintInput,
-  canonFrontmatter,
   canonRuleLevel,
   introducedCanonFindings,
   lintCanon,

@@ -184,7 +184,10 @@ async function pullDocs(
   return { docs, skippedDocs }
 }
 
-export async function pullRecordCache(local: Database = db()): Promise<{
+export async function pullRecordCache(
+  local: Database = db(),
+  suppliedIdentity?: RecordIdentity,
+): Promise<{
   docs: number
   skippedDocs: number
   subjects: number
@@ -215,7 +218,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
       routingPool: { added: 0, updated: 0, caughtUp: true },
     }
   const client = recordApiClient()
-  const identity = await client.whoami()
+  const identity = suppliedIdentity ?? (await client.whoami())
   if (!identity.activeSpaceId) throw new Error(noActiveRecordSpaceRefusal())
   rememberSignedInRecordUser(identity.user, local)
   rememberActiveRecordSpace(local, identity.activeSpaceId)

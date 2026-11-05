@@ -31,6 +31,7 @@ import {
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
+import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
 import {
@@ -532,10 +533,14 @@ async function sendSyncBatch(input: {
 
 async function ensureActiveSpaceBuiltIns(
   client: Pick<ReturnType<typeof recordApiClient>, 'whoami' | 'ensureSpaceBuiltIns'>,
+  local: Database,
 ): Promise<Awaited<ReturnType<typeof client.whoami>>> {
   const session = await client.whoami()
-  if (session.activeSpaceId && client.ensureSpaceBuiltIns)
+  if (session.activeSpaceId && client.ensureSpaceBuiltIns) {
+    if (builtInsEnsured(local, session.activeSpaceId)) return session
     await client.ensureSpaceBuiltIns({ destinationSpaceId: session.activeSpaceId })
+    recordBuiltInsEnsured(local, session.activeSpaceId)
+  }
   return session
 }
 
@@ -595,9 +600,10 @@ function cacheFirstSyncedMachineNames(
 async function pullAfterSync(
   options: RecordSyncOptions,
   local: Database,
+  identity: NonNullable<Parameters<typeof pullRecordCache>[1]>,
 ): Promise<Pick<RecordSyncResult, 'routingPool' | 'projectRegister'>> {
   if (options.client) return {}
-  const pull = await pullRecordCache(local)
+  const pull = await pullRecordCache(local, identity)
   return { routingPool: pull.routingPool, projectRegister: pull.projectRegister }
 }
 
@@ -633,7 +639,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const writableLocal = local!
   const client = options.client ?? recordApiClient()
   if (!client.sync) throw new Error('record API client does not provide evidence sync')
-  const session = await ensureActiveSpaceBuiltIns(client)
+  const session = await ensureActiveSpaceBuiltIns(client, writableLocal)
   const memberships = parseRecordSpaceMemberships(session.memberships)
   const blocked: BlockedOutboxRow[] = []
   let pushed = 0
@@ -675,7 +681,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     if (!batch.request.rows.length) break
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
-  const { routingPool, projectRegister } = await pullAfterSync(options, writableLocal)
+  const { routingPool, projectRegister } = await pullAfterSync(options, writableLocal, session)
   rememberHostedRecord(writableLocal)
   return completedSyncResult({
     pushed,

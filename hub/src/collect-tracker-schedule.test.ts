@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SLOW_MS, TrackerPollSchedule } from './collect.ts'
+import { oneShotTrackerSelection, SLOW_MS, TrackerPollSchedule } from './collect.ts'
 import type { TrackerResult } from './ingest/trackers.ts'
 
 describe('tracker poll schedule', () => {
@@ -52,5 +52,17 @@ describe('tracker poll schedule', () => {
     expect(schedule.due(['down']).size).toBe(0)
     now += 2 * SLOW_MS
     expect([...schedule.due(['down'])]).toEqual(['down'])
+  })
+})
+
+test('one-shot tracker selection skips only fresh projects unless tasks are forced', () => {
+  const projects = ['fresh', 'stale', 'never']
+  expect(oneShotTrackerSelection(projects, new Set(['fresh']), false)).toEqual({
+    only: new Set(['stale', 'never']),
+    skippedFresh: 1,
+  })
+  expect(oneShotTrackerSelection(projects, new Set(['fresh']), true)).toEqual({
+    only: null,
+    skippedFresh: 0,
   })
 })

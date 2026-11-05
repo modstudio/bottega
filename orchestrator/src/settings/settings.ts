@@ -5,7 +5,7 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
   type SettingsPermissionList,
-} from '../../../shared/settings-summary.ts'
+} from '../../../shared/settings-permission-lists.ts'
 import {
   AUTO_MODE_LISTS,
   type AutoModeList,

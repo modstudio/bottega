@@ -120,6 +120,27 @@ export const trackerProjects = () =>
     })
     .map((project) => project.name)
 
+const BACKFILL_RESULT = 'backfill'
+
+/** True for a tracker project that was read successfully, never the synthetic backfill row. */
+export const successfulTrackerRead = (result: TrackerResult) =>
+  result.project !== BACKFILL_RESULT && !result.error && !result.skipped
+
+const trackerReadKey = (project: Project) => `collect.tracker.${project}.at`
+
+export function trackerProjectsReadSince(
+  projectNames: readonly Project[],
+  cutoffMs: number,
+): Set<Project> {
+  const fresh = new Set<Project>()
+  const read = db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+  for (const project of projectNames) {
+    const value = read.get(trackerReadKey(project))?.value
+    if (value && Date.parse(value) >= cutoffMs) fresh.add(project)
+  }
+  return fresh
+}
+
 type ExistingTask = {
   external_id: string | null
   key: string
@@ -538,13 +559,22 @@ function recentIntervalsNeedingTracker(conn: Database) {
     .all()
 }
 
-function finishTrackerResults(
+export function finishTrackerResults(
   results: { result: TrackerResult; filled: number }[],
   at: string,
 ): TrackerResult[] {
   const filled = results.reduce((sum, item) => sum + item.filled, 0)
   const out = results.map((item) => item.result)
-  if (filled) out.push({ project: 'backfill', tasks: filled, changed: 0, activity: true })
+  if (filled) out.push({ project: BACKFILL_RESULT, tasks: filled, changed: 0, activity: true })
+  const successfulProjects = out.filter(successfulTrackerRead)
+  if (successfulProjects.length)
+    writeTransaction((conn) => {
+      const write = conn.query(
+        `INSERT INTO setting (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      for (const result of successfulProjects) write.run(trackerReadKey(result.project), at)
+    })
   if (!trackerLegError(out))
     writeTransaction((conn) =>
       conn

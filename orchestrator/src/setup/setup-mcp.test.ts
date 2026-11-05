@@ -7,7 +7,9 @@ import {
   type McpServer,
   mcpAddArgv,
   mcpRemoveArgv,
+  mutateClaudeMcpRegistration,
   readMcpRegistration,
+  reconcileClaudeMcpRegistration,
   registeredCommandResolves,
   SETUP_COMMAND_TIMEOUT_MS,
   type SetupCommandResult,
@@ -82,6 +84,16 @@ test('recognizes Claude missing-server diagnostics by their exact first-line pre
       result('configuration file not found', 1),
     ),
   ).toEqual({ status: 'unreadable', detail: 'exit code 1' })
+})
+
+test('reads Claude local scope from its descriptive scope line', () => {
+  expect(
+    readMcpRegistration('claude', '/bin/claude', MCP_SERVER_NAME, () =>
+      result(
+        `Scope: Local config (private to you in this project)\nCommand: ${FRONT_DOOR}\nArgs: mcp\n`,
+      ),
+    ),
+  ).toEqual({ status: 'registered', command: FRONT_DOOR, args: ['mcp'], scope: 'local' })
 })
 
 test('recognizes Grok absence from its successful real empty-list output', () => {
@@ -253,5 +265,115 @@ test('uses each harness exact user-scope add form', () => {
     '--scope',
     'user',
     'orch',
+  ])
+})
+
+test('reconciles Claude local scope through the project cwd and reports check drift', () => {
+  const calls: Array<{ argv: string[]; cwd: string | undefined }> = []
+  const runner = (argv: string[], _timeout: number, options?: { cwd?: string }) => {
+    calls.push({ argv, cwd: options?.cwd })
+    return result(`No MCP server named "${MCP_SERVER_NAME}".\n`, 1)
+  }
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  expect(
+    reconcileClaudeMcpRegistration({
+      port: { bin: '/bin/claude', runner },
+      server,
+      scope: 'local',
+      cwd: '/projects/one',
+      present: true,
+      check: true,
+    }),
+  ).toEqual({ changed: true, detail: 'would apply' })
+  expect(calls).toEqual([
+    {
+      argv: ['/bin/claude', 'mcp', 'get', MCP_SERVER_NAME],
+      cwd: '/projects/one',
+    },
+  ])
+  expect(mcpAddArgv('claude', '/bin/claude', server, 'local')).toContain('local')
+  expect(mcpRemoveArgv('claude', '/bin/claude', MCP_SERVER_NAME, 'local')).toContain('local')
+})
+
+test('reconcile removes a registered Claude user-scope entry', () => {
+  const calls: string[][] = []
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  const runner = (argv: string[]) => {
+    calls.push(argv)
+    return argv.includes('get')
+      ? result(`Scope: User config\nCommand: ${FRONT_DOOR}\nArgs: mcp\n`)
+      : result('removed')
+  }
+  expect(
+    reconcileClaudeMcpRegistration({
+      port: { bin: '/bin/claude', runner },
+      server,
+      scope: 'user',
+      present: false,
+      check: false,
+    }),
+  ).toEqual({ changed: true })
+  expect(calls.at(-1)).toEqual(['/bin/claude', 'mcp', 'remove', '--scope', 'user', MCP_SERVER_NAME])
+})
+
+test('forced reconcile replaces a Claude entry and refuses a differing post-add readback', () => {
+  const calls: string[][] = []
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  expect(() =>
+    reconcileClaudeMcpRegistration({
+      port: {
+        bin: '/bin/claude',
+        runner: (argv) => {
+          calls.push(argv)
+          return argv.includes('get')
+            ? result('Scope: User config\nCommand: /wrong\nArgs:\n')
+            : result('ok')
+        },
+      },
+      server,
+      scope: 'user',
+      present: true,
+      check: false,
+      forceReplace: true,
+    }),
+  ).toThrow('did not match after add')
+  expect(calls.map((argv) => argv[2])).toEqual(['remove', 'add', 'get'])
+})
+
+test('reconcile preserves the changed-before-add refusal without explicit replacement', () => {
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  expect(() =>
+    reconcileClaudeMcpRegistration({
+      port: {
+        bin: '/bin/claude',
+        runner: () => result('Scope: User config\nCommand: /wrong\nArgs:\n'),
+      },
+      server,
+      scope: 'user',
+      present: true,
+      check: false,
+      refuseChangedBeforeAdd: true,
+    }),
+  ).toThrow('changed before add')
+})
+
+test('mutates a decided Claude scope without a CLI readback', () => {
+  const calls: string[][] = []
+  const server: McpServer = { name: MCP_SERVER_NAME, command: FRONT_DOOR, args: ['mcp'] }
+  mutateClaudeMcpRegistration({
+    port: {
+      bin: '/bin/claude',
+      runner: (argv) => {
+        calls.push(argv)
+        return result('')
+      },
+    },
+    server,
+    action: 'add',
+    scope: 'local',
+    cwd: '/projects/one',
+  })
+  expect(calls).toEqual([
+    ['/bin/claude', 'mcp', 'add', '--scope', 'local', MCP_SERVER_NAME, '--', FRONT_DOOR, 'mcp'],
   ])
 })

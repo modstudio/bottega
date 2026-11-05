@@ -61,10 +61,14 @@ export type SetupCommandResult = {
   timedOut: boolean
   error: string | null
 }
-export type SetupCommandRunner = (argv: string[], timeoutMs: number) => SetupCommandResult
+export type SetupCommandRunner = (
+  argv: string[],
+  timeoutMs: number,
+  options?: { cwd?: string },
+) => SetupCommandResult
 export type McpReadback =
   | { status: 'absent' }
-  | { status: 'registered'; command: string; args: string[] }
+  | { status: 'registered'; command: string; args: string[]; scope?: 'user' | 'local' }
   | { status: 'stale'; command: string; args: string[]; detail: string }
   | { status: 'different'; command: string; args: string[]; detail: string }
   | { status: 'unreadable'; detail: string }
@@ -92,6 +96,7 @@ export function stableMcpServers(): McpServer[] {
 export function runSetupCommand(
   argv: string[],
   timeoutMs = SETUP_COMMAND_TIMEOUT_MS,
+  options?: { cwd?: string },
 ): SetupCommandResult {
   try {
     const env = { ...process.env }
@@ -103,6 +108,7 @@ export function runSetupCommand(
       stderr: 'pipe',
       timeout: timeoutMs,
       env,
+      cwd: options?.cwd,
     })
     return {
       exitCode: child.exitCode,
@@ -137,9 +143,24 @@ function mcpReadArgv(
   throw new Error(`${harness} has no automatic MCP registration support`)
 }
 
-export function mcpAddArgv(harness: HarnessName, bin: string, server: McpServer): string[] {
+export function mcpAddArgv(
+  harness: HarnessName,
+  bin: string,
+  server: McpServer,
+  claudeScope: 'user' | 'local' = 'user',
+): string[] {
   if (harness === 'claude')
-    return [bin, 'mcp', 'add', '--scope', 'user', server.name, '--', server.command, ...server.args]
+    return [
+      bin,
+      'mcp',
+      'add',
+      '--scope',
+      claudeScope,
+      server.name,
+      '--',
+      server.command,
+      ...server.args,
+    ]
   if (harness === 'codex')
     return [bin, 'mcp', 'add', server.name, '--', server.command, ...server.args]
   if (harness === 'grok')
@@ -151,8 +172,9 @@ export function mcpRemoveArgv(
   harness: HarnessName,
   bin: string,
   name: McpServerName | LegacyMcpServerName,
+  claudeScope: 'user' | 'local' = 'user',
 ): string[] {
-  if (harness === 'claude') return [bin, 'mcp', 'remove', '--scope', 'user', name]
+  if (harness === 'claude') return [bin, 'mcp', 'remove', '--scope', claudeScope, name]
   if (harness === 'codex') return [bin, 'mcp', 'remove', name]
   if (harness === 'grok') return [bin, 'mcp', 'remove', '--scope', 'user', name]
   throw new Error(`${harness} has no automatic MCP registration support`)
@@ -251,7 +273,13 @@ function parseClaude(result: SetupCommandResult, name: string): McpReadback {
       ? stringArray(JSON.parse(rawArgs))
       : rawArgs.split(/\s+/).filter(Boolean)
     if (!args) throw new Error('Args was not a string array')
-    return { status: 'registered', command, args }
+    const rawScope = result.stdout.match(/^\s*Scope:\s*(user|local)\b/im)?.[1]?.toLowerCase()
+    return {
+      status: 'registered',
+      command,
+      args,
+      ...(rawScope === 'user' || rawScope === 'local' ? { scope: rawScope } : {}),
+    }
   } catch {
     return {
       status: 'unreadable',
@@ -272,11 +300,146 @@ export function readMcpRegistration(
   bin: string,
   name: McpServerName | LegacyMcpServerName,
   runner: SetupCommandRunner = runSetupCommand,
+  options?: { cwd?: string },
 ): McpReadback {
-  const result = runner(mcpReadArgv(harness, bin, name), SETUP_COMMAND_TIMEOUT_MS)
+  const result = runner(mcpReadArgv(harness, bin, name), SETUP_COMMAND_TIMEOUT_MS, options)
   if (harness === 'codex') return parseCodex(result, name)
   if (harness === 'grok') return parseGrok(result, name)
   return parseClaude(result, name)
+}
+
+export type ClaudeMcpRegistrationPort = {
+  runner: SetupCommandRunner
+  bin: string
+}
+
+/** Apply one already-decided Claude MCP mutation without paying for a CLI readback. */
+export function mutateClaudeMcpRegistration(input: {
+  port: ClaudeMcpRegistrationPort
+  server: McpServer
+  action: 'add' | 'remove'
+  scope: 'user' | 'local'
+  cwd?: string
+}): void {
+  const { port, server, action, scope } = input
+  const commandCwd = input.cwd ?? process.env.HOME
+  const result = port.runner(
+    action === 'add'
+      ? mcpAddArgv('claude', port.bin, server, scope)
+      : mcpRemoveArgv('claude', port.bin, server.name, scope),
+    SETUP_COMMAND_TIMEOUT_MS,
+    { cwd: commandCwd },
+  )
+  const failure = resultFailure(result)
+  if (failure) throw new Error(`claude refused MCP ${action}: ${failure}`)
+}
+
+function claudeMcpReconcileAction(
+  current: McpReadback,
+  server: McpServer,
+  scope: 'user' | 'local',
+  present: boolean,
+  forceReplace: boolean,
+): 'none' | 'add' | 'remove' | 'replace' {
+  const atScope = current.status === 'registered' && (current.scope ?? 'user') === scope
+  if (!present) return atScope ? 'remove' : 'none'
+  if (!forceReplace && atScope && sameMcpRegistration(current, server)) return 'none'
+  return atScope ? 'replace' : 'add'
+}
+
+type ClaudeMcpReconcileInput = {
+  port: ClaudeMcpRegistrationPort
+  server: McpServer
+  scope: 'user' | 'local'
+  cwd?: string
+  present: boolean
+  check: boolean
+  forceReplace?: boolean
+  refuseChangedBeforeAdd?: boolean
+  removeName?: LegacyMcpServerName
+}
+
+function currentClaudeMcpRegistration(
+  input: ClaudeMcpReconcileInput,
+  commandCwd: string | undefined,
+): McpReadback {
+  if (input.removeName) return { status: 'absent' }
+  if (input.forceReplace) {
+    return {
+      status: 'registered',
+      command: input.server.command,
+      args: input.server.args,
+      scope: input.scope,
+    }
+  }
+  return readMcpRegistration('claude', input.port.bin, input.server.name, input.port.runner, {
+    cwd: commandCwd,
+  })
+}
+
+function runClaudeMcpMutation(
+  input: ClaudeMcpReconcileInput,
+  action: 'add' | 'remove' | 'replace',
+  commandCwd: string | undefined,
+): void {
+  const { port, server, scope } = input
+  const removeName = input.removeName ?? server.name
+  if (input.removeName || action === 'remove' || action === 'replace') {
+    const removed = port.runner(
+      mcpRemoveArgv('claude', port.bin, removeName, scope),
+      SETUP_COMMAND_TIMEOUT_MS,
+      { cwd: commandCwd },
+    )
+    const failure = resultFailure(removed)
+    if (failure) throw new Error(`claude refused MCP remove: ${failure}`)
+  }
+  if (action !== 'add' && action !== 'replace') return
+  const added = port.runner(
+    mcpAddArgv('claude', port.bin, server, scope),
+    SETUP_COMMAND_TIMEOUT_MS,
+    {
+      cwd: commandCwd,
+    },
+  )
+  const failure = resultFailure(added)
+  if (failure) throw new Error(`claude refused MCP add: ${failure}`)
+  const readback = readMcpRegistration('claude', port.bin, server.name, port.runner, {
+    cwd: commandCwd,
+  })
+  if (!sameMcpRegistration(readback, server))
+    throw new Error('claude MCP registration did not match after add')
+}
+
+/** Read and reconcile one Claude MCP scope without editing Claude-owned JSON. */
+export function reconcileClaudeMcpRegistration(input: ClaudeMcpReconcileInput): {
+  changed: boolean
+  detail?: string
+} {
+  const { server, scope, cwd } = input
+  const commandCwd = cwd ?? process.env.HOME
+  const current = currentClaudeMcpRegistration(input, commandCwd)
+  if (current.status === 'unreadable') throw new Error(current.detail)
+  if (
+    input.refuseChangedBeforeAdd &&
+    current.status === 'registered' &&
+    (current.scope ?? 'user') === scope &&
+    !sameMcpRegistration(current, server)
+  ) {
+    throw new Error(
+      `claude ${server.name} changed before add (registered command or arguments differ); run ${PLATFORM_SLUG} machine setup apply to review and replace it`,
+    )
+  }
+  const action = claudeMcpReconcileAction(
+    current,
+    server,
+    scope,
+    input.present,
+    input.forceReplace === true,
+  )
+  if (action === 'none') return { changed: false }
+  if (input.check) return { changed: true, detail: 'would apply' }
+  runClaudeMcpMutation(input, action, commandCwd)
+  return { changed: true }
 }
 
 export function captureHarnessMcpFacts(

@@ -62,8 +62,8 @@ const canonEditGuardBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'node:fs',
       'node:path',
+      'shared/canon-frontmatter.ts',
       'shared/state-directory.ts',
-      `${source}canon-lint.ts`,
       'orchestrator/src/database/db.ts',
       'orchestrator/src/project/projects.ts',
     ],
@@ -272,7 +272,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
   {
     name: 'user-canon-home-boundary',
     file: `${source}user-canon-home.ts`,
-    allowed: ['node:path', 'shared/brand.ts'],
+    allowed: ['node:path', 'shared/brand.ts', 'shared/user-canon-home.ts'],
     typeOnlyAllowed: [],
     reason:
       'Keep user canon home mapping and hydration decisions pure and independent of filesystems, stores, commands, and processes.',
@@ -282,6 +282,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
     file: `${source}user-canon-home-files.ts`,
     allowed: [
       'shared/brand.ts',
+      'shared/user-canon-home.ts',
       'node:fs',
       'node:path',
       'orchestrator/src/settings/settings-write.ts',

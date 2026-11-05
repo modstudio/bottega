@@ -7,6 +7,7 @@ import { type MergedChangeSources, resolveWorkflowProjectFacts } from './workflo
 import { parseWorkflowTree } from './workflow-tree.ts'
 
 const autonomy: WorkflowAutonomyResolution = {
+  layers: [],
   steps: {},
   rulings: { value: 'user', scope: 'test' },
   shipTo: { value: 'trunk', scope: 'test' },

@@ -1,5 +1,5 @@
 import type { StateClassStore } from './identity-inventory.ts'
-import type { StateClassDeclaration } from './identity-state-classes.ts'
+import type { StateClassDeclaration, TableStateClassDeclaration } from './identity-state-classes.ts'
 
 type StateClassInput = {
   tables: Readonly<Record<StateClassStore, readonly string[]>>
@@ -12,8 +12,9 @@ type StateClassInput = {
 const remedy = 'edit scripts/identity-state-classes.ts'
 
 function declaredRows(declarations: readonly StateClassDeclaration[]) {
-  const declared = new Map<string, StateClassDeclaration[]>()
+  const declared = new Map<string, TableStateClassDeclaration[]>()
   for (const declaration of declarations) {
+    if (!('table' in declaration)) continue
     const key = `${declaration.store}.${declaration.table}`
     declared.set(key, [...(declared.get(key) ?? []), declaration])
   }
@@ -22,7 +23,7 @@ function declaredRows(declarations: readonly StateClassDeclaration[]) {
 
 function coverageRefusals(
   existing: ReadonlySet<string>,
-  declared: ReadonlyMap<string, readonly StateClassDeclaration[]>,
+  declared: ReadonlyMap<string, readonly TableStateClassDeclaration[]>,
 ): string[] {
   const refusals: string[] = []
   for (const key of existing) {
@@ -45,7 +46,7 @@ function coverageRefusals(
 
 function hostedFirstRefusals(
   key: string,
-  row: StateClassDeclaration,
+  row: TableStateClassDeclaration,
   hostedTables: ReadonlySet<string>,
 ): string[] {
   const hasCounterpart = typeof row.counterpart === 'string' && row.counterpart.trim() !== ''
@@ -68,7 +69,7 @@ function hostedFirstRefusals(
 
 function declarationRefusals(
   key: string,
-  row: StateClassDeclaration,
+  row: TableStateClassDeclaration,
   outboxSources: ReadonlySet<string>,
   hostedTables: ReadonlySet<string>,
 ): string[] {
@@ -95,7 +96,7 @@ function declarationRefusals(
 
 function pushableRefusals(
   pushableHubTables: readonly { hosted: string; local: string }[],
-  declared: ReadonlyMap<string, readonly StateClassDeclaration[]>,
+  declared: ReadonlyMap<string, readonly TableStateClassDeclaration[]>,
 ): string[] {
   return pushableHubTables.flatMap(({ hosted, local }) => {
     const key = `hub.${local}`
@@ -117,11 +118,20 @@ export function stateClassRefusals(input: StateClassInput): string[] {
   const declared = declaredRows(input.declarations)
   const outboxSources = new Set(input.outboxSources)
   const hostedTables = new Set(input.hostedTables)
+  const stateFileRefusals = input.declarations.flatMap((row) => {
+    if (!('path' in row)) return []
+    return row.reason.trim() && row.ruling.trim()
+      ? []
+      : [
+          `state-directory.${row.path}: machine-only declaration needs a non-empty reason and ruling; remedy: ${remedy}`,
+        ]
+  })
   return [
     ...coverageRefusals(existing, declared),
     ...[...declared].flatMap(([key, rows]) =>
       rows.flatMap((row) => declarationRefusals(key, row, outboxSources, hostedTables)),
     ),
     ...pushableRefusals(input.pushableHubTables, declared),
+    ...stateFileRefusals,
   ].sort()
 }

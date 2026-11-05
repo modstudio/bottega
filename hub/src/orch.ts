@@ -19,6 +19,14 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
+import {
+  AUTONOMY_PRESETS,
+  AUTONOMY_STAGES,
+  AUTONOMY_VALUES,
+  type AutonomyLayerRow,
+  type AutonomyStage,
+  STAGE_AUTONOMY_VALUES,
+} from '../../shared/autonomy.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../shared/config-contract.ts'
 import {
@@ -74,7 +82,7 @@ import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
   type SettingsPermissionList,
-} from '../../shared/settings-summary.ts'
+} from '../../shared/settings-permission-lists.ts'
 import { SHIP_TO_VALUES } from '../../shared/ship-to.ts'
 import type { ContractDocRow } from './doc-contract.ts'
 
@@ -712,11 +720,31 @@ export const MachinePermissionOverlaySchema = z.object({
   drop: PermissionListsSchema,
 }) satisfies z.ZodType<MachinePermissionOverlay>
 
+const AutonomyStageSchema = z.enum(AUTONOMY_STAGES)
+const AutonomyValueSchema = z.enum(AUTONOMY_VALUES)
+const LayerAutonomyValueSchema = z.enum(STAGE_AUTONOMY_VALUES)
+const LayerAutonomyStagesSchema = z.object(
+  Object.fromEntries(
+    AUTONOMY_STAGES.map((stage) => [stage, LayerAutonomyValueSchema.nullable()]),
+  ) as Record<AutonomyStage, z.ZodNullable<typeof LayerAutonomyValueSchema>>,
+)
+
 const ContextSchema = z.discriminatedUnion('registered', [
   z.object({ registered: z.literal(false), warnings: z.array(z.string()).optional() }),
   z.object({
     registered: z.literal(true),
     project: z.string(),
+    layers: z
+      .array(
+        z.object({
+          scope: z.string(),
+          preset: z.enum(AUTONOMY_PRESETS).nullable(),
+          rulings: z.enum(['agent', 'user']).nullable(),
+          shipTo: z.enum(SHIP_TO_VALUES).nullable(),
+          stages: LayerAutonomyStagesSchema,
+        }) satisfies z.ZodType<AutonomyLayerRow>,
+      )
+      .optional(),
     rulings: z.object({ value: z.enum(['agent', 'user']), scope: z.string() }),
     shipTo: z.object({
       value: z.enum(SHIP_TO_VALUES),
@@ -727,18 +755,18 @@ const ContextSchema = z.discriminatedUnion('registered', [
     stages: z.array(
       z.union([
         z.object({
-          stage: z.enum(['plan', 'implement', 'review', 'docs', 'canon', 'ship']),
+          stage: AutonomyStageSchema,
           agreed: z.literal(true),
-          value: z.enum(['ask', 'review', 'auto']),
+          value: AutonomyValueSchema,
           scope: z.string(),
           steps: z.number(),
         }),
         z.object({
-          stage: z.enum(['plan', 'implement', 'review', 'docs', 'canon', 'ship']),
+          stage: AutonomyStageSchema,
           agreed: z.literal(false),
           values: z.array(
             z.object({
-              value: z.enum(['ask', 'review', 'auto']),
+              value: AutonomyValueSchema,
               scope: z.string(),
               steps: z.number(),
             }),

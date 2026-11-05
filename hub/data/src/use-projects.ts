@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { type HostedProjectRow, trpc } from './client.ts'
+import { type HostedProjectRow, hostedTrpc, trpc } from './client.ts'
+import { isHostedMode } from './hub-mode.ts'
 
 export type HostedProjectColors = Record<string, { light: string | null; dark: string | null }>
 
@@ -21,4 +22,12 @@ export function useHostedProjects(enabled = true) {
     pending: query.isPending,
     error: query.error?.message ?? null,
   }
+}
+
+/** Projects exposed by the context router for the dashboard's current mode. */
+export function useContextProjects() {
+  const hosted = isHostedMode()
+  const local = useQuery({ ...trpc.context.projects.queryOptions(), enabled: !hosted })
+  const remote = useQuery({ ...hostedTrpc.context.projects.queryOptions(), enabled: hosted })
+  return hosted ? remote : local
 }

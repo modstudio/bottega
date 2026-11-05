@@ -14,9 +14,11 @@ import { ingestGit } from './ingest/git.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
 import {
   ingestTrackers,
+  successfulTrackerRead,
   type TrackerResult,
   trackerLegError,
   trackerProjects,
+  trackerProjectsReadSince,
 } from './ingest/trackers.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { correctStoredIntervalProjects } from './interval-project-correction.ts'
@@ -64,9 +66,12 @@ type PollState = { nextAt: number; quiet: number; failures: number }
  *
  * A changing tracker stays on the five-minute floor. Quiet trackers step to
  * ten and then fifteen minutes. Failures double out to an hour, so an outage
- * cannot produce a request every tick. State is deliberately process-local:
- * restarting or explicitly collecting means "fresh now", not "honor an old
- * delay". The injected clock keeps this policy deterministic in tests.
+ * cannot produce a request every tick. This schedule is deliberately
+ * process-local: restarting the watch means "fresh now", not "honor an old
+ * delay". A one-shot collect instead skips a tracker whose last successful
+ * read, persisted by any process, falls within `SLOW_MS`; collecting tasks
+ * explicitly, or rebuilding with `--since`, reads every tracker. The injected clock keeps this policy
+ * deterministic in tests.
  */
 export class TrackerPollSchedule {
   private state = new Map<string, PollState>()
@@ -106,6 +111,18 @@ export class TrackerPollSchedule {
 
 const trackerSchedule = new TrackerPollSchedule()
 
+export function oneShotTrackerSelection(
+  projectNames: readonly string[],
+  fresh: ReadonlySet<string>,
+  forced: boolean,
+): { only: ReadonlySet<string> | null; skippedFresh: number } {
+  if (forced) return { only: null, skippedFresh: 0 }
+  return {
+    only: new Set(projectNames.filter((project) => !fresh.has(project))),
+    skippedFresh: fresh.size,
+  }
+}
+
 export type CollectLegResult =
   | {
       source: string
@@ -114,6 +131,7 @@ export type CollectLegResult =
       metrics?: CollectLegMetrics
       hostedChanges?: HostedChangeLegReport
       hostedOutbox?: HostedOutboxReport
+      trackerCounts?: { read: number; skippedFresh: number }
     }
   | { source: string; ok: false; error: string; durationMs: number }
 
@@ -145,6 +163,8 @@ export function formatCollectLeg(result: CollectLegResult): string {
     return `${result.source.padEnd(18)}${separator}${hostedChangeLegLine(result.hostedChanges)}`
   if (result.hostedOutbox)
     return `${result.source.padEnd(18)}${separator}${hostedOutboxLine(result.hostedOutbox)}`
+  if (result.trackerCounts)
+    return `${result.source.padEnd(18)}${separator}ok (${result.trackerCounts.read} trackers read, ${result.trackerCounts.skippedFresh} skipped fresh)`
   return `${result.source.padEnd(18)}ok`
 }
 
@@ -583,16 +603,30 @@ async function collectSlowSourceLegs(
     lastCompleted = 'git'
   }
   guard?.assertHeld(lastCompleted)
-  const due = scheduled && collectTasks ? trackerSchedule.due(trackerProjects()) : null
+  const registeredTrackers = collectTasks ? trackerProjects() : []
+  const fresh =
+    collectTasks && !scheduled && !only
+      ? trackerProjectsReadSince(registeredTrackers, Date.now() - SLOW_MS)
+      : new Set<string>()
+  const selection = oneShotTrackerSelection(registeredTrackers, fresh, only === 'tasks')
+  const due = scheduled ? trackerSchedule.due(registeredTrackers) : selection.only
   let trackerResults: TrackerResult[] = []
   if (collectTasks) {
     results.push(
-      await settleLeg('tasks', async () => {
-        trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
-        if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
-        const error = trackerLegError(trackerResults)
-        if (error) throw new Error(error)
-      }),
+      (await settleTimedLeg(
+        'tasks',
+        async () => {
+          trackerResults = due?.size === 0 ? [] : await ingestTrackers(due)
+          if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
+          const error = trackerLegError(trackerResults)
+          if (error) throw new Error(error)
+          return {
+            read: trackerResults.filter(successfulTrackerRead).length,
+            skippedFresh: selection.skippedFresh,
+          }
+        },
+        (trackerCounts) => ({ ok: true, trackerCounts }),
+      ))!,
     )
     lastCompleted = 'tasks'
   }
@@ -703,19 +737,27 @@ export async function collectOnce(
   if (selected('tasks')) {
     guard.assertHeld(previous)
     results.push(
-      await settleLeg('tasks', async () => {
-        const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
-        for (const result of trackerResults) {
-          const note = result.skipped
-            ? `skipped: ${result.skipped}`
-            : result.error
-              ? `FAILED: ${result.error}`
-              : `${result.tasks} tasks, ${result.changed} status changes`
-          console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
-        }
-        const error = trackerLegError(trackerResults)
-        if (error) throw new Error(error)
-      }),
+      (await settleTimedLeg(
+        'tasks',
+        async () => {
+          const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
+          for (const result of trackerResults) {
+            const note = result.skipped
+              ? `skipped: ${result.skipped}`
+              : result.error
+                ? `FAILED: ${result.error}`
+                : `${result.tasks} tasks, ${result.changed} status changes`
+            console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
+          }
+          const error = trackerLegError(trackerResults)
+          if (error) throw new Error(error)
+          return {
+            read: trackerResults.filter(successfulTrackerRead).length,
+            skippedFresh: 0,
+          }
+        },
+        (trackerCounts) => ({ ok: true, trackerCounts }),
+      ))!,
     )
     previous = 'tasks'
     guard.assertHeld(previous)

@@ -2,11 +2,12 @@ import { variant } from '../text/variant.ts'
 
 export const appShellStyles = variant({
   slots: {
-    liveIndicator: 'absolute top-2 left-9 size-1.5 shrink-0 rounded-full bg-status-fill',
+    liveIndicator: 'absolute top-1.5 left-9 size-1.5 shrink-0 rounded-full bg-status-fill',
     switcherPanel: '-m-3 flex min-w-48 flex-col gap-px p-1',
     groupHeading: 'px-3 pt-2 pb-1 font-medium text-sm text-text-muted',
     nav: 'flex flex-col py-3',
     group: 'flex flex-col gap-px',
+    groupItems: 'ml-[1.625rem] flex flex-col gap-px border-border-default border-l pl-1',
     mobileDialog:
       'fixed inset-y-0 left-0 h-dvh max-h-none w-[min(17rem,82vw)] border-border-default border-r bg-surface-page text-text-primary shadow-overlay transition-[translate] duration-(--duration-base) backdrop:bg-scrim starting:-translate-x-full',
     mobileFrame: 'flex h-full flex-col',
@@ -31,7 +32,7 @@ export const appShellStyles = variant({
 })
 
 export const navLinkStyles = variant({
-  base: 'relative flex h-10 items-center gap-3 border border-transparent px-[1.0625rem] text-text-secondary outline-none transition-colors hover:bg-control-hover hover:text-text-primary focus-visible:bg-control-hover data-[status=active]:border-border-default data-[status=active]:bg-surface-sunken data-[status=active]:text-text-primary [&_svg]:size-[18px] [&_svg]:shrink-0 [&_svg]:stroke-[1.5]',
+  base: 'relative flex h-8 items-center gap-3 border border-transparent px-[1.0625rem] text-text-secondary outline-none transition-colors hover:bg-control-hover hover:text-text-primary focus-visible:bg-control-hover data-[status=active]:border-border-default data-[status=active]:bg-surface-sunken data-[status=active]:text-text-primary [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]',
   variants: { full: { true: 'w-full' } },
 })
 
@@ -41,6 +42,8 @@ export const navLabelStyles = variant({
     role: {
       switcherLabel: 'flex-1 text-left',
       switcherIcon: 'ml-auto !size-3.5',
+      disclosure: '-rotate-90 !size-3.5 transition-transform',
+      disclosureOpen: '!size-3.5 transition-transform',
     },
   },
 })
@@ -51,8 +54,8 @@ export const navMarkStyles = variant({
 })
 
 export const navSectionStyles = variant({
-  base: 'flex flex-col gap-1 px-2',
-  variants: { separated: { true: 'mt-4' } },
+  base: 'flex flex-col gap-px px-2',
+  variants: { separated: { true: 'mt-3' } },
 })
 
 export const brandToggleStyles = variant({

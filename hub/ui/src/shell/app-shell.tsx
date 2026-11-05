@@ -1,4 +1,11 @@
-import { ChevronRight, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Menu as MenuIcon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  X,
+} from 'lucide-react'
 import {
   type ComponentType,
   createContext,
@@ -6,6 +13,7 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
 } from 'react'
@@ -34,10 +42,12 @@ export type NavItem = {
   label: string
   icon: Icon
   count?: number
+  /** The count asks for the reader, so a closed group still shows it. */
+  attention?: boolean
   live?: boolean
 }
 
-/** Pages visited less often, behind one rail entry that opens them beside the rail. */
+/** Pages behind one rail entry that unfolds them in place, or beside an icon-only rail. */
 type NavGroup = { label: string; icon: Icon; items: readonly NavItem[] }
 
 type NavEntry = NavItem | NavGroup
@@ -152,12 +162,74 @@ function GroupEntry({
   )
 }
 
+/**
+ * A group in a rail that shows labels: its heading unfolds the pages in place, following the
+ * WAI-ARIA disclosure pattern. It opens by itself while it holds the current page until the
+ * reader chooses, and that choice is remembered per browser. Closed, it keeps any count that
+ * asks for the reader.
+ */
+function ExpandableGroup({
+  group,
+  active,
+  storageKey,
+  children,
+}: {
+  group: NavGroup
+  active: boolean
+  storageKey: string
+  children: ReactNode
+}) {
+  const [choice, setChoice] = useStoredState(storageKey, 'auto', [
+    'auto',
+    'open',
+    'closed',
+  ] as const)
+  const open = choice === 'open' || (choice === 'auto' && active)
+  const panel = useId()
+  const Icon = group.icon
+  const waiting = group.items.reduce(
+    (total, item) => total + (item.attention ? (item.count ?? 0) : 0),
+    0,
+  )
+  return (
+    <div className={appShellStyles().group()}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panel}
+        data-status={active && !open ? 'active' : undefined}
+        className={navLinkStyles({ full: true })}
+        onClick={() => setChoice(open ? 'closed' : 'open')}
+      >
+        <Icon aria-hidden />
+        <span className={navLabelStyles({ hidden: false, role: 'switcherLabel' })}>
+          {group.label}
+        </span>
+        {!open && waiting ? (
+          <span className={navMarkStyles({ hidden: false })}>{waiting.toLocaleString()}</span>
+        ) : null}
+        <ChevronDown
+          aria-hidden
+          className={navLabelStyles({
+            hidden: false,
+            role: open ? 'disclosureOpen' : 'disclosure',
+          })}
+        />
+      </button>
+      <div id={panel} hidden={!open} className={appShellStyles().groupItems()}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function NavList({
   sections,
   renderLink,
   labeled,
   isActive,
   onNavigate,
+  storageKey,
 }: {
   sections: readonly NavSection[]
   renderLink: RenderLink
@@ -165,6 +237,8 @@ function NavList({
   labeled: 'icons' | 'always' | 'full'
   isActive: (to: string) => boolean
   onNavigate?: () => void
+  /** Where each group's open or closed choice is remembered. */
+  storageKey: string
 }) {
   const hidden = labeled === 'icons'
   const link = (item: NavItem) => (
@@ -183,11 +257,15 @@ function NavList({
           {section.entries.map((entry) =>
             !isGroup(entry) ? (
               link(entry)
-            ) : labeled === 'full' ? (
-              <div key={entry.label} className={appShellStyles().group()}>
-                <div className={appShellStyles().groupHeading()}>{entry.label}</div>
+            ) : !hidden ? (
+              <ExpandableGroup
+                key={entry.label}
+                group={entry}
+                active={entry.items.some((item) => isActive(item.to))}
+                storageKey={`${storageKey}:group:${entry.label}`}
+              >
                 {entry.items.map(link)}
-              </div>
+              </ExpandableGroup>
             ) : (
               <GroupEntry
                 key={entry.label}
@@ -212,6 +290,7 @@ function MobileMenu({
   renderLink,
   isActive,
   footer,
+  storageKey,
 }: {
   open: boolean
   onClose: () => void
@@ -220,6 +299,7 @@ function MobileMenu({
   renderLink: RenderLink
   isActive: (to: string) => boolean
   footer?: ReactNode
+  storageKey: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
@@ -248,6 +328,7 @@ function MobileMenu({
             labeled="full"
             isActive={isActive}
             onNavigate={onClose}
+            storageKey={storageKey}
           />
         </div>
         {footer ? <div className={appShellStyles().mobileFooter()}>{footer}</div> : null}
@@ -388,6 +469,7 @@ export function AppShell({
                 renderLink={renderLink}
                 labeled={collapsed ? 'icons' : 'always'}
                 isActive={isActive}
+                storageKey={storageKey}
               />
             </div>
             {railFooter ? <div className={appShellStyles().railFooter()}>{railFooter}</div> : null}
@@ -419,6 +501,7 @@ export function AppShell({
             renderLink={renderLink}
             isActive={isActive}
             footer={railFooter}
+            storageKey={storageKey}
           />
         ) : null}
       </div>

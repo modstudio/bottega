@@ -348,6 +348,7 @@ describe('workflow versions and project composition', () => {
       'fixture',
     )
     const autonomy = {
+      layers: [],
       steps: {
         'only-ship-to': { value: 'auto' as const, scope: 'test' },
         'only-tracker': { value: 'auto' as const, scope: 'test' },

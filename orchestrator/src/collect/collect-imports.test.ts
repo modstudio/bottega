@@ -17,7 +17,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/record-id.ts',
   '../../../shared/secret-shaped.ts',
   '../../../shared/self-spawn.ts',
-  '../../../shared/settings-summary.ts',
+  '../../../shared/settings-permission-lists.ts',
   '../../../shared/ship-to.ts',
   '../../../shared/state-directory.ts',
   '../artifact-paths.ts',

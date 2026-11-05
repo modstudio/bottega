@@ -13,6 +13,7 @@ import { readMachineAutonomy } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import {
+  type AutonomyLayerRow,
   type AutonomyPreset,
   type AutonomyResolution,
   type AutonomySettings,
@@ -132,6 +133,25 @@ function validateSessionAutonomy(session: AutonomySettings): void {
   )
 }
 
+function staleAutonomyLayer(layer: AutonomyLayerRow): AutonomyLayerRow {
+  const scope = staleHostedScope(layer.scope)
+  if (scope === layer.scope) return layer
+  return {
+    ...layer,
+    scope,
+    preset: null,
+    stages: Object.fromEntries(
+      Object.entries(layer.stages).map(([stage, value]) => [
+        stage,
+        value === null ? null : staleHostedAutonomyWinner({ value, scope: layer.scope }).value,
+      ]),
+    ) as AutonomyLayerRow['stages'],
+  }
+}
+
+const cachedHostedNote = (reason: string, cached: CachedSessionContext, now: () => Date) =>
+  `hosted autonomy settings unavailable: ${reason}; resolved from cached hosted autonomy settings, local and project scopes (cache age ${Math.max(0, now().getTime() - Date.parse(cached.resolvedAt))} ms)`
+
 export async function resolveProjectAutonomy(
   project: string,
   workflow: string | undefined,
@@ -198,9 +218,9 @@ export async function resolveProjectAutonomy(
       session,
     }
   if (cached) {
-    const ageMs = Math.max(0, now().getTime() - Date.parse(cached.resolvedAt))
     return {
       ...resolution,
+      layers: resolution.layers.map(staleAutonomyLayer),
       steps: Object.fromEntries(
         Object.entries(resolution.steps).map(([slug, winner]) => [
           slug,
@@ -218,7 +238,7 @@ export async function resolveProjectAutonomy(
       rulings: { ...resolution.rulings, scope: staleHostedScope(resolution.rulings.scope) },
       shipTo: { ...resolution.shipTo, scope: staleHostedScope(resolution.shipTo.scope) },
       hosted: { status: hosted.status, reason: hosted.reason },
-      note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from cached hosted autonomy settings, local and project scopes (cache age ${ageMs} ms)`,
+      note: cachedHostedNote(hosted.reason, cached, now),
       session,
     }
   }

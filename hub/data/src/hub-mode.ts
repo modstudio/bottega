@@ -7,18 +7,21 @@ import {
   CheckCircle2,
   CircleDollarSign,
   FolderGit2,
+  Gauge,
   GitCompareArrows,
   Inbox,
   Kanban,
   type LucideIcon,
+  Mail,
   MessageSquareText,
   NotebookPen,
   Plane,
   Play,
   Route as RouteIcon,
   ScanSearch,
+  ScrollText,
   Settings,
-  SlidersHorizontal,
+  ShieldCheck,
   Users,
 } from 'lucide-react'
 
@@ -73,90 +76,38 @@ export function sameLocationOn(
 }
 
 type Counted = 'flight' | 'done' | 'runs' | 'inbox'
-type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted }
+type NavLink = { to: string; label: string; icon: LucideIcon; count?: Counted; attention?: boolean }
 type NavGroup = { label: string; icon: LucideIcon; items: NavLink[] }
 export type NavSection = { id: string; entries: (NavLink | NavGroup)[] }
 
-// Pages opened daily stay one click away; the rest sit behind a group that
-// opens beside the rail.
+// The dashboard stays one click away; every other page sits in a group that
+// unfolds in place in the open rail and beside it in the collapsed one.
 const LOCAL_NAV: NavSection[] = [
   {
-    id: 'work',
-    entries: [
-      { to: '/flight', label: 'Flight', icon: Plane, count: 'flight' },
-      { to: '/inbox', label: 'Inbox', icon: Inbox, count: 'inbox' },
-      { to: '/board', label: 'Board', icon: Kanban },
-      { to: '/done', label: 'Done', icon: CheckCircle2, count: 'done' },
-      { to: '/runs', label: 'Runs', icon: Play, count: 'runs' },
-    ],
+    id: 'home',
+    entries: [{ to: '/flight', label: 'Flight', icon: Plane, count: 'flight' }],
   },
   {
-    id: 'knowledge',
-    entries: [
-      { to: '/projects', label: 'Projects', icon: FolderGit2 },
-      { to: '/docs', label: 'Docs', icon: BookOpen },
-    ],
-  },
-  {
-    id: 'more',
+    id: 'groups',
     entries: [
       {
-        label: 'Delegation',
-        icon: Bot,
+        label: 'Work',
+        icon: Kanban,
         items: [
+          { to: '/inbox', label: 'Inbox', icon: Inbox, count: 'inbox', attention: true },
+          { to: '/board', label: 'Board', icon: Kanban },
+          { to: '/done', label: 'Done', icon: CheckCircle2, count: 'done' },
+          { to: '/runs', label: 'Runs', icon: Play, count: 'runs' },
+        ],
+      },
+      {
+        label: 'Knowledge',
+        icon: BookOpen,
+        items: [
+          { to: '/projects', label: 'Projects', icon: FolderGit2 },
+          { to: '/docs', label: 'Docs', icon: BookOpen },
           { to: '/notes', label: 'Notes', icon: NotebookPen },
           { to: '/messages', label: 'Messages', icon: MessageSquareText },
-          { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
-          { to: '/agents', label: 'Agents', icon: Bot },
-          { to: '/routing', label: 'Routing', icon: RouteIcon },
-        ],
-      },
-      {
-        label: 'Machine',
-        icon: Activity,
-        items: [
-          { to: '/health', label: 'Health', icon: Activity },
-          { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
-          { to: '/spend', label: 'Spend', icon: CircleDollarSign },
-        ],
-      },
-      {
-        label: 'Settings',
-        icon: Settings,
-        items: [
-          { to: '/context', label: 'Agent settings', icon: SlidersHorizontal },
-          { to: '/settings', label: 'Report email', icon: Settings },
-        ],
-      },
-    ],
-  },
-]
-
-const HOSTED_NAV: NavSection[] = [
-  {
-    id: 'work',
-    entries: [
-      { to: '/flight', label: 'Flight', icon: Plane },
-      { to: '/board', label: 'Board', icon: Kanban },
-      { to: '/done', label: 'Done', icon: CheckCircle2 },
-      { to: '/messages', label: 'Messages', icon: MessageSquareText },
-      { to: '/notes', label: 'Notes', icon: NotebookPen },
-      { to: '/runs', label: 'Runs', icon: Play },
-      { to: '/reviews', label: 'Reviews', icon: ScanSearch },
-      { to: '/projects', label: 'Projects', icon: FolderGit2 },
-      { to: '/docs', label: 'Docs', icon: BookOpen },
-    ],
-  },
-  {
-    id: 'more',
-    entries: [
-      {
-        label: 'Measures',
-        icon: BarChart3,
-        items: [
-          { to: '/reports', label: 'Reports', icon: BarChart3 },
-          { to: '/spend', label: 'Spend', icon: CircleDollarSign },
-          { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
         ],
       },
       {
@@ -166,16 +117,87 @@ const HOSTED_NAV: NavSection[] = [
           { to: '/agents', label: 'Agents', icon: Bot },
           { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
           { to: '/routing', label: 'Routing', icon: RouteIcon },
-          { to: '/health', label: 'Machines', icon: Activity },
         ],
       },
       {
-        label: 'Space',
-        icon: Users,
+        label: 'Measures',
+        icon: BarChart3,
         items: [
+          { to: '/health', label: 'Health', icon: Activity },
+          { to: '/spend', label: 'Spend', icon: CircleDollarSign },
+          { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
+        ],
+      },
+      {
+        label: 'Settings',
+        icon: Settings,
+        items: [
+          { to: '/personal/instructions', label: 'Instructions', icon: ScrollText },
+          { to: '/personal/autonomy', label: 'Autonomy', icon: Gauge },
+          { to: '/personal/permissions', label: 'Permissions', icon: ShieldCheck },
+          { to: '/settings', label: 'Report email', icon: Mail },
+        ],
+      },
+    ],
+  },
+]
+
+const HOSTED_NAV: NavSection[] = [
+  {
+    id: 'home',
+    entries: [{ to: '/flight', label: 'Flight', icon: Plane }],
+  },
+  {
+    id: 'groups',
+    entries: [
+      {
+        label: 'Work',
+        icon: Kanban,
+        items: [
+          { to: '/board', label: 'Board', icon: Kanban },
+          { to: '/done', label: 'Done', icon: CheckCircle2 },
+          { to: '/runs', label: 'Runs', icon: Play },
+          { to: '/reviews', label: 'Reviews', icon: ScanSearch },
+        ],
+      },
+      {
+        label: 'Knowledge',
+        icon: BookOpen,
+        items: [
+          { to: '/projects', label: 'Projects', icon: FolderGit2 },
+          { to: '/docs', label: 'Docs', icon: BookOpen },
+          { to: '/notes', label: 'Notes', icon: NotebookPen },
+          { to: '/messages', label: 'Messages', icon: MessageSquareText },
+        ],
+      },
+      {
+        label: 'Agents',
+        icon: Bot,
+        items: [
+          { to: '/agents', label: 'Agents', icon: Bot },
+          { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
+          { to: '/routing', label: 'Routing', icon: RouteIcon },
+        ],
+      },
+      {
+        label: 'Measures',
+        icon: BarChart3,
+        items: [
+          { to: '/reports', label: 'Reports', icon: BarChart3 },
+          { to: '/health', label: 'Machines', icon: Activity },
+          { to: '/spend', label: 'Spend', icon: CircleDollarSign },
+          { to: '/ratio', label: 'Ratio', icon: GitCompareArrows },
+        ],
+      },
+      {
+        label: 'Settings',
+        icon: Settings,
+        items: [
+          { to: '/personal/instructions', label: 'Instructions', icon: ScrollText },
+          { to: '/personal/autonomy', label: 'Autonomy', icon: Gauge },
+          { to: '/personal/permissions', label: 'Permissions', icon: ShieldCheck },
           { to: '/members', label: 'Members', icon: Users },
-          { to: '/context', label: 'Agent settings', icon: SlidersHorizontal },
-          { to: '/settings', label: 'Report email', icon: Settings },
+          { to: '/settings', label: 'Report email', icon: Mail },
         ],
       },
     ],
@@ -228,6 +250,7 @@ export function isHostedPath(pathname: string) {
     path === '/projects' ||
     path === '/docs' ||
     path === '/context' ||
+    path.startsWith('/personal/') ||
     path === '/jobs' ||
     path === '/agents' ||
     path === '/routing' ||
