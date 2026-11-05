@@ -4,6 +4,18 @@ ALTER TABLE doc NO FORCE ROW LEVEL SECURITY;
 ALTER TABLE config_entry NO FORCE ROW LEVEL SECURITY;
 ALTER TABLE doc_related_subject NO FORCE ROW LEVEL SECURITY;
 
+-- A user entry already in the personal space with the same value makes its copy elsewhere
+-- redundant; only copies whose values differ need a person to choose.
+DELETE FROM config_entry copy
+USING "user" u, config_entry personal
+WHERE copy.user_id=u.id
+  AND personal.user_id=u.id
+  AND personal.space_id=u.personal_space_id
+  AND copy.space_id<>u.personal_space_id
+  AND copy.key=personal.key
+  AND copy.environment=personal.environment
+  AND copy.value=personal.value;
+
 DO $$
 DECLARE
   duplicates text;
