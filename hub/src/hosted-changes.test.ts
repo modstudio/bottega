@@ -15,7 +15,7 @@ import {
   READABLE_HUB_CHANGES,
   readHostedChangesInTransaction,
   recordChangePage,
-  recordChangeReset,
+  recordChangeResetRequired,
 } from './hosted-changes.ts'
 
 const migrationsFolder = join(
@@ -167,19 +167,16 @@ test('a first read resets to the horizon, then reads committed tenant changes af
   }
 })
 
-test('record change reset distinguishes null, stale, and current cursors', () => {
+test('a record change reset orders cursors by transaction before sequence', () => {
   const horizon = { xid: 12n, seq: 20n }
-  expect(recordChangeReset(null, horizon, 4n)).toEqual({
-    resetRequired: true,
-    horizon,
-    cursor: horizon,
-    lag: 4n,
-  })
-  expect(recordChangeReset({ xid: 12n, seq: 19n }, horizon, 3n)?.resetRequired).toBe(true)
-  expect(recordChangeReset(horizon, horizon, 3n)).toBeNull()
+  expect(recordChangeResetRequired(null, horizon)).toBe(true)
+  expect(recordChangeResetRequired({ xid: 12n, seq: 19n }, horizon)).toBe(true)
+  expect(recordChangeResetRequired({ xid: 11n, seq: 99n }, horizon)).toBe(true)
+  expect(recordChangeResetRequired({ xid: 13n, seq: 1n }, horizon)).toBe(false)
+  expect(recordChangeResetRequired(horizon, horizon)).toBe(false)
 })
 
-test('a record change page shapes its pair cursor and count lag', () => {
+test('a record change page advances its pair cursor to the last returned row', () => {
   const row = (xid: number, seq: number) => ({
     xid: String(xid),
     seq: String(seq),
@@ -189,14 +186,13 @@ test('a record change page shapes its pair cursor and count lag', () => {
     at: '2026-11-05T00:00:00.000Z',
   })
   const after = { xid: 10n, seq: 10n }
-  const page = recordChangePage(after, [row(11, 13), row(12, 12)], 7n)
+  const page = recordChangePage(after, [row(11, 13), row(12, 12)])
   expect(page.changes.map((change) => [change.xid, change.seq])).toEqual([
     [11n, 13n],
     [12n, 12n],
   ])
   expect(page.cursor).toEqual({ xid: 12n, seq: 12n })
-  expect(page.lag).toBe(7n)
-  expect(recordChangePage(after, [], 2n).cursor).toBe(after)
+  expect(recordChangePage(after, []).cursor).toBe(after)
 })
 
 test('every logged table is readable or explicitly deferred', () => {

@@ -252,26 +252,21 @@ export type RecordChangeCursor = { xid: bigint; seq: bigint }
 const cursorBefore = (left: RecordChangeCursor, right: RecordChangeCursor) =>
   left.xid < right.xid || (left.xid === right.xid && left.seq < right.seq)
 
-/** A cursor below the pruning horizon cannot resume; the consumer resets to the horizon. */
-export function recordChangeReset(
+/**
+ * A machine with no cursor, or one below the pruning horizon, cannot resume: it reloads and then
+ * reads on from the horizon.
+ */
+export function recordChangeResetRequired(
   after: RecordChangeCursor | null,
   horizon: RecordChangeCursor,
-  lag: bigint,
-) {
-  if (after !== null && !cursorBefore(after, horizon)) return null
-  return {
-    resetRequired: true as const,
-    horizon,
-    cursor: horizon,
-    lag,
-  }
+): after is null {
+  return after === null || cursorBefore(after, horizon)
 }
 
 /** Shapes a page already restricted to transactions below the snapshot cutoff. */
 export function recordChangePage(
   after: RecordChangeCursor,
   candidates: readonly RecordChangeLogRow[],
-  lag: bigint,
 ) {
   const changes: RecordChangeEntry[] = candidates.map((row) => ({
     xid: asBigInt(row.xid),
@@ -283,7 +278,7 @@ export function recordChangePage(
   }))
   const last = changes.at(-1)
   const cursor = last === undefined ? after : { xid: last.xid, seq: last.seq }
-  return { resetRequired: false as const, changes, cursor, lag }
+  return { changes, cursor }
 }
 
 async function recordChangeLag(tx: SQL, cursor: RecordChangeCursor) {
@@ -308,9 +303,14 @@ async function readRecordChangesInTransaction(
       FROM record_change_horizon WHERE singleton`,
   )[0]!
   const horizon = { xid: asBigInt(metadata.horizon_xid), seq: asBigInt(metadata.horizon_seq) }
-  const reset = recordChangeReset(after, horizon, await recordChangeLag(tx, horizon))
-  if (reset) return reset
-  if (after === null) throw new Error('null record change cursor did not reset')
+  if (recordChangeResetRequired(after, horizon)) {
+    return {
+      resetRequired: true as const,
+      horizon,
+      cursor: horizon,
+      lag: await recordChangeLag(tx, horizon),
+    }
+  }
 
   const candidates = rows<RecordChangeLogRow>(
     await tx`SELECT xid::text, seq::text, table_name, row_id::text, op, at
@@ -320,9 +320,8 @@ async function readRecordChangesInTransaction(
     ORDER BY xid, seq
     LIMIT ${limit}`,
   )
-  const last = candidates.at(-1)
-  const cursor = last === undefined ? after : { xid: asBigInt(last.xid), seq: asBigInt(last.seq) }
-  return recordChangePage(after, candidates, await recordChangeLag(tx, cursor))
+  const page = recordChangePage(after, candidates)
+  return { resetRequired: false as const, ...page, lag: await recordChangeLag(tx, page.cursor) }
 }
 
 async function readRecordChanges(
