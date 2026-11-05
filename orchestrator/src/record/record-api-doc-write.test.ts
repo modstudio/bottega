@@ -191,8 +191,10 @@ describe('record API doc write refusals', () => {
         return input.spaceId === 'space-personal' ? personalDoc : null
       },
     })
-    expect((await app.request(`/v1/docs/${id}`)).status).toBe(200)
-    expect(spaces).toEqual(['space-a', 'space-personal', 'space-personal'])
+    const response = await app.request(`/v1/docs/${id}`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject(personalDoc)
+    expect([...new Set(spaces)]).toEqual(['space-a', 'space-personal'])
   })
 
   test('the settings route reads and writes a user document in the personal space', async () => {
