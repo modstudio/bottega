@@ -219,39 +219,33 @@ export async function hostedCollectLegs(
   ;(dependencies.correctIntervals ?? correctStoredIntervalProjects)()
   const legacyInjected =
     dependencies.noteChanges !== undefined || dependencies.sendChanges !== undefined
-  const legs = [
-    {
-      name: 'hosted outbox',
-      work: dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
-    },
-    ...(legacyInjected
-      ? [
-          { name: 'hosted task changes', work: dependencies.changes ?? pullHostedTaskChanges },
-          { name: 'hosted note changes', work: dependencies.noteChanges ?? pullHostedNoteChanges },
-          { name: 'hosted send changes', work: dependencies.sendChanges ?? pullHostedSendChanges },
-        ]
-      : [{ name: 'hosted changes', work: dependencies.changes ?? pullHostedChanges }]),
-  ]
   const results: CollectLegResult[] = []
-  let previous: string | undefined
-  for (const { name: source, work } of legs) {
+  guard?.assertHeld()
+  results.push(
+    (await settleTimedLeg(
+      'hosted outbox',
+      dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
+      (report) => ({ ok: true, hostedOutbox: report }),
+    ))!,
+  )
+  guard?.assertHeld('hosted outbox')
+  const changeLegs: Array<{
+    source: string
+    work: () => Promise<HostedChangesReport | HostedChangeLegReport | null | undefined>
+  }> = legacyInjected
+    ? [
+        { source: 'hosted task changes', work: dependencies.changes ?? pullHostedTaskChanges },
+        { source: 'hosted note changes', work: dependencies.noteChanges ?? pullHostedNoteChanges },
+        { source: 'hosted send changes', work: dependencies.sendChanges ?? pullHostedSendChanges },
+      ]
+    : [{ source: 'hosted changes', work: dependencies.changes ?? pullHostedChanges }]
+  let previous = 'hosted outbox'
+  for (const { source, work } of changeLegs) {
     guard?.assertHeld(previous)
-    if (source === 'hosted outbox') {
-      results.push(
-        (await settleTimedLeg(source, work, (report) => ({
-          ok: true,
-          hostedOutbox: report as HostedOutboxReport,
-        })))!,
-      )
-    } else {
-      const changeResult = await settleChangeLeg(
-        source,
-        work as () => Promise<HostedChangesReport | HostedChangeLegReport | null | undefined>,
-      )
-      if (changeResult) results.push(changeResult)
-    }
+    const result = await settleChangeLeg(source, work)
+    if (result) results.push(result)
     previous = source
-    guard?.assertHeld(source)
+    guard?.assertHeld(previous)
   }
   return results
 }

@@ -550,7 +550,7 @@ function pageFor(changes: HostedRecordChange[]): HostedSpaceChangePage {
     next: 0,
     more: false,
     resetRequired: false,
-    changes: changes as HostedSpaceChange[],
+    changes: changes.map((change, index) => ({ ...change, sequence: index + 1 })),
   }
 }
 
@@ -608,7 +608,7 @@ async function applyFeedPage(
           familyCounts.absentParentSkipped += 1
           pending.add(pair(feed.name, change.space))
         } else
-          applyOneChange(conn, change as HostedSpaceChange, change.space, feed.family, familyCounts)
+          applyOneChange(conn, { ...change, sequence: 0 }, change.space, feed.family, familyCounts)
       }
     }
     putSetting(conn, FEED_PENDING, JSON.stringify([...pending].sort()))
