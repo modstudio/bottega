@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
@@ -54,7 +55,15 @@ import { hoursAgo } from './time.ts'
  * run rarely. Git is cheap but only changes on commit, so it rides with them.
  */
 const FAST_MS = 20_000
+export const WATCH_LIVE_MS = 3 * FAST_MS
 export const SLOW_MS = 5 * 60_000
+const WATCH_ALIVE_KEY = 'collect.watch.alive'
+
+export type WatcherAlive = {
+  holder: string
+  pid: number
+  at: string
+}
 
 const QUIET_MAX_MS = 15 * 60_000
 const FAILURE_MAX_MS = 60 * 60_000
@@ -115,11 +124,33 @@ export function oneShotTrackerSelection(
   projectNames: readonly string[],
   fresh: ReadonlySet<string>,
   forced: boolean,
-): { only: ReadonlySet<string> | null; skippedFresh: number } {
-  if (forced) return { only: null, skippedFresh: 0 }
+  liveWatcher: boolean,
+): { only: ReadonlySet<string> | null; skippedFresh: number; leftToWatcher: number } {
+  if (forced) return { only: null, skippedFresh: 0, leftToWatcher: 0 }
+  if (liveWatcher) return { only: new Set(), skippedFresh: 0, leftToWatcher: projectNames.length }
   return {
     only: new Set(projectNames.filter((project) => !fresh.has(project))),
     skippedFresh: fresh.size,
+    leftToWatcher: 0,
+  }
+}
+
+export function watcherLive(alive: string | null | undefined, now: number): boolean {
+  if (!alive) return false
+  try {
+    const parsed: unknown = JSON.parse(alive)
+    if (!parsed || typeof parsed !== 'object') return false
+    const value = parsed as Partial<WatcherAlive>
+    if (
+      typeof value.holder !== 'string' ||
+      typeof value.pid !== 'number' ||
+      typeof value.at !== 'string'
+    )
+      return false
+    const at = Date.parse(value.at)
+    return Number.isFinite(at) && now - at <= WATCH_LIVE_MS
+  } catch {
+    return false
   }
 }
 
@@ -131,7 +162,7 @@ export type CollectLegResult =
       metrics?: CollectLegMetrics
       hostedChanges?: HostedChangeLegReport
       hostedOutbox?: HostedOutboxReport
-      trackerCounts?: { read: number; skippedFresh: number }
+      trackerCounts?: { read: number; skippedFresh: number; leftToWatcher: number }
     }
   | { source: string; ok: false; error: string; durationMs: number }
 
@@ -163,8 +194,16 @@ export function formatCollectLeg(result: CollectLegResult): string {
     return `${result.source.padEnd(18)}${separator}${hostedChangeLegLine(result.hostedChanges)}`
   if (result.hostedOutbox)
     return `${result.source.padEnd(18)}${separator}${hostedOutboxLine(result.hostedOutbox)}`
-  if (result.trackerCounts)
-    return `${result.source.padEnd(18)}${separator}ok (${result.trackerCounts.read} trackers read, ${result.trackerCounts.skippedFresh} skipped fresh)`
+  if (result.trackerCounts) {
+    const counts = [`${result.trackerCounts.read} trackers read`]
+    if (result.trackerCounts.leftToWatcher)
+      counts.push(
+        `${result.trackerCounts.leftToWatcher} left to the watcher; force with ${PLATFORM_SLUG} collect --only tasks`,
+      )
+    if (result.trackerCounts.skippedFresh)
+      counts.push(`${result.trackerCounts.skippedFresh} skipped fresh`)
+    return `${result.source.padEnd(18)}${separator}ok (${counts.join(', ')})`
+  }
   return `${result.source.padEnd(18)}ok`
 }
 
@@ -475,6 +514,47 @@ const stamp = (key: string) =>
       .run(key, JSON.stringify(nowIso())),
   )
 
+function watcherAliveValue(): string | null {
+  return (
+    db()
+      .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key = ?')
+      .get(WATCH_ALIVE_KEY)?.value ?? null
+  )
+}
+
+function writeWatcherAlive(holder: WatcherAlive['holder']) {
+  const alive: WatcherAlive = { holder, pid: process.pid, at: nowIso() }
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `INSERT INTO setting (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(WATCH_ALIVE_KEY, JSON.stringify(alive)),
+  )
+}
+
+function deleteWatcherAlive(holder: WatcherAlive['holder']) {
+  releaseStoredLease(WATCH_ALIVE_KEY, holder)
+}
+
+function attemptWatcherAliveWrite(action: () => void, onError: (error: Error) => void) {
+  try {
+    action()
+  } catch (e) {
+    onError(e as Error)
+  }
+}
+
+function refreshWatcherAliveIfHeld(
+  enabled: boolean,
+  holder: string,
+  onError: (error: Error) => void,
+) {
+  if (enabled && leaseHolder() === holder)
+    attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
+}
+
 /**
  * How far back the fast runs collect looks.
  *
@@ -608,7 +688,13 @@ async function collectSlowSourceLegs(
     collectTasks && !scheduled && !only
       ? trackerProjectsReadSince(registeredTrackers, Date.now() - SLOW_MS)
       : new Set<string>()
-  const selection = oneShotTrackerSelection(registeredTrackers, fresh, only === 'tasks')
+  const liveWatcher = !scheduled && watcherLive(watcherAliveValue(), Date.now())
+  const selection = oneShotTrackerSelection(
+    registeredTrackers,
+    fresh,
+    only === 'tasks',
+    liveWatcher,
+  )
   const due = scheduled ? trackerSchedule.due(registeredTrackers) : selection.only
   let trackerResults: TrackerResult[] = []
   if (collectTasks) {
@@ -623,6 +709,7 @@ async function collectSlowSourceLegs(
           return {
             read: trackerResults.filter(successfulTrackerRead).length,
             skippedFresh: selection.skippedFresh,
+            leftToWatcher: selection.leftToWatcher,
           }
         },
         (trackerCounts) => ({ ok: true, trackerCounts }),
@@ -754,6 +841,7 @@ export async function collectOnce(
           return {
             read: trackerResults.filter(successfulTrackerRead).length,
             skippedFresh: 0,
+            leftToWatcher: 0,
           }
         },
         (trackerCounts) => ({ ok: true, trackerCounts }),
@@ -819,10 +907,14 @@ export function watch(
         guard: LeaseGuard,
         outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
       ) => Promise<CollectCycleResult>,
+      heartbeat = false,
     ) =>
     async () => {
-      if (stopping || busy || !acquireLease(holder)) return
+      if (stopping) return
+      if (busy) return refreshWatcherAliveIfHeld(heartbeat, holder, onError)
+      if (!acquireLease(holder)) return
       busy = true
+      if (heartbeat) attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
       // A failed collect must not stop the loop or take the server down: the
       // stored data is still the last good reading, which is the point of having
       // stored it.
@@ -860,6 +952,7 @@ export function watch(
         }
         return results
       }),
+    true,
   )
   const slow = runCycle(
     dependencies.slow ??
@@ -880,7 +973,7 @@ export function watch(
       const slowResults = await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)
       return [...fastResults, ...slowResults]
     })
-  void runCycle(initial)()
+  void runCycle(initial, true)()
   const a = setInterval(() => void fast(), FAST_MS)
   const b = setInterval(() => void slow(), SLOW_MS)
 
@@ -890,6 +983,7 @@ export function watch(
     clearInterval(b)
     while (busy) await Bun.sleep(10)
     releaseLease(holder)
+    attemptWatcherAliveWrite(() => deleteWatcherAlive(holder), onError)
   }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, async () => {
