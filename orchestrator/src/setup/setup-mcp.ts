@@ -273,7 +273,7 @@ function parseClaude(result: SetupCommandResult, name: string): McpReadback {
       ? stringArray(JSON.parse(rawArgs))
       : rawArgs.split(/\s+/).filter(Boolean)
     if (!args) throw new Error('Args was not a string array')
-    const rawScope = result.stdout.match(/^\s*Scope:\s*(user|local)\s*$/im)?.[1]?.toLowerCase()
+    const rawScope = result.stdout.match(/^\s*Scope:\s*(user|local)\b/im)?.[1]?.toLowerCase()
     return {
       status: 'registered',
       command,

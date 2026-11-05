@@ -85,6 +85,16 @@ test('recognizes Claude missing-server diagnostics by their exact first-line pre
   ).toEqual({ status: 'unreadable', detail: 'exit code 1' })
 })
 
+test('reads Claude local scope from its descriptive scope line', () => {
+  expect(
+    readMcpRegistration('claude', '/bin/claude', MCP_SERVER_NAME, () =>
+      result(
+        `Scope: Local config (private to you in this project)\nCommand: ${FRONT_DOOR}\nArgs: mcp\n`,
+      ),
+    ),
+  ).toEqual({ status: 'registered', command: FRONT_DOOR, args: ['mcp'], scope: 'local' })
+})
+
 test('recognizes Grok absence from its successful real empty-list output', () => {
   expect(readMcpRegistration('grok', '/bin/grok', 'orch', () => result('[]'))).toEqual({
     status: 'absent',
