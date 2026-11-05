@@ -113,6 +113,11 @@ export function recordSessionPath(env: StateEnvironment): string {
   return join(recordSessionDirectory(env), 'session')
 }
 
+/** Machine-only record of the Claude MCP placement last applied by settings reconciliation. */
+export function claudeMcpPlacementPath(env: StateEnvironment): string {
+  return join(resolveStatePaths(env).orchestratorDirectory, 'claude-mcp-placement.json')
+}
+
 /** Create a 0700 directory, refusing a symlink, a non-directory or one this user does not own. */
 function ensureOwnedPrivateDirectory(directory: string, noun: string): string {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
