@@ -49,6 +49,40 @@ export function mapRecordScoreRow(row: Record<string, unknown>): RecordScore {
   }
 }
 
+export async function recordScoreRows(
+  tx: SQL,
+  select:
+    | { ids: readonly string[] }
+    | { spaceId: string; updatedSince?: string; limit: number; cursor: RecordCursor | null },
+): Promise<Record<string, unknown>[]> {
+  const ids = 'ids' in select ? select.ids : null
+  const page =
+    ids === null
+      ? (select as {
+          spaceId: string
+          updatedSince?: string
+          limit: number
+          cursor: RecordCursor | null
+        })
+      : null
+  return (await tx`
+    SELECT COALESCE(s.run_id,e.run_id) AS run_id,s.delivery,s.quality,s.fidelity,s.note,s.scored_at,s.scored_by,
+      GREATEST(s.updated_at,e.excluded_at,e.superseded_at) AS updated_at,
+      CASE WHEN e.superseded_at IS NOT NULL THEN NULL ELSE COALESCE(r.evidence_excluded,e.reason) END AS evidence_excluded
+    FROM run_score s FULL OUTER JOIN run_exclusion e ON e.run_id=s.run_id AND e.space_id=s.space_id
+    LEFT JOIN run r ON r.id=COALESCE(s.run_id,e.run_id)
+    WHERE (${ids !== null} AND COALESCE(s.run_id,e.run_id)=ANY(string_to_array(${ids?.join(',') ?? ''}, ',')::uuid[]))
+      OR (${ids === null} AND COALESCE(s.space_id,e.space_id)=${page?.spaceId ?? null}::uuid
+        AND (${page?.updatedSince ?? null}::timestamptz IS NULL
+          OR GREATEST(s.updated_at,e.excluded_at,e.superseded_at)>${page?.updatedSince ?? null}::timestamptz)
+        AND (${page?.cursor?.at ?? null}::timestamptz IS NULL
+          OR (GREATEST(s.updated_at,e.excluded_at,e.superseded_at),COALESCE(s.run_id,e.run_id))
+            >(${page?.cursor?.at ?? null}::timestamptz,${page?.cursor?.id ?? null}::uuid)))
+    ORDER BY GREATEST(s.updated_at,e.excluded_at,e.superseded_at),COALESCE(s.run_id,e.run_id)
+    LIMIT ${ids?.length ?? (page?.limit ?? -1) + 1}
+  `) as Record<string, unknown>[]
+}
+
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
     await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
@@ -205,32 +239,7 @@ export async function listRecordScores(
   input: Tenant & { updatedSince?: string; limit: number; cursor: RecordCursor | null },
 ): Promise<RecordScore[]> {
   return tenant(input, async (tx) => {
-    const rows = await tx`
-      SELECT
-        COALESCE(s.run_id, e.run_id) AS run_id,
-        s.delivery, s.quality, s.fidelity, s.note, s.scored_at, s.scored_by,
-        GREATEST(s.updated_at, e.excluded_at, e.superseded_at) AS updated_at,
-        CASE WHEN e.superseded_at IS NOT NULL THEN NULL
-          ELSE COALESCE(r.evidence_excluded, e.reason)
-        END AS evidence_excluded
-      FROM run_score s
-      FULL OUTER JOIN run_exclusion e ON e.run_id=s.run_id AND e.space_id=s.space_id
-      LEFT JOIN run r ON r.id=COALESCE(s.run_id, e.run_id)
-      WHERE COALESCE(s.space_id, e.space_id)=${input.spaceId}::uuid
-        AND (
-          ${input.updatedSince ?? null}::timestamptz IS NULL
-          OR GREATEST(s.updated_at, e.excluded_at, e.superseded_at)
-            > ${input.updatedSince ?? null}::timestamptz
-        )
-        AND (
-          ${input.cursor?.at ?? null}::timestamptz IS NULL
-          OR (GREATEST(s.updated_at, e.excluded_at, e.superseded_at), COALESCE(s.run_id, e.run_id))
-            > (${input.cursor?.at ?? null}::timestamptz, ${input.cursor?.id ?? null}::uuid)
-        )
-      ORDER BY GREATEST(s.updated_at, e.excluded_at, e.superseded_at),
-        COALESCE(s.run_id, e.run_id)
-      LIMIT ${input.limit + 1}
-    `
+    const rows = await recordScoreRows(tx, input)
     return rows.map((row: Record<string, unknown>) => mapRecordScoreRow(row))
   })
 }

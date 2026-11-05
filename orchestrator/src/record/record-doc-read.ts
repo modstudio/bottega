@@ -47,6 +47,47 @@ export type RecordDocListInput = {
   acrossReadableSpaces: boolean
 }
 
+type RecordDocRowSelection = { ids?: readonly string[] } & Partial<RecordDocListInput> & {
+    spaceIds?: readonly string[]
+    spaceId?: string
+  }
+
+function recordDocRowParameters(input: RecordDocRowSelection) {
+  if (input.ids) return { byIds: true, ids: input.ids.join(','), spaces: '', input: {} }
+  const spaces = input.acrossReadableSpaces ? input.spaceIds : [input.spaceId]
+  return { byIds: false, ids: '', spaces: spaces.join(','), input }
+}
+
+export async function recordDocRows(
+  tx: SQL,
+  selection: RecordDocRowSelection,
+): Promise<Record<string, unknown>[]> {
+  const { byIds, ids, spaces, input } = recordDocRowParameters(selection)
+  return (await tx`
+    SELECT d.*, s.name AS space_name, p.name AS project_name,
+      own.name AS article_subject_name,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('id',rs.id,'name',rs.name) ORDER BY rs.position,rs.id) FROM doc_related_subject dr JOIN subject rs ON rs.id=dr.subject_id WHERE dr.space_id=d.space_id AND dr.doc_id=d.id),'[]'::jsonb) AS related_subjects,
+      to_char(d.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+    FROM doc d
+    JOIN space s ON s.id=d.space_id
+    LEFT JOIN project p ON p.id=d.project_id
+    LEFT JOIN subject own ON own.id=d.article_subject_id
+    WHERE (${byIds} AND d.id=ANY(string_to_array(${ids}, ',')::uuid[]))
+      OR (NOT ${byIds}
+        AND d.space_id=ANY(string_to_array(${spaces}, ',')::uuid[])
+        AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
+        AND (${input.audience ?? null}::text IS NULL OR ${input.audience ?? null}=ANY(d.audiences))
+        AND (${input.status ?? null}::text IS NULL OR d.status=${input.status ?? null})
+        AND (${input.kind ?? null}::text IS NULL OR d.kind=${input.kind ?? null})
+        AND (${input.subject === undefined}::boolean OR (${input.subject === null}::boolean AND d.subject IS NULL) OR d.subject=${input.subject ?? null})
+        AND (${input.includeDeleted ?? true}::boolean OR d.deleted_at IS NULL)
+        AND (${input.updatedSince ?? null}::timestamptz IS NULL OR d.updated_at>${input.updatedSince ?? null}::timestamptz)
+        AND (${input.cursor?.at ?? null}::timestamptz IS NULL OR (d.updated_at,d.id)>(${input.cursor?.at ?? null}::timestamptz,${input.cursor?.id ?? null}::uuid)))
+    ORDER BY d.updated_at,d.id
+    LIMIT ${selection.ids?.length ?? (selection.limit ?? 0) + 1}
+  `) as Record<string, unknown>[]
+}
+
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
@@ -56,39 +97,10 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
 
 export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {
   return tenant(input, async (tx) => {
-    const spaceIds = input.spaceIds?.length ? input.spaceIds : [input.spaceId]
-    const selectedSpaceIds = input.acrossReadableSpaces ? spaceIds : [input.spaceId]
-    const rows = await tx`
-      SELECT d.*, s.name AS space_name, p.name AS project_name,
-        own.name AS article_subject_name,
-        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',rs.id,'name',rs.name) ORDER BY rs.position,rs.id) FROM doc_related_subject dr JOIN subject rs ON rs.id=dr.subject_id WHERE dr.space_id=d.space_id AND dr.doc_id=d.id),'[]'::jsonb) AS related_subjects,
-        to_char(d.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
-      FROM doc d
-      JOIN space s ON s.id=d.space_id
-      LEFT JOIN project p ON p.id=d.project_id
-      LEFT JOIN subject own ON own.id=d.article_subject_id
-      WHERE d.space_id = ANY(string_to_array(${selectedSpaceIds.join(',')}, ',')::uuid[])
-        AND (${input.scope ?? null}::text IS NULL OR d.scope=${input.scope ?? null})
-        AND (${input.audience ?? null}::text IS NULL OR ${input.audience ?? null}=ANY(d.audiences))
-        AND (${input.status ?? null}::text IS NULL OR d.status=${input.status ?? null})
-        AND (${input.kind ?? null}::text IS NULL OR d.kind=${input.kind ?? null})
-        AND (
-          ${input.subject === undefined}::boolean
-          OR (${input.subject === null}::boolean AND d.subject IS NULL)
-          OR d.subject=${input.subject ?? null}
-        )
-        AND (${input.includeDeleted}::boolean OR d.deleted_at IS NULL)
-        AND (
-          ${input.updatedSince ?? null}::timestamptz IS NULL
-          OR d.updated_at > ${input.updatedSince ?? null}::timestamptz
-        )
-        AND (
-          ${input.cursor?.at ?? null}::timestamptz IS NULL
-          OR (d.updated_at, d.id) > (${input.cursor?.at ?? null}::timestamptz, ${input.cursor?.id ?? null}::uuid)
-        )
-      ORDER BY d.updated_at, d.id
-      LIMIT ${input.limit + 1}
-    `
+    const rows = await recordDocRows(tx, {
+      ...input,
+      spaceIds: input.spaceIds?.length ? input.spaceIds : [input.spaceId],
+    })
     return rows.map((row: Record<string, unknown>) => {
       const doc = recordDocRow(row)
       const body = input.audience ? docBodyForAudience(doc.body, input.audience) : doc.body

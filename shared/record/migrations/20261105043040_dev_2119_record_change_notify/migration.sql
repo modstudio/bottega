@@ -12,6 +12,7 @@ DECLARE
   new_space uuid;
   old_id uuid;
   new_id uuid;
+  logged boolean := false;
 BEGIN
   IF TG_OP <> 'INSERT' THEN old_row := to_jsonb(OLD); END IF;
   IF TG_OP <> 'DELETE' THEN new_row := to_jsonb(NEW); END IF;
@@ -23,9 +24,11 @@ BEGIN
   IF TG_OP = 'INSERT' THEN
     INSERT INTO public.record_change (space_id,table_name,row_id,op)
     VALUES (new_space,logged_table,new_id,'upsert');
+    logged := true;
   ELSIF TG_OP = 'DELETE' THEN
     INSERT INTO public.record_change (space_id,table_name,row_id,op)
     VALUES (old_space,logged_table,old_id,CASE WHEN TG_NARGS > 1 THEN 'upsert' ELSE 'delete' END);
+    logged := true;
   ELSIF OLD IS DISTINCT FROM NEW THEN
     IF old_space IS DISTINCT FROM new_space THEN
       INSERT INTO public.record_change (space_id,table_name,row_id,op)
@@ -33,8 +36,9 @@ BEGIN
     END IF;
     INSERT INTO public.record_change (space_id,table_name,row_id,op)
     VALUES (new_space,logged_table,new_id,'upsert');
+    logged := true;
   END IF;
-  PERFORM pg_notify('record_change_advanced','');
+  IF logged THEN PERFORM pg_notify('record_change_advanced',''); END IF;
   RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 END
 $$;
@@ -47,4 +51,8 @@ FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row('doc_id','doc');
 DROP TRIGGER record_change_review_lens ON public.review_lens;
 CREATE TRIGGER record_change_review_lens
 AFTER INSERT OR UPDATE OR DELETE ON public.review_lens
+FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row('run_id','run');
+
+CREATE TRIGGER record_change_run_exclusion
+AFTER INSERT OR UPDATE OR DELETE ON public.run_exclusion
 FOR EACH ROW EXECUTE FUNCTION public.record_change_log_row('run_id','run');

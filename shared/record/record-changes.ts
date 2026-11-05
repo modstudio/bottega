@@ -76,10 +76,15 @@ export function recordChangePage(after: RecordChangeCursor, candidates: readonly
   return { changes, cursor: last ? { xid: last.xid, seq: last.seq } : after }
 }
 
-async function recordChangeLag(tx: SQL, cursor: RecordChangeCursor): Promise<number> {
+async function recordChangeLag(
+  tx: SQL,
+  cursor: RecordChangeCursor,
+  tables: readonly string[],
+): Promise<number> {
   const result = rows<{ lag: string | number | bigint }>(
     await tx`SELECT count(*)::text AS lag FROM record_change
-      WHERE (xid,seq)>(${cursor.xid.toString()}::xid8,${cursor.seq})`,
+      WHERE (xid,seq)>(${cursor.xid.toString()}::xid8,${cursor.seq})
+        AND table_name=ANY(string_to_array(${tables.join(',')}, ',')::text[])`,
   )[0]!
   const lag = Number(result.lag)
   if (!Number.isSafeInteger(lag)) throw new Error('record change lag exceeds a safe integer')
@@ -105,7 +110,7 @@ async function readRecordChangesInTransaction(
       resetRequired: true as const,
       horizon,
       cursor: horizon,
-      lag: await recordChangeLag(tx, horizon),
+      lag: await recordChangeLag(tx, horizon, tables),
     }
   const candidates = rows<LogRow>(
     await tx`SELECT xid::text,seq::text,table_name,row_id::text,space_id::text,op
@@ -116,10 +121,24 @@ async function readRecordChangesInTransaction(
       ORDER BY record_change.xid,record_change.seq LIMIT ${limit}`,
   )
   const page = recordChangePage(after, candidates)
+  let cursor = page.cursor
+  if (candidates.length < limit) {
+    const bound = rows<{ xid: string | number | bigint; seq: string | number | bigint }>(
+      await tx`SELECT xid::text,seq::text FROM record_change
+        WHERE xid<pg_snapshot_xmin(pg_current_snapshot())
+          AND (xid,seq)>(${after.xid.toString()}::xid8,${after.seq})
+        ORDER BY xid DESC,seq DESC LIMIT 1`,
+    )[0]
+    if (bound) {
+      const final = { xid: asBigInt(bound.xid), seq: asBigInt(bound.seq) }
+      if (before(cursor, final)) cursor = final
+    }
+  }
   return {
     resetRequired: false as const,
-    ...page,
-    lag: await recordChangeLag(tx, page.cursor),
+    changes: page.changes,
+    cursor,
+    lag: await recordChangeLag(tx, cursor, tables),
     more: candidates.length === limit,
   }
 }

@@ -111,17 +111,41 @@ function mapped(table: RecordPortTable, row: Record<string, unknown>): RecordPor
 
 export { mapped as mapRecordPortRow }
 
+export async function recordPortRows(
+  tx: SQL,
+  table: RecordPortTable,
+  select:
+    | { ids: readonly string[] }
+    | { spaceId: string; cursor: RecordCursor | null; limit: number },
+): Promise<Record<string, unknown>[]> {
+  const column = RECORD_PORT_CURSORS[table].column
+  const ids = 'ids' in select ? select.ids : null
+  const page =
+    ids === null
+      ? (select as { spaceId: string; cursor: RecordCursor | null; limit: number })
+      : null
+  return tx.unsafe(
+    `SELECT *,to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+     FROM ${table}
+     WHERE ($1::boolean AND id=ANY(string_to_array($2,',')::uuid[]))
+       OR (NOT $1::boolean AND space_id=$3::uuid AND ($4::timestamptz IS NULL OR (${column},id)>($4::timestamptz,$5::uuid)))
+     ORDER BY ${column},id LIMIT $6`,
+    [
+      ids !== null,
+      ids?.join(',') ?? '',
+      page?.spaceId ?? null,
+      page?.cursor?.at ?? null,
+      page?.cursor?.id ?? null,
+      ids?.length ?? (page?.limit ?? -1) + 1,
+    ],
+  ) as Promise<Record<string, unknown>[]>
+}
+
 export async function listRecordPortCatalogue(
   input: Tenant & { table: RecordPortTable; limit: number; cursor: RecordCursor | null },
 ): Promise<(RecordPortRow & RecordListCursorRow)[]> {
   return tenant(input, async (tx) => {
-    const at = input.cursor?.at ?? null
-    const id = input.cursor?.id ?? null
-    const column = RECORD_PORT_CURSORS[input.table].column
-    const rows = await tx.unsafe(
-      `SELECT *,to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM ${input.table} WHERE space_id=$1::uuid AND ($2::timestamptz IS NULL OR (${column},id)>($2::timestamptz,$3::uuid)) ORDER BY ${column},id LIMIT $4`,
-      [input.spaceId, at, id, input.limit + 1],
-    )
+    const rows = await recordPortRows(tx, input.table, input)
     return (rows as Record<string, unknown>[]).map((row) => ({
       ...mapped(input.table, row),
       [recordCursorAt]: text(row.cursor_at),

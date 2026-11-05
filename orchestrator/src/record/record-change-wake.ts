@@ -23,15 +23,22 @@ export function createRecordChangeWakeSource(recordUrl: string, supplied?: Liste
   const wake = () => {
     for (const waiter of waiters) waiter()
   }
-  const open = () =>
-    (opening ??= (async () => {
-      client ??= new SQL(recordServiceUrl(recordUrl))
-      subscription = await client.listen(RECORD_CHANGE_NOTIFY_CHANNEL, wake, wake)
-    })())
+  const open = () => {
+    if (!opening)
+      opening = (async () => {
+        client ??= supplied ?? new SQL(recordServiceUrl(recordUrl))
+        subscription = await client.listen(RECORD_CHANGE_NOTIFY_CHANNEL, wake, wake)
+      })().catch((error) => {
+        opening = undefined
+        client = undefined
+        throw error
+      })
+    return opening
+  }
   return {
     async wait(milliseconds: number, signal?: AbortSignal): Promise<void> {
       if (signal?.aborted) return
-      await open()
+      await open().catch(() => undefined)
       await new Promise<void>((resolve) => {
         let timer: ReturnType<typeof setTimeout>
         const done = () => {
@@ -47,7 +54,7 @@ export function createRecordChangeWakeSource(recordUrl: string, supplied?: Liste
     },
     async close() {
       wake()
-      if (opening) await opening
+      if (opening) await opening.catch(() => undefined)
       await subscription?.unlisten()
       await client?.close()
     },

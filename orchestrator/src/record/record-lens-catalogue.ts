@@ -50,10 +50,10 @@ function hostedLensProfilePinVersionSql(input: {
   }
 }
 
-export async function selectionRows(
+async function selectionRows(
   tx: SQL,
-  spaceId: string,
-  after: { at: string | null; id: string | null; rowId: string | null; limit: number },
+  spaceId: string | null,
+  after: { at: string | null; id: string | null; rowIds: readonly string[] | null; limit: number },
 ): Promise<Record<string, unknown>[]> {
   const pinVersion = hostedLensProfilePinVersionSql({
     selection: 'selection',
@@ -68,18 +68,18 @@ export async function selectionRows(
       to_char(selection.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM project_lens_profile selection
     ${pinVersion.joins}
-    WHERE selection.space_id=$1::uuid
-      AND ($2::uuid IS NULL OR selection.id=$2::uuid)
+    WHERE ($1::uuid IS NULL OR selection.space_id=$1::uuid)
+      AND ($2::text IS NULL OR selection.id=ANY(string_to_array($2,',')::uuid[]))
       AND ($3::timestamptz IS NULL OR (selection.updated_at,selection.id)>($3::timestamptz,$4::uuid))
     ORDER BY selection.updated_at,selection.id LIMIT $5`,
-    [spaceId, after.rowId, after.at, after.id, after.limit],
+    [spaceId, after.rowIds?.join(',') ?? null, after.at, after.id, after.limit],
   )
 }
 
-export async function selectionRevisionRows(
+async function selectionRevisionRows(
   tx: SQL,
-  spaceId: string,
-  after: { at: string | null; id: string | null; rowId: string | null; limit: number },
+  spaceId: string | null,
+  after: { at: string | null; id: string | null; rowIds: readonly string[] | null; limit: number },
 ): Promise<Record<string, unknown>[]> {
   const pinVersion = hostedLensProfilePinVersionSql({
     selection: 'selection',
@@ -96,11 +96,11 @@ export async function selectionRevisionRows(
     JOIN project_lens_profile selection
       ON selection.space_id=history.space_id AND selection.id=history.selection_id
     ${pinVersion.joins}
-    WHERE history.space_id=$1::uuid
-      AND ($2::uuid IS NULL OR history.id=$2::uuid)
+    WHERE ($1::uuid IS NULL OR history.space_id=$1::uuid)
+      AND ($2::text IS NULL OR history.id=ANY(string_to_array($2,',')::uuid[]))
       AND ($3::timestamptz IS NULL OR (history.at,history.id)>($3::timestamptz,$4::uuid))
     ORDER BY history.at,history.id LIMIT $5`,
-    [spaceId, after.rowId, after.at, after.id, after.limit],
+    [spaceId, after.rowIds?.join(',') ?? null, after.at, after.id, after.limit],
   )
 }
 
@@ -184,47 +184,50 @@ function mapped(
 
 export { mapped as mapRecordLensRow }
 
+const lensCursorColumn = (table: RecordLensTable) =>
+  table === 'lens_revision' ||
+  table === 'lens_profile_revision' ||
+  table === 'project_lens_profile_revision'
+    ? 'at'
+    : 'updated_at'
+
+export async function recordLensRows(
+  tx: SQL,
+  table: RecordLensTable,
+  select:
+    | { ids: readonly string[] }
+    | { spaceId: string; cursor: RecordCursor | null; limit: number },
+): Promise<Record<string, unknown>[]> {
+  const ids = 'ids' in select ? select.ids : null
+  const page =
+    ids === null
+      ? (select as { spaceId: string; cursor: RecordCursor | null; limit: number })
+      : null
+  const args = {
+    at: page?.cursor?.at ?? null,
+    id: page?.cursor?.id ?? null,
+    rowIds: ids,
+    limit: ids?.length ?? (page?.limit ?? -1) + 1,
+  }
+  if (table === 'project_lens_profile') return selectionRows(tx, page?.spaceId ?? null, args)
+  if (table === 'project_lens_profile_revision')
+    return selectionRevisionRows(tx, page?.spaceId ?? null, args)
+  const column = lensCursorColumn(table)
+  return tx.unsafe(
+    `SELECT *,to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
+     FROM ${table}
+     WHERE ($1::boolean AND id=ANY(string_to_array($2,',')::uuid[]))
+       OR (NOT $1::boolean AND space_id=$3::uuid AND ($4::timestamptz IS NULL OR (${column},id)>($4::timestamptz,$5::uuid)))
+     ORDER BY ${column},id LIMIT $6`,
+    [ids !== null, ids?.join(',') ?? '', page?.spaceId ?? null, args.at, args.id, args.limit],
+  ) as Promise<Record<string, unknown>[]>
+}
+
 export async function listRecordLensCatalogue(
   input: Tenant & { table: RecordLensTable; limit: number; cursor: RecordCursor | null },
 ): Promise<(Record<string, unknown> & RecordListCursorRow)[]> {
   return tenant(input, async (tx) => {
-    const at = input.cursor?.at ?? null
-    const id = input.cursor?.id ?? null
-    let rows: Record<string, unknown>[]
-    switch (input.table) {
-      case 'lens':
-        rows =
-          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM lens WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
-        break
-      case 'lens_revision':
-        rows =
-          await tx`SELECT *,to_char(at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM lens_revision WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
-        break
-      case 'lens_profile':
-        rows =
-          await tx`SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM lens_profile WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (updated_at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY updated_at,id LIMIT ${input.limit + 1}`
-        break
-      case 'lens_profile_revision':
-        rows =
-          await tx`SELECT *,to_char(at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND (${at}::timestamptz IS NULL OR (at,id)>(${at}::timestamptz,${id}::uuid)) ORDER BY at,id LIMIT ${input.limit + 1}`
-        break
-      case 'project_lens_profile':
-        rows = await selectionRows(tx, input.spaceId, {
-          at,
-          id,
-          rowId: null,
-          limit: input.limit + 1,
-        })
-        break
-      case 'project_lens_profile_revision':
-        rows = await selectionRevisionRows(tx, input.spaceId, {
-          at,
-          id,
-          rowId: null,
-          limit: input.limit + 1,
-        })
-        break
-    }
+    const rows = await recordLensRows(tx, input.table, input)
     return rows.map((row) => ({
       ...mapped(input.table, row),
       [recordCursorAt]: text(row.cursor_at),
@@ -488,13 +491,13 @@ export async function selectRecordProjectLensProfile(
     const selection = await selectionRows(tx, input.spaceId, {
       at: null,
       id: null,
-      rowId: id,
+      rowIds: [id],
       limit: 1,
     })
     const revisions = await selectionRevisionRows(tx, input.spaceId, {
       at: null,
       id: null,
-      rowId: revisionId,
+      rowIds: [revisionId],
       limit: 1,
     })
     return {

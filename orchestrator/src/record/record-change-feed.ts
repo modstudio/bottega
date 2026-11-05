@@ -8,20 +8,20 @@ import {
 } from '../../../shared/record/record-changes.ts'
 import type { TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordDocRow } from './record-doc-mapping.ts'
-import { mapRecordLensRow, selectionRevisionRows, selectionRows } from './record-lens-catalogue.ts'
+import { recordDocRows } from './record-doc-read.ts'
+import { mapRecordLensRow, recordLensRows } from './record-lens-catalogue.ts'
 import { RECORD_LENS_TABLES, type RecordLensTable } from './record-lens-contract.ts'
 import { recordPool } from './record-pool.ts'
-import { mapRecordPortRow } from './record-port-catalogue.ts'
+import { mapRecordPortRow, recordPortRows } from './record-port-catalogue.ts'
 import { RECORD_PORT_TABLES, type RecordPortTable } from './record-port-contract.ts'
-import { mapRecordProjectRow } from './record-projects.ts'
+import { mapRecordProjectRow, recordProjectRows } from './record-projects.ts'
 import {
   mapRecordRoutingEvidenceRow,
-  ROUTING_EVIDENCE_RUN_FIELDS,
-  ROUTING_EVIDENCE_SCORE_FIELDS,
+  recordRoutingEvidenceRows,
 } from './record-routing-evidence.ts'
-import { mapRecordSubjectRow } from './record-subjects.ts'
-import { mapRecordScoreRow } from './record-verdicts.ts'
-import { mapRecordWorkflowRow } from './record-workflow-catalogue.ts'
+import { mapRecordSubjectRow, recordSubjectRows } from './record-subjects.ts'
+import { mapRecordScoreRow, recordScoreRows } from './record-verdicts.ts'
+import { mapRecordWorkflowRow, recordWorkflowRows } from './record-workflow-catalogue.ts'
 import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workflow-contract.ts'
 
 export const RECORD_CHANGE_SERVED_TABLES = [
@@ -48,12 +48,10 @@ type MaterializedChange = {
   row?: unknown
 }
 type FamilyKey = Omit<MaterializedChange, 'row'> & { position: number }
-const records = (value: unknown) => value as Record<string, unknown>[]
-
 function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
   const keyed: FamilyKey[] = []
   for (const [position, change] of changes.entries()) {
-    if (change.table === 'run')
+    if (change.table === 'run') {
       keyed.push({
         table: 'routing_evidence',
         id: change.id,
@@ -61,7 +59,14 @@ function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
         op: change.op,
         position,
       })
-    else if (change.table === 'run_score') {
+      keyed.push({
+        table: 'run_score',
+        id: change.id,
+        space: change.space,
+        op: change.op,
+        position,
+      })
+    } else if (change.table === 'run_score') {
       keyed.push({
         table: 'run_score',
         id: change.id,
@@ -85,102 +90,65 @@ function familyKeys(changes: readonly RecordChangeEntry[]): FamilyKey[] {
         position,
       })
   }
-  const last = new Map<string, FamilyKey>()
-  for (const item of keyed) last.set(`${item.table}:${item.id}`, item)
-  return [...last.values()].sort((a, b) => a.position - b.position)
+  return keyed
 }
 
-async function basicRowFor(tx: SQL, key: FamilyKey): Promise<unknown | undefined> {
-  const id = key.id
-  if (key.table === 'doc') {
-    const rows = records(
-      await tx`SELECT d.*,s.name AS space_name,p.name AS project_name,
-      own.name AS article_subject_name,
-      COALESCE((SELECT jsonb_agg(jsonb_build_object('id',rs.id,'name',rs.name) ORDER BY rs.position,rs.id)
-        FROM doc_related_subject dr JOIN subject rs ON rs.id=dr.subject_id
-        WHERE dr.space_id=d.space_id AND dr.doc_id=d.id),'[]'::jsonb) AS related_subjects
-      FROM doc d JOIN space s ON s.id=d.space_id LEFT JOIN project p ON p.id=d.project_id
-      LEFT JOIN subject own ON own.id=d.article_subject_id WHERE d.id=${id}::uuid`,
+async function rowsByFamily(tx: SQL, keys: readonly FamilyKey[]): Promise<Map<string, unknown>> {
+  const result = new Map<string, unknown>()
+  const ids = (table: RecordChangeServedTable) => [
+    ...new Set(
+      keys.filter((key) => key.table === table && key.op !== 'delete').map((key) => key.id),
+    ),
+  ]
+  const add = (
+    table: RecordChangeServedTable,
+    rows: Record<string, unknown>[],
+    map: (row: Record<string, unknown>) => unknown,
+    idColumn = 'id',
+  ) => {
+    for (const row of rows) result.set(`${table}:${String(row[idColumn])}`, map(row))
+  }
+  const docs = ids('doc')
+  if (docs.length) add('doc', await recordDocRows(tx, { ids: docs }), recordDocRow)
+  const projects = ids('project')
+  if (projects.length) add('project', await recordProjectRows(tx, projects), mapRecordProjectRow)
+  const subjects = ids('subject')
+  if (subjects.length)
+    add('subject', await recordSubjectRows(tx, { ids: subjects }), mapRecordSubjectRow)
+  for (const table of RECORD_LENS_TABLES) {
+    const rowIds = ids(table)
+    if (rowIds.length)
+      add(table, await recordLensRows(tx, table as RecordLensTable, { ids: rowIds }), (row) =>
+        mapRecordLensRow(table as RecordLensTable, row),
+      )
+  }
+  for (const table of RECORD_PORT_TABLES) {
+    const rowIds = ids(table)
+    if (rowIds.length)
+      add(table, await recordPortRows(tx, table as RecordPortTable, { ids: rowIds }), (row) =>
+        mapRecordPortRow(table as RecordPortTable, row),
+      )
+  }
+  for (const table of RECORD_WORKFLOW_TABLES) {
+    const rowIds = ids(table)
+    if (rowIds.length)
+      add(
+        table,
+        await recordWorkflowRows(tx, table as RecordWorkflowTable, { ids: rowIds }),
+        (row) => mapRecordWorkflowRow(table as RecordWorkflowTable, row),
+      )
+  }
+  const scores = ids('run_score')
+  if (scores.length)
+    add('run_score', await recordScoreRows(tx, { ids: scores }), mapRecordScoreRow, 'run_id')
+  const evidence = ids('routing_evidence')
+  if (evidence.length)
+    add(
+      'routing_evidence',
+      await recordRoutingEvidenceRows(tx, { ids: evidence }),
+      mapRecordRoutingEvidenceRow,
     )
-    return rows[0] ? recordDocRow(rows[0]) : undefined
-  }
-  if (key.table === 'project') {
-    const rows = records(
-      await tx`SELECT p.*,s.name AS space_name FROM project p JOIN space s ON s.id=p.space_id WHERE p.id=${id}::uuid`,
-    )
-    return rows[0] ? mapRecordProjectRow(rows[0]) : undefined
-  }
-  if (key.table === 'subject') {
-    const rows = records(
-      await tx`SELECT s.*,p.name AS project FROM subject s JOIN project p ON p.id=s.project_id AND p.space_id=s.space_id WHERE s.id=${id}::uuid`,
-    )
-    return rows[0] ? mapRecordSubjectRow(rows[0]) : undefined
-  }
-  return undefined
-}
-
-async function catalogueRowFor(tx: SQL, key: FamilyKey): Promise<unknown | undefined> {
-  const id = key.id
-  if ((RECORD_LENS_TABLES as readonly string[]).includes(key.table)) {
-    const table = key.table as RecordLensTable
-    let rows: Record<string, unknown>[]
-    if (table === 'project_lens_profile')
-      rows = await selectionRows(tx, key.space, { at: null, id: null, rowId: id, limit: 1 })
-    else if (table === 'project_lens_profile_revision')
-      rows = await selectionRevisionRows(tx, key.space, { at: null, id: null, rowId: id, limit: 1 })
-    else rows = records(await tx.unsafe(`SELECT * FROM ${table} WHERE id=$1::uuid`, [id]))
-    return rows[0] ? mapRecordLensRow(table, rows[0]) : undefined
-  }
-  if ((RECORD_PORT_TABLES as readonly string[]).includes(key.table)) {
-    const table = key.table as RecordPortTable
-    const rows = records(await tx.unsafe(`SELECT * FROM ${table} WHERE id=$1::uuid`, [id]))
-    return rows[0] ? mapRecordPortRow(table, rows[0]) : undefined
-  }
-  if ((RECORD_WORKFLOW_TABLES as readonly string[]).includes(key.table)) {
-    const table = key.table as RecordWorkflowTable
-    const rows = records(await tx.unsafe(`SELECT * FROM ${table} WHERE id=$1::uuid`, [id]))
-    return rows[0] ? mapRecordWorkflowRow(table, rows[0]) : undefined
-  }
-  return undefined
-}
-
-async function evidenceRowFor(tx: SQL, key: FamilyKey): Promise<unknown | undefined> {
-  const id = key.id
-  if (key.table === 'run_score') {
-    const rows = records(
-      await tx`SELECT COALESCE(s.run_id,e.run_id) AS run_id,s.delivery,s.quality,s.fidelity,s.note,s.scored_at,s.scored_by,
-      GREATEST(s.updated_at,e.excluded_at,e.superseded_at) AS updated_at,
-      CASE WHEN e.superseded_at IS NOT NULL THEN NULL ELSE COALESCE(r.evidence_excluded,e.reason) END AS evidence_excluded
-      FROM run_score s FULL OUTER JOIN run_exclusion e ON e.run_id=s.run_id AND e.space_id=s.space_id
-      LEFT JOIN run r ON r.id=COALESCE(s.run_id,e.run_id) WHERE COALESCE(s.run_id,e.run_id)=${id}::uuid`,
-    )
-    return rows[0] ? mapRecordScoreRow(rows[0]) : undefined
-  }
-  const rows = records(
-    await tx`SELECT r.id,r.space_id,r.agent,r.model,r.job,r.stack,r.prompt_bytes,r.status,r.failure_kind,
-    COALESCE(r.executor,'external') AS executor,r.evidence_excluded,r.started_at,r.latency_ms,r.vendor_tokens,r.model_calls,
-    r.peak_call_tokens,s.delivery,s.quality,s.fidelity,r.evidence_seq,
-    COALESCE((SELECT array_agg(DISTINCT lens.lens ORDER BY lens.lens) FROM review_lens lens WHERE lens.run_id=r.id),ARRAY[]::text[]) AS lenses
-    FROM run r LEFT JOIN run_score s ON s.run_id=r.id AND s.space_id=r.space_id
-    WHERE r.id=${id}::uuid AND r.probe=false AND r.parent_run_id IS NULL AND r.status IN ('ok','failed','stale')
-      AND NOT (COALESCE(r.withheld_fields,'[]'::jsonb) ?| ${tx.array([...ROUTING_EVIDENCE_RUN_FIELDS], 'text')})
-      AND (s.run_id IS NULL OR NOT (COALESCE(s.withheld_fields,'[]'::jsonb) ?| ${tx.array([...ROUTING_EVIDENCE_SCORE_FIELDS], 'text')}))
-      AND NOT EXISTS (SELECT 1 FROM review_lens withheld WHERE withheld.run_id=r.id AND COALESCE(withheld.withheld_fields,'[]'::jsonb) ? 'lens')`,
-  )
-  return rows[0] ? mapRecordRoutingEvidenceRow(rows[0]) : undefined
-}
-
-async function rowFor(tx: SQL, key: FamilyKey): Promise<unknown | undefined> {
-  if (key.op === 'delete' && key.table !== 'routing_evidence') return undefined
-  if (key.table === 'doc' || key.table === 'project' || key.table === 'subject')
-    return basicRowFor(tx, key)
-  if (
-    (RECORD_LENS_TABLES as readonly string[]).includes(key.table) ||
-    (RECORD_PORT_TABLES as readonly string[]).includes(key.table) ||
-    (RECORD_WORKFLOW_TABLES as readonly string[]).includes(key.table)
-  )
-    return catalogueRowFor(tx, key)
-  return evidenceRowFor(tx, key)
+  return result
 }
 
 export async function readRecordChangeFeed(
@@ -195,9 +163,10 @@ export async function readRecordChangeFeed(
     async (tx, page) => {
       if (page.resetRequired) return page
       const keys = familyKeys(page.changes)
+      const materialized = await rowsByFamily(tx, keys)
       const changes: MaterializedChange[] = []
       for (const key of keys) {
-        const row = await rowFor(tx, key)
+        const row = materialized.get(`${key.table}:${key.id}`)
         const base = {
           table: key.table,
           id: key.id,

@@ -30,6 +30,7 @@ export const recordChangeModules = [
     './record-port-contract.ts',
     './record-workflow-contract.ts',
     './record-doc-mapping.ts',
+    './record-doc-read.ts',
     './record-lens-catalogue.ts',
     './record-port-catalogue.ts',
     './record-projects.ts',
