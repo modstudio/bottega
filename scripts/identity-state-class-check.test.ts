@@ -2,12 +2,12 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { readSqliteKeyTables } from './identity-inventory.ts'
 import { stateClassRefusals } from './identity-state-class-check.ts'
-import type { StateClassDeclaration } from './identity-state-classes.ts'
+import type { StateClassDeclaration, TableStateClassDeclaration } from './identity-state-classes.ts'
 
 const hosted = (
   table: string,
-  overrides: Partial<StateClassDeclaration> = {},
-): StateClassDeclaration => ({
+  overrides: Partial<TableStateClassDeclaration> = {},
+): TableStateClassDeclaration => ({
   store: 'orchestrator',
   table,
   class: 'hosted-first',
