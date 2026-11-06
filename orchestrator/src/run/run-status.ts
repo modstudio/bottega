@@ -16,3 +16,14 @@ export const TERMINAL_RUN_STATUS_SET: ReadonlySet<string> = new Set<string>(TERM
 
 /** The same statuses as the quoted, parenthesized SQL list a run `IN` or `NOT IN` test needs. */
 export const TERMINAL_RUN_STATUS_SQL = `(${TERMINAL_RUN_STATUSES.map((status) => `'${status}'`).join(',')})`
+
+/** Run statuses whose facts can already be reflected in the hosted record. */
+const RECORD_REACHABLE_RUN_STATUSES = [...TERMINAL_RUN_STATUSES, 'asking'] as const
+
+/** The record-reachable statuses for in-process eligibility checks. */
+export const RECORD_REACHABLE_RUN_STATUS_SET: ReadonlySet<string> = new Set<string>(
+  RECORD_REACHABLE_RUN_STATUSES,
+)
+
+/** The record-reachable statuses as the quoted, parenthesized SQL list an `IN` test needs. */
+export const RECORD_REACHABLE_RUN_STATUS_SQL = `(${RECORD_REACHABLE_RUN_STATUSES.map((status) => `'${status}'`).join(',')})`

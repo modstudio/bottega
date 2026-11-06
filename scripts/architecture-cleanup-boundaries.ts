@@ -252,6 +252,7 @@ export const cleanupBoundarySpecs = [
       '../board/board-reach.ts',
       '../branch/branch-disposal.ts',
       '../database/database-commands.ts',
+      '../run/run-outbox.ts',
       '../database/contention-retention.ts',
       '../database/db.ts',
       '../evidence/unjudged-expiry.ts',
@@ -283,7 +284,7 @@ export const cleanupBoundarySpecs = [
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep cleanup-sweep independent of transports, routing, reviews, contracts, and the CLI; database maintenance stays behind the database command owner.',
+      'Keep cleanup-sweep independent of transports, routing, reviews, contracts, and the CLI; maintenance stays behind the database command and run-outbox owners.',
   },
   {
     name: 'cleanup-sweep-outbox-boundary',

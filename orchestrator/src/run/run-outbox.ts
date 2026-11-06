@@ -3,10 +3,13 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
+import { writableDb, writeTransaction } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { isReleasedOutboxPayload } from '../record/outbox-prune-payload.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
-import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
+import { RECORD_REACHABLE_RUN_STATUS_SET, RECORD_REACHABLE_RUN_STATUS_SQL } from './run-status.ts'
+import { isSyntheticLifecycleJob } from './synthetic-lifecycle-job.ts'
 
 type LocalRun = Record<string, unknown> & {
   number: number
@@ -25,6 +28,68 @@ export type RunRecordBackfillResult = {
   refreshedRoots: number
   skippedReleased: number
   skippedLive: number
+}
+
+export type RunRecordBackfillDecision =
+  | 'enqueue'
+  | 'refresh-number'
+  | 'refresh-links'
+  | 'refresh-root'
+  | 'none'
+
+export type RunRecordBackfillFacts = {
+  job: string
+  number: number
+  status: string
+  failureKind: string | null
+  parentRunRecordId: string | null
+  projectRecordId: string | null
+  taskRecordId: string | null
+  latestPayload:
+    | { state: 'absent' }
+    | { state: 'released' }
+    | { state: 'parsed'; value: Record<string, unknown> }
+}
+
+/** A run is record-reachable once it has a publishable status and is not lifecycle bookkeeping. */
+export function isRunRecordEligible(status: string, job: string): boolean {
+  return RECORD_REACHABLE_RUN_STATUS_SET.has(status) && !isSyntheticLifecycleJob(job)
+}
+
+/** Roots are stamped when their whole chain ends; turns use their own finished time. */
+export function runRecordFinishedAt(
+  database: Database,
+  runId: string,
+  parentRunRecordId: string | null,
+  ownFinishedAt: string,
+): string {
+  return parentRunRecordId === null
+    ? (chainTerminationAtForRoot(database, runId) ?? ownFinishedAt)
+    : ownFinishedAt
+}
+
+/** Decides whether the hosted record lacks a terminal run fact held locally. */
+export function runRecordBackfillDecision(
+  facts: RunRecordBackfillFacts,
+): RunRecordBackfillDecision {
+  if (isSyntheticLifecycleJob(facts.job)) return 'none'
+  if (facts.latestPayload.state === 'absent') return 'enqueue'
+  if (facts.latestPayload.state === 'released') return 'none'
+  const latest = facts.latestPayload.value
+  if (latest.number !== facts.number) return 'refresh-number'
+  if (shouldRefreshRunRecordLinks(latest, facts.projectRecordId, facts.taskRecordId))
+    return 'refresh-links'
+  if (
+    facts.parentRunRecordId === null &&
+    (latest.status !== facts.status || latest.failureKind !== facts.failureKind)
+  )
+    return 'refresh-root'
+  return 'none'
+}
+
+export type RunRecordBackfillInspection = Record<RunRecordBackfillDecision, number> & {
+  released: number
+  live: number
 }
 
 export function shouldRefreshRunRecordLinks(
@@ -214,32 +279,34 @@ export function enqueueRunRecord(
     .run(newRecordId(), row.record_id, payload, finishedAt)
 }
 
-function readableLatestPayload(payload: string): Record<string, unknown> | null {
-  if (isReleasedOutboxPayload(payload)) return null
+function readableLatestPayload(payload: string | null): RunRecordBackfillFacts['latestPayload'] {
+  if (payload === null) return { state: 'absent' }
+  if (isReleasedOutboxPayload(payload)) return { state: 'released' }
   try {
-    return JSON.parse(payload) as Record<string, unknown>
+    return { state: 'parsed', value: JSON.parse(payload) as Record<string, unknown> }
   } catch {
-    return {}
+    return { state: 'parsed', value: {} }
   }
 }
 
-export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
-  const eligible = database
-    .query<
-      {
-        record_id: string
-        finished_at: string
-        parent_run_record_id: string | null
-        status: string
-        failure_kind: string | null
-        latest_payload: string | null
-        number: number
-        project_record_id: string | null
-        task_record_id: string | null
-      },
-      [string, string]
-    >(
-      `SELECT r.record_id, r.number, COALESCE(r.last_event_at, r.started_at) AS finished_at,
+type BackfillRunRow = {
+  record_id: string
+  finished_at: string
+  parent_run_record_id: string | null
+  status: string
+  failure_kind: string | null
+  latest_payload: string | null
+  number: number
+  project_record_id: string | null
+  task_record_id: string | null
+  job: string
+}
+
+function backfillRunRows(database: Database): BackfillRunRow[] {
+  return database
+    .query<BackfillRunRow, []>(
+      `SELECT r.record_id, r.number, r.job,
+              COALESCE(r.last_event_at, r.started_at) AS finished_at,
               r.parent_run_record_id, r.status, r.failure_kind, latest.payload AS latest_payload,
               r.project_record_id, r.task_record_id
          FROM run r
@@ -248,50 +315,76 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
             WHERE prior.kind='run' AND prior.row_id=r.record_id
             ORDER BY prior.id DESC LIMIT 1
          )
-        WHERE r.status IN ('ok', 'failed', 'stale', 'stopped', 'asking')
-          AND r.job NOT IN (?,?)
+        WHERE r.status IN ${RECORD_REACHABLE_RUN_STATUS_SQL}
         ORDER BY r.number`,
     )
-    .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
+    .all()
+}
+
+function backfillFacts(row: BackfillRunRow): RunRecordBackfillFacts {
+  return {
+    job: row.job,
+    number: row.number,
+    status: row.status,
+    failureKind: row.failure_kind,
+    parentRunRecordId: row.parent_run_record_id,
+    projectRecordId: row.project_record_id,
+    taskRecordId: row.task_record_id,
+    latestPayload: readableLatestPayload(row.latest_payload),
+  }
+}
+
+export function inspectRunRecordBackfill(database: Database): RunRecordBackfillInspection {
+  const inspection: RunRecordBackfillInspection = {
+    enqueue: 0,
+    'refresh-number': 0,
+    'refresh-links': 0,
+    'refresh-root': 0,
+    none: 0,
+    released: 0,
+    live: liveRunCount(database),
+  }
+  for (const row of backfillRunRows(database)) {
+    const facts = backfillFacts(row)
+    inspection[runRecordBackfillDecision(facts)]++
+    if (facts.latestPayload.state === 'released' && !isSyntheticLifecycleJob(facts.job))
+      inspection.released++
+  }
+  return inspection
+}
+
+function liveRunCount(database: Database): number {
+  return database
+    .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
+    .get()!.count
+}
+
+export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
   let enqueued = 0
   let refreshedLinks = 0
   let refreshedNumbers = 0
   let refreshedRoots = 0
   let skippedReleased = 0
-  for (const row of eligible) {
-    if (row.latest_payload === null) {
-      enqueueRunRecord(database, row.record_id, machineId, row.finished_at)
-      enqueued++
-      continue
-    }
-    const latest = readableLatestPayload(row.latest_payload)
-    if (latest === null) {
+  for (const row of backfillRunRows(database)) {
+    const facts = backfillFacts(row)
+    const decision = runRecordBackfillDecision(facts)
+    if (facts.latestPayload.state === 'released' && !isSyntheticLifecycleJob(facts.job))
       skippedReleased++
-      continue
-    }
-    const refreshLinks = shouldRefreshRunRecordLinks(
-      latest,
-      row.project_record_id,
-      row.task_record_id,
+    if (decision === 'none') continue
+    const finishedAt = runRecordFinishedAt(
+      database,
+      row.record_id,
+      row.parent_run_record_id,
+      row.finished_at,
     )
-    const isRoot = row.parent_run_record_id === null
-    const outcomeChanged =
-      isRoot && (latest.status !== row.status || latest.failureKind !== row.failure_kind)
-    const refreshNumber = latest.number !== row.number
-    if (!refreshLinks && !outcomeChanged && !refreshNumber) continue
-    // A root's record carries its chain's outcome, so it is stamped at the chain's end.
-    const finishedAt = isRoot
-      ? (chainTerminationAtForRoot(database, row.record_id) ?? row.finished_at)
-      : row.finished_at
     enqueueRunRecord(database, row.record_id, machineId, finishedAt)
-    if (refreshNumber) refreshedNumbers++
-    else if (refreshLinks) refreshedLinks++
+    if (decision === 'enqueue') enqueued++
+    else if (decision === 'refresh-number') refreshedNumbers++
+    else if (decision === 'refresh-links') refreshedLinks++
     else refreshedRoots++
   }
 
-  const skippedLive = database
-    .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
-    .get()!.count
+  const skippedLive = liveRunCount(database)
   return {
     enqueued,
     refreshedLinks,
@@ -300,4 +393,10 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
     skippedReleased,
     skippedLive,
   }
+}
+
+/** Repairs record-reachable run rows as the run-outbox phase of machine sweep. */
+export function backfillRunRecordsForSweep(): RunRecordBackfillResult {
+  const database = writableDb()
+  return writeTransaction(() => backfillRunRecords(database, machineId()), database)
 }

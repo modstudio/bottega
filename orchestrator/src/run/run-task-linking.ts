@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projects } from '../project/projects.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
   type HubTaskReader,
@@ -12,6 +13,7 @@ import {
   taskReadRefusal,
 } from '../workflow/workflow-task-reference.ts'
 import { linkWorkflowQuestionsTaskReference } from './question-mutation.ts'
+import { enqueueRunRecord, isRunRecordEligible, runRecordFinishedAt } from './run-outbox.ts'
 
 type TaskLinkSource = 'launch_key' | 'review_ref' | 'branch' | 'turn'
 type ProjectLinkSource = 'task-project' | 'cwd' | 'scratchpad-cwd'
@@ -396,6 +398,30 @@ export async function linkRunTasks(
       for (const link of links) {
         if (!link.task_record_id && !link.project_record_id) continue
         update.run(link.task_record_id ?? null, link.project_record_id ?? null, link.record_id)
+        const linkedRun = database
+          .query<
+            {
+              job: string
+              status: string
+              finished_at: string
+              parent_run_record_id: string | null
+            },
+            [string]
+          >(
+            `SELECT job,status,COALESCE(last_event_at,started_at) AS finished_at,
+                    parent_run_record_id
+             FROM run WHERE record_id=?`,
+          )
+          .get(link.record_id)!
+        if (isRunRecordEligible(linkedRun.status, linkedRun.job)) {
+          const finishedAt = runRecordFinishedAt(
+            database,
+            link.record_id,
+            linkedRun.parent_run_record_id,
+            linkedRun.finished_at,
+          )
+          enqueueRunRecord(database, link.record_id, machineId(), finishedAt)
+        }
       }
       for (const update of pendingUpdates) {
         writeLocalTaskLink(database, update)

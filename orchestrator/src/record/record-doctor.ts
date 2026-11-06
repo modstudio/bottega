@@ -29,6 +29,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
@@ -64,6 +65,7 @@ export type RecordDoctorFacts = {
   memberships: readonly RecordSpaceMembership[]
   projects: ReadonlyArray<{ name: string; space: string | null }>
   pendingOutboxRows: number
+  runRecordBackfill: RunRecordBackfillInspection
   quarantinedOutboxRows: readonly QuarantinedDoctorRow[]
   operatorConnectionPresent: boolean
   operatorChecks?: readonly RecordDoctorCheck[]
@@ -146,6 +148,24 @@ function projectSpaceChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
   })
 }
 
+function runRecordBackfillCheck(facts: RunRecordBackfillInspection): RecordDoctorCheck {
+  const missing =
+    facts.enqueue + facts['refresh-number'] + facts['refresh-links'] + facts['refresh-root']
+  return missing === 0
+    ? {
+        name: 'local runs the record does not reflect',
+        status: 'pass',
+        detail: '0',
+        section: 'customer',
+      }
+    : {
+        name: 'local runs the record does not reflect',
+        status: 'fail',
+        detail: `${missing}: enqueue ${facts.enqueue}, refresh-number ${facts['refresh-number']}, refresh-links ${facts['refresh-links']}, refresh-root ${facts['refresh-root']}; run \`${PLATFORM_SLUG} record push --backfill\``,
+        section: 'customer',
+      }
+}
+
 /** Turns already gathered facts into the complete, ordered doctor presentation. */
 export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctorCheck[] {
   const checks: RecordDoctorCheck[] = [
@@ -203,6 +223,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
     detail: String(facts.pendingOutboxRows),
     section: 'customer',
   })
+  checks.push(runRecordBackfillCheck(facts.runRecordBackfill))
   checks.push(
     facts.quarantinedOutboxRows.length
       ? {
@@ -407,6 +428,7 @@ async function customerFacts(
     memberships: parseRecordSpaceMemberships(identity?.memberships),
     projects,
     pendingOutboxRows: pendingOutboxCount(database),
+    runRecordBackfill: inspectRunRecordBackfill(database),
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({
       id: row.id,
       kind: row.kind,

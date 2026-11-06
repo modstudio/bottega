@@ -26,7 +26,10 @@ import {
   POOL_ROUTING_EVIDENCE_ROWS_SQL,
   POOL_SUCCESSFUL_RUN_SAMPLES_SQL,
 } from '../orchestrator/src/route/routing-pool-evidence.ts'
-import { TERMINAL_RUN_STATUS_SQL } from '../orchestrator/src/run/run-status.ts'
+import {
+  RECORD_REACHABLE_RUN_STATUS_SQL,
+  TERMINAL_RUN_STATUS_SQL,
+} from '../orchestrator/src/run/run-status.ts'
 import { SUBSCRIPTION_QUOTA_WINDOWS_SQL } from '../orchestrator/src/run/run-subscription-cost-store.ts'
 
 type ConcernName = 'orchestrator' | 'hub' | 'shared'
@@ -120,6 +123,10 @@ const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
   },
   TERMINAL_RUN_STATUS_SQL: {
     values: [TERMINAL_RUN_STATUS_SQL],
+    declaredIn: 'orchestrator/src/run/run-status.ts',
+  },
+  RECORD_REACHABLE_RUN_STATUS_SQL: {
+    values: [RECORD_REACHABLE_RUN_STATUS_SQL],
     declaredIn: 'orchestrator/src/run/run-status.ts',
   },
   SUBSCRIPTION_QUOTA_WINDOWS_SQL: {

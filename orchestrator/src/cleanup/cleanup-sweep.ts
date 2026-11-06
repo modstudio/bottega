@@ -45,6 +45,7 @@ import {
   runCloseOutLeaseIds,
   runLeaseIds,
 } from '../run/run-lease.ts'
+import { backfillRunRecordsForSweep } from '../run/run-outbox.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
@@ -415,6 +416,19 @@ async function finishSweep(
 ): Promise<void> {
   const runLinks = await sweepRunTaskLinks(dry, hubTaskReader)
   presentation[runLinks.kind](runLinks.line)
+  if (!dry) {
+    const repaired = backfillRunRecordsForSweep()
+    const total =
+      repaired.enqueued +
+      repaired.refreshedNumbers +
+      repaired.refreshedLinks +
+      repaired.refreshedRoots
+    if (total > 0) {
+      presentation.log(
+        `record backfill repaired ${total} runs (enqueue ${repaired.enqueued}, numbers ${repaired.refreshedNumbers}, links ${repaired.refreshedLinks}, roots ${repaired.refreshedRoots})`,
+      )
+    }
+  }
   if (cleanupFailed || runLinks.kind === 'error') presentation.setExitCode(1)
 }
 

@@ -127,6 +127,102 @@ describe('run link derivation', () => {
 })
 
 describe('run task linking service', () => {
+  test('enqueues a newly linked terminal run but not a running or already-linked run', async () => {
+    const projectId = addProject('link-outbox', '/work/link-outbox')
+    const terminalId = addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
+    const runningId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'running',
+      projectRecordId: projectId,
+    })
+    const existingTaskId = '01990000-0000-7000-8000-000000009003'
+    const linkedId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      taskRecordId: existingTaskId,
+      projectRecordId: projectId,
+    })
+    const updateKey = db().query('UPDATE run SET launch_key=? WHERE record_id=?')
+    updateKey.run('LINK-1', terminalId)
+    updateKey.run('LINK-2', runningId)
+    updateKey.run('LINK-3', linkedId)
+
+    await linkRunTasks(
+      { dryRun: false },
+      {
+        hubReader: async () => [
+          {
+            key: 'LINK-1',
+            record_id: '01990000-0000-7000-8000-000000009001',
+            project: 'link-outbox',
+          },
+          {
+            key: 'LINK-2',
+            record_id: '01990000-0000-7000-8000-000000009002',
+            project: 'link-outbox',
+          },
+          { key: 'LINK-3', record_id: existingTaskId, project: 'link-outbox' },
+        ],
+      },
+    )
+
+    const outbox = db()
+      .query<{ row_id: string; payload: string }, [string, string, string]>(
+        `SELECT row_id,payload FROM outbox WHERE kind='run'
+         AND row_id IN (?,?,?) ORDER BY row_id`,
+      )
+      .all(terminalId, runningId, linkedId)
+    expect(outbox).toHaveLength(1)
+    expect(outbox[0]!.row_id).toBe(terminalId)
+    expect(JSON.parse(outbox[0]!.payload)).toMatchObject({
+      taskId: '01990000-0000-7000-8000-000000009001',
+    })
+  })
+
+  test('stamps a newly linked root at the end of its run chain', async () => {
+    const projectId = addProject('link-chain', '/work/link-chain')
+    const rootId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      projectRecordId: projectId,
+      startedAt: '2026-11-01T01:00:00.000Z',
+    })
+    addRun({
+      agent: 'codex',
+      job: 'implement',
+      projectRecordId: projectId,
+      parent: rootId,
+      turn: 2,
+      startedAt: '2026-11-01T02:00:00.000Z',
+      latency: 1_000,
+    })
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('CHAIN-1', rootId)
+
+    await linkRunTasks(
+      { dryRun: false },
+      {
+        hubReader: async () => [
+          {
+            key: 'CHAIN-1',
+            record_id: '01990000-0000-7000-8000-000000009101',
+            project: 'link-chain',
+          },
+        ],
+      },
+    )
+
+    const payload = db()
+      .query<{ payload: string }, [string]>(
+        `SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(rootId)!
+    expect(JSON.parse(payload.payload)).toMatchObject({
+      taskId: '01990000-0000-7000-8000-000000009101',
+      finishedAt: '2026-11-01T02:00:01.000Z',
+    })
+  })
+
   test('writes derived links once and is idempotent', async () => {
     const projectId = addProject('link-write', '/work/link-write')
     const migrationSql = readFileSync(

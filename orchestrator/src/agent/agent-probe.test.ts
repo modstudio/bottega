@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { db, writableDb } from '../database/db.ts'
 import {
   recordAgentProbe,
+  recordSuccessfulRegistrationProbe,
   registrationProbeCacheReusable,
   registrationProbeNeedsMcp,
   registrationProbeRequirements,
@@ -135,6 +136,25 @@ test('changing an agent identity resets a probed writing capability', () => {
   recordAgentProbe('writing-identity-fixture', result(true))
   setAgent('writing-identity-fixture', { model: 'changed-fixture' })
   expect(JSON.parse(registeredCaps('writing-identity-fixture')).writesRepo).toBe(false)
+})
+
+test('a successful registration probe enqueues its terminal run record', () => {
+  registered('successful-probe-outbox-fixture')
+  recordSuccessfulRegistrationProbe('successful-probe-outbox-fixture')
+
+  const rows = db()
+    .query<{ payload: string }, []>(
+      `SELECT outbox.payload FROM outbox
+       JOIN run ON run.record_id=outbox.row_id
+       WHERE outbox.kind='run' AND run.agent='successful-probe-outbox-fixture'`,
+    )
+    .all()
+  expect(rows).toHaveLength(1)
+  expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+    agent: 'successful-probe-outbox-fixture',
+    job: 'agent-probe',
+    status: 'ok',
+  })
 })
 
 function registeredCaps(name: string): string {

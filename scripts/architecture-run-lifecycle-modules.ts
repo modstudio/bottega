@@ -265,9 +265,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/self-spawn.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    '../record/machine-identity.ts',
     '../workflow/workflow-task-linking.ts',
     '../workflow/workflow-task-reference.ts',
     './question-mutation.ts',
+    './run-outbox.ts',
+    './synthetic-lifecycle-job.ts',
   ]),
   module('orchestrator/src/run/run-task-branch-resolution.ts', [
     '../branch/task-branch.ts',

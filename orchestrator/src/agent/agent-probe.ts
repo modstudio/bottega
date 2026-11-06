@@ -6,11 +6,13 @@ import { join } from 'node:path'
 import { which } from 'bun'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { nowIso, writableDb } from '../database/db.ts'
+import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { billingHoldForFailure } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachment.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { nextRunNumber } from '../run/run-number.ts'
+import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { runProbeTurn } from './agent-probe-turn.ts'
 import {
   type AgentRow,
@@ -147,29 +149,35 @@ export function recordSuccessfulRegistrationProbe(name: string): void {
   const row = agentRows().find((candidate) => candidate.name === name)
   if (!row) throw new Error(`unknown agent "${name}"`)
   const prompt = 'registration probe passed'
-  writableDb()
-    .query(
-      `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,probe,status,latency_ms,exit_code,output_bytes,model,transport)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    )
-    .run(
-      newRecordId(),
-      nextRunNumber(writableDb()),
-      nowIso(),
-      name,
-      'agent-probe',
-      createHash('sha256').update(prompt).digest('hex'),
-      Buffer.byteLength(prompt),
-      prompt,
-      1,
-      'ok',
-      0,
-      0,
-      0,
-      row.model,
-      row.transport,
-    )
+  const database = writableDb()
+  const runId = newRecordId()
+  const finishedAt = nowIso()
+  writeTransaction(() => {
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,probe,status,latency_ms,exit_code,output_bytes,model,transport)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        runId,
+        nextRunNumber(database),
+        finishedAt,
+        name,
+        'agent-probe',
+        createHash('sha256').update(prompt).digest('hex'),
+        Buffer.byteLength(prompt),
+        prompt,
+        1,
+        'ok',
+        0,
+        0,
+        0,
+        row.model,
+        row.transport,
+      )
+    enqueueRunRecord(database, runId, machineId(), finishedAt)
+  }, database)
 }
 
 /** Prove capabilities before routing spends a worktree discovering them. */
