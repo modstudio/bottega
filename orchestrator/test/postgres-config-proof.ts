@@ -111,6 +111,19 @@ export function registerHostedConfigProofs(
     ])
   })
 
+  test('membership role backfill preserves the stand-in access and restores forced RLS', () => {
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT
+           (SELECT role FROM membership WHERE id='01990000-0000-7000-8000-000000000003'),
+           (SELECT relforcerowsecurity FROM pg_class WHERE relname='membership'),
+           (SELECT relforcerowsecurity FROM pg_class WHERE relname='invitation');`,
+      ),
+    ).toBe('member|t|t')
+  })
+
   test('hosted secret table grants stay narrow', () => {
     const facts = succeeds(
       'postgres',
