@@ -81,6 +81,27 @@ describe('worker reply finalization', () => {
     })
     expect(result.error).toContain('rejected question text: "placeholder"')
   })
+
+  test('an asking reply with only an invalid typed question names the parse defect', () => {
+    const result = classify(
+      reply({
+        status: 'asking',
+        questions: [
+          {
+            kind: 'choice',
+            question: 'Which shape?',
+            why: 'The interface depends on it.',
+            options: [{ name: 'only', criteria: null }],
+            recommendation: null,
+            criteria: null,
+            levels: null,
+          },
+        ],
+      }),
+    )
+    expect(result).toMatchObject({ status: 'failed', failureKind: 'contract' })
+    expect(result.error).toContain('choice needs at least two options')
+  })
   test('asking with text but empty why is a contract failure', () => {
     expect(
       classify(
@@ -155,7 +176,9 @@ describe('worker reply finalization', () => {
     expect(result.acceptedQuestions.map(({ question, why }) => ({ question, why }))).toEqual([
       { question: 'which table?', why: 'the schema changes' },
     ])
-    expect(result.error).toBe('1 invalid question dropped; rejected question text: "   "')
+    expect(result.error).toBe(
+      '1 invalid question dropped; rejected question text: "   " (question is empty)',
+    )
   })
   test('done carrying a real question is reclassified as asking', () => {
     const result = classify(
@@ -222,7 +245,7 @@ describe('worker reply finalization', () => {
       { question: 'Which table?' },
     ])
     expect(result.error).toBe(
-      'status reclassified from done to asking: a worker with a real question has not finished\n1 invalid question dropped; rejected question text: " "',
+      'status reclassified from done to asking: a worker with a real question has not finished\n1 invalid question dropped; rejected question text: " " (question is empty)',
     )
   })
   test('done carrying only blank questions stays done and records the dropped blanks', () => {
@@ -236,7 +259,9 @@ describe('worker reply finalization', () => {
       }),
     )
     expect(result.status).toBe('ok')
-    expect(result.error).toBe('2 invalid questions dropped; rejected question text: " ", "​"')
+    expect(result.error).toBe(
+      '2 invalid questions dropped; rejected question text: " " (question is empty), "​" (question is empty)',
+    )
     expect(result.acceptedQuestions).toEqual([])
   })
   test('done carrying no questions remains done', () => {

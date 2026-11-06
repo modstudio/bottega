@@ -1,6 +1,7 @@
 // concern: contract
 
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
 import { isReaderJob, type Job, job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
@@ -139,9 +140,40 @@ export const WORKER_SCHEMA = {
         additionalProperties: false,
         required: ['question', 'options', 'recommendation', 'why'],
         properties: {
+          kind: {
+            type: ['string', 'null'],
+            enum: [...WORKER_QUESTION_KINDS, null],
+            description:
+              'choice when there are named options, yesno for a yes/no ruling, score for an ordered scale, text otherwise.',
+          },
           question: { type: 'string' },
-          options: nullableStrings,
+          options: {
+            description: 'An option may be an object with name and criteria.',
+            anyOf: [
+              nullableStrings,
+              {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: { name: { type: 'string' }, criteria: { type: ['string', 'null'] } },
+                  required: ['name', 'criteria'],
+                  additionalProperties: false,
+                },
+              },
+            ],
+          },
           recommendation: { type: ['string', 'null'] },
+          criteria: {
+            type: ['object', 'null'],
+            description: 'Yesno only; what yes means and what no means.',
+            properties: { yes: { type: ['string', 'null'] }, no: { type: ['string', 'null'] } },
+            required: ['yes', 'no'],
+            additionalProperties: false,
+          },
+          levels: {
+            ...nullableStrings,
+            description: 'Score only; the ordered level labels, lowest first, answered by index.',
+          },
           why: {
             type: ['string', 'null'],
             description: 'Why this changes the implementation.',
@@ -223,9 +255,12 @@ export type WorkerReply = {
   questions?:
     | {
         question: string
-        options?: string[] | null
+        kind?: 'choice' | 'yesno' | 'score' | 'text' | null
+        options?: (string | { name: string; criteria?: string | null })[] | null
         recommendation?: string | null
         why?: string | null
+        criteria?: { yes?: string | null; no?: string | null } | null
+        levels?: string[] | null
       }[]
     | null
   deviations?: { what: string; why: string }[] | null

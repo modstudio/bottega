@@ -60,6 +60,7 @@ export const mcpModules: McpModule[] = [
     'zod',
     '../../../shared/docs.ts',
     '../../../shared/orch-contract.ts',
+    '../ask/worker-question.ts',
     '../database/db.ts',
     '../doc/docs.ts',
     '../operator/operator-waiting.ts',

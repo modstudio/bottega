@@ -7,6 +7,7 @@ export type NoulQuestion = {
   type: 'noul'
   instructions: string
   threshold: number
+  criteria?: Readonly<{ true?: string; false?: string }>
 }
 
 export type ChoiceQuestion = {
@@ -18,4 +19,13 @@ export type ChoiceQuestion = {
   threshold: number
 }
 
-export type TypedQuestion = NoulQuestion | ChoiceQuestion
+export type ScoreQuestion = {
+  id: string
+  version: number
+  type: 'score'
+  instructions: string
+  criteria: readonly string[]
+  threshold: number
+}
+
+export type TypedQuestion = NoulQuestion | ChoiceQuestion | ScoreQuestion

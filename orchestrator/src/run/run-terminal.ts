@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
-import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
+import { type AskLoopback, preAnswerReplyQuestions, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutRemovalAttribution,
   type CheckoutToWatch,
@@ -379,10 +379,10 @@ function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | un
 }
 
 /** Which accepted questions have not already been recorded, preserving reply order. */
-export function questionsToInsert(
+export function questionsToInsert<T extends { question: string }>(
   existingQuestionTexts: string[],
-  acceptedQuestions: ReturnType<typeof realQuestions>,
-): ReturnType<typeof realQuestions> {
+  acceptedQuestions: T[],
+): T[] {
   const norm = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase()
   const already = new Set(existingQuestionTexts.map(norm))
   return acceptedQuestions.filter((item) => {
@@ -663,6 +663,27 @@ function completeRecordedRun(input: RecordedFinishInput): TerminalResult {
   }
 }
 
+async function recordTerminalQuestions(
+  runId: string,
+  questions: ReturnType<typeof realQuestions>,
+): Promise<Awaited<ReturnType<typeof recordReplyQuestions>>> {
+  if (!questions.length) return []
+  // A live question that timed out is repeated in the final answer; recording it twice
+  // would make `bottega question answer` demand two rulings for one question.
+  const existingQuestionTexts = (
+    db().query('SELECT question FROM question WHERE run_record_id = ?').all(runId) as {
+      question: string
+    }[]
+  ).map((row) => row.question)
+  const askedAt = nowIso()
+  return recordReplyQuestions({
+    runId,
+    questions: questionsToInsert(existingQuestionTexts, questions),
+    askedAt,
+    awaitingOperatorAt: await initialQuestionWaitingAt(runId, askedAt),
+  })
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -840,47 +861,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       exitCode,
     }),
   ))
-  /**
-   * Questions are deliberately inserted BEFORE the terminal row is written.
-   * This is ordering, not a transaction: a lost terminal write can leave the
-   * run reading `running` with an open question. That half-state is
-   * recoverable because the escalation survived. The reverse — terminal
-   * `asking` with nothing to answer — is not, and would sit in the inbox for
-   * ever.
-   *
-   * Making the inserts atomic with the terminal write requires first making
-   * questions recoverable from the terminal journal. `TerminalSnapshot`
-   * carries no question payload, so reconciliation could otherwise restore
-   * `asking` without its questions after a failed terminal transaction.
-   */
-  if (acceptedQuestions.length) {
-    /**
-     * A question asked through the LIVE channel and then repeated in the final
-     * answer must not be recorded twice.
-     *
-     * That is the normal path when a live question times out: the tool tells
-     * the worker to stop and report it, which is exactly what it then does.
-     * Inserted again, the inbox shows the same question twice and `orch
-     * answer` refuses a single ruling because it demands one per open
-     * question — so the correct fallback made the run unanswerable.
-     *
-     * Matched on the question text, normalized, which is what the worker is
-     * repeating verbatim from its own tool call.
-     */
-    const existingQuestionTexts = (
-      db().query('SELECT question FROM question WHERE run_record_id = ?').all(claim.id) as {
-        question: string
-      }[]
-    ).map((row) => row.question)
-    const askedAt = nowIso()
-    const awaitingOperatorAt = await initialQuestionWaitingAt(claim.id, askedAt)
-    recordReplyQuestions({
-      runId: claim.id,
-      questions: questionsToInsert(existingQuestionTexts, acceptedQuestions),
-      askedAt,
-      awaitingOperatorAt,
-    })
-  }
+  // Questions precede the terminal row so `asking` is never stored without an inbox entry.
+  const recordedQuestions = await recordTerminalQuestions(claim.id, acceptedQuestions)
 
   if (mcpSetupHeader) {
     output = output ? `${mcpSetupHeader}\n\n${output}` : mcpSetupHeader
@@ -1084,6 +1066,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
     }
   }
+  await preAnswerReplyQuestions(claim.id, recordedQuestions)
   const recorded = db().query(TERMINAL_STATUS_SQL).get(claim.id) as {
     status: string
     failure_kind: string | null

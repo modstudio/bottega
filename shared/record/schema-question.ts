@@ -1,7 +1,17 @@
 // concern: postgres-schema-question
 /** Knows the hosted question evidence shape. Must not know local execution or synchronization. */
 import { type SQLWrapper, sql } from 'drizzle-orm'
-import { index, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import {
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 import { hubTask } from './schema-hub.ts'
 import { run } from './schema-run.ts'
@@ -33,13 +43,26 @@ export const question = pgTable.withRLS(
     recommendation: text(),
     why: text(),
     askedVia: text('asked_via'),
+    kind: text(),
+    typedOptions: jsonb('typed_options'),
+    criteria: jsonb(),
+    levels: jsonb(),
     answer: text(),
+    answerValue: text('answer_value'),
+    answeredByKind: text('answered_by_kind'),
     answerBasis: text('answer_basis'),
     answeredAt: timestamp('answered_at', { withTimezone: true }),
     answeredBy: text('answered_by'),
     answeredByName: text('answered_by_name'),
     answererKind: text('answerer_kind'),
     answerChannel: text('answer_channel'),
+    jevPick: text('jev_pick'),
+    jevConfidence: doublePrecision('jev_confidence'),
+    jevProbabilities: jsonb('jev_probabilities'),
+    jevModel: text('jev_model'),
+    jevInputTokens: integer('jev_input_tokens'),
+    jevError: text('jev_error'),
+    jevAgreed: integer('jev_agreed'),
     awaitingOperatorAt: timestamp('awaiting_operator_at', { withTimezone: true }),
     relayedBy: text('relayed_by'),
     overturnedAt: timestamp('overturned_at', { withTimezone: true }),

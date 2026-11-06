@@ -82,16 +82,22 @@ const rulingFileStores: RulingFileStores = {
 const answerRulingSchema = z
   .object({
     question_id: identifier,
-    ruling: z.string().trim().min(1),
+    ruling: z.string().trim().min(1).optional(),
+    value: z.union([z.string(), z.boolean(), z.number().int()]).optional(),
+    note: z.string().trim().min(1).optional(),
     from_operator: z.boolean().optional(),
   })
+  .refine(
+    ({ ruling, value, note }) => ruling !== undefined || value !== undefined || note !== undefined,
+    'ruling, value, or note is required',
+  )
   .strict()
 
 function resolveAnswerRulings(
   rulings: z.infer<typeof answerRulingSchema>[],
   commandFromOperator: boolean,
 ) {
-  return rulings.map(({ question_id, ruling, from_operator: rulingFromOperator }) => {
+  return rulings.map(({ question_id, ruling, value, note, from_operator: rulingFromOperator }) => {
     const attribution = rulingAttributionDecision(commandFromOperator, rulingFromOperator ?? false)
     if (attribution.kind === 'conflict') {
       throw new Error(
@@ -100,7 +106,8 @@ function resolveAnswerRulings(
     }
     return {
       questionId: localQuestionId(question_id),
-      text: ruling,
+      text: note ?? ruling ?? String(value),
+      typedValue: value,
       fromOperator: attribution.kind === 'operator',
     }
   })
@@ -120,19 +127,21 @@ function registerAnswerQuestionsTool(server: McpServer): void {
       outputSchema: z.object(AnswerWaitingResultSchema.shape).strict(),
     },
     async ({ run_record_id, rulings, from_operator, record_only }) => {
-      const result = await answerRun(
-        localRunId(run_record_id),
-        {
-          rulings: resolveAnswerRulings(rulings, from_operator ?? false),
-          fromOperator: false,
-          channel: 'mcp',
-          recordOnly: record_only ?? false,
-          json: true,
-          flags: { detach: true, follow: false, quiet: true },
-        },
-        answerRunHelpers(presentation),
+      const resolved = resolveAnswerRulings(rulings, from_operator ?? false)
+      return structured(
+        await answerRun(
+          localRunId(run_record_id),
+          {
+            rulings: resolved,
+            fromOperator: false,
+            channel: 'mcp',
+            recordOnly: record_only ?? false,
+            json: true,
+            flags: { detach: true, follow: false, quiet: true },
+          },
+          answerRunHelpers(presentation),
+        ),
       )
-      return structured(result)
     },
   )
 }

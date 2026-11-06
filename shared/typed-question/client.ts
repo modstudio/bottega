@@ -14,7 +14,13 @@ type ChoiceAnswer = {
   confidence: number
   probabilities: Record<string, number>
 }
-export type TypedQuestionAnswer = NoulAnswer | ChoiceAnswer
+type ScoreAnswer = {
+  score: number
+  confidence: number
+  legend: Record<string, string>
+  probabilities: Record<string, number>
+}
+export type TypedQuestionAnswer = NoulAnswer | ChoiceAnswer | ScoreAnswer
 
 /** A recorded answer's noul probability; a choice answer or unreadable JSON carries none. */
 export function noulProbability(answerJson: string): number | null {
@@ -53,9 +59,11 @@ function finiteProbability(value: unknown): value is number {
 }
 
 function questionBody(question: TypedQuestion): Record<string, unknown> {
-  return question.type === 'choice'
-    ? { type: question.type, instructions: question.instructions, criteria: question.criteria }
-    : { type: question.type, instructions: question.instructions }
+  return {
+    type: question.type,
+    instructions: question.instructions,
+    ...('criteria' in question && question.criteria ? { criteria: question.criteria } : {}),
+  }
 }
 
 function parseAnswer(
@@ -87,6 +95,41 @@ function parseAnswer(
     if (!finiteProbability(values.noul)) return null
     return {
       answer: { noul: values.noul },
+      model: response.model,
+      inputTokens: inputTokens as number,
+    }
+  }
+  if (question.type === 'score') {
+    const levelKeys = question.criteria.map((_, index) => String(index))
+    if (
+      typeof values.score !== 'number' ||
+      !Number.isFinite(values.score) ||
+      (values.score as number) < 0 ||
+      (values.score as number) > question.criteria.length - 1 ||
+      !finiteProbability(values.confidence) ||
+      !values.legend ||
+      typeof values.legend !== 'object' ||
+      !values.probabilities ||
+      typeof values.probabilities !== 'object'
+    )
+      return null
+    const legend = values.legend as Record<string, unknown>
+    const probabilities = values.probabilities as Record<string, unknown>
+    if (
+      levelKeys.some(
+        (key) => typeof legend[key] !== 'string' || !finiteProbability(probabilities[key]),
+      ) ||
+      Object.keys(legend).some((key) => !levelKeys.includes(key)) ||
+      Object.keys(probabilities).some((key) => !levelKeys.includes(key))
+    )
+      return null
+    return {
+      answer: {
+        score: values.score as number,
+        confidence: values.confidence,
+        legend: legend as Record<string, string>,
+        probabilities: probabilities as Record<string, number>,
+      },
       model: response.model,
       inputTokens: inputTokens as number,
     }

@@ -202,6 +202,7 @@ function answerCommandDefinition(program: Command): Command {
   )
     .allowUnknownOption(true)
     .option('--file <value>', 'read the ruling from this file')
+    .option('--value <value>', 'record the typed value of the ruling')
     .option('--follow', 'wait for the resumed run and print its result')
     .option('--detach', 'return after resuming the run')
     .option('--quiet', 'suppress collection guidance and followed output')

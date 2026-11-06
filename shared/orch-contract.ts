@@ -17,6 +17,8 @@ import {
   trackerSettingsShape,
 } from './trackers.ts'
 
+export const WORKER_QUESTION_KINDS = ['choice', 'yesno', 'score', 'text'] as const
+
 const DocSearchResultBaseSchema = z
   .object({
     scope: z.string(),
@@ -160,6 +162,11 @@ const OpenQuestionSchema = z
     options: z.array(z.string()),
     recommendation: z.string().nullable(),
     why: z.string().nullable(),
+    kind: z.enum(WORKER_QUESTION_KINDS),
+    jev_pick: z.string().nullable(),
+    jev_confidence: z.number().nullable(),
+    jev_probabilities: z.string().nullable(),
+    jev_error: z.string().nullable(),
     status: z.string(),
     ruling_status: z.enum(['open', 'answered', 'overturned']),
     overturned_at: z.string().nullable(),

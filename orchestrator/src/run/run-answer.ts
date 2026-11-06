@@ -26,13 +26,12 @@ import {
   continuationCheckoutForAnswer,
   continuationCheckoutForRetry,
 } from './continuation-checkout-service.ts'
+import { applyArchitectQuestionAnswers } from './question-answer.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
-import { questionOpenSql } from './question-open.ts'
+import { openChainQuestions, questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
-  QUESTION_DELIVERY_MODE_LIVE,
-  QUESTION_DELIVERY_MODE_RECORD_ONLY,
   QUESTION_DELIVERY_MODE_RESUME,
   QUESTION_DELIVERY_MODE_RETRY,
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
@@ -46,6 +45,11 @@ import {
   answerResumeWorker,
   reportAnswerResume,
 } from './run-answer-resume.ts'
+import {
+  type AnsweredQuestion,
+  answeredQuestion,
+  type TypedAnswerQuestion,
+} from './run-answer-typed-value.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
 import {
   adoptRunMutation,
@@ -138,53 +142,115 @@ function answerResult(
     run_number: runNumber,
     resumed_record_id: resumedAs,
     resumed_number: resumedNumber,
-  }
+  } as const
 }
 
 export type AnswerRunInput = {
-  rulings: string | { questionId: string; text: string; fromOperator: boolean }[]
+  rulings:
+    | string
+    | {
+        questionId: string
+        text: string
+        typedValue?: unknown
+        fromOperator: boolean
+      }[]
   allowPartialRecordOnly?: boolean
   fromOperator: boolean
   channel: AnswerChannel
   recordOnly: boolean
   json: boolean
   flags: RunFlags
+  typedValue?: unknown
 }
-type OpenQuestion = {
-  record_id: string
-  number: number
-  question: string
+type OpenQuestion = TypedAnswerQuestion & {
   awaiting_operator_at: string | null
   owner_id: string
   owner_status: string
   owner_pid: number | null
 }
-type AnsweredQuestion = {
-  number: number
-  record_id: string
-  question: string
-  answer: string
-  fromOperator: boolean
-}
 
 type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
 
-function answeredQuestion(
-  question: OpenQuestion,
-  answer: string,
-  fromOperator: boolean,
-): AnsweredQuestion {
-  return {
-    number: question.number,
-    record_id: question.record_id,
-    question: question.question,
-    answer,
-    fromOperator,
-  }
-}
-
 function wrongQuestionChain(questionId: string, rootRecordId: string): string {
   return `--q${questionId} belongs to run ${rootRecordId}, not this chain`
+}
+
+function namedQuestionRefusal(questionId: string, runId: string): string {
+  const named = db()
+    .query(
+      `SELECT q.answered_at,r.record_id AS run_record_id,
+          COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id
+     FROM question q JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
+    )
+    .get(questionId) as {
+    answered_at: string | null
+    run_record_id: string
+    root_record_id: string
+  } | null
+  if (!named) return `--q${questionId} names no question`
+  if (named.root_record_id !== runId) return wrongQuestionChain(questionId, named.root_record_id)
+  if (named.answered_at) return `--q${questionId} on run ${named.run_record_id} is already closed`
+  return `--q${questionId} is not open on this chain`
+}
+
+function collectAnswers(input: {
+  runId: string
+  open: OpenQuestion[]
+  answer: AnswerRunInput
+  argvLimit: number | undefined
+}): AnsweredQuestion[] {
+  const rulings = input.answer.rulings
+  if (!Array.isArray(rulings)) {
+    if (!rulings)
+      throw new Error(
+        `run ${input.runId} is waiting on ${input.open.length} question(s). ` +
+          `Rule with: ${PLATFORM_SLUG} question answer ${input.runId} --q${input.open[0]!.number} "<ruling>", ` +
+          'or pass a ruling via --file or stdin.',
+      )
+    const answer = validatedRuling(rulings, input.argvLimit)
+    if (input.answer.typedValue !== undefined && input.open.length > 1)
+      throw new Error('--value requires --q<id> when more than one question is open')
+    return [
+      answeredQuestion(input.open[0]!, answer, input.answer.fromOperator, input.answer.typedValue),
+    ]
+  }
+  const invalid: string[] = []
+  const seen = new Set<string>()
+  for (const ruling of rulings) {
+    if (seen.has(ruling.questionId)) invalid.push(`--q${ruling.questionId} given more than once`)
+    seen.add(ruling.questionId)
+    if (input.open.some((question) => question.record_id === ruling.questionId)) continue
+    invalid.push(namedQuestionRefusal(ruling.questionId, input.runId))
+  }
+  if (invalid.length)
+    throw new Error(
+      `refusing the whole ruling: ${invalid.join('; ')}\n` +
+        `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  return input.open.flatMap((question) => {
+    const ruling = rulings.find((item) => item.questionId === question.record_id)
+    if (!ruling) return []
+    const answer = validatedRuling(ruling.text, input.argvLimit)
+    return [answeredQuestion(question, answer, ruling.fromOperator, ruling.typedValue)]
+  })
+}
+
+function validatedRuling(text: string, argvLimit: number | undefined): string {
+  if (!text.trim())
+    throw new Error(
+      `empty ruling: received ${JSON.stringify(text)}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  const nul = text.indexOf('\0')
+  if (nul >= 0)
+    throw new Error(
+      `ruling contains a NUL at byte offset ${Buffer.byteLength(text.slice(0, nul), 'utf8')}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  const bytes = Buffer.byteLength(text, 'utf8')
+  if (argvLimit !== undefined && bytes > argvLimit)
+    throw new Error(
+      `ruling is ${bytes} bytes; this agent's resume transport is bounded at ${argvLimit} bytes\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  return text
 }
 
 type AnswerRootRow = {
@@ -259,15 +325,11 @@ function requireAnswerAuthority(
 }
 
 function readOpenQuestions(id: string, status: string): OpenQuestion[] {
-  const open = db()
-    .query(
-      `SELECT q.record_id,q.number,q.question,q.awaiting_operator_at,
-              r.record_id owner_id, r.status owner_status, r.pid owner_pid
-     FROM question q JOIN run r ON r.record_id = q.run_record_id
-    WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}
-    ORDER BY q.number`,
-    )
-    .all(id, id) as OpenQuestion[]
+  const open = openChainQuestions<OpenQuestion>(
+    db(),
+    id,
+    'q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.options,q.typed_options,q.criteria,q.levels, r.record_id owner_id,r.status owner_status,r.pid owner_pid',
+  )
   if (open.length) return open
   const asked = db()
     .query(
@@ -676,11 +738,8 @@ export async function retryRun(
  * Rule on what a worker asked, and set it going again.
  *
  * The ruling RESUMES the worker's own session rather than starting a new run,
- * which is the entire reason escalation is affordable here: everything the
- * worker had read is still in its head, so a design question costs one short
- * turn instead of a second full survey of the code. Starting fresh would make
- * asking more expensive than guessing, and a channel that costs more than
- * guessing does not get used.
+ * keeping everything it read in context. A design question costs one short
+ * turn instead of a fresh survey, so asking stays cheaper than guessing.
  */
 export async function answerRun(
   requestedId: string,
@@ -807,77 +866,8 @@ export async function answerRun(
 
   // The CLI adapter resolves positional, file, and stdin sources before the
   // service boundary. Other adapters supply validated ruling text directly.
-  const answers: AnsweredQuestion[] = []
   const argvLimit = ownersLive ? undefined : helpers.argvResumeLimit(resumeAgent)
-  const rulingFrom = (text: string): string => {
-    if (!text.trim())
-      throw new Error(
-        `empty ruling: received ${JSON.stringify(text)}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    const nul = text.indexOf('\0')
-    if (nul >= 0)
-      throw new Error(
-        `ruling contains a NUL at byte offset ${Buffer.byteLength(text.slice(0, nul), 'utf8')}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    const bytes = Buffer.byteLength(text, 'utf8')
-    if (argvLimit !== undefined && bytes > argvLimit)
-      throw new Error(
-        `ruling is ${bytes} bytes; this agent's resume transport is bounded at ${argvLimit} bytes\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    return text
-  }
-  if (Array.isArray(input.rulings)) {
-    const invalid: string[] = []
-    const seen = new Set<string>()
-    for (const ruling of input.rulings) {
-      if (seen.has(ruling.questionId)) invalid.push(`--q${ruling.questionId} given more than once`)
-      seen.add(ruling.questionId)
-      if (open.some((q) => q.record_id === ruling.questionId)) continue
-      const named = db()
-        .query(
-          `SELECT q.record_id,q.number,q.answered_at,r.record_id AS run_record_id,
-              COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id
-         FROM question q JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
-        )
-        .get(ruling.questionId) as {
-        record_id: string
-        number: number
-        answered_at: string | null
-        run_record_id: string
-        root_record_id: string
-      } | null
-      if (!named) {
-        invalid.push(`--q${ruling.questionId} names no question`)
-      } else if (named.root_record_id !== id) {
-        invalid.push(wrongQuestionChain(ruling.questionId, named.root_record_id))
-      } else if (named.answered_at) {
-        invalid.push(`--q${ruling.questionId} on run ${named.run_record_id} is already closed`)
-      } else {
-        invalid.push(`--q${ruling.questionId} is not open on this chain`)
-      }
-    }
-    if (invalid.length) {
-      throw new Error(
-        `refusing the whole ruling: ${invalid.join('; ')}\n` +
-          `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    }
-    for (const q of open) {
-      const ruling = input.rulings.find((item) => item.questionId === q.record_id)
-      if (!ruling) continue
-      answers.push(answeredQuestion(q, rulingFrom(ruling.text), ruling.fromOperator))
-    }
-  } else {
-    if (!input.rulings) {
-      throw new Error(
-        `run ${id} is waiting on ${open.length} question(s). ` +
-          `Rule with: ${PLATFORM_SLUG} question answer ${id} --q${open[0]!.number} "<ruling>", ` +
-          'or pass a ruling via --file or stdin.',
-      )
-    } else {
-      answers.push(answeredQuestion(open[0]!, rulingFrom(input.rulings), input.fromOperator))
-    }
-  }
+  const answers = collectAnswers({ runId: id, open, answer: input, argvLimit })
   await assertAnswersReady(open.length, answers, input, ownersLive)
 
   if (
@@ -932,50 +922,23 @@ export async function answerRun(
     answers,
     callerSession,
   )
-  const upd = db().query(
-    `UPDATE question
-      SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
-          delivery_pending_at=?, awaiting_operator_at=NULL
-    WHERE record_id=?`,
-  )
   writeTransaction(() => {
     if (authorityDecision.kind === 'allow-as-owner') {
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    answers.forEach((answer, index) => {
-      upd.run(
-        answer.answer,
-        now,
-        ...attributions[index]!,
-        input.channel,
-        ownersLive ? null : now,
-        answer.record_id,
-      )
-      enqueueQuestionRecord(db(), answer.record_id)
+    applyArchitectQuestionAnswers({
+      database: db(),
+      answers,
+      attributions,
+      answeredAt: now,
+      channel: input.channel,
+      ownersLive,
+      skipResume,
+      open,
+      refusal: (questionId) => namedQuestionRefusal(questionId, id),
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)
-    if (skipResume) {
-      appendQuestionDeliveries(
-        answers.map((answer) => answer.record_id),
-        {
-          runId: null,
-          mode: QUESTION_DELIVERY_MODE_RECORD_ONLY,
-          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-          at: now,
-        },
-      )
-    } else if (ownersLive) {
-      for (const answer of answers) {
-        const owner = open.find((question) => question.record_id === answer.record_id)!
-        appendQuestionDeliveries([answer.record_id], {
-          runId: owner.owner_id,
-          mode: QUESTION_DELIVERY_MODE_LIVE,
-          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-          at: now,
-        })
-      }
-    }
     if (skipResume || ownersLive) auditRunMutation(answerAuthority, 'answer')
   })
 
@@ -1063,7 +1026,8 @@ export async function answerRun(
         db()
           .query(
             `UPDATE question
-            SET answer=NULL, answered_at=NULL, answered_by=NULL, answered_by_name=NULL, answerer_kind=NULL,
+            SET answer=NULL, answer_value=NULL, answered_by_kind=NULL, jev_agreed=NULL,
+                answered_at=NULL, answered_by=NULL, answered_by_name=NULL, answerer_kind=NULL,
                 revision=revision+1,
                 answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
           WHERE record_id=?`,

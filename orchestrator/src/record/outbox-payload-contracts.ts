@@ -61,7 +61,7 @@ const SCORE_RECORD_PAYLOAD_CONTRACT = contract(SCORE_RECORD_PAYLOAD_COLUMNS, {
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = columns(
   // workflowCursorId is accepted and ignored because queued payloads are frozen.
-  'id number spaceId runId workflowKey workflowTaskId workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answeredByName answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnedByName overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
+  'id number spaceId runId workflowKey workflowTaskId workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia kind typedOptions criteria levels answer answerValue answerBasis answeredAt answeredBy answeredByName answeredByKind answererKind answerChannel jevPick jevConfidence jevProbabilities jevModel jevInputTokens jevError jevAgreed awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnedByName overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
 )
 const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMNS, {
   number: null,
@@ -74,6 +74,19 @@ const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMN
   answerBasis: null,
   answeredByName: null,
   overturnedByName: null,
+  kind: 'text',
+  typedOptions: null,
+  criteria: null,
+  levels: null,
+  answerValue: null,
+  answeredByKind: null,
+  jevPick: null,
+  jevConfidence: null,
+  jevProbabilities: null,
+  jevModel: null,
+  jevInputTokens: null,
+  jevError: null,
+  jevAgreed: null,
 })
 
 const TASK_FLOW_RECORD_PAYLOAD_CONTRACT = contract(

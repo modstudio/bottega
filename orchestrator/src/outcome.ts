@@ -1,5 +1,10 @@
 // concern: outcome
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import {
+  type WorkerQuestion,
+  type WorkerQuestionInput,
+  WorkerQuestionSchema,
+} from './ask/worker-question.ts'
 export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
 export const SCHEMA_ENVELOPE_ERROR_PREFIX = 'schema-envelope: '
 
@@ -36,17 +41,10 @@ export function schemaEnvelopeContractError(
   )
 }
 
-type WorkerQuestion = {
-  question: string
-  options?: string[] | null
-  recommendation?: string | null
-  why?: string | null
-}
-
 type FinalizationReply = {
   status: 'done' | 'asking' | 'refused'
   files_changed?: string[] | null
-  questions?: WorkerQuestion[] | null
+  questions?: WorkerQuestionInput[] | null
   tests?: { ran?: boolean } | null
 }
 
@@ -68,7 +66,19 @@ function isRealQuestion(item: WorkerQuestion): boolean {
 /** The usable question subset of a schema-valid worker reply. */
 export function realQuestions(r: FinalizationReply | null | undefined): WorkerQuestion[] {
   if (!r?.questions?.length) return []
-  return r.questions.filter(isRealQuestion)
+  return r.questions.flatMap((question) => {
+    const parsed = WorkerQuestionSchema.safeParse(question)
+    return parsed.success && isRealQuestion(parsed.data) ? [parsed.data] : []
+  })
+}
+
+function droppedQuestionReason(question: WorkerQuestionInput): string {
+  const parsed = WorkerQuestionSchema.safeParse(question)
+  if (!parsed.success) return parsed.error.issues.map((issue) => issue.message).join('; ')
+  const normalized = normalizeQuestionField(parsed.data.question)
+  if (!normalized) return 'question is empty'
+  if (!normalizeQuestionField(parsed.data.why)) return 'why is empty'
+  return 'question is generic'
 }
 
 /** A reply contains a decision for the architect when at least one question is real. */
@@ -92,7 +102,7 @@ export type WorkerFinalization<FailureKind extends string = string> = {
   failureKind: FailureKind | 'contract' | 'other' | null
   error: string | null
   acceptedQuestions: WorkerQuestion[]
-  droppedQuestions: WorkerQuestion[]
+  droppedQuestions: WorkerQuestionInput[]
 }
 
 type FinalizationInputs<FailureKind extends string> = {
@@ -163,15 +173,14 @@ function reclassifyDoneAsking<FailureKind extends string>(
 }
 
 function annotateDroppedQuestions<FailureKind extends string>(
-  reply: FinalizationReply | null,
-  acceptedQuestions: WorkerQuestion[],
-  droppedQuestions: WorkerQuestion[],
+  droppedQuestions: WorkerQuestionInput[],
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
-  if (droppedQuestions.length === 0 || (acceptedQuestions.length === 0 && reply?.status !== 'done'))
-    return decision
+  if (droppedQuestions.length === 0) return decision
   const count = droppedQuestions.length
-  const rejected = droppedQuestions.map((item) => JSON.stringify(item.question)).join(', ')
+  const rejected = droppedQuestions
+    .map((item) => `${JSON.stringify(item.question)} (${droppedQuestionReason(item)})`)
+    .join(', ')
   const note =
     `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
     `rejected question text: ${rejected}`
@@ -196,9 +205,9 @@ export function finalizeWorkerReply<FailureKind extends string>(
   const { reply } = inputs
   const questionsControlStatus = reply?.status === 'asking' || reply?.status === 'done'
   const acceptedQuestions = questionsControlStatus ? realQuestions(reply) : []
-  const accepted = new Set(acceptedQuestions)
+  const accepted = new Set(acceptedQuestions.map((item) => item.question))
   const droppedQuestions = questionsControlStatus
-    ? (reply?.questions ?? []).filter((item) => !accepted.has(item))
+    ? (reply?.questions ?? []).filter((item) => !accepted.has(item.question))
     : []
   let decision: FinalizationDecision<FailureKind> = inputs
   decision = rejectEmptyAsking(reply, acceptedQuestions, decision)
@@ -208,7 +217,7 @@ export function finalizeWorkerReply<FailureKind extends string>(
     decision = { ...decision, error: appendOutcomeNote(decision.error, note) }
   }
   decision = reclassifyDoneAsking(reply, acceptedQuestions, decision)
-  decision = annotateDroppedQuestions(reply, acceptedQuestions, droppedQuestions, decision)
+  decision = annotateDroppedQuestions(droppedQuestions, decision)
   decision = annotateUnchangedTurn(inputs, decision)
   return { ...decision, acceptedQuestions, droppedQuestions }
 }

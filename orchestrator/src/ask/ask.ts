@@ -78,6 +78,7 @@ import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
+import { preAnswerWorkerQuestion } from './jev-worker-question.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
 import {
   validateWorkerNoteInput,
@@ -86,6 +87,13 @@ import {
   type WorkerNoteRun,
 } from './worker-note.ts'
 import { requestWorkerNote } from './worker-note-request.ts'
+import {
+  encodeWorkerQuestion,
+  type WorkerQuestion,
+  type WorkerQuestionInput,
+  WorkerQuestionInputSchema,
+  WorkerQuestionSchema,
+} from './worker-question.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -105,7 +113,6 @@ function boundedTimeout(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000
 }
 const ASK_TIMEOUT_MS = boundedTimeout()
-
 function recordQuestion(input: {
   runId: string
   askedAt: string
@@ -115,13 +122,15 @@ function recordQuestion(input: {
   why?: string | null
   askedVia: AskedVia
   awaitingOperatorAt: string | null
+  typed?: WorkerQuestion
 }): string {
   const recordId = newRecordId()
+  const stored = input.typed ? encodeWorkerQuestion(input.typed) : null
   const inserted = db()
     .query<{ record_id: string }, (string | number | null)[]>(
       `INSERT INTO question
-       (record_id,number,run_record_id,asked_at,question,options,recommendation,why,asked_via,awaiting_operator_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+       (record_id,number,run_record_id,asked_at,question,options,recommendation,why,asked_via,awaiting_operator_at,kind,typed_options,criteria,levels)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       recordId,
@@ -134,35 +143,60 @@ function recordQuestion(input: {
       input.why ?? null,
       input.askedVia,
       input.awaitingOperatorAt,
+      stored?.kind ?? (input.options?.length ? 'choice' : 'text'),
+      stored?.typedOptions ?? null,
+      stored?.criteria ?? null,
+      stored?.levels ?? null,
     )
   if (!inserted) throw new Error('question was not recorded')
   enqueueQuestionRecord(db(), inserted.record_id)
   return inserted.record_id
 }
 
-export function recordReplyQuestions(input: {
+export async function recordReplyQuestions(input: {
   runId: string
-  questions: Array<{
-    question: string
-    options?: string[] | null
-    recommendation?: string | null
-    why?: string | null
-  }>
+  questions: WorkerQuestionInput[]
   askedAt: string
   awaitingOperatorAt: string | null
-}): void {
-  writeTransaction(() => {
+}): Promise<Array<{ recordId: string; question: WorkerQuestion }>> {
+  const recorded = writeTransaction(() => {
+    const rows: Array<{ recordId: string; question: WorkerQuestion }> = []
     enqueueRunRecord(db(), input.runId, machineId(), input.askedAt)
     for (const question of input.questions) {
-      recordQuestion({
+      const typed = WorkerQuestionSchema.parse(question)
+      const recordId = recordQuestion({
         runId: input.runId,
         askedAt: input.askedAt,
-        ...question,
+        question: typed.question,
+        options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
+        recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
+        why: typed.why,
         askedVia: ASKED_VIA_REPLY,
         awaitingOperatorAt: input.awaitingOperatorAt,
+        typed,
       })
+      rows.push({ recordId, question: typed })
     }
+    return rows
   })
+  return recorded
+}
+
+export async function preAnswerReplyQuestions(
+  runId: string,
+  recorded: Array<{ recordId: string; question: WorkerQuestion }>,
+): Promise<void> {
+  await Promise.all(
+    recorded.map(({ recordId, question }) =>
+      preAnswerWorkerQuestion({
+        recordId,
+        runId,
+        question,
+        canResume: false,
+        answerChannel: 'cli',
+      }),
+    ),
+  )
 }
 
 /** How often to look for a ruling. Cheap: one indexed read of a local file. */
@@ -420,20 +454,24 @@ async function requestGate(
  * this whole channel exists to remove, and it would look exactly like a hung
  * agent.
  */
-export async function ask(o: {
-  runId: string
-  question: string
-  options?: string[]
-  recommendation?: string
-  why?: string
-  timeoutMs?: number
-}): Promise<AskResult> {
+export async function ask(
+  o: { runId: string; timeoutMs?: number } & (
+    | WorkerQuestion
+    | {
+        question: string
+        options?: string[]
+        recommendation?: string
+        why?: string
+      }
+  ),
+): Promise<AskResult> {
   writableDb()
   const prose = await orchestratorProseGate([
     { field: 'question text', text: o.question, prior: null },
   ])
   const proseNotice = prose.refusal ?? (prose.notices.join('\n') || undefined)
   const askedAt = nowIso()
+  const typed = WorkerQuestionSchema.parse(o)
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
   const id = writeTransaction(() => {
     db().query("UPDATE run SET status='asking' WHERE record_id=? AND status='running'").run(o.runId)
@@ -442,12 +480,20 @@ export async function ask(o: {
       runId: o.runId,
       askedAt,
       question: o.question,
-      options: o.options,
-      recommendation: o.recommendation,
-      why: o.why,
+      options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
+      recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
+      why: typed.why,
       askedVia: ASKED_VIA_LIVE,
       awaitingOperatorAt,
+      typed,
     })
+  })
+  await preAnswerWorkerQuestion({
+    recordId: id,
+    runId: o.runId,
+    question: typed,
+    canResume: true,
+    answerChannel: 'mcp',
   })
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)
   const q = db().query(
@@ -644,27 +690,15 @@ export function createAskMcpServer(
         'Ask the architect to rule on a design decision that is not yours to make. ' +
         'Blocks until they answer. Use this the moment you are unsure: asking is free ' +
         'and expected, guessing is not. Ask everything you need in one call where you can.',
-      inputSchema: z.object({
-        question: requiredTextReachingHandler.describe('The decision you need made.'),
-        options: z
-          .preprocess(
-            (value) => (Array.isArray(value) ? value.map(String) : undefined),
-            z.array(z.string()).optional(),
-          )
-          .describe('The choices as you see them.'),
-        recommendation: z
-          .preprocess((value) => (value ? String(value) : undefined), z.string().optional())
-          .describe('What you would do, and why.'),
-        why: z
-          .preprocess((value) => (value ? String(value) : undefined), z.string().optional())
-          .describe('What this changes about the implementation.'),
-      }),
+      inputSchema: WorkerQuestionInputSchema,
     },
-    async ({ question, options, recommendation, why }) => {
+    async (questionInput) => {
+      const { question } = questionInput
       if (!question.trim()) return missing('question')
       try {
+        const typedQuestion = WorkerQuestionSchema.parse(questionInput)
         const result = authorized()
-          ? await ask({ runId, question, options, recommendation, why, timeoutMs })
+          ? await ask({ runId, ...typedQuestion, timeoutMs })
           : { answered: false as const, reason: unauthorized() }
         return text(askResponseText(result))
         // Not `isError`. A timeout is a legitimate outcome carrying an

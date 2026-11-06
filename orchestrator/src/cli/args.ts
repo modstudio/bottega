@@ -32,6 +32,7 @@ function shellValue(value: string): string {
 }
 
 export const ANSWER_WORKING_FORMS =
+  `  ${PLATFORM_SLUG} question answer <id> --value <typed-value> ["<note>"]\n` +
   `  ${PLATFORM_SLUG} question answer <id> --q<id> "<ruling>"\n` +
   `  ${PLATFORM_SLUG} question answer <id> --q<id> "<ruling>" --from-operator-q<id>\n` +
   `  ${PLATFORM_SLUG} question answer <id> --q<id> --file <path>\n  ${PLATFORM_SLUG} question answer <id> --file <path>\n` +
@@ -414,7 +415,8 @@ export function parseAnswerTextSources(
 
 /** Match the bare question selector shared by thin command surfaces; the caller resolves the identifier. */
 export function bareQuestionSelector(arg: string): string | null {
-  const match = arg.match(/^--q([^=]+)$/)
+  if (arg === '--quiet') return null
+  const match = arg.match(/^--q([^=]+)(?:=.*)?$/)
   return match ? match[1]! : null
 }
 

@@ -401,6 +401,7 @@ export const recordModules: RecordModule[] = [
     './outbox-payload-contracts.ts',
     './record-payload-columns.ts',
     './record-question-audit.ts',
+    './record-question-values.ts',
     './record-auth.ts',
     './record-evidence-references.ts',
     './record-release-sync.ts',
@@ -421,6 +422,7 @@ export const recordModules: RecordModule[] = [
     './score-sync.ts',
     './record-pool.ts',
   ]),
+  module('orchestrator/src/record/record-question-values.ts', []),
   module('orchestrator/src/record/record-sync-task-flow.ts', [
     'bun',
     'drizzle-orm',
