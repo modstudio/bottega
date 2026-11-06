@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline'
 import { DEFAULT_IDLE_CAP_MS, spansFromTimestamps, union } from '../../../shared/interval.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { attribute, isInjected, projectOf, refreshKeyPrefixes } from '../attribute.ts'
+import { attribute, isInjected, refreshKeyPrefixes } from '../attribute.ts'
 import { db, nowIso, writeTransaction } from '../db.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { hostedSignedInUserId } from '../task-client.ts'
@@ -139,7 +139,7 @@ function userText(msg: unknown): string | null {
   return parts.join('\n').trim() || null
 }
 
-async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]> {
+async function legsOf(file: string, ref: string): Promise<Leg[]> {
   const legs: Leg[] = []
   let cur: Leg | null = null
   const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
@@ -158,7 +158,7 @@ async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]
       continue
     }
     const ts = d.timestamp ? new Date(d.timestamp).getTime() : NaN
-    if (!Number.isFinite(ts) || ts < sinceMs) continue
+    if (!Number.isFinite(ts)) continue
     const cwd = d.cwd ?? ''
     if (!cwd) continue
 
@@ -195,30 +195,69 @@ async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]
  * no measurable duration. That is the honest reading of a single message, and
  * it keeps the token total conserved — which is the only property that makes
  * the reconciliation against the day grain meaningful.
+ *
+ * A spend instant outside every measured span gets its own zero-length span at
+ * that instant. Spends at the same uncovered instant share that span. A spend
+ * exactly on a measured span's end remains part of that measured span.
  */
 export function spendingSpans(leg: Leg, idleCapMs: number) {
   const spans = union(spansFromTimestamps(leg.stamps, idleCapMs)).map((s) => ({ ...s, tokens: 0 }))
 
-  if (!spans.length) {
-    if (!leg.spend.length) return []
-    const at = Math.min(...leg.spend.map((s) => s.at))
-    return [{ start: at, end: at, tokens: leg.spend.reduce((t, s) => t + s.tokens, 0) }]
-  }
-
   for (const { at, tokens } of leg.spend) {
-    // The last message sits exactly on the final span's end boundary, so a
-    // strict `< end` test would drop it. Clamping to the nearest span keeps
-    // every token, which is the point.
-    let idx = spans.findIndex((s) => at >= s.start && at < s.end)
-    if (idx < 0) {
-      idx =
-        at <= spans[0]!.start
-          ? 0
-          : spans.reduce((best, s, i) => (at >= s.start ? i : best), spans.length - 1)
+    const span = spans.find((s) => at >= s.start && at <= s.end)
+    if (span) {
+      span.tokens += tokens
+    } else {
+      spans.push({ start: at, end: at, tokens })
     }
-    spans[idx]!.tokens += tokens
   }
-  return spans
+  return spans.sort((a, b) => a.start - b.start || a.end - b.end)
+}
+
+function shapeLegs(legs: Leg[], sinceMs: number, idleCapMs: number) {
+  const shaped = legs.map((leg, i) => {
+    const allSpans = spendingSpans(leg, idleCapMs)
+    return {
+      leg,
+      i,
+      a: attribute({ cwd: leg.cwd, prompts: leg.prompts }),
+      allSpans,
+      spans: allSpans.filter((span) => span.end >= sinceMs),
+    }
+  })
+
+  /**
+   * A leg that named nothing borrows from the nearest leg of the SAME
+   * session that did. Last resort, and a weak one: measured against legs
+   * whose key is known it is right 39% of the time - so it is recorded as
+   * `sibling-leg` and must not be read as fact.
+   *
+   * It replaced a commit window that scored 3% on that same holdout, which
+   * is roughly what naming an open ticket at random would score. The window
+   * asked "what was committed in this repo nearby" and answered with a task
+   * key; in a repo carrying a dozen concurrent worktrees that is usually
+   * somebody else's ticket. This at least asks about THIS session.
+   *
+   * Seeded only from DIRECT attributions, never from another borrowed key:
+   * chaining would let one worktree leg color an entire day. Same project
+   * only, because a session moves between repos and the nearest leg in time
+   * may be in a different one.
+   */
+  const anchors = shaped.filter(
+    (x) => x.a.key && (x.a.via === 'worktree' || x.a.via === 'prompt') && x.allSpans.length,
+  )
+  const startOf = (x: (typeof shaped)[number]) => Math.min(...x.allSpans.map((span) => span.start))
+  for (const x of shaped) {
+    if (x.a.key || !x.allSpans.length) continue
+    const near = anchors
+      .filter((anchor) => anchor.a.project === x.a.project)
+      .sort((p, q) => Math.abs(startOf(p) - startOf(x)) - Math.abs(startOf(q) - startOf(x)))[0]
+    if (near) {
+      x.a.key = near.a.key
+      x.a.via = 'sibling-leg'
+    }
+  }
+  return shaped
 }
 
 type TranscriptIntervalRow = {
@@ -388,10 +427,7 @@ export async function ingestTranscripts(
     files++
 
     const ref = file.startsWith(`${root.path}/`) ? file.slice(root.path.length + 1) : file
-    const legs = (await legsOf(file, ref, sinceMs))
-      // Work outside registered projects is left out rather than charged to a
-      // project it never touched.
-      .filter((l) => projectOf(l.cwd))
+    const legs = await legsOf(file, ref)
     if (!legs.length) {
       continue
     }
@@ -401,47 +437,17 @@ export async function ingestTranscripts(
       // can collide on (source, ref, start_at): a zero-length span sits exactly
       // where the next leg begins, which is precisely when the working
       // directory changed between two adjacent messages — common, not exotic.
-      const shaped = legs.map((leg, i) => ({
-        leg,
-        i,
-        a: attribute({ cwd: leg.cwd, prompts: leg.prompts }),
-        spans: spendingSpans(leg, idleCapMs),
-      }))
+      const shaped = shapeLegs(legs, sinceMs, idleCapMs)
 
-      /**
-       * A leg that named nothing borrows from the nearest leg of the SAME
-       * session that did. Last resort, and a weak one: measured against legs
-       * whose key is known it is right 39% of the time - so it is recorded as
-       * `sibling-leg` and must not be read as fact.
-       *
-       * It replaced a commit window that scored 3% on that same holdout, which
-       * is roughly what naming an open ticket at random would score. The window
-       * asked "what was committed in this repo nearby" and answered with a task
-       * key; in a repo carrying a dozen concurrent worktrees that is usually
-       * somebody else's ticket. This at least asks about THIS session.
-       *
-       * Seeded only from DIRECT attributions, never from another borrowed key:
-       * chaining would let one worktree leg color an entire day. Same project
-       * only, because a session moves between repos and the nearest leg in time
-       * may be in a different one.
-       */
-      const anchors = shaped.filter(
-        (x) => x.a.key && (x.a.via === 'worktree' || x.a.via === 'prompt') && x.spans.length,
-      )
-      const startOf = (x: (typeof shaped)[number]) => Math.min(...x.spans.map((s) => s.start))
-      for (const x of shaped) {
-        if (x.a.key || !x.spans.length) continue
-        const near = anchors
-          .filter((an) => an.a.project === x.a.project)
-          .sort((p, q) => Math.abs(startOf(p) - startOf(x)) - Math.abs(startOf(q) - startOf(x)))[0]
-        if (near) {
-          x.a.key = near.a.key
-          x.a.via = 'sibling-leg'
-        }
-      }
+      // Files with no registered work in the current window are left
+      // unstamped, so registering a project makes a later pass ingest them.
+      if (!shaped.some((x) => x.a.project && x.spans.length)) return
 
       const recomputed: TranscriptIntervalRow[] = []
       shaped.forEach(({ leg, i, a, spans }) => {
+        // Work outside registered projects is left out rather than charged to
+        // a project it never touched. Its leg still occupies its file ordinal.
+        if (!a.project) return
         for (const s of spans) {
           recomputed.push({
             source: 'claude',
