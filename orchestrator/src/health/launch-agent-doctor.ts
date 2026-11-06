@@ -25,7 +25,12 @@ import {
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
-import { resolveStateRoot, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import {
+  RECORD_SYNC_PENDING_MARKER,
+  recordSyncQueueDirectory,
+  resolveStateRoot,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
@@ -246,13 +251,16 @@ function currentRenderValues(
   const paths = resolveInstallationPaths(sourceRoot, {})
   const home = homedir()
   const concern = owner.templatePath?.startsWith('hub/') ? paths.hubAssets : paths.ops
+  const stateHome = resolveStateRoot(process.env)
   return {
     __INSTALL_ROOT__: paths.root,
     __BOTTEGA_BIN__: paths.executable,
     __CONCERN__: concern,
     __HOME__: home,
     __STATE_HOME_ENV__: STATE_HOME_ENV,
-    __STATE_HOME__: resolveStateRoot(process.env),
+    __STATE_HOME__: stateHome,
+    __RECORD_SYNC_QUEUE__: recordSyncQueueDirectory({ [STATE_HOME_ENV]: stateHome }),
+    __RECORD_SYNC_MARKER__: RECORD_SYNC_PENDING_MARKER,
     __MONITOR_BACKSTOP_SECONDS__: String(MONITOR_BACKSTOP_SECONDS),
     __FIX_DEFECT_BACKSTOP_SECONDS__: String(FIX_DEFECT_BACKSTOP_SECONDS),
     __MODEL_HOST__: String(readMachineValue('model_host.ssh_alias')),

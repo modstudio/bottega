@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
+import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import {
   RELEASED_OUTBOX_PAYLOAD,
   releasedOutboxPayloadSql,
@@ -119,11 +120,13 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
       .run(payload, at, pending.id)
     return true
   }
-  database
-    .query(
-      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'question',?,?,?)",
-    )
-    .run(newRecordId(), recordId, payload, at)
+  insertOutboxRow(database, {
+    recordId: newRecordId(),
+    kind: 'question',
+    rowId: recordId,
+    payload,
+    createdAt: at,
+  })
   return true
 }
 

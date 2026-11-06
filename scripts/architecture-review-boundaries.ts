@@ -464,6 +464,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../../../shared/record/schema.ts',
       '../database/db.ts',
       '../record/machine-identity.ts',
+      '../record/outbox-enqueue.ts',
       '../record/outbox-prune-payload.ts',
       '../record/outbox-sanitize.ts',
       '../record/outbox-serialize.ts',

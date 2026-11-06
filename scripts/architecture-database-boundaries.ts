@@ -62,6 +62,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       `${source}slow-statements.ts`,
       `${source}store-actor.ts`,
       `${source}wal-persistence.ts`,
+      `${source}write-commit-effects.ts`,
       `${source}write-probe.ts`,
     ],
     typeOnlyAllowed: [],

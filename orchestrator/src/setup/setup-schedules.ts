@@ -12,7 +12,12 @@ import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
-import { resolveStateRoot, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import {
+  RECORD_SYNC_PENDING_MARKER,
+  recordSyncQueueDirectory,
+  resolveStateRoot,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
 import { plistStandardOutPath } from './launchd-owners.ts'
 
 export const MAINTENANCE_SCHEDULE_LABELS = [
@@ -45,11 +50,14 @@ const templatePath = (label: MaintenanceScheduleLabel): string =>
 
 /** Replace the complete placeholder vocabulary shared by the two maintenance templates. */
 export function renderMaintenanceSchedule(template: string, values: ScheduleRenderValues): string {
+  const recordSyncQueue = recordSyncQueueDirectory({ [STATE_HOME_ENV]: values.stateHome })
   return renderLaunchAgentTemplate(template, {
     __BOTTEGA_BIN__: values.bottegaBin,
     __HOME__: values.home,
     __STATE_HOME_ENV__: values.stateHomeEnvironment,
     __STATE_HOME__: values.stateHome,
+    __RECORD_SYNC_QUEUE__: recordSyncQueue,
+    __RECORD_SYNC_MARKER__: RECORD_SYNC_PENDING_MARKER,
   })
 }
 
@@ -132,6 +140,7 @@ export async function applyMaintenanceSchedules(): Promise<ScheduleApplyResult[]
   const values = scheduleValues()
   const agents = join(values.home, 'Library', 'LaunchAgents')
   await mkdir(agents, { recursive: true })
+  await mkdir(recordSyncQueueDirectory(process.env), { recursive: true })
   const skipFacts = gatherLaunchAgentSkipFacts()
   const results: ScheduleApplyResult[] = []
   for (const label of MAINTENANCE_SCHEDULE_LABELS) {

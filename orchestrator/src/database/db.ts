@@ -80,6 +80,11 @@ import {
 } from './store-actor.ts'
 import { keepJournalSidecars } from './wal-persistence.ts'
 import {
+  beginWriteCommitEffects,
+  discardWriteCommitEffects,
+  flushWriteCommitEffects,
+} from './write-commit-effects.ts'
+import {
   isWriteProbeTable,
   staleWriteProbe,
   WRITE_PROBE_TABLE_PREFIX,
@@ -747,7 +752,24 @@ export function liveRuns(database: Database = db()): LiveRun[] {
 export function writeTransaction<T>(fn: () => T, database: Database = db(true)): T {
   refuseStoreAfterCheckoutMove()
   const conn = refuseOrReloadStaleSchema(database, true)
-  return conn.transaction(fn).immediate()
+  // A nested call keeps its savepoint so a caught inner failure still rolls back its own writes.
+  if (!beginWriteCommitEffects(conn)) return conn.transaction(fn).immediate()
+  // Migration application owns its surrounding transaction, so effects there
+  // keep their pre-queue behavior instead of waiting on a commit this helper cannot observe.
+  if (conn.inTransaction) {
+    discardWriteCommitEffects(conn)
+    return conn.transaction(fn).immediate()
+  }
+
+  let result: T
+  try {
+    result = conn.transaction(fn).immediate()
+  } catch (error) {
+    discardWriteCommitEffects(conn)
+    throw error
+  }
+  flushWriteCommitEffects(conn)
+  return result
 }
 
 /** Mint the install identity only on a database lifecycle path already authorized to write. */

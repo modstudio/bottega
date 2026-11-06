@@ -41,6 +41,8 @@ export const STATE_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`
 export const ORCHESTRATOR_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_ORCHESTRATOR_DB`
 export const ORCHESTRATOR_DATABASE_WRITE_ENV = `${ORCHESTRATOR_DATABASE_ENV}_WRITE`
 export const HUB_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
+const RECORD_SYNC_QUEUE_DIRECTORY = 'record-sync-queue'
+export const RECORD_SYNC_PENDING_MARKER = 'pending'
 
 /** Resolve the per-user state root using only the supplied environment. */
 export function resolveStateRoot(env: StateEnvironment): string {
@@ -99,6 +101,11 @@ export function concernStateDirectory(
 ): string {
   const paths = resolveStatePaths(env)
   return concern === 'orchestrator' ? paths.orchestratorDirectory : paths.hubDirectory
+}
+
+/** Directory launchd watches for pending hosted-record evidence. */
+export function recordSyncQueueDirectory(env: StateEnvironment): string {
+  return join(resolveStatePaths(env).orchestratorDirectory, RECORD_SYNC_QUEUE_DIRECTORY)
 }
 
 /** Pending local-dashboard login tokens, denied to sandboxed workers. */
@@ -232,11 +239,15 @@ if (import.meta.main) {
     console.log(resolveOrchestratorDatabase(env))
   } else if (concern === 'orchestrator' && kind === 'runs') {
     console.log(resolveRunsDirectory(env))
+  } else if (concern === 'orchestrator' && kind === 'record-sync-queue') {
+    console.log(recordSyncQueueDirectory(env))
+  } else if (concern === 'orchestrator' && kind === 'record-sync-marker') {
+    console.log(RECORD_SYNC_PENDING_MARKER)
   } else if (concern === 'hub' && kind === 'database') {
     console.log(resolveHubDatabase(env))
   } else {
     throw new Error(
-      'working form: bun shared/state-directory.ts environment | root | orchestrator <database|runs> | hub database',
+      'working form: bun shared/state-directory.ts environment | root | orchestrator <database|runs|record-sync-queue|record-sync-marker> | hub database',
     )
   }
 }

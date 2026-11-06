@@ -3,7 +3,10 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import { afterWriteCommit } from '../database/write-commit-effects.ts'
+import { signalRecordSync } from './outbox-enqueue.ts'
 import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
 export type QuarantinedOutboxRow = {
   id: number
@@ -111,13 +114,14 @@ export function retryOutboxRow(
   database: Database = db(),
   at = nowIso(),
   actorSession = sessionId(),
+  env: StateEnvironment = process.env,
 ): void {
   writeTransaction(() => {
-    retryOutboxRowInWriteTransaction(rowId, database, at, actorSession)
+    retryOutboxRowInWriteTransaction(rowId, database, at, actorSession, env)
   }, database)
 }
 
-function retryOutboxRowInWriteTransaction(
+function retryOutboxRowWithoutSignal(
   rowId: number,
   database: Database,
   at: string,
@@ -133,12 +137,24 @@ function retryOutboxRowInWriteTransaction(
     .run(rowId)
 }
 
-/** Retry matching rows using a write transaction already held by the caller. */
+function retryOutboxRowInWriteTransaction(
+  rowId: number,
+  database: Database,
+  at: string,
+  actorSession: string | null,
+  env: StateEnvironment = process.env,
+): void {
+  retryOutboxRowWithoutSignal(rowId, database, at, actorSession)
+  afterWriteCommit(database, () => signalRecordSync(env))
+}
+
+/** Retry matching rows and request record sync after the owning transaction commits. */
 export function retryOutboxRowsMatchingInWriteTransaction(
   matching: string,
   database: Database,
   at = nowIso(),
   actorSession = sessionId(),
+  env: StateEnvironment = process.env,
 ): number {
   const rows = database
     .query<{ id: number }, [string]>(
@@ -149,7 +165,8 @@ export function retryOutboxRowsMatchingInWriteTransaction(
        ORDER BY id`,
     )
     .all(matching)
-  for (const row of rows) retryOutboxRowInWriteTransaction(row.id, database, at, actorSession)
+  for (const row of rows) retryOutboxRowWithoutSignal(row.id, database, at, actorSession)
+  if (rows.length > 0) afterWriteCommit(database, () => signalRecordSync(env))
   return rows.length
 }
 
@@ -158,11 +175,13 @@ export function retryOutboxRowsMatching(
   database: Database = db(),
   at = nowIso(),
   actorSession = sessionId(),
+  env: StateEnvironment = process.env,
 ): number {
-  return writeTransaction(
-    () => retryOutboxRowsMatchingInWriteTransaction(matching, database, at, actorSession),
+  const retried = writeTransaction(
+    () => retryOutboxRowsMatchingInWriteTransaction(matching, database, at, actorSession, env),
     database,
   )
+  return retried
 }
 
 export function retireOutboxRow(

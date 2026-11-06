@@ -9,6 +9,7 @@ import { observeGitRef, targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import {
   BRANCH_DISPOSAL_REASONS,
@@ -275,11 +276,13 @@ function recordDisposal(plan: DisposalPlan, database = writableDb()): void {
     createdAt: plan.disposedAt,
     updatedAt: plan.disposedAt,
   })
-  database
-    .query(
-      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'branch_disposal',?,?,?)",
-    )
-    .run(newRecordId(), plan.recordId, payload, plan.disposedAt)
+  insertOutboxRow(database, {
+    recordId: newRecordId(),
+    kind: 'branch_disposal',
+    rowId: plan.recordId,
+    payload,
+    createdAt: plan.disposedAt,
+  })
 }
 
 export type BranchDisposalDependencies = {

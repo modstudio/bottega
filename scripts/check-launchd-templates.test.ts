@@ -6,6 +6,7 @@ import {
   clockParts,
   installerPlaceholders,
   installerRenderRules,
+  launchdFieldTypeViolations,
   missingInstallRules,
   templatePlaceholders,
 } from './check-launchd-templates.ts'
@@ -102,4 +103,13 @@ describe('clockParts', () => {
     expect(clockParts('24:00')).toBeNull()
     expect(clockParts('22:60')).toBeNull()
   })
+})
+
+test('a QueueDirectories dictionary is refused', () => {
+  expect(
+    launchdFieldTypeViolations(
+      { QueueDirectories: { '/tmp/record-sync': true } },
+      'record-sync.plist',
+    ),
+  ).toEqual(['record-sync.plist: QueueDirectories must be an array of strings'])
 })

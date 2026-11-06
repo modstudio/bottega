@@ -10,6 +10,8 @@ PRODUCT_BIN="$INSTALL_ROOT/bin/$(bun --no-env-file -e 'console.log(require(proce
 CONCERN="$INSTALL_ROOT/ops"
 STATE_HOME_ENV="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" environment)"
 STATE_HOME="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" root)"
+RECORD_SYNC_QUEUE="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" orchestrator record-sync-queue)"
+RECORD_SYNC_MARKER="$(bun --no-env-file "$INSTALL_ROOT/shared/state-directory.ts" orchestrator record-sync-marker)"
 MODEL_HOST="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.ssh_alias)"
 TUNNEL_LOCAL_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.tunnel_local_port)"
 TUNNEL_REMOTE_PORT="$(bun --no-env-file "$INSTALL_ROOT/shared/machine-config.ts" get model_host.tunnel_remote_port)"
@@ -86,7 +88,7 @@ mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/doc
   "$HOME/Library/Logs/orch-fix-defect" \
   "$HOME/Library/Logs/orch-canon-eval" "$HOME/Library/Logs/orch-canon-audit" \
   "$HOME/Library/Logs/orch-canon-mirror" "$HOME/Library/Logs/orch-board-watch" \
-  "$HOME/Library/Logs/orch-spare"
+  "$HOME/Library/Logs/orch-spare" "$RECORD_SYNC_QUEUE"
 
 remove_skipped_agent "com.user.orch-settings-apply" "retired; settings apply runs at session start"
 
@@ -134,6 +136,8 @@ for tmpl in "$CONCERN"/launchd/*.plist.template; do
       "__INSTALL_ROOT__" "$INSTALL_ROOT" "__BOTTEGA_BIN__" "$PRODUCT_BIN" \
       "__CONCERN__" "$CONCERN" "__HOME__" "$HOME" \
       "__STATE_HOME_ENV__" "$STATE_HOME_ENV" "__STATE_HOME__" "$STATE_HOME" \
+      "__RECORD_SYNC_QUEUE__" "$RECORD_SYNC_QUEUE" \
+      "__RECORD_SYNC_MARKER__" "$RECORD_SYNC_MARKER" \
       "__MODEL_HOST__" "$MODEL_HOST" "__TUNNEL_LOCAL_PORT__" "$TUNNEL_LOCAL_PORT" \
       "__TUNNEL_REMOTE_PORT__" "$TUNNEL_REMOTE_PORT" "__FLYCTL__" "$FLYCTL" \
       "__SPARE_START_HOUR__" "$SPARE_START_HOUR" \

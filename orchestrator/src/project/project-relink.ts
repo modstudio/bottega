@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { retryOutboxRowsMatchingInWriteTransaction } from '../record/outbox-quarantine.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
@@ -99,6 +100,7 @@ export function relinkProjectIdentity(
   project: Pick<Project, 'name' | 'recordId'>,
   hostedId: string,
   database: Database = writableDb(),
+  env: StateEnvironment = process.env,
 ): ProjectRelinkResult {
   if (project.recordId === hostedId) {
     return {
@@ -131,6 +133,9 @@ export function relinkProjectIdentity(
     retried = retryOutboxRowsMatchingInWriteTransaction(
       `record project ${oldId} is absent from request space `,
       database,
+      undefined,
+      undefined,
+      env,
     )
     return counts
   }, database)

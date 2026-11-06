@@ -50,6 +50,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/task-flow-outbox-write.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
+    '../record/outbox-enqueue.ts',
     '../record/outbox-sanitize.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-identity.ts', [
