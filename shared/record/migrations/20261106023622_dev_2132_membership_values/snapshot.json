@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "c7bc8730-a015-4981-8647-7ff27eb5ae4b",
+  "id": "c221ccfb-64d5-44a0-b5ea-7bb0852c7717",
   "prevIds": [
-    "71a680f9-2798-4e0b-a700-9423b3147232"
+    "0e31266d-ef9a-4e14-80aa-e79fc4c4f4ea"
   ],
   "ddl": [
     {
@@ -231,18 +231,6 @@
     {
       "isRlsEnabled": true,
       "name": "subject",
-      "entityType": "tables",
-      "schema": "public"
-    },
-    {
-      "isRlsEnabled": true,
-      "name": "hub_change",
-      "entityType": "tables",
-      "schema": "public"
-    },
-    {
-      "isRlsEnabled": true,
-      "name": "hub_change_head",
       "entityType": "tables",
       "schema": "public"
     },
@@ -8641,136 +8629,6 @@
       "entityType": "columns",
       "schema": "public",
       "table": "subject"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "space_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "sequence",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "table_name",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "row_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "op",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change_head"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "space_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change_head"
-    },
-    {
-      "type": "bigint",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "sequence",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "hub_change_head"
     },
     {
       "type": "uuid",
@@ -19248,40 +19106,6 @@
       ],
       "onUpdate": "NO ACTION",
       "onDelete": "NO ACTION",
-      "name": "hub_change_space_id_space_id_fkey",
-      "entityType": "fks",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "space_id"
-      ],
-      "schemaTo": "public",
-      "tableTo": "space",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "name": "hub_change_head_space_id_space_id_fkey",
-      "entityType": "fks",
-      "schema": "public",
-      "table": "hub_change_head"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "space_id"
-      ],
-      "schemaTo": "public",
-      "tableTo": "space",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
       "name": "hub_day_space_id_space_id_fkey",
       "entityType": "fks",
       "schema": "public",
@@ -21790,26 +21614,6 @@
         "id"
       ],
       "nameExplicit": false,
-      "name": "hub_change_pkey",
-      "schema": "public",
-      "table": "hub_change",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "hub_change_head_pkey",
-      "schema": "public",
-      "table": "hub_change_head",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
       "name": "hub_day_pkey",
       "schema": "public",
       "table": "hub_day",
@@ -22391,29 +22195,6 @@
       "entityType": "uniques",
       "schema": "public",
       "table": "public_doc_space"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        "space_id",
-        "sequence"
-      ],
-      "nullsNotDistinct": false,
-      "name": "hub_change_space_sequence_unique",
-      "entityType": "uniques",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        "space_id"
-      ],
-      "nullsNotDistinct": false,
-      "name": "hub_change_head_space_unique",
-      "entityType": "uniques",
-      "schema": "public",
-      "table": "hub_change_head"
     },
     {
       "nameExplicit": true,
@@ -23390,13 +23171,6 @@
       "entityType": "checks",
       "schema": "public",
       "table": "subject"
-    },
-    {
-      "value": "\"op\" IN ('upsert','delete')",
-      "name": "hub_change_op_check",
-      "entityType": "checks",
-      "schema": "public",
-      "table": "hub_change"
     },
     {
       "value": "\"sightings\" > 0",
@@ -25700,97 +25474,6 @@
       "entityType": "policies",
       "schema": "public",
       "table": "subject"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "SELECT",
-      "roles": [
-        "public"
-      ],
-      "using": "\"hub_change\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
-      "withCheck": null,
-      "name": "hub_change_space_select",
-      "entityType": "policies",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "INSERT",
-      "roles": [
-        "public"
-      ],
-      "using": null,
-      "withCheck": "\"hub_change\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
-      "name": "hub_change_space_insert",
-      "entityType": "policies",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "ALL",
-      "roles": [
-        "record_owner"
-      ],
-      "using": "true",
-      "withCheck": "true",
-      "name": "hub_change_owner_all",
-      "entityType": "policies",
-      "schema": "public",
-      "table": "hub_change"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "SELECT",
-      "roles": [
-        "public"
-      ],
-      "using": "\"hub_change_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
-      "withCheck": null,
-      "name": "hub_change_head_space_select",
-      "entityType": "policies",
-      "schema": "public",
-      "table": "hub_change_head"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "INSERT",
-      "roles": [
-        "public"
-      ],
-      "using": null,
-      "withCheck": "\"hub_change_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
-      "name": "hub_change_head_space_insert",
-      "entityType": "policies",
-      "schema": "public",
-      "table": "hub_change_head"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "UPDATE",
-      "roles": [
-        "public"
-      ],
-      "using": "\"hub_change_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
-      "withCheck": "\"hub_change_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
-      "name": "hub_change_head_space_update",
-      "entityType": "policies",
-      "schema": "public",
-      "table": "hub_change_head"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "ALL",
-      "roles": [
-        "record_owner"
-      ],
-      "using": "true",
-      "withCheck": "true",
-      "name": "hub_change_head_owner_all",
-      "entityType": "policies",
-      "schema": "public",
-      "table": "hub_change_head"
     },
     {
       "as": "PERMISSIVE",
