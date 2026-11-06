@@ -89,11 +89,31 @@ export const WorkerQuestionInputSchema = z.object({
 
 const normalizedQuestion = z.discriminatedUnion('kind', [choice, yesno, score, text])
 
-export const WorkerQuestionSchema = WorkerQuestionInputSchema.transform((value) => ({
-  ...value,
-  kind: value.kind ?? (Array.isArray(value.options) && value.options.length ? 'choice' : 'text'),
-})).pipe(normalizedQuestion)
-export type WorkerQuestion = z.infer<typeof WorkerQuestionInputSchema>
+export type WorkerQuestion =
+  | {
+      kind: 'choice'
+      question: string
+      why: string
+      options: { name: string; criteria?: string }[]
+      recommendation?: string
+    }
+  | {
+      kind: 'yesno'
+      question: string
+      why: string
+      criteria?: { yes?: string; no?: string }
+    }
+  | { kind: 'score'; question: string; why: string; levels: string[] }
+  | { kind: 'text'; question: string; why: string }
+
+export const WorkerQuestionSchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  const value = raw as Record<string, unknown>
+  return {
+    ...value,
+    kind: value.kind ?? (Array.isArray(value.options) && value.options.length ? 'choice' : 'text'),
+  }
+}, normalizedQuestion) as z.ZodType<WorkerQuestion>
 export type WorkerQuestionInput = {
   kind?: (typeof WORKER_QUESTION_KINDS)[number] | null
   question: string
@@ -130,7 +150,7 @@ export function encodeWorkerQuestion(question: WorkerQuestion): {
 }
 
 export function decodeWorkerQuestion(question: StoredWorkerQuestion): WorkerQuestion {
-  return WorkerQuestionInputSchema.parse({
+  return WorkerQuestionSchema.parse({
     question: question.question,
     why: question.why ?? '',
     kind: question.kind,
