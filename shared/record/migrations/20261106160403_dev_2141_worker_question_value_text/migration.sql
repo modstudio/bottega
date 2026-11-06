@@ -1,0 +1,2 @@
+ALTER TABLE "question" ALTER COLUMN "answer_value" SET DATA TYPE text USING "answer_value"::text;--> statement-breakpoint
+ALTER TABLE "question" ALTER COLUMN "jev_pick" SET DATA TYPE text USING "jev_pick"::text;

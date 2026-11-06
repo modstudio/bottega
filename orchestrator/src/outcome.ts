@@ -173,8 +173,6 @@ function reclassifyDoneAsking<FailureKind extends string>(
 }
 
 function annotateDroppedQuestions<FailureKind extends string>(
-  reply: FinalizationReply | null,
-  acceptedQuestions: WorkerQuestion[],
   droppedQuestions: WorkerQuestionInput[],
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
@@ -219,7 +217,7 @@ export function finalizeWorkerReply<FailureKind extends string>(
     decision = { ...decision, error: appendOutcomeNote(decision.error, note) }
   }
   decision = reclassifyDoneAsking(reply, acceptedQuestions, decision)
-  decision = annotateDroppedQuestions(reply, acceptedQuestions, droppedQuestions, decision)
+  decision = annotateDroppedQuestions(droppedQuestions, decision)
   decision = annotateUnchangedTurn(inputs, decision)
   return { ...decision, acceptedQuestions, droppedQuestions }
 }

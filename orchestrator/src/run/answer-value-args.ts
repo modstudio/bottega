@@ -28,10 +28,7 @@ function selectedQuestionIdentifier(identifiers: string[]): string | undefined {
   return identifiers[0]
 }
 
-export function answerValueArgs(
-  argv: string[],
-  questionIdentifiers: string[],
-): AnswerValueArgs {
+export function answerValueArgs(argv: string[], questionIdentifiers: string[]): AnswerValueArgs {
   const taken = takeValue(argv)
   if (taken.raw === undefined) return { argv: taken.argv }
   return {

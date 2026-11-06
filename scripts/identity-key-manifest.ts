@@ -257,6 +257,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.provisioning_entries_limited',
     'pull_request_ci.complete',
     'record_change_horizon.singleton',
+    'question.jev_agreed',
   ]),
   ...manifest('hosted', 'count, ordinal, version, handle, or measurement', [
     'doc.position',
@@ -281,6 +282,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'release.exit_code',
     'release.commits_behind_trunk',
     'question.revision',
+    'question.jev_input_tokens',
     ...taskIdentity.HOSTED_TASK_IDENTITY_INTEGER_COLUMNS,
     'run.prompt_bytes',
     'run.evidence_seq',

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -47,6 +48,7 @@ describe('Jev worker-question apply path', () => {
         answer: { choice: 'a', confidence: 0.95, probabilities: { a: 0.95, b: 0.05 } },
         model: 'jev-test',
         inputTokens: 12,
+        latencyMs: 1,
       }),
       readMachine: (key) => (key === 'jev.auto_rule' ? 'on' : '0.9'),
       resolveRulings: async () => 'agent',
@@ -67,6 +69,9 @@ describe('Jev worker-question apply path', () => {
     expect(db().query('SELECT count(*) count FROM outbox WHERE row_id=?').get(recordId)).toEqual({
       count: 1,
     })
+    expect(
+      db().query("SELECT count(*) count FROM run_mutation_audit WHERE action='answer'").get(),
+    ).toEqual({ count: 1 })
   })
 
   test('an invalid threshold escalates and records its remedy', async () => {
@@ -82,16 +87,19 @@ describe('Jev worker-question apply path', () => {
         kind: 'answer',
         answer: { choice: 'a', confidence: 1, probabilities: { a: 1, b: 0 } },
         model: 'jev-test',
-        inputTokens: null,
+        inputTokens: 0,
+        latencyMs: 1,
       }),
       readMachine: (key) => (key === 'jev.confidence_threshold' ? 'NaN' : 'on'),
       resolveRulings: async () => 'agent',
     })
     expect(result).toEqual({ applied: false })
     expect(
-      (db().query('SELECT jev_error FROM question WHERE record_id=?').get(recordId) as {
-        jev_error: string
-      }).jev_error,
-    ).toContain('bottega machine config set jev.confidence_threshold')
+      (
+        db().query('SELECT jev_error FROM question WHERE record_id=?').get(recordId) as {
+          jev_error: string
+        }
+      ).jev_error,
+    ).toContain(`${PLATFORM_SLUG} machine config set jev.confidence_threshold`)
   })
 })

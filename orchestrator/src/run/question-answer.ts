@@ -19,7 +19,7 @@ export function applyQuestionAnswer(input: {
   answeredBy: string | null
   answeredByName: string | null
   answeredByKind: 'architect' | 'jev'
-  answererKind: 'agent' | 'operator'
+  answererKind: 'agent' | 'operator' | 'eval' | null
   channel: AnswerChannel
   deliveryPendingAt: string | null
   delivery?: {

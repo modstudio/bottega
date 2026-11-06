@@ -44,9 +44,7 @@ export function routeJevAnswer(input: {
             ).level
           : null
   const probabilities =
-    'probabilities' in answer
-      ? answer.probabilities
-      : { yes: answer.noul, no: 1 - answer.noul }
+    'probabilities' in answer ? answer.probabilities : { yes: answer.noul, no: 1 - answer.noul }
   if (
     !input.canResume ||
     !input.autoRule ||

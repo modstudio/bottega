@@ -2,7 +2,7 @@
 /** Typed worker-question vocabulary, storage codec, and answer validation. */
 
 import { z } from 'zod'
-import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
+import type { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
 
 const nullableAbsent = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === null ? undefined : value), schema.optional())
@@ -83,7 +83,15 @@ export const WorkerQuestionInputSchema = z.preprocess(
 
 export const WorkerQuestionSchema = WorkerQuestionInputSchema
 export type WorkerQuestion = z.infer<typeof WorkerQuestionInputSchema>
-export type WorkerQuestionInput = z.input<typeof WorkerQuestionInputSchema>
+export type WorkerQuestionInput = {
+  kind?: (typeof WORKER_QUESTION_KINDS)[number] | null
+  question: string
+  why?: string | null
+  options?: (string | { name: string; criteria?: string | null })[] | null
+  recommendation?: string | null
+  criteria?: { yes?: string | null; no?: string | null } | null
+  levels?: string[] | null
+}
 export type AnswerValue = string | boolean | number
 
 export type StoredWorkerQuestion = {
@@ -139,7 +147,11 @@ function yesnoAnswer(raw: unknown): boolean {
 
 function scoreAnswer(question: Extract<WorkerQuestion, { kind: 'score' }>, raw: unknown): number {
   const value = typeof raw === 'string' && /^-?\d+$/.test(raw) ? Number(raw) : raw
-  if (Number.isInteger(value) && (value as number) >= 0 && (value as number) < question.levels.length)
+  if (
+    Number.isInteger(value) &&
+    (value as number) >= 0 &&
+    (value as number) < question.levels.length
+  )
     return value as number
   throw new Error(`allowed values: ${question.levels.map((_, index) => index).join(', ')}`)
 }
@@ -154,13 +166,4 @@ export function decodeAnswerValue(question: WorkerQuestion, raw: unknown): Answe
   if (question.kind === 'yesno') return yesnoAnswer(raw)
   if (question.kind === 'score') return scoreAnswer(question, raw)
   return textAnswer(raw)
-}
-
-export function answerValueRefusal(question: WorkerQuestion, value: unknown): string | null {
-  try {
-    decodeAnswerValue(question, value)
-    return null
-  } catch (error) {
-    return (error as Error).message
-  }
 }

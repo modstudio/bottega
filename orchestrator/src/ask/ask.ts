@@ -37,13 +37,6 @@ import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
-  type WorkerQuestion,
-  type WorkerQuestionInput,
-  encodeWorkerQuestion,
-  WorkerQuestionInputSchema,
-  WorkerQuestionSchema,
-} from './worker-question.ts'
-import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
   markRunBoardNoticesDelivered,
@@ -94,6 +87,13 @@ import {
   type WorkerNoteRun,
 } from './worker-note.ts'
 import { requestWorkerNote } from './worker-note-request.ts'
+import {
+  encodeWorkerQuestion,
+  type WorkerQuestion,
+  type WorkerQuestionInput,
+  WorkerQuestionInputSchema,
+  WorkerQuestionSchema,
+} from './worker-question.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.

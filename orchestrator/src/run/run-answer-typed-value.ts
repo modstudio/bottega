@@ -2,10 +2,9 @@
 /** Decodes stored worker questions and validates answer values for the answer service. */
 
 import {
+  type AnswerValue,
   decodeAnswerValue,
   decodeWorkerQuestion,
-  type AnswerValue,
-  type WorkerQuestion,
 } from '../ask/worker-question.ts'
 
 export type TypedAnswerQuestion = {
@@ -43,7 +42,9 @@ function typedAnswerValue(
   try {
     return decodeAnswerValue(typed, value)
   } catch (error) {
-    throw new Error(`question ${question.number} refuses that typed value; ${(error as Error).message}`)
+    throw new Error(
+      `question ${question.number} refuses that typed value; ${(error as Error).message}`,
+    )
   }
 }
 

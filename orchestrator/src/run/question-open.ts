@@ -6,11 +6,7 @@ import type { Database } from 'bun:sqlite'
 export const questionOpenSql = (alias: string): string =>
   `${alias}.answered_at IS NULL AND ${alias}.closed_at IS NULL`
 
-export function openChainQuestions<T>(
-  database: Database,
-  runId: string,
-  columns: string,
-): T[] {
+export function openChainQuestions<T>(database: Database, runId: string, columns: string): T[] {
   return database
     .query(
       `SELECT ${columns} FROM question q JOIN run r ON r.record_id=q.run_record_id

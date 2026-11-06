@@ -26,8 +26,8 @@ import {
   continuationCheckoutForAnswer,
   continuationCheckoutForRetry,
 } from './continuation-checkout-service.ts'
-import { appendQuestionDeliveries } from './question-delivery.ts'
 import { applyQuestionAnswer } from './question-answer.ts'
+import { appendQuestionDeliveries } from './question-delivery.ts'
 import { openChainQuestions, questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
@@ -144,7 +144,7 @@ function answerResult(
     run_number: runNumber,
     resumed_record_id: resumedAs,
     resumed_number: resumedNumber,
-  }
+  } as const
 }
 
 export type AnswerRunInput = {
@@ -173,8 +173,83 @@ type OpenQuestion = TypedAnswerQuestion & {
 
 type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
 
+function storedAnswerDelivery(input: {
+  skipResume: boolean
+  ownersLive: boolean
+  answerRecordId: string
+  open: OpenQuestion[]
+}) {
+  if (!input.skipResume && !input.ownersLive) return {}
+  return {
+    delivery: {
+      runId: input.skipResume
+        ? null
+        : input.open.find((question) => question.record_id === input.answerRecordId)!.owner_id,
+      mode: input.skipResume ? QUESTION_DELIVERY_MODE_RECORD_ONLY : QUESTION_DELIVERY_MODE_LIVE,
+      outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+    },
+  }
+}
+
 function wrongQuestionChain(questionId: string, rootRecordId: string): string {
   return `--q${questionId} belongs to run ${rootRecordId}, not this chain`
+}
+
+function collectAnswers(input: {
+  runId: string
+  open: OpenQuestion[]
+  answer: AnswerRunInput
+  argvLimit: number | undefined
+}): AnsweredQuestion[] {
+  if (!Array.isArray(input.answer.rulings)) {
+    if (!input.answer.rulings)
+      throw new Error(
+        `run ${input.runId} is waiting on ${input.open.length} question(s). ` +
+          `Rule with: ${PLATFORM_SLUG} question answer ${input.runId} --q${input.open[0]!.number} "<ruling>", ` +
+          'or pass a ruling via --file or stdin.',
+      )
+    const answer = validatedRuling(input.answer.rulings, input.argvLimit)
+    if (input.answer.typedValue !== undefined && input.open.length > 1)
+      throw new Error('--value requires --q<id> when more than one question is open')
+    return [
+      answeredQuestion(input.open[0]!, answer, input.answer.fromOperator, input.answer.typedValue),
+    ]
+  }
+  const invalid: string[] = []
+  const seen = new Set<string>()
+  for (const ruling of input.answer.rulings) {
+    if (seen.has(ruling.questionId)) invalid.push(`--q${ruling.questionId} given more than once`)
+    seen.add(ruling.questionId)
+    if (input.open.some((question) => question.record_id === ruling.questionId)) continue
+    const named = db()
+      .query(
+        `SELECT q.record_id,q.number,q.answered_at,r.record_id AS run_record_id,
+            COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id
+       FROM question q JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
+      )
+      .get(ruling.questionId) as {
+      answered_at: string | null
+      run_record_id: string
+      root_record_id: string
+    } | null
+    if (!named) invalid.push(`--q${ruling.questionId} names no question`)
+    else if (named.root_record_id !== input.runId)
+      invalid.push(wrongQuestionChain(ruling.questionId, named.root_record_id))
+    else if (named.answered_at)
+      invalid.push(`--q${ruling.questionId} on run ${named.run_record_id} is already closed`)
+    else invalid.push(`--q${ruling.questionId} is not open on this chain`)
+  }
+  if (invalid.length)
+    throw new Error(
+      `refusing the whole ruling: ${invalid.join('; ')}\n` +
+        `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  return input.open.flatMap((question) => {
+    const ruling = input.answer.rulings.find((item) => item.questionId === question.record_id)
+    if (!ruling) return []
+    const answer = validatedRuling(ruling.text, input.argvLimit)
+    return [answeredQuestion(question, answer, ruling.fromOperator, ruling.typedValue)]
+  })
 }
 
 function validatedRuling(text: string, argvLimit: number | undefined): string {
@@ -811,64 +886,8 @@ export async function answerRun(
 
   // The CLI adapter resolves positional, file, and stdin sources before the
   // service boundary. Other adapters supply validated ruling text directly.
-  const answers: AnsweredQuestion[] = []
   const argvLimit = ownersLive ? undefined : helpers.argvResumeLimit(resumeAgent)
-  if (Array.isArray(input.rulings)) {
-    const invalid: string[] = []
-    const seen = new Set<string>()
-    for (const ruling of input.rulings) {
-      if (seen.has(ruling.questionId)) invalid.push(`--q${ruling.questionId} given more than once`)
-      seen.add(ruling.questionId)
-      if (open.some((q) => q.record_id === ruling.questionId)) continue
-      const named = db()
-        .query(
-          `SELECT q.record_id,q.number,q.answered_at,r.record_id AS run_record_id,
-              COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id
-         FROM question q JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
-        )
-        .get(ruling.questionId) as {
-        record_id: string
-        number: number
-        answered_at: string | null
-        run_record_id: string
-        root_record_id: string
-      } | null
-      if (!named) {
-        invalid.push(`--q${ruling.questionId} names no question`)
-      } else if (named.root_record_id !== id) {
-        invalid.push(wrongQuestionChain(ruling.questionId, named.root_record_id))
-      } else if (named.answered_at) {
-        invalid.push(`--q${ruling.questionId} on run ${named.run_record_id} is already closed`)
-      } else {
-        invalid.push(`--q${ruling.questionId} is not open on this chain`)
-      }
-    }
-    if (invalid.length) {
-      throw new Error(
-        `refusing the whole ruling: ${invalid.join('; ')}\n` +
-          `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    }
-    for (const q of open) {
-      const ruling = input.rulings.find((item) => item.questionId === q.record_id)
-      if (!ruling) continue
-      const answer = validatedRuling(ruling.text, argvLimit)
-      answers.push(answeredQuestion(q, answer, ruling.fromOperator, ruling.typedValue))
-    }
-  } else {
-    if (!input.rulings) {
-      throw new Error(
-        `run ${id} is waiting on ${open.length} question(s). ` +
-          `Rule with: ${PLATFORM_SLUG} question answer ${id} --q${open[0]!.number} "<ruling>", ` +
-          'or pass a ruling via --file or stdin.',
-      )
-    } else {
-      const answer = validatedRuling(input.rulings, argvLimit)
-      if (input.typedValue !== undefined && open.length > 1)
-        throw new Error('--value requires --q<id> when more than one question is open')
-      answers.push(answeredQuestion(open[0]!, answer, input.fromOperator, input.typedValue))
-    }
-  }
+  const answers = collectAnswers({ runId: id, open, answer: input, argvLimit })
   await assertAnswersReady(open.length, answers, input, ownersLive)
 
   if (
@@ -942,19 +961,12 @@ export async function answerRun(
         answererKind,
         channel: input.channel,
         deliveryPendingAt: ownersLive ? null : now,
-        ...(skipResume || ownersLive
-          ? {
-              delivery: {
-                runId: skipResume
-                  ? null
-                  : open.find((q) => q.record_id === answer.record_id)!.owner_id,
-                mode: skipResume
-                  ? QUESTION_DELIVERY_MODE_RECORD_ONLY
-                  : QUESTION_DELIVERY_MODE_LIVE,
-                outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-              },
-            }
-          : {}),
+        ...storedAnswerDelivery({
+          skipResume,
+          ownersLive,
+          answerRecordId: answer.record_id,
+          open,
+        }),
       })
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)

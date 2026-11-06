@@ -44,24 +44,9 @@ function loadQuestion(database: Database, questionId: string): QuestionRow {
   return row
 }
 
-export function enqueueQuestionRecord(database: Database, questionId: string): boolean {
-  const row = loadQuestion(database, questionId)
-  const recordId = row.record_id!
-  const at = nowIso()
-  const audits = database
-    .query<Record<string, unknown>, [string]>(
-      `SELECT action,actor_session,at,reason FROM question_mutation_audit
-       WHERE question_record_id=? ORDER BY at,action`,
-    )
-    .all(questionId)
-    .map((audit) => ({
-      action: audit.action,
-      actorSession: audit.actor_session,
-      at: audit.at,
-      reason: audit.reason,
-    }))
-  const payload = stringifyOutboxPayload('question', {
-    id: recordId,
+function questionPayload(row: QuestionRow, audits: object[], at: string): string {
+  return stringifyOutboxPayload('question', {
+    id: row.record_id,
     number: row.number,
     spaceId: PLATFORM_SPACE_ID,
     runId: row.run_record_id,
@@ -85,7 +70,7 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     criteria: json(row.criteria),
     levels: json(row.levels),
     answer: row.answer,
-    answerValue: json(row.answer_value),
+    answerValue: row.answer_value,
     answerBasis: row.answer_basis,
     answeredAt: row.answered_at,
     answeredBy: row.answered_by,
@@ -93,7 +78,7 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     answeredByKind: row.answered_by_kind,
     answererKind: row.answerer_kind,
     answerChannel: row.answer_channel,
-    jevPick: json(row.jev_pick),
+    jevPick: row.jev_pick,
     jevConfidence: row.jev_confidence,
     jevProbabilities: json(row.jev_probabilities),
     jevModel: row.jev_model,
@@ -118,6 +103,25 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     createdAt: row.asked_at,
     updatedAt: at,
   })
+}
+
+export function enqueueQuestionRecord(database: Database, questionId: string): boolean {
+  const row = loadQuestion(database, questionId)
+  const recordId = row.record_id!
+  const at = nowIso()
+  const audits = database
+    .query<Record<string, unknown>, [string]>(
+      `SELECT action,actor_session,at,reason FROM question_mutation_audit
+       WHERE question_record_id=? ORDER BY at,action`,
+    )
+    .all(questionId)
+    .map((audit) => ({
+      action: audit.action,
+      actorSession: audit.actor_session,
+      at: audit.at,
+      reason: audit.reason,
+    }))
+  const payload = questionPayload(row, audits, at)
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox

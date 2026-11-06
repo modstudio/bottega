@@ -45,12 +45,14 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/ask/jev-worker-question.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/typed-question/client.ts',
     '../../../shared/typed-question/registry.ts',
     '../database/db.ts',
     '../run/question-answer.ts',
     '../run/question-outbox.ts',
+    '../run/run-authority.ts',
     '../run/question-vocabulary.ts',
     '../workflow/autonomy-scopes.ts',
     './jev-routing.ts',
@@ -58,6 +60,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/run-answer-typed-value.ts', ['../ask/worker-question.ts']),
   module('orchestrator/src/run/answer-value-args.ts', []),
+  module('orchestrator/src/run/question-answer.ts', [
+    'bun:sqlite',
+    './question-delivery.ts',
+    './question-outbox.ts',
+    './question-vocabulary.ts',
+  ]),
   module('orchestrator/src/resources/resource-claims.ts', [
     '../../../shared/record-id.ts',
     '../git/checkout-identity.ts',

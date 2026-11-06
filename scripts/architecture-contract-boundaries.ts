@@ -14,6 +14,7 @@ export const contractBoundarySpecs: ContractBoundarySpec[] = [
     file: 'orchestrator/src/contract/contract.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/orch-contract.ts',
       '../jobs/jobs.ts',
       '../outcome.ts',
       '../review/review-vocabulary.ts',

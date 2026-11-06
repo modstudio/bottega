@@ -44,6 +44,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../workflow/autonomy-scopes.ts',
       './checkpoint.ts',
       './continuation-checkout-service.ts',
+      './question-answer.ts',
       './run-resume-prompt.ts',
       './run-answer-liveness.ts',
       './run-answer-typed-value.ts',

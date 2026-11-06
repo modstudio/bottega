@@ -94,7 +94,7 @@ export async function answerInputFromArgv(
   flags: Flags,
   helpers: Pick<ReturnType<typeof answerRunHelpers>, 'readWorkerFile' | 'readMessageText'>,
   refusedOptions?: Readonly<Record<string, string>>,
-  answerId?: string,
+  _answerId?: string,
 ): Promise<AnswerRunInput> {
   const valueArgs = answerValueArgs(argv, questionIdentifiers(argv))
   const channelArgs = parseAnswerChannelArgs(valueArgs.argv)
@@ -146,9 +146,7 @@ export async function answerInputFromArgv(
     (!parsed.positionals.length && !process.stdin.isTTY)
   ) {
     rulings =
-      valueArgs.raw !== undefined &&
-      parsed.commandFile === undefined &&
-      !parsed.positionals.length
+      valueArgs.raw !== undefined && parsed.commandFile === undefined && !parsed.positionals.length
         ? cliRuling(valueArgs.raw)
         : cliRuling(
             (await helpers.readMessageText({
