@@ -372,10 +372,7 @@ function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'de
   return assertCanonWriteAllowed(input)
 }
 
-export {
-  lintStoredDoc,
-  storedDocWarnings,
-} from './doc-lint-adapter.ts'
+export { lintStoredDoc, storedDocWarnings } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   assertLocalReferenceWrite(prior, input)

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -13,7 +14,7 @@ const globals = globalThis as typeof globalThis & {
   [DOC_SECRET_SCANNER_KEY]?: SecretScanner
 }
 const tasks: ContextFactsPorts = {
-  tasks: async () => [{ key: 'DEV-1844', record_id: newRecordId(), project: 'bottega' }],
+  tasks: async () => [{ key: 'DEV-1844', record_id: newRecordId(), project: PLATFORM_SLUG }],
   pointer: async () => null,
 }
 

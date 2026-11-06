@@ -54,7 +54,7 @@ function normalizeContextBody(body: string): string {
 export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts): string | null {
   const address = `context item ${item.id}`
   const profile = PROFILE[facts.profile]
-  if (!profile.allowed.includes(item.kind)) {
+  if (!(profile.allowed as readonly ContextItemKind[]).includes(item.kind)) {
     return `${address} refused: ${facts.profile} profile does not allow kind ${item.kind}`
   }
   if (!item.source.trim()) return `${address} refused: every item requires a non-empty source`

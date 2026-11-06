@@ -36,19 +36,8 @@ async function pointerRefusal(value: string, database: Database): Promise<string
       return `task document ${pointer} does not resolve`
     }
   }
-  if (/^doc:[0-9a-f-]{36}$/i.test(pointer)) {
-    return database.query('SELECT 1 FROM doc WHERE record_id=?').get(pointer.slice(4))
-      ? null
-      : `doc-store record ${pointer} does not resolve`
-  }
-  if (/^[0-9a-f-]{36}$/i.test(pointer) || /^\d+$/.test(pointer)) {
-    if (
-      database
-        .query('SELECT 1 FROM run WHERE record_id=? OR number=?')
-        .get(pointer, Number(pointer) || -1)
-    )
-      return null
-  }
+  const stored = storedPointerRefusal(pointer, database)
+  if (stored !== undefined) return stored
   const pr = /^#?(\d+)$/.exec(pointer)
   if (
     pr &&
@@ -60,6 +49,20 @@ async function pointerRefusal(value: string, database: Database): Promise<string
     return null
   } catch {}
   return `pointer ${JSON.stringify(pointer)} does not resolve as a task document, run, commit, pull request number, or doc-store record`
+}
+
+function storedPointerRefusal(pointer: string, database: Database): string | null | undefined {
+  if (/^doc:[0-9a-f-]{36}$/i.test(pointer)) {
+    return database.query('SELECT 1 FROM doc WHERE record_id=?').get(pointer.slice(4))
+      ? null
+      : `doc-store record ${pointer} does not resolve`
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(pointer) && !/^\d+$/.test(pointer)) return undefined
+  return database
+    .query('SELECT 1 FROM run WHERE record_id=? OR number=?')
+    .get(pointer, Number(pointer) || -1)
+    ? null
+    : undefined
 }
 
 const productionContextFactsPorts: ContextFactsPorts = {
@@ -88,7 +91,7 @@ function claimedTasks(owner: string, database: Database): string[] {
     .map((row) => row.subject_value)
 }
 
-export async function contextSetRefusal(
+async function contextSetRefusal(
   input: { subject: string; slug: string; body: string },
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
@@ -98,7 +101,7 @@ export async function contextSetRefusal(
   const taskKey = input.subject.startsWith('task:') ? input.subject.slice(5) : null
   const owner = input.subject.startsWith('session:') ? input.subject.slice(8) : null
   if (taskKey && !tasks.some((task) => task.key === taskKey && task.project === PLATFORM_SLUG)) {
-    return `context item ${input.slug} refused: task:${taskKey} is not a ${PLATFORM_SLUG} hub task`
+    return `context item ${input.slug} refused: task:${taskKey} is not in the ${PLATFORM_SLUG} task store`
   }
   if (owner && owner !== sessionId(database)) {
     return `context item ${input.slug} refused: only owning session ${owner} may write session:${owner}`
