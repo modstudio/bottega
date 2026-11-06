@@ -149,10 +149,12 @@ export function effectiveDocSummary(
     ? { summary: written, summarySource: 'written' }
     : { summary: docSummary(body), summarySource: 'derived' }
 }
+type UnfiledDocScope = 'canon' | 'settings' | 'context'
+/** Canon and settings have their own writers, and context items are written through their holder. */
 export const FILING_DOC_SCOPES = DOC_SCOPES.filter(
-  (scope): scope is Exclude<DocScope, 'canon' | 'settings'> =>
-    scope !== 'canon' && scope !== 'settings',
-) as [Exclude<DocScope, 'canon' | 'settings'>, ...Exclude<DocScope, 'canon' | 'settings'>[]]
+  (scope): scope is Exclude<DocScope, UnfiledDocScope> =>
+    scope !== 'canon' && scope !== 'settings' && scope !== 'context',
+) as [Exclude<DocScope, UnfiledDocScope>, ...Exclude<DocScope, UnfiledDocScope>[]]
 export type FilingDocScope = (typeof FILING_DOC_SCOPES)[number]
 
 export type DocSubjectKind = 'project' | 'stack' | 'agent' | 'job' | 'holder'

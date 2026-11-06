@@ -3,11 +3,7 @@
 import { sessionId } from '../database/db.ts'
 import { decodeContextItem, encodeContextItem } from './context-item-codec.ts'
 import { contextProfileForHolder } from './context-write-adapter.ts'
-import {
-  type ContextItemKind,
-  contextDropRefusal,
-  missingContextKinds,
-} from './doc-context-write.ts'
+import { type ContextItemKind, missingContextKinds } from './doc-context-write.ts'
 import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
@@ -63,17 +59,6 @@ export async function dropContextItem(
   const holder = contextHolder(input)
   const doc = getDoc('context', holder, input.id)
   if (!doc) throw new Error(`no context item ${holder}/${input.id}`)
-  if (holder.startsWith('session:') && holder.slice(8) !== sessionId()) {
-    throw new Error(
-      `context item ${input.id} refused: only owning session ${holder.slice(8)} may write ${holder}`,
-    )
-  }
-  const items = listDocs({ scope: 'context', subject: holder }).map((row) =>
-    decodeContextItem(holder, row.slug, row.body),
-  )
-  const profile = await contextProfileForHolder(holder)
-  const refusal = contextDropRefusal(decodeContextItem(holder, doc.slug, doc.body), items, profile)
-  if (refusal) throw new Error(refusal)
   await removeDoc('context', holder, input.id, {
     reason: `drop context item ${input.id}`,
     expectedRevision: input.expectedRevision,

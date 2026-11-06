@@ -16,6 +16,7 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/context-write-adapter.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    '../board/board-claim-service.ts',
     '../database/db.ts',
     '../git/commit-resolution.ts',
     '../workflow/workflow-task-reference.ts',

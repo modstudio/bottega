@@ -98,6 +98,19 @@ function rulingRefusal(item: ContextItem, address: string): string | null {
   return null
 }
 
+/** Only the session a session holder names may write or drop its items. */
+export function holderOwnershipRefusal(
+  holder: string,
+  caller: string | null,
+  id: string,
+): string | null {
+  if (!holder.startsWith('session:')) return null
+  const owner = holder.slice('session:'.length)
+  return owner === caller
+    ? null
+    : `context item ${id} refused: only owning session ${owner} may write ${holder}`
+}
+
 export function contextDropRefusal(
   item: ContextItem,
   siblings: ContextItem[],

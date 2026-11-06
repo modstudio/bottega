@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { setDoc } from '../../test/fixtures/docs.ts'
+import { removeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { SecretScanner } from '../secret-scan/secret-scan.ts'
 import { encodeContextItem } from './context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { DOC_SECRET_SCANNER_KEY } from './doc-secret-scan.ts'
-import { listDocMetadata } from './docs.ts'
+import { importDoc, listDocMetadata } from './docs.ts'
 
 const globals = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
@@ -59,6 +59,41 @@ describe('context document integration', () => {
         expectedRevision: first.revision!,
       }),
     ).rejects.toThrow(new RegExp(`context item next:.*current revision ${second.revision}`, 's'))
+    await expect(
+      setDoc({
+        scope: 'context',
+        subject: 'task:DEV-1844',
+        slug: 'next',
+        title: 'next',
+        body,
+        delivery: 'demand',
+      }),
+    ).rejects.toThrow(`pass --expected-revision ${second.revision}`)
+  })
+
+  test('every write verb applies the context policy, not only set', async () => {
+    globals[CONTEXT_FACTS_PORTS_KEY] = tasks
+    await setDoc({
+      scope: 'context',
+      subject: 'task:DEV-1844',
+      slug: 'next',
+      title: 'next',
+      body: encodeContextItem({ kind: 'next-action', source: 'run:1', body: 'Continue.' }),
+      delivery: 'demand',
+    })
+    await expect(removeDoc('context', 'task:DEV-1844', 'next')).rejects.toThrow(
+      'cannot remove the last required next-action item',
+    )
+    await expect(
+      importDoc({
+        scope: 'context',
+        subject: 'task:DEV-1844',
+        slug: 'raw',
+        title: 'raw',
+        body: 'No frontmatter.',
+        reason: 'test import',
+      }),
+    ).rejects.toThrow('requires YAML frontmatter')
   })
 
   test('fails closed for context while ordinary docs warn and write', async () => {

@@ -7,7 +7,14 @@ import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { decodeContextItem } from './context-item-codec.ts'
-import { type ContextItem, type ContextProfile, contextWriteRefusal } from './doc-context-write.ts'
+import { liveTaskClaimsOfSession } from '../board/board-claim-service.ts'
+import {
+  type ContextItem,
+  type ContextProfile,
+  contextDropRefusal,
+  contextWriteRefusal,
+  holderOwnershipRefusal,
+} from './doc-context-write.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 
@@ -82,15 +89,6 @@ function taskProfile(key: string, tasks: ContextTask[]): ContextProfile {
   return tasks.some((task) => task.parent_key === key) ? 'epic' : 'task'
 }
 
-function claimedTasks(owner: string, database: Database): string[] {
-  return database
-    .query<{ subject_value: string }, [string]>(
-      `SELECT subject_value FROM board_claim WHERE holder_session=? AND subject_kind='task' AND closed_at IS NULL ORDER BY subject_value`,
-    )
-    .all(owner)
-    .map((row) => row.subject_value)
-}
-
 async function contextSetRefusal(
   input: { subject: string; slug: string; body: string },
   database: Database = db(),
@@ -103,10 +101,9 @@ async function contextSetRefusal(
   if (taskKey && !tasks.some((task) => task.key === taskKey && task.project === PLATFORM_SLUG)) {
     return `context item ${input.slug} refused: task:${taskKey} is not in the ${PLATFORM_SLUG} task store`
   }
-  if (owner && owner !== sessionId(database)) {
-    return `context item ${input.slug} refused: only owning session ${owner} may write session:${owner}`
-  }
-  const claims = owner ? claimedTasks(owner, database) : []
+  const ownership = holderOwnershipRefusal(input.subject, sessionId(database), input.slug)
+  if (ownership) return ownership
+  const claims = owner ? liveTaskClaimsOfSession(owner, Date.now(), database) : []
   const profile = taskKey ? taskProfile(taskKey, tasks) : 'session'
   const parent = taskKey ? tasks.find((task) => task.key === taskKey)?.parent_key : null
   const relatedHolders = owner
@@ -139,6 +136,24 @@ export async function assertContextSetAllowed(input: {
     slug: input.slug,
     body: input.body,
   })
+  if (refusal) throw new Error(refusal)
+}
+
+/** A context item leaves only through its owner and never as the last required item. */
+export async function assertContextDropAllowed(
+  doc: { scope: string; subject: string | null; slug: string; body: string },
+  database: Database = db(),
+  ports: ContextFactsPorts = defaultContextFactsPorts(),
+): Promise<void> {
+  if (doc.scope !== 'context') return
+  const holder = doc.subject ?? ''
+  const refusal =
+    holderOwnershipRefusal(holder, sessionId(database), doc.slug) ??
+    contextDropRefusal(
+      decodeContextItem(holder, doc.slug, doc.body),
+      storedItems(holder, database),
+      await contextProfileForHolder(holder, ports),
+    )
   if (refusal) throw new Error(refusal)
 }
 

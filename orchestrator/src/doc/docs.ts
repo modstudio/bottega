@@ -28,7 +28,7 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
-import { assertContextSetAllowed } from './context-write-adapter.ts'
+import { assertContextDropAllowed, assertContextSetAllowed } from './context-write-adapter.ts'
 import {
   assertLocalArticleDelivery,
   type DocWriteContext,
@@ -579,6 +579,7 @@ export async function importDoc(
   } & DocWriteContext,
 ): Promise<Doc> {
   assertWorkerDocStoreWriteAllowed('importDoc')
+  await assertContextSetAllowed(input)
   return setDocWithOp(input, 'import')
 }
 
@@ -595,6 +596,7 @@ export async function removeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
+  await assertContextDropAllowed(doc)
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
     { scope, slug, expectedRevision: context.expectedRevision },
@@ -898,6 +900,7 @@ export async function restoreDoc(
   ) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
+  await assertContextSetAllowed({ scope, subject, slug, body: revision.body })
   const [expectedCurrent, current] = referenceRestoreState(scope, subject, slug, owner, revision)
   assertLocalRevisionWrite(
     { scope, expectedRevision: context.expectedRevision },
