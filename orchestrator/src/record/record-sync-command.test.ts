@@ -120,6 +120,52 @@ test('sync presentation reports project register counts and every skip reason', 
   ])
 })
 
+test('sync presentation reports released run payloads skipped by backfill', async () => {
+  const output: string[] = []
+  await syncCommand(
+    { backfill: true },
+    { log: (line) => output.push(line) },
+    {
+      sync: async () =>
+        ({
+          configured: false,
+          pushed: 0,
+          failed: 0,
+          pending: 0,
+          quarantined: [],
+          blocked: [],
+          backfill: {
+            enqueued: 0,
+            refreshedLinks: 0,
+            refreshedNumbers: 0,
+            refreshedRoots: 0,
+            skippedReleased: 2,
+            skippedLive: 1,
+            questions: { enqueued: 0 },
+            scores: 0,
+            reviews: { enqueuedReviews: 0, enqueuedReads: 0 },
+            landingEvidence: {
+              enqueuedLandings: 0,
+              enqueuedOverrides: 0,
+              enqueuedCarries: 0,
+              enqueuedContentions: 0,
+              enqueuedFlakes: 0,
+              enqueuedPullRequestCi: 0,
+            },
+            releases: { enqueued: 0 },
+          },
+        }) as never,
+      boardAdoption: {
+        database: db(),
+        hostedConfigured: () => false,
+        signedIn: () => false,
+      } as never,
+    },
+  )
+
+  expect(output[0]).toContain('skipped-released 2, skipped-live 1')
+})
+
 test('sync presentation reports only nonzero record-cache misses and its purge warning', async () => {
   const output: string[] = []
   await syncCommand(

@@ -454,7 +454,8 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
     },
   )
   expect(lines[0]).toBe(`updating the ${PLATFORM_NAME} checkout at ${target}`)
-  expect(lines[1]).toMatch(
+  expect(lines[1]).toBe('outbox released 0 payloads; backlog remains no')
+  expect(lines[2]).toMatch(
     /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
   )
   expect(projectPaths).toEqual([target])
@@ -514,8 +515,9 @@ test('machine update does not name the checkout when the caller is already there
       migrate: () => {},
     },
   )
-  expect(lines).toHaveLength(1)
-  expect(lines[0]).toMatch(
+  expect(lines).toHaveLength(2)
+  expect(lines[0]).toBe('outbox released 0 payloads; backlog remains no')
+  expect(lines[1]).toMatch(
     /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
   )
 })

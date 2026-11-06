@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
-
+import { isReleasedOutboxPayload } from '../record/outbox-prune-payload.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
@@ -23,6 +23,7 @@ export type RunRecordBackfillResult = {
   refreshedLinks: number
   refreshedNumbers: number
   refreshedRoots: number
+  skippedReleased: number
   skippedLive: number
 }
 
@@ -213,6 +214,15 @@ export function enqueueRunRecord(
     .run(newRecordId(), row.record_id, payload, finishedAt)
 }
 
+function readableLatestPayload(payload: string): Record<string, unknown> | null {
+  if (isReleasedOutboxPayload(payload)) return null
+  try {
+    return JSON.parse(payload) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
 export function backfillRunRecords(database: Database, machineId: string): RunRecordBackfillResult {
   const eligible = database
     .query<
@@ -247,17 +257,17 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
   let refreshedLinks = 0
   let refreshedNumbers = 0
   let refreshedRoots = 0
+  let skippedReleased = 0
   for (const row of eligible) {
     if (row.latest_payload === null) {
       enqueueRunRecord(database, row.record_id, machineId, row.finished_at)
       enqueued++
       continue
     }
-    let latest: Record<string, unknown>
-    try {
-      latest = JSON.parse(row.latest_payload) as Record<string, unknown>
-    } catch {
-      latest = {}
+    const latest = readableLatestPayload(row.latest_payload)
+    if (latest === null) {
+      skippedReleased++
+      continue
     }
     const refreshLinks = shouldRefreshRunRecordLinks(
       latest,
@@ -282,5 +292,12 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
   const skippedLive = database
     .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
-  return { enqueued, refreshedLinks, refreshedNumbers, refreshedRoots, skippedLive }
+  return {
+    enqueued,
+    refreshedLinks,
+    refreshedNumbers,
+    refreshedRoots,
+    skippedReleased,
+    skippedLive,
+  }
 }

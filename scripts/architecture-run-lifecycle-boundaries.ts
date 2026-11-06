@@ -269,6 +269,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../../../shared/record-id.ts',
       '../../../shared/record/schema.ts',
       '../record/outbox-sanitize.ts',
+      '../record/outbox-prune-payload.ts',
       '../record/outbox-serialize.ts',
       './run-chain.ts',
       './synthetic-lifecycle-job.ts',

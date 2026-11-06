@@ -3,7 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
+import { OUTBOX_PAYLOAD_RETENTION_MS, RELEASED_OUTBOX_PAYLOAD } from './outbox-prune-payload.ts'
 import {
+  deliveredUnprotectedOutboxDeleteSql,
+  releasableOutboxPayloadCountSql,
+  releasableOutboxPayloadProbeSql,
+  releasableOutboxPayloadSelectionSql,
   supersededOutboxCountSql,
   supersededOutboxProbeSql,
   supersededOutboxSelectionSql,
@@ -19,7 +24,22 @@ export type OutboxPruneResult = { deleted: number; more: boolean }
 
 export type OutboxPruneDrainOptions = { timeBoundMs?: number }
 
+export type OutboxPayloadReleaseOptions = { now: number; limit: number; dryRun?: boolean }
+export type OutboxPayloadReleaseResult = { released: number; more: boolean }
+export type OutboxPayloadReleaseDrainOptions = { now: number; timeBoundMs?: number }
+
 export const OUTBOX_PRUNE_CHUNK_SIZE = 5_000
+
+/** Deletes one identity's delivered, unprotected rows inside the caller's transaction. */
+export function deleteDeliveredUnprotectedOutboxRows(
+  database: Database,
+  kind: string,
+  rowId: string,
+): number {
+  return database
+    .query<never, [string, string]>(deliveredUnprotectedOutboxDeleteSql)
+    .run(kind, rowId).changes
+}
 
 function validateLimit(limit: number): void {
   if (!Number.isSafeInteger(limit) || limit < 1)
@@ -82,4 +102,58 @@ export function drainSupersededOutboxRows(
     (options.timeBoundMs === undefined || performance.now() - started < options.timeBoundMs)
   )
   return { deleted, more }
+}
+
+function payloadReleaseArgs(now: number): [string, string] {
+  return [new Date(now - OUTBOX_PAYLOAD_RETENTION_MS).toISOString(), RELEASED_OUTBOX_PAYLOAD]
+}
+
+export function releaseDeliveredOutboxPayloads(
+  database: Database,
+  options: OutboxPayloadReleaseOptions,
+): OutboxPayloadReleaseResult {
+  validateLimit(options.limit)
+  const args = payloadReleaseArgs(options.now)
+  if (options.dryRun) {
+    const count = database
+      .query<{ count: number }, [string, string]>(releasableOutboxPayloadCountSql)
+      .get(...args)!.count
+    return { released: count, more: count > 0 }
+  }
+  const release = (): OutboxPayloadReleaseResult => {
+    const selected = database
+      .query<{ id: number }, [string, string, number]>(releasableOutboxPayloadSelectionSql)
+      .all(...args, options.limit)
+    const update = database.query('UPDATE outbox SET payload=? WHERE id=?')
+    for (const row of selected) update.run(RELEASED_OUTBOX_PAYLOAD, row.id)
+    const more = Boolean(
+      database
+        .query<{ id: number }, [string, string]>(releasableOutboxPayloadProbeSql)
+        .get(...args),
+    )
+    return { released: selected.length, more }
+  }
+  return database.inTransaction ? release() : writeTransaction(release, database)
+}
+
+/** Drains payload-release chunks until no eligible rows remain or the time bound expires. */
+export function drainDeliveredOutboxPayloads(
+  database: Database,
+  options: OutboxPayloadReleaseDrainOptions,
+): OutboxPayloadReleaseResult {
+  const started = performance.now()
+  let released = 0
+  let more = false
+  do {
+    const result = releaseDeliveredOutboxPayloads(database, {
+      now: options.now,
+      limit: OUTBOX_PRUNE_CHUNK_SIZE,
+    })
+    released += result.released
+    more = result.more
+  } while (
+    more &&
+    (options.timeBoundMs === undefined || performance.now() - started < options.timeBoundMs)
+  )
+  return { released, more }
 }

@@ -1570,6 +1570,14 @@
       "tag": "0205_contention_occurrences",
       "breakpoints": true,
       "compatibility": "fenced"
+    },
+    {
+      "idx": 206,
+      "version": "6",
+      "when": 1793980800000,
+      "tag": "0206_orphan_contention_outbox",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

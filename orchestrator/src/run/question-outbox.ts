@@ -6,6 +6,10 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
+import {
+  RELEASED_OUTBOX_PAYLOAD,
+  releasedOutboxPayloadSql,
+} from '../record/outbox-prune-payload.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 type QuestionRow = Record<string, unknown> & {
@@ -125,14 +129,20 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
 
 export function backfillQuestionRecords(database: Database): { enqueued: number } {
   const questions = database
-    .query<{ record_id: string }, []>(
-      `SELECT record_id FROM question WHERE COALESCE(json_extract((
-         SELECT payload FROM outbox
+    .query<{ record_id: string }, [string]>(
+      `SELECT question.record_id FROM question
+       LEFT JOIN outbox latest ON latest.id=(
+         SELECT id FROM outbox
           WHERE kind='question' AND row_id=question.record_id
           ORDER BY id DESC LIMIT 1
-       ), '$.number'), -1) != question.number ORDER BY number`,
+       )
+       WHERE CASE
+         WHEN ${releasedOutboxPayloadSql('latest.payload')} THEN question.number
+         ELSE COALESCE(json_extract(latest.payload, '$.number'), -1)
+       END != question.number
+       ORDER BY question.number`,
     )
-    .all()
+    .all(RELEASED_OUTBOX_PAYLOAD)
   for (const row of questions) enqueueQuestionRecord(database, row.record_id)
   return { enqueued: questions.length }
 }

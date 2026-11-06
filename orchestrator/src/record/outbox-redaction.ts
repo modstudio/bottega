@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { isReleasedOutboxPayload } from './outbox-prune-payload.ts'
 import { sanitizeOutboxPayloadForRules, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 const DEFAULT_SYNCED_REDACTION_RULES = [
@@ -30,6 +31,7 @@ export type SyncedRedactionResult = {
   enqueued: number
   wouldEnqueue: number
   skipped: SyncedRedactionSkip[]
+  releasedSkipped: number
   dryRun: boolean
 }
 
@@ -125,7 +127,12 @@ export function redactSyncedOutbox(
   const skipped: SyncedRedactionSkip[] = []
   let enqueued = 0
   let wouldEnqueue = 0
+  let releasedSkipped = 0
   for (const row of latestSyncedRows(database)) {
+    if (isReleasedOutboxPayload(row.payload)) {
+      releasedSkipped += 1
+      continue
+    }
     const sanitized = sanitizeOutboxPayloadForRules(row.kind, parsePayload(row), options.rules)
     if (sanitized.matches.length === 0) continue
     const recordRules = [...new Set(sanitized.matches.map((match) => match.rule))].toSorted()
@@ -185,6 +192,7 @@ export function redactSyncedOutbox(
     enqueued,
     wouldEnqueue,
     skipped,
+    releasedSkipped,
     dryRun: options.dryRun,
   }
 }
@@ -192,6 +200,7 @@ export function redactSyncedOutbox(
 export function renderSyncedRedaction(result: SyncedRedactionResult): string {
   const lines = result.counts.map((row) => `${row.kind}\t${row.rule}\t${row.count}`)
   for (const row of result.skipped) lines.push(`skipped\t${row.kind}\t${row.recordId}`)
+  lines.push(`released payloads skipped\t${result.releasedSkipped}`)
   lines.push(
     result.dryRun
       ? `enqueued\t0\tdry run; would enqueue ${result.wouldEnqueue}`

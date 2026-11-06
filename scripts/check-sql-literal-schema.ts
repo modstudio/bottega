@@ -14,6 +14,12 @@ import {
 } from '../orchestrator/src/lens/lens-profile-pin-version-sql.ts'
 import { PROJECT_REFERENCES } from '../orchestrator/src/project/project-reference-counts.ts'
 import {
+  deliveredUnprotectedOutboxDeleteSql,
+  releasableOutboxPayloadCountSql,
+  releasableOutboxPayloadProbeSql,
+  releasableOutboxPayloadSelectionSql,
+} from '../orchestrator/src/record/outbox-prune-query.ts'
+import {
   POOL_CANDIDATE_ROWS_SQL,
   POOL_LATENCY_ROWS_SQL,
   POOL_PROMPT_BUCKET_ROWS_SQL,
@@ -60,6 +66,22 @@ type GlobalSubstitution = {
  * substitution would otherwise prepare SQL that file never writes.
  */
 const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
+  deliveredUnprotectedOutboxDeleteSql: {
+    values: [deliveredUnprotectedOutboxDeleteSql],
+    declaredIn: 'orchestrator/src/record/outbox-prune-query.ts',
+  },
+  releasableOutboxPayloadCountSql: {
+    values: [releasableOutboxPayloadCountSql],
+    declaredIn: 'orchestrator/src/record/outbox-prune-query.ts',
+  },
+  releasableOutboxPayloadProbeSql: {
+    values: [releasableOutboxPayloadProbeSql],
+    declaredIn: 'orchestrator/src/record/outbox-prune-query.ts',
+  },
+  releasableOutboxPayloadSelectionSql: {
+    values: [releasableOutboxPayloadSelectionSql],
+    declaredIn: 'orchestrator/src/record/outbox-prune-query.ts',
+  },
   SLOW_STATEMENT_BUCKET_PREDICATE: {
     values: [SLOW_STATEMENT_BUCKET_PREDICATE],
     declaredIn: 'orchestrator/src/database/slow-statements.ts',

@@ -167,6 +167,29 @@ test('skips null-only, mismatched, open, missing, and hosted-diverged findings',
   })
 })
 
+test('a released latest receipt skips rather than restoring an older retained payload', () => {
+  const seed = seedFinding('restore-triage-released')
+  appendSource(seed)
+  db()
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+       VALUES (?,'review_finding',?,'','2026-09-23T00:00:00.000Z','2026-09-23T00:01:00.000Z')`,
+    )
+    .run(newRecordId(), seed.remintedRecordId)
+
+  const report = restoreReviewTriage(db(), { dryRun: false })
+
+  expect(report.applied).toBe(0)
+  expect(report.byReason).toEqual({ 'payload released': 1 })
+  expect(
+    db()
+      .query<{ record_id: string; disposition: string | null }, [string]>(
+        'SELECT record_id,disposition FROM review_finding WHERE record_id=?',
+      )
+      .get(seed.remintedRecordId),
+  ).toEqual({ record_id: seed.remintedRecordId, disposition: null })
+})
+
 test('dry-run reports the amendment but writes nothing', () => {
   const seed = seedFinding('restore-triage-dry-run')
   appendSource(seed)

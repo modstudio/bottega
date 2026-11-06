@@ -2,6 +2,7 @@
 /** Counts secret-shaped free-text leaves in local outbox payloads. Must not print matched text. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isReleasedOutboxPayload } from './outbox-prune-payload.ts'
 import { firstOutboxEvidenceRule } from './outbox-sanitize.ts'
 
 type OutboxSecretAuditStatus = 'synced' | 'pending' | 'quarantined' | 'retired'
@@ -55,7 +56,7 @@ function unreadableOutboxAuditMessage(ids: number[], includeIds: boolean): strin
 export function auditOutboxSecrets(
   database: Database,
   options: { ids: boolean } = { ids: false },
-): { counts: OutboxSecretAuditCount[] } {
+): { counts: OutboxSecretAuditCount[]; releasedSkipped: number } {
   const rows = database
     .query<OutboxAuditRow, []>(
       `SELECT id, kind, payload, synced_at, quarantined_at, retired_at FROM outbox ORDER BY id`,
@@ -63,7 +64,12 @@ export function auditOutboxSecrets(
     .all()
   const grouped = new Map<string, OutboxSecretAuditCount>()
   const unreadable: number[] = []
+  let releasedSkipped = 0
   for (const row of rows) {
+    if (isReleasedOutboxPayload(row.payload)) {
+      releasedSkipped += 1
+      continue
+    }
     const parsed = parseOutboxObject(row.payload)
     if (parsed === null) {
       unreadable.push(row.id)
@@ -95,14 +101,19 @@ export function auditOutboxSecrets(
         left.rule.localeCompare(right.rule) ||
         left.status.localeCompare(right.status),
     ),
+    releasedSkipped,
   }
 }
 
-export function renderOutboxSecretAudit(report: { counts: OutboxSecretAuditCount[] }): string {
-  return report.counts
-    .map((row) => {
+export function renderOutboxSecretAudit(report: {
+  counts: OutboxSecretAuditCount[]
+  releasedSkipped: number
+}): string {
+  return [
+    ...report.counts.map((row) => {
       const ids = row.ids ? `\t${row.ids.join(',')}` : ''
       return `${row.kind}\t${row.rule}\t${row.status}\t${row.count}${ids}`
-    })
-    .join('\n')
+    }),
+    `released payloads skipped\t${report.releasedSkipped}`,
+  ].join('\n')
 }

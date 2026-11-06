@@ -105,7 +105,7 @@ export async function syncCommand(
   await automaticallyAdoptHostedBoard(presentation, dependencies.boardAdoption)
   if (result.backfill) {
     presentation.log(
-      `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-live ${result.backfill.skippedLive}`,
+      `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-released ${result.backfill.skippedReleased}, skipped-live ${result.backfill.skippedLive}`,
     )
     presentation.log(`question backfill enqueued ${result.backfill.questions.enqueued}`)
     presentation.log(`score backfill enqueued ${result.backfill.scores}`)

@@ -157,6 +157,9 @@ test('contention prune keeps pending, quarantined, and unrolled raw rows', () =>
     expect(
       database.query('SELECT record_id FROM contention WHERE record_id=?').get(unrolled),
     ).not.toBeNull()
+    expect(
+      database.query("SELECT id FROM outbox WHERE kind='contention' AND row_id=?").get(quarantined),
+    ).not.toBeNull()
   } finally {
     database.close()
   }
@@ -219,6 +222,9 @@ test('contention prune removes a delivered slow-statement bucket past the raw wi
     })
     expect(
       database.query('SELECT record_id FROM contention WHERE record_id=?').get(bucket),
+    ).toBeNull()
+    expect(
+      database.query("SELECT id FROM outbox WHERE kind='contention' AND row_id=?").get(bucket),
     ).toBeNull()
   } finally {
     database.close()

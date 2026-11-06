@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { pruneSupersededOutboxRows } from './outbox-prune.ts'
+import { pruneSupersededOutboxRows, releaseDeliveredOutboxPayloads } from './outbox-prune.ts'
+import { OUTBOX_PAYLOAD_RETENTION_MS, RELEASED_OUTBOX_PAYLOAD } from './outbox-prune-payload.ts'
 import { supersededOutboxSelectionSql } from './outbox-prune-query.ts'
 import { localQuestionCountForSpace } from './record-doctor.ts'
 import { applyRecordSyncBatchResults } from './record-sync-results.ts'
@@ -163,6 +164,55 @@ test('dry-run uses a read-only handle without taking a write transaction', () =>
     readonly.close()
     rmSync(directory, { recursive: true, force: true })
   }
+})
+
+test('payload release honors its window, protected states, audits, and idempotence', () => {
+  const database = migratedTestDatabase()
+  const now = Date.parse('2026-11-05T12:00:00.000Z')
+  const outside = addRow(database, 'outside', 'delivered')
+  const inside = addRow(database, 'inside', 'delivered')
+  const quarantined = addRow(database, 'quarantined-release', 'quarantined')
+  const retired = addRow(database, 'retired-release', 'retired')
+  const pending = addRow(database, 'pending-release', 'pending')
+  const quarantineAudited = addRow(database, 'quarantine-audited-release', 'delivered')
+  const redactionAudited = addRow(database, 'redaction-audited-release', 'delivered')
+  database
+    .query('UPDATE outbox SET synced_at=? WHERE id=?')
+    .run(new Date(now - OUTBOX_PAYLOAD_RETENTION_MS - 1).toISOString(), outside)
+  database
+    .query('UPDATE outbox SET synced_at=? WHERE id=?')
+    .run(new Date(now - OUTBOX_PAYLOAD_RETENTION_MS + 1).toISOString(), inside)
+  database
+    .query('UPDATE outbox SET synced_at=? WHERE id IN (?,?)')
+    .run(STAMP, quarantineAudited, redactionAudited)
+  audit(database, 'outbox_quarantine_audit', quarantineAudited)
+  audit(database, 'outbox_redaction_audit', redactionAudited)
+
+  expect(releaseDeliveredOutboxPayloads(database, { now, limit: 100, dryRun: true })).toEqual({
+    released: 1,
+    more: true,
+  })
+  expect(releaseDeliveredOutboxPayloads(database, { now, limit: 100 })).toEqual({
+    released: 1,
+    more: false,
+  })
+  expect(
+    database
+      .query<{ payload: string }, [number]>('SELECT payload FROM outbox WHERE id=?')
+      .get(outside)!.payload,
+  ).toBe(RELEASED_OUTBOX_PAYLOAD)
+  for (const id of [inside, quarantined, retired, pending, quarantineAudited, redactionAudited]) {
+    expect(
+      database
+        .query<{ payload: string }, [number]>('SELECT payload FROM outbox WHERE id=?')
+        .get(id)!.payload,
+    ).not.toBe(RELEASED_OUTBOX_PAYLOAD)
+  }
+  expect(releaseDeliveredOutboxPayloads(database, { now, limit: 100 })).toEqual({
+    released: 0,
+    more: false,
+  })
+  database.close()
 })
 
 test('acknowledgement prunes earlier delivered rows for that identity only', () => {

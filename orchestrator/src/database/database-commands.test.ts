@@ -99,8 +99,9 @@ test('incremental vacuum setup converts once and reports size and elapsed time',
   expect(db().query<{ auto_vacuum: number }, []>('PRAGMA auto_vacuum').get()).toEqual({
     auto_vacuum: 2,
   })
-  expect(lines).toHaveLength(1)
-  expect(lines[0]).toMatch(
+  expect(lines).toHaveLength(2)
+  expect(lines[0]).toBe('outbox released 0 payloads; backlog remains no')
+  expect(lines[1]).toMatch(
     /^incremental vacuum setup: pruned 1 rows, \d+ bytes before, \d+ bytes after, 5ms elapsed$/,
   )
   expect(db().query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()).toEqual({
@@ -110,7 +111,7 @@ test('incremental vacuum setup converts once and reports size and elapsed time',
     { log: (line) => lines.push(line) },
     { inFlightRuns: () => [] },
   )
-  expect(lines[1]).toBe(
+  expect(lines[2]).toBe(
     `incremental vacuum setup skipped: store is already incremental; retry with ${PLATFORM_SLUG} machine update`,
   )
 })

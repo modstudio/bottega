@@ -182,7 +182,7 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
     store: 'orchestrator',
     table: 'outbox',
     class: 'journal',
-    keep: 'A delivered row stays until a later delivered row for the same kind and row identity exists; pending, quarantined, retired, latest-delivered, and audited rows stay.',
+    keep: 'Superseded delivered rows are deleted by orchestrator/src/record/outbox-prune.ts#pruneSupersededOutboxRows. The latest delivered row stays as a receipt and its payload is released after OUTBOX_PAYLOAD_RETENTION_MS, except that orchestrator/src/database/contention-retention.ts#pruneContentionRows deletes an eligible contention receipt with its pruned source row; pending, quarantined, retired, and audited rows keep their payload.',
     remover: 'orchestrator/src/record/outbox-prune.ts#pruneSupersededOutboxRows',
     slice: 'outbox',
   },

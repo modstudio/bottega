@@ -57,6 +57,9 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
           drain: () => {
             throw new Error('prune busy')
           },
+          release: () => {
+            throw new Error('release busy')
+          },
           releasePages: () => {
             throw new Error('vacuum busy')
           },
@@ -78,6 +81,7 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
       close_out_outcome: 'absent',
     })
     expect(lines).toContain('outbox prune failed: prune busy')
+    expect(lines).toContain('outbox release failed: release busy')
     expect(lines).toContain('contention rollup failed: rollup busy')
     expect(lines).toContain('contention prune failed: contention prune busy')
     expect(lines).toContain('monitor prune failed: monitor prune busy')

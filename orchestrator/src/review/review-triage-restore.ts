@@ -3,6 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { z } from 'zod'
 import { DB_PATH, writableDb, writeTransaction } from '../database/db.ts'
+import { isReleasedOutboxPayload } from '../record/outbox-prune-payload.ts'
 import { amendFinding, triageValues } from './review-triage.ts'
 import {
   decideTriageRestore,
@@ -20,7 +21,7 @@ type ReviewFinding = Candidate & { disposition: string | null }
 type SourceLookup = {
   row: OutboxRow | null
   source: TriageRestoreSource | null
-  status: 'missing' | 'invalid' | 'valid'
+  status: 'missing' | 'released' | 'invalid' | 'valid'
 }
 type TriageRestoreResult = {
   finding: string
@@ -110,8 +111,17 @@ function reviewFindings(database: Database, reviewRecordId: string): ReviewFindi
 
 function latestSource(
   database: Database,
-  finding: Pick<Candidate, 'reviewRecordId' | 'ordinal'>,
+  finding: Pick<Candidate, 'recordId' | 'reviewRecordId' | 'ordinal'>,
 ): SourceLookup {
+  const receipt = database
+    .query<OutboxRow, [string]>(
+      `SELECT id,row_id,payload FROM outbox
+        WHERE kind='review_finding' AND row_id=? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(finding.recordId)
+  if (receipt && isReleasedOutboxPayload(receipt.payload)) {
+    return { row: receipt, source: null, status: 'released' }
+  }
   const row = database
     .query<OutboxRow, [string, number]>(
       `SELECT id, row_id, payload FROM outbox
