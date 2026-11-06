@@ -1,6 +1,6 @@
-import { expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -15,6 +15,16 @@ import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sourc
 import { migrationWindow } from './migration-window-state.ts'
 import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
+
+const fixturePackage = join(dir, 'package.json')
+
+beforeAll(() => {
+  writeFileSync(fixturePackage, JSON.stringify({ name: PLATFORM_SLUG }))
+})
+
+afterAll(() => {
+  rmSync(fixturePackage, { force: true })
+})
 
 function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()
@@ -93,6 +103,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
       migrate: () => {
         migrated = true
       },
+      runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(migrationDrain(db())).toBeNull()
@@ -129,6 +140,7 @@ test('an additive machine update marks only the store-open window around pull an
           expect(migrationDrain(db())).toBeNull()
           phases.push('migrate')
         },
+        runLaunchAgentsRefreshVerb: () => {},
       },
     )
     expect(phases).toEqual(['pull', 'migrate'])
@@ -240,6 +252,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
           expect(migrationDrain(db())?.phase).toBe('migrating')
           events.push('migrate')
         },
+        runLaunchAgentsRefreshVerb: () => {},
       },
     )
   } finally {
@@ -451,6 +464,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
         return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
       },
       migrate: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(lines[0]).toBe(`updating the ${PLATFORM_NAME} checkout at ${target}`)
@@ -486,6 +500,7 @@ test('machine update defaults the target to the installation root', async () => 
         return ''
       },
       migrate: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(projectPaths).toEqual([target])
@@ -513,6 +528,7 @@ test('machine update does not name the checkout when the caller is already there
             ? JSON.stringify({ entries: migrationJournal() })
             : '',
       migrate: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(lines).toHaveLength(2)
@@ -546,10 +562,83 @@ test('machine update keeps its successful result when store maintenance fails', 
         maintainStore: () => {
           throw new Error('store busy')
         },
+        runLaunchAgentsRefreshVerb: () => {},
       },
     ),
   ).resolves.toBeUndefined()
   expect(lines).toEqual([
     `incremental vacuum setup skipped: store busy; retry with ${PLATFORM_SLUG} machine update`,
   ])
+})
+
+test('checkout update refreshes through deps.cwd when the running identity root differs', async () => {
+  const target = mkdtempSync(join(tmpdir(), 'machine-update-checkout.'))
+  const refreshed: string[] = []
+  writeFileSync(join(target, 'package.json'), JSON.stringify({ name: PLATFORM_SLUG }))
+  try {
+    await machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: target,
+        identity: {
+          kind: 'checkout',
+          root: join(target, 'running-checkout'),
+          version: 'development',
+        },
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: target,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) =>
+          args[0] === 'branch'
+            ? 'main'
+            : args[0] === 'show'
+              ? JSON.stringify({ entries: migrationJournal() })
+              : '',
+        migrate: () => {},
+        maintainStore: () => {},
+        runLaunchAgentsRefreshVerb: (binary) => refreshed.push(binary),
+      },
+    )
+    expect(refreshed).toEqual([resolve(target, 'bin', PLATFORM_SLUG)])
+  } finally {
+    rmSync(target, { recursive: true, force: true })
+  }
+})
+
+test('distribution update refreshes through the installed target and preserves its remedy failure', async () => {
+  const target = realpathSync(process.execPath)
+  const refreshed: string[] = []
+  let updated = false
+  const remedy = `com.user.orch-record-sync definition still drifted; run ${PLATFORM_SLUG} machine setup apply`
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        authorityRefusal: () => null,
+        identity: {
+          kind: 'distribution',
+          root: resolve(target, '..'),
+          manifest: {
+            name: PLATFORM_NAME,
+            version: '1.2.3',
+            built: '2026-11-06T12:00:00.000Z',
+            commit: 'abc1234',
+          },
+        },
+        updateDistribution: async () => {
+          updated = true
+        },
+        maintainStore: () => {},
+        runLaunchAgentsRefreshVerb: (binary) => {
+          refreshed.push(binary)
+          throw new Error(remedy)
+        },
+      },
+    ),
+  ).rejects.toThrow(remedy)
+  expect(updated).toBeTrue()
+  expect(refreshed).toEqual([target])
 })

@@ -473,6 +473,7 @@ export const CLI_COMMANDS = new Set([
   'gate',
   'jobs',
   'journal',
+  'launch-agents',
   'lens',
   'link-tasks',
   'load',
