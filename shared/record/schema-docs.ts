@@ -62,7 +62,7 @@ const subjectRule = (scope: AnyPgColumn, subject: AnyPgColumn, owner: AnyPgColum
   (${owner} IS NOT NULL AND ${scope} IN ('canon','settings') AND ${subject} IS NULL) OR
   (${owner} IS NULL AND (
   (${scope} IN ('machine','global') AND ${subject} IS NULL) OR
-  (${scope} IN ('project','stack','agent','job','resume') AND ${subject} IS NOT NULL) OR
+  (${scope} IN ('project','stack','agent','job','resume','context') AND ${subject} IS NOT NULL) OR
   ${scope} IN ('canon','settings')
   ))
 )`
@@ -109,7 +109,7 @@ export const doc = pgTable.withRLS(
   (table) => [
     check(
       'doc_scope_check',
-      sql`${table.scope} IN ('project','machine','agent','job','global','stack','resume','canon','settings')`,
+      sql`${table.scope} IN ('project','machine','agent','job','global','stack','resume','canon','settings','context')`,
     ),
     check('doc_delivery_check', sql`${table.delivery} IN ('inject','demand')`),
     check(
@@ -231,7 +231,7 @@ export const docRevision = pgTable.withRLS(
   (table) => [
     check(
       'doc_revision_scope_check',
-      sql`${table.scope} IN ('project','machine','agent','job','global','stack','resume','canon','settings')`,
+      sql`${table.scope} IN ('project','machine','agent','job','global','stack','resume','canon','settings','context')`,
     ),
     check('doc_revision_delivery_check', sql`${table.delivery} IN ('inject','demand')`),
     check(

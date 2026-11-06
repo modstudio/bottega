@@ -344,6 +344,8 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../../../shared/record/tenant.ts',
       '../canon/canon-import-policy.ts',
       '../doc/canon-import-collision.ts',
+      '../doc/context-item-codec.ts',
+      '../doc/doc-context-write.ts',
       '../doc/doc-resume-frontmatter.ts',
       '../doc/doc-resume-write.ts',
       '../doc/doc-status.ts',

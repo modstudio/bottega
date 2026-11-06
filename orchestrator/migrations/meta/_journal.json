@@ -1578,6 +1578,14 @@
       "tag": "0206_orphan_contention_outbox",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 207,
+      "version": "6",
+      "when": 1793980800001,
+      "tag": "0207_context_doc_scope",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

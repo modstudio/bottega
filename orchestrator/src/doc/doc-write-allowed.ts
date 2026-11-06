@@ -132,8 +132,9 @@ export function importedDocDelivery(scope: string): 'demand' | undefined {
   return scope === 'project' || scope === 'global' ? 'demand' : undefined
 }
 
+/** Canon, settings and context items never pack into prompts, whatever the caller asked. */
 export function forcedDocDelivery(scope: string): 'demand' | null {
-  return scope === 'canon' || scope === 'settings' ? 'demand' : null
+  return scope === 'canon' || scope === 'settings' || scope === 'context' ? 'demand' : null
 }
 
 /** Articles are discovered on demand and never participate in canon or prompt injection. */
@@ -261,29 +262,40 @@ export function decideDocRevisionWrite(input: {
     !input.isCreate &&
     input.scope !== 'canon' &&
     input.scope !== 'settings' &&
+    input.scope !== 'context' &&
     input.expected === undefined
   ) {
     return { allow: true }
   }
 
   const current = input.current ?? '(no current revision)'
+  const remedy = revisionRemedy(input.scope, current)
   if (!input.isCreate && input.expected === undefined) {
     return {
       allow: false,
-      reason:
-        `refusing ${input.scope} update at current revision ${current}; pass --expect ${current}\n` +
-        `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
+      reason: `refusing ${input.scope} update at current revision ${current}; pass ${remedy.flag}\n${remedy.reread}`,
     }
   }
   if (input.expected !== input.current) {
     return {
       allow: false,
-      reason:
-        `refusing stale document update: expected revision ${input.expected}, current revision ${current}\n` +
-        `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
+      reason: `refusing stale document update: expected revision ${input.expected}, current revision ${current}\n${remedy.reread}`,
     }
   }
   return { allow: true }
+}
+
+/** Context items are revised through their own verbs, so their refusal names those verbs' flag. */
+function revisionRemedy(scope: string, current: string) {
+  return scope === 'context'
+    ? {
+        flag: `--expected-revision ${current} (expected_revision over MCP)`,
+        reread: `re-read with ${PLATFORM_SLUG} context show (get_context over MCP) and re-apply the edit`,
+      }
+    : {
+        flag: `--expect ${current}`,
+        reread: `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
+      }
 }
 
 /** Hosted services have no checkout inventory, so they enforce every pure rule except references. */

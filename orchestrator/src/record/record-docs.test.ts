@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { encodeContextItem } from '../doc/context-item-codec.ts'
 import { recordDocLintRefusal } from '../doc/doc-write-allowed.ts'
 import { checkRecordCommands } from './record-doc-command-check.ts'
 import { recordDocRevisionIdentityRefusal } from './record-doc-mapping.ts'
+import { assertContextItemShape } from './record-docs.ts'
 
 const doc = (body: string) => ({
   scope: 'machine',
@@ -70,4 +72,20 @@ test('hosted import refuses an unknown customer command and accepts a known one'
       imported.audiences,
     ),
   ).not.toThrow()
+})
+
+test('the hosted record refuses a context item that does not decode or breaks its item rules', () => {
+  expect(() => assertContextItemShape('context', 'raw', 'No frontmatter.')).toThrow(
+    'requires YAML frontmatter',
+  )
+  const ruling = encodeContextItem({ kind: 'ruling', source: 'agent', body: 'Ship it.' })
+  expect(() => assertContextItemShape('context', 'ship', ruling)).toThrow('non-empty objection')
+  expect(() =>
+    assertContextItemShape(
+      'context',
+      'next',
+      encodeContextItem({ kind: 'next-action', source: 'run:1', body: 'Continue.' }),
+    ),
+  ).not.toThrow()
+  expect(() => assertContextItemShape('machine', 'raw', 'No frontmatter.')).not.toThrow()
 })

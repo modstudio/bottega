@@ -15,6 +15,8 @@ import {
 import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
+import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
+import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
 import type { SelectedDocWriteTree } from '../doc/doc-write-tree.ts'
 import {
@@ -431,10 +433,56 @@ function registerConsumeAndRevisionTools(server: McpServer): void {
   registerDocRevisionTool(server)
 }
 
+function registerContextTools(server: McpServer): void {
+  const holder = { task: z.string().optional(), session: z.string().uuid().optional() }
+  server.registerTool(
+    'get_context',
+    { description: 'Get the context items for one holder.', inputSchema: z.object(holder) },
+    async (input) => text(await getContext(input)),
+  )
+  server.registerTool(
+    'set_context_item',
+    {
+      description: 'Create or revise one context item.',
+      inputSchema: z.object({
+        ...holder,
+        id: z
+          .string()
+          .regex(/^[a-z0-9][a-z0-9-]*$/)
+          .max(64),
+        kind: z.enum(CONTEXT_ITEM_KINDS),
+        source: z.string().trim().min(1),
+        objection: z.string().trim().min(1).optional(),
+        body: z.string(),
+        expected_revision: z.string().optional(),
+      }),
+    },
+    async ({ expected_revision, ...input }) =>
+      text(await setContextItem({ ...input, expectedRevision: expected_revision })),
+  )
+  server.registerTool(
+    'drop_context_item',
+    {
+      description: 'Remove one context item.',
+      inputSchema: z.object({
+        ...holder,
+        id: z
+          .string()
+          .regex(/^[a-z0-9][a-z0-9-]*$/)
+          .max(64),
+        expected_revision: z.string().optional(),
+      }),
+    },
+    async ({ expected_revision, ...input }) =>
+      text(await dropContextItem({ ...input, expectedRevision: expected_revision })),
+  )
+}
+
 export function registerDocTools(server: McpServer, ports: DocToolPorts): void {
   registerReadDocTools(server)
   registerSetDocTool(server, ports)
   registerSetDocStatusTool(server)
   registerRemoveDocTool(server, ports)
   registerConsumeAndRevisionTools(server)
+  registerContextTools(server)
 }

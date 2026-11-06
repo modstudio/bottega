@@ -33,6 +33,11 @@ export function secretScanRefusal(
 
 export function scanDocBody(input: DocAddress, scanSecrets: SecretScanner): SecretScanOutcome {
   const outcome = scanSecrets(input.body)
+  if (input.scope === 'context' && outcome.status === 'unavailable') {
+    throw new Error(
+      `secret scan refused ${addressOf(input)}: ${outcome.reason}; context writes fail closed`,
+    )
+  }
   if (outcome.status !== 'found') return outcome
   throw new Error(secretScanRefusal(input, outcome))
 }

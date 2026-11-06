@@ -453,6 +453,20 @@ export function listClaims(
   return { claims }
 }
 
+/** The task keys a session holds by a live claim, in every project. */
+export function liveTaskClaimsOfSession(
+  session: string,
+  clock = Date.now(),
+  database = db(),
+): string[] {
+  const rows = database
+    .query(
+      `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE holder_session=? AND subject_kind='task' AND closed_at IS NULL ORDER BY subject_value`,
+    )
+    .all(session) as ClaimRow[]
+  return rows.filter((row) => rowLive(row, clock, database)).map((row) => row.subject_value)
+}
+
 export function releaseTaskClaims(
   key: string,
   project: string,

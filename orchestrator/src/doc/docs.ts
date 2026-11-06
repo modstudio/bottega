@@ -28,6 +28,7 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
+import { assertContextDropAllowed, assertContextSetAllowed } from './context-write-adapter.ts'
 import {
   assertLocalArticleDelivery,
   type DocWriteContext,
@@ -131,17 +132,17 @@ const hostedDocWriteIdentity = (identity: ReturnType<typeof resolvedDocWriteIden
   sessionId: identity.session,
 })
 
-function assertSetDocAllowed(input: DocWriteInput): void {
+async function assertSetDocAllowed(input: DocWriteInput): Promise<void> {
   assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope !== 'resume') return
   const refusal = rw.resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body))
   if (refusal) throw new Error(refusal)
 }
 
-type DocWriteAllowedInput = Parameters<typeof assertDocWriteAllowed>[0]
+type DocWriteAllowedInput = DocWriteInput & { delivery: 'inject' | 'demand' }
 
-function assertRestoredDocWriteAllowed(input: DocWriteAllowedInput): string[] {
-  const warnings = assertDocWriteAllowed(input)
+async function assertRestoredDocWriteAllowed(input: DocWriteAllowedInput): Promise<string[]> {
+  const warnings = await assertDocWriteAllowed(input)
   if (input.scope !== 'resume') return warnings
   const refusal = rw.resumeRestoreRefusal(
     rw.resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body)),
@@ -361,7 +362,9 @@ function assertCanonRemovalAllowed(
   if (refusal) throw new Error(refusal)
 }
 
-function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'demand' }): string[] {
+/** Every write verb reaches this check, so it carries the context item policy. */
+async function assertDocWriteAllowed(input: DocWriteAllowedInput): Promise<string[]> {
+  await assertContextSetAllowed(input)
   const inject = refuseProjectOrGlobalInject(input.scope, input.delivery)
   if (inject) throw new Error(inject)
   const settings = refuseSettingsBody(input.scope, input.body)
@@ -370,10 +373,7 @@ function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'de
   return assertCanonWriteAllowed(input)
 }
 
-export {
-  lintStoredDoc,
-  storedDocWarnings,
-} from './doc-lint-adapter.ts'
+export { lintStoredDoc, storedDocWarnings } from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   assertLocalReferenceWrite(prior, input)
@@ -405,7 +405,7 @@ async function setDocWithOp(
   assertDocBodyCommands(input, { kind, form: articleFields.form, audiences: tree.audiences })
   const lifecycle = localDocumentLifecycle(input, prior)
   assertLocalArticleDelivery(input, delivery, kind)
-  const canonWarnings = assertDocWriteAllowed({ ...input, delivery })
+  const canonWarnings = await assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
   await assertDocProse(input, prior)
   const written = await applyRecordWriteAuthority({
@@ -475,7 +475,7 @@ async function setDocWithOp(
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
-  assertSetDocAllowed(input)
+  await assertSetDocAllowed(input)
   const prior = getDoc(input.scope, input.subject, input.slug, input.owner ?? null)
   const refusal = rw.resumeConsumptionWriteRefusal(input, prior?.body ?? null)
   if (refusal) throw new Error(refusal)
@@ -596,9 +596,10 @@ export async function removeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
+  await assertContextDropAllowed(doc)
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
-    { scope, expectedRevision: context.expectedRevision },
+    { scope, slug, expectedRevision: context.expectedRevision },
     doc.revision,
     false,
   )
@@ -905,7 +906,7 @@ export async function restoreDoc(
     expectedCurrent,
     false,
   )
-  const canonWarnings = assertRestoredDocWriteAllowed({
+  const canonWarnings = await assertRestoredDocWriteAllowed({
     scope,
     subject,
     owner,
