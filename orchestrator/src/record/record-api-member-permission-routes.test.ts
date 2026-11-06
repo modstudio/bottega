@@ -16,15 +16,7 @@ function appWith(setSpaceMemberPermission: ReturnType<typeof mock>) {
   }>()
   registerRecordMemberPermissionRoutes(
     app,
-    {
-      listSpaceConfigAccess: async () => [],
-      grantSpaceConfigAccess: async () => undefined,
-      setSpaceMemberPermission,
-      withdrawSpaceConfigAccess: async () => ({
-        revokedMachineKeyIds: [],
-        readableSecretKeys: [],
-      }),
-    },
+    { setSpaceMemberPermission },
     {
       scope: () => tenant,
       noSpace: () => Response.json({ error: 'no space' }, { status: 422 }),
