@@ -12,6 +12,7 @@ import {
   GitCompareArrows,
   Inbox,
   Kanban,
+  KeyRound,
   Laptop,
   type LucideIcon,
   Mail,
@@ -146,6 +147,7 @@ const NAV_TREE: { label: string; icon: LucideIcon; items: ModeLink[] }[] = [
     items: [
       { to: '/projects', label: 'Projects', icon: FolderGit2 },
       { to: '/members', label: 'Members', icon: Users, only: 'hosted' },
+      { to: '/secrets', label: 'Secrets', icon: KeyRound, only: 'hosted' },
       { to: '/settings', label: 'Report email', icon: Mail },
     ],
   },
@@ -230,7 +232,8 @@ export function isHostedPath(pathname: string) {
     path === '/ratio' ||
     path === '/spend' ||
     path === '/settings' ||
-    path === '/members'
+    path === '/members' ||
+    path === '/secrets'
   ) {
     return true
   }
