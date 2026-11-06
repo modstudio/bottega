@@ -36,7 +36,7 @@ export const RECORD_CHANGE_SERVED_TABLES = [
   'routing_evidence',
 ] as const
 type RecordChangeServedTable = (typeof RECORD_CHANGE_SERVED_TABLES)[number]
-const RECORD_CHANGE_LOG_TABLES = [
+export const RECORD_CHANGE_LOG_TABLES = [
   ...RECORD_CHANGE_SERVED_TABLES.filter((table) => table !== 'routing_evidence'),
   'run',
 ] as const

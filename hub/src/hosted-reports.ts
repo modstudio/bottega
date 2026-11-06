@@ -369,7 +369,7 @@ function decodeSendCursor(value: string): SendCursor {
   }
 }
 
-export async function readHostedSendsInTransaction(
+async function readHostedSendsInTransaction(
   tx: SQL,
   identity: TaskIdentity,
   filters: { limit?: number; updatedSince?: string; cursor?: string },

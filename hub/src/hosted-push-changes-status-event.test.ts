@@ -6,10 +6,9 @@ import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixt
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
-import { pullHostedTaskChanges } from './hosted-change-cache.ts'
+import { pullHostedChanges } from './hosted-change-cache.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
-import { HOSTED_CHANGES_CURSOR_KEY } from './hosted-task-change-family.ts'
 import { applyMigrations } from './migrations.ts'
 import { drainHostedOutbox, queueHostedChange, retryHostedOutboxEntryCommand } from './outbox.ts'
 import { loadOutboxChange } from './outbox-row.ts'
@@ -27,6 +26,7 @@ const taskId = '01990000-0000-7000-8000-000000001401'
 const userId = '01990000-0000-7000-8000-000000001399'
 const projectId = '01990000-0000-7000-8000-000000001498'
 const identity = { userId, spaceId }
+const feedCursorKey = 'collect.hosted-record-changes.cursor'
 let database: PGlite
 
 const taskRow = (): PushedTask => ({
@@ -88,7 +88,7 @@ const pushIdentity = async (): Promise<HostedTaskIdentity> => ({
   memberships: [{ spaceId, slug: 'workshop', permission: 'write' as const }],
   capabilities: {
     spacePush: true,
-    spaceChanges: true,
+    recordChanges: true,
     spacePushTables: ['hub_task', HOSTED_STATUS_EVENT_TABLE],
   },
 })
@@ -172,7 +172,7 @@ function hostedCursor() {
   return (
     db()
       .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
-      .get(`${HOSTED_CHANGES_CURSOR_KEY}.${spaceId}`)?.value ?? null
+      .get(feedCursorKey)?.value ?? null
   )
 }
 
@@ -181,11 +181,17 @@ function seedCursor(conn: Database) {
     .query(
       `INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
     )
-    .run(`${HOSTED_CHANGES_CURSOR_KEY}.${spaceId}`, '1')
+    .run(feedCursorKey, 'before')
+  conn
+    .query('INSERT INTO setting(key,value) VALUES (?,?)')
+    .run(
+      'collect.hosted-record-changes.spaces',
+      JSON.stringify({ task: [spaceId], note: [spaceId], send: [spaceId] }),
+    )
 }
 
 async function pullStatusEvent(row: PushedStatusEvent) {
-  await pullHostedTaskChanges({
+  await pullHostedChanges({
     baseUrl: 'https://hub.example.test',
     token: 'session',
     registeredProjects: registered(),
@@ -193,16 +199,14 @@ async function pullStatusEvent(row: PushedStatusEvent) {
       const url = new URL(input)
       if (url.pathname === '/v1/tasks/identity') return Response.json(await pushIdentity())
       return Response.json({
-        head: 20,
-        oldest: 1,
-        next: 2,
+        cursor: 'after',
+        lag: 0,
         more: false,
-        resetRequired: false,
         changes: [
           {
-            sequence: 2,
             table: HOSTED_STATUS_EVENT_TABLE,
             id: row.id,
+            space: spaceId,
             op: 'upsert',
             row,
           },
@@ -439,7 +443,7 @@ test('a machine row that already holds the hosted id drops the duplicate and adv
     { record_id: hostedId, from_status: 'open', to_status: 'active' },
   ])
   expect(eventOutbox()).toEqual([{ row_id: hostedId, quarantined_at: null }])
-  expect(hostedCursor()).toBe('2')
+  expect(hostedCursor()).toBe('after')
 })
 
 test('a deleted holder is rejected and not adopted', async () => {

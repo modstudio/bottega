@@ -202,6 +202,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-bun-versions.test.ts',
   'scripts/check-launchd-templates.test.ts',
   'scripts/check-record-project-space-ownership.test.ts',
+  'scripts/architecture-record-change-feed.test.ts',
   'scripts/check-machine-state.test.ts',
   'scripts/check-legacy-names.test.ts',
   'scripts/check-docker-workspaces.test.ts',

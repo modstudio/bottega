@@ -195,24 +195,24 @@ test('two machine sightings append once each and repeated delivery writes no cha
   const second = sighting(secondAnchor, '2026-10-09T14:00:00.000Z')
   expect(await apply([first])).toEqual([{ id: noteId, status: 'applied' }])
   expect(await apply([second])).toEqual([{ id: noteId, status: 'applied' }])
-  const beforeDuplicate = Number(
+  const beforeDuplicate = BigInt(
     (
-      await database.query<{ sequence: string | number }>(
-        `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
+      await database.query<{ seq: string | number }>(
+        `SELECT COALESCE(max(seq),0) seq FROM record_change WHERE space_id=$1`,
         [spaceId],
       )
-    ).rows[0]!.sequence,
+    ).rows[0]!.seq,
   )
   expect(await apply([first])).toEqual([{ id: noteId, status: 'duplicate' }])
   expect(await apply([second])).toEqual([{ id: noteId, status: 'duplicate' }])
   expect(
-    Number(
+    BigInt(
       (
-        await database.query<{ sequence: string | number }>(
-          `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
+        await database.query<{ seq: string | number }>(
+          `SELECT COALESCE(max(seq),0) seq FROM record_change WHERE space_id=$1`,
           [spaceId],
         )
-      ).rows[0]!.sequence,
+      ).rows[0]!.seq,
     ),
   ).toBe(beforeDuplicate)
   const stored = (
@@ -323,13 +323,13 @@ test('merge appends target anchors before deleting the source and its acknowledg
      VALUES ($1,$2,'workshop',$3,'session',$4,1,$4,$4)`,
     [acknowledgementId, spaceId, sourceId, '2026-10-09T12:00:00.000Z'],
   )
-  const beforeMerge = Number(
+  const beforeMerge = BigInt(
     (
-      await database.query<{ sequence: string | number }>(
-        `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
+      await database.query<{ seq: string | number }>(
+        `SELECT COALESCE(max(seq),0) seq FROM record_change WHERE space_id=$1`,
         [spaceId],
       )
-    ).rows[0]!.sequence,
+    ).rows[0]!.seq,
   )
   expect(
     await apply([
@@ -368,8 +368,8 @@ test('merge appends target anchors before deleting the source and its acknowledg
   expect(
     (
       await database.query<{ row_id: string }>(
-        `SELECT row_id::text FROM hub_change WHERE space_id=$1 AND sequence>$2
-         AND row_id=ANY($3::uuid[]) ORDER BY sequence`,
+        `SELECT row_id::text FROM record_change WHERE space_id=$1 AND seq>$2
+         AND row_id=ANY($3::uuid[]) ORDER BY seq`,
         [spaceId, beforeMerge, [targetId, sourceId, acknowledgementId]],
       )
     ).rows,

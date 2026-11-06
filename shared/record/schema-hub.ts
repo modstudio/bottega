@@ -25,8 +25,6 @@ import {
   membership,
   project,
   RECORD_ACTOR_ROLE,
-  RECORD_OWNER_ROLE,
-  space,
   spaceIdentity,
   tenantPolicies,
   user,
@@ -34,100 +32,6 @@ import {
 
 const identity = () => uuid('id').primaryKey()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
-
-export const HUB_CHANGE_SOURCES = {
-  rows: [
-    'hub_task',
-    'hub_task_comment',
-    'hub_task_document',
-    'hub_task_status_event',
-    'hub_send',
-    'hub_interval',
-    'hub_day',
-    'hub_note',
-    'hub_note_acknowledgement',
-  ],
-  children: {
-    hub_send_recipient: 'hub_send',
-  },
-} as const
-
-export const HUB_CHANGE_SOURCE_EXCLUSIONS = {
-  hub_change_head: 'Change-log state tracks the latest allocated sequence for each space.',
-  hub_change: 'Change-log entries form the hosted synchronization feed.',
-  hub_report_subscription: 'Hosted report configuration defines scheduled report delivery.',
-  hub_report_subscription_member: 'Hosted report membership selects subscription recipients.',
-  hub_report_subscription_project: 'Hosted report configuration selects subscription projects.',
-  hub_report_subscription_recipient: 'Hosted report delivery stores subscription recipients.',
-} as const
-
-export const hubChangeHead = pgTable.withRLS(
-  'hub_change_head',
-  {
-    id: uuid('id').primaryKey(),
-    spaceId: uuid('space_id')
-      .notNull()
-      .references(() => space.id),
-    sequence: bigint({ mode: 'bigint' }).notNull(),
-  },
-  // Triggers write change-log heads inside a statement whose row policy already judged the caller.
-  (table) => [
-    unique('hub_change_head_space_unique').on(table.spaceId),
-    pgPolicy('hub_change_head_space_select', {
-      for: 'select',
-      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
-    }),
-    pgPolicy('hub_change_head_space_insert', {
-      for: 'insert',
-      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
-    }),
-    pgPolicy('hub_change_head_space_update', {
-      for: 'update',
-      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
-      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
-    }),
-    pgPolicy('hub_change_head_owner_all', {
-      for: 'all',
-      to: RECORD_OWNER_ROLE,
-      using: sql`true`,
-      withCheck: sql`true`,
-    }),
-  ],
-)
-
-export const hubChange = pgTable.withRLS(
-  'hub_change',
-  {
-    id: uuid('id').primaryKey(),
-    spaceId: uuid('space_id')
-      .notNull()
-      .references(() => space.id),
-    sequence: bigint({ mode: 'bigint' }).notNull(),
-    tableName: text('table_name').notNull(),
-    rowId: uuid('row_id').notNull(),
-    op: text().notNull(),
-    at: timestamp({ withTimezone: true }).defaultNow(),
-  },
-  // Triggers write change rows inside a statement whose row policy already judged the caller.
-  (table) => [
-    unique('hub_change_space_sequence_unique').on(table.spaceId, table.sequence),
-    check('hub_change_op_check', sql`${table.op} IN ('upsert','delete')`),
-    pgPolicy('hub_change_space_select', {
-      for: 'select',
-      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
-    }),
-    pgPolicy('hub_change_space_insert', {
-      for: 'insert',
-      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
-    }),
-    pgPolicy('hub_change_owner_all', {
-      for: 'all',
-      to: RECORD_OWNER_ROLE,
-      using: sql`true`,
-      withCheck: sql`true`,
-    }),
-  ],
-)
 
 export const hubTask = pgTable.withRLS(
   'hub_task',

@@ -167,8 +167,6 @@ async function withQuestionFixture(
     await admin`DELETE FROM project WHERE id=${QUESTION_PROJECT_ID}::uuid`
     await admin`DELETE FROM machine_name_claim WHERE machine_id=${QUESTION_MACHINE_ID}::uuid`
     await admin`DELETE FROM machine WHERE id=${QUESTION_MACHINE_ID}::uuid`
-    await admin`DELETE FROM hub_change WHERE space_id=${QUESTION_SPACE_ID}::uuid`
-    await admin`DELETE FROM hub_change_head WHERE space_id=${QUESTION_SPACE_ID}::uuid`
     await admin`DELETE FROM routing_evidence_head WHERE space_id=${QUESTION_SPACE_ID}::uuid`
     await admin`DELETE FROM membership WHERE id=${QUESTION_MEMBERSHIP_ID}::uuid`
     await admin`DELETE FROM space WHERE id=${QUESTION_SPACE_ID}::uuid`
@@ -248,8 +246,6 @@ realPostgres('hosted run task references', () => {
       await admin`DELETE FROM project WHERE id=${PROJECT_ID}::uuid`
       await admin`DELETE FROM machine_name_claim WHERE machine_id=${MACHINE_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE_ID}::uuid`
-      await admin`DELETE FROM hub_change WHERE space_id IN (${SPACE_ID}::uuid,${OTHER_SPACE_ID}::uuid)`
-      await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_ID}::uuid,${OTHER_SPACE_ID}::uuid)`
       await admin`DELETE FROM routing_evidence_head WHERE space_id IN (${SPACE_ID}::uuid,${OTHER_SPACE_ID}::uuid)`
       await admin`DELETE FROM membership WHERE id=${MEMBERSHIP_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${SPACE_ID}::uuid`
@@ -389,8 +385,6 @@ realPostgres('hosted machine name claims', () => {
       await admin`DELETE FROM machine_name_claim WHERE id=${CLAIM_ID}::uuid`
       await admin`DELETE FROM machine WHERE id IN (${CLAIM_REQUESTER_ID}::uuid,${CLAIM_HOLDER_ID}::uuid)`
       await admin`DELETE FROM project WHERE id=${CLAIM_PROJECT_ID}::uuid`
-      await admin`DELETE FROM hub_change WHERE space_id=${CLAIM_SPACE_ID}::uuid`
-      await admin`DELETE FROM hub_change_head WHERE space_id=${CLAIM_SPACE_ID}::uuid`
       await admin`DELETE FROM routing_evidence_head WHERE space_id=${CLAIM_SPACE_ID}::uuid`
       await admin`DELETE FROM membership WHERE id=${CLAIM_MEMBERSHIP_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${CLAIM_SPACE_ID}::uuid`
@@ -452,8 +446,6 @@ realPostgres('hosted machine name claims', () => {
       await admin`DELETE FROM run WHERE id=${FOREIGN_RUN_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${FOREIGN_MACHINE_ID}::uuid`
       await admin`DELETE FROM project WHERE id=${CLAIM_PROJECT_ID}::uuid`
-      await admin`DELETE FROM hub_change WHERE space_id=${CLAIM_SPACE_ID}::uuid`
-      await admin`DELETE FROM hub_change_head WHERE space_id=${CLAIM_SPACE_ID}::uuid`
       await admin`DELETE FROM routing_evidence_head WHERE space_id=${CLAIM_SPACE_ID}::uuid`
       await admin`DELETE FROM membership WHERE id=${CLAIM_MEMBERSHIP_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${CLAIM_SPACE_ID}::uuid`
@@ -592,8 +584,6 @@ realPostgres('hosted jsonb sync values', () => {
       await admin`DELETE FROM project WHERE id=${JSONB_PROJECT_ID}::uuid`
       await admin`DELETE FROM machine_name_claim WHERE machine_id=${JSONB_MACHINE_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${JSONB_MACHINE_ID}::uuid`
-      await admin`DELETE FROM hub_change WHERE space_id=${JSONB_SPACE_ID}::uuid`
-      await admin`DELETE FROM hub_change_head WHERE space_id=${JSONB_SPACE_ID}::uuid`
       await admin`DELETE FROM routing_evidence_head WHERE space_id=${JSONB_SPACE_ID}::uuid`
       await admin`DELETE FROM membership WHERE id=${JSONB_MEMBERSHIP_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${JSONB_SPACE_ID}::uuid`

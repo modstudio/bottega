@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import type { HostedSpaceChange, HostedSpaceChangePage, TaskFetch } from './task-client.ts'
+import type { HostedChangeRow } from './hosted-record-change-wire.ts'
+import type { TaskFetch } from './task-client.ts'
 import type { RegisteredTaskSpace, TaskDestinationIdentity } from './task-project-space.ts'
 
 export const classifyHostedChangeDelete = (machineSpace: string | null, logSpace: string) =>
@@ -14,7 +15,7 @@ export const classifyHostedChangeUpsert = (
   return JSON.stringify(before) === JSON.stringify(after) ? { kind: 'no-op' } : { kind: 'changed' }
 }
 
-export type HostedChangeRequestOptions = {
+type HostedChangeRequestOptions = {
   baseUrl?: string
   token?: string | null
   fetch?: TaskFetch
@@ -26,6 +27,15 @@ export type HostedPreparedPage = {
   apply: Array<(conn: Database) => void>
   skippedForAbsentParent: ReadonlySet<string>
 }
+
+export type HostedPreparedChange = {
+  table: string
+  id: string
+  op: 'upsert' | 'delete'
+  row?: HostedChangeRow
+}
+
+export type HostedPreparedChangePage = { changes: HostedPreparedChange[] }
 
 export type HostedChangeFamily = {
   cursorPrefix: string
@@ -39,14 +49,14 @@ export type HostedChangeFamily = {
     options: HostedChangeRequestOptions,
   ) => Promise<{ cursor: string; more: boolean; apply: (conn: Database) => void }>
   preparePage?: (
-    page: HostedSpaceChangePage,
+    page: HostedPreparedChangePage,
     options: HostedChangeRequestOptions,
   ) => Promise<HostedPreparedPage>
   tableOrder: (table: string) => number
   accepts: (table: string) => boolean
   machineRow: (conn: Database, table: string, id: string) => Record<string, unknown> | null
   rowSpace: (conn: Database, table: string, id: string) => string | null
-  apply: (conn: Database, table: string, row: NonNullable<HostedSpaceChange['row']>) => void
+  apply: (conn: Database, table: string, row: HostedChangeRow) => void
   delete: (conn: Database, table: string, id: string) => void
   finish?: (conn: Database) => void
   reportAbsentParentSkips?: true

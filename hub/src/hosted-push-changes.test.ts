@@ -146,7 +146,7 @@ afterAll(async () => {
   if (database) await database.close()
 })
 
-test('an interval recreation replaces only the tuple holder in its space and logs both rows', async () => {
+test('an interval recreation replaces only the tuple holder in its space', async () => {
   const oldId = '01990000-0000-7000-8000-000000001252'
   const newId = '01990000-0000-7000-8000-000000001253'
   const otherId = '01990000-0000-7000-8000-000000001254'
@@ -154,14 +154,6 @@ test('an interval recreation replaces only the tuple holder in its space and log
   expect(
     await apply([{ table: 'hub_interval', id: oldId, op: 'upsert', row: intervalRow(oldId) }]),
   ).toEqual([{ id: oldId, status: 'applied' }])
-  const sequence = Number(
-    (
-      await database.query<{ sequence: string | number }>(
-        `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
-        [spaceId],
-      )
-    ).rows[0]!.sequence,
-  )
   await database.exec(`
     RESET ROLE;
     INSERT INTO space(id,name,slug,created_at)
@@ -195,18 +187,6 @@ test('an interval recreation replaces only the tuple holder in its space and log
     { id: newId, space_id: spaceId },
     { id: otherId, space_id: otherSpace },
   ])
-  expect(
-    (
-      await database.query<{ row_id: string; op: string }>(
-        `SELECT row_id::text,op FROM hub_change
-         WHERE space_id=$1 AND sequence>$2 ORDER BY sequence`,
-        [spaceId, sequence],
-      )
-    ).rows,
-  ).toEqual([
-    { row_id: oldId, op: 'delete' },
-    { row_id: newId, op: 'upsert' },
-  ])
   await database.exec(`
     RESET ROLE;
     SET ROLE ${RECORD_ACTOR_ROLE};
@@ -218,14 +198,6 @@ test('an interval recreation replaces only the tuple holder in its space and log
     { id: oldId, status: 'duplicate' },
   ])
 
-  const afterReplace = Number(
-    (
-      await database.query<{ sequence: string | number }>(
-        `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
-        [spaceId],
-      )
-    ).rows[0]!.sequence,
-  )
   expect(
     await apply([{ table: 'hub_interval', id: oldId, op: 'upsert', row: intervalRow(oldId) }]),
   ).toEqual([
@@ -235,16 +207,6 @@ test('an interval recreation replaces only the tuple holder in its space and log
       reason: `interval superseded by newer UUID ${newId}`,
     },
   ])
-  expect(
-    Number(
-      (
-        await database.query<{ sequence: string | number }>(
-          `SELECT sequence FROM hub_change_head WHERE space_id=$1`,
-          [spaceId],
-        )
-      ).rows[0]!.sequence,
-    ),
-  ).toBe(afterReplace)
 })
 
 test('an existing incoming interval moves onto a tuple held by an older id', async () => {

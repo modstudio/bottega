@@ -330,9 +330,6 @@ test('token bigint migration keeps values and appends no change-log entry', asyn
     );
   `)
   await database.exec('RESET ROLE')
-  const changesBefore = (
-    await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM hub_change`)
-  ).rows[0]!.count
   const dayCount = (
     await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM hub_day`)
   ).rows[0]!.count
@@ -388,10 +385,6 @@ test('token bigint migration keeps values and appends no change-log entry', asyn
       )
     ).rows[0]?.data_type,
   ).toBe('bigint')
-  expect(
-    (await database.query<{ count: number }>(`SELECT count(*)::int AS count FROM hub_change`))
-      .rows[0]!.count,
-  ).toBe(changesBefore)
   expect(dayCount).toBe(1)
   expect(intervalCount).toBe(1)
   await database.close()

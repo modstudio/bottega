@@ -8,9 +8,6 @@ import {
   hostedChangeLegLine,
   hostedChangesLines,
   pullHostedChanges,
-  pullHostedNoteChanges,
-  pullHostedSendChanges,
-  pullHostedTaskChanges,
 } from './hosted-change-cache.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 
@@ -263,31 +260,18 @@ type HostedCollectDependencies = {
   outbox?: () => Promise<HostedOutboxReport>
   correctIntervals?: () => void
   changes?: () => Promise<HostedChangesReport | HostedChangeLegReport | null | undefined>
-  noteChanges?: () => Promise<HostedChangeLegReport | null | undefined>
-  sendChanges?: () => Promise<HostedChangeLegReport | null | undefined>
 }
 
-export async function hostedCollectLegs(
+async function hostedCollectLegs(
   guard?: LeaseGuard,
   dependencies: HostedCollectDependencies = {},
 ): Promise<CollectLegResult[]> {
   ;(dependencies.correctIntervals ?? correctStoredIntervalProjects)()
-  const legacyInjected =
-    dependencies.noteChanges !== undefined || dependencies.sendChanges !== undefined
   const results: CollectLegResult[] = []
   guard?.assertHeld()
   results.push(await collectHostedOutboxOnce(dependencies.outbox))
   guard?.assertHeld('hosted outbox')
-  const changeLegs: Array<{
-    source: string
-    work: () => Promise<HostedChangesReport | HostedChangeLegReport | null | undefined>
-  }> = legacyInjected
-    ? [
-        { source: 'hosted task changes', work: dependencies.changes ?? pullHostedTaskChanges },
-        { source: 'hosted note changes', work: dependencies.noteChanges ?? pullHostedNoteChanges },
-        { source: 'hosted send changes', work: dependencies.sendChanges ?? pullHostedSendChanges },
-      ]
-    : [{ source: 'hosted changes', work: dependencies.changes ?? pullHostedChanges }]
+  const changeLegs = [{ source: 'hosted changes', work: dependencies.changes ?? pullHostedChanges }]
   let previous = 'hosted outbox'
   for (const { source, work } of changeLegs) {
     guard?.assertHeld(previous)

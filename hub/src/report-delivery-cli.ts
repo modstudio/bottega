@@ -21,7 +21,7 @@ type DeliveryResult = {
 export async function runScheduledReportDelivery(input: {
   deliveryEnabled: boolean
   dryRun: boolean
-  prune(): Promise<{ hub: number; record: number }>
+  prune(): Promise<{ record: number }>
   deliver(): Promise<DeliveryResult>
   print(line: string): void
   printError(line: string): void
@@ -31,9 +31,7 @@ export async function runScheduledReportDelivery(input: {
   } else {
     try {
       const deleted = await input.prune()
-      input.print(
-        `change log pruning: ${deleted.hub} hub changes, ${deleted.record} record changes deleted`,
-      )
+      input.print(`change log pruning: ${deleted.record} record changes deleted`)
     } catch (cause) {
       input.printError(`change log pruning failed: ${String(cause)}`)
     }

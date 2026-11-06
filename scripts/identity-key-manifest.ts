@@ -258,7 +258,6 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
   ...manifest('hosted', 'count, ordinal, version, handle, or measurement', [
     'doc.position',
     'doc_revision.position',
-    'hub_change.sequence',
     'record_change.seq',
     'record_change_horizon.seq',
     'routing_evidence_head.sequence',
@@ -315,7 +314,6 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'contention.duration_ms',
     'board_claim.duration_ms',
     'board_message.revision',
-    'hub_change_head.sequence',
     'hub_task.next_document_number',
     'hub_task_document.number',
     'hub_note.number',

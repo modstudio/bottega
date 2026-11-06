@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { encodeRecordChangeCursor } from '../../shared/record/record-changes.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { changeApi } from './change-api.ts'
@@ -33,36 +34,18 @@ const pushRequest = (body: unknown, space = 'space-b') =>
     body: JSON.stringify(body),
   })
 
-test('change route binds a requested member space and parses its bounded request', async () => {
-  let received: unknown
-  const response = await changeApi(request('after=0&tables=hub_task,hub_note'), config, {
-    fetch: whoami,
-    list: async (_url, identity, input) => {
-      received = { identity, input }
-      return { head: 0, oldest: null, next: 0, more: false, resetRequired: false, changes: [] }
-    },
-  })
-  expect(response?.status).toBe(200)
-  expect(received).toEqual({
-    identity: {
-      kind: 'authenticated',
-      userId: 'user-1',
-      spaceId: 'space-b',
-      spaceIds: ['space-a', 'space-b'],
-      userName: null,
-      memberships: [
-        { spaceId: 'space-a', slug: 'active', permission: 'write' },
-        { spaceId: 'space-b', slug: 'other', permission: 'write' },
-      ],
-    },
-    input: { after: 0, limit: 500, tables: ['hub_task', 'hub_note'] },
+test('legacy table-scoped change requests name the upgrade remedy', async () => {
+  const response = await changeApi(request('after=0&tables=hub_task,hub_note'), config)
+  expect(response?.status).toBe(410)
+  expect(await response?.json()).toEqual({
+    error: 'the per-space change log has been retired',
+    remedy: `Install a release that reads the record change feed with \`${PLATFORM_SLUG} machine update\`, or install the newest release.`,
   })
 })
 
-test('change route serves the feed dialect without tables and keeps tables on the legacy route', async () => {
+test('change route serves the feed dialect without tables and retires tables requests', async () => {
   const cursor = encodeRecordChangeCursor({ xid: 7n, seq: 9n })
   let feedReads = 0
-  let legacyReads = 0
   const dependencies = {
     fetch: whoami,
     feed: async (_client: never, identity: { spaceIds: string[] }, input: unknown) => {
@@ -77,17 +60,6 @@ test('change route serves the feed dialect without tables and keeps tables on th
         more: false,
       }
     },
-    list: async () => {
-      legacyReads++
-      return {
-        head: 0,
-        oldest: null,
-        next: 0,
-        more: false,
-        resetRequired: false as const,
-        changes: [],
-      }
-    },
   }
   const feed = await changeApi(request(`after=${cursor}&limit=12`), config, dependencies as never)
   expect(feed?.status).toBe(200)
@@ -99,8 +71,8 @@ test('change route serves the feed dialect without tables and keeps tables on th
   })
   expect(
     (await changeApi(request('after=0&tables=hub_task'), config, dependencies as never))?.status,
-  ).toBe(200)
-  expect({ feedReads, legacyReads }).toEqual({ feedReads: 1, legacyReads: 1 })
+  ).toBe(410)
+  expect(feedReads).toBe(1)
 })
 
 test('feed route resets without a cursor and refuses wait', async () => {
@@ -417,25 +389,16 @@ test('identity-set route binds the requested space and refuses a non-member befo
   expect(reads).toBe(0)
 })
 
-test('change route refuses non-members before reading and validates every query boundary', async () => {
-  let reads = 0
-  const dependencies = {
-    fetch: whoami,
-    list: async () => {
-      reads++
-      return { head: 0, oldest: null, next: 0, more: false, resetRequired: false, changes: [] }
-    },
-  }
+test('change route retires every table-scoped query without reading', async () => {
+  const dependencies = { fetch: whoami }
   expect(
     (await changeApi(request('after=0&tables=hub_task', 'outside'), config, dependencies))?.status,
-  ).toBe(403)
-  expect(reads).toBe(0)
+  ).toBe(410)
 
   for (const query of [
     'tables=hub_task',
     'after=-1&tables=hub_task',
     'after=9007199254740992&tables=hub_task',
-    'after=0',
     'after=0&tables=',
     'after=0&tables=hub_interval',
     'after=0&tables=hub_task&tables=hub_note',
@@ -444,12 +407,6 @@ test('change route refuses non-members before reading and validates every query 
     'after=0&tables=hub_task&limit=1.5',
   ]) {
     const response = await changeApi(request(query), config, dependencies)
-    expect(response?.status, query).toBe(400)
+    expect(response?.status, query).toBe(410)
   }
-  expect(reads).toBe(0)
-  const invalidTable = await changeApi(request('after=0&tables=hub_interval'), config, dependencies)
-  expect(await invalidTable?.json()).toEqual({
-    error:
-      'tables must name only: hub_task, hub_task_comment, hub_task_document, hub_task_status_event, hub_send, hub_note, hub_note_acknowledgement',
-  })
 })

@@ -13,7 +13,7 @@ test('scheduled report delivery prunes when sending is disabled', async () => {
     dryRun: false,
     prune: async () => {
       pruned += 1
-      return { hub: 4, record: 2 }
+      return { record: 2 }
     },
     deliver: async () => {
       deliveries += 1
@@ -26,7 +26,7 @@ test('scheduled report delivery prunes when sending is disabled', async () => {
   expect(result).toEqual({ due: 0, sent: 0, skipped: 0, failed: 0 })
   expect(pruned).toBe(1)
   expect(deliveries).toBe(0)
-  expect(lines).toContain('change log pruning: 4 hub changes, 2 record changes deleted')
+  expect(lines).toContain('change log pruning: 2 record changes deleted')
 })
 
 test('scheduled report delivery continues when pruning fails', async () => {
@@ -62,7 +62,7 @@ test('scheduled report delivery skips pruning during a dry run', async () => {
     dryRun: true,
     prune: async () => {
       pruned += 1
-      return { hub: 4, record: 2 }
+      return { record: 2 }
     },
     deliver: async () => {
       deliveries += 1
