@@ -141,10 +141,6 @@ export const hubModuleSpecs = [
     ],
   },
   {
-    file: 'hub/src/change-pruning.ts',
-    allowed: ['bun'],
-  },
-  {
     file: 'hub/src/subject-contract.ts',
     allowed: ['zod', '../../shared/subjects.ts'],
   },

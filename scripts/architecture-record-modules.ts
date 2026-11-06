@@ -23,6 +23,7 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/record/service-connection.ts',
   ]),
+  module('orchestrator/src/record/record-change-prune.ts', ['bun', './record-pool.ts']),
   module('orchestrator/src/postgres/postgres-migrate.ts', [
     '../../../shared/install-root.ts',
     '../../../shared/record/migration-session.ts',

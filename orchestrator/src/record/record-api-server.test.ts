@@ -36,6 +36,7 @@ test('stopping the server ends an open board stream before closing its wake sour
   expect((await reader.read()).done).toBe(false)
   let serverStopped = false
   let authClosed = false
+  let pruneStopped = false
   await stopRecordApiServer({
     stop() {
       expect(wakeSourceClosed).toBe(true)
@@ -43,6 +44,11 @@ test('stopping the server ends an open board stream before closing its wake sour
     },
     boardWakeSource: wakeSource,
     recordChangeWakeSource: { async close() {} },
+    recordChangePrune: {
+      stop() {
+        pruneStopped = true
+      },
+    },
     boardStreamRegistry: registry,
     auth: {
       async close() {
@@ -53,5 +59,6 @@ test('stopping the server ends an open board stream before closing its wake sour
   expect((await reader.read()).done).toBe(true)
   expect(wakeSourceClosed).toBe(true)
   expect(serverStopped).toBe(true)
+  expect(pruneStopped).toBe(true)
   expect(authClosed).toBe(true)
 })

@@ -224,6 +224,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-board-wake.ts',
       './record-change-feed.ts',
       './record-change-wake.ts',
+      './record-change-prune.ts',
       './record-board-claims.ts',
       './record-board-overview.ts',
       './record-board-receipts.ts',
@@ -238,6 +239,12 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-pool.ts',
     ],
     'Enforce the record-api-server concern boundary.',
+  ),
+  boundary(
+    'record-change-prune-boundary',
+    'orchestrator/src/record/record-change-prune.ts',
+    ['bun', './record-pool.ts'],
+    'Keep record change retention independent of HTTP, authentication, and server composition.',
   ),
 ]
 
