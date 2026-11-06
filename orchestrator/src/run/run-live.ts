@@ -56,7 +56,7 @@ import {
   transportFor,
   type VendorUsage,
 } from '../transport/transport.ts'
-import { preserveGooseLedger } from '../transport/transport-goose-ledger.ts'
+import { captureGooseLedger } from '../transport/transport-goose-ledger.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   type CheckpointContainment,
@@ -68,6 +68,7 @@ import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
 import { raiseForHostCapacityWait } from './run-claim-host-capacity.ts'
+import type { GooseContextProfile } from './run-context-profile.ts'
 import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
@@ -449,6 +450,7 @@ export type LiveResult = {
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
   workerEvents: StreamEvent[]
+  contextProfile?: GooseContextProfile | null
 }
 
 function observeCollectedTurn(
@@ -554,8 +556,8 @@ function runUsageResult(
   return { vendorTokens, callUsage, costUsd, vendorUsage, quotaReadings }
 }
 
-function preserveLiveGooseLedger(input: LiveInput): void {
-  preserveGooseLedger(
+function captureLiveGooseLedger(input: LiveInput) {
+  return captureGooseLedger(
     {
       harness: input.a.harness ?? input.a.name,
       runtimeDir: input.sandboxSelection.profile ? input.runtimeDir : null,
@@ -565,11 +567,6 @@ function preserveLiveGooseLedger(input: LiveInput): void {
   )
 }
 
-function clearRunTimer(timer: ReturnType<typeof setTimeout> | null): null {
-  clearTimeout(timer ?? undefined)
-  return null
-}
-
 function codexTransportMcpScope(scope: CodexMcpScope | null) {
   return {
     projectServers: scope?.servers,
@@ -577,7 +574,6 @@ function codexTransportMcpScope(scope: CodexMcpScope | null) {
   }
 }
 
-// Runs the claimed worker and completes its recorded outcome.
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -889,7 +885,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     })
     await settleToolBurst(claim.id, toolBurst)
     const { stdout, stderr } = collected
-    // One derivation from the raw stream, carried through terminalisation.
     vendorTerminatedStream = [stdout, stderr].find(hasVendorTerminationMarker) ?? null
     exitCode = collected.exitCode
     const reply = collected.parsed
@@ -1046,19 +1041,17 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const decided = { ...decideOutcome(derived.inputs), error }
     ;({ status, failureKind, error } = applyToolBurstOutcome(toolBurst, decided))
   } catch (e) {
-    // Spawn refused, a pipe broke or output was unwritable: the row must not claim to run.
     status = 'failed'
     error = errorTail(proc ? String((e as Error)?.stack ?? e) : String((e as Error)?.message ?? e))
     failureKind = proc ? 'other' : 'harness'
     await settleToolBurst(claim.id, toolBurst)
   }
   rearmWallDeadline = () => {}
-  timer = clearRunTimer(timer)
-  preserveLiveGooseLedger(input)
+  clearTimeout(timer ?? undefined)
   await closeLiveBrokers(executionBrokers, noteBroker)
   return {
     proc,
-    timer,
+    timer: null,
     checkpointTimer,
     resourceObserver,
     timedOut,
@@ -1085,6 +1078,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     askLoopback,
     mcpSetupHeader,
     workerEvents,
+    contextProfile: captureLiveGooseLedger(input),
   }
 }
 

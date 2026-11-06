@@ -165,6 +165,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-resume-kind.ts',
   ]),
   module('orchestrator/src/run/run-artifact-limits.ts', []),
+  module('orchestrator/src/run/run-context-profile.ts', ['bun:sqlite']),
   module('orchestrator/src/run/question-display.ts', ['node:path', '../../../shared/brand.ts']),
   module('orchestrator/src/run/question-display-probe.ts', [
     'node:fs',
@@ -376,6 +377,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
       './run-tool-burst.ts',
       './tool-call-burst.ts',
       './run-call-usage.ts',
+      './run-context-profile.ts',
       '../sandbox/codex-mcp-scope.ts',
       '../sandbox/project-mcp-scope.ts',
       '../confinement/confinement.ts',
@@ -597,6 +599,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../review/review.ts',
     './run-artifacts.ts',
     './run-call-usage.ts',
+    './run-context-profile.ts',
     './run-finish-error.ts',
     './run-liveness.ts',
     './run-outbox.ts',

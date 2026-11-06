@@ -90,6 +90,7 @@ import {
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { reportMaintenanceStep } from './cleanup-sweep-report.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
+import { sweepGooseLedgers } from './goose-ledger-sweep.ts'
 import { heldProjectTrees, sweepProject } from './project-sweep.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
 import { sweepRunLeftovers } from './run-leftover-sweep.ts'
@@ -554,14 +555,27 @@ function sweepExpiredRunStore(
   selectedProject: Project | null,
   presentation: CleanupPresentation,
 ): ReturnType<typeof sweepRunLeftovers> {
+  // The ledger sweep is machine-wide, so a project-scoped sweep leaves it alone like the orphan sweep.
+  const gooseLedgers =
+    selectedProject === null
+      ? sweepGooseLedgers({ dryRun: options.dryRun, onError: presentation.error })
+      : null
+  if (gooseLedgers !== null) {
+    presentation.log(
+      `Goose ledgers ${options.dryRun ? 'would free' : 'freed'} ${gooseLedgers.bytes} bytes; ` +
+        `${options.dryRun ? 'would extract' : 'extracted'} ${gooseLedgers.extracted} context profiles; ` +
+        `${gooseLedgers.failed} failed`,
+    )
+  }
   const evidenceClosedRootIds = sweepUnjudgedRuns(options.dryRun, selectedProject, presentation)
-  return sweepRunLeftovers({
+  const leftovers = sweepRunLeftovers({
     dryRun: options.dryRun,
     verbose: options.verbose,
     projectRecordId: selectedProject?.recordId ?? null,
     presentation,
     evidenceClosedRootIds,
   })
+  return { ...leftovers, failed: leftovers.failed || (gooseLedgers?.failed ?? 0) > 0 }
 }
 
 type RecordedSweepState = {

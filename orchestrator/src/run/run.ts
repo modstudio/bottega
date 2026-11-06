@@ -831,6 +831,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   let quotaReadings = EMPTY_QUOTA_READINGS
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
+  let contextProfile: Awaited<ReturnType<typeof runLive>>['contextProfile'] = null
   let contract: WorkerReply | null = null
   let contractObjects = 0
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
@@ -913,6 +914,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           askLoopback,
           mcpSetupHeader,
           workerEvents,
+          contextProfile,
         } = await runLive({
           repoJob,
           name,
@@ -1038,6 +1040,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
               artifactsPersisted,
               mcpRuling,
               workerEvents,
+              contextProfile,
             }),
             {
               runId: claim.id,

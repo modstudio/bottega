@@ -24,7 +24,16 @@ export const coreModuleSpecs = [
   { file: 'orchestrator/src/tool-event-text.ts', allowed: [] },
   {
     file: 'orchestrator/src/transport/transport-goose-ledger.ts',
-    allowed: ['node:fs', 'node:path', '../run-owned-paths.ts'],
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../run-owned-paths.ts',
+      './transport-goose-context-profile.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/transport/transport-goose-context-profile.ts',
+    allowed: ['bun:sqlite', 'node:fs', 'node:path', '../run/run-context-profile.ts'],
   },
   { file: 'orchestrator/src/worker-store-write.ts', allowed: [] },
 ] as const
