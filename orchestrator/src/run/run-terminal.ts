@@ -668,6 +668,8 @@ async function recordTerminalQuestions(
   questions: ReturnType<typeof realQuestions>,
 ): Promise<Awaited<ReturnType<typeof recordReplyQuestions>>> {
   if (!questions.length) return []
+  // A live question that timed out is repeated in the final answer; recording it twice
+  // would make `bottega question answer` demand two rulings for one question.
   const existingQuestionTexts = (
     db().query('SELECT question FROM question WHERE run_record_id = ?').all(runId) as {
       question: string
