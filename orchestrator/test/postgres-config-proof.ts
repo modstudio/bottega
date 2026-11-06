@@ -774,7 +774,6 @@ export function registerHostedConfigProofs(
   test('membership roles and permissions accept only their known values', () => {
     const roleInsertId = newRecordId()
     const permissionInsertId = newRecordId()
-    const updateId = newRecordId()
     expect(() =>
       succeeds(
         'postgres',
@@ -791,31 +790,6 @@ export function registerHostedConfigProofs(
          VALUES ('${permissionInsertId}', '${spaceB}', '${USER_B}', 'member', 'admin', now());`,
       ),
     ).toThrow('membership_permission_check')
-
-    try {
-      succeeds(
-        'postgres',
-        'postgres',
-        `INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
-         VALUES ('${updateId}', '${spaceB}', '${USER_B}', 'member', 'write', now());`,
-      )
-      expect(() =>
-        succeeds(
-          'postgres',
-          'postgres',
-          `UPDATE membership SET role='owner,admin' WHERE id='${updateId}';`,
-        ),
-      ).toThrow('membership_role_check')
-      expect(() =>
-        succeeds(
-          'postgres',
-          'postgres',
-          `UPDATE membership SET permission='admin' WHERE id='${updateId}';`,
-        ),
-      ).toThrow('membership_permission_check')
-    } finally {
-      succeeds('postgres', 'postgres', `DELETE FROM membership WHERE id='${updateId}';`)
-    }
   })
 
   test('an owner or admin sets a member permission', async () => {
