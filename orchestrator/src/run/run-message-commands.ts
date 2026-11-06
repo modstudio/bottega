@@ -26,6 +26,7 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
+import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
@@ -79,6 +80,12 @@ export const answerRunHelpers = (presentation: Presentation) => ({
   presentation: controlPresentation(presentation),
 })
 
+const questionIdentifiers = (argv: string[]): string[] =>
+  argv.flatMap((argument) => {
+    const match = argument === '--quiet' ? null : argument.match(/^--q([^=]+)(?:=.*)?$/)
+    return match ? [match[1]!] : []
+  })
+
 export async function answerInputFromArgv(
   argv: string[],
   recordOnly: boolean,
@@ -88,21 +95,7 @@ export async function answerInputFromArgv(
   refusedOptions?: Readonly<Record<string, string>>,
   answerId?: string,
 ): Promise<AnswerRunInput> {
-  const valueArgs = (() => {
-    const remaining: string[] = []
-    let value: string | undefined
-    for (let index = 0; index < argv.length; index += 1) {
-      const argument = argv[index]!
-      if (argument !== '--value' && !argument.startsWith('--value=')) {
-        remaining.push(argument)
-        continue
-      }
-      if (value !== undefined) throw new Error('--value may be supplied only once')
-      value = argument === '--value' ? argv[++index] : argument.slice('--value='.length)
-      if (!value) throw new Error('--value needs a value')
-    }
-    return { argv: remaining, value }
-  })()
+  const valueArgs = answerValueArgs(argv, answerId, questionIdentifiers(argv))
   const channelArgs = parseAnswerChannelArgs(valueArgs.argv)
   const parsed = parseAnswerTextSources(channelArgs.argv, refusedOptions)
   const fromOperator = channelArgs.argv.includes('--from-operator')
@@ -115,43 +108,6 @@ export async function answerInputFromArgv(
   const cliRuling = (text: string) => {
     if (text) assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS)
     return text
-  }
-  let typedValue: string | boolean | number | undefined
-  let typedQuestionId: string | undefined
-  if (valueArgs.value !== undefined) {
-    if (!answerId) throw new Error('--value requires a question context')
-    if (parsed.byId.length > 1) throw new Error('--value may answer only one question at a time')
-    const openQuestions = parsed.byId.length
-      ? []
-      : (db()
-          .query<{ record_id: string }, [string, string]>(
-            `SELECT q.record_id FROM question q JOIN run r ON r.record_id=q.run_record_id
-              WHERE (r.record_id=? OR r.parent_run_record_id=?) AND ${questionOpenSql('q')}
-              ORDER BY q.number`,
-          )
-          .all(answerId, answerId) as { record_id: string }[])
-    if (openQuestions.length > 1)
-      throw new Error('--value requires --q<id> when more than one question is open')
-    typedQuestionId = parsed.byId.length
-      ? resolveQuestionIdentifier(db(), parsed.byId[0]!.identifier)
-      : openQuestions[0]?.record_id
-    if (!typedQuestionId) throw new Error('--value names no open question')
-    const stored = db()
-      .query<{ kind: string }, [string]>('SELECT kind FROM question WHERE record_id=?')
-      .get(typedQuestionId)
-    if (!stored) throw new Error('--value names no question')
-    if (stored.kind === 'yesno') {
-      const normalized = valueArgs.value.toLowerCase()
-      if (normalized !== 'true' && normalized !== 'false')
-        throw new Error('--value for a yesno question must be true or false')
-      typedValue = normalized === 'true'
-    } else if (stored.kind === 'score') {
-      if (!/^-?\d+$/.test(valueArgs.value))
-        throw new Error('--value for a score question must be an integer')
-      typedValue = Number(valueArgs.value)
-    } else {
-      typedValue = valueArgs.value
-    }
   }
   if (parsed.byId.length) {
     if (parsed.commandFile !== undefined || parsed.positionals.length) {
@@ -178,7 +134,7 @@ export async function answerInputFromArgv(
         text: cliRuling(
           source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
         ),
-        ...(questionId === typedQuestionId ? { typedValue } : {}),
+        ...(questionId === valueArgs.questionId ? { typedValue: valueArgs.value } : {}),
         fromOperator: attribution.kind === 'operator',
       }
     })
@@ -187,8 +143,10 @@ export async function answerInputFromArgv(
     (!parsed.positionals.length && !process.stdin.isTTY)
   ) {
     rulings =
-      typedValue !== undefined && parsed.commandFile === undefined && !parsed.positionals.length
-        ? cliRuling(String(typedValue))
+      valueArgs.value !== undefined &&
+      parsed.commandFile === undefined &&
+      !parsed.positionals.length
+        ? cliRuling(String(valueArgs.value))
         : cliRuling(
             (await helpers.readMessageText({
               missing: 'no ruling: pass it as an argument, via --file, or on stdin',
@@ -197,14 +155,14 @@ export async function answerInputFromArgv(
             })) ?? '',
           )
   } else {
-    rulings = cliRuling(parsed.positionals.join(' ') || String(typedValue ?? ''))
+    rulings = cliRuling(parsed.positionals.join(' ') || String(valueArgs.value ?? ''))
   }
-  if (typedValue !== undefined && typeof rulings === 'string') {
+  if (valueArgs.value !== undefined && typeof rulings === 'string') {
     rulings = [
       {
-        questionId: typedQuestionId!,
+        questionId: valueArgs.questionId!,
         text: rulings,
-        typedValue,
+        typedValue: valueArgs.value,
         fromOperator,
       },
     ]

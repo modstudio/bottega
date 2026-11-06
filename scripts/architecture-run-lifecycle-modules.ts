@@ -49,9 +49,16 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/typed-question/client.ts',
     '../../../shared/typed-question/registry.ts',
     '../database/db.ts',
+    '../run/question-vocabulary.ts',
     '../workflow/autonomy-scopes.ts',
     './jev-routing.ts',
     '../../../shared/worker-question.ts',
+  ]),
+  module('orchestrator/src/run/run-answer-typed-value.ts', ['../../../shared/worker-question.ts']),
+  module('orchestrator/src/run/answer-value-args.ts', [
+    '../database/db.ts',
+    './question-identifier.ts',
+    './question-open.ts',
   ]),
   module('orchestrator/src/resources/resource-claims.ts', [
     '../../../shared/record-id.ts',

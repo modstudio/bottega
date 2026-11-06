@@ -46,6 +46,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './continuation-checkout-service.ts',
       './run-resume-prompt.ts',
       './run-answer-liveness.ts',
+      './run-answer-typed-value.ts',
       './run-answer-authority.ts',
       './run-artifacts.ts',
       './run-authority.ts',

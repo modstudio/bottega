@@ -7,11 +7,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import {
-  answerValueRefusal,
-  type WorkerQuestion,
-  WorkerQuestionSchema,
-} from '../../../shared/worker-question.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
@@ -51,6 +46,11 @@ import {
   answerResumeWorker,
   reportAnswerResume,
 } from './run-answer-resume.ts'
+import {
+  type AnsweredQuestion,
+  answeredQuestion,
+  type TypedAnswerQuestion,
+} from './run-answer-typed-value.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
 import {
   adoptRunMutation,
@@ -162,49 +162,35 @@ export type AnswerRunInput = {
   json: boolean
   flags: RunFlags
 }
-type OpenQuestion = {
-  record_id: string
-  number: number
-  question: string
+type OpenQuestion = TypedAnswerQuestion & {
   awaiting_operator_at: string | null
   owner_id: string
   owner_status: string
   owner_pid: number | null
-  why: string | null
-  kind: string
-  typed_options: string | null
-  criteria: string | null
-  levels: string | null
-}
-type AnsweredQuestion = {
-  number: number
-  record_id: string
-  question: string
-  answer: string
-  typedValue?: string | boolean | number
-  fromOperator: boolean
 }
 
 type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
 
-function answeredQuestion(
-  question: OpenQuestion,
-  answer: string,
-  fromOperator: boolean,
-  typedValue?: string | boolean | number,
-): AnsweredQuestion {
-  return {
-    number: question.number,
-    record_id: question.record_id,
-    question: question.question,
-    answer,
-    ...(typedValue !== undefined ? { typedValue } : {}),
-    fromOperator,
-  }
-}
-
 function wrongQuestionChain(questionId: string, rootRecordId: string): string {
   return `--q${questionId} belongs to run ${rootRecordId}, not this chain`
+}
+
+function validatedRuling(text: string, argvLimit: number | undefined): string {
+  if (!text.trim())
+    throw new Error(
+      `empty ruling: received ${JSON.stringify(text)}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  const nul = text.indexOf('\0')
+  if (nul >= 0)
+    throw new Error(
+      `ruling contains a NUL at byte offset ${Buffer.byteLength(text.slice(0, nul), 'utf8')}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  const bytes = Buffer.byteLength(text, 'utf8')
+  if (argvLimit !== undefined && bytes > argvLimit)
+    throw new Error(
+      `ruling is ${bytes} bytes; this agent's resume transport is bounded at ${argvLimit} bytes\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+    )
+  return text
 }
 
 type AnswerRootRow = {
@@ -300,36 +286,6 @@ function readOpenQuestions(id: string, status: string): OpenQuestion[] {
       ? `run ${id} has already been ruled on; its current status is ${status}`
       : `run ${id} has no questions to answer; its current status is ${status}`,
   )
-}
-
-function storedWorkerQuestion(question: OpenQuestion): WorkerQuestion {
-  return WorkerQuestionSchema.parse({
-    question: question.question,
-    why: question.why ?? '',
-    kind: question.kind,
-    ...(question.kind === 'choice' ? { options: JSON.parse(question.typed_options ?? '[]') } : {}),
-    ...(question.kind === 'yesno' && question.criteria
-      ? { criteria: JSON.parse(question.criteria) }
-      : {}),
-    ...(question.kind === 'score' ? { levels: JSON.parse(question.levels ?? '[]') } : {}),
-  })
-}
-
-function typedAnswerValue(
-  question: OpenQuestion,
-  answer: string,
-  explicit: string | boolean | number | undefined,
-): string | boolean | number | undefined {
-  const typed = storedWorkerQuestion(question)
-  let value = explicit
-  if (value === undefined && typed.kind === 'choice') {
-    const normalized = answer.trim().toLowerCase()
-    value = typed.options.find(({ name }) => name.trim().toLowerCase() === normalized)?.name
-  }
-  if (value === undefined) return undefined
-  const refusal = answerValueRefusal(typed, value)
-  if (refusal) throw new Error(`question ${question.number} refuses that typed value; ${refusal}`)
-  return value
 }
 
 function requireAnswerableLiveness(
@@ -859,23 +815,6 @@ export async function answerRun(
   // service boundary. Other adapters supply validated ruling text directly.
   const answers: AnsweredQuestion[] = []
   const argvLimit = ownersLive ? undefined : helpers.argvResumeLimit(resumeAgent)
-  const rulingFrom = (text: string): string => {
-    if (!text.trim())
-      throw new Error(
-        `empty ruling: received ${JSON.stringify(text)}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    const nul = text.indexOf('\0')
-    if (nul >= 0)
-      throw new Error(
-        `ruling contains a NUL at byte offset ${Buffer.byteLength(text.slice(0, nul), 'utf8')}\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    const bytes = Buffer.byteLength(text, 'utf8')
-    if (argvLimit !== undefined && bytes > argvLimit)
-      throw new Error(
-        `ruling is ${bytes} bytes; this agent's resume transport is bounded at ${argvLimit} bytes\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-      )
-    return text
-  }
   if (Array.isArray(input.rulings)) {
     const invalid: string[] = []
     const seen = new Set<string>()
@@ -915,15 +854,8 @@ export async function answerRun(
     for (const q of open) {
       const ruling = input.rulings.find((item) => item.questionId === q.record_id)
       if (!ruling) continue
-      const answer = rulingFrom(ruling.text)
-      answers.push(
-        answeredQuestion(
-          q,
-          answer,
-          ruling.fromOperator,
-          typedAnswerValue(q, answer, ruling.typedValue),
-        ),
-      )
+      const answer = validatedRuling(ruling.text, argvLimit)
+      answers.push(answeredQuestion(q, answer, ruling.fromOperator, ruling.typedValue))
     }
   } else {
     if (!input.rulings) {
@@ -933,15 +865,8 @@ export async function answerRun(
           'or pass a ruling via --file or stdin.',
       )
     } else {
-      const answer = rulingFrom(input.rulings)
-      answers.push(
-        answeredQuestion(
-          open[0]!,
-          answer,
-          input.fromOperator,
-          typedAnswerValue(open[0]!, answer, undefined),
-        ),
-      )
+      const answer = validatedRuling(input.rulings, argvLimit)
+      answers.push(answeredQuestion(open[0]!, answer, input.fromOperator))
     }
   }
   await assertAnswersReady(open.length, answers, input, ownersLive)

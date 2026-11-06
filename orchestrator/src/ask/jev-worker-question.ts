@@ -9,8 +9,8 @@ import {
 } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import type { WorkerQuestion } from '../../../shared/worker-question.ts'
-import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { db, nowIso } from '../database/db.ts'
+import type { AnswerChannel } from '../run/question-vocabulary.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { routeJevAnswer } from './jev-routing.ts'
 
