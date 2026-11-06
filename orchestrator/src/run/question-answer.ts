@@ -10,6 +10,13 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
+import {
+  QUESTION_DELIVERY_MODE_LIVE,
+  QUESTION_DELIVERY_MODE_RECORD_ONLY,
+  QUESTION_DELIVERY_OUTCOME_DELIVERED,
+} from './question-vocabulary.ts'
+import type { answerAttributions } from './ruling-attribution.ts'
+import type { AnsweredQuestion } from './run-answer-typed-value.ts'
 
 export function applyQuestionAnswer(input: {
   database: Database
@@ -63,4 +70,47 @@ export function applyQuestionAnswer(input: {
     )
   enqueueQuestionRecord(input.database, input.questionId)
   return true
+}
+
+export function applyArchitectQuestionAnswers(input: {
+  database: Database
+  answers: AnsweredQuestion[]
+  attributions: ReturnType<typeof answerAttributions>
+  answeredAt: string
+  channel: AnswerChannel
+  ownersLive: boolean
+  skipResume: boolean
+  open: Array<{ record_id: string; owner_id: string }>
+  refusal: (questionId: string) => string
+}): void {
+  input.answers.forEach((answer, index) => {
+    const [answeredBy, answeredByName, answererKind] = input.attributions[index]!
+    const delivery: Parameters<typeof applyQuestionAnswer>[0]['delivery'] =
+      input.skipResume || input.ownersLive
+        ? {
+            runId: input.skipResume
+              ? null
+              : input.open.find((question) => question.record_id === answer.record_id)!.owner_id,
+            mode: input.skipResume
+              ? QUESTION_DELIVERY_MODE_RECORD_ONLY
+              : QUESTION_DELIVERY_MODE_LIVE,
+            outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+          }
+        : undefined
+    const changed = applyQuestionAnswer({
+      database: input.database,
+      questionId: answer.record_id,
+      answer: answer.answer,
+      value: answer.typedValue,
+      answeredAt: input.answeredAt,
+      answeredBy,
+      answeredByName,
+      answeredByKind: 'architect',
+      answererKind,
+      channel: input.channel,
+      deliveryPendingAt: input.ownersLive ? null : input.answeredAt,
+      ...(delivery ? { delivery } : {}),
+    })
+    if (!changed) throw new Error(input.refusal(answer.record_id))
+  })
 }

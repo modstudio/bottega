@@ -65,6 +65,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './question-delivery.ts',
     './question-open.ts',
     './question-outbox.ts',
+    './run-answer-typed-value.ts',
+    './ruling-attribution.ts',
     './question-vocabulary.ts',
   ]),
   module('orchestrator/src/resources/resource-claims.ts', [

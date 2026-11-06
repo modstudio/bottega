@@ -663,6 +663,25 @@ function completeRecordedRun(input: RecordedFinishInput): TerminalResult {
   }
 }
 
+async function recordTerminalQuestions(
+  runId: string,
+  questions: ReturnType<typeof realQuestions>,
+): Promise<Awaited<ReturnType<typeof recordReplyQuestions>>> {
+  if (!questions.length) return []
+  const existingQuestionTexts = (
+    db().query('SELECT question FROM question WHERE run_record_id = ?').all(runId) as {
+      question: string
+    }[]
+  ).map((row) => row.question)
+  const askedAt = nowIso()
+  return recordReplyQuestions({
+    runId,
+    questions: questionsToInsert(existingQuestionTexts, questions),
+    askedAt,
+    awaitingOperatorAt: await initialQuestionWaitingAt(runId, askedAt),
+  })
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -840,46 +859,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       exitCode,
     }),
   ))
-  /**
-   * Questions are inserted before the terminal row. A lost terminal write can leave the
-   * run reading `running` with an open question. That half-state is
-   * recoverable because the escalation survived. The reverse — terminal
-   * `asking` with nothing to answer — would sit in the inbox for ever.
-   *
-   * Making the inserts atomic with the terminal write requires first making
-   * questions recoverable from the terminal journal. `TerminalSnapshot`
-   * carries no question payload, so reconciliation could otherwise restore
-   * `asking` without its questions after a failed terminal transaction.
-   */
-  let recordedQuestions: Awaited<ReturnType<typeof recordReplyQuestions>> = []
-  if (acceptedQuestions.length) {
-    /**
-     * A question asked through the LIVE channel and then repeated in the final
-     * answer must not be recorded twice.
-     *
-     * That is the normal path when a live question times out: the tool tells
-     * the worker to stop and report it, which is exactly what it then does.
-     * Inserted again, the inbox shows the same question twice and `orch
-     * answer` refuses a single ruling because it demands one per open
-     * question — so the correct fallback made the run unanswerable.
-     *
-     * Matched on the question text, normalized, which is what the worker is
-     * repeating verbatim from its own tool call.
-     */
-    const existingQuestionTexts = (
-      db().query('SELECT question FROM question WHERE run_record_id = ?').all(claim.id) as {
-        question: string
-      }[]
-    ).map((row) => row.question)
-    const askedAt = nowIso()
-    const awaitingOperatorAt = await initialQuestionWaitingAt(claim.id, askedAt)
-    recordedQuestions = await recordReplyQuestions({
-      runId: claim.id,
-      questions: questionsToInsert(existingQuestionTexts, acceptedQuestions),
-      askedAt,
-      awaitingOperatorAt,
-    })
-  }
+  // Questions precede the terminal row so `asking` is never stored without an inbox entry.
+  const recordedQuestions = await recordTerminalQuestions(claim.id, acceptedQuestions)
 
   if (mcpSetupHeader) {
     output = output ? `${mcpSetupHeader}\n\n${output}` : mcpSetupHeader

@@ -26,14 +26,12 @@ import {
   continuationCheckoutForAnswer,
   continuationCheckoutForRetry,
 } from './continuation-checkout-service.ts'
-import { applyQuestionAnswer } from './question-answer.ts'
+import { applyArchitectQuestionAnswers } from './question-answer.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { openChainQuestions, questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
-  QUESTION_DELIVERY_MODE_LIVE,
-  QUESTION_DELIVERY_MODE_RECORD_ONLY,
   QUESTION_DELIVERY_MODE_RESUME,
   QUESTION_DELIVERY_MODE_RETRY,
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
@@ -173,26 +171,6 @@ type OpenQuestion = TypedAnswerQuestion & {
 
 type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
 
-function storedAnswerDelivery(input: {
-  skipResume: boolean
-  ownersLive: boolean
-  answerRecordId: string
-  open: OpenQuestion[]
-}):
-  | { delivery: NonNullable<Parameters<typeof applyQuestionAnswer>[0]['delivery']> }
-  | { delivery?: never } {
-  if (!input.skipResume && !input.ownersLive) return {}
-  return {
-    delivery: {
-      runId: input.skipResume
-        ? null
-        : input.open.find((question) => question.record_id === input.answerRecordId)!.owner_id,
-      mode: input.skipResume ? QUESTION_DELIVERY_MODE_RECORD_ONLY : QUESTION_DELIVERY_MODE_LIVE,
-      outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-    },
-  }
-}
-
 function wrongQuestionChain(questionId: string, rootRecordId: string): string {
   return `--q${questionId} belongs to run ${rootRecordId}, not this chain`
 }
@@ -213,41 +191,6 @@ function namedQuestionRefusal(questionId: string, runId: string): string {
   if (named.root_record_id !== runId) return wrongQuestionChain(questionId, named.root_record_id)
   if (named.answered_at) return `--q${questionId} on run ${named.run_record_id} is already closed`
   return `--q${questionId} is not open on this chain`
-}
-
-function applyArchitectAnswer(input: {
-  runId: string
-  answer: AnsweredQuestion
-  attribution: ReturnType<typeof answerAttributions>[number]
-  answeredAt: string
-  channel: AnswerChannel
-  ownersLive: boolean
-  skipResume: boolean
-  open: OpenQuestion[]
-}): void {
-  const [answeredBy, answeredByName, answererKind] = input.attribution
-  if (
-    !applyQuestionAnswer({
-      database: db(),
-      questionId: input.answer.record_id,
-      answer: input.answer.answer,
-      value: input.answer.typedValue,
-      answeredAt: input.answeredAt,
-      answeredBy,
-      answeredByName,
-      answeredByKind: 'architect',
-      answererKind,
-      channel: input.channel,
-      deliveryPendingAt: input.ownersLive ? null : input.answeredAt,
-      ...storedAnswerDelivery({
-        skipResume: input.skipResume,
-        ownersLive: input.ownersLive,
-        answerRecordId: input.answer.record_id,
-        open: input.open,
-      }),
-    })
-  )
-    throw new Error(namedQuestionRefusal(input.answer.record_id, input.runId))
 }
 
 function collectAnswers(input: {
@@ -795,11 +738,8 @@ export async function retryRun(
  * Rule on what a worker asked, and set it going again.
  *
  * The ruling RESUMES the worker's own session rather than starting a new run,
- * which is the entire reason escalation is affordable here: everything the
- * worker had read is still in its head, so a design question costs one short
- * turn instead of a second full survey of the code. Starting fresh would make
- * asking more expensive than guessing, and a channel that costs more than
- * guessing does not get used.
+ * keeping everything it read in context. A design question costs one short
+ * turn instead of a fresh survey, so asking stays cheaper than guessing.
  */
 export async function answerRun(
   requestedId: string,
@@ -987,24 +927,18 @@ export async function answerRun(
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    answers.forEach((answer, index) => {
-      applyArchitectAnswer({
-        runId: id,
-        answer,
-        attribution: attributions[index]!,
-        answeredAt: now,
-        channel: input.channel,
-        ownersLive,
-        skipResume,
-        open,
-      })
+    applyArchitectQuestionAnswers({
+      database: db(),
+      answers,
+      attributions,
+      answeredAt: now,
+      channel: input.channel,
+      ownersLive,
+      skipResume,
+      open,
+      refusal: (questionId) => namedQuestionRefusal(questionId, id),
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)
-    if (skipResume) {
-      // The shared answer transition recorded each delivery.
-    } else if (ownersLive) {
-      // The shared answer transition recorded each delivery.
-    }
     if (skipResume || ownersLive) auditRunMutation(answerAuthority, 'answer')
   })
 
