@@ -1,3 +1,19 @@
+/** Unauthenticated and product pages: checked for a response and a render, never timed. */
+export const UNTIMED_ROUTES = [
+  '/sign-in',
+  '/forgot-password',
+  '/reset-password',
+  '/accept-invitation/probe',
+  '/unsubscribe/probe/probe',
+  '/product/board',
+  '/product/context',
+  '/product/doc-store',
+  '/product/orchestration',
+  '/product/review',
+  '/product/workers',
+  '/product/workflows',
+] as const
+
 export type ParameterizedRoute = {
   template: string
   parent: string
@@ -42,4 +58,23 @@ export function firstSampleLink(
 
 export function slowestFirst<T extends { settleMs: number | null }>(rows: readonly T[]): T[] {
   return [...rows].sort((left, right) => (right.settleMs ?? -1) - (left.settleMs ?? -1))
+}
+
+/** The path template a TanStack route file declares, or null for a route without parameters. */
+export function routeFileTemplate(file: string): string | null {
+  const name = file.replace(/\.tsx$/, '')
+  if (!name.includes('$')) return null
+  return `/${name
+    .split('.')
+    .map((segment) => segment.replace(/_$/, ''))
+    .join('/')}`
+}
+
+/** Route templates that no parameterized or untimed probe entry covers. */
+export function unprobedRouteTemplates(templates: readonly string[]): string[] {
+  const probed = new Set(PARAMETERIZED_ROUTES.map((route) => route.template))
+  return templates.filter(
+    (template) =>
+      !probed.has(template) && !UNTIMED_ROUTES.some((route) => routePattern(template).test(route)),
+  )
 }

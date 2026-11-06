@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { firstSampleLink, slowestFirst } from './page-probe-decision.ts'
+import { readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import {
+  firstSampleLink,
+  routeFileTemplate,
+  slowestFirst,
+  unprobedRouteTemplates,
+} from './page-probe-decision.ts'
 
 describe('page probe decisions', () => {
   test('takes the first same-origin link with the exact parameterized route shape', () => {
@@ -25,5 +32,15 @@ describe('page probe decisions', () => {
       { route: '/slow', settleMs: 12 },
     ])
     expect(rows.map((row) => row.route)).toEqual(['/slow', '/fast', '/missing'])
+  })
+
+  test('every parameterized route file is probed, sampled or untimed', () => {
+    const routes = fileURLToPath(new URL('../src/routes', import.meta.url))
+    const templates = readdirSync(routes)
+      .map(routeFileTemplate)
+      .filter((template): template is string => template !== null)
+    expect(templates).toContain('/inbox/$kind/$id')
+    expect(unprobedRouteTemplates(templates)).toEqual([])
+    expect(unprobedRouteTemplates(['/agents/$name'])).toEqual(['/agents/$name'])
   })
 })

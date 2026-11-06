@@ -1,7 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { type Browser, type BrowserContext, chromium, type Page, type Request } from 'playwright'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
@@ -9,13 +7,28 @@ import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import {
+  command as dashboardCommand,
+  distribution,
+  executable,
+  freePort,
+  pipedOutput,
+  repoRoot,
+  stopServer,
+  waitForServer,
+} from './dashboard-server.ts'
+import {
   collectRenderEvidence,
   rootStillRendered,
   routesForMode,
   SETTLE_TIMEOUT_MS,
   waitForRootRendered,
 } from './page-check.ts'
-import { firstSampleLink, PARAMETERIZED_ROUTES, slowestFirst } from './page-probe-decision.ts'
+import {
+  firstSampleLink,
+  PARAMETERIZED_ROUTES,
+  slowestFirst,
+  UNTIMED_ROUTES,
+} from './page-probe-decision.ts'
 
 type Mode = 'local' | 'hosted'
 type Phase = 'cold' | 'reload'
@@ -33,27 +46,6 @@ type ProbeRow = {
   timed: boolean
 }
 
-const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
-const executable = join(repoRoot, 'bin', PLATFORM_SLUG)
-const distribution = join(repoRoot, 'hub', 'web', 'dist', 'index.html')
-const UNTIMED_ROUTES = [
-  '/sign-in',
-  '/forgot-password',
-  '/reset-password',
-  '/accept-invitation/probe',
-  '/unsubscribe/probe/probe',
-  '/product/board',
-  '/product/context',
-  '/product/doc-store',
-  '/product/orchestration',
-  '/product/review',
-  '/product/workers',
-  '/product/workflows',
-] as const
-
-const pipedOutput = (stream: Bun.Subprocess['stdout']): ReadableStream<Uint8Array> =>
-  stream as ReadableStream<Uint8Array>
-
 function requestedModes(): { label: 'local' | 'hosted' | 'both'; modes: Mode[] } {
   const args = process.argv.slice(2)
   const index = args.indexOf('--mode')
@@ -61,72 +53,6 @@ function requestedModes(): { label: 'local' | 'hosted' | 'both'; modes: Mode[] }
   if (value === 'local' || value === 'hosted') return { label: value, modes: [value] }
   if (value === 'both') return { label: value, modes: ['local', 'hosted'] }
   throw new Error('usage: bun run probe -- --mode local|hosted|both')
-}
-
-async function freePort(): Promise<number> {
-  const reservation = createServer()
-  await new Promise<void>((resolve, reject) => {
-    reservation.once('error', reject)
-    reservation.listen(0, '127.0.0.1', resolve)
-  })
-  const address = reservation.address()
-  const port = typeof address === 'object' && address !== null ? address.port : undefined
-  await new Promise<void>((resolve, reject) =>
-    reservation.close((error) => (error ? reject(error) : resolve())),
-  )
-  if (port === undefined) throw new Error('could not reserve a dashboard page-probe port')
-  return port
-}
-
-async function waitForServer(origin: string, exited: Promise<number>): Promise<void> {
-  let lastFailure = 'no response'
-  for (let attempt = 0; attempt < 200; attempt++) {
-    try {
-      await fetch(origin)
-      return
-    } catch (error) {
-      lastFailure = String(error)
-    }
-    const result = await Promise.race([
-      exited.then((exitCode) => ({ exitCode })),
-      Bun.sleep(50).then(() => null),
-    ])
-    if (result)
-      throw new Error(`dashboard server exited ${result.exitCode} before accepting requests`)
-  }
-  throw new Error(`dashboard server did not accept requests: ${lastFailure}`)
-}
-
-async function command(args: string[]): Promise<string> {
-  const child = Bun.spawn([executable, ...args], {
-    cwd: repoRoot,
-    env: process.env,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (exitCode !== 0) {
-    throw new Error(
-      `${executable} ${args.join(' ')} exited ${exitCode}: ${stderr.trim() || stdout.trim()}`,
-    )
-  }
-  return stdout.trim()
-}
-
-async function stopServer(server: ReturnType<typeof Bun.spawn>): Promise<void> {
-  server.kill()
-  const stopped = await Promise.race([
-    server.exited.then(() => true),
-    Bun.sleep(5_000).then(() => false),
-  ])
-  if (!stopped) {
-    server.kill(9)
-    await server.exited
-  }
 }
 
 function requestPath(request: Request): string {
@@ -226,8 +152,11 @@ async function clickedSample(page: Page, template: string, origin: string): Prom
   return firstSampleLink(template, [page.url()], origin)
 }
 
-async function sampleRoutes(context: BrowserContext, origin: string): Promise<Map<string, string>> {
+type Samples = { found: Map<string, string>; failures: Map<string, string> }
+
+async function sampleRoutes(context: BrowserContext, origin: string): Promise<Samples> {
   const samples = new Map<string, string>()
+  const failures = new Map<string, string>()
   const page = await context.newPage()
   try {
     for (const definition of PARAMETERIZED_ROUTES) {
@@ -245,14 +174,17 @@ async function sampleRoutes(context: BrowserContext, origin: string): Promise<Ma
           firstSampleLink(definition.template, hrefs, origin) ??
           (await clickedSample(page, definition.template, origin))
         if (sample) samples.set(definition.template, sample)
-      } catch {
-        // The measured parent row records the failure; this route still reports no sample.
+      } catch (error) {
+        failures.set(
+          definition.template,
+          `sample discovery on ${definition.parent} failed: ${(error as Error).message}`,
+        )
       }
     }
   } finally {
     await page.close()
   }
-  return samples
+  return { found: samples, failures }
 }
 
 async function probeMode(context: BrowserContext, origin: string, mode: Mode): Promise<ProbeRow[]> {
@@ -260,7 +192,7 @@ async function probeMode(context: BrowserContext, origin: string, mode: Mode): P
   const rows: ProbeRow[] = []
   const measuredRoutes = routesForMode(mode)
   for (const definition of PARAMETERIZED_ROUTES) {
-    const sample = samples.get(definition.template)
+    const sample = samples.found.get(definition.template)
     if (sample) measuredRoutes.push(sample)
     else {
       rows.push({
@@ -271,7 +203,9 @@ async function probeMode(context: BrowserContext, origin: string, mode: Mode): P
         renderMs: null,
         settleMs: null,
         slowestRequest: null,
-        evidence: [],
+        evidence: [
+          samples.failures.get(definition.template) ?? 'no matching row on the parent list',
+        ],
         rendered: null,
         timed: true,
       })
@@ -357,7 +291,10 @@ try {
         new Response(pipedOutput(localServer.stderr)).text(),
       ])
       await waitForServer(origin, localServer.exited)
-      const loginUrl = await command(['dashboard', 'login', '--port', String(port)])
+      const loginUrl = await dashboardCommand(
+        ['dashboard', 'login', '--port', String(port)],
+        process.env,
+      )
       const context = await browser.newContext()
       try {
         const login = await context.newPage()
