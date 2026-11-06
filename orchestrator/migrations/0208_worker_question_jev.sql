@@ -20,9 +20,9 @@ SET kind='choice',
       FROM json_each(question.options)
     )
 WHERE options IS NOT NULL
-  AND json_valid(options)
-  AND json_type(options)='array'
-  AND json_array_length(options)>0
+  AND CASE WHEN json_valid(options)
+        THEN json_type(options)='array' AND json_array_length(options)>0
+        ELSE 0 END
   AND kind <> 'choice'
   AND typed_options IS NULL;
 -- /BACKFILL
