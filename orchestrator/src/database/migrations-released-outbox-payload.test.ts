@@ -19,8 +19,7 @@ test('re-executed backfills tolerate released outbox payloads', () => {
     }
     expect(applyMigrations(database)).toContain(newest)
     expect(
-      database.query<{ n: number }, []>("SELECT count(*) n FROM outbox WHERE payload=''").get()!
-        .n,
+      database.query<{ n: number }, []>("SELECT count(*) n FROM outbox WHERE payload=''").get()!.n,
     ).toBe(3)
   } finally {
     database.close()

@@ -86,7 +86,7 @@ describe('context document integration', () => {
     expect(ordinary.writeWarnings?.[0]).toContain('write allowed unchecked')
   })
 
-  test('refuses a task holder outside the bottega task store', async () => {
+  test('refuses a task holder outside the platform task store', async () => {
     globals[CONTEXT_FACTS_PORTS_KEY] = {
       ...tasks,
       tasks: async () => [{ key: 'SHIP-7', record_id: newRecordId(), project: 'starship' }],
