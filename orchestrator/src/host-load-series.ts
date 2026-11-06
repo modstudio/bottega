@@ -137,9 +137,9 @@ export function summarizeHostLoadWindow(
     latestSwapUsed: last.swapUsed,
     swapDelta: last.swapUsed - first.swapUsed,
     latestLoadavg1: last.loadavg1,
-    hostCapacityWaitCount: waits.filter(
-      (wait) => isHostCapacityWait(wait) && (wait.durationMs ?? 0) >= HOST_LOAD_WAIT_MIN_MS,
-    ).length,
+    hostCapacityWaitCount: waits
+      .filter((wait) => isHostCapacityWait(wait) && (wait.durationMs ?? 0) >= HOST_LOAD_WAIT_MIN_MS)
+      .reduce((sum, wait) => sum + wait.occurrences, 0),
   }
 }
 

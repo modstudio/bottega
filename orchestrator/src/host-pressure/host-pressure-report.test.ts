@@ -26,19 +26,22 @@ test('host pressure derives nearest-rank load, pressure shares, and recorded wai
         at: '2026-10-01T01:00:00Z',
         resourceKind: 'cpu',
         resourceKey: 'host-capacity',
-        durationMs: 10,
+        durationMs: 30,
+        occurrences: 3,
       },
       {
         at: '2026-10-01T02:00:00Z',
         resourceKind: 'cpu',
         resourceKey: 'host-capacity',
         durationMs: 30,
+        occurrences: 1,
       },
       {
         at: '2026-10-01T03:00:00Z',
         resourceKind: 'lock',
         resourceKey: 'create',
         durationMs: 7,
+        occurrences: 1,
       },
     ],
     window,
@@ -54,7 +57,42 @@ test('host pressure derives nearest-rank load, pressure shares, and recorded wai
     { level: 'warning', count: 2, share: 2 / 3 },
   ])
   expect(report.contentions).toEqual([
-    { kind: 'host-capacity (runs and gates)', waits: 2, medianWaitMs: 10, totalWaitMs: 40 },
+    { kind: 'host-capacity (runs and gates)', waits: 4, medianWaitMs: 10, totalWaitMs: 60 },
     { kind: 'lock/create', waits: 1, medianWaitMs: 7, totalWaitMs: 7 },
+  ])
+})
+
+test('host pressure weights per-wait durations from coalesced contention rows', () => {
+  const window = { start: '2026-10-01T00:00:00Z', end: '2026-10-02T00:00:00Z' }
+  const report = hostPressureReport(
+    [],
+    [
+      {
+        at: '2026-10-01T01:00:00Z',
+        resourceKind: 'lock',
+        resourceKey: 'create',
+        durationMs: 60,
+        occurrences: 3,
+      },
+      {
+        at: '2026-10-01T02:00:00Z',
+        resourceKind: 'lock',
+        resourceKey: 'create',
+        durationMs: 10,
+        occurrences: 1,
+      },
+      {
+        at: '2026-10-01T03:00:00Z',
+        resourceKind: 'lock',
+        resourceKey: 'create',
+        durationMs: 40,
+        occurrences: 1,
+      },
+    ],
+    window,
+  )
+
+  expect(report.contentions).toEqual([
+    { kind: 'lock/create', waits: 5, medianWaitMs: 20, totalWaitMs: 110 },
   ])
 })

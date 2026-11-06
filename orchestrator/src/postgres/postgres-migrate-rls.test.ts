@@ -33,7 +33,7 @@ import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evi
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerQuestionTaskRecordSyncProof } from '../../test/postgres-question-task-proof.ts'
-import { registerRecordChangePruneProof as registerPruneProof } from '../../test/postgres-record-change-prune-proof.ts'
+import { registerRecordRetentionProof } from '../../test/postgres-record-retention-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
@@ -312,7 +312,7 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
-  registerPruneProof(actorUrl!)
+  registerRecordRetentionProof(actorUrl!)
   registerHostedConfigProofs(actorUrl!, ids.SPACE_A, ids.SPACE_B, ids.USER_A)
   registerConfigAccessSpaceCreationProof({
     actorUrl: () => actorUrl!,

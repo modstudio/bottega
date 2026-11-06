@@ -1,9 +1,28 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { summarizeContention } from './contention.ts'
-import { pruneContentionRows, rollupContentionDays } from './contention-retention.ts'
+import { insertSlowStatementContention, summarizeContention } from './contention.ts'
+import {
+  CONTENTION_RAW_WINDOW_MS,
+  pruneContentionRows,
+  rollupContentionDays,
+} from './contention-retention.ts'
 import { setContentionRolledThroughDay } from './contention-rollup-state.ts'
 import { migratedTestDatabase } from './test-database.fixture.ts'
+
+test('hosted contention prune window matches the local raw window', () => {
+  const migration = readFileSync(
+    join(
+      import.meta.dir,
+      '../../../shared/record/migrations/20261106042841_dev_2133_contention_prune/migration.sql',
+    ),
+    'utf8',
+  )
+  const days = migration.match(/retention CONSTANT interval := interval '(\d+) days?'/)?.[1]
+  expect(days).toBeDefined()
+  expect(Number(days) * 24 * 60 * 60_000).toBe(CONTENTION_RAW_WINDOW_MS)
+})
 
 function addContention(
   database: ReturnType<typeof migratedTestDatabase>,
@@ -12,15 +31,16 @@ function addContention(
   event: 'wait' | 'invalidation',
   duration: number | null,
   session: string | null = 'session-a',
+  occurrences = 1,
 ): string {
   const recordId = newRecordId()
   database
     .query(
       `INSERT INTO contention
-       (record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms)
-       VALUES (?,?,?,?,?,?,?)`,
+       (record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,occurrences)
+       VALUES (?,?,?,?,?,?,?,?)`,
     )
-    .run(recordId, at, session, 'cpu', key, event, duration)
+    .run(recordId, at, session, 'cpu', key, event, duration, occurrences)
   return recordId
 }
 
@@ -46,7 +66,7 @@ function addOutbox(
 test('contention rollup is idempotent and preserves summaries across rolled and raw days', () => {
   const database = migratedTestDatabase()
   try {
-    addContention(database, '2026-10-01T01:00:00.000Z', 'alpha', 'wait', 10)
+    addContention(database, '2026-10-01T01:00:00.000Z', 'alpha', 'wait', 30, 'session-a', 3)
     addContention(database, '2026-10-01T02:00:00.000Z', 'alpha', 'wait', -5)
     addContention(database, '2026-10-01T03:00:00.000Z', 'beta', 'invalidation', null, null)
     addContention(database, '2026-10-02T04:00:00.000Z', 'gamma', 'wait', 30, 'session-b')
@@ -68,6 +88,24 @@ test('contention rollup is idempotent and preserves summaries across rolled and 
       },
     )
     expect(database.query('SELECT COUNT(*) count FROM contention_day').get()).toEqual({ count: 2 })
+    expect(summarizeContention(database, '2026-10-01T00:00:00.000Z')).toEqual(before)
+  } finally {
+    database.close()
+  }
+})
+
+test('contention summaries and rollups weight bucket occurrences rather than rows', () => {
+  const database = migratedTestDatabase()
+  try {
+    addContention(database, '2026-10-01T01:00:00.000Z', 'bucket', 'wait', 40, 'session-a', 4)
+    const before = summarizeContention(database, '2026-10-01T00:00:00.000Z')
+    expect(before.resources.find((row) => row.kind === 'cpu')).toMatchObject({
+      count: 4,
+      totalDurationMs: 40,
+      meanDurationMs: 10,
+      topKeys: [{ key: 'bucket', count: 4 }],
+    })
+    rollupContentionDays(database, { now: Date.parse('2026-10-02T12:00:00.000Z') })
     expect(summarizeContention(database, '2026-10-01T00:00:00.000Z')).toEqual(before)
   } finally {
     database.close()
@@ -119,6 +157,126 @@ test('contention prune keeps pending, quarantined, and unrolled raw rows', () =>
     expect(
       database.query('SELECT record_id FROM contention WHERE record_id=?').get(unrolled),
     ).not.toBeNull()
+  } finally {
+    database.close()
+  }
+})
+
+test('contention prune keeps a closed slow-statement bucket until it has an outbox row', () => {
+  const database = migratedTestDatabase()
+  try {
+    const bucket = addContention(database, '2026-10-01T01:00:00.000Z', 'slow bucket', 'wait', 10)
+    database
+      .query("UPDATE contention SET resource_kind='store',cause='slow-statement' WHERE record_id=?")
+      .run(bucket)
+    setContentionRolledThroughDay(database, '2026-10-01')
+    expect(
+      pruneContentionRows(database, {
+        now: Date.parse('2026-10-20T12:00:00.000Z'),
+        dryRun: true,
+      }),
+    ).toEqual({ rows: 0, more: false })
+    expect(
+      database.query('SELECT record_id FROM contention WHERE record_id=?').get(bucket),
+    ).toBeDefined()
+
+    expect(pruneContentionRows(database, { now: Date.parse('2026-10-20T12:00:00.000Z') })).toEqual({
+      rows: 0,
+      more: false,
+    })
+    expect(
+      database
+        .query("SELECT COUNT(*) count FROM outbox WHERE kind='contention' AND row_id=?")
+        .get(bucket),
+    ).toEqual({ count: 0 })
+    expect(
+      database.query('SELECT record_id FROM contention WHERE record_id=?').get(bucket),
+    ).toBeDefined()
+  } finally {
+    database.close()
+  }
+})
+
+test('contention prune removes a delivered slow-statement bucket past the raw window', () => {
+  const database = migratedTestDatabase()
+  try {
+    const bucket = addContention(
+      database,
+      '2026-10-01T01:00:00.000Z',
+      'delivered slow bucket',
+      'wait',
+      10,
+    )
+    database
+      .query("UPDATE contention SET resource_kind='store',cause='slow-statement' WHERE record_id=?")
+      .run(bucket)
+    addOutbox(database, bucket, 'synced')
+    setContentionRolledThroughDay(database, '2026-10-01')
+
+    expect(pruneContentionRows(database, { now: Date.parse('2026-10-20T12:00:00.000Z') })).toEqual({
+      rows: 1,
+      more: false,
+    })
+    expect(
+      database.query('SELECT record_id FROM contention WHERE record_id=?').get(bucket),
+    ).toBeNull()
+  } finally {
+    database.close()
+  }
+})
+
+test('contention retention enqueues a quiet machine closed bucket exactly once', () => {
+  const database = migratedTestDatabase()
+  try {
+    const bucket = addContention(
+      database,
+      '2026-10-01T01:00:00.000Z',
+      'quiet slow bucket',
+      'wait',
+      10,
+    )
+    database
+      .query("UPDATE contention SET resource_kind='store',cause='slow-statement' WHERE record_id=?")
+      .run(bucket)
+    const options = { now: Date.parse('2026-10-02T12:00:00.000Z') }
+    rollupContentionDays(database, options)
+    rollupContentionDays(database, options)
+    expect(
+      database
+        .query("SELECT COUNT(*) count FROM outbox WHERE kind='contention' AND row_id=?")
+        .get(bucket),
+    ).toEqual({ count: 1 })
+  } finally {
+    database.close()
+  }
+})
+
+test('contention retention enqueues an older closed bucket skipped by the hot path', () => {
+  const database = migratedTestDatabase()
+  try {
+    const olderBucket = addContention(
+      database,
+      '2026-10-23T06:00:00.000Z',
+      'older slow bucket',
+      'wait',
+      10,
+    )
+    database
+      .query("UPDATE contention SET resource_kind='store',cause='slow-statement' WHERE record_id=?")
+      .run(olderBucket)
+
+    const now = Date.parse('2026-10-23T08:15:00.000Z')
+    insertSlowStatementContention(database, 'current slow bucket', 12, now, 'session-a')
+    expect(
+      database
+        .query("SELECT COUNT(*) count FROM outbox WHERE kind='contention' AND row_id=?")
+        .get(olderBucket),
+    ).toEqual({ count: 0 })
+
+    rollupContentionDays(database, { now })
+    expect(database.query("SELECT row_id FROM outbox WHERE kind='contention'").all()).toEqual([
+      { row_id: olderBucket },
+    ])
   } finally {
     database.close()
   }

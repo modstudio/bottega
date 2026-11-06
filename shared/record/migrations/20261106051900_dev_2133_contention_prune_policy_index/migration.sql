@@ -1,0 +1,2 @@
+CREATE INDEX "contention_at_idx" ON "contention" ("at");--> statement-breakpoint
+CREATE POLICY "contention_owner_all" ON "contention" AS PERMISSIVE FOR ALL TO "record_owner" USING (true) WITH CHECK (true);

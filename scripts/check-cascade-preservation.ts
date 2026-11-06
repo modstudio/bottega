@@ -413,6 +413,18 @@ function stringLiterals(expression: string): string[] {
   )
 }
 
+function globExamples(expression: string, column: string): string[] {
+  const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return [...expression.matchAll(new RegExp(`${escaped}\\s+GLOB\\s+'((?:''|[^'])*)'`, 'gi'))].map(
+    (match) =>
+      match[1]!
+        .replaceAll("''", "'")
+        .replaceAll('[0-9]', '0')
+        .replaceAll('[a-z]', 'a')
+        .replaceAll('[A-Z]', 'A'),
+  )
+}
+
 function candidates(
   column: TableInfo,
   checks: readonly string[],
@@ -445,6 +457,7 @@ function candidates(
     }
     values.push(
       ...related.flatMap(stringLiterals),
+      ...related.flatMap((check) => globExamples(check, column.name)),
       `probe-${ordinal}`,
       'probe',
       '[]',

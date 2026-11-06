@@ -23,7 +23,7 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/record/service-connection.ts',
   ]),
-  module('orchestrator/src/record/record-change-prune.ts', ['bun', './record-pool.ts']),
+  module('orchestrator/src/record/record-retention.ts', ['bun', './record-pool.ts']),
   module('orchestrator/src/postgres/postgres-migrate.ts', [
     '../../../shared/install-root.ts',
     '../../../shared/record/migration-session.ts',
@@ -587,6 +587,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/landing-outbox.ts', [
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
+    '../database/slow-statements.ts',
     './machine-identity.ts',
     './outbox-sanitize.ts',
     './outbox-serialize.ts',

@@ -1,6 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { insertContention, loadContentionWaits } from './contention.ts'
+import {
+  insertContention,
+  insertSlowStatementContention,
+  loadContentionWaits,
+} from './contention.ts'
 import { db } from './db.ts'
 import { migratedTestDatabase } from './test-database.fixture.ts'
 
@@ -72,12 +76,59 @@ describe('contention ledger', () => {
           resourceKind: 'cpu',
           resourceKey: 'space-separated',
           durationMs: 25,
+          occurrences: 1,
         },
       ])
     } finally {
       database.close()
     }
   })
+})
+
+test('slow statements coalesce by session and UTC hour and enqueue once after closing', () => {
+  const database = migratedTestDatabase()
+  try {
+    const firstHour = Date.parse('2026-10-23T08:15:00.000Z')
+    insertSlowStatementContention(database, 'SELECT ?', 11, firstHour, 'session-a')
+    insertSlowStatementContention(database, 'SELECT ?', 13, firstHour + 60_000, 'session-a')
+    expect(
+      database
+        .query(
+          `SELECT at,occurrences,duration_ms FROM contention WHERE cause='slow-statement' ORDER BY at`,
+        )
+        .all(),
+    ).toEqual([{ at: '2026-10-23T08:00:00.000Z', occurrences: 2, duration_ms: 24 }])
+    expect(
+      database.query("SELECT COUNT(*) count FROM outbox WHERE kind='contention'").get(),
+    ).toEqual({ count: 0 })
+
+    insertSlowStatementContention(database, 'SELECT ?', 17, firstHour + 60 * 60_000, 'session-a')
+    expect(
+      database
+        .query(
+          `SELECT at,occurrences,duration_ms FROM contention WHERE cause='slow-statement' ORDER BY at`,
+        )
+        .all(),
+    ).toEqual([
+      { at: '2026-10-23T08:00:00.000Z', occurrences: 2, duration_ms: 24 },
+      { at: '2026-10-23T09:00:00.000Z', occurrences: 1, duration_ms: 17 },
+    ])
+    expect(
+      database.query("SELECT COUNT(*) count FROM outbox WHERE kind='contention'").get(),
+    ).toEqual({ count: 1 })
+    insertSlowStatementContention(
+      database,
+      'SELECT ?',
+      19,
+      firstHour + 60 * 60_000 + 1,
+      'session-a',
+    )
+    expect(
+      database.query("SELECT COUNT(*) count FROM outbox WHERE kind='contention'").get(),
+    ).toEqual({ count: 1 })
+  } finally {
+    database.close()
+  }
 })
 
 describe('one-shot contention writes honor the stale-schema invariant', () => {

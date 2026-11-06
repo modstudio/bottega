@@ -95,12 +95,18 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
     'record',
     'kept',
   ),
-  ...entries(['contention', 'hub_interval'], 'telemetry', null, 'telemetry'),
+  ...entries(
+    ['contention'],
+    'telemetry',
+    'orchestrator/src/record/record-retention.ts#pruneRecordRetention',
+    'telemetry',
+  ),
+  ...entries(['hub_interval'], 'telemetry', null, 'telemetry'),
   ...entries(['record_change_horizon'], 'journal', null, 'change-logs'),
   ...entries(
     ['record_change'],
     'journal',
-    'orchestrator/src/record/record-change-prune.ts#pruneRecordChanges',
+    'orchestrator/src/record/record-retention.ts#pruneRecordRetention',
     'change-logs',
   ),
   ...entries(

@@ -24,6 +24,20 @@ const contentionLabel = (row: HostPressureContention) =>
     ? 'host-capacity (runs and gates)'
     : `${row.resourceKind}/${row.resourceKey}`
 
+function weightedMedianWaitMs(rows: readonly HostPressureContention[]): number | null {
+  const waits = rows
+    .filter((row) => row.durationMs !== null && row.occurrences > 0)
+    .map((row) => ({ duration: Math.max(0, row.durationMs!) / row.occurrences, ...row }))
+    .sort((left, right) => left.duration - right.duration)
+  const rank = Math.ceil(waits.reduce((sum, row) => sum + row.occurrences, 0) * 0.5)
+  let cumulative = 0
+  for (const row of waits) {
+    cumulative += row.occurrences
+    if (cumulative >= rank) return row.duration
+  }
+  return null
+}
+
 export function hostPressureReport(
   samples: readonly PressureSample[],
   contentions: readonly HostPressureContention[],
@@ -64,8 +78,8 @@ export function hostPressureReport(
         )
         return {
           kind,
-          waits: rows.length,
-          medianWaitMs: nearestRankPercentile(durations, 0.5),
+          waits: rows.reduce((sum, row) => sum + row.occurrences, 0),
+          medianWaitMs: weightedMedianWaitMs(rows),
           totalWaitMs: durations.reduce((sum, duration) => sum + duration, 0),
         }
       })
