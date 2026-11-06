@@ -65,6 +65,7 @@ import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
 import { registerHostLoadCommands } from './host-load.ts'
+import { registerLaunchAgentRefreshCommand } from './launch-agent-refresh.ts'
 import { registerLensCommands } from './lens.ts'
 import { registerMachineJournalCommand } from './machine-journal.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
@@ -263,6 +264,7 @@ function registerMachineInspectionCommands(program: Command): void {
   registerEfficiencyCommands(program)
   registerHostLoadCommands(program)
   registerMachineJournalCommand(program, { write })
+  registerLaunchAgentRefreshCommand(program, { log })
 }
 
 function registerMachineAttentionCommands(program: Command): void {

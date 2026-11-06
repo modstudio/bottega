@@ -119,6 +119,18 @@ export const modules: ArchitectureModule[] = [
     '../database/migrations.ts',
     '../machine-journal.ts',
   ]),
+  module('orchestrator/src/commands/launch-agent-refresh.ts', [
+    'commander',
+    '../health/launch-agent-refresh.ts',
+  ]),
+  module('orchestrator/src/health/launch-agent-refresh.ts', [
+    'node:path',
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+    '../setup/launchd-owners.ts',
+    '../setup/setup-schedules.ts',
+    './launch-agent-doctor.ts',
+  ]),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',

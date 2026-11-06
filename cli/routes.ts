@@ -285,6 +285,12 @@ export const ROUTES = (
     route('machine setup', 'orch', 'setup', 'set up this machine: level and projects'),
     route('machine reclaim-fixture-questions', 'hub', 'reclaim-fixture-questions'),
     { command: ['machine', 'journal'], owner: 'orch', argv: ['journal'], hidden: true },
+    {
+      command: ['machine', 'launch-agents', 'refresh'],
+      owner: 'orch',
+      argv: ['launch-agents', 'refresh'],
+      hidden: true,
+    },
     { command: ['machine', 'init-db'], owner: 'orch', argv: ['init-db'], hidden: true },
     {
       command: ['machine', 'legacy-calls'],

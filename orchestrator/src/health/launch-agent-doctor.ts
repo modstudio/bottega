@@ -277,7 +277,7 @@ function currentRenderValues(
   }
 }
 
-function installedDefinitionObservations(
+export function installedDefinitionObservations(
   owners: readonly InstalledPlistOwner[],
   installationKind: InstallationKind | null,
 ): Record<string, LaunchAgentDefinitionObservation> {

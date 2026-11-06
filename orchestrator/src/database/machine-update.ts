@@ -7,6 +7,7 @@ import {
   INSTALL_HOME_ENV,
   type InstallationIdentity,
   installRoot,
+  resolveInstallationPaths,
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
@@ -120,6 +121,9 @@ type UpdateDependencies = {
   migrate?: (cwd: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
+  identity?: InstallationIdentity
+  updateDistribution?: typeof updateDistribution
+  refreshLaunchAgents?: (binary: string) => void
   project?: (
     cwd: string,
     database: import('bun:sqlite').Database,
@@ -128,6 +132,18 @@ type UpdateDependencies = {
     path: string
     settings: { trunk?: string }
   } | null
+}
+
+function runLaunchAgentRefresh(binary: string): void {
+  const result = Bun.spawnSync([binary, 'machine', 'launch-agents', 'refresh'], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `launch-agent refresh failed with exit ${result.exitCode}; run ${binary} machine launch-agents refresh`,
+    )
+  }
 }
 
 function maintainStoreAfterUpdate(
@@ -267,11 +283,11 @@ export async function machineUpdateCommand(
   }
   const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
-  const identity = runningInstallationIdentity(import.meta.dir, process.env)
+  const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
   const path = decideUpdatePath(identity.kind, requestedVersion)
   if (path.action === 'refuse') throw new Error(path.reason)
   if (identity.kind === 'distribution') {
-    await updateDistribution({
+    await (deps.updateDistribution ?? updateDistribution)({
       manifest: identity.manifest,
       requestedVersion,
       presentation,
@@ -279,6 +295,8 @@ export async function machineUpdateCommand(
     })
     const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
     maintainStoreAfterUpdate(presentation, maintainStore)
+    const refreshLaunchAgents = deps.refreshLaunchAgents ?? runLaunchAgentRefresh
+    refreshLaunchAgents(realpathSync(process.execPath))
     return
   }
   const target = deps.cwd ?? installRoot()
@@ -331,4 +349,6 @@ export async function machineUpdateCommand(
   })
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
   maintainStoreAfterUpdate(presentation, maintainStore)
+  const refreshLaunchAgents = deps.refreshLaunchAgents ?? runLaunchAgentRefresh
+  refreshLaunchAgents(resolveInstallationPaths(identity.root, {}).executable)
 }
