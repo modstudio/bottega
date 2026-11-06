@@ -542,6 +542,7 @@ export const modules: ArchitectureModule[] = [
     '../caller-classification.ts',
     '../database/db.ts',
     '../git/commit-resolution.ts',
+    '../git/evidence-checkout.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',
     './review-command-cwd.ts',

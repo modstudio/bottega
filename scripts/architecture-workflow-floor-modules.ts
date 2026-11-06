@@ -250,6 +250,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../caller-classification.ts',
     '../database/db.ts',
     '../gate/gate-decision.ts',
+    '../git/evidence-checkout.ts',
+    '../project/projects.ts',
     '../sandbox/sandbox.ts',
     '../sandbox/sandbox-runtime.ts',
     '../secret-shaped-output.ts',

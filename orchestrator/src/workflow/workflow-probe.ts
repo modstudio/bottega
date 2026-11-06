@@ -21,7 +21,7 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
-import { assertEvidenceCheckoutIdentity } from '../git/checkout-identity.ts'
+import { assertEvidenceCheckoutIdentity } from '../git/evidence-checkout.ts'
 import { projectAt } from '../project/projects.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'

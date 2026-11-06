@@ -5,8 +5,7 @@
  */
 import { realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { mainCheckoutWorktreeHint, projects } from '../project/projects.ts'
+import { projects } from '../project/projects.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 
 /** Preserve the root separator while removing spelling-only trailing separators. */
@@ -195,44 +194,6 @@ export function evidenceCheckoutRefusal(input: {
     !pathAtOrBelow(input.topLevel, input.worktreeBase)
     ? 'worktree-area-resolved-outside'
     : null
-}
-
-function shortHeadCommit(cwd: string): string | null {
-  try {
-    const result = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--short=12', 'HEAD'], {
-      env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'ignore',
-    })
-    return result.exitCode === 0 ? result.stdout.toString().trim() || null : null
-  } catch {
-    return null
-  }
-}
-
-/** Gather checkout identity and refuse evidence that a stranded worktree-area cwd misattributes. */
-export function assertEvidenceCheckoutIdentity(input: {
-  cwd: string
-  projectPath: string
-  verb: string
-  topLevel?: string | null
-  resolveCommit?: (cwd: string) => string | null
-}): void {
-  const topLevel = input.topLevel === undefined ? gitTopLevel(input.cwd) : input.topLevel
-  if (!topLevel) return
-  const worktreeBase = realpathOrSpelled(mainCheckoutWorktreeHint(input.projectPath))
-  const cwd = checkoutPathsSame(input.cwd, worktreeBase)
-    ? worktreeBase
-    : realpathOrSpelled(input.cwd)
-  const resolvedTopLevel = checkoutPathsSame(topLevel, worktreeBase)
-    ? worktreeBase
-    : realpathOrSpelled(topLevel)
-  if (!evidenceCheckoutRefusal({ cwd, topLevel: resolvedTopLevel, worktreeBase })) return
-  const commit = (input.resolveCommit ?? shortHeadCommit)(resolvedTopLevel) ?? 'unknown commit'
-  throw new Error(
-    `${PLATFORM_SLUG} ${input.verb}: ${input.cwd} is not a worktree; git resolves it to ${resolvedTopLevel} at ${commit}, so evidence recorded here would prove that checkout, not a branch tip.\n` +
-      `cleared by: pass --cwd <the branch's worktree root> (${PLATFORM_SLUG} tree list --json), or reopen the run's tree with ${PLATFORM_SLUG} tree open <run>; remove the stranded directory if its tree is gone.`,
-  )
 }
 
 /**
