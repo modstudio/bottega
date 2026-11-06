@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { askTypedQuestionClient } from './client.ts'
-import type { ChoiceQuestion, NoulQuestion } from './registry.ts'
+import type { ChoiceQuestion, NoulQuestion, ScoreQuestion } from './registry.ts'
 
 const FIXTURE_QUESTION = {
   id: 'spec_unsettled',
@@ -116,4 +116,36 @@ describe('backoff response', () => {
     expect(calls).toBe(2)
     expect(result).toMatchObject({ kind: 'error', error: 'http_429' })
   })
+})
+
+test('sends score levels and parses a score answer', async () => {
+  const question: ScoreQuestion = {
+    id: 'level',
+    version: 1,
+    type: 'score',
+    instructions: 'Score it.',
+    criteria: ['low', 'high'],
+    threshold: 0.9,
+  }
+  let sent: { questions: { level: { criteria: string[] } } } | undefined
+  const result = await askTypedQuestionClient(question, 'state', {
+    resolve,
+    fetch: async (_url, init) => {
+      sent = JSON.parse(String(init.body)) as typeof sent
+      return Response.json({
+        answers: {
+          level: {
+            score: 1,
+            confidence: 0.9,
+            legend: 'high',
+            probabilities: { '0': 0.1, '1': 0.9 },
+          },
+        },
+        model: 'jev-score',
+        usage: { input_tokens: 5 },
+      })
+    },
+  })
+  expect(sent?.questions.level.criteria).toEqual(['low', 'high'])
+  expect(result).toMatchObject({ kind: 'answer', answer: { score: 1, confidence: 0.9 } })
 })

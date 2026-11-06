@@ -11,6 +11,7 @@ import {
   ListOpenQuestionsResultSchema,
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
+import { answerValueRefusal, WorkerQuestionSchema } from '../ask/worker-question.ts'
 import { db } from '../database/db.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
@@ -82,25 +83,58 @@ const rulingFileStores: RulingFileStores = {
 const answerRulingSchema = z
   .object({
     question_id: identifier,
-    ruling: z.string().trim().min(1),
+    ruling: z.string().trim().min(1).optional(),
+    value: z.union([z.string(), z.boolean(), z.number().int()]).optional(),
+    note: z.string().trim().min(1).optional(),
     from_operator: z.boolean().optional(),
   })
+  .refine(
+    ({ ruling, value, note }) => ruling !== undefined || value !== undefined || note !== undefined,
+    'ruling, value, or note is required',
+  )
   .strict()
 
 function resolveAnswerRulings(
   rulings: z.infer<typeof answerRulingSchema>[],
   commandFromOperator: boolean,
 ) {
-  return rulings.map(({ question_id, ruling, from_operator: rulingFromOperator }) => {
+  return rulings.map(({ question_id, ruling, value, note, from_operator: rulingFromOperator }) => {
     const attribution = rulingAttributionDecision(commandFromOperator, rulingFromOperator ?? false)
     if (attribution.kind === 'conflict') {
       throw new Error(
         'from_operator cannot be combined with rulings[].from_operator; use the top-level field for every ruling or the per-ruling field for individual rulings',
       )
     }
+    const questionId = localQuestionId(question_id)
+    const row = db()
+      .query(
+        'SELECT question,why,kind,typed_options,criteria,levels FROM question WHERE record_id=?',
+      )
+      .get(questionId) as {
+      question: string
+      why: string | null
+      kind: string
+      typed_options: string | null
+      criteria: string | null
+      levels: string | null
+    } | null
+    if (!row) throw new Error(`question ${question_id} was not found`)
+    const parsed = WorkerQuestionSchema.parse({
+      question: row.question,
+      why: row.why,
+      kind: row.kind,
+      ...(row.kind === 'choice' ? { options: JSON.parse(row.typed_options ?? '[]') } : {}),
+      ...(row.kind === 'yesno' && row.criteria ? { criteria: JSON.parse(row.criteria) } : {}),
+      ...(row.kind === 'score' ? { levels: JSON.parse(row.levels ?? '[]') } : {}),
+    })
+    if (value !== undefined) {
+      const refusal = answerValueRefusal(parsed, value)
+      if (refusal) throw new Error(`question ${question_id} refuses that typed value; ${refusal}`)
+    }
     return {
-      questionId: localQuestionId(question_id),
-      text: ruling,
+      questionId,
+      text: note ?? ruling ?? String(value),
+      typedValue: value,
       fromOperator: attribution.kind === 'operator',
     }
   })
@@ -120,10 +154,11 @@ function registerAnswerQuestionsTool(server: McpServer): void {
       outputSchema: z.object(AnswerWaitingResultSchema.shape).strict(),
     },
     async ({ run_record_id, rulings, from_operator, record_only }) => {
+      const resolved = resolveAnswerRulings(rulings, from_operator ?? false)
       const result = await answerRun(
         localRunId(run_record_id),
         {
-          rulings: resolveAnswerRulings(rulings, from_operator ?? false),
+          rulings: resolved,
           fromOperator: false,
           channel: 'mcp',
           recordOnly: record_only ?? false,
@@ -132,6 +167,13 @@ function registerAnswerQuestionsTool(server: McpServer): void {
         },
         answerRunHelpers(presentation),
       )
+      const update = db().query(
+        `UPDATE question SET answer_value=?,answered_by_kind='architect',jev_agreed=CASE WHEN jev_pick IS NULL THEN NULL WHEN jev_pick=? THEN 1 ELSE 0 END WHERE record_id=?`,
+      )
+      for (const ruling of resolved) {
+        const encoded = ruling.typedValue === undefined ? null : JSON.stringify(ruling.typedValue)
+        update.run(encoded, encoded, ruling.questionId)
+      }
       return structured(result)
     },
   )

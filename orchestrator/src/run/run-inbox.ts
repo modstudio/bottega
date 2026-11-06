@@ -38,6 +38,11 @@ type InboxQuestion = {
   options: string[]
   recommendation: string | null
   why: string | null
+  kind: 'choice' | 'yesno' | 'score' | 'text'
+  jev_pick: string | null
+  jev_confidence: number | null
+  jev_probabilities: string | null
+  jev_error: string | null
   status: string
   ruling_status: 'open' | 'answered' | 'overturned'
   overturned_at: string | null
@@ -87,6 +92,11 @@ type QueriedInboxQuestion = {
   options: string | null
   recommendation: string | null
   why: string | null
+  kind: 'choice' | 'yesno' | 'score' | 'text'
+  jev_pick: string | null
+  jev_confidence: number | null
+  jev_probabilities: string | null
+  jev_error: string | null
   agent: string
   job: string
   repo: string | null
@@ -216,7 +226,8 @@ export async function queryInbox(
   const queriedRows = db()
     .query(
       `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
-            q.asked_at, q.question, q.options, q.recommendation, q.why,
+            q.asked_at, q.question, q.options, q.recommendation, q.why,q.kind,
+            q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
             q.answered_at, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
             r.agent, r.job, r.repo, root.project_record_id, r.status, r.session_id,
@@ -267,6 +278,11 @@ export async function queryInbox(
           options: q.options ? (JSON.parse(q.options) as string[]) : [],
           recommendation: q.recommendation,
           why: q.why,
+          kind: q.kind,
+          jev_pick: q.jev_pick,
+          jev_confidence: q.jev_confidence,
+          jev_probabilities: q.jev_probabilities,
+          jev_error: q.jev_error,
           status: q.root_voided ? 'voided' : q.root_status,
           ruling_status: rulingStatus(q.overturned_at, q.answered_at),
           overturned_at: q.overturned_at,
@@ -415,6 +431,30 @@ function presentLines(lines: string[], log: RunInboxPresentation['log']): void {
   for (const line of lines) log(line)
 }
 
+function presentQuestionDetails(
+  question: {
+    why: string | null
+    jev_pick: string | null
+    jev_confidence: number | null
+    jev_probabilities: string | null
+    jev_error: string | null
+    options: string | null
+    recommendation: string | null
+  },
+  recommendationLabel: string,
+  log: RunInboxPresentation['log'],
+): void {
+  if (question.why) log(`        why: ${question.why}`)
+  if (question.jev_pick)
+    log(
+      `        Jev: ${question.jev_pick} (confidence ${question.jev_confidence ?? 'unknown'}; probabilities ${question.jev_probabilities ?? 'unavailable'})`,
+    )
+  if (question.jev_error) log(`        Jev: ${question.jev_error}`)
+  const options = question.options ? (JSON.parse(question.options) as string[]) : []
+  for (const option of options) log(`        - ${option}`)
+  if (question.recommendation) log(`        ${recommendationLabel}: ${question.recommendation}`)
+}
+
 export async function runInboxCommand(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
@@ -438,6 +478,7 @@ export async function runInboxCommand(
   const queriedRows = db()
     .query(
       `SELECT q.number,q.run_record_id,r.number AS run_number,q.asked_at,q.question,q.options,q.recommendation,q.why,
+            q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
             q.answered_at,
             q.answer, q.overturned_at, q.overturned_by, q.overturn_reason, q.replacement,
             q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
@@ -472,6 +513,10 @@ export async function runInboxCommand(
     options: string | null
     recommendation: string | null
     why: string | null
+    jev_pick: string | null
+    jev_confidence: number | null
+    jev_probabilities: string | null
+    jev_error: string | null
     agent: string
     job: string
     repo: string | null
@@ -558,10 +603,7 @@ export async function runInboxCommand(
     }
     group.questionNumbers.push(q.number)
     log(`  [q${q.number}] ${displayRunQuestion(q.run_record_id, q.question)}`)
-    if (q.why) log(`        why: ${q.why}`)
-    const opts = q.options ? (JSON.parse(q.options) as string[]) : []
-    for (const o of opts) log(`        - ${o}`)
-    if (q.recommendation) log(`        it would: ${q.recommendation}`)
+    presentQuestionDetails(q, 'it would', log)
     if (q.session_id === null) {
       log('        unowned — any session may rule, and the answering identity is recorded')
     }
@@ -599,10 +641,7 @@ export async function runInboxCommand(
           `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
       )
       log(`        ${displayRunQuestion(q.run_record_id, q.question)}`)
-      if (q.why) log(`        why: ${q.why}`)
-      const opts = q.options ? (JSON.parse(q.options) as string[]) : []
-      for (const o of opts) log(`        - ${o}`)
-      if (q.recommendation) log(`        recommendation: ${q.recommendation}`)
+      presentQuestionDetails(q, 'recommendation', log)
       log('        only the owning session may rule; visibility does not transfer authority')
     }
   }

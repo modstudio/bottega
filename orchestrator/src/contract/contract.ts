@@ -137,11 +137,32 @@ export const WORKER_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['question', 'options', 'recommendation', 'why'],
+        required: ['kind', 'question', 'options', 'recommendation', 'why', 'criteria', 'levels'],
         properties: {
+          kind: { type: ['string', 'null'], enum: ['choice', 'yesno', 'score', 'text', null] },
           question: { type: 'string' },
-          options: nullableStrings,
+          options: {
+            anyOf: [
+              nullableStrings,
+              {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: { name: { type: 'string' }, criteria: { type: ['string', 'null'] } },
+                  required: ['name', 'criteria'],
+                  additionalProperties: false,
+                },
+              },
+            ],
+          },
           recommendation: { type: ['string', 'null'] },
+          criteria: {
+            type: ['object', 'null'],
+            properties: { yes: { type: ['string', 'null'] }, no: { type: ['string', 'null'] } },
+            required: ['yes', 'no'],
+            additionalProperties: false,
+          },
+          levels: nullableStrings,
           why: {
             type: ['string', 'null'],
             description: 'Why this changes the implementation.',
@@ -223,9 +244,12 @@ export type WorkerReply = {
   questions?:
     | {
         question: string
-        options?: string[] | null
+        kind?: 'choice' | 'yesno' | 'score' | 'text' | null
+        options?: (string | { name: string; criteria?: string | null })[] | null
         recommendation?: string | null
         why?: string | null
+        criteria?: { yes?: string | null; no?: string | null } | null
+        levels?: string[] | null
       }[]
     | null
   deviations?: { what: string; why: string }[] | null

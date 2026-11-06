@@ -39,6 +39,21 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/ask-invocation.ts', ['../../../shared/commander-public-path.ts']),
   module('orchestrator/src/ask/ask-proxy.ts', ['node:net', './ask-failure.ts']),
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
+  module('orchestrator/src/ask/worker-question.ts', ['zod']),
+  module('orchestrator/src/ask/jev-routing.ts', [
+    '../../../shared/typed-question/client.ts',
+    './worker-question.ts',
+  ]),
+  module('orchestrator/src/ask/jev-worker-question.ts', [
+    'bun:sqlite',
+    '../../../shared/machine-config.ts',
+    '../../../shared/typed-question/client.ts',
+    '../../../shared/typed-question/registry.ts',
+    '../database/db.ts',
+    '../workflow/autonomy-scopes.ts',
+    './jev-routing.ts',
+    './worker-question.ts',
+  ]),
   module('orchestrator/src/resources/resource-claims.ts', [
     '../../../shared/record-id.ts',
     '../git/checkout-identity.ts',

@@ -874,7 +874,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     ).map((row) => row.question)
     const askedAt = nowIso()
     const awaitingOperatorAt = await initialQuestionWaitingAt(claim.id, askedAt)
-    recordReplyQuestions({
+    await recordReplyQuestions({
       runId: claim.id,
       questions: questionsToInsert(existingQuestionTexts, acceptedQuestions),
       askedAt,

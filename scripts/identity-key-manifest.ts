@@ -150,6 +150,8 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'question.revision',
     'question.number',
     'question.change_seq',
+    'question.jev_input_tokens',
+    'question.jev_agreed',
     'board_message.number',
     'question.workflow_step_ordinal',
     'release_ledger.exit_code',

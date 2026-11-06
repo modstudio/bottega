@@ -1,5 +1,6 @@
 // concern: outcome
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { type WorkerQuestion, WorkerQuestionSchema } from './ask/worker-question.ts'
 export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
 export const SCHEMA_ENVELOPE_ERROR_PREFIX = 'schema-envelope: '
 
@@ -36,13 +37,6 @@ export function schemaEnvelopeContractError(
   )
 }
 
-type WorkerQuestion = {
-  question: string
-  options?: string[] | null
-  recommendation?: string | null
-  why?: string | null
-}
-
 type FinalizationReply = {
   status: 'done' | 'asking' | 'refused'
   files_changed?: string[] | null
@@ -68,7 +62,10 @@ function isRealQuestion(item: WorkerQuestion): boolean {
 /** The usable question subset of a schema-valid worker reply. */
 export function realQuestions(r: FinalizationReply | null | undefined): WorkerQuestion[] {
   if (!r?.questions?.length) return []
-  return r.questions.filter(isRealQuestion)
+  return r.questions.flatMap((question) => {
+    const parsed = WorkerQuestionSchema.safeParse(question)
+    return parsed.success && isRealQuestion(parsed.data) ? [parsed.data] : []
+  })
 }
 
 /** A reply contains a decision for the architect when at least one question is real. */
