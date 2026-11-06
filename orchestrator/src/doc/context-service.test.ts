@@ -7,7 +7,7 @@ import type { SecretScanner } from '../secret-scan/secret-scan.ts'
 import { encodeContextItem } from './context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { DOC_SECRET_SCANNER_KEY } from './doc-secret-scan.ts'
-import { importDoc, listDocMetadata } from './docs.ts'
+import { importDoc, listDocMetadata, listDocs } from './docs.ts'
 
 const globals = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
@@ -164,6 +164,8 @@ describe('context document integration', () => {
       delivery: 'demand',
     })
     expect(listDocMetadata().some((doc) => doc.scope === 'context')).toBe(false)
+    expect(listDocs().some((doc) => doc.scope === 'context')).toBe(false)
+    expect(listDocs({ scope: 'context' })).toHaveLength(1)
     expect(listDocMetadata({ scope: 'context' })).toHaveLength(1)
   })
 })

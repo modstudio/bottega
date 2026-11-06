@@ -39,8 +39,8 @@ async function pointerRefusal(value: string, database: Database): Promise<string
       return docs.some((doc) => doc.reference === pointer)
         ? null
         : `task document ${pointer} does not resolve`
-    } catch {
-      return `task document ${pointer} does not resolve`
+    } catch (error) {
+      return `task documents of ${key} could not be read (${(error as Error).message}); retry once the task store answers`
     }
   }
   const stored = storedPointerRefusal(pointer, database)

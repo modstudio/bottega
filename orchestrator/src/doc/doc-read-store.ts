@@ -251,15 +251,28 @@ function validKind(kind: string): asserts kind is DocKind {
 
 function addressFilters(filters: {
   scope?: string
+  scopes?: string[]
   subject?: string | null
   owner?: string | null
 }): { where: string[]; values: string[] } {
   const where: string[] = []
   const values: string[] = []
+  if (filters.scope !== undefined && filters.scopes !== undefined) {
+    throw new Error('use scope or scopes, not both')
+  }
   if (filters.scope !== undefined) {
     validScope(filters.scope)
     where.push('d.scope = ?')
     values.push(filters.scope)
+  }
+  if (filters.scopes !== undefined) {
+    for (const scope of filters.scopes) validScope(scope)
+    where.push(
+      filters.scopes.length === 0
+        ? '0'
+        : `d.scope IN (${filters.scopes.map(() => '?').join(', ')})`,
+    )
+    values.push(...filters.scopes)
   }
   if (filters.subject !== undefined) {
     where.push(filters.subject === null ? 'd.subject IS NULL' : 'd.subject = ?')
@@ -328,6 +341,7 @@ export function docForAudience<T extends { audiences: DocAudiences; body: string
 export function listDocsStore(
   filters: {
     scope?: string
+    scopes?: string[]
     subject?: string | null
     owner?: string | null
     audience?: string
@@ -439,12 +453,6 @@ export function listDocMetadataStore(filters: DocListFilters = {}): DocMetadata[
 }
 
 function metadataFilters(filters: DocListFilters): { where: string[]; values: string[] } {
-  if (filters.scopes !== undefined) {
-    for (const scope of filters.scopes) validScope(scope)
-  }
-  if (filters.scope !== undefined && filters.scopes !== undefined) {
-    throw new Error('use scope or scopes, not both')
-  }
   const { where, values } = addressFilters(filters)
   if (filters.articleSubject !== undefined) {
     where.push(
@@ -466,13 +474,6 @@ function metadataFilters(filters: DocListFilters): { where: string[]; values: st
     validKind(filters.kind)
     where.push('d.kind = ?')
     values.push(filters.kind)
-  }
-  if (filters.scopes !== undefined) {
-    if (filters.scopes.length === 0) where.push('0')
-    else {
-      where.push(`d.scope IN (${filters.scopes.map(() => '?').join(', ')})`)
-      values.push(...filters.scopes)
-    }
   }
   if (filters.match !== undefined) {
     where.push(`(

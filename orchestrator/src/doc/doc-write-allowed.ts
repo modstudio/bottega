@@ -132,8 +132,9 @@ export function importedDocDelivery(scope: string): 'demand' | undefined {
   return scope === 'project' || scope === 'global' ? 'demand' : undefined
 }
 
+/** Canon, settings and context items never pack into prompts, whatever the caller asked. */
 export function forcedDocDelivery(scope: string): 'demand' | null {
-  return scope === 'canon' || scope === 'settings' ? 'demand' : null
+  return scope === 'canon' || scope === 'settings' || scope === 'context' ? 'demand' : null
 }
 
 /** Articles are discovered on demand and never participate in canon or prompt injection. */
