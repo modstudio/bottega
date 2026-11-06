@@ -55,7 +55,7 @@ import {
   recordSyncAuthorizationDecision,
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
-import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
+import * as evidenceLookup from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
@@ -104,18 +104,16 @@ async function existingEvidenceOwned(
   principal: RecordPrincipal,
   _ownership: { scope: 'machine' | 'space-principal' },
 ): Promise<boolean> {
-  const lookup = ownedEvidenceLookup({
+  const lookup = evidenceLookup.existingEvidenceOwnershipLookup({
     ...principal,
     ...evidenceOwnership(table),
     id,
     machineId,
-    suffix: 'FOR UPDATE',
   })
-  const rows = await tx.unsafe(lookup.text, lookup.values)
-  if (rows.length > 0) return true
-  const collision = await tx.unsafe(`SELECT id FROM ${table} WHERE id=$1::uuid FOR UPDATE`, [id])
-  if (collision.length > 0) throw evidenceCollision(table, id)
-  return false
+  const rows = (await tx.unsafe(lookup.text, lookup.values)) as { owned?: unknown }[]
+  const decision = evidenceLookup.existingEvidenceOwnershipDecision(rows[0])
+  if (decision === 'collision') throw evidenceCollision(table, id)
+  return decision === 'owned'
 }
 
 function requireOwnedUpsert(
@@ -139,7 +137,7 @@ async function assertEvidenceReferencesOwned(input: {
   await input.postgres.begin(async (tx) => {
     await bindPrincipal(tx, input.principal)
     for (const reference of references) {
-      const lookup = ownedEvidenceLookup({
+      const lookup = evidenceLookup.ownedEvidenceLookup({
         ...input.principal,
         ...evidenceOwnership(reference.table),
         id: reference.id,

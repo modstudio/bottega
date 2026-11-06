@@ -8,10 +8,61 @@ import {
   backfillRunRecords,
   buildRunRecordPayload,
   enqueueRunRecord,
+  inspectRunRecordBackfill,
+  runRecordBackfillDecision,
   shouldRefreshRunRecordLinks,
 } from './run-outbox.ts'
+import { CANON_MIRROR_JOB } from './synthetic-lifecycle-job.ts'
 
 const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
+
+test('backfill decision classifies every way the record can miss a local run', () => {
+  const base = {
+    job: 'implement',
+    number: 42,
+    status: 'ok',
+    failureKind: null,
+    parentRunRecordId: null,
+    projectRecordId: null,
+    taskRecordId: null,
+  }
+  expect(runRecordBackfillDecision({ ...base, latestPayload: { state: 'absent' } })).toBe('enqueue')
+  expect(
+    runRecordBackfillDecision({
+      ...base,
+      latestPayload: { state: 'parsed', value: { number: 1, status: 'ok', failureKind: null } },
+    }),
+  ).toBe('refresh-number')
+  expect(
+    runRecordBackfillDecision({
+      ...base,
+      taskRecordId: 'task-id',
+      latestPayload: { state: 'parsed', value: { number: 42, status: 'ok', failureKind: null } },
+    }),
+  ).toBe('refresh-links')
+  expect(
+    runRecordBackfillDecision({
+      ...base,
+      status: 'failed',
+      failureKind: 'capacity',
+      latestPayload: { state: 'parsed', value: { number: 42, status: 'ok', failureKind: null } },
+    }),
+  ).toBe('refresh-root')
+  expect(runRecordBackfillDecision({ ...base, latestPayload: { state: 'released' } })).toBe('none')
+  expect(
+    runRecordBackfillDecision({
+      ...base,
+      job: CANON_MIRROR_JOB,
+      latestPayload: { state: 'absent' },
+    }),
+  ).toBe('none')
+  expect(
+    runRecordBackfillDecision({
+      ...base,
+      latestPayload: { state: 'parsed', value: { number: 42, status: 'ok', failureKind: null } },
+    }),
+  ).toBe('none')
+})
 
 test('link refresh requires a new local link absent from the latest payload', () => {
   const projectId = '01990000-0000-7000-8000-000000001214'
@@ -55,6 +106,42 @@ test('backfill does not enqueue a terminal run whose latest payload was released
     refreshedRoots: 0,
     skippedReleased: 1,
     skippedLive: 0,
+  })
+  expect(
+    database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!.count,
+  ).toBe(1)
+  database.close()
+})
+
+test('backfill inspection counts missing, released, and live runs without writing', () => {
+  const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
+  const projectId = database
+    .query<{ record_id: string }, []>('SELECT record_id FROM project ORDER BY name LIMIT 1')
+    .get()!.record_id
+  const insert = database.query(
+    `INSERT INTO run (
+       record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
+       project_record_id
+     ) VALUES (?,?,'2026-11-01T12:00:00.000Z','codex','implement','sha',4,'head',?,?)`,
+  )
+  const missingId = newRecordId()
+  const releasedId = newRecordId()
+  const runningId = newRecordId()
+  insert.run(missingId, 1, 'ok', projectId)
+  insert.run(releasedId, 2, 'failed', projectId)
+  insert.run(runningId, 3, 'running', projectId)
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
+       VALUES (?,'run',?,?,'2026-11-01T12:01:00.000Z')`,
+    )
+    .run(newRecordId(), releasedId, '')
+
+  expect(inspectRunRecordBackfill(database)).toMatchObject({
+    enqueue: 1,
+    released: 1,
+    live: 1,
   })
   expect(
     database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!.count,

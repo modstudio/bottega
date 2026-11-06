@@ -32,6 +32,15 @@ describe('record doctor decisions', () => {
       { name: 'local-only', space: null },
     ],
     pendingOutboxRows: 2,
+    runRecordBackfill: {
+      enqueue: 0,
+      'refresh-number': 0,
+      'refresh-links': 0,
+      'refresh-root': 0,
+      none: 0,
+      released: 0,
+      live: 0,
+    },
     quarantinedOutboxRows: [],
     operatorConnectionPresent: false,
   } as const
@@ -65,10 +74,30 @@ describe('record doctor decisions', () => {
       'membership library',
       `project ${PLATFORM_NAME} declared space`,
       'local outbox pending rows',
+      'local runs the record does not reflect',
       'local outbox quarantined rows',
     ])
     expect(JSON.stringify(checks)).not.toContain('BOTTEGA_RECORD_URL')
     expect(JSON.stringify(checks)).not.toContain('BETTER_AUTH_SECRET')
+  })
+
+  test('reports each way a local run can be missing from the record', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      runRecordBackfill: {
+        ...healthyFacts.runRecordBackfill,
+        enqueue: 1,
+        'refresh-number': 2,
+        'refresh-links': 3,
+        'refresh-root': 4,
+      },
+    })
+    expect(checks).toContainEqual({
+      name: 'local runs the record does not reflect',
+      status: 'fail',
+      detail: `10: enqueue 1, refresh-number 2, refresh-links 3, refresh-root 4; run \`${PLATFORM_SLUG} record push --backfill\``,
+      section: 'customer',
+    })
   })
 
   test('a stored-session attribution failure directs the customer to sign in', () => {

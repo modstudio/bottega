@@ -167,10 +167,10 @@ export function fakePostgres(
         return runReferenceAvailable ? [{ id: values?.[0] }] : []
       if (
         evidenceCollisionId &&
-        source.startsWith('SELECT id FROM pull_request_ci WHERE id=') &&
-        !source.includes('space_id=')
+        source.includes('AS owned FROM pull_request_ci WHERE id=$1::uuid FOR UPDATE') &&
+        values?.[0] === evidenceCollisionId
       ) {
-        return [{ id: evidenceCollisionId }]
+        return [{ owned: false }]
       }
       if (source.toLowerCase().includes('insert into "run"')) {
         runWrites++

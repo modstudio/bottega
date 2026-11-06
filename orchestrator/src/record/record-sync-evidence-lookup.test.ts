@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
 import type { MachineEvidenceTable } from './record-evidence-references.ts'
-import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
+import {
+  existingEvidenceOwnershipDecision,
+  existingEvidenceOwnershipLookup,
+  ownedEvidenceLookup,
+} from './record-sync-evidence-lookup.ts'
 
 const input = {
   id: 'record-id',
@@ -50,4 +54,38 @@ test('only a run lookup is bound to the starting user', () => {
     'space-id',
     'machine-id',
   ])
+})
+
+test('existing evidence lookup locks one id and projects ownership', () => {
+  const lookup = existingEvidenceOwnershipLookup({
+    id: input.id,
+    spaceId: input.spaceId,
+    machineId: input.machineId,
+    userId: input.userId,
+    scope: 'machine',
+    table: 'run',
+  })
+  expect(lookup.text).toContain('AS owned')
+  expect(lookup.text).toContain('WHERE id=$1::uuid FOR UPDATE')
+  expect(lookup.values).toEqual(['record-id', 'space-id', 'machine-id', 'user-id'])
+})
+
+test('existing space-principal lookup locks task flow stage ownership once', () => {
+  const lookup = existingEvidenceOwnershipLookup({
+    id: input.id,
+    spaceId: input.spaceId,
+    machineId: input.machineId,
+    userId: input.userId,
+    scope: 'space-principal',
+    table: 'task_flow_stage',
+  })
+  expect(lookup.text).toContain('owner_machine.id=evidence.opened_machine_id')
+  expect(lookup.text).toContain('FOR UPDATE OF evidence')
+  expect(lookup.values).toEqual(['record-id', 'space-id', 'user-id'])
+})
+
+test('existing evidence ownership distinguishes absent, owned, and collision', () => {
+  expect(existingEvidenceOwnershipDecision(undefined)).toBe('absent')
+  expect(existingEvidenceOwnershipDecision({ owned: true })).toBe('owned')
+  expect(existingEvidenceOwnershipDecision({ owned: false })).toBe('collision')
 })

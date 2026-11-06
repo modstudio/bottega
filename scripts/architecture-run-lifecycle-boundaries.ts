@@ -268,10 +268,13 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     [
       '../../../shared/record-id.ts',
       '../../../shared/record/schema.ts',
+      '../database/db.ts',
+      '../record/machine-identity.ts',
       '../record/outbox-sanitize.ts',
       '../record/outbox-prune-payload.ts',
       '../record/outbox-serialize.ts',
       './run-chain.ts',
+      './run-status.ts',
       './synthetic-lifecycle-job.ts',
       'bun:sqlite',
     ],

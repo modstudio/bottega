@@ -659,6 +659,7 @@ export const recordModules: RecordModule[] = [
     '../agent/agents.ts',
     '../database/db.ts',
     '../postgres/postgres-migrate.ts',
+    '../run/run-outbox.ts',
     './machine-identity.ts',
     './outbox-quarantine.ts',
     './record-api-client.ts',
