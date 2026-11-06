@@ -714,6 +714,42 @@ describe('record client', () => {
     })
   })
 
+  test('run detail accepts the bigint prompt size the record sends as a string', async () => {
+    const id = '01990000-0000-7000-8000-000000000001'
+    const fetch: RecordFetch = async () =>
+      jsonResponse({
+        id,
+        spaceId: '01990000-0000-7000-8000-000000000002',
+        spaceName: 'Space',
+        projectName: 'workshop',
+        machineId: '01990000-0000-7000-8000-000000000003',
+        startedAt: '2026-11-06T12:00:00.000Z',
+        finishedAt: null,
+        agent: 'codex',
+        job: 'implement',
+        status: 'ok',
+        latencyMs: null,
+        promptHead: 'Build it',
+        promptBytes: '18234',
+        outputBytes: '512',
+        taskKey: 'DEV-1',
+        failureKind: null,
+        vendorTokens: null,
+        vendorCostUsd: null,
+        label: null,
+        lens: null,
+        parentRunId: null,
+        turn: 0,
+        evidenceExcluded: null,
+        probe: false,
+        score: null,
+        error: null,
+        reviews: [],
+      })
+    const run = await clientWith(fetch).run(id)
+    expect(run.promptBytes).toBe(18234)
+  })
+
   test('rejects a malformed body', async () => {
     const fetch: RecordFetch = async () => jsonResponse({ nope: true })
     await expect(clientWith(fetch).whoami()).rejects.toMatchObject({

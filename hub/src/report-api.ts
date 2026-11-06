@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   recordRequestNature,
@@ -134,14 +135,20 @@ async function dispatchReportRequest(
   )
 }
 
-export async function reportApi(
+async function unsubscribeRoute(
   request: Request,
+  url: URL,
   config: HostedRouteConfig,
-  dependencies: Dependencies = {},
+  dependencies: Dependencies,
 ): Promise<Response | null> {
-  const url = new URL(request.url)
   const emailUnsubscribe = /^\/v1\/report-unsubscribe\/([^/]+)\/([^/]+)$/.exec(url.pathname)
   const oneClickUnsubscribe = /^\/unsubscribe\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+  // A link whose space is not a uuid names no recipient, like an unknown token.
+  const unsubscribeSpace = (emailUnsubscribe ?? oneClickUnsubscribe)?.[1]
+  if (unsubscribeSpace !== undefined && !z.string().uuid().safeParse(unsubscribeSpace).success) {
+    if (emailUnsubscribe && request.method === 'GET') return json(null)
+    if (request.method === 'POST') return json({ unsubscribed: false })
+  }
   if (emailUnsubscribe && request.method === 'GET')
     return json(
       await call(dependencies.emailRecipientByToken, hostedEmailRecipientByToken)(
@@ -158,6 +165,17 @@ export async function reportApi(
         unsubscribeHostedEmailRecipient,
       )(config.recordDatabaseUrl, postedUnsubscribe[1]!, postedUnsubscribe[2]!),
     })
+  return null
+}
+
+export async function reportApi(
+  request: Request,
+  config: HostedRouteConfig,
+  dependencies: Dependencies = {},
+): Promise<Response | null> {
+  const url = new URL(request.url)
+  const unsubscribe = await unsubscribeRoute(request, url, config, dependencies)
+  if (unsubscribe) return unsubscribe
   if (!url.pathname.startsWith('/v1/report-subscriptions') && !url.pathname.startsWith('/v1/sends'))
     return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)

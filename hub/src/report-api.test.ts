@@ -83,6 +83,30 @@ test('email unsubscribe lookup and one-click POST need no session', async () => 
   expect(await unsubscribe?.json()).toEqual({ unsubscribed: true })
 })
 
+test('an unsubscribe link whose space is not a uuid names no recipient', async () => {
+  const dependencies = {
+    emailRecipientByToken: () => {
+      throw new Error('invalid input syntax for type uuid')
+    },
+    unsubscribeEmailRecipient: () => {
+      throw new Error('invalid input syntax for type uuid')
+    },
+  }
+  const lookup = await reportApi(
+    new Request('https://hub.example.test/v1/report-unsubscribe/not-a-space/mail-token'),
+    config,
+    dependencies,
+  )
+  const unsubscribe = await reportApi(
+    new Request('https://hub.example.test/unsubscribe/not-a-space/mail-token', { method: 'POST' }),
+    config,
+    dependencies,
+  )
+  expect(lookup?.status).toBe(200)
+  expect(await lookup?.json()).toBeNull()
+  expect(await unsubscribe?.json()).toEqual({ unsubscribed: false })
+})
+
 test('read-only membership refuses send creation and mirroring', async () => {
   // Production break watched: gate only report-subscription writes.
   let writes = 0

@@ -7,6 +7,7 @@
     "dev": "vite",
     "test": "bun test && bun run --cwd ../ui test",
     "build": "vite build",
+    "probe": "bun scripts/page-probe.ts",
     "smoke": "bun scripts/smoke.ts",
     "typecheck": "bun run --cwd ../ui typecheck && bun run --cwd ../views typecheck && bun run --cwd ../data typecheck && bun run --cwd ../util typecheck && bun run --cwd ../site typecheck && tsc --noEmit"
   },
