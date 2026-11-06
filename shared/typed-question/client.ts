@@ -6,7 +6,7 @@ import type { TypedQuestion } from './registry.ts'
 
 const TYPED_QUESTION_TIMEOUT_MS = 5_000
 const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
-const TYPESAFE_KEY = 'TYPESAFE_API_KEY'
+const TYPESAFE_KEY = 'TYPESAFE_KEY'
 
 type NoulAnswer = { noul: number }
 type ChoiceAnswer = {

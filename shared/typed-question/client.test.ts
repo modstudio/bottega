@@ -10,7 +10,7 @@ const FIXTURE_QUESTION = {
   instructions: 'Judge whether the fixture state leaves a choice open.',
 } as const satisfies NoulQuestion
 
-const resolve = async () => ({ TYPESAFE_API_KEY: 'fixture-secret' })
+const resolve = async () => ({ TYPESAFE_KEY: 'fixture-secret' })
 
 test('sends the declared noul question and parses its probability', async () => {
   let request: { url: string; init: RequestInit } | null = null

@@ -18,14 +18,14 @@ const { directory: databaseDir } = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDat
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
-const originalTypesafeKey = process.env.TYPESAFE_API_KEY
+const originalTypesafeKey = process.env.TYPESAFE_KEY
 const configDir = mkdtempSync(join(tmpdir(), 'hub-test-config-'))
 process.env[CONFIG_HOME_ENV] = configDir
 machineId(HUB_MIGRATION_BACKFILL_VALUES.machine_id)
 process.env[HARNESS_ENV_FILE_ENV] = ''
 delete process.env.BOTTEGA_RECORD_API_URL
 // A typed-question ask in a test must take the missing-key path, never a metered network call.
-delete process.env.TYPESAFE_API_KEY
+delete process.env.TYPESAFE_KEY
 const assertTestHubDatabase = createTestHubDatabaseGuard()
 assertTestHubDatabase()
 const { applyMigrations } = await import('../src/migrations.ts')
@@ -43,8 +43,8 @@ afterAll(() => {
   else process.env[HARNESS_ENV_FILE_ENV] = originalHarnessEnvFile
   if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
   else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
-  if (originalTypesafeKey === undefined) delete process.env.TYPESAFE_API_KEY
-  else process.env.TYPESAFE_API_KEY = originalTypesafeKey
+  if (originalTypesafeKey === undefined) delete process.env.TYPESAFE_KEY
+  else process.env.TYPESAFE_KEY = originalTypesafeKey
   rmSync(configDir, { recursive: true, force: true })
   rmSync(databaseDir, { recursive: true, force: true })
 })

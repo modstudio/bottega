@@ -102,7 +102,7 @@ export async function preAnswerWorkerQuestion(input: {
     storeJevError(
       database,
       input.recordId,
-      result.kind === 'missing-key' ? 'skipped: TYPESAFE_API_KEY is not configured' : result.error,
+      result.kind === 'missing-key' ? 'skipped: TYPESAFE_KEY is not configured' : result.error,
     )
     return { applied: false }
   }
