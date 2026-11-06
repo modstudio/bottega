@@ -63,18 +63,18 @@ function projectPath(name: string): string {
 
 async function localAutonomy(project: string) {
   const cwd = projectPath(project)
-  const [resolved, machineEntries] = await Promise.all([
+  const [resolved, machineEntries, config] = await Promise.all([
     fromOrch(() => contextGet(cwd)),
     fromOrch(machineConfigList),
+    fromOrch(configList)
+      .then((entries) => ({ entries, warning: null }))
+      .catch(() => ({
+        entries: [],
+        warning: 'warning: hosted autonomy preset and overrides are unavailable until you sign in',
+      })),
   ])
-  let entries: Awaited<ReturnType<typeof configList>> = []
-  let configWarning: string | null = null
-  try {
-    entries = await fromOrch(configList)
-  } catch {
-    configWarning =
-      'warning: hosted autonomy preset and overrides are unavailable until you sign in'
-  }
+  const entries: Awaited<ReturnType<typeof configList>> = config.entries
+  const configWarning: string | null = config.warning
   const user = entries.filter((entry) => entry.scope === 'user')
   const preset = user.find((entry) => entry.key === 'autonomy.preset')?.value
   const userPreset = AUTONOMY_PRESETS.includes(preset as AutonomyPreset)

@@ -3,9 +3,23 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { decideSubscriptionPacing } from './subscription-pacing.ts'
 import {
+  SUBSCRIPTION_PACING_FACTS_SQL,
   SUBSCRIPTION_PACING_WINDOW_LIMIT,
   subscriptionPacingFacts,
 } from './subscription-pacing-store.ts'
+
+test('pacing facts plan avoids correlated lists and full run scans', () => {
+  const now = Date.now() / 1000
+  const plan = db()
+    .query<{ detail: string }, [string, number, number, number, number, number, number]>(
+      `EXPLAIN QUERY PLAN ${SUBSCRIPTION_PACING_FACTS_SQL}`,
+    )
+    .all(JSON.stringify(['codex']), 8, 3, now, now, now, now)
+    .map((row) => row.detail)
+
+  expect(plan.filter((detail) => detail.includes('CORRELATED LIST SUBQUERY'))).toEqual([])
+  expect(plan.filter((detail) => /^SCAN r2?$/.test(detail))).toEqual([])
+})
 
 test('pacing facts add post-reading tokens using the latest qualified calibration', () => {
   const now = Date.now()
