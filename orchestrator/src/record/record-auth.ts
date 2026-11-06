@@ -22,6 +22,7 @@ import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { ensureMemberConfigRemovalSafe } from './record-config-access-removal.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
+import { keepOwnerWrite } from './record-member-permission.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
@@ -328,12 +329,6 @@ async function markCreatedSpaceOwner(
     throw new Error(
       `creating owner's membership was not found for space ${created.id} and user ${owner.id}`,
     )
-}
-
-/** An owner membership is always write, so a read member promoted to owner gains write. */
-async function keepOwnerWrite(client: SQL, member: { id: string; role: string }): Promise<void> {
-  if (!member.role.split(',').includes('owner')) return
-  await client`UPDATE membership SET permission='write' WHERE id=${member.id}::uuid AND permission<>'write'`
 }
 
 type ResetPasswordSender = typeof sendPasswordResetEmail

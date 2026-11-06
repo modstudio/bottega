@@ -290,6 +290,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       '../mail/password-reset-mailer.ts',
       './record-invitation.ts',
       './record-config-access-removal.ts',
+      './record-member-permission.ts',
       './record-pool.ts',
     ],
     'Enforce the record-auth concern boundary.',

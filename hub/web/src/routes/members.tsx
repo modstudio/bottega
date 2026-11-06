@@ -25,11 +25,15 @@ import { useState } from 'react'
 
 export const Route = createFileRoute('/members')({ component: MembersRoute })
 const roles: OrganizationRole[] = ['owner', 'admin', 'member']
-type MemberPermission = 'read' | 'write'
-const permissionOptions = [
-  { value: 'write', label: 'Write' },
-  { value: 'read', label: 'Read' },
-]
+type MemberPermission = RecordConfigAccessResponse['items'][number]['permission']
+const permissionLabels: Record<MemberPermission, 'Write' | 'Read'> = {
+  write: 'Write',
+  read: 'Read',
+}
+const permissionOptions = (['write', 'read'] as const).map((value) => ({
+  value,
+  label: permissionLabels[value],
+}))
 
 type MemberAccessRow = OrganizationMember & {
   permissionLabel: 'Write' | 'Read' | '-' | '…'
@@ -48,8 +52,8 @@ export function joinMembersToConfigAccess(
     const access = accessByEmail.get(member.user.email.toLowerCase())
     return {
       ...member,
-      permissionLabel: access ? (access.permission === 'write' ? 'Write' : 'Read') : '-',
-      permission: access ? (access.permission === 'write' ? 'write' : 'read') : null,
+      permissionLabel: access ? permissionLabels[access.permission] : '-',
+      permission: access?.permission ?? null,
       configAccessLabel: access ? (access.configAccess ? 'Yes' : 'No') : '-',
       configAccess: access?.configAccess ?? null,
     }

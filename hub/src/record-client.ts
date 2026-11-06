@@ -77,18 +77,18 @@ const scoreInputSchema = z.object({
 })
 const voidInputSchema = z.object({ reason: z.string().min(1) })
 const verdictResponseSchema = z.object({ ok: z.literal(true) })
+export const memberPermission = z.enum(['read', 'write'])
 const configAccessListSchema = z.object({
   items: z.array(
     z.object({
       email: z.string(),
       role: z.string(),
-      permission: z.string(),
+      permission: memberPermission,
       configAccess: z.boolean(),
     }),
   ),
 })
 const configAccessGrantSchema = z.object({ granted: z.literal(true) })
-export const memberPermission = z.enum(['read', 'write'])
 const memberPermissionSchema = z.object({ permission: memberPermission })
 const configAccessWithdrawSchema = z.object({
   revokedMachineKeyIds: z.array(z.string()),
