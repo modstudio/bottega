@@ -243,6 +243,7 @@ export const cleanupBoundarySpecs = [
       './cleanup-sweep-report.ts',
       './cleanup-sweep-orphan-report.ts',
       './cleanup-sweep-orphan-candidate.ts',
+      './goose-ledger-sweep.ts',
       './claim-reconciliation.ts',
       './project-sweep.ts',
       '../close/close-out.ts',

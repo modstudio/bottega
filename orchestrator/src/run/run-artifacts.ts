@@ -43,6 +43,7 @@ import {
   namedRunArtifactPaths,
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
+import { type GooseContextProfile, writeRunContextProfile } from './run-context-profile.ts'
 import {
   quotaReadingsColumnValues,
   type RunQuotaColumns,
@@ -337,6 +338,7 @@ export type TerminalSnapshot = RunUsageColumns &
     testsClaimDisagrees: number | null
     deviations: number | null
     escalations: number | null
+    contextProfile?: GooseContextProfile | null
   }
 
 export function persistTerminalSnapshot(id: string, snapshot: TerminalSnapshot): void {
@@ -423,6 +425,7 @@ export function reconcileRun(id: string): string {
         snapshot.escalations,
         id,
       )
+    writeRunContextProfile(db(), id, snapshot.contextProfile)
   })
   teardownTerminalRunResources(db(), id)
   return `reconciled run ${id} as ${snapshot.status}`

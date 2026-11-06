@@ -157,6 +157,11 @@ const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
 
 const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ...exempt(
+    'orchestrator/src/transport/transport-goose-context-profile.ts',
+    ['37d0da7ea7ac2a52'],
+    'Goose usage extraction reads the harness-owned sessions database rather than the orchestrator schema',
+  ),
+  ...exempt(
     'shared/migration-connection-policy.ts',
     ['c38d7bd094749ac7'],
     'migration policy reads one of its two controlled connection pragma names',

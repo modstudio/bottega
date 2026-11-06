@@ -57,6 +57,7 @@ import {
   terminalRunArtifactPaths,
 } from './run-artifacts.ts'
 import type { RunCallUsage } from './run-call-usage.ts'
+import { type GooseContextProfile, writeRunContextProfile } from './run-context-profile.ts'
 import { markTerminalRecorded } from './run-finish-error.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
@@ -131,6 +132,7 @@ function writeOperationalState(
     input.billingHoldDetail,
     input.endpointKey,
   )
+  writeRunContextProfile(db(), input.claim.id, input.contextProfile)
 }
 
 type TerminalMcpRuling = {
@@ -268,6 +270,7 @@ export type TerminalInput = {
   artifactsPersisted: boolean
   mcpRuling: TerminalMcpRuling
   workerEvents: Array<{ kind: string }>
+  contextProfile?: GooseContextProfile | null
 }
 
 export type TerminalResult = {
@@ -284,6 +287,7 @@ export type TerminalResult = {
 
 function terminalUsageSnapshot(input: TerminalInput, name: string) {
   return {
+    contextProfile: input.contextProfile ?? null,
     vendorTokens: input.vendorTokens,
     modelCalls: input.callUsage?.modelCalls ?? null,
     peakCallTokens: input.callUsage?.peakCallTokens ?? null,
@@ -966,7 +970,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           provenanceSilent ? 'silent' : null,
           claim.id,
         )
-
       writeOperationalState(input, resourceUsage, failureKind, name)
       recordTerminalMcpEvidence(db(), claim.id, mcpRuling)
       /**

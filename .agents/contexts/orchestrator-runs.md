@@ -98,7 +98,7 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 
 **Run messages are context, not rulings.** `bottega run tell` queues; queued is never reported as delivered. A message cannot close an open question or relax the escalation contract.
 
-**`answer` refuses a chain with nothing open; `continue` refuses one that is waiting.** Resuming a waiting worker makes it guess. A resumed turn is detached, like everything else.
+**`answer` refuses a chain with nothing open; `continue` refuses one that is waiting.** Resuming a waiting worker makes it guess. A resumed turn is detached.
 
 # A delegated agent is not a trusted one
 
@@ -118,5 +118,5 @@ It reports emptiness only after looking at the right data. Otherwise it exits no
 
 # Prompts and replies age out
 
-`KEEP_RUN_FILES_DAYS` bounds verbatim packs and answers under `runs/`. The row stays; only the text ages out.
+`KEEP_RUN_FILES_DAYS` bounds run packs and answers, `GOOSE_LEDGER_KEEP_DAYS` raw Goose logs; rows and context profiles remain.
 
