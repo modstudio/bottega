@@ -137,7 +137,7 @@ export const WORKER_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['kind', 'question', 'options', 'recommendation', 'why', 'criteria', 'levels'],
+        required: ['question', 'options', 'recommendation', 'why'],
         properties: {
           kind: { type: ['string', 'null'], enum: ['choice', 'yesno', 'score', 'text', null] },
           question: { type: 'string' },

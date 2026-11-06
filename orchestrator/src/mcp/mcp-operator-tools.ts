@@ -11,7 +11,7 @@ import {
   ListOpenQuestionsResultSchema,
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
-import { answerValueRefusal, WorkerQuestionSchema } from '../ask/worker-question.ts'
+import { answerValueRefusal, WorkerQuestionSchema } from '../../../shared/worker-question.ts'
 import { db } from '../database/db.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'

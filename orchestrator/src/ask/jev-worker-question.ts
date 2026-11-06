@@ -8,10 +8,10 @@ import {
   type TypedQuestionClientResult,
 } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
+import type { WorkerQuestion } from '../../../shared/worker-question.ts'
 import { db, nowIso } from '../database/db.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { routeJevAnswer } from './jev-routing.ts'
-import type { WorkerQuestion } from './worker-question.ts'
 
 type RunContext = { job: string; launch_key: string | null; repo: string | null }
 

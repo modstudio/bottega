@@ -1,6 +1,6 @@
 // concern: outcome
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { type WorkerQuestion, WorkerQuestionSchema } from './ask/worker-question.ts'
+import { type WorkerQuestion, WorkerQuestionSchema } from '../../shared/worker-question.ts'
 export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
 export const SCHEMA_ENVELOPE_ERROR_PREFIX = 'schema-envelope: '
 

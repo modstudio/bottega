@@ -36,6 +36,7 @@ import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/s
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { type WorkerQuestion, WorkerQuestionSchema } from '../../../shared/worker-question.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
@@ -87,7 +88,6 @@ import {
   type WorkerNoteRun,
 } from './worker-note.ts'
 import { requestWorkerNote } from './worker-note-request.ts'
-import { type WorkerQuestion, WorkerQuestionSchema } from './worker-question.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.

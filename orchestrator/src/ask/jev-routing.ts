@@ -2,7 +2,7 @@
 /** Pure decision for whether Jev advice may become a worker ruling. */
 
 import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
-import type { WorkerQuestion } from './worker-question.ts'
+import type { WorkerQuestion } from '../../../shared/worker-question.ts'
 
 export type JevRoutingDecision =
   | { action: 'apply'; value: string | boolean | number; confidence: number }

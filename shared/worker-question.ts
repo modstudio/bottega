@@ -8,7 +8,7 @@ const choice = z
   .object({
     kind: z.literal('choice'),
     question: z.string().trim().min(1),
-    why: z.string().trim().min(1),
+    why: z.string().trim().default(''),
     options: z
       .array(choiceOption)
       .min(2)
@@ -37,23 +37,22 @@ const choice = z
         message: `recommendation must name one of: ${question.options.map(({ name }) => name).join(', ')}`,
       })
   })
-
 const yesno = z.object({
   kind: z.literal('yesno'),
   question: z.string().trim().min(1),
-  why: z.string().trim().min(1),
+  why: z.string().trim().default(''),
   criteria: z.object({ yes: z.string().optional(), no: z.string().optional() }).optional(),
 })
 const score = z.object({
   kind: z.literal('score'),
   question: z.string().trim().min(1),
-  why: z.string().trim().min(1),
+  why: z.string().trim().default(''),
   levels: z.array(z.string().trim().min(1)).min(2).max(10),
 })
 const text = z.object({
   kind: z.literal('text'),
   question: z.string().trim().min(1),
-  why: z.string().trim().min(1),
+  why: z.string().trim().default(''),
 })
 
 export const WorkerQuestionSchema = z.preprocess(

@@ -11,6 +11,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 export const typedQuestionModules = [
   module('orchestrator/src/run/prompt-sha.ts', ['node:crypto']),
   module('shared/typed-question/registry.ts', []),
+  module('shared/worker-question.ts', ['zod']),
   module('shared/typed-question/client.ts', ['../env-source.ts', './registry.ts']),
   module('shared/typed-question/typed-question-metrics.ts', []),
   module('shared/typed-question/state-identity.ts', ['node:crypto']),
