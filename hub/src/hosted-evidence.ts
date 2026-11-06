@@ -209,6 +209,8 @@ export async function applyDayChangeInTransaction(
          ${row.collected_at}::timestamptz, now())`
     return 'applied'
   }
+  // collected_at is not content: hosted hub_day.collected_at is the collection pass of the
+  // last content change, while local day.collected_at advances on every pass.
   const matches = await tx`SELECT 1 FROM hub_day
     WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid AND day=${row.day}
       AND machine_id=${row.machine_id}::uuid
@@ -217,10 +219,7 @@ export async function applyDayChangeInTransaction(
       AND other_tokens=${row.other_tokens} AND commits=${row.commits} AND files=${row.files}
       AND lines_product=${row.lines_product} AND lines_test=${row.lines_test}
       AND lines_docs=${row.lines_docs} AND lines_config=${row.lines_config}
-      AND lines_generated=${row.lines_generated}
-      AND (day < (SELECT max(day) FROM hub_day WHERE space_id=${identity.spaceId}::uuid
-          AND machine_id=${row.machine_id}::uuid)
-        OR collected_at=${row.collected_at}::timestamptz)`
+      AND lines_generated=${row.lines_generated}`
   if (matches.length) return 'duplicate'
   await tx`
     UPDATE hub_day SET

@@ -208,7 +208,7 @@ test('day identity is per machine and legacy rows are claimed', async () => {
   const firstRefreshed = { ...first, collected_at: '2026-10-20T23:30:00.000Z' }
   expect(
     await apply([{ table: 'hub_day', id: first.id, op: 'upsert', row: firstRefreshed }]),
-  ).toEqual([{ id: first.id, status: 'applied' }])
+  ).toEqual([{ id: first.id, status: 'duplicate' }])
 
   const conflict = { ...first, id: '01990000-0000-7000-8000-000000008332' }
   expect(

@@ -215,6 +215,76 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
   await database.close()
 })
 
+test('hosted day evidence ignores a newer collection time until content changes', async () => {
+  const database = await hostedEvidenceDatabase()
+  const sql = pgliteSql(database)
+  const identity = { userId, spaceId }
+  const originalCollectedAt = '2026-10-05T19:50:00.000Z'
+  const unchangedUpdatedAt = '2026-10-05T20:00:00.000Z'
+  const original: DayEvidence = {
+    id: dayId,
+    machine_id: HOSTED_FIXTURE_MACHINE_ID,
+    day: '2026-10-05',
+    claude_tokens: 10,
+    cache_read: 20,
+    messages: 1,
+    tasks: 1,
+    canon_tokens: 30,
+    other_tokens: 40,
+    commits: 1,
+    files: 2,
+    lines_product: 3,
+    lines_test: 4,
+    lines_docs: 5,
+    lines_config: 6,
+    lines_generated: 7,
+    collected_at: originalCollectedAt,
+  }
+  try {
+    expect(await applyDayChangeInTransaction(sql, identity, original)).toBe('applied')
+    await database.query(`UPDATE hub_day SET updated_at=$1 WHERE id=$2`, [
+      unchangedUpdatedAt,
+      dayId,
+    ])
+
+    expect(
+      await applyDayChangeInTransaction(sql, identity, {
+        ...original,
+        collected_at: '2026-10-05T21:00:00.000Z',
+      }),
+    ).toBe('duplicate')
+    expect(
+      (
+        await database.query<{ collected_at: string; updated_at: string }>(
+          `SELECT collected_at::text,updated_at::text FROM hub_day WHERE id=$1`,
+          [dayId],
+        )
+      ).rows[0],
+    ).toEqual({
+      collected_at: '2026-10-05 19:50:00+00',
+      updated_at: '2026-10-05 20:00:00+00',
+    })
+
+    expect(
+      await applyDayChangeInTransaction(sql, identity, {
+        ...original,
+        claude_tokens: 11,
+        collected_at: '2026-10-05T21:00:00.000Z',
+      }),
+    ).toBe('applied')
+    expect(
+      (
+        await database.query<{ claude_tokens: string | number; collected_at: string }>(
+          `SELECT claude_tokens,collected_at::text FROM hub_day WHERE id=$1`,
+          [dayId],
+        )
+      ).rows[0],
+    ).toEqual({ claude_tokens: 11, collected_at: '2026-10-05 21:00:00+00' })
+  } finally {
+    await database.close()
+  }
+})
+
 test('hosted interval nulls a task id absent from the caller space', async () => {
   const database = await hostedEvidenceDatabase()
   const absentTaskId = '01990000-0000-7000-8000-000000001499'

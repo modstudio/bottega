@@ -89,19 +89,53 @@ test('restated evidence queues nothing while material interval and day changes q
   ])
 })
 
-test('only the newest day queues when collected_at changes', () => {
+test('the newest day queues only when its content changes', () => {
   insertDay(dayOneId, '2026-10-10')
   insertDay(dayTwoId, '2026-10-11')
   writeTransaction((conn) => conn.exec(`DELETE FROM hosted_outbox`))
-  writeTransaction((conn) => {
-    conn
-      .query(`UPDATE day SET collected_at='2026-10-11T00:00:00.000Z' WHERE record_id=?`)
-      .run(dayOneId)
+  writeTransaction((conn) =>
     conn
       .query(`UPDATE day SET collected_at='2026-10-12T00:00:00.000Z' WHERE record_id=?`)
-      .run(dayTwoId)
-  })
+      .run(dayTwoId),
+  )
+  expect(queued()).toEqual([])
+
+  writeTransaction((conn) =>
+    conn.query(`UPDATE day SET claude_tokens=11 WHERE record_id=?`).run(dayTwoId),
+  )
   expect(queued()).toEqual([{ table_name: 'hub_day', row_id: dayTwoId, operation: 'upsert' }])
+})
+
+test('a day content change re-queues a held entry with its delivery state cleared', () => {
+  insertDay(dayTwoId, '2026-10-11')
+  writeTransaction((conn) =>
+    conn
+      .query(`UPDATE hosted_outbox SET generation=4,attempts=3,last_error='push failed',
+        quarantined_at='2026-10-11T23:30:00.000Z',quarantine_reason='rejected',
+        routing_space_id='space',routing_project='workshop',routing_project_record_id='project-id'
+        WHERE table_name='hub_day' AND row_id=?`)
+      .run(dayTwoId),
+  )
+
+  writeTransaction((conn) =>
+    conn.query(`UPDATE day SET claude_tokens=11 WHERE record_id=?`).run(dayTwoId),
+  )
+  expect(
+    db()
+      .query(`SELECT generation,attempts,last_error,quarantined_at,quarantine_reason,
+        routing_space_id,routing_project,routing_project_record_id
+        FROM hosted_outbox WHERE table_name='hub_day' AND row_id=?`)
+      .get(dayTwoId),
+  ).toEqual({
+    generation: 5,
+    attempts: 0,
+    last_error: null,
+    quarantined_at: null,
+    quarantine_reason: null,
+    routing_space_id: null,
+    routing_project: null,
+    routing_project_record_id: null,
+  })
 })
 
 test('a new day queues exactly one entry', () => {
