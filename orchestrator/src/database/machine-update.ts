@@ -123,7 +123,7 @@ type UpdateDependencies = {
   maintainStore?: (presentation: Presentation) => void
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
-  refreshLaunchAgents?: (binary: string) => void
+  runLaunchAgentsRefreshVerb?: (binary: string) => void
   project?: (
     cwd: string,
     database: import('bun:sqlite').Database,
@@ -134,7 +134,7 @@ type UpdateDependencies = {
   } | null
 }
 
-function runLaunchAgentRefresh(binary: string): void {
+function runLaunchAgentsRefreshVerb(binary: string): void {
   const result = Bun.spawnSync([binary, 'machine', 'launch-agents', 'refresh'], {
     stdout: 'inherit',
     stderr: 'inherit',
@@ -295,7 +295,7 @@ export async function machineUpdateCommand(
     })
     const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
     maintainStoreAfterUpdate(presentation, maintainStore)
-    const refreshLaunchAgents = deps.refreshLaunchAgents ?? runLaunchAgentRefresh
+    const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
     refreshLaunchAgents(realpathSync(process.execPath))
     return
   }
@@ -349,6 +349,6 @@ export async function machineUpdateCommand(
   })
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
   maintainStoreAfterUpdate(presentation, maintainStore)
-  const refreshLaunchAgents = deps.refreshLaunchAgents ?? runLaunchAgentRefresh
-  refreshLaunchAgents(resolveInstallationPaths(identity.root, {}).executable)
+  const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
+  refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
 }

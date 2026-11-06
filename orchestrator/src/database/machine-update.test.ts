@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,6 +15,16 @@ import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sourc
 import { migrationWindow } from './migration-window-state.ts'
 import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
+
+const fixturePackage = join(dir, 'package.json')
+
+beforeAll(() => {
+  writeFileSync(fixturePackage, JSON.stringify({ name: PLATFORM_SLUG }))
+})
+
+afterAll(() => {
+  rmSync(fixturePackage, { force: true })
+})
 
 function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()
@@ -93,7 +103,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
       migrate: () => {
         migrated = true
       },
-      refreshLaunchAgents: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(migrationDrain(db())).toBeNull()
@@ -130,7 +140,7 @@ test('an additive machine update marks only the store-open window around pull an
           expect(migrationDrain(db())).toBeNull()
           phases.push('migrate')
         },
-        refreshLaunchAgents: () => {},
+        runLaunchAgentsRefreshVerb: () => {},
       },
     )
     expect(phases).toEqual(['pull', 'migrate'])
@@ -242,7 +252,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
           expect(migrationDrain(db())?.phase).toBe('migrating')
           events.push('migrate')
         },
-        refreshLaunchAgents: () => {},
+        runLaunchAgentsRefreshVerb: () => {},
       },
     )
   } finally {
@@ -454,7 +464,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
         return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
       },
       migrate: () => {},
-      refreshLaunchAgents: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(lines[0]).toBe(`updating the ${PLATFORM_NAME} checkout at ${target}`)
@@ -490,7 +500,7 @@ test('machine update defaults the target to the installation root', async () => 
         return ''
       },
       migrate: () => {},
-      refreshLaunchAgents: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(projectPaths).toEqual([target])
@@ -518,7 +528,7 @@ test('machine update does not name the checkout when the caller is already there
             ? JSON.stringify({ entries: migrationJournal() })
             : '',
       migrate: () => {},
-      refreshLaunchAgents: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(lines).toHaveLength(2)
@@ -552,7 +562,7 @@ test('machine update keeps its successful result when store maintenance fails', 
         maintainStore: () => {
           throw new Error('store busy')
         },
-        refreshLaunchAgents: () => {},
+        runLaunchAgentsRefreshVerb: () => {},
       },
     ),
   ).resolves.toBeUndefined()
@@ -561,7 +571,7 @@ test('machine update keeps its successful result when store maintenance fails', 
   ])
 })
 
-test('checkout update refreshes launch agents through the updated checkout binary', async () => {
+test('checkout update refreshes through deps.cwd when the running identity root differs', async () => {
   const target = mkdtempSync(join(tmpdir(), 'machine-update-checkout.'))
   const refreshed: string[] = []
   writeFileSync(join(target, 'package.json'), JSON.stringify({ name: PLATFORM_SLUG }))
@@ -570,7 +580,11 @@ test('checkout update refreshes launch agents through the updated checkout binar
       { log: () => {} },
       {
         cwd: target,
-        identity: { kind: 'checkout', root: target, version: 'development' },
+        identity: {
+          kind: 'checkout',
+          root: join(target, 'running-checkout'),
+          version: 'development',
+        },
         authorityRefusal: () => null,
         project: () => ({
           name: 'migration-update-fixture',
@@ -585,7 +599,7 @@ test('checkout update refreshes launch agents through the updated checkout binar
               : '',
         migrate: () => {},
         maintainStore: () => {},
-        refreshLaunchAgents: (binary) => refreshed.push(binary),
+        runLaunchAgentsRefreshVerb: (binary) => refreshed.push(binary),
       },
     )
     expect(refreshed).toEqual([resolve(target, 'bin', PLATFORM_SLUG)])
@@ -618,7 +632,7 @@ test('distribution update refreshes through the installed target and preserves i
           updated = true
         },
         maintainStore: () => {},
-        refreshLaunchAgents: (binary) => {
+        runLaunchAgentsRefreshVerb: (binary) => {
           refreshed.push(binary)
           throw new Error(remedy)
         },

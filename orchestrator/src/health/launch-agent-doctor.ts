@@ -37,7 +37,7 @@ import {
   installationPlistOwners,
   isCheckoutOnlyLaunchAgentInstaller,
 } from '../setup/launchd-owners.ts'
-import { MAINTENANCE_SCHEDULE_LABELS } from '../setup/setup-schedules.ts'
+import { isMaintenanceScheduleLabel } from '../setup/setup-schedules.ts'
 import { minutesOfDay } from '../spare/spare-decisions.ts'
 
 export type LaunchAgentLoadObservation =
@@ -69,9 +69,7 @@ export type LaunchAgentDoctorDecision = {
   launchctlUnavailable: null | 'launchctl missing' | 'gui domain unreachable'
 }
 
-const maintenanceLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
-
-function installerRemedy(
+export function installerRemedy(
   installationKind: InstallationKind | null,
   ownerCommand: string | null,
 ): string | null {
@@ -99,13 +97,13 @@ export function decideLaunchAgentDoctor(input: {
   definitions?: Readonly<Record<string, LaunchAgentDefinitionObservation>>
 }): LaunchAgentDoctorDecision {
   const skipped = input.owners.flatMap(({ label }) => {
-    if (maintenanceLabels.has(label)) return []
+    if (isMaintenanceScheduleLabel(label)) return []
     const reason = input.skipReasons[label]
     return reason ? [{ label, reason }] : []
   })
   const scheduleRemedy = installerRemedy(
     input.installationKind,
-    input.owners.find(({ label }) => maintenanceLabels.has(label))?.command ?? null,
+    input.owners.find(({ label }) => isMaintenanceScheduleLabel(label))?.command ?? null,
   )
   const observedLoadedLabels =
     input.loadObservation.kind === 'available' ? input.loadObservation.loadedLabels : null
@@ -138,7 +136,7 @@ export function decideLaunchAgentDoctor(input: {
     }
   }
   const schedules = input.owners
-    .filter(({ label }) => maintenanceLabels.has(label))
+    .filter(({ label }) => isMaintenanceScheduleLabel(label))
     .map(({ label }) => {
       const loaded = observedLoadedLabels?.has(label) ?? null
       const skipReason = input.skipReasons[label] ?? null
@@ -169,7 +167,7 @@ export function decideLaunchAgentDoctor(input: {
   const informational = unloaded
     .filter(
       ({ label, command }) =>
-        !maintenanceLabels.has(label) &&
+        !isMaintenanceScheduleLabel(label) &&
         input.installationKind !== 'checkout' &&
         isCheckoutOnlyLaunchAgentInstaller(command),
     )
@@ -178,7 +176,7 @@ export function decideLaunchAgentDoctor(input: {
   return {
     skipped,
     findings: unloaded.filter(
-      ({ label }) => !maintenanceLabels.has(label) && !informationalLabels.has(label),
+      ({ label }) => !isMaintenanceScheduleLabel(label) && !informationalLabels.has(label),
     ),
     informational,
     definitionFindings,
@@ -354,7 +352,7 @@ function loadedLaunchAgentLabels(
   if (domain.exitCode !== 0) return { kind: 'unavailable', reason: 'gui domain unreachable' }
   const loaded = new Set<string>()
   for (const { label } of owners) {
-    if (skipReasons[label] && !maintenanceLabels.has(label)) continue
+    if (skipReasons[label] && !isMaintenanceScheduleLabel(label)) continue
     const child = Bun.spawnSync([launchctl, 'print', `gui/${uid}/${label}`], {
       stdout: 'ignore',
       stderr: 'ignore',
@@ -369,7 +367,7 @@ async function lastRunByLabel(
 ): Promise<Record<string, string>> {
   const result: Record<string, string> = {}
   for (const owner of owners) {
-    if (!maintenanceLabels.has(owner.label) || !owner.standardOutPath) continue
+    if (!isMaintenanceScheduleLabel(owner.label) || !owner.standardOutPath) continue
     const path = owner.standardOutPath.replaceAll('__HOME__', homedir())
     try {
       const modified = (await stat(path)).mtime
