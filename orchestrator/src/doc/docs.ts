@@ -28,6 +28,7 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
+import { assertContextSetAllowed } from './context-write-adapter.ts'
 import {
   assertLocalArticleDelivery,
   type DocWriteContext,
@@ -43,7 +44,6 @@ import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
-import { contextSetRefusal } from './context-write-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
 import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
 import { assertDocProse } from './doc-prose.ts'
@@ -134,10 +134,7 @@ const hostedDocWriteIdentity = (identity: ReturnType<typeof resolvedDocWriteIden
 
 async function assertSetDocAllowed(input: DocWriteInput): Promise<void> {
   assertWorkerDocStoreWriteAllowed('setDoc')
-  if (input.scope === 'context') {
-    const refusal = await contextSetRefusal({ subject: input.subject ?? '', slug: input.slug, body: input.body })
-    if (refusal) throw new Error(refusal)
-  }
+  await assertContextSetAllowed(input)
   if (input.scope !== 'resume') return
   const refusal = rw.resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body))
   if (refusal) throw new Error(refusal)

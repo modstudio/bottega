@@ -26,8 +26,8 @@ CREATE TABLE doc (
 );
 INSERT INTO doc SELECT * FROM doc_context_scope_snapshot;
 CREATE TABLE doc_related_subject (
- id TEXT PRIMARY KEY, doc_record_id TEXT NOT NULL REFERENCES doc(record_id) ON DELETE CASCADE,
- subject_id TEXT NOT NULL REFERENCES subject(id) ON DELETE RESTRICT, record_id TEXT NOT NULL,
+ record_id TEXT NOT NULL PRIMARY KEY, doc_record_id TEXT NOT NULL REFERENCES doc(record_id) ON DELETE CASCADE,
+ subject_id TEXT NOT NULL REFERENCES subject(id) ON DELETE RESTRICT,
  UNIQUE(doc_record_id,subject_id)
 );
 INSERT INTO doc_related_subject SELECT * FROM doc_related_subject_context_scope_snapshot;
@@ -61,7 +61,6 @@ CREATE INDEX doc_article_subject_id ON doc(article_subject_id);
 CREATE INDEX doc_space_id ON doc(space_id);
 CREATE INDEX doc_related_subject_doc ON doc_related_subject(doc_record_id);
 CREATE INDEX doc_related_subject_subject ON doc_related_subject(subject_id);
-CREATE UNIQUE INDEX doc_related_subject_record_id_unique ON doc_related_subject(record_id);
 CREATE INDEX doc_revision_address ON doc_revision(scope,COALESCE(subject,''),COALESCE(owner,''),slug,number);
 CREATE INDEX doc_revision_doc_record_id ON doc_revision(doc_record_id,number);
 CREATE INDEX doc_revision_parent_record_id ON doc_revision(parent_record_id);

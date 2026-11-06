@@ -1,8 +1,8 @@
 // concern: cli
 /** Registers architect session resolution and stored context item verbs. */
 import type { Command } from 'commander'
-import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
+import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
 
@@ -17,7 +17,9 @@ export function register(program: Command): void {
       return sessionContextCommand({ cwd: options.cwd, json: Boolean(options.json) }, { log })
     })
   const holderOptions = (command: Command) =>
-    command.option('--task <key>', 'select task holder').option('--session <id>', 'select session holder')
+    command
+      .option('--task <key>', 'select task holder')
+      .option('--session <id>', 'select session holder')
   holderOptions(context.command('show').description('show stored context items'))
     .option('--json', 'write JSON')
     .action(async (options) => {
@@ -34,11 +36,22 @@ export function register(program: Command): void {
     .option('--expected-revision <revision>', 'compare-and-set revision')
     .argument('<body>', 'item text')
     .action(async (body, options) => {
-      if (!CONTEXT_ITEM_KINDS.includes(options.kind)) throw new Error(`--kind must be one of ${CONTEXT_ITEM_KINDS.join(', ')}`)
-      log(JSON.stringify(await setContextItem({ ...options, expectedRevision: options.expectedRevision, body })))
+      if (!CONTEXT_ITEM_KINDS.includes(options.kind))
+        throw new Error(`--kind must be one of ${CONTEXT_ITEM_KINDS.join(', ')}`)
+      log(
+        JSON.stringify(
+          await setContextItem({ ...options, expectedRevision: options.expectedRevision, body }),
+        ),
+      )
     })
   holderOptions(context.command('drop').description('remove one context item'))
     .requiredOption('--id <id>', 'stable item id')
     .option('--expected-revision <revision>', 'compare-and-set revision')
-    .action(async (options) => log(JSON.stringify(await dropContextItem({ ...options, expectedRevision: options.expectedRevision }))))
+    .action(async (options) =>
+      log(
+        JSON.stringify(
+          await dropContextItem({ ...options, expectedRevision: options.expectedRevision }),
+        ),
+      ),
+    )
 }

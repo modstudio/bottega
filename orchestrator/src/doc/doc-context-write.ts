@@ -47,7 +47,7 @@ const PROFILE = {
   { allowed: readonly ContextItemKind[]; required: readonly ContextItemKind[] }
 >
 
-export function normalizeContextBody(body: string): string {
+function normalizeContextBody(body: string): string {
   return body.toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
@@ -61,13 +61,13 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
   if (item.body.length > CONTEXT_ITEM_MAX_CHARS[item.kind]) {
     return `${address} refused: ${item.kind} limit is ${CONTEXT_ITEM_MAX_CHARS[item.kind]} characters`
   }
-  if (item.kind === 'ruling') {
-    if (!item.objection?.trim()) return `${address} refused: a ruling requires a non-empty objection`
-    if (item.source !== 'operator' && item.source !== 'agent') {
-      return `${address} refused: a ruling source must be operator or agent`
-    }
-  }
-  if (facts.profile === 'session' && facts.claimedTask && ['ruling', 'open-question'].includes(item.kind)) {
+  const ruling = rulingRefusal(item, address)
+  if (ruling) return ruling
+  if (
+    facts.profile === 'session' &&
+    facts.claimedTask &&
+    ['ruling', 'open-question'].includes(item.kind)
+  ) {
     return `${address} refused: task-level ${item.kind} written to a session; write it to task:${facts.claimedTask}`
   }
   if (item.kind === 'pointer' && facts.pointerRefusal) {
@@ -89,15 +89,34 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
   return null
 }
 
-export function contextDropRefusal(item: ContextItem, siblings: ContextItem[], profile: ContextProfile) {
+function rulingRefusal(item: ContextItem, address: string): string | null {
+  if (item.kind !== 'ruling') return null
+  if (!item.objection?.trim()) return `${address} refused: a ruling requires a non-empty objection`
+  if (item.source !== 'operator' && item.source !== 'agent') {
+    return `${address} refused: a ruling source must be operator or agent`
+  }
+  return null
+}
+
+export function contextDropRefusal(
+  item: ContextItem,
+  siblings: ContextItem[],
+  profile: ContextProfile,
+) {
   const required = PROFILE[profile].required as readonly ContextItemKind[]
-  if (required.includes(item.kind) && siblings.filter((row) => row.kind === item.kind).length === 1) {
+  if (
+    required.includes(item.kind) &&
+    siblings.filter((row) => row.kind === item.kind).length === 1
+  ) {
     return `context item ${item.id} refused: cannot remove the last required ${item.kind} item`
   }
   return null
 }
 
-export function missingContextKinds(items: ContextItem[], profile: ContextProfile): ContextItemKind[] {
+export function missingContextKinds(
+  items: ContextItem[],
+  profile: ContextProfile,
+): ContextItemKind[] {
   return PROFILE[profile].required.filter(
     (kind) => !items.some((item) => item.kind === kind),
   ) as ContextItemKind[]

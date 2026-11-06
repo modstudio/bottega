@@ -16,7 +16,20 @@ function resolveListFilters(filters: DocListFilters): DocListFilters {
 
 function hideContextByDefault(filters: DocListFilters): DocListFilters {
   if (filters.scope !== undefined || filters.scopes !== undefined) return filters
-  return { ...filters, scopes: ['project', 'machine', 'agent', 'job', 'global', 'stack', 'resume', 'canon', 'settings'] }
+  return {
+    ...filters,
+    scopes: [
+      'project',
+      'machine',
+      'agent',
+      'job',
+      'global',
+      'stack',
+      'resume',
+      'canon',
+      'settings',
+    ],
+  }
 }
 
 export function listDocs(filters: DocListFilters = {}) {

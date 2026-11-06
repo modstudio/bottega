@@ -1,10 +1,6 @@
 // concern: context-item-codec
 /** Encodes context item metadata in document frontmatter. */
-import {
-  CONTEXT_ITEM_KINDS,
-  type ContextItem,
-  type ContextItemKind,
-} from './doc-context-write.ts'
+import { CONTEXT_ITEM_KINDS, type ContextItem, type ContextItemKind } from './doc-context-write.ts'
 
 function value(body: string, key: string): string | undefined {
   const match = new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(body.slice(0, body.indexOf('\n---', 4)))
@@ -19,7 +15,8 @@ function value(body: string, key: string): string | undefined {
 }
 
 export function decodeContextItem(holder: string, id: string, storedBody: string): ContextItem {
-  if (!storedBody.startsWith('---\n')) throw new Error(`context item ${id} requires YAML frontmatter`)
+  if (!storedBody.startsWith('---\n'))
+    throw new Error(`context item ${id} requires YAML frontmatter`)
   const end = storedBody.indexOf('\n---', 4)
   if (end < 0) throw new Error(`context item ${id} requires closed YAML frontmatter`)
   const kind = value(storedBody, 'kind')

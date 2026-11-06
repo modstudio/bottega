@@ -82,7 +82,11 @@ export function assertLocalRevisionWrite(
     scope: input.scope,
   })
   if (!decision.allow) {
-    throw new Error(input.scope === 'context' ? `context item ${input.slug ?? '(unknown)'}: ${decision.reason}` : decision.reason)
+    throw new Error(
+      input.scope === 'context'
+        ? `context item ${input.slug ?? '(unknown)'}: ${decision.reason}`
+        : decision.reason,
+    )
   }
 }
 

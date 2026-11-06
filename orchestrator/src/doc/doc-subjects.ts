@@ -10,7 +10,6 @@ export function docSubjects(): {
   stack: string[]
   agent: string[]
   job: string[]
-  holder: string[]
 } {
   return {
     project: (db().query('SELECT name FROM project ORDER BY name').all() as { name: string }[]).map(
@@ -23,7 +22,6 @@ export function docSubjects(): {
     ).map((row) => row.stack),
     agent: Object.keys(AGENTS).sort(),
     job: Object.keys(JOBS).sort(),
-    holder: [],
   }
 }
 

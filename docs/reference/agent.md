@@ -7,6 +7,9 @@ agents, jobs, and routing
 - [bottega agent](#bottega-agent)
 - [bottega agent add](#bottega-agent-add)
 - [bottega agent context](#bottega-agent-context)
+- [bottega agent context drop](#bottega-agent-context-drop)
+- [bottega agent context set](#bottega-agent-context-set)
+- [bottega agent context show](#bottega-agent-context-show)
 - [bottega agent contract](#bottega-agent-contract)
 - [bottega agent cost-backtest](#bottega-agent-cost-backtest)
 - [bottega agent guide](#bottega-agent-guide)
@@ -66,7 +69,7 @@ Options are documented by `--help`.
 
 **Synopsis:** `bottega agent context [--cwd <path>] [--json]`
 
-show the resolved architect context for a checkout
+manage stored architect context or resolve checkout context
 
 ### Options
 
@@ -76,6 +79,62 @@ show the resolved architect context for a checkout
 ### Related
 
 - [bottega agent](./agent.md#bottega-agent)
+- [bottega agent context drop](./agent.md#bottega-agent-context-drop)
+- [bottega agent context set](./agent.md#bottega-agent-context-set)
+- [bottega agent context show](./agent.md#bottega-agent-context-show)
+
+## bottega agent context drop
+
+**Synopsis:** `bottega agent context drop [--task <key>] [--session <id>] [--id <id>] [--expected-revision <revision>]`
+
+remove one context item
+
+### Options
+
+- `--task <key>`: select task holder
+- `--session <id>`: select session holder
+- `--id <id>`: stable item id
+- `--expected-revision <revision>`: compare-and-set revision
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context set
+
+**Synopsis:** `bottega agent context set <body> [--task <key>] [--session <id>] [--kind <kind>] [--source <source>] [--objection <text>] [--id <id>] [--expected-revision <revision>]`
+
+create or revise one context item
+
+### Options
+
+- `--task <key>`: select task holder
+- `--session <id>`: select session holder
+- `--kind <kind>`: one of ruling, position, open-question, pointer, next-action
+- `--source <source>`: item source
+- `--objection <text>`: objection overcome by a ruling
+- `--id <id>`: stable item id
+- `--expected-revision <revision>`: compare-and-set revision
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context show
+
+**Synopsis:** `bottega agent context show [--task <key>] [--session <id>] [--json]`
+
+show stored context items
+
+### Options
+
+- `--task <key>`: select task holder
+- `--session <id>`: select session holder
+- `--json`: write JSON
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
 
 ## bottega agent contract
 
