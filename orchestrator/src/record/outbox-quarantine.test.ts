@@ -1,6 +1,14 @@
 import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  RECORD_SYNC_PENDING_MARKER,
+  recordSyncQueueDirectory,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { retireOutboxRowWithDependencyProof } from './outbox-operator.ts'
@@ -85,6 +93,9 @@ describe('outbox quarantine exits', () => {
 
   test('matching retry clears and audits only quarantined rows containing the text', () => {
     const database = fixture()
+    const stateRoot = mkdtempSync(join(tmpdir(), 'outbox-retry-signal-'))
+    const env = { [STATE_HOME_ENV]: stateRoot }
+    const marker = join(recordSyncQueueDirectory(env), RECORD_SYNC_PENDING_MARKER)
     database
       .query(
         `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,quarantined_at,quarantine_reason,last_error)
@@ -101,8 +112,21 @@ describe('outbox quarantine exits', () => {
         database,
         '2026-09-28T00:02:00.000Z',
         'operator-session',
+        env,
       ),
     ).toBe(1)
+    expect(existsSync(marker)).toBe(true)
+    rmSync(marker)
+    expect(
+      retryOutboxRowsMatching(
+        'parent is absent',
+        database,
+        '2026-09-28T00:03:00.000Z',
+        'operator-session',
+        env,
+      ),
+    ).toBe(0)
+    expect(existsSync(marker)).toBe(false)
     expect(
       database
         .query('SELECT id,quarantined_at FROM outbox WHERE id BETWEEN 7 AND 10 ORDER BY id')
@@ -122,6 +146,7 @@ describe('outbox quarantine exits', () => {
         .all(),
     ).toEqual([{ outbox_id: 8, disposition: 'retry', actor_session: 'operator-session' }])
     database.close()
+    rmSync(stateRoot, { recursive: true, force: true })
   })
 
   test('retire preserves quarantine and permanently removes the row from delivery', () => {

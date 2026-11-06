@@ -2,6 +2,7 @@
 /** Refreshes the one pending outbox mutation for a task-flow record, or inserts it. */
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export function writePendingTaskFlowOutbox(
@@ -24,7 +25,11 @@ export function writePendingTaskFlowOutbox(
       .run(payload, at, pending.id)
     return
   }
-  database
-    .query('INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,?,?,?,?)')
-    .run(newRecordId(), kind, rowId, payload, at)
+  insertOutboxRow(database, {
+    recordId: newRecordId(),
+    kind,
+    rowId,
+    payload,
+    createdAt: at,
+  })
 }

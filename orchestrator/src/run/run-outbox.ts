@@ -5,6 +5,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { isReleasedOutboxPayload } from '../record/outbox-prune-payload.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
@@ -271,12 +272,13 @@ export function enqueueRunRecord(
       evidenceUnvoid,
     ),
   )
-  database
-    .query(
-      `INSERT INTO outbox (record_id, kind, row_id, payload, created_at)
-       VALUES (?, 'run', ?, ?, ?)`,
-    )
-    .run(newRecordId(), row.record_id, payload, finishedAt)
+  insertOutboxRow(database, {
+    recordId: newRecordId(),
+    kind: 'run',
+    rowId: row.record_id,
+    payload,
+    createdAt: finishedAt,
+  })
 }
 
 function readableLatestPayload(payload: string | null): RunRecordBackfillFacts['latestPayload'] {

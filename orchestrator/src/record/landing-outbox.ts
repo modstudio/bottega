@@ -9,6 +9,7 @@ import {
 } from '../database/slow-statements.ts'
 import { machineId } from './machine-identity.ts'
 
+import { insertOutboxRow } from './outbox-enqueue.ts'
 import { stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {
@@ -32,9 +33,13 @@ const enqueue = (
   at: string,
 ): void => {
   const payload = stringifyOutboxPayload(kind, value)
-  database
-    .query('INSERT INTO outbox (record_id, kind, row_id, payload, created_at) VALUES (?,?,?,?,?)')
-    .run(newRecordId(), kind, recordId, payload, at)
+  insertOutboxRow(database, {
+    recordId: newRecordId(),
+    kind,
+    rowId: recordId,
+    payload,
+    createdAt: at,
+  })
 }
 
 function buildLandingRecordPayload(row: LocalRow, machineId: string, at: string) {

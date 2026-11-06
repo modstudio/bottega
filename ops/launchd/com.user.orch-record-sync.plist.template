@@ -7,12 +7,16 @@
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>&quot;__BOTTEGA_BIN__&quot; record push
+    <string>rm -f &quot;__RECORD_SYNC_QUEUE__/__RECORD_SYNC_MARKER__&quot;
+&quot;__BOTTEGA_BIN__&quot; record push
 push_status=$?
 &quot;__BOTTEGA_BIN__&quot; record publish
 publish_status=$?
 if [ "$push_status" -ne 0 ] || [ "$publish_status" -ne 0 ]; then exit 1; fi</string>
   </array>
+  <key>QueueDirectories</key>
+  <array><string>__RECORD_SYNC_QUEUE__</string></array>
+  <key>ThrottleInterval</key><integer>15</integer>
   <key>StartInterval</key><integer>300</integer>
   <key>WorkingDirectory</key><string>__HOME__</string>
   <key>EnvironmentVariables</key>

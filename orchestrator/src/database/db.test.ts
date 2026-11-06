@@ -17,9 +17,11 @@ import {
   storeInFlightMigrationCompatibility,
   withReadOnlyDatabaseAccess,
   writableDb,
+  writeTransaction,
 } from './db.ts'
 import { migrationJournal } from './migrations.ts'
 import { keepJournalSidecars } from './wal-persistence.ts'
+import { afterWriteCommit } from './write-commit-effects.ts'
 
 /** A worker caller on a store the facts declare outside OS temporary state: restricted read-only. */
 const restrictedHandleFacts: ProcessHandleFacts = {
@@ -31,6 +33,64 @@ const restrictedHandleFacts: ProcessHandleFacts = {
   brokerChannel: false,
   storePathUnderTemporaryRoot: false,
 }
+
+test('write transactions run queued effects once after the outer commit', () => {
+  const database = new Database(':memory:')
+  database.exec('CREATE TABLE item (value INTEGER)')
+  const observations: number[] = []
+
+  writeTransaction(() => {
+    database.exec('INSERT INTO item VALUES (1)')
+    afterWriteCommit(database, () => {
+      observations.push(
+        database.query<{ count: number }, []>('SELECT count(*) AS count FROM item').get()!.count,
+      )
+    })
+    afterWriteCommit(database, () => {
+      throw new Error('best-effort effect failed')
+    })
+    writeTransaction(() => {
+      afterWriteCommit(database, () => observations.push(2))
+    }, database)
+    expect(observations).toEqual([])
+  }, database)
+
+  expect(observations).toEqual([1, 2])
+  database.close()
+})
+
+test('a rolled-back write transaction discards queued effects', () => {
+  const database = new Database(':memory:')
+  const observations: string[] = []
+
+  expect(() =>
+    writeTransaction(() => {
+      afterWriteCommit(database, () => observations.push('ran'))
+      throw new Error('rollback')
+    }, database),
+  ).toThrow('rollback')
+
+  expect(observations).toEqual([])
+  database.close()
+})
+
+test('a caught nested write transaction failure rolls back only its own writes', () => {
+  const database = new Database(':memory:')
+  database.exec('CREATE TABLE item (value INTEGER)')
+
+  writeTransaction(() => {
+    database.exec('INSERT INTO item VALUES (1)')
+    expect(() =>
+      writeTransaction(() => {
+        database.exec('INSERT INTO item VALUES (2)')
+        throw new Error('inner')
+      }, database),
+    ).toThrow('inner')
+  }, database)
+
+  expect(database.query('SELECT value FROM item').all()).toEqual([{ value: 1 }])
+  database.close()
+})
 
 function hideJournalAfter(version: number): void {
   const entries = migrationJournal().slice(0, version)

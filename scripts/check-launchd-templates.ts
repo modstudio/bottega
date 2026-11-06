@@ -10,6 +10,11 @@ import {
   MONITOR_BACKSTOP_SECONDS,
 } from '../shared/launch-agent-render.ts'
 import { readMachineValue } from '../shared/machine-config.ts'
+import {
+  RECORD_SYNC_PENDING_MARKER,
+  recordSyncQueueDirectory,
+  STATE_HOME_ENV,
+} from '../shared/state-directory.ts'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -118,6 +123,49 @@ export function clockParts(value: string): { hour: number; minute: number } | nu
   }
 }
 
+function objectValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function calendarIntervalsHaveIntegerFields(value: unknown): boolean {
+  const intervals = Array.isArray(value) ? value : [value]
+  return (
+    intervals.length > 0 &&
+    intervals.every(
+      (interval) =>
+        objectValue(interval) &&
+        Object.values(interval).every((part) => typeof part === 'number' && Number.isInteger(part)),
+    )
+  )
+}
+
+/** Type errors in launchd fields whose plist shape controls scheduling. */
+export function launchdFieldTypeViolations(plist: unknown, name: string): string[] {
+  if (!objectValue(plist)) return [`${name}: rendered plist root must be a dictionary`]
+  const errors: string[] = []
+  for (const key of ['QueueDirectories', 'WatchPaths'] as const) {
+    if (!(key in plist)) continue
+    const value = plist[key]
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+      errors.push(`${name}: ${key} must be an array of strings`)
+    }
+  }
+  for (const key of ['StartInterval', 'ThrottleInterval'] as const) {
+    if (!(key in plist)) continue
+    if (typeof plist[key] !== 'number' || !Number.isInteger(plist[key])) {
+      errors.push(`${name}: ${key} must be an integer`)
+    }
+  }
+  if ('StartCalendarInterval' in plist) {
+    if (!calendarIntervalsHaveIntegerFields(plist.StartCalendarInterval)) {
+      errors.push(
+        `${name}: StartCalendarInterval must be a dictionary or array of dictionaries with integer fields`,
+      )
+    }
+  }
+  return errors
+}
+
 /**
  * The value each placeholder is rendered with for the lint. Anything launchd
  * reads as a number comes from the same source the installer reads, so the lint
@@ -127,13 +175,16 @@ type LaunchAgentPlaceholder = (typeof LAUNCH_AGENT_PLACEHOLDERS)[number]
 
 function lintValues(concern: string): Record<LaunchAgentPlaceholder, string | null> {
   const spare = clockParts(readMachineValue('spare.start_time'))
+  const stateHome = `/tmp/${PLATFORM_SLUG}-state`
   return {
     __INSTALL_ROOT__: repositoryRoot,
     __BOTTEGA_BIN__: join(repositoryRoot, 'bin', PLATFORM_SLUG),
     __CONCERN__: concern,
     __HOME__: '/tmp',
     __STATE_HOME_ENV__: `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`,
-    __STATE_HOME__: `/tmp/${PLATFORM_SLUG}-state`,
+    __STATE_HOME__: stateHome,
+    __RECORD_SYNC_QUEUE__: recordSyncQueueDirectory({ [STATE_HOME_ENV]: stateHome }),
+    __RECORD_SYNC_MARKER__: RECORD_SYNC_PENDING_MARKER,
     __MONITOR_BACKSTOP_SECONDS__: String(MONITOR_BACKSTOP_SECONDS),
     __FIX_DEFECT_BACKSTOP_SECONDS__: String(FIX_DEFECT_BACKSTOP_SECONDS),
     __MODEL_HOST__: 'example',
@@ -175,6 +226,21 @@ function checkRenderedPlist(input: { name: string; path: string; plutil: string 
     const detail = lint.stdout.toString() + lint.stderr.toString()
     if (detail.trim()) errors.push(detail.trim())
     return errors
+  }
+  const jsonResult = Bun.spawnSync([input.plutil, '-convert', 'json', '-o', '-', input.path], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (jsonResult.exitCode !== 0) {
+    errors.push(`${input.name}: rendered launchd template could not be parsed as JSON`)
+  } else {
+    try {
+      errors.push(
+        ...launchdFieldTypeViolations(JSON.parse(jsonResult.stdout.toString()), input.name),
+      )
+    } catch {
+      errors.push(`${input.name}: rendered launchd template produced invalid JSON`)
+    }
   }
   const programResult = Bun.spawnSync(
     [input.plutil, '-extract', 'ProgramArguments.0', 'raw', input.path],

@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
+import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 type ReleaseRow = Record<string, unknown> & { record_id: string }
@@ -62,11 +63,13 @@ export function enqueueReleaseRecord(database: Database, releaseRecordId: string
       .run(payload, at, pending.id)
     return
   }
-  database
-    .query(
-      "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'release',?,?,?)",
-    )
-    .run(newRecordId(), row.record_id, payload, at)
+  insertOutboxRow(database, {
+    recordId: newRecordId(),
+    kind: 'release',
+    rowId: row.record_id,
+    payload,
+    createdAt: at,
+  })
 }
 
 export function backfillReleaseRecords(database: Database): { enqueued: number } {

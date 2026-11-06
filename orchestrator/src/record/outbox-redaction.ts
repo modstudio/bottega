@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { insertOutboxRow } from './outbox-enqueue.ts'
 import { isReleasedOutboxPayload } from './outbox-prune-payload.ts'
 import { sanitizeOutboxPayloadForRules, stringifyOutboxPayload } from './outbox-sanitize.ts'
 
@@ -147,18 +148,15 @@ export function redactSyncedOutbox(
     }
     const inserted = writeTransaction(() => {
       if (!remainsEligible(database, row)) return false
-      const inserted = database
-        .query<{ id: number }, [string, string, string, string, string]>(
-          `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
-           VALUES (?,?,?,?,?) RETURNING id`,
-        )
-        .get(
-          newRecordId(),
-          row.kind,
-          row.row_id,
-          stringifyOutboxPayload(row.kind, sanitized.payload, { sanitizedForRules: true }),
-          at,
-        )!
+      const insertedId = insertOutboxRow(database, {
+        recordId: newRecordId(),
+        kind: row.kind,
+        rowId: row.row_id,
+        payload: stringifyOutboxPayload(row.kind, sanitized.payload, {
+          sanitizedForRules: true,
+        }),
+        createdAt: at,
+      })
       const paths = [...new Set(sanitized.matches.map((match) => match.path))].toSorted()
       database
         .query(
@@ -168,7 +166,7 @@ export function redactSyncedOutbox(
         )
         .run(
           newRecordId(),
-          inserted.id,
+          insertedId,
           row.kind,
           row.row_id,
           JSON.stringify(recordRules),

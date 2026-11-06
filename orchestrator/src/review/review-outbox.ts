@@ -5,6 +5,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import {
   RELEASED_OUTBOX_PAYLOAD,
   releasedOutboxPayloadSql,
@@ -23,11 +24,14 @@ const enqueue = (
   recordId: string,
   value: Record<string, unknown>,
   at: string,
-) => {
-  database
-    .query('INSERT INTO outbox (record_id, kind, row_id, payload, created_at) VALUES (?,?,?,?,?)')
-    .run(newRecordId(), kind, recordId, stringifyOutboxPayload(kind, value), at)
-}
+) =>
+  insertOutboxRow(database, {
+    recordId: newRecordId(),
+    kind,
+    rowId: recordId,
+    payload: stringifyOutboxPayload(kind, value),
+    createdAt: at,
+  })
 
 export function enqueueReview(database: Database, reviewRecordId: string): void {
   const at = nowIso()

@@ -1,0 +1,119 @@
+import { Database } from 'bun:sqlite'
+import { afterEach, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  RECORD_SYNC_PENDING_MARKER,
+  recordSyncQueueDirectory,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
+import { writeTransaction } from '../database/db.ts'
+import { insertOutboxRow } from './outbox-enqueue.ts'
+
+const roots: string[] = []
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+function fixture(): Database {
+  const database = new Database(':memory:')
+  database.exec(`CREATE TABLE outbox (
+    id INTEGER PRIMARY KEY,
+    record_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    row_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`)
+  return database
+}
+
+function stateEnvironment(root: string): Record<string, string> {
+  return { [STATE_HOME_ENV]: root }
+}
+
+test('inserts the row and creates the pending marker under the state root', () => {
+  const root = mkdtempSync(join(tmpdir(), 'outbox-enqueue-'))
+  roots.push(root)
+  const database = fixture()
+  const env = stateEnvironment(root)
+  insertOutboxRow(
+    database,
+    {
+      recordId: newRecordId(),
+      kind: 'run',
+      rowId: 'run-record',
+      payload: '{}',
+      createdAt: '2026-11-06T12:00:00.000Z',
+    },
+    env,
+  )
+
+  expect(database.query('SELECT kind,row_id,payload,created_at FROM outbox').get()).toEqual({
+    kind: 'run',
+    row_id: 'run-record',
+    payload: '{}',
+    created_at: '2026-11-06T12:00:00.000Z',
+  })
+  expect(existsSync(join(recordSyncQueueDirectory(env), RECORD_SYNC_PENDING_MARKER))).toBe(true)
+  database.close()
+})
+
+test('a marker write failure leaves the inserted row and does not throw', () => {
+  const root = mkdtempSync(join(tmpdir(), 'outbox-enqueue-failure-'))
+  roots.push(root)
+  const env = stateEnvironment(root)
+  const queue = recordSyncQueueDirectory(env)
+  mkdirSync(join(root, 'orchestrator'), { recursive: true })
+  writeFileSync(queue, 'blocks directory creation')
+  const database = fixture()
+
+  expect(() =>
+    insertOutboxRow(
+      database,
+      {
+        recordId: newRecordId(),
+        kind: 'score',
+        rowId: 'score-record',
+        payload: '{}',
+        createdAt: '2026-11-06T12:01:00.000Z',
+      },
+      env,
+    ),
+  ).not.toThrow()
+  expect(
+    database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get(),
+  ).toEqual({
+    count: 1,
+  })
+  database.close()
+})
+
+test('a transaction creates the marker only after its write commits', () => {
+  const root = mkdtempSync(join(tmpdir(), 'outbox-enqueue-commit-'))
+  roots.push(root)
+  const database = fixture()
+  const env = stateEnvironment(root)
+  const marker = join(recordSyncQueueDirectory(env), RECORD_SYNC_PENDING_MARKER)
+
+  writeTransaction(() => {
+    insertOutboxRow(
+      database,
+      {
+        recordId: newRecordId(),
+        kind: 'run',
+        rowId: 'committed-run',
+        payload: '{}',
+        createdAt: '2026-11-06T12:02:00.000Z',
+      },
+      env,
+    )
+    expect(existsSync(marker)).toBe(false)
+  }, database)
+
+  expect(existsSync(marker)).toBe(true)
+  database.close()
+})

@@ -161,6 +161,7 @@ export const cleanupBoundarySpecs = [
       '../project/project-lock.ts',
       '../project/projects.ts',
       '../record/machine-identity.ts',
+      '../record/outbox-enqueue.ts',
       '../record/outbox-sanitize.ts',
       '../record/outbox-serialize.ts',
       './branch-disposal-decision.ts',

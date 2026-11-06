@@ -443,6 +443,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/score/score-outbox.ts', [
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
+    '../record/outbox-enqueue.ts',
     '../record/outbox-sanitize.ts',
     '../record/outbox-serialize.ts',
     '../verdict/verdict-payload.ts',

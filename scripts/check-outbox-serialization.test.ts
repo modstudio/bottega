@@ -1,13 +1,12 @@
 import { expect, test } from 'bun:test'
 import { outboxSerializationViolations } from './check-outbox-serialization.ts'
 
-test('refuses a production outbox insert without the shared serializer', () => {
+test('refuses a production enqueue without the shared serializer', () => {
   expect(
     outboxSerializationViolations([
       {
         file: 'orchestrator/src/record/example.ts',
-        source:
-          "database.query('insert into outbox   (kind,payload) values (?,?)').run(kind, JSON.stringify(payload))\n",
+        source: 'insertOutboxRow(database, { kind, payload: JSON.stringify(payload) })\n',
       },
     ]),
   ).toEqual([
@@ -15,17 +14,31 @@ test('refuses a production outbox insert without the shared serializer', () => {
   ])
 })
 
-test('refuses an outbox insert that calls the serializer without sanitizing', () => {
+test('refuses an enqueue that calls a serializer without sanitizing', () => {
   expect(
     outboxSerializationViolations([
       {
         file: 'orchestrator/src/run/example.ts',
         source:
-          "import { serializeOutboxPayload } from '../record/outbox-serialize.ts'\nconst text = serializeOutboxPayload(kind, payload)\ndatabase.query('INSERT INTO outbox(kind,payload)').run(kind, text)\n",
+          "import { serializeOutboxPayload } from '../record/outbox-serialize.ts'\nconst text = serializeOutboxPayload(kind, payload)\ninsertOutboxRow(database, { kind, payload: text })\n",
       },
     ]),
   ).toEqual([
     'orchestrator/src/run/example.ts:3: outbox payload writes must import and call stringifyOutboxPayload before enqueue',
+  ])
+})
+
+test('refuses an enqueue helper call with a raw JSON payload', () => {
+  expect(
+    outboxSerializationViolations([
+      {
+        file: 'orchestrator/src/review/example.ts',
+        source:
+          "import { insertOutboxRow } from '../record/outbox-enqueue.ts'\ninsertOutboxRow(database, { payload: JSON.stringify(value) })\n",
+      },
+    ]),
+  ).toEqual([
+    'orchestrator/src/review/example.ts:2: outbox payload writes must import and call stringifyOutboxPayload before enqueue',
   ])
 })
 
@@ -42,7 +55,7 @@ test('refuses an outbox payload update without the shared wrapper', () => {
   ])
 })
 
-test('refuses a reordered payload update and an insert without a column list', () => {
+test('refuses a reordered payload update and an enqueue', () => {
   expect(
     outboxSerializationViolations([
       {
@@ -52,7 +65,7 @@ test('refuses a reordered payload update and an insert without a column list', (
       },
       {
         file: 'orchestrator/src/run/values.ts',
-        source: "database.query('INSERT INTO outbox VALUES (?,?,?,?,?)').run(...row)\n",
+        source: 'insertOutboxRow(database, { ...row, payload: JSON.stringify(row) })\n',
       },
     ]),
   ).toEqual([
@@ -79,7 +92,7 @@ test('allows an outbox payload write that imports and calls the wrapper', () => 
       {
         file: 'orchestrator/src/run/example.ts',
         source:
-          "import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'\nconst text = stringifyOutboxPayload(kind, payload)\ndatabase.query('INSERT INTO outbox(kind,payload)').run(kind, text)\n",
+          "import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'\nconst text = stringifyOutboxPayload(kind, payload)\ninsertOutboxRow(database, { kind, payload: text })\n",
       },
     ]),
   ).toEqual([])

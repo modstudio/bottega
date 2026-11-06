@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 
+import { insertOutboxRow } from '../record/outbox-enqueue.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
 
@@ -94,12 +95,13 @@ export function enqueueScoreRecord(database: Database, runId: string, machineId:
       )
       .run(payload, row.scored_at, pending.id)
   } else {
-    database
-      .query(
-        `INSERT INTO outbox (record_id, kind, row_id, payload, created_at)
-         VALUES (?, 'score', ?, ?, ?)`,
-      )
-      .run(newRecordId(), row.record_id, payload, row.scored_at)
+    insertOutboxRow(database, {
+      recordId: newRecordId(),
+      kind: 'score',
+      rowId: row.record_id,
+      payload,
+      createdAt: row.scored_at,
+    })
   }
   return true
 }
