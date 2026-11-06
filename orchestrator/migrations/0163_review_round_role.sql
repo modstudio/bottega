@@ -28,11 +28,16 @@ UPDATE review
         AND json_valid(project.settings)
    )
    AND NOT EXISTS (
-     SELECT 1
-       FROM project, json_each(project.settings, '$.review.lenses') declared
+     SELECT 1 FROM project
       WHERE project.record_id=review.project_record_id
         AND project.settings IS NOT NULL
-        AND json_valid(project.settings)
-        AND json_extract(declared.value, '$.lens')='issue-blast-radius'
+        AND EXISTS (
+          SELECT 1
+            FROM json_each(CASE WHEN json_valid(project.settings)
+              THEN project.settings ELSE '[]' END, '$.review.lenses') declared
+           WHERE CASE WHEN declared.type='object'
+             THEN json_extract(declared.value, '$.lens')='issue-blast-radius'
+             ELSE 0 END
+        )
    );
 -- /BACKFILL

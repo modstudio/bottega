@@ -74,6 +74,34 @@ test('outbox migration moves pending tracker status events and retires the setti
   database.close()
 })
 
+test('outbox migration ignores non-object pending tracker status events', () => {
+  const database = storeBeforeOutbox()
+  database
+    .query(`INSERT INTO setting(key,value) VALUES (?,?)`)
+    .run(
+      'tracker.status-events.pending-mirror',
+      JSON.stringify([
+        { eventRecordId: '0199b001-0000-7000-8000-000000000001', at: '2026-10-11T12:00:00Z' },
+        'e2',
+      ]),
+    )
+
+  applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)
+
+  expect(
+    database.query(`SELECT id,table_name,row_id,operation,queued_at FROM hosted_outbox`).all(),
+  ).toEqual([
+    {
+      id: '0199b001-0000-7000-8000-000000000001',
+      table_name: 'hub_task_status_event',
+      row_id: '0199b001-0000-7000-8000-000000000001',
+      operation: 'upsert',
+      queued_at: '2026-10-11T12:00:00Z',
+    },
+  ])
+  database.close()
+})
+
 test('the additive outbox migration brings each queued status event task once', () => {
   const database = storeBeforeOutbox()
   const taskId = '0199b001-0000-7000-8000-000000000010'

@@ -117,7 +117,8 @@ function falseVerdictRows(database: Database, runs: HealthRunRow[]): HealthVerdi
   const cleared = database
     .query(
       `SELECT DISTINCT run_record_id FROM run_mutation_audit
-      WHERE action='reclassify' AND json_valid(reason) AND json_extract(reason,'$.cleared')=1`,
+      WHERE action='reclassify' AND CASE WHEN json_valid(reason)
+        THEN json_extract(reason,'$.cleared')=1 ELSE 0 END`,
     )
     .all() as { run_record_id: string }[]
   const voided = database

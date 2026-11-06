@@ -53,6 +53,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/embedded-assets.ts',
     '../../../shared/install-root.ts',
     '../../../shared/migration-connection-policy.ts',
+    '../../../shared/migration-source.ts',
     './applied-migration-compatibilities.ts',
     './agent-port-baseline-uuid-migration-preflight.ts',
     './gate-check-execution-uuid-migration-preflight.ts',

@@ -3,9 +3,17 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import ts from 'typescript'
-import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
+import {
+  applyMigrations as applyHubMigrations,
+  migrationJournal as hubMigrationJournal,
+  MIGRATIONS_FOLDER as hubMigrationsFolder,
+} from '../hub/src/migrations.ts'
 import { MIGRATIONS_TABLE } from '../orchestrator/src/database/applied-migration-compatibilities.ts'
-import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
+import {
+  applyMigrations as applyOrchestratorMigrations,
+  migrationJournal as orchestratorMigrationJournal,
+  MIGRATIONS_FOLDER as orchestratorMigrationsFolder,
+} from '../orchestrator/src/database/migrations.ts'
 import { SLOW_STATEMENT_BUCKET_PREDICATE } from '../orchestrator/src/database/slow-statements.ts'
 import {
   LOCAL_PIN_VERSION_SQL,
@@ -31,9 +39,19 @@ import {
   TERMINAL_RUN_STATUS_SQL,
 } from '../orchestrator/src/run/run-status.ts'
 import { SUBSCRIPTION_QUOTA_WINDOWS_SQL } from '../orchestrator/src/run/run-subscription-cost-store.ts'
+import { splitMigrationSource } from '../shared/migration-source.ts'
+import { detectUnsafeJsonGuards } from './check-json-valid-guards.ts'
 
 type ConcernName = 'orchestrator' | 'hub' | 'shared'
-type Concern = { name: ConcernName; root: string; migrate(database: Database): unknown }
+type Concern = {
+  name: ConcernName
+  root: string
+  migrations: {
+    folder: string
+    journal(folder: string): readonly { tag: string }[]
+  } | null
+  migrate(database: Database): unknown
+}
 type SqlSite = { file: string; line: number; sql: string; interpolated: boolean }
 type UnresolvedSite = { file: string; line: number; expression: string }
 export type SqlExemption = { file: string; fingerprint: string; reason: string }
@@ -45,6 +63,8 @@ export type SqlCheckInput = {
 
 const root = resolve(import.meta.dir, '..')
 const SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|REPLACE|WITH|PRAGMA|CREATE|DROP|ALTER)\b/i
+const JSON_GUARD_FAILURE =
+  'json_valid() cannot guard another JSON call over the same expression through AND'
 
 export function sqlFingerprint(sql: string): string {
   return createHash('sha256').update(sql.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16)
@@ -678,6 +698,7 @@ function checkConcern(input: {
     ]
     for (const site of candidates) {
       const key = `${site.file}#${site.fingerprint}`
+      if (!('expression' in site)) failures.push(...jsonGuardFailures(site))
       if (exemptionByKey.has(key)) {
         unused.delete(key)
         skipped[concern.name] += 1
@@ -701,6 +722,28 @@ function checkConcern(input: {
   }
 }
 
+function jsonGuardFailures(site: SqlSite): string[] {
+  return detectUnsafeJsonGuards(site.sql).map((issue) => {
+    const line = site.line + site.sql.slice(0, issue.offset).split('\n').length - 1
+    return `${site.file}:${line}: ${JSON_GUARD_FAILURE}`
+  })
+}
+
+function checkMigrationBackfillJsonGuards(concern: Concern, failures: string[]): void {
+  if (!concern.migrations) return
+  const directory = concern.migrations.folder
+  for (const entry of concern.migrations.journal(directory)) {
+    const file = resolve(directory, `${entry.tag}.sql`)
+    const source = readFileSync(file, 'utf8')
+    for (const { sql, offset } of splitMigrationSource(source).backfillBlocks) {
+      for (const issue of detectUnsafeJsonGuards(sql)) {
+        const line = source.slice(0, offset + issue.offset).split('\n').length
+        failures.push(`${relative(root, file)}:${line}: ${JSON_GUARD_FAILURE}`)
+      }
+    }
+  }
+}
+
 export function checkSqlLiteralSchemaWith(input: SqlCheckInput): {
   prepared: Record<ConcernName, number>
   skipped: Record<ConcernName, number>
@@ -714,7 +757,7 @@ export function checkSqlLiteralSchemaWith(input: SqlCheckInput): {
   const exemptionByKey = new Map(
     exemptions.map((item) => [`${item.file}#${item.fingerprint}`, item]),
   )
-  for (const concern of input.concerns)
+  for (const concern of input.concerns) {
     checkConcern({
       concern,
       catalogues: input.catalogues,
@@ -724,6 +767,8 @@ export function checkSqlLiteralSchemaWith(input: SqlCheckInput): {
       skipped,
       failures,
     })
+    checkMigrationBackfillJsonGuards(concern, failures)
+  }
   for (const key of unused) failures.push(`stale SQL exemption: ${key}`)
   if (failures.length)
     throw new Error(
@@ -746,16 +791,25 @@ function checkSqlLiteralSchema() {
       {
         name: 'shared',
         root: resolve(root, 'shared'),
+        migrations: null,
         migrate: () => {},
       },
       {
         name: 'orchestrator',
         root: resolve(root, 'orchestrator/src'),
+        migrations: {
+          folder: orchestratorMigrationsFolder,
+          journal: orchestratorMigrationJournal,
+        },
         migrate: applyOrchestratorMigrations,
       },
       {
         name: 'hub',
         root: resolve(root, 'hub/src'),
+        migrations: {
+          folder: hubMigrationsFolder,
+          journal: hubMigrationJournal,
+        },
         migrate: (database) =>
           applyHubMigrations(database, undefined, {
             machine_id: '01990000-0000-7000-8000-000000000001',

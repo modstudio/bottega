@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
+import { splitMigrationSource } from '../../../shared/migration-source.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 
 // Six of these tests spawn the orch CLI and apply the whole migration journal
@@ -34,7 +35,6 @@ import {
   readUserVersion,
   SCHEMA_LOCK_TABLE,
   schemaVersionLabel,
-  splitMigrationSource,
   stripSqlComments,
 } from '../database/migrations.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'

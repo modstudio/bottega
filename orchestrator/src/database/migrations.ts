@@ -9,6 +9,7 @@ import {
   enterMigrationConnectionPolicy,
   leaveMigrationConnectionPolicy,
 } from '../../../shared/migration-connection-policy.ts'
+import { splitMigrationSource } from '../../../shared/migration-source.ts'
 import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import {
   hasMigrationCompatibilityColumn,
@@ -45,7 +46,6 @@ export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
 const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
-const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 const RUN_UUID_KEY_MIGRATION = '0124_run_uuid_key'
 const LENS_PORT_UUID_KEY_MIGRATION = '0131_lens_port_uuid_key'
 const MONITOR_RELEASE_CLAIM_UUID_KEY_MIGRATION = '0156_monitor_release_claim_uuid_keys'
@@ -124,27 +124,6 @@ function migrationSource(entry: MigrationJournalEntry, folder = MIGRATIONS_FOLDE
     join('orchestrator', 'migrations', `${entry.tag}.sql`),
     join(folder, `${entry.tag}.sql`),
   )
-}
-
-/** DDL for hashing and one-time apply; backfill blocks are excluded so they can evolve. */
-export function splitMigrationSource(source: string): { ddl: string; backfill: string } {
-  const opens = source.match(/^[ \t]*--[ \t]*BACKFILL[ \t]*$/gm) ?? []
-  const closes = source.match(/^[ \t]*--[ \t]*\/BACKFILL[ \t]*$/gm) ?? []
-  if (opens.length !== closes.length) {
-    throw new Error(
-      `refusing to load a migration whose backfill block is not closed\n` +
-        `invariant: ${BACKFILL_UNCLOSED}`,
-    )
-  }
-  const blocks: string[] = []
-  const ddl = source.replace(
-    /^[ \t]*--[ \t]*BACKFILL[ \t]*\r?\n([\s\S]*?)^[ \t]*--[ \t]*\/BACKFILL[ \t]*\r?\n?/gm,
-    (_match, body: string) => {
-      blocks.push(body)
-      return ''
-    },
-  )
-  return { ddl, backfill: blocks.join('\n') }
 }
 
 export function migrationHash(entry: MigrationJournalEntry, folder = MIGRATIONS_FOLDER): string {
