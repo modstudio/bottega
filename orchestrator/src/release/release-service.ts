@@ -394,13 +394,13 @@ function postDeployFacts(
   const remedy = timedOut
     ? `; re-run ${PLATFORM_SLUG} release run ${project} --rung ${rung} once the deploy has finished, and confirm the live observation`
     : ''
+  // The deploy's own output stays on the ledger ahead of the live-probe outcome,
+  // so a probe timeout keeps the evidence for why the deploy did not land.
+  const output = `${deployed.output}\n${waited.terminal.ledgerResult.output}${remedy}`
   return {
     ...waited.terminal,
-    ledgerResult: waited.terminal.ledgerResult,
-    outputTail: capturedOutputTail(`${waited.terminal.outputTail}${remedy}`, [
-      candidate,
-      waited.live,
-    ]),
+    ledgerResult: { exitCode: waited.terminal.ledgerResult.exitCode, output },
+    outputTail: capturedOutputTail(output, [candidate, initialLive, waited.live]),
     warning: waited.warning
       ? releaseCapturedText(waited.warning, [candidate, waited.live])
       : waited.terminal.warning,
