@@ -3,6 +3,7 @@
 
 import { readFileSync } from 'node:fs'
 import { parseWorkerReplyWithCount } from '../contract/contract-reply.ts'
+import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 
 const REFUSAL_QUOTE_CHARS = 200
@@ -24,6 +25,7 @@ export function refusalScoreGuidance(text: string | null, jobName: string): stri
   const reply = parseWorkerReplyWithCount<{ status: string; summary: string }>(
     text,
     STATUS_SUMMARY_SCHEMA,
+    valueMatchesReplySchema,
   ).reply
   if (reply?.status !== 'refused') return null
   const firstLine = reply.summary.split(/\r?\n/, 1)[0] ?? ''

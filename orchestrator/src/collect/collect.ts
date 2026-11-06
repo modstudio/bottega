@@ -581,6 +581,45 @@ export type CollectResultPresentation = {
   exit(code: number): never
 }
 
+export function unfinishedResultMessage(
+  requested: { number: number; status: string; failureKind: string | null },
+  final: { number: number; status: string },
+  fallback: string,
+): string {
+  if (
+    requested.status === 'failed' &&
+    final.status === 'running' &&
+    requested.number !== final.number
+  ) {
+    return (
+      `run ${requested.number} failed (${requested.failureKind ?? 'unknown'}); ` +
+      `its failover successor ${final.number} is still running`
+    )
+  }
+  return fallback
+}
+
+function unfinishedResultMessageForRun(
+  database: Database,
+  requestedId: string,
+  final: CollectedRunRow,
+): string {
+  const requested = database
+    .query<{ number: number; status: string; failure_kind: string | null }, [string]>(
+      'SELECT number,status,failure_kind FROM run WHERE record_id=?',
+    )
+    .get(requestedId)!
+  return unfinishedResultMessage(
+    {
+      number: requested.number,
+      status: requested.status,
+      failureKind: requested.failure_kind,
+    },
+    { number: final.number, status: final.status },
+    `run ${requestedId} (${final.agent}/${final.job}) is still running`,
+  )
+}
+
 /** A successful run may carry a non-failing outcome note in its error column. */
 export function okOutcomeNote(row: { status: string; error: string | null }): string {
   return row.status === 'ok' && row.error ? `\n  ${row.error}` : ''
@@ -675,7 +714,7 @@ export function collectResult(
   const outcome = outcomeOf(row)
   const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}${row.executor === HARNESS_EXECUTOR ? `\n  executor:  ${row.executor}` : ''}\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
-    presentation.error(`run ${id} (${row.agent}/${row.job}) is still running`)
+    presentation.error(unfinishedResultMessageForRun(database, id, row))
     presentation.exit(2)
   }
   const output = collectedOutput(row)

@@ -25,6 +25,7 @@ import {
   workerPreamble,
 } from './contract.ts'
 import { parseWorkerReplyWithCount, VERIFY_CLAIM_SCHEMA } from './contract-reply.ts'
+import { valueMatchesReplySchema } from './contract-reply-validator.ts'
 
 test('reply contract names absolute scratch files without a shell variable', () => {
   const scratch = '/var/tmp/orch/runs/42/scratch'
@@ -552,6 +553,7 @@ describe('a worker that narrates in its own reply shape', () => {
         .map((value) => JSON.stringify(value))
         .join('\n'),
       WORKER_SCHEMA,
+      valueMatchesReplySchema,
     )
     expect(parsed.reply?.summary).toBe('quoted contract-shaped object')
     expect(parsed.contractObjects).toBe(2)

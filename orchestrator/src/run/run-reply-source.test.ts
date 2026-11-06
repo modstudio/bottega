@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import type { JsonSchema, SchemaValidatorPort } from '../contract/contract-reply.ts'
+import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
+import { valueMatchesStrictSchema } from '../transport/transport.ts'
 import {
+  collectReplySource,
   decideReplySource,
   type ReplySourceFacts,
   type ReplySourceRuling,
@@ -147,4 +151,92 @@ describe('reply source ruling', () => {
   for (const row of cases) {
     test(row.name, () => expect(decideReplySource(row.facts)).toEqual(row.expected))
   }
+})
+
+const fullJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['integer', 'number', 'boolean', 'nothing', 'rows', 'choice'],
+  properties: {
+    integer: { type: 'integer' },
+    number: { type: 'number' },
+    boolean: { type: 'boolean' },
+    nothing: { type: 'null' },
+    rows: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['n'],
+        properties: { n: { type: 'integer' } },
+      },
+    },
+    choice: { type: 'string', enum: ['accepted', 'rejected'] },
+  },
+} as const
+
+const fullJsonReply = {
+  integer: 2,
+  number: 2.5,
+  boolean: true,
+  nothing: null,
+  rows: [{ n: 3, nestedExtra: 'kept' }],
+  choice: 'accepted',
+  extra: 'kept',
+}
+
+const unusedDialect = {
+  schema: fullJsonSchema,
+  schemaName: 'fullJsonSchema',
+  parse: () => ({ reply: null, contractObjects: 0 }),
+}
+
+function customReply(value: unknown, validatesSchema?: SchemaValidatorPort) {
+  return collectReplySource({
+    replyFileText: JSON.stringify(value),
+    fallbackText: '',
+    contract: 'custom',
+    dialect: unusedDialect,
+    schema: fullJsonSchema,
+    validatesSchema,
+  })
+}
+
+function oldIntegerTypeofBehavior(value: unknown, schema: JsonSchema): boolean {
+  if (!valueMatchesReplySchema(value, schema)) return false
+  if (schema.type === 'integer') {
+    const javascriptType: string = typeof value
+    return javascriptType === schema.type
+  }
+  if (Array.isArray(value) && schema.items) {
+    return value.every((item) => oldIntegerTypeofBehavior(item, schema.items!))
+  }
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(schema.properties ?? {}).every(
+      ([key, child]) =>
+        !Object.hasOwn(value, key) ||
+        oldIntegerTypeofBehavior((value as Record<string, unknown>)[key], child),
+    )
+  }
+  return true
+}
+
+describe('custom reply-file schema validation', () => {
+  test('Ajv accepts JSON Schema primitives, nested objects, arrays, and enums', () => {
+    expect(customReply(fullJsonReply).replyFileError).toBeNull()
+    expect(customReply({ ...fullJsonReply, integer: '2' }).replyFileError).toContain(
+      'did not match',
+    )
+  })
+
+  test('reply-file leniency removes additionalProperties at every depth', () => {
+    expect(customReply(fullJsonReply).replyFileError).toBeNull()
+    expect(valueMatchesStrictSchema(fullJsonSchema, fullJsonReply)).toBe(false)
+  })
+
+  test('mutation: the old typeof behavior rejects the valid integer reply', () => {
+    expect(customReply(fullJsonReply, oldIntegerTypeofBehavior).replyFileError).toContain(
+      'did not match',
+    )
+  })
 })

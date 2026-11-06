@@ -18,6 +18,7 @@ import {
   releasedWritingTreeNote,
   resolveFailover,
   thinOutputWarning,
+  unfinishedResultMessage,
 } from './collect.ts'
 
 const recordedResult = (recordId: string, writingJob: () => boolean = () => false) => {
@@ -41,6 +42,16 @@ const recordedResult = (recordId: string, writingJob: () => boolean = () => fals
 
 const base = '3646a62f6abd4486aeb2c27744d2f69ba7210828'
 const changed = JSON.stringify(['.githooks/pre-commit'])
+
+test('a running failover successor preserves the original failure in result output', () => {
+  expect(
+    unfinishedResultMessage(
+      { number: 29364, status: 'failed', failureKind: 'contract' },
+      { number: 29388, status: 'running' },
+      'generic',
+    ),
+  ).toBe('run 29364 failed (contract); its failover successor 29388 is still running')
+})
 
 describe('no-commit report', () => {
   test('rejects comparing no-commit evidence against any base and head except the turn own', () => {

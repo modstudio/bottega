@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { assetPath } from '../../../shared/install-root.ts'
+import { loadAjvValidator } from '../contract/contract-reply-validator.ts'
 import type { FailureKind } from '../failure/failure.ts'
 import { classify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
@@ -731,23 +732,6 @@ export function confineFsPath(path: string, root: string, method = 'readTextFile
     throw new Error(`ACP fs.${method} refused: ${path} is outside the ${rootName}`)
   }
   return candidate
-}
-
-let schemaValidator: AjvValidator | null = null
-
-function loadAjvValidator(): AjvValidator {
-  if (schemaValidator) return schemaValidator
-  // Loaded here, not at module load: doctor and every reporting command reach
-  // this module through run.ts, and the hermetic linked-tree fixtures carry no
-  // orchestrator/node_modules, so a static import broke `bottega machine doctor`.
-  try {
-    const loaded = require('./ajv-validator.ts') as typeof import('./ajv-validator.ts')
-    schemaValidator = loaded.createStrictSchemaValidator()
-    return schemaValidator
-  } catch (error) {
-    const cause = error instanceof Error ? error.message : String(error)
-    throw new Error(`failed to load or construct the strict schema validator: ${cause}`)
-  }
 }
 
 /** Validate a reply against the same Codex-normalized schema the CLI path hands the vendor. */

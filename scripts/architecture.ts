@@ -350,6 +350,10 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/contract/codex-schema.ts', []),
   module('orchestrator/src/contract/codex-mcp-tool.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/contract/contract-reply.ts', []),
+  module('orchestrator/src/contract/contract-reply-validator.ts', [
+    '../transport/ajv-validator.ts',
+    './contract-reply.ts',
+  ]),
   ...recipeModules,
   module('orchestrator/src/hook-tree/hook-tree.ts', [
     '../../../shared/brand.ts',

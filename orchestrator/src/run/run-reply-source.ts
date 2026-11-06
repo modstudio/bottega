@@ -4,7 +4,8 @@
  * files, stores, processes, or run terminalisation.
  */
 import { REPLY_FILE_NAME, type ReplyDialect, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
-import { type JsonSchema, validatesSchema } from '../contract/contract-reply.ts'
+import type { SchemaValidatorPort } from '../contract/contract-reply.ts'
+import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
 import { schemaMismatchError, valueMatchesStrictSchema } from '../transport/transport.ts'
 
 export type ReplyContract = 'none' | 'text' | 'custom'
@@ -73,6 +74,7 @@ function parseReplyFile(
   text: string,
   dialect: ReplyDialect,
   schema: unknown,
+  validatesSchema: SchemaValidatorPort,
 ): { matches: boolean; parsed: unknown } {
   if (contract !== 'custom') {
     const reply = dialect.parse(text).reply
@@ -85,7 +87,7 @@ function parseReplyFile(
   }
   try {
     const parsed: unknown = JSON.parse(text)
-    return { matches: validatesSchema(parsed, schema as JsonSchema), parsed }
+    return { matches: validatesSchema(parsed, schema as never), parsed }
   } catch {
     return { matches: false, parsed: null }
   }
@@ -116,11 +118,18 @@ export function collectReplySource(input: {
   contract: ReplyContract
   dialect: ReplyDialect
   schema: unknown
+  validatesSchema?: SchemaValidatorPort
 }): ReplySourceRuling {
   const parsedReplyFile =
     input.replyFileText === null
       ? null
-      : parseReplyFile(input.contract, input.replyFileText, input.dialect, input.schema)
+      : parseReplyFile(
+          input.contract,
+          input.replyFileText,
+          input.dialect,
+          input.schema,
+          input.validatesSchema ?? valueMatchesReplySchema,
+        )
   return decideReplySource({
     replyFile:
       input.replyFileText === null
