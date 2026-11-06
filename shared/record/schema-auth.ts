@@ -3,6 +3,7 @@
 import { sql } from 'drizzle-orm'
 import {
   bigint,
+  check,
   index,
   integer,
   pgPolicy,
@@ -13,6 +14,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import {
   inviteePolicies,
+  MEMBERSHIP_ROLES,
   RECORD_AUTH_ROLE,
   space,
   spaceIdentity,
@@ -93,6 +95,10 @@ export const invitation = pgTable.withRLS(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    check(
+      'invitation_role_check',
+      sql`${table.role} IS NULL OR ${table.role} IN ${MEMBERSHIP_ROLES}`,
+    ),
     index('invitation_space_id_idx').on(table.spaceId),
     index('invitation_email_idx').on(table.email),
     ...tenantPolicies('invitation', table.spaceId),

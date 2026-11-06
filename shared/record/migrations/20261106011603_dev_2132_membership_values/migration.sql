@@ -1,0 +1,3 @@
+ALTER TABLE "membership" ADD CONSTRAINT "membership_role_check" CHECK ("role" IN ('owner', 'admin', 'member'));--> statement-breakpoint
+ALTER TABLE "membership" ADD CONSTRAINT "membership_permission_check" CHECK ("permission" IN ('read', 'write'));--> statement-breakpoint
+ALTER TABLE "invitation" ADD CONSTRAINT "invitation_role_check" CHECK ("role" IS NULL OR "role" IN ('owner', 'admin', 'member'));

@@ -484,7 +484,7 @@ export function recordAuth(
             modelName: 'membership',
             fields: { organizationId: 'spaceId' },
             additionalFields: {
-              permission: { type: 'string', required: true, defaultValue: 'write' },
+              permission: { type: 'string', required: true, defaultValue: 'write', input: false },
               configAccess: { type: 'boolean', required: true, defaultValue: false, input: false },
             },
           },
