@@ -96,6 +96,7 @@ test('workflow exec --record-evidence records the payload row with the receiving
   try {
     delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    registerCurrentProject('workflow-exec-record-evidence')
     const shown = outcomePresentation()
     const payload = {
       command: ['env'],

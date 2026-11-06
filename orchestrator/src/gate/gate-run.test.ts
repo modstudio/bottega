@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
@@ -289,6 +290,34 @@ test('runs and records a relative gate from the caller checkout top level', asyn
     cwd: checkoutTopLevel,
     resolved_command: expectedCommand,
   })
+})
+
+test('refuses a stranded directory below the worktree base before the gate runs', async () => {
+  const worktreeBase = join(repositoryPath, '.claude', 'worktrees')
+  mkdirSync(worktreeBase, { recursive: true })
+  const cwd = mkdtempSync(join(worktreeBase, 'stranded-gate-'))
+  let ran = false
+  try {
+    await expect(
+      runArchitectGate({
+        cwd,
+        d: database(),
+        topLevel: () => repositoryPath,
+        checkout: cleanCheckout,
+        gitState: cleanGitState,
+        write: () => {},
+        runner: () => {
+          ran = true
+          throw new Error('should not run')
+        },
+      }),
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} gate run: ${cwd} is not a worktree; git resolves it to ${repositoryPath}`,
+    )
+    expect(ran).toBe(false)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
 })
 
 test('refuses a merge in progress before the gate runs', async () => {

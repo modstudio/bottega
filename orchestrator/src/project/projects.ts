@@ -839,7 +839,8 @@ function requiresCleanMain(settings: ProjectSettings): boolean {
   return settings.requireCleanMain !== false
 }
 
-function mainCheckoutWorktreeHint(projectPath: string): string {
+/** The directory under a registered checkout where Bottega creates disposable trees. */
+export function mainCheckoutWorktreeHint(projectPath: string): string {
   return join(projectPath, '.claude', 'worktrees')
 }
 

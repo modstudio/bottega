@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
+import { assertEvidenceCheckoutIdentity } from '../git/checkout-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { reviewRecordArgv } from '../project/review-record-template.ts'
@@ -19,7 +20,7 @@ import { reviewLineage } from './review-lineage-store.ts'
 import { type ReviewRecordRow, reviewRecordFindings } from './review-record-findings.ts'
 import { writeReviewRecordFindings } from './review-record-findings-file.ts'
 
-type ReviewRecordProject = Pick<Project, 'name' | 'settings'>
+type ReviewRecordProject = Pick<Project, 'name' | 'path' | 'settings'>
 
 type ResolvedReviewRecord = {
   complete: boolean
@@ -40,6 +41,7 @@ type ReviewRecordCommandOperations = {
   findingsPath(project: string, branch: string): string
   write(path: string, findings: ReturnType<typeof reviewRecordFindings>): void
   run(argv: string[], cwd: string): ReviewRecordCommandResult
+  assertCheckout: typeof assertEvidenceCheckoutIdentity
 }
 
 const PROJECT_REVIEW_RECORD_USAGE = `${PLATFORM_SLUG} review project-record <branch> --cwd <tree> --reason "<one line>"`
@@ -190,6 +192,7 @@ export function reviewRecordCommandOperations(
         stderr: result.stderr.toString(),
       }
     },
+    assertCheckout: assertEvidenceCheckoutIdentity,
   }
 }
 
@@ -224,6 +227,7 @@ export function recordProjectReviewCommand(
   if (!project) {
     throw new Error(`cannot resolve a project for ${cwd}; pass a registered project worktree`)
   }
+  operations.assertCheckout({ cwd, projectPath: project.path, verb: 'review project-record' })
   const template = project.settings.review?.record
   if (!template) {
     presentation.log(`project ${project.name} declares no review record`)

@@ -20,6 +20,7 @@ function operations(overrides: Partial<Operations> = {}): Operations {
   return {
     project: () => ({
       name: 'fixture',
+      path: '/fixture',
       settings: {
         review: {
           lenses: [{ lens: 'correctness' }],
@@ -53,6 +54,7 @@ function operations(overrides: Partial<Operations> = {}): Operations {
     findingsPath: () => '/state/review.json',
     write: () => {},
     run: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+    assertCheckout: () => {},
     ...overrides,
   }
 }

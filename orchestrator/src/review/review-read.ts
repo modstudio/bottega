@@ -7,6 +7,7 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
+import { assertEvidenceCheckoutIdentity } from '../git/checkout-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
@@ -18,7 +19,11 @@ type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
 type Git = (cwd: string, args: string[]) => string
 type ResolveCommit = (checkout: string, argument: string) => string
-type ReviewReadDeps = { runGit: Git; resolveCommit: ResolveCommit }
+type ReviewReadDeps = {
+  runGit: Git
+  resolveCommit: ResolveCommit
+  assertCheckout: typeof assertEvidenceCheckoutIdentity
+}
 
 const git: Git = (cwd, args) => {
   const result = Bun.spawnSync(['git', ...args], {
@@ -33,7 +38,11 @@ const git: Git = (cwd, args) => {
   return result.stdout.toString().trim()
 }
 
-const defaultDeps: ReviewReadDeps = { runGit: git, resolveCommit: resolveCommitArgument }
+const defaultDeps: ReviewReadDeps = {
+  runGit: git,
+  resolveCommit: resolveCommitArgument,
+  assertCheckout: assertEvidenceCheckoutIdentity,
+}
 
 export function latestArchitectRead(database: Database, project: string, branch: string) {
   const lineage = reviewLineage(database, project, branch)
@@ -71,8 +80,9 @@ export function recordArchitectRead(
   input: { cwd: string; sha?: string; note: string },
   suppliedDatabase?: Database,
   recordedAt = nowIso(),
-  deps: ReviewReadDeps = defaultDeps,
+  suppliedDeps: Partial<ReviewReadDeps> = {},
 ): string {
+  const deps = { ...defaultDeps, ...suppliedDeps }
   if (process.env.BOTTEGA_DEPTH !== undefined) {
     throw new Error(
       `${PLATFORM_SLUG} review read is reserved for architect sessions; BOTTEGA_DEPTH is set`,
@@ -85,6 +95,7 @@ export function recordArchitectRead(
   const database = suppliedDatabase ?? writableDb()
   const project = projectAt(input.cwd, database)
   if (!project) throw new Error(`cannot resolve a project for ${input.cwd}`)
+  deps.assertCheckout({ cwd: input.cwd, projectPath: project.path, verb: 'review read' })
   const branch = deps.runGit(input.cwd, ['branch', '--show-current'])
   if (!branch)
     throw new Error(`${PLATFORM_SLUG} review read requires a checked-out branch, not detached HEAD`)

@@ -15,6 +15,7 @@ import {
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
+import { assertEvidenceCheckoutIdentity } from '../git/checkout-identity.ts'
 import { projectAt } from '../project/projects.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { redactSecretShapedOutput } from '../secret-shaped-output.ts'
@@ -237,6 +238,12 @@ function architectGateTarget(input: {
       `${PLATFORM_SLUG} gate run: could not resolve the checkout top level for ${cwd}; run ${PLATFORM_SLUG} gate run from inside the checkout to gate`,
     )
   }
+  assertEvidenceCheckoutIdentity({
+    cwd,
+    projectPath: project.path,
+    verb: 'gate run',
+    topLevel: checkoutTopLevel,
+  })
   return { caller, project, gate, checkoutTopLevel }
 }
 
