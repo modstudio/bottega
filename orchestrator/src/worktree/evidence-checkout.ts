@@ -2,12 +2,12 @@
 /** Gathers checkout path identity before an evidence-writing command runs. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt, gitToplevel } from '../../../shared/git.ts'
-import { mainCheckoutWorktreeHint } from '../project/projects.ts'
 import {
   checkoutPathsSame,
   evidenceCheckoutRefusal,
   realpathOrSpelled,
-} from './checkout-identity.ts'
+} from '../git/checkout-identity.ts'
+import { mainCheckoutWorktreeHint } from '../project/projects.ts'
 
 function shortHeadCommit(cwd: string): string | null {
   const result = gitAt(cwd, ['rev-parse', '--short=12', 'HEAD'])
@@ -25,12 +25,10 @@ export function assertEvidenceCheckoutIdentity(input: {
   const topLevel = input.topLevel === undefined ? gitToplevel(input.cwd) : input.topLevel
   if (!topLevel) return
   const worktreeBase = realpathOrSpelled(mainCheckoutWorktreeHint(input.projectPath))
-  const cwd = checkoutPathsSame(input.cwd, worktreeBase)
-    ? worktreeBase
-    : realpathOrSpelled(input.cwd)
-  const resolvedTopLevel = checkoutPathsSame(topLevel, worktreeBase)
-    ? worktreeBase
-    : realpathOrSpelled(topLevel)
+  const normalize = (path: string): string =>
+    checkoutPathsSame(path, worktreeBase) ? worktreeBase : realpathOrSpelled(path)
+  const cwd = normalize(input.cwd)
+  const resolvedTopLevel = normalize(topLevel)
   if (!evidenceCheckoutRefusal({ cwd, topLevel: resolvedTopLevel, worktreeBase })) return
   const commit = (input.resolveCommit ?? shortHeadCommit)(resolvedTopLevel) ?? 'unknown commit'
   throw new Error(

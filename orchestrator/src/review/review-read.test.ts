@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -43,6 +43,33 @@ test('worker sessions cannot record an architect read', () => {
   expect(() => recordArchitectRead({ cwd: '/unused', note: 'read the final fix' })).toThrow(
     'reserved for architect sessions',
   )
+})
+
+test('a stranded directory below the worktree base is refused before recording a review read', () => {
+  delete process.env.BOTTEGA_DEPTH
+  process.env.CLAUDE_CODE_SESSION_ID = 'owner-session'
+  const repositoryPath = resolve(import.meta.dir, '../../..')
+  const worktreeBase = join(repositoryPath, '.claude', 'worktrees')
+  mkdirSync(worktreeBase, { recursive: true })
+  const cwd = mkdtempSync(join(worktreeBase, 'stranded-review-read-'))
+  const d = new Database(':memory:')
+  applyMigrations(d)
+  d.query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)').run(
+    newRecordId(),
+    'fixture',
+    repositoryPath,
+    '{}',
+  )
+  try {
+    expect(() => recordArchitectRead({ cwd, note: 'read the final fix' }, d)).toThrow(
+      `${PLATFORM_SLUG} review read: ${cwd} is not a worktree; git resolves it to ${repositoryPath}`,
+    )
+    expect(
+      d.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM review_read').get()?.count,
+    ).toBe(0)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
 })
 
 test('only the root run session owns architect reads for its branch', () => {

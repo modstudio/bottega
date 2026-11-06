@@ -15,10 +15,10 @@ import {
   writableDb,
   writeTransaction,
 } from '../database/db.ts'
-import { assertEvidenceCheckoutIdentity } from '../git/evidence-checkout.ts'
 import { projectAt } from '../project/projects.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
 import { redactSecretShapedOutput } from '../secret-shaped-output.ts'
+import { assertEvidenceCheckoutIdentity } from '../worktree/evidence-checkout.ts'
 import {
   gateCheckExecutionPath,
   insertGateCheckExecutions,

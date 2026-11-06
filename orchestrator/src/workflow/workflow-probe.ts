@@ -21,10 +21,10 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
-import { assertEvidenceCheckoutIdentity } from '../git/evidence-checkout.ts'
 import { projectAt } from '../project/projects.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
+import { assertEvidenceCheckoutIdentity } from '../worktree/evidence-checkout.ts'
 import { handOffWorkflowEvidence } from './workflow-evidence-handoff.ts'
 import type { WorkflowEvidencePayload } from './workflow-evidence-payload.ts'
 import {
@@ -152,7 +152,7 @@ function resolveEvidenceHead(
 
 function assertWorkflowEvidenceCheckout(cwd: string, database: Database, verb: string): void {
   const project = projectAt(cwd, database)
-  if (!project) throw new Error(`${PLATFORM_SLUG} ${verb}: no registered project contains ${cwd}`)
+  if (!project) return
   assertEvidenceCheckoutIdentity({ cwd, projectPath: project.path, verb })
 }
 
@@ -425,7 +425,7 @@ export async function recordWorkflowEvidence(
     signal: payload.signal as NodeJS.Signals | null,
   }
   const recorded = await recordWorkflowCommand(payload.command, payload.cwd, ran, 'exec', {
-    d: database,
+    d: input.d,
     commit: payload.headCommit,
     preCommandCommit: payload.preCommandHeadCommit,
   })

@@ -37,12 +37,12 @@ export const coreModuleSpecs = [
   },
   { file: 'orchestrator/src/worker-store-write.ts', allowed: [] },
   {
-    file: 'orchestrator/src/git/evidence-checkout.ts',
+    file: 'orchestrator/src/worktree/evidence-checkout.ts',
     allowed: [
       '../../../shared/brand.ts',
       '../../../shared/git.ts',
       '../project/projects.ts',
-      './checkout-identity.ts',
+      '../git/checkout-identity.ts',
     ],
   },
 ] as const

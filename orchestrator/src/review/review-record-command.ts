@@ -5,10 +5,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
-import { assertEvidenceCheckoutIdentity } from '../git/evidence-checkout.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { reviewRecordArgv } from '../project/review-record-template.ts'
+import { assertEvidenceCheckoutIdentity } from '../worktree/evidence-checkout.ts'
 import {
   type ChangeGroup,
   measureChangeGroup,
