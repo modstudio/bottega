@@ -12,7 +12,8 @@ UPDATE outbox
      json(replace(json_extract(payload, '$.outsideWorktreeWrites'), '\u0000', '\n'))
    )
  WHERE kind = 'run'
-   AND json_valid(payload)
-   AND json_type(payload, '$.outsideWorktreeWrites') IS NOT NULL
-   AND instr(json_extract(payload, '$.outsideWorktreeWrites'), '\u0000') > 0;
+   AND CASE WHEN json_valid(payload) THEN
+     json_type(payload, '$.outsideWorktreeWrites') IS NOT NULL
+     AND instr(json_extract(payload, '$.outsideWorktreeWrites'), '\u0000') > 0
+   ELSE 0 END;
 -- /BACKFILL
