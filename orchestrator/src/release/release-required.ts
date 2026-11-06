@@ -6,7 +6,7 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
-import { releaseProofDecision, unprovableReleaseRungMessage } from './release-decision.ts'
+import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
 import type { EntryClosure } from './release-entry-closure.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
@@ -380,18 +380,17 @@ function runRequiredReleaseRungs(
   }
   const releases = plans.map((plan): RequiredRungRelease => {
     if (!plan.required) return failure(plan, plan.reason ?? 'not required')
-    if (!plan.declaresLive) {
+    const proofRefusal = releaseRungProofRefusal(
+      PLATFORM_SLUG,
+      project.name,
+      plan.rung,
+      plan.branch,
+      project.settings.release?.rungs ?? [],
+      plan.declaresLive,
+    )
+    if (proofRefusal) {
       return {
-        ...failure(
-          plan,
-          unprovableReleaseRungMessage(
-            PLATFORM_SLUG,
-            project.name,
-            plan.rung,
-            plan.branch,
-            project.settings.release?.rungs ?? [],
-          ),
-        ),
+        ...failure(plan, proofRefusal),
         unprovable: true,
       }
     }

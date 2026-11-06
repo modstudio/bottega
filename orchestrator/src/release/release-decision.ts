@@ -223,6 +223,19 @@ export function unprovableReleaseRungMessage(
   return `${condition}; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${platformSlug} project set ${project} --settings ${shellQuote(patch)}, then retry`
 }
 
+/** Refuse a selected release rung until it can prove liveness by observation. */
+export function releaseRungProofRefusal(
+  platformSlug: string,
+  project: string,
+  rung: string,
+  branch: string,
+  rungs: readonly ReleaseRungForRemedy[],
+  declaresLive: boolean,
+): string | null {
+  if (declaresLive) return null
+  return unprovableReleaseRungMessage(platformSlug, project, rung, branch, rungs)
+}
+
 export type TrunkFreshnessDecision =
   | { ok: true; overrideReason: string | null }
   | { ok: false; message: string }

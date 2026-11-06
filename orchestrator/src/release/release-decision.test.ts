@@ -17,6 +17,7 @@ import {
   releaseProcessEnvironment,
   releaseReasonDecision,
   releaseRowProvesCandidate,
+  releaseRungProofRefusal,
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
@@ -99,10 +100,9 @@ test('an unprovable rung names the complete register remedy', () => {
 })
 
 test('a deploy-only rung names the complete live-probe remedy', () => {
+  const rungs = [{ name: 'production', branch: 'master', deploy: 'dispatch production' }]
   expect(
-    unprovableReleaseRungMessage(PLATFORM_SLUG, 'fixture', 'production', 'master', [
-      { name: 'production', branch: 'master', deploy: 'dispatch production' },
-    ]),
+    releaseRungProofRefusal(PLATFORM_SLUG, 'fixture', 'production', 'master', rungs, false),
   ).toBe(
     `release rung production declares a deploy command but no live probe and cannot be proved; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"production","branch":"master","deploy":"dispatch production","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
   )
@@ -485,23 +485,15 @@ describe('already-live release decision', () => {
     ['rollback was requested', true, 0, undefined, 'deliberate rollback', false, false],
   ] as const)(
     '%s',
-    (
-      _label,
-      candidateIsLiveAncestor,
-      commitsBehindTrunk,
-      redeployReason,
-      rollbackReason,
-      alreadyLive,
-      landingAhead,
-    ) => {
-    expect(
-      alreadyLiveReleaseDecision({
-        candidateIsLiveAncestor,
-        commitsBehindTrunk,
-        redeployReason,
-        rollbackReason,
-      }),
-    ).toEqual({ alreadyLive, landingAhead })
+    (_label, candidateIsLiveAncestor, commitsBehindTrunk, redeployReason, rollbackReason, alreadyLive, landingAhead) => {
+      expect(
+        alreadyLiveReleaseDecision({
+          candidateIsLiveAncestor,
+          commitsBehindTrunk,
+          redeployReason,
+          rollbackReason,
+        }),
+      ).toEqual({ alreadyLive, landingAhead })
     },
   )
 })
