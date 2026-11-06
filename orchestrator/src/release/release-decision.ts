@@ -187,7 +187,7 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
 }
 
-/** Name the register edit that makes a rung without a deploy command provable. */
+/** Name the register edit that makes a rung without a live probe provable. */
 export function unprovableReleaseRungMessage(
   platformSlug: string,
   project: string,
@@ -217,7 +217,10 @@ export function unprovableReleaseRungMessage(
       : candidate,
   )
   const patch = JSON.stringify({ release: { rungs: replacement } })
-  return `release rung ${rung} declares neither a deploy command nor a live probe and cannot be proved; declare a live probe with: ${platformSlug} project set ${project} --settings ${shellQuote(patch)}, then retry`
+  const condition = rungs.find((candidate) => candidate.name === rung)?.deploy
+    ? `release rung ${rung} declares a deploy command but no live probe and cannot be proved`
+    : `release rung ${rung} declares neither a deploy command nor a live probe and cannot be proved`
+  return `${condition}; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${platformSlug} project set ${project} --settings ${shellQuote(patch)}, then retry`
 }
 
 export type TrunkFreshnessDecision =
@@ -327,16 +330,16 @@ export function forwardReleaseDecision(facts: {
 
 /** Skip only when this candidate is the rung's newest confirmed-live release. */
 export function alreadyLiveReleaseDecision(facts: {
-  newestLive: string | null
-  candidate: string
+  candidateIsLiveAncestor: boolean
+  commitsBehindTrunk: number
   redeployReason?: string
   rollbackReason?: string
-}): boolean {
-  return (
-    facts.newestLive === facts.candidate &&
+}): { alreadyLive: boolean; landingAhead: boolean } {
+  const alreadyLive =
+    facts.candidateIsLiveAncestor &&
     facts.redeployReason === undefined &&
     facts.rollbackReason === undefined
-  )
+  return { alreadyLive, landingAhead: alreadyLive && facts.commitsBehindTrunk > 0 }
 }
 
 /** Decide whether release evidence proves the merge is deployed on this rung. */
@@ -347,7 +350,7 @@ export function releaseProofDecision(facts: {
   candidateContainsMerge: boolean
 }): boolean {
   if (facts.exitCode !== 0 || !facts.candidateContainsMerge) return false
-  return facts.declaresLive ? facts.liveMatchesCandidate === true : true
+  return facts.declaresLive && facts.liveMatchesCandidate === true
 }
 
 /** Map a release ledger row to proof that its candidate is deployed. */
@@ -357,11 +360,10 @@ export function releaseRowProvesCandidate(
     live_matches_candidate: number | null
     candidate_commit: string
   },
-  declaresLive: boolean,
   deployed: string,
 ): boolean {
   return releaseProofDecision({
-    declaresLive,
+    declaresLive: true,
     exitCode: row.exit_code,
     liveMatchesCandidate:
       row.live_matches_candidate === null ? null : row.live_matches_candidate === 1,

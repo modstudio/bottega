@@ -249,22 +249,15 @@ function newestSuccessfulRelease(
   )
 }
 
-/** Return the live commit proved by the newest successful row, or its candidate without live proof. */
+/** Return the live commit observed by the newest live-proved release row. */
 export function newestSuccessfulReleasedCommit(project: string, rung: string): string | null {
-  const release = newestSuccessfulRelease(project, rung, false)
-  if (!release) return null
-  return release.live_matches_candidate === 1 && release.live_commit_after
-    ? release.live_commit_after
-    : release.candidate_commit
+  const release = newestSuccessfulRelease(project, rung, true)
+  return release?.live_commit_after ?? null
 }
 
-/** Return the newest release row that can prove a rung with this live-probe policy. */
-export function newestSuccessfulProvenReleaseCommit(
-  project: string,
-  rung: string,
-  declaresLive: boolean,
-): string | null {
-  return newestSuccessfulRelease(project, rung, declaresLive)?.candidate_commit ?? null
+/** Return the candidate from the newest release row whose live probe proved it. */
+export function newestSuccessfulProvenReleaseCommit(project: string, rung: string): string | null {
+  return newestSuccessfulRelease(project, rung, true)?.candidate_commit ?? null
 }
 
 function liveReadingRefusal(
@@ -291,17 +284,6 @@ function releaseLiveCommit(command: string, cwd: string, purpose: string, rung: 
   return reading.commit
 }
 
-function previousReleaseCommit(
-  liveCommand: string | undefined,
-  path: string,
-  project: string,
-  rung: string,
-): string | null {
-  return liveCommand
-    ? releaseLiveCommit(liveCommand, path, 'pre-deploy live', rung)
-    : newestSuccessfulReleasedCommit(project, rung)
-}
-
 function unregisteredReleaseProjectRemedy(projectName: string): string {
   return `no project "${projectName}"; register it with ${PLATFORM_SLUG} project add, then retry`
 }
@@ -319,7 +301,7 @@ function releaseTarget(projectName: string, requestedRung: string | undefined) {
     )
   const selected = selectReleaseRung(release.rungs, requestedRung)
   if ('refusal' in selected) throw new Error(selected.refusal)
-  if (!selected.deploy && !selected.live)
+  if (!selected.live)
     throw new Error(
       unprovableReleaseRungMessage(
         PLATFORM_SLUG,
@@ -412,7 +394,7 @@ function postDeployFacts(
 
 export type ReleaseResult = {
   /** The release ledger row's display number. */
-  id: number
+  id: number | null
   project: string
   rung: string
   branch: string
@@ -437,6 +419,7 @@ type ReleaseCommandOutcome = {
   ledger:
     | { kind: 'finish'; recordId: string; deployed: CommandResult }
     | { kind: 'warning'; recordId: string; previousWarning: string | null }
+    | { kind: 'none' }
 }
 
 function alreadyLiveReleaseResult(
@@ -445,44 +428,44 @@ function alreadyLiveReleaseResult(
   branch: string,
   trunk: string,
   deployed: string,
+  live: string,
+  candidateIsLiveAncestor: boolean,
+  commitsBehindTrunk: number,
   redeployReason: string | undefined,
   rollbackReason: string | undefined,
-  declaresLive: boolean,
-): { result: ReleaseResult; recordId: string } | null {
-  const newestLive = newestSuccessfulRelease(project, rung, declaresLive)
-  if (
-    !newestLive ||
-    !releaseRowProvesCandidate(newestLive, declaresLive, deployed) ||
-    !alreadyLiveReleaseDecision({
-      newestLive: newestLive.candidate_commit,
-      candidate: deployed,
-      redeployReason,
-      rollbackReason,
-    })
-  )
-    return null
+): { result: ReleaseResult; recordId: string | null } | null {
+  const decision = alreadyLiveReleaseDecision({
+    candidateIsLiveAncestor,
+    commitsBehindTrunk,
+    redeployReason,
+    rollbackReason,
+  })
+  if (!decision.alreadyLive) return null
+  const newestLive = newestSuccessfulRelease(project, rung, true)
+  const matchingRow =
+    newestLive && releaseRowProvesCandidate(newestLive, deployed) ? newestLive : null
   return {
     result: {
-      id: newestLive.number,
+      id: matchingRow?.number ?? null,
       project,
       rung,
       branch,
       deployed,
       trunk,
-      commitsBehindTrunk: newestLive.commits_behind_trunk ?? 0,
-      behindTrunkReason: newestLive.behind_trunk_reason,
-      liveBefore: newestLive.live_commit_before,
+      commitsBehindTrunk,
+      behindTrunkReason: null,
+      liveBefore: live,
       baseline: false,
-      rollback: Boolean(newestLive.rollback),
-      rollbackReason: newestLive.rollback_reason,
+      rollback: Boolean(matchingRow?.rollback),
+      rollbackReason: matchingRow?.rollback_reason ?? null,
       exitCode: 0,
-      outputTail: `rung ${rung} is already live at ${deployed}`,
-      liveAfter: newestLive.live_commit_after,
+      outputTail: `rung ${rung} is already live at ${deployed}; nothing deployed`,
+      liveAfter: live,
       liveMatchesCandidate: true,
-      warning: newestLive.warning,
+      warning: matchingRow?.warning ?? null,
       alreadyLive: true,
     },
-    recordId: newestLive.record_id,
+    recordId: matchingRow?.record_id ?? null,
   }
 }
 
@@ -545,21 +528,24 @@ function releaseCiDeployedTarget(
   const liveCommand = selected.live!
   git(['fetch', 'origin', selected.branch], project.path)
   const candidate = git(['rev-parse', `origin/${selected.branch}`], project.path)
+  const live = releaseLiveCommit(liveCommand, project.path, 'CI-deployed release live', selected.name)
+  const position = releaseTrunkPositionFacts(project.path, trunk, selected.branch, candidate)
   const alreadyLive = alreadyLiveReleaseResult(
     projectName,
     selected.name,
     selected.branch,
     trunk,
     candidate,
+    live,
+    candidateIsLiveAncestor(candidate, live, project.path),
+    position.commitsBehindTrunk,
     redeployReason,
     undefined,
-    true,
   )
   if (alreadyLive) return alreadyLive.result
 
-  let live = releaseLiveCommit(liveCommand, project.path, 'CI-deployed release live', selected.name)
+  let polledLive = live
   const liveBefore = live
-  const position = releaseTrunkPositionFacts(project.path, trunk, selected.branch, candidate)
   const freshness = { ...position, behindTrunkReason: null }
   const ledger = startReleaseLedgerEntry(writableDb(), {
     project: projectName,
@@ -577,7 +563,7 @@ function releaseCiDeployedTarget(
     for (;;) {
       const elapsedMs = Date.now() - startedAt
       const decision = ciDeployWaitDecision({
-        candidateIsLiveAncestor: candidateIsLiveAncestor(candidate, live, project.path),
+        candidateIsLiveAncestor: candidateIsLiveAncestor(candidate, polledLive, project.path),
         elapsedMs,
         waitMs: RELEASE_CI_DEPLOY_WAIT_MS,
       })
@@ -586,21 +572,26 @@ function releaseCiDeployedTarget(
           decision,
           rung: selected.name,
           candidate,
-          live,
+          live: polledLive,
           elapsedMs,
         })
         break
       }
       Bun.sleepSync(RELEASE_CI_DEPLOY_POLL_MS)
-      live = releaseLiveCommit(liveCommand, project.path, 'CI-deployed release live', selected.name)
+      polledLive = releaseLiveCommit(
+        liveCommand,
+        project.path,
+        'CI-deployed release live',
+        selected.name,
+      )
     }
   } catch (cause) {
     warning = cause instanceof Error ? cause.message : String(cause)
-    outcome = failedCiDeployOutcome(warning, live)
+    outcome = failedCiDeployOutcome(warning, polledLive)
   }
   const terminal = outcome!
-  const outputTail = capturedOutputTail(terminal.outputTail, [candidate, live])
-  const capturedWarning = warning ? releaseCapturedText(warning, [candidate, live]) : null
+  const outputTail = capturedOutputTail(terminal.outputTail, [candidate, polledLive])
+  const capturedWarning = warning ? releaseCapturedText(warning, [candidate, polledLive]) : null
   finishReleaseLedgerEntry(
     writableDb(),
     ledger.recordId,
@@ -673,7 +664,10 @@ function releaseCommandTarget(
       outcome.result.liveMatchesCandidate,
       outcome.result.warning,
     )
-  } else if (outcome.result.warning !== outcome.ledger.previousWarning) {
+  } else if (
+    outcome.ledger.kind === 'warning' &&
+    outcome.result.warning !== outcome.ledger.previousWarning
+  ) {
     updateReleaseLedgerWarning(writableDb(), outcome.ledger.recordId, outcome.result.warning!)
   }
   return outcome.result
@@ -691,27 +685,32 @@ function releaseCommandTargetAtRung(
   const checkout = checkoutFacts(project.path, selected.branch, trunk)
   const checkoutDecision = checkoutReleaseDecision(checkout)
   if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
+  const live = releaseLiveCommit(selected.live!, project.path, 'pre-deploy live', selected.name)
+  const position = releaseTrunkPositionFacts(project.path, trunk, selected.branch, checkout.head)
   const alreadyLive = alreadyLiveReleaseResult(
     projectName,
     selected.name,
     selected.branch,
     trunk,
     checkout.head,
+    live,
+    candidateIsLiveAncestor(checkout.head, live, project.path),
+    position.commitsBehindTrunk,
     redeployReason,
     rollbackReason,
-    selected.live !== undefined,
   )
   if (alreadyLive) {
     return {
       result: alreadyLive.result,
-      ledger: {
-        kind: 'warning',
-        recordId: alreadyLive.recordId,
-        previousWarning: alreadyLive.result.warning,
-      },
+      ledger: alreadyLive.recordId
+        ? {
+            kind: 'warning',
+            recordId: alreadyLive.recordId,
+            previousWarning: alreadyLive.result.warning,
+          }
+        : { kind: 'none' },
     }
   }
-  const live = previousReleaseCommit(selected.live, project.path, projectName, selected.name)
   const freshness = releaseTrunkFacts(
     project.path,
     trunk,

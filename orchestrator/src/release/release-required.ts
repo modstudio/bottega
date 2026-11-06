@@ -208,14 +208,14 @@ export function requiredRungDecision(
 }
 
 export type RequiredReleaseRunner = {
-  newestLive(project: Project, rung: string, declaresLive: boolean): string | null
+  newestLive(project: Project, rung: string): string | null
   contains(project: Project, ancestor: string, descendant: string): boolean
   release(project: Project, rung: string): ReleaseResult
 }
 
 const requiredReleaseRunner: RequiredReleaseRunner = {
-  newestLive(project, rung, declaresLive) {
-    return newestSuccessfulProvenReleaseCommit(project.name, rung, declaresLive)
+  newestLive(project, rung) {
+    return newestSuccessfulProvenReleaseCommit(project.name, rung)
   },
   contains(project, ancestor, descendant) {
     return gitResult(['merge-base', '--is-ancestor', ancestor, descendant], project.path).ok
@@ -380,7 +380,7 @@ function runRequiredReleaseRungs(
   }
   const releases = plans.map((plan): RequiredRungRelease => {
     if (!plan.required) return failure(plan, plan.reason ?? 'not required')
-    if (!plan.declaresDeploy && !plan.declaresLive) {
+    if (!plan.declaresLive) {
       return {
         ...failure(
           plan,
@@ -396,13 +396,13 @@ function runRequiredReleaseRungs(
       }
     }
     try {
-      const live = runner.newestLive(project, plan.rung, plan.declaresLive)
+      const live = runner.newestLive(project, plan.rung)
       if (live && runner.contains(project, mergeCommit, live)) {
         return {
           rung: plan.rung,
           required: true,
           deployExit: 0,
-          outputTail: plan.declaresLive ? `already live at ${live}` : `deployed at ${live}`,
+          outputTail: `already live at ${live}`,
           satisfied: true,
           deployed: false,
         }

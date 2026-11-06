@@ -12,7 +12,12 @@ import { log } from './support.ts'
 
 function writeReleaseResult(result: ReleaseResult): void {
   if (result.alreadyLive) {
-    log(`${result.project}/${result.rung}: already live at ${result.deployed}`)
+    log(`${result.project}/${result.rung}: already live at ${result.deployed}; nothing deployed`)
+    if (result.trunk !== result.branch && result.commitsBehindTrunk > 0) {
+      log(
+        `${result.trunk} has ${result.commitsBehindTrunk} newer commits that are not on ${result.branch}; promote them to ${result.branch} first`,
+      )
+    }
     if (result.warning) log(`warning: ${result.warning}`)
     return
   }
