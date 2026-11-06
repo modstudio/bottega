@@ -24,11 +24,11 @@ export function registerRecordRetentionProof(actorUrl: string): void {
     const recentContentionId = newRecordId()
     const otherSpaceRecentContentionId = newRecordId()
     admin(`
-      INSERT INTO contention (id, space_id, machine_id, at, resource_kind, resource_key, event_kind) VALUES
-        ('${expiredContentionId}', '${SPACE_A}', '${MACHINE_A}', now() - interval '15 days', 'store', 'expired', 'wait'),
-        ('${otherSpaceExpiredContentionId}', '${SPACE_B}', '${MACHINE_A}', now() - interval '15 days', 'store', 'other-space-expired', 'wait'),
-        ('${recentContentionId}', '${SPACE_A}', '${MACHINE_A}', now(), 'store', 'recent', 'wait'),
-        ('${otherSpaceRecentContentionId}', '${SPACE_B}', '${MACHINE_A}', now(), 'store', 'other-space-recent', 'wait');
+      INSERT INTO contention (id, space_id, machine_id, at, created_at, resource_kind, resource_key, event_kind) VALUES
+        ('${expiredContentionId}', '${SPACE_A}', '${MACHINE_A}', now() - interval '15 days', now() - interval '15 days', 'store', 'expired', 'wait'),
+        ('${otherSpaceExpiredContentionId}', '${SPACE_B}', '${MACHINE_A}', now() - interval '15 days', now() - interval '15 days', 'store', 'other-space-expired', 'wait'),
+        ('${recentContentionId}', '${SPACE_A}', '${MACHINE_A}', now(), now(), 'store', 'recent', 'wait'),
+        ('${otherSpaceRecentContentionId}', '${SPACE_B}', '${MACHINE_A}', now(), now(), 'store', 'other-space-recent', 'wait');
     `)
 
     // pruneRecordRetention connects as record_actor without setting app.space_id or app.user_id.
