@@ -274,11 +274,9 @@ test('contention retention enqueues an older closed bucket skipped by the hot pa
     ).toEqual({ count: 0 })
 
     rollupContentionDays(database, { now })
-    expect(
-      database
-        .query("SELECT COUNT(*) count FROM outbox WHERE kind='contention' AND row_id=?")
-        .get(olderBucket),
-    ).toEqual({ count: 1 })
+    expect(database.query("SELECT row_id FROM outbox WHERE kind='contention'").all()).toEqual([
+      { row_id: olderBucket },
+    ])
   } finally {
     database.close()
   }

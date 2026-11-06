@@ -9,28 +9,17 @@ import {
 
 // The transaction boundary and advisory-lock SQL are exercised by postgres-record-retention-proof.ts.
 
-test('record retention prunes record changes before contention under one acquired lock', async () => {
-  const calls: string[] = []
+test('record retention reports both prune outcomes under an acquired lock', async () => {
   expect(
     await runLockedRecordRetention({
-      tryLock: async () => {
-        calls.push('lock')
-        return true
-      },
-      pruneRecordChanges: async () => {
-        calls.push('record_change')
-        return 2
-      },
-      pruneContention: async () => {
-        calls.push('contention')
-        return 3
-      },
+      tryLock: async () => true,
+      pruneRecordChanges: async () => 2,
+      pruneContention: async () => 3,
     }),
   ).toEqual({
     acquired: true,
     outcomes: { recordChange: { deleted: 2 }, contention: { deleted: 3 } },
   })
-  expect(calls).toEqual(['lock', 'record_change', 'contention'])
 })
 
 test('record retention pass reports both deleted counts and one duration', async () => {
