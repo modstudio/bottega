@@ -9,29 +9,34 @@ export const SUBSCRIPTION_PACING_WINDOW_LIMIT = 8
 
 export const SUBSCRIPTION_PACING_FACTS_SQL = `
   WITH paced(harness) AS (SELECT value FROM json_each(?)),
+       paced_agent AS (
+         SELECT a.name AS agent, a.harness AS harness
+           FROM agent a JOIN paced p ON p.harness = a.harness
+          WHERE a.billing = 'subscription'
+       ),
+       recent_resets AS (
+         SELECT harness, resetsAt FROM (
+           SELECT pa.harness AS harness, r2.quota_resets_at AS resetsAt,
+                  DENSE_RANK() OVER (PARTITION BY pa.harness ORDER BY r2.quota_resets_at DESC) AS rank
+             FROM run r2 JOIN paced_agent pa ON pa.agent = r2.agent
+            WHERE r2.quota_resets_at IS NOT NULL
+         ) WHERE rank <= ?
+         GROUP BY harness, resetsAt
+       ),
        quota_windows AS (
-         SELECT a.harness AS harness, r.quota_resets_at AS resetsAt,
+         SELECT pa.harness AS harness, r.quota_resets_at AS resetsAt,
                 MAX(r.quota_window_minutes) AS windowMinutes,
                 MIN(r.quota_used_percent_start) AS usedPercentStart,
                 MAX(r.quota_used_percent_end) AS usedPercentEnd,
                 SUM(COALESCE(r.vendor_tokens, 0)) AS tokens
-           FROM run r JOIN agent a ON a.name = r.agent
-           JOIN paced p ON p.harness = a.harness
-          WHERE a.billing = 'subscription'
-            AND r.quota_used_percent_start IS NOT NULL
+           FROM run r JOIN paced_agent pa ON pa.agent = r.agent
+          WHERE r.quota_used_percent_start IS NOT NULL
             AND r.quota_used_percent_end IS NOT NULL
             AND r.quota_window_minutes IS NOT NULL
             AND r.quota_resets_at IS NOT NULL
-            AND r.quota_resets_at IN (
-              SELECT r2.quota_resets_at
-                FROM run r2 JOIN agent a2 ON a2.name = r2.agent
-               WHERE a2.harness = a.harness AND a2.billing = 'subscription'
-                 AND r2.quota_resets_at IS NOT NULL
-               GROUP BY r2.quota_resets_at
-               ORDER BY r2.quota_resets_at DESC
-               LIMIT ?
-            )
-          GROUP BY a.harness, r.quota_resets_at
+            AND EXISTS (SELECT 1 FROM recent_resets rr
+                         WHERE rr.harness = pa.harness AND rr.resetsAt = r.quota_resets_at)
+          GROUP BY pa.harness, r.quota_resets_at
        ),
        qualified AS (
          SELECT *, ROW_NUMBER() OVER (PARTITION BY harness ORDER BY resetsAt DESC) AS rank
@@ -39,16 +44,16 @@ export const SUBSCRIPTION_PACING_FACTS_SQL = `
           WHERE usedPercentEnd - usedPercentStart >= ? AND tokens > 0
        ),
        readings AS (
-         SELECT a.harness, r.quota_used_percent_end AS usedPercentEnd,
+         SELECT pa.harness AS harness, r.quota_used_percent_end AS usedPercentEnd,
                 r.quota_window_minutes AS windowMinutes, r.quota_resets_at AS resetsAt,
                 julianday(r.started_at) + r.latency_ms / 86400000.0 AS finishedAt,
                 ROW_NUMBER() OVER (
-                  PARTITION BY a.harness
+                  PARTITION BY pa.harness
                   ORDER BY julianday(r.started_at) + r.latency_ms / 86400000.0 DESC,
                            r.record_id DESC
                 ) AS rank
-           FROM run r JOIN agent a ON a.name = r.agent JOIN paced p ON p.harness = a.harness
-          WHERE a.billing = 'subscription' AND r.status IN ('ok','failed')
+           FROM run r JOIN paced_agent pa ON pa.agent = r.agent
+          WHERE r.status IN ('ok','failed')
             AND r.latency_ms IS NOT NULL AND r.quota_used_percent_end IS NOT NULL
             AND r.quota_window_minutes IS NOT NULL AND r.quota_resets_at IS NOT NULL
             AND ? >= r.quota_resets_at - r.quota_window_minutes * 60
@@ -77,8 +82,8 @@ export const SUBSCRIPTION_PACING_FACTS_SQL = `
   SELECT f.*,
          COALESCE((
            SELECT SUM(COALESCE(r.vendor_tokens, 0))
-             FROM run r JOIN agent a ON a.name = r.agent
-            WHERE a.harness = f.harness AND a.billing = 'subscription'
+             FROM paced_agent pa JOIN run r ON r.agent = pa.agent
+            WHERE pa.harness = f.harness
               AND r.status IN ('ok','failed') AND r.latency_ms IS NOT NULL
               AND ((f.readingFinishedAt IS NOT NULL
                     AND julianday(r.started_at) + r.latency_ms / 86400000.0 > f.readingFinishedAt
