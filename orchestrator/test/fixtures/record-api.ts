@@ -40,6 +40,7 @@ function idleConfigAuthorizationDeps() {
     claimMachineKey: unused,
     listSpaceConfigAccess: async () => [],
     grantSpaceConfigAccess: unused,
+    setSpaceMemberPermission: unused,
     withdrawSpaceConfigAccess: unused,
     showOutsideIntake: async () => null,
     setOutsideIntake: unused,

@@ -125,6 +125,7 @@ describe('hostedRouter', () => {
       'record.score',
       'record.sendReportSubscriptionTest',
       'record.setActiveSpace',
+      'record.setMemberPermission',
       'record.settings',
       'record.snapshots',
       'record.spend',

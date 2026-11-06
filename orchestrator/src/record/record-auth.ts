@@ -22,6 +22,7 @@ import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { ensureMemberConfigRemovalSafe } from './record-config-access-removal.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
+import { keepOwnerWrite } from './record-member-permission.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
@@ -264,6 +265,9 @@ function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBu
       organization: { id: string }
     }) => {
       await ensureMemberConfigRemovalSafe({ url, spaceId: organization.id, userId: member.userId })
+    },
+    afterUpdateMemberRole: async ({ member }: { member: { id: string; role: string } }) => {
+      await keepOwnerWrite(authClient, member)
     },
     afterCreateOrganization: async ({
       organization: created,

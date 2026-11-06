@@ -25,9 +25,20 @@ import { useState } from 'react'
 
 export const Route = createFileRoute('/members')({ component: MembersRoute })
 const roles: OrganizationRole[] = ['owner', 'admin', 'member']
+type MemberPermission = RecordConfigAccessResponse['items'][number]['permission']
+const permissionLabels: Record<MemberPermission, 'Write' | 'Read'> = {
+  write: 'Write',
+  read: 'Read',
+}
+const permissionOptions = (['write', 'read'] as const).map((value) => ({
+  value,
+  label: permissionLabels[value],
+}))
 
 type MemberAccessRow = OrganizationMember & {
   permissionLabel: 'Write' | 'Read' | '-' | '…'
+  /** The stored permission, or `null` while access is loading or the member has no row. */
+  permission: MemberPermission | null
   configAccessLabel: 'Yes' | 'No' | '-' | '…'
   configAccess: boolean | null
 }
@@ -41,7 +52,8 @@ export function joinMembersToConfigAccess(
     const access = accessByEmail.get(member.user.email.toLowerCase())
     return {
       ...member,
-      permissionLabel: access ? (access.permission === 'write' ? 'Write' : 'Read') : '-',
+      permissionLabel: access ? permissionLabels[access.permission] : '-',
+      permission: access?.permission ?? null,
       configAccessLabel: access ? (access.configAccess ? 'Yes' : 'No') : '-',
       configAccess: access?.configAccess ?? null,
     }
@@ -52,6 +64,7 @@ function memberColumns(
   callerRole: OrganizationRole | undefined,
   canEditMember: (member: OrganizationMember) => boolean,
   changeRole: (member: OrganizationMember, role: OrganizationRole) => void,
+  changePermission: (member: MemberAccessRow, permission: MemberPermission) => void,
 ): CollectionColumn<MemberAccessRow>[] {
   return [
     {
@@ -93,7 +106,19 @@ function memberColumns(
       id: 'permission',
       label: 'Permission',
       phone: 'line',
-      render: (member) => member.permissionLabel,
+      // An owner always writes, so only a non-owner's permission is editable.
+      render: (member) =>
+        member.permission && member.role !== 'owner' && canEditMember(member) ? (
+          <Select
+            label={`Permission for ${member.user.name}`}
+            size="sm"
+            value={member.permission}
+            options={permissionOptions}
+            onChange={(permission) => changePermission(member, permission as MemberPermission)}
+          />
+        ) : (
+          member.permissionLabel
+        ),
     },
     {
       id: 'config-access',
@@ -193,6 +218,7 @@ function MembersPage() {
     ? memberRows.map((member) => ({
         ...member,
         permissionLabel: '…' as const,
+        permission: null,
         configAccessLabel: '…' as const,
         configAccess: null,
       }))
@@ -217,7 +243,7 @@ function MembersPage() {
     <section>
       <PageHeader
         title="Members"
-        about="Config access lets a member read and change this space's sealed configuration and secrets from their machines."
+        about="Permission decides whether a member can change this space's work or only read it; owners always have write. Config access lets a member read and change this space's sealed configuration and secrets from their machines."
       />
       {configAccess.error ? (
         <div className="mb-4">
@@ -267,6 +293,9 @@ function MemberTable({
   const withdraw = useMutation(
     trpc.record.withdrawConfigAccess.mutationOptions({ onSuccess: onChanged }),
   )
+  const setPermission = useMutation(
+    trpc.record.setMemberPermission.mutationOptions({ onSuccess: onChanged }),
+  )
   const canEditMember = (member: OrganizationMember) =>
     callerRole === 'owner' || (callerRole === 'admin' && member.role !== 'owner')
   const act = async (id: string, operation: () => Promise<unknown>) => {
@@ -280,9 +309,16 @@ function MemberTable({
       }))
     }
   }
-  const columns = memberColumns(callerRole, canEditMember, (member, role) => {
-    void act(member.id, () => changeRole.mutateAsync({ id: member.id, role }))
-  })
+  const columns = memberColumns(
+    callerRole,
+    canEditMember,
+    (member, role) => {
+      void act(member.id, () => changeRole.mutateAsync({ id: member.id, role }))
+    },
+    (member, permission) => {
+      void act(member.id, () => setPermission.mutateAsync({ email: member.user.email, permission }))
+    },
+  )
   return (
     <>
       <Collection

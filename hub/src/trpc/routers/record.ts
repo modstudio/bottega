@@ -37,6 +37,7 @@ import { selectSnapshot } from '../../snapshot-selection.ts'
 import type { Context } from '../context.ts'
 import { recordConfigAccessRouter } from './record-config-access.ts'
 import { email } from './record-inputs.ts'
+import { recordMemberPermissionRouter } from './record-member-permission.ts'
 import { recordClient } from './record-router-client.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -649,4 +650,8 @@ const recordCoreRouter = t.router({
   }),
 })
 
-export const recordRouter = t.mergeRouters(recordCoreRouter, recordConfigAccessRouter)
+export const recordRouter = t.mergeRouters(
+  recordCoreRouter,
+  recordConfigAccessRouter,
+  recordMemberPermissionRouter,
+)

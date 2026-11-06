@@ -17,6 +17,13 @@ const members: OrganizationMember[] = [
     role: 'member',
     user: { name: 'Grace', email: 'grace@example.com' },
   },
+  {
+    id: 'member-3',
+    userId: 'user-3',
+    organizationId: 'space-1',
+    role: 'member',
+    user: { name: 'Lin', email: 'lin@example.com' },
+  },
 ]
 
 test('joins member access by email and marks a missing access row', () => {
@@ -27,16 +34,19 @@ test('joins member access by email and marks a missing access row', () => {
       permission: 'write',
       configAccess: true,
     },
+    { email: 'lin@example.com', role: 'member', permission: 'read', configAccess: false },
   ])
 
   expect(
-    rows.map(({ permissionLabel, configAccessLabel, configAccess }) => ({
+    rows.map(({ permission, permissionLabel, configAccessLabel, configAccess }) => ({
+      permission,
       permissionLabel,
       configAccessLabel,
       configAccess,
     })),
   ).toEqual([
-    { permissionLabel: 'Write', configAccessLabel: 'Yes', configAccess: true },
-    { permissionLabel: '-', configAccessLabel: '-', configAccess: null },
+    { permission: 'write', permissionLabel: 'Write', configAccessLabel: 'Yes', configAccess: true },
+    { permission: null, permissionLabel: '-', configAccessLabel: '-', configAccess: null },
+    { permission: 'read', permissionLabel: 'Read', configAccessLabel: 'No', configAccess: false },
   ])
 })

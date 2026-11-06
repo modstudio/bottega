@@ -16,6 +16,19 @@ export const recordBindingModules: RecordModule[] = [
     './record-api-releases.ts',
     './record-api-subjects.ts',
   ]),
+  module('orchestrator/src/record/record-api-member-permission-routes.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-member-permission.ts',
+  ]),
+  module('orchestrator/src/record/record-member-permission.ts', [
+    'bun',
+    '../../../shared/record/tenant.ts',
+    './record-config.ts',
+    './record-config-error.ts',
+    './record-pool.ts',
+  ]),
   module('orchestrator/src/record/record-api-write-routes.ts', [
     'hono',
     './record-api-board.ts',
@@ -24,6 +37,7 @@ export const recordBindingModules: RecordModule[] = [
     './record-api-doc-counts.ts',
     './record-api-doc-rename.ts',
     './record-api-machine-key-claim-routes.ts',
+    './record-api-member-permission-routes.ts',
     './record-api-moderation-routes.ts',
     './record-api-outside-block-routes.ts',
     './record-api-outside-intake-routes.ts',

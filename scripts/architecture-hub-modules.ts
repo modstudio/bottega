@@ -14,6 +14,17 @@ export const hubModuleSpecs = [
     ],
   },
   {
+    file: 'hub/src/trpc/routers/record-member-permission.ts',
+    allowed: [
+      '@trpc/server',
+      'zod',
+      '../../record-client.ts',
+      '../context.ts',
+      './record-inputs.ts',
+      './record-router-client.ts',
+    ],
+  },
+  {
     file: 'hub/src/trpc/routers/record-inputs.ts',
     allowed: ['zod'],
   },

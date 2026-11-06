@@ -67,6 +67,35 @@ export function registerConfigAccessSpaceCreationProof(input: {
     }
   })
 
+  test('a read member promoted to owner gains write permission', async () => {
+    const auth = testRecordAuth(input.actorUrl(), input.authUrl())
+    const memberId = newRecordId()
+    try {
+      const userId = input.userId()
+      const created = await auth.api.createOrganization({
+        headers: bearerHeaders(input.token()),
+        body: {
+          name: 'Owner Write Hook',
+          slug: `owner-write-hook-${userId.slice(-8)}`,
+          keepCurrentActiveOrganization: true,
+        },
+      })
+      input.succeeds(`
+        INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at)
+        VALUES ('${memberId}','${created.id}','${input.otherUserId()}','member','read',false,now());`)
+      await auth.api.updateMemberRole({
+        headers: bearerHeaders(input.token()),
+        body: { memberId, role: 'owner', organizationId: created.id },
+      })
+      expect(
+        input.succeeds(`SELECT role, permission FROM membership WHERE id='${memberId}';`),
+      ).toBe('owner|write')
+    } finally {
+      input.succeeds(`DELETE FROM membership WHERE id='${memberId}';`)
+      await auth.close()
+    }
+  })
+
   test('a non-owner member setting the outside intake receives the owner remedy', async () => {
     const spaceId = newRecordId()
     const projectId = newRecordId()

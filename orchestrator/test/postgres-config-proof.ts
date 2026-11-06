@@ -26,6 +26,7 @@ import {
   retireDataKey,
   revokeMachineKey,
 } from '../src/record/record-config.ts'
+import { setSpaceMemberPermission } from '../src/record/record-member-permission.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
@@ -736,6 +737,81 @@ export function registerHostedConfigProofs(
         permission: 'write',
         configAccess: true,
       })
+    } finally {
+      succeeds(
+        'postgres',
+        'postgres',
+        `UPDATE membership SET role='member'
+         WHERE space_id='${spaceA}' AND user_id='${userA}';`,
+      )
+    }
+  })
+
+  test('only an owner or admin sets a member permission', async () => {
+    await expect(
+      setSpaceMemberPermission({
+        ...serviceTenant,
+        userId: USER_B,
+        email: 'other@example.test',
+        permission: 'read',
+      }),
+    ).rejects.toThrow('requires an owner or admin')
+  })
+
+  test('an owner or admin sets a member permission', async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE membership SET role='owner'
+       WHERE space_id='${spaceA}' AND user_id='${userA}';`,
+    )
+    try {
+      await expect(
+        setSpaceMemberPermission({
+          ...serviceTenant,
+          email: 'other@example.test',
+          permission: 'read',
+        }),
+      ).resolves.toEqual({ permission: 'read' })
+      await expect(listSpaceConfigAccess(serviceTenant)).resolves.toContainEqual({
+        email: 'other@example.test',
+        role: 'member',
+        permission: 'read',
+        configAccess: true,
+      })
+    } finally {
+      try {
+        await setSpaceMemberPermission({
+          ...serviceTenant,
+          email: 'other@example.test',
+          permission: 'write',
+        })
+      } finally {
+        succeeds(
+          'postgres',
+          'postgres',
+          `UPDATE membership SET role='member'
+           WHERE space_id='${spaceA}' AND user_id='${userA}';`,
+        )
+      }
+    }
+  })
+
+  test("an owner's permission cannot be changed", async () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE membership SET role='owner'
+       WHERE space_id='${spaceA}' AND user_id='${userA}';`,
+    )
+    try {
+      await expect(
+        setSpaceMemberPermission({
+          ...serviceTenant,
+          email: 'owner@example.test',
+          permission: 'read',
+        }),
+      ).rejects.toThrow('owners always have write permission')
     } finally {
       succeeds(
         'postgres',
