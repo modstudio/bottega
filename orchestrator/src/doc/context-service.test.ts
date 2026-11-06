@@ -86,6 +86,38 @@ describe('context document integration', () => {
     expect(ordinary.writeWarnings?.[0]).toContain('write allowed unchecked')
   })
 
+  test('refuses a task holder outside the bottega task store', async () => {
+    globals[CONTEXT_FACTS_PORTS_KEY] = {
+      ...tasks,
+      tasks: async () => [{ key: 'SHIP-7', record_id: newRecordId(), project: 'starship' }],
+    }
+    await expect(
+      setDoc({
+        scope: 'context',
+        subject: 'task:SHIP-7',
+        slug: 'next',
+        title: 'next',
+        body: encodeContextItem({ kind: 'next-action', source: 'run:1', body: 'Continue.' }),
+        delivery: 'demand',
+      }),
+    ).rejects.toThrow(`task:SHIP-7 is not in the ${PLATFORM_SLUG} task store`)
+  })
+
+  test('refuses a write to a session holder by any other session', async () => {
+    globals[CONTEXT_FACTS_PORTS_KEY] = tasks
+    const other = newRecordId()
+    await expect(
+      setDoc({
+        scope: 'context',
+        subject: `session:${other}`,
+        slug: 'next',
+        title: 'next',
+        body: encodeContextItem({ kind: 'next-action', source: 'run:1', body: 'Continue.' }),
+        delivery: 'demand',
+      }),
+    ).rejects.toThrow(`only owning session ${other} may write session:${other}`)
+  })
+
   test('default document listing excludes context', async () => {
     globals[CONTEXT_FACTS_PORTS_KEY] = tasks
     await setDoc({
