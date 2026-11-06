@@ -324,6 +324,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
     'orchestrator/src/record/record-member-permission.ts',
     [
       'bun',
+      '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       './record-config.ts',
       './record-config-error.ts',

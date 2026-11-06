@@ -2,17 +2,18 @@
 /** Owns a space member's read/write permission and the rule that an owner is always write. */
 
 import type { SQL } from 'bun'
+import { MEMBERSHIP_PERMISSIONS } from '../../../shared/record/schema.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 
-export const MEMBER_PERMISSIONS = ['read', 'write'] as const
+export const MEMBER_PERMISSIONS = MEMBERSHIP_PERMISSIONS
 export type MemberPermission = (typeof MEMBER_PERMISSIONS)[number]
 
-/** Better Auth stores a member's roles as a comma list; any list holding owner is an owner. */
+/** The membership role check constraint guarantees one role, so only the owner token is owner. */
 export function isSpaceOwner(role: string): boolean {
-  return role.split(',').some((part) => part.trim() === 'owner')
+  return role === 'owner'
 }
 
 /** An owner membership is always write, so a read member promoted to owner gains write. */

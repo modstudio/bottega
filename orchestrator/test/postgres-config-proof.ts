@@ -111,6 +111,19 @@ export function registerHostedConfigProofs(
     ])
   })
 
+  test('membership role backfill preserves the stand-in access and restores forced RLS', () => {
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT
+           (SELECT role FROM membership WHERE id='01990000-0000-7000-8000-000000000003'),
+           (SELECT relforcerowsecurity FROM pg_class WHERE relname='membership'),
+           (SELECT relforcerowsecurity FROM pg_class WHERE relname='invitation');`,
+      ),
+    ).toBe('member|t|t')
+  })
+
   test('hosted secret table grants stay narrow', () => {
     const facts = succeeds(
       'postgres',
@@ -756,6 +769,27 @@ export function registerHostedConfigProofs(
         permission: 'read',
       }),
     ).rejects.toThrow('requires an owner or admin')
+  })
+
+  test('membership roles and permissions accept only their known values', () => {
+    const roleInsertId = newRecordId()
+    const permissionInsertId = newRecordId()
+    expect(() =>
+      succeeds(
+        'postgres',
+        'postgres',
+        `INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
+         VALUES ('${roleInsertId}', '${spaceB}', '${USER_B}', 'owner,admin', 'write', now());`,
+      ),
+    ).toThrow('membership_role_check')
+    expect(() =>
+      succeeds(
+        'postgres',
+        'postgres',
+        `INSERT INTO membership (id, space_id, user_id, role, permission, created_at)
+         VALUES ('${permissionInsertId}', '${spaceB}', '${USER_B}', 'member', 'admin', now());`,
+      ),
+    ).toThrow('membership_permission_check')
   })
 
   test('an owner or admin sets a member permission', async () => {

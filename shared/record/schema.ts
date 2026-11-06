@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   bigint,
   boolean,
+  check,
   foreignKey,
   jsonb,
   pgPolicy,
@@ -21,6 +22,8 @@ export const RECORD_AUTH_ROLE = 'record_auth' as const
 export const RECORD_ACTOR_ROLE = 'record_actor' as const
 export const RECORD_PUBLIC_ROLE = 'record_public' as const
 export const RECORD_READER_ROLE = 'record_reader' as const
+export const MEMBERSHIP_ROLES = ['owner', 'admin', 'member'] as const
+export const MEMBERSHIP_PERMISSIONS = ['read', 'write'] as const
 
 const identity = () => uuid('id').primaryKey()
 export const spaceIdentity = () =>
@@ -149,6 +152,8 @@ export const membership = pgTable.withRLS(
     const currentUser = sql`nullif(current_setting('app.user_id', true), '')::uuid`
     return [
       unique('membership_space_user_unique').on(table.spaceId, table.userId),
+      check('membership_role_check', sql`${table.role} IN ${MEMBERSHIP_ROLES}`),
+      check('membership_permission_check', sql`${table.permission} IN ${MEMBERSHIP_PERMISSIONS}`),
       pgPolicy('membership_space_select', {
         for: 'select',
         using: sql`${table.spaceId} = ${currentSpace} OR ${table.userId} = ${currentUser}`,
