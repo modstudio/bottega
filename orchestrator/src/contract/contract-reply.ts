@@ -1,6 +1,6 @@
 // concern: contract
 /**
- * The pure reply-parsing slice: the JSON-schema validator, the reply schemas
+ * The pure reply-parsing slice: the reply schemas
  * that stand alone, and the brace-scanner that recovers a structured reply from
  * whatever an agent actually returned.
  *
@@ -35,49 +35,7 @@ export type JsonSchema = {
   additionalProperties?: boolean
 }
 
-/** Whether one type name matches the value it is tested against. */
-function matchesType(value: unknown, type: string): boolean {
-  if (type === 'null') return value === null
-  if (type === 'array') return Array.isArray(value)
-  if (type === 'object') {
-    return value !== null && typeof value === 'object' && !Array.isArray(value)
-  }
-  return typeof value === type
-}
-
-/**
- * Validate an object's required keys and every declared property it carries.
- *
- * additionalProperties:false is NOT enforced here. The schema declares it so a
- * schema-bound agent cannot invent fields, but a worker that did the work and
- * added one stray key has not stopped doing the work, and rejecting the reply
- * would throw a finished implementation away over a field nobody reads.
- */
-function validatesObject(object: Record<string, unknown>, schema: JsonSchema): boolean {
-  if (schema.required?.some((key) => !Object.hasOwn(object, key))) return false
-  if (schema.properties) {
-    for (const [key, child] of Object.entries(schema.properties)) {
-      if (Object.hasOwn(object, key) && !validatesSchema(object[key], child)) return false
-    }
-  }
-  return true
-}
-
-export function validatesSchema(value: unknown, schema: JsonSchema): boolean {
-  if (schema.anyOf && !schema.anyOf.some((choice) => validatesSchema(value, choice))) return false
-  if (schema.enum && !schema.enum.some((item) => Object.is(item, value))) return false
-
-  const types = typeof schema.type === 'string' ? [schema.type] : schema.type
-  if (types && !types.some((type) => matchesType(value, type))) return false
-
-  if (Array.isArray(value) && schema.items) {
-    return value.every((item) => validatesSchema(item, schema.items!))
-  }
-  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    return validatesObject(value as Record<string, unknown>, schema)
-  }
-  return true
-}
+export type SchemaValidatorPort = (value: unknown, schema: JsonSchema) => boolean
 
 /**
  * Which authoritative canon source was available to a run.
@@ -180,7 +138,11 @@ function advanceStringState(inString: boolean, escaped: boolean, ch: string) {
  * worker that did the work and garbled one question should not lose the work.
  * Schema validation supersedes any looser recovery policy here.
  */
-function parseCandidate<T>(candidate: string, schema: JsonSchema): T | null {
+function parseCandidate<T>(
+  candidate: string,
+  schema: JsonSchema,
+  validatesSchema: SchemaValidatorPort,
+): T | null {
   try {
     let o = JSON.parse(candidate)
     if (o && typeof o === 'object' && !Array.isArray(o) && o.status === 'blocked') {
@@ -203,9 +165,10 @@ function parseCandidate<T>(candidate: string, schema: JsonSchema): T | null {
 export function parseWorkerReplyWithCount<T>(
   text: string,
   schema: JsonSchema,
+  validatesSchema: SchemaValidatorPort,
 ): { reply: T | null; contractObjects: number } {
   const valid = scanJsonObjects(text.trim())
-    .map((candidate) => parseCandidate<T>(candidate, schema))
+    .map((candidate) => parseCandidate<T>(candidate, schema, validatesSchema))
     .filter((value): value is T => value !== null)
   return { reply: valid[0] ?? null, contractObjects: valid.length }
 }

@@ -484,6 +484,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-reply-source.ts', [
     '../contract/contract.ts',
     '../contract/contract-reply.ts',
+    '../contract/contract-reply-validator.ts',
     '../transport/transport.ts',
   ]),
   module('orchestrator/src/run/run-executor.ts', ['../failure/failure.ts']),

@@ -6,7 +6,8 @@ import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
 import { ISSUE_WORKER_SCHEMA, type IssueWorkerReply } from '../contract/contract.ts'
-import { type JsonSchema, validatesSchema } from '../contract/contract-reply.ts'
+import type { JsonSchema } from '../contract/contract-reply.ts'
+import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
 import { type Project, projectByName } from '../project/projects.ts'
@@ -177,7 +178,7 @@ function jsonObjects(text: string): unknown[] {
 }
 
 export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
-  const found = jsonObjects(text).find((value) => validatesSchema(value, schema))
+  const found = jsonObjects(text).find((value) => valueMatchesReplySchema(value, schema))
   if (!found) throw new Error('issue worker reply did not match its structured contract')
   return found as T
 }

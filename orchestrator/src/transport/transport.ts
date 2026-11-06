@@ -7,6 +7,7 @@ import { job } from '../jobs/jobs.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
+import { loadAjvValidator } from './ajv-validator-loader.ts'
 import type { CodexAskExposure } from './codex-ask-exposure.ts'
 import type { QuotaReadings } from './quota-readings.ts'
 import type { AgentBilling, VendorUsage } from './vendor-usage.ts'
@@ -731,23 +732,6 @@ export function confineFsPath(path: string, root: string, method = 'readTextFile
     throw new Error(`ACP fs.${method} refused: ${path} is outside the ${rootName}`)
   }
   return candidate
-}
-
-let schemaValidator: AjvValidator | null = null
-
-function loadAjvValidator(): AjvValidator {
-  if (schemaValidator) return schemaValidator
-  // Loaded here, not at module load: doctor and every reporting command reach
-  // this module through run.ts, and the hermetic linked-tree fixtures carry no
-  // orchestrator/node_modules, so a static import broke `bottega machine doctor`.
-  try {
-    const loaded = require('./ajv-validator.ts') as typeof import('./ajv-validator.ts')
-    schemaValidator = loaded.createStrictSchemaValidator()
-    return schemaValidator
-  } catch (error) {
-    const cause = error instanceof Error ? error.message : String(error)
-    throw new Error(`failed to load or construct the strict schema validator: ${cause}`)
-  }
 }
 
 /** Validate a reply against the same Codex-normalized schema the CLI path hands the vendor. */

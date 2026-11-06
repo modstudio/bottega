@@ -8,6 +8,7 @@
  */
 import type { DocForm } from '../../../shared/docs.ts'
 import { parseWorkerReplyWithCount, VERIFY_CLAIM_SCHEMA } from '../contract/contract-reply.ts'
+import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
 import { FAILURE_KINDS, type FailureKind } from '../failure/failure.ts'
 
 /**
@@ -198,7 +199,11 @@ type VerifyClaimReply = { verdict: 'true' | 'false' | 'undecidable' }
  * verdict advances the queue.
  */
 export function decideDriftVerdict(reply: string): DriftVerdict {
-  const { reply: parsed } = parseWorkerReplyWithCount<VerifyClaimReply>(reply, VERIFY_CLAIM_SCHEMA)
+  const { reply: parsed } = parseWorkerReplyWithCount<VerifyClaimReply>(
+    reply,
+    VERIFY_CLAIM_SCHEMA,
+    valueMatchesReplySchema,
+  )
   if (parsed?.verdict === 'false') return { kind: 'drift' }
   if (parsed?.verdict === 'true') return { kind: 'clean' }
   return { kind: 'no-evidence' }

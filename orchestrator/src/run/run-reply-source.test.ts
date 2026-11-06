@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { valueMatchesStrictSchema } from '../transport/transport.ts'
 import {
+  collectReplySource,
   decideReplySource,
   type ReplySourceFacts,
   type ReplySourceRuling,
@@ -147,4 +149,67 @@ describe('reply source ruling', () => {
   for (const row of cases) {
     test(row.name, () => expect(decideReplySource(row.facts)).toEqual(row.expected))
   }
+})
+
+const fullJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['integer', 'number', 'boolean', 'nothing', 'rows', 'choice', 'additionalProperties'],
+  properties: {
+    integer: { type: 'integer' },
+    number: { type: 'number' },
+    boolean: { type: 'boolean' },
+    nothing: { type: 'null' },
+    rows: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['n'],
+        properties: { n: { type: 'integer' } },
+      },
+    },
+    choice: { type: 'string', enum: ['accepted', 'rejected'] },
+    additionalProperties: { type: 'string' },
+  },
+} as const
+
+const fullJsonReply = {
+  integer: 2,
+  number: 2.5,
+  boolean: true,
+  nothing: null,
+  rows: [{ n: 3, nestedExtra: 'kept' }],
+  choice: 'accepted',
+  additionalProperties: 'a property name, not the schema keyword',
+  extra: 'kept',
+}
+
+const unusedDialect = {
+  schema: fullJsonSchema,
+  schemaName: 'fullJsonSchema',
+  parse: () => ({ reply: null, contractObjects: 0 }),
+}
+
+function customReply(value: unknown) {
+  return collectReplySource({
+    replyFileText: JSON.stringify(value),
+    fallbackText: '',
+    contract: 'custom',
+    dialect: unusedDialect,
+    schema: fullJsonSchema,
+  })
+}
+
+describe('custom reply-file schema validation', () => {
+  test('Ajv accepts JSON Schema primitives, nested objects, arrays, and enums', () => {
+    expect(customReply(fullJsonReply).replyFileError).toBeNull()
+    expect(customReply({ ...fullJsonReply, integer: '2' }).replyFileError).toContain(
+      'did not match',
+    )
+  })
+
+  test('reply-file leniency removes additionalProperties at every depth', () => {
+    expect(valueMatchesStrictSchema(fullJsonSchema, fullJsonReply)).toBe(false)
+  })
 })

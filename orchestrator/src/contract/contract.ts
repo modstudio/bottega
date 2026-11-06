@@ -11,8 +11,8 @@ import {
   type JsonSchema,
   parseWorkerReplyWithCount,
   VERIFY_CLAIM_SCHEMA,
-  validatesSchema,
 } from './contract-reply.ts'
+import { valueMatchesReplySchema } from './contract-reply-validator.ts'
 
 export { hasRealQuestions, realQuestions } from '../outcome.ts'
 
@@ -974,7 +974,7 @@ export function packResumePrompt(
 export type ContractReply = WorkerReply | IssueWorkerReply
 
 export function parseWorkerReply(text: string): WorkerReply | null {
-  return parseWorkerReplyWithCount<WorkerReply>(text, WORKER_SCHEMA).reply
+  return parseWorkerReplyWithCount<WorkerReply>(text, WORKER_SCHEMA, valueMatchesReplySchema).reply
 }
 
 type DialectParseResult = { reply: unknown | null; contractObjects: number }
@@ -991,7 +991,7 @@ function parseSchemaReply(text: string, schema: JsonSchema): DialectParseResult 
   } catch {
     return { reply: null, contractObjects: 0 }
   }
-  return validatesSchema(value, schema)
+  return valueMatchesReplySchema(value, schema)
     ? { reply: value, contractObjects: 1 }
     : { reply: null, contractObjects: 0 }
 }
@@ -1002,14 +1002,20 @@ export function resolveReplyDialect(j: Job): ReplyDialect {
     return {
       schema: ISSUE_WORKER_SCHEMA,
       schemaName: 'ISSUE_WORKER_SCHEMA',
-      parse: (text) => parseWorkerReplyWithCount<IssueWorkerReply>(text, ISSUE_WORKER_SCHEMA),
+      parse: (text) =>
+        parseWorkerReplyWithCount<IssueWorkerReply>(
+          text,
+          ISSUE_WORKER_SCHEMA,
+          valueMatchesReplySchema,
+        ),
     }
   }
   if (j.needs.writesRepo) {
     return {
       schema: WORKER_SCHEMA,
       schemaName: 'WORKER_SCHEMA',
-      parse: (text) => parseWorkerReplyWithCount<WorkerReply>(text, WORKER_SCHEMA),
+      parse: (text) =>
+        parseWorkerReplyWithCount<WorkerReply>(text, WORKER_SCHEMA, valueMatchesReplySchema),
     }
   }
   if (j.findings) {
