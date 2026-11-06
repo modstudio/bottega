@@ -106,7 +106,7 @@ export function createHookTree(input: {
     tool,
     repoRoot: project.path,
     baseRef: input.base,
-    name: input.name,
+    ...input,
   })
   try {
     git(['check-ref-format', '--branch', hookBranch], project.path)

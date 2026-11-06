@@ -271,9 +271,10 @@ export function trackedHookBranch(input: {
   repoRoot: string
   baseRef?: string
   name: string
+  key?: string
 }): string {
   const { recipe } = loadRecipeAtBase({ ...input, recipePath: input.tool.recipePath! })
-  return hookBranchName(recipe.hookBranch, input.name)
+  return hookBranchName(recipe.hookBranch, input.name, input.key)
 }
 
 function renderedPlaceholder(name: string): string {
