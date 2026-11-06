@@ -6,7 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
-import { insertOutboxRow } from '../record/outbox-enqueue.ts'
+import { insertOutboxRow, refreshPendingOutboxRow } from '../record/outbox-enqueue.ts'
 import {
   RELEASED_OUTBOX_PAYLOAD,
   releasedOutboxPayloadSql,
@@ -132,9 +132,7 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     )
     .get(recordId)
   if (pending) {
-    database
-      .query('UPDATE outbox SET payload=?,created_at=?,attempts=0,last_error=NULL WHERE id=?')
-      .run(payload, at, pending.id)
+    refreshPendingOutboxRow(database, { id: pending.id, payload, createdAt: at })
     return true
   }
   insertOutboxRow(database, {
