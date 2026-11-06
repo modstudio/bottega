@@ -158,7 +158,7 @@ export async function recordReplyQuestions(input: {
   questions: WorkerQuestionInput[]
   askedAt: string
   awaitingOperatorAt: string | null
-}): Promise<void> {
+}): Promise<Array<{ recordId: string; question: WorkerQuestion }>> {
   const recorded = writeTransaction(() => {
     const rows: Array<{ recordId: string; question: WorkerQuestion }> = []
     enqueueRunRecord(db(), input.runId, machineId(), input.askedAt)
@@ -179,11 +179,18 @@ export async function recordReplyQuestions(input: {
     }
     return rows
   })
+  return recorded
+}
+
+export async function preAnswerReplyQuestions(
+  runId: string,
+  recorded: Array<{ recordId: string; question: WorkerQuestion }>,
+): Promise<void> {
   await Promise.all(
     recorded.map(({ recordId, question }) =>
       preAnswerWorkerQuestion({
         recordId,
-        runId: input.runId,
+        runId,
         question,
         canResume: false,
         answerChannel: 'cli',

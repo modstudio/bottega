@@ -67,7 +67,13 @@ const text = z.object({
 })
 
 export const WorkerQuestionInputSchema = z.object({
-  kind: z.enum(WORKER_QUESTION_KINDS).nullable().optional(),
+  kind: z
+    .enum(WORKER_QUESTION_KINDS)
+    .nullable()
+    .optional()
+    .describe(
+      'choice when there are named options, yesno for a yes/no ruling, score for an ordered scale, text otherwise',
+    ),
   question: requiredQuestion,
   why: z.string().nullable().optional(),
   options: z
@@ -78,13 +84,19 @@ export const WorkerQuestionInputSchema = z.object({
       ]),
     )
     .nullable()
-    .optional(),
+    .optional()
+    .describe('An option may be a string or an object with name and criteria.'),
   recommendation: z.string().nullable().optional(),
   criteria: z
     .object({ yes: z.string().nullable().optional(), no: z.string().nullable().optional() })
     .nullable()
-    .optional(),
-  levels: z.array(z.string()).nullable().optional(),
+    .optional()
+    .describe('Yesno only; what yes means and what no means.'),
+  levels: z
+    .array(z.string())
+    .nullable()
+    .optional()
+    .describe('Score only; the ordered level labels, lowest first, answered by index.'),
 })
 
 const normalizedQuestion = z.discriminatedUnion('kind', [choice, yesno, score, text])

@@ -140,9 +140,15 @@ export const WORKER_SCHEMA = {
         additionalProperties: false,
         required: ['question', 'options', 'recommendation', 'why'],
         properties: {
-          kind: { type: ['string', 'null'], enum: [...WORKER_QUESTION_KINDS, null] },
+          kind: {
+            type: ['string', 'null'],
+            enum: [...WORKER_QUESTION_KINDS, null],
+            description:
+              'choice when there are named options, yesno for a yes/no ruling, score for an ordered scale, text otherwise.',
+          },
           question: { type: 'string' },
           options: {
+            description: 'An option may be an object with name and criteria.',
             anyOf: [
               nullableStrings,
               {
@@ -159,11 +165,15 @@ export const WORKER_SCHEMA = {
           recommendation: { type: ['string', 'null'] },
           criteria: {
             type: ['object', 'null'],
+            description: 'Yesno only; what yes means and what no means.',
             properties: { yes: { type: ['string', 'null'] }, no: { type: ['string', 'null'] } },
             required: ['yes', 'no'],
             additionalProperties: false,
           },
-          levels: nullableStrings,
+          levels: {
+            ...nullableStrings,
+            description: 'Score only; the ordered level labels, lowest first, answered by index.',
+          },
           why: {
             type: ['string', 'null'],
             description: 'Why this changes the implementation.',

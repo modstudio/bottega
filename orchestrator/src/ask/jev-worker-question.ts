@@ -41,6 +41,11 @@ function storeJevError(database: Database, recordId: string, error: string): voi
   }, database)
 }
 
+function lostJevRace(database: Database, recordId: string): { applied: false } {
+  storeJevError(database, recordId, 'question was answered or closed while Jev was deciding')
+  return { applied: false }
+}
+
 function storeJevAdvice(
   database: Database,
   recordId: string,
@@ -160,11 +165,12 @@ export async function preAnswerWorkerQuestion(
       autoRule: readMachine('jev.auto_rule') === 'on',
       canResume: input.canResume,
     })
+    let applied = false
     writeTransaction(() => {
       storeJevAdvice(database, input.recordId, decision, result, null)
       if (decision.action === 'apply') {
         const at = nowIso()
-        applyQuestionAnswer({
+        applied = applyQuestionAnswer({
           database,
           questionId: input.recordId,
           answer: String(decision.value),
@@ -175,21 +181,23 @@ export async function preAnswerWorkerQuestion(
           answeredByKind: 'jev',
           answererKind: 'agent',
           channel: input.answerChannel,
-          deliveryPendingAt: at,
+          deliveryPendingAt: null,
           delivery: {
             runId: input.runId,
             mode: QUESTION_DELIVERY_MODE_LIVE,
             outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
           },
         })
-        auditRunMutation(
-          runMutationAuthority(database, input.runId),
-          'answer',
-          'Jev auto-ruling',
-          database,
-        )
+        if (applied)
+          auditRunMutation(
+            runMutationAuthority(database, input.runId),
+            'answer',
+            'Jev auto-ruling',
+            database,
+          )
       } else enqueueQuestionRecord(database, input.recordId)
     }, database)
+    if (decision.action === 'apply' && !applied) return lostJevRace(database, input.recordId)
     return decision.action === 'apply'
       ? { applied: true, value: decision.value }
       : { applied: false }

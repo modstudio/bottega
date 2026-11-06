@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
-import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
+import { type AskLoopback, preAnswerReplyQuestions, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutRemovalAttribution,
   type CheckoutToWatch,
@@ -841,18 +841,17 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     }),
   ))
   /**
-   * Questions are deliberately inserted BEFORE the terminal row is written.
-   * This is ordering, not a transaction: a lost terminal write can leave the
+   * Questions are inserted before the terminal row. A lost terminal write can leave the
    * run reading `running` with an open question. That half-state is
    * recoverable because the escalation survived. The reverse — terminal
-   * `asking` with nothing to answer — is not, and would sit in the inbox for
-   * ever.
+   * `asking` with nothing to answer — would sit in the inbox for ever.
    *
    * Making the inserts atomic with the terminal write requires first making
    * questions recoverable from the terminal journal. `TerminalSnapshot`
    * carries no question payload, so reconciliation could otherwise restore
    * `asking` without its questions after a failed terminal transaction.
    */
+  let recordedQuestions: Awaited<ReturnType<typeof recordReplyQuestions>> = []
   if (acceptedQuestions.length) {
     /**
      * A question asked through the LIVE channel and then repeated in the final
@@ -874,7 +873,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     ).map((row) => row.question)
     const askedAt = nowIso()
     const awaitingOperatorAt = await initialQuestionWaitingAt(claim.id, askedAt)
-    await recordReplyQuestions({
+    recordedQuestions = await recordReplyQuestions({
       runId: claim.id,
       questions: questionsToInsert(existingQuestionTexts, acceptedQuestions),
       askedAt,
@@ -1084,6 +1083,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
     }
   }
+  await preAnswerReplyQuestions(claim.id, recordedQuestions)
   const recorded = db().query(TERMINAL_STATUS_SQL).get(claim.id) as {
     status: string
     failure_kind: string | null

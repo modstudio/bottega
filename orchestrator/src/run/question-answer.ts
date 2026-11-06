@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { appendQuestionDeliveries } from './question-delivery.ts'
+import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import type {
   AnswerChannel,
@@ -27,20 +28,21 @@ export function applyQuestionAnswer(input: {
     mode: QuestionDeliveryMode
     outcome: QuestionDeliveryOutcome
   }
-}): void {
+}): boolean {
   const encodedValue = input.value === undefined ? null : JSON.stringify(input.value)
   const changed = input.database
     .query(
       `UPDATE question
        SET answer=?,answer_value=?,answered_by_kind=?,
-           jev_agreed=CASE WHEN jev_pick IS NULL OR ? IS NULL THEN NULL WHEN jev_pick=? THEN 1 ELSE 0 END,
+           jev_agreed=CASE WHEN ?='jev' OR jev_pick IS NULL OR ? IS NULL THEN NULL WHEN jev_pick=? THEN 1 ELSE 0 END,
            answered_at=?,answered_by=?,answered_by_name=?,answerer_kind=?,answer_channel=?,revision=revision+1,
            delivery_pending_at=?,awaiting_operator_at=NULL
-       WHERE record_id=?`,
+       WHERE record_id=? AND ${questionOpenSql('question')}`,
     )
     .run(
       input.answer,
       encodedValue,
+      input.answeredByKind,
       input.answeredByKind,
       encodedValue,
       encodedValue,
@@ -52,7 +54,7 @@ export function applyQuestionAnswer(input: {
       input.deliveryPendingAt,
       input.questionId,
     )
-  if (changed.changes !== 1) throw new Error(`question ${input.questionId} does not exist`)
+  if (changed.changes !== 1) return false
   if (input.delivery)
     appendQuestionDeliveries(
       [input.questionId],
@@ -60,4 +62,5 @@ export function applyQuestionAnswer(input: {
       input.database,
     )
   enqueueQuestionRecord(input.database, input.questionId)
+  return true
 }

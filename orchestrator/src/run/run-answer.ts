@@ -215,6 +215,41 @@ function namedQuestionRefusal(questionId: string, runId: string): string {
   return `--q${questionId} is not open on this chain`
 }
 
+function applyArchitectAnswer(input: {
+  runId: string
+  answer: AnsweredQuestion
+  attribution: ReturnType<typeof answerAttributions>[number]
+  answeredAt: string
+  channel: AnswerChannel
+  ownersLive: boolean
+  skipResume: boolean
+  open: OpenQuestion[]
+}): void {
+  const [answeredBy, answeredByName, answererKind] = input.attribution
+  if (
+    !applyQuestionAnswer({
+      database: db(),
+      questionId: input.answer.record_id,
+      answer: input.answer.answer,
+      value: input.answer.typedValue,
+      answeredAt: input.answeredAt,
+      answeredBy,
+      answeredByName,
+      answeredByKind: 'architect',
+      answererKind,
+      channel: input.channel,
+      deliveryPendingAt: input.ownersLive ? null : input.answeredAt,
+      ...storedAnswerDelivery({
+        skipResume: input.skipResume,
+        ownersLive: input.ownersLive,
+        answerRecordId: input.answer.record_id,
+        open: input.open,
+      }),
+    })
+  )
+    throw new Error(namedQuestionRefusal(input.answer.record_id, input.runId))
+}
+
 function collectAnswers(input: {
   runId: string
   open: OpenQuestion[]
@@ -953,25 +988,15 @@ export async function answerRun(
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
     answers.forEach((answer, index) => {
-      const [answeredBy, answeredByName, answererKind] = attributions[index]!
-      applyQuestionAnswer({
-        database: db(),
-        questionId: answer.record_id,
-        answer: answer.answer,
-        value: answer.typedValue,
+      applyArchitectAnswer({
+        runId: id,
+        answer,
+        attribution: attributions[index]!,
         answeredAt: now,
-        answeredBy,
-        answeredByName,
-        answeredByKind: 'architect',
-        answererKind,
         channel: input.channel,
-        deliveryPendingAt: ownersLive ? null : now,
-        ...storedAnswerDelivery({
-          skipResume,
-          ownersLive,
-          answerRecordId: answer.record_id,
-          open,
-        }),
+        ownersLive,
+        skipResume,
+        open,
       })
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)

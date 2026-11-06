@@ -63,6 +63,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/question-answer.ts', [
     'bun:sqlite',
     './question-delivery.ts',
+    './question-open.ts',
     './question-outbox.ts',
     './question-vocabulary.ts',
   ]),
