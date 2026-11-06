@@ -721,7 +721,7 @@ describe('record client', () => {
         id,
         spaceId: '01990000-0000-7000-8000-000000000002',
         spaceName: 'Space',
-        projectName: 'bottega',
+        projectName: 'workshop',
         machineId: '01990000-0000-7000-8000-000000000003',
         startedAt: '2026-11-06T12:00:00.000Z',
         finishedAt: null,
