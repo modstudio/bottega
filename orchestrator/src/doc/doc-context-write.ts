@@ -57,12 +57,8 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
   if (!(profile.allowed as readonly ContextItemKind[]).includes(item.kind)) {
     return `${address} refused: ${facts.profile} profile does not allow kind ${item.kind}`
   }
-  if (!item.source.trim()) return `${address} refused: every item requires a non-empty source`
-  if (item.body.length > CONTEXT_ITEM_MAX_CHARS[item.kind]) {
-    return `${address} refused: ${item.kind} limit is ${CONTEXT_ITEM_MAX_CHARS[item.kind]} characters`
-  }
-  const ruling = rulingRefusal(item, address)
-  if (ruling) return ruling
+  const shape = contextItemShapeRefusal(item)
+  if (shape) return shape
   if (
     facts.profile === 'session' &&
     facts.claimedTask &&
@@ -87,6 +83,16 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
     }
   }
   return null
+}
+
+/** The rules one item obeys without facts about its holder, so the hosted record applies them too. */
+export function contextItemShapeRefusal(item: ContextItem): string | null {
+  const address = `context item ${item.id}`
+  if (!item.source.trim()) return `${address} refused: every item requires a non-empty source`
+  if (item.body.length > CONTEXT_ITEM_MAX_CHARS[item.kind]) {
+    return `${address} refused: ${item.kind} limit is ${CONTEXT_ITEM_MAX_CHARS[item.kind]} characters`
+  }
+  return rulingRefusal(item, address)
 }
 
 function rulingRefusal(item: ContextItem, address: string): string | null {
