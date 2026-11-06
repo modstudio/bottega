@@ -8,6 +8,7 @@ import { registerRecordDocCountsRoute } from './record-api-doc-counts.ts'
 import { registerRecordDocOrderRoute } from './record-api-doc-order.ts'
 import { registerRecordDocRenameRoute } from './record-api-doc-rename.ts'
 import { registerRecordMachineKeyClaimRoutes } from './record-api-machine-key-claim-routes.ts'
+import { registerRecordMemberPermissionRoutes } from './record-api-member-permission-routes.ts'
 import { registerRecordModerationRoutes } from './record-api-moderation-routes.ts'
 import { registerRecordOutsideBlockRoutes } from './record-api-outside-block-routes.ts'
 import { registerRecordOutsideIntakeRoutes } from './record-api-outside-intake-routes.ts'
@@ -22,6 +23,7 @@ type Deps = Parameters<typeof registerRecordProjectRoutes>[1] & {
   Parameters<typeof registerRecordBoardRoutes>[1] &
   Parameters<typeof registerRecordMachineKeyClaimRoutes>[1] &
   Parameters<typeof registerRecordConfigAccessRoutes>[1] &
+  Parameters<typeof registerRecordMemberPermissionRoutes>[1] &
   Parameters<typeof registerRecordOutsideBlockRoutes>[1] &
   Parameters<typeof registerRecordModerationRoutes>[1] &
   Parameters<typeof registerRecordOutsideIntakeRoutes>[1] &
@@ -32,6 +34,7 @@ type Ports = Parameters<typeof registerRecordProjectRoutes>[2] &
   Parameters<typeof registerRecordBoardRoutes>[2] &
   Parameters<typeof registerRecordMachineKeyClaimRoutes>[2] &
   Parameters<typeof registerRecordConfigAccessRoutes>[2] &
+  Parameters<typeof registerRecordMemberPermissionRoutes>[2] &
   Parameters<typeof registerRecordOutsideBlockRoutes>[2] &
   Parameters<typeof registerRecordModerationRoutes>[2] &
   Parameters<typeof registerRecordOutsideIntakeRoutes>[2] &
@@ -48,6 +51,7 @@ export function registerRecordWriteRoutes(
   registerRecordBoardRoutes(app, deps, ports)
   registerRecordMachineKeyClaimRoutes(app, deps, ports)
   registerRecordConfigAccessRoutes(app, deps, ports)
+  registerRecordMemberPermissionRoutes(app, deps, ports)
   registerRecordOutsideIntakeRoutes(app, deps, ports)
   registerRecordOutsideBlockRoutes(app, deps, ports)
   registerRecordModerationRoutes(app, deps, ports)

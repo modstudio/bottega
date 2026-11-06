@@ -265,6 +265,9 @@ function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBu
     }) => {
       await ensureMemberConfigRemovalSafe({ url, spaceId: organization.id, userId: member.userId })
     },
+    afterUpdateMemberRole: async ({ member }: { member: { id: string; role: string } }) => {
+      await keepOwnerWrite(authClient, member)
+    },
     afterCreateOrganization: async ({
       organization: created,
       user: owner,
@@ -325,6 +328,12 @@ async function markCreatedSpaceOwner(
     throw new Error(
       `creating owner's membership was not found for space ${created.id} and user ${owner.id}`,
     )
+}
+
+/** An owner membership is always write, so a read member promoted to owner gains write. */
+async function keepOwnerWrite(client: SQL, member: { id: string; role: string }): Promise<void> {
+  if (!member.role.split(',').includes('owner')) return
+  await client`UPDATE membership SET permission='write' WHERE id=${member.id}::uuid AND permission<>'write'`
 }
 
 type ResetPasswordSender = typeof sendPasswordResetEmail

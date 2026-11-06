@@ -24,6 +24,7 @@ export const recordBindingModules: RecordModule[] = [
     './record-api-doc-counts.ts',
     './record-api-doc-rename.ts',
     './record-api-machine-key-claim-routes.ts',
+    './record-api-member-permission-routes.ts',
     './record-api-moderation-routes.ts',
     './record-api-outside-block-routes.ts',
     './record-api-outside-intake-routes.ts',

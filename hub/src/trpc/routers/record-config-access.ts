@@ -13,11 +13,6 @@ export const recordConfigAccessRouter = t.router({
   grantConfigAccess: t.procedure
     .input(emailInput)
     .mutation(({ ctx, input }) => recordClient(ctx).grantConfigAccess(input.email)),
-  setMemberPermission: t.procedure
-    .input(z.object({ email: z.string().email(), permission: z.enum(['read', 'write']) }))
-    .mutation(({ ctx, input }) =>
-      recordClient(ctx).setMemberPermission(input.email, input.permission),
-    ),
   withdrawConfigAccess: t.procedure
     .input(emailInput)
     .mutation(({ ctx, input }) => recordClient(ctx).withdrawConfigAccess(input.email)),

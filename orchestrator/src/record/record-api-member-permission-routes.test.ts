@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
-import { registerRecordConfigAccessRoutes } from './record-api-config-access-routes.ts'
+import { registerRecordMemberPermissionRoutes } from './record-api-member-permission-routes.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
 const tenant = {
@@ -14,7 +14,7 @@ function appWith(setSpaceMemberPermission: ReturnType<typeof mock>) {
   const app = new Hono<{
     Variables: { identity: RecordIdentity; destinationSpaceId?: string }
   }>()
-  registerRecordConfigAccessRoutes(
+  registerRecordMemberPermissionRoutes(
     app,
     {
       listSpaceConfigAccess: async () => [],
@@ -40,7 +40,7 @@ test('member permission route validates its body and forwards parsed input', asy
   const setSpaceMemberPermission = mock(async () => ({ permission: 'read' as const }))
   const app = appWith(setSpaceMemberPermission)
 
-  const invalid = await app.request('/v1/config-access/permission', {
+  const invalid = await app.request('/v1/members/permission', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'member@example.test', permission: 'admin' }),
@@ -48,7 +48,7 @@ test('member permission route validates its body and forwards parsed input', asy
   expect(invalid.status).toBe(422)
   expect(setSpaceMemberPermission).not.toHaveBeenCalled()
 
-  const valid = await app.request('/v1/config-access/permission', {
+  const valid = await app.request('/v1/members/permission', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'member@example.test', permission: 'read' }),

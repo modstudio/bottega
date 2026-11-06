@@ -6,7 +6,8 @@ import type { ConfigTenant } from './record-config.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 
-export type MemberPermission = 'read' | 'write'
+export const MEMBER_PERMISSIONS = ['read', 'write'] as const
+export type MemberPermission = (typeof MEMBER_PERMISSIONS)[number]
 
 export async function setSpaceMemberPermission(
   input: ConfigTenant & { email: string; permission: MemberPermission },
