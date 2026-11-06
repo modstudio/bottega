@@ -113,7 +113,7 @@ create a project worktree and print its path
 ### Options
 
 - `--name <text>`: name the worktree
-- `--key <KEY>`: attribute the worktree to this task
+- `--key <KEY>`: attribute the worktree to this task and its default branch name
 - `--base <ref>`: create the worktree from this revision
 - `--seed <value>`: provision the worktree from this project seed
 - `--cwd <path>`: select the project from this working directory (default: the current working directory)

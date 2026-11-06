@@ -157,10 +157,10 @@ const recipeShape = strictObject({
     .min(1)
     .superRefine((template, context) => {
       for (const match of template.matchAll(/\{([^{}]+)\}/g)) {
-        if (match[1] !== 'name') {
+        if (match[1] !== 'name' && match[1] !== 'key') {
           context.addIssue({
             code: 'custom',
-            message: `hook-branch placeholder rule: hookBranch may use only {name}, not {${match[1]}}`,
+            message: `hook-branch placeholder rule: hookBranch may use only {name} and {key}, not {${match[1]}}`,
           })
         }
       }
@@ -687,8 +687,16 @@ function validateCwd(
 export type TrackedRecipe = z.infer<typeof recipeSchema>
 
 /** Fill the validated hook-only branch template. */
-export function hookBranchName(template: string | undefined, name: string): string {
-  return (template ?? 'worktree-{name}').replace(/\{name\}/g, name)
+export function hookBranchName(
+  template: string | undefined,
+  name: string,
+  key: string | undefined,
+): string {
+  const branchTemplate = template ?? (key ? '{key}-{name}' : 'worktree-{name}')
+  if (branchTemplate.includes('{key}') && !key) {
+    throw new Error('hookBranch uses {key}; supply --key <KEY> when creating the tree')
+  }
+  return branchTemplate.replace(/\{name\}/g, name).replace(/\{key\}/g, key ?? '')
 }
 
 export function recipeJsonSchema(): unknown {

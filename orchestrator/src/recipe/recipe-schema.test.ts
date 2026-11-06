@@ -622,20 +622,31 @@ describe('tracked recipe refusal rules', () => {
 })
 
 describe('project config document', () => {
-  test('decides default and declared hook branches and refuses other placeholders', () => {
+  test('decides keyed, unkeyed, and declared hook branches', () => {
     const defaulted = configDocumentSchema.parse({ worktree: minimal() }).worktree!
-    expect(hookBranchName(defaulted.hookBranch, 'alice')).toBe('worktree-alice')
+    expect(hookBranchName(defaulted.hookBranch, 'alice', 'DEV-2137')).toBe('DEV-2137-alice')
+    expect(hookBranchName(defaulted.hookBranch, 'alice', undefined)).toBe('worktree-alice')
 
     const declared = configDocumentSchema.parse({
-      worktree: { ...minimal(), hookBranch: 'session/{name}' },
+      worktree: { ...minimal(), hookBranch: 'session/{key}/{name}' },
     }).worktree!
-    expect(hookBranchName(declared.hookBranch, 'alice')).toBe('session/alice')
+    expect(hookBranchName(declared.hookBranch, 'alice', 'DEV-2137')).toBe('session/DEV-2137/alice')
+    expect(() => hookBranchName(declared.hookBranch, 'alice', undefined)).toThrow('--key')
+  })
 
+  test('accepts {key} in hookBranch and refuses unrecognized placeholders', () => {
+    expect(
+      configDocumentSchema.safeParse({
+        worktree: { ...minimal(), hookBranch: 'session/{key}/{name}' },
+      }).success,
+    ).toBe(true)
     const refused = configDocumentSchema.safeParse({
-      worktree: { ...minimal(), hookBranch: 'session/{id}' },
+      worktree: { ...minimal(), hookBranch: 'session/{base}' },
     })
     expect(refused.success).toBe(false)
-    if (!refused.success) expect(refused.error.issues[0]?.message).toContain('may use only {name}')
+    if (!refused.success) {
+      expect(refused.error.issues[0]?.message).toContain('may use only {name} and {key}')
+    }
   })
 
   test('accepts a nested worktree recipe and an optional root schema', () => {

@@ -354,7 +354,7 @@ function registerTreeCommands(program: Command): void {
     .command('create')
     .description(TREE_DESCRIPTIONS.create)
     .requiredOption('--name <text>', 'name the worktree')
-    .option('--key <KEY>', 'attribute the worktree to this task')
+    .option('--key <KEY>', 'attribute the worktree to this task and its default branch name')
     .option('--base <ref>', 'create the worktree from this revision')
     .option('--seed <value>', 'provision the worktree from this project seed')
     .option('--cwd <path>', 'select the project from this working directory', process.cwd())
