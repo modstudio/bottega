@@ -96,9 +96,9 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
     'kept',
   ),
   ...entries(['contention', 'hub_interval'], 'telemetry', null, 'telemetry'),
-  ...entries(['hub_change_head', 'record_change_horizon'], 'journal', null, 'change-logs'),
+  ...entries(['record_change_horizon'], 'journal', null, 'change-logs'),
   ...entries(
-    ['hub_change', 'record_change'],
+    ['record_change'],
     'journal',
     'hub/src/change-pruning.ts#pruneHostedChanges',
     'change-logs',

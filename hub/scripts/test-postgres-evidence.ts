@@ -11,7 +11,6 @@ import {
   recordServiceUrl,
 } from '../../shared/record/service-connection.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
-import { listHostedChanges } from '../src/hosted-changes.ts'
 import type { IntervalEvidence } from '../src/hosted-evidence.ts'
 import { hostedMeasures, loadHostedMeasureRows } from '../src/hosted-measures.ts'
 import { listHostedNotes } from '../src/hosted-note-list.ts'
@@ -799,30 +798,10 @@ try {
     )
     if (!mirroredNote) throw new Error('hidden mirror evidence note was not created')
     d2NoteIds.push(mirroredNote.id)
-    const beforeHide = await listHostedChanges(
-      actorUrl,
-      { userId: USER, spaceId: SPACE_A },
-      {
-        after: 0,
-        limit: 500,
-        tables: ['hub_note'],
-      },
-    )
     await actorUrl.begin(async (tx) => {
       await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
       await tx`SELECT public.hub_note_set_hidden(${mirroredNote.id}::uuid,'duplicate',${OWNER_USER}::uuid)`
     })
-    const hiddenChanges = await listHostedChanges(
-      actorUrl,
-      { userId: USER, spaceId: SPACE_A },
-      { after: beforeHide.head, limit: 500, tables: ['hub_note'] },
-    )
-    if (
-      !hiddenChanges.changes.some(
-        (change) => change.id === mirroredNote.id && change.op === 'delete',
-      )
-    )
-      throw new Error('a hidden note did not leave a non-author member cache as a delete')
     const acknowledgementId = newRecordId()
     const mirror = await mirrorHostedNotes(
       actorUrl,
@@ -864,17 +843,6 @@ try {
       await bindTenant(tx, { userId: OWNER_USER, spaceId: SPACE_A, spaceIds: [SPACE_A] })
       await tx`SELECT public.hub_note_set_hidden(${mirroredNote.id}::uuid,NULL,${OWNER_USER}::uuid)`
     })
-    const unhiddenChanges = await listHostedChanges(
-      actorUrl,
-      { userId: USER, spaceId: SPACE_A },
-      { after: hiddenChanges.next, limit: 500, tables: ['hub_note'] },
-    )
-    if (
-      !unhiddenChanges.changes.some(
-        (change) => change.id === mirroredNote.id && change.op === 'upsert' && 'row' in change,
-      )
-    )
-      throw new Error('an unhidden note did not return to a member cache as an upsert')
     const successfulOutsideWrites = await admin<{ writes: string }[]>`
       SELECT count(*)::text AS writes FROM space_outside_write
       WHERE user_id=${OUTSIDE_USER}::uuid AND kind='note'`
@@ -970,21 +938,11 @@ try {
     await admin`DELETE FROM space_outside_intake WHERE id=${intakeId}::uuid`
   }
 
-  const changeHead = async () => {
-    const rows = await admin<{ head: string }[]>`
-      SELECT COALESCE((SELECT sequence::text FROM hub_change_head
-        WHERE space_id=${SPACE_A}::uuid),'0') AS head`
-    const head = rows[0]?.head
-    if (head === undefined) throw new Error('space change-log head query returned no row')
-    return head
-  }
-
   const insertedInterval = await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
     interval,
   ])
   if (insertedInterval[0]?.status !== 'applied')
     throw new Error(`interval applied outcome was ${JSON.stringify(insertedInterval[0] ?? null)}`)
-  const intervalHead = await changeHead()
   const duplicateInterval = await pushIntervals(actorUrl, { userId: USER, spaceId: SPACE_A }, [
     interval,
   ])
@@ -992,24 +950,13 @@ try {
     throw new Error(
       `interval duplicate outcome was ${JSON.stringify(duplicateInterval[0] ?? null)}`,
     )
-  const intervalDuplicateHead = await changeHead()
-  if (intervalDuplicateHead !== intervalHead)
-    throw new Error(
-      `interval duplicate advanced the space change-log head from ${intervalHead} to ${intervalDuplicateHead}`,
-    )
 
   const insertedDay = await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
   if (insertedDay[0]?.status !== 'applied')
     throw new Error(`day applied outcome was ${JSON.stringify(insertedDay[0] ?? null)}`)
-  const dayHead = await changeHead()
   const duplicateDay = await pushDays(actorUrl, { userId: USER, spaceId: SPACE_A }, [day])
   if (duplicateDay[0]?.status !== 'duplicate')
     throw new Error(`day duplicate outcome was ${JSON.stringify(duplicateDay[0] ?? null)}`)
-  const dayDuplicateHead = await changeHead()
-  if (dayDuplicateHead !== dayHead)
-    throw new Error(
-      `day duplicate advanced the space change-log head from ${dayHead} to ${dayDuplicateHead}`,
-    )
 
   const client = actorUrl
   try {
@@ -2626,8 +2573,6 @@ try {
   await admin`DELETE FROM seq WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM project WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM record_change WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
-  await admin`DELETE FROM hub_change WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
-  await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM space WHERE id IN (${SPACE_A}::uuid, ${SPACE_B}::uuid, ${SPACE_C}::uuid)`
   await admin`DELETE FROM machine WHERE id=${MACHINE}::uuid`
   await admin`DELETE FROM "user" WHERE id IN (${USER}::uuid, ${SECOND_USER}::uuid, ${READ_USER}::uuid,

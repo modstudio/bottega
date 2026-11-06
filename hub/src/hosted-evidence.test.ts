@@ -7,7 +7,6 @@ import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { migrationSessionStatements } from '../../shared/record/migration-session.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HOSTED_FIXTURE_MACHINE_ID } from '../test/hosted-record-fixture.ts'
-import { hubChangeReadability } from './hosted-changes.ts'
 import {
   applyDayChangeInTransaction,
   applyIntervalChangeInTransaction,
@@ -213,8 +212,6 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
   expect(Number(storedInterval.claude_tokens)).toBe(INTERVAL_TOKENS)
   expect(Number(storedInterval.vendor_tokens)).toBe(INTERVAL_TOKENS)
 
-  expect(hubChangeReadability('hub_interval')).toBe('not-yet-readable')
-  expect(hubChangeReadability('hub_day')).toBe('not-yet-readable')
   await database.close()
 })
 

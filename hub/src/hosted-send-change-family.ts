@@ -4,7 +4,7 @@ import { cacheHostedSend } from './report-cache.ts'
 import { hostedSendChanges } from './report-client.ts'
 import type { RegisteredTaskSpace, TaskDestinationIdentity } from './task-project-space.ts'
 
-export const HOSTED_SEND_CHANGES_CURSOR_KEY = 'collect.hosted-send-changes.cursor'
+const HOSTED_SEND_CHANGES_CURSOR_KEY = 'collect.hosted-send-changes.cursor'
 
 export function createHostedSendChangeFamily(
   _registered: readonly RegisteredTaskSpace[],

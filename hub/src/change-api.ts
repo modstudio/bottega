@@ -6,12 +6,6 @@ import {
   type RecordChangeCursor,
 } from '../../shared/record/record-changes.ts'
 import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
-import {
-  listHostedChanges,
-  MAX_HUB_CHANGE_PAGE_SIZE,
-  READABLE_HUB_CHANGES,
-  type ReadableHubChangeTable,
-} from './hosted-changes.ts'
 import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import {
@@ -37,7 +31,6 @@ const TEST_REFUSAL =
 
 type Dependencies = {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
-  list?: typeof listHostedChanges
   ids?: typeof listHostedIdentitySet
   push?: typeof applyHostedPushChanges
   feed?: (
@@ -51,37 +44,15 @@ type ChangeIdentity = Exclude<
   { kind: 'refused-space' | 'unauthenticated' | 'unavailable' }
 >
 
-const allowed = Object.keys(READABLE_HUB_CHANGES) as ReadableHubChangeTable[]
-const allowedMessage = allowed.join(', ')
 const json = (value: unknown, status = 200) => Response.json(value, { status })
-
-function requestInput(url: URL) {
-  const afterValue = url.searchParams.get('after')
-  if (afterValue === null || !/^(0|[1-9]\d*)$/.test(afterValue))
-    throw new Error('after must be a non-negative safe integer')
-  const after = Number(afterValue)
-  if (!Number.isSafeInteger(after)) throw new Error('after must be a non-negative safe integer')
-
-  const limitValue = url.searchParams.get('limit')
-  const limit = limitValue === null ? MAX_HUB_CHANGE_PAGE_SIZE : Number(limitValue)
-  if (
-    (limitValue !== null && !/^[1-9]\d*$/.test(limitValue)) ||
-    !Number.isInteger(limit) ||
-    limit < 1 ||
-    limit > MAX_HUB_CHANGE_PAGE_SIZE
+const retiredChangeLogResponse = () =>
+  json(
+    {
+      error: 'the per-space change log has been retired',
+      remedy: `Install a release that reads the record change feed with \`${PLATFORM_SLUG} machine update\`, or install the newest release.`,
+    },
+    410,
   )
-    throw new Error(`limit must be an integer from 1 through ${MAX_HUB_CHANGE_PAGE_SIZE}`)
-
-  const tableValues = url.searchParams.getAll('tables')
-  if (tableValues.length !== 1 || !tableValues[0])
-    throw new Error(`tables must name one or more of: ${allowedMessage}`)
-  const tables = tableValues[0].split(',')
-  const invalid = tables.filter(
-    (table): table is string => !allowed.includes(table as ReadableHubChangeTable),
-  )
-  if (invalid.length) throw new Error(`tables must name only: ${allowedMessage}`)
-  return { after, limit, tables: [...new Set(tables)] as ReadableHubChangeTable[] }
-}
 
 function feedInput(url: URL) {
   if (url.searchParams.has('wait')) throw new Error('wait is unsupported by the hub change feed')
@@ -107,9 +78,7 @@ function hasTestDependencies(
 ): boolean {
   if (!dependencies.fetch) return false
   if (pathname === '/v1/changes/ids') return Boolean(dependencies.ids)
-  return method === 'GET'
-    ? Boolean(dependencies.list || dependencies.feed)
-    : Boolean(dependencies.push)
+  return method === 'GET' ? Boolean(dependencies.feed) : Boolean(dependencies.push)
 }
 
 function pushInput(
@@ -222,43 +191,33 @@ async function changeLogResponse(
   if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
   assertAuthenticatedIdentity(who)
   if (request.method === 'POST') return pushResponse(request, config, dependencies, who)
-  const legacy = url.searchParams.has('tables')
-  let input: ReturnType<typeof requestInput> | ReturnType<typeof feedInput>
+  let input: ReturnType<typeof feedInput>
   try {
-    input = legacy ? requestInput(url) : feedInput(url)
+    input = feedInput(url)
   } catch (error) {
     return json({ error: (error as Error).message }, 400)
   }
   try {
-    if (!legacy) {
-      const result = await (dependencies.feed ?? readHostedRecordChanges)(
-        config.recordDatabaseUrl,
-        who,
-        input as ReturnType<typeof feedInput>,
-      )
-      if (result.resetRequired)
-        return json(
-          {
-            reset: true,
-            cursor: encodeRecordChangeCursor(result.cursor),
-            tables: HOSTED_RECORD_CHANGE_TABLES,
-          },
-          410,
-        )
-      return json({
-        changes: result.changes,
-        cursor: encodeRecordChangeCursor(result.cursor),
-        lag: result.lag,
-        more: result.more,
-      })
-    }
-    return json(
-      await (dependencies.list ?? listHostedChanges)(
-        config.recordDatabaseUrl,
-        who,
-        input as ReturnType<typeof requestInput>,
-      ),
+    const result = await (dependencies.feed ?? readHostedRecordChanges)(
+      config.recordDatabaseUrl,
+      who,
+      input,
     )
+    if (result.resetRequired)
+      return json(
+        {
+          reset: true,
+          cursor: encodeRecordChangeCursor(result.cursor),
+          tables: HOSTED_RECORD_CHANGE_TABLES,
+        },
+        410,
+      )
+    return json({
+      changes: result.changes,
+      cursor: encodeRecordChangeCursor(result.cursor),
+      lag: result.lag,
+      more: result.more,
+    })
   } catch (error) {
     return json({ error: (error as Error).message }, 409)
   }
@@ -271,6 +230,8 @@ export async function changeApi(
 ): Promise<Response | null> {
   const url = new URL(request.url)
   if (url.pathname !== '/v1/changes' && url.pathname !== '/v1/changes/ids') return null
+  if (url.pathname === '/v1/changes' && url.searchParams.has('tables'))
+    return retiredChangeLogResponse()
   if (
     process.env.NODE_ENV === 'test' &&
     !hasTestDependencies(url.pathname, request.method, dependencies)

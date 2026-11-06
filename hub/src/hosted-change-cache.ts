@@ -4,7 +4,8 @@ import {
   classifyHostedChangeDelete,
   classifyHostedChangeUpsert,
   type HostedChangeFamily,
-  type HostedChangeRequestOptions,
+  type HostedPreparedChange,
+  type HostedPreparedChangePage,
   type HostedPreparedPage,
 } from './hosted-change-family.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
@@ -29,10 +30,7 @@ import { projects } from './projects.ts'
 import {
   type HostedRecordChange,
   type HostedRecordChangePage,
-  type HostedSpaceChange,
-  type HostedSpaceChangePage,
   hostedRecordChanges,
-  hostedSpaceChanges,
   hostedTaskIdentity,
   type TaskFetch,
 } from './task-client.ts'
@@ -42,8 +40,8 @@ import {
   taskProjectDestination,
 } from './task-project-space.ts'
 
-export const HOSTED_NOTE_CHANGES_CURSOR_KEY = 'collect.hosted-note-changes.cursor'
-export const MAX_HOSTED_CHANGE_PAGES_PER_PASS = 40
+const HOSTED_NOTE_CHANGES_CURSOR_KEY = 'collect.hosted-note-changes.cursor'
+const MAX_HOSTED_CHANGE_PAGES_PER_PASS = 40
 
 type SpaceCounts = {
   spaceId: string
@@ -77,15 +75,6 @@ const emptyCounts = (spaceId: string): SpaceCounts => ({
   deletesSkipped: 0,
   absentParentSkipped: 0,
   resets: 0,
-})
-const addCounts = (left: SpaceCounts, right: SpaceCounts): SpaceCounts => ({
-  spaceId: left.spaceId,
-  upsertsChanged: left.upsertsChanged + right.upsertsChanged,
-  upsertsNoop: left.upsertsNoop + right.upsertsNoop,
-  deletesApplied: left.deletesApplied + right.deletesApplied,
-  deletesSkipped: left.deletesSkipped + right.deletesSkipped,
-  absentParentSkipped: left.absentParentSkipped + right.absentParentSkipped,
-  resets: left.resets + right.resets,
 })
 function sumCounts(spaces: SpaceCounts[], reportAbsentParentSkips: boolean): HostedChangeLegReport {
   const totals = spaces.reduce<HostedChangeLegReport>(
@@ -125,55 +114,7 @@ export function hostedChangeLegLine(report: HostedChangeLegReport): string {
     .join('; ')
 }
 
-function readCursor(family: HostedChangeFamily, spaceId: string): number | null {
-  const value = db()
-    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-    .get(`${family.cursorPrefix}.${spaceId}`)?.value
-  if (value === undefined || !/^(0|[1-9]\d*)$/.test(value)) return null
-  const cursor = Number(value)
-  return Number.isSafeInteger(cursor) ? cursor : null
-}
-function storeCursor(conn: Database, family: HostedChangeFamily, spaceId: string, cursor: number) {
-  conn
-    .query(
-      'INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-    )
-    .run(`${family.cursorPrefix}.${spaceId}`, String(cursor))
-}
-type SnapshotState = { head: number; cursor: string | null }
-const snapshotKey = (family: HostedChangeFamily, spaceId: string) =>
-  `${family.cursorPrefix}.snapshot.${spaceId}`
-function readSnapshotState(family: HostedChangeFamily, spaceId: string): SnapshotState | null {
-  const value = db()
-    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
-    .get(snapshotKey(family, spaceId))?.value
-  if (!value) return null
-  try {
-    const parsed = JSON.parse(value) as SnapshotState
-    if (
-      Number.isSafeInteger(parsed.head) &&
-      parsed.head >= 0 &&
-      (parsed.cursor === null || typeof parsed.cursor === 'string')
-    )
-      return parsed
-  } catch {
-    // A malformed partial snapshot is restarted from its first page.
-  }
-  return null
-}
-function storeSnapshotState(
-  conn: Database,
-  family: HostedChangeFamily,
-  spaceId: string,
-  state: SnapshotState,
-) {
-  conn
-    .query(
-      'INSERT INTO setting(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-    )
-    .run(snapshotKey(family, spaceId), JSON.stringify(state))
-}
-function applyDelete(conn: Database, change: HostedSpaceChange, family: HostedChangeFamily) {
+function applyDelete(conn: Database, change: HostedPreparedChange, family: HostedChangeFamily) {
   if (Object.hasOwn(HOSTED_MACHINE_TABLES, change.table))
     return reconcilePulledRow(conn, {
       table: change.table as ReconciledHostedTable,
@@ -181,7 +122,10 @@ function applyDelete(conn: Database, change: HostedSpaceChange, family: HostedCh
       operation: 'delete',
       current: () => family.machineRow(conn, change.table, change.id),
       apply: () => {},
-      remove: () => family.delete(conn, change.table, change.id),
+      remove: () =>
+        change.row
+          ? family.apply(conn, change.table, change.row)
+          : family.delete(conn, change.table, change.id),
     })
   family.delete(conn, change.table, change.id)
   return { kind: 'deleted' as const }
@@ -189,7 +133,7 @@ function applyDelete(conn: Database, change: HostedSpaceChange, family: HostedCh
 
 function applyDeleteChange(
   conn: Database,
-  change: HostedSpaceChange,
+  change: HostedPreparedChange,
   spaceId: string,
   family: HostedChangeFamily,
   counts: SpaceCounts,
@@ -209,7 +153,7 @@ function applyDeleteChange(
 
 function applyOneChange(
   conn: Database,
-  change: HostedSpaceChange,
+  change: HostedPreparedChange,
   spaceId: string,
   family: HostedChangeFamily,
   counts: SpaceCounts,
@@ -262,117 +206,6 @@ function applyOneChange(
   const decision = classifyHostedChangeUpsert(before, after)
   if (decision.kind === 'no-op') counts.upsertsNoop += 1
   else counts.upsertsChanged += 1
-}
-
-function applyPage(
-  conn: Database,
-  page: HostedSpaceChangePage,
-  spaceId: string,
-  family: HostedChangeFamily,
-  prepared: HostedPreparedPage,
-) {
-  const counts = emptyCounts(spaceId)
-  for (const apply of prepared.apply) apply(conn)
-  const changes = page.changes
-    .map((change, index) => ({ change, index }))
-    .sort(
-      (left, right) =>
-        family.tableOrder(left.change.table) - family.tableOrder(right.change.table) ||
-        left.index - right.index,
-    )
-  for (const { change } of changes) {
-    if (prepared.skippedForAbsentParent.has(`${change.table}:${change.id}`)) {
-      counts.absentParentSkipped += 1
-      continue
-    }
-    applyOneChange(conn, change, spaceId, family, counts)
-  }
-  family.finish?.(conn)
-  return counts
-}
-
-async function startSpace(
-  family: HostedChangeFamily,
-  spaceId: string,
-  options: HostedChangeRequestOptions,
-  head?: number,
-): Promise<SpaceCounts> {
-  const stored = readSnapshotState(family, spaceId)
-  const sequence =
-    stored?.head ?? head ?? (await hostedSpaceChanges(0, { ...options, limit: 1 })).head
-  let snapshotCursor = stored?.cursor ?? null
-  for (;;) {
-    const page = await family.fullPull(snapshotCursor, options)
-    if (page.more && page.cursor === snapshotCursor)
-      throw new Error('hosted snapshot cursor did not advance')
-    writeTransaction((conn) => {
-      page.apply(conn)
-      if (page.more)
-        storeSnapshotState(conn, family, spaceId, { head: sequence, cursor: page.cursor })
-      else {
-        storeCursor(conn, family, spaceId, sequence)
-        conn.query('DELETE FROM setting WHERE key=?').run(snapshotKey(family, spaceId))
-      }
-    })
-    snapshotCursor = page.cursor
-    if (!page.more) break
-  }
-  const counts = emptyCounts(spaceId)
-  counts.resets = 1
-  return addCounts(counts, await followSpace(family, spaceId, sequence, options))
-}
-async function followSpace(
-  family: HostedChangeFamily,
-  spaceId: string,
-  after: number,
-  options: HostedChangeRequestOptions,
-): Promise<SpaceCounts> {
-  let counts = emptyCounts(spaceId)
-  let cursor = after
-  for (let page = 0; page < MAX_HOSTED_CHANGE_PAGES_PER_PASS; page++) {
-    const response = await hostedSpaceChanges(cursor, options)
-    if (response.resetRequired)
-      return addCounts(counts, await startSpace(family, spaceId, options, response.head))
-    const prepared = (await family.preparePage?.(response, options)) ?? {
-      apply: [],
-      skippedForAbsentParent: new Set<string>(),
-    }
-    const pageCounts = writeTransaction((conn) => {
-      const applied = applyPage(conn, response, spaceId, family, prepared)
-      storeCursor(conn, family, spaceId, response.next)
-      return applied
-    })
-    counts = addCounts(counts, pageCounts)
-    cursor = response.next
-    if (!response.more) break
-  }
-  return counts
-}
-async function pullFamily(
-  family: HostedChangeFamily,
-  options: PullOptions,
-  identity: TaskDestinationIdentity,
-  registered: readonly RegisteredTaskSpace[],
-) {
-  const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
-  const results: SpaceCounts[] = []
-  const failures: string[] = []
-  for (const spaceId of family.spaces(registered, identity)) {
-    const requestOptions = { ...shared, recordSpace: spaceId, tables: family.tables }
-    try {
-      const cursor = readCursor(family, spaceId)
-      results.push(
-        cursor === null
-          ? await startSpace(family, spaceId, requestOptions)
-          : await followSpace(family, spaceId, cursor, requestOptions),
-      )
-    } catch (cause) {
-      failures.push(`${spaceId}: ${cause instanceof Error ? cause.message : String(cause)}`)
-    }
-  }
-  if (failures.length)
-    throw new Error(`${family.failureLabel} pulls failed: ${failures.join('; ')}`)
-  return sumCounts(results, family.reportAbsentParentSkips === true)
 }
 
 const NOTE_TABLES = 'hub_note,hub_note_acknowledgement'
@@ -445,28 +278,6 @@ function noteFamily(
     failureLabel: 'hosted note change',
   }
 }
-
-async function pullChanges(
-  makeFamily: (
-    registered: readonly RegisteredTaskSpace[],
-    identity: TaskDestinationIdentity,
-  ) => HostedChangeFamily,
-  options: PullOptions,
-) {
-  const shared = { baseUrl: options.baseUrl, token: options.token, fetch: options.fetch }
-  const identity = await hostedTaskIdentity(shared)
-  if (identity.capabilities?.spaceChanges !== true)
-    throw new Error(
-      'the hosted hub does not serve the change log; release the hosted hub at or after the version that does',
-    )
-  const registered = options.registeredProjects ?? projects()
-  return pullFamily(makeFamily(registered, identity), options, identity, registered)
-}
-export const pullHostedTaskChanges = (options: PullOptions = {}) =>
-  pullChanges(createHostedTaskChangeFamily, options)
-export const pullHostedNoteChanges = (options: PullOptions = {}) => pullChanges(noteFamily, options)
-export const pullHostedSendChanges = (options: PullOptions = {}) =>
-  pullChanges(createHostedSendChangeFamily, options)
 
 const FEED_CURSOR = 'collect.hosted-record-changes.cursor'
 const FEED_SPACES = 'collect.hosted-record-changes.spaces'
@@ -543,15 +354,8 @@ function countFor(counts: Map<string, SpaceCounts>, name: FamilyName, space: str
   return value
 }
 
-function pageFor(changes: HostedRecordChange[]): HostedSpaceChangePage {
-  return {
-    head: 0,
-    oldest: null,
-    next: 0,
-    more: false,
-    resetRequired: false,
-    changes: changes.map((change, index) => ({ ...change, sequence: index + 1 })),
-  }
+function pageFor(changes: HostedRecordChange[]): HostedPreparedChangePage {
+  return { changes }
 }
 
 async function applyFeedPage(
@@ -607,8 +411,7 @@ async function applyFeedPage(
         if (prep.skippedForAbsentParent.has(`${change.table}:${change.id}`)) {
           familyCounts.absentParentSkipped += 1
           pending.add(pair(feed.name, change.space))
-        } else
-          applyOneChange(conn, { ...change, sequence: 0 }, change.space, feed.family, familyCounts)
+        } else applyOneChange(conn, change, change.space, feed.family, familyCounts)
       }
     }
     putSetting(conn, FEED_PENDING, JSON.stringify([...pending].sort()))

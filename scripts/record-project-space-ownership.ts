@@ -39,16 +39,6 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   },
   { table: 'doc_revision', kind: 'project', ownerColumns: ['project_id'] },
   {
-    table: 'hub_change',
-    kind: 'space',
-    reason: 'space synchronization journal',
-  },
-  {
-    table: 'hub_change_head',
-    kind: 'space',
-    reason: 'space synchronization cursor',
-  },
-  {
     table: 'record_change',
     kind: 'space',
     reason: 'space-attributed global synchronization journal',

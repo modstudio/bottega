@@ -118,7 +118,7 @@ test('the edge accepts evidence and unchanged resends append no hosted changes',
   ])
   const before = (
     await database.query<{ count: number }>(
-      `SELECT count(*)::int count FROM hub_change WHERE table_name IN ('hub_interval','hub_day')`,
+      `SELECT count(*)::int count FROM record_change WHERE table_name IN ('hub_interval','hub_day')`,
     )
   ).rows[0]!.count
   expect(await apply(inputs)).toEqual([
@@ -127,7 +127,7 @@ test('the edge accepts evidence and unchanged resends append no hosted changes',
   ])
   const after = (
     await database.query<{ count: number }>(
-      `SELECT count(*)::int count FROM hub_change WHERE table_name IN ('hub_interval','hub_day')`,
+      `SELECT count(*)::int count FROM record_change WHERE table_name IN ('hub_interval','hub_day')`,
     )
   ).rows[0]!.count
   expect(after).toBe(before)

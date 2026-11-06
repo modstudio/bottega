@@ -21,9 +21,20 @@ const readableSpaces = sql`string_to_array(nullif(current_setting('app.space_ids
 
 export const RECORD_CHANGE_CHILD_TABLES = [
   ['doc_related_subject', 'doc_id', 'doc'],
+  ['hub_send_recipient', 'send_id', 'hub_send'],
   ['review_lens', 'run_id', 'run'],
   ['run_exclusion', 'run_id', 'run'],
 ] as const
+
+export const RECORD_CHANGE_EXCLUDED_TABLES = {
+  hub_interval: 'no feed serves this table; the working-set slice decides its sync',
+  hub_day: 'no feed serves this table; the working-set slice decides its sync',
+  doc_revision: 'doc history stays hosted-only',
+  hub_report_subscription: 'hosted report configuration is not replicated to a working set',
+  hub_report_subscription_member: 'hosted report membership is not replicated to a working set',
+  hub_report_subscription_project: 'hosted report selection is not replicated to a working set',
+  hub_report_subscription_recipient: 'hosted report recipients are not replicated to a working set',
+} as const
 
 export const RECORD_CHANGE_TRIGGER_TABLES = [
   'hub_task',
@@ -31,13 +42,10 @@ export const RECORD_CHANGE_TRIGGER_TABLES = [
   'hub_task_document',
   'hub_task_status_event',
   'hub_send',
-  'hub_interval',
-  'hub_day',
   'hub_note',
   'hub_note_acknowledgement',
   'hub_send_recipient',
   'doc',
-  'doc_revision',
   'doc_related_subject',
   'subject',
   'project',

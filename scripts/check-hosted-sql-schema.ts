@@ -34,7 +34,7 @@ const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
       'incoming-link cleanup interpolates a table and column from the closed task relationship catalogue',
   },
   {
-    file: 'hub/src/hosted-changes.ts',
+    file: 'hub/src/hosted-record-changes.ts',
     fingerprint: '7d64a7aca0eb15b7',
     reason: 'change reader interpolates one of its reviewed hosted change tables',
   },

@@ -1,6 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
-import type { HostedChangeFamily } from './hosted-change-family.ts'
+import type {
+  HostedChangeFamily,
+  HostedPreparedChange,
+  HostedPreparedChangePage,
+} from './hosted-change-family.ts'
 import { hostedTaskReference } from './hosted-task-reference.ts'
 import {
   applyHostedChangeUpsert,
@@ -15,13 +19,7 @@ import {
   isHostedTaskChildTable,
   reconcileParentRecordIds,
 } from './task-cache.ts'
-import {
-  type HostedSpaceChange,
-  type HostedSpaceChangePage,
-  hostedGetTask,
-  hostedTaskChanges,
-  isMissingHostedTask,
-} from './task-client.ts'
+import { hostedGetTask, hostedTaskChanges, isMissingHostedTask } from './task-client.ts'
 import {
   type RegisteredTaskSpace,
   type TaskDestinationIdentity,
@@ -29,9 +27,9 @@ import {
   taskPullSpaces,
 } from './task-project-space.ts'
 
-export const HOSTED_CHANGES_CURSOR_KEY = 'collect.hosted-changes.cursor'
+const HOSTED_CHANGES_CURSOR_KEY = 'collect.hosted-changes.cursor'
 
-function pageParentStates(page: HostedSpaceChangePage) {
+function pageParentStates(page: HostedPreparedChangePage) {
   const states = new Map<string, 'live' | 'absent'>()
   for (const change of page.changes) {
     if (change.table !== 'hub_task') continue
@@ -42,7 +40,7 @@ function pageParentStates(page: HostedSpaceChangePage) {
   return states
 }
 
-function liveChildRow(change: HostedSpaceChange) {
+function liveChildRow(change: HostedPreparedChange) {
   if (change.op !== 'upsert' || !isHostedTaskChildTable(change.table) || !change.row) return null
   const row = change.row as Parameters<typeof childTaskRecordId>[1] & {
     deleted_at?: string | null
@@ -81,7 +79,7 @@ async function fetchLiveParent(
 }
 
 async function prepareTaskParents(
-  page: HostedSpaceChangePage,
+  page: HostedPreparedChangePage,
   options: Parameters<NonNullable<HostedChangeFamily['preparePage']>>[1],
 ) {
   const pageParents = pageParentStates(page)

@@ -186,7 +186,6 @@ export async function taskApi(
         projectNoteCounters: true,
         targetSpaceNotes: true,
         noteTriageStaleness: true,
-        spaceChanges: true,
         recordChanges: true,
         spacePush: true,
         spacePushTables: PUSHABLE_HUB_CHANGE_TABLES,

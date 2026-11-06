@@ -400,7 +400,6 @@ describe('hosted-only task safety', () => {
         projectNoteCounters: true,
         targetSpaceNotes: true,
         noteTriageStaleness: true,
-        spaceChanges: true,
         recordChanges: true,
         spacePush: true,
         spacePushTables: [

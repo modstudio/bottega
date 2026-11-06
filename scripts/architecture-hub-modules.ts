@@ -70,7 +70,6 @@ export const hubModuleSpecs = [
       '../../shared/brand.ts',
       '../../shared/record-space-request.ts',
       '../../shared/record/record-changes.ts',
-      './hosted-changes.ts',
       './hosted-identity-set.ts',
       './hosted-push-changes.ts',
       './hosted-record-changes.ts',
@@ -85,9 +84,11 @@ export const hubModuleSpecs = [
     allowed: [
       'bun',
       '../../shared/record/record-changes.ts',
-      './hosted-changes.ts',
+      './hosted-notes.ts',
+      './hosted-reports.ts',
       './hosted-record-change-wire.ts',
       './hosted-tenant.ts',
+      './hosted-tasks.ts',
     ],
   },
   {
@@ -136,17 +137,6 @@ export const hubModuleSpecs = [
       '../../shared/outside-write-adapter.ts',
       '../../shared/record-id.ts',
       '../../shared/record/postgres-error.ts',
-      './hosted-tenant.ts',
-    ],
-  },
-  {
-    file: 'hub/src/hosted-changes.ts',
-    allowed: [
-      'bun',
-      '../../shared/record/tenant.ts',
-      './hosted-notes.ts',
-      './hosted-reports.ts',
-      './hosted-tasks.ts',
       './hosted-tenant.ts',
     ],
   },

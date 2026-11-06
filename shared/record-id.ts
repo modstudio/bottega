@@ -2,9 +2,9 @@ const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 
 /**
  * IDs are minted by the application before a database connection exists; no id column has a
- * default. The trigger-written hub_change and hub_change_head rows are the exception: because a
- * trigger cannot call application code, public.record_uuid_v7() mints their IDs in SQL. That mint
- * sorts calls from distinct microseconds by time but does not order calls within one microsecond.
+ * default. Trigger-written record rows use public.record_uuid_v7() because a trigger cannot call
+ * application code. That mint sorts calls from distinct microseconds by time but does not order
+ * calls within one microsecond.
  */
 let lastRecordId = ''
 

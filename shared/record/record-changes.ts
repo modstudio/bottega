@@ -1,5 +1,5 @@
 // concern: record-changes
-/** Reads the global record_change log on an (xid8, seq) cursor, with the horizon as its reset watermark. Knows nothing of hub_change, HTTP, or any table's wire form. */
+/** Reads the global record_change log on an (xid8, seq) cursor, with the horizon as its reset watermark. Knows nothing of HTTP or any table's wire form. */
 
 import { Buffer } from 'node:buffer'
 import type { SQL } from 'bun'
