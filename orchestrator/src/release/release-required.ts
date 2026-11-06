@@ -6,7 +6,7 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
-import { releaseProofDecision, unprovableReleaseRungMessage } from './release-decision.ts'
+import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
 import type { EntryClosure } from './release-entry-closure.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
@@ -208,14 +208,14 @@ export function requiredRungDecision(
 }
 
 export type RequiredReleaseRunner = {
-  newestLive(project: Project, rung: string, declaresLive: boolean): string | null
+  newestLive(project: Project, rung: string): string | null
   contains(project: Project, ancestor: string, descendant: string): boolean
   release(project: Project, rung: string): ReleaseResult
 }
 
 const requiredReleaseRunner: RequiredReleaseRunner = {
-  newestLive(project, rung, declaresLive) {
-    return newestSuccessfulProvenReleaseCommit(project.name, rung, declaresLive)
+  newestLive(project, rung) {
+    return newestSuccessfulProvenReleaseCommit(project.name, rung)
   },
   contains(project, ancestor, descendant) {
     return gitResult(['merge-base', '--is-ancestor', ancestor, descendant], project.path).ok
@@ -380,29 +380,27 @@ function runRequiredReleaseRungs(
   }
   const releases = plans.map((plan): RequiredRungRelease => {
     if (!plan.required) return failure(plan, plan.reason ?? 'not required')
-    if (!plan.declaresDeploy && !plan.declaresLive) {
+    const proofRefusal = releaseRungProofRefusal(
+      PLATFORM_SLUG,
+      project.name,
+      plan.rung,
+      plan.branch,
+      project.settings.release?.rungs ?? [],
+    )
+    if (proofRefusal) {
       return {
-        ...failure(
-          plan,
-          unprovableReleaseRungMessage(
-            PLATFORM_SLUG,
-            project.name,
-            plan.rung,
-            plan.branch,
-            project.settings.release?.rungs ?? [],
-          ),
-        ),
+        ...failure(plan, proofRefusal),
         unprovable: true,
       }
     }
     try {
-      const live = runner.newestLive(project, plan.rung, plan.declaresLive)
+      const live = runner.newestLive(project, plan.rung)
       if (live && runner.contains(project, mergeCommit, live)) {
         return {
           rung: plan.rung,
           required: true,
           deployExit: 0,
-          outputTail: plan.declaresLive ? `already live at ${live}` : `deployed at ${live}`,
+          outputTail: `already live at ${live}`,
           satisfied: true,
           deployed: false,
         }
@@ -414,7 +412,6 @@ function runRequiredReleaseRungs(
         deployExit: result.exitCode,
         outputTail: result.outputTail || result.warning || '(no deploy output)',
         satisfied: releaseProofDecision({
-          declaresLive: plan.declaresLive,
           exitCode: result.exitCode,
           liveMatchesCandidate: result.liveMatchesCandidate,
           candidateContainsMerge: true,
