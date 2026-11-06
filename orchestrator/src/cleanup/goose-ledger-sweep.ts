@@ -81,7 +81,10 @@ function walkLedger(path: string) {
     STORAGE_WALK_ENTRY_LIMIT,
   )
   const times = walked.observations.flatMap((entry) =>
-    entry.mtimeMs === null ? [] : [entry.mtimeMs],
+    // The session database's -shm file is an index any reader rewrites, not content.
+    entry.mtimeMs === null || entry.relativePath === 'sessions/sessions.db-shm'
+      ? []
+      : [entry.mtimeMs],
   )
   return {
     bytes: walked.observations.reduce((total, entry) => total + entry.bytes, 0),
