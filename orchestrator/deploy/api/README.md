@@ -30,6 +30,11 @@ pending migrations, so a bare `fly deploy` cannot run ahead of the record schema
 The app serves `GET /version` with the commit it was built from; the deploy script supplies that
 commit as a build argument.
 
+The running record API calls `record_change_prune()` on
+`RECORD_CHANGE_PRUNE_INTERVAL_MS` after the initial
+`RECORD_CHANGE_PRUNE_START_DELAY_MS`. A transaction-scoped advisory lock serializes each pass
+across record API instances.
+
 Before migrating, create the dedicated Better Auth login and public-read role as the PostgreSQL
 administrator. Granting the public role without inheritance lets the application actor switch to
 it explicitly without applying its public policy to ordinary tenant queries:

@@ -1,11 +1,10 @@
 # Hosted report delivery
 
-This hourly scheduled Machine prunes hosted change-log entries older than thirty days and
-runs the same report-delivery pass as a person running `bun run --cwd hub/ report-deliver`.
+This hourly scheduled Machine runs the same report-delivery pass as a person running
+`bun run --cwd hub/ report-deliver`.
 Report delivery discovers only subscription scheduling metadata across spaces; every
 subscription, membership, measure, and send-ledger read or write is performed with that
-space bound under record row-level security. Pruning runs through the guarded record
-function across spaces.
+space bound under record row-level security.
 
 Run commands from the repository root. Create the app and install secrets without enabling
 delivery:
@@ -23,8 +22,7 @@ fly secrets set -a bottega-hub-report-delivery \
 
 Keep every value above as a Fly secret. The image defaults to report delivery being disabled
 even when enabled subscriptions exist: without `BOTTEGA_REPORT_DELIVERY_ENABLED=true`, a
-scheduled pass still prunes the change log, then exits successfully without reading
-subscriptions or sending mail.
+scheduled pass exits successfully without reading subscriptions or sending mail.
 
 Build and create the disabled hourly Machine:
 
@@ -38,9 +36,9 @@ fly machine run . \
   --schedule hourly
 ```
 
-Before enabling, run a dry pass from a one-off Machine and inspect its output. Dry-run skips
-change-log pruning, renders the recipients, subject, exact local window, and text body, writes
-no send row, and uses no SES client:
+Before enabling, run a dry pass from a one-off Machine and inspect its output. Dry-run renders
+the recipients, subject, exact local window, and text body, writes no send row, and uses no SES
+client:
 
 ```sh
 fly machine run . \

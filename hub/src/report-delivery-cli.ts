@@ -4,7 +4,6 @@
 
 import { SQL } from 'bun'
 import { recordServiceUrl } from '../../shared/record/service-connection.ts'
-import { pruneHostedChanges } from './change-pruning.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { runReportDeliveryPass } from './report-delivery.ts'
 import { hostedDeliveryRepository, sesReportMailClient } from './report-delivery-hosted.ts'
@@ -21,21 +20,9 @@ type DeliveryResult = {
 export async function runScheduledReportDelivery(input: {
   deliveryEnabled: boolean
   dryRun: boolean
-  prune(): Promise<{ record: number }>
   deliver(): Promise<DeliveryResult>
   print(line: string): void
-  printError(line: string): void
 }) {
-  if (input.dryRun) {
-    input.print('change log pruning skipped for dry run')
-  } else {
-    try {
-      const deleted = await input.prune()
-      input.print(`change log pruning: ${deleted.record} record changes deleted`)
-    } catch (cause) {
-      input.printError(`change log pruning failed: ${String(cause)}`)
-    }
-  }
   if (!input.dryRun && !input.deliveryEnabled) {
     input.print(
       'report delivery is disabled; set BOTTEGA_REPORT_DELIVERY_ENABLED=true to enable sending',
@@ -60,7 +47,6 @@ export async function runReportDeliveryCommand(
     return await runScheduledReportDelivery({
       deliveryEnabled: environment.BOTTEGA_REPORT_DELIVERY_ENABLED === 'true',
       dryRun: input.dryRun,
-      prune: () => pruneHostedChanges(database),
       deliver: () =>
         runReportDeliveryPass({
           repository: hostedDeliveryRepository(database),
@@ -70,7 +56,6 @@ export async function runReportDeliveryCommand(
           print: console.log,
         }),
       print: console.log,
-      printError: console.error,
     })
   } finally {
     await database.close()

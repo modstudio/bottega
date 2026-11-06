@@ -33,6 +33,7 @@ import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evi
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
 import { registerQuestionTaskRecordSyncProof } from '../../test/postgres-question-task-proof.ts'
+import { registerRecordChangePruneProof as registerPruneProof } from '../../test/postgres-record-change-prune-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
@@ -81,8 +82,7 @@ realPostgres('RLS proof against real Postgres', () => {
   let invitationClient: ReturnType<typeof invitationApiClient>
   let apiServer: Awaited<ReturnType<typeof startRecordApiServer>>
   const invitationEmails: Array<Parameters<NonNullable<Parameters<typeof recordAuth>[4]>>[0]> = []
-  const authProjectA = newRecordId()
-  const authProjectB = newRecordId()
+  const [authProjectA, authProjectB] = [newRecordId(), newRecordId()]
   const authRunA = newRecordId()
   const authRunB = newRecordId()
   const actorSession = async (token: string) => {
@@ -312,6 +312,7 @@ realPostgres('RLS proof against real Postgres', () => {
   })
 
   registerInvitationAuthProofs(psql, actorUrl!, succeeds, SIGN_UP_AUTH.password)
+  registerPruneProof(actorUrl!)
   registerHostedConfigProofs(actorUrl!, ids.SPACE_A, ids.SPACE_B, ids.USER_A)
   registerConfigAccessSpaceCreationProof({
     actorUrl: () => actorUrl!,

@@ -44,6 +44,7 @@ import {
   importRecordWorkflowCatalogue,
 } from './record-catalogue-import.ts'
 import { readRecordChangeFeed } from './record-change-feed.ts'
+import { pruneRecordChanges, startRecordChangePrune } from './record-change-prune.ts'
 import { createRecordChangeWakeSource } from './record-change-wake.ts'
 import {
   addDataKeyWraps,
@@ -174,10 +175,12 @@ export async function stopRecordApiServer(input: {
   closeActiveConnections?: boolean
   boardWakeSource: { close(): Promise<void> }
   recordChangeWakeSource: { close(): Promise<void> }
+  recordChangePrune: { stop(): void }
   boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>
   auth: { close(): Promise<void> }
 }): Promise<void> {
   input.boardStreamRegistry.closeAll()
+  input.recordChangePrune.stop()
   await input.boardWakeSource.close()
   await input.recordChangeWakeSource.close()
   await input.stop(input.closeActiveConnections)
@@ -190,6 +193,7 @@ function serveRecordApi(
   boardWakeSource: Awaited<ReturnType<typeof createBoardWakeSource>>,
   recordChangeWakeSource: ReturnType<typeof createRecordChangeWakeSource>,
   boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>,
+  recordChangePrune: { stop(): void },
   auth: ReturnType<typeof recordAuth>,
 ) {
   const server = Bun.serve({
@@ -220,6 +224,7 @@ function serveRecordApi(
       closeActiveConnections,
       boardWakeSource,
       recordChangeWakeSource,
+      recordChangePrune,
       boardStreamRegistry,
       auth,
     })
@@ -345,6 +350,15 @@ function registerStorageRoute(
   })
 }
 
+function recordProjectDependencies() {
+  return {
+    readProjects: listRecordProjects,
+    readTaskFlow: readRecordTaskFlow,
+    upsertProject: upsertRecordProject,
+    retireProject: retireRecordProject,
+  }
+}
+
 async function serveRecordApiWithAuth(
   config: ReturnType<typeof recordApiServerConfig>,
   auth: ReturnType<typeof recordAuth>,
@@ -353,6 +367,9 @@ async function serveRecordApiWithAuth(
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const recordChangeWakeSource = createRecordChangeWakeSource(config.recordUrl)
   const boardStreamRegistry = createBoardStreamRegistry()
+  const recordChangePrune = startRecordChangePrune({
+    prune: () => pruneRecordChanges(config.recordUrl),
+  })
   const migrations = recordMigrationCount()
   const app = recordApi({
     clientAddresses: { recordApiUrl: config.authUrl, hubHostedUrl: config.hubUrl },
@@ -363,10 +380,7 @@ async function serveRecordApiWithAuth(
     ...recordRunDependencies(),
     readReleases: listRecordReleases,
     readLatestReleases: readLatestRecordReleases,
-    readProjects: listRecordProjects,
-    readTaskFlow: readRecordTaskFlow,
-    upsertProject: upsertRecordProject,
-    retireProject: retireRecordProject,
+    ...recordProjectDependencies(),
     ...recordLensDependencies(),
     listSubjects: listRecordSubjects,
     addSubject: addRecordSubject,
@@ -428,6 +442,7 @@ async function serveRecordApiWithAuth(
     boardWakeSource,
     recordChangeWakeSource,
     boardStreamRegistry,
+    recordChangePrune,
     auth,
   )
 }

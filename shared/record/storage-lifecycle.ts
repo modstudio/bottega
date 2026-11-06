@@ -100,7 +100,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
   ...entries(
     ['record_change'],
     'journal',
-    'hub/src/change-pruning.ts#pruneHostedChanges',
+    'orchestrator/src/record/record-change-prune.ts#pruneRecordChanges',
     'change-logs',
   ),
   ...entries(
