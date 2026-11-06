@@ -69,6 +69,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
 
   test('a read member promoted to owner gains write permission', async () => {
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
+    const memberId = newRecordId()
     try {
       const userId = input.userId()
       const created = await auth.api.createOrganization({
@@ -79,7 +80,6 @@ export function registerConfigAccessSpaceCreationProof(input: {
           keepCurrentActiveOrganization: true,
         },
       })
-      const memberId = newRecordId()
       input.succeeds(`
         INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at)
         VALUES ('${memberId}','${created.id}','${input.otherUserId()}','member','read',false,now());`)
@@ -91,6 +91,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
         input.succeeds(`SELECT role, permission FROM membership WHERE id='${memberId}';`),
       ).toBe('owner|write')
     } finally {
+      input.succeeds(`DELETE FROM membership WHERE id='${memberId}';`)
       await auth.close()
     }
   })
