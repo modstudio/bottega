@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, statfsSync, statSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
-import { drainSupersededOutboxRows } from '../record/outbox-prune.ts'
+import { drainDeliveredOutboxPayloads, drainSupersededOutboxRows } from '../record/outbox-prune.ts'
 import {
   formatMigrationInFlightRun,
   type MigrationInFlightRun,
@@ -150,13 +150,18 @@ export function setupIncrementalVacuumAfterMachineUpdate(
   const now = dependencies.now ?? performance.now.bind(performance)
   const started = now()
   let pruned = 0
+  let released = { released: 0, more: false }
   withSynchronousDatabaseForMigrationStep((database) => {
     pruned = drainSupersededOutboxRows(database).deleted
+    released = drainDeliveredOutboxPayloads(database, { now: Date.now() })
     database.exec('PRAGMA auto_vacuum=INCREMENTAL')
     database.exec('VACUUM')
     database.exec('PRAGMA wal_checkpoint(TRUNCATE)')
   })
   const after = statSync(path).size
+  presentation.log(
+    `outbox released ${released.released} payloads; backlog remains ${released.more ? 'yes' : 'no'}`,
+  )
   presentation.log(
     `incremental vacuum setup: pruned ${pruned} rows, ${before} bytes before, ${after} bytes after, ${Math.round(now() - started)}ms elapsed`,
   )

@@ -5,6 +5,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
+import { RELEASED_OUTBOX_PAYLOAD } from '../record/outbox-prune-payload.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.columns
@@ -253,5 +254,32 @@ test('question backfill rebuilds a synced payload that predates its display numb
     localId: question.number,
   })
   expect(backfillQuestionRecords(database)).toEqual({ enqueued: 0 })
+  database.close()
+})
+
+test('question backfill treats a released latest payload as current', () => {
+  const database = fixture()
+  const question = database
+    .query<{ record_id: string }, []>(
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+       VALUES (7,'${newRecordId()}','${RUN_RECORD_ID}','2026-09-25T10:01:00.000Z','Which?')
+       RETURNING record_id`,
+    )
+    .get()!
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+       VALUES (?,'question',?,?,'2026-09-25T10:01:00.000Z','2026-09-25T10:01:00.000Z')`,
+    )
+    .run(newRecordId(), question.record_id, RELEASED_OUTBOX_PAYLOAD)
+
+  expect(backfillQuestionRecords(database)).toEqual({ enqueued: 0 })
+  expect(
+    database
+      .query<{ count: number }, [string]>(
+        "SELECT count(*) AS count FROM outbox WHERE kind='question' AND row_id=?",
+      )
+      .get(question.record_id),
+  ).toEqual({ count: 1 })
   database.close()
 })

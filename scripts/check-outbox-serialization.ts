@@ -11,6 +11,9 @@ const OUTBOX_PAYLOAD_WRITE =
 const WRAPPER_IMPORT =
   /import\s*{[^}]*\bstringifyOutboxPayload\b[^}]*}\s*from\s*['"][^'"]*\/outbox-sanitize\.ts['"]/
 const WRAPPER_CALL = /\bstringifyOutboxPayload\s*\(/
+const RELEASE_MARKER_IMPORT =
+  /import\s*{[^}]*\bRELEASED_OUTBOX_PAYLOAD\b[^}]*}\s*from\s*['"][^'"]*\/outbox-prune-payload\.ts['"]/
+const RELEASE_MARKER_CALL = /\.run\(RELEASED_OUTBOX_PAYLOAD\b/
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 
 export type OutboxSource = { file: string; source: string }
@@ -20,6 +23,7 @@ export function outboxSerializationViolations(files: readonly OutboxSource[]): s
   for (const { file, source } of files) {
     if (TEST_FILE.test(file) || !OUTBOX_PAYLOAD_WRITE.test(source)) continue
     if (WRAPPER_IMPORT.test(source) && WRAPPER_CALL.test(source)) continue
+    if (RELEASE_MARKER_IMPORT.test(source) && RELEASE_MARKER_CALL.test(source)) continue
     const offset = source.search(OUTBOX_PAYLOAD_WRITE)
     const line = source.slice(0, offset).split('\n').length
     violations.push(

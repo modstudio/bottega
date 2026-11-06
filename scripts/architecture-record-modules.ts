@@ -576,6 +576,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/schema.ts',
     '../database/db.ts',
     '../record/machine-identity.ts',
+    '../record/outbox-prune-payload.ts',
     '../record/outbox-sanitize.ts',
     '../record/outbox-serialize.ts',
   ]),
@@ -596,6 +597,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/outbox-secret-audit.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',
+    './outbox-prune-payload.ts',
     './outbox-sanitize.ts',
   ]),
   module('orchestrator/src/record/outbox-redaction.ts', [
@@ -603,6 +605,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     'bun:sqlite',
     '../database/db.ts',
+    './outbox-prune-payload.ts',
     './outbox-sanitize.ts',
     './outbox-serialize.ts',
   ]),
@@ -684,6 +687,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/outbox-dependency.ts', [
     'bun:sqlite',
     '../run/run-status.ts',
+    './outbox-prune-payload.ts',
     './record-evidence-references.ts',
     './record-sync-types.ts',
   ]),

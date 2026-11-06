@@ -57,6 +57,7 @@ test('audit counts kind x first-matching rule x status and never includes matche
       { kind: 'run', rule: 'provider-prefix', status: 'retired', count: 1 },
       { kind: 'run', rule: 'provider-prefix', status: 'synced', count: 1 },
     ],
+    releasedSkipped: 0,
   })
   const json = JSON.stringify(report)
   expect(json).not.toContain(SECRET)
@@ -68,6 +69,7 @@ test('audit counts kind x first-matching rule x status and never includes matche
       'run\tprovider-prefix\tquarantined\t1',
       'run\tprovider-prefix\tretired\t1',
       'run\tprovider-prefix\tsynced\t1',
+      'released payloads skipped\t0',
     ].join('\n'),
   )
   expect(text).not.toContain(SECRET)
@@ -80,6 +82,16 @@ test('audit --ids is the only way outbox ids appear', () => {
   const withIds = auditOutboxSecrets(database, { ids: true })
   expect(withIds.counts.map((row) => row.ids)).toEqual([[2], [3], [4], [1]])
   expect(renderOutboxSecretAudit(withIds)).toContain('\t1')
+  database.close()
+})
+
+test('audit skips released payloads and reports their count', () => {
+  const database = seeded()
+  database.query('UPDATE outbox SET payload=? WHERE id=1').run('')
+  const report = auditOutboxSecrets(database)
+  expect(report.releasedSkipped).toBe(1)
+  expect(report.counts.some((row) => row.status === 'synced')).toBe(false)
+  expect(renderOutboxSecretAudit(report)).toContain('released payloads skipped\t1')
   database.close()
 })
 

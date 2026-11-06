@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
+import { isReleasedOutboxPayload } from './outbox-prune-payload.ts'
 import { evidenceReferences } from './record-evidence-references.ts'
 import type {
   BlockedOutboxRow,
@@ -119,6 +120,7 @@ function lensRun(
     )
     .get(lensRecordId)
   if (!row) return { runId: null, unreadable: false }
+  if (isReleasedOutboxPayload(row.payload)) return { runId: null, unreadable: false }
   try {
     const payload = JSON.parse(row.payload) as unknown
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {

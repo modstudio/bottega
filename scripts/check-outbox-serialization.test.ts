@@ -84,3 +84,15 @@ test('allows an outbox payload write that imports and calls the wrapper', () => 
     ]),
   ).toEqual([])
 })
+
+test('allows the declared delivered-payload release marker', () => {
+  expect(
+    outboxSerializationViolations([
+      {
+        file: 'orchestrator/src/record/outbox-prune.ts',
+        source:
+          "import { RELEASED_OUTBOX_PAYLOAD } from './outbox-prune-payload.ts'\ndatabase.query('UPDATE outbox SET payload=? WHERE id=?').run(RELEASED_OUTBOX_PAYLOAD, id)\n",
+      },
+    ]),
+  ).toEqual([])
+})

@@ -5,6 +5,10 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
+import {
+  RELEASED_OUTBOX_PAYLOAD,
+  releasedOutboxPayloadSql,
+} from '../record/outbox-prune-payload.ts'
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export type ReviewRecordBackfillResult = {
@@ -239,20 +243,21 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
     )
     .all()
   const reclassified = database
-    .query<{ record_id: string }, []>(
+    .query<{ record_id: string }, [string]>(
       `SELECT review.record_id FROM review
+       JOIN outbox latest ON latest.id=(
+         SELECT id FROM outbox
+          WHERE kind='review' AND row_id=review.record_id
+          ORDER BY id DESC LIMIT 1
+       )
        WHERE review.role='supplementary'
-         AND EXISTS (
-           SELECT 1 FROM outbox WHERE outbox.kind='review' AND outbox.row_id=review.record_id
-         )
-         AND COALESCE((
-           SELECT json_extract(outbox.payload,'$.role') FROM outbox
-            WHERE outbox.kind='review' AND outbox.row_id=review.record_id
-            ORDER BY outbox.id DESC LIMIT 1
-         ), '')<>'supplementary'
+         AND CASE
+           WHEN ${releasedOutboxPayloadSql('latest.payload')} THEN 'supplementary'
+           ELSE COALESCE(json_extract(latest.payload,'$.role'), '')
+         END<>'supplementary'
        ORDER BY review.number`,
     )
-    .all()
+    .all(RELEASED_OUTBOX_PAYLOAD)
   for (const row of reviews) enqueueReview(database, row.record_id)
   for (const row of reclassified) enqueueReview(database, row.record_id)
   const reads = database

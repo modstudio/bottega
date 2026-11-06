@@ -14,6 +14,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/record-id.ts',
     '../host-pressure/host-pressure-decision.ts',
     '../record/landing-outbox.ts',
+    '../record/outbox-prune.ts',
     './db.ts',
     './contention-rollup-state.ts',
     './retention-chunks.ts',

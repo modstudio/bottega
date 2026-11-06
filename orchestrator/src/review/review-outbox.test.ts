@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
+import { RELEASED_OUTBOX_PAYLOAD } from '../record/outbox-prune-payload.ts'
 import { backfillReviewRecords, enqueueReview, enqueueReviewLens } from './review-outbox.ts'
 
 test('review payload keys conform to the hosted review-family contracts', () => {
@@ -114,5 +115,35 @@ test('review backfill enqueues the graph once and is idempotent', () => {
     enqueuedReviews: 0,
     enqueuedReads: 0,
   })
+  database.close()
+})
+
+test('review backfill treats a released latest supplementary payload as current', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  database
+    .query(
+      `INSERT INTO review (number,record_id,recorded_at,role)
+       VALUES (1,'01990000-0000-7000-8000-000000000021','2026-09-15T01:00:00Z','supplementary')`,
+    )
+    .run()
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+       VALUES ('01990000-0000-7000-8000-000000000022','review',
+               '01990000-0000-7000-8000-000000000021',?,
+               '2026-09-15T01:00:00Z','2026-09-15T01:00:00Z')`,
+    )
+    .run(RELEASED_OUTBOX_PAYLOAD)
+
+  expect(backfillReviewRecords(database)).toEqual({
+    enqueuedReviews: 0,
+    enqueuedReads: 0,
+  })
+  expect(
+    database
+      .query<{ count: number }, []>("SELECT count(*) AS count FROM outbox WHERE kind='review'")
+      .get(),
+  ).toEqual({ count: 1 })
   database.close()
 })

@@ -131,7 +131,7 @@ describe('record audit-secrets command', () => {
       const output: string[] = []
       recordAuditSecretsCommand({ json: true, ids: false }, { log: (value) => output.push(value) })
       expect(entered).toBe(0)
-      expect(JSON.parse(output.join(''))).toEqual({ counts: [] })
+      expect(JSON.parse(output.join(''))).toEqual({ counts: [], releasedSkipped: 0 })
     } finally {
       restore()
       keeper.close()

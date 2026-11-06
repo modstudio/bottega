@@ -238,6 +238,8 @@ export const cleanupBoundarySpecs = [
       './stray-worktree-sweep.ts',
       './cleanup-sweep-docker.ts',
       './cleanup-sweep-named-tree.ts',
+      './cleanup-sweep-outbox.ts',
+      './cleanup-sweep-report.ts',
       './cleanup-sweep-orphan-report.ts',
       './cleanup-sweep-orphan-candidate.ts',
       './claim-reconciliation.ts',
@@ -282,6 +284,26 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, and the CLI; database maintenance stays behind the database command owner.',
+  },
+  {
+    name: 'cleanup-sweep-outbox-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-outbox.ts',
+    allowed: [
+      'bun:sqlite',
+      '../database/db.ts',
+      '../record/outbox-prune.ts',
+      './cleanup.ts',
+      './cleanup-sweep-report.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep bounded outbox sweep maintenance behind its database owners.',
+  },
+  {
+    name: 'cleanup-sweep-report-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-report.ts',
+    allowed: ['./cleanup.ts'],
+    typeOnlyAllowed: ['./cleanup.ts'],
+    reason: 'Keep maintenance-step presentation shared without owning sweep policy.',
   },
   {
     name: 'cleanup-sweep-orphan-candidate-boundary',

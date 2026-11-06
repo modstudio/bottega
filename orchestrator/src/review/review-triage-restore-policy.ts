@@ -8,6 +8,7 @@ export const TRIAGE_RESTORE_SKIP_REASONS = {
   identityMismatch: 'identity mismatch',
   openReview: 'review is not completed',
   hostedDivergence: 'hosted identity already diverged',
+  payloadReleased: 'payload released',
 } as const
 
 export type TriageRestoreFinding = {
@@ -43,7 +44,7 @@ export type TriageRestoreDecision =
 export type TriageRestoreFacts = {
   finding: TriageRestoreFinding
   source: TriageRestoreSource | null
-  sourceStatus: 'missing' | 'invalid' | 'valid'
+  sourceStatus: 'missing' | 'released' | 'invalid' | 'valid'
   liveRecordIdReferenced: boolean
 }
 
@@ -65,6 +66,9 @@ export function decideTriageRestore(facts: TriageRestoreFacts): TriageRestoreDec
   const { finding, source } = facts
   if (facts.sourceStatus === 'missing') {
     return { action: 'skip', reason: TRIAGE_RESTORE_SKIP_REASONS.noSource }
+  }
+  if (facts.sourceStatus === 'released') {
+    return { action: 'skip', reason: TRIAGE_RESTORE_SKIP_REASONS.payloadReleased }
   }
   if (!source) return { action: 'skip', reason: TRIAGE_RESTORE_SKIP_REASONS.identityMismatch }
   if (source.disposition === null) {

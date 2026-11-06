@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
+import { RELEASED_OUTBOX_PAYLOAD } from './outbox-prune-payload.ts'
 import {
   redactSyncedOutbox,
   renderSyncedRedaction,
@@ -66,6 +67,7 @@ test('redaction re-enqueues only chosen-rule leaves, audits paths, and leaves lo
     enqueued: 1,
     wouldEnqueue: 1,
     skipped: [],
+    releasedSkipped: 0,
     dryRun: false,
   })
   const rows = database
@@ -110,6 +112,7 @@ test('a redacted row is a no-op after it syncs', () => {
     enqueued: 0,
     wouldEnqueue: 0,
     skipped: [],
+    releasedSkipped: 0,
     dryRun: false,
   })
   expect(database.query('SELECT count(*) AS count FROM outbox').get()).toEqual({ count: 2 })
@@ -158,6 +161,39 @@ test('a newer active row is skipped and reported without leaking planted text', 
   expect(JSON.stringify(result)).not.toContain(urlUserinfo)
   expect(renderSyncedRedaction(result)).not.toContain(urlUserinfo)
   expect(renderSyncedRedaction(result)).toContain('skipped\trun\trecord-42')
+  database.close()
+})
+
+test('a released latest delivered row skips the identity instead of using older audited payload', () => {
+  const { database } = seeded()
+  database
+    .query(
+      `INSERT INTO outbox_redaction_audit
+       (record_id,outbox_id,kind,row_id,rules,withheld_paths,at)
+       VALUES (?,1,'run','record-42','[]','[]',?)`,
+    )
+    .run(newRecordId(), STAMP)
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+       VALUES (?,'run','record-42',?,?,?)`,
+    )
+    .run(newRecordId(), RELEASED_OUTBOX_PAYLOAD, NEXT_STAMP, NEXT_STAMP)
+
+  const result = redactSyncedOutbox(
+    { rules: syncedRedactionRules('url-userinfo'), dryRun: false },
+    database,
+    '2026-09-28T10:02:00.000Z',
+  )
+  expect(result).toEqual({
+    counts: [],
+    enqueued: 0,
+    wouldEnqueue: 0,
+    skipped: [],
+    releasedSkipped: 1,
+    dryRun: false,
+  })
+  expect(database.query('SELECT count(*) AS count FROM outbox').get()).toEqual({ count: 2 })
   database.close()
 })
 

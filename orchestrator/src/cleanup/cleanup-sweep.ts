@@ -31,11 +31,6 @@ import {
   orphansWithOwnershipEvidence,
   reclaimOrphanProcess,
 } from '../reclaim/orphan-process-reclaim.ts'
-import {
-  drainSupersededOutboxRows,
-  OUTBOX_PRUNE_CHUNK_SIZE,
-  pruneSupersededOutboxRows,
-} from '../record/outbox-prune.ts'
 import type { DockerResource } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -86,7 +81,13 @@ import {
   orphanCandidateDecision,
 } from './cleanup-sweep-orphan-candidate.ts'
 import { finishRemovedOrphan, reportOrphanAfterRemovalKeep } from './cleanup-sweep-orphan-report.ts'
+import {
+  DEFAULT_OUTBOX_MAINTENANCE,
+  maintainOutboxForSweep,
+  type OutboxMaintenance,
+} from './cleanup-sweep-outbox.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
+import { reportMaintenanceStep } from './cleanup-sweep-report.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
 import { heldProjectTrees, sweepProject } from './project-sweep.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
@@ -150,10 +151,7 @@ export type SweepHelpers = {
   observeGrokTrustHeadings: () => GrokTrustObservation
   grokTrustPathFromHeading: (heading: string) => string | null
   hubTaskReader: HubTaskReader
-  outboxMaintenance?: {
-    drain: typeof drainSupersededOutboxRows
-    releasePages: typeof releaseIncrementalVacuumPages
-  }
+  outboxMaintenance?: SweepOutboxMaintenance
   telemetryMaintenance?: {
     rollupContention: typeof rollupContentionDays
     pruneContention: typeof pruneContentionRows
@@ -161,58 +159,20 @@ export type SweepHelpers = {
   }
 }
 
-const KEPT_ROW_LIMIT = 10
-const OUTBOX_PRUNE_TIME_BOUND_MS = 2_000
-const TELEMETRY_MAINTENANCE_TIME_BOUND_MS = 2_000
-const DEFAULT_OUTBOX_MAINTENANCE: NonNullable<SweepHelpers['outboxMaintenance']> = {
-  drain: drainSupersededOutboxRows,
-  releasePages: releaseIncrementalVacuumPages,
+type SweepOutboxMaintenance = OutboxMaintenance & {
+  releasePages: typeof releaseIncrementalVacuumPages
 }
+
+const KEPT_ROW_LIMIT = 10
+const TELEMETRY_MAINTENANCE_TIME_BOUND_MS = 2_000
 const DEFAULT_TELEMETRY_MAINTENANCE: NonNullable<SweepHelpers['telemetryMaintenance']> = {
   rollupContention: rollupContentionDays,
   pruneContention: pruneContentionRows,
   pruneMonitor: pruneMonitorRows,
 }
-
-function pruneOutboxForSweep(
-  dryRun: boolean,
-  presentation: CleanupPresentation,
-  maintenance: NonNullable<SweepHelpers['outboxMaintenance']>,
-): void {
-  const database = dryRun ? db() : writableDb()
-  if (dryRun) {
-    try {
-      const result = pruneSupersededOutboxRows(database, {
-        limit: OUTBOX_PRUNE_CHUNK_SIZE,
-        dryRun: true,
-      })
-      presentation.log(`outbox would prune ${result.deleted} rows`)
-    } catch (error) {
-      presentation.error(`outbox prune failed: ${error instanceof Error ? error.message : error}`)
-    }
-    return
-  }
-  try {
-    const result = maintenance.drain(database, { timeBoundMs: OUTBOX_PRUNE_TIME_BOUND_MS })
-    presentation.log(
-      `outbox pruned ${result.deleted} rows; backlog remains ${result.more ? 'yes' : 'no'}`,
-    )
-  } catch (error) {
-    presentation.error(`outbox prune failed: ${error instanceof Error ? error.message : error}`)
-  }
-}
-
-function reportMaintenanceStep<T>(
-  label: string,
-  presentation: CleanupPresentation,
-  run: () => T,
-  line: (result: T) => string,
-): void {
-  try {
-    presentation.log(line(run()))
-  } catch (error) {
-    presentation.error(`${label} failed: ${error instanceof Error ? error.message : error}`)
-  }
+const DEFAULT_SWEEP_OUTBOX_MAINTENANCE: SweepOutboxMaintenance = {
+  ...DEFAULT_OUTBOX_MAINTENANCE,
+  releasePages: releaseIncrementalVacuumPages,
 }
 
 function maintainTelemetryForSweep(
@@ -253,7 +213,7 @@ function maintainTelemetryForSweep(
 
 function releaseMaintenancePages(
   presentation: CleanupPresentation,
-  maintenance: NonNullable<SweepHelpers['outboxMaintenance']>,
+  maintenance: SweepOutboxMaintenance,
 ): void {
   try {
     if (maintenance.releasePages() === 'not-incremental') {
@@ -271,11 +231,11 @@ function releaseMaintenancePages(
 function prepareSweep(
   dryRun: boolean,
   presentation: CleanupPresentation,
-  maintenance: NonNullable<SweepHelpers['outboxMaintenance']>,
+  maintenance: SweepOutboxMaintenance,
   telemetry: NonNullable<SweepHelpers['telemetryMaintenance']>,
 ): void {
   if (!dryRun) writableDb()
-  pruneOutboxForSweep(dryRun, presentation, maintenance)
+  maintainOutboxForSweep(dryRun, presentation, maintenance)
   maintainTelemetryForSweep(dryRun, presentation, telemetry)
   if (!dryRun) releaseMaintenancePages(presentation, maintenance)
   reapExpiredBoardMessages(dryRun)
@@ -289,7 +249,7 @@ function prepareSweepWithHelpers(
   prepareSweep(
     dryRun,
     presentation,
-    helpers.outboxMaintenance ?? DEFAULT_OUTBOX_MAINTENANCE,
+    helpers.outboxMaintenance ?? DEFAULT_SWEEP_OUTBOX_MAINTENANCE,
     helpers.telemetryMaintenance ?? DEFAULT_TELEMETRY_MAINTENANCE,
   )
 }

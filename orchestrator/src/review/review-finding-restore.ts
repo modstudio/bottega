@@ -5,6 +5,7 @@ import { realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { DATABASE_RESOLUTION, DB_PATH, writableDb, writeTransaction } from '../database/db.ts'
+import { isReleasedOutboxPayload } from '../record/outbox-prune-payload.ts'
 import {
   decideFindingRestores,
   type OrderedRestoreFindingDecision,
@@ -29,6 +30,7 @@ type FindingRestoreReport = {
   target: string
   mode: 'report-only' | 'write'
   payloadsRead: number
+  releasedPayloads: number
   duplicatePayloads: number
   rowsWouldRestore: number
   rowsRestored: number
@@ -117,15 +119,21 @@ function parsePayload(
 function parsePayloads(rows: readonly OutboxRow[]): {
   payloads: { outboxId: number; payload: RestoreFindingPayload }[]
   unusable: FindingRestoreReport['unusable']
+  releasedPayloads: number
 } {
   const payloads: { outboxId: number; payload: RestoreFindingPayload }[] = []
   const unusable: FindingRestoreReport['unusable'] = []
+  let releasedPayloads = 0
   for (const row of rows) {
+    if (isReleasedOutboxPayload(row.payload)) {
+      releasedPayloads += 1
+      continue
+    }
     const parsed = parsePayload(row)
     if (parsed.ok) payloads.push({ outboxId: row.id, payload: parsed.payload })
     else unusable.push({ outboxId: row.id, recordId: parsed.recordId, reason: parsed.reason })
   }
-  return { payloads, unusable }
+  return { payloads, unusable, releasedPayloads }
 }
 
 function prepareInserts(
@@ -168,7 +176,7 @@ function restoreReviewFindings(
   const rows = database
     .query<OutboxRow, []>("SELECT id, payload FROM outbox WHERE kind='review_finding' ORDER BY id")
     .all()
-  const { payloads, unusable } = parsePayloads(rows)
+  const { payloads, unusable, releasedPayloads } = parsePayloads(rows)
   const decisions = decideFindingRestores(payloads, restoreFacts(database))
   const { inserts, duplicatePayloads, rowsAlreadyPresent } = prepareInserts(decisions, unusable)
 
@@ -199,6 +207,7 @@ function restoreReviewFindings(
     target,
     mode: write ? 'write' : 'report-only',
     payloadsRead: rows.length,
+    releasedPayloads,
     duplicatePayloads,
     rowsWouldRestore: unusable.length ? 0 : inserts.length,
     rowsRestored,
@@ -218,6 +227,7 @@ function renderFindingRestoreReport(report: FindingRestoreReport): string {
     `target: ${report.target}`,
     `mode: ${report.mode}`,
     `payloads read: ${report.payloadsRead}`,
+    `payloads skipped (payload released): ${report.releasedPayloads}`,
     `duplicate payloads: ${report.duplicatePayloads}`,
     `rows that would be restored: ${report.rowsWouldRestore}`,
     `rows restored: ${report.rowsRestored}`,

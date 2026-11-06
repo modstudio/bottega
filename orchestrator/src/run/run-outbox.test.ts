@@ -25,7 +25,7 @@ test('link refresh requires a new local link absent from the latest payload', ()
   expect(shouldRefreshRunRecordLinks({ projectId }, projectId, taskId)).toBe(true)
 })
 
-test('backfill does not enqueue a run whose latest payload lacks executor', () => {
+test('backfill does not enqueue a terminal run whose latest payload was released', () => {
   const database = migratedTestDatabase()
   fixtureProjectRecordId(database)
   const projectId = database
@@ -46,17 +46,14 @@ test('backfill does not enqueue a run whose latest payload lacks executor', () =
       `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
        VALUES (?,'run',?,?,'2026-11-01T12:01:00.000Z')`,
     )
-    .run(
-      newRecordId(),
-      runId,
-      JSON.stringify({ number: 1, projectId, status: 'ok', failureKind: null }),
-    )
+    .run(newRecordId(), runId, '')
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 0,
     refreshedLinks: 0,
     refreshedNumbers: 0,
     refreshedRoots: 0,
+    skippedReleased: 1,
     skippedLive: 0,
   })
   expect(
@@ -192,6 +189,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     refreshedLinks: 0,
     refreshedNumbers: 0,
     refreshedRoots: 0,
+    skippedReleased: 0,
     skippedLive: 1,
   })
   const runs = database
@@ -223,6 +221,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
     refreshedLinks: 0,
     refreshedNumbers: 0,
     refreshedRoots: 0,
+    skippedReleased: 0,
     skippedLive: 1,
   })
   expect(
@@ -248,6 +247,7 @@ test('backfill leaves hook-tree rows local', () => {
     refreshedLinks: 0,
     refreshedNumbers: 0,
     refreshedRoots: 0,
+    skippedReleased: 0,
     skippedLive: 0,
   })
   expect(database.query('SELECT record_id FROM run').get()).toEqual({
@@ -290,6 +290,7 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
     refreshedLinks: 0,
     refreshedNumbers: 0,
     refreshedRoots: 1,
+    skippedReleased: 0,
     skippedLive: 0,
   })
   const counts = database
@@ -344,6 +345,7 @@ test('backfill refreshes stale links for roots and turns only once', () => {
     refreshedLinks: 2,
     refreshedNumbers: 0,
     refreshedRoots: 0,
+    skippedReleased: 0,
     skippedLive: 0,
   })
   expect(backfillRunRecords(database, machine)).toEqual({
@@ -351,6 +353,7 @@ test('backfill refreshes stale links for roots and turns only once', () => {
     refreshedLinks: 0,
     refreshedNumbers: 0,
     refreshedRoots: 0,
+    skippedReleased: 0,
     skippedLive: 0,
   })
   expect(
@@ -388,6 +391,7 @@ test('backfill rebuilds a run payload that predates its display number', () => {
     refreshedLinks: 0,
     refreshedNumbers: 1,
     refreshedRoots: 0,
+    skippedReleased: 0,
     skippedLive: 0,
   })
   const latest = database
@@ -443,6 +447,7 @@ test('backfill timestamps a refreshed root from its outcome-producing turn', () 
     refreshedLinks: 0,
     refreshedNumbers: 0,
     refreshedRoots: 1,
+    skippedReleased: 0,
     skippedLive: 0,
   })
   const payload = database

@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { DEFAULT_EFFICIENCY_WINDOW_MS } from '../host-pressure/host-pressure-decision.ts'
 import { enqueueClosedSlowStatementContentions } from '../record/landing-outbox.ts'
+import { deleteDeliveredUnprotectedOutboxRows } from '../record/outbox-prune.ts'
 import {
   contentionRolledThroughDay,
   setContentionRolledThroughDay,
@@ -178,7 +179,10 @@ export function pruneContentionRows(
     remove: (selected) => {
       writeTransaction(() => {
         const remove = database.query('DELETE FROM contention WHERE record_id=?')
-        for (const row of selected) remove.run(row.record_id)
+        for (const row of selected) {
+          deleteDeliveredUnprotectedOutboxRows(database, 'contention', row.record_id)
+          remove.run(row.record_id)
+        }
       }, database)
     },
     accumulate: (rows, selected) => rows + selected.length,

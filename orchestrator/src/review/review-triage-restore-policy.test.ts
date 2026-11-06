@@ -86,3 +86,10 @@ test('skips each unsafe source class with its stable reason', () => {
     reason: TRIAGE_RESTORE_SKIP_REASONS.hostedDivergence,
   })
 })
+
+test('skips a released source with its distinct stable reason', () => {
+  expect(decideTriageRestore(facts({ source: null, sourceStatus: 'released' }))).toEqual({
+    action: 'skip',
+    reason: TRIAGE_RESTORE_SKIP_REASONS.payloadReleased,
+  })
+})
