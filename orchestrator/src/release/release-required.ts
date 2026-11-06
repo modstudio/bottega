@@ -386,7 +386,6 @@ function runRequiredReleaseRungs(
       plan.rung,
       plan.branch,
       project.settings.release?.rungs ?? [],
-      plan.declaresLive,
     )
     if (proofRefusal) {
       return {
@@ -413,7 +412,6 @@ function runRequiredReleaseRungs(
         deployExit: result.exitCode,
         outputTail: result.outputTail || result.warning || '(no deploy output)',
         satisfied: releaseProofDecision({
-          declaresLive: plan.declaresLive,
           exitCode: result.exitCode,
           liveMatchesCandidate: result.liveMatchesCandidate,
           candidateContainsMerge: true,

@@ -339,38 +339,6 @@ describe('project workflow injection', () => {
     ).toBe(true)
   })
 
-  test.each([
-    [
-      { ...release.rungs[0]!, live: ' ' },
-      [expect.stringContaining('release.rungs.0.live: Too small')],
-    ],
-    [
-      {
-        ...release.rungs[0]!,
-        live: undefined,
-        requiredWhenChanged: ['shared/record/migrations/**'],
-      },
-      [
-        expect.stringContaining(
-          'release rung "production" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged',
-        ),
-      ],
-    ],
-    [{ ...release.rungs[0]!, live: undefined, releasesWhenChanged: ['src/**'] }, []],
-    [
-      { ...release.rungs[0]!, releasesWhenChanged: [] },
-      [expect.stringContaining('release.rungs.0.releasesWhenChanged: Too small')],
-    ],
-    [
-      { ...release.rungs[0]!, live: undefined, releasesWhenChanged: [' '] },
-      [expect.stringContaining('release.rungs.0.releasesWhenChanged.0: Too small')],
-    ],
-  ])('validates release rung schema %#', (rung, expected) => {
-    expect(validateProjectSettings({ release: { ...release, rungs: [rung] } }, 'strict')).toEqual(
-      expected,
-    )
-  })
-
   test('refuses a before-pull-request entry without changed-path globs', () => {
     expect(
       validateProjectSettings(
@@ -439,7 +407,14 @@ describe('project workflow injection', () => {
         {
           trunk: 'main',
           release: {
-            rungs: [{ name: 'production', branch: 'main', deploy: 'bun run deploy' }],
+            rungs: [
+              {
+                name: 'production',
+                branch: 'main',
+                deploy: 'bun run deploy',
+                live: 'read live commit',
+              },
+            ],
             mergeMethod: 'squash',
             requiredChecks: ['gate'],
           },

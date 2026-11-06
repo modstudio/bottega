@@ -230,9 +230,8 @@ export function releaseRungProofRefusal(
   rung: string,
   branch: string,
   rungs: readonly ReleaseRungForRemedy[],
-  declaresLive: boolean,
 ): string | null {
-  if (declaresLive) return null
+  if (rungs.find((candidate) => candidate.name === rung)?.live) return null
   return unprovableReleaseRungMessage(platformSlug, project, rung, branch, rungs)
 }
 
@@ -357,13 +356,12 @@ export function alreadyLiveReleaseDecision(facts: {
 
 /** Decide whether release evidence proves the merge is deployed on this rung. */
 export function releaseProofDecision(facts: {
-  declaresLive: boolean
   exitCode: number | null
   liveMatchesCandidate: boolean | null
   candidateContainsMerge: boolean
 }): boolean {
   if (facts.exitCode !== 0 || !facts.candidateContainsMerge) return false
-  return facts.declaresLive && facts.liveMatchesCandidate === true
+  return facts.liveMatchesCandidate === true
 }
 
 /** Map a release ledger row to proof that its candidate is deployed. */
@@ -376,7 +374,6 @@ export function releaseRowProvesCandidate(
   deployed: string,
 ): boolean {
   return releaseProofDecision({
-    declaresLive: true,
     exitCode: row.exit_code,
     liveMatchesCandidate:
       row.live_matches_candidate === null ? null : row.live_matches_candidate === 1,
@@ -392,17 +389,6 @@ export function releaseLockDecision(
     ok: false,
     message: `another release holds this project lock (session ${holder.session ?? 'unknown'}, started ${holder.since}); wait for that release to finish, then retry`,
   }
-}
-
-export type LiveCheckDecision = { matches: boolean; warning: string | null }
-
-export function postDeployLiveDecision(candidate: string, live: string): LiveCheckDecision {
-  return candidate === live
-    ? { matches: true, warning: null }
-    : {
-        matches: false,
-        warning: `deploy exited successfully, but live commit ${live} does not equal candidate ${candidate}`,
-      }
 }
 
 export function selectReleaseRung<T extends { name: string; deploy?: string }>(

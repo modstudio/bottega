@@ -6,7 +6,6 @@ import {
   ciDeployWaitDecision,
   ciDeployWaitOutcome,
   forwardReleaseDecision,
-  postDeployLiveDecision,
   RELEASE_CHECKOUT_DIRTY_REFUSAL,
   releaseAncestryFromExitCode,
   releaseCapturedText,
@@ -101,9 +100,7 @@ test('an unprovable rung names the complete register remedy', () => {
 
 test('a deploy-only rung names the complete live-probe remedy', () => {
   const rungs = [{ name: 'production', branch: 'master', deploy: 'dispatch production' }]
-  expect(
-    releaseRungProofRefusal(PLATFORM_SLUG, 'fixture', 'production', 'master', rungs, false),
-  ).toBe(
+  expect(releaseRungProofRefusal(PLATFORM_SLUG, 'fixture', 'production', 'master', rungs)).toBe(
     `release rung production declares a deploy command but no live probe and cannot be proved; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"production","branch":"master","deploy":"dispatch production","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
   )
 })
@@ -502,17 +499,6 @@ test('release lock names its holder', () => {
   expect(releaseLockDecision({ session: 'session-1', since: '2026-10-01T12:00:00Z' })).toEqual({
     ok: false,
     message: expect.stringContaining('session session-1'),
-  })
-})
-
-test('post-deploy live check matches', () => {
-  expect(postDeployLiveDecision('abc', 'abc')).toEqual({ matches: true, warning: null })
-})
-
-test('post-deploy live check warns on mismatch', () => {
-  expect(postDeployLiveDecision('abc', 'def')).toEqual({
-    matches: false,
-    warning: expect.stringContaining('does not equal candidate'),
   })
 })
 

@@ -799,7 +799,6 @@ describe('release proof decision', () => {
   test('does not prove a no-live rung from a successful descendant release', () => {
     expect(
       releaseProofDecision({
-        declaresLive: false,
         exitCode: 0,
         liveMatchesCandidate: null,
         candidateContainsMerge: true,
@@ -810,7 +809,6 @@ describe('release proof decision', () => {
   test('does not prove a live rung from a null match', () => {
     expect(
       releaseProofDecision({
-        declaresLive: true,
         exitCode: 0,
         liveMatchesCandidate: null,
         candidateContainsMerge: true,
@@ -821,7 +819,6 @@ describe('release proof decision', () => {
   test('proves a live rung from a matching descendant release', () => {
     expect(
       releaseProofDecision({
-        declaresLive: true,
         exitCode: 0,
         liveMatchesCandidate: true,
         candidateContainsMerge: true,
