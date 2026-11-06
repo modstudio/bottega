@@ -3,18 +3,17 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { navForMode } from '@bottega/hub-data/hub-mode'
-import { type Browser, chromium, type Page } from 'playwright'
+import { type Browser, chromium } from 'playwright'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import { assertRendered, collectRenderEvidence, routesForMode } from './page-check.ts'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const executable = join(repoRoot, 'bin', PLATFORM_SLUG)
 const distribution = join(repoRoot, 'hub', 'web', 'dist', 'index.html')
 const stateRoot = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-dashboard-smoke-`))
 const startedAt = performance.now()
-const LOCAL_NAV = navForMode('local')
 
 function smokeEnvironment(): Record<string, string | undefined> {
   const env = {
@@ -82,56 +81,6 @@ async function waitForServer(origin: string, exited: Promise<number>): Promise<v
   throw new Error(`dashboard server did not accept requests: ${lastFailure}`)
 }
 
-function localRoutes(): string[] {
-  const routes = LOCAL_NAV.flatMap((section) =>
-    section.entries.flatMap((entry) =>
-      'items' in entry ? entry.items.map((item) => item.to) : entry.to,
-    ),
-  )
-  return ['/', ...new Set(routes)]
-}
-
-function collectEvidence(page: Page, origin: string): string[] {
-  const evidence: string[] = []
-  page.on('pageerror', (error) => evidence.push(`uncaught page error: ${error.message}`))
-  page.on('console', (message) => {
-    if (message.type() !== 'error') return
-    const location = message.location()
-    const source = location.url ? ` (${location.url}:${location.lineNumber})` : ''
-    evidence.push(`console error: ${message.text()}${source}`)
-  })
-  page.on('response', (response) => {
-    const url = new URL(response.url())
-    if (url.origin === origin && response.status() >= 500) {
-      evidence.push(`same-origin ${response.status()} response: ${url.pathname}${url.search}`)
-    }
-  })
-  return evidence
-}
-
-// A route's first queries can fail after its first paint, so each phase is
-// observed until the network goes idle. Live queries poll, so idle may never
-// come; the bound keeps the observation window finite either way.
-const SETTLE_TIMEOUT_MS = 10_000
-
-function rootRendered(): boolean {
-  const root = document.querySelector('#root')
-  return Boolean(root?.childElementCount || root?.textContent?.trim())
-}
-
-async function assertRendered(page: Page, route: string, phase: string): Promise<void> {
-  try {
-    await page.locator('#root').waitFor({ state: 'attached', timeout: 5_000 })
-    await page.waitForFunction(rootRendered)
-  } catch (error) {
-    throw new Error(`${route} ${phase}: application root rendered nothing (${String(error)})`)
-  }
-  await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {})
-  if (!(await page.evaluate(rootRendered))) {
-    throw new Error(`${route} ${phase}: application root emptied after rendering`)
-  }
-}
-
 async function stopServer(server: ReturnType<typeof Bun.spawn>): Promise<void> {
   server.kill()
   const stopped = await Promise.race([
@@ -174,11 +123,11 @@ try {
   const loginUrl = await command(['dashboard', 'login', '--port', String(port)])
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
-  const evidence = collectEvidence(page, origin)
+  const evidence = collectRenderEvidence(page, origin)
   await page.goto(loginUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForURL((url) => url.origin === origin && url.pathname === '/')
 
-  for (const route of localRoutes()) {
+  for (const route of routesForMode('local')) {
     evidence.length = 0
     await page.goto(new URL(route, origin).href, { waitUntil: 'domcontentloaded' })
     await assertRendered(page, route, 'direct navigation')
@@ -193,7 +142,7 @@ try {
     console.log(`passed ${route}`)
   }
   console.log(
-    `dashboard smoke passed ${localRoutes().length} routes in ${((performance.now() - startedAt) / 1_000).toFixed(2)}s`,
+    `dashboard smoke passed ${routesForMode('local').length} routes in ${((performance.now() - startedAt) / 1_000).toFixed(2)}s`,
   )
 } finally {
   await browser?.close()
