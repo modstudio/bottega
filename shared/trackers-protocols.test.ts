@@ -530,9 +530,207 @@ describe('tracker source construction', () => {
     ] as const
     for (const entry of cases) {
       const source = trackerSourceFor(project('identity', entry.protocol))!
-      const tasks = await source.fetch({ callTool: async () => entry.reply })
-      expect(tasks.map((task) => task.externalId)).toEqual([`${entry.protocol.split('-')[0]}-uuid`])
+      const fetched = await source.fetch({ callTool: async () => entry.reply })
+      expect(fetched.tasks.map((task) => task.externalId)).toEqual([
+        `${entry.protocol.split('-')[0]}-uuid`,
+      ])
     }
+  })
+
+  for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
+    test(`${protocol} incremental reads send the declared filter and page without statuses`, async () => {
+      const trackerProject = project(protocol, protocol)
+      trackerProject.settings.tracker!.updatedSince = true
+      const source = trackerSourceFor(trackerProject)!
+      const calls: Record<string, unknown>[] = []
+      const fetched = await source.fetch(
+        {
+          async callTool(_name, args) {
+            calls.push(args)
+            if (protocol === 'workspace-mcp') {
+              return {
+                tasks: [
+                  {
+                    id: `workspace-${calls.length}`,
+                    short_id: `WOR-${calls.length}`,
+                    status: calls.length === 1 ? 'todo' : 'done',
+                    updated_at: '2026-11-06T11:55:00.000Z',
+                  },
+                ],
+                last_page: 2,
+              }
+            }
+            return {
+              data: {
+                items: [
+                  {
+                    id: `cursor-${calls.length}`,
+                    humanKey: `CUR-${calls.length}`,
+                    status: calls.length === 1 ? 'todo' : 'done',
+                    updatedAt: '2026-11-06T11:55:00.000Z',
+                  },
+                ],
+                ...(calls.length === 1 ? { nextCursor: 'page-2' } : {}),
+              },
+            }
+          },
+        },
+        '2026-11-06T11:50:00.000Z',
+      )
+
+      expect(calls).toEqual(
+        protocol === 'workspace-mcp'
+          ? [
+              { updated_since: '2026-11-06T11:50:00.000Z', page: 1, per_page: 100 },
+              { updated_since: '2026-11-06T11:50:00.000Z', page: 2, per_page: 100 },
+            ]
+          : [
+              { updatedSince: '2026-11-06T11:50:00.000Z', limit: 100 },
+              {
+                updatedSince: '2026-11-06T11:50:00.000Z',
+                limit: 100,
+                cursor: 'page-2',
+              },
+            ],
+      )
+      expect(fetched.tasks.map((task) => [task.category, task.updatedAt])).toEqual([
+        ['open', '2026-11-06T11:55:00.000Z'],
+        ['done', '2026-11-06T11:55:00.000Z'],
+      ])
+    })
+  }
+
+  test('cursor-mcp incremental reads skip and count soft-deleted rows', async () => {
+    const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
+    const fetched = await source.fetch(
+      {
+        callTool: async () => ({
+          data: {
+            items: [
+              { id: 'gone', humanKey: 'STO-1', deletedAt: '2026-11-06T11:59:00.000Z' },
+              { id: 'kept', humanKey: 'STO-2', status: 'todo' },
+            ],
+          },
+        }),
+      },
+      '2026-11-06T11:50:00.000Z',
+    )
+    expect(fetched.deletedKeys).toEqual(['STO-1'])
+    expect(fetched.tasks.map((task) => task.key)).toEqual(['STO-2'])
+  })
+
+  test('workspace-mcp incremental reads skip rows without a status', async () => {
+    const trackerProject = project('starship', 'workspace-mcp')
+    trackerProject.settings.tracker!.updatedSince = true
+    const source = trackerSourceFor(trackerProject)!
+    const fetched = await source.fetch(
+      {
+        callTool: async () => ({
+          tasks: [
+            { id: 'missing-status', short_id: 'STAR-1', summary: 'No status' },
+            { id: 'kept', short_id: 'STAR-2', summary: 'Has status', status: 'todo' },
+          ],
+        }),
+      },
+      '2026-11-06T11:50:00.000Z',
+    )
+
+    expect(fetched.tasks.map((task) => task.key)).toEqual(['STAR-2'])
+    expect(fetched.complete).toBeFalse()
+  })
+
+  test('cursor-mcp incremental reads are incomplete when a row has no status', async () => {
+    const trackerProject = project('stopal', 'cursor-mcp')
+    trackerProject.settings.tracker!.updatedSince = true
+    const source = trackerSourceFor(trackerProject)!
+    const fetched = await source.fetch(
+      {
+        callTool: async () => ({
+          data: {
+            items: [
+              { id: 'missing-status', humanKey: 'STO-1', title: 'No status' },
+              { id: 'kept', humanKey: 'STO-2', title: 'Has status', status: 'todo' },
+            ],
+          },
+        }),
+      },
+      '2026-11-06T11:50:00.000Z',
+    )
+
+    expect(fetched.tasks.map((task) => task.key)).toEqual(['STO-2'])
+    expect(fetched.complete).toBeFalse()
+  })
+
+  test('incremental reads are incomplete rather than open when a status maps to no category', async () => {
+    const workspace = project('starship', 'workspace-mcp')
+    workspace.settings.tracker!.updatedSince = true
+    const workspaceRead = await trackerSourceFor(workspace)!.fetch(
+      {
+        callTool: async () => ({
+          tasks: [
+            { id: 'unmapped', short_id: 'STAR-1', summary: 'Closed', status: 'Completed' },
+            { id: 'mapped', short_id: 'STAR-2', summary: 'Done', status: 'done' },
+          ],
+        }),
+      },
+      '2026-11-06T11:50:00.000Z',
+    )
+    const cursor = project('stopal', 'cursor-mcp')
+    cursor.settings.tracker!.updatedSince = true
+    const cursorRead = await trackerSourceFor(cursor)!.fetch(
+      {
+        callTool: async () => ({
+          data: {
+            items: [
+              { id: 'unmapped', humanKey: 'STO-1', title: 'Closed', status: 'Completed' },
+              { id: 'mapped', humanKey: 'STO-2', title: 'Done', status: 'done' },
+            ],
+          },
+        }),
+      },
+      '2026-11-06T11:50:00.000Z',
+    )
+
+    for (const read of [workspaceRead, cursorRead]) {
+      expect(read.tasks.map((task) => [task.key, task.category])).toEqual([
+        [read === workspaceRead ? 'STAR-2' : 'STO-2', 'done'],
+      ])
+      expect(read.complete).toBeFalse()
+    }
+  })
+
+  test('updated-since changes a three-status two-page read from six tool calls to two', async () => {
+    const trackerProject = project('starship', 'workspace-mcp')
+    trackerProject.settings.tracker!.openStatuses = ['todo', 'active', 'review']
+    const source = trackerSourceFor(trackerProject)!
+    let calls = 0
+    const caller: ToolCaller = {
+      async callTool() {
+        calls++
+        return { tasks: [], last_page: 2 }
+      },
+    }
+    await source.fetch(caller)
+    expect(calls).toBe(6)
+    calls = 0
+    await source.fetch(caller, '2026-11-06T11:50:00.000Z')
+    expect(calls).toBe(2)
+  })
+
+  test('an incremental read reports the cursor paging bound as partial', async () => {
+    const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
+    let calls = 0
+    const fetched = await source.fetch(
+      {
+        async callTool() {
+          calls++
+          return { data: { items: [], nextCursor: `page-${calls + 1}` } }
+        },
+      },
+      '2026-11-06T11:50:00.000Z',
+    )
+    expect(calls).toBe(40)
+    expect(fetched.complete).toBeFalse()
   })
 
   test('names a project whose tracker is missing envPrefix', () => {

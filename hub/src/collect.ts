@@ -841,7 +841,7 @@ export async function collectOnce(
               ? `skipped: ${result.skipped}`
               : result.error
                 ? `FAILED: ${result.error}`
-                : `${result.tasks} tasks, ${result.changed} status changes`
+                : `${result.mode ? `${result.mode} read, ` : ''}${result.tasks} tasks, ${result.changed} status changes${result.deleted ? `, ${result.deleted} deleted dropped` : ''}`
             console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
           }
           const error = trackerLegError(trackerResults)
