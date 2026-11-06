@@ -119,18 +119,21 @@ describe('host load window', () => {
         resourceKind: 'cpu' as const,
         resourceKey: 'host-capacity',
         durationMs: HOST_LOAD_WAIT_MIN_MS,
+        occurrences: 3,
       },
       {
         at: samples[0]!.at,
         resourceKind: 'cpu' as const,
         resourceKey: 'host-capacity',
         durationMs: HOST_LOAD_WAIT_MIN_MS - 1,
+        occurrences: 1,
       },
       {
         at: samples[0]!.at,
         resourceKind: 'lock' as const,
         resourceKey: 'create',
         durationMs: 5_000,
+        occurrences: 1,
       },
     ]
 
@@ -142,7 +145,7 @@ describe('host load window', () => {
       latestSwapUsed: 2_000,
       swapDelta: 1_000,
       latestLoadavg1: 3,
-      hostCapacityWaitCount: 1,
+      hostCapacityWaitCount: 3,
     })
   })
 

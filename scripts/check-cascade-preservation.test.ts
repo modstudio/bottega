@@ -240,6 +240,24 @@ test('execution probe chooses a value permitted by a CHECK constraint', () => {
   ])
 })
 
+test('execution probe derives a value permitted by a GLOB constraint', () => {
+  const result = probeMigrations([
+    {
+      tag: '0000_schema',
+      source: `
+        CREATE TABLE parent (id INTEGER PRIMARY KEY);
+        CREATE TABLE child (
+          id INTEGER PRIMARY KEY,
+          parent_id INTEGER NOT NULL REFERENCES parent(id) ON DELETE CASCADE,
+          day TEXT NOT NULL CHECK(day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
+        );`,
+    },
+    { tag: '0001_rebuild', source: 'DELETE FROM parent;' },
+  ])
+
+  expect(result.unprobed).toEqual([])
+})
+
 test('execution probe seeds nullable exclusive-or columns with an integer flag', () => {
   const result = probeMigrations([
     {

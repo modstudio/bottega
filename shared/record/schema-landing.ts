@@ -5,14 +5,16 @@ import {
   bigint,
   boolean,
   check,
+  index,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   text,
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
+import { machine, project, RECORD_OWNER_ROLE, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
 const machineIdentity = () =>
@@ -174,6 +176,7 @@ export const contention = pgTable.withRLS(
     resourceKey: text('resource_key').notNull(),
     eventKind: text('event_kind').notNull(),
     durationMs: bigint('duration_ms', { mode: 'bigint' }),
+    occurrences: integer('occurrences').notNull().default(1),
     cause: text(),
     runId: uuid('run_id'),
     landingId: uuid('landing_id'),
@@ -182,7 +185,16 @@ export const contention = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [...tenantPolicies('contention', table.spaceId)],
+  (table) => [
+    ...tenantPolicies('contention', table.spaceId),
+    index('contention_at_idx').on(table.at),
+    pgPolicy('contention_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+  ],
 )
 
 export const testFlake = pgTable.withRLS(

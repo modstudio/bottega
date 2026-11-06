@@ -3,6 +3,9 @@
 import type { Database } from 'bun:sqlite'
 
 const SLOW_STATEMENT_MS = 100
+export const SLOW_STATEMENT_BUCKET_MS = 60 * 60_000
+export const SLOW_STATEMENT_BUCKET_PREDICATE =
+  "resource_kind='store' AND event_kind='wait' AND cause='slow-statement'"
 const STATEMENT_FINGERPRINT_LENGTH = 240
 
 const STRING_LITERAL = /'(?:''|[^'])*'/g
@@ -17,6 +20,12 @@ export function statementFingerprint(sql: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, STATEMENT_FINGERPRINT_LENGTH)
+}
+
+export function slowStatementBucketStart(now: number): string {
+  return new Date(
+    Math.floor(now / SLOW_STATEMENT_BUCKET_MS) * SLOW_STATEMENT_BUCKET_MS,
+  ).toISOString()
 }
 
 export type StatementTimingOptions = {

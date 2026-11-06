@@ -330,6 +330,41 @@ test('document audience vocabulary migration converts local docs and revisions w
   }
 })
 
+test('contention occurrences migration folds duplicate slow-statement buckets before indexing', () => {
+  const database = migrationBoundaryTestDatabase('0205_contention_occurrences')
+  try {
+    database
+      .query(
+        `INSERT INTO contention
+         (record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause)
+         VALUES
+         ('01990000-0000-7000-8000-000000000101','2026-11-06T04:00:00.000Z','session-a','store','fingerprint','wait',120,'slow-statement'),
+         ('01990000-0000-7000-8000-000000000102','2026-11-06T04:00:00.000Z','session-a','store','fingerprint','wait',180,'slow-statement')`,
+      )
+      .run()
+
+    expect(applyOneMigration(database, '0205_contention_occurrences')).toEqual([
+      '0205_contention_occurrences',
+    ])
+    expect(
+      database
+        .query(
+          `SELECT record_id,occurrences,duration_ms FROM contention
+           WHERE cause='slow-statement'`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        record_id: '01990000-0000-7000-8000-000000000101',
+        occurrences: 2,
+        duration_ms: 300,
+      },
+    ])
+  } finally {
+    database.close()
+  }
+})
+
 test('collect change triggers advance once for arbitrary run updates', () => {
   const database = migratedTestDatabase()
   try {

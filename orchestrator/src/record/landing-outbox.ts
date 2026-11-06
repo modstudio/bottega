@@ -3,6 +3,10 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
+import {
+  SLOW_STATEMENT_BUCKET_PREDICATE,
+  slowStatementBucketStart,
+} from '../database/slow-statements.ts'
 import { machineId } from './machine-identity.ts'
 
 import { stringifyOutboxPayload } from './outbox-sanitize.ts'
@@ -151,6 +155,7 @@ function buildContentionRecordPayload(row: LocalRow, machineId: string, at: stri
     resourceKey: row.resource_key,
     eventKind: row.event_kind,
     durationMs: row.duration_ms,
+    occurrences: row.occurrences,
     cause: row.cause,
     hostLoad: json(row.host_load),
     runId: row.run_record_id,
@@ -305,7 +310,7 @@ export function enqueueContention(database: Database, recordId: string, at = now
   const row = database
     .query<LocalRow, [string]>(
       `SELECT contention.record_id,contention.at,contention.session_id,contention.resource_kind,
-              contention.resource_key,contention.event_kind,contention.duration_ms,contention.cause,
+              contention.resource_key,contention.event_kind,contention.duration_ms,contention.occurrences,contention.cause,
               contention.landing_record_id,contention.host_load,run.record_id AS run_record_id
        FROM contention LEFT JOIN run ON run.record_id=contention.run_record_id
        WHERE contention.record_id=?`,
@@ -314,6 +319,24 @@ export function enqueueContention(database: Database, recordId: string, at = now
   if (!row) throw new Error(`contention ${recordId} does not exist and cannot be enqueued`)
   const value = buildContentionRecordPayload(row, machineId(), at)
   enqueue(database, 'contention', String(row.record_id), value, at)
+}
+
+export function enqueueClosedSlowStatementContentions(
+  database: Database,
+  closedAtOrAfter: string,
+  closedBefore: string,
+): number {
+  const rows = database
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT record_id FROM contention
+       WHERE ${SLOW_STATEMENT_BUCKET_PREDICATE}
+         AND at>=? AND at<?
+         AND NOT EXISTS (SELECT 1 FROM outbox WHERE kind='contention' AND row_id=contention.record_id)
+       ORDER BY at,record_id`,
+    )
+    .all(closedAtOrAfter, closedBefore)
+  for (const row of rows) enqueueContention(database, row.record_id)
+  return rows.length
 }
 
 function enqueueTestFlake(database: Database, recordId: string, at = nowIso()): void {
@@ -327,7 +350,10 @@ function enqueueTestFlake(database: Database, recordId: string, at = nowIso()): 
   enqueue(database, 'test_flake', String(row.record_id), value, at)
 }
 
-export function backfillLandingEvidenceRecords(database: Database): LandingEvidenceBackfillResult {
+export function backfillLandingEvidenceRecords(
+  database: Database,
+  now = Date.now(),
+): LandingEvidenceBackfillResult {
   const backfill = (table: string, kind: string, enqueueRow: (recordId: string) => void) => {
     const rows = database
       .query<{ record_id: string }, [string]>(
@@ -349,12 +375,23 @@ export function backfillLandingEvidenceRecords(database: Database): LandingEvide
     enqueuedTriageSnapshots: backfill('landing_triage_snapshot', 'landing_triage_snapshot', (id) =>
       enqueueLandingTriageSnapshot(database, id),
     ),
-    enqueuedContentions: backfill('contention', 'contention', (id) =>
-      enqueueContention(database, id),
-    ),
+    enqueuedContentions: enqueueContentionBackfill(database, now),
     enqueuedFlakes: backfill('test_flake', 'test_flake', (id) => enqueueTestFlake(database, id)),
     enqueuedPullRequestCi: backfill('pull_request_ci', 'pull_request_ci', (id) =>
       enqueuePullRequestCi(database, id),
     ),
   }
+}
+
+function enqueueContentionBackfill(database: Database, now: number): number {
+  const openHour = slowStatementBucketStart(now)
+  const rows = database
+    .query<{ record_id: string }, [string]>(
+      `SELECT record_id FROM contention WHERE NOT EXISTS
+         (SELECT 1 FROM outbox WHERE kind='contention' AND row_id=contention.record_id)
+       AND (NOT (${SLOW_STATEMENT_BUCKET_PREDICATE}) OR at<?) ORDER BY record_id`,
+    )
+    .all(openHour)
+  for (const row of rows) enqueueContention(database, row.record_id)
+  return rows.length
 }

@@ -44,7 +44,6 @@ import {
   importRecordWorkflowCatalogue,
 } from './record-catalogue-import.ts'
 import { readRecordChangeFeed } from './record-change-feed.ts'
-import { pruneRecordChanges, startRecordChangePrune } from './record-change-prune.ts'
 import { createRecordChangeWakeSource } from './record-change-wake.ts'
 import {
   addDataKeyWraps,
@@ -115,6 +114,7 @@ import {
 } from './record-public-docs.ts'
 import { recordReleaseCheck } from './record-release-check.ts'
 import { listRecordReleases, readLatestRecordReleases } from './record-releases.ts'
+import { pruneRecordRetention, startRecordRetention } from './record-retention.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
 import { listRecordRoutingEvidence } from './record-routing-evidence.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
@@ -175,12 +175,12 @@ export async function stopRecordApiServer(input: {
   closeActiveConnections?: boolean
   boardWakeSource: { close(): Promise<void> }
   recordChangeWakeSource: { close(): Promise<void> }
-  recordChangePrune: { stop(): void }
+  recordRetention: { stop(): void }
   boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>
   auth: { close(): Promise<void> }
 }): Promise<void> {
   input.boardStreamRegistry.closeAll()
-  input.recordChangePrune.stop()
+  input.recordRetention.stop()
   await input.boardWakeSource.close()
   await input.recordChangeWakeSource.close()
   await input.stop(input.closeActiveConnections)
@@ -193,7 +193,7 @@ function serveRecordApi(
   boardWakeSource: Awaited<ReturnType<typeof createBoardWakeSource>>,
   recordChangeWakeSource: ReturnType<typeof createRecordChangeWakeSource>,
   boardStreamRegistry: ReturnType<typeof createBoardStreamRegistry>,
-  recordChangePrune: { stop(): void },
+  recordRetention: { stop(): void },
   auth: ReturnType<typeof recordAuth>,
 ) {
   const server = Bun.serve({
@@ -224,7 +224,7 @@ function serveRecordApi(
       closeActiveConnections,
       boardWakeSource,
       recordChangeWakeSource,
-      recordChangePrune,
+      recordRetention,
       boardStreamRegistry,
       auth,
     })
@@ -367,8 +367,8 @@ async function serveRecordApiWithAuth(
   const boardWakeSource = await createBoardWakeSource(config.recordUrl)
   const recordChangeWakeSource = createRecordChangeWakeSource(config.recordUrl)
   const boardStreamRegistry = createBoardStreamRegistry()
-  const recordChangePrune = startRecordChangePrune({
-    prune: () => pruneRecordChanges(config.recordUrl),
+  const recordRetention = startRecordRetention({
+    prune: () => pruneRecordRetention(config.recordUrl),
   })
   const migrations = recordMigrationCount()
   const app = recordApi({
@@ -442,7 +442,7 @@ async function serveRecordApiWithAuth(
     boardWakeSource,
     recordChangeWakeSource,
     boardStreamRegistry,
-    recordChangePrune,
+    recordRetention,
     auth,
   )
 }

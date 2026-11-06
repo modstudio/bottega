@@ -27,7 +27,11 @@ import {
   resolveCallerIdentity,
 } from '../caller-classification.ts'
 import { appliedMigrationCompatibilities } from './applied-migration-compatibilities.ts'
-import { contentionTableExists, insertContention } from './contention.ts'
+import {
+  contentionTableExists,
+  insertContention,
+  insertSlowStatementContention,
+} from './contention.ts'
 import { DATABASE_SIDECAR_SUFFIXES } from './database-file-family.ts'
 import {
   DATABASE_RESOLUTION,
@@ -241,16 +245,7 @@ function openUninstrumentedOwnedWritableDatabase(
 }
 
 function recordSlowStatement(fingerprint: string, durationMs: number): void {
-  tryWriteContention(
-    {
-      resourceKind: 'store',
-      resourceKey: fingerprint,
-      eventKind: 'wait',
-      durationMs,
-      cause: 'slow-statement',
-    },
-    { busyTimeoutMs: 0 },
-  )
+  tryWriteSlowStatementContention(fingerprint, durationMs)
 }
 
 /** Run one read command against a SQLite-enforced read-only process handle. */
@@ -760,6 +755,25 @@ export function ensureMachineIdentity(database: Database): void {
   carryMachineIdentity(database, (fn) => writeTransaction(fn, database))
 }
 
+/** Runs a guarded one-shot contention write and may throw; callers keep it best-effort. */
+function writeOneShotContention(write: (database: Database) => void): void {
+  if (storeWritesRefused() || registeredStoreWriteProtected) return
+  const database = openUninstrumentedOwnedWritableDatabase(DB_PATH, { create: false })
+  try {
+    database.exec('PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON')
+    keepJournalSidecars(database)
+    // The one-shot connection sits outside writeTransaction's stale-schema
+    // guard, so it checks the same invariant itself: a process writes only
+    // the schema version it opened.
+    const opened = openedUserVersion
+    if (opened !== null && readUserVersion(database) !== opened) return
+    if (!contentionTableExists(database)) return
+    writeTransaction(() => write(database), database)
+  } finally {
+    database.close()
+  }
+}
+
 /** Best-effort contention insert; never throws. busyTimeoutMs 0 uses a one-shot connection. */
 export function tryWriteContention(
   row: import('./contention.ts').ContentionWrite,
@@ -768,20 +782,7 @@ export function tryWriteContention(
   try {
     if (storeWritesRefused() || registeredStoreWriteProtected) return
     if (opts?.busyTimeoutMs === 0) {
-      const d = openUninstrumentedOwnedWritableDatabase(DB_PATH, { create: false })
-      try {
-        d.exec('PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON')
-        keepJournalSidecars(d)
-        // The one-shot connection sits outside writeTransaction's stale-schema
-        // guard, so it checks the same invariant itself: a process writes only
-        // the schema version it opened.
-        const opened = openedUserVersion
-        if (opened !== null && readUserVersion(d) !== opened) return
-        if (!contentionTableExists(d)) return
-        writeTransaction(() => insertContention(d, row), d)
-      } finally {
-        d.close()
-      }
+      writeOneShotContention((database) => insertContention(database, row))
       return
     }
     const d = openWritableHandle()
@@ -789,6 +790,17 @@ export function tryWriteContention(
     writeTransaction(() => insertContention(d, row), d)
   } catch {
     /* CONSTRAINTS: recording must not change lock, landing or detector behavior */
+  }
+}
+
+/** Best-effort hourly slow-statement bucket update with the same one-shot lock discipline. */
+function tryWriteSlowStatementContention(fingerprint: string, durationMs: number): void {
+  try {
+    writeOneShotContention((database) =>
+      insertSlowStatementContention(database, fingerprint, durationMs),
+    )
+  } catch {
+    /* Recording must not change statement behavior. */
   }
 }
 

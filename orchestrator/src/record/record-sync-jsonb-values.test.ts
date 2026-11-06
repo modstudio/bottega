@@ -107,6 +107,7 @@ const payload: RecordPayload = {
   resourceKind: 'gate',
   resourceKey: 'gate',
   eventKind: 'wait',
+  occurrences: 1,
   hostLoad: OBJECT,
   loadAtFailure: OBJECT,
   test: 'test',
@@ -231,4 +232,10 @@ test.each(cases)('$name sync values keep jsonb fields structured', ({ values, fi
     expect(result[field]).not.toBeNull()
     expect(typeof result[field]).not.toBe('string')
   }
+})
+
+test('contention sync refuses non-positive occurrences', () => {
+  expect(() => contentionValues({ ...payload, occurrences: 0 })).toThrow(
+    'contention.occurrences must be a positive integer',
+  )
 })

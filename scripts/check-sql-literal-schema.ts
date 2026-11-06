@@ -6,6 +6,7 @@ import ts from 'typescript'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import { MIGRATIONS_TABLE } from '../orchestrator/src/database/applied-migration-compatibilities.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
+import { SLOW_STATEMENT_BUCKET_PREDICATE } from '../orchestrator/src/database/slow-statements.ts'
 import {
   LOCAL_PIN_VERSION_SQL,
   LOCAL_REVISION_PIN_VERSION_JOINS_SQL,
@@ -59,6 +60,10 @@ type GlobalSubstitution = {
  * substitution would otherwise prepare SQL that file never writes.
  */
 const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
+  SLOW_STATEMENT_BUCKET_PREDICATE: {
+    values: [SLOW_STATEMENT_BUCKET_PREDICATE],
+    declaredIn: 'orchestrator/src/database/slow-statements.ts',
+  },
   POOL_CANDIDATE_ROWS_SQL: {
     values: [POOL_CANDIDATE_ROWS_SQL],
     declaredIn: 'orchestrator/src/route/routing-pool-evidence.ts',

@@ -155,9 +155,10 @@ const PULL_REQUEST_CI_RECORD_PAYLOAD_CONTRACT = contract(
   { projectId: null, withheldFields: null },
 )
 const CONTENTION_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId machineId localId at sessionId resourceKind resourceKey eventKind durationMs cause runId landingId hostLoad withheldFields createdAt updatedAt',
+  'id spaceId machineId localId at sessionId resourceKind resourceKey eventKind durationMs occurrences cause runId landingId hostLoad withheldFields createdAt updatedAt',
 )
 const CONTENTION_RECORD_PAYLOAD_CONTRACT = contract(CONTENTION_RECORD_PAYLOAD_COLUMNS, {
+  occurrences: 1,
   hostLoad: null,
   withheldFields: null,
 })

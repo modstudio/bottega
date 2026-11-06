@@ -498,6 +498,13 @@ function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
 }
 
 export function contentionValues(row: Payload) {
+  if (
+    typeof row.occurrences !== 'number' ||
+    !Number.isInteger(row.occurrences) ||
+    row.occurrences < 1
+  ) {
+    throw new OutboxRowError('contention.occurrences must be a positive integer', 'row-validation')
+  }
   return {
     ...landingCommonValues(row),
     at: date(row.at),
@@ -506,6 +513,7 @@ export function contentionValues(row: Payload) {
     resourceKey: String(row.resourceKey),
     eventKind: String(row.eventKind),
     durationMs: nullableRoundedBigint(row.durationMs, 'contention.duration_ms'),
+    occurrences: row.occurrences,
     cause: nullableString(row.cause),
     runId: nullableString(row.runId),
     landingId: nullableString(row.landingId),

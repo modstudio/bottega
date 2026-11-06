@@ -1,0 +1,1 @@
+ALTER TABLE "contention" ADD COLUMN "occurrences" integer DEFAULT 1 NOT NULL;

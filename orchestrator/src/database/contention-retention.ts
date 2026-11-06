@@ -4,16 +4,21 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { DEFAULT_EFFICIENCY_WINDOW_MS } from '../host-pressure/host-pressure-decision.ts'
+import { enqueueClosedSlowStatementContentions } from '../record/landing-outbox.ts'
 import {
   contentionRolledThroughDay,
   setContentionRolledThroughDay,
 } from './contention-rollup-state.ts'
 import { writeTransaction } from './db.ts'
 import { drainRetentionChunks } from './retention-chunks.ts'
+import { SLOW_STATEMENT_BUCKET_PREDICATE, slowStatementBucketStart } from './slow-statements.ts'
 
-const CONTENTION_RAW_WINDOW_MS = 2 * DEFAULT_EFFICIENCY_WINDOW_MS
+export const CONTENTION_RAW_WINDOW_MS = 2 * DEFAULT_EFFICIENCY_WINDOW_MS
 const CONTENTION_RETENTION_CHUNK_SIZE = 5_000
 const CONTENTION_PRUNE_PREDICATE = `c.at < ?1 AND c.at < date(?2, '+1 day')
+  AND (NOT (${SLOW_STATEMENT_BUCKET_PREDICATE}) OR EXISTS (
+    SELECT 1 FROM outbox sent WHERE sent.kind='contention' AND sent.row_id=c.record_id
+  ))
   AND NOT EXISTS (
     SELECT 1 FROM outbox o WHERE o.kind='contention' AND o.row_id=c.record_id
       AND (o.synced_at IS NULL OR o.quarantined_at IS NOT NULL)
@@ -55,7 +60,7 @@ function rollupDay(database: Database, day: string): void {
       },
       [string, string]
     >(
-      `SELECT session_id,resource_kind,resource_key,event_kind,COUNT(*) event_count,
+      `SELECT session_id,resource_kind,resource_key,event_kind,SUM(occurrences) event_count,
               SUM(MAX(0,COALESCE(duration_ms,0))) total_duration_ms
        FROM contention WHERE at>=? AND at<date(?, '+1 day')
        GROUP BY session_id,resource_kind,resource_key,event_kind`,
@@ -98,6 +103,10 @@ export function rollupContentionDays(
       .get(today, first)!.count
     return { days, more: days > 0 }
   }
+  writeTransaction(
+    () => enqueueClosedSlowStatementContentions(database, '', slowStatementBucketStart(now)),
+    database,
+  )
   const started = performance.now()
   let days = 0
   let next = nextRollupDay(database, today)

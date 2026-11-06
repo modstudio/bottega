@@ -4,8 +4,16 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import type { StoreLockRefusalEntry } from '../../../shared/store-lock-refusal-log.ts'
 import type { StoreWriteHoldEntry } from '../../../shared/store-write-hold-log.ts'
 import type { RecordedHostLoad } from '../gate-load.ts'
-import { enqueueContention } from '../record/landing-outbox.ts'
+import {
+  enqueueClosedSlowStatementContentions,
+  enqueueContention,
+} from '../record/landing-outbox.ts'
 import { contentionRolledThroughDay } from './contention-rollup-state.ts'
+import {
+  SLOW_STATEMENT_BUCKET_MS,
+  SLOW_STATEMENT_BUCKET_PREDICATE,
+  slowStatementBucketStart,
+} from './slow-statements.ts'
 
 const RESOURCE_KINDS = [
   'trunk',
@@ -62,6 +70,7 @@ type ContentionRow = {
   resource_key: string
   event_kind: EventKind
   duration_ms: number | null
+  occurrences: number
   landing_record_id: string | null
   cause: string | null
   at: string
@@ -72,6 +81,7 @@ export type ContentionWait = {
   resourceKind: ResourceKind
   resourceKey: string
   durationMs: number | null
+  occurrences: number
 }
 
 export function isHostCapacityWait(wait: ContentionWait): boolean {
@@ -163,6 +173,31 @@ export function insertContention(d: Database, row: ContentionWrite): void {
   enqueueContention(d, inserted.record_id, at)
 }
 
+export function insertSlowStatementContention(
+  d: Database,
+  fingerprint: string,
+  durationMs: number,
+  now = Date.now(),
+  sessionId: string | null = process.env.CLAUDE_CODE_SESSION_ID ?? null,
+): void {
+  const bucketStart = slowStatementBucketStart(now)
+  enqueueClosedSlowStatementContentions(
+    d,
+    slowStatementBucketStart(now - SLOW_STATEMENT_BUCKET_MS),
+    bucketStart,
+  )
+  d.query(
+    `INSERT INTO contention
+       (record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,occurrences)
+     VALUES (?, ?, ?, 'store', ?, 'wait', ?, 'slow-statement', 1)
+     ON CONFLICT(COALESCE(session_id, ''),resource_key,at)
+       WHERE ${SLOW_STATEMENT_BUCKET_PREDICATE}
+     DO UPDATE SET
+       occurrences=contention.occurrences+1,
+       duration_ms=COALESCE(contention.duration_ms,0)+excluded.duration_ms`,
+  ).run(newRecordId(), bucketStart, sessionId, fingerprint, Math.round(durationMs))
+}
+
 export function summarizeContention(d: Database, from: string): ContentionSummary {
   if (!contentionTableExists(d)) return emptyContention()
   type SummaryRow = Omit<ContentionRow, 'landing_record_id' | 'cause' | 'at' | 'duration_ms'> & {
@@ -180,7 +215,7 @@ export function summarizeContention(d: Database, from: string): ContentionSummar
     : []
   const raw = d
     .query(
-      `SELECT session_id,resource_kind,resource_key,event_kind,COUNT(*) event_count,
+      `SELECT session_id,resource_kind,resource_key,event_kind,SUM(occurrences) event_count,
               SUM(MAX(0,COALESCE(duration_ms,0))) total_duration_ms
        FROM contention
        WHERE at >= ? AND (? IS NULL OR at >= date(?, '+1 day'))
@@ -228,18 +263,19 @@ export function loadContentionWaits(d: Database, from: string, until: string): C
   if (!contentionTableExists(d)) return []
   const rows = d
     .query(
-      `SELECT at,resource_kind,resource_key,duration_ms FROM contention
+      `SELECT at,resource_kind,resource_key,duration_ms,occurrences FROM contention
        WHERE event_kind='wait' AND datetime(at)>=datetime(?) AND datetime(at)<datetime(?)
        ORDER BY at,record_id`,
     )
     .all(from, until) as Pick<
     ContentionRow,
-    'at' | 'resource_kind' | 'resource_key' | 'duration_ms'
+    'at' | 'resource_kind' | 'resource_key' | 'duration_ms' | 'occurrences'
   >[]
   return rows.map((row) => ({
     at: row.at,
     resourceKind: row.resource_kind,
     resourceKey: row.resource_key,
     durationMs: row.duration_ms,
+    occurrences: row.occurrences,
   }))
 }

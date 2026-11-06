@@ -44,7 +44,7 @@ test('stopping the server ends an open board stream before closing its wake sour
     },
     boardWakeSource: wakeSource,
     recordChangeWakeSource: { async close() {} },
-    recordChangePrune: {
+    recordRetention: {
       stop() {
         pruneStopped = true
       },
