@@ -7,6 +7,7 @@ import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
   ANSWER_WORKING_FORMS,
   assertWorkerText,
+  bareQuestionSelector,
   CONTINUE_WORKING_FORMS,
   type ContinueArgs,
   parseAnswerChannelArgs,
@@ -28,7 +29,7 @@ import {
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
-import { questionOpenSql } from './question-open.ts'
+import { openChainQuestions } from './question-open.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
@@ -82,8 +83,8 @@ export const answerRunHelpers = (presentation: Presentation) => ({
 
 const questionIdentifiers = (argv: string[]): string[] =>
   argv.flatMap((argument) => {
-    const match = argument === '--quiet' ? null : argument.match(/^--q([^=]+)(?:=.*)?$/)
-    return match ? [match[1]!] : []
+    const identifier = bareQuestionSelector(argument)
+    return identifier === null ? [] : [identifier]
   })
 
 export async function answerInputFromArgv(
@@ -95,7 +96,7 @@ export async function answerInputFromArgv(
   refusedOptions?: Readonly<Record<string, string>>,
   answerId?: string,
 ): Promise<AnswerRunInput> {
-  const valueArgs = answerValueArgs(argv, answerId, questionIdentifiers(argv))
+  const valueArgs = answerValueArgs(argv, questionIdentifiers(argv))
   const channelArgs = parseAnswerChannelArgs(valueArgs.argv)
   const parsed = parseAnswerTextSources(channelArgs.argv, refusedOptions)
   const fromOperator = channelArgs.argv.includes('--from-operator')
@@ -134,7 +135,9 @@ export async function answerInputFromArgv(
         text: cliRuling(
           source.file !== undefined ? helpers.readWorkerFile(source.file) : source.text!,
         ),
-        ...(questionId === valueArgs.questionId ? { typedValue: valueArgs.value } : {}),
+        ...(source.identifier === valueArgs.questionIdentifier
+          ? { typedValue: valueArgs.raw }
+          : {}),
         fromOperator: attribution.kind === 'operator',
       }
     })
@@ -143,10 +146,10 @@ export async function answerInputFromArgv(
     (!parsed.positionals.length && !process.stdin.isTTY)
   ) {
     rulings =
-      valueArgs.value !== undefined &&
+      valueArgs.raw !== undefined &&
       parsed.commandFile === undefined &&
       !parsed.positionals.length
-        ? cliRuling(String(valueArgs.value))
+        ? cliRuling(valueArgs.raw)
         : cliRuling(
             (await helpers.readMessageText({
               missing: 'no ruling: pass it as an argument, via --file, or on stdin',
@@ -155,17 +158,7 @@ export async function answerInputFromArgv(
             })) ?? '',
           )
   } else {
-    rulings = cliRuling(parsed.positionals.join(' ') || String(valueArgs.value ?? ''))
-  }
-  if (valueArgs.value !== undefined && typeof rulings === 'string') {
-    rulings = [
-      {
-        questionId: valueArgs.questionId!,
-        text: rulings,
-        typedValue: valueArgs.value,
-        fromOperator,
-      },
-    ]
+    rulings = cliRuling(parsed.positionals.join(' ') || valueArgs.raw || '')
   }
   const ruledQuestionIds = new Set(
     Array.isArray(rulings) ? rulings.map((ruling) => ruling.questionId) : [],
@@ -187,6 +180,9 @@ export async function answerInputFromArgv(
     recordOnly,
     json,
     flags,
+    ...(valueArgs.raw !== undefined && typeof rulings === 'string'
+      ? { typedValue: valueArgs.raw }
+      : {}),
   }
 }
 
@@ -212,15 +208,10 @@ function answeredQuestions(
       fromOperator: ruling.fromOperator,
     }))
   }
-  return (
-    db()
-      .query(
-        `SELECT q.number FROM question q JOIN run owner ON owner.record_id=q.run_record_id
-          WHERE (owner.record_id=? OR owner.parent_run_record_id=?) AND ${questionOpenSql('q')}
-          ORDER BY q.number`,
-      )
-      .all(runId, runId) as { number: number }[]
-  ).map((row) => ({ number: row.number, fromOperator: input.fromOperator }))
+  return openChainQuestions<{ number: number }>(db(), runId, 'q.number').map((row) => ({
+    number: row.number,
+    fromOperator: input.fromOperator,
+  }))
 }
 
 export async function answerCommand(

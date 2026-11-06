@@ -41,7 +41,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
   module('orchestrator/src/ask/jev-routing.ts', [
     '../../../shared/typed-question/client.ts',
-    '../../../shared/worker-question.ts',
+    './worker-question.ts',
   ]),
   module('orchestrator/src/ask/jev-worker-question.ts', [
     'bun:sqlite',
@@ -49,17 +49,15 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/typed-question/client.ts',
     '../../../shared/typed-question/registry.ts',
     '../database/db.ts',
+    '../run/question-answer.ts',
+    '../run/question-outbox.ts',
     '../run/question-vocabulary.ts',
     '../workflow/autonomy-scopes.ts',
     './jev-routing.ts',
-    '../../../shared/worker-question.ts',
+    './worker-question.ts',
   ]),
-  module('orchestrator/src/run/run-answer-typed-value.ts', ['../../../shared/worker-question.ts']),
-  module('orchestrator/src/run/answer-value-args.ts', [
-    '../database/db.ts',
-    './question-identifier.ts',
-    './question-open.ts',
-  ]),
+  module('orchestrator/src/run/run-answer-typed-value.ts', ['../ask/worker-question.ts']),
+  module('orchestrator/src/run/answer-value-args.ts', []),
   module('orchestrator/src/resources/resource-claims.ts', [
     '../../../shared/record-id.ts',
     '../git/checkout-identity.ts',

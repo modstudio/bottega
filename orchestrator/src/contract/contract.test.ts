@@ -441,6 +441,53 @@ describe('a worker that stops to ask is not a worker that failed', () => {
       ),
     ).toBe(true)
   })
+
+  test('accepts every nullable field emitted by the worker reply contract', () => {
+    const questions = realQuestions({
+      status: 'asking',
+      questions: [
+        {
+          question: 'Legacy?',
+          why: 'Changes it.',
+          options: ['a', 'b'],
+          recommendation: null,
+          criteria: null,
+          levels: null,
+        },
+        {
+          kind: 'choice',
+          question: 'Typed choice?',
+          why: 'Changes it.',
+          options: [
+            { name: 'a', criteria: null },
+            { name: 'b', criteria: null },
+          ],
+          recommendation: null,
+          criteria: null,
+          levels: null,
+        },
+        {
+          kind: 'yesno',
+          question: 'Proceed?',
+          why: 'Changes it.',
+          options: null,
+          recommendation: null,
+          criteria: { yes: null, no: null },
+          levels: null,
+        },
+        {
+          kind: 'score',
+          question: 'How much?',
+          why: 'Changes it.',
+          options: null,
+          recommendation: null,
+          criteria: null,
+          levels: ['low', 'high'],
+        },
+      ],
+    })
+    expect(questions.map(({ kind }) => kind)).toEqual(['choice', 'choice', 'yesno', 'score'])
+  })
 })
 
 describe('a worker asking is not a worker blocked', () => {

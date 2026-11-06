@@ -39,8 +39,10 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import {
   type WorkerQuestion,
   type WorkerQuestionInput,
+  encodeWorkerQuestion,
+  WorkerQuestionInputSchema,
   WorkerQuestionSchema,
-} from '../../../shared/worker-question.ts'
+} from './worker-question.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
@@ -111,18 +113,6 @@ function boundedTimeout(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000
 }
 const ASK_TIMEOUT_MS = boundedTimeout()
-const workerQuestionInput = z.object({
-  question: z.preprocess((value) => String(value ?? ''), z.string()),
-  why: z.string().optional(),
-  kind: z.enum(['choice', 'yesno', 'score', 'text']).optional(),
-  options: z
-    .array(z.union([z.string(), z.object({ name: z.string(), criteria: z.string().optional() })]))
-    .optional(),
-  recommendation: z.string().optional(),
-  criteria: z.object({ yes: z.string().optional(), no: z.string().optional() }).optional(),
-  levels: z.array(z.string()).optional(),
-})
-
 function recordQuestion(input: {
   runId: string
   askedAt: string
@@ -135,6 +125,7 @@ function recordQuestion(input: {
   typed?: WorkerQuestion
 }): string {
   const recordId = newRecordId()
+  const stored = input.typed ? encodeWorkerQuestion(input.typed) : null
   const inserted = db()
     .query<{ record_id: string }, (string | number | null)[]>(
       `INSERT INTO question
@@ -152,12 +143,10 @@ function recordQuestion(input: {
       input.why ?? null,
       input.askedVia,
       input.awaitingOperatorAt,
-      input.typed?.kind ?? (input.options?.length ? 'choice' : 'text'),
-      input.typed?.kind === 'choice' ? JSON.stringify(input.typed.options) : null,
-      input.typed?.kind === 'yesno' && input.typed.criteria
-        ? JSON.stringify(input.typed.criteria)
-        : null,
-      input.typed?.kind === 'score' ? JSON.stringify(input.typed.levels) : null,
+      stored?.kind ?? (input.options?.length ? 'choice' : 'text'),
+      stored?.typedOptions ?? null,
+      stored?.criteria ?? null,
+      stored?.levels ?? null,
     )
   if (!inserted) throw new Error('question was not recorded')
   enqueueQuestionRecord(db(), inserted.record_id)
@@ -191,15 +180,25 @@ export async function recordReplyQuestions(input: {
     return rows
   })
   await Promise.all(
-    recorded.map(({ recordId, question }) =>
-      preAnswerWorkerQuestion({
-        recordId,
-        runId: input.runId,
-        question,
-        canResume: false,
-        answerChannel: 'cli',
-      }),
-    ),
+    recorded.map(async ({ recordId, question }) => {
+      try {
+        return await preAnswerWorkerQuestion({
+          recordId,
+          runId: input.runId,
+          question,
+          canResume: false,
+          answerChannel: 'cli',
+        })
+      } catch (error) {
+        writeTransaction(() => {
+          db()
+            .query('UPDATE question SET jev_error=? WHERE record_id=?')
+            .run(String(error), recordId)
+          enqueueQuestionRecord(db(), recordId)
+        })
+        return { applied: false as const }
+      }
+    }),
   )
 }
 
@@ -694,7 +693,7 @@ export function createAskMcpServer(
         'Ask the architect to rule on a design decision that is not yours to make. ' +
         'Blocks until they answer. Use this the moment you are unsure: asking is free ' +
         'and expected, guessing is not. Ask everything you need in one call where you can.',
-      inputSchema: workerQuestionInput,
+      inputSchema: WorkerQuestionInputSchema,
     },
     async (questionInput) => {
       const { question } = questionInput

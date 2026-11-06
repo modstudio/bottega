@@ -60,4 +60,25 @@ describe('typed values through the answer service', () => {
       answer_value: '"Existing"',
     })
   })
+
+  test('CLI records disagreement and leaves agreement null without Jev advice', async () => {
+    const disagreed = typedRun('choice', 'typed_options', [
+      { name: 'existing' },
+      { name: 'new' },
+    ])
+    db().query('UPDATE question SET jev_pick=? WHERE run_record_id=?').run('"existing"', disagreed)
+    await answerRun(disagreed, { argv: ['--value', 'new'], recordOnly: true, flags }, helpers)
+    expect(db().query('SELECT jev_agreed FROM question WHERE run_record_id=?').get(disagreed)).toEqual(
+      { jev_agreed: 0 },
+    )
+
+    const unadvised = typedRun('choice', 'typed_options', [
+      { name: 'existing' },
+      { name: 'new' },
+    ])
+    await answerRun(unadvised, { argv: ['--value', 'new'], recordOnly: true, flags }, helpers)
+    expect(db().query('SELECT jev_agreed FROM question WHERE run_record_id=?').get(unadvised)).toEqual(
+      { jev_agreed: null },
+    )
+  })
 })

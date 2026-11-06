@@ -11,3 +11,12 @@ ALTER TABLE question ADD COLUMN jev_model TEXT;
 ALTER TABLE question ADD COLUMN jev_input_tokens INTEGER;
 ALTER TABLE question ADD COLUMN jev_error TEXT;
 ALTER TABLE question ADD COLUMN jev_agreed INTEGER CHECK (jev_agreed IN (0,1));
+
+-- BACKFILL
+UPDATE question
+SET kind='choice'
+WHERE options IS NOT NULL
+  AND json_valid(options)
+  AND json_type(options)='array'
+  AND json_array_length(options)>0;
+-- /BACKFILL

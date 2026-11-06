@@ -415,7 +415,8 @@ export function parseAnswerTextSources(
 
 /** Match the bare question selector shared by thin command surfaces; the caller resolves the identifier. */
 export function bareQuestionSelector(arg: string): string | null {
-  const match = arg.match(/^--q([^=]+)$/)
+  if (arg === '--quiet') return null
+  const match = arg.match(/^--q([^=]+)(?:=.*)?$/)
   return match ? match[1]! : null
 }
 

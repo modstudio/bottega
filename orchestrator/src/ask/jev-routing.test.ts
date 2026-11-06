@@ -19,7 +19,13 @@ describe('Jev worker-question routing', () => {
         autoRule: true,
         canResume: true,
       }),
-    ).toEqual({ action: 'apply', value: 'a', confidence: 0.9 })
+    ).toEqual({
+      action: 'apply',
+      value: 'a',
+      pick: 'a',
+      probabilities: { a: 0.9, b: 0.1 },
+      confidence: 0.9,
+    })
   })
 
   test('user rulings and a disabled auto-rule always escalate', () => {
@@ -57,7 +63,7 @@ describe('Jev worker-question routing', () => {
         autoRule: true,
         canResume: true,
       }),
-    ).toEqual({ action: 'escalate', confidence: null })
+    ).toEqual({ action: 'escalate', pick: null, probabilities: null, confidence: null })
   })
 
   test('yes/no confidence is distance from the midpoint', () => {
@@ -71,7 +77,13 @@ describe('Jev worker-question routing', () => {
         autoRule: true,
         canResume: true,
       }),
-    ).toEqual({ action: 'apply', value: false, confidence: 0.95 })
+    ).toEqual({
+      action: 'apply',
+      value: false,
+      pick: false,
+      probabilities: { yes: 0.05, no: 0.95 },
+      confidence: 0.95,
+    })
   })
 
   test('score applies the most probable level, not the rounded expected position', () => {
@@ -95,7 +107,13 @@ describe('Jev worker-question routing', () => {
         autoRule: true,
         canResume: true,
       }),
-    ).toEqual({ action: 'apply', value: 1, confidence: 0.9 })
+    ).toEqual({
+      action: 'apply',
+      value: 1,
+      pick: 1,
+      probabilities: { '0': 0, '1': 0.57, '2': 0.43 },
+      confidence: 0.9,
+    })
   })
 
   test('durable reply questions escalate even when every ruling condition is met', () => {
@@ -108,6 +126,11 @@ describe('Jev worker-question routing', () => {
         autoRule: true,
         canResume: false,
       }),
-    ).toEqual({ action: 'escalate', confidence: 1 })
+    ).toEqual({
+      action: 'escalate',
+      pick: 'a',
+      probabilities: { a: 1, b: 0 },
+      confidence: 1,
+    })
   })
 })

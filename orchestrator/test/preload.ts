@@ -105,7 +105,7 @@ const originalSandbox = process.env.BOTTEGA_SANDBOX
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
-const originalTypesafeKey = process.env.TYPESAFE_KEY
+const originalTypesafeKey = process.env.TYPESAFE_API_KEY
 const originalRunId = process.env.BOTTEGA_RUN_ID
 const originalDepth = process.env.BOTTEGA_DEPTH
 const originalStateHome = process.env[STATE_HOME_ENV]
@@ -123,7 +123,7 @@ process.env[CONFIG_HOME_ENV] = configDir
 process.env[HARNESS_ENV_FILE_ENV] = ''
 delete process.env.BOTTEGA_RECORD_API_URL
 // A typed-question ask in a test must take the missing-key path, never a metered network call.
-delete process.env.TYPESAFE_KEY
+delete process.env.TYPESAFE_API_KEY
 process.env.BOTTEGA_ORCHESTRATOR_DB = store
 const { directory: hubDatabaseDir } = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDatabase)
 process.env.BOTTEGA_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
@@ -348,7 +348,7 @@ afterAll(() => {
   restoreEnvironment(CONFIG_HOME_ENV, originalConfigHome)
   restoreEnvironment(HARNESS_ENV_FILE_ENV, originalHarnessEnvFile)
   restoreEnvironment('BOTTEGA_RECORD_API_URL', originalRecordApiUrl)
-  restoreEnvironment('TYPESAFE_KEY', originalTypesafeKey)
+  restoreEnvironment('TYPESAFE_API_KEY', originalTypesafeKey)
   restoreEnvironment('BOTTEGA_RUN_ID', originalRunId)
   restoreEnvironment('BOTTEGA_DEPTH', originalDepth)
   for (const key of Object.keys(process.env)) {

@@ -94,7 +94,8 @@ test('bare question selectors take the identifier after --q and leave resolution
   expect(bareQuestionSelector('--q01a11f04-7887-7000-920d-06b4b5b0a08d')).toBe(
     '01a11f04-7887-7000-920d-06b4b5b0a08d',
   )
-  expect(bareQuestionSelector('--q42=answer')).toBeNull()
+  expect(bareQuestionSelector('--q42=answer')).toBe('42')
+  expect(bareQuestionSelector('--quiet')).toBeNull()
 })
 
 test('the singleton reader refuses duplicates while the plural reader preserves them', () => {

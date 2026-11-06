@@ -5,12 +5,17 @@ import type { Database } from 'bun:sqlite'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import {
   askTypedQuestionClient,
-  type TypedQuestionClientResult,
 } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
-import type { WorkerQuestion } from '../../../shared/worker-question.ts'
-import { db, nowIso } from '../database/db.ts'
-import type { AnswerChannel } from '../run/question-vocabulary.ts'
+import type { WorkerQuestion } from './worker-question.ts'
+import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { applyQuestionAnswer } from '../run/question-answer.ts'
+import { enqueueQuestionRecord } from '../run/question-outbox.ts'
+import {
+  type AnswerChannel,
+  QUESTION_DELIVERY_MODE_LIVE,
+  QUESTION_DELIVERY_OUTCOME_DELIVERED,
+} from '../run/question-vocabulary.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { routeJevAnswer } from './jev-routing.ts'
 
@@ -37,22 +42,6 @@ function jevQuestion(id: string, question: WorkerQuestion): TypedQuestion | null
   }
 }
 
-function pick(result: Extract<TypedQuestionClientResult, { kind: 'answer' }>): unknown {
-  if ('choice' in result.answer) return result.answer.choice
-  if ('score' in result.answer)
-    return Object.entries(result.answer.probabilities).reduce(
-      (best, [level, probability]) =>
-        probability > best.probability ? { level: Number(level), probability } : best,
-      { level: 0, probability: -1 },
-    ).level
-  return result.answer.noul >= 0.5
-}
-
-function probabilities(result: Extract<TypedQuestionClientResult, { kind: 'answer' }>) {
-  if ('probabilities' in result.answer) return result.answer.probabilities
-  return { yes: result.answer.noul, no: 1 - result.answer.noul }
-}
-
 export async function preAnswerWorkerQuestion(input: {
   recordId: string
   runId: string
@@ -61,6 +50,8 @@ export async function preAnswerWorkerQuestion(input: {
   database?: Database
   canResume: boolean
   answerChannel: AnswerChannel
+  readMachine?: typeof readMachineValue
+  resolveRulings?: () => Promise<'agent' | 'user'>
 }): Promise<{ applied: boolean; value?: string | boolean | number }> {
   const typed = jevQuestion(input.recordId, input.question)
   if (!typed) return { applied: false }
@@ -74,45 +65,80 @@ export async function preAnswerWorkerQuestion(input: {
     `${input.question.why}\ntask: ${run.launch_key ?? 'none'}\njob: ${run.job}`,
   )
   if (result.kind !== 'answer') {
-    database
-      .query('UPDATE question SET jev_error=? WHERE record_id=?')
-      .run(
-        result.kind === 'missing-key' ? 'skipped: TYPESAFE_KEY is not configured' : result.error,
-        input.recordId,
-      )
+    writeTransaction(() => {
+      database
+        .query('UPDATE question SET jev_error=? WHERE record_id=?')
+        .run(
+          result.kind === 'missing-key'
+            ? 'skipped: TYPESAFE_API_KEY is not configured'
+            : result.error,
+          input.recordId,
+        )
+      enqueueQuestionRecord(database, input.recordId)
+    }, database)
     return { applied: false }
   }
-  const threshold = Number(readMachineValue('jev.confidence_threshold'))
-  const rulings = run.repo
-    ? (await resolveProjectAutonomy(run.repo, undefined, undefined, [], {}, undefined, database))
-        .rulings.value
-    : 'user'
+  const readMachine = input.readMachine ?? readMachineValue
+  const threshold = Number(readMachine('jev.confidence_threshold'))
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    const raw = readMachine('jev.confidence_threshold')
+    const error = `invalid jev.confidence_threshold ${JSON.stringify(raw)}; run bottega machine config set jev.confidence_threshold <0-1>`
+    writeTransaction(() => {
+      database.query('UPDATE question SET jev_error=? WHERE record_id=?').run(error, input.recordId)
+      enqueueQuestionRecord(database, input.recordId)
+    }, database)
+    return { applied: false }
+  }
+  const rulings = input.resolveRulings
+    ? await input.resolveRulings()
+    : run.repo
+      ? (await resolveProjectAutonomy(run.repo, undefined, undefined, [], {}, undefined, database))
+          .rulings.value
+      : 'user'
   const decision = routeJevAnswer({
     question: input.question,
     answer: result.answer,
     threshold,
     rulings,
-    autoRule: readMachineValue('jev.auto_rule') === 'on',
+    autoRule: readMachine('jev.auto_rule') === 'on',
     canResume: input.canResume,
   })
-  database
-    .query(
-      `UPDATE question SET jev_pick=?,jev_confidence=?,jev_probabilities=?,jev_model=?,jev_input_tokens=? WHERE record_id=?`,
-    )
-    .run(
-      JSON.stringify(pick(result)),
-      decision.confidence,
-      JSON.stringify(probabilities(result)),
-      result.model,
-      result.inputTokens,
-      input.recordId,
-    )
-  if (decision.action !== 'apply') return { applied: false }
-  const value = decision.value
-  database
-    .query(
-      `UPDATE question SET answer=?,answer_value=?,answered_at=?,answered_by='jev',answered_by_kind='jev',answerer_kind='agent',answer_channel=?,revision=revision+1 WHERE record_id=?`,
-    )
-    .run(String(value), JSON.stringify(value), nowIso(), input.answerChannel, input.recordId)
-  return { applied: true, value }
+  writeTransaction(() => {
+    database
+      .query(
+        `UPDATE question SET jev_pick=?,jev_confidence=?,jev_probabilities=?,jev_model=?,jev_input_tokens=?,jev_error=NULL WHERE record_id=?`,
+      )
+      .run(
+        decision.pick === null ? null : JSON.stringify(decision.pick),
+        decision.confidence,
+        decision.probabilities === null ? null : JSON.stringify(decision.probabilities),
+        result.model,
+        result.inputTokens,
+        input.recordId,
+      )
+    if (decision.action === 'apply') {
+      const at = nowIso()
+      applyQuestionAnswer({
+        database,
+        questionId: input.recordId,
+        answer: String(decision.value),
+        value: decision.value,
+        answeredAt: at,
+        answeredBy: 'jev',
+        answeredByName: null,
+        answeredByKind: 'jev',
+        answererKind: 'agent',
+        channel: input.answerChannel,
+        deliveryPendingAt: at,
+        delivery: {
+          runId: input.runId,
+          mode: QUESTION_DELIVERY_MODE_LIVE,
+          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+        },
+      })
+    } else enqueueQuestionRecord(database, input.recordId)
+  }, database)
+  return decision.action === 'apply'
+    ? { applied: true, value: decision.value }
+    : { applied: false }
 }

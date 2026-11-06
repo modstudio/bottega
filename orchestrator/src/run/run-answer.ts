@@ -27,7 +27,8 @@ import {
   continuationCheckoutForRetry,
 } from './continuation-checkout-service.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
-import { questionOpenSql } from './question-open.ts'
+import { applyQuestionAnswer } from './question-answer.ts'
+import { openChainQuestions, questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
@@ -152,7 +153,7 @@ export type AnswerRunInput = {
     | {
         questionId: string
         text: string
-        typedValue?: string | boolean | number
+        typedValue?: unknown
         fromOperator: boolean
       }[]
   allowPartialRecordOnly?: boolean
@@ -161,6 +162,7 @@ export type AnswerRunInput = {
   recordOnly: boolean
   json: boolean
   flags: RunFlags
+  typedValue?: unknown
 }
 type OpenQuestion = TypedAnswerQuestion & {
   awaiting_operator_at: string | null
@@ -265,15 +267,11 @@ function requireAnswerAuthority(
 }
 
 function readOpenQuestions(id: string, status: string): OpenQuestion[] {
-  const open = db()
-    .query(
-      `SELECT q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.typed_options,q.criteria,q.levels,
-              r.record_id owner_id, r.status owner_status, r.pid owner_pid
-     FROM question q JOIN run r ON r.record_id = q.run_record_id
-    WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}
-    ORDER BY q.number`,
-    )
-    .all(id, id) as OpenQuestion[]
+  const open = openChainQuestions<OpenQuestion>(
+    db(),
+    id,
+    'q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.typed_options,q.criteria,q.levels, r.record_id owner_id,r.status owner_status,r.pid owner_pid',
+  )
   if (open.length) return open
   const asked = db()
     .query(
@@ -866,7 +864,9 @@ export async function answerRun(
       )
     } else {
       const answer = validatedRuling(input.rulings, argvLimit)
-      answers.push(answeredQuestion(open[0]!, answer, input.fromOperator))
+      if (input.typedValue !== undefined && open.length > 1)
+        throw new Error('--value requires --q<id> when more than one question is open')
+      answers.push(answeredQuestion(open[0]!, answer, input.fromOperator, input.typedValue))
     }
   }
   await assertAnswersReady(open.length, answers, input, ownersLive)
@@ -923,56 +923,45 @@ export async function answerRun(
     answers,
     callerSession,
   )
-  const upd = db().query(
-    `UPDATE question
-      SET answer=?, answer_value=?, answered_by_kind='architect',
-          jev_agreed=CASE WHEN jev_pick IS NULL OR ? IS NULL THEN NULL WHEN jev_pick=? THEN 1 ELSE 0 END,
-          answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
-          delivery_pending_at=?, awaiting_operator_at=NULL
-    WHERE record_id=?`,
-  )
   writeTransaction(() => {
     if (authorityDecision.kind === 'allow-as-owner') {
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
     answers.forEach((answer, index) => {
-      const encodedValue =
-        answer.typedValue === undefined ? null : JSON.stringify(answer.typedValue)
-      upd.run(
-        answer.answer,
-        encodedValue,
-        encodedValue,
-        encodedValue,
-        now,
-        ...attributions[index]!,
-        input.channel,
-        ownersLive ? null : now,
-        answer.record_id,
-      )
-      enqueueQuestionRecord(db(), answer.record_id)
+      const [answeredBy, answeredByName, answererKind] = attributions[index]!
+      applyQuestionAnswer({
+        database: db(),
+        questionId: answer.record_id,
+        answer: answer.answer,
+        value: answer.typedValue,
+        answeredAt: now,
+        answeredBy,
+        answeredByName,
+        answeredByKind: 'architect',
+        answererKind,
+        channel: input.channel,
+        deliveryPendingAt: ownersLive ? null : now,
+        ...(skipResume || ownersLive
+          ? {
+              delivery: {
+                runId: skipResume
+                  ? null
+                  : open.find((q) => q.record_id === answer.record_id)!.owner_id,
+                mode: skipResume
+                  ? QUESTION_DELIVERY_MODE_RECORD_ONLY
+                  : QUESTION_DELIVERY_MODE_LIVE,
+                outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+              },
+            }
+          : {}),
+      })
     })
     if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)
     if (skipResume) {
-      appendQuestionDeliveries(
-        answers.map((answer) => answer.record_id),
-        {
-          runId: null,
-          mode: QUESTION_DELIVERY_MODE_RECORD_ONLY,
-          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-          at: now,
-        },
-      )
+      // The shared answer transition recorded each delivery.
     } else if (ownersLive) {
-      for (const answer of answers) {
-        const owner = open.find((question) => question.record_id === answer.record_id)!
-        appendQuestionDeliveries([answer.record_id], {
-          runId: owner.owner_id,
-          mode: QUESTION_DELIVERY_MODE_LIVE,
-          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-          at: now,
-        })
-      }
+      // The shared answer transition recorded each delivery.
     }
     if (skipResume || ownersLive) auditRunMutation(answerAuthority, 'answer')
   })
@@ -1061,7 +1050,8 @@ export async function answerRun(
         db()
           .query(
             `UPDATE question
-            SET answer=NULL, answered_at=NULL, answered_by=NULL, answered_by_name=NULL, answerer_kind=NULL,
+            SET answer=NULL, answer_value=NULL, answered_by_kind=NULL, jev_agreed=NULL,
+                answered_at=NULL, answered_by=NULL, answered_by_name=NULL, answerer_kind=NULL,
                 revision=revision+1,
                 answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
           WHERE record_id=?`,

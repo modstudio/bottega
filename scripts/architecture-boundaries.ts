@@ -604,7 +604,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'outcome-boundary',
     'orchestrator/src/outcome.ts',
-    ['../../shared/brand.ts', '../../shared/worker-question.ts'],
+    ['../../shared/brand.ts', './ask/worker-question.ts'],
     'Keep outcome decisions and interpretation independent of lifecycle concerns.',
   ),
   ...portBoundarySpecs.map((spec) =>

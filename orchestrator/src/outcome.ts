@@ -4,7 +4,7 @@ import {
   type WorkerQuestion,
   type WorkerQuestionInput,
   WorkerQuestionSchema,
-} from '../../shared/worker-question.ts'
+} from './ask/worker-question.ts'
 export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
 export const SCHEMA_ENVELOPE_ERROR_PREFIX = 'schema-envelope: '
 
@@ -70,6 +70,15 @@ export function realQuestions(r: FinalizationReply | null | undefined): WorkerQu
     const parsed = WorkerQuestionSchema.safeParse(question)
     return parsed.success && isRealQuestion(parsed.data) ? [parsed.data] : []
   })
+}
+
+function droppedQuestionReason(question: WorkerQuestionInput): string {
+  const parsed = WorkerQuestionSchema.safeParse(question)
+  if (!parsed.success) return parsed.error.issues.map((issue) => issue.message).join('; ')
+  const normalized = normalizeQuestionField(parsed.data.question)
+  if (!normalized) return 'question is empty'
+  if (!normalizeQuestionField(parsed.data.why)) return 'why is empty'
+  return 'question is generic'
 }
 
 /** A reply contains a decision for the architect when at least one question is real. */
@@ -169,10 +178,11 @@ function annotateDroppedQuestions<FailureKind extends string>(
   droppedQuestions: WorkerQuestionInput[],
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
-  if (droppedQuestions.length === 0 || (acceptedQuestions.length === 0 && reply?.status !== 'done'))
-    return decision
+  if (droppedQuestions.length === 0) return decision
   const count = droppedQuestions.length
-  const rejected = droppedQuestions.map((item) => JSON.stringify(item.question)).join(', ')
+  const rejected = droppedQuestions
+    .map((item) => `${JSON.stringify(item.question)} (${droppedQuestionReason(item)})`)
+    .join(', ')
   const note =
     `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
     `rejected question text: ${rejected}`

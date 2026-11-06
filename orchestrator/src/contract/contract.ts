@@ -1,6 +1,7 @@
 // concern: contract
 
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
 import { isReaderJob, type Job, job } from '../jobs/jobs.ts'
 import { GENERIC_QUESTION_TOKENS } from '../outcome.ts'
 import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
@@ -139,7 +140,7 @@ export const WORKER_SCHEMA = {
         additionalProperties: false,
         required: ['question', 'options', 'recommendation', 'why'],
         properties: {
-          kind: { type: ['string', 'null'], enum: ['choice', 'yesno', 'score', 'text', null] },
+          kind: { type: ['string', 'null'], enum: [...WORKER_QUESTION_KINDS, null] },
           question: { type: 'string' },
           options: {
             anyOf: [

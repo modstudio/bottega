@@ -11,7 +11,7 @@ function fixture(input: {
   fetch?: (input: string, init: RequestInit) => Promise<Response>
 }) {
   const rows: TypedQuestionAnswerRow[] = []
-  const resolve = input.resolve ?? (async () => ({ TYPESAFE_KEY: 'fixture-secret' }))
+  const resolve = input.resolve ?? (async () => ({ TYPESAFE_API_KEY: 'fixture-secret' }))
   const fetch = input.fetch ?? (async () => new Response('', { status: 500 }))
   return {
     rows,
@@ -33,7 +33,7 @@ const input = {
 } as const
 
 test('a missing key returns no answer and records nothing', async () => {
-  const f = fixture({ resolve: async () => ({ TYPESAFE_KEY: undefined }) })
+  const f = fixture({ resolve: async () => ({ TYPESAFE_API_KEY: undefined }) })
 
   expect(await askTypedQuestion(input, f.dependencies)).toBeNull()
   expect(f.rows).toEqual([])
