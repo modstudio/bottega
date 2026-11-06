@@ -125,6 +125,182 @@ test('a recent unregistered transcript remains unstamped and ingests after regis
   }
 })
 
+test('transcript interval identity and attribution survive a sliding collection window', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'transcript-window-identity-'))
+  const file = join(root, 'identity.jsonl')
+  const originalRoot = process.env.BOTTEGA_TRANSCRIPT_ROOT
+  const taskRecordId = newRecordId()
+  const line = (timestamp: string, cwd: string, type: string, message: unknown) =>
+    JSON.stringify({ timestamp, cwd, sessionId: 'identity-session', type, message })
+  try {
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .run(taskRecordId, 'ALP-9123', 'alpha', 'mcp', '2026-11-03', '2026-11-03'),
+    )
+    writeFileSync(
+      file,
+      [
+        line('2026-11-03T09:00:00.000Z', '/fixtures/repos/beta', 'assistant', {
+          usage: { input_tokens: 1 },
+        }),
+        line('2026-11-03T09:01:00.000Z', '/fixtures/repos/beta', 'assistant', {
+          usage: { output_tokens: 1 },
+        }),
+        line('2026-11-03T10:00:00.000Z', '/fixtures/repos/alpha', 'user', {
+          content: 'Implement ALP-9123',
+        }),
+        line('2026-11-03T10:06:00.000Z', '/fixtures/repos/alpha', 'assistant', {
+          usage: { input_tokens: 10 },
+        }),
+        line('2026-11-03T10:08:00.000Z', '/fixtures/repos/alpha', 'assistant', {
+          usage: { output_tokens: 20 },
+        }),
+        line('2026-11-03T10:10:00.000Z', '/fixtures/repos/alpha/src', 'assistant', {
+          usage: { input_tokens: 30 },
+        }),
+        line('2026-11-03T10:11:00.000Z', '/fixtures/repos/alpha/src', 'assistant', {
+          usage: { output_tokens: 40 },
+        }),
+      ].join('\n') + '\n',
+    )
+    process.env.BOTTEGA_TRANSCRIPT_ROOT = root
+
+    const intervalsAt = (since: string) =>
+      db()
+        .query<
+          {
+            ref: string
+            start_at: string
+            end_at: string
+            task_key: string | null
+            via: string | null
+          },
+          [string]
+        >(
+          `SELECT ref,start_at,end_at,task_key,via FROM interval
+           WHERE source='claude' AND ref LIKE 'claude:identity.jsonl:%'
+             AND project='alpha' AND end_at >= ?
+           ORDER BY start_at`,
+        )
+        .all(since)
+
+    const beforeEdge = '2026-11-03T08:55:00.000Z'
+    await ingestTranscripts(beforeEdge, undefined, null, { rebuild: true })
+    const first = intervalsAt(beforeEdge)
+
+    const afterFirstMessage = '2026-11-03T10:05:00.000Z'
+    await ingestTranscripts(afterFirstMessage, undefined, null, { rebuild: true })
+    const second = intervalsAt(afterFirstMessage)
+
+    const expected = [
+      {
+        ref: 'claude:identity.jsonl:1',
+        start_at: '2026-11-03T10:00:00.000Z',
+        end_at: '2026-11-03T10:08:00.000Z',
+        task_key: 'ALP-9123',
+        via: 'prompt',
+      },
+      {
+        ref: 'claude:identity.jsonl:2',
+        start_at: '2026-11-03T10:10:00.000Z',
+        end_at: '2026-11-03T10:11:00.000Z',
+        task_key: 'ALP-9123',
+        via: 'sibling-leg',
+      },
+    ]
+    expect(first).toEqual(expected)
+    expect(second).toEqual(expected)
+  } finally {
+    writeTransaction((conn) => {
+      conn.query("DELETE FROM interval WHERE ref LIKE 'claude:identity.jsonl:%'").run()
+      conn.query('DELETE FROM transcript_fingerprint WHERE path=?').run(file)
+      conn.query('DELETE FROM task WHERE record_id=?').run(taskRecordId)
+    })
+    if (originalRoot === undefined) delete process.env.BOTTEGA_TRANSCRIPT_ROOT
+    else process.env.BOTTEGA_TRANSCRIPT_ROOT = originalRoot
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('an in-window spend after a capped gap is ingested at its own instant', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'transcript-spend-gap-'))
+  const file = join(root, 'gap.jsonl')
+  const originalRoot = process.env.BOTTEGA_TRANSCRIPT_ROOT
+  const taskRecordId = newRecordId()
+  const nine = at('2026-11-03T09:00:00.000Z')
+  const noon = at('2026-11-03T12:00:00.000Z')
+  const leg = {
+    cwd: '/fixtures/repos/alpha',
+    ref: 'gap.jsonl',
+    stamps: [nine, noon],
+    prompts: ['Implement ALP-9124'],
+    spend: [{ at: noon, tokens: 55 }],
+  }
+  try {
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .run(taskRecordId, 'ALP-9124', 'alpha', 'mcp', '2026-11-03', '2026-11-03'),
+    )
+    writeFileSync(
+      file,
+      [
+        JSON.stringify({
+          timestamp: '2026-11-03T09:00:00.000Z',
+          cwd: leg.cwd,
+          sessionId: 'gap-session',
+          type: 'user',
+          message: { content: leg.prompts[0] },
+        }),
+        JSON.stringify({
+          timestamp: '2026-11-03T12:00:00.000Z',
+          cwd: leg.cwd,
+          sessionId: 'gap-session',
+          type: 'assistant',
+          message: { usage: { input_tokens: 55 } },
+        }),
+      ].join('\n') + '\n',
+    )
+    process.env.BOTTEGA_TRANSCRIPT_ROOT = root
+
+    await ingestTranscripts('2026-11-03T10:00:00.000Z', undefined, null, { rebuild: true })
+
+    expect(
+      db()
+        .query<{ start_at: string; end_at: string; claude_tokens: number }, []>(
+          `SELECT start_at,end_at,claude_tokens FROM interval
+           WHERE source='claude' AND ref='claude:gap.jsonl:0'`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        start_at: '2026-11-03T12:00:00.000Z',
+        end_at: '2026-11-03T12:00:00.000Z',
+        claude_tokens: 55,
+      },
+    ])
+    expect(
+      spendingSpans(leg, DEFAULT_IDLE_CAP_MS).reduce((total, span) => total + span.tokens, 0),
+    ).toBe(55)
+  } finally {
+    writeTransaction((conn) => {
+      conn.query("DELETE FROM interval WHERE ref='claude:gap.jsonl:0'").run()
+      conn.query('DELETE FROM transcript_fingerprint WHERE path=?').run(file)
+      conn.query('DELETE FROM task WHERE record_id=?').run(taskRecordId)
+    })
+    if (originalRoot === undefined) delete process.env.BOTTEGA_TRANSCRIPT_ROOT
+    else process.env.BOTTEGA_TRANSCRIPT_ROOT = originalRoot
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 describe('transcript root', () => {
   test('a resolved path enables ingest and an empty value disables it', () => {
     expect(resolveTranscriptRoot('/transcripts')).toEqual({
@@ -191,9 +367,26 @@ describe('spend conservation', () => {
   })
 
   test('spend after a capped gap is still counted', () => {
-    // The span ends 10 minutes in; the message lands an hour later. It must
-    // land in a span rather than falling through the gap.
-    expect(conserved([t, t + 3600_000], [{ at: t + 3600_000, tokens: 77 }])).toBe(77)
+    // The measured span ends 10 minutes in; the message lands an hour later
+    // and gets a zero-length span at its own instant.
+    const out = spendingSpans(
+      {
+        cwd: '/fixtures/repos/workshop',
+        ref: 'r',
+        stamps: [t, t + 3600_000],
+        prompts: [],
+        spend: [
+          { at: t + 3600_000, tokens: 70 },
+          { at: t + 3600_000, tokens: 7 },
+        ],
+      },
+      DEFAULT_IDLE_CAP_MS,
+    )
+    expect(out).toEqual([
+      { start: t, end: t + DEFAULT_IDLE_CAP_MS, tokens: 0 },
+      { start: t + 3600_000, end: t + 3600_000, tokens: 77 },
+    ])
+    expect(out.reduce((total, span) => total + span.tokens, 0)).toBe(77)
   })
 
   test('a leg with no spend at all emits nothing', () => {
