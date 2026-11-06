@@ -1,13 +1,17 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
-import { resolveAssigneeIds } from '../../../shared/trackers.ts'
+import { resolveAssigneeIds, type TrackerSource } from '../../../shared/trackers.ts'
 import { resetFixtureStore } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
 import { trackerPresentation } from '../projects.ts'
 import { showTask } from '../task.ts'
 import { taskIdentityDoctor } from '../task-identity.ts'
 import {
+  dropDeletedTrackerTasks,
+  fetchTrackerTasks,
   finishTrackerResults,
   ingestTrackers,
+  recordTrackerReadState,
+  storedTrackerReadMode,
   type TrackerTask,
   trackerCredentials,
   trackerLegError,
@@ -119,7 +123,7 @@ describe('tracker observation times', () => {
     })
   })
 
-  test('an unchanged done lookup preserves its stored closure time', () => {
+  test('re-observing done work preserves its lifecycle times while an open task closes now', () => {
     const done = { ...trackerTask, status: 'completed', category: 'done' as const }
     const closedAt = '2026-09-02T12:00:00.000Z'
     const stored = {
@@ -128,10 +132,14 @@ describe('tracker observation times', () => {
       status_category: done.category,
       closed_at: closedAt,
     }
-    expect(trackerObservationTimes(done, stored, at).closedAt).toBe(closedAt)
+    expect(trackerObservationTimes(done, stored, at)).toMatchObject({
+      openedAt: stored.opened_at,
+      closedAt,
+    })
     expect(
-      trackerObservationTimes({ ...done, title: 'Changed done task' }, stored, at).closedAt,
-    ).toBe(at)
+      trackerObservationTimes({ ...done, title: 'Changed done task', updatedAt: at }, stored, at),
+    ).toMatchObject({ openedAt: stored.opened_at, closedAt })
+    expect(trackerObservationTimes(done, storedTrackerTask, at).closedAt).toBe(at)
   })
 })
 
@@ -150,6 +158,168 @@ afterAll(() => {
 })
 
 describe('tracker register', () => {
+  const source = (
+    supportsUpdatedSince: boolean,
+    fetch: TrackerSource['fetch'],
+    project = 'alpha',
+  ): TrackerSource => ({
+    project,
+    env: 'FIXTURE',
+    supportsUpdatedSince,
+    fetch,
+  })
+
+  test('incremental reads skip vanished lookups while undeclared reads keep the full behavior', async () => {
+    cacheTrackerTask({ ...trackerTask, externalId: 'incremental-task', key: 'ALP-INCREMENTAL' })
+    let lookups = 0
+    const incremental = source(true, async () => ({ tasks: [], complete: true, deletedKeys: [] }))
+    incremental.lookup = async () => {
+      lookups++
+      return null
+    }
+    await fetchTrackerTasks(incremental, { callTool: async () => ({}) }, 'incremental', 'cursor')
+    expect(lookups).toBe(0)
+
+    const full = { ...incremental, supportsUpdatedSince: false }
+    await fetchTrackerTasks(full, { callTool: async () => ({}) }, 'full', null)
+    expect(lookups).toBe(1)
+  })
+
+  test('full reads do not look up keys reported as deleted', async () => {
+    cacheTrackerTask({
+      ...trackerTask,
+      externalId: 'deleted-task',
+      key: 'DEL-1',
+      project: 'deleted',
+    })
+    let lookups = 0
+    const full = source(
+      false,
+      async () => ({ tasks: [], complete: true, deletedKeys: ['DEL-1'] }),
+      'deleted',
+    )
+    full.lookup = async () => {
+      lookups++
+      return null
+    }
+
+    await fetchTrackerTasks(full, { callTool: async () => ({}) }, 'full', null)
+    expect(lookups).toBe(0)
+  })
+
+  test.each(['incremental', 'full'] as const)(
+    '%s reads drop cached tasks reported deleted',
+    async (mode) => {
+      const project = `deleted-${mode}`
+      const key = mode === 'full' ? 'DEL-FULL' : 'DEL-INCREMENTAL'
+      cacheTrackerTask({ ...trackerTask, externalId: key.toLowerCase(), key, project })
+      const fetched = await fetchTrackerTasks(
+        source(
+          true,
+          async () => ({ tasks: [], complete: true, deletedKeys: [key, 'UNKNOWN-1'] }),
+          project,
+        ),
+        { callTool: async () => ({}) },
+        mode,
+        mode === 'incremental' ? '2026-11-06T09:55:00.000Z' : null,
+      )
+      const at = '2026-11-06T10:00:00.000Z'
+
+      expect(dropDeletedTrackerTasks(project, fetched.deletedKeys, at).dropped).toBe(1)
+      expect(
+        db()
+          .query<{ status: string; status_category: string; closed_at: string }, [string, string]>(
+            'SELECT status,status_category,closed_at FROM task WHERE project=? AND key=?',
+          )
+          .get(project, key),
+      ).toEqual({ status: 'deleted', status_category: 'dropped', closed_at: at })
+    },
+  )
+
+  test('cursor and full-read time advance only after a complete read', () => {
+    const first = '2026-11-06T10:00:00.000Z'
+    recordTrackerReadState('alpha', 'full', first, true)
+    expect(
+      storedTrackerReadMode(
+        source(true, async () => ({ tasks: [], complete: true, deletedKeys: [] })),
+        first,
+      ),
+    ).toEqual({
+      mode: 'incremental',
+      since: '2026-11-06T09:55:00.000Z',
+    })
+
+    const partial = '2026-11-06T11:00:00.000Z'
+    recordTrackerReadState('alpha', 'incremental', partial, false)
+    expect(
+      storedTrackerReadMode(
+        source(true, async () => ({ tasks: [], complete: true, deletedKeys: [] })),
+        partial,
+      ),
+    ).toEqual({
+      mode: 'full',
+      since: '2026-11-06T09:55:00.000Z',
+    })
+    expect(
+      db()
+        .query<{ value: string }, []>(
+          "SELECT value FROM setting WHERE key='collect.tracker.alpha.full-at'",
+        )
+        .get()?.value,
+    ).toBe(first)
+  })
+
+  test('a repeated deletion report keeps the first drop and a closed task keeps its closure', () => {
+    const project = 'deleted-repeat'
+    cacheTrackerTask({ ...trackerTask, externalId: 'del-open', key: 'DEL-OPEN', project })
+    cacheTrackerTask({
+      ...trackerTask,
+      externalId: 'del-done',
+      key: 'DEL-DONE',
+      project,
+      status: 'done',
+      category: 'done',
+    })
+    const closedBefore = db()
+      .query<{ closed_at: string }, [string, string]>(
+        'SELECT closed_at FROM task WHERE project=? AND key=?',
+      )
+      .get(project, 'DEL-DONE')?.closed_at
+    const first = '2026-11-06T10:00:00.000Z'
+
+    expect(dropDeletedTrackerTasks(project, ['DEL-OPEN', 'DEL-DONE'], first).dropped).toBe(2)
+    expect(dropDeletedTrackerTasks(project, ['DEL-OPEN'], '2026-11-06T10:05:00.000Z').dropped).toBe(
+      0,
+    )
+    const rows = db()
+      .query<{ key: string; closed_at: string }, [string]>(
+        'SELECT key,closed_at FROM task WHERE project=? ORDER BY key',
+      )
+      .all(project)
+    expect(rows).toEqual([
+      { key: 'DEL-DONE', closed_at: closedBefore ?? first },
+      { key: 'DEL-OPEN', closed_at: first },
+    ])
+  })
+
+  test('an incomplete incremental read leaves since unchanged and forces a full read', () => {
+    const first = '2026-11-06T12:00:00.000Z'
+    recordTrackerReadState('incomplete', 'full', first, true)
+    const tracker = source(
+      true,
+      async () => ({ tasks: [], complete: false, deletedKeys: [] }),
+      'incomplete',
+    )
+    const before = storedTrackerReadMode(tracker, first)
+
+    recordTrackerReadState('incomplete', 'incremental', '2026-11-06T13:00:00.000Z', false)
+
+    expect(storedTrackerReadMode(tracker, '2026-11-06T13:00:00.000Z')).toEqual({
+      mode: 'full',
+      since: before.since,
+    })
+  })
+
   test('successful reads record per-project freshness and failures do not', () => {
     const at = '2026-10-01T12:00:00.000Z'
     finishTrackerResults(

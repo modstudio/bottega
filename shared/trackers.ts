@@ -16,6 +16,11 @@ const TRACKER_ACTIONS = [
 export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
 export const TRACKER_PROTOCOLS = ['workspace-mcp', 'cursor-mcp', 'array-mcp', 'hub'] as const
 export type TrackerProtocol = (typeof TRACKER_PROTOCOLS)[number]
+const UPDATED_SINCE_PROTOCOLS: ReadonlySet<TrackerProtocol> = new Set([
+  'workspace-mcp',
+  'cursor-mcp',
+])
+const updatedSinceProtocolList = [...UPDATED_SINCE_PROTOCOLS].join(' and ')
 export const ARRAY_MCP_STATUS_WRITE_CONFIRM = 'production'
 type TrackerActionName = { agent: string; wire?: string | null }
 
@@ -127,6 +132,7 @@ export const trackerSettingsShape = {
   assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
   envPrefix: z.string().trim().min(1).optional(),
   openStatuses: z.array(z.string()).optional(),
+  updatedSince: z.boolean().optional(),
   completesOnMerge: z.boolean().optional(),
   states: z.record(trackerNameSchema, z.enum(['backlog', ...TASK_STATUSES])).optional(),
   reviewStages: z.strictObject(trackerReviewStagesShape).optional(),
@@ -159,6 +165,23 @@ export function refuseNonCursorProjectId(
       code: 'custom',
       path: ['projectId'],
       message: 'projectId is accepted only by the cursor-mcp protocol; remove tracker.projectId',
+    })
+  }
+}
+
+/** Only protocols with a defined incremental request may declare it. */
+export function refuseUnsupportedUpdatedSince(
+  tracker: TrackerSettings,
+  context: z.core.$RefinementCtx<TrackerSettings>,
+): void {
+  if (
+    tracker.updatedSince !== undefined &&
+    !UPDATED_SINCE_PROTOCOLS.has(tracker.protocol as TrackerProtocol)
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['updatedSince'],
+      message: `updatedSince is accepted only by the ${updatedSinceProtocolList} protocols; remove tracker.updatedSince`,
     })
   }
 }
@@ -250,7 +273,9 @@ export type TrackerSource = {
   project: string
   /** The env-source name prefix, e.g. STARSHIP for STARSHIP_MCP_URL. */
   env: string
-  fetch: (m: ToolCaller) => Promise<TrackerTask[]>
+  /** The register declares that this source accepts its protocol's updated-since filter. */
+  supportsUpdatedSince: boolean
+  fetch: (m: ToolCaller, updatedSince?: string) => Promise<TrackerFetchResult>
   /** One closed task by key, for work the window touched but the sync skipped. */
   lookup?: (m: ToolCaller, key: string) => Promise<TrackerTask | null>
   /**
@@ -260,6 +285,12 @@ export type TrackerSource = {
    * that cannot report any.
    */
   readCommentIds?: (m: ToolCaller, key: string) => Promise<string[] | null>
+}
+
+export type TrackerFetchResult = {
+  tasks: TrackerTask[]
+  complete: boolean
+  deletedKeys: string[]
 }
 
 export class TrackerLookupUnverifiable extends Error {
@@ -289,11 +320,12 @@ export const WORKSPACE_LOOKUP_PAGE_SIZE = 5
 const WORKSPACE_LOOKUP_MAX_PAGES = MAX_PAGES
 
 /** The raw status word wins where it is finer than the tracker's category. */
-function categoryOf(
+/** The category a status establishes, or null when neither the word nor the project's states name one. */
+function establishedCategory(
   rawStatus: string,
   category: string,
   states: TrackerSettings['states'],
-): StatusCategory {
+): StatusCategory | null {
   const w = rawStatus.toLowerCase()
   if (/review/.test(w)) return 'review'
   if (/blocked|on hold/.test(w)) return 'review'
@@ -303,7 +335,15 @@ function categoryOf(
     states?.[normal(rawStatus)] ??
     states?.[category] ??
     states?.[normal(category)]
-  return mapped === 'backlog' ? 'open' : (mapped ?? 'open')
+  return mapped === 'backlog' ? 'open' : (mapped ?? null)
+}
+
+function categoryOf(
+  rawStatus: string,
+  category: string,
+  states: TrackerSettings['states'],
+): StatusCategory {
+  return establishedCategory(rawStatus, category, states) ?? 'open'
 }
 
 export const trackerStatusCategory = categoryOf
@@ -396,6 +436,7 @@ type WorkspaceTask = {
   status?: string
   status_category?: string
   assignee_id?: string | number | null
+  updated_at?: string
 }
 
 type WorkspaceTaskDetail = Omit<WorkspaceTask, 'status'> & {
@@ -484,9 +525,81 @@ async function lookupWorkspaceTask(
   )
 }
 
+function appendWorkspaceTasks(
+  tasks: TrackerTask[],
+  refs: AssigneeRef[],
+  rows: WorkspaceTask[],
+  project: string,
+  status: string | undefined,
+  updatedSince: string | undefined,
+  states: TrackerSettings['states'],
+): boolean {
+  let complete = true
+  for (const task of rows) {
+    if (!task.short_id) continue
+    // An incremental read also returns closed rows, so a status that establishes no category
+    // cannot default to open; the read is partial and the next one is full.
+    const category =
+      updatedSince === undefined
+        ? categoryOf(task.status ?? '', task.status_category ?? status ?? '', states)
+        : task.status
+          ? establishedCategory(task.status, task.status_category ?? '', states)
+          : null
+    if (category === null) {
+      complete = false
+      continue
+    }
+    const key = task.short_id.toUpperCase()
+    tasks.push({
+      externalId: task.id ?? null,
+      key,
+      project,
+      title: decode(task.summary ?? ''),
+      status: task.status ?? status ?? '',
+      category,
+      updatedAt: updatedSince === undefined ? null : (task.updated_at ?? null),
+      assignee: null,
+    })
+    refs.push({ id: task.assignee_id, taskKey: key })
+  }
+  return complete
+}
+
+async function fetchWorkspaceStatus(
+  m: ToolCaller,
+  project: string,
+  status: string | undefined,
+  updatedSince: string | undefined,
+  states: TrackerSettings['states'],
+): Promise<{ tasks: TrackerTask[]; refs: AssigneeRef[]; complete: boolean }> {
+  const tasks: TrackerTask[] = []
+  const refs: AssigneeRef[] = []
+  let complete = true
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const reply = (await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
+      ...(updatedSince === undefined ? { status } : { updated_since: updatedSince }),
+      page,
+      per_page: 100,
+    })) as { tasks?: WorkspaceTask[]; last_page?: number }
+    complete &&= appendWorkspaceTasks(
+      tasks,
+      refs,
+      reply.tasks ?? [],
+      project,
+      status,
+      updatedSince,
+      states,
+    )
+    if (!reply.last_page || page >= reply.last_page) break
+    if (page === MAX_PAGES) complete = false
+  }
+  return { tasks, refs, complete }
+}
+
 function workspaceSource(
   project: string,
   env: string,
+  supportsUpdatedSince: boolean,
   openStatuses: string[],
   states: TrackerSettings['states'],
   lookup: NonNullable<TrackerSettings['assigneeLookup']>,
@@ -496,38 +609,22 @@ function workspaceSource(
   return {
     project,
     env,
-    async fetch(m) {
+    supportsUpdatedSince,
+    async fetch(m, updatedSince) {
       const out: TrackerTask[] = []
       const refs: AssigneeRef[] = []
-      for (const status of openStatuses) {
-        for (let page = 1; page <= MAX_PAGES; page++) {
-          const r = (await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
-            status,
-            page,
-            per_page: 100,
-          })) as { tasks?: WorkspaceTask[]; last_page?: number }
-          for (const t of r.tasks ?? []) {
-            if (!t.short_id) continue
-            out.push({
-              externalId: t.id ?? null,
-              key: t.short_id.toUpperCase(),
-              project,
-              title: decode(t.summary ?? ''),
-              status: t.status ?? status,
-              category: categoryOf(t.status ?? '', t.status_category ?? status, states),
-              updatedAt: null,
-              assignee: null,
-            })
-            refs.push({ id: t.assignee_id, taskKey: t.short_id.toUpperCase() })
-          }
-          if (!r.last_page || page >= r.last_page) break
-        }
+      let complete = true
+      for (const status of updatedSince === undefined ? openStatuses : [undefined]) {
+        const fetched = await fetchWorkspaceStatus(m, project, status, updatedSince, states)
+        out.push(...fetched.tasks)
+        refs.push(...fetched.refs)
+        complete &&= fetched.complete
       }
       const names = await assignees(m, refs)
       out.forEach((task, index) => {
         task.assignee = names[index] ?? null
       })
-      return out
+      return { tasks: out, complete, deletedKeys: [] }
     },
     async lookup(m, key) {
       return lookupWorkspaceTask(m, key, project, states, assignees)
@@ -548,6 +645,55 @@ const cursorCreatedTaskKey = (result: unknown): string | undefined => {
   return nonEmptyUppercase('humanKey' in data ? data.humanKey : undefined)
 }
 
+type CursorTask = {
+  id?: string
+  humanKey?: string
+  title?: string
+  status?: string
+  updatedAt?: string
+  assigneeName?: string | null
+  deletedAt?: string | null
+}
+
+function appendCursorTasks(
+  out: TrackerTask[],
+  items: CursorTask[],
+  project: string,
+  status: string | undefined,
+  states: TrackerSettings['states'],
+): { deletedKeys: string[]; complete: boolean } {
+  const deletedKeys: string[] = []
+  let complete = true
+  for (const task of items) {
+    if (task.deletedAt) {
+      if (task.humanKey) deletedKeys.push(task.humanKey.toUpperCase())
+      continue
+    }
+    if (!task.humanKey) continue
+    const category =
+      status === undefined
+        ? task.status
+          ? establishedCategory(task.status, task.status, states)
+          : null
+        : categoryOf(task.status ?? '', task.status ?? status, states)
+    if (category === null) {
+      complete = false
+      continue
+    }
+    out.push({
+      externalId: task.id ?? null,
+      key: task.humanKey.toUpperCase(),
+      project,
+      title: decode(task.title ?? ''),
+      status: task.status ?? status ?? '',
+      category,
+      updatedAt: task.updatedAt ?? null,
+      assignee: task.assigneeName?.trim() || null,
+    })
+  }
+  return { deletedKeys, complete }
+}
+
 /**
  * Dotted tool names (`task.list`) with a `{data:{items,nextCursor}}` envelope,
  * paged by cursor. The dot is the server's wire name even when clients display
@@ -556,52 +702,40 @@ const cursorCreatedTaskKey = (result: unknown): string | undefined => {
 function cursorMcpSource(
   project: string,
   env: string,
+  supportsUpdatedSince: boolean,
   openStatuses: string[],
   states: TrackerSettings['states'],
 ): TrackerSource {
   return {
     project,
     env,
-    async fetch(m) {
+    supportsUpdatedSince,
+    async fetch(m, updatedSince) {
       const out: TrackerTask[] = []
-      for (const status of openStatuses) {
+      let complete = true
+      const deletedKeys: string[] = []
+      for (const status of updatedSince === undefined ? openStatuses : [undefined]) {
         let cursor: string | undefined
         for (let page = 0; page < MAX_PAGES; page++) {
           const r = (await m.callTool(trackerWireAction('cursor-mcp', 'search'), {
-            status,
+            ...(updatedSince === undefined ? { status } : { updatedSince }),
             limit: 100,
             ...(cursor ? { cursor } : {}),
           })) as {
             data?: {
-              items?: {
-                id?: string
-                humanKey?: string
-                title?: string
-                status?: string
-                updatedAt?: string
-                assigneeName?: string | null
-              }[]
+              items?: CursorTask[]
               nextCursor?: string
             }
           }
-          for (const t of r.data?.items ?? []) {
-            if (!t.humanKey) continue
-            out.push({
-              externalId: t.id ?? null,
-              key: t.humanKey.toUpperCase(),
-              project,
-              title: decode(t.title ?? ''),
-              status: t.status ?? status,
-              category: categoryOf(t.status ?? '', t.status ?? status, states),
-              updatedAt: t.updatedAt ?? null,
-              assignee: t.assigneeName?.trim() || null,
-            })
-          }
+          const appended = appendCursorTasks(out, r.data?.items ?? [], project, status, states)
+          deletedKeys.push(...appended.deletedKeys)
+          complete &&= appended.complete
           cursor = r.data?.nextCursor
           if (!cursor) break
+          if (page === MAX_PAGES - 1) complete = false
         }
       }
-      return out
+      return { tasks: out, complete, deletedKeys }
     },
     async lookup(m, key) {
       let response: unknown
@@ -674,6 +808,7 @@ function arrayMcpSource(
   return {
     project,
     env,
+    supportsUpdatedSince: false,
     async fetch(m) {
       const out: TrackerTask[] = []
       for (const status of openStatuses) {
@@ -698,7 +833,7 @@ function arrayMcpSource(
           })
         }
       }
-      return out
+      return { tasks: out, complete: true, deletedKeys: [] }
     },
     async lookup(m, key) {
       const r = await m.callTool(trackerWireAction('array-mcp', 'get'), { search: key })
@@ -762,6 +897,7 @@ export function trackerSourceFor(
     return workspaceSource(
       project.name,
       env,
+      tracker.updatedSince === true,
       statuses,
       tracker.states,
       tracker.assigneeLookup ?? 'person-lookup',
@@ -769,7 +905,13 @@ export function trackerSourceFor(
     )
   }
   if (tracker.protocol === 'cursor-mcp') {
-    return cursorMcpSource(project.name, env, statuses, tracker.states)
+    return cursorMcpSource(
+      project.name,
+      env,
+      tracker.updatedSince === true,
+      statuses,
+      tracker.states,
+    )
   }
   if (tracker.protocol === 'array-mcp') {
     return arrayMcpSource(project.name, env, statuses, tracker.states)

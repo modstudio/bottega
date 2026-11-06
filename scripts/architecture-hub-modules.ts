@@ -1,4 +1,5 @@
 export const hubModuleSpecs = [
+  { file: 'hub/src/ingest/tracker-read-mode.ts', allowed: [] },
   {
     file: 'hub/src/trpc/routers/record-router-client.ts',
     allowed: ['../../record-client.ts', '../context.ts'],
