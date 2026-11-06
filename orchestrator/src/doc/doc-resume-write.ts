@@ -34,7 +34,7 @@ const NEXT_ACTION_HEADING = /^[ \t]{0,3}#{1,6}[ \t]+NEXT ACTION[ \t]*#*[ \t]*$/i
 const PATH_TOKEN = /\/?[A-Za-z0-9._~:@%+=-]+(?:\/[A-Za-z0-9._~:@%+=-]+)*\/?/g
 const URL_SPAN = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/g
 
-function isScratchLocation(path: string): boolean {
+export function isScratchLocation(path: string): boolean {
   return (
     path.startsWith('/tmp/') ||
     path.startsWith('/private/tmp/') ||

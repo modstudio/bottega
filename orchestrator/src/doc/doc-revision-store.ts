@@ -71,7 +71,7 @@ export function docWriteIdentity(
 }
 
 export function assertLocalRevisionWrite(
-  input: { scope: string; expectedRevision?: string },
+  input: { scope: string; slug?: string; expectedRevision?: string },
   current: string | null,
   isCreate: boolean,
 ): void {
@@ -81,7 +81,9 @@ export function assertLocalRevisionWrite(
     isCreate,
     scope: input.scope,
   })
-  if (!decision.allow) throw new Error(decision.reason)
+  if (!decision.allow) {
+    throw new Error(input.scope === 'context' ? `context item ${input.slug ?? '(unknown)'}: ${decision.reason}` : decision.reason)
+  }
 }
 
 export function currentDocRevision(

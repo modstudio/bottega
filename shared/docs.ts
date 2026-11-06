@@ -16,6 +16,7 @@ export const DOC_SCOPES = [
   'resume',
   'canon',
   'settings',
+  'context',
 ] as const
 export type DocScope = (typeof DOC_SCOPES)[number]
 export const DOC_AUDIENCES = ['technical', 'internal', 'customer'] as const
@@ -154,7 +155,7 @@ export const FILING_DOC_SCOPES = DOC_SCOPES.filter(
 ) as [Exclude<DocScope, 'canon' | 'settings'>, ...Exclude<DocScope, 'canon' | 'settings'>[]]
 export type FilingDocScope = (typeof FILING_DOC_SCOPES)[number]
 
-export type DocSubjectKind = 'project' | 'stack' | 'agent' | 'job'
+export type DocSubjectKind = 'project' | 'stack' | 'agent' | 'job' | 'holder'
 
 export const DOC_SCOPE_SUBJECT_KIND = {
   project: 'project',
@@ -166,6 +167,7 @@ export const DOC_SCOPE_SUBJECT_KIND = {
   resume: 'project',
   canon: 'project',
   settings: 'project',
+  context: 'holder',
 } as const satisfies Record<DocScope, DocSubjectKind | null>
 
 export function docScopeHasProjectSubject(scope: string): boolean {
@@ -202,4 +204,5 @@ export const DOC_SCOPE_ALLOWS_OWNER = {
   resume: false,
   canon: true,
   settings: true,
+  context: false,
 } as const satisfies Record<DocScope, boolean>

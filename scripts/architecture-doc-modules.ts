@@ -11,6 +11,26 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-context-write.ts', []),
+  module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
+  module('orchestrator/src/doc/context-write-adapter.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../database/db.ts',
+    '../workflow/workflow-task-reference.ts',
+    './context-item-codec.ts',
+    './doc-context-write.ts',
+    './doc-read-store.ts',
+    './doc-resume-write.ts',
+  ]),
+  module('orchestrator/src/doc/context-service.ts', [
+    '../../../shared/brand.ts',
+    '../database/db.ts',
+    './context-write-adapter.ts',
+    './context-item-codec.ts',
+    './doc-context-write.ts',
+    './docs.ts',
+  ]),
   module('orchestrator/src/secret-scan/secret-scan-decision.ts', []),
   module('orchestrator/src/secret-scan/secret-scan.ts', ['node:os', './secret-scan-decision.ts']),
   module('orchestrator/src/doc/doc-secret-scan.ts', [

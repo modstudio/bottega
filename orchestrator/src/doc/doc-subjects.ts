@@ -10,6 +10,7 @@ export function docSubjects(): {
   stack: string[]
   agent: string[]
   job: string[]
+  holder: string[]
 } {
   return {
     project: (db().query('SELECT name FROM project ORDER BY name').all() as { name: string }[]).map(
@@ -22,6 +23,7 @@ export function docSubjects(): {
     ).map((row) => row.stack),
     agent: Object.keys(AGENTS).sort(),
     job: Object.keys(JOBS).sort(),
+    holder: [],
   }
 }
 
@@ -33,7 +35,9 @@ export function validDocSubjects(scope: DocScope): string {
       ? docSubjects().project
       : subjectKind === 'stack'
         ? docSubjects().stack
-        : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
+        : subjectKind === 'holder'
+          ? ['task:<KEY>', 'session:<uuid>']
+          : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
 }
 
@@ -59,6 +63,15 @@ export function validateDocSubject(scope: DocScope, subject: string): void {
   }
   if (subjectKind === 'job' && !JOBS[subject]) {
     throw new Error(`unknown job subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
+  }
+  if (
+    subjectKind === 'holder' &&
+    !/^task:[A-Z][A-Z0-9]*-\d+$/.test(subject) &&
+    !/^session:[0-9a-f-]{36}$/i.test(subject)
+  ) {
+    throw new Error(
+      `invalid context holder subject ${JSON.stringify(subject)}; use task:<KEY> or session:<uuid>`,
+    )
   }
 }
 

@@ -261,6 +261,7 @@ export function decideDocRevisionWrite(input: {
     !input.isCreate &&
     input.scope !== 'canon' &&
     input.scope !== 'settings' &&
+    input.scope !== 'context' &&
     input.expected === undefined
   ) {
     return { allow: true }

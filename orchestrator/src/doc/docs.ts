@@ -43,6 +43,7 @@ import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
+import { contextSetRefusal } from './context-write-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
 import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
 import { assertDocProse } from './doc-prose.ts'
@@ -131,8 +132,12 @@ const hostedDocWriteIdentity = (identity: ReturnType<typeof resolvedDocWriteIden
   sessionId: identity.session,
 })
 
-function assertSetDocAllowed(input: DocWriteInput): void {
+async function assertSetDocAllowed(input: DocWriteInput): Promise<void> {
   assertWorkerDocStoreWriteAllowed('setDoc')
+  if (input.scope === 'context') {
+    const refusal = await contextSetRefusal({ subject: input.subject ?? '', slug: input.slug, body: input.body })
+    if (refusal) throw new Error(refusal)
+  }
   if (input.scope !== 'resume') return
   const refusal = rw.resumeWriteRefusal(input.slug, input.body, resumeFrontmatter(input.body))
   if (refusal) throw new Error(refusal)
@@ -475,7 +480,7 @@ async function setDocWithOp(
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
-  assertSetDocAllowed(input)
+  await assertSetDocAllowed(input)
   const prior = getDoc(input.scope, input.subject, input.slug, input.owner ?? null)
   const refusal = rw.resumeConsumptionWriteRefusal(input, prior?.body ?? null)
   if (refusal) throw new Error(refusal)
@@ -598,7 +603,7 @@ export async function removeDoc(
   if (!doc) return false
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
-    { scope, expectedRevision: context.expectedRevision },
+    { scope, slug, expectedRevision: context.expectedRevision },
     doc.revision,
     false,
   )

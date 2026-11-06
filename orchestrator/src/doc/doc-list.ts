@@ -14,10 +14,19 @@ function resolveListFilters(filters: DocListFilters): DocListFilters {
   }
 }
 
+function hideContextByDefault(filters: DocListFilters): DocListFilters {
+  if (filters.scope !== undefined || filters.scopes !== undefined) return filters
+  return { ...filters, scopes: ['project', 'machine', 'agent', 'job', 'global', 'stack', 'resume', 'canon', 'settings'] }
+}
+
 export function listDocs(filters: DocListFilters = {}) {
-  return listDocsStore(resolveListFilters(filters))
+  const resolved = resolveListFilters(filters)
+  const rows = listDocsStore(resolved)
+  return filters.scope === undefined && filters.scopes === undefined
+    ? rows.filter((doc) => doc.scope !== 'context')
+    : rows
 }
 
 export function listDocMetadata(filters: DocListFilters = {}) {
-  return listDocMetadataStore(resolveListFilters(filters))
+  return listDocMetadataStore(resolveListFilters(hideContextByDefault(filters)))
 }

@@ -148,6 +148,8 @@ export const mcpModules: McpModule[] = [
     '../canon/canon.ts',
     '../database/db.ts',
     '../doc/doc-revision-identifier.ts',
+    '../doc/context-service.ts',
+    '../doc/doc-context-write.ts',
     '../doc/doc-write-tree.ts',
     '../doc/docs.ts',
     '../worker-store-write.ts',
