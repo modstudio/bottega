@@ -2,7 +2,7 @@
 /** Typed worker-question vocabulary, storage codec, and answer validation. */
 
 import { z } from 'zod'
-import type { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
+import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
 
 const nullableAbsent = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === null ? undefined : value), schema.optional())
@@ -66,22 +66,33 @@ const text = z.object({
   why: nullableAbsent(z.string().trim()).default(''),
 })
 
-export const WorkerQuestionInputSchema = z.preprocess(
-  (raw) => {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
-    const value = raw as Record<string, unknown>
-    const kind = value.kind ?? undefined
-    if (kind === undefined)
-      return {
-        ...value,
-        kind: Array.isArray(value.options) && value.options.length ? 'choice' : 'text',
-      }
-    return value
-  },
-  z.discriminatedUnion('kind', [choice, yesno, score, text]),
-)
+export const WorkerQuestionInputSchema = z.object({
+  kind: z.enum(WORKER_QUESTION_KINDS).nullable().optional(),
+  question: requiredQuestion,
+  why: z.string().nullable().optional(),
+  options: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({ name: z.string(), criteria: z.string().nullable().optional() }),
+      ]),
+    )
+    .nullable()
+    .optional(),
+  recommendation: z.string().nullable().optional(),
+  criteria: z
+    .object({ yes: z.string().nullable().optional(), no: z.string().nullable().optional() })
+    .nullable()
+    .optional(),
+  levels: z.array(z.string()).nullable().optional(),
+})
 
-export const WorkerQuestionSchema = WorkerQuestionInputSchema
+const normalizedQuestion = z.discriminatedUnion('kind', [choice, yesno, score, text])
+
+export const WorkerQuestionSchema = WorkerQuestionInputSchema.transform((value) => ({
+  ...value,
+  kind: value.kind ?? (Array.isArray(value.options) && value.options.length ? 'choice' : 'text'),
+})).pipe(normalizedQuestion)
 export type WorkerQuestion = z.infer<typeof WorkerQuestionInputSchema>
 export type WorkerQuestionInput = {
   kind?: (typeof WORKER_QUESTION_KINDS)[number] | null

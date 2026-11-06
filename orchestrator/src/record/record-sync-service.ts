@@ -39,6 +39,7 @@ import {
 import { assertRecordPayloadColumns } from './record-payload-columns.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
+import { typedQuestionRecordValues } from './record-question-values.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
@@ -338,6 +339,7 @@ export const questionValues = (
   recommendation: nullableString(row.recommendation),
   why: nullableString(row.why),
   askedVia: nullableString(row.askedVia),
+  ...typedQuestionRecordValues(row),
   answer: nullableString(row.answer),
   answerBasis: nullableString(row.answerBasis),
   answeredAt: nullableDate(row.answeredAt),

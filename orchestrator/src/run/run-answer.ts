@@ -178,7 +178,9 @@ function storedAnswerDelivery(input: {
   ownersLive: boolean
   answerRecordId: string
   open: OpenQuestion[]
-}) {
+}):
+  | { delivery: NonNullable<Parameters<typeof applyQuestionAnswer>[0]['delivery']> }
+  | { delivery?: never } {
   if (!input.skipResume && !input.ownersLive) return {}
   return {
     delivery: {
@@ -195,20 +197,39 @@ function wrongQuestionChain(questionId: string, rootRecordId: string): string {
   return `--q${questionId} belongs to run ${rootRecordId}, not this chain`
 }
 
+function namedQuestionRefusal(questionId: string, runId: string): string {
+  const named = db()
+    .query(
+      `SELECT q.answered_at,r.record_id AS run_record_id,
+          COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id
+     FROM question q JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
+    )
+    .get(questionId) as {
+    answered_at: string | null
+    run_record_id: string
+    root_record_id: string
+  } | null
+  if (!named) return `--q${questionId} names no question`
+  if (named.root_record_id !== runId) return wrongQuestionChain(questionId, named.root_record_id)
+  if (named.answered_at) return `--q${questionId} on run ${named.run_record_id} is already closed`
+  return `--q${questionId} is not open on this chain`
+}
+
 function collectAnswers(input: {
   runId: string
   open: OpenQuestion[]
   answer: AnswerRunInput
   argvLimit: number | undefined
 }): AnsweredQuestion[] {
-  if (!Array.isArray(input.answer.rulings)) {
-    if (!input.answer.rulings)
+  const rulings = input.answer.rulings
+  if (!Array.isArray(rulings)) {
+    if (!rulings)
       throw new Error(
         `run ${input.runId} is waiting on ${input.open.length} question(s). ` +
           `Rule with: ${PLATFORM_SLUG} question answer ${input.runId} --q${input.open[0]!.number} "<ruling>", ` +
           'or pass a ruling via --file or stdin.',
       )
-    const answer = validatedRuling(input.answer.rulings, input.argvLimit)
+    const answer = validatedRuling(rulings, input.argvLimit)
     if (input.answer.typedValue !== undefined && input.open.length > 1)
       throw new Error('--value requires --q<id> when more than one question is open')
     return [
@@ -217,27 +238,11 @@ function collectAnswers(input: {
   }
   const invalid: string[] = []
   const seen = new Set<string>()
-  for (const ruling of input.answer.rulings) {
+  for (const ruling of rulings) {
     if (seen.has(ruling.questionId)) invalid.push(`--q${ruling.questionId} given more than once`)
     seen.add(ruling.questionId)
     if (input.open.some((question) => question.record_id === ruling.questionId)) continue
-    const named = db()
-      .query(
-        `SELECT q.record_id,q.number,q.answered_at,r.record_id AS run_record_id,
-            COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id
-       FROM question q JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
-      )
-      .get(ruling.questionId) as {
-      answered_at: string | null
-      run_record_id: string
-      root_record_id: string
-    } | null
-    if (!named) invalid.push(`--q${ruling.questionId} names no question`)
-    else if (named.root_record_id !== input.runId)
-      invalid.push(wrongQuestionChain(ruling.questionId, named.root_record_id))
-    else if (named.answered_at)
-      invalid.push(`--q${ruling.questionId} on run ${named.run_record_id} is already closed`)
-    else invalid.push(`--q${ruling.questionId} is not open on this chain`)
+    invalid.push(namedQuestionRefusal(ruling.questionId, input.runId))
   }
   if (invalid.length)
     throw new Error(
@@ -245,7 +250,7 @@ function collectAnswers(input: {
         `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
     )
   return input.open.flatMap((question) => {
-    const ruling = input.answer.rulings.find((item) => item.questionId === question.record_id)
+    const ruling = rulings.find((item) => item.questionId === question.record_id)
     if (!ruling) return []
     const answer = validatedRuling(ruling.text, input.argvLimit)
     return [answeredQuestion(question, answer, ruling.fromOperator, ruling.typedValue)]
