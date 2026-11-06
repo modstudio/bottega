@@ -4,10 +4,11 @@
 import { z } from 'zod'
 
 const choiceOption = z.object({ name: z.string().trim().min(1), criteria: z.string().optional() })
+const requiredQuestion = z.preprocess((value) => String(value ?? ''), z.string())
 const choice = z
   .object({
     kind: z.literal('choice'),
-    question: z.string().trim().min(1),
+    question: requiredQuestion,
     why: z.string().trim().default(''),
     options: z
       .array(choiceOption)
@@ -39,19 +40,19 @@ const choice = z
   })
 const yesno = z.object({
   kind: z.literal('yesno'),
-  question: z.string().trim().min(1),
+  question: requiredQuestion,
   why: z.string().trim().default(''),
   criteria: z.object({ yes: z.string().optional(), no: z.string().optional() }).optional(),
 })
 const score = z.object({
   kind: z.literal('score'),
-  question: z.string().trim().min(1),
+  question: requiredQuestion,
   why: z.string().trim().default(''),
   levels: z.array(z.string().trim().min(1)).min(2).max(10),
 })
 const text = z.object({
   kind: z.literal('text'),
-  question: z.string().trim().min(1),
+  question: requiredQuestion,
   why: z.string().trim().default(''),
 })
 
@@ -76,6 +77,15 @@ export const WorkerQuestionSchema = z.preprocess(
 )
 
 export type WorkerQuestion = z.infer<typeof WorkerQuestionSchema>
+export type WorkerQuestionInput = {
+  kind?: 'choice' | 'yesno' | 'score' | 'text' | null
+  question: string
+  why?: string | null
+  options?: (string | { name: string; criteria?: string | null })[] | null
+  recommendation?: string | null
+  criteria?: { yes?: string | null; no?: string | null } | null
+  levels?: string[] | null
+}
 export function answerValueRefusal(question: WorkerQuestion, value: unknown): string | null {
   if (question.kind === 'choice')
     return typeof value === 'string' && question.options.some(({ name }) => name === value)

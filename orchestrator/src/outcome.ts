@@ -1,6 +1,10 @@
 // concern: outcome
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { type WorkerQuestion, WorkerQuestionSchema } from '../../shared/worker-question.ts'
+import {
+  type WorkerQuestion,
+  type WorkerQuestionInput,
+  WorkerQuestionSchema,
+} from '../../shared/worker-question.ts'
 export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
 export const SCHEMA_ENVELOPE_ERROR_PREFIX = 'schema-envelope: '
 
@@ -40,7 +44,7 @@ export function schemaEnvelopeContractError(
 type FinalizationReply = {
   status: 'done' | 'asking' | 'refused'
   files_changed?: string[] | null
-  questions?: WorkerQuestion[] | null
+  questions?: WorkerQuestionInput[] | null
   tests?: { ran?: boolean } | null
 }
 
@@ -89,7 +93,7 @@ export type WorkerFinalization<FailureKind extends string = string> = {
   failureKind: FailureKind | 'contract' | 'other' | null
   error: string | null
   acceptedQuestions: WorkerQuestion[]
-  droppedQuestions: WorkerQuestion[]
+  droppedQuestions: WorkerQuestionInput[]
 }
 
 type FinalizationInputs<FailureKind extends string> = {
@@ -162,7 +166,7 @@ function reclassifyDoneAsking<FailureKind extends string>(
 function annotateDroppedQuestions<FailureKind extends string>(
   reply: FinalizationReply | null,
   acceptedQuestions: WorkerQuestion[],
-  droppedQuestions: WorkerQuestion[],
+  droppedQuestions: WorkerQuestionInput[],
   decision: FinalizationDecision<FailureKind>,
 ): FinalizationDecision<FailureKind> {
   if (droppedQuestions.length === 0 || (acceptedQuestions.length === 0 && reply?.status !== 'done'))
@@ -193,9 +197,9 @@ export function finalizeWorkerReply<FailureKind extends string>(
   const { reply } = inputs
   const questionsControlStatus = reply?.status === 'asking' || reply?.status === 'done'
   const acceptedQuestions = questionsControlStatus ? realQuestions(reply) : []
-  const accepted = new Set(acceptedQuestions)
+  const accepted = new Set(acceptedQuestions.map((item) => item.question))
   const droppedQuestions = questionsControlStatus
-    ? (reply?.questions ?? []).filter((item) => !accepted.has(item))
+    ? (reply?.questions ?? []).filter((item) => !accepted.has(item.question))
     : []
   let decision: FinalizationDecision<FailureKind> = inputs
   decision = rejectEmptyAsking(reply, acceptedQuestions, decision)

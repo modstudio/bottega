@@ -343,6 +343,27 @@ async function acceptedQuestionsWithNotice(
   return accepted
 }
 
+function typedTransportQuestions(
+  asking: boolean,
+  questions: Array<{
+    question: string
+    options?: string[]
+    recommendation?: string | null
+    why: string
+  }>,
+): ReturnType<typeof realQuestions> {
+  if (!asking) return []
+  return realQuestions({
+    status: 'asking',
+    questions: questions.map((item) => ({
+      question: item.question,
+      options: item.options ?? null,
+      recommendation: item.recommendation ?? null,
+      why: item.why,
+    })),
+  })
+}
+
 export type LiveInput = {
   repoJob: boolean
   name: string
@@ -896,14 +917,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     replyFileError = classifiedReplyFileError(ruling, schema ?? resolvedDialect.schema)
     replyFilePresent = ruling.replyFilePresent
     if (ruling.rewriteOutputFile) writeFileSync(outPath, output)
-    const transportQuestions = collected.asking
-      ? collected.questions.map((item) => ({
-          question: item.question,
-          options: item.options ?? null,
-          recommendation: item.recommendation ?? null,
-          why: item.why,
-        }))
-      : []
+    const transportQuestions = typedTransportQuestions(collected.asking, collected.questions)
     for (const event of collected.events) {
       if (event.kind !== 'permission') continue
       const line =

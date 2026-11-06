@@ -379,10 +379,10 @@ function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | un
 }
 
 /** Which accepted questions have not already been recorded, preserving reply order. */
-export function questionsToInsert(
+export function questionsToInsert<T extends { question: string }>(
   existingQuestionTexts: string[],
-  acceptedQuestions: ReturnType<typeof realQuestions>,
-): ReturnType<typeof realQuestions> {
+  acceptedQuestions: T[],
+): T[] {
   const norm = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase()
   const already = new Set(existingQuestionTexts.map(norm))
   return acceptedQuestions.filter((item) => {

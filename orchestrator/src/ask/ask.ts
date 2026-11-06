@@ -36,7 +36,11 @@ import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/s
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { type WorkerQuestion, WorkerQuestionSchema } from '../../../shared/worker-question.ts'
+import {
+  type WorkerQuestion,
+  type WorkerQuestionInput,
+  WorkerQuestionSchema,
+} from '../../../shared/worker-question.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
   claimRunBoardNotices,
@@ -107,6 +111,17 @@ function boundedTimeout(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60_000
 }
 const ASK_TIMEOUT_MS = boundedTimeout()
+const workerQuestionInput = z.object({
+  question: z.preprocess((value) => String(value ?? ''), z.string()),
+  why: z.string().optional(),
+  kind: z.enum(['choice', 'yesno', 'score', 'text']).optional(),
+  options: z
+    .array(z.union([z.string(), z.object({ name: z.string(), criteria: z.string().optional() })]))
+    .optional(),
+  recommendation: z.string().optional(),
+  criteria: z.object({ yes: z.string().optional(), no: z.string().optional() }).optional(),
+  levels: z.array(z.string()).optional(),
+})
 
 function recordQuestion(input: {
   runId: string
@@ -151,7 +166,7 @@ function recordQuestion(input: {
 
 export async function recordReplyQuestions(input: {
   runId: string
-  questions: WorkerQuestion[]
+  questions: WorkerQuestionInput[]
   askedAt: string
   awaitingOperatorAt: string | null
 }): Promise<void> {
@@ -444,7 +459,7 @@ export async function ask(
         question: string
         options?: string[]
         recommendation?: string
-        why: string
+        why?: string
       }
   ),
 ): Promise<AskResult> {
@@ -667,12 +682,13 @@ export function createAskMcpServer(
         'Ask the architect to rule on a design decision that is not yours to make. ' +
         'Blocks until they answer. Use this the moment you are unsure: asking is free ' +
         'and expected, guessing is not. Ask everything you need in one call where you can.',
-      inputSchema: WorkerQuestionSchema,
+      inputSchema: workerQuestionInput,
     },
-    async (typedQuestion) => {
-      const { question } = typedQuestion
+    async (questionInput) => {
+      const { question } = questionInput
       if (!question.trim()) return missing('question')
       try {
+        const typedQuestion = WorkerQuestionSchema.parse(questionInput)
         const result = authorized()
           ? await ask({ runId, ...typedQuestion, timeoutMs })
           : { answered: false as const, reason: unauthorized() }

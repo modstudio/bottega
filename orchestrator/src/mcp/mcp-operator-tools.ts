@@ -106,28 +106,28 @@ function resolveAnswerRulings(
       )
     }
     const questionId = localQuestionId(question_id)
-    const row = db()
-      .query(
-        'SELECT question,why,kind,typed_options,criteria,levels FROM question WHERE record_id=?',
-      )
-      .get(questionId) as {
-      question: string
-      why: string | null
-      kind: string
-      typed_options: string | null
-      criteria: string | null
-      levels: string | null
-    } | null
-    if (!row) throw new Error(`question ${question_id} was not found`)
-    const parsed = WorkerQuestionSchema.parse({
-      question: row.question,
-      why: row.why,
-      kind: row.kind,
-      ...(row.kind === 'choice' ? { options: JSON.parse(row.typed_options ?? '[]') } : {}),
-      ...(row.kind === 'yesno' && row.criteria ? { criteria: JSON.parse(row.criteria) } : {}),
-      ...(row.kind === 'score' ? { levels: JSON.parse(row.levels ?? '[]') } : {}),
-    })
     if (value !== undefined) {
+      const row = db()
+        .query(
+          'SELECT question,why,kind,typed_options,criteria,levels FROM question WHERE record_id=?',
+        )
+        .get(questionId) as {
+        question: string
+        why: string | null
+        kind: string
+        typed_options: string | null
+        criteria: string | null
+        levels: string | null
+      } | null
+      if (!row) throw new Error(`question ${question_id} was not found`)
+      const parsed = WorkerQuestionSchema.parse({
+        question: row.question,
+        why: row.why ?? '',
+        kind: row.kind,
+        ...(row.kind === 'choice' ? { options: JSON.parse(row.typed_options ?? '[]') } : {}),
+        ...(row.kind === 'yesno' && row.criteria ? { criteria: JSON.parse(row.criteria) } : {}),
+        ...(row.kind === 'score' ? { levels: JSON.parse(row.levels ?? '[]') } : {}),
+      })
       const refusal = answerValueRefusal(parsed, value)
       if (refusal) throw new Error(`question ${question_id} refuses that typed value; ${refusal}`)
     }
