@@ -2,8 +2,7 @@
 /** Owns the scorer-facing explanation of a worker refusal. */
 
 import { readFileSync } from 'node:fs'
-import { parseWorkerReplyWithCount } from '../contract/contract-reply.ts'
-import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
+import { parseWorkerReplyWithCount, type SchemaValidatorPort } from '../contract/contract-reply.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 
 const REFUSAL_QUOTE_CHARS = 200
@@ -17,6 +16,18 @@ const STATUS_SUMMARY_SCHEMA = {
   },
 } as const
 
+// Collection runs in trees without orchestrator/node_modules, so this check
+// stays a plain predicate over the two fields rather than loading Ajv.
+const matchesStatusSummary: SchemaValidatorPort = (value) => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const { status, summary } = value as Record<string, unknown>
+  return (
+    typeof status === 'string' &&
+    STATUS_SUMMARY_SCHEMA.properties.status.enum.some((allowed) => allowed === status) &&
+    typeof summary === 'string'
+  )
+}
+
 export function refusalScoreGuidance(text: string | null, jobName: string): string | null {
   if (text === null) return null
   // Terminalisation already validated the full worker contract. Re-run its
@@ -25,7 +36,7 @@ export function refusalScoreGuidance(text: string | null, jobName: string): stri
   const reply = parseWorkerReplyWithCount<{ status: string; summary: string }>(
     text,
     STATUS_SUMMARY_SCHEMA,
-    valueMatchesReplySchema,
+    matchesStatusSummary,
   ).reply
   if (reply?.status !== 'refused') return null
   const firstLine = reply.summary.split(/\r?\n/, 1)[0] ?? ''
