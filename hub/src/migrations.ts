@@ -12,6 +12,7 @@ import {
   enterMigrationConnectionPolicy,
   leaveMigrationConnectionPolicy,
 } from '../../shared/migration-connection-policy.ts'
+import { splitMigrationSource } from '../../shared/migration-source.ts'
 import type { QuestionIdentity, WorkflowCursorIdentityRow } from '../../shared/orch-contract.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
@@ -19,7 +20,6 @@ export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
 const SCHEMA_INVARIANT = `Only ${PLATFORM_SLUG} machine migrate changes the store schema.`
 export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema version it opened.'
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
-const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 
 export type JournalEntry = { idx: number; when: number; tag: string }
 type ColumnShape = {
@@ -91,27 +91,6 @@ function migrationSource(entry: JournalEntry, folder = MIGRATIONS_FOLDER): strin
     join('hub', 'migrations', `${entry.tag}.sql`),
     join(folder, `${entry.tag}.sql`),
   )
-}
-
-/** DDL for hashing and one-time apply; backfill blocks are excluded so they can evolve. */
-export function splitMigrationSource(source: string): { ddl: string; backfill: string } {
-  const opens = source.match(/^[ \t]*--[ \t]*BACKFILL[ \t]*$/gm) ?? []
-  const closes = source.match(/^[ \t]*--[ \t]*\/BACKFILL[ \t]*$/gm) ?? []
-  if (opens.length !== closes.length) {
-    throw new Error(
-      `refusing to load a migration whose backfill block is not closed\n` +
-        `invariant: ${BACKFILL_UNCLOSED}`,
-    )
-  }
-  const blocks: string[] = []
-  const ddl = source.replace(
-    /^[ \t]*--[ \t]*BACKFILL[ \t]*\r?\n([\s\S]*?)^[ \t]*--[ \t]*\/BACKFILL[ \t]*\r?\n?/gm,
-    (_match, body: string) => {
-      blocks.push(body)
-      return ''
-    },
-  )
-  return { ddl, backfill: blocks.join('\n') }
 }
 
 function migrationHash(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {

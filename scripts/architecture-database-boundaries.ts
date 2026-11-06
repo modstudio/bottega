@@ -14,6 +14,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       'shared/embedded-assets.ts',
       'shared/install-root.ts',
       'shared/migration-connection-policy.ts',
+      'shared/migration-source.ts',
       `${source}applied-migration-compatibilities.ts`,
       `${source}agent-port-baseline-uuid-migration-preflight.ts`,
       `${source}gate-check-execution-uuid-migration-preflight.ts`,

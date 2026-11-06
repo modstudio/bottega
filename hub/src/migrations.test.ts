@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { splitMigrationSource } from '../../shared/migration-source.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { resetFixtureStore, runHubFixtureProcess } from '../test/run-fixtures.ts'
@@ -35,7 +36,6 @@ import {
   readUserVersion,
   SCHEMA_LOCK_TABLE,
   schemaVersionLabel,
-  splitMigrationSource,
 } from './migrations.ts'
 
 beforeAll(resetFixtureStore)

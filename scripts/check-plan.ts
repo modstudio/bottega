@@ -272,6 +272,7 @@ export const ROOT_TEST_FILES = [
   'scripts/test-focused.test.ts',
   'scripts/test-preload.test.ts',
   'scripts/check-sql-literal-schema.test.ts',
+  'scripts/check-json-valid-guards.test.ts',
   'scripts/check-hosted-sql-schema.test.ts',
 ] as const
 

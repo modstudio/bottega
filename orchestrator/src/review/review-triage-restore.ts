@@ -125,9 +125,11 @@ function latestSource(
   const row = database
     .query<OutboxRow, [string, number]>(
       `SELECT id, row_id, payload FROM outbox
-        WHERE kind='review_finding' AND json_valid(payload)
-          AND json_extract(payload,'$.reviewId')=?
-          AND json_extract(payload,'$.ordinal')=?
+        WHERE kind='review_finding'
+          AND CASE WHEN json_valid(payload) THEN
+            json_extract(payload,'$.reviewId')=?
+            AND json_extract(payload,'$.ordinal')=?
+          ELSE 0 END
         ORDER BY id DESC LIMIT 1`,
     )
     .get(finding.reviewRecordId, finding.ordinal)

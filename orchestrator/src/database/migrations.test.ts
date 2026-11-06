@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
+import { splitMigrationSource } from '../../../shared/migration-source.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
@@ -10,7 +11,6 @@ import {
   expectedSchemaHash,
   MIGRATIONS_FOLDER,
   migrationJournal,
-  splitMigrationSource,
   stripSqlComments,
 } from './migrations.ts'
 import { migratedTestDatabase, migrationBoundaryTestDatabase } from './test-database.fixture.ts'

@@ -10,6 +10,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 
 export const sharedModules: ArchitectureModule[] = [
   module('shared/run-process-marker.ts', []),
+  module('shared/migration-source.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/command-spellings.ts', []),
   module('shared/note-label.ts', []),

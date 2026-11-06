@@ -5,9 +5,9 @@ import { type Node, type Program, parse } from 'sql-parser-cst'
 import {
   MIGRATIONS_FOLDER,
   migrationJournal,
-  splitMigrationSource,
   stripSqlComments,
 } from '../orchestrator/src/database/migrations.ts'
+import { splitMigrationSource } from '../shared/migration-source.ts'
 import { newRecordId } from '../shared/record-id.ts'
 
 export type CascadeExemption = {

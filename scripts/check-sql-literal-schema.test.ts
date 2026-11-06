@@ -12,12 +12,20 @@ afterEach(() => {
 
 function fixture(
   source: string,
-  options: { exemptions?: { fingerprint: string; reason: string }[]; catalogue?: string[] } = {},
+  options: {
+    exemptions?: { fingerprint: string; reason: string }[]
+    catalogue?: string[]
+    migration?: string
+    unjournaledMigration?: string
+  } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'sql-schema-'))
   directories.push(directory)
   const file = join(directory, 'fixture.ts')
   writeFileSync(file, source)
+  if (options.migration) writeFileSync(join(directory, '0001_fixture.sql'), options.migration)
+  if (options.unjournaledMigration)
+    writeFileSync(join(directory, 'orphan.sql'), options.unjournaledMigration)
   const relativeFile = relative(resolve(import.meta.dir, '..'), file)
   return () =>
     checkSqlLiteralSchemaWith({
@@ -25,6 +33,9 @@ function fixture(
         {
           name: 'orchestrator',
           root: directory,
+          migrations: options.migration
+            ? { folder: directory, journal: () => [{ tag: '0001_fixture' }] }
+            : null,
           migrate: (database: Database) =>
             database.exec('CREATE TABLE example (id INTEGER, name TEXT)'),
         },
@@ -85,4 +96,49 @@ test('a file that declares a global substitution identifier itself is refused', 
       ].join('\n'),
     ),
   ).toThrow('import TERMINAL_RUN_STATUS_SQL from orchestrator/src/run/run-status.ts')
+})
+
+test('a SQL site that guards JSON reads with a flat json_valid AND is refused', () => {
+  expect(
+    fixture(
+      'database.query("SELECT id FROM example WHERE json_valid(name) AND json_extract(name, \'$.a\')=1")',
+    ),
+  ).toThrow('json_valid() cannot guard another JSON call')
+  const flat = "SELECT id FROM example WHERE json_valid(name) AND json_extract(name, '$.a')=1"
+  expect(
+    fixture(`database.query("${flat}")`, {
+      exemptions: [{ fingerprint: sqlFingerprint(flat), reason: 'prepare only' }],
+    }),
+  ).toThrow('json_valid() cannot guard another JSON call')
+})
+
+test('a flat JSON guard in the concern migration directory is refused', () => {
+  expect(
+    fixture('', {
+      migration: `-- BACKFILL
+UPDATE example
+   SET name='seen'
+ WHERE json_valid(name) AND json_extract(name, '$.state')='ready';
+-- /BACKFILL
+CREATE TABLE ignored (payload TEXT CHECK (json_valid(payload) AND json_type(payload)='object'));
+`,
+    }),
+  ).toThrow('0001_fixture.sql:4: json_valid() cannot guard another JSON call')
+})
+
+test('an unjournaled SQL file is outside the migration backfill scan', () => {
+  expect(
+    fixture('', {
+      migration: `-- BACKFILL
+UPDATE example SET name='seen';
+-- /BACKFILL
+`,
+      unjournaledMigration: `-- BACKFILL
+UPDATE example
+   SET name='seen'
+ WHERE json_valid(name) AND json_extract(name, '$.state')='ready';
+-- /BACKFILL
+`,
+    }),
+  ).not.toThrow()
 })
