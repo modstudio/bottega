@@ -36,4 +36,13 @@ export const coreModuleSpecs = [
     allowed: ['bun:sqlite', 'node:fs', 'node:path', '../run/run-context-profile.ts'],
   },
   { file: 'orchestrator/src/worker-store-write.ts', allowed: [] },
+  {
+    file: 'orchestrator/src/worktree/evidence-checkout.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/git.ts',
+      '../project/projects.ts',
+      '../git/checkout-identity.ts',
+    ],
+  },
 ] as const

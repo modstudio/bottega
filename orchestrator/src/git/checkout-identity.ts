@@ -164,17 +164,37 @@ export function checkoutPathsSame(left: string, right: string): boolean | null {
   return fold(leftPhysical) === fold(rightPhysical)
 }
 
+function atOrBelow(
+  path: string,
+  root: string,
+  fold: (value: string) => string = (value) => value,
+): boolean {
+  const offset = relative(fold(root), fold(path))
+  return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset))
+}
+
 /** Compare containment using physical path identity and the checkout volume's case rules. */
 export function checkoutPathsOverlap(left: string, right: string): boolean | null {
   const pair = physicalPathPair(left, right)
   if (!pair) return null
   const [leftPhysical, rightPhysical, caseInsensitive] = pair
   const fold = caseInsensitive ? partialUnicodeCaseFold : (value: string) => value
-  const atOrBelow = (path: string, root: string): boolean => {
-    const offset = relative(fold(root), fold(path))
-    return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset))
-  }
-  return atOrBelow(leftPhysical, rightPhysical) || atOrBelow(rightPhysical, leftPhysical)
+  return (
+    atOrBelow(leftPhysical, rightPhysical, fold) || atOrBelow(rightPhysical, leftPhysical, fold)
+  )
+}
+
+export type EvidenceCheckoutRefusal = 'worktree-area-resolved-outside'
+
+/** Decide whether Git escaped from the worktree area while resolving an evidence cwd. */
+export function evidenceCheckoutRefusal(input: {
+  cwd: string
+  topLevel: string
+  worktreeBase: string
+}): EvidenceCheckoutRefusal | null {
+  return atOrBelow(input.cwd, input.worktreeBase) && !atOrBelow(input.topLevel, input.worktreeBase)
+    ? 'worktree-area-resolved-outside'
+    : null
 }
 
 /**

@@ -69,6 +69,7 @@ export const gateModules: GateModule[] = [
     '../../../shared/git.ts',
     '../caller-classification.ts',
     '../database/db.ts',
+    '../worktree/evidence-checkout.ts',
     '../project/projects.ts',
     '../resources/main-stack.ts',
     '../secret-shaped-output.ts',
