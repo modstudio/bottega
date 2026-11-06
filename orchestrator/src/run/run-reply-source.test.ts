@@ -156,7 +156,7 @@ describe('reply source ruling', () => {
 const fullJsonSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['integer', 'number', 'boolean', 'nothing', 'rows', 'choice'],
+  required: ['integer', 'number', 'boolean', 'nothing', 'rows', 'choice', 'additionalProperties'],
   properties: {
     integer: { type: 'integer' },
     number: { type: 'number' },
@@ -172,6 +172,7 @@ const fullJsonSchema = {
       },
     },
     choice: { type: 'string', enum: ['accepted', 'rejected'] },
+    additionalProperties: { type: 'string' },
   },
 } as const
 
@@ -182,6 +183,7 @@ const fullJsonReply = {
   nothing: null,
   rows: [{ n: 3, nestedExtra: 'kept' }],
   choice: 'accepted',
+  additionalProperties: 'a property name, not the schema keyword',
   extra: 'kept',
 }
 

@@ -23,14 +23,48 @@ export function loadAjvValidator(): AjvValidator {
   }
 }
 
-function withoutAdditionalProperties(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutAdditionalProperties)
-  if (value === null || typeof value !== 'object') return value
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => key !== 'additionalProperties')
-      .map(([key, child]) => [key, withoutAdditionalProperties(child)]),
-  )
+const schemaMapKeywords = [
+  '$defs',
+  'definitions',
+  'dependentSchemas',
+  'patternProperties',
+  'properties',
+] as const
+const schemaArrayKeywords = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const
+const schemaKeywords = [
+  'contains',
+  'else',
+  'if',
+  'not',
+  'propertyNames',
+  'then',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+] as const
+
+function withoutAdditionalProperties(schema: unknown): unknown {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return schema
+  const copy = { ...(schema as Record<string, unknown>) }
+  delete copy.additionalProperties
+  for (const keyword of schemaMapKeywords) {
+    const children = copy[keyword]
+    if (children === null || typeof children !== 'object' || Array.isArray(children)) continue
+    copy[keyword] = Object.fromEntries(
+      Object.entries(children).map(([name, child]) => [name, withoutAdditionalProperties(child)]),
+    )
+  }
+  for (const keyword of schemaArrayKeywords) {
+    if (Array.isArray(copy[keyword])) {
+      copy[keyword] = copy[keyword].map(withoutAdditionalProperties)
+    }
+  }
+  const items = copy.items
+  if (Array.isArray(items)) copy.items = items.map(withoutAdditionalProperties)
+  else if (items !== undefined) copy.items = withoutAdditionalProperties(items)
+  for (const keyword of schemaKeywords) {
+    if (copy[keyword] !== undefined) copy[keyword] = withoutAdditionalProperties(copy[keyword])
+  }
+  return copy
 }
 
 /**

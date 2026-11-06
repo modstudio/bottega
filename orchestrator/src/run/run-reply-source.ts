@@ -4,7 +4,7 @@
  * files, stores, processes, or run terminalisation.
  */
 import { REPLY_FILE_NAME, type ReplyDialect, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
-import type { SchemaValidatorPort } from '../contract/contract-reply.ts'
+import type { JsonSchema, SchemaValidatorPort } from '../contract/contract-reply.ts'
 import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
 import { schemaMismatchError, valueMatchesStrictSchema } from '../transport/transport.ts'
 
@@ -87,7 +87,7 @@ function parseReplyFile(
   }
   try {
     const parsed: unknown = JSON.parse(text)
-    return { matches: validatesSchema(parsed, schema as never), parsed }
+    return { matches: validatesSchema(parsed, schema as JsonSchema), parsed }
   } catch {
     return { matches: false, parsed: null }
   }
