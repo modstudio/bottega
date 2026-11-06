@@ -10,7 +10,7 @@ import {
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
 import { writeTransaction } from '../database/db.ts'
-import { insertOutboxRow } from './outbox-enqueue.ts'
+import { insertOutboxRow, refreshPendingOutboxRow } from './outbox-enqueue.ts'
 
 const roots: string[] = []
 
@@ -26,7 +26,9 @@ function fixture(): Database {
     kind TEXT NOT NULL,
     row_id TEXT NOT NULL,
     payload TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT
   )`)
   return database
 }
@@ -115,5 +117,43 @@ test('a transaction creates the marker only after its write commits', () => {
   }, database)
 
   expect(existsSync(marker)).toBe(true)
+  database.close()
+})
+
+test('a transaction creates the marker only after its pending-row refresh commits', () => {
+  const root = mkdtempSync(join(tmpdir(), 'outbox-refresh-commit-'))
+  roots.push(root)
+  const database = fixture()
+  const env = { [STATE_HOME_ENV]: root }
+  const marker = join(recordSyncQueueDirectory(env), RECORD_SYNC_PENDING_MARKER)
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,attempts,last_error)
+       VALUES (?,?,?,?,?,3,'failed')`,
+    )
+    .run(newRecordId(), 'score', 'refreshed-score', '{}', '2026-11-06T12:03:00.000Z')
+
+  writeTransaction(() => {
+    refreshPendingOutboxRow(
+      database,
+      {
+        id: 1,
+        payload: '{"quality":4}',
+        createdAt: '2026-11-06T12:04:00.000Z',
+      },
+      env,
+    )
+    expect(existsSync(marker)).toBe(false)
+  }, database)
+
+  expect(existsSync(marker)).toBe(true)
+  expect(
+    database.query('SELECT payload,created_at,attempts,last_error FROM outbox WHERE id=1').get(),
+  ).toEqual({
+    payload: '{"quality":4}',
+    created_at: '2026-11-06T12:04:00.000Z',
+    attempts: 0,
+    last_error: null,
+  })
   database.close()
 })

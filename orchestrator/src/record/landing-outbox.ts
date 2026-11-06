@@ -9,7 +9,7 @@ import {
 } from '../database/slow-statements.ts'
 import { machineId } from './machine-identity.ts'
 
-import { insertOutboxRow } from './outbox-enqueue.ts'
+import { insertOutboxRow, refreshPendingOutboxRow } from './outbox-enqueue.ts'
 import { stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {
@@ -228,9 +228,11 @@ export function enqueuePullRequestCi(database: Database, recordId: string, at = 
     )
     .get(recordId)
   if (pending) {
-    database
-      .query('UPDATE outbox SET payload=?,created_at=?,attempts=0,last_error=NULL WHERE id=?')
-      .run(stringifyOutboxPayload('pull_request_ci', value), at, pending.id)
+    refreshPendingOutboxRow(database, {
+      id: pending.id,
+      payload: stringifyOutboxPayload('pull_request_ci', value),
+      createdAt: at,
+    })
   } else {
     enqueue(database, 'pull_request_ci', recordId, value, at)
   }

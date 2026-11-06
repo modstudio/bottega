@@ -98,6 +98,20 @@ test('allows an outbox payload write that imports and calls the wrapper', () => 
   ).toEqual([])
 })
 
+test('refuses a pending-row refresh with a raw JSON payload', () => {
+  expect(
+    outboxSerializationViolations([
+      {
+        file: 'orchestrator/src/review/example.ts',
+        source:
+          "import { refreshPendingOutboxRow } from '../record/outbox-enqueue.ts'\nrefreshPendingOutboxRow(database, { payload: JSON.stringify(value) })\n",
+      },
+    ]),
+  ).toEqual([
+    'orchestrator/src/review/example.ts:2: outbox payload writes must import and call stringifyOutboxPayload before enqueue',
+  ])
+})
+
 test('allows the declared delivered-payload release marker', () => {
   expect(
     outboxSerializationViolations([

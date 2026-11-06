@@ -7,7 +7,7 @@ test('flags a direct outbox insert outside the enqueue module', () => {
       "database.query('INSERT INTO outbox (record_id) VALUES (?)')",
       'orchestrator/src/run/example.ts',
     ),
-  ).toEqual(['orchestrator/src/run/example.ts:1'])
+  ).toEqual(['orchestrator/src/run/example.ts:1: use record/outbox-enqueue.ts'])
 })
 
 test.each(['INSERT OR REPLACE', 'INSERT OR IGNORE', 'REPLACE'])(
@@ -18,6 +18,67 @@ test.each(['INSERT OR REPLACE', 'INSERT OR IGNORE', 'REPLACE'])(
         `database.query('${operation} INTO outbox (record_id) VALUES (?)')`,
         'orchestrator/src/run/example.ts',
       ),
-    ).toEqual(['orchestrator/src/run/example.ts:1'])
+    ).toEqual(['orchestrator/src/run/example.ts:1: use record/outbox-enqueue.ts'])
   },
 )
+
+test('an apostrophe in an earlier comment does not hide a re-pending update', () => {
+  expect(
+    directOutboxInsertViolations(
+      "// It doesn't matter here.\ndatabase.query('UPDATE outbox SET attempts=0 WHERE id=?')",
+      'orchestrator/src/run/example.ts',
+    ),
+  ).toEqual(['orchestrator/src/run/example.ts:2: use record/outbox-enqueue.ts'])
+})
+
+test('flags a payload-only pending outbox update outside its owners', () => {
+  expect(
+    directOutboxInsertViolations(
+      "database.query('UPDATE outbox SET payload=?,created_at=? WHERE id=?')",
+      'orchestrator/src/run/example.ts',
+    ),
+  ).toEqual([
+    'orchestrator/src/run/example.ts:1: use record/outbox-enqueue.ts or record/outbox-prune.ts',
+  ])
+})
+
+test('quarantine clearing is refused outside its owners', () => {
+  expect(
+    directOutboxInsertViolations(
+      "database.query('UPDATE outbox SET quarantined_at=NULL,last_error=NULL WHERE id=?')",
+      'orchestrator/src/run/example.ts',
+    ),
+  ).toEqual([
+    'orchestrator/src/run/example.ts:1: use record/outbox-enqueue.ts or record/outbox-quarantine.ts',
+  ])
+})
+
+test('quarantine clearing is allowed in the quarantine owner', () => {
+  expect(
+    directOutboxInsertViolations(
+      "database.query('UPDATE outbox SET quarantined_at=NULL,last_error=NULL WHERE id=?')",
+      'orchestrator/src/record/outbox-quarantine.ts',
+    ),
+  ).toEqual([])
+})
+
+test('allows an outbox payload-only prune update', () => {
+  expect(
+    directOutboxInsertViolations(
+      "database.query('UPDATE outbox SET payload=? WHERE id=?')",
+      'orchestrator/src/record/outbox-prune.ts',
+    ),
+  ).toEqual([])
+})
+
+test.each([
+  'UPDATE outbox SET attempts=attempts+1,last_error=? WHERE id=?',
+  'UPDATE outbox SET synced_at=?,last_error=NULL WHERE id=?',
+])('allows outbox bookkeeping updates anywhere: %s', (statement) => {
+  expect(
+    directOutboxInsertViolations(
+      `database.query('${statement}')`,
+      'orchestrator/src/run/example.ts',
+    ),
+  ).toEqual([])
+})

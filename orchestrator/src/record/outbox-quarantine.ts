@@ -5,8 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
-import { afterWriteCommit } from '../database/write-commit-effects.ts'
-import { signalRecordSync } from './outbox-enqueue.ts'
+import { signalRecordSyncAfterWriteCommit } from './outbox-enqueue.ts'
 import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
 export type QuarantinedOutboxRow = {
   id: number
@@ -145,7 +144,7 @@ function retryOutboxRowInWriteTransaction(
   env: StateEnvironment = process.env,
 ): void {
   retryOutboxRowWithoutSignal(rowId, database, at, actorSession)
-  afterWriteCommit(database, () => signalRecordSync(env))
+  signalRecordSyncAfterWriteCommit(database, env)
 }
 
 /** Retry matching rows and request record sync after the owning transaction commits. */
@@ -166,7 +165,7 @@ export function retryOutboxRowsMatchingInWriteTransaction(
     )
     .all(matching)
   for (const row of rows) retryOutboxRowWithoutSignal(row.id, database, at, actorSession)
-  if (rows.length > 0) afterWriteCommit(database, () => signalRecordSync(env))
+  if (rows.length > 0) signalRecordSyncAfterWriteCommit(database, env)
   return rows.length
 }
 

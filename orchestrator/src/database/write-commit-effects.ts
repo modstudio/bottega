@@ -3,13 +3,19 @@
 import type { Database } from 'bun:sqlite'
 
 type AfterWriteCommitEffect = () => void
-const effectsByConnection = new WeakMap<Database, AfterWriteCommitEffect[]>()
+type QueuedEffect = { effect: AfterWriteCommitEffect; key?: string }
+const effectsByConnection = new WeakMap<Database, QueuedEffect[]>()
 
 /** Run an effect after the owned write transaction commits, or now when none is owned here. */
-export function afterWriteCommit(database: Database, effect: AfterWriteCommitEffect): void {
+export function afterWriteCommit(
+  database: Database,
+  effect: AfterWriteCommitEffect,
+  key?: string,
+): void {
   const queued = effectsByConnection.get(database)
   if (queued) {
-    queued.push(effect)
+    if (key !== undefined && queued.some((entry) => entry.key === key)) return
+    queued.push({ effect, key })
     return
   }
   try {
@@ -30,7 +36,7 @@ export function beginWriteCommitEffects(database: Database): boolean {
 export function flushWriteCommitEffects(database: Database): void {
   const effects = effectsByConnection.get(database) ?? []
   effectsByConnection.delete(database)
-  for (const effect of effects) {
+  for (const { effect } of effects) {
     try {
       effect()
     } catch {

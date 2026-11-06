@@ -9,6 +9,7 @@ export const recordOutboxModules: ArchitectureModule[] = [
       'bun:sqlite',
       'shared/state-directory.ts',
       'orchestrator/src/database/write-commit-effects.ts',
+      'orchestrator/src/record/outbox-sanitize.ts',
     ],
   },
   {

@@ -6,8 +6,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
+import { rewritePendingOutboxPayloads } from '../record/outbox-enqueue.ts'
 import { retryOutboxRowsMatchingInWriteTransaction } from '../record/outbox-quarantine.ts'
-import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { PROJECT_REFERENCES } from './project-reference-counts.ts'
@@ -66,35 +66,6 @@ function rewritePayloadProjectIds(value: unknown, oldId: string, newId: string):
   return changed
 }
 
-function rewritePendingOutbox(database: Database, oldId: string, newId: string): number {
-  const rows = database
-    .query<{ id: number; kind: string; payload: string }, []>(
-      'SELECT id,kind,payload FROM outbox WHERE synced_at IS NULL',
-    )
-    .all()
-  let rewritten = 0
-  for (const row of rows) {
-    let payload: unknown
-    try {
-      payload = JSON.parse(row.payload)
-    } catch {
-      continue
-    }
-    if (!rewritePayloadProjectIds(payload, oldId, newId)) continue
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue
-    rewritten += database
-      .query('UPDATE outbox SET payload=? WHERE id=? AND payload=? AND synced_at IS NULL')
-      .run(
-        stringifyOutboxPayload(row.kind, payload as Record<string, unknown>, {
-          sanitizedForRules: true,
-        }),
-        row.id,
-        row.payload,
-      ).changes
-  }
-  return rewritten
-}
-
 /** Rewrite one project's identity and all registered local references atomically. */
 export function relinkProjectIdentity(
   project: Pick<Project, 'name' | 'recordId'>,
@@ -129,7 +100,11 @@ export function relinkProjectIdentity(
       throw new Error(
         `project ${project.name} changed while it was being relinked; inspect \`${PLATFORM_SLUG} project list --json\` and retry`,
       )
-    counts.outbox = rewritePendingOutbox(database, oldId, hostedId)
+    counts.outbox = rewritePendingOutboxPayloads(
+      database,
+      (_kind, payload) => rewritePayloadProjectIds(payload, oldId, hostedId),
+      env,
+    )
     retried = retryOutboxRowsMatchingInWriteTransaction(
       `record project ${oldId} is absent from request space `,
       database,

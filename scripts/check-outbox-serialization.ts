@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
+const OUTBOX_ENQUEUE_OWNER = 'orchestrator/src/record/outbox-enqueue.ts'
 // A payload assignment in the SET list counts; a `WHERE payload=?` comparison does not.
 const OUTBOX_PAYLOAD_WRITE =
-  /(?<!function )\binsertOutboxRow\s*\(|UPDATE\s+outbox\s+SET\b(?:(?!\bWHERE\b)[^`'";])*\bpayload\s*=/i
+  /(?<!function )\b(?:insertOutboxRow|refreshPendingOutboxRow)\s*\(|UPDATE\s+outbox\s+SET\b(?:(?!\bWHERE\b)[^`'";])*\bpayload\s*=/i
 const WRAPPER_IMPORT =
   /import\s*{[^}]*\bstringifyOutboxPayload\b[^}]*}\s*from\s*['"][^'"]*\/outbox-sanitize\.ts['"]/
 const WRAPPER_CALL = /\bstringifyOutboxPayload\s*\(/
@@ -21,6 +22,7 @@ export type OutboxSource = { file: string; source: string }
 export function outboxSerializationViolations(files: readonly OutboxSource[]): string[] {
   const violations: string[] = []
   for (const { file, source } of files) {
+    if (file === OUTBOX_ENQUEUE_OWNER) continue
     if (TEST_FILE.test(file) || !OUTBOX_PAYLOAD_WRITE.test(source)) continue
     if (WRAPPER_IMPORT.test(source) && WRAPPER_CALL.test(source)) continue
     if (RELEASE_MARKER_IMPORT.test(source) && RELEASE_MARKER_CALL.test(source)) continue
