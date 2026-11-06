@@ -9,6 +9,7 @@ import {
 } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
 import type { WorkerQuestion } from '../../../shared/worker-question.ts'
+import type { AnswerChannel } from '../../../shared/question-vocabulary.ts'
 import { db, nowIso } from '../database/db.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { routeJevAnswer } from './jev-routing.ts'
@@ -38,7 +39,12 @@ function jevQuestion(id: string, question: WorkerQuestion): TypedQuestion | null
 
 function pick(result: Extract<TypedQuestionClientResult, { kind: 'answer' }>): unknown {
   if ('choice' in result.answer) return result.answer.choice
-  if ('score' in result.answer) return result.answer.score
+  if ('score' in result.answer)
+    return Object.entries(result.answer.probabilities).reduce(
+      (best, [level, probability]) =>
+        probability > best.probability ? { level: Number(level), probability } : best,
+      { level: 0, probability: -1 },
+    ).level
   return result.answer.noul >= 0.5
 }
 
@@ -53,6 +59,8 @@ export async function preAnswerWorkerQuestion(input: {
   question: WorkerQuestion
   client?: typeof askTypedQuestionClient
   database?: Database
+  canResume: boolean
+  answerChannel: AnswerChannel
 }): Promise<{ applied: boolean; value?: string | boolean | number }> {
   const typed = jevQuestion(input.recordId, input.question)
   if (!typed) return { applied: false }
@@ -85,6 +93,7 @@ export async function preAnswerWorkerQuestion(input: {
     threshold,
     rulings,
     autoRule: readMachineValue('jev.auto_rule') === 'on',
+    canResume: input.canResume,
   })
   database
     .query(
@@ -102,8 +111,8 @@ export async function preAnswerWorkerQuestion(input: {
   const value = decision.value
   database
     .query(
-      `UPDATE question SET answer=?,answer_value=?,answered_at=?,answered_by='jev',answered_by_kind='jev',answerer_kind='agent',answer_channel='live',revision=revision+1 WHERE record_id=?`,
+      `UPDATE question SET answer=?,answer_value=?,answered_at=?,answered_by='jev',answered_by_kind='jev',answerer_kind='agent',answer_channel=?,revision=revision+1 WHERE record_id=?`,
     )
-    .run(String(value), JSON.stringify(value), nowIso(), input.recordId)
+    .run(String(value), JSON.stringify(value), nowIso(), input.answerChannel, input.recordId)
   return { applied: true, value }
 }

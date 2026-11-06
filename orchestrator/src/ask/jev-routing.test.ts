@@ -17,6 +17,7 @@ describe('Jev worker-question routing', () => {
         threshold: 0.9,
         rulings: 'agent',
         autoRule: true,
+        canResume: true,
       }),
     ).toEqual({ action: 'apply', value: 'a', confidence: 0.9 })
   })
@@ -24,8 +25,14 @@ describe('Jev worker-question routing', () => {
   test('user rulings and a disabled auto-rule always escalate', () => {
     const answer = { choice: 'a', confidence: 1, probabilities: { a: 1, b: 0 } }
     expect(
-      routeJevAnswer({ question: choice, answer, threshold: 0.9, rulings: 'user', autoRule: true })
-        .action,
+      routeJevAnswer({
+        question: choice,
+        answer,
+        threshold: 0.9,
+        rulings: 'user',
+        autoRule: true,
+        canResume: true,
+      }).action,
     ).toBe('escalate')
     expect(
       routeJevAnswer({
@@ -34,6 +41,7 @@ describe('Jev worker-question routing', () => {
         threshold: 0.9,
         rulings: 'agent',
         autoRule: false,
+        canResume: true,
       }).action,
     ).toBe('escalate')
   })
@@ -47,6 +55,7 @@ describe('Jev worker-question routing', () => {
         threshold: 0.9,
         rulings: 'agent',
         autoRule: true,
+        canResume: true,
       }),
     ).toEqual({ action: 'escalate', confidence: null })
   })
@@ -60,7 +69,45 @@ describe('Jev worker-question routing', () => {
         threshold: 0.95,
         rulings: 'agent',
         autoRule: true,
+        canResume: true,
       }),
     ).toEqual({ action: 'apply', value: false, confidence: 0.95 })
+  })
+
+  test('score applies the most probable level, not the rounded expected position', () => {
+    const question = {
+      kind: 'score' as const,
+      question: 'How much?',
+      why: 'Changes it.',
+      levels: ['low', 'medium', 'high'],
+    }
+    expect(
+      routeJevAnswer({
+        question,
+        answer: {
+          score: 1.43,
+          confidence: 0.9,
+          legend: { '0': 'low', '1': 'medium', '2': 'high' },
+          probabilities: { '0': 0, '1': 0.57, '2': 0.43 },
+        },
+        threshold: 0.9,
+        rulings: 'agent',
+        autoRule: true,
+        canResume: true,
+      }),
+    ).toEqual({ action: 'apply', value: 1, confidence: 0.9 })
+  })
+
+  test('durable reply questions escalate even when every ruling condition is met', () => {
+    expect(
+      routeJevAnswer({
+        question: choice,
+        answer: { choice: 'a', confidence: 1, probabilities: { a: 1, b: 0 } },
+        threshold: 0.9,
+        rulings: 'agent',
+        autoRule: true,
+        canResume: false,
+      }),
+    ).toEqual({ action: 'escalate', confidence: 1 })
   })
 })

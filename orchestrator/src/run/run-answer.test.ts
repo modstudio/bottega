@@ -40,6 +40,81 @@ afterEach(() => {
 })
 
 describe('run answers', () => {
+  test('CLI typed value records agreement through the answer service', async () => {
+    const id = insert('asking')
+    db()
+      .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
+      .run('orch-test-session', 'valid-session', id)
+    db()
+      .query(
+        `INSERT INTO question
+          (number,record_id,run_record_id,asked_at,question,kind,typed_options,jev_pick)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        new Date().toISOString(),
+        'which shape?',
+        'choice',
+        JSON.stringify([{ name: 'existing' }, { name: 'new' }]),
+        JSON.stringify('existing'),
+      )
+
+    await answerRun(id, { argv: ['--value', 'existing'], recordOnly: true, flags }, helpers)
+
+    expect(
+      db()
+        .query(
+          'SELECT answer_value,answered_by_kind,jev_agreed FROM question WHERE run_record_id=?',
+        )
+        .get(id),
+    ).toEqual({ answer_value: '"existing"', answered_by_kind: 'architect', jev_agreed: 1 })
+  })
+
+  test('typed answer refusal names the allowed score values', async () => {
+    const id = insert('asking')
+    db()
+      .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
+      .run('orch-test-session', 'valid-session', id)
+    db()
+      .query(
+        `INSERT INTO question
+          (number,record_id,run_record_id,asked_at,question,kind,levels)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?)`,
+      )
+      .run(id, new Date().toISOString(), 'which level?', 'score', JSON.stringify(['low', 'high']))
+
+    await expect(
+      answerRun(id, { argv: ['--value', '2'], recordOnly: true, flags }, helpers),
+    ).rejects.toThrow('allowed values: 0, 1')
+  })
+
+  test('matching choice ruling text is stored as its typed value', async () => {
+    const id = insert('asking')
+    db()
+      .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
+      .run('orch-test-session', 'valid-session', id)
+    db()
+      .query(
+        `INSERT INTO question
+          (number,record_id,run_record_id,asked_at,question,kind,typed_options)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?,?)`,
+      )
+      .run(
+        id,
+        new Date().toISOString(),
+        'which shape?',
+        'choice',
+        JSON.stringify([{ name: 'Existing' }, { name: 'New' }]),
+      )
+
+    await answerRun(id, { argv: [' existing '], recordOnly: true, flags }, helpers)
+
+    expect(db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(id)).toEqual({
+      answer_value: '"Existing"',
+    })
+  })
+
   test('record-only closes the question, marks the chain stranded, and retry restates the ruling', async () => {
     const id = insert('asking')
     const prompt = trackResidue(join(dir, `record-only-${id}.txt`))

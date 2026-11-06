@@ -192,7 +192,13 @@ export async function recordReplyQuestions(input: {
   })
   await Promise.all(
     recorded.map(({ recordId, question }) =>
-      preAnswerWorkerQuestion({ recordId, runId: input.runId, question }),
+      preAnswerWorkerQuestion({
+        recordId,
+        runId: input.runId,
+        question,
+        canResume: false,
+        answerChannel: 'cli',
+      }),
     ),
   )
 }
@@ -486,7 +492,13 @@ export async function ask(
       typed,
     })
   })
-  await preAnswerWorkerQuestion({ recordId: id, runId: o.runId, question: typed })
+  await preAnswerWorkerQuestion({
+    recordId: id,
+    runId: o.runId,
+    question: typed,
+    canResume: true,
+    answerChannel: 'mcp',
+  })
   const deadline = Date.now() + (o.timeoutMs ?? ASK_TIMEOUT_MS)
   const q = db().query(
     'SELECT answer FROM question WHERE record_id = ? AND answered_at IS NOT NULL',

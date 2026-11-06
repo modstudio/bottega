@@ -124,7 +124,7 @@ test('sends score levels and parses a score answer', async () => {
     version: 1,
     type: 'score',
     instructions: 'Score it.',
-    criteria: ['low', 'high'],
+    criteria: ['low', 'medium', 'high'],
     threshold: 0.9,
   }
   let sent: { questions: { level: { criteria: string[] } } } | undefined
@@ -135,10 +135,10 @@ test('sends score levels and parses a score answer', async () => {
       return Response.json({
         answers: {
           level: {
-            score: 1,
+            score: 1.43,
             confidence: 0.9,
-            legend: 'high',
-            probabilities: { '0': 0.1, '1': 0.9 },
+            legend: { '0': 'low', '1': 'medium', '2': 'high' },
+            probabilities: { '0': 0, '1': 0.57, '2': 0.43 },
           },
         },
         model: 'jev-score',
@@ -146,6 +146,6 @@ test('sends score levels and parses a score answer', async () => {
       })
     },
   })
-  expect(sent?.questions.level.criteria).toEqual(['low', 'high'])
-  expect(result).toMatchObject({ kind: 'answer', answer: { score: 1, confidence: 0.9 } })
+  expect(sent?.questions.level.criteria).toEqual(['low', 'medium', 'high'])
+  expect(result).toMatchObject({ kind: 'answer', answer: { score: 1.43, confidence: 0.9 } })
 })

@@ -17,7 +17,7 @@ type ChoiceAnswer = {
 type ScoreAnswer = {
   score: number
   confidence: number
-  legend: string
+  legend: Record<string, string>
   probabilities: Record<string, number>
 }
 export type TypedQuestionAnswer = NoulAnswer | ChoiceAnswer | ScoreAnswer
@@ -100,23 +100,34 @@ function parseAnswer(
     }
   }
   if (question.type === 'score') {
+    const levelKeys = question.criteria.map((_, index) => String(index))
     if (
-      !Number.isInteger(values.score) ||
+      typeof values.score !== 'number' ||
+      !Number.isFinite(values.score) ||
       (values.score as number) < 0 ||
-      (values.score as number) >= question.criteria.length ||
+      (values.score as number) > question.criteria.length - 1 ||
       !finiteProbability(values.confidence) ||
-      typeof values.legend !== 'string' ||
+      !values.legend ||
+      typeof values.legend !== 'object' ||
       !values.probabilities ||
       typeof values.probabilities !== 'object'
     )
       return null
+    const legend = values.legend as Record<string, unknown>
     const probabilities = values.probabilities as Record<string, unknown>
-    if (Object.values(probabilities).some((value) => !finiteProbability(value))) return null
+    if (
+      levelKeys.some(
+        (key) => typeof legend[key] !== 'string' || !finiteProbability(probabilities[key]),
+      ) ||
+      Object.keys(legend).some((key) => !levelKeys.includes(key)) ||
+      Object.keys(probabilities).some((key) => !levelKeys.includes(key))
+    )
+      return null
     return {
       answer: {
         score: values.score as number,
         confidence: values.confidence,
-        legend: values.legend,
+        legend: legend as Record<string, string>,
         probabilities: probabilities as Record<string, number>,
       },
       model: response.model,

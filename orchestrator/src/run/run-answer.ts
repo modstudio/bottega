@@ -7,6 +7,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import {
+  answerValueRefusal,
+  type WorkerQuestion,
+  WorkerQuestionSchema,
+} from '../../../shared/worker-question.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
@@ -142,7 +147,14 @@ function answerResult(
 }
 
 export type AnswerRunInput = {
-  rulings: string | { questionId: string; text: string; fromOperator: boolean }[]
+  rulings:
+    | string
+    | {
+        questionId: string
+        text: string
+        typedValue?: string | boolean | number
+        fromOperator: boolean
+      }[]
   allowPartialRecordOnly?: boolean
   fromOperator: boolean
   channel: AnswerChannel
@@ -158,12 +170,18 @@ type OpenQuestion = {
   owner_id: string
   owner_status: string
   owner_pid: number | null
+  why: string | null
+  kind: string
+  typed_options: string | null
+  criteria: string | null
+  levels: string | null
 }
 type AnsweredQuestion = {
   number: number
   record_id: string
   question: string
   answer: string
+  typedValue?: string | boolean | number
   fromOperator: boolean
 }
 
@@ -173,12 +191,14 @@ function answeredQuestion(
   question: OpenQuestion,
   answer: string,
   fromOperator: boolean,
+  typedValue?: string | boolean | number,
 ): AnsweredQuestion {
   return {
     number: question.number,
     record_id: question.record_id,
     question: question.question,
     answer,
+    ...(typedValue !== undefined ? { typedValue } : {}),
     fromOperator,
   }
 }
@@ -261,7 +281,7 @@ function requireAnswerAuthority(
 function readOpenQuestions(id: string, status: string): OpenQuestion[] {
   const open = db()
     .query(
-      `SELECT q.record_id,q.number,q.question,q.awaiting_operator_at,
+      `SELECT q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.typed_options,q.criteria,q.levels,
               r.record_id owner_id, r.status owner_status, r.pid owner_pid
      FROM question q JOIN run r ON r.record_id = q.run_record_id
     WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}
@@ -280,6 +300,36 @@ function readOpenQuestions(id: string, status: string): OpenQuestion[] {
       ? `run ${id} has already been ruled on; its current status is ${status}`
       : `run ${id} has no questions to answer; its current status is ${status}`,
   )
+}
+
+function storedWorkerQuestion(question: OpenQuestion): WorkerQuestion {
+  return WorkerQuestionSchema.parse({
+    question: question.question,
+    why: question.why ?? '',
+    kind: question.kind,
+    ...(question.kind === 'choice' ? { options: JSON.parse(question.typed_options ?? '[]') } : {}),
+    ...(question.kind === 'yesno' && question.criteria
+      ? { criteria: JSON.parse(question.criteria) }
+      : {}),
+    ...(question.kind === 'score' ? { levels: JSON.parse(question.levels ?? '[]') } : {}),
+  })
+}
+
+function typedAnswerValue(
+  question: OpenQuestion,
+  answer: string,
+  explicit: string | boolean | number | undefined,
+): string | boolean | number | undefined {
+  const typed = storedWorkerQuestion(question)
+  let value = explicit
+  if (value === undefined && typed.kind === 'choice') {
+    const normalized = answer.trim().toLowerCase()
+    value = typed.options.find(({ name }) => name.trim().toLowerCase() === normalized)?.name
+  }
+  if (value === undefined) return undefined
+  const refusal = answerValueRefusal(typed, value)
+  if (refusal) throw new Error(`question ${question.number} refuses that typed value; ${refusal}`)
+  return value
 }
 
 function requireAnswerableLiveness(
@@ -865,7 +915,15 @@ export async function answerRun(
     for (const q of open) {
       const ruling = input.rulings.find((item) => item.questionId === q.record_id)
       if (!ruling) continue
-      answers.push(answeredQuestion(q, rulingFrom(ruling.text), ruling.fromOperator))
+      const answer = rulingFrom(ruling.text)
+      answers.push(
+        answeredQuestion(
+          q,
+          answer,
+          ruling.fromOperator,
+          typedAnswerValue(q, answer, ruling.typedValue),
+        ),
+      )
     }
   } else {
     if (!input.rulings) {
@@ -875,7 +933,15 @@ export async function answerRun(
           'or pass a ruling via --file or stdin.',
       )
     } else {
-      answers.push(answeredQuestion(open[0]!, rulingFrom(input.rulings), input.fromOperator))
+      const answer = rulingFrom(input.rulings)
+      answers.push(
+        answeredQuestion(
+          open[0]!,
+          answer,
+          input.fromOperator,
+          typedAnswerValue(open[0]!, answer, undefined),
+        ),
+      )
     }
   }
   await assertAnswersReady(open.length, answers, input, ownersLive)
@@ -934,7 +1000,9 @@ export async function answerRun(
   )
   const upd = db().query(
     `UPDATE question
-      SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
+      SET answer=?, answer_value=?, answered_by_kind='architect',
+          jev_agreed=CASE WHEN jev_pick IS NULL OR ? IS NULL THEN NULL WHEN jev_pick=? THEN 1 ELSE 0 END,
+          answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
           delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE record_id=?`,
   )
@@ -944,8 +1012,13 @@ export async function answerRun(
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
     answers.forEach((answer, index) => {
+      const encodedValue =
+        answer.typedValue === undefined ? null : JSON.stringify(answer.typedValue)
       upd.run(
         answer.answer,
+        encodedValue,
+        encodedValue,
+        encodedValue,
         now,
         ...attributions[index]!,
         input.channel,

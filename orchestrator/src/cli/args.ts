@@ -32,6 +32,7 @@ function shellValue(value: string): string {
 }
 
 export const ANSWER_WORKING_FORMS =
+  `  ${PLATFORM_SLUG} question answer <id> --value <typed-value> ["<note>"]\n` +
   `  ${PLATFORM_SLUG} question answer <id> --q<id> "<ruling>"\n` +
   `  ${PLATFORM_SLUG} question answer <id> --q<id> "<ruling>" --from-operator-q<id>\n` +
   `  ${PLATFORM_SLUG} question answer <id> --q<id> --file <path>\n  ${PLATFORM_SLUG} question answer <id> --file <path>\n` +

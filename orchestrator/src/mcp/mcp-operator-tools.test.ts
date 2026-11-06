@@ -118,6 +118,13 @@ describe('operator MCP tools', () => {
     })
     db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
     const questionId = addQuestion(runId, 'Which shape?')
+    db()
+      .query(`UPDATE question SET kind='choice',typed_options=?,jev_pick=? WHERE number=?`)
+      .run(
+        JSON.stringify([{ name: 'existing' }, { name: 'new' }]),
+        JSON.stringify('existing'),
+        questionId,
+      )
     const runRecordId = (
       db().query('SELECT record_id FROM run WHERE record_id=?').get(runId) as { record_id: string }
     ).record_id
@@ -133,7 +140,11 @@ describe('operator MCP tools', () => {
         arguments: {
           run_record_id: runRecordId.toUpperCase(),
           rulings: [
-            { question_id: questionRecordId.toUpperCase(), ruling: 'Use the existing shape.' },
+            {
+              question_id: questionRecordId.toUpperCase(),
+              value: 'existing',
+              note: 'Use the existing shape.',
+            },
           ],
         },
       }),
@@ -148,8 +159,18 @@ describe('operator MCP tools', () => {
       resumed_record_id: null,
     })
     expect(
-      db().query('SELECT answer,answer_channel FROM question WHERE number=?').get(questionId),
-    ).toEqual({ answer: 'Use the existing shape.', answer_channel: 'mcp' })
+      db()
+        .query(
+          'SELECT answer,answer_value,answered_by_kind,jev_agreed,answer_channel FROM question WHERE number=?',
+        )
+        .get(questionId),
+    ).toEqual({
+      answer: 'Use the existing shape.',
+      answer_value: '"existing"',
+      answered_by_kind: 'architect',
+      jev_agreed: 1,
+      answer_channel: 'mcp',
+    })
   })
 
   test('answer_questions stores flag-shaped rulings verbatim and attributes only explicit operators', async () => {
