@@ -582,14 +582,21 @@ export type CollectResultPresentation = {
 }
 
 export function unfinishedResultMessage(
-  requested: { number: number; status: string; failureKind: string | null },
+  requested: {
+    recordId: string
+    number: number
+    status: string
+    failureKind: string | null
+  },
   final: { number: number; status: string },
+  attempts: readonly Pick<FailoverAttempt, 'rootId'>[],
   fallback: string,
 ): string {
   if (
     requested.status === 'failed' &&
     final.status === 'running' &&
-    requested.number !== final.number
+    attempts.length >= 2 &&
+    attempts[0]!.rootId === requested.recordId
   ) {
     return (
       `run ${requested.number} failed (${requested.failureKind ?? 'unknown'}); ` +
@@ -603,6 +610,7 @@ function unfinishedResultMessageForRun(
   database: Database,
   requestedId: string,
   final: CollectedRunRow,
+  attempts: readonly FailoverAttempt[],
 ): string {
   const requested = database
     .query<{ number: number; status: string; failure_kind: string | null }, [string]>(
@@ -611,11 +619,13 @@ function unfinishedResultMessageForRun(
     .get(requestedId)!
   return unfinishedResultMessage(
     {
+      recordId: requestedId,
       number: requested.number,
       status: requested.status,
       failureKind: requested.failure_kind,
     },
     { number: final.number, status: final.status },
+    attempts,
     `run ${requestedId} (${final.agent}/${final.job}) is still running`,
   )
 }
@@ -714,7 +724,7 @@ export function collectResult(
   const outcome = outcomeOf(row)
   const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}${row.executor === HARNESS_EXECUTOR ? `\n  executor:  ${row.executor}` : ''}\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
-    presentation.error(unfinishedResultMessageForRun(database, id, row))
+    presentation.error(unfinishedResultMessageForRun(database, id, row, chain.attempts))
     presentation.exit(2)
   }
   const output = collectedOutput(row)

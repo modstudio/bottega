@@ -46,11 +46,23 @@ const changed = JSON.stringify(['.githooks/pre-commit'])
 test('a running failover successor preserves the original failure in result output', () => {
   expect(
     unfinishedResultMessage(
-      { number: 29364, status: 'failed', failureKind: 'contract' },
+      { recordId: 'root', number: 29364, status: 'failed', failureKind: 'contract' },
       { number: 29388, status: 'running' },
+      [{ rootId: 'root' }, { rootId: 'successor' }],
       'generic',
     ),
   ).toBe('run 29364 failed (contract); its failover successor 29388 is still running')
+})
+
+test('a running later turn is not described as a failover successor', () => {
+  expect(
+    unfinishedResultMessage(
+      { recordId: 'retry-turn', number: 29365, status: 'failed', failureKind: 'contract' },
+      { number: 29388, status: 'running' },
+      [{ rootId: 'root' }, { rootId: 'successor' }],
+      'run retry-turn is still running',
+    ),
+  ).toBe('run retry-turn is still running')
 })
 
 describe('no-commit report', () => {

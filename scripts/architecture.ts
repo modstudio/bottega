@@ -351,7 +351,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/contract/codex-mcp-tool.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/contract/contract-reply.ts', []),
   module('orchestrator/src/contract/contract-reply-validator.ts', [
-    '../transport/ajv-validator.ts',
+    '../transport/ajv-validator-loader.ts',
     './contract-reply.ts',
   ]),
   ...recipeModules,
@@ -580,6 +580,7 @@ export const modules: ArchitectureModule[] = [
     './standard-transports.ts',
   ]),
   module('orchestrator/src/transport/ajv-validator.ts', []),
+  module('orchestrator/src/transport/ajv-validator-loader.ts', ['./ajv-validator.ts']),
   module('orchestrator/src/transport/acp-trace.ts', [
     'node:child_process',
     'node:fs',

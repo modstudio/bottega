@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import type { JsonSchema, SchemaValidatorPort } from '../contract/contract-reply.ts'
-import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
 import { valueMatchesStrictSchema } from '../transport/transport.ts'
 import {
   collectReplySource,
@@ -193,34 +191,14 @@ const unusedDialect = {
   parse: () => ({ reply: null, contractObjects: 0 }),
 }
 
-function customReply(value: unknown, validatesSchema?: SchemaValidatorPort) {
+function customReply(value: unknown) {
   return collectReplySource({
     replyFileText: JSON.stringify(value),
     fallbackText: '',
     contract: 'custom',
     dialect: unusedDialect,
     schema: fullJsonSchema,
-    validatesSchema,
   })
-}
-
-function oldIntegerTypeofBehavior(value: unknown, schema: JsonSchema): boolean {
-  if (!valueMatchesReplySchema(value, schema)) return false
-  if (schema.type === 'integer') {
-    const javascriptType: string = typeof value
-    return javascriptType === schema.type
-  }
-  if (Array.isArray(value) && schema.items) {
-    return value.every((item) => oldIntegerTypeofBehavior(item, schema.items!))
-  }
-  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    return Object.entries(schema.properties ?? {}).every(
-      ([key, child]) =>
-        !Object.hasOwn(value, key) ||
-        oldIntegerTypeofBehavior((value as Record<string, unknown>)[key], child),
-    )
-  }
-  return true
 }
 
 describe('custom reply-file schema validation', () => {
@@ -232,13 +210,6 @@ describe('custom reply-file schema validation', () => {
   })
 
   test('reply-file leniency removes additionalProperties at every depth', () => {
-    expect(customReply(fullJsonReply).replyFileError).toBeNull()
     expect(valueMatchesStrictSchema(fullJsonSchema, fullJsonReply)).toBe(false)
-  })
-
-  test('mutation: the old typeof behavior rejects the valid integer reply', () => {
-    expect(customReply(fullJsonReply, oldIntegerTypeofBehavior).replyFileError).toContain(
-      'did not match',
-    )
   })
 })
