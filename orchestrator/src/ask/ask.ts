@@ -180,25 +180,15 @@ export async function recordReplyQuestions(input: {
     return rows
   })
   await Promise.all(
-    recorded.map(async ({ recordId, question }) => {
-      try {
-        return await preAnswerWorkerQuestion({
-          recordId,
-          runId: input.runId,
-          question,
-          canResume: false,
-          answerChannel: 'cli',
-        })
-      } catch (error) {
-        writeTransaction(() => {
-          db()
-            .query('UPDATE question SET jev_error=? WHERE record_id=?')
-            .run(String(error), recordId)
-          enqueueQuestionRecord(db(), recordId)
-        })
-        return { applied: false as const }
-      }
-    }),
+    recorded.map(({ recordId, question }) =>
+      preAnswerWorkerQuestion({
+        recordId,
+        runId: input.runId,
+        question,
+        canResume: false,
+        answerChannel: 'cli',
+      }),
+    ),
   )
 }
 

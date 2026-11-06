@@ -102,4 +102,34 @@ describe('Jev worker-question apply path', () => {
       ).jev_error,
     ).toContain(`${PLATFORM_SLUG} machine config set jev.confidence_threshold`)
   })
+
+  test('a rulings resolver failure is recorded and escalates', async () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: 'fixture' })
+    const recordId = storedQuestion(runId)
+    const result = await preAnswerWorkerQuestion({
+      recordId,
+      runId,
+      question: choice,
+      canResume: true,
+      answerChannel: 'mcp',
+      client: async () => ({
+        kind: 'answer',
+        answer: { choice: 'a', confidence: 1, probabilities: { a: 1, b: 0 } },
+        model: 'jev-test',
+        inputTokens: 0,
+        latencyMs: 1,
+      }),
+      readMachine: (key) => (key === 'jev.auto_rule' ? 'on' : '0.9'),
+      resolveRulings: async () => {
+        throw new Error('rulings unavailable')
+      },
+    })
+    expect(result).toEqual({ applied: false })
+    expect(db().query('SELECT jev_error FROM question WHERE record_id=?').get(recordId)).toEqual({
+      jev_error: 'Error: rulings unavailable',
+    })
+    expect(db().query('SELECT count(*) count FROM outbox WHERE row_id=?').get(recordId)).toEqual({
+      count: 1,
+    })
+  })
 })

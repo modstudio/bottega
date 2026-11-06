@@ -17,7 +17,11 @@ beforeEach(() => {
 })
 afterEach(() => restoreEnvironment())
 
-function typedRun(kind: string, column: 'typed_options' | 'levels', values: unknown): string {
+function typedRun(
+  kind: string,
+  column: 'typed_options' | 'criteria' | 'levels',
+  values: unknown,
+): string {
   const id = insert('asking')
   db()
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
@@ -59,6 +63,40 @@ describe('typed values through the answer service', () => {
     expect(db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(id)).toEqual({
       answer_value: '"Existing"',
     })
+  })
+
+  test('legacy choice options remain answerable without typed options', async () => {
+    const id = insert('asking')
+    db()
+      .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
+      .run('orch-test-session', 'valid-session', id)
+    db()
+      .query(
+        `INSERT INTO question
+         (number,record_id,run_record_id,asked_at,question,kind,options)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        id,
+        new Date().toISOString(),
+        'legacy question?',
+        'choice',
+        JSON.stringify(['Existing', 'New']),
+      )
+    await answerRun(id, { argv: [' existing '], recordOnly: true, flags }, helpers)
+    expect(db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(id)).toEqual({
+      answer_value: '"Existing"',
+    })
+  })
+
+  test('matching yesno ruling text counts as its typed value', async () => {
+    const id = typedRun('yesno', 'criteria', { yes: 'proceed', no: 'stop' })
+    db().query('UPDATE question SET jev_pick=? WHERE run_record_id=?').run('true', id)
+    await answerRun(id, { argv: [' yes '], recordOnly: true, flags }, helpers)
+    expect(
+      db().query('SELECT answer_value,jev_agreed FROM question WHERE run_record_id=?').get(id),
+    ).toEqual({ answer_value: 'true', jev_agreed: 1 })
   })
 
   test('CLI records disagreement and leaves agreement null without Jev advice', async () => {

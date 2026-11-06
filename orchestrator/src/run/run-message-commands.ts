@@ -94,7 +94,6 @@ export async function answerInputFromArgv(
   flags: Flags,
   helpers: Pick<ReturnType<typeof answerRunHelpers>, 'readWorkerFile' | 'readMessageText'>,
   refusedOptions?: Readonly<Record<string, string>>,
-  _answerId?: string,
 ): Promise<AnswerRunInput> {
   const valueArgs = answerValueArgs(argv, questionIdentifiers(argv))
   const channelArgs = parseAnswerChannelArgs(valueArgs.argv)
@@ -222,15 +221,7 @@ export async function answerCommand(
   refusedOptions?: Readonly<Record<string, string>>,
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
-  const input = await answerInputFromArgv(
-    argv,
-    recordOnly,
-    json,
-    flags,
-    helpers,
-    refusedOptions,
-    id,
-  )
+  const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
   const questions = answeredQuestions(id, input)
   const result = await answerRun(id, input, helpers)
   if (json) console.log(JSON.stringify(result))

@@ -22,6 +22,17 @@ import type { WorkerQuestion } from './worker-question.ts'
 type RunContext = { job: string; launch_key: string | null; repo: string | null }
 
 type JevAnswer = Extract<Awaited<ReturnType<typeof askTypedQuestionClient>>, { kind: 'answer' }>
+type PreAnswerInput = {
+  recordId: string
+  runId: string
+  question: WorkerQuestion
+  client?: typeof askTypedQuestionClient
+  database?: Database
+  canResume: boolean
+  answerChannel: AnswerChannel
+  readMachine?: (key: 'jev.confidence_threshold' | 'jev.auto_rule') => string | number
+  resolveRulings?: () => Promise<'agent' | 'user'>
+}
 
 function storeJevError(database: Database, recordId: string, error: string): void {
   writeTransaction(() => {
@@ -76,98 +87,114 @@ function jevQuestion(id: string, question: WorkerQuestion): TypedQuestion | null
   }
 }
 
-export async function preAnswerWorkerQuestion(input: {
-  recordId: string
-  runId: string
-  question: WorkerQuestion
-  client?: typeof askTypedQuestionClient
-  database?: Database
-  canResume: boolean
-  answerChannel: AnswerChannel
-  readMachine?: (key: 'jev.confidence_threshold' | 'jev.auto_rule') => string | number
-  resolveRulings?: () => Promise<'agent' | 'user'>
-}): Promise<{ applied: boolean; value?: string | boolean | number }> {
+function storeInvalidThreshold(
+  database: Database,
+  input: PreAnswerInput,
+  result: JevAnswer,
+  raw: string | number,
+): void {
+  const error = `invalid jev.confidence_threshold ${JSON.stringify(raw)}; run ${PLATFORM_SLUG} machine config set jev.confidence_threshold <0-1>`
+  const advice = routeJevAnswer({
+    question: input.question,
+    answer: result.answer,
+    threshold: 1,
+    rulings: 'user',
+    autoRule: false,
+    canResume: false,
+  })
+  writeTransaction(() => {
+    storeJevAdvice(database, input.recordId, advice, result, error)
+    enqueueQuestionRecord(database, input.recordId)
+  }, database)
+}
+
+export async function preAnswerWorkerQuestion(
+  input: PreAnswerInput,
+): Promise<{ applied: boolean; value?: string | boolean | number }> {
   const typed = jevQuestion(input.recordId, input.question)
   if (!typed) return { applied: false }
   const database = input.database ?? db()
-  const run = database
-    .query('SELECT job,launch_key,repo FROM run WHERE record_id=?')
-    .get(input.runId) as RunContext | null
-  if (!run) return { applied: false }
-  const result = await (input.client ?? askTypedQuestionClient)(
-    typed,
-    `${input.question.why}\ntask: ${run.launch_key ?? 'none'}\njob: ${run.job}`,
-  )
-  if (result.kind !== 'answer') {
-    storeJevError(
-      database,
-      input.recordId,
-      result.kind === 'missing-key' ? 'skipped: TYPESAFE_KEY is not configured' : result.error,
+  try {
+    const run = database
+      .query('SELECT job,launch_key,repo FROM run WHERE record_id=?')
+      .get(input.runId) as RunContext | null
+    if (!run) return { applied: false }
+    const result = await (input.client ?? askTypedQuestionClient)(
+      typed,
+      `${input.question.why}\ntask: ${run.launch_key ?? 'none'}\njob: ${run.job}`,
     )
-    return { applied: false }
-  }
-  const readMachine = input.readMachine ?? readMachineValue
-  const threshold = Number(readMachine('jev.confidence_threshold'))
-  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
-    const raw = readMachine('jev.confidence_threshold')
-    const error = `invalid jev.confidence_threshold ${JSON.stringify(raw)}; run ${PLATFORM_SLUG} machine config set jev.confidence_threshold <0-1>`
-    const advice = routeJevAnswer({
+    if (result.kind !== 'answer') {
+      storeJevError(
+        database,
+        input.recordId,
+        result.kind === 'missing-key' ? 'skipped: TYPESAFE_KEY is not configured' : result.error,
+      )
+      return { applied: false }
+    }
+    const readMachine = input.readMachine ?? readMachineValue
+    const threshold = Number(readMachine('jev.confidence_threshold'))
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+      storeInvalidThreshold(database, input, result, readMachine('jev.confidence_threshold'))
+      return { applied: false }
+    }
+    const rulings = input.resolveRulings
+      ? await input.resolveRulings()
+      : run.repo
+        ? (
+            await resolveProjectAutonomy(
+              run.repo,
+              undefined,
+              undefined,
+              [],
+              {},
+              undefined,
+              database,
+            )
+          ).rulings.value
+        : 'user'
+    const decision = routeJevAnswer({
       question: input.question,
       answer: result.answer,
-      threshold: 1,
-      rulings: 'user',
-      autoRule: false,
-      canResume: false,
+      threshold,
+      rulings,
+      autoRule: readMachine('jev.auto_rule') === 'on',
+      canResume: input.canResume,
     })
     writeTransaction(() => {
-      storeJevAdvice(database, input.recordId, advice, result, error)
-      enqueueQuestionRecord(database, input.recordId)
+      storeJevAdvice(database, input.recordId, decision, result, null)
+      if (decision.action === 'apply') {
+        const at = nowIso()
+        applyQuestionAnswer({
+          database,
+          questionId: input.recordId,
+          answer: String(decision.value),
+          value: decision.value,
+          answeredAt: at,
+          answeredBy: 'jev',
+          answeredByName: null,
+          answeredByKind: 'jev',
+          answererKind: 'agent',
+          channel: input.answerChannel,
+          deliveryPendingAt: at,
+          delivery: {
+            runId: input.runId,
+            mode: QUESTION_DELIVERY_MODE_LIVE,
+            outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
+          },
+        })
+        auditRunMutation(
+          runMutationAuthority(database, input.runId),
+          'answer',
+          'Jev auto-ruling',
+          database,
+        )
+      } else enqueueQuestionRecord(database, input.recordId)
     }, database)
+    return decision.action === 'apply'
+      ? { applied: true, value: decision.value }
+      : { applied: false }
+  } catch (error) {
+    storeJevError(database, input.recordId, String(error))
     return { applied: false }
   }
-  const rulings = input.resolveRulings
-    ? await input.resolveRulings()
-    : run.repo
-      ? (await resolveProjectAutonomy(run.repo, undefined, undefined, [], {}, undefined, database))
-          .rulings.value
-      : 'user'
-  const decision = routeJevAnswer({
-    question: input.question,
-    answer: result.answer,
-    threshold,
-    rulings,
-    autoRule: readMachine('jev.auto_rule') === 'on',
-    canResume: input.canResume,
-  })
-  writeTransaction(() => {
-    storeJevAdvice(database, input.recordId, decision, result, null)
-    if (decision.action === 'apply') {
-      const at = nowIso()
-      applyQuestionAnswer({
-        database,
-        questionId: input.recordId,
-        answer: String(decision.value),
-        value: decision.value,
-        answeredAt: at,
-        answeredBy: 'jev',
-        answeredByName: null,
-        answeredByKind: 'jev',
-        answererKind: 'agent',
-        channel: input.answerChannel,
-        deliveryPendingAt: at,
-        delivery: {
-          runId: input.runId,
-          mode: QUESTION_DELIVERY_MODE_LIVE,
-          outcome: QUESTION_DELIVERY_OUTCOME_DELIVERED,
-        },
-      })
-      auditRunMutation(
-        runMutationAuthority(database, input.runId),
-        'answer',
-        'Jev auto-ruling',
-        database,
-      )
-    } else enqueueQuestionRecord(database, input.recordId)
-  }, database)
-  return decision.action === 'apply' ? { applied: true, value: decision.value } : { applied: false }
 }

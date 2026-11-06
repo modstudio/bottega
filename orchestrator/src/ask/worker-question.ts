@@ -129,6 +129,7 @@ export type StoredWorkerQuestion = {
   question: string
   why: string | null
   kind: string
+  options?: string | null
   typed_options: string | null
   criteria: string | null
   levels: string | null
@@ -150,11 +151,12 @@ export function encodeWorkerQuestion(question: WorkerQuestion): {
 }
 
 export function decodeWorkerQuestion(question: StoredWorkerQuestion): WorkerQuestion {
+  const storedOptions = question.typed_options ?? question.options ?? '[]'
   return WorkerQuestionSchema.parse({
     question: question.question,
     why: question.why ?? '',
     kind: question.kind,
-    ...(question.kind === 'choice' ? { options: JSON.parse(question.typed_options ?? '[]') } : {}),
+    ...(question.kind === 'choice' ? { options: JSON.parse(storedOptions) } : {}),
     ...(question.kind === 'yesno' && question.criteria
       ? { criteria: JSON.parse(question.criteria) }
       : {}),

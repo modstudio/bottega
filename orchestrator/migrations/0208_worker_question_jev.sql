@@ -14,9 +14,15 @@ ALTER TABLE question ADD COLUMN jev_agreed INTEGER CHECK (jev_agreed IN (0,1));
 
 -- BACKFILL
 UPDATE question
-SET kind='choice'
+SET kind='choice',
+    typed_options=(
+      SELECT json_group_array(json_object('name', value))
+      FROM json_each(question.options)
+    )
 WHERE options IS NOT NULL
   AND json_valid(options)
   AND json_type(options)='array'
-  AND json_array_length(options)>0;
+  AND json_array_length(options)>0
+  AND kind <> 'choice'
+  AND typed_options IS NULL;
 -- /BACKFILL

@@ -13,6 +13,7 @@ export type TypedAnswerQuestion = {
   question: string
   why: string | null
   kind: string
+  options: string | null
   typed_options: string | null
   criteria: string | null
   levels: string | null
@@ -38,6 +39,13 @@ function typedAnswerValue(
     const normalized = answer.trim().toLowerCase()
     value = typed.options.find(({ name }) => name.trim().toLowerCase() === normalized)?.name
   }
+  if (value === undefined && typed.kind === 'yesno') {
+    const normalized = answer.trim().toLowerCase()
+    if (normalized === 'yes' || normalized === 'true') value = true
+    if (normalized === 'no' || normalized === 'false') value = false
+  }
+  if (value === undefined && typed.kind === 'score' && /^\d+$/.test(answer.trim()))
+    value = answer.trim()
   if (value === undefined) return undefined
   try {
     return decodeAnswerValue(typed, value)

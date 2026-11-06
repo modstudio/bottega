@@ -350,7 +350,7 @@ function readOpenQuestions(id: string, status: string): OpenQuestion[] {
   const open = openChainQuestions<OpenQuestion>(
     db(),
     id,
-    'q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.typed_options,q.criteria,q.levels, r.record_id owner_id,r.status owner_status,r.pid owner_pid',
+    'q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.options,q.typed_options,q.criteria,q.levels, r.record_id owner_id,r.status owner_status,r.pid owner_pid',
   )
   if (open.length) return open
   const asked = db()
