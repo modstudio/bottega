@@ -196,7 +196,8 @@ const runDetailReviewLensSchema: z.ZodType<RunDetailReviewLens> = z.object({
 
 const runDetailSchema = runSchema.passthrough().extend({
   machineId: z.string().uuid(),
-  promptBytes: z.number(),
+  // The record serializes a Postgres bigint column as a decimal string.
+  promptBytes: z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]),
   error: z.string().nullable(),
   reviews: z.array(runDetailReviewLensSchema),
 })

@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   recordRequestNature,
@@ -142,6 +143,12 @@ export async function reportApi(
   const url = new URL(request.url)
   const emailUnsubscribe = /^\/v1\/report-unsubscribe\/([^/]+)\/([^/]+)$/.exec(url.pathname)
   const oneClickUnsubscribe = /^\/unsubscribe\/([^/]+)\/([^/]+)$/.exec(url.pathname)
+  // A link whose space is not a uuid names no recipient, like an unknown token.
+  const unsubscribeSpace = (emailUnsubscribe ?? oneClickUnsubscribe)?.[1]
+  if (unsubscribeSpace !== undefined && !z.string().uuid().safeParse(unsubscribeSpace).success) {
+    if (emailUnsubscribe && request.method === 'GET') return json(null)
+    if (request.method === 'POST') return json({ unsubscribed: false })
+  }
   if (emailUnsubscribe && request.method === 'GET')
     return json(
       await call(dependencies.emailRecipientByToken, hostedEmailRecipientByToken)(

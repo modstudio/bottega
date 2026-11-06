@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { type Browser, type BrowserContext, chromium, type Page, type Request } from 'playwright'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import {
@@ -134,9 +135,10 @@ function requestPath(request: Request): string {
 }
 
 function requestDuration(request: Request): number | null {
+  // Playwright reports responseEnd in milliseconds relative to startTime.
   const timing = request.timing()
-  if (timing.startTime < 0 || timing.responseEnd < timing.startTime) return null
-  return timing.responseEnd - timing.startTime
+  if (timing.startTime < 0 || timing.responseEnd < 0) return null
+  return timing.responseEnd
 }
 
 function isMeasuredRequest(request: Request, origin: string): boolean {
@@ -208,6 +210,22 @@ async function measurePhase(
   }
 }
 
+/**
+ * List rows and cards navigate on click rather than through anchors, and some lists open their
+ * first record by themselves. Keep the current URL when it already has the route's shape;
+ * otherwise follow the first record element and keep where it lands.
+ */
+async function clickedSample(page: Page, template: string, origin: string): Promise<string | null> {
+  const already = firstSampleLink(template, [page.url()], origin)
+  if (already) return already
+  const row = page.locator('[data-record-key]').first()
+  if ((await row.count()) === 0) return null
+  const before = page.url()
+  await row.click({ timeout: 2_000 }).catch(() => {})
+  await page.waitForURL((url) => url.href !== before, { timeout: 3_000 }).catch(() => {})
+  return firstSampleLink(template, [page.url()], origin)
+}
+
 async function sampleRoutes(context: BrowserContext, origin: string): Promise<Map<string, string>> {
   const samples = new Map<string, string>()
   const page = await context.newPage()
@@ -218,10 +236,14 @@ async function sampleRoutes(context: BrowserContext, origin: string): Promise<Ma
           waitUntil: 'domcontentloaded',
         })
         await waitForRootRendered(page, definition.parent, 'sample discovery')
+        // Records arrive after first render, so sample only once the list's queries settle.
+        await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {})
         const hrefs = await page
           .locator('a[href]')
           .evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href))
-        const sample = firstSampleLink(definition.template, hrefs, origin)
+        const sample =
+          firstSampleLink(definition.template, hrefs, origin) ??
+          (await clickedSample(page, definition.template, origin))
         if (sample) samples.set(definition.template, sample)
       } catch {
         // The measured parent row records the failure; this route still reports no sample.
@@ -356,9 +378,16 @@ try {
       if (!token) {
         throw new Error(`record session is absent; run ${PLATFORM_SLUG} record sign-in`)
       }
-      const context = await browser.newContext({
-        extraHTTPHeaders: { authorization: `Bearer ${token}` },
-      })
+      const context = await browser.newContext()
+      // The bearer goes only to the hosted hub and the record API it calls, never to a third party.
+      const bearerOrigins = new Set([origin, new URL(resolveRecordApiUrl(process.env)).origin])
+      await context.route(
+        (url) => bearerOrigins.has(url.origin),
+        (route) =>
+          route.continue({
+            headers: { ...route.request().headers(), authorization: `Bearer ${token}` },
+          }),
+      )
       try {
         rows.push(...(await probeMode(context, origin, mode)))
       } finally {
