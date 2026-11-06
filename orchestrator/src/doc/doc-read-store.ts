@@ -249,14 +249,12 @@ function validKind(kind: string): asserts kind is DocKind {
   }
 }
 
-function addressFilters(filters: {
-  scope?: string
-  scopes?: string[]
-  subject?: string | null
-  owner?: string | null
-}): { where: string[]; values: string[] } {
-  const where: string[] = []
-  const values: string[] = []
+/** One scope or a set of scopes narrows a listing; asking for both is refused. */
+function scopeFilter(
+  filters: { scope?: string; scopes?: string[] },
+  where: string[],
+  values: string[],
+): void {
   if (filters.scope !== undefined && filters.scopes !== undefined) {
     throw new Error('use scope or scopes, not both')
   }
@@ -265,15 +263,23 @@ function addressFilters(filters: {
     where.push('d.scope = ?')
     values.push(filters.scope)
   }
-  if (filters.scopes !== undefined) {
-    for (const scope of filters.scopes) validScope(scope)
-    where.push(
-      filters.scopes.length === 0
-        ? '0'
-        : `d.scope IN (${filters.scopes.map(() => '?').join(', ')})`,
-    )
-    values.push(...filters.scopes)
-  }
+  if (filters.scopes === undefined) return
+  for (const scope of filters.scopes) validScope(scope)
+  where.push(
+    filters.scopes.length === 0 ? '0' : `d.scope IN (${filters.scopes.map(() => '?').join(', ')})`,
+  )
+  values.push(...filters.scopes)
+}
+
+function addressFilters(filters: {
+  scope?: string
+  scopes?: string[]
+  subject?: string | null
+  owner?: string | null
+}): { where: string[]; values: string[] } {
+  const where: string[] = []
+  const values: string[] = []
+  scopeFilter(filters, where, values)
   if (filters.subject !== undefined) {
     where.push(filters.subject === null ? 'd.subject IS NULL' : 'd.subject = ?')
     if (filters.subject !== null) values.push(filters.subject)

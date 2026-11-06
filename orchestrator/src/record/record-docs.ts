@@ -101,13 +101,13 @@ function assertRestoredRecordDoc(
 /** A context item stored in the record must decode and obey its per-item rules. */
 export function assertContextItemShape(scope: string, slug: string, body: string): void {
   if (scope !== 'context') return
-  let item: ReturnType<typeof decodeContextItem>
+  let refusal: string | null
   try {
-    item = decodeContextItem('', slug, body)
+    refusal = contextItemShapeRefusal(decodeContextItem('', slug, body))
   } catch (error) {
-    return assertWrite((error as Error).message)
+    refusal = (error as Error).message
   }
-  assertWrite(contextItemShapeRefusal(item))
+  assertWrite(refusal)
 }
 
 function assertRecordDocUpsert(input: RecordDocWriteInput): void {
