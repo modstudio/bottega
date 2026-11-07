@@ -24,7 +24,6 @@ const PRIMITIVES = new Set([
   'shared/bounded-process.ts',
   'shared/bounded-fetch.ts',
 ])
-const GIT_HELPERS = new Set(['orchestrator/src/git/git-environment.ts', 'shared/git.ts'])
 const TEST_INFRASTRUCTURE = new Set(['shared/test-git-repository.ts'])
 const BASELINE_PATH = resolve(ROOT, 'scripts/quality/raw-start.json')
 const RAW_REMEDY = 'use shared/bounded-process.ts or shared/bounded-fetch.ts with a named budget'
@@ -46,8 +45,7 @@ function productionTypeScript(path: string): boolean {
     !path.endsWith('.test.ts') &&
     !path.endsWith('.d.ts') &&
     !path.startsWith('hub/web/') &&
-    !PRIMITIVES.has(path) &&
-    !TEST_INFRASTRUCTURE.has(path)
+    !PRIMITIVES.has(path)
   )
 }
 
@@ -228,7 +226,10 @@ export function rawStarts(files: Readonly<Record<string, string>>): RawStart[] {
 
 function counts(findings: readonly RawStart[]): Record<string, number> {
   const result: Record<string, number> = {}
-  for (const finding of findings) result[finding.file] = (result[finding.file] ?? 0) + 1
+  for (const finding of findings) {
+    if (TEST_INFRASTRUCTURE.has(finding.file)) continue
+    result[finding.file] = (result[finding.file] ?? 0) + 1
+  }
   return result
 }
 
@@ -282,7 +283,6 @@ export function gitEnvironmentViolations(findings: readonly RawStart[]): string[
       (finding) =>
         finding.rawGit &&
         (finding.file.startsWith('orchestrator/src/') || finding.file.startsWith('shared/')) &&
-        !GIT_HELPERS.has(finding.file) &&
         !finding.hasScrubbedEnvironment,
     )
     .map(
@@ -310,7 +310,8 @@ function checkRawStarts(
   ]
   for (const violation of violations) reporter.error(violation)
   if (violations.length) return false
-  reporter.log(`check-raw-start: ok (${findings.length} frozen raw starts)`)
+  const frozen = Object.values(counts(findings)).reduce((total, count) => total + count, 0)
+  reporter.log(`check-raw-start: ok (${frozen} frozen raw starts)`)
   return true
 }
 

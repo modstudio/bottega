@@ -54,4 +54,14 @@ describe('raw start check', () => {
       'orchestrator/src/raw.ts:1: production git spawn must supply a scrubbed environment; use the guarded helpers in orchestrator/src/git/git-environment.ts, or gitAt in shared/git.ts',
     ])
   })
+
+  test('holds the git helpers and test infrastructure to the environment rule', () => {
+    const raw = `Bun.${'spawnSync'}(['git', 'status'], { env: process.env })`
+    const findings = rawStarts({ 'shared/git.ts': raw, 'shared/test-git-repository.ts': raw })
+    expect(gitEnvironmentViolations(findings).map((line) => line.split(':')[0])).toEqual([
+      'shared/git.ts',
+      'shared/test-git-repository.ts',
+    ])
+    expect(rawStartViolations(findings, { files: { 'shared/git.ts': 1 } })).toEqual([])
+  })
 })
