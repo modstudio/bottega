@@ -63,8 +63,8 @@ describe('round lens plan', () => {
           settled: true,
           provenance: {
             recorded: true,
-            treeInspected: '/other',
-            runTree: '/subject',
+            treeInspected: '/missing/trees/other',
+            runTree: '/missing/trees/subject',
             reviewedCommit: 'abcdef1',
             headCommit: 'abcdef1234567890',
           },
