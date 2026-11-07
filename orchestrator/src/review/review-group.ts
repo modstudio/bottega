@@ -51,7 +51,7 @@ export type TriageReviewRow = {
   }[]
 }
 
-export type LensProvenanceSubjectFacts = {
+type LensProvenanceSubjectFacts = {
   recorded: boolean
   treeInspected: string | null
   runTree: string | null
@@ -79,7 +79,7 @@ function canonicalTreePair(
   return { treeInspected: resolve(treeInspected), runTree: resolve(runTree) }
 }
 
-function provenanceSubjectFacts(row: {
+export function provenanceSubjectFacts(row: {
   review_provenance: string | null
   worktree: string | null
   cwd: string | null

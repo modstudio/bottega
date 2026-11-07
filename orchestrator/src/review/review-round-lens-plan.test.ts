@@ -74,7 +74,13 @@ describe('round lens plan', () => {
     const result = applicableRoundLensPlan({
       relevant: { lenses: ['correctness'] },
       facts: roundLensFacts([row], { patchId: 'patch', pathSet: '["a.ts"]' }),
-      postFix: { kind: 'no-round-needed', reviewNumber: 1 },
+      postFix: {
+        kind: 'no-round-needed',
+        reviewNumber: 1,
+        reviewedTip: 'reviewed-tip',
+        tierThreePaths: [],
+        applicability: { lenses: [] },
+      },
       fixPathsByLens: {},
     })
 

@@ -416,6 +416,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../../../shared/brand.ts',
       'bun:sqlite',
       '../database/db.ts',
+      '../pull-request/triage-decision.ts',
       './review-evidence-sql.ts',
       './review-group.ts',
       './review-role.ts',
