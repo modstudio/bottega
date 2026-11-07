@@ -74,7 +74,9 @@ export function inadmissibleLensReason(row: ProvenanceLensRow): ReviewLensOwedRe
 }
 
 /** Whether a row is named, graded evidence for its recorded review subject. */
-export function countsAsLensEvidence(row: ProvenanceLensRow): boolean {
+export function countsAsLensEvidence(
+  row: ProvenanceLensRow,
+): row is ProvenanceLensRow & { lens: string; graded: true } {
   return Boolean(row.lens && row.graded && lensProvenanceSubject(row.provenance).admissible)
 }
 

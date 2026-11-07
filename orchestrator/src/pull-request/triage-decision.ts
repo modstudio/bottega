@@ -478,7 +478,7 @@ function exactReviewEvidence(evidence: TriageEvidence) {
     evidence.reviews
       .filter((review) => review.completedAt !== null)
       .flatMap((review) =>
-        review.lenses.flatMap((lens) => (countsAsLensEvidence(lens) ? [lens.lens!] : [])),
+        review.lenses.flatMap((lens) => (countsAsLensEvidence(lens) ? [lens.lens] : [])),
       ),
   )
   const secondOpinion = decideSecondOpinion(

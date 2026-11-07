@@ -151,7 +151,7 @@ export function roundLensFacts(
   const completedLenses = [
     ...new Set(
       completedReviews.flatMap((review) =>
-        review.lenses.flatMap((lens) => (countsAsLensEvidence(lens) ? [lens.lens!] : [])),
+        review.lenses.flatMap((lens) => (countsAsLensEvidence(lens) ? [lens.lens] : [])),
       ),
     ),
   ]
@@ -186,7 +186,7 @@ export function roundLensFacts(
   for (const review of prior) {
     const paths = review.pathSet ? (JSON.parse(review.pathSet) as string[]) : []
     for (const lens of review.lenses.flatMap((candidate) =>
-      countsAsLensEvidence(candidate) ? [candidate.lens!] : [],
+      countsAsLensEvidence(candidate) ? [candidate.lens] : [],
     )) {
       reviewedPathsByLens[lens] = [...new Set([...(reviewedPathsByLens[lens] ?? []), ...paths])]
     }
