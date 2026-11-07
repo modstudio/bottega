@@ -202,7 +202,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
   const activeDecision = activeSpaceInvariant(facts)
   checks.push(attributionFailureCheck(facts.attributionFailure))
   checks.push(
-    activeDecision.holds
+    activeDecision.holds && facts.memberships.length > 0
       ? {
           name: 'session active space',
           status: 'pass',

@@ -81,6 +81,33 @@ describe('record doctor decisions', () => {
     expect(JSON.stringify(checks)).not.toContain('BETTER_AUTH_SECRET')
   })
 
+  test('an accepted session with no memberships fails the active-space check', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      activeSpaceId: null,
+      memberships: [],
+    })
+    expect(checks).toContainEqual({
+      name: 'session active space',
+      status: 'fail',
+      detail: expect.any(String),
+      section: 'customer',
+    })
+  })
+
+  test('an active id outside the memberships fails the active-space check', () => {
+    const checks = decideRecordDoctorChecks({
+      ...healthyFacts,
+      activeSpaceId: 'space-stale',
+    })
+    expect(checks).toContainEqual({
+      name: 'session active space',
+      status: 'fail',
+      detail: expect.any(String),
+      section: 'customer',
+    })
+  })
+
   test('reports each way a local run can be missing from the record', () => {
     const checks = decideRecordDoctorChecks({
       ...healthyFacts,

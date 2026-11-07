@@ -51,24 +51,13 @@ export async function signUpCommand(
   presentation: Presentation,
 ): Promise<void> {
   const result = await recordApiSignUp(email, name, await recordPassword(readPassword))
-  writeRecordSessionToken(result.token)
-  rememberSignedInRecordUser(result.user)
-  rememberHostedRecord()
-  presentation.log(`signed up ${result.user.email}`)
+  await completeRecordSessionCommand(result, presentation, 'signed up')
 }
 
-export async function signInCommand(
-  email: string,
-  readPassword: () => Promise<string>,
-  presentation: Presentation,
-): Promise<void> {
-  const result = await recordApiSignIn(email, await recordPassword(readPassword))
-  await completeSignInCommand(result, presentation)
-}
-
-export async function completeSignInCommand(
+async function completeRecordSessionCommand(
   result: { token: string; user: Record<string, unknown> },
   presentation: Presentation,
+  completion: 'signed in' | 'signed up',
 ): Promise<void> {
   writeRecordSessionToken(result.token)
   rememberSignedInRecordUser(result.user)
@@ -76,8 +65,11 @@ export async function completeSignInCommand(
   const identity = await recordMemberships()
   const active = activeSpaceInvariant(identity)
   if (!active.holds) throw new Error(active.message)
-  presentation.log(`signed in ${result.user.email}`)
+  presentation.log(`${completion} ${result.user.email}`)
   presentation.log(`active record space ${active.active?.slug ?? active.active?.spaceId ?? 'none'}`)
+}
+
+async function completeSignedInMachineSetup(presentation: Presentation): Promise<void> {
   try {
     await claimCurrentMachineKey()
   } catch (error) {
@@ -94,6 +86,23 @@ export async function completeSignInCommand(
       )
   }
   await automaticallyAdoptHostedBoard(presentation, { signedIn: () => true })
+}
+
+export async function signInCommand(
+  email: string,
+  readPassword: () => Promise<string>,
+  presentation: Presentation,
+): Promise<void> {
+  const result = await recordApiSignIn(email, await recordPassword(readPassword))
+  await completeSignInCommand(result, presentation)
+}
+
+export async function completeSignInCommand(
+  result: { token: string; user: Record<string, unknown> },
+  presentation: Presentation,
+): Promise<void> {
+  await completeRecordSessionCommand(result, presentation, 'signed in')
+  await completeSignedInMachineSetup(presentation)
 }
 
 export async function whoamiCommand(presentation: Presentation): Promise<void> {

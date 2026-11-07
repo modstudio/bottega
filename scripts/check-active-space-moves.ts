@@ -1,8 +1,10 @@
-// Direct active-space writes are centralized so every CLI write is verified by a whoami re-read.
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+// This guard recognizes every setActiveOrganization access: bare identifiers, property access,
+// string-literal element access, destructuring bindings, and method references passed as values.
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
+import { enclosingFunctionName, sourceFiles } from './source-analysis.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const SOURCE_ROOTS = ['orchestrator/src', 'hub/src', 'hub/data/src', 'hub/web/src'] as const
@@ -14,12 +16,6 @@ const VERIFYING_HELPER = {
 type AdmittedWrite = { file: string; functionName: string; reason: string }
 
 const ADMITTED_ACTIVE_SPACE_WRITES: readonly AdmittedWrite[] = [
-  {
-    file: 'orchestrator/src/record/record-auth.ts',
-    functionName: 'recordDatabaseHooks',
-    reason:
-      'the server session-create hook establishes the initial active space before whoami exists',
-  },
   {
     file: 'hub/web/src/routes/accept-invitation.$id.tsx',
     functionName: 'act',
@@ -38,49 +34,46 @@ function productionTypeScript(path: string): boolean {
   )
 }
 
-function sourceFiles(): string[] {
-  const files: string[] = []
-  const collect = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = join(directory, entry.name)
-      if (entry.isDirectory()) collect(absolute)
-      else if (entry.isFile()) files.push(relative(ROOT, absolute))
-    }
-  }
-  for (const root of SOURCE_ROOTS) {
-    const source = resolve(ROOT, root)
-    if (existsSync(source)) collect(source)
-  }
-  return files.filter(productionTypeScript).sort()
-}
-
 export function activeSpaceSourceViolations(): string[] {
   const files = Object.fromEntries(
-    sourceFiles().map((path) => [path, readFileSync(resolve(ROOT, path), 'utf8')]),
+    sourceFiles(ROOT, SOURCE_ROOTS, productionTypeScript).map((path) => [
+      path,
+      readFileSync(resolve(ROOT, path), 'utf8'),
+    ]),
   )
   return activeSpaceWriteViolations(activeSpaceWriteCalls(files))
 }
 
-function enclosingFunctionName(node: ts.Node): string | null {
-  for (let current: ts.Node | undefined = node; current; current = current.parent) {
-    if (ts.isFunctionDeclaration(current) && current.name) return current.name.text
-    if (
-      (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) &&
-      ts.isVariableDeclaration(current.parent) &&
-      ts.isIdentifier(current.parent.name)
-    ) {
-      return current.parent.name.text
-    }
+function isIdentifierAccess(node: ts.Identifier): boolean {
+  const parent = node.parent
+  if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false
+  if (ts.isBindingElement(parent)) return false
+  if (ts.isFunctionDeclaration(parent) && parent.name === node) return false
+  if (ts.isVariableDeclaration(parent) && parent.name === node) return false
+  if (
+    ts.isMethodSignature(parent) ||
+    ts.isMethodDeclaration(parent) ||
+    ts.isPropertyAssignment(parent)
+  ) {
+    return parent.name !== node
   }
-  return null
+  if (ts.isLiteralTypeNode(parent) || ts.isImportSpecifier(parent)) return false
+  return true
 }
 
-function isSetActiveOrganizationCall(node: ts.CallExpression): boolean {
-  return (
-    (ts.isIdentifier(node.expression) && node.expression.text === 'setActiveOrganization') ||
-    (ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === 'setActiveOrganization')
-  )
+function isSetActiveOrganizationAccess(node: ts.Node): boolean {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text === 'setActiveOrganization'
+  if (ts.isElementAccessExpression(node)) {
+    return (
+      ts.isStringLiteral(node.argumentExpression) &&
+      node.argumentExpression.text === 'setActiveOrganization'
+    )
+  }
+  if (ts.isBindingElement(node)) {
+    const member = node.propertyName ?? node.name
+    return ts.isIdentifier(member) && member.text === 'setActiveOrganization'
+  }
+  return ts.isIdentifier(node) && node.text === 'setActiveOrganization' && isIdentifierAccess(node)
 }
 
 export function activeSpaceWriteCalls(
@@ -94,7 +87,7 @@ export function activeSpaceWriteCalls(
     const kind = path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
     const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, kind)
     const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node) && isSetActiveOrganizationCall(node)) {
+      if (isSetActiveOrganizationAccess(node)) {
         findings.push({
           file: path,
           line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,

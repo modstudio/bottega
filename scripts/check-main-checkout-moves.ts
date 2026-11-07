@@ -1,10 +1,11 @@
 // This guard recognizes literal argv at production git call sites, including git-prefixed spawns.
 // Before the subcommand it skips -C/-c pairs plus --git-dir=, --work-tree=, and --no-pager.
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
 import { PLATFORM_NAME } from '../shared/brand.ts'
+import { enclosingFunctionName, sourceFiles } from './source-analysis.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const SOURCE_ROOTS = ['orchestrator/src', 'hub/src', 'shared'] as const
@@ -66,36 +67,6 @@ export type BranchMoveCall = {
 
 function productionTypeScript(path: string): boolean {
   return path.endsWith('.ts') && !path.endsWith('.test.ts') && !path.endsWith('.fixture.ts')
-}
-
-function sourceFiles(): string[] {
-  const files: string[] = []
-  const collect = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = join(directory, entry.name)
-      if (entry.isDirectory()) collect(absolute)
-      else if (entry.isFile()) files.push(relative(ROOT, absolute))
-    }
-  }
-  for (const root of SOURCE_ROOTS) {
-    const source = resolve(ROOT, root)
-    if (existsSync(source)) collect(source)
-  }
-  return files.filter(productionTypeScript).sort()
-}
-
-function enclosingFunctionName(node: ts.Node): string | null {
-  for (let current: ts.Node | undefined = node; current; current = current.parent) {
-    if (ts.isFunctionDeclaration(current) && current.name) return current.name.text
-    if (
-      (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) &&
-      ts.isVariableDeclaration(current.parent) &&
-      ts.isIdentifier(current.parent.name)
-    ) {
-      return current.parent.name.text
-    }
-  }
-  return null
 }
 
 function literalArgv(node: ts.CallExpression): Array<string | null> | null {
@@ -188,7 +159,10 @@ export function mainCheckoutMoveViolations(findings: readonly BranchMoveCall[]):
 
 if (import.meta.main) {
   const files = Object.fromEntries(
-    sourceFiles().map((path) => [path, readFileSync(resolve(ROOT, path), 'utf8')]),
+    sourceFiles(ROOT, SOURCE_ROOTS, productionTypeScript).map((path) => [
+      path,
+      readFileSync(resolve(ROOT, path), 'utf8'),
+    ]),
   )
   const violations = mainCheckoutMoveViolations(branchMoveCalls(files))
   for (const violation of violations) console.error(violation)

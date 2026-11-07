@@ -101,8 +101,11 @@ export async function activeSpaceDoctorDiagnosis(
   }
 }
 
-async function reportActiveSpaceDoctor(presentation: DoctorPresentation): Promise<void> {
-  const diagnosis = await activeSpaceDoctorDiagnosis()
+export async function reportActiveSpaceDoctor(
+  presentation: DoctorPresentation,
+  diagnose: () => Promise<{ line: string; failed: boolean }> = activeSpaceDoctorDiagnosis,
+): Promise<void> {
+  const diagnosis = await diagnose()
   presentation.log(diagnosis.line)
   if (diagnosis.failed) presentation.exitCode(1)
 }
@@ -114,6 +117,7 @@ type RegisteredCheckout = {
     trunk?: string
     workerCheck?: string
     focusedTests?: ProjectFocusedTests
+    requireCleanMain?: boolean
   }
 }
 type BranchInspection = { landing: string | null; problems: string[] }
@@ -123,35 +127,69 @@ type RegisteredMainCheckoutInspection<T extends RegisteredCheckout> = {
   project: T
   branch: BranchInspection
   checkout: CheckoutInspection | null
-  invariant: CheckoutDecision | null
+  error: string | null
+}
+
+export function registeredMainCheckoutDiagnosis(input: {
+  name: string
+  requireCleanMain: boolean
+  checkout: CheckoutInspection
+  decide: (facts: CheckoutInspection) => CheckoutDecision
+}): { lines: string[]; failed: boolean } {
+  const { name, requireCleanMain, checkout, decide } = input
+  const lines: string[] = []
+  if (checkout.branch !== checkout.trunk) {
+    const branch = decide({ ...checkout, trackedModified: false })
+    if (!branch.holds) lines.push(`${name} register question — ${branch.message}`)
+  }
+  if (checkout.trackedModified) {
+    const dirty = decide({ ...checkout, branch: checkout.trunk })
+    if (!dirty.holds) {
+      lines.push(
+        requireCleanMain
+          ? `${name} FAIL — ${dirty.message}`
+          : `${name} info — tracked modifications are allowed by requireCleanMain false`,
+      )
+    }
+  }
+  if (!lines.length) lines.push(`${name} pass — branch ${checkout.branch}, tracked clean`)
+  return { lines, failed: checkout.trackedModified && requireCleanMain }
 }
 
 function reportRegisteredMainCheckouts<T extends RegisteredCheckout>(
   inspections: readonly RegisteredMainCheckoutInspection<T>[],
   log: DoctorPresentation['log'],
-): void {
+  decide: (facts: CheckoutInspection) => CheckoutDecision,
+): boolean {
+  let failed = false
   log('\nregistered main checkouts')
-  for (const { project, branch, checkout, invariant } of inspections) {
+  for (const { project, branch, checkout, error } of inspections) {
+    if (error !== null) {
+      log(`  ${project.name} check could not run — ${error}`)
+      continue
+    }
     if (!branch.landing) {
       log(`  ${project.name} check could not run — no registered landing branch`)
       continue
     }
-    log(
-      invariant!.holds
-        ? `  ${project.name} pass — branch ${checkout!.branch}, tracked clean`
-        : `  ${project.name} FAIL — ${invariant!.message}`,
-    )
+    const diagnosis = registeredMainCheckoutDiagnosis({
+      name: project.name,
+      requireCleanMain: project.settings.requireCleanMain !== false,
+      checkout: checkout!,
+      decide,
+    })
+    for (const line of diagnosis.lines) log(`  ${line}`)
+    failed ||= diagnosis.failed
   }
+  return failed
 }
 
 function registerMainCheckoutProblems<T extends RegisteredCheckout>(
   inspection: RegisteredMainCheckoutInspection<T>,
 ): string[] {
-  const { branch, checkout, invariant } = inspection
+  const { branch } = inspection
   if (!branch.landing) return branch.problems
-  return checkout!.trackedModified && !invariant!.holds
-    ? [...branch.problems, invariant!.message]
-    : branch.problems
+  return branch.problems
 }
 
 function reportProjectLifecycles(
@@ -174,25 +212,40 @@ function reportProjectLifecycles(
   }
 }
 
-function reportCheckoutRegister<T extends RegisteredCheckout>(
+export function reportCheckoutRegister<T extends RegisteredCheckout>(
   projects: readonly T[],
-  log: DoctorPresentation['log'],
+  presentation: Pick<DoctorPresentation, 'log' | 'exitCode'>,
   hookFinding: (project: T) => string | null,
   inspectBranch: (project: T) => BranchInspection,
   inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
   decide: (facts: CheckoutInspection) => CheckoutDecision,
 ): void {
+  const { log } = presentation
   const hookFlags = projects.map(hookFinding).filter(Boolean)
   if (hookFlags.length) {
     log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
     for (const line of hookFlags) log(`  ${line}`)
   }
   const inspections = projects.map((project): RegisteredMainCheckoutInspection<T> => {
-    const branch = inspectBranch(project)
-    const checkout = branch.landing ? inspectCheckout(project.path, branch.landing) : null
-    return { project, branch, checkout, invariant: checkout ? decide(checkout) : null }
+    try {
+      const branch = inspectBranch(project)
+      if (!branch.landing) return { project, branch, checkout: null, error: null }
+      return {
+        project,
+        branch,
+        checkout: inspectCheckout(project.path, branch.landing),
+        error: null,
+      }
+    } catch (cause) {
+      return {
+        project,
+        branch: { landing: project.settings.trunk ?? null, problems: [] },
+        checkout: null,
+        error: cause instanceof Error ? cause.message : String(cause),
+      }
+    }
   })
-  reportRegisteredMainCheckouts(inspections, log)
+  const failed = reportRegisteredMainCheckouts(inspections, log, decide)
   const inspectionsByProject = new Map(
     inspections.map((inspection) => [inspection.project, inspection]),
   )
@@ -203,6 +256,7 @@ function reportCheckoutRegister<T extends RegisteredCheckout>(
     log('\nregister questions (not run failures):')
     for (const question of questions) log(`  ${question}`)
   }
+  if (failed) presentation.exitCode(1)
 }
 
 export function canonEvalDoctorDecision(input: {
@@ -894,7 +948,7 @@ export async function doctorCommand(
   reportProjectLifecycles(repositoryProjects, log)
   reportCheckoutRegister(
     repositoryProjects,
-    log,
+    presentation,
     undeclaredCommitHooks,
     registerBranchCheck,
     mainCheckoutFacts,

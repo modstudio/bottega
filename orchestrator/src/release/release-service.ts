@@ -174,15 +174,16 @@ function releaseCheckoutRestoreWarning(path: string, trunk: string, cause: unkno
   return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run git -C ${path} switch ${trunk}`
 }
 
-function verifiedReleaseCheckoutRestore(
+export function verifiedReleaseCheckoutRestore(
   path: string,
   trunk: string,
   restoreWarning: string | null,
   shouldVerify: boolean,
+  verify: (path: string, trunk: string) => void = verifyMainCheckoutInvariant,
 ): { restoreWarning: string | null; restoreBreach: string | null } {
   if (!shouldVerify || restoreWarning !== null) return { restoreWarning, restoreBreach: null }
   try {
-    verifyMainCheckoutInvariant(path, trunk)
+    verify(path, trunk)
     return { restoreWarning: null, restoreBreach: null }
   } catch (cause) {
     return {

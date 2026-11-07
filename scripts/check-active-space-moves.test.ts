@@ -33,3 +33,22 @@ test('does not exempt another function in an admitted file', () => {
   })
   expect(activeSpaceWriteViolations(findings)).toHaveLength(1)
 })
+
+test('refuses every form that can take or alias the active-space member', () => {
+  const findings = activeSpaceWriteCalls({
+    'orchestrator/src/unsafe.ts': `
+      function bracket() { client['setActiveOrganization']({ organizationId: id }) }
+      function alias() { const f = client.setActiveOrganization; f({ organizationId: id }) }
+      function destructure() { const { setActiveOrganization: move } = client; move({ organizationId: id }) }
+      function reference() { consume(client.setActiveOrganization) }
+    `,
+  })
+
+  expect(findings.map(({ functionName }) => functionName)).toEqual([
+    'bracket',
+    'alias',
+    'destructure',
+    'reference',
+  ])
+  expect(activeSpaceWriteViolations(findings)).toHaveLength(4)
+})
