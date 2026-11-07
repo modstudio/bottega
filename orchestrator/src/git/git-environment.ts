@@ -167,7 +167,8 @@ function gitResult(
   if (cwdMissing(cwd)) return { ok: false, stdout: '', stderr: `${cwd} does not exist` }
   try {
     const p = startBoundedSync(['git', ...args], {
-      budget: 'git-plumbing',
+      // Its callers include whole-patch reads (worktree extraction, reader patches).
+      budget: 'git-object',
       cwd,
       env: options.env ?? targetGitEnvironment(cwd),
       stdin: options.input,

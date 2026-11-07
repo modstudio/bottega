@@ -91,17 +91,11 @@ const bytes = startBoundedSyncBytes(
 )
 console.log(`sync byte output: [${[...bytes.stdout].join(', ')}] (expected [255, 254, 0, 97])`)
 
-const bytesFloodStarted = performance.now()
-try {
-  startBoundedSyncBytes(['sh', '-c', 'while :; do printf 1234567890; done'], {
-    budget: 'process-table',
-  })
-  console.log('sync byte output flood: unexpectedly completed')
-} catch (error) {
-  console.log(
-    `sync byte output flood: ${error instanceof Error ? error.message : String(error)}; elapsed ${Math.round(performance.now() - bytesFloodStarted)}ms`,
-  )
-}
+const bom = startBoundedSync(
+  [process.execPath, '-e', "process.stdout.write('\\ufeffok')"],
+  { budget: 'process-table' },
+)
+console.log(`sync string BOM: first code point ${bom.stdout.codePointAt(0)} (expected 65279)`)
 
 const server = Bun.serve({
   port: await freePort(),
