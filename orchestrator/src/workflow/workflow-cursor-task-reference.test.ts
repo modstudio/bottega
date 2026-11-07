@@ -25,7 +25,7 @@ describe('workflow cursor task reference', () => {
     )
   })
 
-  test('resolving a selector key links and selects a cursor created before rollout', async () => {
+  test('a pre-rollout cursor named by number links to its resolved task on next', async () => {
     const d = database()
     composeWorkflowWithCursor(
       'flow',
