@@ -127,14 +127,14 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
   const config = hostedServerConfig(environment)
   const recordDatabase = new SQL(recordServiceUrl(config.recordDatabaseUrl))
   const routeConfig = { recordApiUrl: config.recordApiUrl, recordDatabaseUrl: recordDatabase }
-  const fetch = hostedRequestHandler(routeConfig)
+  const requestHandler = hostedRequestHandler(routeConfig)
   const server = Bun.serve({
     hostname: config.hostname,
     idleTimeout: hostedServer.HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port: config.port,
     fetch: async (request) => {
       const started = performance.now()
-      const response = await fetch(request)
+      const response = await requestHandler(request)
       console.log(
         hostedServer.hostedAccessLogLine({
           method: request.method,

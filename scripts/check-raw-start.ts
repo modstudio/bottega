@@ -85,10 +85,13 @@ const BOUNDED_PROCESS_MODULE = new RegExp(`(^|/)${BOUNDED_PROCESS_MODULE_NAME}([
 const BOUNDED_PROCESS_CALLS = new Set(['startBounded', 'startBoundedSync'])
 const BUN_FORMS: readonly string[] = ['Bun.spawn', 'Bun.spawnSync', 'Bun.$']
 
-/** The source pre-filter must name every detector's vocabulary. */
+/**
+ * The source pre-filter must name every detector's vocabulary. Bare `$` is absent because it
+ * matches nearly every file, and every recognized `$` has an execa specifier or the `Bun.$` form.
+ */
 export const RAW_START_DETECTOR_TERMS = [
   ...CHILD_PROCESS_MODULES,
-  ...EXECA_CALLS,
+  ...[...EXECA_CALLS].filter((call) => call !== '$'),
   KY_MODULE,
   FETCH_CALL,
   BOUNDED_PROCESS_MODULE_NAME,
@@ -252,7 +255,13 @@ function taggedFinding(
   path: string,
   imports: Imports,
 ): RawStart | undefined {
-  if (!ts.isIdentifier(node.tag) || !imports.execaCalls.has(node.tag.text)) return undefined
+  const importedExecaTag = ts.isIdentifier(node.tag) && imports.execaCalls.has(node.tag.text)
+  const bunTag =
+    ts.isPropertyAccessExpression(node.tag) &&
+    ts.isIdentifier(node.tag.expression) &&
+    node.tag.expression.text === 'Bun' &&
+    node.tag.name.text === '$'
+  if (!importedExecaTag && !bunTag) return undefined
   return {
     file: path,
     line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,

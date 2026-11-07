@@ -33,10 +33,11 @@ describe('record HTTP authentication responses', () => {
     process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const requests: Array<{ url: string; headers: Headers; body: unknown }> = []
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
       requests.push({
-        url: String(input),
-        headers: new Headers(init?.headers),
-        body: JSON.parse(String(init?.body)),
+        url: request.url,
+        headers: request.headers,
+        body: await request.json(),
       })
       return Response.json(
         { token: 'body-token', user: { id: 'user-a', email: 'a@example.test' } },
@@ -282,10 +283,11 @@ describe('record API client test safety', () => {
     const calls: Array<{ url: string; headers: Headers; credentials?: RequestCredentials }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
       calls.push({
-        url: String(input),
-        headers: new Headers(init?.headers),
-        credentials: init?.credentials,
+        url: request.url,
+        headers: request.headers,
+        credentials: init?.credentials ?? request.credentials,
       })
       return Response.json({ items: [] })
     }) as typeof fetch
@@ -325,8 +327,8 @@ describe('record API client test safety', () => {
     process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const calls: Headers[] = []
     const originalFetch = globalThis.fetch
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Headers(init?.headers))
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push((input instanceof Request ? input : new Request(input, init)).headers)
       return Response.json({ id: newRecordId(), revisionId: newRecordId(), name: 'known' })
     }) as typeof fetch
     try {
@@ -370,10 +372,12 @@ describe('record API client test safety', () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const body = await request.text()
       calls.push({
-        url: String(input),
-        method: init?.method ?? 'GET',
-        body: init?.body ? JSON.parse(String(init.body)) : null,
+        url: request.url,
+        method: request.method,
+        body: body ? JSON.parse(body) : null,
       })
       return Response.json({ orderedIds: [] })
     }) as typeof fetch
@@ -410,19 +414,21 @@ describe('record API client test safety', () => {
       []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
+      const request = input instanceof Request ? input : new Request(input, init)
+      const body = await request.text()
       calls.push({
-        url,
-        method: init?.method ?? 'GET',
-        body: init?.body ? JSON.parse(String(init.body)) : null,
-        signal: init?.signal ?? null,
+        url: request.url,
+        method: request.method,
+        body: body ? JSON.parse(body) : null,
+        signal: request.signal,
       })
       return Response.json({ error: 'nope' }, { status: 409 })
     }) as typeof fetch
     try {
       const client = recordApiClient()
       const id = newRecordId()
-      const boardSignal = new AbortController().signal
+      const boardController = new AbortController()
+      const boardSignal = boardController.signal
       await expect(
         client.listBoardMessages(
           {
@@ -453,10 +459,11 @@ describe('record API client test safety', () => {
           audience: { kind: 'session', sessionId: 'in-reach' },
         }),
       ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
+      boardController.abort()
+      expect(calls[0]?.signal?.aborted).toBeTrue()
       expect(calls[0]).toMatchObject({
         url: 'https://api.example.test/v1/board/messages?kind=question&open=true&includeEnded=false&ownTitlePrefix=Hosted+pressure%3A+%25_',
         method: 'GET',
-        signal: boardSignal,
       })
       expect(calls[1]).toMatchObject({
         url: `https://api.example.test/v1/board/threads/${id}`,

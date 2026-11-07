@@ -67,6 +67,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/change-api.ts',
     allowed: [
+      '../../shared/bounded-fetch.ts',
       '../../shared/brand.ts',
       '../../shared/record-space-request.ts',
       '../../shared/record/record-changes.ts',
@@ -176,6 +177,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/task-api.ts',
     allowed: [
+      '../../shared/bounded-fetch.ts',
       '../../shared/brand.ts',
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
