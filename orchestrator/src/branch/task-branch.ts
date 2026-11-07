@@ -5,7 +5,9 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal as refusalValue } from '../../../shared/refusal.ts'
 import { db } from '../database/db.ts'
+import { RefusalError } from '../refusal-error.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
@@ -111,11 +113,11 @@ export type TaskBranchLandingDecision =
 
 export type TaskBranchLandingRefusal = Extract<TaskBranchLandingDecision, { action: 'refuse' }>
 
-export class TaskBranchLandingRefusalError extends Error {
+export class TaskBranchLandingRefusalError extends RefusalError {
   readonly refusal: TaskBranchLandingRefusal
 
   constructor(refusal: TaskBranchLandingRefusal, trunk: string) {
-    super(taskBranchLandingRefusalMessage(refusal, trunk))
+    super(refusalValue(taskBranchLandingRefusalMessage(refusal, trunk)))
     this.refusal = refusal
   }
 }

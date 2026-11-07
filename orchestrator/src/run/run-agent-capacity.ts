@@ -2,6 +2,7 @@
 /** Pure wait-or-refuse decision plus the bounded polling adapter. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal } from '../../../shared/refusal.ts'
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
@@ -138,10 +139,12 @@ function refusalAtWaitBound(
   return noWait
     ? error
     : new AgentCapacityError(
-        `${error.message}; capacity wait bound reached after ${maxWaitMs}ms` +
-          (detached
-            ? ''
-            : `\ncleared by: retry this command with ${PLATFORM_SLUG} run start --detach`),
+        detached
+          ? refusal(`${error.message}; capacity wait bound reached after ${maxWaitMs}ms`)
+          : refusal(`${error.message}; capacity wait bound reached after ${maxWaitMs}ms`, {
+              kind: 'command',
+              argv: [PLATFORM_SLUG, 'run', 'start', '--detach'],
+            }),
         error.runningCounts,
       )
 }

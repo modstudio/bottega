@@ -5,6 +5,8 @@
  * silently. Must not know run state, argv, routes, or credentials.
  */
 import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { type Refusal, refusal } from '../../../shared/refusal.ts'
+import { RefusalError } from '../refusal-error.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { listMcpToolPages, type McpToolListLaunch } from '../mcp/mcp-tool-list.ts'
 import {
@@ -58,7 +60,7 @@ export type RequiredMcpProbeFacts = {
 }
 
 export type RequiredMcpProbeDecision = {
-  refusal: string | null
+  refusal: Refusal | null
   unrelatedFailures: readonly ProjectMcpProbeFailure[]
 }
 
@@ -110,11 +112,12 @@ export function requiredMcpProbeDecision(facts: RequiredMcpProbeFacts): Required
   const remedy = withheld?.remedy ?? projectMcpWriterRemedy(facts.project)
   const failureLines = failures.map((failure) => `${failure.server}: ${failure.error}`).join('\n')
   return {
-    refusal:
+    refusal: refusal(
       `--mcp require was asked for, but the project MCP launch did not start:\n${failureLines}` +
       `\ninvariant: --mcp require refuses a launch that affirmatively failed or a required server` +
-      ` the run did not get, never a merely unverified connection` +
-      `\ncleared by: ${remedy}`,
+        ` the run did not get, never a merely unverified connection`,
+      { kind: 'edit', text: remedy },
+    ),
     unrelatedFailures,
   }
 }
@@ -126,8 +129,8 @@ export function requiredMcpProbeDecision(facts: RequiredMcpProbeFacts): Required
  * carries only the reason so the sandbox probe stays free of run-state
  * vocabulary.
  */
-export class RequiredMcpProbeRefusalError extends Error {
-  constructor(refusal: string) {
+export class RequiredMcpProbeRefusalError extends RefusalError {
+  constructor(refusal: Refusal) {
     super(refusal)
     this.name = 'RequiredMcpProbeRefusalError'
   }

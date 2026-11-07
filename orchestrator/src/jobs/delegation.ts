@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type Refusal, refusal } from '../../../shared/refusal.ts'
 import {
   DELEGATION_SETTING_KEYS,
   type DelegationClass,
@@ -34,13 +35,16 @@ export function isHarnessDelegated(
 export function harnessDelegationRefusal(
   requestedJob: Pick<Job, 'needs'>,
   settings: DelegationSettings,
-): string | null {
+): Refusal | null {
   if (delegationMode(requestedJob.needs, settings) === 'external') return null
   const jobClass = delegationClass(requestedJob.needs)
   const setting = DELEGATION_SETTING_KEYS[jobClass]
-  return (
-    `this machine runs ${jobClass} work through the harness's own sub-agent (${setting}=harness)\n` +
-    `cleared by: ${delegationRemedy(jobClass, 'external')}`
+  return refusal(
+    `this machine runs ${jobClass} work through the harness's own sub-agent (${setting}=harness)`,
+    {
+      kind: 'command',
+      argv: [PLATFORM_SLUG, 'machine', 'config', 'set', '--machine', setting, 'external'],
+    },
   )
 }
 

@@ -4,6 +4,8 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, statfsSync, statSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal } from '../../../shared/refusal.ts'
+import { RefusalError } from '../refusal-error.ts'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
 import { drainDeliveredOutboxPayloads, drainSupersededOutboxRows } from '../record/outbox-prune.ts'
 import {
@@ -167,7 +169,7 @@ export function setupIncrementalVacuumAfterMachineUpdate(
   )
 }
 
-export class MigrationDrainRefusalError extends Error {
+export class MigrationDrainRefusalError extends RefusalError {
   readonly exitCode = MIGRATION_DRAIN_REFUSAL_EXIT_CODE
 }
 
@@ -304,8 +306,10 @@ function assertInFlightMigrationAllowed(input: {
   const names = input.runs.map(formatMigrationInFlightRun).join(', ')
   if (!input.force) {
     throw new MigrationDrainRefusalError(
-      `refusing non-additive migration while orchestrator runs are in flight: ${names}\n` +
-        `cleared by: ${PLATFORM_SLUG} machine update`,
+      refusal(`refusing non-additive migration while orchestrator runs are in flight: ${names}`, {
+        kind: 'command',
+        argv: [PLATFORM_SLUG, 'machine', 'update'],
+      }),
     )
   }
   input.presentation.log(`forcing migration; these orchestrator runs will fail: ${names}`)

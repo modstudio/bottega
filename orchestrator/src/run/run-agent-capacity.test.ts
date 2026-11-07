@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal } from '../../../shared/refusal.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
@@ -34,7 +35,7 @@ test('capacity wait decision picks the detached or foreground bound', () => {
 
 test('an AgentCapacityError carries capacity and a retry remedy to startup failure recording', () => {
   const failure = capacityStartupFailure(
-    new AgentCapacityError('capacity wait bound reached', { codex: 2 }),
+    new AgentCapacityError(refusal('capacity wait bound reached'), { codex: 2 }),
     'run-id',
   )
   expect(failure[2]?.failureKind).toBe('capacity')
@@ -50,7 +51,7 @@ test('selection re-picks only after the cheap running-count fact may have freed 
   const selected = await waitForAgentSelection({
     select: () => {
       attempts++
-      if (attempts < 2) throw new AgentCapacityError('at capacity', { codex: 2 })
+      if (attempts < 2) throw new AgentCapacityError(refusal('at capacity'), { codex: 2 })
       return 'codex'
     },
     now: () => now,
@@ -83,7 +84,7 @@ test('selection names the exhausted wait bound in its refusal', async () => {
   await expect(
     waitForAgentSelection({
       select: () => {
-        throw new AgentCapacityError('agent codex is at capacity', { codex: 2 })
+        throw new AgentCapacityError(refusal('agent codex is at capacity'), { codex: 2 })
       },
       now: () => now,
       sleep: async (ms) => {
@@ -103,7 +104,7 @@ test('detached selection leaves the retry remedy to startup failure recording', 
   try {
     await waitForAgentSelection({
       select: () => {
-        throw new AgentCapacityError('agent codex is at capacity', { codex: 2 })
+        throw new AgentCapacityError(refusal('agent codex is at capacity'), { codex: 2 })
       },
       detached: true,
       now: () => now,
@@ -130,7 +131,7 @@ test('selection refreshes the running-run snapshot at the wait bound', async () 
       select: () => {
         attempts += 1
         throw new AgentCapacityError(
-          `agent codex is at capacity (${attempts === 1 ? 'old-run' : 'current-run'})`,
+          refusal(`agent codex is at capacity (${attempts === 1 ? 'old-run' : 'current-run'})`),
           { codex: 2 },
         )
       },
