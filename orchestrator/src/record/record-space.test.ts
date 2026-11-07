@@ -220,10 +220,11 @@ describe('record space decisions', () => {
 
   test('switches only to a listed membership and sends its id', async () => {
     const calls: unknown[] = []
+    let activeSpaceId: string | null = null
     const selected = await switchRecordSpace('team', {
       whoami: async () => ({
         user: { id: 'user-a' },
-        activeSpaceId: null,
+        activeSpaceId,
         personalSpaceId: null,
         memberships: [
           {
@@ -237,6 +238,7 @@ describe('record space decisions', () => {
       }),
       setActiveOrganization: async (input) => {
         calls.push(input)
+        activeSpaceId = input.organizationId ?? null
         return { id: 'space-a', slug: 'team' }
       },
     })
@@ -248,6 +250,35 @@ describe('record space decisions', () => {
       permission: 'write',
     })
     expect(calls).toEqual([{ organizationId: 'space-a' }])
+  })
+
+  test('refuses a switch when whoami re-reads a different active space', async () => {
+    await expect(
+      switchRecordSpace('team', {
+        whoami: async () => ({
+          user: { id: 'user-a' },
+          activeSpaceId: 'space-other',
+          personalSpaceId: null,
+          memberships: [
+            {
+              space_id: 'space-a',
+              name: 'Team',
+              slug: 'team',
+              role: 'member',
+              permission: 'write',
+            },
+            {
+              space_id: 'space-other',
+              name: 'Other',
+              slug: 'other',
+              role: 'member',
+              permission: 'write',
+            },
+          ],
+        }),
+        setActiveOrganization: async () => ({ id: 'space-a', slug: 'team' }),
+      }),
+    ).rejects.toThrow('active space space-other is not valid; intended space space-a')
   })
 
   test('refuses a non-member without calling set-active and names the available slugs', async () => {

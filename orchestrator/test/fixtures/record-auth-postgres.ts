@@ -38,9 +38,13 @@ export const SIGN_UP_AUTH = {
   invitationAccepted: '01990000-0000-7000-8000-000000000150',
 } as const
 
+const VERIFIED_PERSONAL_SPACE_LINE = expect.stringMatching(/^active record space user-\S+$/)
+
 export const SIGN_UP_CLI_OUTPUT = [
   `signed up ${SIGN_UP_AUTH.emailA}`,
+  VERIFIED_PERSONAL_SPACE_LINE,
   `signed up ${SIGN_UP_AUTH.emailB}`,
+  VERIFIED_PERSONAL_SPACE_LINE,
 ]
 
 export function invitationApiClient(

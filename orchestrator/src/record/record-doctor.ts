@@ -30,6 +30,7 @@ import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
+import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
@@ -198,14 +199,16 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
           section: 'customer',
         },
   ]
-  const active = facts.memberships.find((membership) => membership.spaceId === facts.activeSpaceId)
+  const activeDecision = activeSpaceInvariant(facts)
   checks.push(attributionFailureCheck(facts.attributionFailure))
   checks.push(
-    active
+    activeDecision.holds && facts.memberships.length > 0
       ? {
           name: 'session active space',
           status: 'pass',
-          detail: `${active.slug} (${active.spaceId})`,
+          detail: activeDecision.active
+            ? `${activeDecision.active.slug} (${activeDecision.active.spaceId})`
+            : 'no space',
           section: 'customer',
         }
       : {

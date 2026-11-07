@@ -9,6 +9,7 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { verifyMainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
 import { projectLockState, withReleaseLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import {
@@ -173,6 +174,25 @@ function releaseCheckoutRestoreWarning(path: string, trunk: string, cause: unkno
   return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run git -C ${path} switch ${trunk}`
 }
 
+export function verifiedReleaseCheckoutRestore(
+  path: string,
+  trunk: string,
+  restoreWarning: string | null,
+  shouldVerify: boolean,
+  verify: (path: string, trunk: string) => void = verifyMainCheckoutInvariant,
+): { restoreWarning: string | null; restoreBreach: string | null } {
+  if (!shouldVerify || restoreWarning !== null) return { restoreWarning, restoreBreach: null }
+  try {
+    verify(path, trunk)
+    return { restoreWarning: null, restoreBreach: null }
+  } catch (cause) {
+    return {
+      restoreWarning: null,
+      restoreBreach: releaseCheckoutRestoreWarning(path, trunk, cause),
+    }
+  }
+}
+
 function fastForwardReleaseBranch(path: string, branch: string): void {
   const head = git(['rev-parse', 'HEAD'], path)
   const remoteHead = git(['rev-parse', `origin/${branch}`], path)
@@ -219,12 +239,21 @@ function withReleaseCheckout(
       }
     }
   }
+  const verifiedRestore = verifiedReleaseCheckoutRestore(
+    path,
+    trunk,
+    restoreWarning,
+    transition.restoreToTrunk,
+  )
+  restoreWarning = verifiedRestore.restoreWarning
   const composed = releaseCheckoutOutcomeDecision({
     failure: failed ? (failure instanceof Error ? failure.message : String(failure)) : null,
     warning: outcome?.result.warning ?? null,
     restoreWarning,
+    restoreBreach: verifiedRestore.restoreBreach,
   })
   if (!composed.ok) {
+    if (verifiedRestore.restoreBreach !== null) throw new Error(composed.message)
     if (restoreWarning === null) throw failure
     throw new Error(composed.message)
   }

@@ -47,6 +47,8 @@ export const recordAuthCommandBoundaries: ImportBoundary[] = [
       './record-api-client.ts',
       './record-email-verification-client.ts',
       './record-session.ts',
+      './active-space-invariant.ts',
+      './record-space.ts',
     ],
     'Enforce the record-auth-command concern boundary.',
   ),

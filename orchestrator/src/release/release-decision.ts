@@ -118,13 +118,20 @@ export function releaseCheckoutOutcomeDecision(facts: {
   failure: string | null
   warning: string | null
   restoreWarning: string | null
+  restoreBreach?: string | null
 }): ReleaseCheckoutOutcomeDecision {
   if (facts.failure !== null) {
     return {
       ok: false,
-      message: [facts.failure, facts.restoreWarning]
-        .filter((value): value is string => value !== null)
+      message: [facts.failure, facts.restoreWarning, facts.restoreBreach]
+        .filter((value): value is string => typeof value === 'string')
         .join('; '),
+    }
+  }
+  if (facts.restoreBreach) {
+    return {
+      ok: false,
+      message: `release steps completed; ${facts.restoreBreach}`,
     }
   }
   return {

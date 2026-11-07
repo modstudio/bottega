@@ -13,6 +13,10 @@ const module = (file: string, allowed: string[]): ProjectModule => ({
 
 export const projectModules: ProjectModule[] = [
   module('orchestrator/src/project/branch-name.ts', []),
+  module('orchestrator/src/project/main-checkout-invariant.ts', [
+    '../../../shared/brand.ts',
+    '../git/git-environment.ts',
+  ]),
   module('orchestrator/src/project/project-worktree-resolution.ts', [
     'node:fs',
     'node:path',

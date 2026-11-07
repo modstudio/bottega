@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
+import { activeSpaceInvariant } from './active-space-invariant.ts'
 import type { MachineNamePair } from './machine-name.ts'
 import { claimCurrentMachineNames } from './machine-name-command.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
@@ -191,9 +192,25 @@ export async function switchRecordSpace(
 ): Promise<RecordMembership> {
   const listed = await recordMemberships(client)
   const selected = resolveRecordSpace(value, listed.memberships)
-  await client.setActiveOrganization({ organizationId: selected.spaceId })
+  const active = await setAndVerifyActiveRecordSpace(selected.spaceId, client)
   if (names) await claimCurrentMachineNames(names)
-  return selected
+  return active
+}
+
+/** The only client-side active-space setter; success means whoami proved the write. */
+async function setAndVerifyActiveRecordSpace(
+  organizationId: string,
+  client: Pick<RecordApiClient, 'whoami' | 'setActiveOrganization'> = recordApiClient(),
+): Promise<RecordMembership> {
+  await client.setActiveOrganization({ organizationId })
+  const reread = await recordMemberships(client)
+  const decision = activeSpaceInvariant({
+    ...reread,
+    intendedSpaceId: organizationId,
+  })
+  if (!decision.holds) throw new Error(decision.message)
+  if (!decision.active) throw new Error(`active space none; intended space ${organizationId}`)
+  return decision.active
 }
 
 export function refuseDuplicateRecordSpaceSlug(
@@ -299,10 +316,13 @@ export async function pendingRecordInvitations(
 
 export async function acceptRecordInvitation(
   invitationId: string,
-  client: Pick<RecordApiClient, 'acceptInvitation'> = recordApiClient(),
+  client: Pick<RecordApiClient, 'acceptInvitation' | 'whoami'> = recordApiClient(),
   names?: MachineNamePair,
 ): Promise<string> {
-  const accepted = await client.acceptInvitation(invitationId)
+  await client.acceptInvitation(invitationId)
+  const reread = await recordMemberships(client)
+  const decision = activeSpaceInvariant(reread)
+  if (!decision.holds) throw new Error(decision.message)
   if (names) await claimCurrentMachineNames(names)
-  return accepted.invitation.organizationId
+  return decision.active?.spaceId ?? 'none'
 }

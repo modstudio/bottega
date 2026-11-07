@@ -1,18 +1,146 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   type FocusedTestDeclaration,
   validateFocusedTestDeclaration,
 } from '../focused-test/focused-test-decision.ts'
+import { mainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
 import { mergeProjectSettings, parseSettingsPatch } from '../project/project-settings-patch.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import {
+  activeSpaceDoctorDiagnosis,
   affectedSelectorDoctorFinding,
   canonEvalDoctorDecision,
   doctorAcpStatus,
+  registeredMainCheckoutDiagnosis,
+  reportActiveSpaceDoctor,
+  reportCheckoutRegister,
   workerCheckDoctorFinding,
 } from './doctor.ts'
+
+test('machine doctor reports whoami active-space results without claiming unavailable checks pass', async () => {
+  const passing = await activeSpaceDoctorDiagnosis(async () => ({
+    user: { id: 'user-a' },
+    activeSpaceId: 'space-a',
+    personalSpaceId: null,
+    memberships: [
+      {
+        space_id: 'space-a',
+        name: 'Alpha',
+        slug: 'alpha',
+        role: 'owner',
+        permission: 'write',
+      },
+    ],
+  }))
+  expect(passing).toEqual({ line: 'active space   pass — alpha', failed: false })
+
+  const failing = await activeSpaceDoctorDiagnosis(async () => ({
+    user: { id: 'user-a' },
+    activeSpaceId: 'space-stale',
+    personalSpaceId: null,
+    memberships: [
+      {
+        space_id: 'space-a',
+        name: 'Alpha',
+        slug: 'alpha',
+        role: 'owner',
+        permission: 'write',
+      },
+    ],
+  }))
+  expect(failing.failed).toBe(true)
+  expect(failing.line).toContain('FAIL')
+  const output: string[] = []
+  const exitCodes: number[] = []
+  await reportActiveSpaceDoctor(
+    {
+      log: (line) => output.push(line),
+      exitCode: (code) => exitCodes.push(code),
+    },
+    async () => failing,
+  )
+  expect(output).toHaveLength(1)
+  expect(output[0]).toContain('FAIL')
+  expect(exitCodes).toEqual([1])
+
+  const signedOut = await activeSpaceDoctorDiagnosis(async () => {
+    throw new Error(RECORD_SIGN_IN_REMEDY)
+  })
+  expect(signedOut).toEqual({
+    line: `active space   check could not run — no one is signed in; ${RECORD_SIGN_IN_REMEDY}`,
+    failed: false,
+  })
+
+  const unavailable = await activeSpaceDoctorDiagnosis(async () => {
+    throw new Error('record unavailable')
+  })
+  expect(unavailable).toEqual({
+    line: 'active space   check could not run — record unavailable',
+    failed: false,
+  })
+})
+
+test('machine doctor fails only tracked-dirty projects that require a clean main', () => {
+  expect(
+    registeredMainCheckoutDiagnosis({
+      name: 'strict',
+      requireCleanMain: true,
+      checkout: { branch: 'main', trunk: 'main', trackedModified: true },
+      decide: mainCheckoutInvariant,
+    }),
+  ).toMatchObject({ failed: true, lines: [expect.stringContaining('FAIL')] })
+
+  expect(
+    registeredMainCheckoutDiagnosis({
+      name: 'permissive',
+      requireCleanMain: false,
+      checkout: { branch: 'main', trunk: 'main', trackedModified: true },
+      decide: mainCheckoutInvariant,
+    }),
+  ).toEqual({
+    failed: false,
+    lines: ['permissive info — tracked modifications are allowed by requireCleanMain false'],
+  })
+})
+
+test('machine doctor keeps a wrong branch as a register question', () => {
+  const diagnosis = registeredMainCheckoutDiagnosis({
+    name: 'branchy',
+    requireCleanMain: true,
+    checkout: { branch: 'feature', trunk: 'main', trackedModified: false },
+    decide: mainCheckoutInvariant,
+  })
+  expect(diagnosis.failed).toBe(false)
+  expect(diagnosis.lines).toEqual([expect.stringContaining('register question')])
+  expect(diagnosis.lines[0]).not.toContain('FAIL')
+})
+
+test('machine doctor carries on after one checkout git inspection fails', () => {
+  const output: string[] = []
+  const exitCodes: number[] = []
+  const projects = [
+    { name: 'broken', path: '/broken', settings: {} },
+    { name: 'clean', path: '/clean', settings: {} },
+  ]
+  reportCheckoutRegister(
+    projects,
+    { log: (line) => output.push(line), exitCode: (code) => exitCodes.push(code) },
+    () => null,
+    () => ({ landing: 'main', problems: [] }),
+    (path, trunk) => {
+      if (path === '/broken') throw new Error('git refused this checkout')
+      return { branch: 'main', trunk, trackedModified: false }
+    },
+    mainCheckoutInvariant,
+  )
+
+  expect(exitCodes).toEqual([])
+  expect(output).toContain('  broken check could not run — git refused this checkout')
+  expect(output).toContain('  clean pass — branch main, tracked clean')
+})
 
 afterEach(() => registerEmbeddedAssets(null))
 
