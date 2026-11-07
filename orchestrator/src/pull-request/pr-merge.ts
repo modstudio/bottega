@@ -6,6 +6,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
@@ -131,11 +132,15 @@ export type PullRequestMergeAdapter = {
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
 
 function run(cwd: string, argv: string[]): ProcessResult {
-  const result = Bun.spawnSync(argv, {
+  const result = startBoundedSync(argv, {
+    budget:
+      argv[0] === 'gh'
+        ? 'gh'
+        : argv[0] === 'git' && argv[1] === 'fetch'
+          ? 'git-network'
+          : 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return {
     exitCode: result.exitCode,

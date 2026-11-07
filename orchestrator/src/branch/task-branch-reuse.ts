@@ -4,6 +4,7 @@
  * run claims, worktree creation, transports, or contracts.
  */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { resolveTaskBranch, type TaskBranchCandidate, taskBranchIsAncestor } from './task-branch.ts'
 
@@ -98,10 +99,9 @@ export function taskBranchDivergenceRefusal(
 }
 
 function taskBranchGit(cwd: string, args: string[], allowExitOne = false): string | null {
-  const process = Bun.spawnSync(['git', '-C', cwd, ...args], {
+  const process = startBoundedSync(['git', '-C', cwd, ...args], {
+    budget: 'git-plumbing',
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (allowExitOne && process.exitCode === 1) return null
   if (process.exitCode !== 0) {

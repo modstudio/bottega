@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
 import {
@@ -407,7 +408,7 @@ export function completePullRequestPostLanding(input: {
 }
 
 function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {
-  const result = Bun.spawnSync(
+  const result = startBoundedSync(
     [
       join(project.path, 'bin', PLATFORM_SLUG),
       'workflow',
@@ -417,7 +418,7 @@ function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotio
       '--reason',
       reason,
     ],
-    { cwd: project.path, env: process.env, stdout: 'pipe', stderr: 'pipe' },
+    { budget: 'self-cli', cwd: project.path, env: process.env },
   )
   if (result.exitCode === 0) return { ok: true, output: result.stdout.toString().trim() }
   return {

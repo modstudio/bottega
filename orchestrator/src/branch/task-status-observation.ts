@@ -2,6 +2,7 @@
 /** Reads one task's status through the task concern's existing CLI owner. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { type StatusCategory, TASK_STATUSES } from '../../../shared/trackers.ts'
 
@@ -15,9 +16,9 @@ export type TaskStatusObservation = {
 
 export function observeTaskStatus(key: string | null, project: string): TaskStatusObservation {
   if (!key) return { raw: null, category: null, lastSeen: null, verified: false, detail: 'unkeyed' }
-  const result = Bun.spawnSync(
+  const result = startBoundedSync(
     [...bottegaEntryArgv(PLATFORM_SLUG), 'task', 'show', key, '--project', project, '--json'],
-    { stdout: 'pipe', stderr: 'pipe', env: process.env },
+    { budget: 'self-cli', env: process.env },
   )
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim() || `exit ${result.exitCode}`

@@ -1,16 +1,16 @@
 // concern: GitHub Actions API
 /** Owns the gh process port for Actions run listings and merge-queue GraphQL. */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
 
 function run(cwd: string, argv: string[]): ProcessResult {
-  const result = Bun.spawnSync(argv, {
+  const result = startBoundedSync(argv, {
+    budget: 'gh',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return {
     exitCode: result.exitCode,

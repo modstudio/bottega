@@ -15,6 +15,9 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { boundedFetch } from '../../../shared/bounded-fetch.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import type { DistributionManifest } from '../../../shared/install-root.ts'
 import {
   DEFAULT_RELEASE_DOWNLOAD_ROOT,
@@ -47,6 +50,8 @@ import {
 
 type Presentation = { log(value: string): void }
 
+const releaseDownloadFetch = boundedFetch('release-download')
+
 type PreparedReleaseUpdate = {
   decision: Extract<CandidateStoreDecision, { state: 'positioned' }>
   pendingMigration: string | null
@@ -77,8 +82,9 @@ async function readDownload(url: URL): Promise<Uint8Array> {
   }
   let response: Response
   try {
-    response = await fetch(url)
+    response = await releaseDownloadFetch(url)
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     throw new Error(
       `download failed for ${url}: ${error instanceof Error ? error.message : String(error)}; ` +
         `retry, or check ${DOWNLOAD_BASE_URL_ENV}`,
@@ -122,18 +128,17 @@ function candidateJournal(
 } {
   const state = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-update-probe.`))
   try {
-    const result = Bun.spawnSync([staged, 'machine', 'journal', '--json'], {
+    const result = startBoundedSync([staged, 'machine', 'journal', '--json'], {
+      budget: 'self-cli',
       env: databaseOverrideFreeEnvironment({ [STATE_HOME_ENV]: state }),
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
-    const stderr = result.stderr.toString()
+    const stderr = result.stderr
     if (result.exitCode !== 0) {
       throw new Error(predatesUpdateRefusal(version, result.exitCode, stderr))
     }
     let output: unknown
     try {
-      output = JSON.parse(result.stdout.toString())
+      output = JSON.parse(result.stdout)
     } catch {
       throw new Error(predatesUpdateRefusal(version, result.exitCode, stderr))
     }

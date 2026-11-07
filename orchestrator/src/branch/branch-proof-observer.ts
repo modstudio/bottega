@@ -1,6 +1,7 @@
 // concern: branches
 /** Gathers git and forge facts used by the pure run-branch landing decision. */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { matchAutomaticBranchLandingForTip } from './branch-landing-match.ts'
@@ -14,11 +15,10 @@ import {
 import { taskBranchPatchEquivalent } from './task-branch.ts'
 
 function runGit(cwd: string, args: string[]): { exitCode: number; output: string; error: string } {
-  const process = Bun.spawnSync(['git', ...args], {
+  const process = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return {
     exitCode: process.exitCode,

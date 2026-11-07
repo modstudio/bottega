@@ -5,6 +5,8 @@ export type { PullRequestView } from './pull-request-view.ts'
 
 /** Lists merged pull requests and checks whether branch content landed through one. */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 
@@ -33,17 +35,17 @@ export type PullRequestNameCheck<T extends PullRequestHead = MergedPullRequest> 
   | null
 
 function command(cwd: string, argv: string[], label: string): string {
-  let process: ReturnType<typeof Bun.spawnSync>
+  let process: ReturnType<typeof startBoundedSync>
   try {
     // Output is parsed, so a forced-color environment must not reach gh or git.
     const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
-    process = Bun.spawnSync(argv, {
+    process = startBoundedSync(argv, {
+      budget: argv[0] === 'gh' ? 'gh' : 'git-plumbing',
       cwd,
       env: { ...env, NO_COLOR: '1' },
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
   }
   if (process.exitCode !== 0) {

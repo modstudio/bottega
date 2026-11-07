@@ -2,6 +2,7 @@
 /** Observes the local facts consumed by the branch landing classifier without consulting GitHub. */
 
 import type { Database } from 'bun:sqlite'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
@@ -27,11 +28,10 @@ export type OfflineBranchLandingObservation = OfflineBranchLandingCandidate & {
 }
 
 function git(cwd: string, ...args: string[]): string {
-  const process = Bun.spawnSync(['git', ...args], {
+  const process = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (process.exitCode !== 0) {
     throw new Error(process.stderr.toString().trim() || `git ${args.join(' ')} failed`)

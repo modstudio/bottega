@@ -2,6 +2,8 @@
 /** Resolves the caller's exact change, applies triage policy, and records admission evidence. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -63,11 +65,10 @@ export type PullRequestChange = {
 }
 
 const command = (cwd: string, argv: string[], label: string): string => {
-  const process = Bun.spawnSync(argv, {
+  const process = startBoundedSync(argv, {
+    budget: argv[0] === 'gh' ? 'gh' : 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (process.exitCode !== 0) {
     throw new Error(
@@ -102,11 +103,10 @@ export function resolvePullRequestChange(
   const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
     trunk,
     (args) =>
-      Bun.spawnSync(['git', ...args], {
+      startBoundedSync(['git', ...args], {
+        budget: 'git-plumbing',
         cwd,
         env: targetGitEnvironment(cwd),
-        stdout: 'pipe',
-        stderr: 'pipe',
       }).exitCode === 0,
   )
   const postFix = postFixReviewDecision({
@@ -548,15 +548,15 @@ export function recordMergeAdmission(
 }
 
 function pullRequestForBranch(cwd: string, branch: string): { number: number; url: string } | null {
-  let process: ReturnType<typeof Bun.spawnSync>
+  let process: ReturnType<typeof startBoundedSync>
   try {
-    process = Bun.spawnSync(['gh', 'pr', 'view', branch, '--json', 'number,url'], {
+    process = startBoundedSync(['gh', 'pr', 'view', branch, '--json', 'number,url'], {
+      budget: 'gh',
       cwd,
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     return null
   }
   if (process.exitCode !== 0) return null
@@ -634,16 +634,16 @@ export function createPullRequest(
   let output = ''
   let failure: string | null = null
   try {
-    const process = Bun.spawnSync(['gh', 'pr', 'create', ...args, '--base', trunk], {
+    const process = startBoundedSync(['gh', 'pr', 'create', ...args, '--base', trunk], {
+      budget: 'gh',
       cwd,
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
     output = process.stdout.toString().trim()
     if (process.exitCode !== 0)
       failure = process.stderr.toString().trim() || `exit ${process.exitCode}`
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     failure = String((cause as Error)?.message ?? cause)
   }
   const created = pullRequestForBranch(cwd, change.branch)
