@@ -94,6 +94,7 @@
     "orchestrator/src/worktree/evidence-checkout.ts": 1,
     "orchestrator/src/worktree/removal-working-directory.ts": 1,
     "orchestrator/src/worktree/worktree-caller.ts": 1,
+    "scripts/read-hosted-migrate-url.ts": 1,
     "shared/bounded-json-lines-log.ts": 2,
     "shared/database-lock-refusal.ts": 1,
     "shared/install-root.ts": 1,
@@ -107,8 +108,6 @@
     "orchestrator/src/branch/task-branch.ts": 1,
     "orchestrator/src/porting/porting-import-contract.ts": 1,
     "orchestrator/src/route/route.ts": 6,
-    "orchestrator/src/run/question-mutation.ts": 1,
-    "orchestrator/src/run/ruling-overturn.ts": 1,
     "orchestrator/src/run/run-agent-capacity.ts": 1
   },
   "commandCases": {

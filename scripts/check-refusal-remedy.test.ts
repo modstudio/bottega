@@ -34,12 +34,53 @@ test('requires the raw-literal and missing-remedy baselines to shrink', () => {
 test('requires every command remedy to name one clearing test or exemption', () => {
   const findings = refusalRemedyFindings({
     'orchestrator/src/example.ts': `
+      import { refusal } from '../../shared/refusal.ts'
       function decide() {
         return refusal('stopped', { kind: 'command', argv: ['${PLATFORM_SLUG}', 'repair'] })
       }
     `,
   })
   expect(refusalRemedyViolations(findings, emptyBaseline())).toEqual([
-    'orchestrator/src/example.ts:3: command remedy orchestrator/src/example.ts#decide needs a clearing test or exemption',
+    'orchestrator/src/example.ts:4: command remedy orchestrator/src/example.ts#decide needs a clearing test or exemption',
+  ])
+})
+
+test('resolves aliased and namespace refusal imports without matching a local helper', () => {
+  const findings = refusalRemedyFindings({
+    'orchestrator/src/example.ts': `
+      import { refusal as refusalValue } from '../../shared/refusal.ts'
+      import * as refusalShape from '../../shared/refusal.ts'
+      refusalValue('aliased', { kind: 'command', argv: ['${PLATFORM_SLUG}', 'repair'] })
+      refusalShape.refusal('namespace')
+      function refusal() {}
+      refusal()
+    `,
+  })
+  expect(findings.commandRemedies).toEqual([
+    {
+      id: 'orchestrator/src/example.ts#<top-level>',
+      file: 'orchestrator/src/example.ts',
+      line: 4,
+    },
+  ])
+  expect(findings.missingRemedies).toEqual([{ file: 'orchestrator/src/example.ts', line: 5 }])
+})
+
+test('fails a command case whose clearing test file is missing', () => {
+  const files = {
+    'orchestrator/src/example.ts': `
+      import { refusal } from '../../shared/refusal.ts'
+      function decide() {
+        return refusal('stopped', { kind: 'command', argv: ['${PLATFORM_SLUG}', 'repair'] })
+      }
+    `,
+  }
+  const findings = refusalRemedyFindings(files)
+  const baseline = emptyBaseline()
+  baseline.commandCases['orchestrator/src/example.ts#decide'] = {
+    test: 'orchestrator/src/missing.test.ts: remedy clears refusal',
+  }
+  expect(refusalRemedyViolations(findings, baseline, files)).toEqual([
+    'orchestrator/src/example.ts#decide: clearing test file orchestrator/src/missing.test.ts does not exist',
   ])
 })

@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import * as ts from 'typescript'
@@ -30,9 +30,16 @@ function productionPath(path: string): boolean {
 }
 
 function sourceFiles(): string[] {
-  return ['orchestrator/src/**/*.ts', 'shared/**/*.ts', 'hub/src/**/*.ts', 'cli/**/*.ts']
+  return [
+    'orchestrator/src/**/*.ts',
+    'shared/**/*.ts',
+    'hub/src/**/*.ts',
+    'cli/**/*.ts',
+    'scripts/**/*.ts',
+  ]
     .flatMap((pattern) => [...new Glob(pattern).scanSync({ cwd: ROOT, onlyFiles: true })])
     .filter(productionPath)
+    .filter((path) => path !== 'scripts/check-refusal-remedy.ts')
     .sort()
 }
 
@@ -54,6 +61,59 @@ function commandRemedy(argument: ts.Expression | undefined): boolean {
   if (!argument || !ts.isObjectLiteralExpression(argument)) return false
   const kind = propertyNamed(argument, 'kind')?.initializer
   return Boolean(kind && ts.isStringLiteral(kind) && kind.text === 'command')
+}
+
+function refusalImportBindings(
+  file: string,
+  statement: ts.Statement,
+): ts.NamedImportBindings | null {
+  if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+    return null
+  const clause = statement.importClause
+  if (
+    !clause?.namedBindings ||
+    clause.isTypeOnly ||
+    normalize(join(dirname(file), statement.moduleSpecifier.text)) !== RENDERER
+  )
+    return null
+  return clause.namedBindings
+}
+
+function refusalBindings(
+  file: string,
+  source: ts.SourceFile,
+): {
+  named: Set<string>
+  namespaces: Set<string>
+} {
+  const named = new Set<string>()
+  const namespaces = new Set<string>()
+  for (const statement of source.statements) {
+    const bindings = refusalImportBindings(file, statement)
+    if (!bindings) continue
+    if (ts.isNamedImports(bindings)) {
+      for (const element of bindings.elements) {
+        if (!element.isTypeOnly && (element.propertyName ?? element.name).text === 'refusal')
+          named.add(element.name.text)
+      }
+    } else if (ts.isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text)
+    }
+  }
+  return { named, namespaces }
+}
+
+function isRefusalCall(
+  expression: ts.LeftHandSideExpression,
+  bindings: ReturnType<typeof refusalBindings>,
+): boolean {
+  if (ts.isIdentifier(expression)) return bindings.named.has(expression.text)
+  return (
+    ts.isPropertyAccessExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    bindings.namespaces.has(expression.expression.text) &&
+    expression.name.text === 'refusal'
+  )
 }
 
 function enclosingName(node: ts.Node): string {
@@ -78,6 +138,7 @@ export function refusalRemedyFindings(
   for (const [file, text] of Object.entries(files)) {
     if (!productionPath(file)) continue
     const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
+    const bindings = refusalBindings(file, source)
     const visit = (node: ts.Node): void => {
       if (
         file !== RENDERER &&
@@ -90,11 +151,7 @@ export function refusalRemedyFindings(
       ) {
         findings.rawLiterals.push({ file, line: lineOf(source, node) })
       }
-      if (
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        (node.expression.text === 'refusal' || node.expression.text === 'refusalValue')
-      ) {
+      if (ts.isCallExpression(node) && isRefusalCall(node.expression, bindings)) {
         if (!node.arguments[1]) findings.missingRemedies.push({ file, line: lineOf(source, node) })
         if (commandRemedy(node.arguments[1])) {
           findings.commandRemedies.push({
@@ -109,6 +166,33 @@ export function refusalRemedyFindings(
     visit(source)
   }
   return findings
+}
+
+function testReference(value: string): { file: string; title: string } | null {
+  const separator = value.indexOf(': ')
+  if (separator < 1 || separator + 2 >= value.length) return null
+  return { file: value.slice(0, separator), title: value.slice(separator + 2) }
+}
+
+function containsTestTitle(file: string, text: string, title: string): boolean {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
+  let found = false
+  const visit = (node: ts.Node): void => {
+    if (found) return
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      (node.expression.text === 'test' || node.expression.text === 'it') &&
+      ts.isStringLiteralLike(node.arguments[0]) &&
+      node.arguments[0].text === title
+    ) {
+      found = true
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return found
 }
 
 function counts(findings: readonly { file: string }[]): Record<string, number> {
@@ -142,6 +226,7 @@ function ratchetViolations(
 export function refusalRemedyViolations(
   findings: RefusalRemedyFindings,
   baseline: RefusalRemedyBaseline,
+  testFiles: Readonly<Record<string, string>> = {},
 ): string[] {
   const violations = [
     ...ratchetViolations('raw cleared-by literal', findings.rawLiterals, baseline.rawLiterals),
@@ -160,6 +245,18 @@ export function refusalRemedyViolations(
       )
     else if (Boolean(record.test) === Boolean(record.exemption))
       violations.push(`${finding.id}: command remedy must record exactly one test or exemption`)
+    else if (record.test) {
+      const reference = testReference(record.test)
+      if (!reference || !reference.file.endsWith('.test.ts')) {
+        violations.push(`${finding.id}: clearing test must name a test file and title`)
+      } else if (!(reference.file in testFiles)) {
+        violations.push(`${finding.id}: clearing test file ${reference.file} does not exist`)
+      } else if (!containsTestTitle(reference.file, testFiles[reference.file]!, reference.title)) {
+        violations.push(
+          `${finding.id}: clearing test file ${reference.file} does not contain test title "${reference.title}"`,
+        )
+      }
+    }
   }
   for (const id of Object.keys(baseline.commandCases)) {
     if (!actualCommands.has(id)) violations.push(`${id}: stale command-remedy case must be removed`)
@@ -173,11 +270,18 @@ function check(): boolean {
   )
   const baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) as RefusalRemedyBaseline
   const findings = refusalRemedyFindings(files)
-  const violations = refusalRemedyViolations(findings, baseline)
+  const testFiles = Object.fromEntries(
+    Object.values(baseline.commandCases)
+      .flatMap((record) => (record.test ? [testReference(record.test)] : []))
+      .filter((reference): reference is { file: string; title: string } => Boolean(reference))
+      .filter(({ file }) => existsSync(resolve(ROOT, file)))
+      .map(({ file }) => [file, readFileSync(resolve(ROOT, file), 'utf8')]),
+  )
+  const violations = refusalRemedyViolations(findings, baseline, testFiles)
   for (const violation of violations) console.error(violation)
   if (violations.length) return false
   console.log(
-    `check-refusal-remedy: ok (${findings.rawLiterals.length} raw literals, ${findings.missingRemedies.length} shape-built refusals without remedies)`,
+    `check-refusal-remedy: ok (${findings.rawLiterals.length} raw literals, ${findings.missingRemedies.length} shape-built refusals without remedies, ${findings.commandRemedies.length} command remedies)`,
   )
   return true
 }
