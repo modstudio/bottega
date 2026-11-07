@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   type PerPathPatch,
   type RebaseFileComparison,
+  postFixReviewDecision,
   rebaseCarryDecision,
 } from './review-post-fix.ts'
 import { applicableRoundLensPlan } from './review-round-lens-plan.ts'
@@ -104,5 +105,29 @@ test('a replay difference re-owes a lens even when it reviewed that path before 
   ).toEqual({
     lenses: ['migration-safety'],
     lensReasons: { 'migration-safety': 'newly-touched-path' },
+  })
+})
+
+test('a rebase that re-owes one lens off a tier-3 path re-lenses only that lens', () => {
+  const decision = postFixReviewDecision({
+    facts: {
+      completed: {
+        number: 1,
+        identity: 'review',
+        launchKey: 'DEV-1813',
+        runIds: [],
+        pathsByLens: { correctness: ['src/a.ts'], craft: ['src/b.ts'] },
+      },
+      reviewedTip: 'reviewed',
+      fixFiles: [{ path: 'src/a.ts', insertions: 1, deletions: 1 }],
+      reOwedPathsByLens: { correctness: ['src/a.ts'] },
+    },
+    tier: 3,
+    review: undefined,
+  })
+  expect(decision).toMatchObject({
+    kind: 're-lens',
+    tierThreePaths: [],
+    applicability: { lenses: ['correctness'] },
   })
 })

@@ -534,6 +534,8 @@ export function postFixReviewDecision(input: {
     fixFiles.map(({ path }) => path),
     input.review,
   )
+  // A tier-3 fix path owes the ordinary selection; a rebase owes only the lenses that read a changed file.
+  const ordinaryLenses = tierThreePaths.length > 0 ? applicable.lenses : []
   return {
     kind: 're-lens',
     reviewNumber: completed.number,
@@ -541,7 +543,7 @@ export function postFixReviewDecision(input: {
     fixPaths: fixFiles.map(({ path }) => path),
     tierThreePaths,
     applicability: selectReviewApplicability(applicable, [
-      ...new Set([...applicable.lenses, ...reOwedLenses]),
+      ...new Set([...ordinaryLenses, ...reOwedLenses]),
     ]),
     ...(reOwedPathsByLens ? { reOwedPathsByLens } : {}),
   }
