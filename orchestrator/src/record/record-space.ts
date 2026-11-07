@@ -324,5 +324,5 @@ export async function acceptRecordInvitation(
   const decision = activeSpaceInvariant(reread)
   if (!decision.holds) throw new Error(decision.message)
   if (names) await claimCurrentMachineNames(names)
-  return decision.active
+  return decision.active?.spaceId ?? 'none'
 }

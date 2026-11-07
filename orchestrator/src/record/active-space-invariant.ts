@@ -5,15 +5,15 @@ import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 
 type Membership = { spaceId: string; slug: string }
 
-export type ActiveSpaceInvariant =
-  | { holds: true; active: Membership | null }
-  | { holds: false; active: Membership | null; message: string }
+export type ActiveSpaceInvariant<T extends Membership = Membership> =
+  | { holds: true; active: T | null }
+  | { holds: false; active: T | null; message: string }
 
-export function activeSpaceInvariant(input: {
+export function activeSpaceInvariant<T extends Membership>(input: {
   activeSpaceId: string | null
-  memberships: readonly Membership[]
+  memberships: readonly T[]
   intendedSpaceId?: string
-}): ActiveSpaceInvariant {
+}): ActiveSpaceInvariant<T> {
   if (input.memberships.length === 0 && input.intendedSpaceId === undefined) {
     return { holds: true, active: null }
   }

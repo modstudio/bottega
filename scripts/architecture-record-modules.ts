@@ -3,6 +3,7 @@
 import { dirname, normalize } from 'node:path'
 import { recordBindingModules } from './architecture-record-binding-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
+import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
 import { storageRecordModules } from './architecture-storage-modules.ts'
 
 type RecordModule = { file: string; allowed: string[] }
@@ -18,10 +19,8 @@ const cacheDeleteImports = ['bun:sqlite', '../database/db.ts', '../database/tole
 
 export const recordModules: RecordModule[] = [
   ...recordChangeModules,
+  ...recordInvariantModules,
   ...storageRecordModules,
-  module('orchestrator/src/record/active-space-invariant.ts', [
-    '../../../shared/record-remedies.ts',
-  ]),
   module('orchestrator/src/record/record-pool.ts', [
     'bun',
     '../../../shared/record/service-connection.ts',
@@ -719,21 +718,6 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     './record-auth.ts',
     './record-pool.ts',
-  ]),
-  module('orchestrator/src/record/record-space.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/moderation-hide-reason.ts',
-    '../../../shared/record-id.ts',
-    '../../../shared/record/schema.ts',
-    '../../../shared/record-space-membership.ts',
-    './machine-name-command.ts',
-    './machine-name.ts',
-    './record-api-client.ts',
-    './record-auth.ts',
-    './record-cache-projects.ts',
-    './record-moderation-hide.ts',
-    './record-session.ts',
-    './active-space-invariant.ts',
   ]),
   module('orchestrator/src/record/record-invitation.ts', []),
   module('orchestrator/src/record/record-api-access.ts', [

@@ -238,7 +238,7 @@ describe('record space decisions', () => {
       }),
       setActiveOrganization: async (input) => {
         calls.push(input)
-        activeSpaceId = input.organizationId
+        activeSpaceId = input.organizationId ?? null
         return { id: 'space-a', slug: 'team' }
       },
     })

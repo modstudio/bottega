@@ -106,15 +106,23 @@ async function reportActiveSpaceDoctor(presentation: DoctorPresentation): Promis
   if (diagnosis.failed) presentation.exitCode(1)
 }
 
-type RegisteredCheckout = { name: string; path: string; settings: { trunk?: string } }
+type RegisteredCheckout = {
+  name: string
+  path: string
+  settings: {
+    trunk?: string
+    workerCheck?: string
+    focusedTests?: ProjectFocusedTests
+  }
+}
 type BranchInspection = { landing: string | null; problems: string[] }
 type CheckoutInspection = { branch: string | null; trunk: string; trackedModified: boolean }
 type CheckoutDecision = { holds: true } | { holds: false; message: string }
 
-function reportRegisteredMainCheckouts(
-  projects: readonly RegisteredCheckout[],
+function reportRegisteredMainCheckouts<T extends RegisteredCheckout>(
+  projects: readonly T[],
   log: DoctorPresentation['log'],
-  inspectBranch: (project: RegisteredCheckout) => BranchInspection,
+  inspectBranch: (project: T) => BranchInspection,
   inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
   decide: (facts: CheckoutInspection) => CheckoutDecision,
 ): void {
@@ -135,9 +143,9 @@ function reportRegisteredMainCheckouts(
   }
 }
 
-function registerMainCheckoutProblems(
-  project: RegisteredCheckout,
-  inspectBranch: (project: RegisteredCheckout) => BranchInspection,
+function registerMainCheckoutProblems<T extends RegisteredCheckout>(
+  project: T,
+  inspectBranch: (project: T) => BranchInspection,
   inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
   decide: (facts: CheckoutInspection) => CheckoutDecision,
 ): string[] {
@@ -170,11 +178,11 @@ function reportProjectLifecycles(
   }
 }
 
-function reportCheckoutRegister(
-  projects: readonly RegisteredCheckout[],
+function reportCheckoutRegister<T extends RegisteredCheckout>(
+  projects: readonly T[],
   log: DoctorPresentation['log'],
-  hookFinding: (project: RegisteredCheckout) => string | null,
-  inspectBranch: (project: RegisteredCheckout) => BranchInspection,
+  hookFinding: (project: T) => string | null,
+  inspectBranch: (project: T) => BranchInspection,
   inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
   decide: (facts: CheckoutInspection) => CheckoutDecision,
 ): void {

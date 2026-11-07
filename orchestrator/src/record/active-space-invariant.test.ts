@@ -11,11 +11,11 @@ describe('active space invariant', () => {
   test('holds for an active membership and an intended-space match', () => {
     expect(activeSpaceInvariant({ activeSpaceId: 'space-a', memberships })).toEqual({
       holds: true,
-      active: memberships[0],
+      active: memberships[0]!,
     })
     expect(
       activeSpaceInvariant({ activeSpaceId: 'space-b', memberships, intendedSpaceId: 'space-b' }),
-    ).toEqual({ holds: true, active: memberships[1] })
+    ).toEqual({ holds: true, active: memberships[1]! })
   })
 
   test('treats no memberships as no space', () => {
