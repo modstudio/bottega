@@ -1,86 +1,91 @@
 import { expect, test } from 'bun:test'
-import type { ReviewSettings } from '../project/project-injection.ts'
-import { fixFilesFromPatches, type PerPathPatch, postFixReviewDecision } from './review-post-fix.ts'
+import {
+  type PerPathPatch,
+  type RebaseFileComparison,
+  rebaseCarryDecision,
+} from './review-post-fix.ts'
 import { applicableRoundLensPlan } from './review-round-lens-plan.ts'
 
-const completed = { number: 2, identity: 'reviewed', launchKey: 'AB-3097', runIds: ['run'] }
 const patch = (path: string, patchId: string): PerPathPatch => ({
   path,
   patchId,
   insertions: 1,
   deletions: 0,
 })
-const review: ReviewSettings = {
-  lenses: [
-    { lens: 'correctness' },
-    { lens: 'migration-safety', paths: ['migrations/**', 'critical/**'] },
-    { lens: 'craft', paths: ['src/**'] },
-  ],
-  risk: {
-    paths: [
-      { pattern: '^(critical|migrations)/', tier: 3, reason: 'composition-sensitive surface' },
-    ],
-    unlisted: 2,
-  },
-}
-
-test('a rebase over disjoint trunk work carries an unchanged branch round', () => {
-  const fixFiles = fixFilesFromPatches(
-    [patch('critical/shared.ts', 'unchanged')],
-    [patch('critical/shared.ts', 'unchanged')],
-    ['trunk/disjoint.ts'],
-  )
-  const decision = postFixReviewDecision({
-    facts: { completed, reviewedTip: 'recorded-pin', fixFiles },
-    tier: 3,
-    review,
-  })
-
-  expect(decision).toMatchObject({ kind: 'no-round-needed', reviewedTip: 'recorded-pin' })
-  expect(
-    applicableRoundLensPlan({
-      relevant: { lenses: ['correctness', 'migration-safety', 'craft'] },
-      facts: {
-        reviewedPathsByLens: {},
-        completedLenses: ['correctness', 'migration-safety', 'craft'],
-        satisfiedSecondOpinionLenses: [],
-        latestAcceptedOrModifiedLenses: [],
-      },
-      postFix: decision,
-      fixPathsByLens: {},
-    }).round,
-  ).toEqual({ lenses: [] })
+const comparison = (
+  path: string,
+  replayed: string,
+  current: string,
+  conflicted = false,
+): RebaseFileComparison => ({
+  path,
+  replayed: patch(path, replayed),
+  current: patch(path, current),
+  conflicted,
 })
-test('a rebase over trunk work on a branch path re-runs only that path lens', () => {
-  const fixFiles = fixFilesFromPatches(
-    [patch('critical/shared.ts', 'unchanged')],
-    [patch('critical/shared.ts', 'unchanged')],
-    ['critical/shared.ts'],
-  )
-  const decision = postFixReviewDecision({
-    facts: { completed, reviewedTip: 'recorded-pin', fixFiles },
-    tier: 3,
-    review,
-  })
 
-  expect(decision).toMatchObject({
-    kind: 're-lens',
-    fixPaths: ['critical/shared.ts'],
-    tierThreePaths: ['critical/shared.ts'],
-  })
+test('a clean replay carrying the reviewed content carries every lens', () => {
   expect(
-    applicableRoundLensPlan({
-      relevant: { lenses: ['correctness', 'migration-safety', 'craft'] },
-      facts: {
-        reviewedPathsByLens: { 'migration-safety': [] },
-        completedLenses: ['correctness', 'migration-safety', 'craft'],
-        satisfiedSecondOpinionLenses: [],
-        latestAcceptedOrModifiedLenses: [],
-      },
-      postFix: decision,
-      fixPathsByLens: {
+    rebaseCarryDecision({
+      files: [comparison('critical/shared.ts', 'same', 'same')],
+      pathsByLens: {
+        correctness: ['critical/shared.ts'],
         'migration-safety': ['critical/shared.ts'],
       },
+    }),
+  ).toEqual({ fixFiles: [], reOwedPathsByLens: {} })
+})
+
+test('a conflict-resolved file re-owes only lenses that recorded that file', () => {
+  expect(
+    rebaseCarryDecision({
+      files: [comparison('critical/shared.ts', 'merge-result', 'resolved', true)],
+      pathsByLens: {
+        correctness: ['src/other.ts'],
+        'migration-safety': ['critical/shared.ts'],
+      },
+    }),
+  ).toEqual({
+    fixFiles: [{ path: 'critical/shared.ts', insertions: 1, deletions: 0 }],
+    reOwedPathsByLens: { 'migration-safety': ['critical/shared.ts'] },
+  })
+})
+
+test('a changed file outside every recorded lens path re-owes no lens', () => {
+  expect(
+    rebaseCarryDecision({
+      files: [comparison('generated/baseline.json', 'old', 'new')],
+      pathsByLens: {
+        correctness: ['src/app.ts'],
+        'migration-safety': ['migrations/001.sql'],
+      },
+    }),
+  ).toEqual({
+    fixFiles: [{ path: 'generated/baseline.json', insertions: 1, deletions: 0 }],
+    reOwedPathsByLens: {},
+  })
+})
+
+test('a replay difference re-owes a lens even when it reviewed that path before the rebase', () => {
+  expect(
+    applicableRoundLensPlan({
+      relevant: { lenses: ['correctness', 'migration-safety'] },
+      facts: {
+        reviewedPathsByLens: { 'migration-safety': ['migrations/001.sql'] },
+        completedLenses: ['correctness', 'migration-safety'],
+        satisfiedSecondOpinionLenses: [],
+        latestAcceptedOrModifiedLenses: [],
+      },
+      postFix: {
+        kind: 're-lens',
+        reviewNumber: 2,
+        reviewedTip: 'recorded-pin',
+        fixPaths: ['migrations/001.sql'],
+        tierThreePaths: ['migrations/001.sql'],
+        applicability: { lenses: ['migration-safety'] },
+        reOwedPathsByLens: { 'migration-safety': ['migrations/001.sql'] },
+      },
+      fixPathsByLens: { 'migration-safety': ['migrations/001.sql'] },
     }).round,
   ).toEqual({
     lenses: ['migration-safety'],

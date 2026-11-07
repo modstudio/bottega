@@ -8,7 +8,9 @@ import {
   type ApplicableReview,
   applicablePostFixReview,
   applicableReview,
+  selectReviewApplicability,
 } from './review-applicability.ts'
+import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
@@ -30,6 +32,7 @@ export type CompletedReview = {
   identity: string | null
   launchKey: string | null
   runIds: string[]
+  pathsByLens: Readonly<Record<string, readonly string[]>>
 }
 
 export type PostFixReviewFacts =
@@ -38,6 +41,7 @@ export type PostFixReviewFacts =
       completed: CompletedReview
       reviewedTip: string | null
       fixFiles: ReviewTierFile[] | null
+      reOwedPathsByLens?: Readonly<Record<string, readonly string[]>>
       comparisonError?: string
     }
 
@@ -52,6 +56,7 @@ export type PostFixReviewDecision =
       fixPaths: string[]
       tierThreePaths: string[]
       applicability: ApplicableReview
+      reOwedPathsByLens?: Readonly<Record<string, readonly string[]>>
     }
   | {
       kind: 'no-round-needed'
@@ -71,6 +76,44 @@ export type PostFixReviewDecision =
 
 export type PerPathPatch = ReviewTierFile & { patchId: string }
 
+export type RebaseFileComparison = {
+  path: string
+  replayed: PerPathPatch | null
+  current: PerPathPatch | null
+  conflicted: boolean
+}
+
+export type RebaseCarryDecision = {
+  fixFiles: ReviewTierFile[]
+  reOwedPathsByLens: Readonly<Record<string, readonly string[]>>
+}
+
+/** Decide review carry from per-file replay facts and recorded lens coverage. */
+export function rebaseCarryDecision(input: {
+  files: readonly RebaseFileComparison[]
+  pathsByLens: Readonly<Record<string, readonly string[]>>
+}): RebaseCarryDecision {
+  const changed = input.files.filter(
+    ({ replayed, current, conflicted }) => conflicted || replayed?.patchId !== current?.patchId,
+  )
+  const fixFiles = changed.map(({ path, replayed, current }) => {
+    const source = current ?? replayed
+    return {
+      path,
+      insertions: source?.insertions ?? 0,
+      deletions: source?.deletions ?? 0,
+    }
+  })
+  const changedPaths = fixFiles.map(({ path }) => path)
+  const reOwedPathsByLens = Object.fromEntries(
+    Object.entries(input.pathsByLens).flatMap(([lens, covered]) => {
+      const paths = changedPaths.filter((path) => filesCoveredIntersectChanged([path], covered))
+      return paths.length ? [[lens, paths] as const] : []
+    }),
+  )
+  return { fixFiles, reOwedPathsByLens }
+}
+
 export function mapPatchPaths(
   patches: PerPathPatch[],
   renamedPaths: ReadonlyMap<string, string>,
@@ -84,7 +127,12 @@ export function mapPatchPaths(
 type CompletedReviewEvidenceRow = Pick<
   ReviewRoundEvidenceRow,
   'review_record_id' | 'run_id' | 'launch_key' | 'branch' | 'patch_id' | 'path_set'
-> & { review_number: number; role: ReviewRole }
+> & {
+  review_number: number
+  role: ReviewRole
+  lens: string
+  files_covered: string
+}
 
 export function latestCompletedReview(
   database: Database,
@@ -95,7 +143,8 @@ export function latestCompletedReview(
   const rows = database
     .query<CompletedReviewEvidenceRow, [string, ...string[]]>(
       `SELECT r.record_id AS review_record_id,r.number AS review_number,r.role,
-              run.record_id AS run_id,run.launch_key,run.branch,r.patch_id,r.path_set
+              run.record_id AS run_id,run.launch_key,run.branch,r.patch_id,r.path_set,
+              rl.lens,rl.files_covered
          FROM review r
          JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
@@ -114,11 +163,20 @@ export function latestCompletedReview(
   }, [])
   const first = roundRows[0]
   if (!first) return null
+  const pathsByLens: Record<string, string[]> = {}
+  for (const row of roundRows) {
+    const paths = JSON.parse(row.files_covered) as unknown
+    if (!Array.isArray(paths) || paths.some((path) => typeof path !== 'string')) {
+      throw new Error(`review lens ${row.lens} files_covered is not a JSON array of paths`)
+    }
+    pathsByLens[row.lens] = [...new Set([...(pathsByLens[row.lens] ?? []), ...paths])]
+  }
   return {
     number: first.review_number,
     identity: reviewRoundIdentity(first).identity,
     launchKey: first.launch_key,
     runIds: roundRows.map(({ run_id }) => run_id),
+    pathsByLens,
   }
 }
 
@@ -133,15 +191,28 @@ function recordedReviewedTip(repo: string, to: string, review: CompletedReview):
   return recorded
 }
 
+type ReviewedTipMatch = {
+  reviewedTip: string
+  rebaseCarry?: RebaseCarryDecision
+}
+
 function matchingReviewedTip(
   repo: string,
   to: string,
   trunkRef: string,
   branch: string,
   review: CompletedReview,
-): string | null {
+): ReviewedTipMatch | null {
   const recorded = recordedReviewedTip(repo, to, review)
-  if (recorded) return recorded
+  if (recorded) {
+    if (git(repo, ['merge-base', '--is-ancestor', recorded, to]).ok) {
+      return { reviewedTip: recorded }
+    }
+    return {
+      reviewedTip: recorded,
+      rebaseCarry: compareReplayedReview(repo, recorded, to, trunkRef, review.pathsByLens),
+    }
+  }
   if (!review.identity) return null
   const history = git(repo, ['rev-list', '--reverse', to, '--not', trunkRef])
   if (!history.ok) return null
@@ -159,7 +230,7 @@ function matchingReviewedTip(
     }).identity
     if (candidateRound === review.identity) match = candidate
   }
-  return match
+  return match ? { reviewedTip: match } : null
 }
 
 /** Compare two branch changes without depending on how either change was committed. */
@@ -253,6 +324,87 @@ function changePatches(
   return { mergeBase: mergeBase.out, patches }
 }
 
+function patchesForRange(repo: string, base: string, tip: string): PerPathPatch[] {
+  const files = diffNumstat(repo, base, tip)
+  const diff = git(repo, [
+    'diff',
+    '--binary',
+    '--no-ext-diff',
+    '--no-color',
+    '--no-renames',
+    '--unified=0',
+    `${base}..${tip}`,
+  ])
+  if (!diff.ok) throw new Error(diff.err)
+  const sections = diffSections(new TextDecoder().decode(diff.stdout))
+  if (sections.length !== files.length) {
+    throw new Error(
+      `git diff section count ${sections.length} did not match numstat count ${files.length}`,
+    )
+  }
+  return files.map((file, index) => ({
+    ...file,
+    patchId: pathNeutralContentIdentity(sections[index]!),
+  }))
+}
+
+function mergeTreeReplay(input: {
+  repo: string
+  reviewedBase: string
+  currentBase: string
+  reviewedTip: string
+}): { tree: string; conflictedPaths: string[] } {
+  const replay = git(input.repo, [
+    'merge-tree',
+    '--write-tree',
+    '--name-only',
+    '-z',
+    `--merge-base=${input.reviewedBase}`,
+    input.currentBase,
+    input.reviewedTip,
+  ])
+  const fields = new TextDecoder().decode(replay.stdout).split('\0')
+  const tree = fields.shift()?.trim() ?? ''
+  if (!/^[0-9a-f]{40,64}$/.test(tree)) throw new Error(replay.err)
+  const separator = fields.indexOf('')
+  const conflictedPaths = fields.slice(0, separator < 0 ? fields.length : separator)
+  return { tree, conflictedPaths }
+}
+
+function compareReplayedReview(
+  repo: string,
+  reviewedTip: string,
+  currentTip: string,
+  trunkRef: string,
+  pathsByLens: Readonly<Record<string, readonly string[]>>,
+): RebaseCarryDecision {
+  const reviewedBase = git(repo, ['merge-base', reviewedTip, trunkRef])
+  if (!reviewedBase.ok) throw new Error(reviewedBase.err)
+  const currentBase = git(repo, ['merge-base', currentTip, trunkRef])
+  if (!currentBase.ok) throw new Error(currentBase.err)
+  const replay = mergeTreeReplay({
+    repo,
+    reviewedBase: reviewedBase.out,
+    currentBase: currentBase.out,
+    reviewedTip,
+  })
+  const replayed = patchesForRange(repo, currentBase.out, replay.tree)
+  const current = patchesForRange(repo, currentBase.out, currentTip)
+  const replayedByPath = new Map(replayed.map((file) => [file.path, file]))
+  const currentByPath = new Map(current.map((file) => [file.path, file]))
+  const paths = [...new Set([...replayedByPath.keys(), ...currentByPath.keys()])].sort()
+  const conflicts = new Set(replay.conflictedPaths)
+  return rebaseCarryDecision({
+    files: paths.map((path) => ({
+      path,
+      replayed: replayedByPath.get(path) ?? null,
+      current: currentByPath.get(path) ?? null,
+      conflicted: conflicts.has(path),
+    })),
+    pathsByLens,
+  })
+}
+
 function trunkChange(
   repo: string,
   reviewedBase: string,
@@ -306,22 +458,26 @@ export function gatherPostFixReviewFacts(input: {
 }): PostFixReviewFacts {
   const completed = latestCompletedReview(input.database, input.project, input.branch)
   if (!completed) return { completed: null }
-  const reviewedTip = matchingReviewedTip(
-    input.repo,
-    input.to,
-    input.trunkRef,
-    input.branch,
-    completed,
-  )
-  if (!reviewedTip) return { completed, reviewedTip: null, fixFiles: null }
+  let match: ReviewedTipMatch | null = null
   try {
+    match = matchingReviewedTip(input.repo, input.to, input.trunkRef, input.branch, completed)
+    if (!match) return { completed, reviewedTip: null, fixFiles: null }
+    if (match.rebaseCarry) {
+      return {
+        completed,
+        reviewedTip: match.reviewedTip,
+        fixFiles: match.rebaseCarry.fixFiles,
+        reOwedPathsByLens: match.rebaseCarry.reOwedPathsByLens,
+      }
+    }
     return {
       completed,
-      reviewedTip,
-      fixFiles: branchFixFiles(input.repo, reviewedTip, input.to, input.trunkRef),
+      reviewedTip: match.reviewedTip,
+      fixFiles: branchFixFiles(input.repo, match.reviewedTip, input.to, input.trunkRef),
     }
   } catch (cause) {
     const comparisonError = String((cause as Error)?.message ?? cause)
+    const reviewedTip = match?.reviewedTip ?? recordedReviewedTip(input.repo, input.to, completed)
     let fixFiles: ReviewTierFile[] = []
     try {
       fixFiles = currentChangeFiles(input.repo, input.to, input.trunkRef)
@@ -345,7 +501,7 @@ export function postFixReviewDecision(input: {
   review: ReviewSettings | undefined
 }): PostFixReviewDecision {
   if (!input.facts.completed) return { kind: 'no-completed-round' }
-  const { completed, reviewedTip, fixFiles, comparisonError } = input.facts
+  const { completed, reviewedTip, fixFiles, comparisonError, reOwedPathsByLens } = input.facts
   if (reviewedTip && fixFiles && comparisonError) {
     const tierThreePaths =
       input.tier === POST_FIX_RELENS_TIER ? tierThreeRiskPaths(fixFiles, input.review?.risk) : []
@@ -379,6 +535,32 @@ export function postFixReviewDecision(input: {
     return { kind: 'reviewed-tip-unidentified', reviewNumber: completed.number }
   }
   const tierThreePaths = tierThreeRiskPaths(fixFiles, input.review?.risk)
+  if (reOwedPathsByLens) {
+    const reOwedLenses = Object.keys(reOwedPathsByLens)
+    if (reOwedLenses.length === 0) {
+      return {
+        kind: 'no-round-needed',
+        reviewNumber: completed.number,
+        reviewedTip,
+        tierThreePaths: [],
+        applicability: applicableReview(0, [], input.review),
+      }
+    }
+    const applicable = applicablePostFixReview(
+      POST_FIX_RELENS_TIER,
+      fixFiles.map(({ path }) => path),
+      input.review,
+    )
+    return {
+      kind: 're-lens',
+      reviewNumber: completed.number,
+      reviewedTip,
+      fixPaths: fixFiles.map(({ path }) => path),
+      tierThreePaths,
+      applicability: selectReviewApplicability(applicable, reOwedLenses),
+      reOwedPathsByLens,
+    }
+  }
   if (tierThreePaths.length === 0) {
     return {
       kind: 'no-round-needed',
