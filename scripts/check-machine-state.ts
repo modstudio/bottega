@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 #!/usr/bin/env bun
 /** Machine state belongs in the per-user state root, never inside the checkout. */
 import { existsSync } from 'node:fs'
@@ -71,11 +73,7 @@ const exactLegacyPaths = [
 ]
 
 function gitPaths(root: string, argv: string[], tracked: boolean): MachineStatePath[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', ...argv])], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', ...argv])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
   if (result.exitCode !== 0) {
     throw new Error(`could not inspect checkout paths: ${result.stderr.toString().trim()}`)
   }

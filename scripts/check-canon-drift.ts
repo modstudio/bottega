@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import {
@@ -36,7 +37,7 @@ const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const remedy = `edit canon in the store with ${PLATFORM_SLUG} doc set, then run ${PLATFORM_SLUG} doc canon hydrate in the worktree and commit`
 
 function run(argv: string[], cwd: string): { exitCode: number; stdout: string; stderr: string } {
-  const result = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const result = startBoundedSync(argv, { budget: 'process-table', cwd })
   return {
     exitCode: result.exitCode,
     stdout: result.stdout.toString(),

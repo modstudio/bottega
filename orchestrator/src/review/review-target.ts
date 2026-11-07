@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: review-target
 /**
  * Knows the project register, worktree base rules, and branch refs. Must not
@@ -54,11 +55,7 @@ export function reviewRemoteTrunkRefExists(
 /** Run a git probe whose result is determined only by its exit code. */
 export function spawnGitProbe(cwd: string): (args: string[]) => boolean {
   return (args) =>
-    Bun.spawnSync(['git', '-C', cwd, ...args], {
-      env: targetGitEnvironment(cwd),
-      stdout: 'ignore',
-      stderr: 'ignore',
-    }).exitCode === 0
+    startBoundedSync(['git', '-C', cwd, ...args], { budget: 'git-plumbing', env: targetGitEnvironment(cwd) }).exitCode === 0
 }
 
 export type ReviewTargetRefDecision =
@@ -310,11 +307,7 @@ export function resolveReviewTarget(
 
 export function implicitReviewWarning(cwd: string): string {
   const branch = branchOf(cwd) ?? '(detached HEAD)'
-  const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--verify', 'HEAD^{commit}'], {
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
+  const p = startBoundedSync(['git', '-C', cwd, 'rev-parse', '--verify', 'HEAD^{commit}'], { budget: 'git-plumbing', env: targetGitEnvironment(cwd) })
   const commit = p.exitCode === 0 ? p.stdout.toString().trim() : null
   return `reviewing ${branch} at ${commit?.slice(0, 8) ?? 'unknown'}; pass --review <branch> to be explicit`
 }

@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: review-coverage
 import type { Database } from 'bun:sqlite'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
@@ -15,13 +16,7 @@ import type {
 
 function coverageGit(repoRoot: string): CoverageGitRunner {
   return (args, stdin) => {
-    const p = Bun.spawnSync(['git', ...args], {
-      cwd: repoRoot,
-      env: targetGitEnvironment(repoRoot),
-      stdin,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdin })
     return {
       ok: p.exitCode === 0,
       out: p.stdout.toString().trim(),

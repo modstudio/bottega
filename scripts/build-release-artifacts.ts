@@ -1,3 +1,5 @@
+import { inspectionGitEnv } from '../shared/git.ts'
+import { startBounded } from '../shared/bounded-process.ts'
 import { createHash } from 'node:crypto'
 import {
   copyFileSync,
@@ -32,12 +34,8 @@ export type ArtifactPorts = {
 }
 
 async function command(argv: string[]): Promise<CommandResult> {
-  const child = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const child = await startBounded(argv, { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const { stdout, stderr, exitCode } = child
   if (stderr.trim()) console.error(stderr.trim())
   return { exitCode, stdout: stdout.trim() }
 }

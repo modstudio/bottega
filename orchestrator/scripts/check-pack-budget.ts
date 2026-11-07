@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import { CanonBudgetError, compilePack, compilePackFromGateFacts } from '../src/canon/canon.ts'
@@ -49,20 +50,12 @@ function report(failures: string[]): void {
 }
 
 function runReady(store: string): number {
-  const child = Bun.spawnSync([process.execPath, fileURLToPath(import.meta.url)], {
-    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store, [READY]: '1' },
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
+  const child = startBoundedSync([process.execPath, fileURLToPath(import.meta.url)], { budget: 'process-table', env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store, [READY]: '1' } })
   return child.exitCode ?? 1
 }
 
 function runGateFacts(path: string): number {
-  const child = Bun.spawnSync([process.execPath, fileURLToPath(import.meta.url)], {
-    env: { ...process.env, [GATE_FACTS_ENV]: path, [READY]: '1' },
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
+  const child = startBoundedSync([process.execPath, fileURLToPath(import.meta.url)], { budget: 'process-table', env: { ...process.env, [GATE_FACTS_ENV]: path, [READY]: '1' } })
   return child.exitCode ?? 1
 }
 

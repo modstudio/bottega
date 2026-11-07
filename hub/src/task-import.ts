@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 import { readFileSync } from 'node:fs'
 import { assetPath } from '../../shared/install-root.ts'
 import { projectOf, writeCommitKey } from './attribute.ts'
@@ -17,10 +19,7 @@ export async function importTasks(file: string): Promise<number> {
     closed: string | null
     shas: string[]
   }[]
-  const log = Bun.spawnSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], {
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
+  const log = startBoundedSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], { budget: 'git-plumbing', env: inspectionGitEnv() })
   const stamps = new Map(
     new TextDecoder()
       .decode(log.stdout)

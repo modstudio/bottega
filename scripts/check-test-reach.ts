@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -173,11 +175,7 @@ export function testReach(input: {
 }
 
 export function trackedFiles(): string[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files'])], {
-    cwd: ROOT,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files'])], { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() })
   if (result.exitCode !== 0) {
     throw new Error(
       `git ls-files failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,
@@ -187,11 +185,7 @@ export function trackedFiles(): string[] {
 }
 
 function baseExemptions(commit: string): TestReachExemption[] | null {
-  const result = Bun.spawnSync(['git', 'show', `${commit}:${EXEMPTIONS_FILE}`], {
-    cwd: ROOT,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', 'show', `${commit}:${EXEMPTIONS_FILE}`], { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() })
   if (result.exitCode === 0) return parseTestReachExemptions(result.stdout.toString())
   const error = result.stderr.toString()
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))

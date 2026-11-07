@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
 #!/usr/bin/env bun
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -74,12 +75,7 @@ function baseArgumentOrExit(argv: readonly string[]): string | null {
  */
 function baseBaselineOrExit(commit: string | null): string[] | null {
   if (!commit) return null
-  const result = Bun.spawnSync(['git', 'show', `${commit}:${BASELINE_FILE}`], {
-    cwd: ROOT,
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', 'show', `${commit}:${BASELINE_FILE}`], { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() })
   if (result.exitCode === 0) return parseUndeclaredModulesBaseline(result.stdout.toString())
   const error = result.stderr.toString()
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))

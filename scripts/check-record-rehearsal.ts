@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -75,7 +76,7 @@ type GitHubEvent = {
 }
 
 function command(argv: string[]): string {
-  const result = Bun.spawnSync(argv, { stdout: 'pipe', stderr: 'pipe' })
+  const result = startBoundedSync(argv, { budget: 'process-table' })
   if (result.exitCode !== 0) {
     throw new Error(`${argv.join(' ')} failed: ${result.stderr.toString().trim()}`)
   }

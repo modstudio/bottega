@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 /**
  * Observation-only inventory of recipe databases, retained-branch refs, and
  * shared ref-guard metadata. The monitor reports what it finds; nothing here
@@ -267,12 +268,7 @@ function listCommand(
 ): { ascertainable: true; names: string[] } | { ascertainable: false; reason: string } {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(argv, {
-      cwd,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: RESOURCE_INVENTORY_TIMEOUT_MS,
-    })
+    p = startBoundedSync(argv, { budget: 'process-table', cwd })
   } catch (error) {
     return {
       ascertainable: false,
@@ -352,14 +348,7 @@ function git(
 ): { ok: true; out: string } | { ok: false; reason: string; exitCode: number | null } {
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(['git', ...args], {
-      cwd,
-      env: targetGitEnvironment(cwd),
-      stdin: stdin === undefined ? undefined : Buffer.from(stdin),
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: RESOURCE_INVENTORY_TIMEOUT_MS,
-    })
+    p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd), stdin: stdin === undefined ? undefined : Buffer.from(stdin) })
   } catch (error) {
     return {
       ok: false,

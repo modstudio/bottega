@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: confinement-ruling
 /**
  * Knows confinement classifications, chain authority, recorded artifacts, and
@@ -82,12 +83,7 @@ export function clearConfinement(
   const project = projectByName(repo)
   if (!project) throw new Error(`run ${id}'s recorded project ${repo} is not registered`)
   const inspect = (cwd: string, args: string[]) => {
-    const child = Bun.spawnSync(['git', ...args], {
-      cwd,
-      env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const child = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) })
     return child.exitCode === 0 ? child.stdout.toString().trim() : null
   }
   const currentTip = inspect(project.path, [

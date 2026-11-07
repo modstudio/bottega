@@ -1,3 +1,4 @@
+import { hostedApiFetch } from '../shared/bounded-fetch.ts'
 import { Database } from 'bun:sqlite'
 import {
   chmodSync,
@@ -122,7 +123,7 @@ async function smokeDashboard(executable: string, stateHome: string): Promise<vo
     let failure: unknown
     for (let attempt = 0; attempt < 100; attempt++) {
       try {
-        response = await fetch(`http://127.0.0.1:${port}/`)
+        response = await hostedApiFetch(`http://127.0.0.1:${port}/`)
         break
       } catch (error) {
         failure = error
@@ -136,7 +137,7 @@ async function smokeDashboard(executable: string, stateHome: string): Promise<vo
     }
     const assetPath = html.match(/<script[^>]+src=["']([^"']+-[^"'/]+\.js)["']/)?.[1]
     if (!assetPath) throw new Error(`${rendered} index did not name a hashed JavaScript asset`)
-    const asset = await fetch(new URL(assetPath, `http://127.0.0.1:${port}/`))
+    const asset = await hostedApiFetch(new URL(assetPath, `http://127.0.0.1:${port}/`))
     const contentType = asset.headers.get('content-type') ?? ''
     if (asset.status !== 200 || !contentType.includes('javascript')) {
       throw new Error(

@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
@@ -62,12 +64,12 @@ for (const root of ROOTS) {
   }
 }
 
-const trackedPython = Bun.spawnSync([
+const trackedPython = startBoundedSync([
   'git',
   '-C',
   checkout,
   ...nulPathListArgs(['ls-files', '--', '*.py']),
-])
+], { budget: 'git-plumbing', env: inspectionGitEnv() })
 if (trackedPython.exitCode !== 0) {
   console.error('could not list tracked Python files; run this check from a Git checkout')
   process.exit(1)

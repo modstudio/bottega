@@ -1,3 +1,4 @@
+import { startBoundedSync } from './bounded-process.ts'
 // concern: process-identity
 /**
  * Knows how to identify an operating-system process. Must not know runs,
@@ -53,7 +54,7 @@ export function observeBoundedSubprocess(
 ): { process: ReturnType<typeof Bun.spawnSync>; error: string | null } {
   let observed: ReturnType<typeof Bun.spawnSync>
   for (let attempt = 0; ; attempt += 1) {
-    observed = Bun.spawnSync(argv, { ...options, timeout: timeoutMs })
+    observed = startBoundedSync(argv, { budget: 'process-table', ...options })
     if (observed.exitedDueToTimeout !== true || attempt >= retryCount) break
   }
   return {

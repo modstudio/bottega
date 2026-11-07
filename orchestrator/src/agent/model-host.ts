@@ -1,3 +1,4 @@
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 // concern: model-host
 /** Owns model-host wake, health, reachability, and availability. Must not know probes or CLI grammar. */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -272,7 +273,7 @@ export async function localReachable(
 ): Promise<LocalHealth> {
   if (!baseUrl) return { ok: false, detail: 'BOTTEGA_MODEL_HOST_URL not set' }
   try {
-    const res = await fetch(new URL('models', baseUrl.replace(/\/?$/, '/')), {
+    const res = await hostedApiFetch(new URL('models', baseUrl.replace(/\/?$/, '/')), {
       signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` }

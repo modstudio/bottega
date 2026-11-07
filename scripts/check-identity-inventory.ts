@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 #!/usr/bin/env bun
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
@@ -40,22 +42,16 @@ type Baseline = Record<'orchestrator' | 'hub' | 'hosted', string[]>
 
 function baseBaseline(base: string): Baseline | null {
   const root = fileURLToPath(new URL('..', import.meta.url))
-  const result = Bun.spawnSync(
-    [
+  const result = startBoundedSync([
       'git',
       '-C',
       root,
       '--no-optional-locks',
       'show',
       `${base}:scripts/identity-key-baseline.json`,
-    ],
-    { stdout: 'pipe', stderr: 'pipe' },
-  )
+    ], { budget: 'git-plumbing', env: inspectionGitEnv() })
   if (result.exitCode === 0) return JSON.parse(result.stdout.toString()) as Baseline
-  const missing = Bun.spawnSync(
-    ['git', '-C', root, '--no-optional-locks', 'cat-file', '-e', `${base}^{commit}`],
-    { stdout: 'pipe', stderr: 'pipe' },
-  )
+  const missing = startBoundedSync(['git', '-C', root, '--no-optional-locks', 'cat-file', '-e', `${base}^{commit}`], { budget: 'git-plumbing', env: inspectionGitEnv() })
   if (missing.exitCode === 0) return null
   throw new Error(`identity inventory could not resolve base commit ${base}`)
 }

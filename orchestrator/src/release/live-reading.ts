@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: release-live-reading
 /** Reads and parses the commit reported by a release rung's bounded live command. */
 
@@ -55,13 +56,7 @@ function parseLiveReading(capture: LiveReadingCapture): LiveReading {
 }
 
 const runLiveCommand: LiveReadingRunner = (command, cwd, timeoutMs) => {
-  const result = Bun.spawnSync(['/bin/sh', '-lc', command], {
-    cwd,
-    env: releaseProcessEnvironment(targetGitEnvironment(cwd)),
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: timeoutMs,
-  })
+  const result = startBoundedSync(['/bin/sh', '-lc', command], { budget: 'self-cli', cwd, env: releaseProcessEnvironment(targetGitEnvironment(cwd)) })
   return {
     exitCode: result.exitCode ?? -1,
     output: [result.stdout.toString(), result.stderr.toString()].filter(Boolean).join(''),

@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: doc-lint
 /** Gathers registered checkout trees for the pure stored-document lint decision. */
 import { existsSync } from 'node:fs'
@@ -41,11 +42,7 @@ export function docReferenceTargetProjects(
 }
 
 function gitHead(root: string): string {
-  const result = Bun.spawnSync(['git', '-C', root, 'rev-parse', 'HEAD'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: inspectionGitEnv(),
-  })
+  const result = startBoundedSync(['git', '-C', root, 'rev-parse', 'HEAD'], { budget: 'git-plumbing', env: inspectionGitEnv() })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim()
     throw new Error(detail || 'git rev-parse HEAD failed')

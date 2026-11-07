@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -218,20 +219,14 @@ function discoverTemplates(): TemplateFact[] {
 /** Lint one rendered plist and check that its first program argument exists. */
 function checkRenderedPlist(input: { name: string; path: string; plutil: string }): string[] {
   const errors: string[] = []
-  const lint = Bun.spawnSync([input.plutil, '-lint', input.path], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const lint = startBoundedSync([input.plutil, '-lint', input.path], { budget: 'process-table' })
   if (lint.exitCode !== 0) {
     errors.push(`${input.name}: launchd template failed plutil -lint`)
     const detail = lint.stdout.toString() + lint.stderr.toString()
     if (detail.trim()) errors.push(detail.trim())
     return errors
   }
-  const jsonResult = Bun.spawnSync([input.plutil, '-convert', 'json', '-o', '-', input.path], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const jsonResult = startBoundedSync([input.plutil, '-convert', 'json', '-o', '-', input.path], { budget: 'process-table' })
   if (jsonResult.exitCode !== 0) {
     errors.push(`${input.name}: rendered launchd template could not be parsed as JSON`)
   } else {
@@ -243,10 +238,7 @@ function checkRenderedPlist(input: { name: string; path: string; plutil: string 
       errors.push(`${input.name}: rendered launchd template produced invalid JSON`)
     }
   }
-  const programResult = Bun.spawnSync(
-    [input.plutil, '-extract', 'ProgramArguments.0', 'raw', input.path],
-    { stdout: 'pipe', stderr: 'pipe' },
-  )
+  const programResult = startBoundedSync([input.plutil, '-extract', 'ProgramArguments.0', 'raw', input.path], { budget: 'process-table' })
   const program = programResult.stdout.toString().trim()
   if (programResult.exitCode !== 0 || !program) {
     errors.push(`${input.name}: launchd template has no first program argument`)

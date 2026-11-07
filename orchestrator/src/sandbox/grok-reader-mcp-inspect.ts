@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: Grok reader MCP inspection
 /** Verifies the effective MCP set Grok reports after reader scoping. */
 
@@ -104,12 +105,7 @@ export function inspectGrokReaderMcp(
   runConfigPath: string,
   platformServers: readonly string[],
 ): string | null {
-  const inspected = Bun.spawnSync([bin, 'inspect', '--json'], {
-    cwd,
-    env: environment,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const inspected = startBoundedSync([bin, 'inspect', '--json'], { budget: 'process-table', cwd, env: environment })
   const stdout = inspected.stdout.toString().trim()
   const stderr = inspected.stderr.toString().trim()
   if (inspected.exitCode !== 0) {

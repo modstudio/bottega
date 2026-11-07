@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import type { Database } from 'bun:sqlite'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -104,10 +105,7 @@ export function hostedWorkflowRepositoryFixture(label: string) {
   const worktree = join(mainCheckout, 'child')
   mkdirSync(join(worktree, '.agents', 'workflows'), { recursive: true })
   for (const repository of [mainCheckout, worktree]) {
-    const initialized = Bun.spawnSync(['git', 'init', '--quiet'], {
-      cwd: repository,
-      env: scrubbedGitEnv(),
-    })
+    const initialized = startBoundedSync(['git', 'init', '--quiet'], { budget: 'git-plumbing', cwd: repository, env: scrubbedGitEnv() })
     if (initialized.exitCode !== 0) {
       rmSync(root, { recursive: true, force: true })
       throw new Error(initialized.stderr.toString().trim() || `git init failed in ${repository}`)

@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 #!/usr/bin/env bun
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
@@ -46,7 +48,7 @@ export function selectedTestSources(modules: readonly { source: string }[]): str
 }
 
 function gitLines(args: readonly string[]): string[] {
-  const result = Bun.spawnSync(['git', ...args], { stdout: 'pipe', stderr: 'pipe' })
+  const result = startBoundedSync(['git', ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
   const stderr = result.stderr.toString().trim()
   if (result.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${stderr || `exit ${result.exitCode}`}`)

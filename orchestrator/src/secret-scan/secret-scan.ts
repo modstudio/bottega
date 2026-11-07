@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: secret-scan
 /** Scans text with default gitleaks rules while retaining no matched text. */
 
@@ -17,8 +18,7 @@ export function scanTextForSecrets(body: string): SecretScanOutcome {
   delete environment.GITLEAKS_CONFIG_TOML
 
   try {
-    const child = Bun.spawnSync(
-      [
+    const child = startBoundedSync([
         binary,
         'stdin',
         '--redact=100',
@@ -26,16 +26,7 @@ export function scanTextForSecrets(body: string): SecretScanOutcome {
         '--report-path=-',
         '--no-banner',
         '--log-level=error',
-      ],
-      {
-        cwd: tmpdir(),
-        env: environment,
-        stdin: Buffer.from(body),
-        stdout: 'pipe',
-        stderr: 'pipe',
-        timeout: SECRET_SCAN_TIMEOUT_MS,
-      },
-    )
+      ], { budget: 'process-table', cwd: tmpdir(), env: environment, stdin: Buffer.from(body) })
     return decideSecretScanOutcome({
       exitCode: child.exitCode,
       report: child.stdout.toString(),

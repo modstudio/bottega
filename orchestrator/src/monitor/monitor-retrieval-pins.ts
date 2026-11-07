@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: monitor-retrieval-pins
 /** Runs the model-free retrieval pin report and translates stale pins into monitor conditions. */
 
@@ -53,11 +54,7 @@ export function staleRetrievalPinConditions(report: PinReport): MonitorCondition
 }
 
 export function observeRetrievalPins(): { conditions: MonitorCondition[]; errors: string[] } {
-  const child = Bun.spawnSync([...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: RETRIEVAL_PIN_OBSERVATION_TIMEOUT_MS,
-  })
+  const child = startBoundedSync([...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'], { budget: 'self-cli' })
   const stdout = new TextDecoder().decode(child.stdout)
   const stderr = new TextDecoder().decode(child.stderr).trim()
   try {

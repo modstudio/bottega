@@ -185,11 +185,7 @@ function appliedMigrations(): { when: number; hash: string }[] {
 }
 
 export function migrateInstalledBinary(target: string): void {
-  const result = Bun.spawnSync([target, 'machine', 'migrate'], {
-    env: databaseOverrideFreeEnvironment(),
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
+  const result = startBoundedSync([target, 'machine', 'migrate'], { budget: 'machine-update', env: databaseOverrideFreeEnvironment() })
   if (result.exitCode !== 0) {
     throw new Error(
       `updated binary migration failed with exit ${result.exitCode}; run ${target} machine migrate`,
@@ -241,10 +237,7 @@ export async function prepareReleaseUpdate(input: {
   try {
     const archivePath = join(stage, resolution.asset)
     writeFileSync(archivePath, archive)
-    const unpack = Bun.spawnSync(['tar', '-xzf', archivePath, '-C', stage], {
-      stdout: 'inherit',
-      stderr: 'inherit',
-    })
+    const unpack = startBoundedSync(['tar', '-xzf', archivePath, '-C', stage], { budget: 'process-table' })
     if (unpack.exitCode !== 0) {
       throw new Error(`could not unpack ${resolution.asset}; retry the update`)
     }

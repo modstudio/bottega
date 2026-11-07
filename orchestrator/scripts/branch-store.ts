@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -80,14 +81,7 @@ function mainGateFactsSnapshot(dir: string): GateFactsSnapshot {
   const started = performance.now()
   const env = { ...process.env }
   delete env[GATE_FACTS_ENV]
-  const child = Bun.spawnSync(
-    [join(main, 'bin', PLATFORM_SLUG), 'machine', 'gate-facts', '--out', path],
-    {
-      env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
+  const child = startBoundedSync([join(main, 'bin', PLATFORM_SLUG), 'machine', 'gate-facts', '--out', path], { budget: 'self-cli', env })
   const elapsedMs = performance.now() - started
   if (child.exitCode !== 0) {
     const detail = child.stderr.toString().trim() || child.stdout.toString().trim()

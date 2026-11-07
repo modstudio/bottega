@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 /** Live vendor event log: append-only JSONL plus last_event_at, and bottega run peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -838,12 +839,7 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
 

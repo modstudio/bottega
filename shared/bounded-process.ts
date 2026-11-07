@@ -7,8 +7,15 @@ import { BoundExceededError, CALL_BUDGETS, type CallBudgetName } from './call-bu
  * no-answer; every other wrapper lets it escape.
  */
 
-export type BoundedResult = { exitCode: number; stdout: string; stderr: string }
-export type BoundedBytesResult = { exitCode: number; stdout: Uint8Array; stderr: string }
+export type BoundedResult = {
+  exitCode: number
+  success: boolean
+  signalCode: string | number | null | undefined
+  exitedDueToTimeout: boolean
+  stdout: string
+  stderr: string
+}
+export type BoundedBytesResult = Omit<BoundedResult, 'stdout'> & { stdout: Uint8Array }
 
 type BoundedProcessOptions = {
   budget: CallBudgetName
@@ -58,7 +65,15 @@ export async function startBounded(
   if (result.isMaxBuffer) {
     throw new BoundExceededError(commandText(argv), options.budget, 'output', budget.outputBytes)
   }
-  return { exitCode: exitCode(result.exitCode), stdout: result.stdout, stderr: result.stderr }
+  const code = exitCode(result.exitCode)
+  return {
+    exitCode: code,
+    success: code === 0,
+    signalCode: result.signal,
+    exitedDueToTimeout: false,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  }
 }
 
 function killProcessGroup(pid: number): void {
@@ -101,6 +116,9 @@ export function startBoundedSyncBytes(
   }
   return {
     exitCode: exitCode(result.exitCode),
+    success: result.success,
+    signalCode: result.signalCode,
+    exitedDueToTimeout: false,
     stdout: result.stdout,
     stderr: result.stderr.toString(),
   }

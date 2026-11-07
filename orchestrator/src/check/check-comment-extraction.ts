@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import bash from '@ast-grep/lang-bash'
@@ -269,12 +270,7 @@ export function commentFindingsInSources(
 }
 
 function trackedSources(root: string): SourceFile[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS])], {
-    cwd: root,
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
   if (result.exitCode !== 0) {
     throw new Error(`could not list tracked source files: ${result.stderr.toString().trim()}`)
   }

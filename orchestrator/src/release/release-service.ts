@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: release-service
 /** Gathers release facts, executes a registered deploy under the project lock, and owns its ledger. */
 
@@ -106,12 +107,7 @@ function run(
   cwd: string,
   extraEnvironment?: Record<string, string>,
 ): CommandResult {
-  const result = Bun.spawnSync(argv, {
-    cwd,
-    env: releaseProcessEnvironment(targetGitEnvironment(cwd), extraEnvironment),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(argv, { budget: 'process-table', cwd, env: releaseProcessEnvironment(targetGitEnvironment(cwd), extraEnvironment) })
   return {
     exitCode: result.exitCode ?? -1,
     output: [result.stdout.toString(), result.stderr.toString()].filter(Boolean).join(''),

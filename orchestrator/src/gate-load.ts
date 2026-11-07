@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { randomUUID } from 'node:crypto'
 import {
   closeSync,
@@ -237,14 +238,7 @@ export function parseMacOSMemoryPressure(output: string | undefined): MemoryPres
 function readMemoryPressure(platform: NodeJS.Platform): MemoryPressure {
   if (platform !== 'darwin') return 'unknown'
   try {
-    const result = Bun.spawnSync(
-      ['/usr/sbin/sysctl', '-n', 'kern.memorystatus_vm_pressure_level'],
-      {
-        stdout: 'pipe',
-        stderr: 'ignore',
-        timeout: MEMORY_PRESSURE_READ_TIMEOUT_MS,
-      },
-    )
+    const result = startBoundedSync(['/usr/sbin/sysctl', '-n', 'kern.memorystatus_vm_pressure_level'], { budget: 'process-table' })
     return result.exitCode === 0 ? parseMacOSMemoryPressure(result.stdout.toString()) : 'unknown'
   } catch {
     return 'unknown'
@@ -269,11 +263,7 @@ export function parseSwapUsage(output: string): { used: number; total: number } 
 function readSwap(platform: NodeJS.Platform): { used: number; total: number } | null {
   try {
     if (platform === 'darwin') {
-      const result = Bun.spawnSync(['/usr/sbin/sysctl', '-n', 'vm.swapusage'], {
-        stdout: 'pipe',
-        stderr: 'ignore',
-        timeout: MEMORY_PRESSURE_READ_TIMEOUT_MS,
-      })
+      const result = startBoundedSync(['/usr/sbin/sysctl', '-n', 'vm.swapusage'], { budget: 'process-table' })
       return result.exitCode === 0 ? parseSwapUsage(result.stdout.toString()) : null
     }
     if (platform === 'linux') return parseSwapUsage(readFileSync('/proc/meminfo', 'utf8'))

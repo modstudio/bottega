@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: doctor
 /** Knows local agent auth probes. Must not know routing, dispatch, or run outcomes. */
 
@@ -68,7 +69,7 @@ export function classifyAgentAuth(agent: string, capture: AgentAuthCapture): Age
 }
 
 const spawnAuth: AuthSpawn = (argv, options) => {
-  const child = Bun.spawnSync(argv, options)
+  const child = startBoundedSync(argv, { ...options, budget: 'process-table' })
   return {
     exitCode: child.exitCode,
     stdout: child.stdout,

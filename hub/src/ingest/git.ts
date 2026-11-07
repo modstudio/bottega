@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../../../shared/git.ts'
 /**
  * Generated files, which are not work.
  *
@@ -82,8 +84,7 @@ function scanGit(since: string) {
 
   for (const project of projects().filter((project) => project.repository)) {
     const repo = project.name
-    const proc = Bun.spawnSync(
-      [
+    const proc = startBoundedSync([
         'git',
         '-C',
         project.path,
@@ -92,9 +93,7 @@ function scanGit(since: string) {
         `--since=${since}`,
         '--numstat',
         '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
-      ],
-      { stdout: 'pipe', stderr: 'ignore' },
-    )
+      ], { budget: 'git-plumbing', env: inspectionGitEnv() })
     let day: string | null = null
     for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
       if (line.startsWith('\u0000')) {

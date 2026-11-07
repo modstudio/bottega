@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: monitor-conditions
 /** Owns monitor condition detection and the row queries and helpers those detectors share with composition and notice revalidation. */
 
@@ -187,12 +188,7 @@ export function hookTreeConditions(database = db(), clock = Date.now()): Monitor
 }
 
 export function git(cwd: string, args: string[]): string | null {
-  const p = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
 
@@ -632,10 +628,7 @@ export function rulingConditions(clock = Date.now()): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  const p = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'question', 'stats', '--json'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'question', 'stats', '--json'], { budget: 'self-cli' })
   if (p.exitCode !== 0)
     return {
       conditions: [],
@@ -692,10 +685,7 @@ export function rulingConditions(clock = Date.now()): {
 
 /** The hub reconciler owns the repair; the monitor invokes it and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
-  const p = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'], { budget: 'self-cli' })
   if (p.exitCode !== 0) {
     return {
       conditions: [],
@@ -739,10 +729,7 @@ export function dockerConditions(clock: number): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  const listed = Bun.spawnSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const listed = startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], { budget: 'docker' })
   if (listed.exitCode !== 0) {
     return {
       conditions: [],
@@ -756,10 +743,7 @@ export function dockerConditions(clock: number): {
   // volumes and classify only compose workdirs under vanished worktrees.
   const candidates = listed.stdout.toString().split('\n').filter(Boolean)
   if (!candidates.length) return { conditions: [], errors: [] }
-  const inspected = Bun.spawnSync(['docker', 'volume', 'inspect', ...candidates], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const inspected = startBoundedSync(['docker', 'volume', 'inspect', ...candidates], { budget: 'docker' })
   if (inspected.exitCode !== 0) {
     return {
       conditions: [],

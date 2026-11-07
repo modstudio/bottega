@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: doctor
 /** Reports installer-owned launch agents without changing their launchd state. */
 
@@ -345,18 +346,12 @@ function loadedLaunchAgentLabels(
   const launchctl = Bun.which('launchctl')
   const uid = process.getuid?.()
   if (!launchctl || uid === undefined) return { kind: 'unavailable', reason: 'launchctl missing' }
-  const domain = Bun.spawnSync([launchctl, 'print', `gui/${uid}`], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-  })
+  const domain = startBoundedSync([launchctl, 'print', `gui/${uid}`], { budget: 'process-table' })
   if (domain.exitCode !== 0) return { kind: 'unavailable', reason: 'gui domain unreachable' }
   const loaded = new Set<string>()
   for (const { label } of owners) {
     if (skipReasons[label] && !isMaintenanceScheduleLabel(label)) continue
-    const child = Bun.spawnSync([launchctl, 'print', `gui/${uid}/${label}`], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-    })
+    const child = startBoundedSync([launchctl, 'print', `gui/${uid}/${label}`], { budget: 'process-table' })
     if (child.exitCode === 0) loaded.add(label)
   }
   return { kind: 'available', loadedLabels: loaded }

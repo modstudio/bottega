@@ -1,3 +1,4 @@
+import { startBoundedSync } from './bounded-process.ts'
 type SecurityResult = {
   exitCode: number
   stdout: Uint8Array
@@ -83,12 +84,7 @@ function runSecurity(argv: string[], stdin?: Uint8Array, env?: RunnerEnvironment
   if (injected) return env ? injected(argv, stdin, env) : injected(argv, stdin)
   if (process.env.NODE_ENV === 'test')
     throw new Error('keychain access requires an injected security runner in tests')
-  const result = Bun.spawnSync(argv, {
-    ...(stdin ? { stdin } : {}),
-    ...(env ? { env } : {}),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(argv, { budget: 'process-table', ...(stdin ? { stdin } : {}), ...(env ? { env } : {}) })
   return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
 }
 

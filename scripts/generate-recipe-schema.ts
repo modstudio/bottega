@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
 #!/usr/bin/env bun
 /** Generate the editor-facing project config schema from its one Zod definition. */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -11,11 +12,7 @@ const outputPath = fileURLToPath(
 function generatedRecipeSchema(): string {
   const schema = recipeJsonSchema()
   const unformatted = `${JSON.stringify(schema, null, 2)}\n`
-  const formatted = Bun.spawnSync(['bunx', 'biome', 'format', `--stdin-file-path=${outputPath}`], {
-    stdin: Buffer.from(unformatted),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const formatted = startBoundedSync(['bunx', 'biome', 'format', `--stdin-file-path=${outputPath}`], { budget: 'process-table', stdin: Buffer.from(unformatted) })
   if (formatted.exitCode !== 0) {
     throw new Error(`could not format generated recipe schema: ${formatted.stderr.toString()}`)
   }

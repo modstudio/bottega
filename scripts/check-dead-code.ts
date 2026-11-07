@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
 #!/usr/bin/env bun
 import {
   existsSync,
@@ -86,17 +87,14 @@ type ProductionConfig = { workspaces?: { '.'?: { entry?: unknown } } }
 
 function runPass(root: string, pass: ReturnType<typeof passes>[number]): PassResult {
   const startedAt = performance.now()
-  const result = Bun.spawnSync(
-    [
+  const result = startBoundedSync([
       join(root, 'node_modules/.bin/knip'),
       ...pass.args,
       '--reporter',
       'json',
       '--no-progress',
       '--no-exit-code',
-    ],
-    { cwd: root, stdout: 'pipe', stderr: 'pipe', timeout: KNIP_TIMEOUT_MS },
-  )
+    ], { budget: 'process-table', cwd: root })
   const elapsedMs = performance.now() - startedAt
   if (result.signalCode) {
     throw new Error(`knip ${pass.name} pass timed out after ${KNIP_TIMEOUT_MS}ms`)
@@ -136,8 +134,7 @@ function rootProductionEntries(root: string): string[] {
 
 function tracedRootEntryFiles(root: string, entries: readonly string[]) {
   const startedAt = performance.now()
-  const result = Bun.spawnSync(
-    [
+  const result = startBoundedSync([
       join(root, 'node_modules/.bin/knip'),
       '--production',
       '--config',
@@ -146,9 +143,7 @@ function tracedRootEntryFiles(root: string, entries: readonly string[]) {
       '--debug',
       '--no-progress',
       '--no-exit-code',
-    ],
-    { cwd: root, stdout: 'pipe', stderr: 'pipe', timeout: KNIP_TIMEOUT_MS },
-  )
+    ], { budget: 'process-table', cwd: root })
   const elapsedMs = performance.now() - startedAt
   if (result.signalCode) {
     throw new Error(`knip production graph trace timed out after ${KNIP_TIMEOUT_MS}ms`)
@@ -209,11 +204,7 @@ function collectFindings(root: string, verifyProductionEntries = false) {
 }
 
 function git(args: string[], step: string) {
-  const result = Bun.spawnSync(['git', '-C', ROOT, '--no-optional-locks', ...args], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', '-C', ROOT, '--no-optional-locks', ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim() || 'no error output'
     throw new Error(`check-dead-code: ${step} failed: ${detail}`)
@@ -311,10 +302,7 @@ function copyBase(commit: string) {
     rmSync(directory, { recursive: true, force: true })
     throw error
   }
-  const extractResult = Bun.spawnSync(['tar', '-xf', archive, '-C', tree], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const extractResult = startBoundedSync(['tar', '-xf', archive, '-C', tree], { budget: 'process-table' })
   if (extractResult.exitCode !== 0) {
     const detail = extractResult.stderr.toString().trim() || 'no error output'
     rmSync(directory, { recursive: true, force: true })

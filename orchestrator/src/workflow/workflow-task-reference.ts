@@ -1,3 +1,4 @@
+import { startBounded } from '../../../shared/bounded-process.ts'
 // concern: workflows
 /** Resolves a workflow task label through the injectable hub task-list port. */
 
@@ -45,17 +46,9 @@ function taskReference(row: unknown): HubTaskReference {
 }
 
 export async function taskCommand(command: string[]): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...command], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env },
-  })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (code !== 0) throw new Error(stderr.trim() || `exit status ${code}`)
+  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...command], { budget: 'self-cli', env: { ...process.env } })
+  const { stdout, stderr, exitCode } = child
+  if (exitCode !== 0) throw new Error(stderr.trim() || `exit status ${code}`)
   return stdout.trim()
 }
 

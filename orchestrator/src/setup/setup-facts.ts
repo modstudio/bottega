@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: setup-facts
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
@@ -121,11 +122,7 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
 
 function runCommand(argv: string[]): CommandCapture {
   try {
-    const child = Bun.spawnSync(argv, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: COMMAND_TIMEOUT_MS,
-    })
+    const child = startBoundedSync(argv, { budget: 'process-table' })
     return {
       exitCode: child.exitCode,
       stdout: child.stdout.toString(),

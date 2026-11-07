@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
@@ -21,12 +22,7 @@ export function shellQuote(value: string): string {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
 

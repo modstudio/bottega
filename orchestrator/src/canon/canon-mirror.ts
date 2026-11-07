@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: canon-mirror
 /** Owns the scheduled store-to-repository canon publication lifecycle. */
 import type { Database } from 'bun:sqlite'
@@ -111,12 +112,7 @@ export function screenCanonMirrorError(
   return redactSecretShaped(text, { knownCommits }).text
 }
 function spawn(cwd: string, args: string[]): ReturnType<typeof Bun.spawnSync> {
-  return Bun.spawnSync(args, {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  return startBoundedSync(args, { budget: 'process-table', cwd, env: targetGitEnvironment(cwd) })
 }
 function command(cwd: string, args: string[]): string {
   const child = spawn(cwd, args)

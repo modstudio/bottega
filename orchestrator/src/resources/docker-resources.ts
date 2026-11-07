@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
@@ -88,11 +89,7 @@ function list(
         ]
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(args, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout,
-    })
+    p = startBoundedSync(args, { budget: 'process-table' })
   } catch (error) {
     return {
       ascertainable: false,
@@ -405,11 +402,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
   const timeout = dockerInventoryTimeoutMs()
   let listed: ReturnType<typeof Bun.spawnSync>
   try {
-    listed = Bun.spawnSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout,
-    })
+    listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], { budget: 'docker' })
   } catch (error) {
     return {
       ascertainable: false,
@@ -436,11 +429,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
 
   let inspected: ReturnType<typeof Bun.spawnSync>
   try {
-    inspected = Bun.spawnSync(['docker', 'network', 'inspect', ...names], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout,
-    })
+    inspected = startBoundedSync(['docker', 'network', 'inspect', ...names], { budget: 'docker' })
   } catch (error) {
     return {
       ascertainable: false,
@@ -513,11 +502,7 @@ export function removeDockerResource(
   const command = dockerRemovalCommand(resource)
   let process: ReturnType<typeof Bun.spawnSync>
   try {
-    process = Bun.spawnSync(command.split(' '), {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: dockerRemovalTimeoutMs(),
-    })
+    process = startBoundedSync(command.split(' '), { budget: 'process-table' })
   } catch (error) {
     return `${command} failed: ${(error as Error).message}`
   }

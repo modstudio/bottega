@@ -1,3 +1,5 @@
+import { inspectionGitEnv } from '../../../shared/git.ts'
+import { startBounded } from '../../../shared/bounded-process.ts'
 // concern: retrieval-corpus
 /** Builds bounded, overlapping retrieval units from the repository source corpus. */
 import { readFile } from 'node:fs/promises'
@@ -224,24 +226,13 @@ function isDocRow(value: unknown): value is DocRow {
 }
 
 export async function loadDocRows(repositoryRoot: string): Promise<DocRow[]> {
-  const child = Bun.spawn(
-    [
+  const child = await startBounded([
       ...bottegaEntryArgv(PLATFORM_SLUG, resolve(repositoryRoot, 'bin', PLATFORM_SLUG)),
       'doc',
       'list',
       '--json',
-    ],
-    {
-      cwd: repositoryRoot,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+    ], { budget: 'self-cli', cwd: repositoryRoot })
+  const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(
       `doc corpus export failed: ${stderr.trim() || `exit ${exitCode}`}. ` +
@@ -270,15 +261,8 @@ export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
 
 export async function loadCodeCorpus(repositoryRoot: string): Promise<Chunk[]> {
   const root = resolve(repositoryRoot)
-  const child = Bun.spawn(['git', '-C', root, ...nulPathListArgs(['ls-files'])], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const child = await startBounded(['git', '-C', root, ...nulPathListArgs(['ls-files'])], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(`tracked code corpus listing failed: ${stderr.trim() || `exit ${exitCode}`}`)
   }

@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: review-pins
 import type { Database } from 'bun:sqlite'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
@@ -76,13 +77,7 @@ export function git(
   _hermetic = false,
   stdin?: Uint8Array,
 ): { ok: boolean; out: string; err: string; stdout: Uint8Array } {
-  const p = Bun.spawnSync(['git', ...args], {
-    cwd: repo,
-    env: targetGitEnvironment(repo),
-    stdin,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo), stdin })
   return {
     ok: p.exitCode === 0,
     out: p.stdout.toString().trim(),

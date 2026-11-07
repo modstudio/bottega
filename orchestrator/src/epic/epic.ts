@@ -1,3 +1,4 @@
+import { startBounded } from '../../../shared/bounded-process.ts'
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { engagedMs } from '../../../shared/interval.ts'
@@ -480,8 +481,7 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
 }
 
 export async function epicChildren(project: string, epicKey: string): Promise<EpicChild[]> {
-  const child = Bun.spawn(
-    [
+  const child = await startBounded([
       ...bottegaEntryArgv(PLATFORM_SLUG),
       'task',
       'list',
@@ -490,19 +490,9 @@ export async function epicChildren(project: string, epicKey: string): Promise<Ep
       '--parent',
       epicKey,
       '--json',
-    ],
-    {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: { ...process.env },
-    },
-  )
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (code !== 0)
+    ], { budget: 'self-cli', env: { ...process.env } })
+  const { stdout, stderr, exitCode } = child
+  if (exitCode !== 0)
     throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
   const parsed = JSON.parse(stdout) as unknown
   if (

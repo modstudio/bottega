@@ -1,3 +1,5 @@
+import { startBounded } from '../../../shared/bounded-process.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -191,17 +193,9 @@ export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env },
-  })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (code !== 0)
+  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...args], { budget: 'self-cli', env: { ...process.env } })
+  const { stdout, stderr, exitCode } = child
+  if (exitCode !== 0)
     throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
   return stdout.trim()
 }
@@ -399,7 +393,7 @@ function argv(
   cwd: string,
   env = process.env,
 ): { ok: boolean; text: string; exitCode: number } {
-  const p = Bun.spawnSync(command, { cwd, env, stdout: 'pipe', stderr: 'pipe' })
+  const p = startBoundedSync(command, { budget: 'process-table', cwd, env })
   const text = `${p.stdout.toString()}${p.stderr.toString()}`.trim()
   return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
 }

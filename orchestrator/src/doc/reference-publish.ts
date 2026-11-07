@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: reference-publish
 /** Publishes tracked generated command-reference pages through the document service. */
 
@@ -36,12 +37,7 @@ export function slugLinkedBody(body: string, indexName: string): string {
 }
 
 function trackedReferenceFiles(root: string): string[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', 'docs/reference/*.md'])], {
-    cwd: root,
-    env: scrubbedGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', 'docs/reference/*.md'])], { budget: 'git-plumbing', cwd: root, env: scrubbedGitEnv() })
   if (result.exitCode !== 0) {
     throw new Error(`could not read tracked reference pages: ${result.stderr.toString().trim()}`)
   }

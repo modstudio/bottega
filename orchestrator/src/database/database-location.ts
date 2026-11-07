@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -43,15 +44,7 @@ type RepositoryRoot = {
 
 function repositoryRootFromGit(cwd: string): RepositoryRoot | null {
   try {
-    const git = Bun.spawnSync(
-      ['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'],
-      {
-        cwd,
-        env: inspectionGitEnv(),
-        stdout: 'pipe',
-        stderr: 'ignore',
-      },
-    )
+    const git = startBoundedSync(['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'], { budget: 'git-plumbing', cwd, env: inspectionGitEnv() })
     if (git.exitCode !== 0) return null
     const [bare, gitDirOutput, commonOutput] = git.stdout.toString().trim().split('\n')
     if (!gitDirOutput || !commonOutput || (bare !== 'true' && bare !== 'false')) return null

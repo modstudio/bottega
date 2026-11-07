@@ -1,3 +1,5 @@
+import { startBounded } from '../../../shared/bounded-process.ts'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 // concern: dashboard-server
 /** Starts, awaits and stops the dashboard server the browser scripts drive. */
 import { createServer } from 'node:net'
@@ -16,17 +18,8 @@ export const pipedOutput = (stream: Bun.Subprocess['stdout']): ReadableStream<Ui
   stream as ReadableStream<Uint8Array>
 
 export async function command(args: string[], env: Environment): Promise<string> {
-  const child = Bun.spawn([executable, ...args], {
-    cwd: repoRoot,
-    env,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const child = await startBounded([executable, ...args], { budget: 'self-cli', cwd: repoRoot, env })
+  const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(
       `${executable} ${args.join(' ')} exited ${exitCode}: ${stderr.trim() || stdout.trim()}`,
@@ -54,7 +47,7 @@ export async function waitForServer(origin: string, exited: Promise<number>): Pr
   let lastFailure = 'no response'
   for (let attempt = 0; attempt < 200; attempt++) {
     try {
-      await fetch(origin)
+      await hostedApiFetch(origin)
       return
     } catch (error) {
       lastFailure = String(error)

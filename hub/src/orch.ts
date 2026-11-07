@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 /**
  * The orchestrator, read through its CLI.
  *
@@ -494,12 +495,7 @@ export function projectListProcessError(result: ProjectListProcessResult): strin
 export function projectList(): OrchProject[] {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const args = ['project', 'list', '--json']
-  const proc = Bun.spawnSync([...command, ...args], {
-    env: { ...process.env },
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: PROJECT_LIST_TIMEOUT_MS,
-  })
+  const proc = startBoundedSync([...command, ...args], { budget: 'process-table', env: { ...process.env } })
   const out = proc.stdout.toString()
   const error = projectListProcessError({
     command: `${PLATFORM_SLUG} ${args.join(' ')}`,

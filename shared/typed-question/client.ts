@@ -1,3 +1,4 @@
+import { hostedApiFetch } from '../bounded-fetch.ts'
 // concern: typed-question-client
 /** Calls the TypeSafe typed-question API without exposing its credential. */
 
@@ -51,7 +52,7 @@ type TypedQuestionClientDependencies = {
 
 const clientDependencies: TypedQuestionClientDependencies = {
   resolve: readEnvValuesWithHosted,
-  fetch: (input, init) => globalThis.fetch(input, init),
+  fetch: (input, init) => hostedApiFetch(input, init),
 }
 
 function finiteProbability(value: unknown): value is number {

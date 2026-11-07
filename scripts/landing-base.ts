@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
 type CpuTime = { user: number | bigint; system: number | bigint }
 
 type LandingBase = {
@@ -18,11 +19,7 @@ function resolveRemoteLandingBase(
 ): LandingBase {
   const remoteBranch = `origin/${landingBranch}`
   const command = ['git', 'merge-base', remoteBranch, 'HEAD']
-  const result = Bun.spawnSync(command, {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(command, { budget: 'process-table', cwd: root })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim()
     throw new Error(

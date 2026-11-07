@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { readFileSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -60,7 +61,7 @@ function checkout(project: Project, explicitProject: boolean, cwd: string): stri
 }
 
 function typosVersion(binary: string): string | null {
-  const result = Bun.spawnSync([binary, '--version'], { stdout: 'pipe', stderr: 'pipe' })
+  const result = startBoundedSync([binary, '--version'], { budget: 'process-table' })
   return result.exitCode === 0 ? result.stdout.toString().trim() : ''
 }
 
@@ -75,7 +76,7 @@ function spellingCommand(argv: string[], presentation: Presentation): void {
   const command = [binary!, '--format', 'json', '--locale', 'en-us']
   if (argv.includes('--fix')) command.push('--write-changes')
   command.push('.')
-  const result = Bun.spawnSync(command, { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+  const result = startBoundedSync(command, { budget: 'process-table', cwd: root })
   let findings: ReturnType<typeof spellingFindings>
   try {
     findings = spellingFindings(result.stdout.toString())
@@ -96,7 +97,7 @@ function spellingCommand(argv: string[], presentation: Presentation): void {
 }
 
 function spawnText(argv: string[], cwd: string, label: string): string {
-  const result = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const result = startBoundedSync(argv, { budget: 'process-table', cwd })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim()
     throw new Error(`${label} failed with exit ${result.exitCode}${detail ? `: ${detail}` : ''}`)

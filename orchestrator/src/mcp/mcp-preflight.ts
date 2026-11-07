@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: mcp-preflight
 /**
  * Knows MCP request/provenance vocabulary and Grok's connection diagnostic.
@@ -177,15 +178,7 @@ function grokMcpConnection(
   env: Record<string, string>,
   trust = false,
 ): McpConnection {
-  const p = Bun.spawnSync(
-    [bin, ...(trust ? ['--cwd', cwd, '--trust'] : []), 'mcp', 'doctor', server, '--json'],
-    {
-      cwd,
-      env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
+  const p = startBoundedSync([bin, ...(trust ? ['--cwd', cwd, '--trust'] : []), 'mcp', 'doctor', server, '--json'], { budget: 'process-table', cwd, env })
   const stdout = p.stdout.toString().trim()
   const stderr = p.stderr.toString().trim()
   try {

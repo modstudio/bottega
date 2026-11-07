@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 import type { Database } from 'bun:sqlite'
 import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
@@ -113,7 +115,7 @@ export type CreateNoteInput = {
 }
 
 const git = (cwd: string, ...args: string[]): string | null => {
-  const result = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'ignore' })
+  const result = startBoundedSync(['git', '-C', cwd, ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
   return result.exitCode === 0 ? result.stdout.toString().trim() : null
 }
 

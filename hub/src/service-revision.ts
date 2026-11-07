@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 // concern: service-revision
 /** Identity and revision policy for long-running processes in the hub concern. */
 
@@ -90,11 +92,7 @@ export function serviceRevisionStatus(
 
 function readInstallHead(): RevisionRead {
   try {
-    const result = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
-      cwd: installRoot(),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const result = startBoundedSync(['git', 'rev-parse', 'HEAD'], { budget: 'git-plumbing', cwd: installRoot(), env: inspectionGitEnv() })
     const revision = result.stdout.toString().trim()
     if (result.exitCode === 0 && revision) return { revision, error: null }
     return {

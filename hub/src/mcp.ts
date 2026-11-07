@@ -1,3 +1,4 @@
+import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import {
   Client,
   type ClientOptions,
@@ -173,7 +174,7 @@ export class Mcp {
         : requestSignal
           ? AbortSignal.any([requestSignal, AbortSignal.timeout(this.timeoutMs)])
           : AbortSignal.timeout(this.timeoutMs)
-    const response = await globalThis.fetch(input, { ...init, signal })
+    const response = await hostedApiFetch(input, { ...init, signal })
     if (!message) return response
 
     const raw = await response.clone().text()

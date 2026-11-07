@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: setup-mcp
 /** Knows harness MCP CLI grammar and bounded execution. Must not know setup questions or projects. */
 
@@ -103,13 +104,7 @@ export function runSetupCommand(
     delete env.CLAUDE_CODE_SESSION_ID
     delete env.CLAUDE_CODE_BRIDGE_SESSION_ID
     env.BOTTEGA_ORCHESTRATOR_DB = process.platform === 'win32' ? 'NUL' : '/dev/null'
-    const child = Bun.spawnSync(argv, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: timeoutMs,
-      env,
-      cwd: options?.cwd,
-    })
+    const child = startBoundedSync(argv, { budget: 'process-table', env, cwd: options?.cwd })
     return {
       exitCode: child.exitCode,
       stdout: child.stdout.toString(),

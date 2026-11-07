@@ -1,3 +1,4 @@
+import { startBoundedSync } from './bounded-process.ts'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { inspectionGitEnv } from './git'
@@ -140,11 +141,7 @@ export function changeFacts(
 }
 
 function git(cwd: string, args: string[]) {
-  const result = Bun.spawnSync(['git', '-C', cwd, '--no-optional-locks', ...args], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', '-C', cwd, '--no-optional-locks', ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim() || 'no error output'
     throw new Error(

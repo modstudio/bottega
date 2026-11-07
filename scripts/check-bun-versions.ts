@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 #!/usr/bin/env bun
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
@@ -100,14 +102,7 @@ export function bunImagePins(path: string, source: string): BunImagePin[] {
 
 /** Tracked and untracked, unignored Dockerfiles, so a worker's new image is judged before it is committed. */
 function repositoryDockerfiles(root: string): string[] {
-  const result = Bun.spawnSync(
-    ['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])],
-    {
-      cwd: root,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
   if (!result.success) {
     throw new Error(
       `could not list the repository's Dockerfiles: ${result.stderr.toString().trim() || `git exited ${result.exitCode}`}; run git ls-files from the repository root`,

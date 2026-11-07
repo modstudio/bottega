@@ -1,3 +1,4 @@
+import { hostedApiFetch } from '../shared/bounded-fetch.ts'
 #!/usr/bin/env bun
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
@@ -172,7 +173,7 @@ async function realCommandRunner(
 }
 
 async function realMachineDetails(machineId: string, token: string): Promise<unknown> {
-  const response = await fetch(
+  const response = await hostedApiFetch(
     `https://api.machines.dev/v1/apps/${REHEARSAL_APP}/machines/${machineId}`,
     {
       headers: { Authorization: `Bearer ${token}` },

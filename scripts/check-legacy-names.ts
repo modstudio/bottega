@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 #!/usr/bin/env bun
 // State databases are named for their concerns; the former orchestrator filename is legacy.
 // Environment names are blocking at zero; prefix-sharing TypeScript constants are named exemptions.
@@ -211,14 +213,7 @@ function textForLegacyScan(path: string, text: string): string {
 }
 
 function scannedFiles(): string[] {
-  const result = Bun.spawnSync(
-    ['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])],
-    {
-      cwd: ROOT,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])], { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() })
   if (result.exitCode !== 0) {
     throw new Error(
       `git ls-files failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,

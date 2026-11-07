@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
 #!/usr/bin/env bun
 import { readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -18,11 +19,7 @@ export function decideHarnessMirror(entries: HarnessMirrorEntry[]): string[] {
 }
 
 function trackedClaudeEntries(root: string): HarnessMirrorEntry[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', '-s', '--', '.claude'])], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '-s', '--', '.claude'])], { budget: 'agent-cli', cwd: root })
   if (result.exitCode !== 0) {
     throw new Error(`could not inspect tracked .claude paths: ${result.stderr.toString().trim()}`)
   }

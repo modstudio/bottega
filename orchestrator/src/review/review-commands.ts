@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: review-commands
 /** Knows review command semantics and presentation. Must not know runs, transports, routing by value, the CLI, or worktrees by value. */
 import { Database } from 'bun:sqlite'
@@ -52,21 +53,11 @@ function printReviewFinding(
 
 function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabel = from) {
   const endpoint = (ref: string, label = ref): TierRangeEndpoint => {
-    const peeled = Bun.spawnSync(['git', 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const peeled = startBoundedSync(['git', 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) })
     if (peeled.exitCode === 0) {
       return { ref: label, commit: peeled.stdout.toString().trim(), kind: 'commit' }
     }
-    const object = Bun.spawnSync(['git', 'cat-file', '-t', ref], {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
+    const object = startBoundedSync(['git', 'cat-file', '-t', ref], { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) })
     if (object.exitCode !== 0) return { ref: label, commit: null, kind: 'unresolvable' }
     const kind = object.stdout.toString().trim()
     return { ref: label, commit: null, kind: kind === 'tree' ? 'tree' : 'other' }
@@ -75,12 +66,7 @@ function resolveTierRangeInRepo(repo: string, from: string, to: string, fromLabe
   const toEndpoint = endpoint(to)
   const base =
     fromEndpoint.kind === 'commit' && toEndpoint.kind === 'commit'
-      ? Bun.spawnSync(['git', 'merge-base', fromEndpoint.commit!, toEndpoint.commit!], {
-          cwd: repo,
-          env: targetGitEnvironment(repo),
-          stdout: 'pipe',
-          stderr: 'pipe',
-        })
+      ? startBoundedSync(['git', 'merge-base', fromEndpoint.commit!, toEndpoint.commit!], { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) })
       : null
   const resolution = resolveTierRange({
     from: fromEndpoint,
@@ -128,12 +114,7 @@ function resolveTierTarget(
       const branchLive =
         writer &&
         row.branch &&
-        Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`], {
-          cwd: project.path,
-          env: targetGitEnvironment(project.path),
-          stdout: 'pipe',
-          stderr: 'pipe',
-        }).exitCode === 0
+        startBoundedSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`], { budget: 'git-plumbing', cwd: project.path, env: targetGitEnvironment(project.path) }).exitCode === 0
       const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
       if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
       const trunk = project.settings.trunk?.trim()
@@ -173,12 +154,7 @@ function resolveTierTarget(
     }
   }
 
-  const branch = Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`], {
-    cwd: repo,
-    env: targetGitEnvironment(repo),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const branch = startBoundedSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`], { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) })
   if (branch.exitCode !== 0) {
     throw new Error('review tier accepts a branch, run id, or explicit <from>..<to> range')
   }

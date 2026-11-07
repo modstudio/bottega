@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: main-checkout Docker stack adapter
 
 import type { Database } from 'bun:sqlite'
@@ -33,12 +34,7 @@ function dockerCompose(cwd: string, args: string[]): CommandResult {
   const command = ['docker', 'compose', ...args]
   let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = Bun.spawnSync(command, {
-      cwd,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
+    result = startBoundedSync(command, { budget: 'process-table', cwd })
   } catch (error) {
     return { ok: false, reason: `${command.join(' ')} failed: ${(error as Error).message}` }
   }
@@ -257,11 +253,7 @@ function runningMainStackPaths(): CommandResult {
     '{{.Label "com.docker.compose.project.working_dir"}}',
   ]
   try {
-    result = Bun.spawnSync(command, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
+    result = startBoundedSync(command, { budget: 'process-table' })
   } catch (error) {
     return { ok: false, reason: `main stack inventory unavailable: ${(error as Error).message}` }
   }
@@ -292,11 +284,7 @@ export function mainStackServedWorktree(input: {
   ]
   let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = Bun.spawnSync(command, {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
+    result = startBoundedSync(command, { budget: 'process-table' })
   } catch (error) {
     return {
       value: 'unknown',
@@ -359,12 +347,7 @@ export function mainStackExecInProgress(
   const command = ['docker', 'inspect', '-f', '{{json .ExecIDs}}', ...ids]
   let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = Bun.spawnSync(command, {
-      cwd: projectPath,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
-    })
+    result = startBoundedSync(command, { budget: 'process-table', cwd: projectPath })
   } catch (error) {
     return { value: 'unknown', reason: `${command.join(' ')} failed: ${(error as Error).message}` }
   }

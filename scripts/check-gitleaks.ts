@@ -1,3 +1,5 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { fileURLToPath } from 'node:url'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { decideGitleaksScan, planGitleaksScans } from './check-gitleaks-plan'
@@ -18,11 +20,7 @@ try {
   process.exit(1)
 }
 const range = `${mergeBase}..HEAD`
-const rangeCount = Bun.spawnSync(['git', 'rev-list', '--count', range], {
-  cwd: root,
-  stdout: 'pipe',
-  stderr: 'pipe',
-})
+const rangeCount = startBoundedSync(['git', 'rev-list', '--count', range], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
 if (rangeCount.exitCode !== 0) {
   const detail = rangeCount.stderr.toString().trim()
   console.error(`check-gitleaks could not inspect ${range}${detail ? `: ${detail}` : ''}`)
@@ -37,14 +35,7 @@ const scans = planGitleaksScans({
 })
 
 if (rangeCommitCount === 0) {
-  const untracked = Bun.spawnSync(
-    ['git', ...nulPathListArgs(['ls-files', '--others', '--exclude-standard'])],
-    {
-      cwd: root,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
+  const untracked = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--others', '--exclude-standard'])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
   if (untracked.exitCode !== 0) {
     const detail = untracked.stderr.toString().trim()
     console.error(`check-gitleaks could not inspect untracked files${detail ? `: ${detail}` : ''}`)
@@ -60,10 +51,7 @@ if (rangeCommitCount === 0) {
 let failed = false
 for (const scan of scans) {
   try {
-    const result = Bun.spawnSync([gitleaks, ...scan.args], {
-      stdout: 'inherit',
-      stderr: 'pipe',
-    })
+    const result = startBoundedSync([gitleaks, ...scan.args], { budget: 'process-table' })
     const log = result.stderr.toString()
     process.stderr.write(result.stderr)
     const decision = decideGitleaksScan({ exitCode: result.exitCode, log })
