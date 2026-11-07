@@ -32,9 +32,21 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
       '../mcp/mcp-probe.ts',
       '../mcp/mcp-tool-list.ts',
       '../project/projects.ts',
+      './task-cli-read.ts',
       './task-key-admission.ts',
     ],
     'Keep tracker access in an adapter that returns evidence to the pure admission decision.',
+  ),
+  boundary(
+    'task-cli-read-boundary',
+    'orchestrator/src/dispatch/task-cli-read.ts',
+    [
+      '../../../shared/bounded-process.ts',
+      '../../../shared/brand.ts',
+      '../../../shared/self-spawn.ts',
+    ],
+    'Keep the declared CLI task read and its bounded process in one tracker adapter.',
+    ['../project/projects.ts'],
   ),
   boundary(
     'mcp-commands-boundary',

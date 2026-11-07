@@ -1,7 +1,6 @@
 // concern: task-key-lookup
 /** Reads a task through the tracker protocol declared by its registered project. */
 
-import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
@@ -15,6 +14,7 @@ import {
 } from '../mcp/mcp-probe.ts'
 import { callMcpTool } from '../mcp/mcp-tool-list.ts'
 import type { Project } from '../project/projects.ts'
+import { readTaskThroughCli } from './task-cli-read.ts'
 import type { TaskKeyLookupResult } from './task-key-admission.ts'
 
 const errorText = (cause: unknown): string =>
@@ -48,18 +48,7 @@ export async function readLensTask(project: Project, key: string): Promise<LensT
     }
   }
   try {
-    const result = await startBounded(
-      [
-        ...bottegaEntryArgv(PLATFORM_SLUG),
-        'task',
-        'show',
-        key,
-        '--project',
-        project.name,
-        '--json',
-      ],
-      { budget: 'self-cli', cwd: project.path, env: { ...process.env } },
-    )
+    const result = await readTaskThroughCli(project, key)
     if (result.exitCode !== 0) {
       return {
         available: false,
