@@ -202,6 +202,12 @@ describe('record space decisions', () => {
     )
   })
 
+  test('create --trial refuses a slug without the trial prefix', async () => {
+    await expect(createRecordSpace('Demo', 'demo', undefined, true)).rejects.toThrow(
+      'requires a slug starting with trial-',
+    )
+  })
+
   test('passes hosted invitations through with their ISO expiry', async () => {
     const invitations = [
       {

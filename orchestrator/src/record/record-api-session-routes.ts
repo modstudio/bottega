@@ -12,13 +12,15 @@ import {
   registerRecordRoutingEvidenceRoute,
 } from './record-api-routing-evidence.ts'
 import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
+import { registerRecordTrialSpaceRoutes } from './record-api-trial-space-routes.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 export type RecordSessionRouteDeps = RecordMachineRouteDeps &
   RecordInvitationRouteDeps &
   RecordSyncRouteDeps &
-  RoutingEvidenceRouteDeps
+  RoutingEvidenceRouteDeps &
+  Parameters<typeof registerRecordTrialSpaceRoutes>[1]
 
 export function registerRecordSessionRoutes(
   app: Hono<ApiEnvironment>,
@@ -28,4 +30,5 @@ export function registerRecordSessionRoutes(
   registerRecordInvitationRoute(app, deps)
   registerRecordSyncRoute(app, deps)
   registerRecordRoutingEvidenceRoute(app, deps)
+  registerRecordTrialSpaceRoutes(app, deps)
 }

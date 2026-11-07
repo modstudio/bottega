@@ -7,6 +7,7 @@ import {
   recordAllowedOrigins,
   recordAuth,
   recordIdentityFromRows,
+  refuseTrialMarkerUpdate,
   rememberedSessionSpaceWrite,
   sessionSpace,
 } from './record-auth.ts'
@@ -19,6 +20,15 @@ beforeAll(() => {
   priorHubUrl = process.env.RECORD_HUB_URL
   process.env.BETTER_AUTH_SECRET = 'test-secret-at-least-thirty-two-characters'
   process.env.RECORD_HUB_URL = 'https://hub.example.test'
+})
+
+test('organization updates cannot change the trial marker', () => {
+  expect(() => refuseTrialMarkerUpdate({}, { trial: { createdAt: 'now' } })).toThrow(
+    'metadata.trial is immutable',
+  )
+  expect(() => refuseTrialMarkerUpdate({ trial: { createdAt: 'then' } }, {})).toThrow(
+    'metadata.trial is immutable',
+  )
 })
 afterAll(() => {
   if (priorSecret === undefined) delete process.env.BETTER_AUTH_SECRET

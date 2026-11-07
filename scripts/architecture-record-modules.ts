@@ -189,6 +189,7 @@ export const recordModules: RecordModule[] = [
     './record-api-machine.ts',
     './record-api-routing-evidence.ts',
     './record-api-sync.ts',
+    './record-api-trial-space-routes.ts',
     './record-auth.ts',
   ]),
   module('orchestrator/src/record/record-api-client-routing-evidence.ts', [
@@ -730,6 +731,7 @@ export const recordModules: RecordModule[] = [
     './record-config-error.ts',
     './record-docs.ts',
     './record-projects.ts',
+    './record-trial-space-contract.ts',
     './record-verdicts.ts',
   ]),
   module('orchestrator/src/record/record-config-error.ts', []),

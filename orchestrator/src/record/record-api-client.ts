@@ -94,6 +94,7 @@ import type {
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
+import type { TrialSpaceDeleteResult } from './record-trial-space-contract.ts'
 import { currentRecordWriteDecision } from './record-write-authority.ts'
 
 export type RecordDocUpsertInput = {
@@ -130,6 +131,7 @@ export type RecordDocUpsertInput = {
   expectedRevision?: string
   generator?: DocGenerator
 }
+type CreateOrganizationInput = { name: string; slug: string; metadata?: Record<string, unknown> }
 type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
 type RecordDocWriteContext = Pick<
   RecordDocUpsertInput,
@@ -230,7 +232,8 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordConfigAccessClient> & {
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
-    createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
+    createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
+    deleteTrialSpace(slug: string): Promise<TrialSpaceDeleteResult>
     setActiveOrganization(input: {
       organizationId?: string
       organizationSlug?: string
@@ -705,6 +708,7 @@ const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) 
     body: JSON.stringify(input),
     ...destination,
   })
+const postJson = (body: unknown) => ({ method: 'POST', body: JSON.stringify(body) })
 
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
@@ -719,6 +723,8 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return {
     storage: () => request('/v1/storage'),
+    deleteTrialSpace: (slug) =>
+      request<TrialSpaceDeleteResult>('/v1/spaces/delete-trial', postJson({ slug })),
     ...recordChangesClient(request),
     ...recordMachineClient(request),
     ...recordConfigAccessClient(request),

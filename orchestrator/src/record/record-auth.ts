@@ -257,6 +257,18 @@ function recordAuthPresentation(environment: RecordAuthEnvironment) {
 
 function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBuiltInsPort) {
   return {
+    beforeUpdateOrganization: async ({
+      organization,
+      member,
+    }: {
+      organization: { metadata?: Record<string, unknown> }
+      member: { organizationId: string }
+    }) => {
+      if (!Object.hasOwn(organization, 'metadata')) return
+      const rows =
+        await authClient`SELECT metadata FROM space WHERE id=${member.organizationId}::uuid`
+      refuseTrialMarkerUpdate(rows[0]?.metadata, organization.metadata)
+    },
     beforeRemoveMember: async ({
       member,
       organization,
@@ -284,6 +296,16 @@ function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBu
         spaceIds: [created.id],
       })
     },
+  }
+}
+
+export function refuseTrialMarkerUpdate(current: unknown, replacement: unknown): void {
+  const trial = (value: unknown) =>
+    typeof value === 'object' && value !== null ? (value as { trial?: unknown }).trial : undefined
+  if (JSON.stringify(trial(current)) !== JSON.stringify(trial(replacement))) {
+    throw new APIError('BAD_REQUEST', {
+      message: 'metadata.trial is immutable; create a new trial space instead',
+    })
   }
 }
 

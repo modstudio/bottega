@@ -29,4 +29,19 @@ export const recordInvariantModules = [
     './record-session.ts',
     './active-space-invariant.ts',
   ]),
+  module('orchestrator/src/record/record-trial-space-contract.ts', []),
+  module('orchestrator/src/record/record-api-trial-space-routes.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-trial-space-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-trial-space-delete.ts', [
+    'bun',
+    '../../../shared/brand.ts',
+    '../../../shared/record/space-teardown.ts',
+    '../../../shared/record/tenant.ts',
+    './record-pool.ts',
+    './record-trial-space-contract.ts',
+  ]),
 ]

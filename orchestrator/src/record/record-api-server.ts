@@ -132,6 +132,7 @@ import {
 } from './record-subjects.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 import { readRecordTaskFlow } from './record-task-flow.ts'
+import { deleteTrialRecordSpace } from './record-trial-space-delete.ts'
 import {
   countRecordScores,
   listRecordScores,
@@ -434,6 +435,7 @@ async function serveRecordApiWithAuth(
     releaseBoardClaim: releaseHostedBoardClaim,
     listBoardClaims: listHostedBoardClaims,
     releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
+    deleteTrialSpace: deleteTrialRecordSpace,
   })
   registerStorageRoute(app, config, environment)
   return serveRecordApi(

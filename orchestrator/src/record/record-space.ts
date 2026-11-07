@@ -269,6 +269,7 @@ export async function createRecordSpace(
   name: string,
   slug: string,
   client: Pick<RecordApiClient, 'whoami' | 'createOrganization'> = recordApiClient(),
+  trial = false,
 ): Promise<
   {
     before: HostedActiveSpace
@@ -277,16 +278,40 @@ export async function createRecordSpace(
 > {
   if (!name.trim()) throw new Error('record space name must be non-empty')
   if (!slug.trim()) throw new Error('record space slug must be non-empty')
+  if (trial && !slug.startsWith('trial-'))
+    throw new Error(
+      'record space create --trial requires a slug starting with trial-; change the slug and retry',
+    )
   const listed = await recordMemberships(client)
   refuseDuplicateRecordSpaceSlug(slug, listed.memberships)
   const before = hostedActiveSpace(listed.activeSpaceId, listed.memberships)
-  const created = await client.createOrganization({ name, slug })
+  const created = await client.createOrganization({
+    name,
+    slug,
+    ...(trial
+      ? {
+          metadata: {
+            trial: {
+              createdByUserId: (await client.whoami()).user.id,
+              createdAt: new Date().toISOString(),
+            },
+          },
+        }
+      : {}),
+  })
   const afterIdentity = await recordMemberships(client)
   return {
     ...created,
     before,
     after: hostedActiveSpace(afterIdentity.activeSpaceId, afterIdentity.memberships),
   }
+}
+
+export async function deleteTrialSpace(
+  slug: string,
+  client: Pick<RecordApiClient, 'deleteTrialSpace'> = recordApiClient(),
+) {
+  return client.deleteTrialSpace(slug)
 }
 
 export async function inviteToActiveRecordSpace(
