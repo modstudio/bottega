@@ -261,10 +261,16 @@ export function decideReviewReadArtifact(input: {
   reviewedCommit: string
   branchTip: string | null
 }): ReviewReadArtifactDecision {
+  if (input.branchTip === null)
+    return {
+      accepted: false,
+      message:
+        'this cursor records no worktree, so its branch tip cannot be established; pass `--arg worktree=<tree>` on the cursor to clear this refusal',
+    }
   if (input.reviewedCommit === input.branchTip) return { accepted: true }
   return {
     accepted: false,
-    message: `review-read commit ${input.reviewedCommit} is not this cursor's branch tip ${input.branchTip ?? 'unset'}`,
+    message: `review-read commit ${input.reviewedCommit} is not this cursor's branch tip ${input.branchTip}; record a fresh read with \`${PLATFORM_SLUG} review read --cwd <tree> --sha <tip> --note <text>\` and pass its id as \`--artifact review-read:<UUID>\``,
   }
 }
 

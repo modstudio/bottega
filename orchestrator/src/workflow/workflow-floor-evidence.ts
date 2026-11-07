@@ -520,13 +520,11 @@ function resolveNumericArtifact(
 }
 
 function resolveTaskArtifact(
-  ref: ArtifactRef,
+  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' }>,
   raw: string,
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
 ): { ref: string; exists: boolean } {
-  if (ref.kind !== 'task' && ref.kind !== 'comment')
-    throw new Error(`unsupported artifact kind ${ref.kind}`)
   if (!ports.readTask)
     throw new Error(
       `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
@@ -549,12 +547,12 @@ function resolveTaskArtifact(
 }
 
 function resolveStoredArtifact(
-  ref: ArtifactRef,
+  ref: Extract<ArtifactRef, { kind: 'attached-text' | 'doc' | 'review-read' }>,
   identity: CursorIdentity,
   binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
   d: Database,
   branchTip: string | null,
-): { ref: string; exists: boolean } | undefined {
+): { ref: string; exists: boolean } {
   if (ref.kind === 'attached-text') {
     const row = d
       .query<
@@ -587,12 +585,14 @@ function resolveStoredArtifact(
   }
   if (ref.kind === 'doc')
     return { ref: `doc:${resolveDocArtifact(ref.address, identity, d)}`, exists: true }
-  if (ref.kind !== 'review-read') return undefined
   const row = d
     .query<{ tip: string }, [string]>('SELECT tip FROM review_read WHERE record_id=?')
     .get(ref.recordId)
   const flag = `--artifact review-read:${ref.recordId}`
-  if (!row) throw new Error(`${flag} does not exist`)
+  if (!row)
+    throw new Error(
+      `${flag} does not exist; record a fresh read with \`${PLATFORM_SLUG} review read --cwd <tree> --sha <tip> --note <text>\` and pass its id as \`--artifact review-read:<UUID>\``,
+    )
   const decision = decideReviewReadArtifact({ reviewedCommit: row.tip, branchTip })
   if (!decision.accepted) throw new Error(`${flag} ${decision.message}`)
   return { ref: `review-read:${ref.recordId}`, exists: true }
@@ -608,8 +608,8 @@ function resolveArtifact(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
 ): { ref: string; exists: boolean } {
-  const stored = resolveStoredArtifact(ref, identity, binding, d, branchTip)
-  if (stored) return stored
+  if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
+    return resolveStoredArtifact(ref, identity, binding, d, branchTip)
   if (ref.kind === 'id')
     return resolveNumericArtifact(
       ref.id,

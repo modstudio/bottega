@@ -161,7 +161,7 @@ describe('workflow rendering', () => {
     )
     expect(
       renderWorkflowStep(getWorkflowStep('flow', 'fixture', 'lens', args, d, { mode: 'default' })),
-    ).toContain(`Evidence for recorded-artifact: ${floorGuidance['recorded-artifact']}.`)
+    ).toContain('review-read:<UUID>')
   })
 
   test('a composed mode tells the agent how to fetch and finish every step', () => {
