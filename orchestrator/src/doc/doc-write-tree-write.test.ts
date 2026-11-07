@@ -126,6 +126,9 @@ test('a branch-only citation requires the subject worktree named by --cwd', asyn
   expect(refused.code).toBe(1)
   expect(refused.out).toBe(`tree: ${subject.main}`)
   expect(refused.err).toContain('canon/reference-path')
+  expect(refused.err).toContain(
+    `judged against ${subject.main}; pass --cwd <checkout> to validate against another checkout of subject`,
+  )
 
   const accepted = await command([...base, '--cwd', subject.worktree], body)
   expect(accepted.code).toBe(0)
