@@ -269,6 +269,9 @@ export function admissionDecision(
 
 /** The line refusing one applicable lens, naming the path a fix used to bring it into scope. */
 function missingLensLine(change: PullRequestChange, missing: MissingLens): string {
+  if (missing.reason) {
+    return `${missing.lens} owed: ${missing.reason}; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${missing.lens} "Review ${change.branch} with ${missing.lens}."`
+  }
   const condition = missing.recordedOnBranch
     ? 'has no recorded result for this change'
     : 'has no recorded result on this branch'

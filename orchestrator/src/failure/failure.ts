@@ -88,10 +88,24 @@ const ANSI_ESCAPE_PATTERN = String.raw`\x1B\[[0-?]*[ -/]*[@-~]`
 const ANSI_ESCAPE_SEQUENCE = new RegExp(ANSI_ESCAPE_PATTERN, 'g')
 const GOOSE_PROVIDER_ERROR_STORED = /^Ran into this error:[^\n]*Provider returned error/im
 const GOOSE_PROVIDER_ERROR_NON_ANSWER = /^Ran into this error:[^\n]*Provider returned error/i
+const GOOSE_VENDOR_ERROR_LINE =
+  /^(?:Ran into this error trying to compact:|Ran into this error:)(.*)$/m
+const GOOSE_VENDOR_FAILURE_KINDS = new Set<FailureKind>([
+  'billing',
+  'quota',
+  'daily_quota',
+  'capacity',
+  'context',
+  'auth',
+  'provider_error',
+])
 
-/** Whether Goose's final message reports that the upstream provider failed the request. */
-export function isGooseProviderErrorNonAnswer(text: string): boolean {
-  return GOOSE_PROVIDER_ERROR_STORED.test(text)
+/** Classify only the vendor text from Goose's rendered error line. */
+export function gooseVendorFailureKind(text: string): FailureKind | null {
+  const vendorError = GOOSE_VENDOR_ERROR_LINE.exec(text)?.[1]
+  if (vendorError === undefined) return null
+  const kind = classify(vendorError.trim())
+  return GOOSE_VENDOR_FAILURE_KINDS.has(kind) ? kind : 'provider_error'
 }
 
 /** Remove volatile values while retaining the wording that identifies one failure shape. */

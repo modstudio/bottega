@@ -236,6 +236,7 @@ export type OutcomeInputs<FailureKind extends string = string> = {
   completedReplyAtTimeout: boolean
   replyError: boolean
   replyErrorFailureKind: FailureKind
+  gooseVendorFailureKind: FailureKind | null
   nonAnswer: boolean
   nonAnswerFailureKind: FailureKind
   contractStatus: 'done' | 'asking' | 'refused' | null
@@ -263,6 +264,7 @@ export type OutcomeRule =
   | 'timeout-completed'
   | 'timeout'
   | 'reply-error'
+  | 'goose-vendor-failure'
   | 'non-answer'
   | 'missing-reply-contract'
   | 'contract-asking'
@@ -304,6 +306,7 @@ function decideContractOutcomeRule<FailureKind extends string>(
   inputs: OutcomeInputs<FailureKind>,
 ): OutcomeRule | null {
   if (inputs.replyError) return 'reply-error'
+  if (inputs.gooseVendorFailureKind) return 'goose-vendor-failure'
   if (
     inputs.exitCode === 0 &&
     inputs.nonAnswer &&
@@ -360,6 +363,7 @@ export function decideOutcome<FailureKind extends string>(
     'timeout-completed': completed,
     timeout: () => failed('timeout'),
     'reply-error': () => failed(inputs.replyErrorFailureKind),
+    'goose-vendor-failure': () => failed(inputs.gooseVendorFailureKind!),
     'non-answer': () => failed(inputs.nonAnswerFailureKind),
     'missing-reply-contract': () => failed('contract'),
     'contract-asking': () => failed('contract'),

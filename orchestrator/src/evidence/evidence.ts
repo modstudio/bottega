@@ -10,6 +10,7 @@ import {
 import { provenanceServer } from '../mcp/mcp-preflight.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { CleanReviewEvidence } from '../review/review.ts'
+import { compareReviewedCommit } from '../review/review-lens-provenance.ts'
 import { recordReview } from '../review/review-triage.ts'
 
 export type EvidencePromptFacts = {
@@ -52,25 +53,6 @@ export type EvidenceFacts = {
   readerJob: boolean
   declaredDeliverables: readonly string[]
   readerReply: ReaderReply | null
-}
-
-export type ReviewedCommitComparison = 'equal' | 'prefix' | 'different' | 'missing'
-
-const GIT_DEFAULT_ABBREVIATION_LENGTH = 7
-
-/** Compare claimed review provenance with the full commit recorded at dispatch. */
-export function compareReviewedCommit(
-  expected: string,
-  reviewed: string | null | undefined,
-): ReviewedCommitComparison {
-  const claim = reviewed?.trim().toLowerCase()
-  if (!claim) return 'missing'
-  const recorded = expected.toLowerCase()
-  if (!/^[0-9a-f]+$/.test(claim)) return 'different'
-  if (claim === recorded) return 'equal'
-  return claim.length >= GIT_DEFAULT_ABBREVIATION_LENGTH && recorded.startsWith(claim)
-    ? 'prefix'
-    : 'different'
 }
 
 function applyReviewedCommitEvidence<FailureKind extends string>(
