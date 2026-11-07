@@ -30,14 +30,20 @@ function captureCommandOutput(command: Command, lines: string[]): void {
   for (const child of command.commands) captureCommandOutput(child, lines)
 }
 
-test('every array-valued scalar option on the real command trees is marked repeatable', () => {
+test('every collecting scalar option on the real command trees is marked repeatable', () => {
   const unmarked: string[] = []
   const inspect = (command: Command, path: string[]): void => {
     for (const option of command.options) {
+      let parserCollects = false
+      try {
+        parserCollects = Array.isArray(option.parseArg?.('probe', undefined))
+      } catch {
+        parserCollects = false
+      }
       if (
         (option.required || option.optional) &&
         !option.variadic &&
-        Array.isArray(option.defaultValue) &&
+        (Array.isArray(option.defaultValue) || parserCollects) &&
         !isRepeatable(option)
       )
         unmarked.push(`${path.join(' ')} ${option.flags}`)
