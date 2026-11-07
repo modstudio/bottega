@@ -151,6 +151,24 @@ describe('git guard', () => {
     expect(
       invokeMany(databasePath, clustered).map((decision) => decision?.permissionDecision),
     ).toEqual(['ask', 'ask', 'ask', 'ask', 'ask', 'ask'])
+    expect(
+      invokeMany(databasePath, [
+        { cwd: worktree, command: 'git push -4f origin main' },
+        { cwd: worktree, command: 'git push -f4 origin main' },
+      ]).map((decision) => decision?.permissionDecision),
+    ).toEqual(['ask', 'ask'])
+  })
+
+  test('parses numeric short push options in clusters', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/DEV-1862/numeric-cluster')
+    expect(
+      invokeMany(databasePath, [
+        { cwd: worktree, command: 'git push --force-with-lease -4d origin HEAD' },
+        { cwd: worktree, command: 'git push origin DEV-1862/numeric-cluster' },
+        { cwd: worktree, command: 'git push -4 origin DEV-1862/numeric-cluster' },
+      ]).map((decision) => decision?.permissionDecision ?? null),
+    ).toEqual(['ask', null, null])
   })
 
   test('honors both workflow exec cwd forms and rejects ambiguous cwd flags', () => {

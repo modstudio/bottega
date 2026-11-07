@@ -343,7 +343,7 @@ def push_arguments(argv):
         # -oVALUE is one push-option, not a cluster containing force/delete.
         if arg.startswith("-o"):
             continue
-        if re.fullmatch(r"-[A-Za-z]{2,}", arg):
+        if re.fullmatch(r"-[A-Za-z0-9]{2,}", arg):
             letters = arg[1:]
             if "f" in letters:
                 destructive = broad = True
