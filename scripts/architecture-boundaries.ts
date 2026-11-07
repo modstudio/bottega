@@ -1,3 +1,4 @@
+import { builtinModules } from 'node:module'
 import { dirname, normalize } from 'node:path'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
@@ -6,6 +7,7 @@ import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
 import { gateBoundarySpecs } from './architecture-gate-modules.ts'
+import { HUB_UI_ROOT, HUB_VIEWS_ROOT, TYPESCRIPT_TEST_PATH } from './architecture-hub-packages.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
 import { proseBoundarySpecs } from './architecture-prose-modules.ts'
@@ -35,6 +37,33 @@ import { worktreeBoundarySpecs } from './architecture-worktree-boundaries.ts'
 const normalizeTarget = (file: string, target: string) =>
   target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target
 
+type DependencyCruiserOptions = ReturnType<
+  typeof import('./architecture.ts').dependencyCruiserConfig
+>['options']
+
+export const hubBrowserRoots = [HUB_VIEWS_ROOT, HUB_UI_ROOT, 'hub/web'].map((x) => `${x}/src`)
+
+export function hubBrowserNoNodeBuiltinConfig(sharedOptions: DependencyCruiserOptions) {
+  const esc = (x: string) => x.replace(/^node:/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const builtinPath = `^(?:node:.*|(?:${builtinModules.map(esc).join('|')})|bun:.*)$`
+  return {
+    forbidden: [
+      {
+        name: 'hub-browser-reaches-no-node-builtin',
+        severity: 'error' as const,
+        comment: 'Browser hub packages must not reach Node or Bun built-in modules.',
+        from: { path: `^(?:${hubBrowserRoots.join('|')})/` },
+        to: { path: builtinPath, reachable: true },
+      },
+    ],
+    options: {
+      ...sharedOptions,
+      tsPreCompilationDeps: false,
+      exclude: { path: `${TYPESCRIPT_TEST_PATH}|^hub/web/src/routeTree\\.gen\\.ts$` },
+    },
+  }
+}
+
 export type ImportBoundary = {
   name: string
   file: string
@@ -57,34 +86,28 @@ const boundary = (
   reason,
 })
 
+type BoundarySpec = Omit<ImportBoundary, 'allowed' | 'typeOnlyAllowed'> & {
+  allowed: readonly string[]
+  typeOnlyAllowed?: readonly string[]
+}
+
+const boundaries = (specs: readonly BoundarySpec[]) =>
+  specs.map(({ name, file, allowed, reason, typeOnlyAllowed }) =>
+    boundary(name, file, [...allowed], reason, [...(typeOnlyAllowed ?? [])]),
+  )
+
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
   ...manifestTypeOnlyImportBoundaries,
-  ...proseBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...gateBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
-  ...runRetryModuleSpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...runStopBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...runLivenessBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...runLifecycleTypeOnlyBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...runModuleBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
-  ...branchStoreModuleSpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
+  ...boundaries(proseBoundarySpecs),
+  ...boundaries(gateBoundarySpecs),
+  ...boundaries(runRetryModuleSpecs),
+  ...boundaries(runStopBoundarySpecs),
+  ...boundaries(runLivenessBoundarySpecs),
+  ...boundaries(runLifecycleTypeOnlyBoundarySpecs),
+  ...boundaries(runModuleBoundarySpecs),
+  ...boundaries(branchStoreModuleSpecs),
   boundary(
     'code-commands-boundary',
     'orchestrator/src/code/code-commands.ts',
@@ -184,9 +207,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep cleanup independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   ),
-  ...cleanupBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(cleanupBoundarySpecs),
 
   boundary(
     'close-out-boundary',
@@ -246,9 +267,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep confinement rulings independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   ),
-  ...contractBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(contractBoundarySpecs),
   ...databaseBoundarySpecs,
   boundary(
     'dispatch-commands-boundary',
@@ -315,7 +334,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep review-lens prompt composition a pure decision over lens text and supplied prompt.',
     ['./review-memory.ts', '../database/review-lens-input-artifact.ts'],
   ),
-  ...docBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
+  ...boundaries(docBoundarySpecs),
   boundary(
     'doc-write-identity-boundary',
     'orchestrator/src/doc/doc-write-identity.ts',
@@ -627,9 +646,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../shared/brand.ts', './ask/worker-question.ts'],
     'Keep outcome decisions and interpretation independent of lifecycle concerns.',
   ),
-  ...portBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(portBoundarySpecs),
   boundary(
     'record-api-client-port-boundary',
     'orchestrator/src/record/record-api-client-port.ts',
@@ -897,9 +914,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Enforce the resource-ownership concern boundary.',
   ),
-  ...reviewBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, spec.allowed, spec.reason, spec.typeOnlyAllowed),
-  ),
+  ...boundaries(reviewBoundarySpecs),
   boundary(
     'routing-commands-boundary',
     'orchestrator/src/route/routing-commands.ts',
@@ -932,9 +947,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../../shared/brand.ts', '../review/review-vocabulary.ts', './score.ts'],
     'Keep the missing-score decision independent of adapters and state.',
   ),
-  ...setupModuleSpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(setupModuleSpecs),
   boundary(
     'store-hooks-boundary',
     'orchestrator/src/runtime/store-hooks.ts',
@@ -971,9 +984,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep task branch identity independent of transports, contracts, and routing.',
     ['../run/run-types.ts'],
   ),
-  ...workflowBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
+  ...boundaries(workflowBoundarySpecs),
   boundary(
     'workflow-built-ins-boundary',
     'orchestrator/src/workflow/workflow-built-ins.ts',
@@ -997,7 +1008,5 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep workflow seeds dependent only on database transactions, review vocabulary, and catalogue validation.',
     ['./autonomy.ts'],
   ),
-  ...worktreeBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(worktreeBoundarySpecs),
 ]

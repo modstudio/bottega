@@ -32,7 +32,7 @@ export function hubWebSourcePlacementViolation(path: string): string | null {
 }
 
 const HUB_UTIL_ALLOWED_IMPORT_PATHS = ['^hub/util/src/', '^shared/'] as const
-const TYPESCRIPT_TEST_PATH = '\\.(?:test|spec)\\.[cm]?tsx?$'
+export const TYPESCRIPT_TEST_PATH = '\\.(?:test|spec)\\.[cm]?tsx?$'
 
 export const hubWorkspaceDependencies: Record<string, readonly string[]> = {
   [HUB_UI_PACKAGE]: [],
