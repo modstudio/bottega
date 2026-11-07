@@ -299,6 +299,17 @@ function restoreMainAfterMigrationFailure(input: {
   )
 }
 
+function storePositionInIncomingJournal(
+  database: Parameters<typeof storeJournalPosition>[0],
+  journal: MigrationJournalEntry[],
+): number {
+  const position = storeJournalPosition(database, journal)
+  if (position.state === 'pending-not-found') {
+    throw new Error(`incoming journal does not contain pending migration ${position.migration}`)
+  }
+  return position.index
+}
+
 function handleMigrationFailureAfterPull(input: {
   target: string
   before: string
@@ -310,13 +321,9 @@ function handleMigrationFailureAfterPull(input: {
   const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
   let storeVersion: number
   try {
-    storeVersion = withSynchronousDatabaseForMigrationStep((database) => {
-      const position = storeJournalPosition(database, input.journal)
-      if (position.state === 'pending-not-found') {
-        throw new Error(`incoming journal does not contain pending migration ${position.migration}`)
-      }
-      return position.index
-    })
+    storeVersion = withSynchronousDatabaseForMigrationStep((database) =>
+      storePositionInIncomingJournal(database, input.journal),
+    )
   } catch (storeCause) {
     const storeFailure = storeCause instanceof Error ? storeCause.message : String(storeCause)
     throw new Error(
@@ -326,7 +333,7 @@ function handleMigrationFailureAfterPull(input: {
   }
   if (storeVersion !== input.initialStoreVersion) {
     throw new Error(
-      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store is already partly migrated; ` +
+      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store's migration position moved from ${input.initialStoreVersion} to ${storeVersion} in the incoming journal; ` +
         `rerun ${PLATFORM_SLUG} machine update`,
     )
   }
@@ -389,15 +396,13 @@ export async function machineUpdateCommand(
   const initial = withSynchronousDatabaseForMigrationStep((database) => {
     const local = migrationState(database)
     if (local.ahead) throw new Error(`store is ahead at migration ${local.ahead}`)
-    const position = storeJournalPosition(database, journal)
-    if (position.state === 'pending-not-found')
-      throw new Error(`incoming journal does not contain pending migration ${position.migration}`)
+    const storeVersion = storePositionInIncomingJournal(database, journal)
     const activeDrain = migrationDrainForUpdate(database)
     return {
       activeDrain,
-      decision: decideMigrationDrain({ journal, storeVersion: position.index }),
-      pendingMigration: journal[position.index]?.tag ?? null,
-      storeVersion: position.index,
+      decision: decideMigrationDrain({ journal, storeVersion }),
+      pendingMigration: journal[storeVersion]?.tag ?? null,
+      storeVersion,
     }
   })
   assertNoActiveDrain(initial.activeDrain)

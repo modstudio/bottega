@@ -114,7 +114,7 @@ function moveMainForPostLanding(
     } catch {
       detail = `main did not verifiably stay at ${headBefore} and the move did not complete: ${failure}`
     }
-    adapter.fence(`main moved and the move did not complete; ${recovery}`)
+    adapter.fence(`${detail}; ${recovery}`)
     return {
       moved: false,
       detail,

@@ -842,6 +842,9 @@ test('a move failure after main changed reports the failure and does not hand of
     'main moved from before and the move did not complete: verification raced with a dirty checkout',
   )
   expect(outcome.output).toContain('cleanup was not run')
+  expect(outcome.output).toContain(
+    `git -C ${project.path} fetch origin, then git -C ${project.path} merge --ff-only merge-commit, then ${PLATFORM_SLUG} pr merge 42 --release-required`,
+  )
   expect(events).toEqual(['fence'])
   expect(calls).toEqual([])
 })
