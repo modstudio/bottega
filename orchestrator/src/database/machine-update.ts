@@ -12,6 +12,7 @@ import {
 } from '../../../shared/install-root.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
+import { verifyMainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
@@ -132,6 +133,11 @@ type UpdateDependencies = {
     path: string
     settings: { trunk?: string }
   } | null
+  verifyMainCheckout?: (
+    path: string,
+    trunk: string,
+    git: (cwd: string, args: string[]) => string,
+  ) => void
 }
 
 function runLaunchAgentsRefreshVerb(binary: string): void {
@@ -351,4 +357,5 @@ export async function machineUpdateCommand(
   maintainStoreAfterUpdate(presentation, maintainStore)
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
   refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
+  ;(deps.verifyMainCheckout ?? verifyMainCheckoutInvariant)(target, branch, runGit)
 }

@@ -245,6 +245,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-file-ceiling.test.ts',
   'scripts/check-raw-start.test.ts',
   'scripts/check-main-checkout-moves.test.ts',
+  'scripts/check-active-space-moves.test.ts',
   'scripts/check-git-path-list.test.ts',
   'scripts/command-descriptions.test.ts',
   'scripts/command-reference.test.ts',
