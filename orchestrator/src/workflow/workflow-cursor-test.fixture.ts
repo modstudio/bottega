@@ -2,7 +2,18 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
-import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
+import {
+  abandonSelectedWorkflowCursorForClose,
+  awaitWorkflowRuling,
+  composeWorkflowWithCursor,
+  nextWorkflowStep,
+  ruleWorkflow,
+} from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
@@ -43,6 +54,47 @@ export const matchingCheckout = {
   headIsTipOrAncestor: true,
   landingBranch: 'main',
   ...{ project: 'fixture', branch: args.branch, checkoutPath: '/tmp/work' },
+}
+
+export function prepareOperatorRulingCursor(d: Database, session: string | null) {
+  const current = productionStepCatalogue(d).definition
+  const steps = current.steps.map((step) =>
+    step.slug === 'rebase' ? { ...step, floor: ['ruling'], operatorRuling: true } : step,
+  )
+  const draft = setStepCatalogueLocal(
+    { ...current, steps },
+    'relayed operator ruling fixture',
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(draft.n, 'relayed operator ruling fixture', 'test', d)
+  const ownerContext = { ...context, session }
+  const composition = composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    ownerContext,
+    d,
+    {},
+    {},
+  )
+  awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', ownerContext, d, () => {})
+  return composition.cursor!.id
+}
+
+export function relayOperatorRuling(d: Database, session: string) {
+  return ruleWorkflow(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    'Proceed.',
+    true,
+    'cli',
+    { ...context, session },
+    d,
+  )
 }
 
 export const testPorts = {

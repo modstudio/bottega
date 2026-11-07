@@ -23,9 +23,12 @@ import {
   installEvidence,
   matchingCheckout,
   selectAndNextWorkflowStep as nextWorkflowStep,
+  prepareOperatorRulingCursor,
+  relayOperatorRuling,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
+import { attachWorkflowText } from './workflow-text.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
 
 describe('workflow cursor adapter', () => {
@@ -537,6 +540,48 @@ describe('workflow cursor adapter', () => {
       if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = prior
     }
+  })
+
+  test('a relayed operator ruling preserves the cursor owner and their attach authority', async () => {
+    const d = database()
+    const ownerContext = { ...context, session: 'session-a' }
+    const cursor = prepareOperatorRulingCursor(d, ownerContext.session)
+
+    await relayOperatorRuling(d, 'session-b')
+
+    await expect(
+      attachWorkflowText(
+        { project: 'fixture', workflow: 'flow', mode: 'default', key: args.key },
+        cursor,
+        'Owner attachment.',
+        ownerContext,
+        d,
+      ),
+    ).resolves.toMatch(/^attached-text:/)
+    expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
+      session_id: 'session-a',
+    })
+  })
+
+  test('a relayed operator ruling assigns an ownerless cursor to the ruling session', async () => {
+    const d = database()
+    const relayingContext = { ...context, session: 'session-b' }
+    const cursor = prepareOperatorRulingCursor(d, null)
+
+    await relayOperatorRuling(d, relayingContext.session)
+
+    expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
+      session_id: 'session-b',
+    })
+    await expect(
+      attachWorkflowText(
+        { project: 'fixture', workflow: 'flow', mode: 'default', key: args.key },
+        cursor,
+        'Ruling session attachment.',
+        relayingContext,
+        d,
+      ),
+    ).resolves.toMatch(/^attached-text:/)
   })
 
   test('a plain operator may rule when the workflow owner is gone', async () => {
