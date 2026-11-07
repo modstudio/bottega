@@ -932,7 +932,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
      */
     /**
      * Parsed from whatever the agent WROTE, not only from a clean exit.
-     *
      * codex writes its final message to the `-o` file as it finishes, so a
      * reply can be complete and valid while the process is killed a moment
      * later — by a harness command timeout, by SIGTERM traveling down a
@@ -991,6 +990,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       sandbox: sandboxSelection.sandbox,
       boundMs,
       agentName: name,
+      agentHarness: a.harness ?? a.name,
     })
     error = appendGateExclusionToTimeoutError(
       missingReplyError(replyFile, replyFilePresent, derived.error, callUsage.value, startOpts.env),

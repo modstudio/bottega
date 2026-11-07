@@ -2,7 +2,7 @@
 /** Knows failure evidence reclassification and its audit. Must not know runs, routing, transports, the CLI, or worktrees. */
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
-import { classify, type FailureKind, isGooseProviderErrorNonAnswer } from './failure.ts'
+import { classify, type FailureKind, gooseVendorFailureKind } from './failure.ts'
 
 type FailureFlags = { has(name: string): boolean }
 type FailurePresentation = { log(...values: unknown[]): void }
@@ -11,6 +11,7 @@ type FailurePresentation = { log(...values: unknown[]): void }
 export function reclassifiedFailureKind(
   failureKind: string | null,
   error: string,
+  harness: string | null = null,
 ): FailureKind | null {
   if (!error) return null
   const kind = classify(error)
@@ -19,12 +20,7 @@ export function reclassifiedFailureKind(
     (kind === 'quota' || kind === 'billing' || kind === 'auth')
   )
     return kind
-  if (
-    failureKind === 'contract' &&
-    isGooseProviderErrorNonAnswer(error) &&
-    kind === 'provider_error'
-  )
-    return kind
+  if (failureKind === 'contract' && harness === 'goose') return gooseVendorFailureKind(error)
   return null
 }
 
@@ -49,19 +45,20 @@ export function reclassifyFailuresCommand(
     status: string
     failure_kind: string | null
     error: string
+    harness: string | null
   }
   type CountRow = { agent: string; failure_kind: string | null; count: number }
 
   const all = db()
     .query(
-      `SELECT record_id, agent, job, status, failure_kind, error
-       FROM run
+      `SELECT r.record_id, r.agent, r.job, r.status, r.failure_kind, r.error, a.harness
+       FROM run r LEFT JOIN agent a ON a.name = r.agent
       WHERE status IN ('failed', 'stale')
-      ORDER BY number`,
+      ORDER BY r.number`,
     )
     .all() as FailureRow[]
   const matched = all.flatMap((row) => {
-    const kind = reclassifiedFailureKind(row.failure_kind, row.error)
+    const kind = reclassifiedFailureKind(row.failure_kind, row.error, row.harness)
     return kind ? [{ row, kind }] : []
   })
 

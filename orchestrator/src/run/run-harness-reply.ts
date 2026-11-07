@@ -58,6 +58,7 @@ export function decideHarnessReply(
     sandbox: 'host',
     boundMs: 0,
     agentName: 'harness',
+    agentHarness: 'harness',
   })
   const outcome = decideOutcome(derived.inputs)
   return {

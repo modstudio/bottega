@@ -39,6 +39,7 @@ const base: LiveOutcomeFacts = {
   sandbox: 'host',
   boundMs: 45 * 60_000,
   agentName: 'worker',
+  agentHarness: 'codex',
 }
 
 const outcome = (facts: Partial<LiveOutcomeFacts>) => {
@@ -251,15 +252,16 @@ describe('final-message fallback contract composition', () => {
       expected: { status: 'ok', failureKind: null, error: null, failover: 'none' },
     },
     {
-      name: 'text contract rejects a prose preamble',
+      name: 'Goose compaction failure after a prose preamble is a provider failure',
       contract: 'text' as const,
       fallbackText:
         "I'll start by reading the task.\nRan into this error trying to compact: Server error: Upstream error from Inception",
       dialect: textDialect,
       schema: textDialect.schema,
+      facts: { agentHarness: 'goose' },
       expected: {
         status: 'failed',
-        failureKind: 'contract',
+        failureKind: 'provider_error',
         error:
           "reply.json missing; final message reply did not match the worker contract:\nI'll start by reading the task.\nRan into this error trying to compact: Server error: Upstream error from Inception",
         failover: 'select',
@@ -271,6 +273,51 @@ describe('final-message fallback contract composition', () => {
       fallbackText: textReply,
       dialect: textDialect,
       schema: textDialect.schema,
+      expected: { status: 'ok', failureKind: null, error: null, failover: 'none' },
+    },
+    {
+      name: 'a non-Goose harness keeps the same vendor text as a contract failure',
+      contract: 'text' as const,
+      fallbackText:
+        'Ran into this error trying to compact: Server error: Upstream error from Inception',
+      dialect: textDialect,
+      schema: textDialect.schema,
+      expected: {
+        status: 'failed',
+        failureKind: 'contract',
+        error:
+          'reply.json missing; final message reply did not match the worker contract:\nRan into this error trying to compact: Server error: Upstream error from Inception',
+        failover: 'select',
+      },
+    },
+    {
+      name: 'a mid-line Goose prefix stays a contract failure',
+      contract: 'text' as const,
+      fallbackText:
+        'The harness says Ran into this error: Rate limit exceeded: Provider returned error.',
+      dialect: textDialect,
+      schema: textDialect.schema,
+      facts: { agentHarness: 'goose' },
+      expected: {
+        status: 'failed',
+        failureKind: 'contract',
+        error:
+          'reply.json missing; final message reply did not match the worker contract:\nThe harness says Ran into this error: Rate limit exceeded: Provider returned error.',
+        failover: 'select',
+      },
+    },
+    {
+      name: 'a valid reply quoting the Goose prefix keeps its outcome',
+      contract: 'none' as const,
+      fallbackText: JSON.stringify({
+        deliverables: [],
+        narrative:
+          'The log says Ran into this error: Rate limit exceeded: Provider returned error.',
+        files_written: null,
+      }),
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      facts: { agentHarness: 'goose' },
       expected: { status: 'ok', failureKind: null, error: null, failover: 'none' },
     },
     {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { classify, clusterErrorText, isNonAnswer } from './failure.ts'
+import { classify, clusterErrorText, gooseVendorFailureKind, isNonAnswer } from './failure.ts'
 
 describe('Goose provider failure classification', () => {
   const run26637 =
@@ -26,6 +26,54 @@ describe('Goose provider failure classification', () => {
       expect(classify(text)).toBe('quota')
     },
   )
+
+  const vendorFailures = [
+    ['Ran into this error: Rate limit exceeded: Provider returned error.', 'provider_error'],
+    [
+      'Ran into this error trying to compact: Server error: Upstream error from Inception: request failed',
+      'provider_error',
+    ],
+    ['Ran into this error: Server error: Upstream idle timeout exceeded.', 'provider_error'],
+    [
+      'Ran into this error: Server error: Upstream error from OpenInference: request failed',
+      'provider_error',
+    ],
+    [
+      'Ran into this error: Server error: Upstream error from Alibaba: request failed',
+      'provider_error',
+    ],
+    [
+      'Ran into this error: Server error: This request requires more credits, or fewer max_tokens than requested.',
+      'billing',
+    ],
+    [
+      'Ran into this error trying to compact: Request failed: Bad request (400): invalid request',
+      'provider_error',
+    ],
+  ] as const
+
+  test.each(vendorFailures)('classifies the live vendor line: %s', (line, expected) => {
+    expect(gooseVendorFailureKind(line)).toBe(expected)
+  })
+
+  test.each(vendorFailures)(
+    'classifies only the vendor line in stored text: %s',
+    (line, expected) => {
+      const stored =
+        `reply.json missing; final message reply did not match the worker contract:\n${line}\n` +
+        'reply.json missing at /tmp/reply.json; used final-message fallback\n' +
+        'Failover refused: selected model is at capacity and the chain cannot retry.'
+      expect(gooseVendorFailureKind(stored)).toBe(expected)
+    },
+  )
+
+  test('requires Goose rendering to begin a line', () => {
+    expect(
+      gooseVendorFailureKind(
+        'The reproduced vendor text says Ran into this error: Rate limit exceeded: Provider returned error.',
+      ),
+    ).toBeNull()
+  })
 })
 
 describe('stale-login classification', () => {
