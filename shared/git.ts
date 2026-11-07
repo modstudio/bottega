@@ -118,6 +118,10 @@ export function gitAt(
       timedOut: false,
     }
   } catch (error) {
+    // A deadline breach keeps the timed-out answer callers report; an output breach still escapes.
+    if (error instanceof BoundExceededError && error.bound === 'deadline') {
+      return { code: 128, stdout: '', timedOut: true }
+    }
     if (error instanceof BoundExceededError) throw error
     return { code: 128, stdout: '', timedOut: false }
   }
