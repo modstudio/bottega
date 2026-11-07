@@ -427,7 +427,8 @@ describe('record API client test safety', () => {
     try {
       const client = recordApiClient()
       const id = newRecordId()
-      const boardSignal = new AbortController().signal
+      const boardController = new AbortController()
+      const boardSignal = boardController.signal
       await expect(
         client.listBoardMessages(
           {
@@ -458,10 +459,11 @@ describe('record API client test safety', () => {
           audience: { kind: 'session', sessionId: 'in-reach' },
         }),
       ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
+      boardController.abort()
+      expect(calls[0]?.signal?.aborted).toBeTrue()
       expect(calls[0]).toMatchObject({
         url: 'https://api.example.test/v1/board/messages?kind=question&open=true&includeEnded=false&ownTitlePrefix=Hosted+pressure%3A+%25_',
         method: 'GET',
-        signal: boardSignal,
       })
       expect(calls[1]).toMatchObject({
         url: `https://api.example.test/v1/board/threads/${id}`,

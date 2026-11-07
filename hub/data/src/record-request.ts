@@ -1,7 +1,5 @@
-import { boundedFetch } from '../../../shared/bounded-fetch.ts'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { recordApiUrl } from './hub-mode.ts'
-
-const hostedApiFetch = boundedFetch('hosted-api')
 
 function recordUrl(path: string) {
   const base = recordApiUrl()

@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { SQL } from 'bun'
-import { boundedFetch } from '../../shared/bounded-fetch.ts'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
 import { resolveInstallRoot } from '../../shared/install-root.ts'
@@ -23,7 +22,6 @@ import { hostedRouter } from './trpc/hosted-router.ts'
 
 type ServerEnvironment = Record<string, string | undefined>
 type HostedRouteDependencies = {
-  fetch?: typeof fetch
   changes?: Parameters<typeof changeApi>[2]
   tasks?: Parameters<typeof taskApi>[2]
   notes?: Parameters<typeof noteApi>[2]
@@ -31,8 +29,6 @@ type HostedRouteDependencies = {
   reports?: Parameters<typeof reportApi>[2]
   publicDocsText?: Parameters<typeof publicDocsTextApi>[1]
 }
-
-const hostedApiFetch = boundedFetch('hosted-api')
 
 function transformDocsIndex(response: Response, pathname: string): Response {
   const insert = docsHtmlInsert(pathname)
@@ -81,30 +77,15 @@ export function hostedRequestHandler(
     if (health) return health
     const version = hostedVersionResponse(req, readBuiltCommit())
     if (version) return version
-    const changes = await changeApi(req, config, {
-      ...dependencies.changes,
-      fetch: dependencies.changes?.fetch ?? dependencies.fetch ?? hostedApiFetch,
-    })
+    const changes = await changeApi(req, config, dependencies.changes)
     if (changes) return changes
-    const tasks = await taskApi(req, config, {
-      ...dependencies.tasks,
-      fetch: dependencies.tasks?.fetch ?? dependencies.fetch ?? hostedApiFetch,
-    })
+    const tasks = await taskApi(req, config, dependencies.tasks)
     if (tasks) return tasks
-    const notes = await noteApi(req, config, {
-      ...dependencies.notes,
-      fetch: dependencies.notes?.fetch ?? dependencies.fetch ?? hostedApiFetch,
-    })
+    const notes = await noteApi(req, config, dependencies.notes)
     if (notes) return notes
-    const waitingEmail = await operatorWaitingEmailApi(req, config, {
-      ...dependencies.waitingEmail,
-      fetch: dependencies.waitingEmail?.fetch ?? dependencies.fetch ?? hostedApiFetch,
-    })
+    const waitingEmail = await operatorWaitingEmailApi(req, config, dependencies.waitingEmail)
     if (waitingEmail) return waitingEmail
-    const reports = await reportApi(req, config, {
-      ...dependencies.reports,
-      fetch: dependencies.reports?.fetch ?? dependencies.fetch ?? hostedApiFetch,
-    })
+    const reports = await reportApi(req, config, dependencies.reports)
     if (reports) return reports
     const publicDocsText = await publicDocsTextApi(req, dependencies.publicDocsText)
     if (publicDocsText) return publicDocsText

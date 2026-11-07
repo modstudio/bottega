@@ -85,7 +85,10 @@ const BOUNDED_PROCESS_MODULE = new RegExp(`(^|/)${BOUNDED_PROCESS_MODULE_NAME}([
 const BOUNDED_PROCESS_CALLS = new Set(['startBounded', 'startBoundedSync'])
 const BUN_FORMS: readonly string[] = ['Bun.spawn', 'Bun.spawnSync', 'Bun.$']
 
-/** The source pre-filter must name every detector's vocabulary. */
+/**
+ * The source pre-filter must name every detector's vocabulary. Bare `$` is absent because it
+ * matches nearly every file, and every recognized `$` has an execa specifier or the `Bun.$` form.
+ */
 export const RAW_START_DETECTOR_TERMS = [
   ...CHILD_PROCESS_MODULES,
   ...[...EXECA_CALLS].filter((call) => call !== '$'),

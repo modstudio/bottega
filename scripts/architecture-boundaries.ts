@@ -488,7 +488,6 @@ export const importBoundaries: ImportBoundary[] = [
       'node:path',
       'bun',
       '@trpc/server/adapters/fetch',
-      '../../shared/bounded-fetch.ts',
       '../../shared/built-commit.ts',
       '../../shared/hosted-server.ts',
       '../../shared/install-root.ts',

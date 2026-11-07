@@ -2,7 +2,7 @@ import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client'
 import type { inferRouterOutputs } from '@trpc/server'
 import { createTRPCOptionsProxy } from '@trpc/tanstack-react-query'
-import { boundedFetch } from '../../../shared/bounded-fetch.ts'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AppRouter, HostedRouter } from '../../src/trpc/router.ts'
 import { hostedOrigin, isHostedMode, unauthorizedLeadsToSignIn } from './hub-mode.ts'
@@ -10,8 +10,6 @@ import { fetchWithHubCredentials } from './transport.ts'
 
 const LOCAL_LOGIN_MESSAGE = `Your local session expired. Run \`${PLATFORM_SLUG} dashboard login\` to sign in again.`
 let localUnauthorized = (_message: string) => {}
-const hostedApiFetch = boundedFetch('hosted-api')
-
 export function setLocalUnauthorizedHandler(handler: (message: string) => void) {
   localUnauthorized = handler
 }

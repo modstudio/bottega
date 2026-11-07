@@ -1,7 +1,7 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
-import { boundedFetch } from '../../../shared/bounded-fetch.ts'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import type {
   DocAudience,
   DocAudiences,
@@ -95,8 +95,6 @@ import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
 import { currentRecordWriteDecision } from './record-write-authority.ts'
-
-const hostedApiFetch = boundedFetch('hosted-api')
 
 export type RecordDocUpsertInput = {
   scope: string

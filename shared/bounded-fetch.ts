@@ -7,20 +7,30 @@ function requestUrl(input: RequestInfo | URL): string {
   return input.url
 }
 
+const REQUEST_CARRIED_OPTION_KEYS = [
+  'cache',
+  'credentials',
+  'integrity',
+  'keepalive',
+  'mode',
+  'redirect',
+  'referrer',
+  'referrerPolicy',
+] as const
+
+function requestCarriedOptions(input: Request, init?: RequestInit): RequestInit {
+  return Object.fromEntries(
+    REQUEST_CARRIED_OPTION_KEYS.map((key) => [key, init?.[key] ?? input[key]]),
+  )
+}
+
 function requestOptions(input: RequestInfo | URL, init?: RequestInit): RequestInit | undefined {
   if (!(input instanceof Request)) return init
   return {
+    ...requestCarriedOptions(input, init),
     ...init,
-    cache: init?.cache ?? input.cache,
-    credentials: init?.credentials ?? input.credentials,
     headers: init?.headers ?? input.headers,
-    integrity: init?.integrity ?? input.integrity,
-    keepalive: init?.keepalive ?? input.keepalive,
     method: init?.method ?? input.method,
-    mode: init?.mode ?? input.mode,
-    redirect: init?.redirect ?? input.redirect,
-    referrer: init?.referrer ?? input.referrer,
-    referrerPolicy: init?.referrerPolicy ?? input.referrerPolicy,
     signal: init?.signal ?? input.signal,
   }
 }
@@ -37,14 +47,9 @@ export function boundedFetch(budgetName: CallBudgetName): typeof fetch {
         fetch: (request, transportInit) =>
           transport(request, {
             ...transportInit,
-            cache: options?.cache,
-            credentials: options?.credentials,
-            integrity: options?.integrity,
-            keepalive: options?.keepalive,
-            mode: options?.mode,
-            redirect: options?.redirect,
-            referrer: options?.referrer,
-            referrerPolicy: options?.referrerPolicy,
+            // ky strips its Request-option registry keys before calling the transport, so
+            // fetch-compatible transports need the options carried by its Request restated.
+            ...requestCarriedOptions(request, options),
           }),
         timeout: budget.deadlineMs,
         totalTimeout: budget.totalMs ?? budget.deadlineMs,
@@ -78,3 +83,5 @@ export function boundedFetch(budgetName: CallBudgetName): typeof fetch {
   }
   return Object.assign(fetchWithBounds, { preconnect: fetch.preconnect })
 }
+
+export const hostedApiFetch = boundedFetch('hosted-api')
