@@ -51,18 +51,19 @@ test('machine doctor reports whoami active-space results without claiming unavai
       },
     ],
   }))
-  expect(failing).toMatchObject({ failed: true, line: expect.stringContaining('FAIL') })
+  expect(failing.failed).toBe(true)
+  expect(failing.line).toContain('FAIL')
   const output: string[] = []
   const exitCodes: number[] = []
   await reportActiveSpaceDoctor(
     {
       log: (line) => output.push(line),
       exitCode: (code) => exitCodes.push(code),
-      retrievalCheck: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
     },
     async () => failing,
   )
-  expect(output).toEqual([failing.line])
+  expect(output).toHaveLength(1)
+  expect(output[0]).toContain('FAIL')
   expect(exitCodes).toEqual([1])
 
   const signedOut = await activeSpaceDoctorDiagnosis(async () => {

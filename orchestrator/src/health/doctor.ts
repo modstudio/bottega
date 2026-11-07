@@ -58,6 +58,7 @@ import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
 import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
+type DoctorReporter = { log(value: string): void; exitCode(code: number): void }
 type DoctorPresentation = {
   log(...values: unknown[]): void
   exitCode(code: number): void
@@ -102,7 +103,7 @@ export async function activeSpaceDoctorDiagnosis(
 }
 
 export async function reportActiveSpaceDoctor(
-  presentation: DoctorPresentation,
+  presentation: DoctorReporter,
   diagnose: () => Promise<{ line: string; failed: boolean }> = activeSpaceDoctorDiagnosis,
 ): Promise<void> {
   const diagnosis = await diagnose()
@@ -158,7 +159,7 @@ export function registeredMainCheckoutDiagnosis(input: {
 
 function reportRegisteredMainCheckouts<T extends RegisteredCheckout>(
   inspections: readonly RegisteredMainCheckoutInspection<T>[],
-  log: DoctorPresentation['log'],
+  log: (value: string) => void,
   decide: (facts: CheckoutInspection) => CheckoutDecision,
 ): boolean {
   let failed = false
@@ -214,7 +215,7 @@ function reportProjectLifecycles(
 
 export function reportCheckoutRegister<T extends RegisteredCheckout>(
   projects: readonly T[],
-  presentation: Pick<DoctorPresentation, 'log' | 'exitCode'>,
+  presentation: DoctorReporter,
   hookFinding: (project: T) => string | null,
   inspectBranch: (project: T) => BranchInspection,
   inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
