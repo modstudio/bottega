@@ -7,6 +7,7 @@ import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import { docCommand } from './doc-commands.ts'
+import { canonRemovalRefusal } from './doc-write-allowed.ts'
 import { selectDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import { getDoc } from './docs.ts'
 
@@ -175,10 +176,19 @@ test('a refused canon removal names the judged tree and CLI remedy', async () =>
       { project: projectByName('subject')!, root: subject.worktree },
       '--cwd',
       async () => {
-        throw new Error('refusing canon removal; introduced 1 reference finding')
+        throw new Error(
+          canonRemovalRefusal([
+            {
+              file: 'workflow step verify',
+              line: 4,
+              rule: 'canon/reference-path',
+              message: 'repository path .agents/reference/target.md is not tracked',
+            },
+          ])!,
+        )
       },
     ),
   ).rejects.toThrow(
-    `refusing canon removal; introduced 1 reference finding; judged against ${subject.worktree}; pass --cwd <checkout> to validate against another checkout of subject`,
+    `judged against ${subject.worktree}; pass --cwd <checkout> to validate against another checkout of subject`,
   )
 })
