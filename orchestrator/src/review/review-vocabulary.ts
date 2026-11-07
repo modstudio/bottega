@@ -22,6 +22,7 @@ const REVIEW_LENS_SELECTION_REASON = [
   'tree-mismatch',
   'commit-mismatch',
 ] as const
+export const REVIEW_LENS_OWED_REASONS = ['tree-mismatch', 'commit-mismatch'] as const
 export const REVIEW_GRADE_NAMES = ['reproduced', 'coverage', 'limits', 'overlap'] as const
 export const REVIEW_GRADE_VALUES = {
   reproduced: REVIEW_REPRODUCED,
@@ -41,6 +42,7 @@ export type ReviewLimits = (typeof REVIEW_LIMITS)[number]
 export type ReviewOverlap = (typeof REVIEW_OVERLAP)[number]
 export type ReviewSeverity = (typeof REVIEW_SEVERITY)[number]
 export type ReviewLensSelectionReason = (typeof REVIEW_LENS_SELECTION_REASON)[number]
+export type ReviewLensOwedReason = (typeof REVIEW_LENS_OWED_REASONS)[number]
 
 const MONITOR_SEVERITY = ['informational', 'attention'] as const
 export type MonitorSeverity = (typeof MONITOR_SEVERITY)[number]

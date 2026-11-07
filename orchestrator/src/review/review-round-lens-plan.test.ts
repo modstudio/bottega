@@ -90,6 +90,74 @@ describe('round lens plan', () => {
     })
   })
 
+  test('a newer admissible completed result clears an older provenance mismatch', () => {
+    const older = reviewRow({
+      reviewNumber: 1,
+      lenses: [
+        {
+          recordId: 'lens-mismatch',
+          lens: 'correctness',
+          graded: true,
+          settled: true,
+          provenance: {
+            recorded: true,
+            treeInspected: '/missing/trees/other',
+            runTree: '/missing/trees/subject',
+            reviewedCommit: 'abcdef1',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+    const newer = reviewRow({ reviewNumber: 2 })
+    const lensFacts = roundLensFacts([newer, older], {
+      patchId: 'patch',
+      pathSet: '["a.ts"]',
+    })
+
+    expect(lensFacts.inadmissibleLenses).toBeUndefined()
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness'] },
+        facts: lensFacts,
+        postFix: {
+          kind: 'no-round-needed',
+          reviewNumber: 2,
+          reviewedTip: 'reviewed-tip',
+          tierThreePaths: [],
+          applicability: { lenses: [] },
+        },
+        fixPathsByLens: {},
+      }).round,
+    ).toEqual({ lenses: [] })
+  })
+
+  test('a provenance mismatch in an unfinished review forces no lens', () => {
+    const unfinished = reviewRow({
+      reviewNumber: 1,
+      completedAt: null,
+      lenses: [
+        {
+          recordId: 'lens-mismatch',
+          lens: 'correctness',
+          graded: true,
+          settled: true,
+          provenance: {
+            recorded: true,
+            treeInspected: '/missing/trees/other',
+            runTree: '/missing/trees/subject',
+            reviewedCommit: 'abcdef1',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+    expect(
+      roundLensFacts([unfinished], { patchId: 'patch', pathSet: '["a.ts"]' })
+        .inadmissibleLenses,
+    ).toBeUndefined()
+  })
+
   const round = {
     lenses: ['safety'],
     secondOpinion: 'safety',

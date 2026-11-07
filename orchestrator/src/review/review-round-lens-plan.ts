@@ -1,38 +1,42 @@
 // concern: review-round-lens-plan
 /** Decides which relevant lenses belong in one review round. */
 
-import { lensProvenanceSubject } from '../pull-request/triage-decision.ts'
 import {
   type ApplicableReview,
   type ReviewFunnelPlan,
   selectReviewApplicability,
 } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
+import {
+  lensProvenanceSubject,
+  newestInadmissibleLensRow,
+} from './review-lens-provenance.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
 import { reviewCountsAsRound } from './review-role.ts'
 import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
-import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
+import type { ReviewLensOwedReason, ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 export type RoundLensFacts = {
   reviewedPathsByLens: Readonly<Record<string, readonly string[]>>
   completedLenses: readonly string[]
   satisfiedSecondOpinionLenses: readonly string[]
   latestAcceptedOrModifiedLenses: readonly string[]
-  inadmissibleLenses?: Readonly<Record<string, 'tree-mismatch' | 'commit-mismatch'>>
+  inadmissibleLenses?: Readonly<Record<string, ReviewLensOwedReason>>
 }
 
 function inadmissibleLensReasons(
   reviews: readonly TriageReviewRow[],
-): Record<string, 'tree-mismatch' | 'commit-mismatch'> {
+  completedLenses: ReadonlySet<string>,
+): Record<string, ReviewLensOwedReason> {
+  const lenses = reviews.flatMap((review) => review.lenses)
+  const names = new Set(lenses.flatMap((row) => (row.graded && row.lens ? [row.lens] : [])))
   return Object.fromEntries(
-    reviews.flatMap((review) =>
-      review.lenses.flatMap((lens) => {
-        if (!lens.graded || !lens.lens) return []
-        const subject = lensProvenanceSubject(lens.provenance)
-        return subject.admissible ? [] : [[lens.lens, subject.reason] as const]
-      }),
-    ),
+    [...names].flatMap((lens) => {
+      if (completedLenses.has(lens)) return []
+      const inadmissible = newestInadmissibleLensRow(lenses, lens)
+      return inadmissible ? [[lens, inadmissible.reason] as const] : []
+    }),
   )
 }
 
@@ -135,10 +139,12 @@ export function roundLensFacts(
   branchReviews: readonly TriageReviewRow[],
   current: { patchId: string; pathSet: string },
 ): RoundLensFacts {
+  const completedReviews = branchReviews.filter(
+    (review) => review.completedAt !== null && review.tier !== null,
+  )
   const completedLenses = [
     ...new Set(
-      branchReviews
-        .filter((review) => review.completedAt !== null && review.tier !== null)
+      completedReviews
         .flatMap((review) =>
           review.lenses.flatMap((lens) =>
             lens.graded && lens.lens && lensProvenanceSubject(lens.provenance).admissible
@@ -186,7 +192,7 @@ export function roundLensFacts(
       reviewedPathsByLens[lens] = [...new Set([...(reviewedPathsByLens[lens] ?? []), ...paths])]
     }
   }
-  const inadmissibleLenses = inadmissibleLensReasons(branchReviews)
+  const inadmissibleLenses = inadmissibleLensReasons(completedReviews, new Set(completedLenses))
   const latest = prior[0]
   if (!latest)
     return {

@@ -3,9 +3,9 @@
 import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
-import { lensProvenanceSubject } from '../pull-request/triage-decision.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { provenanceSubjectFacts } from './review-group.ts'
+import { newestInadmissibleLensRow } from './review-lens-provenance.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { reviewCountsAsRound } from './review-role.ts'
 import { reviewRoundIdentity } from './review-round-identity.ts'
@@ -123,11 +123,7 @@ export function eligibleReviewRoundRows(
       since ?? null,
       ...(target ? [target.project, ...lineage] : []),
     ) as ReviewBudgetProvenanceRow[]
-  return rows.filter(
-    (row) =>
-      reviewCountsAsRound(row.role) &&
-      lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
-  )
+  return rows.filter((row) => reviewCountsAsRound(row.role))
 }
 
 const branchKey = (project: string | null, branch: string): string =>
@@ -154,7 +150,12 @@ function branchEvidence(
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
   const lineageRoots = new Map<string, string>()
-  const rows = eligibleReviewRoundRows(database, since, target)
+  const rows = eligibleReviewRoundRows(database, since, target).filter(
+    (row) =>
+      newestInadmissibleLensRow([
+        { graded: true, lens: row.lens, provenance: provenanceSubjectFacts(row) },
+      ]) === null,
+  )
   for (const row of rows) {
     if (!row.branch) continue
     const evidenceBranch =

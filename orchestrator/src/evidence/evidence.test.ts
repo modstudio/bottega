@@ -3,9 +3,9 @@ import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   assessEvidence,
   assessEvidencePrompt,
-  compareReviewedCommit,
   type EvidenceFacts,
 } from './evidence.ts'
+import { compareReviewedCommit } from '../review/review-lens-provenance.ts'
 
 const reviewReply = {
   findings: [],

@@ -13,6 +13,7 @@ import {
 import { reviewLineage } from './review-lineage-store.ts'
 import { measureChangeIdentity } from './review-pins.ts'
 import type { ReviewRole } from './review-role.ts'
+import type { LensProvenanceSubjectFacts } from './review-lens-provenance.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { diffNumstat } from './review-tier.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
@@ -49,14 +50,6 @@ export type TriageReviewRow = {
     disposition: string | null
     lens?: string
   }[]
-}
-
-type LensProvenanceSubjectFacts = {
-  recorded: boolean
-  treeInspected: string | null
-  runTree: string | null
-  reviewedCommit: string | null
-  headCommit: string | null
 }
 
 type StoredReviewProvenance = {

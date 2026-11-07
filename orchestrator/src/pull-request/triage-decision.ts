@@ -1,12 +1,15 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
-import { isAbsolute, relative } from 'node:path'
-import { compareReviewedCommit } from '../evidence/evidence.ts'
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
+import {
+  lensProvenanceSubject,
+  newestInadmissibleLensRow,
+} from '../review/review-lens-provenance.ts'
 import { reviewCountsAsRound } from '../review/review-role.ts'
 import { identifySecondOpinionRun } from '../review/review-second-opinion.ts'
+import type { ReviewLensOwedReason } from '../review/review-vocabulary.ts'
 
 export type TriageReviewGroup = {
   reviews: readonly TriageReviewRow[]
@@ -46,38 +49,9 @@ type TriageSnapshot = {
 export type MissingLens = {
   lens: string
   recordedOnBranch: boolean
-  reason?: 'tree-mismatch' | 'commit-mismatch'
+  reason?: ReviewLensOwedReason
   /** Paths changed since the reviewed tip that select this lens and that it never reviewed. */
   newlyTouchedPaths: string[]
-}
-
-export type LensProvenanceSubject =
-  | { admissible: true }
-  | { admissible: false; reason: 'tree-mismatch' | 'commit-mismatch' }
-
-function pathIsAtOrInside(path: string, root: string): boolean {
-  const remainder = relative(root, path)
-  return remainder === '' || (!remainder.startsWith('..') && !isAbsolute(remainder))
-}
-
-/** Whether one lens's recorded provenance names the run subject it was given. */
-export function lensProvenanceSubject(
-  facts: NonNullable<TriageReviewRow['lenses'][number]['provenance']> | undefined,
-): LensProvenanceSubject {
-  if (!facts?.recorded) return { admissible: true }
-  if (facts.treeInspected) {
-    if (!facts.runTree) return { admissible: false, reason: 'tree-mismatch' }
-    if (!pathIsAtOrInside(facts.treeInspected, facts.runTree)) {
-      return { admissible: false, reason: 'tree-mismatch' }
-    }
-  }
-  const comparison = facts.headCommit
-    ? compareReviewedCommit(facts.headCommit, facts.reviewedCommit)
-    : 'missing'
-  if (comparison !== 'equal' && comparison !== 'prefix') {
-    return { admissible: false, reason: 'commit-mismatch' }
-  }
-  return { admissible: true }
 }
 
 const admissibleLens = (lens: TriageReviewRow['lenses'][number]): boolean =>
@@ -195,7 +169,7 @@ type ReviewGaps = {
   missingLenses: {
     lens: string
     recordedOnBranch: boolean
-    reason?: 'tree-mismatch' | 'commit-mismatch'
+    reason?: ReviewLensOwedReason
   }[]
   undisposedFindings: { reviewNumber: number; ordinal: number }[]
   missingSecondOpinion: { lens: string; firstRunId: string | null } | null
@@ -295,7 +269,7 @@ function coverApplicableLens(
   | {
       kind: 'missing'
       recordedOnBranch: boolean
-      reason?: 'tree-mismatch' | 'commit-mismatch'
+      reason?: ReviewLensOwedReason
     } {
   const hasGradedLens = (review: TriageReviewRow) =>
     review.lenses.some(
@@ -305,16 +279,21 @@ function coverApplicableLens(
     hasGradedLens(review),
   )
   if (latest && latest.tier !== null) return { kind: 'covered', review: latest }
-  const inadmissible = completed
-    .flatMap((review) => review.lenses)
-    .find((candidate) => candidate.lens === lens && candidate.graded && !admissibleLens(candidate))
-  const subject = inadmissible ? lensProvenanceSubject(inadmissible.provenance) : null
+  const coverageReviews = [...new Map(
+    [...exactCompleted, ...completed]
+      .sort((left, right) => right.reviewNumber - left.reviewNumber)
+      .map((review) => [review.reviewRecordId, review]),
+  ).values()]
+  const inadmissible = newestInadmissibleLensRow(
+    coverageReviews.flatMap((review) => review.lenses),
+    lens,
+  )
   return {
     kind: 'missing',
-    recordedOnBranch: completed.some((review) =>
+    recordedOnBranch: coverageReviews.some((review) =>
       review.lenses.some((candidate) => candidate.lens === lens && candidate.graded),
     ),
-    ...(!subject || subject.admissible ? {} : { reason: subject.reason }),
+    ...(inadmissible ? { reason: inadmissible.reason } : {}),
   }
 }
 
@@ -525,14 +504,14 @@ function exactReviewEvidence(evidence: TriageEvidence) {
     missingLenses: evidence.applicableReview.lenses
       .filter((lens) => !judgedLenses.has(lens))
       .map((lens) => {
-        const candidate = evidence.reviews
-          .flatMap((review) => review.lenses)
-          .find((row) => row.lens === lens && row.graded && !admissibleLens(row))
-        const subject = candidate ? lensProvenanceSubject(candidate.provenance) : null
+        const candidate = newestInadmissibleLensRow(
+          evidence.reviews.flatMap((review) => review.lenses),
+          lens,
+        )
         return {
           lens,
-          recordedOnBranch: candidate !== undefined,
-          ...(!subject || subject.admissible ? {} : { reason: subject.reason }),
+          recordedOnBranch: candidate !== null,
+          ...(candidate ? { reason: candidate.reason } : {}),
         }
       }),
     missingSecondOpinion: secondOpinion.complete
