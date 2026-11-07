@@ -664,7 +664,8 @@ export async function removeDoc(
  */
 export async function consumeDoc(
   scope: string,
-  subject: string | null,
+  /** Absent resolves the only stored match, as getDoc does. */
+  requestedSubject: string | null | undefined,
   slug: string,
   context: DocWriteContext,
 ): Promise<ConsumedDoc> {
@@ -672,7 +673,7 @@ export async function consumeDoc(
   writableDb()
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
-  const doc = getDoc(scope, subject, slug)
+  const doc = getDoc(scope, requestedSubject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
   assertLocalStoredReferenceWrite(doc)
   const consumedAt = nowIso()
@@ -694,7 +695,7 @@ export async function consumeDoc(
     local: () =>
       executeLocalDocConsume({
         scope,
-        subject,
+        subject: doc.subject,
         owner: null,
         slug,
         doc,
@@ -733,7 +734,7 @@ export async function consumeDoc(
       if (hosted.alreadyConsumed) return { ...doc, already_consumed: true }
       return commitDocConsume({
         scope,
-        subject,
+        subject: doc.subject,
         owner: null,
         slug,
         body: patched.body,
