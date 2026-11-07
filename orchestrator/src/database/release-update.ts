@@ -14,9 +14,9 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { boundedFetch } from '../../../shared/bounded-fetch.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import type { DistributionManifest } from '../../../shared/install-root.ts'
 import {

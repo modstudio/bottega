@@ -1,8 +1,8 @@
 // concern: pull-request-admission
 /** Resolves the caller's exact change, applies triage policy, and records admission evidence. */
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
@@ -211,6 +211,7 @@ export function ceilingGuidanceForTier(input: {
       commandName: PLATFORM_SLUG,
     })
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     const message = cause instanceof Error ? cause.message : String(cause)
     return (
       `${REVIEW_CEILING_REACHED}; ruling eligibility could not be established: ` +
@@ -721,6 +722,7 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
       overrideId: decision.overrideId,
     }
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     return {
       known: true,
       complete: true,

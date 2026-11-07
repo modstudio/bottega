@@ -242,6 +242,7 @@ function fetchPullRequest(project: Project, pullRequest: PullRequestHead): strin
     )
     return null
   } catch (shaError) {
+    if (shaError instanceof BoundExceededError) throw shaError
     try {
       git(
         project.path,
@@ -253,6 +254,7 @@ function fetchPullRequest(project: Project, pullRequest: PullRequestHead): strin
       )
       return null
     } catch (refError) {
+      if (refError instanceof BoundExceededError) throw refError
       return `PR #${pullRequest.number} fetch failed by SHA (${String(shaError)}) and pull ref (${String(refError)})`
     }
   }
@@ -290,6 +292,7 @@ export function pullRequestCommitCheck(
         return { number: pullRequest.number }
       }
     } catch (error) {
+      if (error instanceof BoundExceededError) throw error
       failure ??= `PR #${pullRequest.number} commit check failed: ${String(error)}`
     }
   }
@@ -316,6 +319,7 @@ export function pullRequestNameCheck<T extends PullRequestHead>(
       if (mergeBase === branchTip) return { pullRequest, containsTip: true }
       mismatch = pullRequest
     } catch (error) {
+      if (error instanceof BoundExceededError) throw error
       failure ??= `PR #${pullRequest.number} head containment check failed: ${String(error)}`
     }
   }

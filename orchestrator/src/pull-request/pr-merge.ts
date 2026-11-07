@@ -5,8 +5,9 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
@@ -412,7 +413,8 @@ function readCheckRollup(
   if (number === undefined) return null
   try {
     return adapter.checks(cwd, number)
-  } catch {
+  } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     return null
   }
 }
@@ -428,6 +430,7 @@ function throwMergeOperationError(
   cause: unknown,
   input: MergeErrorContext & { fallback: (message: string) => Error },
 ): never {
+  if (cause instanceof BoundExceededError) throw cause
   const message = cause instanceof Error ? cause.message : String(cause)
   const decision = decideMergePolicyRefusal({
     message,
@@ -479,6 +482,7 @@ function mergeAdmittedHead(input: {
   try {
     return { mergeCommit: input.adapter.mergeCommit(input.cwd, input.pullRequest.number) }
   } catch (mergeCommitLookupError) {
+    if (mergeCommitLookupError instanceof BoundExceededError) throw mergeCommitLookupError
     return { mergeCommitLookupError }
   }
 }
@@ -561,6 +565,7 @@ function failedMergeGroupRunEvidence(
       ? `${run.conclusion} merge-group run ${run.id} (${run.url})`
       : `no merge-group run that failed since ${enqueuedAt} was found`
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     return `failed merge-group run could not be read: ${cause instanceof Error ? cause.message : String(cause)}`
   }
 }

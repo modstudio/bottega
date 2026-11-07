@@ -101,6 +101,7 @@ export const branchModuleSpecs = [
     allowed: [
       'bun:sqlite',
       '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',

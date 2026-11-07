@@ -75,6 +75,26 @@ function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync
   } as ReturnType<typeof Bun.spawnSync>
 }
 
+type SpawnSyncInput = string[] | { cmd: string[] }
+
+function spawnSyncArgv(input: SpawnSyncInput): string[] {
+  return Array.isArray(input) ? input : input.cmd
+}
+
+function spawnSyncOptions(input: SpawnSyncInput, options: object | undefined): object | undefined {
+  return Array.isArray(input) ? options : input
+}
+
+function callOriginalSpawnSync(
+  original: typeof Bun.spawnSync,
+  input: SpawnSyncInput,
+  options: object | undefined,
+): ReturnType<typeof Bun.spawnSync> {
+  return Array.isArray(input)
+    ? original(input, options as never)
+    : original(input as Parameters<typeof Bun.spawnSync>[0])
+}
+
 test('an evidence-excluded landing-tree owner refuses dispatch planning', () => {
   const repo = join(dir, 'landing-tree-owner-repo')
   const landingTree = join(repo, '.claude', 'worktrees', 'orch-14488')
@@ -124,9 +144,11 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
     .run(null, projectId, newerTerminalOwner)
 
   const originalSpawnSync = Bun.spawnSync
-  spyOn(Bun, 'spawnSync').mockImplementation(((argv: string[], options?: object) => {
+  spyOn(Bun, 'spawnSync').mockImplementation(((input: SpawnSyncInput, options?: object) => {
+    const argv = spawnSyncArgv(input)
+    const effectiveOptions = spawnSyncOptions(input, options)
     if (argv[0] === 'gh') return spawnResult('[]')
-    if (argv[0] !== 'git') return originalSpawnSync(argv, options as never)
+    if (argv[0] !== 'git') return callOriginalSpawnSync(originalSpawnSync, input, options)
     const command = argv.join(' ')
     if (command.includes('rev-parse --local-env-vars')) {
       return spawnResult('GIT_DIR\nGIT_WORK_TREE\n')
@@ -153,7 +175,7 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
     if (command.includes('cherry trunk-tip writer-tip')) return spawnResult('+ writer-tip\n')
     if (command.includes('rev-parse --verify writer-tip^{tree}')) return spawnResult('tree-tip\n')
     if (command.includes('commit-tree tree-tip')) {
-      expect(options).toMatchObject({
+      expect(effectiveOptions).toMatchObject({
         env: {
           GIT_AUTHOR_NAME: 'Patch Equivalence',
           GIT_AUTHOR_EMAIL: 'patch-equivalence@orchestrator.invalid',

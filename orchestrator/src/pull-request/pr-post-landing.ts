@@ -3,8 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
 import {
@@ -95,6 +96,7 @@ function moveMainForPostLanding(
   try {
     adapter.moveMain(project, mergeCommit, movesInstallation)
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     failure = cause instanceof Error ? cause.message : String(cause)
   }
   if (failure) {
@@ -490,6 +492,7 @@ function workflowPromotionResultForChild(input: {
       `merged PR #${input.payload.prNumber} (${input.payload.mergeCommit})`,
     )
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     return {
       ok: false,
       stage: 'promote',

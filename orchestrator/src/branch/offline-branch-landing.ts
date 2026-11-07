@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
@@ -117,7 +118,8 @@ function observeProject(
     if (!tip) return [{ ...candidate, branchExists: false, landed: false }]
     try {
       return [classifyExistingBranch({ candidate, project, tip, trunkTip, records })]
-    } catch {
+    } catch (error) {
+      if (error instanceof BoundExceededError) throw error
       return []
     }
   })
@@ -137,7 +139,8 @@ export function offlineBranchLandingObservations(
       if (!project) return []
       try {
         return observeProject(project, projectCandidates, records)
-      } catch {
+      } catch (error) {
+        if (error instanceof BoundExceededError) throw error
         return []
       }
     },

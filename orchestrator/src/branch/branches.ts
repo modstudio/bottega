@@ -1,8 +1,8 @@
 // concern: branches
 /** Observes registered projects and assembles the run-minted branch report. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { db, writableDb } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -263,6 +263,7 @@ function repairBranchLandings(input: {
         )
       }
     } catch (error) {
+      if (error instanceof BoundExceededError) throw error
       observations.push(
         `${match.branch}: landing lookup found PR #${match.pullRequest.number} but did not record it: ${error instanceof Error ? error.message : String(error)}`,
       )
@@ -468,6 +469,7 @@ function observeOtherBranchProof(input: OtherBranchReportInput): OtherBranchProo
       }
     }
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     checkError = error instanceof Error ? error.message : String(error)
   }
   return { commitsNotOnTrunk, patchEquivalent, commitCheck, nameCheck, checkError }
@@ -556,6 +558,7 @@ export function branchesReport(options: {
       try {
         return branchReportFor(project, options)
       } catch (error) {
+        if (error instanceof BoundExceededError) throw error
         return observationError(project, error)
       }
     }),
@@ -621,6 +624,7 @@ function tipStillEligible(
   try {
     currentTip = localBranches(project).get(row.branch)
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     const reason = error instanceof Error ? error.message : String(error)
     report.kept.push({
       branch: row.branch,
@@ -702,6 +706,7 @@ function deleteAndSettleBranch(
       report.deleted.push(row.branch)
     })
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     const reason = error instanceof Error ? error.message : String(error)
     report.kept.push({ branch: row.branch, reason: 'deletion failed' })
     report.errors.push(`${row.branch}: ${reason}`)
@@ -862,6 +867,7 @@ function otherTipStillEligible(
   try {
     currentTip = localBranches(project).get(row.branch)
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     report.kept.push({
       branch: row.branch,
       reason: 'tip could not be rechecked',
@@ -914,6 +920,7 @@ function deleteOtherBranch(
       report.deleted.push(row.branch)
     })
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     report.kept.push({ branch: row.branch, reason: 'deletion failed' })
     report.errors.push(`${row.branch}: ${error instanceof Error ? error.message : String(error)}`)
   }

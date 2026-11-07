@@ -14,6 +14,7 @@ export const pullRequestModuleSpecs = [
       'node:path',
       '../../../shared/brand.ts',
       '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../../../shared/self-spawn.ts',
       '../database/db.ts',
       '../database/machine-update-mover.ts',

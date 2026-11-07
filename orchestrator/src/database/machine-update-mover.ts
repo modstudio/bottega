@@ -5,8 +5,8 @@
  */
 
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { INSTALL_HOME_ENV, isInstallationRoot } from '../../../shared/install-root.ts'
 
@@ -83,8 +83,6 @@ export function moveRegisteredMainCheckout(
     cwd: invocation.cwd,
     env: invocation.env,
   })
-  const output = [result.stdout.trim(), result.stderr.trim()]
-    .filter(Boolean)
-    .join('\n')
+  const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n')
   return { exitCode: result.exitCode, output }
 }
