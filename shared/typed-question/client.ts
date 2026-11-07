@@ -178,10 +178,10 @@ async function resolveKey(
 async function sendRequest(
   key: string,
   body: string,
-  fetch: TypedQuestionClientDependencies['fetch'],
+  transport: TypedQuestionClientDependencies['fetch'],
 ): Promise<Response | 'timeout' | 'transport'> {
   try {
-    return await fetch(TYPESAFE_ENDPOINT, {
+    return await transport(TYPESAFE_ENDPOINT, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body,

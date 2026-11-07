@@ -95,7 +95,7 @@ function scanGit(since: string) {
         '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
       ], { budget: 'git-plumbing', env: inspectionGitEnv() })
     let day: string | null = null
-    for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
+    for (const line of proc.stdout.split('\n')) {
       if (line.startsWith('\u0000')) {
         const [d, at, sha, subject] = line.slice(1).split('\t')
         if (!d) {

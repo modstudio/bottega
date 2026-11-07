@@ -1,4 +1,5 @@
 import { hostedApiFetch } from '../shared/bounded-fetch.ts'
+import { startBounded } from '../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import {
   chmodSync,
@@ -67,17 +68,12 @@ async function smoke(
   cwd?: string,
 ): Promise<string> {
   const rendered = [executable, ...args].join(' ')
-  const child = Bun.spawn([executable, ...args], {
+  const child = await startBounded([executable, ...args], {
+    budget: 'self-cli',
     cwd,
     env: smokeEnvironment(stateHome),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const { stdout, stderr, exitCode } = child
   console.log(`$ ${rendered}`)
   if (stdout.trim()) console.log(stdout.trim())
   if (stderr.trim()) console.error(stderr.trim())

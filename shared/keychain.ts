@@ -1,4 +1,4 @@
-import { startBoundedSync } from './bounded-process.ts'
+import { startBounded, startBoundedSyncBytes } from './bounded-process.ts'
 type SecurityResult = {
   exitCode: number
   stdout: Uint8Array
@@ -84,8 +84,12 @@ function runSecurity(argv: string[], stdin?: Uint8Array, env?: RunnerEnvironment
   if (injected) return env ? injected(argv, stdin, env) : injected(argv, stdin)
   if (process.env.NODE_ENV === 'test')
     throw new Error('keychain access requires an injected security runner in tests')
-  const result = startBoundedSync(argv, { budget: 'process-table', ...(stdin ? { stdin } : {}), ...(env ? { env } : {}) })
-  return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
+  const result = startBoundedSyncBytes(argv, {
+    budget: 'process-table',
+    ...(stdin ? { stdin } : {}),
+    ...(env ? { env } : {}),
+  })
+  return { exitCode: result.exitCode, stdout: result.stdout, stderr: encoder.encode(result.stderr) }
 }
 
 async function runSecurityAsync(
@@ -98,24 +102,16 @@ async function runSecurityAsync(
   if (injected) return env ? injected(argv, stdin, env) : injected(argv, stdin)
   if (process.env.NODE_ENV === 'test')
     throw new Error('keychain access requires an injected security runner in tests')
-  const child = Bun.spawn(argv, {
+  const result = await startBounded(argv, {
+    budget: 'process-table',
     ...(stdin ? { stdin } : {}),
     ...(env ? { env } : {}),
-    stdout: 'pipe',
-    stderr: 'pipe',
+    signal,
   })
-  const abort = () => child.kill()
-  signal?.addEventListener('abort', abort, { once: true })
-  try {
-    const [exitCode, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).bytes(),
-      new Response(child.stderr).bytes(),
-    ])
-    if (signal?.aborted) throw signal.reason
-    return { exitCode, stdout, stderr }
-  } finally {
-    signal?.removeEventListener('abort', abort)
+  return {
+    exitCode: result.exitCode,
+    stdout: encoder.encode(result.stdout),
+    stderr: encoder.encode(result.stderr),
   }
 }
 

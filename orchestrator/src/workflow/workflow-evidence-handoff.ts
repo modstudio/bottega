@@ -27,7 +27,7 @@ export type WorkflowEvidenceHandOff =
  * one of those as evidence not recorded against the wrapped command's own exit code.
  */
 export function handOffWorkflowEvidence(payload: WorkflowEvidencePayload): WorkflowEvidenceHandOff {
-  let result: ReturnType<typeof Bun.spawnSync>
+  let result: ReturnType<typeof startBoundedSync>
   try {
     result = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'workflow', 'exec', RECORD_EVIDENCE_FLAG, '--json'], { budget: 'self-cli', env: process.env, stdin: Buffer.from(encodeWorkflowEvidencePayload(payload)) })
   } catch (error) {

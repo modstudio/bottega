@@ -1,6 +1,6 @@
+#!/usr/bin/env bun
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
-#!/usr/bin/env bun
 // State databases are named for their concerns; the former orchestrator filename is legacy.
 // Environment names are blocking at zero; prefix-sharing TypeScript constants are named exemptions.
 import { existsSync, lstatSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'

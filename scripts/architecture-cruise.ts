@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBounded } from '../shared/bounded-process.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -105,17 +106,16 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
         .filter(Boolean)
         .join(' '),
     }
-    const nodeVersionProcess = Bun.spawn(['node', '--version'], {
+    const nodeVersionProcess = await startBounded(['node', '--version'], {
+      budget: 'process-table',
       cwd,
       env,
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
-    const [nodeVersion, nodeVersionError, nodeVersionExitCode] = await Promise.all([
-      new Response(nodeVersionProcess.stdout).text(),
-      new Response(nodeVersionProcess.stderr).text(),
-      nodeVersionProcess.exited,
-    ])
+    const {
+      stdout: nodeVersion,
+      stderr: nodeVersionError,
+      exitCode: nodeVersionExitCode,
+    } = nodeVersionProcess
     if (nodeVersionExitCode !== 0) {
       throw new Error(
         `dependency-cruiser could not resolve Node from PATH: ${nodeVersionError.trim() || `node --version exited ${nodeVersionExitCode}`}; install Node ${MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR} or later, or set it up in CI`,
@@ -123,37 +123,32 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
     }
     const nodeVersionRefusal = dependencyCruiserNodeVersionRefusal(nodeVersion)
     if (nodeVersionRefusal) throw new Error(nodeVersionRefusal)
-    const child = Bun.spawn(
-      [
+    try {
+      const child = await startBounded(
+        [
         join(ROOT, 'node_modules/.bin/depcruise'),
         '--validate',
         join(ROOT, '.dependency-cruiser.cjs'),
         ...(request.extraArgs ?? []),
         ...request.entries,
       ],
-      {
-        cwd,
-        env,
-        stdout,
-        stderr: 'inherit',
-      },
-    )
-    let timedOut = false
-    const timeout =
-      request.timeoutMs === undefined
-        ? undefined
-        : setTimeout(() => {
-            timedOut = true
-            child.kill(9)
-          }, request.timeoutMs)
-    try {
-      const [output, exitCode] = await Promise.all([
-        stdout === 'pipe' ? new Response(child.stdout).text() : Promise.resolve(''),
-        child.exited,
-      ])
-      return { exitCode, stdout: output, timedOut }
-    } finally {
-      if (timeout !== undefined) clearTimeout(timeout)
+        {
+          budget: 'self-cli',
+          cwd,
+          env,
+          ...(request.timeoutMs === undefined
+            ? {}
+            : { signal: AbortSignal.timeout(request.timeoutMs) }),
+        },
+      )
+      if (child.stderr) console.error(child.stderr)
+      if (stdout === 'inherit' && child.stdout) console.log(child.stdout)
+      return { exitCode: child.exitCode, stdout: stdout === 'pipe' ? child.stdout : '', timedOut: false }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        return { exitCode: 1, stdout: '', timedOut: true }
+      }
+      throw error
     }
   } finally {
     rmSync(generatedDirectory, { recursive: true, force: true })

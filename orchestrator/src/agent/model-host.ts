@@ -1,4 +1,5 @@
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
+import { startBounded } from '../../../shared/bounded-process.ts'
 // concern: model-host
 /** Owns model-host wake, health, reachability, and availability. Must not know probes or CLI grammar. */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -147,11 +148,9 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
     /* best effort */
   }
   try {
-    Bun.spawn(['wakeonlan', modelHostWolMac()], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-      stdin: 'ignore',
-    }).unref()
+    void startBounded(['wakeonlan', modelHostWolMac()], { budget: 'agent-cli' }).catch(
+      () => undefined,
+    )
   } catch {
     return { sent: false, detail: 'wakeonlan could not be spawned' }
   }

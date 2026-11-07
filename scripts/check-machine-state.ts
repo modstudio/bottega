@@ -1,6 +1,6 @@
+#!/usr/bin/env bun
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
-#!/usr/bin/env bun
 /** Machine state belongs in the per-user state root, never inside the checkout. */
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'

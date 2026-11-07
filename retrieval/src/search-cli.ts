@@ -1,6 +1,6 @@
-import { inspectionGitEnv } from '../../shared/git.ts'
-import { startBounded } from '../../shared/bounded-process.ts'
 #!/usr/bin/env bun
+import { startBounded } from '../../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { requireCheckoutRoot } from '../../shared/install-root.ts'

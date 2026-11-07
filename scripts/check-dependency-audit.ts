@@ -2,6 +2,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { exitUnchecked } from '../shared/check-execution.ts'
+import { startBounded } from '../shared/bounded-process.ts'
 
 const DEPENDENCY_AUDIT_TIMEOUT_MS = 10_000
 const DEPENDENCY_AUDIT_OUTPUT_LIMIT = 500
@@ -128,35 +129,22 @@ function readBaseline(): DependencyAdvisory[] {
 }
 
 async function runAuditCommand(): Promise<AuditCommandResult> {
-  let child: Bun.Subprocess<'ignore', 'pipe', 'pipe'>
   try {
-    child = Bun.spawn(['bun', 'audit', '--json'], {
+    const child = await startBounded(['bun', 'audit', '--json'], {
+      budget: 'self-cli',
       cwd: fileURLToPath(new URL('..', import.meta.url)),
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
+      signal: AbortSignal.timeout(DEPENDENCY_AUDIT_TIMEOUT_MS),
     })
+    return {
+      kind: 'completed',
+      exitCode: child.exitCode,
+      stdout: child.stdout,
+      stderr: child.stderr,
+    }
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') return { kind: 'timeout' }
     return { kind: 'start-failure', error }
   }
-
-  let timedOut = false
-  const timeout = setTimeout(() => {
-    timedOut = true
-    child.kill('SIGKILL')
-  }, DEPENDENCY_AUDIT_TIMEOUT_MS)
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ])
-  clearTimeout(timeout)
-
-  if (timedOut) {
-    return { kind: 'timeout' }
-  }
-
-  return { kind: 'completed', exitCode, stdout, stderr }
 }
 
 export function classifyAuditOutcome(outcome: AuditCommandResult): DependencyAuditClassification {

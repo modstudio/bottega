@@ -48,7 +48,7 @@ function taskReference(row: unknown): HubTaskReference {
 export async function taskCommand(command: string[]): Promise<string> {
   const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...command], { budget: 'self-cli', env: { ...process.env } })
   const { stdout, stderr, exitCode } = child
-  if (exitCode !== 0) throw new Error(stderr.trim() || `exit status ${code}`)
+  if (exitCode !== 0) throw new Error(stderr.trim() || `exit status ${exitCode}`)
   return stdout.trim()
 }
 

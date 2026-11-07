@@ -1,6 +1,6 @@
+#!/usr/bin/env bun
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
-#!/usr/bin/env bun
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
 import { ARCHITECTURE_CRUISE_ENTRIES, typescriptCruiseEntries } from './architecture-cruise.ts'

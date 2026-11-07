@@ -1,5 +1,5 @@
-import { startBoundedSync } from '../shared/bounded-process.ts'
 #!/usr/bin/env bun
+import { startBoundedSync } from '../shared/bounded-process.ts'
 /** Generate the editor-facing project config schema from its one Zod definition. */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

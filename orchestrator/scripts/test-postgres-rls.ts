@@ -1,5 +1,5 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
 #!/usr/bin/env bun
+import { startBounded, startBoundedSync } from '../../shared/bounded-process.ts'
 import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -175,14 +175,14 @@ function copyDatabase(source: string, target: string): void {
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
   currentLeg = runLeg(argv)
-  const child = Bun.spawn(argv, {
+  const child = await startBounded(argv, {
+    budget: 'self-cli',
     cwd: fileURLToPath(new URL('..', import.meta.url)),
     env: testPostgresSpawnEnvironment(process.env, stateRoot, env),
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
   })
-  return child.exited
+  if (child.stdout) console.log(child.stdout)
+  if (child.stderr) console.error(child.stderr)
+  return child.exitCode
 }
 
 function postgres(source: string, database = 'postgres'): void {

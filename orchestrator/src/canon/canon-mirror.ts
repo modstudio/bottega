@@ -111,7 +111,7 @@ export function screenCanonMirrorError(
   const text = value instanceof Error ? value.message : String(value)
   return redactSecretShaped(text, { knownCommits }).text
 }
-function spawn(cwd: string, args: string[]): ReturnType<typeof Bun.spawnSync> {
+function spawn(cwd: string, args: string[]): ReturnType<typeof startBoundedSync> {
   return startBoundedSync(args, { budget: 'process-table', cwd, env: targetGitEnvironment(cwd) })
 }
 function command(cwd: string, args: string[]): string {

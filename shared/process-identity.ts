@@ -1,4 +1,5 @@
 import { startBoundedSync } from './bounded-process.ts'
+import { BoundExceededError } from './call-budgets.ts'
 // concern: process-identity
 /**
  * Knows how to identify an operating-system process. Must not know runs,
@@ -48,17 +49,40 @@ export function processObservationError(
 export function observeBoundedSubprocess(
   command: string,
   argv: string[],
-  options: NonNullable<Parameters<typeof Bun.spawnSync>[1]>,
+  options: {
+    env?: Record<string, string | undefined>
+    stdout?: 'pipe' | 'ignore'
+    stderr?: 'pipe' | 'ignore'
+  },
   timeoutMs: number,
   retryCount = DEFAULT_PROCESS_OBSERVATION_RETRY_COUNT,
-): { process: ReturnType<typeof Bun.spawnSync>; error: string | null } {
-  let observed: ReturnType<typeof Bun.spawnSync>
+): {
+  process: ReturnType<typeof Bun.spawnSync>
+  error: string | null
+} {
+  let observed: ProcessObservationResult & { stdout: string }
   for (let attempt = 0; ; attempt += 1) {
-    observed = startBoundedSync(argv, { budget: 'process-table', ...options })
+    try {
+      const result = startBoundedSync(argv, { budget: 'process-table', env: options.env })
+      observed = {
+        ...result,
+        signalCode: null,
+        exitedDueToTimeout: false,
+      }
+    } catch (error) {
+      if (!(error instanceof BoundExceededError) || error.bound !== 'deadline') throw error
+      observed = {
+        exitCode: null,
+        signalCode: 'SIGKILL',
+        exitedDueToTimeout: true,
+        stdout: '',
+        stderr: error.message,
+      }
+    }
     if (observed.exitedDueToTimeout !== true || attempt >= retryCount) break
   }
   return {
-    process: observed,
+    process: observed as unknown as ReturnType<typeof Bun.spawnSync>,
     error: processObservationError(command, timeoutMs, {
       exitCode: observed.exitCode,
       signalCode: observed.signalCode,

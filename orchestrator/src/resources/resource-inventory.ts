@@ -266,7 +266,7 @@ function listCommand(
   argv: string[],
   cwd: string,
 ): { ascertainable: true; names: string[] } | { ascertainable: false; reason: string } {
-  let p: ReturnType<typeof Bun.spawnSync>
+  let p: ReturnType<typeof startBoundedSync>
   try {
     p = startBoundedSync(argv, { budget: 'process-table', cwd })
   } catch (error) {
@@ -346,7 +346,7 @@ function git(
   args: string[],
   stdin?: string,
 ): { ok: true; out: string } | { ok: false; reason: string; exitCode: number | null } {
-  let p: ReturnType<typeof Bun.spawnSync>
+  let p: ReturnType<typeof startBoundedSync>
   try {
     p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd), stdin: stdin === undefined ? undefined : Buffer.from(stdin) })
   } catch (error) {

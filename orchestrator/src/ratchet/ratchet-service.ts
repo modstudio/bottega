@@ -134,7 +134,7 @@ function runSide(
   if (!files.length) return { ok: true as const, findings: [] }
   const argv = commandForSide(command, files, root)
   if (!argv.length) return { ok: false as const, reason: 'the linter command is empty' }
-  let result: ReturnType<typeof Bun.spawnSync>
+  let result: ReturnType<typeof startBoundedSync>
   try {
     result = startBoundedSync(argv, { budget: 'process-table', cwd })
   } catch (error) {

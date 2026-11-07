@@ -1,5 +1,5 @@
-import { startBoundedSync } from '../shared/bounded-process.ts'
 #!/usr/bin/env bun
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'

@@ -1,6 +1,7 @@
 /** Chooses and invokes the best available desktop notification. */
 
 import type { OperatorNotification } from './operator-notification-contract.ts'
+import { startBounded } from './bounded-process.ts'
 
 export type { OperatorNotification } from './operator-notification-contract.ts'
 export type NotificationCommand = { argv: string[] } | null
@@ -45,7 +46,10 @@ export type NotificationRuntime = {
 const runtime: NotificationRuntime = {
   platform: process.platform,
   which: (name) => Bun.which(name),
-  spawn: (argv) => Bun.spawn(argv, { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' }),
+  spawn: (argv) => ({
+    exited: startBounded(argv, { budget: 'process-table' }).then((result) => result.exitCode),
+    unref() {},
+  }),
   error: (message) => console.error(message),
 }
 

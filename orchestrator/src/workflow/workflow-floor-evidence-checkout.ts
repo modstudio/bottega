@@ -2,19 +2,30 @@
 /** Resolves checkout provenance through git and recorded landing facts. */
 
 import type { Database } from 'bun:sqlite'
-import { spawnSync } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../../../shared/git.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { checkoutLanding } from './workflow-checkout-landing.ts'
 import { type CheckoutResolution, decideCheckoutAnswer } from './workflow-checkout-refusal.ts'
 
 export function gitText(cwd: string, args: string[]): string | null {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
-  return result.status === 0 ? result.stdout.trim() : null
+  const result = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
+    cwd,
+    env: inspectionGitEnv(),
+  })
+  return result.exitCode === 0 ? result.stdout.trim() : null
 }
 
 function gitOk(cwd: string, args: string[]): boolean {
-  return spawnSync('git', args, { cwd, encoding: 'utf8' }).status === 0
+  return (
+    startBoundedSync(['git', ...args], {
+      budget: 'git-plumbing',
+      cwd,
+      env: inspectionGitEnv(),
+    }).exitCode === 0
+  )
 }
 
 function cwdProject(

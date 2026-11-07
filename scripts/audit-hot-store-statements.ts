@@ -1,5 +1,5 @@
-import { startBoundedSync } from '../shared/bounded-process.ts'
 #!/usr/bin/env bun
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import { copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

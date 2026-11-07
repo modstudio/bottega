@@ -32,7 +32,7 @@ type CommandResult = { ok: true; output: string } | { ok: false; reason: string 
 
 function dockerCompose(cwd: string, args: string[]): CommandResult {
   const command = ['docker', 'compose', ...args]
-  let result: ReturnType<typeof Bun.spawnSync>
+  let result: ReturnType<typeof startBoundedSync>
   try {
     result = startBoundedSync(command, { budget: 'process-table', cwd })
   } catch (error) {
@@ -245,7 +245,7 @@ export function ensureProjectMainStack(
 }
 
 function runningMainStackPaths(): CommandResult {
-  let result: ReturnType<typeof Bun.spawnSync>
+  let result: ReturnType<typeof startBoundedSync>
   const command = [
     'docker',
     'ps',
@@ -282,7 +282,7 @@ export function mainStackServedWorktree(input: {
     '--format',
     '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}',
   ]
-  let result: ReturnType<typeof Bun.spawnSync>
+  let result: ReturnType<typeof startBoundedSync>
   try {
     result = startBoundedSync(command, { budget: 'process-table' })
   } catch (error) {
@@ -345,7 +345,7 @@ export function mainStackExecInProgress(
   if (ids.length === 0) return { value: false }
 
   const command = ['docker', 'inspect', '-f', '{{json .ExecIDs}}', ...ids]
-  let result: ReturnType<typeof Bun.spawnSync>
+  let result: ReturnType<typeof startBoundedSync>
   try {
     result = startBoundedSync(command, { budget: 'process-table', cwd: projectPath })
   } catch (error) {

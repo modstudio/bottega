@@ -1,6 +1,6 @@
+#!/usr/bin/env bun
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
-#!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'

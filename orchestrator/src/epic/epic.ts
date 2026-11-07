@@ -493,7 +493,7 @@ export async function epicChildren(project: string, epicKey: string): Promise<Ep
     ], { budget: 'self-cli', env: { ...process.env } })
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0)
-    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
   const parsed = JSON.parse(stdout) as unknown
   if (
     !Array.isArray(parsed) ||

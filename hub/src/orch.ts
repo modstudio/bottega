@@ -1,4 +1,5 @@
 import { startBoundedSync } from '../../shared/bounded-process.ts'
+import { startBounded } from '../../shared/bounded-process.ts'
 /**
  * The orchestrator, read through its CLI.
  *
@@ -211,30 +212,14 @@ async function orchProcess(
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const env = { ...process.env, ...opts.env }
   for (const key of opts.unsetEnv ?? []) delete env[key]
-  const proc = Bun.spawn([...command, ...args], {
-    env,
-    stdout: 'pipe',
-    stderr: 'pipe',
-    stdin: opts.stdin !== undefined ? Buffer.from(opts.stdin) : 'ignore',
-  })
-  let killedAtDeadline = false
-  const timer =
-    timeoutMs > 0
-      ? setTimeout(() => {
-          killedAtDeadline = true
-          proc.kill()
-        }, timeoutMs)
-      : null
   try {
-    const [out, err, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ])
-    if (killedAtDeadline)
-      throw new Error(
-        `hub killed ${PLATFORM_SLUG} ${args.join(' ')} after its ${timeoutMs / 1_000} second deadline`,
-      )
+    const proc = await startBounded([...command, ...args], {
+      budget: 'self-cli',
+      env,
+      stdin: opts.stdin,
+      ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+    })
+    const { stdout: out, stderr: err, exitCode: code } = proc
     if (code !== 0) {
       const accepted =
         opts.acceptedExitCodes?.includes(code) &&
@@ -243,8 +228,13 @@ async function orchProcess(
         throw new Error(err.trim() || out.trim() || `${PLATFORM_SLUG} ${args[0]} exited ${code}`)
     }
     return out.trim()
-  } finally {
-    if (timer) clearTimeout(timer)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new Error(
+        `hub killed ${PLATFORM_SLUG} ${args.join(' ')} after its ${timeoutMs / 1_000} second deadline`,
+      )
+    }
+    throw error
   }
 }
 

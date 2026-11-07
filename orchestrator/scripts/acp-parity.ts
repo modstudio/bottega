@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { AGENTS } from '../src/agent/agent-registry.ts'
 import { db, ROOT } from '../src/database/db.ts'
 import { run } from '../src/run/run.ts'
@@ -217,13 +218,14 @@ async function runAskCase(): Promise<Row> {
     if (row) runId = row.id
     if (row?.asked) {
       questionSeen = true
-      const answer = Bun.spawnSync({
-        cmd: [process.execPath, join(ROOT, 'src/cli.ts'), 'answer', String(row.id), ruling],
+      const answer = startBoundedSync(
+        [process.execPath, join(ROOT, 'src/cli.ts'), 'answer', String(row.id), ruling],
+        {
+        budget: 'self-cli',
         cwd: ROOT,
         env: process.env,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
+        },
+      )
       if (answer.exitCode !== 0) {
         throw new Error(
           `${PLATFORM_SLUG} question answer failed: ${answer.stderr.toString().trim()}`,

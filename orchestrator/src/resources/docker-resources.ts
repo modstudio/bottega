@@ -87,7 +87,7 @@ function list(
           '--format',
           `{{.Name}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}`,
         ]
-  let p: ReturnType<typeof Bun.spawnSync>
+  let p: ReturnType<typeof startBoundedSync>
   try {
     p = startBoundedSync(args, { budget: 'process-table' })
   } catch (error) {
@@ -400,7 +400,7 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
 /** Inventory Compose networks and the two ownership signals the monitor can prove. */
 export function dockerNetworkInventory(): DockerNetworkInventory {
   const timeout = dockerInventoryTimeoutMs()
-  let listed: ReturnType<typeof Bun.spawnSync>
+  let listed: ReturnType<typeof startBoundedSync>
   try {
     listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], { budget: 'docker' })
   } catch (error) {
@@ -427,7 +427,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
     .filter(Boolean)
   if (!names.length) return { ascertainable: true, networks: [] }
 
-  let inspected: ReturnType<typeof Bun.spawnSync>
+  let inspected: ReturnType<typeof startBoundedSync>
   try {
     inspected = startBoundedSync(['docker', 'network', 'inspect', ...names], { budget: 'docker' })
   } catch (error) {
@@ -500,7 +500,7 @@ export function removeDockerResource(
   resource: Pick<DockerResource, 'kind' | 'name'>,
 ): string | null {
   const command = dockerRemovalCommand(resource)
-  let process: ReturnType<typeof Bun.spawnSync>
+  let process: ReturnType<typeof startBoundedSync>
   try {
     process = startBoundedSync(command.split(' '), { budget: 'process-table' })
   } catch (error) {

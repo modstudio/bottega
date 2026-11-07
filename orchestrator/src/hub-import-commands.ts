@@ -2,7 +2,6 @@
 /** Resolves registered Bottega checkouts and judges proposed hub edits with installed policy. */
 
 import type { Database } from 'bun:sqlite'
-import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
   existsSync,
@@ -16,8 +15,8 @@ import {
 } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { startBounded } from '../../shared/bounded-process.ts'
 import { optionalCheckoutRoot } from '../../shared/install-root.ts'
-import { processSignalOutcome } from '../../shared/process-identity.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
 import { type Project, projectAt } from './project/projects.ts'
 
@@ -181,55 +180,28 @@ async function runInstalledJudge(
       reason: 'judge deadline leaves no time before the cleanup margin',
     }
   }
-  const child = spawn(process.execPath, ['--no-env-file', judge, ...args], {
-    cwd: installedRoot,
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  let stdout = ''
-  let stderr = ''
-  child.stdout.setEncoding('utf8')
-  child.stderr.setEncoding('utf8')
-  child.stdout.on('data', (chunk) => {
-    stdout += chunk
-  })
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk
-  })
-  let timedOut = false
-  const timer = setTimeout(() => {
-    timedOut = true
-    if (child.pid === undefined) return
-    try {
-      process.kill(-child.pid, 'SIGKILL')
-    } catch (error) {
-      if (processSignalOutcome(error) !== 'absent') throw error
-    }
-  }, timeoutMs)
-  let exitCode: number | null
   try {
-    exitCode = await new Promise<number | null>((resolveExit, reject) => {
-      child.once('error', reject)
-      child.once('close', resolveExit)
+    const child = await startBounded([process.execPath, '--no-env-file', judge, ...args], {
+      budget: 'self-cli',
+      cwd: installedRoot,
+      signal: AbortSignal.timeout(timeoutMs),
     })
-  } finally {
-    clearTimeout(timer)
-  }
-  if (timedOut) {
+    if (child.exitCode !== 0) {
+      return {
+        status: 'unchecked',
+        findings: [],
+        reason: `judge failed (${child.stderr.trim().replaceAll('\n', ' ') || `exit ${child.exitCode}`})`,
+      }
+    }
+    return JSON.parse(child.stdout) as HubImportJudgment
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== 'TimeoutError') throw error
     return {
       status: 'unchecked',
       findings: [],
       reason: 'judge child reached the hook deadline cleanup margin',
     }
   }
-  if (exitCode !== 0) {
-    return {
-      status: 'unchecked',
-      findings: [],
-      reason: `judge failed (${stderr.trim().replaceAll('\n', ' ') || `exit ${exitCode ?? 'unknown'}`})`,
-    }
-  }
-  return JSON.parse(stdout) as HubImportJudgment
 }
 
 function createCandidateDirectories(directory: string, created: string[]) {

@@ -57,7 +57,7 @@ export function mainStackGateAddresses(project: GateMainStackProject): string[] 
   const declaration = project.settings.mainStack
   if (!declaration?.consumers.includes('gate')) return []
   const command = ['docker', 'compose', 'config', '--format', 'json']
-  let result: ReturnType<typeof Bun.spawnSync>
+  let result: ReturnType<typeof startBoundedSync>
   try {
     result = startBoundedSync(command, { budget: 'process-table', cwd: project.path })
   } catch (error) {

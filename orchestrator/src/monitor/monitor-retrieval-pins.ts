@@ -5,9 +5,6 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
-// The model-free local store read normally completes in well under a second.
-const RETRIEVAL_PIN_OBSERVATION_TIMEOUT_MS = 30_000
-
 type PinReport = {
   pins: Array<{
     queryId: string
@@ -54,13 +51,13 @@ export function staleRetrievalPinConditions(report: PinReport): MonitorCondition
 }
 
 export function observeRetrievalPins(): { conditions: MonitorCondition[]; errors: string[] } {
-  const child = startBoundedSync([...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'], { budget: 'self-cli' })
-  const stdout = new TextDecoder().decode(child.stdout)
-  const stderr = new TextDecoder().decode(child.stderr).trim()
   try {
-    if (child.exitedDueToTimeout) {
-      throw new Error(`timed out after ${RETRIEVAL_PIN_OBSERVATION_TIMEOUT_MS}ms`)
-    }
+    const child = startBoundedSync(
+      [...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'],
+      { budget: 'self-cli' },
+    )
+    const stdout = child.stdout
+    const stderr = child.stderr.trim()
     if (child.exitCode !== 0 && child.exitCode !== 1) {
       throw new Error(stderr || `exit ${child.exitCode}`)
     }

@@ -1,6 +1,6 @@
+#!/usr/bin/env bun
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
-#!/usr/bin/env bun
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
