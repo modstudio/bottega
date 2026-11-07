@@ -520,11 +520,13 @@ function resolveNumericArtifact(
 }
 
 function resolveTaskArtifact(
-  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' }>,
+  ref: ArtifactRef,
   raw: string,
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
 ): { ref: string; exists: boolean } {
+  if (ref.kind !== 'task' && ref.kind !== 'comment')
+    throw new Error(`unsupported artifact kind ${ref.kind}`)
   if (!ports.readTask)
     throw new Error(
       `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
