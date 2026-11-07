@@ -1,6 +1,6 @@
 // concern: workflows
 /** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
@@ -45,6 +45,7 @@ import {
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
+import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
 import {
   type FloorEvidencePorts,
   productionFloorPorts,
@@ -299,7 +300,16 @@ export async function execCommand(
     )
   const command = argv.slice(3)
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
-  const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
+  const resolvedCwd = resolve(process.cwd(), options.cwd ?? process.cwd())
+  const cwd = existsSync(resolvedCwd) ? realpathSync(resolvedCwd) : resolvedCwd
+  const commandDirectory = workflowExecCommandCwd(command)
+  const resolvedCommandCwd = commandDirectory === null ? null : resolve(cwd, commandDirectory)
+  const commandCwd =
+    resolvedCommandCwd !== null && existsSync(resolvedCommandCwd)
+      ? realpathSync(resolvedCommandCwd)
+      : resolvedCommandCwd
+  const checkoutRefusal = workflowExecCheckoutRefusal(command, cwd, commandCwd)
+  if (checkoutRefusal) throw new Error(checkoutRefusal)
   const registeredProject = projects().some(
     (project) => cwd === project.path || cwd.startsWith(`${project.path}/`),
   )

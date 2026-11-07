@@ -552,7 +552,7 @@ test('workflow probe and exec preserve child options after the real argv separat
         '%s%s%s%s',
         '--x',
         '--cwd',
-        'child-dir',
+        '.',
         '--json',
       ],
       presentation([]),
@@ -564,7 +564,7 @@ test('workflow probe and exec preserve child options after the real argv separat
       },
     )
     const expected = {
-      command: ['/usr/bin/printf', '%s%s%s%s', '--x', '--cwd', 'child-dir', '--json'],
+      command: ['/usr/bin/printf', '%s%s%s%s', '--x', '--cwd', '.', '--json'],
       cwd: process.cwd(),
     }
     if (verb === 'probe') expect(received).toEqual(expected)
