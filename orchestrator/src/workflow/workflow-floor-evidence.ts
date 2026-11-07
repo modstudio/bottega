@@ -36,6 +36,7 @@ import {
 import {
   type ArtifactRef,
   type BottegaCommandIdentity,
+  decideReviewReadArtifact,
   type Floor,
   flagForFloor,
   githubPullRequestUrlIn,
@@ -545,15 +546,13 @@ function resolveTaskArtifact(
   return { ref: raw, exists: true }
 }
 
-function resolveArtifact(
+function resolveStoredArtifact(
   ref: ArtifactRef,
-  raw: string,
   identity: CursorIdentity,
   binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
   d: Database,
-  ports: FloorEvidencePorts,
-  resolveCheckout: FloorEvidencePorts['resolveCheckout'],
-): { ref: string; exists: boolean } {
+  branchTip: string | null,
+): { ref: string; exists: boolean } | undefined {
   if (ref.kind === 'attached-text') {
     const row = d
       .query<
@@ -581,12 +580,34 @@ function resolveArtifact(
       : null
     return {
       ref: 'attached-text',
-      exists: attachedTextReferenceMeetsFloor({
-        ...binding,
-        attachment,
-      }),
+      exists: attachedTextReferenceMeetsFloor({ ...binding, attachment }),
     }
   }
+  if (ref.kind === 'doc')
+    return { ref: `doc:${resolveDocArtifact(ref.address, identity, d)}`, exists: true }
+  if (ref.kind !== 'review-read') return undefined
+  const row = d
+    .query<{ tip: string }, [string]>('SELECT tip FROM review_read WHERE record_id=?')
+    .get(ref.recordId)
+  const flag = `--artifact review-read:${ref.recordId}`
+  if (!row) throw new Error(`${flag} does not exist`)
+  const decision = decideReviewReadArtifact({ reviewedCommit: row.tip, branchTip })
+  if (!decision.accepted) throw new Error(`${flag} ${decision.message}`)
+  return { ref: `review-read:${ref.recordId}`, exists: true }
+}
+
+function resolveArtifact(
+  ref: ArtifactRef,
+  raw: string,
+  identity: CursorIdentity,
+  binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
+  d: Database,
+  ports: FloorEvidencePorts,
+  resolveCheckout: FloorEvidencePorts['resolveCheckout'],
+  branchTip: string | null,
+): { ref: string; exists: boolean } {
+  const stored = resolveStoredArtifact(ref, identity, binding, d, branchTip)
+  if (stored) return stored
   if (ref.kind === 'id')
     return resolveNumericArtifact(
       ref.id,
@@ -595,9 +616,6 @@ function resolveArtifact(
       d,
       ports.runHasArtifacts ?? runHasRecordedArtifacts,
     )
-  if (ref.kind === 'doc') {
-    return { ref: `doc:${resolveDocArtifact(ref.address, identity, d)}`, exists: true }
-  }
   if (ref.kind === 'pull-request') return { ref: ref.url, exists: true }
   if (ref.kind === 'probe' || ref.kind === 'exec') {
     const row = d
@@ -972,6 +990,7 @@ export function gatherValidatedEvidenceBase(
       d,
       ports,
       resolveCheckout,
+      gathered.tree.commit,
     )
     Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
     if (parsed.kind === 'pull-request')
