@@ -33,7 +33,7 @@ describe('record HTTP authentication responses', () => {
     process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
     const requests: Array<{ url: string; headers: Headers; body: unknown }> = []
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init)
+      const request = input instanceof Request ? input : new Request(input, init)
       requests.push({
         url: request.url,
         headers: request.headers,
@@ -283,11 +283,11 @@ describe('record API client test safety', () => {
     const calls: Array<{ url: string; headers: Headers; credentials?: RequestCredentials }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init)
+      const request = input instanceof Request ? input : new Request(input, init)
       calls.push({
         url: request.url,
         headers: request.headers,
-        credentials: request.credentials,
+        credentials: init?.credentials ?? request.credentials,
       })
       return Response.json({ items: [] })
     }) as typeof fetch
@@ -328,7 +328,7 @@ describe('record API client test safety', () => {
     const calls: Headers[] = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(new Request(input, init).headers)
+      calls.push((input instanceof Request ? input : new Request(input, init)).headers)
       return Response.json({ id: newRecordId(), revisionId: newRecordId(), name: 'known' })
     }) as typeof fetch
     try {
@@ -372,7 +372,7 @@ describe('record API client test safety', () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init)
+      const request = input instanceof Request ? input : new Request(input, init)
       const body = await request.text()
       calls.push({
         url: request.url,
@@ -414,7 +414,7 @@ describe('record API client test safety', () => {
       []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init)
+      const request = input instanceof Request ? input : new Request(input, init)
       const body = await request.text()
       calls.push({
         url: request.url,

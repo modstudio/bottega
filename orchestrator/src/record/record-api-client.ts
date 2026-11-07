@@ -609,13 +609,11 @@ const defaultRequest = recordApiRequest
 async function publicRequest<T>(path: string): Promise<T> {
   let response: Response
   try {
-    response = await hostedApiFetch(
-      new Request(`${recordApiBaseUrl()}${path}`, {
-        method: 'GET',
-        credentials: 'omit',
-        headers: new Headers(),
-      }),
-    )
+    response = await hostedApiFetch(`${recordApiBaseUrl()}${path}`, {
+      method: 'GET',
+      credentials: 'omit',
+      headers: new Headers(),
+    })
   } catch (error) {
     throw recordApiUnreachable(error)
   }

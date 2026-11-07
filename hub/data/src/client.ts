@@ -54,7 +54,7 @@ const links = [
     url: '/trpc',
     fetch(url, options) {
       return fetchWithHubCredentials(
-        hostedApiFetch,
+        isHostedMode() ? hostedApiFetch : fetch,
         isHostedMode(),
         () => localUnauthorized(LOCAL_LOGIN_MESSAGE),
         url,
