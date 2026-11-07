@@ -6,7 +6,7 @@ import { staticCheckPlan } from './static-check-plan.ts'
 export type UncheckedExitSource = { path: string; source: string }
 
 export function uncheckedExitViolations(sources: readonly UncheckedExitSource[]): string[] {
-  const forbidden = /process\.exit\(\s*0\s*\)/
+  const forbidden = /process\.exit\(\s*(?:0\s*)?\)/
   return sources.flatMap(({ path, source }) =>
     source
       .split('\n')
