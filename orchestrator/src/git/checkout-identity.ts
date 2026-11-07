@@ -5,6 +5,7 @@
  */
 import { realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { projects } from '../project/projects.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 
@@ -59,13 +60,12 @@ export type CheckoutWatchFailure = CheckoutToWatch & { error: string }
 
 function checkoutRootAsAddressed(cwd: string): string | null {
   try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
+    const p = startBoundedSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
+      budget: 'git-plumbing',
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
-    const prefix = new TextDecoder().decode(p.stdout).trim()
+    const prefix = p.stdout.trim()
     let root = cwd
     for (const _segment of prefix.split('/').filter(Boolean)) root = dirname(root)
     return root
@@ -76,13 +76,12 @@ function checkoutRootAsAddressed(cwd: string): string | null {
 
 function gitTopLevel(cwd: string): string | null {
   try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
+    const p = startBoundedSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
+      budget: 'git-plumbing',
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
-    return new TextDecoder().decode(p.stdout).trim() || null
+    return p.stdout.trim() || null
   } catch {
     return null
   }

@@ -2,6 +2,7 @@ import { execa } from 'execa'
 import { BoundExceededError, CALL_BUDGETS, type CallBudgetName } from './call-budgets.ts'
 
 export type BoundedResult = { exitCode: number; stdout: string; stderr: string }
+export type BoundedBytesResult = { exitCode: number; stdout: Uint8Array; stderr: string }
 
 type BoundedProcessOptions = {
   budget: CallBudgetName
@@ -63,10 +64,10 @@ function killProcessGroup(pid: number): void {
   }
 }
 
-export function startBoundedSync(
+function startBoundedSyncBytesRaw(
   argv: readonly string[],
   options: BoundedSyncOptions,
-): BoundedResult {
+): BoundedBytesResult {
   if (argv.length === 0) throw new TypeError('startBoundedSync requires a non-empty argv')
   const budget = CALL_BUDGETS[options.budget]
   const result = Bun.spawnSync({
@@ -95,7 +96,22 @@ export function startBoundedSync(
   }
   return {
     exitCode: exitCode(result.exitCode),
-    stdout: result.stdout.toString(),
+    stdout: result.stdout,
     stderr: result.stderr.toString(),
   }
+}
+
+export function startBoundedSync(
+  argv: readonly string[],
+  options: BoundedSyncOptions,
+): BoundedResult {
+  const result = startBoundedSyncBytesRaw(argv, options)
+  return { ...result, stdout: new TextDecoder().decode(result.stdout) }
+}
+
+export function startBoundedSyncBytes(
+  argv: readonly string[],
+  options: BoundedSyncOptions,
+): BoundedBytesResult {
+  return startBoundedSyncBytesRaw(argv, options)
 }

@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { startBoundedSync, startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import {
   mainCheckoutOf,
   scrubbedGitEnv,
@@ -91,17 +93,16 @@ export type GitRefObservation =
 /** Observe one exact ref without treating an unusable repository as an absent ref. */
 export function observeGitRef(cwd: string, ref: string): GitRefObservation {
   if (cwdMissing(cwd)) return { outcome: 'failed', detail: `${cwd} does not exist` }
-  const result = Bun.spawnSync(['git', 'rev-parse', '--verify', '--quiet', ref], {
+  const result = startBoundedSync(['git', 'rev-parse', '--verify', '--quiet', ref], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (result.exitCode === 0) return { outcome: 'present' }
   if (result.exitCode === 1) return { outcome: 'absent' }
   return {
     outcome: 'failed',
-    detail: result.stderr.toString().trim() || `git exited ${result.exitCode ?? 'without status'}`,
+    detail: result.stderr.trim() || `git exited ${result.exitCode}`,
   }
 }
 
@@ -113,18 +114,17 @@ function git(
   failureContext = '',
 ): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
-  const p = Bun.spawnSync(['git', ...args], {
+  const p = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env,
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(
-      `git ${args.join(' ')} failed${failureContext}: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`,
+      `git ${args.join(' ')} failed${failureContext}: ${p.stderr.trim() || `exit ${p.exitCode}`}`,
     )
   }
-  return p.stdout.toString().trim()
+  return p.stdout.trim()
 }
 
 /** Return the path currently checking out a local branch, if any. */
@@ -150,13 +150,12 @@ function gitOk(
   env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
 ): string | null {
   if (cwdMissing(cwd)) return null
-  const p = Bun.spawnSync(['git', ...args], {
+  const p = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env,
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  return p.exitCode === 0 ? p.stdout.toString().trim() : null
+  return p.exitCode === 0 ? p.stdout.trim() : null
 }
 
 /** Git's stdout with no trim, and an explicit failure rather than an empty string. */
@@ -167,19 +166,19 @@ function gitResult(
 ): { ok: boolean; stdout: string; stderr: string } {
   if (cwdMissing(cwd)) return { ok: false, stdout: '', stderr: `${cwd} does not exist` }
   try {
-    const p = Bun.spawnSync(['git', ...args], {
+    const p = startBoundedSync(['git', ...args], {
+      budget: 'git-plumbing',
       cwd,
       env: options.env ?? targetGitEnvironment(cwd),
       stdin: options.input,
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
     return {
       ok: p.exitCode === 0,
-      stdout: p.stdout.toString(),
-      stderr: p.stderr.toString().trim() || (p.exitCode === 0 ? '' : `exit ${p.exitCode}`),
+      stdout: p.stdout,
+      stderr: p.stderr.trim() || (p.exitCode === 0 ? '' : `exit ${p.exitCode}`),
     }
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     return {
       ok: false,
       stdout: '',
@@ -267,30 +266,28 @@ export function withTemporaryGitIndex<T>(
 /** Changed paths between a review base and a commit or measured content tree. */
 export function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = nulPathListArgs(['diff', '--name-only', `${base}..${inputTree}`])
-  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+  const p = startBoundedSync(['git', '-C', cwd, ...args], {
+    budget: 'git-plumbing',
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(
       `could not measure explicit review paths with git ${args.join(' ')}: ` +
-        (p.stderr.toString().trim() || `exit ${p.exitCode}`),
+        (p.stderr.trim() || `exit ${p.exitCode}`),
     )
   }
-  return splitNulPaths(p.stdout.toString())
+  return splitNulPaths(p.stdout)
 }
 
 /** Read repository configuration without inheriting the worker config we return below. */
 function gitConfigOk(args: string[], cwd: string): string | null {
   if (cwdMissing(cwd)) return null
-  const p = Bun.spawnSync(['git', ...args], {
+  const p = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: { ...targetGitEnvironment(cwd), GIT_CONFIG_COUNT: '0' },
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  return p.exitCode === 0 ? p.stdout.toString().trim() : null
+  return p.exitCode === 0 ? p.stdout.trim() : null
 }
 
 /**
@@ -313,45 +310,38 @@ function gitRaw(
   env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
 ): string {
   if (cwdMissing(cwd)) return ''
-  const p = Bun.spawnSync(['git', ...args], {
+  const p = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env,
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  return p.exitCode === 0 ? p.stdout.toString() : ''
+  return p.exitCode === 0 ? p.stdout : ''
 }
 
 /** Run git with byte-exact stdin, used to carry a working tree as a patch. */
 function gitInput(args: string[], cwd: string, input: Uint8Array): void {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
-  const p = Bun.spawnSync(['git', ...args], {
+  const p = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
     stdin: input,
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`,
-    )
+    throw new Error(`git ${args.join(' ')} failed: ${p.stderr.trim() || `exit ${p.exitCode}`}`)
   }
 }
 
 /** Byte-exact git output where failure must stop setup rather than look empty. */
 function gitBytes(args: string[], cwd: string): Buffer {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
-  const p = Bun.spawnSync(['git', ...args], {
+  const p = startBoundedSyncBytes(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`,
-    )
+    throw new Error(`git ${args.join(' ')} failed: ${p.stderr.trim() || `exit ${p.exitCode}`}`)
   }
   return Buffer.from(p.stdout)
 }
@@ -425,13 +415,12 @@ export {
 /** Read bounded git context without allowing observation failure to fail a run. */
 export function gitContext(cwd: string, ...args: string[]): string | null {
   try {
-    const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+    const p = startBoundedSync(['git', '-C', cwd, ...args], {
+      budget: 'git-plumbing',
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
-    const value = new TextDecoder().decode(p.stdout).trim()
+    const value = p.stdout.trim()
     return value ? value.slice(0, 200) : null
   } catch {
     return null
@@ -446,10 +435,9 @@ export function gitBlobPrefix(
   maxBytes: number,
 ): string | null {
   try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'cat-file', 'blob', `${commit}:${path}`], {
+    const p = startBoundedSyncBytes(['git', '-C', cwd, 'cat-file', 'blob', `${commit}:${path}`], {
+      budget: 'git-plumbing',
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
     return Buffer.from(p.stdout).subarray(0, maxBytes).toString('utf8')
