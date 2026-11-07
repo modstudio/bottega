@@ -2,6 +2,8 @@
 /** Measures change groups and reads their recorded review rows. */
 
 import type { Database } from 'bun:sqlite'
+import { existsSync, realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { Project } from '../project/projects.ts'
 import {
   type ApplicableReview,
@@ -65,6 +67,26 @@ type StoredReviewProvenance = {
 const provenanceString = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value : null
 
+const treePathToken = /(?:^|[\s`(])(\/[^\s()`'",;]+)/g
+
+/** The first absolute path claim in a lens's free-text tree evidence. */
+export function treeInspectedPath(treeInspected: string | null | undefined): string | null {
+  if (!treeInspected) return null
+  for (const match of treeInspected.matchAll(treePathToken)) {
+    const candidate = match[1]?.replace(/[.:]+$/, '')
+    if (candidate && candidate.split('/').filter(Boolean).length >= 3) return candidate
+  }
+  return null
+}
+
+/** Resolve both existing trees physically, or both missing-tree identities lexically. */
+function canonicalTreePair(treeInspected: string, runTree: string): [string, string] {
+  if (existsSync(treeInspected) && existsSync(runTree)) {
+    return [realpathSync(treeInspected), realpathSync(runTree)]
+  }
+  return [resolve(treeInspected), resolve(runTree)]
+}
+
 export function provenanceSubjectFacts(row: {
   review_provenance: string | null
   worktree: string | null
@@ -86,10 +108,14 @@ export function provenanceSubjectFacts(row: {
   } catch {
     // A malformed recorded provenance cannot establish either subject claim.
   }
+  const treeInspected = treeInspectedPath(provenanceString(provenance.tree_inspected))
+  const runTree = row.worktree ?? row.cwd
+  const [canonicalInspected, canonicalRun] =
+    treeInspected && runTree ? canonicalTreePair(treeInspected, runTree) : [treeInspected, runTree]
   return {
     recorded: true,
-    treeInspected: provenanceString(provenance.tree_inspected),
-    runTree: row.worktree ?? row.cwd,
+    treeInspected: canonicalInspected,
+    runTree: canonicalRun,
     reviewedCommit: provenanceString(provenance.reviewed_commit),
     headCommit: row.head_commit,
   }

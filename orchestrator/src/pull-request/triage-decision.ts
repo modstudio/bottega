@@ -1,8 +1,7 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
-import { existsSync, realpathSync } from 'node:fs'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { isAbsolute, relative } from 'node:path'
 import { compareReviewedCommit } from '../evidence/evidence.ts'
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
@@ -56,29 +55,9 @@ export type LensProvenanceSubject =
   | { admissible: true }
   | { admissible: false; reason: 'tree-mismatch' | 'commit-mismatch' }
 
-const treePathToken = /(?:^|[\s`(])(\/[^\s()`'",;]+)/g
-
-/** The first absolute path claim in a lens's free-text tree evidence. */
-export function treeInspectedPath(treeInspected: string | null | undefined): string | null {
-  if (!treeInspected) return null
-  for (const match of treeInspected.matchAll(treePathToken)) {
-    const candidate = match[1]?.replace(/[.:]+$/, '')
-    if (candidate && candidate.split('/').filter(Boolean).length >= 3) return candidate
-  }
-  return null
-}
-
 function pathIsAtOrInside(path: string, root: string): boolean {
   const remainder = relative(root, path)
   return remainder === '' || (!remainder.startsWith('..') && !isAbsolute(remainder))
-}
-
-/** Resolve both existing trees physically, or both missing-tree identities lexically. */
-function canonicalTreePair(treeInspected: string, runTree: string): [string, string] {
-  if (existsSync(treeInspected) && existsSync(runTree)) {
-    return [realpathSync(treeInspected), realpathSync(runTree)]
-  }
-  return [resolve(treeInspected), resolve(runTree)]
 }
 
 /** Whether one lens's recorded provenance names the run subject it was given. */
@@ -86,11 +65,9 @@ export function lensProvenanceSubject(
   facts: NonNullable<TriageReviewRow['lenses'][number]['provenance']> | undefined,
 ): LensProvenanceSubject {
   if (!facts?.recorded) return { admissible: true }
-  const treeInspected = treeInspectedPath(facts.treeInspected)
-  if (treeInspected) {
+  if (facts.treeInspected) {
     if (!facts.runTree) return { admissible: false, reason: 'tree-mismatch' }
-    const [canonicalInspected, canonicalRun] = canonicalTreePair(treeInspected, facts.runTree)
-    if (!pathIsAtOrInside(canonicalInspected, canonicalRun)) {
+    if (!pathIsAtOrInside(facts.treeInspected, facts.runTree)) {
       return { admissible: false, reason: 'tree-mismatch' }
     }
   }

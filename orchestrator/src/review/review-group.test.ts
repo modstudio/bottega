@@ -12,6 +12,7 @@ import {
   reviewsForAdmission,
   reviewsForTriage,
   type TriageReviewRow,
+  treeInspectedPath,
 } from './review-group.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
@@ -452,4 +453,19 @@ test('recorded review tree paths are extracted, normalized, and confined to the 
     complete: false,
     missingLenses: [{ lens: 'correctness', reason: 'tree-mismatch' }],
   })
+})
+
+test('tree evidence extracts the first qualifying absolute path from recorded review shapes', () => {
+  expect(
+    treeInspectedPath(
+      '/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-7b49b6460122 (detached worktree at the artifact HEAD)',
+    ),
+  ).toBe('/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-7b49b6460122')
+  expect(
+    treeInspectedPath(
+      'base 558e80d; (`/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-a8d3e4ed17f2`: diff origin/master...HEAD)',
+    ),
+  ).toBe('/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-a8d3e4ed17f2')
+  expect(treeInspectedPath('74ff6ad...70ba3dd')).toBeNull()
+  expect(treeInspectedPath(null)).toBeNull()
 })
