@@ -18,7 +18,10 @@ import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
-import { missingTypeOnlyImportBoundaryViolations } from './architecture-type-only-boundaries.ts'
+import {
+  duplicateImportBoundaryNameViolations,
+  missingTypeOnlyImportBoundaryViolations,
+} from './architecture-type-only-boundaries.ts'
 import {
   architectureUndeclaredModules,
   countUndeclaredModules,
@@ -36,7 +39,8 @@ const manifestFiles: string[] = modules.map(({ file }) => file)
 const violations: string[] = []
 const manifestFileCounts = new Map<string, number>()
 
-violations.push(...missingTypeOnlyImportBoundaryViolations(importBoundaries))
+violations.push(...(await missingTypeOnlyImportBoundaryViolations(importBoundaries)))
+violations.push(...duplicateImportBoundaryNameViolations(importBoundaries))
 
 for (const file of manifestFiles) {
   manifestFileCounts.set(file, (manifestFileCounts.get(file) ?? 0) + 1)
