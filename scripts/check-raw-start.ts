@@ -138,6 +138,12 @@ function globalFetch(node: ts.CallExpression): boolean {
   )
 }
 
+function kyStart(node: ts.CallExpression, imports: Imports): boolean {
+  if (ts.isIdentifier(node.expression)) return imports.kyCalls.has(node.expression.text)
+  const method = propertyCall(node, imports.kyCalls)
+  return Boolean(method && ['get', 'post', 'put', 'patch', 'head', 'delete'].includes(method))
+}
+
 function gitFacts(node: ts.CallExpression, file: ts.SourceFile) {
   const argv = node.arguments[0]
   const command = argv && ts.isArrayLiteralExpression(argv) ? argv.elements[0] : undefined
@@ -188,7 +194,7 @@ export function rawStarts(files: Readonly<Record<string, string>>): RawStart[] {
               ].includes(childProperty),
           ) ||
           Boolean(execaProperty && ['execa', 'execaSync', '$'].includes(execaProperty))
-        const isHttp = globalFetch(node) || Boolean(identifier && imports.kyCalls.has(identifier))
+        const isHttp = globalFetch(node) || kyStart(node, imports)
         if (isProcess || isHttp) {
           const git = bunStart(node)
             ? gitFacts(node, file)
@@ -200,6 +206,18 @@ export function rawStarts(files: Readonly<Record<string, string>>): RawStart[] {
             ...git,
           })
         }
+      } else if (
+        ts.isTaggedTemplateExpression(node) &&
+        ts.isIdentifier(node.tag) &&
+        imports.execaCalls.has(node.tag.text)
+      ) {
+        findings.push({
+          file: path,
+          line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
+          kind: 'process',
+          rawGit: false,
+          hasScrubbedEnvironment: false,
+        })
       }
       ts.forEachChild(node, visit)
     }

@@ -10,13 +10,16 @@ describe('raw start check', () => {
   test('refuses a new process and HTTP start in a fixture', () => {
     const findings = rawStarts({
       'orchestrator/src/example.ts': `
-        import { execa as run } from 'execa'
+        import ky from 'ky'
+        import { execa as run, $ } from 'execa'
         Bun.${'spawn'}(['echo'])
         run('echo')
+        $\`echo tagged\`
+        ky.get('https://example.test/ky')
         fetch('https://example.test')
       `,
     })
-    expect(rawStartViolations(findings, { files: {} })).toHaveLength(3)
+    expect(rawStartViolations(findings, { files: {} })).toHaveLength(5)
   })
 
   test('accepts baseline counts and proves the baseline equals the tree', () => {
