@@ -102,6 +102,7 @@ function branchMove(argv: readonly (string | null)[]): string | null {
   if (command[0] === 'switch') return 'switch'
   if (command[0] === 'merge' && command.includes('--ff-only')) return 'merge --ff-only'
   if (command[0] === 'reset' && command.includes('--hard')) return 'reset --hard'
+  if (command[0] === 'reset' && command.includes('--keep')) return 'reset --keep'
   return null
 }
 

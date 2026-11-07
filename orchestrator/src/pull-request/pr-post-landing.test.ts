@@ -817,8 +817,10 @@ test('the selected depth is carried to the child and its recovery command', () =
 
 test('a move failure after main changed reports the failure and does not hand off', () => {
   const events: string[] = []
+  const calls: string[] = []
   let head = 'before'
   const outcome = complete({
+    calls,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -835,14 +837,16 @@ test('a move failure after main changed reports the failure and does not hand of
     },
   })
 
-  expect(outcome.exitCode).toBe(21)
+  expect(outcome.exitCode).toBe(20)
   expect(outcome.output).toContain(
-    'main is at a different commit than before and the move did not complete: verification raced with a dirty checkout',
+    'main moved from before and the move did not complete: verification raced with a dirty checkout',
   )
-  expect(events).toEqual([])
+  expect(outcome.output).toContain('cleanup was not run')
+  expect(events).toEqual(['fence'])
+  expect(calls).toEqual([])
 })
 
-test('a bounded move failure after main changed does not fence or hand off', () => {
+test('a bounded move failure after main changed fences and does not hand off', () => {
   const events: string[] = []
   let head = 'before'
   const outcome = complete({
@@ -862,14 +866,14 @@ test('a bounded move failure after main changed does not fence or hand off', () 
     },
   })
 
-  expect(outcome.exitCode).toBe(21)
+  expect(outcome.exitCode).toBe(20)
   expect(outcome.output).toContain(
-    'main is at a different commit than before and the move did not complete: machine update exceeded its machine-update deadline bound',
+    'main moved from before and the move did not complete: machine update exceeded its machine-update deadline bound',
   )
-  expect(events).toEqual([])
+  expect(events).toEqual(['fence'])
 })
 
-test('a failed HEAD re-read after a move failure does not fence or hand off', () => {
+test('a failed HEAD re-read after a move failure fences and does not hand off', () => {
   const events: string[] = []
   let headReads = 0
   const outcome = complete({
@@ -892,11 +896,11 @@ test('a failed HEAD re-read after a move failure does not fence or hand off', ()
     },
   })
 
-  expect(outcome.exitCode).toBe(21)
+  expect(outcome.exitCode).toBe(20)
   expect(outcome.output).toContain(
-    'main is at a different commit than before and the move did not complete: move verification failed',
+    'main did not verifiably stay at before and the move did not complete: move verification failed',
   )
-  expect(events).toEqual([])
+  expect(events).toEqual(['fence'])
 })
 
 test('a non-ladder child exit keeps its code and adds the parent recovery', () => {

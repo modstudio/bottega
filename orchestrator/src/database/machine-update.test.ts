@@ -183,6 +183,43 @@ test('machine update names both failures and the manual remedy when restoring ma
   )
 })
 
+test('machine update leaves main pulled when migrate partly commits before failing', async () => {
+  const held = holdBackLastAdditiveMigration(db())
+  const gitCalls: string[][] = []
+  try {
+    await expect(
+      machineUpdateCommand(
+        { log: () => {} },
+        {
+          cwd: dir,
+          authorityRefusal: () => null,
+          project: () => ({
+            name: 'migration-update-fixture',
+            path: dir,
+            settings: { trunk: 'main' },
+          }),
+          git: (_cwd, args) => {
+            gitCalls.push(args)
+            if (args[0] === 'branch') return 'main'
+            if (args[0] === 'show') return JSON.stringify({ entries: held.journal })
+            if (args[0] === 'rev-parse') return 'before-commit'
+            return ''
+          },
+          migrate: () => {
+            held.restore()
+            throw new Error('injected migration failure after commit')
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      `migration failed: injected migration failure after commit; main was left at the pulled commit because the store is already partly migrated; rerun ${PLATFORM_SLUG} machine update`,
+    )
+    expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
+  } finally {
+    held.restore()
+  }
+})
+
 test('machine update does not reset main when migrate succeeds', async () => {
   const gitCalls: string[][] = []
   await machineUpdateCommand(

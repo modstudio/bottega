@@ -299,6 +299,40 @@ function restoreMainAfterMigrationFailure(input: {
   )
 }
 
+function handleMigrationFailureAfterPull(input: {
+  target: string
+  before: string
+  journal: MigrationJournalEntry[]
+  initialStoreVersion: number
+  runGit: (cwd: string, args: string[]) => string
+  cause: unknown
+}): never {
+  const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  let storeVersion: number
+  try {
+    storeVersion = withSynchronousDatabaseForMigrationStep((database) => {
+      const position = storeJournalPosition(database, input.journal)
+      if (position.state === 'pending-not-found') {
+        throw new Error(`incoming journal does not contain pending migration ${position.migration}`)
+      }
+      return position.index
+    })
+  } catch (storeCause) {
+    const storeFailure = storeCause instanceof Error ? storeCause.message : String(storeCause)
+    throw new Error(
+      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store's migration position could not be read: ${storeFailure}; ` +
+        `rerun ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  if (storeVersion !== input.initialStoreVersion) {
+    throw new Error(
+      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store is already partly migrated; ` +
+        `rerun ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  restoreMainAfterMigrationFailure(input)
+}
+
 export async function machineUpdateCommand(
   presentation: Presentation,
   deps: UpdateDependencies = {},
@@ -363,6 +397,7 @@ export async function machineUpdateCommand(
       activeDrain,
       decision: decideMigrationDrain({ journal, storeVersion: position.index }),
       pendingMigration: journal[position.index]?.tag ?? null,
+      storeVersion: position.index,
     }
   })
   assertNoActiveDrain(initial.activeDrain)
@@ -377,7 +412,14 @@ export async function machineUpdateCommand(
       try {
         migrate(target)
       } catch (cause) {
-        restoreMainAfterMigrationFailure({ target, before, runGit, cause })
+        handleMigrationFailureAfterPull({
+          target,
+          before,
+          journal,
+          initialStoreVersion: initial.storeVersion,
+          runGit,
+          cause,
+        })
       }
     },
   })
