@@ -107,7 +107,7 @@ describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
             retiredAt: null,
             settings: {
               trunk: 'main',
-              checks: { spelling: true, commentHistory: true },
+              checks: { spelling: true, commentHistory: { phrases: ['used to be'] } },
             },
           },
           {
@@ -132,29 +132,36 @@ describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
       else process.env[GATE_FACTS_ENV] = previousGateFacts
     })
 
-    async function run(project: string): Promise<string[]> {
+    async function run(project: string): Promise<{ output: string[]; exitCodes: number[] }> {
       const output: string[] = []
+      const exitCodes: number[] = []
       await checkCommand(
         ['check', '--enabled', '--project', project, '--pr', 'https://example.test/pr/1'],
         {
           log: (value) => output.push(value),
-          setExitCode: () => undefined,
+          setExitCode: (code) => exitCodes.push(code),
           stdinText: async () => '',
           stdinIsTTY: () => true,
           cwd: () => process.cwd(),
         },
       )
-      return output
+      return { output, exitCodes }
     }
 
     test('names tree checks skipped by pull-request selection', async () => {
-      expect(await run('checks-pr-tree')).toEqual([
-        'no pull-request checks enabled for checks-pr-tree; enabled tree checks (spelling, comments) run without --pr',
-      ])
+      expect(await run('checks-pr-tree')).toEqual({
+        output: [
+          'no pull-request checks enabled for checks-pr-tree; enabled tree checks (spelling, comments) run without --pr',
+        ],
+        exitCodes: [],
+      })
     })
 
     test('keeps the empty-project message for pull-request selection', async () => {
-      expect(await run('checks-pr-none')).toEqual(['no checks enabled for checks-pr-none'])
+      expect(await run('checks-pr-none')).toEqual({
+        output: ['no checks enabled for checks-pr-none'],
+        exitCodes: [],
+      })
     })
   })
 
