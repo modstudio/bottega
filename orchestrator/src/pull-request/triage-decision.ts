@@ -4,7 +4,7 @@
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
 import {
-  lensProvenanceSubject,
+  countsAsLensEvidence,
   newestInadmissibleLensRow,
 } from '../review/review-lens-provenance.ts'
 import { reviewCountsAsRound } from '../review/review-role.ts'
@@ -53,9 +53,6 @@ export type MissingLens = {
   /** Paths changed since the reviewed tip that select this lens and that it never reviewed. */
   newlyTouchedPaths: string[]
 }
-
-const admissibleLens = (lens: TriageReviewRow['lenses'][number]): boolean =>
-  lensProvenanceSubject(lens.provenance).admissible
 
 export type TriageDecision =
   | { complete: true; snapshot: TriageSnapshot }
@@ -181,7 +178,10 @@ type ComposedReviewEvidence =
   | { complete: true; coverageGaps: ReviewGaps; round: CompleteReviewRound }
 
 function recordedLensRounds(reviews: readonly TriageReviewRow[]): number {
-  return reviews.reduce((count, review) => count + review.lenses.filter(admissibleLens).length, 0)
+  return reviews.reduce(
+    (count, review) => count + review.lenses.filter(countsAsLensEvidence).length,
+    0,
+  )
 }
 
 export type SecondOpinionDecision =
@@ -206,7 +206,7 @@ function selectSecondOpinion(
     .sort((left, right) => left.opinion.recordId.localeCompare(right.opinion.recordId))
   const creditedRuns = identifySecondOpinionRun(
     opinions.flatMap(({ opinion, review }) =>
-      opinion.runId && opinion.lens && admissibleLens(opinion)
+      opinion.runId && countsAsLensEvidence(opinion)
         ? [
             {
               recordId: opinion.recordId,
@@ -223,10 +223,7 @@ function selectSecondOpinion(
   )
   const eligible = opinions.filter(
     ({ opinion, review }) =>
-      review.completedAt !== null &&
-      opinion.graded &&
-      opinion.lens === lens &&
-      admissibleLens(opinion),
+      review.completedAt !== null && opinion.lens === lens && countsAsLensEvidence(opinion),
   )
   const first = eligible.find(({ opinion }) => opinion.runId === creditedRuns?.firstRunId)
   const second = eligible.find(({ opinion }) => opinion.runId === creditedRuns?.secondRunId)
@@ -272,9 +269,7 @@ function coverApplicableLens(
       reason?: ReviewLensOwedReason
     } {
   const hasGradedLens = (review: TriageReviewRow) =>
-    review.lenses.some(
-      (candidate) => candidate.lens === lens && candidate.graded && admissibleLens(candidate),
-    )
+    review.lenses.some((candidate) => candidate.lens === lens && countsAsLensEvidence(candidate))
   const latest = (exactRequired.has(lens) ? exactCompleted : completed).find((review) =>
     hasGradedLens(review),
   )
@@ -483,9 +478,7 @@ function exactReviewEvidence(evidence: TriageEvidence) {
     evidence.reviews
       .filter((review) => review.completedAt !== null)
       .flatMap((review) =>
-        review.lenses.flatMap((lens) =>
-          lens.graded && lens.lens && admissibleLens(lens) ? [lens.lens] : [],
-        ),
+        review.lenses.flatMap((lens) => (countsAsLensEvidence(lens) ? [lens.lens!] : [])),
       ),
   )
   const secondOpinion = decideSecondOpinion(

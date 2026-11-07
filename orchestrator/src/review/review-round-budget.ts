@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { provenanceSubjectFacts } from './review-group.ts'
-import { newestInadmissibleLensRow } from './review-lens-provenance.ts'
+import { lensProvenanceSubject } from './review-lens-provenance.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { reviewCountsAsRound } from './review-role.ts'
 import { reviewRoundIdentity } from './review-round-identity.ts'
@@ -95,7 +95,7 @@ export function eligibleReviewRoundRows(
   database: Database,
   since?: string,
   target?: { project: string; branch: string },
-): ReviewBudgetEvidenceRow[] {
+): ReviewBudgetProvenanceRow[] {
   const lineage = target ? reviewLineage(database, target.project, target.branch) : []
   const targetFilter = target
     ? `AND run.project_record_id=(SELECT record_id FROM project WHERE name=?)
@@ -150,13 +150,8 @@ function branchEvidence(
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
   const lineageRoots = new Map<string, string>()
-  const rows = (
-    eligibleReviewRoundRows(database, since, target) as ReviewBudgetProvenanceRow[]
-  ).filter(
-    (row) =>
-      newestInadmissibleLensRow([
-        { graded: true, lens: row.lens, provenance: provenanceSubjectFacts(row) },
-      ]) === null,
+  const rows = eligibleReviewRoundRows(database, since, target).filter(
+    (row) => lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
   )
   for (const row of rows) {
     if (!row.branch) continue

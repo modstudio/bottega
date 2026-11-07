@@ -375,7 +375,7 @@ function reviewsForBranch(
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (run.branch IN (${lineage.map(() => '?').join(',')}) OR r.record_id=?
                OR r.record_id IN (${includeReviewIds.map(() => '?').join(',') || 'NULL'}))
-        ORDER BY r.number DESC,rl.record_id,rf.ordinal`,
+        ORDER BY r.number DESC,rl.record_id DESC,rf.ordinal`,
     )
     .all(project, ...lineage, includeReviewId ?? null, ...includeReviewIds)
   const reviews = new Map<string, TriageReviewRow>()

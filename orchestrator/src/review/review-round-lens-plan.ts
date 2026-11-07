@@ -7,7 +7,12 @@ import {
   selectReviewApplicability,
 } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
-import { lensProvenanceSubject, newestInadmissibleLensRow } from './review-lens-provenance.ts'
+import {
+  countsAsLensEvidence,
+  inadmissibleLensReason,
+  lensProvenanceSubject,
+  newestInadmissibleLensRow,
+} from './review-lens-provenance.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
 import { reviewCountsAsRound } from './review-role.ts'
 import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
@@ -27,7 +32,11 @@ function inadmissibleLensReasons(
   completedLenses: ReadonlySet<string>,
 ): Record<string, ReviewLensOwedReason> {
   const lenses = reviews.flatMap((review) => review.lenses)
-  const names = new Set(lenses.flatMap((row) => (row.graded && row.lens ? [row.lens] : [])))
+  const names = new Set(
+    lenses.flatMap((row) =>
+      row.lens && (countsAsLensEvidence(row) || inadmissibleLensReason(row)) ? [row.lens] : [],
+    ),
+  )
   return Object.fromEntries(
     [...names].flatMap((lens) => {
       if (completedLenses.has(lens)) return []
@@ -142,11 +151,7 @@ export function roundLensFacts(
   const completedLenses = [
     ...new Set(
       completedReviews.flatMap((review) =>
-        review.lenses.flatMap((lens) =>
-          lens.graded && lens.lens && lensProvenanceSubject(lens.provenance).admissible
-            ? [lens.lens]
-            : [],
-        ),
+        review.lenses.flatMap((lens) => (countsAsLensEvidence(lens) ? [lens.lens!] : [])),
       ),
     ),
   ]
@@ -181,9 +186,7 @@ export function roundLensFacts(
   for (const review of prior) {
     const paths = review.pathSet ? (JSON.parse(review.pathSet) as string[]) : []
     for (const lens of review.lenses.flatMap((candidate) =>
-      candidate.graded && candidate.lens && lensProvenanceSubject(candidate.provenance).admissible
-        ? [candidate.lens]
-        : [],
+      countsAsLensEvidence(candidate) ? [candidate.lens!] : [],
     )) {
       reviewedPathsByLens[lens] = [...new Set([...(reviewedPathsByLens[lens] ?? []), ...paths])]
     }

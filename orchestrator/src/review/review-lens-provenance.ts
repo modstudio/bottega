@@ -66,15 +66,27 @@ export type ProvenanceLensRow = {
   provenance?: LensProvenanceSubjectFacts
 }
 
+/** Why a graded lens row cannot count as evidence, or null when it can. */
+export function inadmissibleLensReason(row: ProvenanceLensRow): ReviewLensOwedReason | null {
+  if (!row.graded) return null
+  const subject = lensProvenanceSubject(row.provenance)
+  return subject.admissible ? null : subject.reason
+}
+
+/** Whether a row is named, graded evidence for its recorded review subject. */
+export function countsAsLensEvidence(row: ProvenanceLensRow): boolean {
+  return Boolean(row.lens && row.graded && lensProvenanceSubject(row.provenance).admissible)
+}
+
 /** Find the first inadmissible graded row in a newest-first lens sequence. */
 export function newestInadmissibleLensRow(
   rows: readonly ProvenanceLensRow[],
   lens?: string,
 ): { row: ProvenanceLensRow; reason: ReviewLensOwedReason } | null {
   for (const row of rows) {
-    if (!row.graded || (lens !== undefined && row.lens !== lens)) continue
-    const subject = lensProvenanceSubject(row.provenance)
-    if (!subject.admissible) return { row, reason: subject.reason }
+    if (lens !== undefined && row.lens !== lens) continue
+    const reason = inadmissibleLensReason(row)
+    if (reason) return { row, reason }
   }
   return null
 }
