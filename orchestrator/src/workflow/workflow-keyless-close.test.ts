@@ -7,12 +7,11 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
+import { composeWorkflowWithCursor, getWorkflowStepWithCursor } from './workflow-cursor.ts'
 import {
-  composeWorkflowWithCursor,
-  getWorkflowStepWithCursor,
-  nextWorkflowStep,
-} from './workflow-cursor.ts'
-import { testPorts } from './workflow-cursor-test.fixture.ts'
+  selectAndNextWorkflowStep as nextWorkflowStep,
+  testPorts,
+} from './workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { KEYLESS_TRACKER_ACTION_KEY } from './workflow-template.ts'
 import { parseWorkflowTree } from './workflow-tree.ts'

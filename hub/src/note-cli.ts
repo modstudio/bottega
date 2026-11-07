@@ -1,5 +1,6 @@
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { repeatable } from '../../shared/cli-repeat-guard.ts'
 import { projectOf } from './attribute.ts'
 import { requireDatabase } from './db.ts'
 import {
@@ -316,7 +317,11 @@ export function registerNoteCommands(program: Command): void {
     .description('list notes from the local record')
     .option('--project <X>', 'limit notes to this project')
     .option('--stale', 'include stale notes')
-    .option('--session <ID>', 'limit notes to this session', repeat, [])
+    .addOption(
+      repeatable(
+        new Option('--session <ID>', 'limit notes to this session').argParser(repeat).default([]),
+      ),
+    )
     .option('--actionable', 'list notes ready for disposition')
     .option('--kept', 'list notes acknowledged by the selected sessions')
     .option('--json', 'write the note rows as JSON')

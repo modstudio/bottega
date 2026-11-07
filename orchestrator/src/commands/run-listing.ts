@@ -1,7 +1,8 @@
 // concern: cli
 /** Registers run detail and listing adapters. Must not own run behavior. */
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { processStartTime } from '../../../shared/process-identity.ts'
 import { thinOutputWarning } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
@@ -60,7 +61,11 @@ export function register(program: Command): void {
   program
     .command('runs')
     .description('list recorded run conversations')
-    .option('--id <value>', 'include this run conversation', collect, [])
+    .addOption(
+      repeatable(
+        new Option('--id <value>', 'include this run conversation').argParser(collect).default([]),
+      ),
+    )
     .option('--job <value>', 'limit runs to this job')
     .option('--agent <value>', 'limit runs to this agent')
     .option('--limit <value>', 'limit the number of runs')

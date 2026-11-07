@@ -3,6 +3,7 @@
 
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { db } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
@@ -43,6 +44,9 @@ import {
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
+
+const collectedOption = (flags: string, description: string) =>
+  repeatable(new Option(flags, description).argParser(collect).default([]))
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const presentation: WorkflowPresentation = {
@@ -196,8 +200,8 @@ function registerWorkflowRendering({
       .option('--catalogue-version <value>', 'compose with this step catalogue version')
       .option('--mode <value>', 'select this workflow mode')
       .option('--project <value>', 'compose for this registered project')
-      .option('--arg <value>', 'supply a workflow argument as name=value', collect, [])
-      .option('--autonomy <value>', 'override an autonomy scope', collect, []),
+      .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value'))
+      .addOption(collectedOption('--autonomy <value>', 'override an autonomy scope')),
   )
     .allowExcessArguments(false)
     .action((slug, options) => {
@@ -220,8 +224,8 @@ function registerWorkflowRendering({
       .option('--cursor <value>', 'select this workflow cursor')
       .option('--mode <value>', 'select this workflow mode')
       .option('--project <value>', 'select this registered project')
-      .option('--arg <value>', 'supply a workflow argument as name=value', collect, [])
-      .option('--autonomy <value>', 'override an autonomy scope', collect, []),
+      .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value'))
+      .addOption(collectedOption('--autonomy <value>', 'override an autonomy scope')),
   )
     .allowExcessArguments(false)
     .action((slug, step, options) => {
@@ -243,7 +247,7 @@ function registerWorkflowAdvancement({
       .option('--file <value>', 'read the text from this file instead of stdin')
       .option('--mode <value>', 'select this workflow mode')
       .option('--project <value>', 'select this registered project')
-      .option('--arg <value>', 'supply a workflow argument as name=value', collect, []),
+      .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value')),
   )
     .allowExcessArguments(false)
     .action((slug, options) =>
@@ -274,7 +278,7 @@ function registerWorkflowAdvancement({
       .option('--task <value>', 'cite a task as floor evidence')
       .option('--defer <value>', 'record deferred floor evidence')
       .option('--satisfies <value>', 'cite the floor this evidence satisfies')
-      .option('--arg <value>', 'supply a workflow argument as name=value', collect, []),
+      .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value')),
   )
     .allowExcessArguments(false)
     .action((slug, options) => {
@@ -297,7 +301,7 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
       .option('--mode <value>', 'select this workflow mode')
       .option('--project <value>', 'select this registered project')
       .option('--question <value>', 'state the question that needs a ruling')
-      .option('--arg <value>', 'supply a workflow argument as name=value', collect, []),
+      .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value')),
   )
     .allowExcessArguments(false)
     .action((slug, options) =>
@@ -317,7 +321,7 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
       .option('--project <value>', 'select this registered project')
       .option('--ruling <value>', 'supply the ruling text')
       .option('--from-operator', 'mark the ruling as supplied by the operator')
-      .option('--arg <value>', 'supply a workflow argument as name=value', collect, []),
+      .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value')),
   )
     .allowExcessArguments(false)
     .action((slug, options) =>
@@ -375,7 +379,7 @@ function registerWorkflowCursorAdmin({
         .option('--cursor <value>', 'select this workflow cursor')
         .option('--mode <value>', 'select this workflow mode')
         .option('--project <value>', 'select this registered project')
-        .option('--arg <value>', 'supply a workflow argument as name=value', collect, []),
+        .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value')),
     ),
   )
     .allowExcessArguments(false)
@@ -474,8 +478,8 @@ function registerWorkflowTreeCommands({
     .command('hydrate')
     .description('write the production workflow tree into a project worktree')
     .option('--cwd <value>', 'select the project worktree to hydrate')
-    .option('--discard <path>', 'overwrite or delete an unimported tree path', collect, [])
-    .option('--path <path>', 'limit hydration to a tree path', collect, [])
+    .addOption(collectedOption('--discard <path>', 'overwrite or delete an unimported tree path'))
+    .addOption(collectedOption('--path <path>', 'limit hydration to a tree path'))
     .option('--check', 'report drift without writing files')
     .allowExcessArguments(false)
     .action((options) =>

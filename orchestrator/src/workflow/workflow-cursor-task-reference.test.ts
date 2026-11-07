@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
-import { args, context, database } from './workflow-cursor-test.fixture.ts'
+import {
+  args,
+  context,
+  database,
+  selectAndNextWorkflowStep as nextWorkflowStep,
+} from './workflow-cursor-test.fixture.ts'
 
 describe('workflow cursor task reference', () => {
   test('an unknown user task key is stored as a label with no UUID link', async () => {
@@ -20,7 +25,7 @@ describe('workflow cursor task reference', () => {
     )
   })
 
-  test('resolving a selector key links and selects a cursor created before rollout', async () => {
+  test('a pre-rollout cursor named by number links to its resolved task on next', async () => {
     const d = database()
     composeWorkflowWithCursor(
       'flow',
@@ -33,7 +38,9 @@ describe('workflow cursor task reference', () => {
       {},
     )
     const cursor = d
-      .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor')
+      .query<{ number: number; record_id: string }, []>(
+        'SELECT number,record_id FROM workflow_cursor',
+      )
       .get()!
     d.query(
       `INSERT INTO question
@@ -45,7 +52,18 @@ describe('workflow cursor task reference', () => {
     const resolved = await resolveWorkflowCursorContext('fixture', args, context, async () => [
       { key: args.key, record_id: 'task-DEV-822', project: 'fixture' },
     ])
-    nextWorkflowStep('flow', 'fixture', 'default', args, 'linked on selection', resolved, d)
+    nextWorkflowStep(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      'linked on selection',
+      resolved,
+      d,
+      {},
+      undefined,
+      cursor.number,
+    )
 
     expect(
       d.query('SELECT workflow_key,ordinal,task_record_id FROM workflow_cursor').get(),

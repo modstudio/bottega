@@ -10,7 +10,6 @@ import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
-  nextWorkflowStep,
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
@@ -25,6 +24,7 @@ import {
   matchingCheckout,
   prepareOperatorRulingCursor,
   relayOperatorRuling,
+  selectAndNextWorkflowStep as nextWorkflowStep,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
