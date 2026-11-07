@@ -22,9 +22,9 @@ function exitCode(code: number | null | undefined): number {
   return code ?? 1
 }
 
-function stdinBlob(stdin: string | Uint8Array | undefined): Blob | undefined {
+function stdinBlob(stdin: string | Uint8Array | undefined): Blob | Uint8Array | undefined {
   if (stdin === undefined) return undefined
-  return new Blob([typeof stdin === 'string' ? stdin : new Uint8Array(stdin)])
+  return typeof stdin === 'string' ? new Blob([stdin]) : stdin
 }
 
 export async function startBounded(
