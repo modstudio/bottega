@@ -1,4 +1,7 @@
+import { boundedFetch } from '../../../shared/bounded-fetch.ts'
 import { recordApiUrl } from './hub-mode.ts'
+
+const hostedApiFetch = boundedFetch('hosted-api')
 
 function recordUrl(path: string) {
   const base = recordApiUrl()
@@ -19,7 +22,7 @@ export function recordErrorMessage(body: unknown, fallback: string) {
 }
 
 export function recordRequest(path: string, init?: RequestInit) {
-  return fetch(recordUrl(path), {
+  return hostedApiFetch(recordUrl(path), {
     ...init,
     credentials: 'include',
     headers: init?.body ? { 'content-type': 'application/json', ...init.headers } : init?.headers,

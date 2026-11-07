@@ -88,7 +88,7 @@ const BUN_FORMS: readonly string[] = ['Bun.spawn', 'Bun.spawnSync', 'Bun.$']
 /** The source pre-filter must name every detector's vocabulary. */
 export const RAW_START_DETECTOR_TERMS = [
   ...CHILD_PROCESS_MODULES,
-  ...EXECA_CALLS,
+  ...[...EXECA_CALLS].filter((call) => call !== '$'),
   KY_MODULE,
   FETCH_CALL,
   BOUNDED_PROCESS_MODULE_NAME,
@@ -252,7 +252,13 @@ function taggedFinding(
   path: string,
   imports: Imports,
 ): RawStart | undefined {
-  if (!ts.isIdentifier(node.tag) || !imports.execaCalls.has(node.tag.text)) return undefined
+  const importedExecaTag = ts.isIdentifier(node.tag) && imports.execaCalls.has(node.tag.text)
+  const bunTag =
+    ts.isPropertyAccessExpression(node.tag) &&
+    ts.isIdentifier(node.tag.expression) &&
+    node.tag.expression.text === 'Bun' &&
+    node.tag.name.text === '$'
+  if (!importedExecaTag && !bunTag) return undefined
   return {
     file: path,
     line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
