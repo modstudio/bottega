@@ -646,7 +646,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
-  const preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
   let askLoopback: AskLoopback | null = input.askLoopback
   let executionBrokers: WorkerExecutionBrokers | null = null
@@ -1073,7 +1072,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     error,
     failureKind,
     artifactsPersisted: true,
-    preConfinement,
+    preConfinement: null,
     vendorTerminatedStream,
     askLoopback,
     mcpSetupHeader,
