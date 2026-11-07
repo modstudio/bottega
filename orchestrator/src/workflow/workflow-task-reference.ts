@@ -9,6 +9,7 @@ export type HubTaskReference = {
   key: string
   record_id: string
   project: string
+  source?: string | null
   status_category?: string | null
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
@@ -37,6 +38,9 @@ function taskReference(row: unknown): HubTaskReference {
   const status = (row as HubTaskReference).status_category
   if (status !== undefined && status !== null && typeof status !== 'string')
     throw new Error('response contained an invalid task status category')
+  const source = (row as HubTaskReference).source
+  if (source !== undefined && source !== null && typeof source !== 'string')
+    throw new Error('response contained an invalid task source')
   return row as HubTaskReference
 }
 
