@@ -59,6 +59,12 @@ console.log(
   `sync survivors: ${[...afterSync].filter((pid) => !before.has(pid)).join(', ') || 'none'}`,
 )
 
+const stdinStarted = performance.now()
+const stdinReader = await startBounded(['cat'], { budget: 'process-table' })
+console.log(
+  `closed stdin: exit ${stdinReader.exitCode}; elapsed ${Math.round(performance.now() - stdinStarted)}ms`,
+)
+
 await report('output flood', async () =>
   startBounded(['sh', '-c', 'while :; do printf 1234567890; done'], {
     budget: 'process-table',
