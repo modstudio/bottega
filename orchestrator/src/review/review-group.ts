@@ -2,8 +2,6 @@
 /** Measures change groups and reads their recorded review rows. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync, realpathSync } from 'node:fs'
-import { resolve } from 'node:path'
 import type { Project } from '../project/projects.ts'
 import {
   type ApplicableReview,
@@ -67,18 +65,6 @@ type StoredReviewProvenance = {
 const provenanceString = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value : null
 
-/** Resolve both existing trees physically, or both missing-tree identities lexically. */
-function canonicalTreePair(
-  treeInspected: string | null,
-  runTree: string | null,
-): Pick<LensProvenanceSubjectFacts, 'treeInspected' | 'runTree'> {
-  if (!treeInspected || !runTree) return { treeInspected, runTree }
-  if (existsSync(treeInspected) && existsSync(runTree)) {
-    return { treeInspected: realpathSync(treeInspected), runTree: realpathSync(runTree) }
-  }
-  return { treeInspected: resolve(treeInspected), runTree: resolve(runTree) }
-}
-
 export function provenanceSubjectFacts(row: {
   review_provenance: string | null
   worktree: string | null
@@ -100,13 +86,10 @@ export function provenanceSubjectFacts(row: {
   } catch {
     // A malformed recorded provenance cannot establish either subject claim.
   }
-  const trees = canonicalTreePair(
-    provenanceString(provenance.tree_inspected),
-    row.worktree ?? row.cwd,
-  )
   return {
     recorded: true,
-    ...trees,
+    treeInspected: provenanceString(provenance.tree_inspected),
+    runTree: row.worktree ?? row.cwd,
     reviewedCommit: provenanceString(provenance.reviewed_commit),
     headCommit: row.head_commit,
   }

@@ -379,8 +379,8 @@ test('a moved remote trunk is the shared base for review and admission despite s
   expect(changed?.group.patchId).toBe('changed-patch')
 })
 
-test('missing review trees compare normalized recorded spellings', () => {
-  const decisionFor = (treeInspected: string) => {
+test('recorded review tree paths are extracted, normalized, and confined to the run tree', () => {
+  const decisionFor = (treeInspected?: string) => {
     const database = new Database(':memory:')
     applyMigrations(database)
     const projectId = newRecordId()
@@ -401,7 +401,10 @@ test('missing review trees compare normalized recorded spellings', () => {
       .run(
         runId,
         projectId,
-        JSON.stringify({ tree_inspected: treeInspected, reviewed_commit: 'abcdef1' }),
+        JSON.stringify({
+          ...(treeInspected === undefined ? {} : { tree_inspected: treeInspected }),
+          reviewed_commit: 'abcdef1',
+        }),
       )
     const reviewId = newRecordId()
     database
@@ -439,7 +442,12 @@ test('missing review trees compare normalized recorded spellings', () => {
     })
   }
 
-  expect(decisionFor('/missing/trees/other/../subject/')).toMatchObject({ complete: true })
+  expect(decisionFor('/missing/trees/other/../subject/ (detached worktree)')).toMatchObject({
+    complete: true,
+  })
+  expect(decisionFor('74ff6ad...70ba3dd')).toMatchObject({ complete: true })
+  expect(decisionFor()).toMatchObject({ complete: true })
+  expect(decisionFor('/missing/trees/subject/src')).toMatchObject({ complete: true })
   expect(decisionFor('/missing/trees/other')).toMatchObject({
     complete: false,
     missingLenses: [{ lens: 'correctness', reason: 'tree-mismatch' }],
