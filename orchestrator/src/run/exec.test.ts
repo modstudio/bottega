@@ -1,13 +1,14 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal } from '../../../shared/refusal.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { main, startupFailureDiagnostic } from './exec.ts'
 
 test('a startup refusal reports its message without a stack', () => {
-  const refusal = new RefusalError(`run ${PLATFORM_SLUG} agent probe codex`)
-  expect(startupFailureDiagnostic(refusal)).toBe(`run ${PLATFORM_SLUG} agent probe codex`)
+  const error = new RefusalError(refusal(`run ${PLATFORM_SLUG} agent probe codex`))
+  expect(startupFailureDiagnostic(error)).toBe(`run ${PLATFORM_SLUG} agent probe codex`)
 })
 
 test('an unexpected startup error keeps its stack', () => {
