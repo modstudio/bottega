@@ -54,6 +54,7 @@
         "scripts/record-rehearse.ts!",
         "scripts/affected-tests.ts!",
         "scripts/audit-hot-store-statements.ts!",
+        "scripts/probe-bounded-calls.ts!",
         "scripts/test-focused.ts!",
         "!scripts/**/*.fixtures.ts",
         "!scripts/**/*.test.ts",

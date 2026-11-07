@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { dirname, join } from 'node:path'
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { pidAlive, processStartTime } from '../../shared/process-identity.ts'
 import { concernStateDirectory, type StateEnvironment } from '../../shared/state-directory.ts'
 
@@ -136,13 +137,12 @@ function probeServeDown(port: number, timeoutMs = 1_000): Promise<ServeProbeResu
 
 function processCommand(pid: number): string | null {
   try {
-    const inspected = Bun.spawnSync(['ps', '-o', 'command=', '-p', String(pid)], {
+    const inspected = startBoundedSync(['ps', '-o', 'command=', '-p', String(pid)], {
+      budget: 'process-table',
       env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
-      stdout: 'pipe',
-      stderr: 'ignore',
     })
     if (inspected.exitCode !== 0) return null
-    return inspected.stdout.toString().trim() || null
+    return inspected.stdout.trim() || null
   } catch {
     return null
   }
@@ -150,14 +150,12 @@ function processCommand(pid: number): string | null {
 
 function processCwd(pid: number): string | null {
   try {
-    const inspected = Bun.spawnSync(['lsof', '-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
-      stdout: 'pipe',
-      stderr: 'ignore',
+    const inspected = startBoundedSync(['lsof', '-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+      budget: 'process-table',
     })
     if (inspected.exitCode !== 0) return null
     return (
       inspected.stdout
-        .toString()
         .split('\n')
         .find((line) => line.startsWith('n'))
         ?.slice(1) ?? null
@@ -169,15 +167,13 @@ function processCwd(pid: number): string | null {
 
 function listeningProcessIds(port: number): number[] | null {
   try {
-    const inspected = Bun.spawnSync(['lsof', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fp'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const inspected = startBoundedSync(['lsof', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fp'], {
+      budget: 'process-table',
     })
     if (inspected.exitCode !== 0) return null
     return [
       ...new Set(
         inspected.stdout
-          .toString()
           .split('\n')
           .filter((line) => line.startsWith('p'))
           .map((line) => Number(line.slice(1)))

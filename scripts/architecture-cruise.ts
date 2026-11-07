@@ -7,6 +7,7 @@ import { dependencyCruiserConfig } from './architecture.ts'
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const TYPESCRIPT_LOADER = join(ROOT, 'scripts/dependency-cruiser-typescript-loader.mjs')
 const MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR = 24
+const TYPESCRIPT_EXTENSIONS = ['ts', 'tsx']
 
 export const ARCHITECTURE_CRUISE_ROOTS = [
   'orchestrator',
@@ -30,6 +31,19 @@ export const ARCHITECTURE_CRUISE_ENTRIES = [
   'cli/**/*.{ts,tsx,js,jsx,mjs,cjs}',
   'scripts/**/*.{ts,tsx,js,jsx,mjs,cjs}',
 ] as const
+
+/** The architecture cruise entries narrowed to their TypeScript sources. */
+export function typescriptCruiseEntries(entries: readonly string[]): string[] {
+  const selected: string[] = []
+  for (const entry of entries) {
+    const extensions = /\{([^{}]+)\}$/.exec(entry)
+    if (!extensions) continue
+    const names = extensions[1]!.split(',').map((name) => name.trim())
+    if (!TYPESCRIPT_EXTENSIONS.every((extension) => names.includes(extension))) continue
+    selected.push(`${entry.slice(0, extensions.index)}{ts,tsx}`)
+  }
+  return selected
+}
 
 export function architectureCruiseCoverageViolations({
   moduleSources,
