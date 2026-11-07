@@ -4,6 +4,7 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { nullableRecordIso, recordDate } from '../../../shared/record-timestamp.ts'
 import {
   BOARD_CLAIM_DEFAULT_MS,
   type ClaimCloseReason,
@@ -34,8 +35,6 @@ import {
   withBoardTenant,
 } from './record-board-tx.ts'
 
-const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
-
 export const CLAIM_CONFLICT = 'claim conflicts with:'
 
 type ClaimRow = Record<string, unknown>
@@ -43,7 +42,7 @@ type ClaimRow = Record<string, unknown>
 function hostedLive(row: ClaimRow, clock: number): boolean {
   return claimIsLive({
     closed: row.closed_at != null,
-    lapsesAt: Date.parse(String(row.lapses_at)),
+    lapsesAt: recordDate(row.lapses_at).getTime(),
     runStatus: null,
     now: clock,
   })
@@ -72,11 +71,11 @@ async function claimView(
     holder: String(row.holder_user_id),
     note: row.note == null ? null : String(row.note),
     runId: row.run_id == null ? null : String(row.run_id),
-    takenAt: iso(row.taken_at)!,
-    renewedAt: iso(row.renewed_at)!,
-    lapsesAt: iso(row.lapses_at)!,
+    takenAt: nullableRecordIso(row.taken_at)!,
+    renewedAt: nullableRecordIso(row.renewed_at)!,
+    lapsesAt: nullableRecordIso(row.lapses_at)!,
     live: hostedLive(row, clock),
-    closedAt: iso(row.closed_at),
+    closedAt: nullableRecordIso(row.closed_at),
     closeReason: row.close_reason == null ? null : String(row.close_reason),
     previousClaimIds: await previousIds(tx, String(row.id)),
     supersededByClaimId:
@@ -201,7 +200,7 @@ function liveClaimRefusal(rows: ClaimRow[]): string {
         ? ''
         : `ask with ${PLATFORM_SLUG} board ask --audience session:${String(row.holder_session)}, `
     return (
-      `${holder} holding claim ${String(row.id)} until ${iso(row.lapses_at)} ` +
+      `${holder} holding claim ${String(row.id)} until ${nullableRecordIso(row.lapses_at)} ` +
       `(${ask}release claim ${String(row.id)}, or wait for lapse)`
     )
   })
@@ -281,7 +280,7 @@ async function supersedeClaims(
     const ended =
       claimCloseReason({
         closed: false,
-        lapsesAt: Date.parse(String(conflict.lapses_at)),
+        lapsesAt: recordDate(conflict.lapses_at).getTime(),
         runStatus: null,
         now: clock,
       }) ?? 'taken-over'
@@ -599,7 +598,7 @@ export async function releaseHostedBoardTaskClaims(
     )
     if (foreignLive.length) {
       throw new RecordBoardError(
-        `${CLAIM_CONFLICT} ${foreignLive.map((row) => `user ${String(row.holder_user_id)} until ${iso(row.lapses_at)}`).join('; ')}`,
+        `${CLAIM_CONFLICT} ${foreignLive.map((row) => `user ${String(row.holder_user_id)} until ${nullableRecordIso(row.lapses_at)}`).join('; ')}`,
         409,
       )
     }

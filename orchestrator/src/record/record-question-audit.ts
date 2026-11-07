@@ -1,9 +1,11 @@
 // concern: record-question-audit
 /** Writes the mutation audit bundled with one question outbox payload. */
+
 import type { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { questionMutationAudit as questionMutationAuditRecord } from '../../../shared/record/schema-question.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { OutboxRowError } from './outbox-failure.ts'
 import type { RecordPayload as Payload } from './record-sync-contract.ts'
 
@@ -21,7 +23,6 @@ function questionAudits(row: Payload): QuestionAuditPayload[] {
   return row.audits as QuestionAuditPayload[]
 }
 
-const date = (value: unknown) => new Date(String(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 
 export async function pushQuestionAudits(
@@ -39,7 +40,7 @@ export async function pushQuestionAudits(
         spaceId,
         action: String(audit.action),
         actorSession: nullableString(audit.actorSession),
-        at: date(audit.at),
+        at: recordDate(audit.at),
         reason: nullableString(audit.reason),
       })
       .onConflictDoNothing()

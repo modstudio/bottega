@@ -1,7 +1,9 @@
 // concern: record-releases
 /** Owns tenant-bound hosted release reads. Must not know local release execution or HTTP. */
+
 import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { nullableRecordIso } from '../../../shared/record-timestamp.ts'
 import type { RecordCursor } from './record-cursor.ts'
 import { recordPool } from './record-pool.ts'
 import {
@@ -22,8 +24,6 @@ type ReleaseLatestInput = TenantPrincipal & {
   projectId: string
 }
 
-const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
-
 function releaseRow(row: Record<string, unknown>): RecordRelease {
   return {
     id: String(row.id),
@@ -39,8 +39,8 @@ function releaseRow(row: Record<string, unknown>): RecordRelease {
     rollbackReason: row.rollback_reason == null ? null : String(row.rollback_reason),
     actor: String(row.actor),
     sessionId: row.session_id == null ? null : String(row.session_id),
-    startedAt: iso(row.started_at)!,
-    finishedAt: iso(row.finished_at),
+    startedAt: nullableRecordIso(row.started_at)!,
+    finishedAt: nullableRecordIso(row.finished_at),
     exitCode: row.exit_code == null ? null : Number(row.exit_code),
     liveMatchesCandidate:
       row.live_matches_candidate == null ? null : row.live_matches_candidate === true,

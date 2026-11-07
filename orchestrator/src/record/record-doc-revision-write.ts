@@ -1,9 +1,11 @@
 // concern: record-doc-revision-write
 /** Owns complete hosted document revision snapshots and the live revision pointer. */
+
 import type { SQL } from 'bun'
 import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 
@@ -45,7 +47,7 @@ function isSameRevisionSnapshot(
     String(row.author) === input.author &&
     String(row.reason) === input.reason &&
     (row.session_id ?? null) === input.sessionId &&
-    new Date(String(row.at)).toISOString() === new Date(input.at).toISOString()
+    recordDate(row.at).toISOString() === new Date(input.at).toISOString()
   )
 }
 

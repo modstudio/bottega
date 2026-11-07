@@ -1,10 +1,12 @@
 // concern: record-snapshots
 /** Owns tenant-bound latest orchestrator snapshots. Must not know HTTP or local commands. */
+
 import type { SQL } from 'bun'
 import type { MachineRef } from '../../../shared/machine-label.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { recordMachine } from './record-machine.ts'
 import { recordPool } from './record-pool.ts'
 
@@ -44,7 +46,7 @@ export async function upsertRecordSnapshot(
         payload=excluded.payload, taken_at=excluded.taken_at
       RETURNING taken_at
     `
-    return { takenAt: new Date(String(rows[0]!.taken_at)).toISOString() }
+    return { takenAt: recordDate(rows[0]!.taken_at).toISOString() }
   })
 }
 
@@ -63,7 +65,7 @@ export async function listRecordSnapshots(input: Tenant): Promise<RecordSnapshot
       machineId: String(row.machine_id),
       machine: recordMachine(row),
       payload: row.payload,
-      takenAt: new Date(String(row.taken_at)).toISOString(),
+      takenAt: recordDate(row.taken_at).toISOString(),
     }))
   })
 }

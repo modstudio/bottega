@@ -1,5 +1,6 @@
 // concern: record-review-values
 /** Maps local review evidence payloads to hosted record values. */
+import { recordDate } from '../../../shared/record-timestamp.ts'
 
 type Payload = Record<string, unknown>
 
@@ -8,6 +9,6 @@ export const commonReviewRecordValues = (row: Payload) => ({
   spaceId: String(row.spaceId),
   machineId: String(row.machineId),
   withheldFields: row.withheldFields,
-  createdAt: new Date(String(row.createdAt)),
-  updatedAt: new Date(String(row.updatedAt)),
+  createdAt: recordDate(row.createdAt),
+  updatedAt: recordDate(row.updatedAt),
 })

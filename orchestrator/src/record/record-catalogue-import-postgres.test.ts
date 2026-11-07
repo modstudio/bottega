@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import {
   importRecordLensCatalogue,
   importRecordPortCatalogue,
@@ -533,10 +534,10 @@ postgres('hosted catalogue bulk imports', () => {
     expect(workflowEvents).toEqual([
       expect.objectContaining({ id: workflowEventId, at: historicalAt }),
     ])
-    expect(new Date(String(stepEvents[0]!.updatedAt)).getTime()).toBeGreaterThan(
+    expect(recordDate(stepEvents[0]!.updatedAt).getTime()).toBeGreaterThan(
       new Date(cursor.at).getTime(),
     )
-    expect(new Date(String(workflowEvents[0]!.updatedAt)).getTime()).toBeGreaterThan(
+    expect(recordDate(workflowEvents[0]!.updatedAt).getTime()).toBeGreaterThan(
       new Date(cursor.at).getTime(),
     )
     const second = await importRecordWorkflowCatalogue({ ...tenant, ...input })
@@ -748,8 +749,8 @@ postgres('hosted catalogue bulk imports', () => {
       ])
       const [timestamps] =
         await verify`SELECT created_at,updated_at FROM workflow_version WHERE id=${importedDraftId}::uuid`
-      expect(new Date(String(timestamps!.updated_at)).getTime()).toBeGreaterThan(
-        new Date(String(timestamps!.created_at)).getTime(),
+      expect(recordDate(timestamps!.updated_at).getTime()).toBeGreaterThan(
+        recordDate(timestamps!.created_at).getTime(),
       )
       expect([
         ...(await verify`SELECT id FROM workflow_version WHERE id=${seededVersionId}::uuid`),

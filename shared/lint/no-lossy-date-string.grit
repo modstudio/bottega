@@ -1,0 +1,8 @@
+language js
+
+or {
+  `new Date(String($value))`,
+  `Date.parse(String($value))`
+} as $conversion where {
+  register_diagnostic(span=$conversion, message="String(date) drops milliseconds; convert a record timestamp with recordDate from shared/record-timestamp.ts.")
+}
