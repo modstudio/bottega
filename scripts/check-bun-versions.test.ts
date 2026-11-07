@@ -20,6 +20,32 @@ test('refuses a literal workflow Bun version with its location and remedy', () =
   )
 })
 
+test('refuses a setup-bun step that does not read the version file, beside one that does', () => {
+  expect(
+    decideWorkflowBunVersions([
+      {
+        path: '.github/workflows/ci.yml',
+        source: [
+          'jobs:',
+          '  first:',
+          '    steps:',
+          '      - uses: oven-sh/setup-bun@v2',
+          '        with:',
+          '          bun-version-file: .bun-version',
+          '  second:',
+          '    steps:',
+          '      - uses: oven-sh/setup-bun@v2',
+          '      - run: bun install',
+          '        with:',
+          '          bun-version-file: .bun-version',
+        ].join('\n'),
+      },
+    ]),
+  ).toBe(
+    'workflow Bun version check failed\n.github/workflows/ci.yml:9: setup-bun must declare bun-version-file: .bun-version',
+  )
+})
+
 test('refuses an invalid repository Bun version declaration', () => {
   expect(decideBunVersionFile('latest\n')).toBe(
     '.bun-version must contain one plain version, for example 1.4.4',
@@ -29,7 +55,7 @@ test('refuses an invalid repository Bun version declaration', () => {
 test('warns without refusing when the running Bun version differs', () => {
   expect(decideBunVersionFile('1.4.4\n')).toBeUndefined()
   expect(decideRunningBunVersion('1.4.4', '1.4.3')).toBe(
-    'running Bun 1.4.3 differs from .bun-version 1.4.4; run bun upgrade --version 1.4.4 or update .bun-version',
+    'running Bun 1.4.3 differs from .bun-version 1.4.4; install it with curl -fsSL https://bun.com/install | bash -s "bun-v1.4.4", or update .bun-version',
   )
 })
 

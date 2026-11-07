@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS, CI_ONLY_JOBS, CI_ONLY_SUITES } from './check-plan.ts'
-import { RELEASE_BUN_VERSION } from './release-config.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
@@ -85,36 +84,6 @@ function checkCiOnlySuiteJobs(source: string): void {
   }
 }
 
-/** The one form a workflow's Bun version declaration may take. */
-const bunVersionFileShape = 'bun-version-file: .bun-version'
-
-/**
- * Reads every Bun version file a workflow declares. A `bun-version-file:` line
- * naming anything except the repository declaration is refused with the line
- * and the accepted form, never silently counted as no declaration at all.
- */
-function workflowBunVersionFiles(source: string, workflow: string): string[] {
-  const files: string[] = []
-  for (const line of source.split('\n')) {
-    const declaration = /^\s*bun-version-file:(?<value>.*)$/.exec(line)
-    if (!declaration) continue
-    const file = declaration.groups!.value!.trim()
-    if (file !== '.bun-version') {
-      throw new Error(
-        `${workflow} must declare its Bun version as "${bunVersionFileShape}"; got "${line.trim()}"`,
-      )
-    }
-    files.push(file)
-  }
-  return files
-}
-
-/** Makes every Bun a workflow sets up read the repository declaration. */
-function checkBunVersionFiles(source: string, workflow: string): void {
-  const files = workflowBunVersionFiles(source, workflow)
-  if (files.length === 0) throw new Error(`${workflow} must use ${bunVersionFileShape}`)
-}
-
 export function expectedWorkflowJobNames(): string[] {
   return [
     'secrets',
@@ -153,12 +122,10 @@ export function checkCiWorkflow(source: string): void {
   if (!hooks.includes('run: $SUITE_COMMAND --only=orchestrator/hooks'))
     throw new Error('orchestrator-hooks job must run its check-plan leg')
   checkCiOnlySuiteJobs(source)
-  checkBunVersionFiles(source, 'CI workflow')
   const postgres = workflowJob(source, 'postgres')
   if (!postgres.includes('image: postgres:18-alpine'))
     throw new Error('postgres job must use Postgres 18')
   if (!postgres.includes('uses: oven-sh/setup-bun@v2')) throw new Error('postgres job must use Bun')
-  checkBunVersionFiles(postgres, 'postgres job')
   if (!postgres.includes('run: bun install --silent'))
     throw new Error('postgres job must install the workspace')
   if (!postgres.includes(postgresServiceContainer))
@@ -167,9 +134,8 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('postgres job must run the real-Postgres suite without the live import proof')
 }
 
-/** Pins every Bun the release workflow sets up to the version the artifact build requires. */
+/** Keeps release creation inside the release publisher; check-bun-versions owns the Bun declaration. */
 export function checkReleaseWorkflow(source: string): void {
-  checkBunVersionFiles(source, 'release workflow')
   for (const command of workflowRunCommands(workflowJob(source, 'release'))) {
     const directRelease = /\bgh\s+release\s+(upload|create)\b/.exec(command)
     if (directRelease) {
@@ -184,5 +150,5 @@ if (import.meta.main) {
   checkCiWorkflow(readFileSync(`${root}.github/workflows/ci.yml`, 'utf8'))
   console.log('CI workflow covers every check-plan leg and the root test batch')
   checkReleaseWorkflow(readFileSync(`${root}.github/workflows/release.yml`, 'utf8'))
-  console.log(`release workflow sets up Bun ${RELEASE_BUN_VERSION}`)
+  console.log('release workflow check passed')
 }

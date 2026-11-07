@@ -73,16 +73,6 @@ test('pins the real-Postgres leg', () => {
     checkCiWorkflow(workflow.replace('image: postgres:18-alpine', 'image: postgres:17-alpine')),
   ).toThrow('must use Postgres 18')
   expect(() =>
-    checkCiWorkflow(
-      workflow.replace('bun-version-file: .bun-version', 'bun-version-file: other-version'),
-    ),
-  ).toThrow('must declare its Bun version as "bun-version-file: .bun-version"')
-  expect(() =>
-    checkCiWorkflow(
-      workflow.replace('bun-version-file: .bun-version', 'bun-version-file-pinned: .bun-version'),
-    ),
-  ).toThrow('CI workflow must use bun-version-file: .bun-version')
-  expect(() =>
     checkCiWorkflow(workflow.replace('run: bun install --silent', 'run: bun install')),
   ).toThrow('must install the workspace')
   expect(() =>
@@ -119,26 +109,6 @@ test('requires the story job to run the hub-views story-test script', () => {
       ),
     ),
   ).toThrow('must run the hub-views story-test script')
-})
-
-test('makes every release workflow Bun read the repository version file', () => {
-  expect(() => checkReleaseWorkflow(releaseWorkflowFixture())).not.toThrow()
-  expect(() =>
-    checkReleaseWorkflow(releaseWorkflowFixture('bun-version-file: other-version')),
-  ).toThrow(
-    'must declare its Bun version as "bun-version-file: .bun-version"; got "bun-version-file: other-version"',
-  )
-  const acceptedForm = 'must declare its Bun version as "bun-version-file: .bun-version"'
-  for (const pin of [
-    "bun-version-file: '.bun-version'",
-    'bun-version-file: .bun-version # repository declaration',
-  ]) {
-    expect(() => checkReleaseWorkflow(releaseWorkflowFixture(pin))).toThrow(acceptedForm)
-    expect(() => checkReleaseWorkflow(releaseWorkflowFixture(pin))).toThrow(pin)
-  }
-  expect(() => checkReleaseWorkflow(releaseWorkflowFixture(null))).toThrow(
-    'must use bun-version-file: .bun-version',
-  )
 })
 
 test('refuses a release upload outside the release publisher', () => {
