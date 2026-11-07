@@ -83,7 +83,8 @@ import {
 import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-preflight.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
-import { lookupProjectTaskKey } from './task-key-lookup.ts'
+import type { ReviewLensPackInputs } from './review-lens-prompt.ts'
+import { lookupProjectTaskKey, readLensTask } from './task-key-lookup.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
@@ -113,6 +114,68 @@ async function lookupTaskKey(project: string, key: string) {
       condition: `project ${project} is not registered`,
     }
   return lookupProjectTaskKey(registered, key)
+}
+
+function answeredTaskRulings(project: string, key: string): string[] {
+  return db()
+    .query<
+      { question: string; answer: string; replacement: string | null },
+      [string, string]
+    >(
+      `SELECT q.question,q.answer,q.replacement FROM question q
+       JOIN run owner ON owner.record_id=q.run_record_id
+       JOIN run root ON root.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
+       WHERE root.project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND upper(trim(root.launch_key))=upper(trim(?))
+         AND q.answered_at IS NOT NULL
+         AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
+       ORDER BY COALESCE(q.overturned_at,q.answered_at),q.number`,
+    )
+    .all(project, key)
+    .map(({ question, answer, replacement }) => `Question: ${question}\nRuling: ${replacement ?? answer}`)
+}
+
+async function reviewLensInputs(
+  project: NonNullable<ReturnType<typeof projectByName>>,
+  key: string | undefined,
+  lens: string | undefined,
+): Promise<ReviewLensPackInputs> {
+  const decisionConformance = lens === 'decision-conformance'
+  if (!key) {
+    const status = 'unavailable: no task key was declared' as const
+    return {
+      taskTextInput: status,
+      rulingsInput: decisionConformance ? status : null,
+      taskText: '',
+      rulings: '',
+    }
+  }
+  const task = await readLensTask(project, key)
+  if (!task.available) {
+    const status = `unavailable: ${task.reason}` as const
+    return {
+      taskTextInput: status,
+      rulingsInput: decisionConformance ? status : null,
+      taskText: '',
+      rulings: '',
+    }
+  }
+  const rulings = decisionConformance
+    ? [
+        ...answeredTaskRulings(project.name, key),
+        ...task.comments.map((comment) => `Task comment: ${comment}`),
+      ]
+    : []
+  return {
+    taskTextInput: 'carried',
+    rulingsInput: decisionConformance ? 'carried' : null,
+    taskText: `${task.key} — ${task.title}${task.body.trim() ? `\n\n${task.body.trim()}` : ''}`,
+    rulings: decisionConformance
+      ? rulings.length
+        ? rulings.join('\n\n')
+        : 'No answered questions or task comments were recorded.'
+      : '',
+  }
 }
 
 type CallerCheckoutDecision = {
@@ -611,6 +674,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       lookupTaskKey,
       recordRunWarning,
       earlierReviewRejections,
+      reviewLensInputs,
       detach: commandDetacher(presentation),
       runNumber,
       detachedResult: (id, json) => {

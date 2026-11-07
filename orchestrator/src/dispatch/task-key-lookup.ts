@@ -26,6 +26,72 @@ const processEnvironment = (): Record<string, string> =>
     ),
   )
 
+export type LensTaskRead =
+  | {
+      available: true
+      recordId: string
+      key: string
+      title: string
+      body: string
+      comments: string[]
+    }
+  | { available: false; reason: string }
+
+/** Read the task text through the CLI capability declared by the project register. */
+export async function readLensTask(project: Project, key: string): Promise<LensTaskRead> {
+  if (project.settings.tracker?.protocol !== 'hub') {
+    return {
+      available: false,
+      reason: "tracker reachable only through the project's MCP; declare a CLI task read in the project register",
+    }
+  }
+  try {
+    const child = Bun.spawn(
+      [
+        ...bottegaEntryArgv(PLATFORM_SLUG),
+        'task',
+        'show',
+        key,
+        '--project',
+        project.name,
+        '--json',
+      ],
+      { cwd: project.path, stdout: 'pipe', stderr: 'pipe', env: { ...process.env } },
+    )
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+    if (code !== 0) {
+      return { available: false, reason: errorText(stderr || stdout || `exit ${code}`) }
+    }
+    const shown = JSON.parse(stdout) as {
+      task?: { record_id?: unknown; key?: unknown; title?: unknown; body?: unknown }
+      comments?: Array<{ body?: unknown }>
+    }
+    if (
+      typeof shown.task?.record_id !== 'string' ||
+      typeof shown.task.key !== 'string' ||
+      typeof shown.task.title !== 'string'
+    ) {
+      return { available: false, reason: 'CLI task read returned no task text' }
+    }
+    return {
+      available: true,
+      recordId: shown.task.record_id,
+      key: shown.task.key,
+      title: shown.task.title,
+      body: typeof shown.task.body === 'string' ? shown.task.body : '',
+      comments: (shown.comments ?? []).flatMap((comment) =>
+        typeof comment.body === 'string' && comment.body.trim() ? [comment.body.trim()] : [],
+      ),
+    }
+  } catch (cause) {
+    return { available: false, reason: errorText(cause) }
+  }
+}
+
 export const trackerLookupFailureCondition = (cause: unknown, config: McpServerConfig): string => {
   const detail = sanitizeProbeError(errorText(cause), probeSecrets(config))
   return cause instanceof McpHeadersHelperError ? detail : `tracker lookup failed: ${detail}`

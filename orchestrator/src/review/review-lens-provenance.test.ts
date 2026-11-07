@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { compareReviewedCommit, lensProvenanceSubject } from './review-lens-provenance.ts'
+import {
+  compareReviewedCommit,
+  countsAsLensEvidence,
+  inadmissibleLensReason,
+  lensProvenanceSubject,
+} from './review-lens-provenance.ts'
 
 describe('reviewed commit comparison', () => {
   test.each([
@@ -11,6 +16,44 @@ describe('reviewed commit comparison', () => {
     ['missing', undefined, 'missing'],
   ] as const)('%s', (_name, reviewed, expected) => {
     expect(compareReviewedCommit('abcdef1234567890', reviewed)).toBe(expected)
+  })
+})
+
+describe('lens pack input admissibility', () => {
+  test('credits decision conformance when both inputs were carried', () => {
+    expect(
+      countsAsLensEvidence({
+        lens: 'decision-conformance',
+        graded: true,
+        taskTextInput: 'carried',
+        rulingsInput: 'carried',
+      }),
+    ).toBeTrue()
+  })
+
+  test('does not admit decision conformance when an input was unavailable and keeps its reason', () => {
+    const row = {
+      lens: 'decision-conformance',
+      graded: true,
+      taskTextInput:
+        "unavailable: tracker reachable only through the project's MCP; declare a CLI task read in the project register",
+      rulingsInput: 'carried',
+    }
+    expect(countsAsLensEvidence(row)).toBeFalse()
+    expect(inadmissibleLensReason(row)).toBe(
+      "decision-conformance not admitted: tracker reachable only through the project's MCP; declare a CLI task read in the project register",
+    )
+  })
+
+  test('credits another lens without task text while retaining the recorded status', () => {
+    const row = {
+      lens: 'correctness',
+      graded: true,
+      taskTextInput: 'unavailable: fixture tracker is offline',
+      rulingsInput: null,
+    }
+    expect(countsAsLensEvidence(row)).toBeTrue()
+    expect(row.taskTextInput).toBe('unavailable: fixture tracker is offline')
   })
 })
 

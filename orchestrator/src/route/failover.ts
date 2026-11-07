@@ -57,6 +57,10 @@ export type DetachSpec = {
   transportPinSource?: 'explicit' | 'environment'
   label?: string
   lens?: string
+  lensInputs?: {
+    taskTextInput: string
+    rulingsInput: string | null
+  }
   reviewRole?: ReviewRole
   seed?: string
   key?: string
@@ -159,6 +163,7 @@ export function detachedRunOptions(
     transport,
     label,
     lens,
+    lensInputs,
     seed,
     key,
     repo,
@@ -190,6 +195,7 @@ export function detachedRunOptions(
     transport,
     label,
     lens,
+    lensInputs,
     seed,
     key,
     repo,
@@ -224,6 +230,7 @@ export function detachedRunOptions(
     transport,
     label,
     lens,
+    lensInputs,
     seed,
     key,
     repo,

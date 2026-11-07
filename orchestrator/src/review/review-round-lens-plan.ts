@@ -135,7 +135,7 @@ function laterRoundReason(
 
 function withLensReasons(
   applicable: ApplicableReview,
-  reasons: Record<string, ReviewLensSelectionReason>,
+  reasons: NonNullable<ApplicableReview['lensReasons']>,
 ): ApplicableReview {
   return Object.keys(reasons).length ? { ...applicable, lensReasons: reasons } : applicable
 }

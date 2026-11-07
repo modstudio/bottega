@@ -64,20 +64,36 @@ export type ProvenanceLensRow = {
   lens?: string
   graded: boolean
   provenance?: LensProvenanceSubjectFacts
+  taskTextInput?: string | null
+  rulingsInput?: string | null
+}
+
+function unavailableReason(status: string | null | undefined): string | null {
+  const prefix = 'unavailable:'
+  if (!status?.startsWith(prefix)) return null
+  return status.slice(prefix.length).trim() || 'reason not recorded'
+}
+
+/** Why decision-conformance lacks one of the pack inputs that defines its subject. */
+export function lensInputReason(row: ProvenanceLensRow): ReviewLensOwedReason | null {
+  if (row.lens !== 'decision-conformance') return null
+  const reason = unavailableReason(row.taskTextInput) ?? unavailableReason(row.rulingsInput)
+  return reason ? `decision-conformance not admitted: ${reason}` : null
 }
 
 /** Why a graded lens row cannot count as evidence, or null when it can. */
 export function inadmissibleLensReason(row: ProvenanceLensRow): ReviewLensOwedReason | null {
   if (!row.graded) return null
   const subject = lensProvenanceSubject(row.provenance)
-  return subject.admissible ? null : subject.reason
+  if (!subject.admissible) return subject.reason
+  return lensInputReason(row)
 }
 
 /** Whether a row is named, graded evidence for its recorded review subject. */
 export function countsAsLensEvidence(
   row: ProvenanceLensRow,
 ): row is ProvenanceLensRow & { lens: string; graded: true } {
-  return Boolean(row.lens && row.graded && hasAdmissibleProvenance(row))
+  return Boolean(row.lens && row.graded && inadmissibleLensReason(row) === null)
 }
 
 /** Whether a row's provenance names its recorded review subject. */

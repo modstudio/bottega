@@ -331,8 +331,16 @@ export function printReviewTier(
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
       .join(', ')
-    if (lens.reason === 'tree-mismatch' || lens.reason === 'commit-mismatch') {
-      log(`${lens.id} owed: ${lens.reason}`)
+    if (
+      lens.reason === 'tree-mismatch' ||
+      lens.reason === 'commit-mismatch' ||
+      lens.reason?.startsWith('decision-conformance not admitted:')
+    ) {
+      log(
+        lens.reason.startsWith('decision-conformance not admitted:')
+          ? lens.reason
+          : `${lens.id} owed: ${lens.reason}`,
+      )
     } else {
       log(
         `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}${reasonLabel(lens.reason)}`,

@@ -1,5 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { resolve } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
@@ -225,6 +227,38 @@ describe('review discipline', () => {
       { lens: 'correctness', selection_reason: 'initial' },
       { lens: 'craft', selection_reason: 'operator-ordered' },
     ])
+  })
+  test('records lens pack input statuses from the dispatch artifact', () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'decision-conformance',
+    })
+    const directory = mkdtempSync(join(tmpdir(), 'review-lens-inputs-'))
+    const promptPath = join(directory, 'prompt.txt')
+    writeFileSync(promptPath, 'review prompt')
+    writeFileSync(
+      join(directory, 'review-lens-inputs.json'),
+      JSON.stringify({
+        taskTextInput: 'carried',
+        rulingsInput: 'unavailable: tracker comments could not be read',
+      }),
+    )
+    try {
+      db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, runId)
+      recordReview(runId, reviewReply(0), db())
+      expect(
+        db()
+          .query('SELECT task_text_input,rulings_input FROM review_lens WHERE run_record_id=?')
+          .get(runId),
+      ).toEqual({
+        task_text_input: 'carried',
+        rulings_input: 'unavailable: tracker comments could not be read',
+      })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
   test('an unregistered project warns after recording and does not block later grading', () => {
     const runId = addRun({

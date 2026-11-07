@@ -112,6 +112,7 @@ export type RunRow = {
   branch: string | null
   launch_key: string | null
   selection_reason: ReviewLensSelectionReason | null
+  prompt_path: string | null
 }
 
 export type ReviewChangeRange = { from: string; to: string; paths: string[] | null }

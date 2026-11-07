@@ -25,6 +25,10 @@ export type RunOptions = {
   probeReaderSuites?: boolean
   label?: string
   lens?: string
+  lensInputs?: {
+    taskTextInput: string
+    rulingsInput: string | null
+  }
   reviewRole?: ReviewRole
   model?: string
   transport?: TransportName

@@ -43,6 +43,8 @@ export type TriageReviewRow = {
     graded: boolean
     settled: boolean
     provenance?: LensProvenanceSubjectFacts
+    taskTextInput?: string | null
+    rulingsInput?: string | null
   }[]
   findings: readonly {
     recordId: string
@@ -132,6 +134,8 @@ type StoredTriageReviewRow = {
   coverage: string | null
   limits: string | null
   overlap: string | null
+  task_text_input: string | null
+  rulings_input: string | null
   review_provenance: string | null
   worktree: string | null
   cwd: string | null
@@ -366,6 +370,7 @@ function reviewsForBranch(
     .query<StoredTriageReviewRow, (string | null)[]>(
       `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.path_set,
               rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,s.delivery,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
+              rl.task_text_input,rl.rulings_input,
               run.review_provenance,run.worktree,run.cwd,run.head_commit,
               rf.record_id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
@@ -406,6 +411,8 @@ function reviewsForBranch(
           graded: boolean
           settled: boolean
           provenance: LensProvenanceSubjectFacts
+          taskTextInput: string | null
+          rulingsInput: string | null
         }[]
       ).push({
         recordId: row.lens_id,
@@ -415,6 +422,8 @@ function reviewsForBranch(
         graded: reviewLensGraded(row),
         settled: reviewLensSettled(row),
         provenance: provenanceSubjectFacts(row),
+        taskTextInput: row.task_text_input,
+        rulingsInput: row.rulings_input,
       })
     }
     if (

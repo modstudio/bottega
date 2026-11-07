@@ -388,6 +388,8 @@ export function reviewLensValues(row: Payload) {
     limits: nullableString(row.limits),
     overlap: nullableString(row.overlap),
     selectionReason: nullableString(row.selectionReason),
+    taskTextInput: nullableString(row.taskTextInput),
+    rulingsInput: nullableString(row.rulingsInput),
   }
 }
 
