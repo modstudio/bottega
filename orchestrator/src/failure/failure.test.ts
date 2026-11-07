@@ -27,8 +27,19 @@ describe('Goose provider failure classification', () => {
     },
   )
 
+  test.each([
+    ['Ran into this error: 429 Too Many Requests: Provider returned error', 'quota'],
+    ['Ran into this error: 401 Unauthorized: Provider returned error', 'auth'],
+  ] as const)('keeps the vendor status specific: %s', (line, expected) => {
+    expect(gooseVendorFailureKind(line)).toBe(expected)
+  })
+
+  test('does not classify a provider phrase without the Goose prefix as a provider error', () => {
+    expect(classify('Upstream said Provider returned error')).toBe('other')
+  })
+
   const vendorFailures = [
-    ['Ran into this error: Rate limit exceeded: Provider returned error.', 'provider_error'],
+    ['Ran into this error: Rate limit exceeded: Provider returned error.', 'quota'],
     [
       'Ran into this error trying to compact: Server error: Upstream error from Inception: request failed',
       'provider_error',

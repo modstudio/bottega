@@ -6,6 +6,20 @@ import { classify, type FailureKind, gooseVendorFailureKind } from './failure.ts
 
 type FailureFlags = { has(name: string): boolean }
 type FailurePresentation = { log(...values: unknown[]): void }
+type FailureRow = {
+  record_id: string
+  agent: string
+  job: string
+  status: string
+  failure_kind: string | null
+  error: string
+  harness: string | null
+  output_path: string | null
+  executor: string
+}
+type PersistedOutputReader = (
+  row: Pick<FailureRow, 'record_id' | 'output_path' | 'executor'>,
+) => string | null
 
 /** Select the narrowly audited replacement for one stored failure kind and error. */
 export function reclassifiedFailureKind(
@@ -24,6 +38,15 @@ export function reclassifiedFailureKind(
   return null
 }
 
+function matchedFailures(all: FailureRow[], readOutput: PersistedOutputReader) {
+  return all.flatMap((row) => {
+    const output = readOutput(row)
+    const source = output === null ? 'stored error only' : 'output'
+    const kind = reclassifiedFailureKind(row.failure_kind, output ?? row.error, row.harness)
+    return kind ? [{ row, kind, source }] : []
+  })
+}
+
 /**
  * Re-run quota/billing/auth signatures over old, unclassified failures, and
  * reclassify contract failures whose own Goose final message reports an
@@ -35,32 +58,22 @@ export function reclassifiedFailureKind(
 export function reclassifyFailuresCommand(
   flags: FailureFlags,
   presentation: FailurePresentation,
+  readOutput: PersistedOutputReader,
 ): void {
   const { has } = flags
   const { log } = presentation
-  type FailureRow = {
-    record_id: string
-    agent: string
-    job: string
-    status: string
-    failure_kind: string | null
-    error: string
-    harness: string | null
-  }
   type CountRow = { agent: string; failure_kind: string | null; count: number }
 
   const all = db()
     .query(
-      `SELECT r.record_id, r.agent, r.job, r.status, r.failure_kind, r.error, a.harness
+      `SELECT r.record_id, r.agent, r.job, r.status, r.failure_kind, r.error,
+              r.output_path, r.executor, a.harness
        FROM run r LEFT JOIN agent a ON a.name = r.agent
       WHERE status IN ('failed', 'stale')
       ORDER BY r.number`,
     )
     .all() as FailureRow[]
-  const matched = all.flatMap((row) => {
-    const kind = reclassifiedFailureKind(row.failure_kind, row.error, row.harness)
-    return kind ? [{ row, kind }] : []
-  })
+  const matched = matchedFailures(all, readOutput)
 
   const counts = (rows: { agent: string; failure_kind: string | null }[]): CountRow[] => {
     const grouped = new Map<string, CountRow>()
@@ -94,6 +107,11 @@ export function reclassifyFailuresCommand(
   )
 
   printCounts('BEFORE', before)
+  const outputMatches = matched.filter(({ source }) => source === 'output').length
+  const errorMatches = matched.length - outputMatches
+  log(
+    `\nSOURCES  rows decided from output: ${outputMatches}; rows decided from stored error only: ${errorMatches}`,
+  )
   log(`\nPLAN (${matched.length} matched row${matched.length === 1 ? '' : 's'})`)
   for (const { row, kind } of matched) {
     log(

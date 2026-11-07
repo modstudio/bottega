@@ -1,17 +1,23 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, score } from '../../test/fixtures/store.ts'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { addRun, dir, score } from '../../test/fixtures/store.ts'
+import { trackedTestResidue } from '../../test/residue.ts'
+import { persistedRunOutput } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { candidates } from '../route/route.ts'
 import { weigh } from '../score/score.ts'
 import { reclassifiedFailureKind, reclassifyFailuresCommand } from './failure-commands.ts'
 
 describe('reclassify-failures', () => {
+  const trackResidue = trackedTestResidue()
   const runCli = (...args: string[]) => {
     const lines: string[] = []
     try {
       reclassifyFailuresCommand(
         { has: (name) => args.includes(`--${name}`) },
         { log: (...values) => lines.push(values.join(' ')) },
+        persistedRunOutput,
       )
       return { exitCode: 0, stdout: new TextEncoder().encode(lines.join('\n')) }
     } catch (cause) {
@@ -22,7 +28,7 @@ describe('reclassify-failures', () => {
     const error =
       'sandbox: host\nRan into this error: Rate limit exceeded: Provider returned error.\n\n' +
       'Please retry if you think this is a transient or recoverable error.'
-    expect(reclassifiedFailureKind('contract', error, 'goose')).toBe('provider_error')
+    expect(reclassifiedFailureKind('contract', error, 'goose')).toBe('quota')
     expect(reclassifiedFailureKind('contract', error, 'codex')).toBeNull()
     expect(reclassifiedFailureKind('contract', 'Rate limit exceeded', 'goose')).toBeNull()
     expect(reclassifiedFailureKind('quota', error, 'goose')).toBeNull()
@@ -30,7 +36,7 @@ describe('reclassify-failures', () => {
 
   test('reclassifies stored Goose vendor failures through the registered harness', () => {
     const fixtures = [
-      ['Ran into this error: Rate limit exceeded: Provider returned error.', 'provider_error'],
+      ['Ran into this error: Rate limit exceeded: Provider returned error.', 'quota'],
       [
         'Ran into this error trying to compact: Server error: Upstream error from Inception: request failed',
         'provider_error',
@@ -98,6 +104,47 @@ describe('reclassify-failures', () => {
     ).toEqual(fixtures.map(([, expected]) => expected))
     expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(nonGoose)).toEqual({
       failure_kind: 'contract',
+    })
+  })
+
+  test('uses persisted output before stored error and reports both evidence sources', () => {
+    const fromOutput = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+    })
+    const outputPath = trackResidue(join(dir, `reclassify-${fromOutput}.txt`))
+    writeFileSync(outputPath, 'Ran into this error: 401 Unauthorized: Provider returned error')
+    db()
+      .query('UPDATE run SET output_path=?, error=? WHERE record_id=?')
+      .run(outputPath, 'contract wrapper without vendor detail', fromOutput)
+
+    const fromError = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+    })
+    db()
+      .query('UPDATE run SET output_path=?, error=? WHERE record_id=?')
+      .run(
+        join(dir, 'missing-reclassify-output.txt'),
+        'Ran into this error: 429 Too Many Requests: Provider returned error',
+        fromError,
+      )
+    db().query("UPDATE agent SET harness='goose' WHERE name='codex'").run()
+
+    const applied = runCli('reclassify-failures')
+    const stdout = new TextDecoder().decode(applied.stdout)
+    expect(stdout).toContain(
+      'SOURCES  rows decided from output: 1; rows decided from stored error only: 1',
+    )
+    expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(fromOutput)).toEqual({
+      failure_kind: 'auth',
+    })
+    expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(fromError)).toEqual({
+      failure_kind: 'quota',
     })
   })
 

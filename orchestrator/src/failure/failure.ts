@@ -86,7 +86,7 @@ export type FailureKind = (typeof FAILURE_KINDS)[number]
 
 const ANSI_ESCAPE_PATTERN = String.raw`\x1B\[[0-?]*[ -/]*[@-~]`
 const ANSI_ESCAPE_SEQUENCE = new RegExp(ANSI_ESCAPE_PATTERN, 'g')
-const GOOSE_PROVIDER_ERROR_STORED = /^(?:Ran into this error:)?[^\n]*Provider returned error/im
+const GOOSE_PROVIDER_ERROR_STORED = /^Ran into this error:[^\n]*Provider returned error/im
 const GOOSE_PROVIDER_ERROR_NON_ANSWER = /^Ran into this error:[^\n]*Provider returned error/i
 const GOOSE_VENDOR_ERROR_LINE =
   /^(?:Ran into this error trying to compact:|Ran into this error:)(.*)$/m
