@@ -46,11 +46,18 @@ function observeGateCheckoutFacts(cwd: string): {
   presentMarkers: string[]
   unmergedPaths: string[]
 } {
-  const gitDir = startBoundedSync(['git', 'rev-parse', '--path-format=absolute', '--git-dir'], {
-    budget: 'git-plumbing',
-    cwd,
-    env: inspectionGitEnv(),
-  })
+  let gitDir: ReturnType<typeof startBoundedSync>
+  try {
+    gitDir = startBoundedSync(['git', 'rev-parse', '--path-format=absolute', '--git-dir'], {
+      budget: 'git-plumbing',
+      cwd,
+      env: inspectionGitEnv(),
+    })
+  } catch (error) {
+    throw new Error(
+      gitCommandError(cwd, { status: null, error: error as Error }, 'git dir'),
+    )
+  }
   if (gitDir.exitCode !== 0)
     throw new Error(gitCommandError(cwd, { ...gitDir, status: gitDir.exitCode }, 'git dir'))
   const dir = gitDir.stdout.trim()

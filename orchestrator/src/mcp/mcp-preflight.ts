@@ -178,7 +178,10 @@ function grokMcpConnection(
   env: Record<string, string>,
   trust = false,
 ): McpConnection {
-  const p = startBoundedSync([bin, ...(trust ? ['--cwd', cwd, '--trust'] : []), 'mcp', 'doctor', server, '--json'], { budget: 'process-table', cwd, env })
+  const p = startBoundedSync(
+    [bin, ...(trust ? ['--cwd', cwd, '--trust'] : []), 'mcp', 'doctor', server, '--json'],
+    { budget: 'agent-cli', cwd, env },
+  )
   const stdout = p.stdout.toString().trim()
   const stderr = p.stderr.toString().trim()
   try {

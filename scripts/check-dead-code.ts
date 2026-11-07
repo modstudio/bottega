@@ -44,7 +44,6 @@ const CACHE_DIRECTORY = join(
   PLATFORM_SLUG,
   'dead-code',
 )
-const KNIP_TIMEOUT_MS = 120_000
 const MAX_CACHE_ENTRIES = 10
 
 const PRODUCTION_ISSUES = [
@@ -87,18 +86,18 @@ type ProductionConfig = { workspaces?: { '.'?: { entry?: unknown } } }
 
 function runPass(root: string, pass: ReturnType<typeof passes>[number]): PassResult {
   const startedAt = performance.now()
-  const result = startBoundedSync([
+  const result = startBoundedSync(
+    [
       join(root, 'node_modules/.bin/knip'),
       ...pass.args,
       '--reporter',
       'json',
       '--no-progress',
       '--no-exit-code',
-    ], { budget: 'process-table', cwd: root })
+    ],
+    { budget: 'self-cli', cwd: root },
+  )
   const elapsedMs = performance.now() - startedAt
-  if (result.signalCode) {
-    throw new Error(`knip ${pass.name} pass timed out after ${KNIP_TIMEOUT_MS}ms`)
-  }
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim() || result.stdout.toString().trim()
     throw new Error(`knip ${pass.name} pass failed${detail ? `: ${detail}` : ''}`)
@@ -134,7 +133,8 @@ function rootProductionEntries(root: string): string[] {
 
 function tracedRootEntryFiles(root: string, entries: readonly string[]) {
   const startedAt = performance.now()
-  const result = startBoundedSync([
+  const result = startBoundedSync(
+    [
       join(root, 'node_modules/.bin/knip'),
       '--production',
       '--config',
@@ -143,11 +143,10 @@ function tracedRootEntryFiles(root: string, entries: readonly string[]) {
       '--debug',
       '--no-progress',
       '--no-exit-code',
-    ], { budget: 'process-table', cwd: root })
+    ],
+    { budget: 'self-cli', cwd: root },
+  )
   const elapsedMs = performance.now() - startedAt
-  if (result.signalCode) {
-    throw new Error(`knip production graph trace timed out after ${KNIP_TIMEOUT_MS}ms`)
-  }
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim() || result.stdout.toString().trim()
     throw new Error(`knip production graph trace failed${detail ? `: ${detail}` : ''}`)
@@ -204,7 +203,10 @@ function collectFindings(root: string, verifyProductionEntries = false) {
 }
 
 function git(args: string[], step: string) {
-  const result = startBoundedSync(['git', '-C', ROOT, '--no-optional-locks', ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', '-C', ROOT, '--no-optional-locks', ...args], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim() || 'no error output'
     throw new Error(`check-dead-code: ${step} failed: ${detail}`)
@@ -302,7 +304,9 @@ function copyBase(commit: string) {
     rmSync(directory, { recursive: true, force: true })
     throw error
   }
-  const extractResult = startBoundedSync(['tar', '-xf', archive, '-C', tree], { budget: 'process-table' })
+  const extractResult = startBoundedSync(['tar', '-xf', archive, '-C', tree], {
+    budget: 'self-cli',
+  })
   if (extractResult.exitCode !== 0) {
     const detail = extractResult.stderr.toString().trim() || 'no error output'
     rmSync(directory, { recursive: true, force: true })

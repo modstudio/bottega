@@ -42,16 +42,22 @@ type Baseline = Record<'orchestrator' | 'hub' | 'hosted', string[]>
 
 function baseBaseline(base: string): Baseline | null {
   const root = fileURLToPath(new URL('..', import.meta.url))
-  const result = startBoundedSync([
+  const result = startBoundedSync(
+    [
       'git',
       '-C',
       root,
       '--no-optional-locks',
       'show',
       `${base}:scripts/identity-key-baseline.json`,
-    ], { budget: 'git-plumbing', env: inspectionGitEnv() })
+    ],
+    { budget: 'git-plumbing', env: inspectionGitEnv() },
+  )
   if (result.exitCode === 0) return JSON.parse(result.stdout.toString()) as Baseline
-  const missing = startBoundedSync(['git', '-C', root, '--no-optional-locks', 'cat-file', '-e', `${base}^{commit}`], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const missing = startBoundedSync(
+    ['git', '-C', root, '--no-optional-locks', 'cat-file', '-e', `${base}^{commit}`],
+    { budget: 'git-plumbing', env: inspectionGitEnv() },
+  )
   if (missing.exitCode === 0) return null
   throw new Error(`identity inventory could not resolve base commit ${base}`)
 }

@@ -118,7 +118,11 @@ export function workspaceExternals(root: string): {
 }
 
 function spawnOrThrow(command: string[], cwd: string, detail: string): void {
-  const result = startBoundedSync(command, { budget: 'process-table', cwd, env: targetGitEnvironment(cwd) })
+  const result = startBoundedSync(command, {
+    budget: 'self-cli',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString().trim()
     throw new Error(`${detail}: ${stderr || `exit ${result.exitCode}`}`)

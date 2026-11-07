@@ -81,7 +81,6 @@ const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
 export const CAPACITY_SAMPLE_MIN_WINDOW_MS = 250
 const CAPACITY_RATE_MAX_AGE_MS = 5_000
-const MEMORY_PRESSURE_READ_TIMEOUT_MS = 100
 const MEBIBYTE_BYTES = 1024 * 1024
 const SWAP_GROWTH_HOLD_BYTES_PER_SEC = 2 * MEBIBYTE_BYTES
 const GATE_HOLD_CONDITION_ORDER: HostHoldCondition[] = ['gates', 'load', 'memory', 'queue']
@@ -238,7 +237,10 @@ export function parseMacOSMemoryPressure(output: string | undefined): MemoryPres
 function readMemoryPressure(platform: NodeJS.Platform): MemoryPressure {
   if (platform !== 'darwin') return 'unknown'
   try {
-    const result = startBoundedSync(['/usr/sbin/sysctl', '-n', 'kern.memorystatus_vm_pressure_level'], { budget: 'process-table' })
+    const result = startBoundedSync(
+      ['/usr/sbin/sysctl', '-n', 'kern.memorystatus_vm_pressure_level'],
+      { budget: 'process-table' },
+    )
     return result.exitCode === 0 ? parseMacOSMemoryPressure(result.stdout.toString()) : 'unknown'
   } catch {
     return 'unknown'
@@ -263,7 +265,9 @@ export function parseSwapUsage(output: string): { used: number; total: number } 
 function readSwap(platform: NodeJS.Platform): { used: number; total: number } | null {
   try {
     if (platform === 'darwin') {
-      const result = startBoundedSync(['/usr/sbin/sysctl', '-n', 'vm.swapusage'], { budget: 'process-table' })
+      const result = startBoundedSync(['/usr/sbin/sysctl', '-n', 'vm.swapusage'], {
+        budget: 'process-table',
+      })
       return result.exitCode === 0 ? parseSwapUsage(result.stdout.toString()) : null
     }
     if (platform === 'linux') return parseSwapUsage(readFileSync('/proc/meminfo', 'utf8'))

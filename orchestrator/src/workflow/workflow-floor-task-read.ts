@@ -76,14 +76,11 @@ export function hubTaskReadRefusal(
 
 export function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
   const [hub, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
-  const result = startBoundedSync(
-    [hub!, ...prefix, 'task', 'show', key, '--json', '--fresh'],
-    {
+  const result = startBoundedSync([hub!, ...prefix, 'task', 'show', key, '--json', '--fresh'], {
     budget: 'self-cli',
     cwd,
     env: process.env,
-    },
-  )
+  })
   if (result.exitCode !== 0)
     throw new Error(hubTaskReadRefusal(key, result.exitCode, result.stderr, result.stdout))
   return hubTaskReadFromJson(key, JSON.parse(result.stdout))

@@ -47,7 +47,10 @@ export async function keywordRanking(query: string, chunks: Chunk[]): Promise<Ch
   const scores = new Map<string, Set<string>>()
   if (terms.length) {
     const corpus = chunks.map((chunk) => chunk.text.replaceAll('\n', ' ')).join('\n')
-    const child = await startBounded(['rg', '--json', '--ignore-case', '--regexp', terms.join('|'), '-'], { budget: 'process-table', stdin: new Blob([corpus]) })
+    const child = await startBounded(
+      ['rg', '--json', '--ignore-case', '--regexp', terms.join('|'), '-'],
+      { budget: 'process-table', stdin: corpus },
+    )
     const { stdout, stderr, exitCode } = child
     if (exitCode !== 0 && exitCode !== 1) {
       throw new Error(`ripgrep keyword baseline failed: ${stderr.trim() || `exit ${exitCode}`}`)

@@ -19,8 +19,6 @@ import { isProjectRepository, type Project, projects } from '../project/projects
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
-const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
-
 type WorktreeDatabase = {
   engine: 'postgres' | 'mysql'
   name: string
@@ -275,12 +273,6 @@ function listCommand(
       reason: `${argv[0]} inventory unavailable: ${(error as Error).message}`,
     }
   }
-  if (p.exitedDueToTimeout) {
-    return {
-      ascertainable: false,
-      reason: `${argv[0]} inventory unavailable: timed out after ${RESOURCE_INVENTORY_TIMEOUT_MS}ms`,
-    }
-  }
   if (p.exitCode !== 0) {
     const detail = p.stderr?.toString().trim() || `exit ${p.exitCode}`
     return { ascertainable: false, reason: `${argv[0]} inventory unavailable: ${detail}` }
@@ -348,18 +340,16 @@ function git(
 ): { ok: true; out: string } | { ok: false; reason: string; exitCode: number | null } {
   let p: ReturnType<typeof startBoundedSync>
   try {
-    p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd), stdin: stdin === undefined ? undefined : Buffer.from(stdin) })
+    p = startBoundedSync(['git', ...args], {
+      budget: 'git-plumbing',
+      cwd,
+      env: targetGitEnvironment(cwd),
+      stdin: stdin === undefined ? undefined : Buffer.from(stdin),
+    })
   } catch (error) {
     return {
       ok: false,
       reason: `git inventory unavailable: ${(error as Error).message}`,
-      exitCode: null,
-    }
-  }
-  if (p.exitedDueToTimeout) {
-    return {
-      ok: false,
-      reason: `git inventory unavailable: timed out after ${RESOURCE_INVENTORY_TIMEOUT_MS}ms`,
       exitCode: null,
     }
   }

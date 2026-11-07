@@ -111,7 +111,12 @@ export function pruneExpiredBranchDisposalArchives(input: {
 }
 
 function git(cwd: string, args: string[], input?: string): string {
-  const result = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd), stdin: input === undefined ? undefined : Buffer.from(input) })
+  const result = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
+    cwd,
+    env: targetGitEnvironment(cwd),
+    stdin: input === undefined ? undefined : Buffer.from(input),
+  })
   if (result.exitCode !== 0)
     throw new Error(
       result.stderr.toString().trim() || `git ${args.join(' ')} exited ${result.exitCode}`,

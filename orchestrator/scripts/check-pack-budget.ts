@@ -50,12 +50,18 @@ function report(failures: string[]): void {
 }
 
 function runReady(store: string): number {
-  const child = startBoundedSync([process.execPath, fileURLToPath(import.meta.url)], { budget: 'process-table', env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store, [READY]: '1' } })
+  const child = startBoundedSync([process.execPath, fileURLToPath(import.meta.url)], {
+    budget: 'process-table',
+    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store, [READY]: '1' },
+  })
   return child.exitCode ?? 1
 }
 
 function runGateFacts(path: string): number {
-  const child = startBoundedSync([process.execPath, fileURLToPath(import.meta.url)], { budget: 'process-table', env: { ...process.env, [GATE_FACTS_ENV]: path, [READY]: '1' } })
+  const child = startBoundedSync([process.execPath, fileURLToPath(import.meta.url)], {
+    budget: 'process-table',
+    env: { ...process.env, [GATE_FACTS_ENV]: path, [READY]: '1' },
+  })
   return child.exitCode ?? 1
 }
 

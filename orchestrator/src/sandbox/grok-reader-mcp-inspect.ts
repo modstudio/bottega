@@ -105,7 +105,11 @@ export function inspectGrokReaderMcp(
   runConfigPath: string,
   platformServers: readonly string[],
 ): string | null {
-  const inspected = startBoundedSync([bin, 'inspect', '--json'], { budget: 'process-table', cwd, env: environment })
+  const inspected = startBoundedSync([bin, 'inspect', '--json'], {
+    budget: 'agent-cli',
+    cwd,
+    env: environment,
+  })
   const stdout = inspected.stdout.toString().trim()
   const stderr = inspected.stderr.toString().trim()
   if (inspected.exitCode !== 0) {

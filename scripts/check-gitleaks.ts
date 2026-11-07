@@ -20,7 +20,11 @@ try {
   process.exit(1)
 }
 const range = `${mergeBase}..HEAD`
-const rangeCount = startBoundedSync(['git', 'rev-list', '--count', range], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
+const rangeCount = startBoundedSync(['git', 'rev-list', '--count', range], {
+  budget: 'git-plumbing',
+  cwd: root,
+  env: inspectionGitEnv(),
+})
 if (rangeCount.exitCode !== 0) {
   const detail = rangeCount.stderr.toString().trim()
   console.error(`check-gitleaks could not inspect ${range}${detail ? `: ${detail}` : ''}`)
@@ -35,7 +39,10 @@ const scans = planGitleaksScans({
 })
 
 if (rangeCommitCount === 0) {
-  const untracked = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--others', '--exclude-standard'])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
+  const untracked = startBoundedSync(
+    ['git', ...nulPathListArgs(['ls-files', '--others', '--exclude-standard'])],
+    { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() },
+  )
   if (untracked.exitCode !== 0) {
     const detail = untracked.stderr.toString().trim()
     console.error(`check-gitleaks could not inspect untracked files${detail ? `: ${detail}` : ''}`)

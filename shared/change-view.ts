@@ -141,7 +141,10 @@ export function changeFacts(
 }
 
 function git(cwd: string, args: string[]) {
-  const result = startBoundedSync(['git', '-C', cwd, '--no-optional-locks', ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', '-C', cwd, '--no-optional-locks', ...args], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim() || 'no error output'
     throw new Error(

@@ -126,12 +126,12 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
     try {
       const child = await startBounded(
         [
-        join(ROOT, 'node_modules/.bin/depcruise'),
-        '--validate',
-        join(ROOT, '.dependency-cruiser.cjs'),
-        ...(request.extraArgs ?? []),
-        ...request.entries,
-      ],
+          join(ROOT, 'node_modules/.bin/depcruise'),
+          '--validate',
+          join(ROOT, '.dependency-cruiser.cjs'),
+          ...(request.extraArgs ?? []),
+          ...request.entries,
+        ],
         {
           budget: 'self-cli',
           cwd,
@@ -143,7 +143,11 @@ export async function runArchitectureCruise(request: ArchitectureCruiseRequest) 
       )
       if (child.stderr) console.error(child.stderr)
       if (stdout === 'inherit' && child.stdout) console.log(child.stdout)
-      return { exitCode: child.exitCode, stdout: stdout === 'pipe' ? child.stdout : '', timedOut: false }
+      return {
+        exitCode: child.exitCode,
+        stdout: stdout === 'pipe' ? child.stdout : '',
+        timedOut: false,
+      }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'TimeoutError') {
         return { exitCode: 1, stdout: '', timedOut: true }

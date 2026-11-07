@@ -89,19 +89,11 @@ function list(
         ]
   let p: ReturnType<typeof startBoundedSync>
   try {
-    p = startBoundedSync(args, { budget: 'process-table' })
+    p = startBoundedSync(args, { budget: 'docker' })
   } catch (error) {
     return {
       ascertainable: false,
       reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${(error as Error).message}`,
-    }
-  }
-  if (p.exitedDueToTimeout) {
-    return {
-      ascertainable: false,
-      reason:
-        `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
-        `timed out after ${timeout}ms`,
     }
   }
   if (p.exitCode !== 0) {
@@ -399,20 +391,15 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
 
 /** Inventory Compose networks and the two ownership signals the monitor can prove. */
 export function dockerNetworkInventory(): DockerNetworkInventory {
-  const timeout = dockerInventoryTimeoutMs()
   let listed: ReturnType<typeof startBoundedSync>
   try {
-    listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], { budget: 'docker' })
+    listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
+      budget: 'docker',
+    })
   } catch (error) {
     return {
       ascertainable: false,
       reason: `docker network inventory unavailable: ${(error as Error).message}`,
-    }
-  }
-  if (listed.exitedDueToTimeout) {
-    return {
-      ascertainable: false,
-      reason: `docker network inventory unavailable: timed out after ${timeout}ms`,
     }
   }
   if (listed.exitCode !== 0) {
@@ -434,12 +421,6 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
     return {
       ascertainable: false,
       reason: `docker network inspection unavailable: ${(error as Error).message}`,
-    }
-  }
-  if (inspected.exitedDueToTimeout) {
-    return {
-      ascertainable: false,
-      reason: `docker network inspection unavailable: timed out after ${timeout}ms`,
     }
   }
   if (inspected.exitCode !== 0) {
@@ -502,12 +483,10 @@ export function removeDockerResource(
   const command = dockerRemovalCommand(resource)
   let process: ReturnType<typeof startBoundedSync>
   try {
-    process = startBoundedSync(command.split(' '), { budget: 'process-table' })
+    process = startBoundedSync(command.split(' '), { budget: 'docker' })
   } catch (error) {
     return `${command} failed: ${(error as Error).message}`
   }
-  if (process.exitedDueToTimeout)
-    return `${command} failed: timed out after ${dockerRemovalTimeoutMs()}ms`
   if (process.exitCode === 0) return null
   const detail = process.stderr?.toString().trim() || `exit ${process.exitCode}`
   return /no such (?:container|network|volume)/i.test(detail)

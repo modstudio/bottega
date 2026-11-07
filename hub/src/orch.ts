@@ -485,13 +485,16 @@ export function projectListProcessError(result: ProjectListProcessResult): strin
 export function projectList(): OrchProject[] {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const args = ['project', 'list', '--json']
-  const proc = startBoundedSync([...command, ...args], { budget: 'process-table', env: { ...process.env } })
+  const proc = startBoundedSync([...command, ...args], {
+    budget: 'self-cli',
+    env: { ...process.env },
+  })
   const out = proc.stdout.toString()
   const error = projectListProcessError({
     command: `${PLATFORM_SLUG} ${args.join(' ')}`,
     exitCode: proc.exitCode,
-    signalCode: proc.signalCode,
-    exitedDueToTimeout: proc.exitedDueToTimeout === true,
+    signalCode: null,
+    exitedDueToTimeout: false,
     stderr: proc.stderr.toString(),
     stdout: out,
     timeoutMs: PROJECT_LIST_TIMEOUT_MS,

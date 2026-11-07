@@ -93,7 +93,8 @@ function launchctlPath(): string | null {
 
 function launchctlLoaded(launchctl: string, uid: number, label: string): boolean {
   return (
-    startBoundedSync([launchctl, 'print', `gui/${uid}/${label}`], { budget: 'process-table' }).exitCode === 0
+    startBoundedSync([launchctl, 'print', `gui/${uid}/${label}`], { budget: 'process-table' })
+      .exitCode === 0
   )
 }
 
@@ -124,7 +125,9 @@ async function waitUntilUnloaded(launchctl: string, uid: number, label: string):
 
 async function bootstrapWithRetry(launchctl: string, uid: number, target: string): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const result = startBoundedSync([launchctl, 'bootstrap', `gui/${uid}`, target], { budget: 'process-table' })
+    const result = startBoundedSync([launchctl, 'bootstrap', `gui/${uid}`, target], {
+      budget: 'process-table',
+    })
     if (result.exitCode === 0) return
     if (attempt === 19) {
       const detail = `${result.stdout.toString()}${result.stderr.toString()}`.trim()

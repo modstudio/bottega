@@ -47,7 +47,11 @@ export function checkTestFiles(files: string[]): TestPlacementFinding[] {
 }
 
 function trackedFiles(root: string): string[] {
-  const listed = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--', ...ROOTS])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
+  const listed = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--', ...ROOTS])], {
+    budget: 'git-plumbing',
+    cwd: root,
+    env: inspectionGitEnv(),
+  })
   if (listed.exitCode !== 0) {
     throw new Error(
       `could not list tracked test and module files: ${listed.stderr.toString().trim()}`,

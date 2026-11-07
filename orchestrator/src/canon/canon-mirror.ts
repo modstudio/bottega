@@ -112,7 +112,11 @@ export function screenCanonMirrorError(
   return redactSecretShaped(text, { knownCommits }).text
 }
 function spawn(cwd: string, args: string[]): ReturnType<typeof startBoundedSync> {
-  return startBoundedSync(args, { budget: 'process-table', cwd, env: targetGitEnvironment(cwd) })
+  return startBoundedSync(args, {
+    budget: 'git-plumbing',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
 }
 function command(cwd: string, args: string[]): string {
   const child = spawn(cwd, args)

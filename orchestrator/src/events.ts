@@ -839,7 +839,11 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) })
+  const p = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
 

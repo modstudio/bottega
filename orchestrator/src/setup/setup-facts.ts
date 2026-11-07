@@ -25,8 +25,6 @@ import {
 } from './setup-mcp.ts'
 import { gatherScheduleSetupFacts, type ScheduleSetupFact } from './setup-schedules.ts'
 
-const COMMAND_TIMEOUT_MS = 3_000
-
 export type { HarnessName } from './setup-mcp.ts'
 export const KNOWN_HARNESSES = Object.keys(HARNESS_MCP_CATALOGUE) as HarnessName[]
 
@@ -127,7 +125,7 @@ function runCommand(argv: string[]): CommandCapture {
       exitCode: child.exitCode,
       stdout: child.stdout.toString(),
       stderr: child.stderr.toString(),
-      timedOut: child.exitedDueToTimeout === true,
+      timedOut: false,
       error: null,
     }
   } catch (error) {

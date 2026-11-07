@@ -72,7 +72,10 @@ function sqliteStats(
 ): { pages: number | null; ms: number } {
   const target = join(work, `statement-${crypto.randomUUID()}.db`)
   copyFileSync(store, target)
-  const child = startBoundedSync(['sqlite3', target], { budget: 'process-table', stdin: Buffer.from(`.stats on\n.timer on\n${sql.replace(/;?\s*$/, ';')}\n`) })
+  const child = startBoundedSync(['sqlite3', target], {
+    budget: 'process-table',
+    stdin: Buffer.from(`.stats on\n.timer on\n${sql.replace(/;?\s*$/, ';')}\n`),
+  })
   const output = `${child.stdout.toString()}\n${child.stderr.toString()}`
   const misses = output.match(/Page cache misses:\s+(\d+)/i)
   const timer = output.match(/Run Time:\s+real\s+([0-9.]+)/i)

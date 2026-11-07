@@ -69,7 +69,10 @@ function acquireIssueLease(key: string): KernelLease | null {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...args], { budget: 'self-cli', env: { ...process.env } })
+  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
+    budget: 'self-cli',
+    env: { ...process.env },
+  })
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0)
     throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)

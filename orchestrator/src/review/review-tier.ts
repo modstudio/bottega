@@ -58,7 +58,10 @@ export function resolveTierRange(
 }
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {
-  const result = startBoundedSync(['git', 'diff', '--no-renames', '--numstat', '-z', `${from}..${to}`], { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) })
+  const result = startBoundedSync(
+    ['git', 'diff', '--no-renames', '--numstat', '-z', `${from}..${to}`],
+    { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) },
+  )
   if (result.exitCode !== 0)
     throw new Error(result.stderr.toString().trim() || `git diff exited ${result.exitCode}`)
   return result.stdout

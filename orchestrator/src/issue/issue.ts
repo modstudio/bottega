@@ -193,7 +193,10 @@ export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...args], { budget: 'self-cli', env: { ...process.env } })
+  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
+    budget: 'self-cli',
+    env: { ...process.env },
+  })
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0)
     throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
@@ -393,7 +396,7 @@ function argv(
   cwd: string,
   env = process.env,
 ): { ok: boolean; text: string; exitCode: number } {
-  const p = startBoundedSync(command, { budget: 'process-table', cwd, env })
+  const p = startBoundedSync(command, { budget: 'agent-cli', cwd, env })
   const text = `${p.stdout.toString()}${p.stderr.toString()}`.trim()
   return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
 }

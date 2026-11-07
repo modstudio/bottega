@@ -447,7 +447,10 @@ function taskBranchGit(
 
 /** Exit zero is true, exit one is false; any other exit throws naming the command. */
 export function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: string): boolean {
-  const process = startBoundedSync(['git', '-C', cwd, 'merge-base', '--is-ancestor', ancestor, descendant], { budget: 'git-plumbing', env: targetGitEnvironment(cwd) })
+  const process = startBoundedSync(
+    ['git', '-C', cwd, 'merge-base', '--is-ancestor', ancestor, descendant],
+    { budget: 'git-plumbing', env: targetGitEnvironment(cwd) },
+  )
   if (process.exitCode === 0) return true
   if (process.exitCode === 1) return false
   throw new Error(

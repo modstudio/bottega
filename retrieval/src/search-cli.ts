@@ -26,12 +26,18 @@ function usage(): never {
 }
 
 async function registeredCodeProject(path: string): Promise<{ name: string; path: string }> {
-  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), 'project', 'list', '--json'], { budget: 'self-cli' })
+  const child = await startBounded(
+    [...bottegaEntryArgv(PLATFORM_SLUG), 'project', 'list', '--json'],
+    { budget: 'self-cli' },
+  )
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) throw new Error(stderr.trim() || 'could not read the project register')
   const projects = OrchProjectListSchema.parse(JSON.parse(stdout))
   const requested = resolve(path)
-  const git = await startBounded(['git', '-C', requested, 'rev-parse', '--show-toplevel'], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const git = await startBounded(['git', '-C', requested, 'rev-parse', '--show-toplevel'], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   const { stdout: gitStdout, stderr: gitStderr, exitCode: gitExitCode } = git
   if (gitExitCode !== 0) {
     throw new Error(gitStderr.trim() || `${requested} is not inside a git checkout`)

@@ -20,7 +20,10 @@ export type PublishPorts = {
 }
 
 async function command(argv: string[]): Promise<CommandResult> {
-  const child = await startBounded(argv, { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const child = await startBounded(argv, {
+    budget: argv[0] === 'gh' ? 'gh' : 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   const { stdout, stderr, exitCode } = child
   if (stderr.trim()) console.error(stderr.trim())
   return { exitCode, stdout: stdout.trim() }

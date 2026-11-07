@@ -23,7 +23,7 @@ type GhSpawn = (argv: string[]) => {
 /** Forge lookup whose failure result retains the project-set remedy path. */
 export function githubForgeVisibilityLookup(
   repository: string,
-  spawn: GhSpawn = (argv) => startBoundedSync(argv, { budget: 'process-table' }),
+  spawn: GhSpawn = (argv) => startBoundedSync(argv, { budget: 'gh' }),
 ): ReturnType<ForgeVisibilityLookup> {
   try {
     const result = spawn(['gh', 'repo', 'view', repository, '--json', 'visibility'])

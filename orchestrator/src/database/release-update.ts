@@ -185,7 +185,10 @@ function appliedMigrations(): { when: number; hash: string }[] {
 }
 
 export function migrateInstalledBinary(target: string): void {
-  const result = startBoundedSync([target, 'machine', 'migrate'], { budget: 'machine-update', env: databaseOverrideFreeEnvironment() })
+  const result = startBoundedSync([target, 'machine', 'migrate'], {
+    budget: 'machine-update',
+    env: databaseOverrideFreeEnvironment(),
+  })
   if (result.exitCode !== 0) {
     throw new Error(
       `updated binary migration failed with exit ${result.exitCode}; run ${target} machine migrate`,
@@ -237,7 +240,9 @@ export async function prepareReleaseUpdate(input: {
   try {
     const archivePath = join(stage, resolution.asset)
     writeFileSync(archivePath, archive)
-    const unpack = startBoundedSync(['tar', '-xzf', archivePath, '-C', stage], { budget: 'process-table' })
+    const unpack = startBoundedSync(['tar', '-xzf', archivePath, '-C', stage], {
+      budget: 'release-download',
+    })
     if (unpack.exitCode !== 0) {
       throw new Error(`could not unpack ${resolution.asset}; retry the update`)
     }

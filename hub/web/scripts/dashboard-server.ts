@@ -18,7 +18,11 @@ export const pipedOutput = (stream: Bun.Subprocess['stdout']): ReadableStream<Ui
   stream as ReadableStream<Uint8Array>
 
 export async function command(args: string[], env: Environment): Promise<string> {
-  const child = await startBounded([executable, ...args], { budget: 'self-cli', cwd: repoRoot, env })
+  const child = await startBounded([executable, ...args], {
+    budget: 'self-cli',
+    cwd: repoRoot,
+    env,
+  })
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(

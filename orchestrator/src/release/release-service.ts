@@ -107,7 +107,11 @@ function run(
   cwd: string,
   extraEnvironment?: Record<string, string>,
 ): CommandResult {
-  const result = startBoundedSync(argv, { budget: 'process-table', cwd, env: releaseProcessEnvironment(targetGitEnvironment(cwd), extraEnvironment) })
+  const result = startBoundedSync(argv, {
+    budget: argv[0] === 'git' ? 'git-plumbing' : 'self-cli',
+    cwd,
+    env: releaseProcessEnvironment(targetGitEnvironment(cwd), extraEnvironment),
+  })
   return {
     exitCode: result.exitCode ?? -1,
     output: [result.stdout.toString(), result.stderr.toString()].filter(Boolean).join(''),

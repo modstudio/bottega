@@ -37,7 +37,10 @@ export function slugLinkedBody(body: string, indexName: string): string {
 }
 
 function trackedReferenceFiles(root: string): string[] {
-  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', 'docs/reference/*.md'])], { budget: 'git-plumbing', cwd: root, env: scrubbedGitEnv() })
+  const result = startBoundedSync(
+    ['git', ...nulPathListArgs(['ls-files', 'docs/reference/*.md'])],
+    { budget: 'git-plumbing', cwd: root, env: scrubbedGitEnv() },
+  )
   if (result.exitCode !== 0) {
     throw new Error(`could not read tracked reference pages: ${result.stderr.toString().trim()}`)
   }

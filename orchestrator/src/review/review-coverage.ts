@@ -1,4 +1,4 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 // concern: review-coverage
 import type { Database } from 'bun:sqlite'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
@@ -16,12 +16,17 @@ import type {
 
 function coverageGit(repoRoot: string): CoverageGitRunner {
   return (args, stdin) => {
-    const p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdin })
+    const p = startBoundedSyncBytes(['git', ...args], {
+      budget: 'git-plumbing',
+      cwd: repoRoot,
+      env: targetGitEnvironment(repoRoot),
+      stdin,
+    })
     return {
       ok: p.exitCode === 0,
-      out: p.stdout.toString().trim(),
+      out: new TextDecoder().decode(p.stdout).trim(),
       stdout: p.stdout,
-      err: p.stderr.toString().trim() || `exit ${p.exitCode}`,
+      err: p.stderr.trim() || `exit ${p.exitCode}`,
     }
   }
 }

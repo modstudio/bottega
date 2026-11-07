@@ -12,7 +12,10 @@ const outputPath = fileURLToPath(
 function generatedRecipeSchema(): string {
   const schema = recipeJsonSchema()
   const unformatted = `${JSON.stringify(schema, null, 2)}\n`
-  const formatted = startBoundedSync(['bunx', 'biome', 'format', `--stdin-file-path=${outputPath}`], { budget: 'process-table', stdin: Buffer.from(unformatted) })
+  const formatted = startBoundedSync(
+    ['bunx', 'biome', 'format', `--stdin-file-path=${outputPath}`],
+    { budget: 'process-table', stdin: Buffer.from(unformatted) },
+  )
   if (formatted.exitCode !== 0) {
     throw new Error(`could not format generated recipe schema: ${formatted.stderr.toString()}`)
   }

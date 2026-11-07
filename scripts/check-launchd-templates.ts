@@ -226,7 +226,9 @@ function checkRenderedPlist(input: { name: string; path: string; plutil: string 
     if (detail.trim()) errors.push(detail.trim())
     return errors
   }
-  const jsonResult = startBoundedSync([input.plutil, '-convert', 'json', '-o', '-', input.path], { budget: 'process-table' })
+  const jsonResult = startBoundedSync([input.plutil, '-convert', 'json', '-o', '-', input.path], {
+    budget: 'process-table',
+  })
   if (jsonResult.exitCode !== 0) {
     errors.push(`${input.name}: rendered launchd template could not be parsed as JSON`)
   } else {
@@ -238,7 +240,10 @@ function checkRenderedPlist(input: { name: string; path: string; plutil: string 
       errors.push(`${input.name}: rendered launchd template produced invalid JSON`)
     }
   }
-  const programResult = startBoundedSync([input.plutil, '-extract', 'ProgramArguments.0', 'raw', input.path], { budget: 'process-table' })
+  const programResult = startBoundedSync(
+    [input.plutil, '-extract', 'ProgramArguments.0', 'raw', input.path],
+    { budget: 'process-table' },
+  )
   const program = programResult.stdout.toString().trim()
   if (programResult.exitCode !== 0 || !program) {
     errors.push(`${input.name}: launchd template has no first program argument`)

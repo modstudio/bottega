@@ -115,7 +115,10 @@ export type CreateNoteInput = {
 }
 
 const git = (cwd: string, ...args: string[]): string | null => {
-  const result = startBoundedSync(['git', '-C', cwd, ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', '-C', cwd, ...args], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   return result.exitCode === 0 ? result.stdout.toString().trim() : null
 }
 

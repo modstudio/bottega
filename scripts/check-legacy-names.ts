@@ -213,7 +213,10 @@ function textForLegacyScan(path: string, text: string): string {
 }
 
 function scannedFiles(): string[] {
-  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])], { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() })
+  const result = startBoundedSync(
+    ['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])],
+    { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() },
+  )
   if (result.exitCode !== 0) {
     throw new Error(
       `git ls-files failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,

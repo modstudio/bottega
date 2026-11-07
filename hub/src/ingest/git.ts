@@ -84,7 +84,8 @@ function scanGit(since: string) {
 
   for (const project of projects().filter((project) => project.repository)) {
     const repo = project.name
-    const proc = startBoundedSync([
+    const proc = startBoundedSync(
+      [
         'git',
         '-C',
         project.path,
@@ -93,7 +94,9 @@ function scanGit(since: string) {
         `--since=${since}`,
         '--numstat',
         '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
-      ], { budget: 'git-plumbing', env: inspectionGitEnv() })
+      ],
+      { budget: 'git-plumbing', env: inspectionGitEnv() },
+    )
     let day: string | null = null
     for (const line of proc.stdout.split('\n')) {
       if (line.startsWith('\u0000')) {

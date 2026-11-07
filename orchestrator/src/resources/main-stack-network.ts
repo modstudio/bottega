@@ -59,13 +59,13 @@ export function mainStackGateAddresses(project: GateMainStackProject): string[] 
   const command = ['docker', 'compose', 'config', '--format', 'json']
   let result: ReturnType<typeof startBoundedSync>
   try {
-    result = startBoundedSync(command, { budget: 'process-table', cwd: project.path })
+    result = startBoundedSync(command, { budget: 'docker', cwd: project.path })
   } catch (error) {
     throw new Error(
       `writing ACP sandbox could not resolve the gate main-stack network: ${(error as Error).message}; run ${command.join(' ')} in ${project.path}, then retry`,
     )
   }
-  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
+  if (result.exitCode !== 0) {
     throw new Error(
       `writing ACP sandbox could not resolve the gate main-stack network: ${result.stderr?.toString().trim() || 'timed out'}; run ${command.join(' ')} in ${project.path}, then retry`,
     )

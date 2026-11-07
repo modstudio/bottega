@@ -44,7 +44,10 @@ type RepositoryRoot = {
 
 function repositoryRootFromGit(cwd: string): RepositoryRoot | null {
   try {
-    const git = startBoundedSync(['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'], { budget: 'git-plumbing', cwd, env: inspectionGitEnv() })
+    const git = startBoundedSync(
+      ['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'],
+      { budget: 'git-plumbing', cwd, env: inspectionGitEnv() },
+    )
     if (git.exitCode !== 0) return null
     const [bare, gitDirOutput, commonOutput] = git.stdout.toString().trim().split('\n')
     if (!gitDirOutput || !commonOutput || (bare !== 'true' && bare !== 'false')) return null

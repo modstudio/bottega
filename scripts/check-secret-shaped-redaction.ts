@@ -64,12 +64,10 @@ for (const root of ROOTS) {
   }
 }
 
-const trackedPython = startBoundedSync([
-  'git',
-  '-C',
-  checkout,
-  ...nulPathListArgs(['ls-files', '--', '*.py']),
-], { budget: 'git-plumbing', env: inspectionGitEnv() })
+const trackedPython = startBoundedSync(
+  ['git', '-C', checkout, ...nulPathListArgs(['ls-files', '--', '*.py'])],
+  { budget: 'git-plumbing', env: inspectionGitEnv() },
+)
 if (trackedPython.exitCode !== 0) {
   console.error('could not list tracked Python files; run this check from a Git checkout')
   process.exit(1)

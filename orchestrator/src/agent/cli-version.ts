@@ -27,12 +27,12 @@ export function captureCliVersion(
   timeoutMs = CLI_VERSION_TIMEOUT_MS,
 ): CliVersionCapture {
   try {
-    const child = startBoundedSync([bin, '--version'], { budget: 'process-table' })
+    const child = startBoundedSync([bin, '--version'], { budget: 'agent-cli' })
     return {
       exitCode: child.exitCode,
       stdout: child.stdout.toString(),
       stderr: child.stderr.toString(),
-      timedOut: child.exitedDueToTimeout === true,
+      timedOut: false,
       error: null,
     }
   } catch (error) {

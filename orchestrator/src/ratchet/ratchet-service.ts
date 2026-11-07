@@ -36,10 +36,11 @@ type RatchetOptions = {
   measures?: MeasurePattern[]
 }
 
-const LINTER_TIMEOUT_MS = 120_000
-
 function git(root: string, args: string[]): string {
-  const result = startBoundedSync(['git', '-C', root, '--no-optional-locks', ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', '-C', root, '--no-optional-locks', ...args], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode !== 0) {
     throw new Error(
       `git ${args.join(' ')} failed: ${result.stderr.toString().trim() || 'no error output'}`,
@@ -136,17 +137,11 @@ function runSide(
   if (!argv.length) return { ok: false as const, reason: 'the linter command is empty' }
   let result: ReturnType<typeof startBoundedSync>
   try {
-    result = startBoundedSync(argv, { budget: 'process-table', cwd })
+    result = startBoundedSync(argv, { budget: 'self-cli', cwd })
   } catch (error) {
     return {
       ok: false as const,
       reason: `${argv[0]} could not run: ${error instanceof Error ? error.message : String(error)}`,
-    }
-  }
-  if (result.exitedDueToTimeout) {
-    return {
-      ok: false as const,
-      reason: `${argv[0]} timed out after ${LINTER_TIMEOUT_MS}ms`,
     }
   }
   let findings: Finding[]

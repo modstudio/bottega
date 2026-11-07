@@ -73,7 +73,11 @@ const exactLegacyPaths = [
 ]
 
 function gitPaths(root: string, argv: string[], tracked: boolean): MachineStatePath[] {
-  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', ...argv])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', ...argv])], {
+    budget: 'git-plumbing',
+    cwd: root,
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode !== 0) {
     throw new Error(`could not inspect checkout paths: ${result.stderr.toString().trim()}`)
   }

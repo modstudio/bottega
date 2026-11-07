@@ -18,7 +18,10 @@ export type CanonLintInputCollector = (
 ) => Pick<CanonLintInput, 'trackedPaths' | 'packageScripts' | 'sourceTexts'>
 
 function git(cwd: string, args: string[]): string {
-  const result = startBoundedSync(['git', '-C', cwd, ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', '-C', cwd, ...args], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim()
     throw new Error(`git -C ${cwd} ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)

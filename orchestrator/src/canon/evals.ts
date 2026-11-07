@@ -68,7 +68,11 @@ const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
 })
 
 function git(cwd: string, args: string[]): string {
-  const p = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: hermeticGitEnv() })
+  const p = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
+    cwd,
+    env: hermeticGitEnv(),
+  })
   if (p.exitCode !== 0) {
     throw new Error(p.stderr.toString().trim() || `git ${args.join(' ')} exited ${p.exitCode}`)
   }

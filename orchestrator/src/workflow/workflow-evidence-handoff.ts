@@ -29,7 +29,14 @@ export type WorkflowEvidenceHandOff =
 export function handOffWorkflowEvidence(payload: WorkflowEvidencePayload): WorkflowEvidenceHandOff {
   let result: ReturnType<typeof startBoundedSync>
   try {
-    result = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'workflow', 'exec', RECORD_EVIDENCE_FLAG, '--json'], { budget: 'self-cli', env: process.env, stdin: Buffer.from(encodeWorkflowEvidencePayload(payload)) })
+    result = startBoundedSync(
+      [...bottegaEntryArgv(PLATFORM_SLUG), 'workflow', 'exec', RECORD_EVIDENCE_FLAG, '--json'],
+      {
+        budget: 'self-cli',
+        env: process.env,
+        stdin: Buffer.from(encodeWorkflowEvidencePayload(payload)),
+      },
+    )
   } catch (error) {
     return { kind: 'not-recorded', detail: error instanceof Error ? error.message : String(error) }
   }

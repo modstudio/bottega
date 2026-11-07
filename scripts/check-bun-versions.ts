@@ -102,8 +102,11 @@ export function bunImagePins(path: string, source: string): BunImagePin[] {
 
 /** Tracked and untracked, unignored Dockerfiles, so a worker's new image is judged before it is committed. */
 function repositoryDockerfiles(root: string): string[] {
-  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
-  if (!result.success) {
+  const result = startBoundedSync(
+    ['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])],
+    { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() },
+  )
+  if (result.exitCode !== 0) {
     throw new Error(
       `could not list the repository's Dockerfiles: ${result.stderr.toString().trim() || `git exited ${result.exitCode}`}; run git ls-files from the repository root`,
     )

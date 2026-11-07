@@ -72,7 +72,11 @@ export function emptyProjectReviewRefusal(input: {
 type Presentation = { log(...values: unknown[]): void }
 
 function git(cwd: string, argv: string[]): string {
-  const result = startBoundedSync(['git', ...argv], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) })
+  const result = startBoundedSync(['git', ...argv], {
+    budget: 'git-plumbing',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
   if (result.exitCode !== 0) {
     throw new Error(
       `git ${argv.join(' ')} failed: ${result.stderr.toString().trim() || `exit ${result.exitCode}`}`,
@@ -176,7 +180,11 @@ export function reviewRecordCommandOperations(
       ),
     write: writeReviewRecordFindings,
     run: (argv, cwd) => {
-      const result = startBoundedSync(argv, { budget: 'process-table', cwd, env: targetGitEnvironment(cwd) })
+      const result = startBoundedSync(argv, {
+        budget: 'git-plumbing',
+        cwd,
+        env: targetGitEnvironment(cwd),
+      })
       return {
         exitCode: result.exitCode,
         stdout: result.stdout.toString(),

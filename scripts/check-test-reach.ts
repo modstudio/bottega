@@ -175,7 +175,11 @@ export function testReach(input: {
 }
 
 export function trackedFiles(): string[] {
-  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files'])], { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files'])], {
+    budget: 'git-plumbing',
+    cwd: ROOT,
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode !== 0) {
     throw new Error(
       `git ls-files failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,
@@ -185,7 +189,11 @@ export function trackedFiles(): string[] {
 }
 
 function baseExemptions(commit: string): TestReachExemption[] | null {
-  const result = startBoundedSync(['git', 'show', `${commit}:${EXEMPTIONS_FILE}`], { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', 'show', `${commit}:${EXEMPTIONS_FILE}`], {
+    budget: 'git-plumbing',
+    cwd: ROOT,
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode === 0) return parseTestReachExemptions(result.stdout.toString())
   const error = result.stderr.toString()
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))

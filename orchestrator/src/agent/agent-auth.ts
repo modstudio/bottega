@@ -1,4 +1,4 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 // concern: doctor
 /** Knows local agent auth probes. Must not know routing, dispatch, or run outcomes. */
 
@@ -68,13 +68,13 @@ export function classifyAgentAuth(agent: string, capture: AgentAuthCapture): Age
   )
 }
 
-const spawnAuth: AuthSpawn = (argv, options) => {
-  const child = startBoundedSync(argv, { ...options, budget: 'process-table' })
+const spawnAuth: AuthSpawn = (argv, _options) => {
+  const child = startBoundedSyncBytes(argv, { budget: 'agent-cli' })
   return {
     exitCode: child.exitCode,
     stdout: child.stdout,
-    stderr: child.stderr,
-    exitedDueToTimeout: child.exitedDueToTimeout,
+    stderr: new TextEncoder().encode(child.stderr),
+    exitedDueToTimeout: false,
   }
 }
 

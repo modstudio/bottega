@@ -52,10 +52,9 @@ export function staleRetrievalPinConditions(report: PinReport): MonitorCondition
 
 export function observeRetrievalPins(): { conditions: MonitorCondition[]; errors: string[] } {
   try {
-    const child = startBoundedSync(
-      [...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'],
-      { budget: 'self-cli' },
-    )
+    const child = startBoundedSync([...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'], {
+      budget: 'self-cli',
+    })
     const stdout = child.stdout
     const stderr = child.stderr.trim()
     if (child.exitCode !== 0 && child.exitCode !== 1) {

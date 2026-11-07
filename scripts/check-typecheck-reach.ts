@@ -46,7 +46,10 @@ function resolvedTypecheckFileSets(root: string, configPaths: readonly string[])
 }
 
 function trackedTypeScriptPaths(root: string): string[] {
-  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', '--', '*.ts', '*.tsx'])], { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() })
+  const result = startBoundedSync(
+    ['git', ...nulPathListArgs(['ls-files', '--', '*.ts', '*.tsx'])],
+    { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() },
+  )
   if (result.exitCode !== 0) {
     throw new Error(`git ls-files failed: ${result.stderr.toString().trim()}`)
   }

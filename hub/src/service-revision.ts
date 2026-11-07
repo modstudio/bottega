@@ -92,7 +92,11 @@ export function serviceRevisionStatus(
 
 function readInstallHead(): RevisionRead {
   try {
-    const result = startBoundedSync(['git', 'rev-parse', 'HEAD'], { budget: 'git-plumbing', cwd: installRoot(), env: inspectionGitEnv() })
+    const result = startBoundedSync(['git', 'rev-parse', 'HEAD'], {
+      budget: 'git-plumbing',
+      cwd: installRoot(),
+      env: inspectionGitEnv(),
+    })
     const revision = result.stdout.toString().trim()
     if (result.exitCode === 0 && revision) return { revision, error: null }
     return {

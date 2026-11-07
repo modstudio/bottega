@@ -27,7 +27,11 @@ type ReviewReadDeps = {
 }
 
 const git: Git = (cwd, args) => {
-  const result = startBoundedSync(['git', ...args], { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) })
+  const result = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
   if (result.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${result.stderr.toString().trim()}`)
   }

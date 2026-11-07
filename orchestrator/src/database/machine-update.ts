@@ -89,7 +89,11 @@ function incomingJournal(
 }
 
 function runMigration(cwd: string): void {
-  const result = startBoundedSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], { budget: 'self-cli', cwd, env: targetGitEnvironment(cwd) })
+  const result = startBoundedSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
+    budget: 'self-cli',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
   if (result.exitCode !== 0)
     throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
 }
@@ -137,7 +141,9 @@ type UpdateDependencies = {
 }
 
 function runLaunchAgentsRefreshVerb(binary: string): void {
-  const result = startBoundedSync([binary, 'machine', 'launch-agents', 'refresh'], { budget: 'agent-cli' })
+  const result = startBoundedSync([binary, 'machine', 'launch-agents', 'refresh'], {
+    budget: 'agent-cli',
+  })
   if (result.exitCode !== 0) {
     throw new Error(
       `launch-agent refresh failed with exit ${result.exitCode}; run ${binary} machine launch-agents refresh`,

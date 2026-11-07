@@ -5,8 +5,6 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { tmpdir } from 'node:os'
 import { decideSecretScanOutcome, type SecretScanOutcome } from './secret-scan-decision.ts'
 
-const SECRET_SCAN_TIMEOUT_MS = 3_000
-
 export type SecretScanner = (body: string) => SecretScanOutcome
 
 export function scanTextForSecrets(body: string): SecretScanOutcome {
@@ -18,7 +16,8 @@ export function scanTextForSecrets(body: string): SecretScanOutcome {
   delete environment.GITLEAKS_CONFIG_TOML
 
   try {
-    const child = startBoundedSync([
+    const child = startBoundedSync(
+      [
         binary,
         'stdin',
         '--redact=100',
@@ -26,11 +25,13 @@ export function scanTextForSecrets(body: string): SecretScanOutcome {
         '--report-path=-',
         '--no-banner',
         '--log-level=error',
-      ], { budget: 'process-table', cwd: tmpdir(), env: environment, stdin: Buffer.from(body) })
+      ],
+      { budget: 'process-table', cwd: tmpdir(), env: environment, stdin: Buffer.from(body) },
+    )
     return decideSecretScanOutcome({
       exitCode: child.exitCode,
       report: child.stdout.toString(),
-      timedOut: child.exitedDueToTimeout === true,
+      timedOut: false,
       couldNotRun: false,
     })
   } catch {

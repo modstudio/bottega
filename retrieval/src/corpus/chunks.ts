@@ -226,12 +226,15 @@ function isDocRow(value: unknown): value is DocRow {
 }
 
 export async function loadDocRows(repositoryRoot: string): Promise<DocRow[]> {
-  const child = await startBounded([
+  const child = await startBounded(
+    [
       ...bottegaEntryArgv(PLATFORM_SLUG, resolve(repositoryRoot, 'bin', PLATFORM_SLUG)),
       'doc',
       'list',
       '--json',
-    ], { budget: 'self-cli', cwd: repositoryRoot })
+    ],
+    { budget: 'self-cli', cwd: repositoryRoot },
+  )
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(
@@ -261,7 +264,10 @@ export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
 
 export async function loadCodeCorpus(repositoryRoot: string): Promise<Chunk[]> {
   const root = resolve(repositoryRoot)
-  const child = await startBounded(['git', '-C', root, ...nulPathListArgs(['ls-files'])], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const child = await startBounded(['git', '-C', root, ...nulPathListArgs(['ls-files'])], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(`tracked code corpus listing failed: ${stderr.trim() || `exit ${exitCode}`}`)

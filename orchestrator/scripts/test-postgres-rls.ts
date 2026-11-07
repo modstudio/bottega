@@ -54,7 +54,7 @@ function runLeg(argv: readonly string[]): string {
 }
 
 // A sampler that cannot start leaves the guard informational instead of failing the run.
-function spawnSampler(command: string[]): Bun.SyncSubprocess<'pipe', 'pipe'> | { reason: string } {
+function spawnSampler(command: string[]): ReturnType<typeof startBoundedSync> | { reason: string } {
   try {
     return startBoundedSync(command, { budget: 'process-table' })
   } catch (error) {
@@ -186,7 +186,8 @@ async function run(argv: string[], env?: Record<string, string>): Promise<number
 }
 
 function postgres(source: string, database = 'postgres'): void {
-  const result = startBoundedSync([
+  const result = startBoundedSync(
+    [
       'docker',
       'exec',
       '-i',
@@ -198,7 +199,9 @@ function postgres(source: string, database = 'postgres'): void {
       database,
       '-v',
       'ON_ERROR_STOP=1',
-    ], { budget: 'docker', stdin: new Blob([source]) })
+    ],
+    { budget: 'docker', stdin: source },
+  )
   if (result.exitCode !== 0) throw new Error(`Postgres fixture command exited ${result.exitCode}`)
 }
 
@@ -257,8 +260,7 @@ function release(): void {
     }
   }
   // An interrupted start can still have created the container, so removal does not wait on readiness.
-  if (launched)
-    startBoundedSync(['docker', 'rm', '-f', '-v', container], { budget: 'docker' })
+  if (launched) startBoundedSync(['docker', 'rm', '-f', '-v', container], { budget: 'docker' })
   rmSync(sourceCopies, { recursive: true, force: true })
   rmSync(stateRoot, { recursive: true, force: true })
 }
@@ -286,7 +288,8 @@ try {
   if (!provisionedContainer) {
     launched = true
     // Synchronous so no signal handler runs between the container starting and `started` being set.
-    const start = startBoundedSync([
+    const start = startBoundedSync(
+      [
         'docker',
         'run',
         '--rm',
@@ -300,14 +303,19 @@ try {
         'postgres:18-alpine',
         '-c',
         'max_connections=200',
-      ], { budget: 'docker' }).exitCode
+      ],
+      { budget: 'docker' },
+    ).exitCode
     if (start !== 0) throw new EarlyExit(start)
   }
   started = true
 
   let ready = false
   for (let attempt = 0; attempt < 40; attempt++) {
-    const probe = startBoundedSync(['docker', 'exec', container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], { budget: 'docker' })
+    const probe = startBoundedSync(
+      ['docker', 'exec', container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'],
+      { budget: 'docker' },
+    )
     if (probe.exitCode === 0) {
       ready = true
       break
@@ -316,7 +324,9 @@ try {
   }
   if (!ready) throw new Error('disposable Postgres did not become ready')
 
-  const portResult = startBoundedSync(['docker', 'port', container, '5432/tcp'], { budget: 'docker' })
+  const portResult = startBoundedSync(['docker', 'port', container, '5432/tcp'], {
+    budget: 'docker',
+  })
   if (portResult.exitCode !== 0) throw new Error(portResult.stderr.toString())
   const port = portResult.stdout.toString().trim().split(':').at(-1)
   if (!port) throw new Error('disposable Postgres published no host port')

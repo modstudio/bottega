@@ -1,4 +1,5 @@
 import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import {
@@ -37,7 +38,11 @@ const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const remedy = `edit canon in the store with ${PLATFORM_SLUG} doc set, then run ${PLATFORM_SLUG} doc canon hydrate in the worktree and commit`
 
 function run(argv: string[], cwd: string): { exitCode: number; stdout: string; stderr: string } {
-  const result = startBoundedSync(argv, { budget: 'process-table', cwd })
+  const result = startBoundedSync(argv, {
+    budget: 'git-plumbing',
+    cwd,
+    env: inspectionGitEnv(),
+  })
   return {
     exitCode: result.exitCode,
     stdout: result.stdout.toString(),

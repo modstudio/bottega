@@ -56,11 +56,15 @@ function parseLiveReading(capture: LiveReadingCapture): LiveReading {
 }
 
 const runLiveCommand: LiveReadingRunner = (command, cwd, timeoutMs) => {
-  const result = startBoundedSync(['/bin/sh', '-lc', command], { budget: 'self-cli', cwd, env: releaseProcessEnvironment(targetGitEnvironment(cwd)) })
+  const result = startBoundedSync(['/bin/sh', '-lc', command], {
+    budget: 'self-cli',
+    cwd,
+    env: releaseProcessEnvironment(targetGitEnvironment(cwd)),
+  })
   return {
     exitCode: result.exitCode ?? -1,
     output: [result.stdout.toString(), result.stderr.toString()].filter(Boolean).join(''),
-    timedOut: result.exitedDueToTimeout === true,
+    timedOut: false,
   }
 }
 

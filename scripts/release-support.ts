@@ -24,8 +24,6 @@ export function distributionManifest(
 
 export async function run(argv: string[], cwd = repositoryRoot): Promise<string> {
   const child = await startBounded(argv, { budget: 'self-cli', cwd })
-  const output = await new Response(child.stdout).text()
-  const exitCode = await child.exited
-  if (exitCode !== 0) throw new Error(`${argv.join(' ')} exited ${exitCode}`)
-  return output.trim()
+  if (child.exitCode !== 0) throw new Error(`${argv.join(' ')} exited ${child.exitCode}`)
+  return child.stdout.trim()
 }

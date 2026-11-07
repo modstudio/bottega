@@ -351,7 +351,9 @@ function loadedLaunchAgentLabels(
   const loaded = new Set<string>()
   for (const { label } of owners) {
     if (skipReasons[label] && !isMaintenanceScheduleLabel(label)) continue
-    const child = startBoundedSync([launchctl, 'print', `gui/${uid}/${label}`], { budget: 'process-table' })
+    const child = startBoundedSync([launchctl, 'print', `gui/${uid}/${label}`], {
+      budget: 'process-table',
+    })
     if (child.exitCode === 0) loaded.add(label)
   }
   return { kind: 'available', loadedLabels: loaded }

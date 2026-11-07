@@ -75,7 +75,11 @@ function baseArgumentOrExit(argv: readonly string[]): string | null {
  */
 function baseBaselineOrExit(commit: string | null): string[] | null {
   if (!commit) return null
-  const result = startBoundedSync(['git', 'show', `${commit}:${BASELINE_FILE}`], { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', 'show', `${commit}:${BASELINE_FILE}`], {
+    budget: 'git-plumbing',
+    cwd: ROOT,
+    env: inspectionGitEnv(),
+  })
   if (result.exitCode === 0) return parseUndeclaredModulesBaseline(result.stdout.toString())
   const error = result.stderr.toString()
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))

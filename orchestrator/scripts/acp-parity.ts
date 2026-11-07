@@ -221,9 +221,9 @@ async function runAskCase(): Promise<Row> {
       const answer = startBoundedSync(
         [process.execPath, join(ROOT, 'src/cli.ts'), 'answer', String(row.id), ruling],
         {
-        budget: 'self-cli',
-        cwd: ROOT,
-        env: process.env,
+          budget: 'self-cli',
+          cwd: ROOT,
+          env: process.env,
         },
       )
       if (answer.exitCode !== 0) {

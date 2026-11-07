@@ -19,7 +19,10 @@ export async function importTasks(file: string): Promise<number> {
     closed: string | null
     shas: string[]
   }[]
-  const log = startBoundedSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const log = startBoundedSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   const stamps = new Map(
     log.stdout
       .split('\n')

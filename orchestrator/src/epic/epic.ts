@@ -481,7 +481,8 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
 }
 
 export async function epicChildren(project: string, epicKey: string): Promise<EpicChild[]> {
-  const child = await startBounded([
+  const child = await startBounded(
+    [
       ...bottegaEntryArgv(PLATFORM_SLUG),
       'task',
       'list',
@@ -490,7 +491,9 @@ export async function epicChildren(project: string, epicKey: string): Promise<Ep
       '--parent',
       epicKey,
       '--json',
-    ], { budget: 'self-cli', env: { ...process.env } })
+    ],
+    { budget: 'self-cli', env: { ...process.env } },
+  )
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0)
     throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)

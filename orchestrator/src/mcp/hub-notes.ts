@@ -25,7 +25,12 @@ export type HubNote = z.infer<typeof noteRowsSchema>[number]
 export type FiledNoteAnchor = NoteAnchorWire
 
 async function spawnOutput(entry: BottegaEntry, args: string[], cwd: string): Promise<string> {
-  const child = await startBounded([...bottegaEntryArgv(entry), ...args], { budget: 'self-cli', cwd, env: { ...process.env }, stdin: 'ignore' })
+  const child = await startBounded([...bottegaEntryArgv(entry), ...args], {
+    budget: 'self-cli',
+    cwd,
+    env: { ...process.env },
+    stdin: 'ignore',
+  })
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)

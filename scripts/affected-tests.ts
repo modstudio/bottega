@@ -48,7 +48,10 @@ export function selectedTestSources(modules: readonly { source: string }[]): str
 }
 
 function gitLines(args: readonly string[]): string[] {
-  const result = startBoundedSync(['git', ...args], { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const result = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
+  })
   const stderr = result.stderr.toString().trim()
   if (result.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${stderr || `exit ${result.exitCode}`}`)

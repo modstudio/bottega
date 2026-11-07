@@ -109,7 +109,7 @@ export function runSetupCommand(
       exitCode: child.exitCode,
       stdout: child.stdout.toString(),
       stderr: child.stderr.toString(),
-      timedOut: child.exitedDueToTimeout === true,
+      timedOut: false,
       error: null,
     }
   } catch (error) {
