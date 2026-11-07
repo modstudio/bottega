@@ -276,6 +276,70 @@ async function updateDistribution(input: {
   input.presentation.log(current.message)
 }
 
+function restoreMainAfterMigrationFailure(input: {
+  target: string
+  before: string
+  runGit: (cwd: string, args: string[]) => string
+  cause: unknown
+}): never {
+  const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  try {
+    input.runGit(input.target, ['reset', '--keep', input.before])
+  } catch (restoreCause) {
+    const restoreFailure =
+      restoreCause instanceof Error ? restoreCause.message : String(restoreCause)
+    throw new Error(
+      `migration failed: ${migrationFailure}; restoring main to ${input.before} failed: ${restoreFailure}; ` +
+        `manually run git -C ${input.target} reset --keep ${input.before}, then ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  throw new Error(
+    `migration failed: ${migrationFailure}; main was restored to ${input.before}; ` +
+      `rerun ${PLATFORM_SLUG} machine update`,
+  )
+}
+
+function storePositionInIncomingJournal(
+  database: Parameters<typeof storeJournalPosition>[0],
+  journal: MigrationJournalEntry[],
+): number {
+  const position = storeJournalPosition(database, journal)
+  if (position.state === 'pending-not-found') {
+    throw new Error(`incoming journal does not contain pending migration ${position.migration}`)
+  }
+  return position.index
+}
+
+function handleMigrationFailureAfterPull(input: {
+  target: string
+  before: string
+  journal: MigrationJournalEntry[]
+  initialStoreVersion: number
+  runGit: (cwd: string, args: string[]) => string
+  cause: unknown
+}): never {
+  const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  let storeVersion: number
+  try {
+    storeVersion = withSynchronousDatabaseForMigrationStep((database) =>
+      storePositionInIncomingJournal(database, input.journal),
+    )
+  } catch (storeCause) {
+    const storeFailure = storeCause instanceof Error ? storeCause.message : String(storeCause)
+    throw new Error(
+      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store's migration position could not be read: ${storeFailure}; ` +
+        `rerun ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  if (storeVersion !== input.initialStoreVersion) {
+    throw new Error(
+      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store's migration position moved from ${input.initialStoreVersion} to ${storeVersion} in the incoming journal; ` +
+        `rerun ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  restoreMainAfterMigrationFailure(input)
+}
+
 export async function machineUpdateCommand(
   presentation: Presentation,
   deps: UpdateDependencies = {},
@@ -332,14 +396,13 @@ export async function machineUpdateCommand(
   const initial = withSynchronousDatabaseForMigrationStep((database) => {
     const local = migrationState(database)
     if (local.ahead) throw new Error(`store is ahead at migration ${local.ahead}`)
-    const position = storeJournalPosition(database, journal)
-    if (position.state === 'pending-not-found')
-      throw new Error(`incoming journal does not contain pending migration ${position.migration}`)
+    const storeVersion = storePositionInIncomingJournal(database, journal)
     const activeDrain = migrationDrainForUpdate(database)
     return {
       activeDrain,
-      decision: decideMigrationDrain({ journal, storeVersion: position.index }),
-      pendingMigration: journal[position.index]?.tag ?? null,
+      decision: decideMigrationDrain({ journal, storeVersion }),
+      pendingMigration: journal[storeVersion]?.tag ?? null,
+      storeVersion,
     }
   })
   assertNoActiveDrain(initial.activeDrain)
@@ -349,8 +412,20 @@ export async function machineUpdateCommand(
     pendingMigration: initial.pendingMigration,
     deps,
     apply: () => {
+      const before = runGit(target, ['rev-parse', 'HEAD'])
       runGit(target, ['pull', '--ff-only', 'origin', branch])
-      migrate(target)
+      try {
+        migrate(target)
+      } catch (cause) {
+        handleMigrationFailureAfterPull({
+          target,
+          before,
+          journal,
+          initialStoreVersion: initial.storeVersion,
+          runGit,
+          cause,
+        })
+      }
     },
   })
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate

@@ -80,7 +80,9 @@ function moveMainForPostLanding(
   target: string,
   movesInstallation: boolean,
   depth?: string,
-): { moved: true } | { moved: false; detail: string; recovery: string } {
+):
+  | { moved: true }
+  | { moved: false; detail: string; recovery: string; cleanupWasFenced?: boolean } {
   const retry = requiredMergeCommand(target, depth)
   const recovery = movesInstallation
     ? `${project.path}/bin/${PLATFORM_SLUG} machine update, then ${retry}`
@@ -99,6 +101,7 @@ function moveMainForPostLanding(
     failure = cause instanceof Error ? cause.message : String(cause)
   }
   if (failure) {
+    let detail: string
     try {
       if (adapter.mainHead(project) === headBefore) {
         return {
@@ -107,8 +110,16 @@ function moveMainForPostLanding(
           recovery,
         }
       }
+      detail = `main moved from ${headBefore} and the move did not complete: ${failure}`
     } catch {
-      return { moved: true }
+      detail = `main did not verifiably stay at ${headBefore} and the move did not complete: ${failure}`
+    }
+    adapter.fence(`${detail}; ${recovery}`)
+    return {
+      moved: false,
+      detail,
+      recovery,
+      cleanupWasFenced: true,
     }
   }
   return { moved: true }
@@ -251,6 +262,8 @@ function mergedOutput(input: {
   requiredRelease: RequiredReleaseReport
   target: string
   depth?: string
+  cleanupWasFenced?: boolean
+  cleanupRecovery?: string
 }): PullRequestMergeOutcome {
   const addRequeue = (outcome: PullRequestMergeOutcome): PullRequestMergeOutcome => ({
     ...outcome,
@@ -258,10 +271,11 @@ function mergedOutput(input: {
   })
   if (input.recordingError) {
     const promotion = input.promotion.output ? `\n${input.promotion.output}` : ''
+    const recovery = input.cleanupWasFenced ? `; recover with: ${input.cleanupRecovery}` : ''
     return addRequeue({
       output:
         `pull request #${input.prNumber} merged as ${input.mergeCommit}\n` +
-        `${input.recordingError}; recover landing evidence with: ${PLATFORM_SLUG} tree branch landed ${input.branch} --pr ${input.prNumber}; cleanup was not run${promotion}`,
+        `${input.recordingError}; recover landing evidence with: ${PLATFORM_SLUG} tree branch landed ${input.branch} --pr ${input.prNumber}; cleanup was not run${recovery}${promotion}`,
       exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
     })
   }
@@ -272,6 +286,10 @@ function mergedOutput(input: {
     input.depth,
   )
   const parts = [input.mergeCommit, input.promotion.output, release].filter(Boolean)
+  if (input.cleanupWasFenced) {
+    parts.push(`cleanup was not run; recover with: ${input.cleanupRecovery}`)
+    return addRequeue({ output: parts.join('\n'), exitCode: MERGED_WITH_RESIDUE_EXIT_CODE })
+  }
   let cleanupExit: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE = input.promotion.error
     ? MERGED_WITH_RESIDUE_EXIT_CODE
     : 0
@@ -383,6 +401,8 @@ export function completePullRequestPostLanding(input: {
             decision.decided ? `${move.detail}; recover with: ${move.recovery}` : decision.error,
           )
         : releaseRequiredFlagAbsent(decision.rungs),
+      cleanupWasFenced: move.cleanupWasFenced,
+      cleanupRecovery: move.recovery,
     })
   }
   const payload: PullRequestPostLandingPayload = {

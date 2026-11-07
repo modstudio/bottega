@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DIST_MANIFEST, INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
-import { db } from './db.ts'
+import { DB_PATH, db } from './db.ts'
 import { machineUpdateCommand, unregisteredMainCheckoutRefusal } from './machine-update.ts'
 import { setMigrationDrain } from './migration-drain.ts'
 import { migrationDrain } from './migration-drain-state.ts'
@@ -71,7 +71,15 @@ function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
   }
   return {
     pending: held[0]!.entry,
-    journal: journal.slice(0, pendingIndex + 1),
+    journal: [
+      ...journal,
+      {
+        idx: journal.length,
+        when: journal.at(-1)!.when + 1,
+        tag: 'incoming_test_migration',
+        compatibility: 'additive',
+      },
+    ],
     restore() {
       for (const { applied } of held) {
         database
@@ -112,10 +120,151 @@ test("machine update clears a dead holder's marker before deciding", async () =>
     'branch',
     'fetch',
     'show',
+    'rev-parse',
     'pull',
     'branch',
     'status',
   ])
+})
+
+test('machine update restores main when migrate fails after the pull', async () => {
+  const gitCalls: string[][] = []
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          gitCalls.push(args)
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          return ''
+        },
+        migrate: () => {
+          throw new Error('injected migration failure')
+        },
+      },
+    ),
+  ).rejects.toThrow(
+    `migration failed: injected migration failure; main was restored to before-commit; rerun ${PLATFORM_SLUG} machine update`,
+  )
+  expect(gitCalls.slice(-3)).toEqual([
+    ['rev-parse', 'HEAD'],
+    ['pull', '--ff-only', 'origin', 'main'],
+    ['reset', '--keep', 'before-commit'],
+  ])
+})
+
+test('machine update names both failures and the manual remedy when restoring main fails', async () => {
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          if (args[0] === 'reset') throw new Error('injected restore failure')
+          return ''
+        },
+        migrate: () => {
+          throw new Error('injected migration failure')
+        },
+      },
+    ),
+  ).rejects.toThrow(
+    `migration failed: injected migration failure; restoring main to before-commit failed: injected restore failure; manually run git -C ${dir} reset --keep before-commit, then ${PLATFORM_SLUG} machine update`,
+  )
+})
+
+test('machine update leaves main pulled when migrate partly commits before failing', async () => {
+  const held = holdBackLastAdditiveMigration(db())
+  const gitCalls: string[][] = []
+  try {
+    await expect(
+      machineUpdateCommand(
+        { log: () => {} },
+        {
+          cwd: dir,
+          authorityRefusal: () => null,
+          project: () => ({
+            name: 'migration-update-fixture',
+            path: dir,
+            settings: { trunk: 'main' },
+          }),
+          git: (_cwd, args) => {
+            gitCalls.push(args)
+            if (args[0] === 'branch') return 'main'
+            if (args[0] === 'show') return JSON.stringify({ entries: held.journal })
+            if (args[0] === 'rev-parse') return 'before-commit'
+            return ''
+          },
+          migrate: () => {
+            held.restore()
+            throw new Error('injected migration failure after commit')
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      `migration failed: injected migration failure after commit; main was left at the pulled commit because the store's migration position moved from ${held.pending.idx} to ${migrationJournal().length} in the incoming journal; rerun ${PLATFORM_SLUG} machine update`,
+    )
+    expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
+  } finally {
+    held.restore()
+  }
+})
+
+test('machine update leaves main pulled when the store position cannot be read after migrate fails', async () => {
+  const gitCalls: string[][] = []
+  const hiddenDatabase = `${DB_PATH}.unreadable-store-test`
+  let databaseHidden = false
+  try {
+    await expect(
+      machineUpdateCommand(
+        { log: () => {} },
+        {
+          cwd: dir,
+          authorityRefusal: () => null,
+          project: () => ({
+            name: 'migration-update-fixture',
+            path: dir,
+            settings: { trunk: 'main' },
+          }),
+          git: (_cwd, args) => {
+            gitCalls.push(args)
+            if (args[0] === 'branch') return 'main'
+            if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+            if (args[0] === 'rev-parse') return 'before-commit'
+            return ''
+          },
+          migrate: () => {
+            renameSync(DB_PATH, hiddenDatabase)
+            databaseHidden = true
+            throw new Error('injected migration failure')
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      `migration failed: injected migration failure; main was left at the pulled commit because the store's migration position could not be read:`,
+    )
+    expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
+  } finally {
+    if (databaseHidden) renameSync(hiddenDatabase, DB_PATH)
+  }
 })
 
 test('machine update refuses when the install root is tracked-dirty after refresh', async () => {
@@ -509,7 +658,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
     /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target])
+  expect(gitCwds).toEqual([target, target, target, target, target, target, target])
 })
 
 test('machine update defaults the target to the installation root', async () => {
@@ -540,7 +689,7 @@ test('machine update defaults the target to the installation root', async () => 
     },
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target])
+  expect(gitCwds).toEqual([target, target, target, target, target, target, target])
   expect(journalRef).toBe(`origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`)
 })
 
