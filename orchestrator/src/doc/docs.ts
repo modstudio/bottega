@@ -657,13 +657,6 @@ export async function removeDoc(
   })
 }
 
-const missingSubjectHint = (subject: string | null | undefined): string =>
-  subject === undefined
-    ? ''
-    : subject === null
-      ? ' with no subject; pass --subject'
-      : ` for subject ${subject}`
-
 /**
  * Consuming a resume changes metadata inside a body whose exact text is the
  * recovery artifact. Patch only the three named fields instead of parsing and
@@ -671,6 +664,7 @@ const missingSubjectHint = (subject: string | null | undefined): string =>
  */
 export async function consumeDoc(
   scope: string,
+  /** Absent resolves the only stored match, as getDoc does. */
   requestedSubject: string | null | undefined,
   slug: string,
   context: DocWriteContext,
@@ -680,8 +674,7 @@ export async function consumeDoc(
   validateHistoricDocAddress(scope, slug)
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, requestedSubject, slug)
-  if (!doc) throw new Error(`no ${scope} doc "${slug}"${missingSubjectHint(requestedSubject)}`)
-  const subject = doc.subject
+  if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
   assertLocalStoredReferenceWrite(doc)
   const consumedAt = nowIso()
   let patched: { body: string; alreadyConsumed: boolean }
@@ -702,7 +695,7 @@ export async function consumeDoc(
     local: () =>
       executeLocalDocConsume({
         scope,
-        subject,
+        subject: doc.subject,
         owner: null,
         slug,
         doc,
@@ -741,7 +734,7 @@ export async function consumeDoc(
       if (hosted.alreadyConsumed) return { ...doc, already_consumed: true }
       return commitDocConsume({
         scope,
-        subject,
+        subject: doc.subject,
         owner: null,
         slug,
         body: patched.body,

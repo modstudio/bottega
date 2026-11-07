@@ -358,7 +358,7 @@ describe('scoped operator docs', () => {
     expect(consumed.subject).toBe('known')
     expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
     await expect(consumeDoc('resume', null, 'subjectless-consume')).rejects.toThrow(
-      'with no subject; pass --subject',
+      'no resume doc "subjectless-consume"',
     )
   })
 
