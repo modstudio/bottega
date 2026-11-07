@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
   context,
   database,
   installEvidence,
   matchingCheckout,
+  selectAndNextWorkflowStep as nextWorkflowStep,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'

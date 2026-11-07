@@ -1,15 +1,22 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import type { LiveCursorAutonomy } from './autonomy.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { cursorName } from './workflow-cursor-format.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
+import {
+  type FloorEvidencePorts,
+  productionFloorPorts,
+  type WorkflowEvidenceInput,
+} from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 
 export const database = testDatabaseFixture((d) => {
@@ -146,7 +153,7 @@ export function closeStep(
   callContext: { session?: string | null; instance?: string },
   d: Database,
 ) {
-  return nextWorkflowStep(
+  return selectAndNextWorkflowStep(
     slug,
     project,
     mode,
@@ -156,6 +163,48 @@ export function closeStep(
     d,
     installEvidence(d, project, slug, mode, callArgs, callContext),
     testPorts,
+  )
+}
+
+/** Selects a cursor through the same path as the production close service, then advances it. */
+export function selectAndNextWorkflowStep(
+  slug: string,
+  project: string,
+  mode: string,
+  callArgs: Record<string, string>,
+  note: string | undefined,
+  callContext: WorkflowCursorContext,
+  d: Database,
+  evidence: WorkflowEvidenceInput = {},
+  ports: FloorEvidencePorts = productionFloorPorts(),
+  cursor?: number,
+  selfRuling?: WorkflowSelfRulingInput,
+  outcome?: string,
+  live?: LiveCursorAutonomy,
+): string {
+  const key = workflowKeyOf(callArgs)
+  const row = selectWorkflowCursorForClose(
+    { project, workflow: slug, mode, ...(key ? { key } : {}) },
+    cursor,
+    callContext.session,
+    d,
+    callContext.taskRecordId,
+    callContext.taskStatusCategory,
+  ) as WorkflowCloseCursor | null
+  if (!row)
+    throw new Error(`${cursorName(slug, mode, key)} has no cursor; compose the workflow first`)
+  return nextWorkflowStep(
+    row,
+    project,
+    callArgs,
+    note,
+    callContext,
+    d,
+    evidence,
+    ports,
+    selfRuling,
+    outcome,
+    live,
   )
 }
 
