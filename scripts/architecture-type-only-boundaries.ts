@@ -43,28 +43,40 @@ type TypeOnlyAllowedSpec = {
 const normalizeTarget = (file: string, target: string) =>
   target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target
 
-const typeOnlyBoundary = (spec: Required<TypeOnlyAllowedSpec>): ImportBoundary => ({
-  name: `${basename(spec.file, '.ts')}-type-only-boundary`,
-  file: spec.file,
-  allowed: spec.allowed.map((target) => normalizeTarget(spec.file, target)),
-  typeOnlyAllowed: spec.typeOnlyAllowed.map((target) => normalizeTarget(spec.file, target)),
-  reason: `Keep the imports ${basename(spec.file, '.ts')} takes for types only type-only.`,
-})
-
-const declaredTypeOnlyBoundaries = (specs: readonly TypeOnlyAllowedSpec[]) =>
-  specs
-    .filter(
-      (spec): spec is Required<TypeOnlyAllowedSpec> =>
-        spec.allowed !== undefined &&
-        spec.typeOnlyAllowed !== undefined &&
-        spec.typeOnlyAllowed.length > 0,
-    )
-    .map(typeOnlyBoundary)
-
 export const manifestTypeOnlyImportBoundaries = [
-  ...declaredTypeOnlyBoundaries(pullRequestModuleSpecs),
-  ...declaredTypeOnlyBoundaries(releaseModules),
-  ...declaredTypeOnlyBoundaries(reviewModuleSpecs),
+  ...pullRequestModuleSpecs
+    .filter((spec) => spec.typeOnlyAllowed?.length)
+    .map((spec) => ({
+      name: `${basename(spec.file, '.ts')}-type-only-boundary`,
+      file: spec.file,
+      allowed: spec.allowed.map((target) => normalizeTarget(spec.file, target)),
+      typeOnlyAllowed: (spec.typeOnlyAllowed ?? []).map((target) =>
+        normalizeTarget(spec.file, target),
+      ),
+      reason: `Keep the imports ${basename(spec.file, '.ts')} takes for types only type-only.`,
+    })),
+  ...releaseModules
+    .filter((spec) => spec.typeOnlyAllowed?.length)
+    .map((spec) => ({
+      name: `${basename(spec.file, '.ts')}-type-only-boundary`,
+      file: spec.file,
+      allowed: spec.allowed.map((target) => normalizeTarget(spec.file, target)),
+      typeOnlyAllowed: (spec.typeOnlyAllowed ?? []).map((target) =>
+        normalizeTarget(spec.file, target),
+      ),
+      reason: `Keep the imports ${basename(spec.file, '.ts')} takes for types only type-only.`,
+    })),
+  ...reviewModuleSpecs
+    .filter((spec) => spec.typeOnlyAllowed?.length)
+    .map((spec) => ({
+      name: `${basename(spec.file, '.ts')}-type-only-boundary`,
+      file: spec.file,
+      allowed: spec.allowed.map((target) => normalizeTarget(spec.file, target)),
+      typeOnlyAllowed: (spec.typeOnlyAllowed ?? []).map((target) =>
+        normalizeTarget(spec.file, target),
+      ),
+      reason: `Keep the imports ${basename(spec.file, '.ts')} takes for types only type-only.`,
+    })),
 ]
 
 const typeOnlyAllowedSpecFamilies: readonly {
