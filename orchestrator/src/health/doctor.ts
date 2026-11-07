@@ -32,7 +32,7 @@ import { runTotals } from '../evidence/evidence-query.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
-import { activeSpaceInvariant } from '../record/active-space-invariant.ts'
+import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { recordMembershipsFromIdentity } from '../record/record-space.ts'
 import {
@@ -93,9 +93,10 @@ export async function activeSpaceDoctorDiagnosis(
       failed: false,
     }
   } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error)
     return {
-      line: `active space   check could not run — ${error instanceof Error ? error.message : String(error)}`,
-      failed: true,
+      line: `active space   check could not run — ${cause === RECORD_SIGN_IN_REMEDY ? `no one is signed in; ${RECORD_SIGN_IN_REMEDY}` : cause}`,
+      failed: false,
     }
   }
 }
@@ -118,43 +119,38 @@ type RegisteredCheckout = {
 type BranchInspection = { landing: string | null; problems: string[] }
 type CheckoutInspection = { branch: string | null; trunk: string; trackedModified: boolean }
 type CheckoutDecision = { holds: true } | { holds: false; message: string }
+type RegisteredMainCheckoutInspection<T extends RegisteredCheckout> = {
+  project: T
+  branch: BranchInspection
+  checkout: CheckoutInspection | null
+  invariant: CheckoutDecision | null
+}
 
 function reportRegisteredMainCheckouts<T extends RegisteredCheckout>(
-  projects: readonly T[],
+  inspections: readonly RegisteredMainCheckoutInspection<T>[],
   log: DoctorPresentation['log'],
-  inspectBranch: (project: T) => BranchInspection,
-  inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
-  decide: (facts: CheckoutInspection) => CheckoutDecision,
 ): void {
   log('\nregistered main checkouts')
-  for (const project of projects) {
-    const branch = inspectBranch(project)
+  for (const { project, branch, checkout, invariant } of inspections) {
     if (!branch.landing) {
       log(`  ${project.name} check could not run — no registered landing branch`)
       continue
     }
-    const facts = inspectCheckout(project.path, branch.landing)
-    const invariant = decide(facts)
     log(
-      invariant.holds
-        ? `  ${project.name} pass — branch ${facts.branch}, tracked clean`
-        : `  ${project.name} FAIL — ${invariant.message}`,
+      invariant!.holds
+        ? `  ${project.name} pass — branch ${checkout!.branch}, tracked clean`
+        : `  ${project.name} FAIL — ${invariant!.message}`,
     )
   }
 }
 
 function registerMainCheckoutProblems<T extends RegisteredCheckout>(
-  project: T,
-  inspectBranch: (project: T) => BranchInspection,
-  inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
-  decide: (facts: CheckoutInspection) => CheckoutDecision,
+  inspection: RegisteredMainCheckoutInspection<T>,
 ): string[] {
-  const branch = inspectBranch(project)
+  const { branch, checkout, invariant } = inspection
   if (!branch.landing) return branch.problems
-  const checkout = inspectCheckout(project.path, branch.landing)
-  const invariant = decide(checkout)
-  return checkout.trackedModified && !invariant.holds
-    ? [...branch.problems, invariant.message]
+  return checkout!.trackedModified && !invariant!.holds
+    ? [...branch.problems, invariant!.message]
     : branch.problems
 }
 
@@ -191,9 +187,17 @@ function reportCheckoutRegister<T extends RegisteredCheckout>(
     log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
     for (const line of hookFlags) log(`  ${line}`)
   }
-  reportRegisteredMainCheckouts(projects, log, inspectBranch, inspectCheckout, decide)
+  const inspections = projects.map((project): RegisteredMainCheckoutInspection<T> => {
+    const branch = inspectBranch(project)
+    const checkout = branch.landing ? inspectCheckout(project.path, branch.landing) : null
+    return { project, branch, checkout, invariant: checkout ? decide(checkout) : null }
+  })
+  reportRegisteredMainCheckouts(inspections, log)
+  const inspectionsByProject = new Map(
+    inspections.map((inspection) => [inspection.project, inspection]),
+  )
   const questions = projectRegisterQuestions(projects, (project) =>
-    registerMainCheckoutProblems(project, inspectBranch, inspectCheckout, decide),
+    registerMainCheckoutProblems(inspectionsByProject.get(project)!),
   )
   if (questions.length) {
     log('\nregister questions (not run failures):')

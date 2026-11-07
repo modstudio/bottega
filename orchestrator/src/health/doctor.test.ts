@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   type FocusedTestDeclaration,
   validateFocusedTestDeclaration,
@@ -32,12 +33,20 @@ test('machine doctor reports whoami active-space results without claiming unavai
   }))
   expect(passing).toEqual({ line: 'active space   pass — alpha', failed: false })
 
+  const signedOut = await activeSpaceDoctorDiagnosis(async () => {
+    throw new Error(RECORD_SIGN_IN_REMEDY)
+  })
+  expect(signedOut).toEqual({
+    line: `active space   check could not run — no one is signed in; ${RECORD_SIGN_IN_REMEDY}`,
+    failed: false,
+  })
+
   const unavailable = await activeSpaceDoctorDiagnosis(async () => {
-    throw new Error('signed out')
+    throw new Error('record unavailable')
   })
   expect(unavailable).toEqual({
-    line: 'active space   check could not run — signed out',
-    failed: true,
+    line: 'active space   check could not run — record unavailable',
+    failed: false,
   })
 })
 

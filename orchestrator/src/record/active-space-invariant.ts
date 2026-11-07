@@ -1,7 +1,12 @@
 // concern: active-space-invariant
 /** Decides whether a hosted identity has a valid active space after a shared-state move. */
 
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_ACTIVE_SPACE_REMEDY,
+  RECORD_SIGN_IN_REMEDY,
+} from '../../../shared/record-remedies.ts'
+
+export { RECORD_SIGN_IN_REMEDY }
 
 type Membership = { spaceId: string; slug: string }
 

@@ -179,13 +179,16 @@ function verifiedReleaseCheckoutRestore(
   trunk: string,
   restoreWarning: string | null,
   shouldVerify: boolean,
-): string | null {
-  if (!shouldVerify || restoreWarning !== null) return restoreWarning
+): { restoreWarning: string | null; restoreBreach: string | null } {
+  if (!shouldVerify || restoreWarning !== null) return { restoreWarning, restoreBreach: null }
   try {
     verifyMainCheckoutInvariant(path, trunk)
-    return null
+    return { restoreWarning: null, restoreBreach: null }
   } catch (cause) {
-    return releaseCheckoutRestoreWarning(path, trunk, cause)
+    return {
+      restoreWarning: null,
+      restoreBreach: releaseCheckoutRestoreWarning(path, trunk, cause),
+    }
   }
 }
 
@@ -235,18 +238,21 @@ function withReleaseCheckout(
       }
     }
   }
-  restoreWarning = verifiedReleaseCheckoutRestore(
+  const verifiedRestore = verifiedReleaseCheckoutRestore(
     path,
     trunk,
     restoreWarning,
     transition.restoreToTrunk,
   )
+  restoreWarning = verifiedRestore.restoreWarning
   const composed = releaseCheckoutOutcomeDecision({
     failure: failed ? (failure instanceof Error ? failure.message : String(failure)) : null,
     warning: outcome?.result.warning ?? null,
     restoreWarning,
+    restoreBreach: verifiedRestore.restoreBreach,
   })
   if (!composed.ok) {
+    if (verifiedRestore.restoreBreach !== null) throw new Error(composed.message)
     if (restoreWarning === null) throw failure
     throw new Error(composed.message)
   }
