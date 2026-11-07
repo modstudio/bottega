@@ -258,7 +258,7 @@ export async function runDiffCommand(
       const diff = startBoundedSyncBytes(
         ['git', 'diff', '--no-ext-diff', '--binary', since, evidenceBranch],
         {
-          budget: 'git-plumbing',
+          budget: 'git-object',
           cwd: repoRoot,
           env: targetGitEnvironment(repoRoot),
         },

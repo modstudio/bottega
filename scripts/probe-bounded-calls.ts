@@ -1,6 +1,6 @@
 import { createServer } from 'node:net'
 import { boundedFetch } from '../shared/bounded-fetch.ts'
-import { startBounded, startBoundedSync } from '../shared/bounded-process.ts'
+import { startBounded, startBoundedSync, startBoundedSyncBytes } from '../shared/bounded-process.ts'
 
 const sleepCommand = ['sh', '-c', 'sleep 100 & sleep 100'] as const
 
@@ -82,6 +82,24 @@ try {
 } catch (error) {
   console.log(
     `sync output flood: ${error instanceof Error ? error.message : String(error)}; elapsed ${Math.round(performance.now() - syncOutputStarted)}ms`,
+  )
+}
+
+const bytes = startBoundedSyncBytes(
+  [process.execPath, '-e', 'process.stdout.write(Uint8Array.from([0xff, 0xfe, 0x00, 0x61]))'],
+  { budget: 'process-table' },
+)
+console.log(`sync byte output: [${[...bytes.stdout].join(', ')}] (expected [255, 254, 0, 97])`)
+
+const bytesFloodStarted = performance.now()
+try {
+  startBoundedSyncBytes(['sh', '-c', 'while :; do printf 1234567890; done'], {
+    budget: 'process-table',
+  })
+  console.log('sync byte output flood: unexpectedly completed')
+} catch (error) {
+  console.log(
+    `sync byte output flood: ${error instanceof Error ? error.message : String(error)}; elapsed ${Math.round(performance.now() - bytesFloodStarted)}ms`,
   )
 }
 

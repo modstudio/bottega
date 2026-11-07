@@ -311,7 +311,7 @@ function gitRaw(
 ): string {
   if (cwdMissing(cwd)) return ''
   const p = startBoundedSync(['git', ...args], {
-    budget: 'git-plumbing',
+    budget: 'git-object',
     cwd,
     env,
   })
@@ -336,7 +336,7 @@ function gitInput(args: string[], cwd: string, input: Uint8Array): void {
 function gitBytes(args: string[], cwd: string): Buffer {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = startBoundedSyncBytes(['git', ...args], {
-    budget: 'git-plumbing',
+    budget: 'git-object',
     cwd,
     env: targetGitEnvironment(cwd),
   })
@@ -436,7 +436,7 @@ export function gitBlobPrefix(
 ): string | null {
   try {
     const p = startBoundedSyncBytes(['git', '-C', cwd, 'cat-file', 'blob', `${commit}:${path}`], {
-      budget: 'git-plumbing',
+      budget: 'git-object',
       env: targetGitEnvironment(cwd),
     })
     if (p.exitCode !== 0) return null

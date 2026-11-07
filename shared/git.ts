@@ -113,7 +113,7 @@ export function gitAt(
       env,
     })
     return {
-      code: result.exitCode ?? 128,
+      code: result.exitCode,
       stdout: result.stdout,
       timedOut: false,
     }

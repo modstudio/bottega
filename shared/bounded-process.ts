@@ -1,6 +1,12 @@
 import { execa } from 'execa'
 import { BoundExceededError, CALL_BUDGETS, type CallBudgetName } from './call-budgets.ts'
 
+/**
+ * A breached bound throws BoundExceededError naming its budget and remedy. A wrapper whose
+ * documented contract is never to fail its caller may catch it and return that contract's
+ * no-answer; every other wrapper lets it escape.
+ */
+
 export type BoundedResult = { exitCode: number; stdout: string; stderr: string }
 export type BoundedBytesResult = { exitCode: number; stdout: Uint8Array; stderr: string }
 
@@ -22,7 +28,7 @@ function exitCode(code: number | null | undefined): number {
   return code ?? 1
 }
 
-function stdinBlob(stdin: string | Uint8Array | undefined): Blob | Uint8Array | undefined {
+function stdinInput(stdin: string | Uint8Array | undefined): Blob | Uint8Array | undefined {
   if (stdin === undefined) return undefined
   return typeof stdin === 'string' ? new Blob([stdin]) : stdin
 }
@@ -64,7 +70,7 @@ function killProcessGroup(pid: number): void {
   }
 }
 
-function startBoundedSyncBytesRaw(
+export function startBoundedSyncBytes(
   argv: readonly string[],
   options: BoundedSyncOptions,
 ): BoundedBytesResult {
@@ -73,7 +79,7 @@ function startBoundedSyncBytesRaw(
   const result = Bun.spawnSync([...argv], {
     cwd: options.cwd,
     env: options.env,
-    stdin: stdinBlob(options.stdin),
+    stdin: stdinInput(options.stdin),
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: budget.deadlineMs,
@@ -104,13 +110,7 @@ export function startBoundedSync(
   argv: readonly string[],
   options: BoundedSyncOptions,
 ): BoundedResult {
-  const result = startBoundedSyncBytesRaw(argv, options)
-  return { ...result, stdout: new TextDecoder().decode(result.stdout) }
-}
-
-export function startBoundedSyncBytes(
-  argv: readonly string[],
-  options: BoundedSyncOptions,
-): BoundedBytesResult {
-  return startBoundedSyncBytesRaw(argv, options)
+  const result = startBoundedSyncBytes(argv, options)
+  // ignoreBOM keeps a leading byte-order mark, as Buffer.toString did before the migration.
+  return { ...result, stdout: new TextDecoder('utf-8', { ignoreBOM: true }).decode(result.stdout) }
 }
