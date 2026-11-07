@@ -6,14 +6,14 @@ import { staticCheckPlan } from './static-check-plan.ts'
 export type UncheckedExitSource = { path: string; source: string }
 
 export function uncheckedExitViolations(sources: readonly UncheckedExitSource[]): string[] {
-  const forbidden = /^\s*process\.exit\(\s*0\s*\)/
+  const forbidden = /process\.exit\(\s*0\s*\)/
   return sources.flatMap(({ path, source }) =>
     source
       .split('\n')
       .flatMap((line, index) =>
         forbidden.test(line)
           ? [
-              `${path}:${index + 1}: process.exit(0) is refused in a gate check; let success fall through, or call exitUnchecked when the check could not run`,
+              `${path}:${index + 1}: an explicit zero exit is refused in a gate check; let success fall through, or call exitUnchecked when the check could not run`,
             ]
           : [],
       ),
