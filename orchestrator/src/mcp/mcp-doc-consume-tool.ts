@@ -30,8 +30,8 @@ export function registerMcpDocConsumeTool(
     async ({ scope, subject, slug }) => {
       const refusal = decideMcpDocWrite('consume_doc', scope)
       if (refusal) throw new Error(refusal)
-      const finishHandoff = await handoff.prepare(getDoc(scope, subject ?? null, slug))
-      const result = await consumeDoc(scope, subject ?? null, slug, {
+      const finishHandoff = await handoff.prepare(getDoc(scope, subject, slug))
+      const result = await consumeDoc(scope, subject, slug, {
         reason: 'consumed by session',
       })
       const handoffResult = await finishHandoff(result)

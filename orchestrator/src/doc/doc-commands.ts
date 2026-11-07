@@ -969,7 +969,7 @@ export async function docCommand(
       sub,
       argv,
       scope,
-      subject,
+      subject: has('subject') || has('user') ? subject : undefined,
       flags,
       log: presentation.log,
       handoff: ports.consumeResumeHandoff,
