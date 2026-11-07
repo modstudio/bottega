@@ -114,7 +114,13 @@ new mode 100755
 test('a failed comparison selects a round from every current changed path', () => {
   const postFix = postFixReviewDecision({
     facts: {
-      completed: { number: 1, identity: 'review', launchKey: 'DEV-1644', runIds: [] },
+      completed: {
+        number: 1,
+        identity: 'review',
+        launchKey: 'DEV-1644',
+        runIds: [],
+        pathsByLens: {},
+      },
       reviewedTip: 'reviewed',
       fixFiles: [
         { path: 'critical/change.ts', insertions: 2, deletions: 1 },
@@ -160,7 +166,7 @@ test('a failed comparison selects a round from every current changed path', () =
 })
 
 const unidentifiedTipFacts = {
-  completed: { number: 7, identity: null, launchKey: null, runIds: [] },
+  completed: { number: 7, identity: null, launchKey: null, runIds: [], pathsByLens: {} },
   reviewedTip: null,
   fixFiles: null,
 }
@@ -484,7 +490,7 @@ function recordCompletedReview(input: {
   return runId
 }
 
-test('re-lenses an unchanged branch patch that overlaps cleanly rebased trunk work', () => {
+test('carries an unchanged branch patch that overlaps cleanly rebased trunk work', () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-post-fix-overlap-'))
   const database = migratedTestDatabase()
   try {
@@ -540,7 +546,8 @@ test('re-lenses an unchanged branch patch that overlaps cleanly rebased trunk wo
 
     expect(facts).toMatchObject({
       reviewedTip: reviewed,
-      fixFiles: [{ path: 'critical/shared.ts' }],
+      fixFiles: [],
+      reOwedPathsByLens: {},
     })
     expect(
       postFixReviewDecision({
@@ -555,9 +562,8 @@ test('re-lenses an unchanged branch patch that overlaps cleanly rebased trunk wo
         },
       }),
     ).toMatchObject({
-      kind: 're-lens',
-      fixPaths: ['critical/shared.ts'],
-      tierThreePaths: ['critical/shared.ts'],
+      kind: 'no-round-needed',
+      tierThreePaths: [],
     })
   } finally {
     database.close()
@@ -618,7 +624,10 @@ test('a changed rebase identity keeps the recorded pin through a later rename', 
       branch,
     })
 
-    expect(facts).toMatchObject({ reviewedTip: reviewed })
+    expect(facts).toMatchObject({
+      reviewedTip: reviewed,
+      reOwedPathsByLens: { correctness: ['migrations/old.sql'] },
+    })
     expect(
       postFixReviewDecision({
         facts,
