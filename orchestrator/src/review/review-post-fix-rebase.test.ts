@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import {
   type PerPathPatch,
-  type RebaseFileComparison,
   postFixReviewDecision,
+  type RebaseFileComparison,
   rebaseCarryDecision,
 } from './review-post-fix.ts'
 import { applicableRoundLensPlan } from './review-round-lens-plan.ts'
