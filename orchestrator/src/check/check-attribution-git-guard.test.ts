@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/preload.ts'
 import { writeMigratedTestDatabase } from '../database/test-database.fixture.ts'
@@ -55,6 +55,23 @@ function invoke(databasePath: string, cwd: string, command: string) {
   })
   const output = result.stdout.toString().trim()
   return output ? (JSON.parse(output).hookSpecificOutput as Decision) : null
+}
+
+function setHead(worktree: string, value: string) {
+  const gitDirectory = join(worktree, '.git')
+  mkdirSync(join(gitDirectory, 'objects'), { recursive: true })
+  mkdirSync(join(gitDirectory, 'refs', 'heads'), { recursive: true })
+  writeFileSync(
+    join(gitDirectory, 'config'),
+    '[core]\n\trepositoryformatversion = 0\n\tbare = false\n',
+  )
+  writeFileSync(join(gitDirectory, 'HEAD'), `${value}\n`)
+}
+
+function setTag(worktree: string, name: string) {
+  const tag = join(worktree, '.git', 'refs', 'tags', name)
+  mkdirSync(dirname(tag), { recursive: true })
+  writeFileSync(tag, '0000000000000000000000000000000000000000\n')
 }
 
 function invokeMany(
@@ -134,6 +151,24 @@ describe('git guard', () => {
     expect(
       invokeMany(databasePath, clustered).map((decision) => decision?.permissionDecision),
     ).toEqual(['ask', 'ask', 'ask', 'ask', 'ask', 'ask'])
+    expect(
+      invokeMany(databasePath, [
+        { cwd: worktree, command: 'git push -4f origin main' },
+        { cwd: worktree, command: 'git push -f4 origin main' },
+      ]).map((decision) => decision?.permissionDecision),
+    ).toEqual(['ask', 'ask'])
+  })
+
+  test('parses numeric short push options in clusters', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/DEV-1862/numeric-cluster')
+    expect(
+      invokeMany(databasePath, [
+        { cwd: worktree, command: 'git push --force-with-lease -4d origin HEAD' },
+        { cwd: worktree, command: 'git push origin DEV-1862/numeric-cluster' },
+        { cwd: worktree, command: 'git push -4 origin DEV-1862/numeric-cluster' },
+      ]).map((decision) => decision?.permissionDecision ?? null),
+    ).toEqual(['ask', null, null])
   })
 
   test('honors both workflow exec cwd forms and rejects ambiguous cwd flags', () => {
@@ -217,6 +252,73 @@ describe('git guard', () => {
         invoke(databasePath, worktree, `git push --delete origin ${branch}`)?.permissionDecision,
       ).toBe('ask')
     }
+  })
+
+  test('allows a HEAD refspec checked out on a feature branch', () => {
+    const { databasePath, outside, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/DEV-1862/head-resolution')
+    expect(
+      invoke(databasePath, outside, `git -C ${worktree} push --force-with-lease origin HEAD`)
+        ?.permissionDecision,
+    ).toBe('allow')
+  })
+
+  test('allows HEAD on a feature branch when a tag has the same name', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/DEV-1862/tag-collision')
+    setTag(worktree, 'DEV-1862/tag-collision')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('allow')
+  })
+
+  test('asks for a HEAD refspec checked out on main', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/main')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('asks for HEAD on main when a tag is also named main', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/main')
+    setTag(worktree, 'main')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('asks to delete the remote ref named HEAD from a feature branch', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/DEV-1862/delete-head')
+    expect(
+      invoke(databasePath, worktree, 'git push --delete origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('asks for a HEAD refspec from detached HEAD', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, '0000000000000000000000000000000000000000')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('asks for a HEAD refspec when branch resolution fails', () => {
+    const { databasePath, worktree } = fixture()
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('judges HEAD:<dst> by its destination without resolving HEAD', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, '0000000000000000000000000000000000000000')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD:DEV-1862/feature')
+        ?.permissionDecision,
+    ).toBe('allow')
   })
 
   test('allows only listed worktree subcommands without program options', () => {
