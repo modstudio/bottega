@@ -1,5 +1,6 @@
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { repeatable } from '../../shared/cli-repeat-guard.ts'
 import { requireDatabase } from './db.ts'
 import { projects } from './projects.ts'
 import {
@@ -104,7 +105,13 @@ export function registerReportCommands(program: Command): void {
     .description('create a scheduled report subscription')
     .option('--scope <space|project|person>', 'scope covered by the report')
     .option('--project <name>', 'project covered by a project report')
-    .option('--member <user-id>', 'member covered by a members report', repeat, [])
+    .addOption(
+      repeatable(
+        new Option('--member <user-id>', 'member covered by a members report')
+          .argParser(repeat)
+          .default([]),
+      ),
+    )
     .option('--cadence <daily|weekly>', 'delivery cadence for the report')
     .option('--hour <N>', 'local hour when the report is due')
     .option('--day <monday>', 'weekday when a weekly report is due')

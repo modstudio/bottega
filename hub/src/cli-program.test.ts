@@ -33,6 +33,12 @@ test('lease JSON reports a free store through the read-only command', async () =
   }
 })
 
+test('run resets repeat state after parsing fails before an action', async () => {
+  const command = createHubProgram()
+  expect(await run(command, ['tasks', '--hours', '1', '--unknown'])).toBe(1)
+  expect(await run(command, ['tasks', '--hours', '2'])).toBe(0)
+})
+
 function command(root: Command, ...path: string[]): Command {
   return path.reduce((parent, name) => {
     const child = parent.commands.find((candidate) => candidate.name() === name)
