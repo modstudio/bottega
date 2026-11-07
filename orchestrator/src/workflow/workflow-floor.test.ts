@@ -298,7 +298,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
   })
 })
 
@@ -983,6 +983,10 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   })
   expect(parseArtifactRef(`exec:${ATTACHMENT_UUID}`)).toEqual({
     kind: 'exec',
+    recordId: ATTACHMENT_UUID,
+  })
+  expect(parseArtifactRef(`review-read:${ATTACHMENT_UUID}`)).toEqual({
+    kind: 'review-read',
     recordId: ATTACHMENT_UUID,
   })
   expect(parseArtifactRef(`doc:project/${PLATFORM_SLUG}/uuid-keys`)).toEqual({
