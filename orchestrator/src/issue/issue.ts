@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { DEFAULT_TASK_KEY_PATTERN } from '../board/board-claim-policy.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
 import { ISSUE_WORKER_SCHEMA, type IssueWorkerReply } from '../contract/contract.ts'
 import type { JsonSchema } from '../contract/contract-reply.ts'
@@ -142,7 +143,7 @@ export function validatedTrackerTaskKey(
   project: Project,
   source = `${PLATFORM_SLUG} task tracker-new`,
 ): string {
-  const keyPattern = project.settings.worktree?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
+  const keyPattern = project.settings.worktree?.keyPattern ?? DEFAULT_TASK_KEY_PATTERN
   if (!new RegExp(keyPattern).test(value)) {
     throw new Error(`${source} did not return a valid task key; returned ${JSON.stringify(value)}`)
   }

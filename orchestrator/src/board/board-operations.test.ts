@@ -13,6 +13,7 @@ import {
   boardAsk,
   boardClaimList,
   boardClaimRelease,
+  boardClaimReleaseTask,
   boardClaimRenew,
   boardClaimTake,
   boardFileNote,
@@ -609,6 +610,25 @@ test('claim verbs stringify every id and share the same local and hosted result 
   })
   await expect(boardClaimList('board-route-project', true, hostedContext)).resolves.toEqual({
     claims: [hostedResult],
+  })
+})
+
+test('release-task normalizes a task subject before releasing a local claim', async () => {
+  const clock = Date.parse('2026-10-05T12:00:00Z')
+  const claim = await boardClaimTake(
+    { subject: 'task:DEV-1', project: 'board-route-project' },
+    { env: noRecordEnv, clock },
+  )
+  await expect(
+    boardClaimReleaseTask('task:DEV-1', 'board-route-project', {
+      env: noRecordEnv,
+      clock: clock + 1,
+    }),
+  ).resolves.toEqual({ released: 1 })
+  await expect(
+    boardClaimList('board-route-project', true, { env: noRecordEnv, clock: clock + 1 }),
+  ).resolves.toEqual({
+    claims: [expect.objectContaining({ recordId: claim.recordId, closeReason: 'task-closed' })],
   })
 })
 
