@@ -63,6 +63,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
     'record-api-client-boundary',
     'orchestrator/src/record/record-api-client.ts',
     [
+      '../../../shared/bounded-fetch.ts',
       '../../../shared/docs.ts',
       '../../../shared/record-api-url.ts',
       '../../../shared/record-remedies.ts',
