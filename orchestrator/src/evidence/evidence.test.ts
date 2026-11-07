@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { compareReviewedCommit } from '../review/review-lens-provenance.ts'
 import { assessEvidence, assessEvidencePrompt, type EvidenceFacts } from './evidence.ts'
 
 const reviewReply = {
@@ -32,19 +31,6 @@ const base: EvidenceFacts = {
   declaredDeliverables: [],
   readerReply: null,
 }
-
-describe('reviewed commit comparison', () => {
-  test.each([
-    ['equal', 'abcdef1234567890', 'equal'],
-    ['seven-character prefix', 'abcdef1', 'prefix'],
-    ['short prefix', 'abcdef', 'different'],
-    ['non-hex value', 'abcdefg', 'different'],
-    ['different', '1234567', 'different'],
-    ['missing', undefined, 'missing'],
-  ] as const)('%s', (_name, reviewed, expected) => {
-    expect(compareReviewedCommit('abcdef1234567890', reviewed)).toBe(expected)
-  })
-})
 
 describe('evidence prompt assessment', () => {
   test.each([

@@ -5,6 +5,7 @@ import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applic
 import type { TriageReviewRow } from '../review/review-group.ts'
 import {
   countsAsLensEvidence,
+  hasAdmissibleProvenance,
   newestInadmissibleLensRow,
 } from '../review/review-lens-provenance.ts'
 import { reviewCountsAsRound } from '../review/review-role.ts'
@@ -179,7 +180,7 @@ type ComposedReviewEvidence =
 
 function recordedLensRounds(reviews: readonly TriageReviewRow[]): number {
   return reviews.reduce(
-    (count, review) => count + review.lenses.filter(countsAsLensEvidence).length,
+    (count, review) => count + review.lenses.filter(hasAdmissibleProvenance).length,
     0,
   )
 }

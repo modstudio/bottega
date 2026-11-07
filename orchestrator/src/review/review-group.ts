@@ -73,7 +73,7 @@ export function treeInspectedPath(treeInspected: string | null | undefined): str
 }
 
 /** Resolve both existing trees physically, or both missing-tree identities lexically. */
-function canonicalTreePair(treeInspected: string, runTree: string): [string, string] {
+export function canonicalTreePair(treeInspected: string, runTree: string): [string, string] {
   if (existsSync(treeInspected) && existsSync(runTree)) {
     return [realpathSync(treeInspected), realpathSync(runTree)]
   }

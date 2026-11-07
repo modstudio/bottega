@@ -77,7 +77,12 @@ export function inadmissibleLensReason(row: ProvenanceLensRow): ReviewLensOwedRe
 export function countsAsLensEvidence(
   row: ProvenanceLensRow,
 ): row is ProvenanceLensRow & { lens: string; graded: true } {
-  return Boolean(row.lens && row.graded && lensProvenanceSubject(row.provenance).admissible)
+  return Boolean(row.lens && row.graded && hasAdmissibleProvenance(row))
+}
+
+/** Whether a row's provenance names its recorded review subject. */
+export function hasAdmissibleProvenance(row: ProvenanceLensRow): boolean {
+  return lensProvenanceSubject(row.provenance).admissible
 }
 
 /** Find the first inadmissible graded row in a newest-first lens sequence. */

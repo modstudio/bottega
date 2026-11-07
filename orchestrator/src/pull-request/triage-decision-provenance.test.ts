@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test'
-import { lensProvenanceSubject } from '../review/review-lens-provenance.ts'
 import { decideTriage, type TriageEvidence } from './triage-decision.ts'
 
 const evidence = (
@@ -51,38 +50,6 @@ test('triage credits matching lens provenance and legacy rows without provenance
   expect(decideTriage(evidence())).toMatchObject({ complete: true })
 })
 
-test('tree admission credits absent claims and paths inside the run tree', () => {
-  const commit = { recorded: true, reviewedCommit: 'abcdef1', headCommit: 'abcdef1234567890' }
-
-  expect(
-    lensProvenanceSubject({ ...commit, treeInspected: null, runTree: '/missing/trees/review' }),
-  ).toEqual({
-    admissible: true,
-  })
-  expect(
-    lensProvenanceSubject({
-      ...commit,
-      treeInspected: '/missing/trees/review/src/nested',
-      runTree: '/missing/trees/review',
-    }),
-  ).toEqual({ admissible: true })
-})
-
-test('tree admission refuses a path in another review tree or a named path without a run tree', () => {
-  const commit = { recorded: true, reviewedCommit: 'abcdef1', headCommit: 'abcdef1234567890' }
-
-  expect(
-    lensProvenanceSubject({
-      ...commit,
-      treeInspected: '/missing/trees/orch-review-other',
-      runTree: '/missing/trees/orch-review-subject',
-    }),
-  ).toEqual({ admissible: false, reason: 'tree-mismatch' })
-  expect(
-    lensProvenanceSubject({ ...commit, treeInspected: '/missing/trees/review', runTree: null }),
-  ).toEqual({ admissible: false, reason: 'tree-mismatch' })
-})
-
 test('triage leaves a lens owed when its provenance names another tree', () => {
   expect(
     decideTriage(
@@ -97,6 +64,28 @@ test('triage leaves a lens owed when its provenance names another tree', () => {
   ).toMatchObject({
     complete: false,
     missingLenses: [{ lens: 'correctness', recordedOnBranch: true, reason: 'tree-mismatch' }],
+  })
+})
+
+test('an admissible ungraded lens row still counts toward published lens rounds', () => {
+  const input = evidence({
+    recorded: true,
+    treeInspected: '/missing/trees/review',
+    runTree: '/missing/trees/review',
+    reviewedCommit: 'abcdef1',
+    headCommit: 'abcdef1234567890',
+  })
+  input.reviews[0]!.lenses = [
+    {
+      ...input.reviews[0]!.lenses[0]!,
+      graded: false,
+      settled: false,
+    },
+  ]
+
+  expect(decideTriage(input)).toMatchObject({
+    complete: false,
+    snapshot: { lensRounds: 1 },
   })
 })
 

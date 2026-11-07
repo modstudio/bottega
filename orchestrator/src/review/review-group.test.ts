@@ -1,10 +1,14 @@
 import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { decideTriage } from '../pull-request/triage-decision.ts'
 import type { ReviewPlan } from './review-applicability.ts'
 import {
+  canonicalTreePair,
   measureChangeGroup,
   reviewLensGraded,
   reviewLensSettled,
@@ -16,6 +20,22 @@ import {
 } from './review-group.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
+
+let canonicalTreeRoot: string
+let canonicalTreeReal: string
+let canonicalTreeSymlink: string
+
+beforeAll(() => {
+  canonicalTreeRoot = mkdtempSync(join(tmpdir(), 'review-group-canonical-tree-'))
+  canonicalTreeReal = join(canonicalTreeRoot, 'real')
+  canonicalTreeSymlink = join(canonicalTreeRoot, 'symlink')
+  mkdirSync(canonicalTreeReal)
+  symlinkSync(canonicalTreeReal, canonicalTreeSymlink, 'dir')
+})
+
+afterAll(() => {
+  rmSync(canonicalTreeRoot, { recursive: true, force: true })
+})
 
 test('a review lens is graded only by all four review grades', () => {
   const noGrades = { reproduced: null, coverage: null, limits: null, overlap: null }
@@ -468,4 +488,9 @@ test('tree evidence extracts the first qualifying absolute path from recorded re
   ).toBe('/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-a8d3e4ed17f2')
   expect(treeInspectedPath('74ff6ad...70ba3dd')).toBeNull()
   expect(treeInspectedPath(null)).toBeNull()
+})
+
+test('canonical tree pairs resolve a directory symlink to the same physical tree', () => {
+  const [inspected, run] = canonicalTreePair(canonicalTreeSymlink, canonicalTreeReal)
+  expect(inspected).toBe(run)
 })
