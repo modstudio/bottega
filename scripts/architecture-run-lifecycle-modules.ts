@@ -213,6 +213,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../git/checkout-identity.ts',
     '../contract/contract.ts',
     '../database/db.ts',
+    '../database/review-lens-input-artifact.ts',
     '../dispatch/dispatch-preflight.ts',
     '../events.ts',
     '../jobs/jobs.ts',

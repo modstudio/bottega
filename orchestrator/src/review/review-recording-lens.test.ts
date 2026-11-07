@@ -7,6 +7,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { ReviewLensInputStatus } from '../database/review-lens-input-artifact.ts'
 import { recordReviews } from './review.ts'
 import { countsAsLensEvidence } from './review-lens-provenance.ts'
 import { completeReview, gradeReviewLens, recordReview, triageFinding } from './review-triage.ts'
@@ -275,9 +276,10 @@ describe('review discipline', () => {
       db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, runId)
       recordReview(runId, reviewReply(0), db())
       const row = db()
-        .query<{ task_text_input: string; rulings_input: string }, [string]>(
-          'SELECT task_text_input,rulings_input FROM review_lens WHERE run_record_id=?',
-        )
+        .query<
+          { task_text_input: ReviewLensInputStatus; rulings_input: ReviewLensInputStatus },
+          [string]
+        >('SELECT task_text_input,rulings_input FROM review_lens WHERE run_record_id=?')
         .get(runId)!
       expect(row).toEqual({
         task_text_input: 'unavailable: input statuses were not carried to this run',

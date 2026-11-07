@@ -5,8 +5,8 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import type { ReviewReply } from '../contract/contract.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import {
-  readReviewLensInputArtifact,
   type ReviewLensInputStatus,
+  readReviewLensInputArtifact,
   unavailableStatus,
 } from '../database/review-lens-input-artifact.ts'
 import { nextReviewNumber } from './review-number.ts'

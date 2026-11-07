@@ -17,6 +17,7 @@ import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import type { ReviewLensInputStatuses } from '../database/review-lens-input-artifact.ts'
 import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
 import { appendRunEvent } from '../events.ts'
@@ -109,6 +110,7 @@ type ClaimOptions = {
   review?: string
   model?: string
   lens?: string
+  lensInputs?: ReviewLensInputStatuses
   reviewRole?: ReviewRole
   keepTree?: KeepTreeExemption
   noFailover?: boolean

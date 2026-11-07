@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { unavailableStatus } from '../database/review-lens-input-artifact.ts'
 import {
   compareReviewedCommit,
   countsAsLensEvidence,
@@ -35,9 +36,9 @@ describe('lens pack input admissibility', () => {
     const row = {
       lens: 'decision-conformance',
       graded: true,
-      taskTextInput: 'unavailable: linear tracker has no CLI task read',
+      taskTextInput: unavailableStatus('linear tracker has no CLI task read'),
       rulingsInput: 'carried',
-    }
+    } as const
     expect(countsAsLensEvidence(row)).toBeFalse()
     expect(inadmissibleLensReason(row)).toBe(
       'decision-conformance not admitted: linear tracker has no CLI task read',

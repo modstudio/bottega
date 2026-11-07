@@ -351,7 +351,6 @@ export type ChainTurn = {
   base_commit: string | null
   worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
   executor?: 'external' | 'harness'
-  prompt_path?: string | null
 }
 
 function continuationWorker(rootId: string, latest: ChainTurn, hasCheckpoint: boolean) {
@@ -515,11 +514,10 @@ function continuationLaunch(
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
   project: Project | null,
-  promptPath: string | null,
 ): ResumeLaunchOptions {
   return {
     ...inherited,
-    lensInputs: successorReviewLensInputStatusesFromPrompt(promptPath),
+    lensInputs: continuationLensInputs(id),
     seed: requireContinuationProvision({
       rootId: id,
       treeDecision,
@@ -528,6 +526,17 @@ function continuationLaunch(
       project,
     }).seed,
   }
+}
+
+function continuationLensInputs(rootId: string) {
+  const row = db()
+    .query(
+      `SELECT prompt_path FROM run
+       WHERE (record_id=? OR parent_run_record_id=?) AND prompt_path IS NOT NULL
+       ORDER BY turn DESC, number DESC LIMIT 1`,
+    )
+    .get(rootId, rootId) as { prompt_path: string } | null
+  return successorReviewLensInputStatusesFromPrompt(row?.prompt_path ?? null)
 }
 
 /** What a continuation says when the architect sent no message of their own. */
@@ -692,7 +701,7 @@ export async function continueRun(
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
     .query(
-      `SELECT record_id, job, parent_run_record_id, status, cwd, repo, base_commit, prompt_path,
+      `SELECT record_id, job, parent_run_record_id, status, cwd, repo, base_commit,
               branch_kept, branch_kept_tip FROM run WHERE record_id = ?`,
     )
     .get(id) as {
@@ -703,7 +712,6 @@ export async function continueRun(
     cwd: string | null
     repo: string | null
     base_commit: string | null
-    prompt_path: string | null
     branch_kept: string | null
     branch_kept_tip: string | null
   } | null
@@ -750,7 +758,7 @@ export async function continueRun(
     id,
     db()
       .query(
-        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source, executor, prompt_path
+        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source, executor
          FROM run WHERE record_id = ? OR parent_run_record_id = ?`,
       )
       .all(id, id) as ChainTurn[],
@@ -799,7 +807,6 @@ export async function continueRun(
     treeDecision,
     Boolean(jobNeeds.writesRepo),
     project,
-    latest.prompt_path ?? row.prompt_path,
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   refuseOversizedResumePrompt({

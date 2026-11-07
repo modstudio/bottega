@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
+import type { ReviewLensInputStatus } from '../database/review-lens-input-artifact.ts'
 import type { Project } from '../project/projects.ts'
 import {
   type ApplicableReview,
@@ -43,8 +44,8 @@ export type TriageReviewRow = {
     graded: boolean
     settled: boolean
     provenance?: LensProvenanceSubjectFacts
-    taskTextInput?: string | null
-    rulingsInput?: string | null
+    taskTextInput?: ReviewLensInputStatus | null
+    rulingsInput?: ReviewLensInputStatus | null
   }[]
   findings: readonly {
     recordId: string
@@ -411,8 +412,8 @@ function reviewsForBranch(
           graded: boolean
           settled: boolean
           provenance: LensProvenanceSubjectFacts
-          taskTextInput: string | null
-          rulingsInput: string | null
+          taskTextInput: ReviewLensInputStatus | null
+          rulingsInput: ReviewLensInputStatus | null
         }[]
       ).push({
         recordId: row.lens_id,
@@ -422,8 +423,8 @@ function reviewsForBranch(
         graded: reviewLensGraded(row),
         settled: reviewLensSettled(row),
         provenance: provenanceSubjectFacts(row),
-        taskTextInput: row.task_text_input,
-        rulingsInput: row.rulings_input,
+        taskTextInput: row.task_text_input as ReviewLensInputStatus | null,
+        rulingsInput: row.rulings_input as ReviewLensInputStatus | null,
       })
     }
     if (
