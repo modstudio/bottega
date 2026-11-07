@@ -1,5 +1,6 @@
 // concern: live-outcome
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
+import { contractMismatchError } from './contract/contract-reply.ts'
 import { classify, FAILS_OVER, type FailureKind, isNonAnswer } from './failure/failure.ts'
 import { decideOutcomeRule, type OutcomeInputs, type OutcomeRule } from './outcome.ts'
 import { errorTail } from './run/run-process.ts'
@@ -11,6 +12,7 @@ const CONTROL_CHARACTERS = /[\p{Cc}]/u
 export type LiveOutcomeFacts = {
   writesJob: boolean
   contractStatus: 'done' | 'asking' | 'refused' | null
+  contractFailures: string[]
   replyError: string | null
   output: string
   replyFilePresent: boolean
@@ -250,7 +252,7 @@ function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): st
     'missing-writer-contract': () =>
       FAILS_OVER.includes(calculated.classifiedMissingContract)
         ? errorTail(calculated.missingContractTerminal)
-        : errorTail(`reply did not match the worker contract:\n${facts.output}`),
+        : errorTail(contractMismatchError('reply', facts.contractFailures, facts.output)),
     default: () => (facts.exitCode === 0 && facts.output ? null : calculated.defaultError),
   }
   const error = messages[rule]()

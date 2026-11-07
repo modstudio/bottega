@@ -111,6 +111,7 @@ test('a live first throttle closes as quota and routes away from cooling codex',
   const derived = deriveLiveOutcome({
     writesJob: false,
     contractStatus: null,
+    contractFailures: [],
     replyError: error,
     output: '',
     replyFilePresent: false,

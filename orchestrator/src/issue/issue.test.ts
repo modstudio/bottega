@@ -318,7 +318,13 @@ describe('filed issue coordinator inputs', () => {
     ).toEqual(reply)
     const { not_established: _, ...missing } = reply
     expect(() => parseIssueReply(JSON.stringify(missing), ISSUE_DIAGNOSIS_SCHEMA)).toThrow(
-      'structured contract',
+      "issue worker reply did not match its structured contract: / required: must have required property 'not_established'",
+    )
+  })
+
+  test('an issue reply with no JSON object names that absence', () => {
+    expect(() => parseIssueReply('plain narration', ISSUE_DIAGNOSIS_SCHEMA)).toThrow(
+      'issue worker reply did not match its structured contract: no JSON object found',
     )
   })
 

@@ -573,6 +573,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/live-outcome.ts', [
     '../../shared/secret-shaped.ts',
+    './contract/contract-reply.ts',
     './failure/failure.ts',
     './outcome.ts',
     './run/run-process.ts',

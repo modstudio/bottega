@@ -1,6 +1,11 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { assetPath } from '../../../shared/install-root.ts'
+import {
+  contractValidationFailures,
+  type SchemaValidationResult,
+  schemaCompileFailure,
+} from '../contract/contract-reply.ts'
 import type { FailureKind } from '../failure/failure.ts'
 import { classify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
@@ -739,16 +744,20 @@ export function valueMatchesStrictSchema(
   schema: unknown,
   value: unknown,
   loadValidator: () => AjvValidator = loadAjvValidator,
-): boolean {
-  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
+): SchemaValidationResult {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
+    return { ok: false, failures: [schemaCompileFailure('schema must be an object')] }
+  }
   const validator = loadValidator()
   try {
-    return validator.compile(schema)(value)
-  } catch {
-    return false
+    const validate = validator.compile(schema)
+    return validate(value)
+      ? { ok: true }
+      : { ok: false, failures: contractValidationFailures(validate.errors) }
+  } catch (error) {
+    return {
+      ok: false,
+      failures: [schemaCompileFailure(error)],
+    }
   }
-}
-
-export function schemaMismatchError(output: string): string {
-  return `reply did not match the worker contract:\n${output}`
 }
