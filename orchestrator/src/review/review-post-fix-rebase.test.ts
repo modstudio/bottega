@@ -66,6 +66,20 @@ test('a changed file outside every recorded lens path re-owes no lens', () => {
   })
 })
 
+test('an annotated coverage claim names a differing file', () => {
+  expect(
+    rebaseCarryDecision({
+      files: [comparison('critical/shared.ts', 'old', 'new')],
+      pathsByLens: {
+        correctness: ['1 of 1 changed files inspected in full: "critical/shared.ts"'],
+      },
+    }),
+  ).toEqual({
+    fixFiles: [{ path: 'critical/shared.ts', insertions: 1, deletions: 0 }],
+    reOwedPathsByLens: { correctness: ['critical/shared.ts'] },
+  })
+})
+
 test('a replay difference re-owes a lens even when it reviewed that path before the rebase', () => {
   expect(
     applicableRoundLensPlan({

@@ -440,9 +440,9 @@ test('prefers a recorded pre-rebase pin and uses identity when the pin is absent
         },
       }),
     ).toMatchObject({
-      kind: 'no-round-needed',
+      kind: 're-lens',
       reviewedTip: originalReviewed,
-      tierThreePaths: [],
+      tierThreePaths: ['critical/fix.ts'],
     })
   } finally {
     database.close()

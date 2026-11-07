@@ -14,6 +14,7 @@ import {
   applicableReview,
   selectReviewApplicability,
 } from './review-applicability.ts'
+import { filesCoveredIncludesPath } from './review-coverage-match.ts'
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
@@ -91,14 +92,6 @@ export type RebaseCarryDecision = {
   reOwedPathsByLens: Readonly<Record<string, readonly string[]>>
 }
 
-function recordedPathIncludes(path: string, claim: string): boolean {
-  const normalized = claim.trim().replace(/^\.\//, '')
-  return (
-    normalized.length > 0 &&
-    (normalized === path || normalized.endsWith(`/${path}`) || path.endsWith(`/${normalized}`))
-  )
-}
-
 /** Decide review carry from per-file replay facts and recorded lens coverage. */
 export function rebaseCarryDecision(input: {
   files: readonly RebaseFileComparison[]
@@ -118,9 +111,7 @@ export function rebaseCarryDecision(input: {
   const changedPaths = fixFiles.map(({ path }) => path)
   const reOwedPathsByLens = Object.fromEntries(
     Object.entries(input.pathsByLens).flatMap(([lens, covered]) => {
-      const paths = changedPaths.filter((path) =>
-        covered.some((claim) => recordedPathIncludes(path, claim)),
-      )
+      const paths = changedPaths.filter((path) => filesCoveredIncludesPath(path, covered))
       return paths.length ? [[lens, paths] as const] : []
     }),
   )
@@ -313,28 +304,7 @@ function changePatches(
 ): { mergeBase: string; patches: PerPathPatch[] } {
   const mergeBase = git(repo, ['merge-base', tip, trunkRef])
   if (!mergeBase.ok) throw new Error(mergeBase.err)
-  const files = diffNumstat(repo, mergeBase.out, tip)
-  const diff = git(repo, [
-    'diff',
-    '--binary',
-    '--no-ext-diff',
-    '--no-color',
-    '--no-renames',
-    '--unified=0',
-    `${mergeBase.out}..${tip}`,
-  ])
-  if (!diff.ok) throw new Error(diff.err)
-  const sections = diffSections(new TextDecoder().decode(diff.stdout))
-  if (sections.length !== files.length) {
-    throw new Error(
-      `git diff section count ${sections.length} did not match numstat count ${files.length}`,
-    )
-  }
-  const patches = files.map((file, index) => ({
-    ...file,
-    patchId: pathNeutralContentIdentity(sections[index]!),
-  }))
-  return { mergeBase: mergeBase.out, patches }
+  return { mergeBase: mergeBase.out, patches: patchesForRange(repo, mergeBase.out, tip) }
 }
 
 function patchesForRange(repo: string, base: string, tip: string): PerPathPatch[] {
@@ -549,33 +519,8 @@ export function postFixReviewDecision(input: {
     return { kind: 'reviewed-tip-unidentified', reviewNumber: completed.number }
   }
   const tierThreePaths = tierThreeRiskPaths(fixFiles, input.review?.risk)
-  if (reOwedPathsByLens) {
-    const reOwedLenses = Object.keys(reOwedPathsByLens)
-    if (reOwedLenses.length === 0) {
-      return {
-        kind: 'no-round-needed',
-        reviewNumber: completed.number,
-        reviewedTip,
-        tierThreePaths: [],
-        applicability: applicableReview(0, [], input.review),
-      }
-    }
-    const applicable = applicablePostFixReview(
-      POST_FIX_RELENS_TIER,
-      fixFiles.map(({ path }) => path),
-      input.review,
-    )
-    return {
-      kind: 're-lens',
-      reviewNumber: completed.number,
-      reviewedTip,
-      fixPaths: fixFiles.map(({ path }) => path),
-      tierThreePaths,
-      applicability: selectReviewApplicability(applicable, reOwedLenses),
-      reOwedPathsByLens,
-    }
-  }
-  if (tierThreePaths.length === 0) {
+  const reOwedLenses = Object.keys(reOwedPathsByLens ?? {})
+  if (tierThreePaths.length === 0 && reOwedLenses.length === 0) {
     return {
       kind: 'no-round-needed',
       reviewNumber: completed.number,
@@ -584,16 +529,20 @@ export function postFixReviewDecision(input: {
       applicability: applicableReview(0, [], input.review),
     }
   }
+  const applicable = applicablePostFixReview(
+    POST_FIX_RELENS_TIER,
+    fixFiles.map(({ path }) => path),
+    input.review,
+  )
   return {
     kind: 're-lens',
     reviewNumber: completed.number,
     reviewedTip,
     fixPaths: fixFiles.map(({ path }) => path),
     tierThreePaths,
-    applicability: applicablePostFixReview(
-      POST_FIX_RELENS_TIER,
-      fixFiles.map(({ path }) => path),
-      input.review,
-    ),
+    applicability: selectReviewApplicability(applicable, [
+      ...new Set([...applicable.lenses, ...reOwedLenses]),
+    ]),
+    ...(reOwedPathsByLens ? { reOwedPathsByLens } : {}),
   }
 }

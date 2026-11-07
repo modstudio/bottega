@@ -265,7 +265,11 @@ function newlyTouchedPathsForPlan(input: {
     input.postFix.kind === 're-lens' || input.postFix.kind === 'comparison-failed'
       ? newlyTouchedPathsByLens(input)
       : {}
-  return { ...ordinary, ...rebaseOwedPaths(input.postFix) }
+  const combined = { ...ordinary }
+  for (const [lens, paths] of Object.entries(rebaseOwedPaths(input.postFix))) {
+    combined[lens] = [...new Set([...(combined[lens] ?? []), ...paths])]
+  }
+  return combined
 }
 
 /** Apply the funnel to the repository decision about whether a later round is needed. */
