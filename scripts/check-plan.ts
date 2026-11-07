@@ -1,5 +1,7 @@
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
 
+export const DEPENDENCY_AUDIT_SCRIPT = 'scripts/check-dependency-audit.ts'
+
 const HOOKS_FOCUSED_FORM = {
   directory: 'orchestrator/hooks',
   argv: ['python3', '-m', 'unittest'],
@@ -209,8 +211,10 @@ export const ROOT_TEST_FILES = [
   'scripts/check-docker-workspaces.test.ts',
   'scripts/check-hosted-memory.test.ts',
   'scripts/check-dependency-audit.test.ts',
+  'scripts/check-execution-completeness.test.ts',
   'scripts/check-runtime.test.ts',
   'scripts/static-check-plan.test.ts',
+  'scripts/check-unchecked-exits.test.ts',
   'scripts/check-ci-workflow.test.ts',
   'scripts/check-storybook.test.ts',
   'scripts/check-outcome.test.ts',

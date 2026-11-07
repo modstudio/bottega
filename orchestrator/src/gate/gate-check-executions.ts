@@ -50,8 +50,8 @@ export function insertGateCheckExecutions(
 ): void {
   const insert = database.query(
     `INSERT INTO check_execution
-      (record_id,gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count)
-     VALUES (?,?,?,?,?,?,?,?)`,
+      (record_id,gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,unchecked_reason,remaining_count)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
   )
   for (const check of records) {
     insert.run(
@@ -62,6 +62,7 @@ export function insertGateCheckExecutions(
       check.wallMs,
       check.cpuMs ?? null,
       check.exitCode,
+      check.unchecked ?? null,
       check.remaining ?? null,
     )
   }

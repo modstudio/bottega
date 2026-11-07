@@ -74,6 +74,7 @@ test('K8b-4 keys gate and check executions by UUID and rewrites gate evidence', 
       cpu_ms: 3.5,
       exit_code: 0,
       remaining_count: 4,
+      unchecked_reason: null,
     })
     expect(
       database

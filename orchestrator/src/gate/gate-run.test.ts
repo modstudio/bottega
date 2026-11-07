@@ -131,7 +131,8 @@ test('inserts valid check records in the transaction with the gate row', async (
           category: 'file-length',
           wallMs: 12.5,
           cpuMs: 8,
-          exitCode: 0,
+          exitCode: 77,
+          unchecked: 'fixture dependency is unavailable',
           remaining: 2,
         })}\n`,
       )
@@ -147,7 +148,7 @@ test('inserts valid check records in the transaction with the gate row', async (
   expect(
     d
       .query(
-        `SELECT gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count
+        `SELECT gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,unchecked_reason,remaining_count
            FROM check_execution`,
       )
       .get(),
@@ -159,7 +160,8 @@ test('inserts valid check records in the transaction with the gate row', async (
     category: 'file-length',
     wall_ms: 12.5,
     cpu_ms: 8,
-    exit_code: 0,
+    exit_code: 77,
+    unchecked_reason: 'fixture dependency is unavailable',
     remaining_count: 2,
   })
   expect(
