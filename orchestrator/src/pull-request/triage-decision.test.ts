@@ -44,6 +44,78 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
 })
 
 describe('pull-request triage decision', () => {
+  test('credits a lens whose recorded tree and commit match its run subject', () => {
+    const matching = review({
+      patchId: 'patch-a',
+      lenses: [
+        {
+          recordId: 'lens-matching',
+          lens: 'correctness',
+          ...gradedLens,
+          provenance: {
+            recorded: true,
+            treeInspected: '/trees/review',
+            runTree: '/trees/review',
+            reviewedCommit: 'abcdef1',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+
+    expect(decideTriage(evidence({ reviews: [matching] }))).toMatchObject({ complete: true })
+  })
+
+  test('does not credit a lens that inspected another tree', () => {
+    const mismatch = review({
+      patchId: 'patch-a',
+      lenses: [
+        {
+          recordId: 'lens-tree-mismatch',
+          lens: 'correctness',
+          ...gradedLens,
+          provenance: {
+            recorded: true,
+            treeInspected: '/trees/other',
+            runTree: '/trees/review',
+            reviewedCommit: 'abcdef1',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+
+    expect(decideTriage(evidence({ reviews: [mismatch] }))).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'correctness', recordedOnBranch: true, reason: 'tree-mismatch' }],
+    })
+  })
+
+  test('does not credit a lens whose reviewed commit differs from its run head', () => {
+    const mismatch = review({
+      patchId: 'patch-a',
+      lenses: [
+        {
+          recordId: 'lens-commit-mismatch',
+          lens: 'correctness',
+          ...gradedLens,
+          provenance: {
+            recorded: true,
+            treeInspected: '/trees/review',
+            runTree: '/trees/review',
+            reviewedCommit: '1234567',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+
+    expect(decideTriage(evidence({ reviews: [mismatch] }))).toMatchObject({
+      complete: false,
+      missingLenses: [{ lens: 'correctness', recordedOnBranch: true, reason: 'commit-mismatch' }],
+    })
+  })
+
   test('path a admits unchanged complete exact evidence', () => {
     expect(decideTriage(evidence())).toEqual({
       complete: true,

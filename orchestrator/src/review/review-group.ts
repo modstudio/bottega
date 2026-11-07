@@ -1,6 +1,9 @@
 // concern: review-group
 /** Measures change groups and reads their recorded review rows. */
+
 import type { Database } from 'bun:sqlite'
+import { existsSync, realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { Project } from '../project/projects.ts'
 import {
   type ApplicableReview,
@@ -38,6 +41,7 @@ export type TriageReviewRow = {
     model?: string | null
     graded: boolean
     settled: boolean
+    provenance?: LensProvenanceSubjectFacts
   }[]
   findings: readonly {
     recordId: string
@@ -45,6 +49,94 @@ export type TriageReviewRow = {
     disposition: string | null
     lens?: string
   }[]
+}
+
+export type LensProvenanceSubjectFacts = {
+  recorded: boolean
+  treeInspected: string | null
+  runTree: string | null
+  reviewedCommit: string | null
+  headCommit: string | null
+}
+
+type StoredReviewProvenance = {
+  tree_inspected?: unknown
+  reviewed_commit?: unknown
+}
+
+const provenanceString = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() ? value : null
+
+/** Resolve both existing trees physically, or both missing-tree identities lexically. */
+function canonicalTreePair(
+  treeInspected: string | null,
+  runTree: string | null,
+): Pick<LensProvenanceSubjectFacts, 'treeInspected' | 'runTree'> {
+  if (!treeInspected || !runTree) return { treeInspected, runTree }
+  if (existsSync(treeInspected) && existsSync(runTree)) {
+    return { treeInspected: realpathSync(treeInspected), runTree: realpathSync(runTree) }
+  }
+  return { treeInspected: resolve(treeInspected), runTree: resolve(runTree) }
+}
+
+function provenanceSubjectFacts(row: {
+  review_provenance: string | null
+  worktree: string | null
+  cwd: string | null
+  head_commit: string | null
+}): LensProvenanceSubjectFacts {
+  if (row.review_provenance === null) {
+    return {
+      recorded: false,
+      treeInspected: null,
+      runTree: null,
+      reviewedCommit: null,
+      headCommit: row.head_commit,
+    }
+  }
+  let provenance: StoredReviewProvenance = {}
+  try {
+    provenance = JSON.parse(row.review_provenance) as StoredReviewProvenance
+  } catch {
+    // A malformed recorded provenance cannot establish either subject claim.
+  }
+  const trees = canonicalTreePair(
+    provenanceString(provenance.tree_inspected),
+    row.worktree ?? row.cwd,
+  )
+  return {
+    recorded: true,
+    ...trees,
+    reviewedCommit: provenanceString(provenance.reviewed_commit),
+    headCommit: row.head_commit,
+  }
+}
+
+type StoredTriageReviewRow = {
+  review_record_id: string
+  review_number: number
+  recorded_at: string
+  completed_at: string | null
+  tier: 0 | 1 | 2 | 3 | null
+  role: ReviewRole
+  patch_id: string | null
+  path_set: string | null
+  lens_id: string
+  run_record_id: string
+  lens: string
+  model: string | null
+  delivery: string | null
+  reproduced: string | null
+  coverage: string | null
+  limits: string | null
+  overlap: string | null
+  review_provenance: string | null
+  worktree: string | null
+  cwd: string | null
+  head_commit: string | null
+  finding_id: string | null
+  ordinal: number | null
+  disposition: string | null
 }
 
 export function reviewLensGraded(lens: {
@@ -269,33 +361,10 @@ function reviewsForBranch(
 ): TriageReviewRow[] {
   const lineage = reviewLineage(database, project, branch)
   const rows = database
-    .query<
-      {
-        review_record_id: string
-        review_number: number
-        recorded_at: string
-        completed_at: string | null
-        tier: 0 | 1 | 2 | 3 | null
-        role: ReviewRole
-        patch_id: string | null
-        path_set: string | null
-        lens_id: string
-        run_record_id: string
-        lens: string
-        model: string | null
-        delivery: string | null
-        reproduced: string | null
-        coverage: string | null
-        limits: string | null
-        overlap: string | null
-        finding_id: string | null
-        ordinal: number | null
-        disposition: string | null
-      },
-      (string | null)[]
-    >(
+    .query<StoredTriageReviewRow, (string | null)[]>(
       `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.path_set,
               rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,s.delivery,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
+              run.review_provenance,run.worktree,run.cwd,run.head_commit,
               rf.record_id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
@@ -334,6 +403,7 @@ function reviewsForBranch(
           model: string | null
           graded: boolean
           settled: boolean
+          provenance: LensProvenanceSubjectFacts
         }[]
       ).push({
         recordId: row.lens_id,
@@ -342,6 +412,7 @@ function reviewsForBranch(
         model: row.model,
         graded: reviewLensGraded(row),
         settled: reviewLensSettled(row),
+        provenance: provenanceSubjectFacts(row),
       })
     }
     if (

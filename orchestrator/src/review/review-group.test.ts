@@ -378,3 +378,70 @@ test('a moved remote trunk is the shared base for review and admission despite s
   expect(reviewed?.applicability.lenses).toEqual(['correctness'])
   expect(changed?.group.patchId).toBe('changed-patch')
 })
+
+test('missing review trees compare normalized recorded spellings', () => {
+  const decisionFor = (treeInspected: string) => {
+    const database = new Database(':memory:')
+    applyMigrations(database)
+    const projectId = newRecordId()
+    database
+      .query(
+        "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+      )
+      .run(projectId)
+    const runId = newRecordId()
+    database
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+            project_record_id,branch,worktree,head_commit,review_provenance)
+         VALUES (?,1,'2026-11-06','codex','review-lens','sha',1,'head','ok','fixture',?,
+                 'DEV-2157','/missing/trees/subject','abcdef1234567890',?)`,
+      )
+      .run(
+        runId,
+        projectId,
+        JSON.stringify({ tree_inspected: treeInspected, reviewed_commit: 'abcdef1' }),
+      )
+    const reviewId = newRecordId()
+    database
+      .query(
+        `INSERT INTO review
+           (record_id,number,recorded_at,completed_at,project_record_id,patch_id,path_set,tier)
+         VALUES (?,1,'2026-11-06','2026-11-06',?,'patch','["a.ts"]',1)`,
+      )
+      .run(reviewId, projectId)
+    database
+      .query(
+        `INSERT INTO review_lens
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,
+            commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+         VALUES (?,?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]',
+                 'all','adequate','named','unique')`,
+      )
+      .run(newRecordId(), reviewId, runId)
+    const selected = reviewsForTriage(database, {
+      project: 'fixture',
+      branch: 'DEV-2157',
+      patchId: 'patch',
+      pathSet: ['a.ts'],
+    })
+    return decideTriage({
+      patchId: 'patch',
+      pathSet: '["a.ts"]',
+      tip: 'abcdef1234567890',
+      tier: 1,
+      applicableReview: { lenses: ['correctness'] },
+      branchOwnerSession: null,
+      reviews: selected.reviews,
+      branchReviewGroups: [{ reviews: selected.branchReviews }],
+      reads: [],
+    })
+  }
+
+  expect(decisionFor('/missing/trees/other/../subject/')).toMatchObject({ complete: true })
+  expect(decisionFor('/missing/trees/other')).toMatchObject({
+    complete: false,
+    missingLenses: [{ lens: 'correctness', reason: 'tree-mismatch' }],
+  })
+})

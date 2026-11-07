@@ -52,6 +52,38 @@ const reviewRow = (
 }
 
 describe('round lens plan', () => {
+  test('an inadmissible completed lens stays owed with its provenance reason', () => {
+    const row = reviewRow({
+      reviewNumber: 1,
+      lenses: [
+        {
+          recordId: 'lens-mismatch',
+          lens: 'correctness',
+          graded: true,
+          settled: true,
+          provenance: {
+            recorded: true,
+            treeInspected: '/other',
+            runTree: '/subject',
+            reviewedCommit: 'abcdef1',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+    const result = applicableRoundLensPlan({
+      relevant: { lenses: ['correctness'] },
+      facts: roundLensFacts([row], { patchId: 'patch', pathSet: '["a.ts"]' }),
+      postFix: { kind: 'no-round-needed', reviewNumber: 1 },
+      fixPathsByLens: {},
+    })
+
+    expect(result.round).toEqual({
+      lenses: ['correctness'],
+      lensReasons: { correctness: 'tree-mismatch' },
+    })
+  })
+
   const round = {
     lenses: ['safety'],
     secondOpinion: 'safety',

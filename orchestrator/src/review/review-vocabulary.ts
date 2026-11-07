@@ -19,6 +19,8 @@ const REVIEW_LENS_SELECTION_REASON = [
   'newly-touched-path',
   'unidentified-tip-funnel',
   'operator-ordered',
+  'tree-mismatch',
+  'commit-mismatch',
 ] as const
 export const REVIEW_GRADE_NAMES = ['reproduced', 'coverage', 'limits', 'overlap'] as const
 export const REVIEW_GRADE_VALUES = {

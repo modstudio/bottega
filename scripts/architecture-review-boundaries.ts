@@ -66,7 +66,12 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
-    allowed: ['./review-applicability.ts', './review-role.ts', './review-second-opinion.ts'],
+    allowed: [
+      '../pull-request/triage-decision.ts',
+      './review-applicability.ts',
+      './review-role.ts',
+      './review-second-opinion.ts',
+    ],
     typeOnlyAllowed: [
       './review-group.ts',
       './review-post-fix.ts',
@@ -373,7 +378,12 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-round-lens-plan-boundary',
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
-    allowed: ['./review-applicability.ts', './review-role.ts', './review-second-opinion.ts'],
+    allowed: [
+      '../pull-request/triage-decision.ts',
+      './review-applicability.ts',
+      './review-role.ts',
+      './review-second-opinion.ts',
+    ],
     typeOnlyAllowed: [
       './review-group.ts',
       './review-post-fix.ts',

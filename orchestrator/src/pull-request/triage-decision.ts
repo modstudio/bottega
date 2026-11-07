@@ -1,6 +1,7 @@
 // concern: pull-request-triage-decision
 /** Decides whether recorded review evidence admits one exact change group. */
 
+import { compareReviewedCommit } from '../evidence/evidence.ts'
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
 import { reviewCountsAsRound } from '../review/review-role.ts'
@@ -44,9 +45,34 @@ type TriageSnapshot = {
 export type MissingLens = {
   lens: string
   recordedOnBranch: boolean
+  reason?: 'tree-mismatch' | 'commit-mismatch'
   /** Paths changed since the reviewed tip that select this lens and that it never reviewed. */
   newlyTouchedPaths: string[]
 }
+
+export type LensProvenanceSubject =
+  | { admissible: true }
+  | { admissible: false; reason: 'tree-mismatch' | 'commit-mismatch' }
+
+/** Whether one lens's recorded provenance names the run subject it was given. */
+export function lensProvenanceSubject(
+  facts: NonNullable<TriageReviewRow['lenses'][number]['provenance']> | undefined,
+): LensProvenanceSubject {
+  if (!facts?.recorded) return { admissible: true }
+  if (!facts.treeInspected || !facts.runTree || facts.treeInspected !== facts.runTree) {
+    return { admissible: false, reason: 'tree-mismatch' }
+  }
+  const comparison = facts.headCommit
+    ? compareReviewedCommit(facts.headCommit, facts.reviewedCommit)
+    : 'missing'
+  if (comparison !== 'equal' && comparison !== 'prefix') {
+    return { admissible: false, reason: 'commit-mismatch' }
+  }
+  return { admissible: true }
+}
+
+const admissibleLens = (lens: TriageReviewRow['lenses'][number]): boolean =>
+  lensProvenanceSubject(lens.provenance).admissible
 
 export type TriageDecision =
   | { complete: true; snapshot: TriageSnapshot }
@@ -157,7 +183,11 @@ type CompleteReviewRound = {
 }
 
 type ReviewGaps = {
-  missingLenses: { lens: string; recordedOnBranch: boolean }[]
+  missingLenses: {
+    lens: string
+    recordedOnBranch: boolean
+    reason?: 'tree-mismatch' | 'commit-mismatch'
+  }[]
   undisposedFindings: { reviewNumber: number; ordinal: number }[]
   missingSecondOpinion: { lens: string; firstRunId: string | null } | null
 }
@@ -168,7 +198,7 @@ type ComposedReviewEvidence =
   | { complete: true; coverageGaps: ReviewGaps; round: CompleteReviewRound }
 
 function recordedLensRounds(reviews: readonly TriageReviewRow[]): number {
-  return reviews.reduce((count, review) => count + review.lenses.length, 0)
+  return reviews.reduce((count, review) => count + review.lenses.filter(admissibleLens).length, 0)
 }
 
 export type SecondOpinionDecision =
@@ -193,7 +223,7 @@ function selectSecondOpinion(
     .sort((left, right) => left.opinion.recordId.localeCompare(right.opinion.recordId))
   const creditedRuns = identifySecondOpinionRun(
     opinions.flatMap(({ opinion, review }) =>
-      opinion.runId && opinion.lens
+      opinion.runId && opinion.lens && admissibleLens(opinion)
         ? [
             {
               recordId: opinion.recordId,
@@ -209,7 +239,11 @@ function selectSecondOpinion(
     lens,
   )
   const eligible = opinions.filter(
-    ({ opinion, review }) => review.completedAt !== null && opinion.graded && opinion.lens === lens,
+    ({ opinion, review }) =>
+      review.completedAt !== null &&
+      opinion.graded &&
+      opinion.lens === lens &&
+      admissibleLens(opinion),
   )
   const first = eligible.find(({ opinion }) => opinion.runId === creditedRuns?.firstRunId)
   const second = eligible.find(({ opinion }) => opinion.runId === creditedRuns?.secondRunId)
@@ -247,16 +281,31 @@ function coverApplicableLens(
   exactRequired: ReadonlySet<string>,
   exactCompleted: readonly TriageReviewRow[],
   completed: readonly TriageReviewRow[],
-): { kind: 'covered'; review: TriageReviewRow } | { kind: 'missing'; recordedOnBranch: boolean } {
+):
+  | { kind: 'covered'; review: TriageReviewRow }
+  | {
+      kind: 'missing'
+      recordedOnBranch: boolean
+      reason?: 'tree-mismatch' | 'commit-mismatch'
+    } {
   const hasGradedLens = (review: TriageReviewRow) =>
-    review.lenses.some((candidate) => candidate.lens === lens && candidate.graded)
+    review.lenses.some(
+      (candidate) => candidate.lens === lens && candidate.graded && admissibleLens(candidate),
+    )
   const latest = (exactRequired.has(lens) ? exactCompleted : completed).find((review) =>
     hasGradedLens(review),
   )
   if (latest && latest.tier !== null) return { kind: 'covered', review: latest }
+  const inadmissible = completed
+    .flatMap((review) => review.lenses)
+    .find((candidate) => candidate.lens === lens && candidate.graded && !admissibleLens(candidate))
+  const subject = inadmissible ? lensProvenanceSubject(inadmissible.provenance) : null
   return {
     kind: 'missing',
-    recordedOnBranch: completed.some((review) => hasGradedLens(review) && review.tier !== null),
+    recordedOnBranch: completed.some((review) =>
+      review.lenses.some((candidate) => candidate.lens === lens && candidate.graded),
+    ),
+    ...(!subject || subject.admissible ? {} : { reason: subject.reason }),
   }
 }
 
@@ -280,7 +329,11 @@ function composedReviewEvidence(
   for (const lens of applicableReview.lenses) {
     const coverage = coverApplicableLens(lens, exactRequired, exactCompleted, completed)
     if (coverage.kind === 'missing') {
-      missingLenses.push({ lens, recordedOnBranch: coverage.recordedOnBranch })
+      missingLenses.push({
+        lens,
+        recordedOnBranch: coverage.recordedOnBranch,
+        ...(coverage.reason ? { reason: coverage.reason } : {}),
+      })
       continue
     }
     const untriaged = undisposedReviewFindings(coverage.review)
@@ -440,7 +493,9 @@ function exactReviewEvidence(evidence: TriageEvidence) {
     evidence.reviews
       .filter((review) => review.completedAt !== null)
       .flatMap((review) =>
-        review.lenses.flatMap((lens) => (lens.graded && lens.lens ? [lens.lens] : [])),
+        review.lenses.flatMap((lens) =>
+          lens.graded && lens.lens && admissibleLens(lens) ? [lens.lens] : [],
+        ),
       ),
   )
   const secondOpinion = decideSecondOpinion(
@@ -460,7 +515,17 @@ function exactReviewEvidence(evidence: TriageEvidence) {
     undisposedFindings: [],
     missingLenses: evidence.applicableReview.lenses
       .filter((lens) => !judgedLenses.has(lens))
-      .map((lens) => ({ lens, recordedOnBranch: false })),
+      .map((lens) => {
+        const candidate = evidence.reviews
+          .flatMap((review) => review.lenses)
+          .find((row) => row.lens === lens && row.graded && !admissibleLens(row))
+        const subject = candidate ? lensProvenanceSubject(candidate.provenance) : null
+        return {
+          lens,
+          recordedOnBranch: candidate !== undefined,
+          ...(!subject || subject.admissible ? {} : { reason: subject.reason }),
+        }
+      }),
     missingSecondOpinion: secondOpinion.complete
       ? null
       : { lens: secondOpinion.lens, firstRunId: secondOpinion.firstRunId },

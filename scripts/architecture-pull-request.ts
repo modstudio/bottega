@@ -51,6 +51,7 @@ export const pullRequestModuleSpecs = [
   {
     file: 'orchestrator/src/pull-request/triage-decision.ts',
     allowed: [
+      '../evidence/evidence.ts',
       '../review/review-applicability.ts',
       '../review/review-group.ts',
       '../review/review-role.ts',
@@ -100,6 +101,8 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/review/review-group.ts',
     allowed: [
       'bun:sqlite',
+      'node:fs',
+      'node:path',
       '../project/projects.ts',
       './review-applicability.ts',
       './review-lineage-store.ts',
