@@ -1,3 +1,4 @@
+import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   decodeRecordChangeCursor,
@@ -129,7 +130,7 @@ async function identityWho(
   return taskSpaceIdentity(
     request,
     config.recordApiUrl,
-    (dependencies.fetch ?? fetch) as typeof fetch,
+    (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
     true,
   )
 }

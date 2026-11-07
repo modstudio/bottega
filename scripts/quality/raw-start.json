@@ -1,8 +1,6 @@
 {
   "files": {
-    "hub/data/src/record-request.ts": 1,
     "hub/deploy/site/src/worker.ts": 1,
-    "hub/src/hosted.ts": 1,
     "hub/src/ingest/git.ts": 1,
     "hub/src/mcp.ts": 1,
     "hub/src/note.ts": 1,
@@ -84,7 +82,7 @@
     "orchestrator/src/recipe/recipe.ts": 1,
     "orchestrator/src/reclaim/reclaim-commands.ts": 1,
     "orchestrator/src/reclaim/reclaim-residue.ts": 2,
-    "orchestrator/src/record/record-api-client.ts": 3,
+    "orchestrator/src/record/record-api-client.ts": 1,
     "orchestrator/src/release/live-reading.ts": 1,
     "orchestrator/src/release/release-entry-closure.ts": 1,
     "orchestrator/src/release/release-service.ts": 1,

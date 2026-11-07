@@ -8,20 +8,14 @@ export function filesCoveredIntersectChanged(
   changed: readonly string[],
   covered: readonly string[],
 ): boolean {
-  return coverageClaims(changed, covered).some(tokenCoversChangedPath)
+  return changed.some((path) => filesCoveredIncludesPath(path, covered))
 }
 
-function coverageClaims(
-  changed: readonly string[],
-  covered: readonly string[],
-): { path: string; token: string }[] {
-  const paths = changed.map(stripLeadingDotSlash)
+/** True when one path is named by a token in the files_covered claims. */
+export function filesCoveredIncludesPath(path: string, covered: readonly string[]): boolean {
+  const normalizedPath = stripLeadingDotSlash(path)
   const tokens = covered.flatMap(coverageTokens)
-  const claims: { path: string; token: string }[] = []
-  for (const path of paths) {
-    for (const token of tokens) claims.push({ path, token })
-  }
-  return claims
+  return tokens.some((token) => tokenCoversChangedPath({ path: normalizedPath, token }))
 }
 
 function coverageTokens(entry: string): string[] {

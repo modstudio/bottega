@@ -31,7 +31,7 @@ export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
   'recorded-artifact':
-    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>`',
+    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
@@ -70,6 +70,7 @@ export type ArtifactRef =
   | { kind: 'exec'; recordId: string }
   | { kind: 'doc'; address: string }
   | { kind: 'run'; id: string }
+  | { kind: 'review-read'; recordId: string }
   | { kind: 'attached-text'; id: string }
   | { kind: 'pull-request'; url: string }
   | { kind: 'id'; id: number }
@@ -198,7 +199,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact')
-    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>'
+    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
@@ -212,6 +213,14 @@ export function closingFlagsForFloor(
   if (floor.commandEvidence === 'pull-request')
     return floor.kind === 'command-exit' ? '--artifact exec:<id>' : '--artifact <pull-request link>'
   return flagForFloor(floor.kind)
+}
+
+function parseStoredArtifact(value: string): ArtifactRef | undefined {
+  const match = /^(review-read|attached-text):(.+)$/i.exec(value)
+  if (!match || !hasRecordIdShape(match[2]!)) return undefined
+  return match[1]!.toLowerCase() === 'review-read'
+    ? { kind: 'review-read', recordId: match[2]!.toLowerCase() }
+    : { kind: 'attached-text', id: match[2]!.toLowerCase() }
 }
 
 export function parseArtifactRef(value: string): ArtifactRef | { error: string } {
@@ -232,9 +241,8 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (doc) return { kind: 'doc', address: doc[1]! }
   const run = /^run:(\S+)$/i.exec(trimmed)
   if (run) return { kind: 'run', id: run[1]! }
-  const attachedText = /^attached-text:(.+)$/i.exec(trimmed)
-  if (attachedText && hasRecordIdShape(attachedText[1]!))
-    return { kind: 'attached-text', id: attachedText[1]!.toLowerCase() }
+  const storedArtifact = parseStoredArtifact(trimmed)
+  if (storedArtifact) return storedArtifact
   if (githubPullRequestUrlIn(trimmed) === trimmed) return { kind: 'pull-request', url: trimmed }
   const runIdentifier = classifyRunIdentifier(trimmed)
   if (runIdentifier?.kind === 'number') return { kind: 'id', id: runIdentifier.number }
@@ -242,7 +250,27 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   const refusal = machineLabelRefusal(trimmed)
   if (refusal) return { error: refusal }
   return {
-    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number or run id, probe:<id>, exec:<id>, attached-text:<UUID>, or a GitHub pull-request link`,
+    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number or run id, probe:<id>, exec:<id>, review-read:<UUID>, attached-text:<UUID>, or a GitHub pull-request link`,
+  }
+}
+
+export type ReviewReadArtifactDecision = { accepted: true } | { accepted: false; message: string }
+
+/** Accepts an architect read only when it records this cursor's current branch tip. */
+export function decideReviewReadArtifact(input: {
+  reviewedCommit: string
+  branchTip: string | null
+}): ReviewReadArtifactDecision {
+  if (input.branchTip === null)
+    return {
+      accepted: false,
+      message:
+        'this cursor records no worktree, so its branch tip cannot be established; pass `--arg worktree=<tree>` on the cursor to clear this refusal',
+    }
+  if (input.reviewedCommit === input.branchTip) return { accepted: true }
+  return {
+    accepted: false,
+    message: `review-read commit ${input.reviewedCommit} is not this cursor's branch tip ${input.branchTip}; record a fresh read with \`${PLATFORM_SLUG} review read --cwd <tree> --sha <tip> --note <text>\` and pass its id as \`--artifact review-read:<UUID>\``,
   }
 }
 

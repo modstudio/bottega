@@ -12,7 +12,6 @@ describe('raw start check', () => {
       expect.arrayContaining([
         'node:child_process',
         'execa',
-        '$',
         'ky',
         'fetch',
         'bounded-process',
@@ -24,6 +23,13 @@ describe('raw start check', () => {
         'Bun.$',
       ]),
     )
+  })
+
+  test('detects Bun shell tagged templates', () => {
+    const findings = rawStarts({
+      'orchestrator/src/example.ts': 'Bun.$`echo tagged`',
+    })
+    expect(rawStartViolations(findings, { files: {} })).toHaveLength(1)
   })
 
   test('refuses new process and HTTP starts in production', () => {

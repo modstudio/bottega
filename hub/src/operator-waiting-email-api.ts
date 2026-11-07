@@ -1,6 +1,7 @@
 // concern: operator-waiting-email-api
 /** Authenticated hosted endpoint for idempotent operator-waiting email delivery. */
 
+import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import {
   recordRequestNature,
   recordSpaceAccessDecision,
@@ -40,7 +41,7 @@ export async function operatorWaitingEmailApi(
   const identity = await taskSpaceIdentity(
     request,
     config.recordApiUrl,
-    dependencies.fetch ?? fetch,
+    dependencies.fetch ?? hostedApiFetch,
     false,
   )
   const refusal = identityRefusal(identity)
