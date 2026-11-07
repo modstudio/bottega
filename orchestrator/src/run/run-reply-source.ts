@@ -3,7 +3,12 @@
  * Knows which collected reply source becomes the public output. Must not know
  * files, stores, processes, or run terminalisation.
  */
-import { REPLY_FILE_NAME, type ReplyDialect, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
+import {
+  REPLY_FILE_NAME,
+  type ReplyDialect,
+  TEXT_REPLY_SCHEMA,
+  type WorkerReply,
+} from '../contract/contract.ts'
 import {
   contractMismatchError,
   type JsonSchema,
@@ -13,6 +18,18 @@ import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts
 import { valueMatchesStrictSchema } from '../transport/transport.ts'
 
 export type ReplyContract = 'none' | 'text' | 'custom'
+
+export function parseContract(
+  dialect: ReplyDialect,
+  text: string,
+): { contract: WorkerReply | null; contractObjects: number; contractFailures: string[] } {
+  const parsed = dialect.parse(text)
+  return {
+    contract: parsed.reply as WorkerReply | null,
+    contractObjects: parsed.contractObjects,
+    contractFailures: parsed.failures,
+  }
+}
 
 export function replyContract(
   schemaPath: string | undefined,

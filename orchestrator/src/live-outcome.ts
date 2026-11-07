@@ -1,13 +1,10 @@
 // concern: live-outcome
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
+import { contractMismatchError } from './contract/contract-reply.ts'
 import { classify, FAILS_OVER, type FailureKind, isNonAnswer } from './failure/failure.ts'
 import { decideOutcomeRule, type OutcomeInputs, type OutcomeRule } from './outcome.ts'
 import { errorTail } from './run/run-process.ts'
-import {
-  contractMismatchError,
-  failureKindFromStop,
-  stopErrorMessage,
-} from './transport/transport.ts'
+import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
 
 export const LAST_VENDOR_EVENT_TYPE_MAX = 64
 const CONTROL_CHARACTERS = /[\p{Cc}]/u

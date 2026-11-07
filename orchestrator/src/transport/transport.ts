@@ -17,8 +17,6 @@ import type { CodexAskExposure } from './codex-ask-exposure.ts'
 import type { QuotaReadings } from './quota-readings.ts'
 import type { AgentBilling, VendorUsage } from './vendor-usage.ts'
 
-export { contractMismatchError } from '../contract/contract-reply.ts'
-
 export {
   EMPTY_VENDOR_USAGE,
   type VendorUsage,

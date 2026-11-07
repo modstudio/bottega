@@ -72,7 +72,7 @@ import type { GooseContextProfile } from './run-context-profile.ts'
 import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
-import { collectReplySource, replyContract } from './run-reply-source.ts'
+import { collectReplySource, parseContract, replyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
 import { firstThrottleObserver, throttleReplyError } from './run-throttle.ts'
 import {
@@ -641,7 +641,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let replyFileError: string | null = null
   let replyFilePresent = false
   let contract: WorkerReply | null = null
-  let contractValidation: [number, string[]] = [0, []]
+  let contractObjects = 0
+  let contractFailures: string[] = []
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
@@ -959,15 +960,13 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         .join('\n')
       mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
     }
-    if (writesJob && output) {
-      const parsed = resolvedDialect.parse(output)
-      contract = parsed.reply as WorkerReply | null
-      contractValidation = [parsed.contractObjects, parsed.failures]
-    }
+    if (writesJob && output)
+      ({ contract, contractObjects, contractFailures } = parseContract(resolvedDialect, output))
     acceptedQuestions = await acceptedQuestionsWithNotice(claim.id, contract, transportQuestions)
     const derived = deriveLiveOutcome({
       writesJob,
-      ...{ contractStatus: contract?.status ?? null, contractFailures: contractValidation[1] },
+      contractStatus: contract?.status ?? null,
+      contractFailures,
       replyError,
       output,
       replyFilePresent,
@@ -1067,7 +1066,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     replyFileError,
     replyFilePresent,
     contract,
-    contractObjects: contractValidation[0],
+    contractObjects,
     acceptedQuestions,
     status,
     error,
