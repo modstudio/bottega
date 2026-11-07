@@ -218,36 +218,34 @@ test('an already-merged pull request skips admission and resumes post-merge stag
 })
 
 test.each([
-  {
-    name: 'failed',
-    failure: new Error('merge-commit lookup failed: forge unavailable'),
-  },
-  {
-    name: 'bounded',
-    failure: new BoundExceededError('gh pr view 42', 'gh', 'deadline', 60_000),
-  },
-])(
-  'a merged pull request records evidence before refusing a $name merge-commit lookup',
-  (input) => {
-    registerProject([])
-    recordPassingGate()
-    const evidence: string[] = []
-    expect(() =>
-      mergePullRequest(
-        '42',
-        cwd,
-        adapter({
-          mergeCommit: () => {
-            throw input.failure
-          },
-          recordLandings: () => evidence.push('landing'),
-          recordCi: () => (evidence.push('ci'), undefined),
-        }),
-      ),
-    ).toThrow(input.failure.message)
-    expect(evidence).toEqual(['landing', 'ci'])
-  },
-)
+  new Error('merge-commit lookup failed: forge unavailable'),
+  new BoundExceededError('gh pr view 42', 'gh', 'deadline', 60_000),
+])('a merged pull request reconciles a $name merge-commit lookup failure', (failure) => {
+  registerProject([]), recordPassingGate()
+  const evidence: string[] = []
+  let releaseReached = false
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        mergeCommit: () => {
+          throw failure
+        },
+        recordLandings: () => evidence.push('landing'),
+        recordCi: () => (evidence.push('ci'), undefined),
+        releaseRequired: () => {
+          releaseReached = true
+          throw new Error('release must not run')
+        },
+      }),
+    ),
+  ).toThrow(
+    `pull request #42 merged, but the merge commit could not be read: ${failure.message}; retry with: ${PLATFORM_SLUG} pr merge 42`,
+  )
+  expect(evidence).toEqual(['landing', 'ci'])
+  expect(releaseReached).toBeFalse()
+})
 
 test('a workflow promotion failure is merge residue and a required release failure wins', () => {
   registerProject([])

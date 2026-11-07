@@ -49,13 +49,21 @@ export function budgetForArgv(argv: readonly string[]): CallBudgetName {
   if (argv[0] === 'gh') return 'gh'
   if (argv[0] !== 'git') return 'git-plumbing'
 
+  const gitGlobalOptionsWithSeparateValues = new Set([
+    '-C',
+    '-c',
+    '--git-dir',
+    '--work-tree',
+    '--namespace',
+    '--config-env',
+  ])
   let skipValue = false
   for (const argument of argv.slice(1)) {
     if (skipValue) {
       skipValue = false
       continue
     }
-    if (argument === '-C' || argument === '-c') {
+    if (gitGlobalOptionsWithSeparateValues.has(argument)) {
       skipValue = true
       continue
     }

@@ -8,6 +8,10 @@ describe('call budgets', () => {
     { argv: ['git', '-C', '/x', 'ls-remote'], budget: 'git-network' },
     { argv: ['git', 'rev-parse'], budget: 'git-plumbing' },
     { argv: ['git', '-c', 'a=b', 'push'], budget: 'git-network' },
+    { argv: ['git', '--git-dir', '.git', 'fetch'], budget: 'git-network' },
+    { argv: ['git', '--work-tree', '/w', 'push', 'origin', 'main'], budget: 'git-network' },
+    { argv: ['git', '--namespace', 'ns', 'ls-remote'], budget: 'git-network' },
+    { argv: ['git', '--git-dir', '.git', 'status'], budget: 'git-plumbing' },
   ] as const)('$argv selects $budget', ({ argv, budget }) => {
     expect(budgetForArgv(argv)).toBe(budget)
   })
