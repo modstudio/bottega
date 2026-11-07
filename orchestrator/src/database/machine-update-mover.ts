@@ -79,7 +79,7 @@ export function moveRegisteredMainCheckout(
 ): MainCheckoutUpdateResult {
   const invocation = mainCheckoutUpdateInvocation(project.path, parentEnvironment)
   const result = startBoundedSync(invocation.argv, {
-    budget: 'self-cli',
+    budget: 'machine-update',
     cwd: invocation.cwd,
     env: invocation.env,
   })

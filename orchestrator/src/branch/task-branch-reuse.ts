@@ -107,10 +107,10 @@ function taskBranchGit(cwd: string, args: string[], allowExitOne = false): strin
   if (process.exitCode !== 0) {
     throw new Error(
       `git ${args.join(' ')} failed while checking task branch compatibility: ` +
-        (process.stderr.toString().trim() || `exit ${process.exitCode}`),
+        (process.stderr.trim() || `exit ${process.exitCode}`),
     )
   }
-  return process.stdout.toString().trim()
+  return process.stdout.trim()
 }
 
 /** Gather the caller's Git facts once and apply the pure reuse decision. */

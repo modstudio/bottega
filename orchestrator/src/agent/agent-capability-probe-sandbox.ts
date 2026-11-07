@@ -48,7 +48,7 @@ function createScratchGitWorktree(path: string): void {
   })
   if (initialized.exitCode !== 0) {
     throw new Error(
-      `registration capability probe could not create its git worktree: ${initialized.stderr.toString().trim() || `git init exited ${initialized.exitCode ?? 'unknown'}`}`,
+      `registration capability probe could not create its git worktree: ${initialized.stderr.trim() || `git init exited ${initialized.exitCode ?? 'unknown'}`}`,
     )
   }
 }

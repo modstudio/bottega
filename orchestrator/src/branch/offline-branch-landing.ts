@@ -35,9 +35,9 @@ function git(cwd: string, ...args: string[]): string {
     env: targetGitEnvironment(cwd),
   })
   if (process.exitCode !== 0) {
-    throw new Error(process.stderr.toString().trim() || `git ${args.join(' ')} failed`)
+    throw new Error(process.stderr.trim() || `git ${args.join(' ')} failed`)
   }
-  return process.stdout.toString().trim()
+  return process.stdout.trim()
 }
 
 function localBranches(project: Project): Map<string, string> {

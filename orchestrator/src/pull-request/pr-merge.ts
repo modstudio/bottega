@@ -7,7 +7,7 @@
 import type { Database } from 'bun:sqlite'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
@@ -134,19 +134,14 @@ type ProcessResult = { exitCode: number; stdout: string; stderr: string }
 
 function run(cwd: string, argv: string[]): ProcessResult {
   const result = startBoundedSync(argv, {
-    budget:
-      argv[0] === 'gh'
-        ? 'gh'
-        : argv[0] === 'git' && argv[1] === 'fetch'
-          ? 'git-network'
-          : 'git-plumbing',
+    budget: budgetForArgv(argv),
     cwd,
     env: targetGitEnvironment(cwd),
   })
   return {
     exitCode: result.exitCode,
-    stdout: result.stdout.toString().trim(),
-    stderr: result.stderr.toString().trim(),
+    stdout: result.stdout.trim(),
+    stderr: result.stderr.trim(),
   }
 }
 
@@ -482,7 +477,6 @@ function mergeAdmittedHead(input: {
   try {
     return { mergeCommit: input.adapter.mergeCommit(input.cwd, input.pullRequest.number) }
   } catch (mergeCommitLookupError) {
-    if (mergeCommitLookupError instanceof BoundExceededError) throw mergeCommitLookupError
     return { mergeCommitLookupError }
   }
 }

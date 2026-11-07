@@ -96,7 +96,6 @@ function moveMainForPostLanding(
   try {
     adapter.moveMain(project, mergeCommit, movesInstallation)
   } catch (cause) {
-    if (cause instanceof BoundExceededError) throw cause
     failure = cause instanceof Error ? cause.message : String(cause)
   }
   if (failure) {
@@ -422,11 +421,11 @@ function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotio
     ],
     { budget: 'self-cli', cwd: project.path, env: process.env },
   )
-  if (result.exitCode === 0) return { ok: true, output: result.stdout.toString().trim() }
+  if (result.exitCode === 0) return { ok: true, output: result.stdout.trim() }
   return {
     ok: false,
     stage: 'promote',
-    detail: result.stderr.toString().trim() || `exit ${result.exitCode}`,
+    detail: result.stderr.trim() || `exit ${result.exitCode}`,
   }
 }
 

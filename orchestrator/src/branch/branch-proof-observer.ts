@@ -22,8 +22,8 @@ function runGit(cwd: string, args: string[]): { exitCode: number; output: string
   })
   return {
     exitCode: process.exitCode,
-    output: process.stdout.toString().trim(),
-    error: process.stderr.toString().trim(),
+    output: process.stdout.trim(),
+    error: process.stderr.trim(),
   }
 }
 

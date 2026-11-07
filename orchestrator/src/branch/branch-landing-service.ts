@@ -2,7 +2,7 @@
 /** Verifies GitHub landing evidence and persists explicit run-branch landing records. */
 
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -44,7 +44,7 @@ function command(cwd: string, argv: string[], label: string): string {
   try {
     const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
     process = startBoundedSync(argv, {
-      budget: argv[0] === 'gh' ? 'gh' : 'git-plumbing',
+      budget: budgetForArgv(argv),
       cwd,
       env: { ...env, NO_COLOR: '1' },
     })
@@ -53,11 +53,9 @@ function command(cwd: string, argv: string[], label: string): string {
     throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
   }
   if (process.exitCode !== 0) {
-    throw new Error(
-      `${label} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
-    )
+    throw new Error(`${label} failed: ${process.stderr.trim() || `exit ${process.exitCode}`}`)
   }
-  return process.stdout?.toString().trim() ?? ''
+  return process.stdout.trim()
 }
 
 function localBranchTip(cwd: string, branch: string): string | null {
@@ -68,10 +66,10 @@ function localBranchTip(cwd: string, branch: string): string | null {
     cwd,
     env: { ...env, NO_COLOR: '1' },
   })
-  if (process.exitCode === 0) return process.stdout?.toString().trim() ?? ''
+  if (process.exitCode === 0) return process.stdout.trim()
   if (process.exitCode === 1) return null
   throw new Error(
-    `git ${args.join(' ')} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
+    `git ${args.join(' ')} failed: ${process.stderr.trim() || `exit ${process.exitCode}`}`,
   )
 }
 

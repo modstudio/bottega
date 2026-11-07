@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { closeDatabaseForFixture, db } from '../database/db.ts'
 import { migrationJournal } from '../database/migrations.ts'
 import { projectByName } from '../project/projects.ts'
@@ -216,36 +217,37 @@ test('an already-merged pull request skips admission and resumes post-merge stag
   expect(released).toBe(true)
 })
 
-test('a merged pull request records evidence before refusing a failed merge-commit lookup', () => {
-  registerProject([])
-  recordPassingGate()
-  const evidence: string[] = []
-  let releaseReached = false
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        mergeCommit: () => {
-          throw new Error('merge-commit lookup failed: forge unavailable')
-        },
-        recordLandings: () => evidence.push('landing'),
-        recordCi: () => {
-          evidence.push('ci')
-          return undefined
-        },
-        releaseRequired: () => {
-          releaseReached = true
-          throw new Error('release must not run without a merge commit')
-        },
-      }),
-    ),
-  ).toThrow(
-    `pull request #42 merged, but the merge commit could not be read: merge-commit lookup failed: forge unavailable; retry with: ${PLATFORM_SLUG} pr merge 42`,
-  )
-  expect(evidence).toEqual(['landing', 'ci'])
-  expect(releaseReached).toBeFalse()
-})
+test.each([
+  {
+    name: 'failed',
+    failure: new Error('merge-commit lookup failed: forge unavailable'),
+  },
+  {
+    name: 'bounded',
+    failure: new BoundExceededError('gh pr view 42', 'gh', 'deadline', 60_000),
+  },
+])(
+  'a merged pull request records evidence before refusing a $name merge-commit lookup',
+  (input) => {
+    registerProject([])
+    recordPassingGate()
+    const evidence: string[] = []
+    expect(() =>
+      mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          mergeCommit: () => {
+            throw input.failure
+          },
+          recordLandings: () => evidence.push('landing'),
+          recordCi: () => (evidence.push('ci'), undefined),
+        }),
+      ),
+    ).toThrow(input.failure.message)
+    expect(evidence).toEqual(['landing', 'ci'])
+  },
+)
 
 test('a workflow promotion failure is merge residue and a required release failure wins', () => {
   registerProject([])

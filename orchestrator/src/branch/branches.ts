@@ -3,7 +3,7 @@
 
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import { db, writableDb } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 
@@ -116,7 +116,7 @@ function command(cwd: string, argv: string[], label: string): string {
     // Output is parsed, so a forced-color environment must not reach gh or git.
     const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
     process = startBoundedSync(argv, {
-      budget: argv[0] === 'gh' ? 'gh' : 'git-plumbing',
+      budget: budgetForArgv(argv),
       cwd,
       env: { ...env, NO_COLOR: '1' },
     })
@@ -125,11 +125,9 @@ function command(cwd: string, argv: string[], label: string): string {
     throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
   }
   if (process.exitCode !== 0) {
-    throw new Error(
-      `${label} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
-    )
+    throw new Error(`${label} failed: ${process.stderr.trim() || `exit ${process.exitCode}`}`)
   }
-  return process.stdout?.toString().trim() ?? ''
+  return process.stdout.trim()
 }
 
 function git(cwd: string, ...args: string[]): string {

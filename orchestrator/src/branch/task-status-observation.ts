@@ -21,7 +21,7 @@ export function observeTaskStatus(key: string | null, project: string): TaskStat
     { budget: 'self-cli', env: process.env },
   )
   if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim() || `exit ${result.exitCode}`
+    const detail = result.stderr.trim() || `exit ${result.exitCode}`
     return {
       raw: null,
       category: null,
@@ -31,7 +31,7 @@ export function observeTaskStatus(key: string | null, project: string): TaskStat
     }
   }
   try {
-    const parsed = JSON.parse(result.stdout.toString()) as {
+    const parsed = JSON.parse(result.stdout) as {
       task?: { status?: unknown; status_category?: unknown; last_seen?: unknown }
     }
     const raw = typeof parsed.task?.status === 'string' ? parsed.task.status : null

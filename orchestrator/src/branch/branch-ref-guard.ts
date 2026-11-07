@@ -153,5 +153,5 @@ export function restoreBranch(
   })
   return result.exitCode === 0
     ? { ok: true }
-    : { ok: false, error: result.stderr.toString().trim() || `exit ${result.exitCode}` }
+    : { ok: false, error: result.stderr.trim() || `exit ${result.exitCode}` }
 }

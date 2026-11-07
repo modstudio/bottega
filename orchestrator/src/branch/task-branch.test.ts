@@ -2,9 +2,11 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
+import type { Project } from '../project/projects.ts'
 import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
@@ -27,6 +29,7 @@ import {
   taskBranchContainedTips,
   taskBranchLandingRefusalMessage,
   taskBranchLandingTreeRefusal,
+  taskBranchPullRequestCheck,
   taskBranchReuseNotice,
 } from './task-branch.ts'
 
@@ -92,6 +95,41 @@ function callOriginalSpawnSync(
 ): ReturnType<typeof Bun.spawnSync> {
   return Array.isArray(input) ? original(input, options as never) : original(input as never)
 }
+
+const pullRequestCheckProject = { path: '/fixture/project' } as Project
+
+test('task branch pull-request checks preserve a bounded listing breach', () => {
+  const breach = new BoundExceededError('gh pr list', 'gh', 'deadline', 60_000)
+  spyOn(Bun, 'spawnSync').mockImplementation(() => {
+    throw breach
+  })
+
+  expect(() =>
+    taskBranchPullRequestCheck({
+      project: pullRequestCheckProject,
+      launchKey: 'DEV-2159',
+      branch: 'DEV-2159-bounded-listing',
+      tip: 'tip',
+      headMatch: 'exact-head-contains-tip',
+    }),
+  ).toThrow(breach)
+})
+
+test('task branch pull-request checks report an ordinary listing failure as unknown', () => {
+  spyOn(Bun, 'spawnSync').mockImplementation(() => {
+    throw new Error('forge unavailable')
+  })
+
+  expect(
+    taskBranchPullRequestCheck({
+      project: pullRequestCheckProject,
+      launchKey: 'DEV-2159',
+      branch: 'DEV-2159-failed-listing',
+      tip: 'tip',
+      headMatch: 'exact-head-contains-tip',
+    }),
+  ).toMatchObject({ state: 'unknown' })
+})
 
 test('an evidence-excluded landing-tree owner refuses dispatch planning', () => {
   const repo = join(dir, 'landing-tree-owner-repo')

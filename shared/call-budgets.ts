@@ -3,6 +3,7 @@ export type CallBudgetName =
   | 'git-network'
   | 'process-table'
   | 'self-cli'
+  | 'machine-update'
   | 'hosted-api'
   | 'release-download'
   | 'agent-cli'
@@ -24,6 +25,8 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   'git-network': { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'process-table': { deadlineMs: 10_000, outputBytes: 4 * MIB, graceMs: 1_000 },
   'self-cli': { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
+  /** Must cover MIGRATION_DRAIN_TIMEOUT_MS, MIGRATION_WINDOW_WAIT_MS, and the release-download total, which the child may spend in sequence. */
+  'machine-update': { deadlineMs: 1_200_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'hosted-api': {
     deadlineMs: 30_000,
     totalMs: 60_000,
@@ -40,6 +43,29 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   docker: { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   gh: { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
 })
+
+/** Select the shared process budget from a gh or git argv. */
+export function budgetForArgv(argv: readonly string[]): CallBudgetName {
+  if (argv[0] === 'gh') return 'gh'
+  if (argv[0] !== 'git') return 'git-plumbing'
+
+  let skipValue = false
+  for (const argument of argv.slice(1)) {
+    if (skipValue) {
+      skipValue = false
+      continue
+    }
+    if (argument === '-C' || argument === '-c') {
+      skipValue = true
+      continue
+    }
+    if (argument.startsWith('-')) continue
+    return ['fetch', 'ls-remote', 'push', 'pull', 'clone'].includes(argument)
+      ? 'git-network'
+      : 'git-plumbing'
+  }
+  return 'git-plumbing'
+}
 
 export type CallBound = 'deadline' | 'output'
 

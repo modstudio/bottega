@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -66,16 +66,14 @@ export type PullRequestChange = {
 
 const command = (cwd: string, argv: string[], label: string): string => {
   const process = startBoundedSync(argv, {
-    budget: argv[0] === 'gh' ? 'gh' : 'git-plumbing',
+    budget: budgetForArgv(argv),
     cwd,
     env: targetGitEnvironment(cwd),
   })
   if (process.exitCode !== 0) {
-    throw new Error(
-      `${label} failed: ${process.stderr.toString().trim() || `exit ${process.exitCode}`}`,
-    )
+    throw new Error(`${label} failed: ${process.stderr.trim() || `exit ${process.exitCode}`}`)
   }
-  return process.stdout.toString().trim()
+  return process.stdout.trim()
 }
 
 const git: Git = (cwd, args) => command(cwd, ['git', ...args], `git ${args.join(' ')}`)
@@ -562,7 +560,7 @@ function pullRequestForBranch(cwd: string, branch: string): { number: number; ur
   }
   if (process.exitCode !== 0) return null
   try {
-    const value = JSON.parse(process.stdout?.toString() ?? '') as {
+    const value = JSON.parse(process.stdout) as {
       number?: unknown
       url?: unknown
     }
@@ -640,11 +638,9 @@ export function createPullRequest(
       cwd,
       env: targetGitEnvironment(cwd),
     })
-    output = process.stdout.toString().trim()
-    if (process.exitCode !== 0)
-      failure = process.stderr.toString().trim() || `exit ${process.exitCode}`
+    output = process.stdout.trim()
+    if (process.exitCode !== 0) failure = process.stderr.trim() || `exit ${process.exitCode}`
   } catch (cause) {
-    if (cause instanceof BoundExceededError) throw cause
     failure = String((cause as Error)?.message ?? cause)
   }
   const created = pullRequestForBranch(cwd, change.branch)

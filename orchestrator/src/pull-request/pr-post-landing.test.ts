@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, fenceStoreAfterCheckoutMove, writableDb } from '../database/db.ts'
 import { projectMovesInstallation } from '../database/machine-update-mover.ts'
@@ -835,6 +836,30 @@ test('a partial move that changes HEAD still fences and hands off', () => {
   })
 
   expect(outcome).toEqual({ output: 'child verifies main', exitCode: 0 })
+  expect(events).toEqual(['fence', 'hand-off'])
+})
+
+test('a bounded move that changes HEAD still reconciles, fences, and hands off', () => {
+  const events: string[] = []
+  let head = 'before'
+  const outcome = complete({
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => head,
+      moveMain: () => {
+        head = 'after'
+        throw new BoundExceededError('machine update', 'machine-update', 'deadline', 1_200_000)
+      },
+      fence: () => events.push('fence'),
+      handOff: () => {
+        events.push('hand-off')
+        return { output: 'child verifies bounded move', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(outcome).toEqual({ output: 'child verifies bounded move', exitCode: 0 })
   expect(events).toEqual(['fence', 'hand-off'])
 })
 

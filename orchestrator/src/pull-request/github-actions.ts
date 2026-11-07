@@ -14,8 +14,8 @@ function run(cwd: string, argv: string[]): ProcessResult {
   })
   return {
     exitCode: result.exitCode,
-    stdout: result.stdout.toString().trim(),
-    stderr: result.stderr.toString().trim(),
+    stdout: result.stdout.trim(),
+    stderr: result.stderr.trim(),
   }
 }
 
