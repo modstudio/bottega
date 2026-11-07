@@ -34,13 +34,11 @@ export const manifestTypeOnlyImportBoundaries = [
   ...typeOnlyImportBoundaries(reviewModuleSpecs),
 ]
 
-const isTypeOnlyAllowedSpec = (value: unknown): value is TypeOnlyAllowedSpec =>
-  typeof value === 'object' &&
-  value !== null &&
-  'file' in value &&
-  typeof value.file === 'string' &&
-  'typeOnlyAllowed' in value &&
-  Array.isArray(value.typeOnlyAllowed)
+const isSpecWithFile = (value: unknown): value is TypeOnlyAllowedSpec =>
+  typeof value === 'object' && value !== null && 'file' in value && typeof value.file === 'string'
+
+const hasTypeOnlyAllowed = (value: TypeOnlyAllowedSpec) =>
+  Array.isArray(value.typeOnlyAllowed) && value.typeOnlyAllowed.length > 0
 
 async function typeOnlyAllowedSpecFamilies() {
   const families: { name: string; specs: readonly TypeOnlyAllowedSpec[] }[] = []
@@ -51,7 +49,8 @@ async function typeOnlyAllowedSpecFamilies() {
       unknown
     >
     for (const [exportName, value] of Object.entries(exports)) {
-      if (!Array.isArray(value) || !value.every(isTypeOnlyAllowedSpec)) continue
+      if (!Array.isArray(value) || !value.every(isSpecWithFile) || !value.some(hasTypeOnlyAllowed))
+        continue
       families.push({
         name: `${basename(moduleFile, '.ts')}:${exportName}`,
         specs: value,
