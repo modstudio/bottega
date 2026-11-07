@@ -150,7 +150,9 @@ function branchEvidence(
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
   const lineageRoots = new Map<string, string>()
-  const rows = eligibleReviewRoundRows(database, since, target).filter(
+  const rows = (
+    eligibleReviewRoundRows(database, since, target) as ReviewBudgetProvenanceRow[]
+  ).filter(
     (row) =>
       newestInadmissibleLensRow([
         { graded: true, lens: row.lens, provenance: provenanceSubjectFacts(row) },

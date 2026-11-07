@@ -1,11 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import {
-  assessEvidence,
-  assessEvidencePrompt,
-  type EvidenceFacts,
-} from './evidence.ts'
 import { compareReviewedCommit } from '../review/review-lens-provenance.ts'
+import { assessEvidence, assessEvidencePrompt, type EvidenceFacts } from './evidence.ts'
 
 const reviewReply = {
   findings: [],

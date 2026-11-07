@@ -22,7 +22,7 @@ const REVIEW_LENS_SELECTION_REASON = [
   'tree-mismatch',
   'commit-mismatch',
 ] as const
-export const REVIEW_LENS_OWED_REASONS = ['tree-mismatch', 'commit-mismatch'] as const
+const REVIEW_LENS_OWED_REASONS = ['tree-mismatch', 'commit-mismatch'] as const
 export const REVIEW_GRADE_NAMES = ['reproduced', 'coverage', 'limits', 'overlap'] as const
 export const REVIEW_GRADE_VALUES = {
   reproduced: REVIEW_REPRODUCED,

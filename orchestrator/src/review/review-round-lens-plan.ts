@@ -7,10 +7,7 @@ import {
   selectReviewApplicability,
 } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
-import {
-  lensProvenanceSubject,
-  newestInadmissibleLensRow,
-} from './review-lens-provenance.ts'
+import { lensProvenanceSubject, newestInadmissibleLensRow } from './review-lens-provenance.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
 import { reviewCountsAsRound } from './review-role.ts'
 import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
@@ -144,14 +141,13 @@ export function roundLensFacts(
   )
   const completedLenses = [
     ...new Set(
-      completedReviews
-        .flatMap((review) =>
-          review.lenses.flatMap((lens) =>
-            lens.graded && lens.lens && lensProvenanceSubject(lens.provenance).admissible
-              ? [lens.lens]
-              : [],
-          ),
+      completedReviews.flatMap((review) =>
+        review.lenses.flatMap((lens) =>
+          lens.graded && lens.lens && lensProvenanceSubject(lens.provenance).admissible
+            ? [lens.lens]
+            : [],
         ),
+      ),
     ),
   ]
   const completedOpinions = branchReviews.flatMap((review) =>

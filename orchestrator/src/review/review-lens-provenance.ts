@@ -35,7 +35,7 @@ export function compareReviewedCommit(
     : 'different'
 }
 
-export function pathIsAtOrInside(path: string, root: string): boolean {
+function pathIsAtOrInside(path: string, root: string): boolean {
   const remainder = relative(root, path)
   return remainder === '' || (!remainder.startsWith('..') && !isAbsolute(remainder))
 }

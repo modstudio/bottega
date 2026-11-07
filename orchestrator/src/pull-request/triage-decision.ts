@@ -279,11 +279,13 @@ function coverApplicableLens(
     hasGradedLens(review),
   )
   if (latest && latest.tier !== null) return { kind: 'covered', review: latest }
-  const coverageReviews = [...new Map(
-    [...exactCompleted, ...completed]
-      .sort((left, right) => right.reviewNumber - left.reviewNumber)
-      .map((review) => [review.reviewRecordId, review]),
-  ).values()]
+  const coverageReviews = [
+    ...new Map(
+      [...exactCompleted, ...completed]
+        .sort((left, right) => right.reviewNumber - left.reviewNumber)
+        .map((review) => [review.reviewRecordId, review]),
+    ).values(),
+  ]
   const inadmissible = newestInadmissibleLensRow(
     coverageReviews.flatMap((review) => review.lenses),
     lens,

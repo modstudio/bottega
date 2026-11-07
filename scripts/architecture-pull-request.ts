@@ -52,9 +52,11 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/pull-request/triage-decision.ts',
     allowed: [
       '../review/review-applicability.ts',
+      '../review/review-group.ts',
       '../review/review-lens-provenance.ts',
       '../review/review-role.ts',
       '../review/review-second-opinion.ts',
+      '../review/review-vocabulary.ts',
     ],
     typeOnlyAllowed: ['../review/review-group.ts', '../review/review-vocabulary.ts'],
   },

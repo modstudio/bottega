@@ -153,8 +153,7 @@ describe('round lens plan', () => {
       ],
     })
     expect(
-      roundLensFacts([unfinished], { patchId: 'patch', pathSet: '["a.ts"]' })
-        .inadmissibleLenses,
+      roundLensFacts([unfinished], { patchId: 'patch', pathSet: '["a.ts"]' }).inadmissibleLenses,
     ).toBeUndefined()
   })
 
