@@ -303,7 +303,7 @@ describe('final-message fallback contract composition', () => {
         status: 'failed',
         failureKind: 'contract',
         error:
-          'reply.json missing; final message reply did not match the worker contract:\nRan into this error trying to compact: Server error: Upstream error from Inception',
+          'reply.json missing; final message reply did not match the worker contract: not JSON: JSON Parse error: Unexpected identifier "Ran"\nRan into this error trying to compact: Server error: Upstream error from Inception',
         failover: 'select',
       },
     },
@@ -319,7 +319,7 @@ describe('final-message fallback contract composition', () => {
         status: 'failed',
         failureKind: 'contract',
         error:
-          'reply.json missing; final message reply did not match the worker contract:\nThe harness says Ran into this error: Rate limit exceeded: Provider returned error.',
+          'reply.json missing; final message reply did not match the worker contract: not JSON: JSON Parse error: Unexpected identifier "The"\nThe harness says Ran into this error: Rate limit exceeded: Provider returned error.',
         failover: 'select',
       },
     },
