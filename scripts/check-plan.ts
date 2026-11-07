@@ -1,5 +1,7 @@
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
 
+export const DEPENDENCY_AUDIT_SCRIPT = 'scripts/check-dependency-audit.ts'
+
 const HOOKS_FOCUSED_FORM = {
   directory: 'orchestrator/hooks',
   argv: ['python3', '-m', 'unittest'],

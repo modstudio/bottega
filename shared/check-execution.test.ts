@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { parseCheckExecutionLines, UNCHECKED_EXIT_CODE } from './check-execution.ts'
+import {
+  parseCheckExecutionLines,
+  UNCHECKED_EXIT_CODE,
+  UNCHECKED_LINE_PREFIX,
+  uncheckedReasonFromLines,
+} from './check-execution.ts'
 
 test('check execution lines retain valid records around malformed and wrong-shaped lines', () => {
   const first = { check: 'lint', wallMs: 12.5, cpuMs: 8, exitCode: 0 }
@@ -29,4 +34,9 @@ test('check execution lines retain unchecked reasons only with the unchecked exi
   expect(
     parseCheckExecutionLines(`${JSON.stringify(unchecked)}\n${JSON.stringify(invalid)}\n`),
   ).toEqual({ records: [unchecked], rejected: 1 })
+})
+
+test('unchecked line writer and parser share the exact protocol', () => {
+  const reason = 'audit host unavailable'
+  expect(uncheckedReasonFromLines([`${UNCHECKED_LINE_PREFIX}${reason}`])).toBe(reason)
 })

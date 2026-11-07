@@ -13,6 +13,9 @@ export type RecordedGateCandidate = {
   elapsedMs: number | null
   finishedAt: string
   outputTail: string
+}
+
+export type SelectedRecordedGateResult = RecordedGateCandidate & {
   uncheckedChecks: readonly { check: string; reason: string }[]
 }
 
@@ -74,13 +77,12 @@ function recordedGateCandidateFromRow(
     elapsedMs: row.elapsed_ms,
     finishedAt: row.finished_at,
     outputTail: row.output_tail ?? '',
-    uncheckedChecks: [],
   }
 }
 
 export function recordedGateResult(runId: string): {
   headCommit: string | null
-  result: RecordedGateCandidate | null
+  result: SelectedRecordedGateResult | null
 } {
   const run = db()
     .query('SELECT project_record_id,head_commit FROM run WHERE record_id=?')

@@ -77,7 +77,6 @@ test('recorded gate result is the most recent finished execution for the exact p
     elapsedMs: 20,
     finishedAt,
     outputTail: `gate ${id}`,
-    uncheckedChecks: [],
   })
   const target = { projectId: 'project-7', headCommit: 'reviewed' }
   expect(

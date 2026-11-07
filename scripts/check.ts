@@ -12,6 +12,7 @@ import {
   type CheckExecutionRecord,
   UNCHECKED_EXIT_CODE,
   UNIT_TEST_CHECK_CATEGORY,
+  uncheckedReasonFromLines,
 } from '../shared/check-execution'
 import { borrowedCheckoutOf, inspectionGitEnv } from '../shared/git'
 import { findingLine } from '../shared/ratchet.ts'
@@ -21,7 +22,12 @@ import {
   FAILED_STEP_DETAIL_LINES,
   type GateStepResult,
 } from './check-outcome.ts'
-import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS } from './check-plan.ts'
+import {
+  CHECK_LEGS,
+  DEPENDENCY_AUDIT_SCRIPT,
+  ROOT_TEST_FILES,
+  STATIC_OMIT_GROUPS,
+} from './check-plan.ts'
 import {
   attributeCommandCpu,
   type CheckArguments,
@@ -140,26 +146,22 @@ function collectChild(child: Bun.Subprocess, exitCode: number) {
     exitCode,
     ...(remaining === undefined ? {} : { remaining }),
   }
-  if (exitCode === UNCHECKED_EXIT_CODE) deferredExecutions.set(child, record)
+  if (exitCode === UNCHECKED_EXIT_CODE && measurement.check) deferredExecutions.set(child, record)
   else appendExecution(record)
   activeChildren.delete(child)
 }
 
-function uncheckedReason(lines: readonly string[]): string | undefined {
-  return lines
-    .map((line) => /^unchecked: (.+)$/.exec(line)?.[1]?.trim())
-    .find((reason): reason is string => Boolean(reason))
-}
-
+/** Finishes the record for a check process that exited unchecked. */
 function finishDeferredExecution(child: Bun.Subprocess, lines: readonly string[]): void {
   const record = deferredExecutions.get(child)
   if (!record) return
   deferredExecutions.delete(child)
-  const reason = uncheckedReason(lines)
+  const reason = uncheckedReasonFromLines(lines)
   appendExecution(reason ? { ...record, unchecked: reason } : record)
 }
 
-function recordUnchecked(check: string, reason: string): void {
+/** Records an unchecked check for which no process was started. */
+function recordUncheckedWithoutProcess(check: string, reason: string): void {
   appendExecution({ check, wallMs: 0, exitCode: UNCHECKED_EXIT_CODE, unchecked: reason })
   uncheckedChecks.push({ check, reason })
 }
@@ -326,7 +328,7 @@ async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
     reportPath: check.reportPath,
   })
   const reason =
-    result.exitCode === UNCHECKED_EXIT_CODE ? uncheckedReason(result.detail) : undefined
+    result.exitCode === UNCHECKED_EXIT_CODE ? uncheckedReasonFromLines(result.detail) : undefined
   if (reason) {
     uncheckedChecks.push({ check: check.name, reason })
     return { name: check.name, exitCode: 0, detail: [], omittedDetailLines: 0 }
@@ -428,7 +430,6 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
     ]
     const exitCode = await child.exited
     await Promise.all(readers)
-    finishDeferredExecution(child, tail)
     if (exitCode !== 0) return { name: leg.name, exitCode, detail: [], omittedDetailLines: 0, tail }
   }
   return { name: leg.name, exitCode: 0, detail: [], omittedDetailLines: 0, tail }
@@ -615,11 +616,11 @@ async function installDependencies() {
 
 if ((await installDependencies()) !== 0) process.exit(1)
 
-const dependencyAuditResult = await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
+const dependencyAuditResult = await inherit(['bun', DEPENDENCY_AUDIT_SCRIPT], root, {
   check: 'dependency audit',
 })
 if (dependencyAuditResult.exitCode === UNCHECKED_EXIT_CODE) {
-  const reason = uncheckedReason(dependencyAuditResult.detail)
+  const reason = uncheckedReasonFromLines(dependencyAuditResult.detail)
   if (!reason) process.exit(1)
   uncheckedChecks.push({ check: 'dependency audit', reason })
 } else if (dependencyAuditResult.exitCode !== 0) process.exit(1)
@@ -662,7 +663,7 @@ let workerBiomeStep: GateStepResult | null = null
 if (workerProjection) {
   if (workerFiles!.length === 0) {
     const reason = `no file changed since the base ${workerBaseCommit}`
-    recordUnchecked(workerProjection.biome.name, reason)
+    recordUncheckedWithoutProcess(workerProjection.biome.name, reason)
     workerBiomeStep = {
       name: workerProjection.biome.name,
       exitCode: 0,
@@ -737,7 +738,7 @@ if (checkArguments.mode === 'static' || checkArguments.mode === 'worker') {
   for (const check of selectedStaticChecks) {
     gateSteps.push(await recordGateStep(check))
   }
-  for (const [check, reason] of omissionReasons) recordUnchecked(check, reason)
+  for (const [check, reason] of omissionReasons) recordUncheckedWithoutProcess(check, reason)
 
   const plannedNames = workerProjection
     ? [

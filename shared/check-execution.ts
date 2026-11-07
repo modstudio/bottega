@@ -4,10 +4,18 @@ import { PLATFORM_SLUG } from './brand.ts'
 export const CHECK_EXECUTION_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECK_EXECUTION_FILE`
 export const UNIT_TEST_CHECK_CATEGORY = 'unit-tests'
 export const UNCHECKED_EXIT_CODE = 77
+export const UNCHECKED_LINE_PREFIX = 'unchecked: '
 
 export function exitUnchecked(reason: string): never {
-  console.log(`unchecked: ${reason}`)
+  console.log(`${UNCHECKED_LINE_PREFIX}${reason}`)
   process.exit(UNCHECKED_EXIT_CODE)
+}
+
+export function uncheckedReasonFromLines(lines: readonly string[]): string | undefined {
+  return lines
+    .filter((line) => line.startsWith(UNCHECKED_LINE_PREFIX))
+    .map((line) => line.slice(UNCHECKED_LINE_PREFIX.length).trim())
+    .find((reason) => reason.length > 0)
 }
 
 const CheckExecutionRecordSchema = z

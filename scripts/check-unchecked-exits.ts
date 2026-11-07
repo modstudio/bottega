@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { DEPENDENCY_AUDIT_SCRIPT } from './check-plan.ts'
 import { staticCheckPlan } from './static-check-plan.ts'
 
 export type UncheckedExitSource = { path: string; source: string }
 
 export function uncheckedExitViolations(sources: readonly UncheckedExitSource[]): string[] {
-  const forbidden = /process\.exit\(\s*0\s*\)/
+  const forbidden = /^\s*process\.exit\(\s*0\s*\)/
   return sources.flatMap(({ path, source }) =>
     source
       .split('\n')
@@ -21,13 +22,14 @@ export function uncheckedExitViolations(sources: readonly UncheckedExitSource[])
 
 function invokedScripts(): string[] {
   return [
-    ...new Set(
-      staticCheckPlan().flatMap((check) =>
+    ...new Set([
+      DEPENDENCY_AUDIT_SCRIPT,
+      ...staticCheckPlan().flatMap((check) =>
         check
           .argv({ root: '', qualityBase: '--base=HEAD' })
           .filter((argument) => argument.endsWith('.ts')),
       ),
-    ),
+    ]),
   ].sort()
 }
 
