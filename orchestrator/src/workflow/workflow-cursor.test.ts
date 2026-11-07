@@ -23,6 +23,8 @@ import {
   database,
   installEvidence,
   matchingCheckout,
+  prepareOperatorRulingCursor,
+  relayOperatorRuling,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
@@ -542,49 +544,15 @@ describe('workflow cursor adapter', () => {
 
   test('a relayed operator ruling preserves the cursor owner and their attach authority', async () => {
     const d = database()
-    const current = productionStepCatalogue(d).definition
-    const draft = setStepCatalogueLocal(
-      {
-        ...current,
-        steps: current.steps.map((step) =>
-          step.slug === 'rebase' ? { ...step, floor: ['ruling'], operatorRuling: true } : step,
-        ),
-      },
-      'relayed operator ruling fixture',
-      'test',
-      d,
-    )
-    promoteStepCatalogueLocal(draft.n, 'relayed operator ruling fixture', 'test', d)
     const ownerContext = { ...context, session: 'session-a' }
-    const relayingContext = { ...context, session: 'session-b' }
-    const composition = composeWorkflowWithCursor(
-      'flow',
-      'fixture',
-      'default',
-      args,
-      ownerContext,
-      d,
-      {},
-      {},
-    )
-    awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', ownerContext, d, () => {})
+    const cursor = prepareOperatorRulingCursor(d, ownerContext.session)
 
-    await ruleWorkflow(
-      'flow',
-      'fixture',
-      'default',
-      args,
-      'Proceed.',
-      true,
-      'cli',
-      relayingContext,
-      d,
-    )
+    await relayOperatorRuling(d, 'session-b')
 
     await expect(
       attachWorkflowText(
         { project: 'fixture', workflow: 'flow', mode: 'default', key: args.key },
-        composition.cursor!.id,
+        cursor,
         'Owner attachment.',
         ownerContext,
         d,
@@ -593,6 +561,27 @@ describe('workflow cursor adapter', () => {
     expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
       session_id: 'session-a',
     })
+  })
+
+  test('a relayed operator ruling assigns an ownerless cursor to the ruling session', async () => {
+    const d = database()
+    const relayingContext = { ...context, session: 'session-b' }
+    const cursor = prepareOperatorRulingCursor(d, null)
+
+    await relayOperatorRuling(d, relayingContext.session)
+
+    expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
+      session_id: 'session-b',
+    })
+    await expect(
+      attachWorkflowText(
+        { project: 'fixture', workflow: 'flow', mode: 'default', key: args.key },
+        cursor,
+        'Ruling session attachment.',
+        relayingContext,
+        d,
+      ),
+    ).resolves.toMatch(/^attached-text:/)
   })
 
   test('a plain operator may rule when the workflow owner is gone', async () => {

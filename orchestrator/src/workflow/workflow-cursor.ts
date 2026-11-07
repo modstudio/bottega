@@ -988,8 +988,9 @@ export async function ruleWorkflow(
         d,
       )
       d.query(
-        `UPDATE workflow_cursor SET state='running',question=NULL,updated_at=? WHERE record_id=?`,
-      ).run(at, row.record_id)
+        `UPDATE workflow_cursor SET state='running',question=NULL,
+       session_id=COALESCE(session_id,?),updated_at=? WHERE record_id=?`,
+      ).run(context.session ?? null, at, row.record_id)
       recordTaskFlowCursorMutation(row.record_id, d)
       return {
         summary: `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
