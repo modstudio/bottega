@@ -10,6 +10,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../collect/collect.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { successorReviewLensInputStatusesFromPrompt } from '../database/review-lens-input-artifact.ts'
 import { appendRunEvent } from '../events.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environment.ts'
@@ -418,6 +419,7 @@ type ResumeLaunchOptions = {
   mcp: ReturnType<typeof mcpRequestFromStored>
   lens: string | undefined
   reviewRole: ReviewRole | undefined
+  lensInputs?: ReturnType<typeof successorReviewLensInputStatusesFromPrompt>
 }
 
 /** Map a stored launch row to the detach options a resumed turn inherits. */
@@ -515,6 +517,7 @@ function continuationLaunch(
 ): ResumeLaunchOptions {
   return {
     ...inherited,
+    lensInputs: continuationLensInputs(id),
     seed: requireContinuationProvision({
       rootId: id,
       treeDecision,
@@ -523,6 +526,17 @@ function continuationLaunch(
       project,
     }).seed,
   }
+}
+
+function continuationLensInputs(rootId: string) {
+  const row = db()
+    .query(
+      `SELECT prompt_path FROM run
+       WHERE (record_id=? OR parent_run_record_id=?) AND prompt_path IS NOT NULL
+       ORDER BY turn DESC, number DESC LIMIT 1`,
+    )
+    .get(rootId, rootId) as { prompt_path: string } | null
+  return successorReviewLensInputStatusesFromPrompt(row?.prompt_path ?? null)
 }
 
 /** What a continuation says when the architect sent no message of their own. */

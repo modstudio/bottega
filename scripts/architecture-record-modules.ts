@@ -410,6 +410,7 @@ export const recordModules: RecordModule[] = [
     './record-release-sync.ts',
     './record-review-read.ts',
     './record-review-values.ts',
+    './record-review-lens-values.ts',
     './record-sync-branch-disposal.ts',
     './record-sync-pull-request-ci.ts',
     './record-sync-contract.ts',
@@ -425,6 +426,7 @@ export const recordModules: RecordModule[] = [
     './score-sync.ts',
     './record-pool.ts',
   ]),
+  module('orchestrator/src/record/record-review-lens-values.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-question-values.ts', []),
   module('orchestrator/src/record/record-sync-task-flow.ts', [
     'bun',

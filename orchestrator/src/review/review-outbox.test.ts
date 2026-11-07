@@ -29,9 +29,9 @@ test('review payload keys conform to the hosted review-family contracts', () => 
     .run()
   database
     .query(`INSERT INTO review_lens
-      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,selection_reason)
+      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,selection_reason,task_text_input,rulings_input)
       VALUES ('01990000-0000-7000-8000-000000000004','01990000-0000-7000-8000-000000000003',
-        '01990000-0000-7000-8000-000000000002','craft','codex','[]','[]','[]','[]','initial')`)
+        '01990000-0000-7000-8000-000000000002','craft','codex','[]','[]','[]','[]','initial','carried','unavailable: no rulings')`)
     .run()
 
   enqueueReview(database, '01990000-0000-7000-8000-000000000003')
@@ -47,6 +47,15 @@ test('review payload keys conform to the hosted review-family contracts', () => 
       [...OUTBOX_PAYLOAD_CONTRACTS[kind].columns].sort(),
     )
   }
+  const lensPayload = database
+    .query<{ payload: string }, []>(
+      "SELECT payload FROM outbox WHERE kind='review_lens' ORDER BY id DESC LIMIT 1",
+    )
+    .get()!
+  expect(JSON.parse(lensPayload.payload)).toMatchObject({
+    taskTextInput: 'carried',
+    rulingsInput: 'unavailable: no rulings',
+  })
   database.close()
 })
 

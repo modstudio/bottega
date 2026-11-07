@@ -17,10 +17,8 @@ export type RepositoryFactsReport = {
   notices: SetupNotice[]
 }
 
-const GIT_TIMEOUT_MS = 3_000
-
 function git(path: string, args: string[]): RepositoryGitCapture {
-  const child = gitAt(path, args, { timeoutMs: GIT_TIMEOUT_MS })
+  const child = gitAt(path, args, { budget: 'git-probe' })
   return {
     exitCode: child.code,
     stdout: child.stdout.trim(),

@@ -104,6 +104,7 @@ export const pullRequestModuleSpecs = [
       'bun:sqlite',
       'node:fs',
       'node:path',
+      '../database/review-lens-input-artifact.ts',
       '../project/projects.ts',
       './review-applicability.ts',
       './review-lens-provenance.ts',
@@ -114,6 +115,10 @@ export const pullRequestModuleSpecs = [
       './review-tier-classifier.ts',
       './review-tier.ts',
     ],
-    typeOnlyAllowed: ['./review-lens-provenance.ts', './review-role.ts'],
+    typeOnlyAllowed: [
+      './review-lens-provenance.ts',
+      './review-role.ts',
+      '../database/review-lens-input-artifact.ts',
+    ],
   },
 ] as const

@@ -8,7 +8,7 @@ import {
   type ReviewTier,
   type ReviewTierFile,
 } from './review-tier-classifier.ts'
-import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
+import type { ReviewLensOwedReason, ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 const BUILT_IN_REVIEW: ReviewSettings = {
   lenses: [{ lens: 'correctness' }, { lens: 'craft', minTier: 2 }, { lens: 'safety', minTier: 3 }],
@@ -24,7 +24,7 @@ export type ApplicableReview = {
   secondOpinion?: string
   lensBases?: Record<string, string>
   secondOpinionBasis?: string
-  lensReasons?: Record<string, ReviewLensSelectionReason>
+  lensReasons?: Record<string, ReviewLensSelectionReason | ReviewLensOwedReason>
 }
 
 export type ReviewFunnelPlan = {
