@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/preload.ts'
@@ -55,6 +55,17 @@ function invoke(databasePath: string, cwd: string, command: string) {
   })
   const output = result.stdout.toString().trim()
   return output ? (JSON.parse(output).hookSpecificOutput as Decision) : null
+}
+
+function setHead(worktree: string, value: string) {
+  const gitDirectory = join(worktree, '.git')
+  mkdirSync(join(gitDirectory, 'objects'), { recursive: true })
+  mkdirSync(join(gitDirectory, 'refs', 'heads'), { recursive: true })
+  writeFileSync(
+    join(gitDirectory, 'config'),
+    '[core]\n\trepositoryformatversion = 0\n\tbare = false\n',
+  )
+  writeFileSync(join(gitDirectory, 'HEAD'), `${value}\n`)
 }
 
 function invokeMany(
@@ -217,6 +228,38 @@ describe('git guard', () => {
         invoke(databasePath, worktree, `git push --delete origin ${branch}`)?.permissionDecision,
       ).toBe('ask')
     }
+  })
+
+  test('allows a HEAD refspec checked out on a feature branch', () => {
+    const { databasePath, outside, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/DEV-1862/head-resolution')
+    expect(
+      invoke(databasePath, outside, `git -C ${worktree} push --force-with-lease origin HEAD`)
+        ?.permissionDecision,
+    ).toBe('allow')
+  })
+
+  test('asks for a HEAD refspec checked out on main', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/main')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('asks for a HEAD refspec from detached HEAD', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, '0000000000000000000000000000000000000000')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('asks for a HEAD refspec when branch resolution fails', () => {
+    const { databasePath, worktree } = fixture()
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
   })
 
   test('allows only listed worktree subcommands without program options', () => {

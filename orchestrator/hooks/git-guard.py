@@ -104,6 +104,7 @@ PROTECTED_BRANCHES = {
 }
 PROTECTED_PREFIXES = ("release/", "releases/")
 BRANCH_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
+HEAD_RESOLVE_TIMEOUT_SECONDS = 2
 
 # Anything that could make the command do more than one thing, or reach a
 # directory other than the one resolved below. A compound is left alone: the
@@ -295,7 +296,22 @@ def ordinary_branch(ref, protected):
     return ref not in protected and not ref.startswith(PROTECTED_PREFIXES)
 
 
-def push_verdict(argv, protected):
+def resolve_head_branch(directory):
+    """Return the branch checked out in directory, or None when it is unknown."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", directory, "symbolic-ref", "--quiet", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=HEAD_RESOLVE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired, TypeError):
+        return None
+    if result.returncode != 0:
+        return None
+    branch = result.stdout.strip()
+    return branch or None
+
+
+def push_verdict(argv, protected, directory):
     """Return safe or ask for a push that can destroy refs, else None."""
     subcommand = git_subcommand_index(argv)
     if subcommand is None or argv[subcommand] != "push":
@@ -346,6 +362,15 @@ def push_verdict(argv, protected):
             destructive = broad = True
 
     refspecs = positional[1:]
+    resolved_head = None
+    has_head_source = any(
+        (spec.removeprefix("+").partition(":")[0] or spec.removeprefix("+")) == "HEAD"
+        for spec in refspecs
+    )
+    if has_head_source:
+        resolved_head = resolve_head_branch(directory)
+        if resolved_head is None:
+            return "ask"
     for spec in refspecs:
         if spec.startswith("+"):
             destructive = broad = True
@@ -353,6 +378,8 @@ def push_verdict(argv, protected):
         src, colon, dst = spec.rpartition(":")
         if colon and not src:
             destructive = True
+        if not colon and spec == "HEAD":
+            dst = resolved_head
         if not ordinary_branch(dst, protected):
             broad = True
 
@@ -517,7 +544,7 @@ def main():
         match = project_for(directory, projects)
         project, root = match if match is not None else (None, None)
 
-        verdict = push_verdict(argv, protected_names(project))
+        verdict = push_verdict(argv, protected_names(project), directory)
         if verdict == "ask":
             return decide("ask", "push can destroy refs on the shared remote")
         if verdict == "safe":
