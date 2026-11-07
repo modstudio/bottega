@@ -87,6 +87,7 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/commands/settings.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/cli-repeat-guard.ts',
     'commander',
     '../settings/settings-apply-commands.ts',
     '../settings/settings-commands.ts',

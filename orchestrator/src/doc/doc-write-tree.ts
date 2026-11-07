@@ -7,6 +7,41 @@ import { type CanonWriteTree, docWriteProjectName } from './doc-write-allowed.ts
 
 export type SelectedDocWriteTree = CanonWriteTree & { project: Project }
 
+export function decideDocWriteTree(input: {
+  shellCheckout: { repositoryIdentity: string | null; toplevel: string | null }
+  subjectProject: { repositoryIdentity: string | null; registeredCheckout: string }
+}): string {
+  const { shellCheckout, subjectProject } = input
+  return shellCheckout.toplevel &&
+    shellCheckout.repositoryIdentity &&
+    subjectProject.repositoryIdentity &&
+    shellCheckout.repositoryIdentity === subjectProject.repositoryIdentity
+    ? shellCheckout.toplevel
+    : subjectProject.registeredCheckout
+}
+
+export async function withDocWriteTreeRemedy<T>(
+  tree: SelectedDocWriteTree | undefined,
+  cwdParameter: '--cwd' | 'cwd',
+  write: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await write()
+  } catch (error) {
+    if (
+      tree &&
+      error instanceof Error &&
+      (error.message.startsWith('refusing canon write;') ||
+        error.message.startsWith('refusing canon removal;'))
+    ) {
+      throw new Error(
+        `${error.message}; judged against ${tree.root}; pass ${cwdParameter} <checkout> to validate against another checkout of ${tree.project.name}`,
+      )
+    }
+    throw error
+  }
+}
+
 function repositoryIdentity(path: string): string | null {
   const main = mainCheckoutOf(path)
   if (!main) return null
@@ -34,6 +69,7 @@ export function selectDocWriteTree(input: {
   scope: string
   subject: string | null
   cwd?: string
+  shellCwd?: string
 }): SelectedDocWriteTree | undefined {
   const projectName = docWriteProjectName(input.scope, input.subject)
   if (!projectName) {
@@ -42,10 +78,29 @@ export function selectDocWriteTree(input: {
   }
   const subjectProject = projectByName(projectName)
   if (!subjectProject) return undefined
-  if (!input.cwd)
-    return input.scope === 'canon'
-      ? { project: subjectProject, root: subjectProject.path }
-      : undefined
+  if (!input.cwd) {
+    if (input.scope !== 'canon') return undefined
+    const shellCwd = input.shellCwd ?? process.cwd()
+    let shellCheckout: { repositoryIdentity: string | null; toplevel: string | null }
+    try {
+      shellCheckout = {
+        repositoryIdentity: repositoryIdentity(shellCwd),
+        toplevel: gitToplevel(shellCwd),
+      }
+    } catch {
+      shellCheckout = { repositoryIdentity: null, toplevel: null }
+    }
+    return {
+      project: subjectProject,
+      root: decideDocWriteTree({
+        shellCheckout,
+        subjectProject: {
+          repositoryIdentity: registeredRepositoryIdentity(subjectProject.path),
+          registeredCheckout: subjectProject.path,
+        },
+      }),
+    }
+  }
   if (!existsSync(input.cwd))
     throw new Error(
       `refusing --cwd ${input.cwd}: it is not a worktree of project ${subjectProject.name}`,

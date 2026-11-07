@@ -2,6 +2,7 @@
 /** Registers documentation and register adapters. Must not own their behavior. */
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { canonLintCommand, dispatchCanonCommand } from '../canon/canon-commands.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
@@ -110,7 +111,8 @@ function options(command: Command, specs: readonly Opt[]): Command {
   for (const [flags, description, repeated] of specs) {
     if (flags.startsWith('--no-') && !['--no-featured', '--no-canon'].includes(flags))
       command.addOption(new PresenceOption(flags, description))
-    else if (repeated) command.option(flags, description, collect, [])
+    else if (repeated)
+      command.addOption(repeatable(new Option(flags, description).argParser(collect).default([])))
     else command.option(flags, description)
   }
   return command

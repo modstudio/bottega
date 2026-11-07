@@ -7,8 +7,11 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { getWorkflowStepWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
-import { abandonCursor } from './workflow-cursor-test.fixture.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor.ts'
+import {
+  abandonCursor,
+  selectAndNextWorkflowStep as nextWorkflowStep,
+} from './workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
   attachedTextReferenceMeetsFloor,

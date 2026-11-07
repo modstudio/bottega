@@ -45,6 +45,7 @@ import {
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
+import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
 import {
   type FloorEvidencePorts,
   productionFloorPorts,
@@ -300,12 +301,25 @@ export async function execCommand(
   const command = argv.slice(3)
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
   const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
+  const commandDirectory = workflowExecCommandCwd(command)
+  const resolvedCommandCwd = commandDirectory === null ? null : resolve(cwd, commandDirectory)
+  const execCheckout = gitToplevel(cwd) ?? cwd
+  const commandCheckout =
+    resolvedCommandCwd === null ? null : (gitToplevel(resolvedCommandCwd) ?? resolvedCommandCwd)
+  const checkoutRefusal = workflowExecCheckoutRefusal(
+    command,
+    execCheckout,
+    resolvedCommandCwd,
+    commandCheckout,
+  )
+  if (checkoutRefusal) throw new Error(checkoutRefusal)
   const registeredProject = projects().some(
     (project) => cwd === project.path || cwd.startsWith(`${project.path}/`),
   )
   const result = await recordWorkflowExec(command, {
     cwd,
     registeredProject,
+    runner: options.probeRunner,
   })
   print(execPrintRecord(result), String(result.id))
   presentCommandOutcome('exec', result, presentation)

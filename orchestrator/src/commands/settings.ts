@@ -1,7 +1,8 @@
 // concern: settings-cli
 /** Owns only the `bottega machine settings` grammar and presentation. */
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import {
   settingsAdoptCommand,
   settingsEnvImportCommand,
@@ -24,6 +25,9 @@ import {
   listMachineSettingsPermissions,
 } from '../settings/settings-machine-permissions.ts'
 import { collect, log, optionFlags } from './support.ts'
+
+const collectedOption = (flags: string, description: string) =>
+  repeatable(new Option(flags, description).argParser(collect).default([]))
 
 function registerSettingsSources(settings: Command): void {
   settings
@@ -249,11 +253,8 @@ export function register(program: Command): void {
     .option('--user', 'target the user settings file')
     .option('--project <name>', 'registered project whose settings are rendered')
     .option('--json', 'write the settings drift report as JSON')
-    .option(
-      '--drop-env <key>',
-      'environment key deliberately removed during rendering',
-      collect,
-      [],
+    .addOption(
+      collectedOption('--drop-env <key>', 'environment key deliberately removed during rendering'),
     )
     .action(async (options) => {
       const flags = optionFlags(options)

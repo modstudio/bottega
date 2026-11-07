@@ -28,7 +28,7 @@ import { type DocHistoryPresentation, docDiffPair } from './doc-history-source.t
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
-import type { SelectedDocWriteTree } from './doc-write-tree.ts'
+import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import {
   diffDocRevisions,
   docSubjects,
@@ -79,6 +79,7 @@ type DocCommandPorts = {
     scope: string
     subject: string | null
     cwd?: string
+    shellCwd?: string
   }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
   consumeResumeHandoff: ConsumeDocHandoff
@@ -212,6 +213,7 @@ function commandDocWriteTree(
     scope,
     subject,
     cwd: flags.flag('cwd'),
+    shellCwd: presentation.cwd(),
   })
   if (tree && !flags.has('json')) presentation.log(`tree: ${tree.root}`)
   return tree
@@ -512,7 +514,8 @@ async function handleSetDocCommand(
       `${PLATFORM_SLUG} doc set <slug> --scope S [--subject X] [--cwd PATH] --title T --reason TEXT [--expect REVISION] (--file F | body on stdin)`,
     )
   }
-  const canonTree = commandDocWriteTree(address.scope, address.subject, flags, presentation, ports)
+  const scope = address.scope
+  const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
   const body = flag('file')
     ? readFileSync(flag('file')!, 'utf8')
     : !presentation.stdinIsTTY
@@ -525,23 +528,25 @@ async function handleSetDocCommand(
   const forceInject = flag('force-inject')
   if (has('force-inject') && !forceInject?.trim())
     throw new Error('--force-inject requires a non-empty reason')
-  const doc = await setDocFromCommand(
-    {
-      ...address,
-      scope: address.scope,
-      slug,
-      title,
-      body,
-      reason,
-      author: flag('author'),
-      forceInject,
-      delivery,
-      ...tree,
-      expectedRevision: flag('expect'),
-      canonTree,
-      collectCanonLintInput: ports.collectCanonLintInput,
-    },
-    sourceFileUpdate,
+  const doc = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
+    setDocFromCommand(
+      {
+        ...address,
+        scope,
+        slug,
+        title,
+        body,
+        reason,
+        author: flag('author'),
+        forceInject,
+        delivery,
+        ...tree,
+        expectedRevision: flag('expect'),
+        canonTree,
+        collectCanonLintInput: ports.collectCanonLintInput,
+      },
+      sourceFileUpdate,
+    ),
   )
   const root = repoRootForDoc(doc, canonTree?.root)
   const warnings = root ? checkDoc(body, { repoRoot: root }) : []
@@ -719,19 +724,22 @@ async function handleRemoveDocCommand(
     throw new Error(
       `${PLATFORM_SLUG} doc rm <slug> --scope S [--subject X] [--cwd PATH] --reason TEXT [--expect REVISION]`,
     )
-  const canonTree = commandDocWriteTree(address.scope, address.subject, flags, presentation, ports)
-  const removed = await removeDoc(
-    address.scope,
-    address.subject,
-    slug,
-    {
-      reason,
-      author: flags.flag('author'),
-      expectedRevision: flags.flag('expect'),
-      canonTree,
-      collectCanonLintInput: ports.collectCanonLintInput,
-    },
-    address.owner,
+  const scope = address.scope
+  const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
+  const removed = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
+    removeDoc(
+      scope,
+      address.subject,
+      slug,
+      {
+        reason,
+        author: flags.flag('author'),
+        expectedRevision: flags.flag('expect'),
+        canonTree,
+        collectCanonLintInput: ports.collectCanonLintInput,
+      },
+      address.owner,
+    ),
   )
   presentation.log(
     flags.has('json')
