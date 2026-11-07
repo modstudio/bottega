@@ -5,6 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import {
+  migratedTestDatabase,
+  prepareMigrationTestDatabases,
+} from '../database/test-database.fixture.ts'
 import { decideTriage } from '../pull-request/triage-decision.ts'
 import type { ReviewPlan } from './review-applicability.ts'
 import {
@@ -26,6 +30,7 @@ let canonicalTreeReal: string
 let canonicalTreeSymlink: string
 
 beforeAll(() => {
+  prepareMigrationTestDatabases()
   canonicalTreeRoot = mkdtempSync(join(tmpdir(), 'review-group-canonical-tree-'))
   canonicalTreeReal = join(canonicalTreeRoot, 'real')
   canonicalTreeSymlink = join(canonicalTreeRoot, 'symlink')
@@ -402,8 +407,7 @@ test('a moved remote trunk is the shared base for review and admission despite s
 
 test('recorded review tree paths are extracted, normalized, and confined to the run tree', () => {
   const decisionFor = (treeInspected?: string) => {
-    const database = new Database(':memory:')
-    applyMigrations(database)
+    const database = migratedTestDatabase()
     const projectId = newRecordId()
     database
       .query(
