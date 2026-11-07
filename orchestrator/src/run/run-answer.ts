@@ -13,6 +13,7 @@ import { ANSWER_WORKING_FORMS } from '../cli/args.ts'
 import { rulingPrompt } from '../contract/contract.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { callerIdentity, db, writableDb, writeTransaction } from '../database/db.ts'
+import { successorReviewLensInputStatusesFromPrompt } from '../database/review-lens-input-artifact.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
@@ -462,8 +463,12 @@ type RetryRunRow = {
   branch_kept_tip: string | null
 }
 
-function retryReviewBindings(row: Pick<RetryRunRow, 'lens' | 'review_role'>) {
-  return { lens: row.lens ?? undefined, reviewRole: row.review_role ?? undefined }
+function retryReviewBindings(row: Pick<RetryRunRow, 'lens' | 'review_role' | 'prompt_path'>) {
+  return {
+    lens: row.lens ?? undefined,
+    reviewRole: row.review_role ?? undefined,
+    lensInputs: successorReviewLensInputStatusesFromPrompt(row.prompt_path),
+  }
 }
 
 function retryAgentBindings(

@@ -394,6 +394,25 @@ describe('round lens plan', () => {
     })
   })
 
+  test("unions a lens's ordinary fix paths with its rebase-owed paths", () => {
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['safety'] },
+        facts: facts({ completedLenses: ['safety'] }),
+        postFix: {
+          kind: 're-lens',
+          reviewNumber: 2,
+          reviewedTip: 'reviewed-tip',
+          fixPaths: ['src/fix.ts', 'src/rebased.ts'],
+          tierThreePaths: ['src/fix.ts'],
+          applicability: { lenses: ['safety'] },
+          reOwedPathsByLens: { safety: ['src/rebased.ts'] },
+        },
+        fixPathsByLens: { safety: ['src/fix.ts'] },
+      }).newlyTouchedPathsByLens,
+    ).toEqual({ safety: ['src/fix.ts', 'src/rebased.ts'] })
+  })
+
   test('a no-round-needed decision selects no round lenses', () => {
     expect(
       applicableRoundLensPlan({

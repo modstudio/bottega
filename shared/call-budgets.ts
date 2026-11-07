@@ -1,5 +1,7 @@
 export type CallBudgetName =
   | 'git-plumbing'
+  | 'git-probe'
+  | 'git-object'
   | 'git-network'
   | 'process-table'
   | 'self-cli'
@@ -22,6 +24,9 @@ const MIB = 1024 * 1024
 
 export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object.freeze({
   'git-plumbing': { deadlineMs: 30_000, outputBytes: 16 * MIB, graceMs: 2_000 },
+  'git-probe': { deadlineMs: 3_000, outputBytes: 16 * MIB, graceMs: 1_000 },
+  /** Whole-object reads (binary patches, blobs) whose size follows the project's content. */
+  'git-object': { deadlineMs: 120_000, outputBytes: 512 * MIB, graceMs: 2_000 },
   'git-network': { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'process-table': { deadlineMs: 10_000, outputBytes: 4 * MIB, graceMs: 1_000 },
   'self-cli': { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },

@@ -135,7 +135,7 @@ function laterRoundReason(
 
 function withLensReasons(
   applicable: ApplicableReview,
-  reasons: Record<string, ReviewLensSelectionReason>,
+  reasons: NonNullable<ApplicableReview['lensReasons']>,
 ): ApplicableReview {
   return Object.keys(reasons).length ? { ...applicable, lensReasons: reasons } : applicable
 }
@@ -248,6 +248,30 @@ function newlyTouchedPathsForRound(
   )
 }
 
+function rebaseOwedPaths(postFix: PostFixReviewDecision): Record<string, string[]> {
+  if (postFix.kind !== 're-lens' || !postFix.reOwedPathsByLens) return {}
+  return Object.fromEntries(
+    Object.entries(postFix.reOwedPathsByLens).map(([lens, paths]) => [lens, [...paths]]),
+  )
+}
+
+function newlyTouchedPathsForPlan(input: {
+  relevant: ApplicableReview
+  facts: RoundLensFacts
+  postFix: PostFixReviewDecision
+  fixPathsByLens: Readonly<Record<string, readonly string[]>>
+}): Record<string, string[]> {
+  const ordinary =
+    input.postFix.kind === 're-lens' || input.postFix.kind === 'comparison-failed'
+      ? newlyTouchedPathsByLens(input)
+      : {}
+  const combined = { ...ordinary }
+  for (const [lens, paths] of Object.entries(rebaseOwedPaths(input.postFix))) {
+    combined[lens] = [...new Set([...(combined[lens] ?? []), ...paths])]
+  }
+  return combined
+}
+
 /** Apply the funnel to the repository decision about whether a later round is needed. */
 export function applicableRoundLensPlan(input: {
   relevant: ApplicableReview
@@ -255,14 +279,7 @@ export function applicableRoundLensPlan(input: {
   postFix: PostFixReviewDecision
   fixPathsByLens: Readonly<Record<string, readonly string[]>>
 }): ReviewFunnelPlan {
-  const newlyTouched =
-    input.postFix.kind === 're-lens' || input.postFix.kind === 'comparison-failed'
-      ? newlyTouchedPathsByLens({
-          relevant: input.relevant,
-          facts: input.facts,
-          fixPathsByLens: input.fixPathsByLens,
-        })
-      : {}
+  const newlyTouched = newlyTouchedPathsForPlan(input)
   const plannedRound = (() => {
     if (input.postFix.kind === 'no-completed-round')
       return withLensReasons(

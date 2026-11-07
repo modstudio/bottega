@@ -32,6 +32,10 @@ import {
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from '../database/migration-compatibility.ts'
+import {
+  type ReviewLensInputStatuses,
+  writeReviewLensInputArtifact,
+} from '../database/review-lens-input-artifact.ts'
 import { type ArtifactPathEvent, recordRunWarning, runEventsPath } from '../events.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -277,6 +281,7 @@ export function prepareFiles(
   recordId: string,
   claimedPrompt: string | null,
   originalPrompt: string,
+  lensInputs?: ReviewLensInputStatuses,
 ) {
   const runDirectory = join(runsDir, recordId)
   mkdirSync(runDirectory, { recursive: true })
@@ -285,6 +290,7 @@ export function prepareFiles(
     outputPath: join(runDirectory, 'output.txt'),
   }
   writeFileSync(paths.promptPath, originalPrompt)
+  if (lensInputs) writeReviewLensInputArtifact(paths.promptPath, lensInputs)
   return paths
 }
 

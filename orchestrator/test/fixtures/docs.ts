@@ -16,7 +16,7 @@ export const setDoc = (input: Omit<TestDocInput, 'reason'> & { reason?: string }
   })
 export const consumeDoc = (
   scope: string,
-  subject: string | null,
+  subject: string | null | undefined,
   slug: string,
   context: { reason: string; author?: string } = { reason: 'test consume' },
 ) => consumeDocument(scope, subject, slug, context)

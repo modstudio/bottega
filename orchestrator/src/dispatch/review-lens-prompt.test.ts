@@ -75,6 +75,27 @@ describe('reviewLensPrompt', () => {
         supplied,
     )
   })
+
+  test('carries task text for every lens and rulings for decision conformance', () => {
+    const prompt = reviewLensPrompt({
+      lens,
+      mechanicallyEnforced: [],
+      earlierRejections: noEarlierRejections,
+      supplied: 'Review the change.',
+      packInputs: {
+        taskTextInput: 'carried',
+        rulingsInput: 'carried',
+        taskText: 'DEV-2078 — Carry task text',
+        rulings: 'Question: Which behavior?\nRuling: The recorded behavior.',
+      },
+    })
+
+    expect(prompt).toContain('TASK TEXT\nDEV-2078 — Carry task text')
+    expect(prompt).toContain(
+      'RECORDED RULINGS\nQuestion: Which behavior?\nRuling: The recorded behavior.',
+    )
+    expect(prompt.indexOf('TASK TEXT')).toBeLessThan(prompt.indexOf('Review the change.'))
+  })
 })
 
 type MemoryRow = ReviewFindingMemory['rows'][number]

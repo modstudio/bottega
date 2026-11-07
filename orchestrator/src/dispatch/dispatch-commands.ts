@@ -35,7 +35,7 @@ import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
 import { decideProbeLaunchOverrides } from './probe-launch-overrides.ts'
-import { reviewLensPrompt } from './review-lens-prompt.ts'
+import { type ReviewLensPackInputs, reviewLensPrompt } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { checkTaskKeyAdmission, type TaskKeyLookup } from './task-key-admission.ts'
 
@@ -107,12 +107,14 @@ function lensPromptFor(
   lensId: string | undefined,
   supplied: string,
   earlierRejections: ReturnType<DispatchPresentation['earlierReviewRejections']>,
+  packInputs?: ReviewLensPackInputs,
 ): string {
   return reviewLensPrompt({
     lens: resolvedFindingsLens(findings, lensId, project?.name ?? null),
     mechanicallyEnforced: projectMechanicalChecks(project),
     earlierRejections,
     supplied,
+    packInputs,
   })
 }
 
@@ -124,12 +126,13 @@ async function compose(
   cwd: string,
   explicitReviewBranch: string | null,
   supplied: string,
+  packInputs?: ReviewLensPackInputs,
 ): Promise<string> {
   const earlier =
     requested.findings && project
       ? presentation.earlierReviewRejections(project.name, cwd, explicitReviewBranch)
       : { project: project?.name ?? '', branch: null, branchLineage: [], rows: [] }
-  return lensPromptFor(project, requested.findings, lens, supplied, earlier)
+  return lensPromptFor(project, requested.findings, lens, supplied, earlier, packInputs)
 }
 
 type DispatchOptions = {
@@ -196,6 +199,11 @@ type DispatchPresentation = {
     cwd: string,
     explicitBranch: string | null,
   ): ReviewFindingMemory
+  reviewLensInputs(
+    project: Project,
+    key: string | undefined,
+    lens: string | undefined,
+  ): Promise<ReviewLensPackInputs>
   detach(
     jobName: string,
     prompt: string,
@@ -265,7 +273,12 @@ export async function warnForUnsettledSpec(
 export async function composeDispatchPrompt(input: {
   presentation: Pick<
     DispatchPresentation,
-    'readPrompt' | 'askTypedQuestion' | 'error' | 'specIdentity' | 'earlierReviewRejections'
+    | 'readPrompt'
+    | 'askTypedQuestion'
+    | 'error'
+    | 'specIdentity'
+    | 'earlierReviewRejections'
+    | 'reviewLensInputs'
   >
   project: Project | null
   requested: ReturnType<typeof job>
@@ -274,8 +287,13 @@ export async function composeDispatchPrompt(input: {
   reviewBranch: string | null
   jobName: string
   continuation: boolean
-}): Promise<string> {
+  key?: string
+}): Promise<{ prompt: string; lensInputs?: ReviewLensPackInputs }> {
   const spec = await input.presentation.readPrompt()
+  const lensInputs =
+    input.requested.findings && input.project
+      ? await input.presentation.reviewLensInputs(input.project, input.key, input.lens)
+      : undefined
   const prompt = await compose(
     input.presentation,
     input.project,
@@ -284,6 +302,7 @@ export async function composeDispatchPrompt(input: {
     input.cwd,
     input.reviewBranch,
     spec,
+    lensInputs,
   )
   await warnForUnsettledSpec(
     {
@@ -296,7 +315,31 @@ export async function composeDispatchPrompt(input: {
     input.presentation.askTypedQuestion,
     input.presentation.error,
   )
-  return prompt
+  return { prompt, ...(lensInputs ? { lensInputs } : {}) }
+}
+
+function composePromptForDispatch(
+  presentation: DispatchPresentation,
+  project: Project | null,
+  requested: ReturnType<typeof job>,
+  lens: string | undefined,
+  cwd: string,
+  reviewBranch: string | null,
+  jobName: string,
+  continuation: boolean,
+  key?: string,
+) {
+  return composeDispatchPrompt({
+    presentation,
+    project,
+    requested,
+    lens,
+    cwd,
+    reviewBranch,
+    jobName,
+    continuation,
+    key,
+  })
 }
 
 function reportGeneralDispatchWarnings(input: {
@@ -612,6 +655,14 @@ function validatedDeliverables(values: string[], jobName: string): string[] {
   return values
 }
 
+function dispatchKeepTree(flags: DispatchFlags) {
+  return keepTreeExemptionFromOption(
+    flags.has('keep-tree'),
+    flags.flag('keep-tree'),
+    flags.flag('keep-tree-reason'),
+  )
+}
+
 export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
@@ -715,21 +766,18 @@ export async function dispatchCommand(
     checkoutHasUncommittedWork: () => checkoutHasUncommittedWork(callerCwd),
     error,
   })
-  const prompt = await composeDispatchPrompt({
+  const { prompt, lensInputs } = await composePromptForDispatch(
     presentation,
-    project: dispatchProject,
+    dispatchProject,
     requested,
     lens,
-    cwd: callerCwd,
-    reviewBranch: resolvedReviewTarget?.branch ?? null,
+    callerCwd,
+    resolvedReviewTarget?.branch ?? null,
     jobName,
-    continuation: Boolean(flag('continue')),
-  })
-  const keepTree = keepTreeExemptionFromOption(
-    has('keep-tree'),
-    flag('keep-tree'),
-    flag('keep-tree-reason'),
+    Boolean(flag('continue')),
+    flag('key'),
   )
+  const keepTree = dispatchKeepTree(flags)
   // A fan-out cannot be run synchronously, and that is not a caller's problem
   // to solve.
   //
@@ -785,6 +833,7 @@ export async function dispatchCommand(
       timeoutMinutes,
       keepTree,
       resolvedTaskBranch,
+      lensInputs,
     })
     recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
     presentation.detachedResult(id, json)
@@ -844,6 +893,7 @@ export async function dispatchCommand(
     timeoutMinutes,
     keepTree,
     resolvedTaskBranch,
+    lensInputs,
   })
   recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
   await follow(id, has('quiet'))

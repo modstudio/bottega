@@ -969,7 +969,7 @@ export async function docCommand(
       sub,
       argv,
       scope,
-      subject,
+      subject: readDocSubject(flags, address),
       flags,
       log: presentation.log,
       handoff: ports.consumeResumeHandoff,

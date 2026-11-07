@@ -70,6 +70,8 @@ export const reviewLens = pgTable.withRLS(
     limits: text(),
     overlap: text(),
     selectionReason: text('selection_reason'),
+    taskTextInput: text('task_text_input'),
+    rulingsInput: text('rulings_input'),
     withheldFields: jsonb('withheld_fields'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

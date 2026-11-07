@@ -2,7 +2,6 @@
 /** Reads a task through the tracker protocol declared by its registered project. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
 import { resolveProjectMcpCommand } from '../mcp/mcp-command.ts'
 import { McpHeadersHelperError, resolveMcpHeaders } from '../mcp/mcp-headers-helper.ts'
@@ -14,6 +13,7 @@ import {
 } from '../mcp/mcp-probe.ts'
 import { callMcpTool } from '../mcp/mcp-tool-list.ts'
 import type { Project } from '../project/projects.ts'
+import { readTaskThroughCli } from './task-cli-read.ts'
 import type { TaskKeyLookupResult } from './task-key-admission.ts'
 
 const errorText = (cause: unknown): string =>
@@ -25,6 +25,59 @@ const processEnvironment = (): Record<string, string> =>
       (entry): entry is [string, string] => entry[1] !== undefined,
     ),
   )
+
+export type LensTaskRead =
+  | {
+      available: true
+      recordId: string
+      key: string
+      title: string
+      body: string
+      comments: string[]
+    }
+  | { available: false; reason: string }
+
+/** Read the task text through the CLI capability declared by the project register. */
+export async function readLensTask(project: Project, key: string): Promise<LensTaskRead> {
+  if (project.settings.tracker?.protocol !== 'hub') {
+    return {
+      available: false,
+      reason: `${project.settings.tracker?.protocol ?? '(missing)'} tracker has no CLI task read`,
+    }
+  }
+  try {
+    const result = await readTaskThroughCli(project, key)
+    if (result.exitCode !== 0) {
+      return {
+        available: false,
+        reason: errorText(result.stderr || result.stdout || `exit ${result.exitCode}`),
+      }
+    }
+    const shown = JSON.parse(result.stdout) as {
+      task?: { record_id?: unknown; key?: unknown; title?: unknown; body?: unknown }
+      comments?: Array<{ body?: unknown }>
+    }
+    if (
+      typeof shown.task?.record_id !== 'string' ||
+      typeof shown.task.key !== 'string' ||
+      typeof shown.task.title !== 'string'
+    ) {
+      return { available: false, reason: 'CLI task read returned no task text' }
+    }
+    return {
+      available: true,
+      recordId: shown.task.record_id,
+      key: shown.task.key,
+      title: shown.task.title,
+      body: typeof shown.task.body === 'string' ? shown.task.body : '',
+      comments: (shown.comments ?? []).flatMap((comment) =>
+        typeof comment.body === 'string' && comment.body.trim() ? [comment.body.trim()] : [],
+      ),
+    }
+  } catch (cause) {
+    return { available: false, reason: errorText(cause) }
+  }
+}
 
 export const trackerLookupFailureCondition = (cause: unknown, config: McpServerConfig): string => {
   const detail = sanitizeProbeError(errorText(cause), probeSecrets(config))
@@ -47,24 +100,8 @@ export function classifyHubTaskLookup(
 
 async function lookupHubTask(project: Project, key: string): Promise<TaskKeyLookupResult> {
   try {
-    const child = Bun.spawn(
-      [
-        ...bottegaEntryArgv(PLATFORM_SLUG),
-        'task',
-        'show',
-        key,
-        '--project',
-        project.name,
-        '--json',
-      ],
-      { cwd: project.path, stdout: 'pipe', stderr: 'pipe', env: { ...process.env } },
-    )
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ])
-    return classifyHubTaskLookup(key, code, stdout, stderr)
+    const result = await readTaskThroughCli(project, key)
+    return classifyHubTaskLookup(key, result.exitCode, result.stdout, result.stderr)
   } catch (cause) {
     return {
       state: 'unreachable',
