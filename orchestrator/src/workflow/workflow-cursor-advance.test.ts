@@ -8,11 +8,8 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import {
-  composeWorkflowWithCursor,
-  getWorkflowStepWithCursor,
-  nextWorkflowStep,
-} from './workflow-cursor.ts'
+import { composeWorkflowWithCursor, getWorkflowStepWithCursor } from './workflow-cursor.ts'
+import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'

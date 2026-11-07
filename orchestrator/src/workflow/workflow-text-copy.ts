@@ -233,20 +233,17 @@ export async function closeCursorWithTextCopy(
   const result =
     input.action === 'next'
       ? nextWorkflowStep(
-          row.workflow_slug,
+          row,
           row.project,
-          row.mode_slug,
           input.args,
           input.note!.trim(),
           input.context,
           database,
           input.evidence,
           input.floorPorts,
-          row.id,
           input.selfRuling,
           input.outcome,
           input.live,
-          row,
         )
       : abandonSelectedWorkflowCursorForClose(
           row,

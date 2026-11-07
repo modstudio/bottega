@@ -9,17 +9,13 @@ import {
   recordTaskFlowCursorMutation,
   selectTaskFlowStage,
 } from './task-flow.ts'
-import {
-  awaitWorkflowRuling,
-  composeWorkflowWithCursor,
-  nextWorkflowStep,
-  ruleWorkflow,
-} from './workflow-cursor.ts'
+import { awaitWorkflowRuling, composeWorkflowWithCursor, ruleWorkflow } from './workflow-cursor.ts'
 import { vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import {
   abandonCursor,
   database as cursorDatabase,
+  selectAndNextWorkflowStep as nextWorkflowStep,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
