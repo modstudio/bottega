@@ -22,6 +22,7 @@ export function decideDocWriteTree(input: {
 
 export async function withDocWriteTreeRemedy<T>(
   tree: SelectedDocWriteTree | undefined,
+  cwdParameter: '--cwd' | 'cwd',
   write: () => Promise<T>,
 ): Promise<T> {
   try {
@@ -34,7 +35,7 @@ export async function withDocWriteTreeRemedy<T>(
         error.message.startsWith('refusing canon removal;'))
     ) {
       throw new Error(
-        `${error.message}; judged against ${tree.root}; pass --cwd <checkout> to validate against another checkout of ${tree.project.name}`,
+        `${error.message}; judged against ${tree.root}; pass ${cwdParameter} <checkout> to validate against another checkout of ${tree.project.name}`,
       )
     }
     throw error
@@ -68,6 +69,7 @@ export function selectDocWriteTree(input: {
   scope: string
   subject: string | null
   cwd?: string
+  shellCwd?: string
 }): SelectedDocWriteTree | undefined {
   const projectName = docWriteProjectName(input.scope, input.subject)
   if (!projectName) {
@@ -78,14 +80,20 @@ export function selectDocWriteTree(input: {
   if (!subjectProject) return undefined
   if (!input.cwd) {
     if (input.scope !== 'canon') return undefined
-    const shellCwd = process.cwd()
+    const shellCwd = input.shellCwd ?? process.cwd()
+    let shellCheckout: { repositoryIdentity: string | null; toplevel: string | null }
+    try {
+      shellCheckout = {
+        repositoryIdentity: repositoryIdentity(shellCwd),
+        toplevel: gitToplevel(shellCwd),
+      }
+    } catch {
+      shellCheckout = { repositoryIdentity: null, toplevel: null }
+    }
     return {
       project: subjectProject,
       root: decideDocWriteTree({
-        shellCheckout: {
-          repositoryIdentity: repositoryIdentity(shellCwd),
-          toplevel: gitToplevel(shellCwd),
-        },
+        shellCheckout,
         subjectProject: {
           repositoryIdentity: registeredRepositoryIdentity(subjectProject.path),
           registeredCheckout: subjectProject.path,

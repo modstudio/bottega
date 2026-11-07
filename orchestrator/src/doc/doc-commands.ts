@@ -79,6 +79,7 @@ type DocCommandPorts = {
     scope: string
     subject: string | null
     cwd?: string
+    shellCwd?: string
   }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
   consumeResumeHandoff: ConsumeDocHandoff
@@ -212,6 +213,7 @@ function commandDocWriteTree(
     scope,
     subject,
     cwd: flags.flag('cwd'),
+    shellCwd: presentation.cwd(),
   })
   if (tree && !flags.has('json')) presentation.log(`tree: ${tree.root}`)
   return tree
@@ -526,7 +528,7 @@ async function handleSetDocCommand(
   const forceInject = flag('force-inject')
   if (has('force-inject') && !forceInject?.trim())
     throw new Error('--force-inject requires a non-empty reason')
-  const doc = await withDocWriteTreeRemedy(canonTree, () =>
+  const doc = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
     setDocFromCommand(
       {
         ...address,
@@ -724,7 +726,7 @@ async function handleRemoveDocCommand(
     )
   const scope = address.scope
   const canonTree = commandDocWriteTree(scope, address.subject, flags, presentation, ports)
-  const removed = await withDocWriteTreeRemedy(canonTree, () =>
+  const removed = await withDocWriteTreeRemedy(canonTree, '--cwd', () =>
     removeDoc(
       scope,
       address.subject,

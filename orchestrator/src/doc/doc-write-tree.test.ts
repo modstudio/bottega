@@ -23,9 +23,6 @@ test("another project's shell checkout picks the registered checkout", () => {
       subjectProject,
     }),
   ).toBe(registeredCheckout)
-})
-
-test('no shell git checkout picks the registered checkout', () => {
   expect(
     decideDocWriteTree({
       shellCheckout: { repositoryIdentity: null, toplevel: null },
