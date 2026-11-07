@@ -91,10 +91,9 @@ const bytes = startBoundedSyncBytes(
 )
 console.log(`sync byte output: [${[...bytes.stdout].join(', ')}] (expected [255, 254, 0, 97])`)
 
-const bom = startBoundedSync(
-  [process.execPath, '-e', "process.stdout.write('\\ufeffok')"],
-  { budget: 'process-table' },
-)
+const bom = startBoundedSync([process.execPath, '-e', "process.stdout.write('\\ufeffok')"], {
+  budget: 'process-table',
+})
 console.log(`sync string BOM: first code point ${bom.stdout.codePointAt(0)} (expected 65279)`)
 
 const server = Bun.serve({
