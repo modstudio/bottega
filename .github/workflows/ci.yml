@@ -201,7 +201,8 @@ jobs:
       - name: Install
         run: bun install --silent
       - name: Install Chromium
-        run: bun run --cwd hub/web playwright install --with-deps chromium
+        timeout-minutes: 6
+        run: scripts/ci/install-chromium.sh hub/web
       - name: Build
         run: bun run --cwd hub/web build
       - name: Smoke
@@ -218,7 +219,8 @@ jobs:
       - name: Install
         run: bun install --silent
       - name: Install Chromium
-        run: bun run --cwd hub/ui playwright install --with-deps chromium
+        timeout-minutes: 6
+        run: scripts/ci/install-chromium.sh hub/ui
       - name: Build stories
         run: bun run --cwd hub/ui storybook:build
       - name: Build view stories
