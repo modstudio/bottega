@@ -7,6 +7,7 @@ import type { ICruiseResult } from 'dependency-cruiser'
 import { CONCERNS } from '../shared/brand.ts'
 import { inspectionGitEnv } from '../shared/git'
 import { modules } from './architecture.ts'
+import { importBoundaries } from './architecture-boundaries.ts'
 import {
   ARCHITECTURE_CRUISE_ENTRIES,
   ARCHITECTURE_CRUISE_ROOTS,
@@ -17,6 +18,10 @@ import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
+import {
+  duplicateImportBoundaryNameViolations,
+  missingTypeOnlyImportBoundaryViolations,
+} from './architecture-type-only-boundaries.ts'
 import {
   architectureUndeclaredModules,
   countUndeclaredModules,
@@ -33,6 +38,9 @@ const BASELINE_FILE = 'scripts/quality/undeclared-modules-baseline.ts'
 const manifestFiles: string[] = modules.map(({ file }) => file)
 const violations: string[] = []
 const manifestFileCounts = new Map<string, number>()
+
+violations.push(...(await missingTypeOnlyImportBoundaryViolations(importBoundaries)))
+violations.push(...duplicateImportBoundaryNameViolations(importBoundaries))
 
 for (const file of manifestFiles) {
   manifestFileCounts.set(file, (manifestFileCounts.get(file) ?? 0) + 1)

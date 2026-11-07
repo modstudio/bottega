@@ -28,6 +28,7 @@ import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
+import { manifestTypeOnlyImportBoundaries } from './architecture-type-only-boundaries.ts'
 import { workflowBoundarySpecs } from './architecture-workflow-boundaries.ts'
 import { worktreeBoundarySpecs } from './architecture-worktree-boundaries.ts'
 
@@ -59,6 +60,7 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
+  ...manifestTypeOnlyImportBoundaries,
   ...proseBoundarySpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
