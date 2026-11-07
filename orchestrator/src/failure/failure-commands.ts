@@ -24,25 +24,27 @@ type PersistedOutputReader = (
 /** Select the narrowly audited replacement for one stored failure kind and error. */
 export function reclassifiedFailureKind(
   failureKind: string | null,
-  error: string,
+  storedError: string,
   harness: string | null = null,
+  output: string | null = null,
 ): FailureKind | null {
-  if (!error) return null
-  const kind = classify(error)
+  const kind = classify(storedError)
   if (
     (failureKind === 'other' || failureKind === null) &&
     (kind === 'quota' || kind === 'billing' || kind === 'auth')
   )
     return kind
-  if (failureKind === 'contract' && harness === 'goose') return gooseVendorFailureKind(error)
+  if (failureKind === 'contract' && harness === 'goose')
+    return gooseVendorFailureKind(output ?? storedError)
   return null
 }
 
 function matchedFailures(all: FailureRow[], readOutput: PersistedOutputReader) {
   return all.flatMap((row) => {
     const output = readOutput(row)
-    const source = output === null ? 'stored error only' : 'output'
-    const kind = reclassifiedFailureKind(row.failure_kind, output ?? row.error, row.harness)
+    const kind = reclassifiedFailureKind(row.failure_kind, row.error, row.harness, output)
+    const source =
+      row.failure_kind === 'contract' && output !== null ? 'output' : 'stored error only'
     return kind ? [{ row, kind, source }] : []
   })
 }

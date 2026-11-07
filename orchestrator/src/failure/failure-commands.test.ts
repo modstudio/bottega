@@ -107,7 +107,7 @@ describe('reclassify-failures', () => {
     })
   })
 
-  test('uses persisted output before stored error and reports both evidence sources', () => {
+  test('uses persisted output for Goose contract failures and reports both evidence sources', () => {
     const fromOutput = addRun({
       agent: 'codex',
       job: 'review-lens',
@@ -145,6 +145,26 @@ describe('reclassify-failures', () => {
     })
     expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(fromError)).toEqual({
       failure_kind: 'quota',
+    })
+  })
+
+  test('does not use persisted output to reclassify an other failure', () => {
+    const recordId = addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'other',
+    })
+    const outputPath = trackResidue(join(dir, `reclassify-${recordId}.txt`))
+    writeFileSync(outputPath, '429 Too Many Requests: rate limit exceeded')
+    db()
+      .query('UPDATE run SET output_path=?, error=? WHERE record_id=?')
+      .run(outputPath, 'reqwest error sending request', recordId)
+
+    const applied = runCli('reclassify-failures')
+    expect(new TextDecoder().decode(applied.stdout)).toContain('PLAN (0 matched rows)')
+    expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(recordId)).toEqual({
+      failure_kind: 'other',
     })
   })
 
