@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  ajvFailures,
-  CONTRACT_FAILURE_LIMIT,
-  type AjvValidationFailure,
-} from '../transport/ajv-validator.ts'
 import { READER_SCHEMA } from './contract.ts'
-import { parseWorkerReplyWithCount } from './contract-reply.ts'
+import {
+  CONTRACT_FAILURE_LIMIT,
+  type ContractValidationFailure,
+  contractValidationFailures,
+  parseWorkerReplyWithCount,
+} from './contract-reply.ts'
 import { valueMatchesReplySchema } from './contract-reply-validator.ts'
 
 describe('worker contract validation failures', () => {
@@ -76,7 +76,7 @@ describe('worker contract validation failures', () => {
   })
 
   test('failure rendering keeps the limit and counts what was left out', () => {
-    const errors: AjvValidationFailure[] = Array.from(
+    const errors: ContractValidationFailure[] = Array.from(
       { length: CONTRACT_FAILURE_LIMIT + 3 },
       (_, index) => ({
         instancePath: `/field${index}`,
@@ -85,7 +85,7 @@ describe('worker contract validation failures', () => {
       }),
     )
 
-    const failures = ajvFailures(errors)
+    const failures = contractValidationFailures(errors)
     expect(failures).toHaveLength(CONTRACT_FAILURE_LIMIT)
     expect(failures.at(-1)).toBe(
       `/field${CONTRACT_FAILURE_LIMIT - 1} type: must be string; 3 more failures left out`,

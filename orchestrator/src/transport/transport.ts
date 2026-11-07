@@ -1,17 +1,13 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { assetPath } from '../../../shared/install-root.ts'
+import { contractValidationFailures, validationErrorMessage } from '../contract/contract-reply.ts'
 import type { FailureKind } from '../failure/failure.ts'
 import { classify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
-import {
-  ajvFailures,
-  type AjvValidator,
-  errorMessage,
-  type SchemaValidationResult,
-} from './ajv-validator.ts'
+import type { AjvValidator, SchemaValidationResult } from './ajv-validator.ts'
 import { loadAjvValidator } from './ajv-validator-loader.ts'
 import type { CodexAskExposure } from './codex-ask-exposure.ts'
 import type { QuotaReadings } from './quota-readings.ts'
@@ -751,9 +747,14 @@ export function valueMatchesStrictSchema(
   const validator = loadValidator()
   try {
     const validate = validator.compile(schema)
-    return validate(value) ? { ok: true } : { ok: false, failures: ajvFailures(validate.errors) }
+    return validate(value)
+      ? { ok: true }
+      : { ok: false, failures: contractValidationFailures(validate.errors) }
   } catch (error) {
-    return { ok: false, failures: [`schema did not compile: ${errorMessage(error)}`] }
+    return {
+      ok: false,
+      failures: [`schema did not compile: ${validationErrorMessage(error)}`],
+    }
   }
 }
 

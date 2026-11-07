@@ -1,11 +1,16 @@
 // concern: contract
 /** Lazily loads Ajv and adapts strict JSON Schema validation to worker-reply leniency. */
 
-import { ajvFailures, type AjvValidateFunction, errorMessage } from '../transport/ajv-validator.ts'
 import { loadAjvValidator } from '../transport/ajv-validator-loader.ts'
-import type { SchemaValidatorPort } from './contract-reply.ts'
+import {
+  contractValidationFailures,
+  type SchemaValidatorPort,
+  validationErrorMessage,
+} from './contract-reply.ts'
 
-const compiledReplyValidators = new WeakMap<object, AjvValidateFunction>()
+type CompiledReplyValidator = ReturnType<ReturnType<typeof loadAjvValidator>['compile']>
+
+const compiledReplyValidators = new WeakMap<object, CompiledReplyValidator>()
 
 const schemaMapKeywords = [
   '$defs',
@@ -63,8 +68,13 @@ export const valueMatchesReplySchema: SchemaValidatorPort = (value, schema) => {
       validate = validator.compile(withoutAdditionalProperties(schema) as object)
       compiledReplyValidators.set(schema, validate)
     } catch (error) {
-      return { ok: false, failures: [`schema did not compile: ${errorMessage(error)}`] }
+      return {
+        ok: false,
+        failures: [`schema did not compile: ${validationErrorMessage(error)}`],
+      }
     }
   }
-  return validate(value) ? { ok: true } : { ok: false, failures: ajvFailures(validate.errors) }
+  return validate(value)
+    ? { ok: true }
+    : { ok: false, failures: contractValidationFailures(validate.errors) }
 }
