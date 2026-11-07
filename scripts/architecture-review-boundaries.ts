@@ -52,7 +52,7 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-lens-provenance.ts',
-    allowed: ['node:path'],
+    allowed: ['node:path', '../database/review-lens-input-artifact.ts'],
     typeOnlyAllowed: ['./review-vocabulary.ts'],
   },
   {
@@ -294,6 +294,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../../../shared/brand.ts',
       '../../../shared/record/schema.ts',
       '../database/db.ts',
+      '../database/review-lens-input-artifact.ts',
       './review-outbox.ts',
       './review-number.ts',
       '../contract/contract.ts',
@@ -384,7 +385,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-lens-provenance-boundary',
     file: 'orchestrator/src/review/review-lens-provenance.ts',
-    allowed: ['node:path'],
+    allowed: ['node:path', '../database/review-lens-input-artifact.ts'],
     typeOnlyAllowed: ['./review-vocabulary.ts'],
     reason: 'Keep review provenance admission a pure decision over canonical subject facts.',
   },

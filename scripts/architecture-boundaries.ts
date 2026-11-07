@@ -148,7 +148,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'checkout-identity-boundary',
     'orchestrator/src/git/checkout-identity.ts',
-    ['node:fs', 'node:path', './git-environment.ts', '../project/projects.ts'],
+    [
+      'node:fs',
+      'node:path',
+      '../../../shared/bounded-process.ts',
+      './git-environment.ts',
+      '../project/projects.ts',
+    ],
     'Keep checkout addressing independent of databases and lifecycle policy.',
   ),
   boundary(
@@ -305,7 +311,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/dispatch/review-lens-prompt.ts',
     [],
     'Keep review-lens prompt composition a pure decision over lens text and supplied prompt.',
-    ['./review-memory.ts'],
+    ['./review-memory.ts', '../database/review-lens-input-artifact.ts'],
   ),
   ...docBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
   boundary(
@@ -458,6 +464,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../review/review-target.ts',
       './route.ts',
       '../dispatch/probe-launch-overrides.ts',
+      '../database/review-lens-input-artifact.ts',
     ],
   ),
   boundary(
@@ -474,6 +481,8 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       'node:os',
       'node:path',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../../../shared/git.ts',
       '../../../shared/git-path-list.ts',
     ],

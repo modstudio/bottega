@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
+import { startBoundedSync } from './bounded-process.ts'
+import { BoundExceededError, type CallBudgetName } from './call-budgets.ts'
 
 /**
  * Hermetic git against a chosen tree.
@@ -31,17 +33,16 @@ function localEnvVarQueryEnv(): NodeJS.ProcessEnv {
 function localEnvVarNames(): string[] {
   if (listedLocalEnvVars) return listedLocalEnvVars
   try {
-    const result = Bun.spawnSync(['git', 'rev-parse', '--local-env-vars'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const result = startBoundedSync(['git', 'rev-parse', '--local-env-vars'], {
+      budget: 'git-plumbing',
       env: localEnvVarQueryEnv(),
     })
     if (result.exitCode !== 0) {
       throw new Error(
-        `refusing operational git: git rev-parse --local-env-vars failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,
+        `refusing operational git: git rev-parse --local-env-vars failed with exit ${result.exitCode}: ${result.stderr.trim() || 'no error output'}`,
       )
     }
-    const names = result.stdout.toString().split(/\s+/).filter(Boolean)
+    const names = result.stdout.split(/\s+/).filter(Boolean)
     // GIT_DIR is the minimum useful answer, not a fallback list. Without it,
     // the query cannot establish that repository routing will be removed.
     if (!names.includes('GIT_DIR')) {
@@ -52,6 +53,7 @@ function localEnvVarNames(): string[] {
     listedLocalEnvVars = names
     return names
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     if (error instanceof Error && error.message.startsWith('refusing operational git:')) throw error
     throw new Error(
       `refusing operational git: could not run git rev-parse --local-env-vars: ${String(error)}`,
@@ -98,7 +100,7 @@ type GitResult = { code: number; stdout: string; timedOut: boolean }
 export function gitAt(
   path: string,
   args: string[],
-  options: { timeoutMs?: number } = {},
+  options: { budget?: CallBudgetName } = {},
 ): GitResult {
   if (!existsSync(path)) return { code: 128, stdout: '', timedOut: false }
   try {
@@ -106,18 +108,21 @@ export function gitAt(
     delete env.LANGUAGE
     env.LC_ALL = 'C'
     env.LANG = 'C'
-    const result = Bun.spawnSync(['git', '-C', path, '--no-optional-locks', ...args], {
+    const result = startBoundedSync(['git', '-C', path, '--no-optional-locks', ...args], {
+      budget: options.budget ?? 'git-plumbing',
       env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
     })
     return {
-      code: result.exitCode ?? 128,
-      stdout: result.stdout?.toString() ?? '',
-      timedOut: result.exitedDueToTimeout === true,
+      code: result.exitCode,
+      stdout: result.stdout,
+      timedOut: false,
     }
-  } catch {
+  } catch (error) {
+    // A deadline breach keeps the timed-out answer callers report; an output breach still escapes.
+    if (error instanceof BoundExceededError && error.bound === 'deadline') {
+      return { code: 128, stdout: '', timedOut: true }
+    }
+    if (error instanceof BoundExceededError) throw error
     return { code: 128, stdout: '', timedOut: false }
   }
 }
@@ -177,14 +182,16 @@ export function mainCheckoutOf(
   if (!existsSync(cwd)) return null
   const borrowed = borrowedCheckoutOf(cwd)
   if (borrowed) return borrowed
-  const result = Bun.spawnSync(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
-    cwd,
-    env: env ?? inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
+  const result = startBoundedSync(
+    ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+    {
+      budget: 'git-plumbing',
+      cwd,
+      env: env ?? inspectionGitEnv(),
+    },
+  )
   if (result.exitCode !== 0) return null
-  const common = result.stdout.toString().trim()
+  const common = result.stdout.trim()
   return common ? dirname(common) : null
 }
 

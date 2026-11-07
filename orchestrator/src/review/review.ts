@@ -4,10 +4,30 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { ReviewReply } from '../contract/contract.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import {
+  type ReviewLensInputStatus,
+  readReviewLensInputArtifact,
+  unavailableStatus,
+} from '../database/review-lens-input-artifact.ts'
 import { nextReviewNumber } from './review-number.ts'
 import { enqueueReview } from './review-outbox.ts'
 
 export { parseReviewOutput, parseReviewReply } from '../contract/contract.ts'
+
+function recordedLensInputStatuses(
+  lens: string | null,
+  promptPath: string | null,
+): { taskTextInput: ReviewLensInputStatus | null; rulingsInput: ReviewLensInputStatus | null } {
+  const artifact = readReviewLensInputArtifact(promptPath)
+  if (artifact.outcome === 'statuses') return artifact
+  if (lens !== 'decision-conformance') return { taskTextInput: null, rulingsInput: null }
+  const status = unavailableStatus(
+    artifact.outcome === 'absent'
+      ? 'input statuses were not carried to this run'
+      : 'input statuses could not be read',
+  )
+  return { taskTextInput: status, rulingsInput: status }
+}
 
 import { job } from '../jobs/jobs.ts'
 import { currentCoverage, projectRecord, reviewBranchNames } from './review-coverage.ts'
@@ -560,7 +580,7 @@ function loadFindingsRuns(entries: { runId: string }[], database: Database): Run
     const run = database
       .query(
         `SELECT record_id, agent, model, lens, review_role, job, status, output_path, input_tree, head_commit, repo, project_record_id,
-              base_commit, review_ref, changed_paths, branch, launch_key, selection_reason
+              base_commit, review_ref, changed_paths, branch, launch_key, selection_reason,prompt_path
          FROM run WHERE record_id=?`,
       )
       .get(runId) as RunRow | null
@@ -586,6 +606,22 @@ function reviewProjectName(database: Database, projectRecordId: string | null): 
   )
 }
 
+function measuredReviewForRuns(runs: readonly RunRow[], database: Database) {
+  const run = runs[0]!
+  if (!run.project_record_id || !run.head_commit) return null
+  const project = database
+    .query<{ name: string; path: string; settings: string }, [string]>(
+      'SELECT name,path,settings FROM project WHERE record_id=?',
+    )
+    .get(run.project_record_id)
+  if (!project) return null
+  return measureReviewChange(
+    project.path,
+    { name: project.name, settings: JSON.parse(project.settings) },
+    run.head_commit,
+  )
+}
+
 export function recordReviews(
   entries: { runId: string; output: ReviewReply }[],
   database: Database = writableDb(),
@@ -607,21 +643,7 @@ export function recordReviews(
         .join('\n')}`,
     )
   }
-  const measured = (() => {
-    const run = runs[0]!
-    if (!run.project_record_id || !run.head_commit) return null
-    const project = database
-      .query<{ name: string; path: string; settings: string }, [string]>(
-        'SELECT name,path,settings FROM project WHERE record_id=?',
-      )
-      .get(run.project_record_id)
-    if (!project) return null
-    return measureReviewChange(
-      project.path,
-      { name: project.name, settings: JSON.parse(project.settings) },
-      run.head_commit,
-    )
-  })()
+  const measured = measuredReviewForRuns(runs, database)
   const [projectRecordId, role] = reviewProjectAndRole(runs)
   const pathSet = measured ? serializePathSet(measured.pathSet) : null
   const reviewRecordId = writeTransaction(() => {
@@ -661,8 +683,9 @@ export function recordReviews(
     const insertLens = database.query(
       `INSERT INTO review_lens
          (record_id, review_record_id, run_record_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
-          files_covered, commands_run, could_not_verify, mcp_tools, docs_read, substitutes, selection_reason)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+          files_covered, commands_run, could_not_verify, mcp_tools, docs_read, substitutes, selection_reason,
+          task_text_input,rulings_input)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     const insert = database.query(
       `INSERT INTO review_finding
@@ -672,6 +695,7 @@ export function recordReviews(
     let ordinal = 0
     entries.forEach(({ output }, index) => {
       const run = runs[index]!
+      const inputStatuses = recordedLensInputStatuses(run.lens, run.prompt_path)
       output.provenance.files_covered = output.provenance.files_covered.map(normalizeCoveredPath)
       const lens = insertLens.get(
         newRecordId(),
@@ -690,6 +714,8 @@ export function recordReviews(
         JSON.stringify(output.provenance.docs_read),
         JSON.stringify(output.provenance.substitutes),
         run.selection_reason ?? 'operator-ordered',
+        inputStatuses.taskTextInput,
+        inputStatuses.rulingsInput,
       ) as { record_id: string }
       output.findings.forEach((finding) => {
         insert.run(
