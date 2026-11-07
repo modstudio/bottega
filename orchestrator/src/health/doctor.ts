@@ -242,8 +242,9 @@ export function reportCheckoutRegister<T extends RegisteredCheckout>(
   const inspectionsByProject = new Map(
     inspections.map((inspection) => [inspection.project, inspection]),
   )
-  const questions = projectRegisterQuestions(projects, (project) =>
-    inspectionsByProject.get(project)!.branch.problems,
+  const questions = projectRegisterQuestions(
+    projects,
+    (project) => inspectionsByProject.get(project)!.branch.problems,
   )
   if (questions.length) {
     log('\nregister questions (not run failures):')
