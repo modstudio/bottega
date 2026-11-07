@@ -2,7 +2,11 @@
 /** Finds a completed round's reviewed tip and decides whether its fix needs a narrow re-lens. */
 
 import type { Database } from 'bun:sqlite'
-import { nulPathListArgs, splitNulNameStatus } from '../../../shared/git-path-list.ts'
+import {
+  nulPathListArgs,
+  splitNulNameStatus,
+  splitNulPaths,
+} from '../../../shared/git-path-list.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
 import {
   type ApplicableReview,
@@ -10,7 +14,6 @@ import {
   applicableReview,
   selectReviewApplicability,
 } from './review-applicability.ts'
-import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
 import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
@@ -56,7 +59,6 @@ export type PostFixReviewDecision =
       fixPaths: string[]
       tierThreePaths: string[]
       applicability: ApplicableReview
-      reOwedPathsByLens?: Readonly<Record<string, readonly string[]>>
     }
   | {
       kind: 'no-round-needed'
@@ -72,6 +74,7 @@ export type PostFixReviewDecision =
       fixPaths: string[]
       tierThreePaths: string[]
       applicability: ApplicableReview
+      reOwedPathsByLens?: Readonly<Record<string, readonly string[]>>
     }
 
 export type PerPathPatch = ReviewTierFile & { patchId: string }
@@ -86,6 +89,14 @@ export type RebaseFileComparison = {
 export type RebaseCarryDecision = {
   fixFiles: ReviewTierFile[]
   reOwedPathsByLens: Readonly<Record<string, readonly string[]>>
+}
+
+function recordedPathIncludes(path: string, claim: string): boolean {
+  const normalized = claim.trim().replace(/^\.\//, '')
+  return (
+    normalized.length > 0 &&
+    (normalized === path || normalized.endsWith(`/${path}`) || path.endsWith(`/${normalized}`))
+  )
 }
 
 /** Decide review carry from per-file replay facts and recorded lens coverage. */
@@ -107,7 +118,9 @@ export function rebaseCarryDecision(input: {
   const changedPaths = fixFiles.map(({ path }) => path)
   const reOwedPathsByLens = Object.fromEntries(
     Object.entries(input.pathsByLens).flatMap(([lens, covered]) => {
-      const paths = changedPaths.filter((path) => filesCoveredIntersectChanged([path], covered))
+      const paths = changedPaths.filter((path) =>
+        covered.some((claim) => recordedPathIncludes(path, claim)),
+      )
       return paths.length ? [[lens, paths] as const] : []
     }),
   )
@@ -354,20 +367,21 @@ function mergeTreeReplay(input: {
   currentBase: string
   reviewedTip: string
 }): { tree: string; conflictedPaths: string[] } {
-  const replay = git(input.repo, [
-    'merge-tree',
-    '--write-tree',
-    '--name-only',
-    '-z',
-    `--merge-base=${input.reviewedBase}`,
-    input.currentBase,
-    input.reviewedTip,
-  ])
-  const fields = new TextDecoder().decode(replay.stdout).split('\0')
-  const tree = fields.shift()?.trim() ?? ''
+  const replay = git(
+    input.repo,
+    nulPathListArgs([
+      'merge-tree',
+      '--write-tree',
+      '--name-only',
+      '--no-messages',
+      '-z',
+      `--merge-base=${input.reviewedBase}`,
+      input.currentBase,
+      input.reviewedTip,
+    ]),
+  )
+  const [tree = '', ...conflictedPaths] = splitNulPaths(new TextDecoder().decode(replay.stdout))
   if (!/^[0-9a-f]{40,64}$/.test(tree)) throw new Error(replay.err)
-  const separator = fields.indexOf('')
-  const conflictedPaths = fields.slice(0, separator < 0 ? fields.length : separator)
   return { tree, conflictedPaths }
 }
 

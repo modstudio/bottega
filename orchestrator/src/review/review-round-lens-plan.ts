@@ -255,6 +255,19 @@ function rebaseOwedPaths(postFix: PostFixReviewDecision): Record<string, string[
   )
 }
 
+function newlyTouchedPathsForPlan(input: {
+  relevant: ApplicableReview
+  facts: RoundLensFacts
+  postFix: PostFixReviewDecision
+  fixPathsByLens: Readonly<Record<string, readonly string[]>>
+}): Record<string, string[]> {
+  const ordinary =
+    input.postFix.kind === 're-lens' || input.postFix.kind === 'comparison-failed'
+      ? newlyTouchedPathsByLens(input)
+      : {}
+  return { ...ordinary, ...rebaseOwedPaths(input.postFix) }
+}
+
 /** Apply the funnel to the repository decision about whether a later round is needed. */
 export function applicableRoundLensPlan(input: {
   relevant: ApplicableReview
@@ -262,16 +275,7 @@ export function applicableRoundLensPlan(input: {
   postFix: PostFixReviewDecision
   fixPathsByLens: Readonly<Record<string, readonly string[]>>
 }): ReviewFunnelPlan {
-  const newlyTouched = {
-    ...(input.postFix.kind === 're-lens' || input.postFix.kind === 'comparison-failed'
-      ? newlyTouchedPathsByLens({
-          relevant: input.relevant,
-          facts: input.facts,
-          fixPathsByLens: input.fixPathsByLens,
-        })
-      : {}),
-    ...rebaseOwedPaths(input.postFix),
-  }
+  const newlyTouched = newlyTouchedPathsForPlan(input)
   const plannedRound = (() => {
     if (input.postFix.kind === 'no-completed-round')
       return withLensReasons(
