@@ -437,13 +437,13 @@ describe('task-linked workflow text preservation', () => {
           key: 'STAR-6294',
           record_id: 'task-dev-1975',
           project: 'fixture',
-          source: 'linear',
+          source: 'git',
         },
       ],
       documents,
     )
     const expected =
-      `task STAR-6294 is kept in its project's own tracker (linear); workflow text copy does not support it, ` +
+      `task STAR-6294 is kept in its project's own tracker; workflow text copy does not support it, ` +
       `and each text stays readable with ${PLATFORM_SLUG} workflow text show <reference>: ${references.join(', ')}`
     const reports = [workflowTextCopyReport(result), workflowTextUncopiedReport(result)]
 
@@ -455,6 +455,40 @@ describe('task-linked workflow text preservation', () => {
       expect.objectContaining({ kind: 'live', body: 'first external text' }),
       expect.objectContaining({ kind: 'live', body: 'second external text' }),
     ])
+  })
+
+  test("a task whose source is 'local' copies every text normally", async () => {
+    const d = database()
+    const cursor = open(d)
+    linkCursor(d, cursor)
+    await attachWorkflowTextByHandle(cursor, 'first local text', context, d)
+    await attachWorkflowTextByHandle(cursor, 'second local text', context, d)
+    const fake = documentFake()
+
+    const result = await copyWorkflowTextForCursor(
+      cursorForWorkflowTextCopy(cursor, d),
+      d,
+      async () => [
+        {
+          key: 'DEV-1975',
+          record_id: 'task-dev-1975',
+          project: 'fixture',
+          source: 'local',
+        },
+      ],
+      fake.ports,
+    )
+    const reports = [workflowTextCopyReport(result), workflowTextUncopiedReport(result)]
+
+    expect(fake.created.map((row) => row.body)).toEqual(['first local text', 'second local text'])
+    expect(
+      d.query<{ count: number }, []>('SELECT COUNT(*) count FROM workflow_text_copy').get()?.count,
+    ).toBe(2)
+    expect(result.copied).toHaveLength(2)
+    expect(result.unsupported).toBeNull()
+    expect(
+      reports.every((report) => !report.includes('workflow text copy does not support it')),
+    ).toBe(true)
   })
 
   test('the close service copies through a context-only task link and leaves a redirect', async () => {

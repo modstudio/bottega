@@ -132,7 +132,7 @@ function unsupportedCopyResult(
     uncopied: [],
     unsupported: {
       reason:
-        `task ${task.key} is kept in its project's own tracker (${task.source}); ` +
+        `task ${task.key} is kept in its project's own tracker; ` +
         `workflow text copy does not support it, and each text stays readable with ${PLATFORM_SLUG} workflow text show <reference>: ${references}`,
     },
   }
