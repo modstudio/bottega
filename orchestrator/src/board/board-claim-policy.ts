@@ -3,7 +3,6 @@ import { pathTagRefusal } from './board-tags.ts'
 import { boardTextSecretRefusal } from './board-text-secret.ts'
 
 export const BOARD_CLAIM_DEFAULT_MS = 4 * 60 * 60 * 1000
-export const DEFAULT_TASK_KEY_PATTERN = '^[A-Z][A-Z0-9]+-[0-9]+$'
 const BOARD_CLAIM_MAX_MS = 24 * 60 * 60 * 1000
 const BOARD_CLAIM_RESOURCE_MAX_CHARS = 200
 
@@ -96,7 +95,7 @@ export function releaseTaskKey(expression: string, keyPattern: string): string {
   const key = (trimmed.startsWith('task:') ? trimmed.slice('task:'.length) : trimmed).trim()
   if (new RegExp(keyPattern).test(key)) return key
   throw new Error(
-    `invalid task key ${JSON.stringify(expression)}; use <KEY> or task:<KEY>, for example DEV-123`,
+    `invalid task key ${JSON.stringify(expression)}; use <KEY> or task:<KEY> matching ${keyPattern}`,
   )
 }
 

@@ -632,6 +632,35 @@ test('release-task normalizes a task subject before releasing a local claim', as
   })
 })
 
+test('release-task normalizes before hosted release and refuses another shape before calling', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const calls: { project: string; projectId?: string | null; key: string }[] = []
+  const client = {
+    ...createMemoryRecordApiClient(),
+    releaseBoardTaskClaims: async (input: (typeof calls)[number]) => {
+      calls.push(input)
+      return { released: 1 }
+    },
+  }
+  const project = db()
+    .query<{ record_id: string }, []>(
+      "SELECT record_id FROM project WHERE name='board-route-project'",
+    )
+    .get()
+  if (!project) throw new Error('board-route-project fixture is missing')
+
+  await expect(
+    boardClaimReleaseTask('task:DEV-1', 'board-route-project', { env, client }),
+  ).resolves.toEqual({ released: 1 })
+  expect(calls).toEqual([
+    { key: 'DEV-1', project: 'board-route-project', projectId: project.record_id },
+  ])
+  await expect(
+    boardClaimReleaseTask('path:DEV-1', 'board-route-project', { env, client }),
+  ).rejects.toThrow('use <KEY> or task:<KEY> matching')
+  expect(calls).toHaveLength(1)
+})
+
 test('a local claim run id is exposed as an opaque string', async () => {
   const inserted = db()
     .query(

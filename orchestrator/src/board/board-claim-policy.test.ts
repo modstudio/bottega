@@ -72,7 +72,7 @@ test('release task keys accept bare and task subject forms while refusing other 
   expect(releaseTaskKey('DEV-1', pattern)).toBe('DEV-1')
   expect(releaseTaskKey('task:DEV-1', pattern)).toBe('DEV-1')
   for (const expression of ['path:DEV-1', 'task:', 'dev 1'])
-    expect(() => releaseTaskKey(expression, pattern)).toThrow('use <KEY> or task:<KEY>')
+    expect(() => releaseTaskKey(expression, pattern)).toThrow('use <KEY> or task:<KEY> matching')
 })
 
 test('take decision covers take, renewal, refusal, stale takeover, and operator force', () => {

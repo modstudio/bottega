@@ -9,6 +9,7 @@ import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
+import { DEFAULT_TASK_KEY_PATTERN } from '../project/project-settings.ts'
 import { projectAt, projectByName, projectRowByName } from '../project/projects.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -31,11 +32,7 @@ import {
   fileAcceptedAnswerNote,
   resolveAcceptedAnswerNoteLabel,
 } from './board-answer-note.ts'
-import {
-  BOARD_CLAIM_DEFAULT_MS,
-  DEFAULT_TASK_KEY_PATTERN,
-  releaseTaskKey,
-} from './board-claim-policy.ts'
+import { BOARD_CLAIM_DEFAULT_MS, releaseTaskKey } from './board-claim-policy.ts'
 import {
   type ClaimView,
   claimProject,
