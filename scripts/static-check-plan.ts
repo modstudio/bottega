@@ -150,6 +150,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   ),
   script('scripts/check-record-migration-force-rls-lifts.ts', run),
   script('scripts/check-record-trigger-bypass.ts', run),
+  script('scripts/check-space-teardown-tables.ts', run),
   script('scripts/check-postgres-array-bindings.ts', run),
   script('scripts/check-record-jsonb-string-checks.ts', run),
   script('scripts/check-record-sql-pool.ts', run),
