@@ -50,9 +50,31 @@ test('loads branch attribution, ambiguity, retired projects, and incomplete CI',
     'DEV-2-conflict',
     'DEV-2-conflict',
   )
+  insertRun.run(
+    '01990000-0000-7000-8000-000000000203',
+    3,
+    '2026-10-09T00:30:00Z',
+    'codex',
+    'review-lens',
+    activeId,
+    'DEV-1',
+    'feature-one',
+    'feature-one',
+  )
   database
     .query("UPDATE run SET lens='issue-blast-radius' WHERE record_id=?")
     .run('01990000-0000-7000-8000-000000000201')
+  database
+    .query('UPDATE run SET worktree=?,head_commit=?,review_provenance=? WHERE record_id=?')
+    .run(
+      '/missing/trees/subject',
+      'abcdef1234567890',
+      JSON.stringify({
+        tree_inspected: '/missing/trees/other',
+        reviewed_commit: 'abcdef1',
+      }),
+      '01990000-0000-7000-8000-000000000203',
+    )
   const supplementaryReviewId = '01990000-0000-7000-8000-000000000211'
   database
     .query(
@@ -66,6 +88,19 @@ test('loads branch attribution, ambiguity, retired projects, and incomplete CI',
        VALUES ('01990000-0000-7000-8000-000000000212',?,?,'issue-blast-radius','codex','[]','[]','[]','[]')`,
     )
     .run(supplementaryReviewId, '01990000-0000-7000-8000-000000000201')
+  const mismatchedRoundId = '01990000-0000-7000-8000-000000000213'
+  database
+    .query(
+      `INSERT INTO review(record_id,number,recorded_at,completed_at,tier,role,patch_id,path_set,project_record_id)
+       VALUES (?,2,'2026-10-09T00:00:00Z','2026-10-09T01:00:00Z',1,'round','patch','[]',?)`,
+    )
+    .run(mismatchedRoundId, activeId)
+  database
+    .query(
+      `INSERT INTO review_lens(record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES ('01990000-0000-7000-8000-000000000214',?,?,'correctness','codex','[]','[]','[]','[]')`,
+    )
+    .run(mismatchedRoundId, '01990000-0000-7000-8000-000000000203')
 
   const insertLanding = database.query(
     `INSERT INTO branch_landing_record
@@ -151,7 +186,7 @@ test('loads branch attribution, ambiguity, retired projects, and incomplete CI',
   ])
   expect(report.current.tasks[0]?.dispatchToMergeHours).toBe(24)
   expect(report.current.tasks[0]?.ciRuns).toBeNull()
-  expect(report.current.tasks[0]?.reviewRounds).toBe(0)
+  expect(report.current.tasks[0]?.reviewRounds).toBe(1)
   expect(report.current.aggregates.unknownCiTasks).toBe(2)
   expect(report.current.unattributedLandings).toEqual([
     {

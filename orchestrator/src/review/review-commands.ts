@@ -331,9 +331,13 @@ export function printReviewTier(
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
       .join(', ')
-    log(
-      `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}${reasonLabel(lens.reason)}`,
-    )
+    if (lens.reason === 'tree-mismatch' || lens.reason === 'commit-mismatch') {
+      log(`${lens.id} owed: ${lens.reason}`)
+    } else {
+      log(
+        `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}${reasonLabel(lens.reason)}`,
+      )
+    }
   }
   if (output.secondOpinion) {
     log(

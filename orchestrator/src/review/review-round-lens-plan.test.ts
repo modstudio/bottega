@@ -52,6 +52,169 @@ const reviewRow = (
 }
 
 describe('round lens plan', () => {
+  test('an inadmissible completed lens stays owed with its provenance reason', () => {
+    const row = reviewRow({
+      reviewNumber: 1,
+      lenses: [
+        {
+          recordId: 'lens-mismatch',
+          lens: 'correctness',
+          graded: true,
+          settled: true,
+          provenance: {
+            recorded: true,
+            treeInspected: '/missing/trees/other',
+            runTree: '/missing/trees/subject',
+            reviewedCommit: 'abcdef1',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+    const result = applicableRoundLensPlan({
+      relevant: { lenses: ['correctness'] },
+      facts: roundLensFacts([row], { patchId: 'patch', pathSet: '["a.ts"]' }),
+      postFix: {
+        kind: 'no-round-needed',
+        reviewNumber: 1,
+        reviewedTip: 'reviewed-tip',
+        tierThreePaths: [],
+        applicability: { lenses: [] },
+      },
+      fixPathsByLens: {},
+    })
+
+    expect(result.round).toEqual({
+      lenses: ['correctness'],
+      lensReasons: { correctness: 'tree-mismatch' },
+    })
+  })
+
+  test('a newer admissible completed result clears an older provenance mismatch', () => {
+    const older = reviewRow({
+      reviewNumber: 1,
+      lenses: [
+        {
+          recordId: 'lens-mismatch',
+          lens: 'correctness',
+          graded: true,
+          settled: true,
+          provenance: {
+            recorded: true,
+            treeInspected: '/missing/trees/other',
+            runTree: '/missing/trees/subject',
+            reviewedCommit: 'abcdef1',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+    const newer = reviewRow({ reviewNumber: 2 })
+    const lensFacts = roundLensFacts([newer, older], {
+      patchId: 'patch',
+      pathSet: '["a.ts"]',
+    })
+
+    expect(lensFacts.inadmissibleLenses).toBeUndefined()
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness'] },
+        facts: lensFacts,
+        postFix: {
+          kind: 'no-round-needed',
+          reviewNumber: 2,
+          reviewedTip: 'reviewed-tip',
+          tierThreePaths: [],
+          applicability: { lenses: [] },
+        },
+        fixPathsByLens: {},
+      }).round,
+    ).toEqual({ lenses: [] })
+  })
+
+  test('a provenance mismatch in an unfinished review forces no lens', () => {
+    const unfinished = reviewRow({
+      reviewNumber: 1,
+      completedAt: null,
+      lenses: [
+        {
+          recordId: 'lens-mismatch',
+          lens: 'correctness',
+          graded: true,
+          settled: true,
+          provenance: {
+            recorded: true,
+            treeInspected: '/missing/trees/other',
+            runTree: '/missing/trees/subject',
+            reviewedCommit: 'abcdef1',
+            headCommit: 'abcdef1234567890',
+          },
+        },
+      ],
+    })
+    expect(
+      roundLensFacts([unfinished], { patchId: 'patch', pathSet: '["a.ts"]' }).inadmissibleLenses,
+    ).toBeUndefined()
+  })
+
+  test('the newest inadmissible row in one review supplies the owed reason', () => {
+    const database = migratedTestDatabase()
+    const projectRecordId = newRecordId()
+    const reviewRecordId = newRecordId()
+    database
+      .query(
+        "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+      )
+      .run(projectRecordId)
+    database
+      .query(
+        `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
+         VALUES (?,1,'2026-10-20T00:00:00Z','2026-10-20T01:00:00Z',2,'patch','["a.ts"]')`,
+      )
+      .run(reviewRecordId)
+    const addLens = (treeInspected: string, reviewedCommit: string) => {
+      const runRecordId = newRecordId()
+      const lensRecordId = newRecordId()
+      database
+        .query(
+          `INSERT INTO run
+             (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+              project_record_id,branch,head_commit,review_provenance,worktree)
+           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-20','codex','review-lens',
+                   'sha',1,'head','ok','fixture',?,'DEV-2157','abcdef1234567890',?,
+                   '/missing/trees/subject')`,
+        )
+        .run(
+          runRecordId,
+          projectRecordId,
+          JSON.stringify({ tree_inspected: treeInspected, reviewed_commit: reviewedCommit }),
+        )
+      database
+        .query(
+          `INSERT INTO review_lens
+             (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,
+              commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+           VALUES (?,?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]',
+                   'all','adequate','absent','none')`,
+        )
+        .run(lensRecordId, reviewRecordId, runRecordId)
+      return lensRecordId
+    }
+    const older = addLens('/missing/trees/other', 'abcdef1')
+    const newer = addLens('/missing/trees/subject', 'fffffff')
+    const branchReviews = reviewsForTriage(database, {
+      project: 'fixture',
+      branch: 'DEV-2157',
+      patchId: 'patch',
+      pathSet: ['a.ts'],
+    }).branchReviews
+
+    expect(branchReviews[0]?.lenses.map(({ recordId }) => recordId)).toEqual([newer, older])
+    expect(
+      roundLensFacts(branchReviews, { patchId: 'patch', pathSet: '["a.ts"]' }).inadmissibleLenses,
+    ).toEqual({ correctness: 'commit-mismatch' })
+  })
+
   const round = {
     lenses: ['safety'],
     secondOpinion: 'safety',
@@ -359,9 +522,9 @@ describe('round lens plan', () => {
         architecture: ['a.ts'],
         safety: ['a.ts'],
       },
-      completedLenses: ['migration-safety', 'correctness', 'craft', 'architecture', 'safety'],
+      completedLenses: ['migration-safety', 'architecture', 'craft', 'correctness', 'safety'],
       satisfiedSecondOpinionLenses: [],
-      latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
+      latestAcceptedOrModifiedLenses: ['craft', 'correctness'],
     })
     database.close()
   })

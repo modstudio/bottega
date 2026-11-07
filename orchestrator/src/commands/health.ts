@@ -1,6 +1,7 @@
 // concern: cli
 /** Registers health reporting adapters. Must not own their behavior. */
 import type { Command } from 'commander'
+import { persistedRunOutput } from '../collect/collect.ts'
 import { checkRetrieval } from '../doc/doc-search.ts'
 import { reclassifyFailuresCommand } from '../failure/failure-commands.ts'
 import { doctorCommand } from '../health/doctor.ts'
@@ -35,7 +36,7 @@ export function register(program: Command): void {
     .option('--dry-run', 'report reclassifications without writing them')
     .allowExcessArguments(false)
     .action((options) => {
-      reclassifyFailuresCommand(optionFlags(options), { log })
+      reclassifyFailuresCommand(optionFlags(options), { log }, persistedRunOutput)
     })
 
   program

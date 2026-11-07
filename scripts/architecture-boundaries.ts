@@ -416,7 +416,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'evidence-boundary',
     'orchestrator/src/evidence/evidence.ts',
-    ['../contract/contract.ts', '../mcp/mcp-preflight.ts', '../review/review-triage.ts'],
+    [
+      '../contract/contract.ts',
+      '../mcp/mcp-preflight.ts',
+      '../review/review-lens-provenance.ts',
+      '../review/review-triage.ts',
+    ],
     'Keep evidence assessment independent of execution and transaction ownership.',
     ['bun:sqlite', '../outcome.ts', '../review/review.ts'],
   ),

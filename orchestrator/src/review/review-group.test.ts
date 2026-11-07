@@ -1,10 +1,18 @@
 import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import {
+  migratedTestDatabase,
+  prepareMigrationTestDatabases,
+} from '../database/test-database.fixture.ts'
 import { decideTriage } from '../pull-request/triage-decision.ts'
 import type { ReviewPlan } from './review-applicability.ts'
 import {
+  canonicalTreePair,
   measureChangeGroup,
   reviewLensGraded,
   reviewLensSettled,
@@ -12,9 +20,27 @@ import {
   reviewsForAdmission,
   reviewsForTriage,
   type TriageReviewRow,
+  treeInspectedPath,
 } from './review-group.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
+
+let canonicalTreeRoot: string
+let canonicalTreeReal: string
+let canonicalTreeSymlink: string
+
+beforeAll(() => {
+  prepareMigrationTestDatabases()
+  canonicalTreeRoot = mkdtempSync(join(tmpdir(), 'review-group-canonical-tree-'))
+  canonicalTreeReal = join(canonicalTreeRoot, 'real')
+  canonicalTreeSymlink = join(canonicalTreeRoot, 'symlink')
+  mkdirSync(canonicalTreeReal)
+  symlinkSync(canonicalTreeReal, canonicalTreeSymlink, 'dir')
+})
+
+afterAll(() => {
+  rmSync(canonicalTreeRoot, { recursive: true, force: true })
+})
 
 test('a review lens is graded only by all four review grades', () => {
   const noGrades = { reproduced: null, coverage: null, limits: null, overlap: null }
@@ -377,4 +403,98 @@ test('a moved remote trunk is the shared base for review and admission despite s
   expect(reviewed?.group.patchId).toBe('reviewed-patch')
   expect(reviewed?.applicability.lenses).toEqual(['correctness'])
   expect(changed?.group.patchId).toBe('changed-patch')
+})
+
+test('recorded review tree paths are extracted, normalized, and confined to the run tree', () => {
+  const decisionFor = (treeInspected?: string) => {
+    const database = migratedTestDatabase()
+    const projectId = newRecordId()
+    database
+      .query(
+        "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+      )
+      .run(projectId)
+    const runId = newRecordId()
+    database
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+            project_record_id,branch,worktree,head_commit,review_provenance)
+         VALUES (?,1,'2026-11-06','codex','review-lens','sha',1,'head','ok','fixture',?,
+                 'DEV-2157','/missing/trees/subject','abcdef1234567890',?)`,
+      )
+      .run(
+        runId,
+        projectId,
+        JSON.stringify({
+          ...(treeInspected === undefined ? {} : { tree_inspected: treeInspected }),
+          reviewed_commit: 'abcdef1',
+        }),
+      )
+    const reviewId = newRecordId()
+    database
+      .query(
+        `INSERT INTO review
+           (record_id,number,recorded_at,completed_at,project_record_id,patch_id,path_set,tier)
+         VALUES (?,1,'2026-11-06','2026-11-06',?,'patch','["a.ts"]',1)`,
+      )
+      .run(reviewId, projectId)
+    database
+      .query(
+        `INSERT INTO review_lens
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,
+            commands_run,could_not_verify,reproduced,coverage,limits,overlap)
+         VALUES (?,?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]',
+                 'all','adequate','named','unique')`,
+      )
+      .run(newRecordId(), reviewId, runId)
+    const selected = reviewsForTriage(database, {
+      project: 'fixture',
+      branch: 'DEV-2157',
+      patchId: 'patch',
+      pathSet: ['a.ts'],
+    })
+    return decideTriage({
+      patchId: 'patch',
+      pathSet: '["a.ts"]',
+      tip: 'abcdef1234567890',
+      tier: 1,
+      applicableReview: { lenses: ['correctness'] },
+      branchOwnerSession: null,
+      reviews: selected.reviews,
+      branchReviewGroups: [{ reviews: selected.branchReviews }],
+      reads: [],
+    })
+  }
+
+  expect(decisionFor('/missing/trees/other/../subject/ (detached worktree)')).toMatchObject({
+    complete: true,
+  })
+  expect(decisionFor('74ff6ad...7034567')).toMatchObject({ complete: true })
+  expect(decisionFor()).toMatchObject({ complete: true })
+  expect(decisionFor('/missing/trees/subject/src')).toMatchObject({ complete: true })
+  expect(decisionFor('/missing/trees/other')).toMatchObject({
+    complete: false,
+    missingLenses: [{ lens: 'correctness', reason: 'tree-mismatch' }],
+  })
+})
+
+test('tree evidence extracts the first qualifying absolute path from recorded review shapes', () => {
+  expect(
+    treeInspectedPath(
+      '/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-7b49b6460122 (detached worktree at the artifact HEAD)',
+    ),
+  ).toBe('/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-7b49b6460122')
+  expect(
+    treeInspectedPath(
+      'base 558e80d; (`/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-a8d3e4ed17f2`: diff origin/master...HEAD)',
+    ),
+  ).toBe('/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-a8d3e4ed17f2')
+  expect(treeInspectedPath('74ff6ad...7034567')).toBeNull()
+  expect(treeInspectedPath(null)).toBeNull()
+})
+
+test('canonical tree pairs resolve a directory symlink to the same physical tree', () => {
+  const [inspected, run] = canonicalTreePair(canonicalTreeSymlink, canonicalTreeReal)
+  expect(inspected).toBe(run)
 })
