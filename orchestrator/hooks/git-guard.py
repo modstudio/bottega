@@ -363,10 +363,8 @@ def push_verdict(argv, protected, directory):
 
     refspecs = positional[1:]
     resolved_head = None
-    has_head_source = any(
-        (spec.removeprefix("+").partition(":")[0] or spec.removeprefix("+")) == "HEAD"
-        for spec in refspecs
-    )
+    # Only a bare HEAD names its destination by the checked-out branch; HEAD:<dst> is judged by dst.
+    has_head_source = any(spec.removeprefix("+") == "HEAD" for spec in refspecs)
     if has_head_source:
         resolved_head = resolve_head_branch(directory)
         if resolved_head is None:

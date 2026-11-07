@@ -262,6 +262,15 @@ describe('git guard', () => {
     ).toBe('ask')
   })
 
+  test('judges HEAD:<dst> by its destination without resolving HEAD', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, '0000000000000000000000000000000000000000')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD:DEV-1862/feature')
+        ?.permissionDecision,
+    ).toBe('allow')
+  })
+
   test('allows only listed worktree subcommands without program options', () => {
     const { databasePath, outside, worktree } = fixture()
     const commands = [
