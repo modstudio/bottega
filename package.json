@@ -58,6 +58,8 @@
     "eslint": "^10.13.0",
     "eslint-plugin-jest": "^29.17.0",
     "eslint-plugin-sonarjs": "4.2.2",
+    "execa": "10.2.0",
+    "ky": "2.2.0",
     "mdast-util-directive": "^3.1.1",
     "mdast-util-from-markdown": "^2.1.0",
     "micromark-extension-directive": "^4.0.0",
