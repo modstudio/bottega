@@ -48,7 +48,10 @@ export const recordModules: RecordModule[] = [
     'node:fs',
     '../project/projects.ts',
   ]),
-  module('orchestrator/src/porting/porting-import-contract.ts', []),
+  module('orchestrator/src/porting/porting-import-contract.ts', [
+    '../../../shared/refusal.ts',
+    '../refusal-error.ts',
+  ]),
   module('orchestrator/src/porting/porting-hosted-import.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',

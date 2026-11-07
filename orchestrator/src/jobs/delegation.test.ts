@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DelegationSettings } from '../../../shared/delegation-mode.ts'
+import { renderRefusal } from '../../../shared/refusal.ts'
 import { harnessDelegationRefusal, noEligibleAgentRefusal } from './delegation.ts'
 
 const settings: DelegationSettings = {
@@ -9,11 +10,20 @@ const settings: DelegationSettings = {
 }
 
 test('a harness class refuses external dispatch with its setting and exact switch command', () => {
-  expect(harnessDelegationRefusal({ needs: { writesRepo: true } }, settings)).toBe(
+  expect(renderRefusal(harnessDelegationRefusal({ needs: { writesRepo: true } }, settings)!)).toBe(
     `this machine runs implement work through the harness's own sub-agent (delegation.implement=harness)\n` +
       `cleared by: ${PLATFORM_SLUG} machine config set --machine delegation.implement external`,
   )
   expect(harnessDelegationRefusal({ needs: { readsRepo: true } }, settings)).toBeNull()
+})
+
+test('the command remedy clears the harness-delegation refusal', () => {
+  expect(
+    harnessDelegationRefusal(
+      { needs: { writesRepo: true } },
+      { ...settings, 'delegation.implement': 'external' },
+    ),
+  ).toBeNull()
 })
 
 test('an empty external lane names agent setup and the shared harness remedy', () => {

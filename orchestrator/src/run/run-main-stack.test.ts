@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { refusal } from '../../../shared/refusal.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { DEFERRED_CWD_MCP_STEPS, decideDeferredCwdMcpPlan } from '../mcp/mcp-preflight.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -96,7 +97,7 @@ test('coordinator MCP preflight runs after its capacity wait selects an agent', 
         select: () => {
           attempts++
           order.push(`select-${attempts}`)
-          if (attempts === 1) throw new AgentCapacityError('at capacity', { codex: 1 })
+          if (attempts === 1) throw new AgentCapacityError(refusal('at capacity'), { codex: 1 })
           return { agent: 'codex', reason: 'capacity available' }
         },
         now: () => now,
