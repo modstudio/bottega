@@ -22,9 +22,9 @@ import {
   database,
   installEvidence,
   matchingCheckout,
+  selectAndNextWorkflowStep as nextWorkflowStep,
   prepareOperatorRulingCursor,
   relayOperatorRuling,
-  selectAndNextWorkflowStep as nextWorkflowStep,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
