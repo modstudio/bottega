@@ -1,6 +1,7 @@
 // concern: branches
 /** Guards local branch mutations against case-confusable refs. */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { db } from '../database/db.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 
@@ -145,13 +146,12 @@ export function restoreBranch(
   const ref = `refs/heads/${branch}`
   const zero = '0000000000000000000000000000000000000000'
   // branch-ref-guard: assertBranchRefMayBeCreated
-  const result = Bun.spawnSync(['git', 'update-ref', ref, tip, zero], {
+  const result = startBoundedSync(['git', 'update-ref', ref, tip, zero], {
+    budget: 'git-plumbing',
     cwd: repoRoot,
     env: targetGitEnvironment(repoRoot),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return result.exitCode === 0
     ? { ok: true }
-    : { ok: false, error: result.stderr.toString().trim() || `exit ${result.exitCode}` }
+    : { ok: false, error: result.stderr.trim() || `exit ${result.exitCode}` }
 }

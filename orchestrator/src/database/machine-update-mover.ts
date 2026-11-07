@@ -5,6 +5,7 @@
  */
 
 import { join } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { INSTALL_HOME_ENV, isInstallationRoot } from '../../../shared/install-root.ts'
@@ -77,14 +78,11 @@ export function moveRegisteredMainCheckout(
   parentEnvironment: Record<string, string | undefined> = process.env,
 ): MainCheckoutUpdateResult {
   const invocation = mainCheckoutUpdateInvocation(project.path, parentEnvironment)
-  const result = Bun.spawnSync(invocation.argv, {
+  const result = startBoundedSync(invocation.argv, {
+    budget: 'machine-update',
     cwd: invocation.cwd,
     env: invocation.env,
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  const output = [result.stdout.toString().trim(), result.stderr.toString().trim()]
-    .filter(Boolean)
-    .join('\n')
+  const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n')
   return { exitCode: result.exitCode, output }
 }

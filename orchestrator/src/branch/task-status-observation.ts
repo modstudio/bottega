@@ -1,6 +1,7 @@
 // concern: branch lifecycle evidence
 /** Reads one task's status through the task concern's existing CLI owner. */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { type StatusCategory, TASK_STATUSES } from '../../../shared/trackers.ts'
@@ -15,12 +16,12 @@ export type TaskStatusObservation = {
 
 export function observeTaskStatus(key: string | null, project: string): TaskStatusObservation {
   if (!key) return { raw: null, category: null, lastSeen: null, verified: false, detail: 'unkeyed' }
-  const result = Bun.spawnSync(
+  const result = startBoundedSync(
     [...bottegaEntryArgv(PLATFORM_SLUG), 'task', 'show', key, '--project', project, '--json'],
-    { stdout: 'pipe', stderr: 'pipe', env: process.env },
+    { budget: 'self-cli', env: process.env },
   )
   if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim() || `exit ${result.exitCode}`
+    const detail = result.stderr.trim() || `exit ${result.exitCode}`
     return {
       raw: null,
       category: null,
@@ -30,7 +31,7 @@ export function observeTaskStatus(key: string | null, project: string): TaskStat
     }
   }
   try {
-    const parsed = JSON.parse(result.stdout.toString()) as {
+    const parsed = JSON.parse(result.stdout) as {
       task?: { status?: unknown; status_category?: unknown; last_seen?: unknown }
     }
     const raw = typeof parsed.task?.status === 'string' ? parsed.task.status : null

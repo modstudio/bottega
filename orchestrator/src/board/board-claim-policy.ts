@@ -90,6 +90,15 @@ export function parseClaimSubject(expression: string): ClaimSubject {
   return { kind, value }
 }
 
+export function releaseTaskKey(expression: string, keyPattern: string): string {
+  const trimmed = expression.trim()
+  const key = (trimmed.startsWith('task:') ? trimmed.slice('task:'.length) : trimmed).trim()
+  if (new RegExp(keyPattern).test(key)) return key
+  throw new Error(
+    `invalid task key ${JSON.stringify(expression)}; use <KEY> or task:<KEY> matching ${keyPattern}`,
+  )
+}
+
 export function claimNote(note: string | undefined): string | null | undefined {
   if (note === undefined) return undefined
   const value = note.trim()

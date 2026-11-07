@@ -13,6 +13,8 @@ export const pullRequestModuleSpecs = [
       'bun:sqlite',
       'node:path',
       '../../../shared/brand.ts',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../../../shared/self-spawn.ts',
       '../database/db.ts',
       '../database/machine-update-mover.ts',
@@ -78,6 +80,8 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/pull-request/pr-admission.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       'bun:sqlite',
       '../../../shared/record/schema.ts',
       '../../../shared/secret-shaped.ts',

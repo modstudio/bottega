@@ -52,6 +52,7 @@ export const agentProbeModules = [
   ]),
   module('orchestrator/src/agent/agent-capability-probe-policy.ts', []),
   module('orchestrator/src/agent/agent-capability-probe-sandbox.ts', [
+    '../../../shared/bounded-process.ts',
     '../../../shared/config-directory.ts',
     '../../../shared/git.ts',
     '../local-listener.ts',
