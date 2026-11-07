@@ -727,7 +727,7 @@ export function collectResult(
     presentation.error(unfinishedResultMessageForRun(database, id, row, chain.attempts))
     presentation.exit(2)
   }
-  const output = collectedOutput(row)
+  const output = persistedRunOutput(row)
   if (row.review_provenance) {
     try {
       const provenance = JSON.parse(row.review_provenance) as {
@@ -793,7 +793,10 @@ export function collectResult(
   }
 }
 
-function collectedOutput(row: CollectedRunRow): string | null {
+/** Read the persisted result text by the same rules as `run result`. */
+export function persistedRunOutput(
+  row: Pick<CollectedRunRow, 'record_id' | 'output_path' | 'executor'>,
+): string | null {
   if (row.output_path && existsSync(row.output_path)) return readFileSync(row.output_path, 'utf8')
   const replyPath = runScratchReplyPath(row.record_id, resolveRunsDirectory(process.env))
   return row.executor === 'harness' && existsSync(replyPath)

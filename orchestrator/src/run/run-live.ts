@@ -647,7 +647,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
-  const preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
   let askLoopback: AskLoopback | null = input.askLoopback
   let executionBrokers: WorkerExecutionBrokers | null = null
@@ -933,7 +932,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
      */
     /**
      * Parsed from whatever the agent WROTE, not only from a clean exit.
-     *
      * codex writes its final message to the `-o` file as it finishes, so a
      * reply can be complete and valid while the process is killed a moment
      * later — by a harness command timeout, by SIGTERM traveling down a
@@ -990,6 +988,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       sandbox: sandboxSelection.sandbox,
       boundMs,
       agentName: name,
+      agentHarness: a.harness ?? a.name,
     })
     error = appendGateExclusionToTimeoutError(
       missingReplyError(replyFile, replyFilePresent, derived.error, callUsage.value, startOpts.env),
@@ -1072,7 +1071,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     error,
     failureKind,
     artifactsPersisted: true,
-    preConfinement,
+    preConfinement: null,
     vendorTerminatedStream,
     askLoopback,
     mcpSetupHeader,

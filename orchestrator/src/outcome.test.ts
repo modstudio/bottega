@@ -21,6 +21,7 @@ const base: OutcomeInputs = {
   completedReplyAtTimeout: false,
   replyError: false,
   replyErrorFailureKind: 'other',
+  gooseVendorFailureKind: null,
   nonAnswer: false,
   nonAnswerFailureKind: 'other',
   contractStatus: null,
@@ -60,6 +61,14 @@ describe('outcome decision', () => {
         exitCode: 1,
       },
       { status: 'failed', failureKind: null },
+    ],
+    [
+      'a Goose vendor failure outranks a missing-file contract mismatch',
+      {
+        replyFileError: true,
+        gooseVendorFailureKind: 'billing',
+      },
+      { status: 'failed', failureKind: 'billing' },
     ],
     [
       'a classified missing writer contract keeps its failure kind',

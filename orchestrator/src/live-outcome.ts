@@ -1,7 +1,13 @@
 // concern: live-outcome
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { contractMismatchError } from './contract/contract-reply.ts'
-import { classify, FAILS_OVER, type FailureKind, isNonAnswer } from './failure/failure.ts'
+import {
+  classify,
+  FAILS_OVER,
+  type FailureKind,
+  gooseVendorFailureKind,
+  isNonAnswer,
+} from './failure/failure.ts'
 import { decideOutcomeRule, type OutcomeInputs, type OutcomeRule } from './outcome.ts'
 import { errorTail } from './run/run-process.ts'
 import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
@@ -36,6 +42,7 @@ export type LiveOutcomeFacts = {
   sandbox: 'host' | 'srt'
   boundMs: number
   agentName: string
+  agentHarness: string
 }
 
 export type LiveOutcomeDerivation = {
@@ -73,6 +80,10 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
     facts.timedOut,
     facts.sandbox,
   )
+  const gooseFailureKind =
+    facts.agentHarness === 'goose' && facts.replyFileError
+      ? gooseVendorFailureKind(facts.output)
+      : null
   const nonAnswer = facts.exitCode === 0 && isNonAnswer(facts.output)
   const nonAnswerFailureKind = classify(facts.output, facts.exitCode, facts.timedOut, facts.sandbox)
   const completedContractTerminal = facts.stderr.trim() || facts.stdout.trim()
@@ -112,6 +123,7 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
       completedReplyAtTimeout,
       replyError: Boolean(facts.replyError),
       replyErrorFailureKind,
+      gooseVendorFailureKind: gooseFailureKind,
       nonAnswer,
       nonAnswerFailureKind,
       contractStatus: facts.contractStatus,
@@ -244,6 +256,7 @@ function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): st
     timeout: () =>
       `no reply within ${Math.round(facts.boundMs / 60_000)}m; ${facts.agentName} was killed`,
     'reply-error': () => errorTail(facts.replyError!),
+    'goose-vendor-failure': () => errorTail(facts.replyFileError!),
     'non-answer': () => errorTail(facts.output),
     'missing-reply-contract': () => errorTail(facts.replyFileError!),
     'contract-asking': () => null,
