@@ -29,16 +29,16 @@ describe('git environment', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'temporary-index-git-'))
     let temporary = ''
     const commands: string[] = []
-    spyOn(Bun, 'spawnSync').mockImplementation(((options: {
-      cmd: string[]
-      env?: NodeJS.ProcessEnv
-    }) => {
-      commands.push(options.cmd.slice(1).join(' '))
-      const index = String(options.env?.GIT_INDEX_FILE)
+    spyOn(Bun, 'spawnSync').mockImplementation(((
+      command: string[],
+      options?: { env?: NodeJS.ProcessEnv },
+    ) => {
+      commands.push(command.slice(1).join(' '))
+      const index = String(options?.env?.GIT_INDEX_FILE)
       temporary = dirname(index)
       expect(existsSync(temporary)).toBeTrue()
-      if (options.cmd[1] === 'optional') return spawnResult('', 1)
-      if (options.cmd[1] === 'raw') return spawnResult('raw\n')
+      if (command[1] === 'optional') return spawnResult('', 1)
+      if (command[1] === 'raw') return spawnResult('raw\n')
       return spawnResult(' value \n')
     }) as typeof Bun.spawnSync)
 
@@ -61,8 +61,11 @@ describe('git environment', () => {
     // Production break watched fail: remove the helper's finally block.
     const cwd = mkdtempSync(join(tmpdir(), 'temporary-index-failure-'))
     let temporary = ''
-    spyOn(Bun, 'spawnSync').mockImplementation(((options: { env?: NodeJS.ProcessEnv }) => {
-      temporary = dirname(String(options.env?.GIT_INDEX_FILE))
+    spyOn(Bun, 'spawnSync').mockImplementation(((
+      _command: string[],
+      options?: { env?: NodeJS.ProcessEnv },
+    ) => {
+      temporary = dirname(String(options?.env?.GIT_INDEX_FILE))
       return spawnResult()
     }) as typeof Bun.spawnSync)
 
@@ -88,10 +91,10 @@ describe('git environment', () => {
     ]
     try {
       for (const [failedCommand, message] of failures) {
-        const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((options: { cmd: string[] }) =>
+        const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) =>
           spawnResult(
             '',
-            options.cmd.slice(1).join(' ') === failedCommand ? 1 : 0,
+            command.slice(1).join(' ') === failedCommand ? 1 : 0,
           )) as typeof Bun.spawnSync)
         expect(() => contentTree(cwd)).toThrow(message)
         spawn.mockRestore()

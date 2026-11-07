@@ -70,8 +70,7 @@ function startBoundedSyncBytesRaw(
 ): BoundedBytesResult {
   if (argv.length === 0) throw new TypeError('startBoundedSync requires a non-empty argv')
   const budget = CALL_BUDGETS[options.budget]
-  const result = Bun.spawnSync({
-    cmd: [...argv],
+  const result = Bun.spawnSync([...argv], {
     cwd: options.cwd,
     env: options.env,
     stdin: stdinBlob(options.stdin),

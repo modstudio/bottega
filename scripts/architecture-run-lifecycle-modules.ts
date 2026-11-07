@@ -639,6 +639,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/shared-git-config.ts', [
     'node:fs',
     'node:path',
+    '../../../shared/bounded-process.ts',
     '../database/database-location.ts',
     '../events.ts',
     '../git/git-environment.ts',

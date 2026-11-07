@@ -82,11 +82,7 @@ const KY_MODULE = 'ky'
 const FETCH_CALL = 'fetch'
 const BOUNDED_PROCESS_MODULE_NAME = 'bounded-process'
 const BOUNDED_PROCESS_MODULE = new RegExp(`(^|/)${BOUNDED_PROCESS_MODULE_NAME}([.]ts)?$`)
-const BOUNDED_PROCESS_CALLS = new Set([
-  'startBounded',
-  'startBoundedSync',
-  'startBoundedSyncBytes',
-])
+const BOUNDED_PROCESS_CALLS = new Set(['startBounded', 'startBoundedSync', 'startBoundedSyncBytes'])
 const BUN_FORMS: readonly string[] = ['Bun.spawn', 'Bun.spawnSync', 'Bun.$']
 
 /** The source pre-filter must name every detector's vocabulary. */
