@@ -90,9 +90,7 @@ function callOriginalSpawnSync(
   input: SpawnSyncInput,
   options: object | undefined,
 ): ReturnType<typeof Bun.spawnSync> {
-  return Array.isArray(input)
-    ? original(input, options as never)
-    : original(input as Parameters<typeof Bun.spawnSync>[0])
+  return Array.isArray(input) ? original(input, options as never) : original(input as never)
 }
 
 test('an evidence-excluded landing-tree owner refuses dispatch planning', () => {
