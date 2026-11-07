@@ -45,7 +45,7 @@ function expandBraces(pattern: string): string[] {
   if (!match || match.index === undefined) return [pattern]
   const before = pattern.slice(0, match.index)
   const after = pattern.slice(match.index + match[0].length)
-  return match[1].split(',').flatMap((choice) => expandBraces(`${before}${choice}${after}`))
+  return match[1]!.split(',').flatMap((choice) => expandBraces(`${before}${choice}${after}`))
 }
 
 function sourceFiles(): string[] {
