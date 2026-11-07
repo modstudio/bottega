@@ -1,12 +1,14 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { spawnFixtureGitSync, spawnFixtureSync } from '../../test/fixtures/spawn.ts'
 import { dir } from '../../test/preload.ts'
 import { writeMigratedTestDatabase } from '../database/test-database.fixture.ts'
+import { GATE_FACTS_ENV } from '../gate/gate-facts.ts'
 import type { ProjectSettings } from '../project/projects.ts'
+import { checkCommand } from './check-commands.ts'
 
 const cli = resolve(import.meta.dir, '../cli/orch.ts')
 const fixtureRoots: string[] = []
@@ -86,38 +88,74 @@ function installGh(): string {
 }
 
 describe(`${PLATFORM_SLUG} gate check --enabled`, () => {
-  test('a project without attribution enabled skips pull request attribution', () => {
-    const root = fixtureDirectory('checks-pr-')
-    writeFileSync(join(root, 'README.md'), 'ordinary text\n')
-    const gh = installGh()
-    const database = registerProject('checks-pr-out', root, { trunk: 'main' })
+  describe('pull-request selection messages', () => {
+    let previousGateFacts: string | undefined
 
-    const result = spawnFixtureSync(
-      [
-        'bun',
-        '--no-env-file',
-        cli,
-        'check',
-        '--enabled',
-        '--project',
-        'checks-pr-out',
-        '--pr',
-        'https://example.test/pr/1',
-      ],
-      {
-        env: {
-          ...process.env,
-          BOTTEGA_ORCHESTRATOR_DB: database,
-          PATH: `${gh}:${process.env.PATH}`,
+    beforeEach(() => {
+      previousGateFacts = process.env[GATE_FACTS_ENV]
+      const root = fixtureDirectory('checks-pr-message-')
+      const facts = {
+        formatVersion: 1,
+        migrationVersion: 1,
+        projects: [
+          {
+            recordId: 'checks-pr-tree',
+            name: 'checks-pr-tree',
+            path: root,
+            stack: null,
+            canon: false,
+            retiredAt: null,
+            settings: {
+              trunk: 'main',
+              checks: { spelling: true, commentHistory: true },
+            },
+          },
+          {
+            recordId: 'checks-pr-none',
+            name: 'checks-pr-none',
+            path: root,
+            stack: null,
+            canon: false,
+            retiredAt: null,
+            settings: { trunk: 'main' },
+          },
+        ],
+        docs: [],
+      }
+      const factsPath = join(root, 'gate-facts.json')
+      writeFileSync(factsPath, JSON.stringify(facts))
+      process.env[GATE_FACTS_ENV] = factsPath
+    })
+
+    afterEach(() => {
+      if (previousGateFacts === undefined) delete process.env[GATE_FACTS_ENV]
+      else process.env[GATE_FACTS_ENV] = previousGateFacts
+    })
+
+    async function run(project: string): Promise<string[]> {
+      const output: string[] = []
+      await checkCommand(
+        ['check', '--enabled', '--project', project, '--pr', 'https://example.test/pr/1'],
+        {
+          log: (value) => output.push(value),
+          setExitCode: () => undefined,
+          stdinText: async () => '',
+          stdinIsTTY: () => true,
+          cwd: () => process.cwd(),
         },
-        stdin: 'ignore',
-        stdout: 'pipe',
-        stderr: 'pipe',
-      },
-    )
+      )
+      return output
+    }
 
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout.toString().trim()).toBe('no checks enabled for checks-pr-out')
+    test('names tree checks skipped by pull-request selection', async () => {
+      expect(await run('checks-pr-tree')).toEqual([
+        'no pull-request checks enabled for checks-pr-tree; enabled tree checks (spelling, comments) run without --pr',
+      ])
+    })
+
+    test('keeps the empty-project message for pull-request selection', async () => {
+      expect(await run('checks-pr-none')).toEqual(['no checks enabled for checks-pr-none'])
+    })
   })
 
   test('an attribution opt-in checks the pull request', () => {
