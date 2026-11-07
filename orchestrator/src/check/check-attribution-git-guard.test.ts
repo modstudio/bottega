@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dir } from '../../test/preload.ts'
 import { writeMigratedTestDatabase } from '../database/test-database.fixture.ts'
@@ -66,6 +66,12 @@ function setHead(worktree: string, value: string) {
     '[core]\n\trepositoryformatversion = 0\n\tbare = false\n',
   )
   writeFileSync(join(gitDirectory, 'HEAD'), `${value}\n`)
+}
+
+function setTag(worktree: string, name: string) {
+  const tag = join(worktree, '.git', 'refs', 'tags', name)
+  mkdirSync(dirname(tag), { recursive: true })
+  writeFileSync(tag, '0000000000000000000000000000000000000000\n')
 }
 
 function invokeMany(
@@ -239,11 +245,37 @@ describe('git guard', () => {
     ).toBe('allow')
   })
 
+  test('allows HEAD on a feature branch when a tag has the same name', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/DEV-1862/tag-collision')
+    setTag(worktree, 'DEV-1862/tag-collision')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('allow')
+  })
+
   test('asks for a HEAD refspec checked out on main', () => {
     const { databasePath, worktree } = fixture()
     setHead(worktree, 'ref: refs/heads/main')
     expect(
       invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('asks for HEAD on main when a tag is also named main', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/main')
+    setTag(worktree, 'main')
+    expect(
+      invoke(databasePath, worktree, 'git push --force-with-lease origin HEAD')?.permissionDecision,
+    ).toBe('ask')
+  })
+
+  test('asks to delete the remote ref named HEAD from a feature branch', () => {
+    const { databasePath, worktree } = fixture()
+    setHead(worktree, 'ref: refs/heads/DEV-1862/delete-head')
+    expect(
+      invoke(databasePath, worktree, 'git push --delete origin HEAD')?.permissionDecision,
     ).toBe('ask')
   })
 
