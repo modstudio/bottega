@@ -1,5 +1,37 @@
 import { expect, test } from 'bun:test'
-import { bunImagePins, decideBunVersions } from './check-bun-versions.ts'
+import {
+  bunImagePins,
+  decideBunVersionFile,
+  decideBunVersions,
+  decideRunningBunVersion,
+  decideWorkflowBunVersions,
+} from './check-bun-versions.ts'
+
+test('refuses a literal workflow Bun version with its location and remedy', () => {
+  expect(
+    decideWorkflowBunVersions([
+      {
+        path: '.github/workflows/ci.yml',
+        source: 'with:\n  bun-version: 1.4.4\n',
+      },
+    ]),
+  ).toBe(
+    'workflow Bun version check failed\n.github/workflows/ci.yml:2: use bun-version-file: .bun-version',
+  )
+})
+
+test('refuses an invalid repository Bun version declaration', () => {
+  expect(decideBunVersionFile('latest\n')).toBe(
+    '.bun-version must contain one plain version, for example 1.4.4',
+  )
+})
+
+test('warns without refusing when the running Bun version differs', () => {
+  expect(decideBunVersionFile('1.4.4\n')).toBeUndefined()
+  expect(decideRunningBunVersion('1.4.4', '1.4.3')).toBe(
+    'running Bun 1.4.3 differs from .bun-version 1.4.4; run bun upgrade --version 1.4.4 or update .bun-version',
+  )
+})
 
 test('passes when every deploy image pin agrees with the target', () => {
   expect(

@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
-import { RELEASE_BUN_VERSION } from './release-config.ts'
 
 export type BunImagePin = { path: string; line: number; version: string }
+export type WorkflowSource = { path: string; source: string }
+
+const plainBunVersion = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
 /** Refuse deploy-image Bun pins that differ from the release build version. */
 export function decideBunVersions(
@@ -20,6 +22,37 @@ export function decideBunVersions(
     ...mismatches.map((pin) => `${pin.path}:${pin.line}: Bun ${pin.version}`),
     `set every pin to ${target}`,
   ].join('\n')
+}
+
+/** Refuse workflow declarations that bypass the repository's version file. */
+export function decideWorkflowBunVersions(
+  workflows: readonly WorkflowSource[],
+): string | undefined {
+  const literals = workflows.flatMap(({ path, source }) =>
+    source
+      .split(/\r?\n/)
+      .flatMap((line, index) => (/^\s*bun-version\s*:/.test(line) ? [`${path}:${index + 1}`] : [])),
+  )
+  if (literals.length === 0) return undefined
+  return [
+    'workflow Bun version check failed',
+    ...literals.map((location) => `${location}: use bun-version-file: .bun-version`),
+  ].join('\n')
+}
+
+/** Refuse a missing or non-version repository declaration. */
+export function decideBunVersionFile(source: string | undefined): string | undefined {
+  const version = source?.trim()
+  if (version && plainBunVersion.test(version) && source?.replace(/\r?\n$/, '') === version) {
+    return undefined
+  }
+  return '.bun-version must contain one plain version, for example 1.4.4'
+}
+
+/** Warn when this gate runs under a Bun other than the repository declaration. */
+export function decideRunningBunVersion(declared: string, running: string): string | undefined {
+  if (declared === running) return undefined
+  return `running Bun ${running} differs from .bun-version ${declared}; run bun upgrade --version ${declared} or update .bun-version`
 }
 
 function isDockerfile(path: string): boolean {
@@ -67,15 +100,41 @@ function repositoryDockerfiles(root: string): string[] {
     .sort()
 }
 
+function workflowSources(root: string): WorkflowSource[] {
+  const directory = resolve(root, '.github/workflows')
+  return readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const absolutePath = resolve(entry.parentPath, entry.name)
+      return { path: relative(root, absolutePath), source: readFileSync(absolutePath, 'utf8') }
+    })
+    .sort((left, right) => left.path.localeCompare(right.path))
+}
+
 if (import.meta.main) {
   const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
+  const versionPath = resolve(root, '.bun-version')
+  const versionSource = existsSync(versionPath) ? readFileSync(versionPath, 'utf8') : undefined
+  const versionRefusal = decideBunVersionFile(versionSource)
+  if (versionRefusal) {
+    console.error(versionRefusal)
+    process.exit(1)
+  }
+  const workflowRefusal = decideWorkflowBunVersions(workflowSources(root))
+  if (workflowRefusal) {
+    console.error(workflowRefusal)
+    process.exit(1)
+  }
   const pins = repositoryDockerfiles(root).flatMap((path) =>
     bunImagePins(path, readFileSync(resolve(root, path), 'utf8')),
   )
-  const refusal = decideBunVersions(RELEASE_BUN_VERSION, pins)
+  const declaredVersion = versionSource!.trim()
+  const refusal = decideBunVersions(declaredVersion, pins)
   if (refusal) {
     console.error(refusal)
     process.exit(1)
   }
+  const warning = decideRunningBunVersion(declaredVersion, Bun.version)
+  if (warning) console.warn(warning)
   console.log(`deploy image Bun version check passed (${pins.length} pins)`)
 }

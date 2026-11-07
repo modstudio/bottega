@@ -85,39 +85,34 @@ function checkCiOnlySuiteJobs(source: string): void {
   }
 }
 
-/** The one form a workflow's Bun pin may take. */
-const bunPinShape = 'bun-version: <version>'
+/** The one form a workflow's Bun version declaration may take. */
+const bunVersionFileShape = 'bun-version-file: .bun-version'
 
 /**
- * Reads every Bun version a workflow pins. A `bun-version:` line whose value is
- * not a bare version — quoted, or carrying a trailing comment — is refused with
- * the line and the accepted form, never silently counted as no pin at all.
+ * Reads every Bun version file a workflow declares. A `bun-version-file:` line
+ * naming anything except the repository declaration is refused with the line
+ * and the accepted form, never silently counted as no declaration at all.
  */
-function workflowBunVersions(source: string, workflow: string): string[] {
-  const versions: string[] = []
+function workflowBunVersionFiles(source: string, workflow: string): string[] {
+  const files: string[] = []
   for (const line of source.split('\n')) {
-    const pin = /^\s*bun-version:(?<value>.*)$/.exec(line)
-    if (!pin) continue
-    const version = pin.groups!.value!.trim()
-    if (!/^[0-9][\w.-]*$/.test(version)) {
+    const declaration = /^\s*bun-version-file:(?<value>.*)$/.exec(line)
+    if (!declaration) continue
+    const file = declaration.groups!.value!.trim()
+    if (file !== '.bun-version') {
       throw new Error(
-        `${workflow} must declare its Bun pin as "${bunPinShape}", unquoted and without a comment; got "${line.trim()}"`,
+        `${workflow} must declare its Bun version as "${bunVersionFileShape}"; got "${line.trim()}"`,
       )
     }
-    versions.push(version)
+    files.push(file)
   }
-  return versions
+  return files
 }
 
-/** Pins every Bun a workflow sets up to the version the release build requires. */
-function checkBunVersions(source: string, workflow: string): void {
-  const versions = workflowBunVersions(source, workflow)
-  if (versions.length === 0) throw new Error(`${workflow} must pin Bun ${RELEASE_BUN_VERSION}`)
-  for (const version of versions) {
-    if (version !== RELEASE_BUN_VERSION) {
-      throw new Error(`${workflow} must use Bun ${RELEASE_BUN_VERSION}; got ${version}`)
-    }
-  }
+/** Makes every Bun a workflow sets up read the repository declaration. */
+function checkBunVersionFiles(source: string, workflow: string): void {
+  const files = workflowBunVersionFiles(source, workflow)
+  if (files.length === 0) throw new Error(`${workflow} must use ${bunVersionFileShape}`)
 }
 
 export function expectedWorkflowJobNames(): string[] {
@@ -158,12 +153,12 @@ export function checkCiWorkflow(source: string): void {
   if (!hooks.includes('run: $SUITE_COMMAND --only=orchestrator/hooks'))
     throw new Error('orchestrator-hooks job must run its check-plan leg')
   checkCiOnlySuiteJobs(source)
-  checkBunVersions(source, 'CI workflow')
+  checkBunVersionFiles(source, 'CI workflow')
   const postgres = workflowJob(source, 'postgres')
   if (!postgres.includes('image: postgres:18-alpine'))
     throw new Error('postgres job must use Postgres 18')
   if (!postgres.includes('uses: oven-sh/setup-bun@v2')) throw new Error('postgres job must use Bun')
-  checkBunVersions(postgres, 'postgres job')
+  checkBunVersionFiles(postgres, 'postgres job')
   if (!postgres.includes('run: bun install --silent'))
     throw new Error('postgres job must install the workspace')
   if (!postgres.includes(postgresServiceContainer))
@@ -174,7 +169,7 @@ export function checkCiWorkflow(source: string): void {
 
 /** Pins every Bun the release workflow sets up to the version the artifact build requires. */
 export function checkReleaseWorkflow(source: string): void {
-  checkBunVersions(source, 'release workflow')
+  checkBunVersionFiles(source, 'release workflow')
   for (const command of workflowRunCommands(workflowJob(source, 'release'))) {
     const directRelease = /\bgh\s+release\s+(upload|create)\b/.exec(command)
     if (directRelease) {
