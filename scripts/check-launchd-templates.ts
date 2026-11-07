@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { exitUnchecked } from '../shared/check-execution.ts'
 import {
   FIX_DEFECT_BACKSTOP_SECONDS,
   LAUNCH_AGENT_PLACEHOLDERS,
@@ -313,8 +314,7 @@ function checkStateHomeExemptions(names: readonly string[]): string[] {
 function main(): void {
   const plutil = Bun.which('plutil')
   if (!plutil) {
-    console.log('check-launchd-templates: skipped; plutil is not available')
-    process.exit(0)
+    exitUnchecked('plutil is not available')
   }
 
   const templates = discoverTemplates()

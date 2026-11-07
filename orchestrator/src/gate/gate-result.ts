@@ -13,6 +13,7 @@ export type RecordedGateCandidate = {
   elapsedMs: number | null
   finishedAt: string
   outputTail: string
+  uncheckedChecks: readonly { check: string; reason: string }[]
 }
 
 type GateExecutionRow = {
@@ -73,6 +74,7 @@ function recordedGateCandidateFromRow(
     elapsedMs: row.elapsed_ms,
     finishedAt: row.finished_at,
     outputTail: row.output_tail ?? '',
+    uncheckedChecks: [],
   }
 }
 
@@ -98,13 +100,20 @@ export function recordedGateResult(runId: string): {
     )
     .all() as GateExecutionRow[]
   const cwdProjectIds = architectProjectIdsByCwd(rows)
-  return {
-    headCommit: run.head_commit,
-    result: selectRecordedGateResult(
-      rows.map((row) => recordedGateCandidateFromRow(row, cwdProjectIds)),
-      { projectId: run.project_record_id, headCommit: run.head_commit },
-    ),
-  }
+  const result = selectRecordedGateResult(
+    rows.map((row) => recordedGateCandidateFromRow(row, cwdProjectIds)),
+    { projectId: run.project_record_id, headCommit: run.head_commit },
+  )
+  if (!result) return { headCommit: run.head_commit, result: null }
+  const uncheckedChecks = db()
+    .query<{ check: string; reason: string }, [string]>(
+      `SELECT check_name AS "check",unchecked_reason AS reason
+       FROM check_execution
+       WHERE gate_execution_record_id=? AND unchecked_reason IS NOT NULL
+       ORDER BY check_name,record_id`,
+    )
+    .all(result.recordId)
+  return { headCommit: run.head_commit, result: { ...result, uncheckedChecks } }
 }
 
 export function formatRecordedGateResult(input: ReturnType<typeof recordedGateResult>): string {
@@ -116,6 +125,12 @@ export function formatRecordedGateResult(input: ReturnType<typeof recordedGateRe
     )
   }
   const result = input.result
+  const unchecked = result.uncheckedChecks.length
+    ? [
+        'unchecked checks:',
+        ...result.uncheckedChecks.map((check) => `- ${check.check} (${check.reason})`),
+      ]
+    : []
   return [
     `Recorded gate result for commit ${result.headCommit}:`,
     `This result was recorded by the issue coordinator's gate or by ${PLATFORM_SLUG} gate run for that commit.`,
@@ -126,6 +141,7 @@ export function formatRecordedGateResult(input: ReturnType<typeof recordedGateRe
     `timed out: ${result.timedOut ?? 'not recorded'}`,
     `elapsed ms: ${result.elapsedMs ?? 'not recorded'}`,
     `finished at: ${result.finishedAt}`,
+    ...unchecked,
     'output tail:',
     result.outputTail,
   ].join('\n')

@@ -38,7 +38,7 @@ export function checkPackBudget(facts?: GateFacts): string[] {
 
 const READY = 'BOTTEGA_PACK_BUDGET_READY'
 
-function report(failures: string[]): never {
+function report(failures: string[]): void {
   if (failures.length) {
     console.error(
       `canon pack budget failed for ${failures.length} project/job combination(s):\n${failures.join('\n\n')}`,
@@ -46,7 +46,6 @@ function report(failures: string[]): never {
     process.exit(1)
   }
   console.log(`canon pack budget ok (ceiling ${DEFAULT_PACK_BYTES} bytes)`)
-  process.exit(0)
 }
 
 function runReady(store: string): number {
@@ -67,10 +66,11 @@ function runGateFacts(path: string): number {
   return child.exitCode ?? 1
 }
 
-if (import.meta.main) {
+function main(): void {
   if (process.env[READY] === '1') {
     const factsPath = process.env[GATE_FACTS_ENV]
     report(checkPackBudget(factsPath ? readGateFactsFile(factsPath) : undefined))
+    return
   }
 
   const live = liveStorePath()
@@ -112,6 +112,7 @@ if (import.meta.main) {
   if (kind === 'current') {
     console.log('canon pack budget: reading live store in place (read-only)')
     report(checkPackBudget())
+    return
   }
 
   const code = withBranchStoreScratch('pack-budget', (dir) => {
@@ -124,3 +125,5 @@ if (import.meta.main) {
   })
   process.exit(code)
 }
+
+if (import.meta.main) main()

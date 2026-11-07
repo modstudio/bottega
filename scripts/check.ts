@@ -10,10 +10,12 @@ import { changeViewPlan } from '../shared/change-view.ts'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
+  UNCHECKED_EXIT_CODE,
   UNIT_TEST_CHECK_CATEGORY,
 } from '../shared/check-execution'
 import { borrowedCheckoutOf, inspectionGitEnv } from '../shared/git'
 import { findingLine } from '../shared/ratchet.ts'
+import { checkExecutionCardinality } from './check-execution-completeness.ts'
 import {
   decideGateOutcome,
   FAILED_STEP_DETAIL_LINES,
@@ -86,6 +88,9 @@ const childMeasurements = new WeakMap<
   Bun.Subprocess,
   ExecutionObservation & { name: string; startedAt: number }
 >()
+const deferredExecutions = new WeakMap<Bun.Subprocess, CheckExecutionRecord>()
+const executionRecords: CheckExecutionRecord[] = []
+const uncheckedChecks: { check: string; reason: string }[] = []
 const commandCpu: CommandCpuSample[] = []
 let excludedGateWaitMs = 0
 let runtimeDeadline: ReturnType<typeof setTimeout>
@@ -110,6 +115,7 @@ function collectCpu(
 }
 
 function appendExecution(record: CheckExecutionRecord) {
+  executionRecords.push(record)
   if (!executionFile) return
   try {
     appendFileSync(executionFile, `${JSON.stringify(record)}\n`)
@@ -126,15 +132,36 @@ function collectChild(child: Bun.Subprocess, exitCode: number) {
   const cpuTime = child.resourceUsage()?.cpuTime
   collectCpu(measurement.name, cpuTime)
   const remaining = readRemainingReport(measurement.reportPath)
-  appendExecution({
+  const record: CheckExecutionRecord = {
     check: measurement.check ?? measurement.name,
     ...(measurement.category ? { category: measurement.category } : {}),
     wallMs: performance.now() - measurement.startedAt,
     ...(cpuTime ? { cpuMs: (Number(cpuTime.user) + Number(cpuTime.system)) / 1_000 } : {}),
     exitCode,
     ...(remaining === undefined ? {} : { remaining }),
-  })
+  }
+  if (exitCode === UNCHECKED_EXIT_CODE) deferredExecutions.set(child, record)
+  else appendExecution(record)
   activeChildren.delete(child)
+}
+
+function uncheckedReason(lines: readonly string[]): string | undefined {
+  return lines
+    .map((line) => /^unchecked: (.+)$/.exec(line)?.[1]?.trim())
+    .find((reason): reason is string => Boolean(reason))
+}
+
+function finishDeferredExecution(child: Bun.Subprocess, lines: readonly string[]): void {
+  const record = deferredExecutions.get(child)
+  if (!record) return
+  deferredExecutions.delete(child)
+  const reason = uncheckedReason(lines)
+  appendExecution(reason ? { ...record, unchecked: reason } : record)
+}
+
+function recordUnchecked(check: string, reason: string): void {
+  appendExecution({ check, wallMs: 0, exitCode: UNCHECKED_EXIT_CODE, unchecked: reason })
+  uncheckedChecks.push({ check, reason })
 }
 
 function printSummary(): { elapsedMs: number; cpuMs: number } | undefined {
@@ -262,6 +289,7 @@ async function inherit(argv: string[], cwd = root, observation: ExecutionObserva
   if (!drained) {
     for (const reader of streamReaders) void reader.cancel().catch(() => {})
   }
+  finishDeferredExecution(child, detail)
   return {
     exitCode,
     detail,
@@ -297,6 +325,12 @@ async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
     category: check.category,
     reportPath: check.reportPath,
   })
+  const reason =
+    result.exitCode === UNCHECKED_EXIT_CODE ? uncheckedReason(result.detail) : undefined
+  if (reason) {
+    uncheckedChecks.push({ check: check.name, reason })
+    return { name: check.name, exitCode: 0, detail: [], omittedDetailLines: 0 }
+  }
   return {
     name: check.name,
     ...(result.exitCode !== 0 && check.name === BIOME_CHECK_NAME
@@ -394,6 +428,7 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
     ]
     const exitCode = await child.exited
     await Promise.all(readers)
+    finishDeferredExecution(child, tail)
     if (exitCode !== 0) return { name: leg.name, exitCode, detail: [], omittedDetailLines: 0, tail }
   }
   return { name: leg.name, exitCode: 0, detail: [], omittedDetailLines: 0, tail }
@@ -580,12 +615,14 @@ async function installDependencies() {
 
 if ((await installDependencies()) !== 0) process.exit(1)
 
-const dependencyAuditExitCode = (
-  await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
-    check: 'dependency audit',
-  })
-).exitCode
-if (dependencyAuditExitCode !== 0) process.exit(1)
+const dependencyAuditResult = await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
+  check: 'dependency audit',
+})
+if (dependencyAuditResult.exitCode === UNCHECKED_EXIT_CODE) {
+  const reason = uncheckedReason(dependencyAuditResult.detail)
+  if (!reason) process.exit(1)
+  uncheckedChecks.push({ check: 'dependency audit', reason })
+} else if (dependencyAuditResult.exitCode !== 0) process.exit(1)
 
 const rootTests = [
   // Every .githooks test must be named here. The list is explicit rather than a
@@ -624,7 +661,8 @@ for (const check of workerProjection?.forced ?? []) {
 let workerBiomeStep: GateStepResult | null = null
 if (workerProjection) {
   if (workerFiles!.length === 0) {
-    console.log(`Biome: skipped because no file changed since the base ${workerBaseCommit}`)
+    const reason = `no file changed since the base ${workerBaseCommit}`
+    recordUnchecked(workerProjection.biome.name, reason)
     workerBiomeStep = {
       name: workerProjection.biome.name,
       exitCode: 0,
@@ -636,7 +674,9 @@ if (workerProjection) {
       root,
       files: workerFiles!,
     })
-    const workerBiomeResult = await inherit(workerBiomeArgv, root)
+    const workerBiomeResult = await inherit(workerBiomeArgv, root, {
+      check: workerProjection.biome.name,
+    })
     workerBiomeStep = {
       name: workerProjection.biome.name,
       ...(workerBiomeResult.exitCode !== 0
@@ -680,18 +720,44 @@ if (checkArguments.mode === 'static' || checkArguments.mode === 'worker') {
     process.exit(1)
   }
   const staticChecks = STATIC_CHECKS.map((check) => materializeStaticCheck(check, qualityMode))
-  const omittedChecks = new Set<string>(
-    checkArguments.omit.flatMap((group) => STATIC_OMIT_GROUPS[group].checks),
-  )
+  const omissionReasons = new Map<string, string>()
   for (const group of checkArguments.omit) {
     const plan = STATIC_OMIT_GROUPS[group]
     console.log(`omitting ${group} static checks (${plan.checks.join(', ')}): ${plan.reason}`)
+    for (const check of plan.checks) omissionReasons.set(check, plan.reason)
+  }
+  for (const omission of workerProjection?.omitted ?? []) {
+    if (!omissionReasons.has(omission.name)) omissionReasons.set(omission.name, omission.reason)
   }
   const selectedStaticChecks = workerProjection
-    ? workerProjection.staticChecks.map((check) => materializeStaticCheck(check, qualityMode))
-    : staticChecks.filter((check) => !omittedChecks.has(check.name))
+    ? workerProjection.staticChecks
+        .filter((check) => !omissionReasons.has(check.name))
+        .map((check) => materializeStaticCheck(check, qualityMode))
+    : staticChecks.filter((check) => !omissionReasons.has(check.name))
   for (const check of selectedStaticChecks) {
     gateSteps.push(await recordGateStep(check))
+  }
+  for (const [check, reason] of omissionReasons) recordUnchecked(check, reason)
+
+  const plannedNames = workerProjection
+    ? [
+        workerProjection.biome.name,
+        ...workerProjection.staticChecks.map((check) => check.name),
+        ...workerProjection.omitted.map((check) => check.name),
+      ]
+    : STATIC_CHECKS.map((check) => check.name)
+  for (const violation of checkExecutionCardinality(
+    [...new Set(plannedNames)],
+    executionRecords.map((record) => record.check),
+  )) {
+    gateSteps.push({
+      name: `check execution completeness: ${violation.check}`,
+      exitCode: 1,
+      detail: [
+        `planned check ${violation.check} has ${violation.count} execution records; expected exactly one`,
+      ],
+      omittedDetailLines: 0,
+    })
   }
 }
 
@@ -731,17 +797,10 @@ if (checkArguments.mode === 'suite') {
 if (checkArguments.mode === 'static' && cpuBudgetVerdict === 'over-informational') {
   console.log('static CPU budget is informational because static work runs on varying hosts')
 }
+for (const check of uncheckedChecks) console.log(`unchecked: ${check.check} (${check.reason})`)
 const gate = decideGateOutcome(gateSteps)
 if (gate.failures.length > 0) {
   console.error('gate failures:')
   for (const line of gate.summary) console.error(line)
-}
-if (workerProjection) {
-  console.log(
-    `worker check omitted ${workerProjection.omitted.length} steps; bun run check runs them all`,
-  )
-  for (const check of workerProjection.omitted) {
-    console.log(`not run by worker check: ${check.name} (${check.reason})`)
-  }
 }
 if (cpuBudgetVerdict === 'over-fatal' || gate.exitCode !== 0) process.exit(1)

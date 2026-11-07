@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { exitUnchecked } from '../shared/check-execution.ts'
 
 const DEPENDENCY_AUDIT_TIMEOUT_MS = 10_000
 const DEPENDENCY_AUDIT_OUTPUT_LIMIT = 500
@@ -188,8 +189,7 @@ async function main() {
   }
   const classification = await audit()
   if (classification.kind === 'unavailable') {
-    console.warn(`dependency audit unavailable: ${classification.detail}`)
-    return
+    exitUnchecked(classification.detail)
   }
   if (classification.kind === 'failure') {
     throw new Error(`dependency audit failed: ${classification.detail}`)
