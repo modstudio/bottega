@@ -7,6 +7,7 @@ import {
   run as runOrchestrator,
 } from '../orchestrator/src/cli/program.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { isRepeatable } from '../shared/cli-repeat-guard.ts'
 import { takesVariadicArgument } from '../shared/commander-public-path.ts'
 import { type BinaryEntries, dispatchBinary } from './dispatch.ts'
 import { ROUTES, resolveRoute } from './routes.ts'
@@ -28,6 +29,25 @@ function captureCommandOutput(command: Command, lines: string[]): void {
   })
   for (const child of command.commands) captureCommandOutput(child, lines)
 }
+
+test('every array-valued scalar option on the real command trees is marked repeatable', () => {
+  const unmarked: string[] = []
+  const inspect = (command: Command, path: string[]): void => {
+    for (const option of command.options) {
+      if (
+        (option.required || option.optional) &&
+        !option.variadic &&
+        Array.isArray(option.defaultValue) &&
+        !isRepeatable(option)
+      )
+        unmarked.push(`${path.join(' ')} ${option.flags}`)
+    }
+    for (const child of command.commands) inspect(child, [...path, child.name()])
+  }
+
+  for (const command of [orchProgram, createHubProgram()]) inspect(command, [command.name()])
+  expect(unmarked, unmarked.join('\n')).toEqual([])
+})
 
 test('wrapper help prints public orchestrator, hub, and translated usage paths', async () => {
   const lines: string[] = []

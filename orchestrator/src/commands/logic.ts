@@ -223,12 +223,7 @@ function registerEfficiencyCommands(program: Command): void {
     .command('efficiency')
     .description('report orchestration efficiency; median is nearest-rank 50th percentile')
     .option('--since <duration>', 'limit the current window by age (default: 7d)')
-    .option(
-      '--section <name>',
-      'print one section; repeat to select more',
-      (name, names: string[]) => [...names, name],
-      [],
-    )
+    .addOption(collectedOption('--section <name>', 'print one section; repeat to select more'))
     .option('--project <name>', 'limit project-keyed evidence to one project')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)

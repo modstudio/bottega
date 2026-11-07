@@ -15,11 +15,15 @@ type CliCommand = {
   hook(event: 'preAction', listener: () => void): unknown
 }
 
-export const REPEATABLE_OPTION = Symbol('repeatable CLI option')
+const REPEATABLE_OPTION = Symbol('repeatable CLI option')
 
 export function repeatable<T extends object>(option: T): T {
   Object.assign(option, { [REPEATABLE_OPTION]: true })
   return option
+}
+
+export function isRepeatable(option: object): boolean {
+  return Boolean((option as CliOption)[REPEATABLE_OPTION])
 }
 
 export function refuseRepeatedOptions(root: CliCommand): () => void {
@@ -28,7 +32,7 @@ export function refuseRepeatedOptions(root: CliCommand): () => void {
     const received = new Map<CliOption, unknown[]>()
     receivedByCommand.push(received)
     for (const option of command.options) {
-      if ((!option.required && !option.optional) || option.variadic || option[REPEATABLE_OPTION])
+      if ((!option.required && !option.optional) || option.variadic || isRepeatable(option))
         continue
       command.on(`option:${option.name()}`, (value) => {
         const values = received.get(option) ?? []

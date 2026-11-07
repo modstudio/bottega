@@ -143,16 +143,27 @@ test('workflow next refuses repeated artifact evidence before its floor runs', a
   const workflow = program.commands.find((command) => command.name() === 'workflow')!
   const next = workflow.commands.find((command) => command.name() === 'next')!
   let floorRan = false
+  const errors: string[] = []
+  const output = next.configureOutput()
   next.hook('preAction', () => {
     floorRan = true
   })
 
-  await expect(
-    program.parseAsync(['workflow', 'next', '--artifact', 'exec:1', '--artifact', 'exec:2'], {
-      from: 'user',
-    }),
-  ).rejects.toThrow('--artifact may be supplied only once; received exec:1 and exec:2')
-  expect(floorRan).toBeFalse()
+  next.configureOutput({ ...output, writeErr: (value) => errors.push(value) })
+  try {
+    expect(await run(['workflow', 'next', '--artifact', 'exec:1', '--artifact', 'exec:2'])).toBe(2)
+    expect(errors.join('')).toContain(
+      '--artifact may be supplied only once; received exec:1 and exec:2',
+    )
+    expect(floorRan).toBeFalse()
+  } finally {
+    next.configureOutput(output)
+  }
+})
+
+test('run resets repeat state after parsing fails before an action', async () => {
+  expect(await run(['load', '--since', '1h', '--unknown'])).toBe(2)
+  expect(await run(['load', '--since', '1h', '--json'])).not.toBe(2)
 })
 
 test('an unknown command keeps exit 2 and migration drain refusals carry their declared code', async () => {

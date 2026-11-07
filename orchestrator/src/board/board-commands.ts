@@ -1,7 +1,7 @@
 import { type Command, Option } from 'commander'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { REPEATABLE_OPTION } from '../../../shared/cli-repeat-guard.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { db } from '../database/db.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
@@ -32,10 +32,8 @@ const ARCHITECTS_AUDIENCE_HELP =
   'recipient; architects means this project, architects:all means every project, architects:<project> names one project'
 
 const collectedOption = (flags: string, description: string, initial?: string[]) => {
-  const option = Object.assign(new Option(flags, description).argParser(collect), {
-    [REPEATABLE_OPTION]: true,
-  })
-  return initial ? option.default(initial) : option
+  const option = repeatable(new Option(flags, description).argParser(collect))
+  return initial === undefined ? option : option.default(initial)
 }
 
 function parseIsoInstant(flag: string) {
