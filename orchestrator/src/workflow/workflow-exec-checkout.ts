@@ -1,27 +1,34 @@
 // concern: workflows
-/** Pure checkout agreement for workflow exec. Must not know filesystems, processes, or clocks. */
+/** Pure checkout agreement for workflow exec. The last child --cwd before -- decides. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export function workflowExecCommandCwd(command: string[]): string | null {
+  let directory: string | null = null
   for (let index = 0; index < command.length; index += 1) {
     const argument = command[index]!
-    if (argument === '--') return null
+    if (argument === '--') break
     if (argument === '--cwd') {
-      const directory = command[index + 1]
-      return directory && directory !== '--' ? directory : null
+      const value = command[index + 1]
+      if (value === '--') break
+      if (value) directory = value
+      index += 1
+      continue
     }
-    if (argument.startsWith('--cwd=')) return argument.slice('--cwd='.length)
+    if (argument.startsWith('--cwd=')) directory = argument.slice('--cwd='.length)
   }
-  return null
+  return directory
 }
+
+const shellQuote = (argument: string): string =>
+  /^[A-Za-z0-9_@%+=:,./-]+$/.test(argument) ? argument : `'${argument.replaceAll("'", "'\\''")}'`
 
 export function workflowExecCheckoutRefusal(
   command: string[],
   execCheckout: string,
+  commandDirectory: string | null,
   commandCheckout: string | null,
 ): string | null {
-  const directory = workflowExecCommandCwd(command)
-  if (directory === null || commandCheckout === execCheckout) return null
-  return `workflow exec runs in ${execCheckout} but the command names --cwd ${directory}; run it as: ${PLATFORM_SLUG} workflow exec --cwd ${directory} -- ${command.join(' ')}`
+  if (commandDirectory === null || commandCheckout === execCheckout) return null
+  return `workflow exec runs in ${execCheckout} but the command names --cwd ${commandDirectory}; run it as: ${PLATFORM_SLUG} workflow exec --cwd ${shellQuote(commandDirectory)} -- ${command.map(shellQuote).join(' ')}`
 }

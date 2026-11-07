@@ -1,6 +1,6 @@
 // concern: workflows
 /** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
@@ -300,15 +300,18 @@ export async function execCommand(
     )
   const command = argv.slice(3)
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
-  const resolvedCwd = resolve(process.cwd(), options.cwd ?? process.cwd())
-  const cwd = existsSync(resolvedCwd) ? realpathSync(resolvedCwd) : resolvedCwd
+  const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
   const commandDirectory = workflowExecCommandCwd(command)
   const resolvedCommandCwd = commandDirectory === null ? null : resolve(cwd, commandDirectory)
-  const commandCwd =
-    resolvedCommandCwd !== null && existsSync(resolvedCommandCwd)
-      ? realpathSync(resolvedCommandCwd)
-      : resolvedCommandCwd
-  const checkoutRefusal = workflowExecCheckoutRefusal(command, cwd, commandCwd)
+  const execCheckout = gitToplevel(cwd) ?? cwd
+  const commandCheckout =
+    resolvedCommandCwd === null ? null : (gitToplevel(resolvedCommandCwd) ?? resolvedCommandCwd)
+  const checkoutRefusal = workflowExecCheckoutRefusal(
+    command,
+    execCheckout,
+    resolvedCommandCwd,
+    commandCheckout,
+  )
   if (checkoutRefusal) throw new Error(checkoutRefusal)
   const registeredProject = projects().some(
     (project) => cwd === project.path || cwd.startsWith(`${project.path}/`),
@@ -316,6 +319,7 @@ export async function execCommand(
   const result = await recordWorkflowExec(command, {
     cwd,
     registeredProject,
+    runner: options.probeRunner,
   })
   print(execPrintRecord(result), String(result.id))
   presentCommandOutcome('exec', result, presentation)
