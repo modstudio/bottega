@@ -72,6 +72,9 @@ import { registerMachineJournalCommand } from './machine-journal.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
 
+const collectedOption = (flags: string, description: string) =>
+  repeatable(new Option(flags, description).argParser(collect).default([]))
+
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`
 const displayRunNumber = (recordId: string): number =>
@@ -691,9 +694,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   )
   for (const option of ORCH_DO_OPTIONS) {
     if ('name' in option && option.name === 'deliverable')
-      doVerb.addOption(
-        repeatable(new Option(option.flags, option.description).argParser(collect).default([])),
-      )
+      doVerb.addOption(collectedOption(option.flags, option.description))
     else doVerb.option(option.flags, option.description)
   }
   doVerb.action((_job, _prompt, _options, command) =>

@@ -274,6 +274,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-commands.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/cli-repeat-guard.ts',
     'commander',
     '../../../shared/board-duration.ts',
     '../database/db.ts',

@@ -148,10 +148,9 @@ test('workflow next refuses repeated artifact evidence before its floor runs', a
   })
 
   await expect(
-    program.parseAsync(
-      ['workflow', 'next', '--artifact', 'exec:1', '--artifact', 'exec:2'],
-      { from: 'user' },
-    ),
+    program.parseAsync(['workflow', 'next', '--artifact', 'exec:1', '--artifact', 'exec:2'], {
+      from: 'user',
+    }),
   ).rejects.toThrow('--artifact may be supplied only once; received exec:1 and exec:2')
   expect(floorRan).toBeFalse()
 })

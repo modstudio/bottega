@@ -8,8 +8,8 @@ type CliOption = {
 }
 
 type CliCommand = {
-  commands: CliCommand[]
-  options: CliOption[]
+  readonly commands: readonly CliCommand[]
+  readonly options: readonly CliOption[]
   on(event: string, listener: (value: unknown) => void): unknown
   error(message: string): never
   hook(event: 'preAction', listener: () => void): unknown
