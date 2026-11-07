@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { gitEnvironmentViolations, rawStarts, rawStartViolations } from './check-raw-start.ts'
 
 describe('raw start check', () => {
-  test('refuses a new process and HTTP start in a fixture', () => {
+  test('refuses new process and HTTP starts in production', () => {
     const findings = rawStarts({
       'orchestrator/src/example.ts': `
         import ky from 'ky'
@@ -15,6 +15,13 @@ describe('raw start check', () => {
       `,
     })
     expect(rawStartViolations(findings, { files: {} })).toHaveLength(5)
+  })
+
+  test('counts starts in shared fixtures', () => {
+    const findings = rawStarts({
+      'shared/fixtures/example.ts': `fetch('https://example.test')`,
+    })
+    expect(rawStartViolations(findings, { files: {} })).toHaveLength(1)
   })
 
   test('accepts baseline counts', () => {
@@ -31,6 +38,12 @@ describe('raw start check', () => {
     })
     expect(rawStartViolations(findings, { files: { 'shared/example.ts': 1 } })).toEqual([
       'shared/example.ts:1: raw start is not bounded; use shared/bounded-process.ts or shared/bounded-fetch.ts with a named budget',
+    ])
+  })
+
+  test('requires a stale baseline count to shrink', () => {
+    expect(rawStartViolations([], { files: { 'shared/example.ts': 1 } })).toEqual([
+      'shared/example.ts: raw start baseline may only shrink; lower its count from 1 to 0',
     ])
   })
 
@@ -57,5 +70,19 @@ describe('raw start check', () => {
       'shared/test-git-repository.ts',
     ])
     expect(rawStartViolations(findings, { files: { 'shared/git.ts': 1 } })).toEqual([])
+  })
+
+  test('requires bounded git starts to supply an environment', () => {
+    const findings = rawStarts({
+      'orchestrator/src/bounded.ts': `
+        import { startBounded, startBoundedSync as sync } from '../../../shared/bounded-process.ts'
+        startBounded(['git', 'status'], { budget: 'git-plumbing' })
+        sync(['git', 'status'], { budget: 'git-plumbing', env })
+      `,
+    })
+    expect(gitEnvironmentViolations(findings)).toEqual([
+      'orchestrator/src/bounded.ts:3: production git spawn must supply a scrubbed environment; use the guarded helpers in orchestrator/src/git/git-environment.ts, or gitAt in shared/git.ts',
+    ])
+    expect(rawStartViolations(findings, { files: {} })).toEqual([])
   })
 })

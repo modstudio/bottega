@@ -71,6 +71,20 @@ await report('output flood', async () =>
   }),
 )
 
+const syncOutputStarted = performance.now()
+try {
+  startBoundedSync(['sh', '-c', 'while :; do printf 1234567890; done'], {
+    budget: 'process-table',
+  })
+  console.log(
+    `sync output flood: unexpectedly completed in ${Math.round(performance.now() - syncOutputStarted)}ms`,
+  )
+} catch (error) {
+  console.log(
+    `sync output flood: ${error instanceof Error ? error.message : String(error)}; elapsed ${Math.round(performance.now() - syncOutputStarted)}ms`,
+  )
+}
+
 const server = Bun.serve({
   port: await freePort(),
   routes: {

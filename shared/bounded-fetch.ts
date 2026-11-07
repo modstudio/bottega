@@ -21,11 +21,17 @@ export function boundedFetch(budgetName: CallBudgetName): typeof fetch {
         throwHttpErrors: false,
       })
       const body = await response.arrayBuffer()
-      return new Response(body, {
+      const rebuilt = new Response(body, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
       })
+      Object.defineProperties(rebuilt, {
+        url: { value: response.url },
+        redirected: { value: response.redirected },
+        type: { value: response.type },
+      })
+      return rebuilt
     } catch (error) {
       if (init?.signal?.aborted) init.signal.throwIfAborted()
       if (input instanceof Request && input.signal.aborted) input.signal.throwIfAborted()
@@ -33,12 +39,7 @@ export function boundedFetch(budgetName: CallBudgetName): typeof fetch {
         throw new BoundExceededError(url, budgetName, 'output', budget.outputBytes)
       }
       if (isTimeoutError(error)) {
-        throw new BoundExceededError(
-          url,
-          budgetName,
-          'deadline',
-          budget.totalMs ?? budget.deadlineMs,
-        )
+        throw new BoundExceededError(url, budgetName, 'deadline', budget.deadlineMs)
       }
       throw error
     }

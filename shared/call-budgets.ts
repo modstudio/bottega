@@ -13,6 +13,7 @@ export type CallBudget = {
   deadlineMs: number
   totalMs?: number
   outputBytes: number
+  /** Applies to startBounded; startBoundedSync kills the process group at the deadline. */
   graceMs: number
 }
 
@@ -50,8 +51,10 @@ export class BoundExceededError extends Error {
 
   constructor(command: string, budget: CallBudgetName, bound: CallBound, value: number) {
     const unit = bound === 'deadline' ? 'ms' : 'bytes'
+    const total = bound === 'deadline' ? CALL_BUDGETS[budget].totalMs : undefined
+    const totalDescription = total === undefined ? '' : ` per attempt (${total} ms total)`
     super(
-      `${command} exceeded its ${budget} ${bound} bound of ${value} ${unit}; declare a larger named budget in shared/call-budgets.ts if the call legitimately needs more`,
+      `${command} exceeded its ${budget} ${bound} bound of ${value} ${unit}${totalDescription}; declare a larger named budget in shared/call-budgets.ts if the call legitimately needs more`,
     )
     this.name = 'BoundExceededError'
     this.command = command

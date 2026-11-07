@@ -1,24 +1,12 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Glob } from 'bun'
 import * as ts from 'typescript'
 import { ratchetDecision } from '../shared/ratchet.ts'
+import { ARCHITECTURE_CRUISE_ENTRIES } from './architecture-cruise.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const SOURCE_ROOTS = [
-  'orchestrator/src',
-  'hub/src',
-  'hub/data/src',
-  'hub/deploy/site/src',
-  'hub/site/src',
-  'hub/ui/src',
-  'hub/util/src',
-  'hub/views/src',
-  'retrieval/src',
-  'cli/src',
-  'shared',
-  'scripts',
-]
 const PRIMITIVES = new Set([
   'shared/call-budgets.ts',
   'shared/bounded-process.ts',
@@ -36,6 +24,7 @@ export type RawStart = {
   kind: 'process' | 'http'
   rawGit: boolean
   hasScrubbedEnvironment: boolean
+  bounded: boolean
 }
 export type RawStartBaseline = { files: Record<string, number> }
 
@@ -44,26 +33,34 @@ function productionTypeScript(path: string): boolean {
     path.endsWith('.ts') &&
     !path.endsWith('.test.ts') &&
     !path.endsWith('.d.ts') &&
-    !path.startsWith('hub/web/') &&
+    !path.includes('/test/') &&
+    !path.startsWith('hub/web/src/') &&
     !PRIMITIVES.has(path)
   )
 }
 
+function expandBraces(pattern: string): string[] {
+  const match = /\{([^{}]+)\}/.exec(pattern)
+  if (!match || match.index === undefined) return [pattern]
+  const before = pattern.slice(0, match.index)
+  const after = pattern.slice(match.index + match[0].length)
+  return match[1].split(',').flatMap((choice) => expandBraces(`${before}${choice}${after}`))
+}
+
 function sourceFiles(): string[] {
-  const files: string[] = []
-  const collect = (directory: string) => {
-    if (!existsSync(directory)) return
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = join(directory, entry.name)
-      if (entry.isDirectory()) collect(absolute)
-      else if (entry.isFile()) files.push(relative(ROOT, absolute))
-    }
-  }
-  for (const directory of SOURCE_ROOTS) collect(resolve(ROOT, directory))
-  return [...new Set(files)].filter(productionTypeScript).sort()
+  const typescriptEntries = ARCHITECTURE_CRUISE_ENTRIES.filter((entry) =>
+    /\{[^}]*\bts\b[^}]*\}/.test(entry),
+  )
+  const files = typescriptEntries.flatMap((entry) =>
+    expandBraces(entry).flatMap((pattern) =>
+      [...new Glob(pattern).scanSync({ cwd: ROOT, onlyFiles: true })].filter(productionTypeScript),
+    ),
+  )
+  return [...new Set(files)].sort()
 }
 
 type Imports = {
+  boundedCalls: Set<string>
   childCalls: Set<string>
   childNamespaces: Set<string>
   execaCalls: Set<string>
@@ -94,6 +91,11 @@ function registerNamedImport(
   imported: string,
   local: string,
 ): void {
+  if (
+    module.endsWith('/bounded-process.ts') &&
+    ['startBounded', 'startBoundedSync'].includes(imported)
+  )
+    imports.boundedCalls.add(local)
   if (CHILD_PROCESS_MODULES.has(module) && CHILD_PROCESS_CALLS.has(imported))
     imports.childCalls.add(local)
   if (module === 'execa' && EXECA_CALLS.has(imported)) imports.execaCalls.add(local)
@@ -124,6 +126,7 @@ function registerStartImports(imports: Imports, statement: ts.ImportDeclaration)
 
 function importedStarts(file: ts.SourceFile): Imports {
   const imports: Imports = {
+    boundedCalls: new Set(),
     childCalls: new Set(),
     childNamespaces: new Set(),
     execaCalls: new Set(),
@@ -199,6 +202,10 @@ function processStart(node: ts.CallExpression, imports: Imports): boolean {
   )
 }
 
+function boundedProcessStart(node: ts.CallExpression, imports: Imports): boolean {
+  return ts.isIdentifier(node.expression) && imports.boundedCalls.has(node.expression.text)
+}
+
 function callFinding(
   node: ts.CallExpression,
   file: ts.SourceFile,
@@ -206,14 +213,18 @@ function callFinding(
   imports: Imports,
 ): RawStart | undefined {
   const isProcess = processStart(node, imports)
-  if (!isProcess && !globalFetch(node) && !kyStart(node, imports)) return undefined
-  const git = bunStart(node)
-    ? gitFacts(node, file)
-    : { rawGit: false, hasScrubbedEnvironment: false }
+  const isBoundedProcess = boundedProcessStart(node, imports)
+  if (!isProcess && !isBoundedProcess && !globalFetch(node) && !kyStart(node, imports))
+    return undefined
+  const git =
+    bunStart(node) || isBoundedProcess
+      ? gitFacts(node, file)
+      : { rawGit: false, hasScrubbedEnvironment: false }
   return {
     file: path,
     line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
-    kind: isProcess ? 'process' : 'http',
+    kind: isProcess || isBoundedProcess ? 'process' : 'http',
+    bounded: isBoundedProcess,
     ...git,
   }
 }
@@ -231,6 +242,7 @@ function taggedFinding(
     kind: 'process',
     rawGit: false,
     hasScrubbedEnvironment: false,
+    bounded: false,
   }
 }
 
@@ -251,6 +263,12 @@ export function rawStarts(files: Readonly<Record<string, string>>): RawStart[] {
     left.localeCompare(right),
   )) {
     if (!productionTypeScript(path)) continue
+    if (
+      !['Bun.spawn', 'Bun.$', 'child_process', 'execa', 'ky', 'fetch', 'startBounded'].some(
+        (term) => source.includes(term),
+      )
+    )
+      continue
     const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const imports = importedStarts(file)
     const visit = (node: ts.Node): void => {
@@ -266,7 +284,7 @@ export function rawStarts(files: Readonly<Record<string, string>>): RawStart[] {
 function counts(findings: readonly RawStart[]): Record<string, number> {
   const result: Record<string, number> = {}
   for (const finding of findings) {
-    if (TEST_INFRASTRUCTURE.has(finding.file)) continue
+    if (finding.bounded || TEST_INFRASTRUCTURE.has(finding.file)) continue
     result[finding.file] = (result[finding.file] ?? 0) + 1
   }
   return result
@@ -299,7 +317,7 @@ export function rawStartViolations(
   const violations = refused.flatMap((finding) => {
     const allowed = baseline.files[finding.file] ?? 0
     return findings
-      .filter((candidate) => candidate.file === finding.file)
+      .filter((candidate) => candidate.file === finding.file && !candidate.bounded)
       .slice(allowed)
       .map(
         (candidate) =>
