@@ -1,7 +1,8 @@
 // concern: cli
 /** Registers session lifecycle adapters. */
 
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { adoptSessionRuns, formatSessionAdoption } from '../session/session-adopt.ts'
 import {
   closeOutSession,
@@ -18,7 +19,13 @@ export function register(program: Command): void {
   session
     .command('losses')
     .description('measure losses around Claude transcript compaction boundaries')
-    .option('--session <id>', 'select one session; repeat to select more', collect, [])
+    .addOption(
+      repeatable(
+        new Option('--session <id>', 'select one session; repeat to select more')
+          .argParser(collect)
+          .default([]),
+      ),
+    )
     .option('--all', 'select every readable transcript')
     .option('--since <date>', 'include rows at or after this ISO date')
     .option('--json', 'write the report as JSON')

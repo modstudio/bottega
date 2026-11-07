@@ -14,8 +14,11 @@ import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/rec
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { cacheHostedTaskFlow } from '../src/workflow/task-flow-read-through.ts'
-import { composeWorkflowWithCursor, nextWorkflowStep } from '../src/workflow/workflow-cursor.ts'
-import { testPorts } from '../src/workflow/workflow-cursor-test.fixture.ts'
+import { composeWorkflowWithCursor } from '../src/workflow/workflow-cursor.ts'
+import {
+  selectAndNextWorkflowStep as nextWorkflowStep,
+  testPorts,
+} from '../src/workflow/workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from '../src/workflow/workflow-seeds.ts'
 import { installWorkflowStoreFixture } from '../src/workflow/workflow-store.fixture.ts'
 import { testRecordAuth } from './fixtures/record-auth-postgres.ts'

@@ -65,6 +65,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../git/git-environment.ts',
     '../project/projects.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-exec-checkout.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-catalogue-commands.ts', [
     'node:path',
     '../cli/args.ts',

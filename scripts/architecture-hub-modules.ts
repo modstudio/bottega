@@ -210,6 +210,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/note-cli.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/cli-repeat-guard.ts',
       'commander',
       './attribute.ts',
       './db.ts',
@@ -264,6 +265,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/cli-program.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/cli-repeat-guard.ts',
       '../../shared/commander-public-path.ts',
       '../../shared/database-lock-refusal.ts',
       '../../shared/store-lock-refusal-log.ts',
@@ -314,6 +316,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/report-cli.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/cli-repeat-guard.ts',
       'commander',
       './db.ts',
       './projects.ts',

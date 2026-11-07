@@ -1,8 +1,9 @@
 // concern: ratchet-cli
 /** Owns only the `bottega gate ratchet` grammar and presentation. */
 
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { runRatchet } from '../ratchet/ratchet-service.ts'
 
 const USAGE =
@@ -24,20 +25,22 @@ export function register(program: Command): void {
     .requiredOption('--format <name>', 'format of the linter output or reports')
     .option('--staged', 'compare staged changes with the current commit')
     .option('--base <ref>', 'Git revision used as the comparison base')
-    .option(
-      '--support <path>',
-      'relative support path made available to the linter',
-      (value, previous: string[]) => [...previous, value],
-      [],
+    .addOption(
+      repeatable(
+        new Option('--support <path>', 'relative support path made available to the linter')
+          .argParser((value, previous: string[]) => [...previous, value])
+          .default([]),
+      ),
     )
     .option('--head-report <file>', 'report file for the current changes')
     .option('--base-report <file>', 'report file for the comparison base')
     .option('--report-root <path>', 'root used to resolve paths in reports')
-    .option(
-      '--measure <rule=pattern>',
-      'rule and message pattern measured as one finding',
-      measure,
-      [],
+    .addOption(
+      repeatable(
+        new Option('--measure <rule=pattern>', 'rule and message pattern measured as one finding')
+          .argParser(measure)
+          .default([]),
+      ),
     )
     .argument('[command...]')
     .allowUnknownOption(true)

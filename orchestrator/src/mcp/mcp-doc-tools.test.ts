@@ -176,6 +176,32 @@ test('set_doc reports a stale canon revision with the MCP remedy', async () => {
   })
 })
 
+test('set_doc canon lint refusal names the MCP cwd remedy', async () => {
+  const current = await canonFixture()
+
+  await withDocClient(async (client) => {
+    const result = await client.callTool({
+      name: 'set_doc',
+      arguments: {
+        scope: 'canon',
+        subject: project,
+        slug,
+        title: 'MCP canon write',
+        body: `${initialBody}\nRead \`orchestrator/src/mcp/missing.ts\`.\n`,
+        reason: 'exercise the MCP canon lint refusal',
+        expected_revision: current.revision,
+      },
+    })
+
+    expect(result.isError).toBe(true)
+    const message = (result.content as { text: string }[])[0]!.text
+    expect(message).toContain(
+      `judged against ${selectedTree}; pass cwd <checkout> to validate against another checkout of ${project}`,
+    )
+    expect(message).not.toContain('--cwd')
+  })
+})
+
 test('remove_doc removes at the expected revision against the selected canon tree', async () => {
   const current = await canonFixture()
 
