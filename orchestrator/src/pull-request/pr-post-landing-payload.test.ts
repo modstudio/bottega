@@ -106,6 +106,12 @@ test.each(Object.keys(payload).filter((field) => field !== 'depth'))(
   },
 )
 
+test.each(['', 5, false])('post-landing payload refuses invalid depth %p', (depth) => {
+  expect(() => parsePullRequestPostLandingPayload(JSON.stringify({ ...payload, depth }))).toThrow(
+    'depth',
+  )
+})
+
 test.each(['branch', 'declaresDeploy'] as const)(
   'post-landing payload refuses a rung plan missing %s',
   (field) => {
