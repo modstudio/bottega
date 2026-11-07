@@ -19,13 +19,15 @@ const STATUS_SUMMARY_SCHEMA = {
 // Collection runs in trees without orchestrator/node_modules, so this check
 // stays a plain predicate over the two fields rather than loading Ajv.
 const matchesStatusSummary: SchemaValidatorPort = (value) => {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, failures: ['/ type: must be object'] }
+  }
   const { status, summary } = value as Record<string, unknown>
-  return (
-    typeof status === 'string' &&
+  return typeof status === 'string' &&
     STATUS_SUMMARY_SCHEMA.properties.status.enum.some((allowed) => allowed === status) &&
     typeof summary === 'string'
-  )
+    ? { ok: true }
+    : { ok: false, failures: ['/ required: must have required properties'] }
 }
 
 export function refusalScoreGuidance(text: string | null, jobName: string): string | null {

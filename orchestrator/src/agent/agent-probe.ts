@@ -444,7 +444,10 @@ export async function probeAgent(
     ? tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output)
     : null
   const schemaOk = needs.schema ? structured.status === 'ok' && parsedSchema?.status === 'ok' : null
-  const fileOk = valueMatchesStrictSchema(JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile)
+  const fileOk = valueMatchesStrictSchema(
+    JSON.parse(readFileSync(schemaPath, 'utf8')),
+    parsedFile,
+  ).ok
   const perJob = Object.fromEntries(
     Object.keys(JOBS).map((jobName) => {
       const job = JOBS[jobName]

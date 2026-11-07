@@ -6,7 +6,12 @@ import { classify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
-import type { AjvValidator } from './ajv-validator.ts'
+import {
+  ajvFailures,
+  type AjvValidator,
+  errorMessage,
+  type SchemaValidationResult,
+} from './ajv-validator.ts'
 import { loadAjvValidator } from './ajv-validator-loader.ts'
 import type { CodexAskExposure } from './codex-ask-exposure.ts'
 import type { QuotaReadings } from './quota-readings.ts'
@@ -739,16 +744,19 @@ export function valueMatchesStrictSchema(
   schema: unknown,
   value: unknown,
   loadValidator: () => AjvValidator = loadAjvValidator,
-): boolean {
-  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
+): SchemaValidationResult {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
+    return { ok: false, failures: ['schema did not compile: schema must be an object'] }
+  }
   const validator = loadValidator()
   try {
-    return validator.compile(schema)(value)
-  } catch {
-    return false
+    const validate = validator.compile(schema)
+    return validate(value) ? { ok: true } : { ok: false, failures: ajvFailures(validate.errors) }
+  } catch (error) {
+    return { ok: false, failures: [`schema did not compile: ${errorMessage(error)}`] }
   }
 }
 
-export function schemaMismatchError(output: string): string {
-  return `reply did not match the worker contract:\n${output}`
+export function schemaMismatchError(output: string, failures: string[]): string {
+  return `reply did not match the worker contract: ${failures.join('; ')}\n${output}`
 }

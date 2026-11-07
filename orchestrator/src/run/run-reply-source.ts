@@ -19,9 +19,11 @@ export function replyContract(
 }
 
 export type ReplySourceFacts = {
-  replyFile: { present: false } | { present: true; text: string; matches: boolean; parsed: unknown }
+  replyFile:
+    | { present: false }
+    | { present: true; text: string; matches: boolean; failures: string[]; parsed: unknown }
   contract: ReplyContract
-  fallback: { text: string; matches: boolean }
+  fallback: { text: string; matches: boolean; failures: string[] }
 }
 
 export type ReplySourceRuling = {
@@ -47,7 +49,7 @@ export function decideReplySource(facts: ReplySourceFacts): ReplySourceRuling {
       output,
       replyFileError: facts.replyFile.matches
         ? null
-        : `${REPLY_FILE_NAME} did not match the worker contract:\n${facts.replyFile.text}`,
+        : `${REPLY_FILE_NAME} did not match the worker contract: ${facts.replyFile.failures.join('; ')}\n${facts.replyFile.text}`,
       replyFilePresent: true,
       replyFileValue: facts.replyFile.parsed,
       rewriteOutputFile: true,
@@ -61,7 +63,7 @@ export function decideReplySource(facts: ReplySourceFacts): ReplySourceRuling {
   return {
     output,
     replyFileError: !facts.fallback.matches
-      ? `${REPLY_FILE_NAME} missing; final message ${schemaMismatchError(facts.fallback.text)}`
+      ? `${REPLY_FILE_NAME} missing; final message ${schemaMismatchError(facts.fallback.text, facts.fallback.failures)}`
       : null,
     replyFilePresent: false,
     replyFileValue: null,
@@ -74,21 +76,32 @@ function parseReplyFile(
   text: string,
   dialect: ReplyDialect,
   schema: unknown,
-): { matches: boolean; parsed: unknown } {
+): { matches: boolean; failures: string[]; parsed: unknown } {
   if (contract !== 'custom') {
-    const reply = dialect.parse(text).reply
-    if (reply !== null) return { matches: true, parsed: reply }
+    const result = dialect.parse(text)
+    if (result.reply !== null) return { matches: true, failures: [], parsed: result.reply }
     try {
-      return { matches: false, parsed: JSON.parse(text) as unknown }
-    } catch {
-      return { matches: false, parsed: null }
+      return { matches: false, failures: result.failures, parsed: JSON.parse(text) as unknown }
+    } catch (error) {
+      return {
+        matches: false,
+        failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+        parsed: null,
+      }
     }
   }
   try {
     const parsed: unknown = JSON.parse(text)
-    return { matches: valueMatchesReplySchema(parsed, schema as JsonSchema), parsed }
-  } catch {
-    return { matches: false, parsed: null }
+    const validation = valueMatchesReplySchema(parsed, schema as JsonSchema)
+    return validation.ok
+      ? { matches: true, failures: [], parsed }
+      : { matches: false, failures: validation.failures, parsed }
+  } catch (error) {
+    return {
+      matches: false,
+      failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+      parsed: null,
+    }
   }
 }
 
@@ -97,17 +110,27 @@ function matchesFallback(
   text: string,
   dialect: ReplyDialect,
   schema: unknown,
-): boolean {
-  if (contract === 'none') return dialect.parse(text).reply !== null
+): { matches: boolean; failures: string[] } {
+  if (contract === 'none') {
+    const result = dialect.parse(text)
+    return { matches: result.reply !== null, failures: result.failures }
+  }
   let value: unknown
   try {
     value = JSON.parse(text)
-  } catch {
-    return false
+  } catch (error) {
+    return {
+      matches: false,
+      failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+    }
   }
-  if (contract === 'text') return valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)
-  if (contract === 'custom') return valueMatchesStrictSchema(schema, value)
-  return false
+  const validation =
+    contract === 'text'
+      ? valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)
+      : valueMatchesStrictSchema(schema, value)
+  return validation.ok
+    ? { matches: true, failures: [] }
+    : { matches: false, failures: validation.failures }
 }
 
 /** Apply one reply-file and contract-validation decision for live and processless workers. */
@@ -130,12 +153,13 @@ export function collectReplySource(input: {
             present: true,
             text: input.replyFileText,
             matches: parsedReplyFile!.matches,
+            failures: parsedReplyFile!.failures,
             parsed: parsedReplyFile!.parsed,
           },
     contract: input.contract,
     fallback: {
       text: input.fallbackText,
-      matches: matchesFallback(input.contract, input.fallbackText, input.dialect, input.schema),
+      ...matchesFallback(input.contract, input.fallbackText, input.dialect, input.schema),
     },
   })
 }

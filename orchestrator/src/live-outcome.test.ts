@@ -238,7 +238,8 @@ describe('final-message fallback contract composition', () => {
         status: 'failed',
         failureKind: 'contract',
         error:
-          "reply.json missing; final message reply did not match the worker contract:\nI'll start by reading the task definitions and current implementation.",
+          'reply.json missing; final message reply did not match the worker contract: not JSON: JSON Parse error: Unexpected identifier "I"\n' +
+          "I'll start by reading the task definitions and current implementation.",
         failover: 'select',
       },
     },
@@ -261,7 +262,8 @@ describe('final-message fallback contract composition', () => {
         status: 'failed',
         failureKind: 'contract',
         error:
-          "reply.json missing; final message reply did not match the worker contract:\nI'll start by reading the task.\nRan into this error trying to compact: Server error: Upstream error from Inception",
+          'reply.json missing; final message reply did not match the worker contract: not JSON: JSON Parse error: Unexpected identifier "I"\n' +
+          "I'll start by reading the task.\nRan into this error trying to compact: Server error: Upstream error from Inception",
         failover: 'select',
       },
     },
@@ -283,7 +285,8 @@ describe('final-message fallback contract composition', () => {
         status: 'failed',
         failureKind: 'contract',
         error:
-          'reply.json missing; final message reply did not match the worker contract:\nI will count the requested records next.',
+          'reply.json missing; final message reply did not match the worker contract: not JSON: JSON Parse error: Unexpected identifier "I"\n' +
+          'I will count the requested records next.',
         failover: 'select',
       },
     },
@@ -337,7 +340,8 @@ describe('final-message fallback contract composition', () => {
       expected: {
         status: 'failed',
         failureKind: 'contract',
-        error: 'reply.json missing; final message reply did not match the worker contract:',
+        error:
+          'reply.json missing; final message reply did not match the worker contract: not JSON: JSON Parse error: Unexpected EOF',
         failover: 'select',
       },
     },

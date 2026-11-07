@@ -10,7 +10,7 @@ const MATCHING_SCHEMA = {
 /** Prove the compiled binary can validate a value against a strict schema with no vendor. */
 export function checkStrictSchemaMain(): number {
   try {
-    if (!valueMatchesStrictSchema(MATCHING_SCHEMA, { status: 'ok' })) {
+    if (!valueMatchesStrictSchema(MATCHING_SCHEMA, { status: 'ok' }).ok) {
       console.error('strict schema validator rejected a matching value')
       return 1
     }

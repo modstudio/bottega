@@ -10,7 +10,7 @@ import {
 const baseFacts: ReplySourceFacts = {
   replyFile: { present: false },
   contract: 'none',
-  fallback: { text: 'transport result', matches: false },
+  fallback: { text: 'transport result', matches: false, failures: ['not JSON: unexpected token'] },
 }
 
 describe('reply source ruling', () => {
@@ -27,6 +27,7 @@ describe('reply source ruling', () => {
           present: true,
           text: '{"answer":"file answer"}',
           matches: true,
+          failures: [],
           parsed: { answer: 'file answer' },
         },
         contract: 'text',
@@ -47,13 +48,15 @@ describe('reply source ruling', () => {
           present: true,
           text: '{"wrong":"shape"}',
           matches: false,
+          failures: ['/ required: must have required property answer'],
           parsed: { wrong: 'shape' },
         },
         contract: 'text',
       },
       expected: {
         output: '{"wrong":"shape"}',
-        replyFileError: 'reply.json did not match the worker contract:\n{"wrong":"shape"}',
+        replyFileError:
+          'reply.json did not match the worker contract: / required: must have required property answer\n{"wrong":"shape"}',
         replyFilePresent: true,
         replyFileValue: { wrong: 'shape' },
         rewriteOutputFile: true,
@@ -63,7 +66,13 @@ describe('reply source ruling', () => {
       name: 'a matching custom reply file keeps its text',
       facts: {
         ...baseFacts,
-        replyFile: { present: true, text: '{"count":2}', matches: true, parsed: { count: 2 } },
+        replyFile: {
+          present: true,
+          text: '{"count":2}',
+          matches: true,
+          failures: [],
+          parsed: { count: 2 },
+        },
         contract: 'custom',
       },
       expected: {
@@ -79,7 +88,7 @@ describe('reply source ruling', () => {
       facts: {
         ...baseFacts,
         contract: 'text',
-        fallback: { text: '{"answer":"fallback answer"}', matches: true },
+        fallback: { text: '{"answer":"fallback answer"}', matches: true, failures: [] },
       },
       expected: {
         output: 'fallback answer',
@@ -95,7 +104,7 @@ describe('reply source ruling', () => {
       expected: {
         output: 'transport result',
         replyFileError:
-          'reply.json missing; final message reply did not match the worker contract:\ntransport result',
+          'reply.json missing; final message reply did not match the worker contract: not JSON: unexpected token\ntransport result',
         replyFilePresent: false,
         replyFileValue: null,
         rewriteOutputFile: true,
@@ -106,12 +115,16 @@ describe('reply source ruling', () => {
       facts: {
         ...baseFacts,
         contract: 'custom',
-        fallback: { text: '{"count":"two"}', matches: false },
+        fallback: {
+          text: '{"count":"two"}',
+          matches: false,
+          failures: ['/count type: must be number'],
+        },
       },
       expected: {
         output: '{"count":"two"}',
         replyFileError:
-          'reply.json missing; final message reply did not match the worker contract:\n{"count":"two"}',
+          'reply.json missing; final message reply did not match the worker contract: /count type: must be number\n{"count":"two"}',
         replyFilePresent: false,
         replyFileValue: null,
         rewriteOutputFile: false,
@@ -122,7 +135,7 @@ describe('reply source ruling', () => {
       facts: {
         ...baseFacts,
         contract: 'custom',
-        fallback: { text: '{"count":2}', matches: true },
+        fallback: { text: '{"count":2}', matches: true, failures: [] },
       },
       expected: {
         output: '{"count":2}',
@@ -138,7 +151,7 @@ describe('reply source ruling', () => {
       expected: {
         output: 'transport result',
         replyFileError:
-          'reply.json missing; final message reply did not match the worker contract:\ntransport result',
+          'reply.json missing; final message reply did not match the worker contract: not JSON: unexpected token\ntransport result',
         replyFilePresent: false,
         replyFileValue: null,
         rewriteOutputFile: false,
@@ -188,7 +201,7 @@ const fullJsonReply = {
 const unusedDialect = {
   schema: fullJsonSchema,
   schemaName: 'fullJsonSchema',
-  parse: () => ({ reply: null, contractObjects: 0 }),
+  parse: () => ({ reply: null, contractObjects: 0, failures: [] }),
 }
 
 function customReply(value: unknown) {
@@ -210,6 +223,6 @@ describe('custom reply-file schema validation', () => {
   })
 
   test('reply-file leniency removes additionalProperties at every depth', () => {
-    expect(valueMatchesStrictSchema(fullJsonSchema, fullJsonReply)).toBe(false)
+    expect(valueMatchesStrictSchema(fullJsonSchema, fullJsonReply).ok).toBe(false)
   })
 })

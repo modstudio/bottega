@@ -178,7 +178,7 @@ function jsonObjects(text: string): unknown[] {
 }
 
 export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
-  const found = jsonObjects(text).find((value) => valueMatchesReplySchema(value, schema))
+  const found = jsonObjects(text).find((value) => valueMatchesReplySchema(value, schema).ok)
   if (!found) throw new Error('issue worker reply did not match its structured contract')
   return found as T
 }

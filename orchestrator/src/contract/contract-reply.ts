@@ -35,7 +35,9 @@ export type JsonSchema = {
   additionalProperties?: boolean
 }
 
-export type SchemaValidatorPort = (value: unknown, schema: JsonSchema) => boolean
+export type SchemaValidationResult = { ok: true } | { ok: false; failures: string[] }
+
+export type SchemaValidatorPort = (value: unknown, schema: JsonSchema) => SchemaValidationResult
 
 /**
  * Which authoritative canon source was available to a run.
@@ -142,15 +144,21 @@ function parseCandidate<T>(
   candidate: string,
   schema: JsonSchema,
   validatesSchema: SchemaValidatorPort,
-): T | null {
+): { reply: T | null; failures: string[] } {
   try {
     let o = JSON.parse(candidate)
     if (o && typeof o === 'object' && !Array.isArray(o) && o.status === 'blocked') {
       o = { ...o, status: 'asking' }
     }
-    return validatesSchema(o, schema) ? o : null
-  } catch {
-    return null
+    const validation = validatesSchema(o, schema)
+    return validation.ok
+      ? { reply: o, failures: [] }
+      : { reply: null, failures: validation.failures }
+  } catch (error) {
+    return {
+      reply: null,
+      failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+    }
   }
 }
 
@@ -166,9 +174,18 @@ export function parseWorkerReplyWithCount<T>(
   text: string,
   schema: JsonSchema,
   validatesSchema: SchemaValidatorPort,
-): { reply: T | null; contractObjects: number } {
-  const valid = scanJsonObjects(text.trim())
-    .map((candidate) => parseCandidate<T>(candidate, schema, validatesSchema))
-    .filter((value): value is T => value !== null)
-  return { reply: valid[0] ?? null, contractObjects: valid.length }
+): { reply: T | null; contractObjects: number; failures: string[] } {
+  const trimmed = text.trim()
+  const scanned = scanJsonObjects(trimmed)
+  const candidates = scanned.length ? scanned : [trimmed]
+  const parsed = candidates.map((candidate) =>
+    parseCandidate<T>(candidate, schema, validatesSchema),
+  )
+  const valid = parsed.flatMap((candidate) => (candidate.reply === null ? [] : [candidate.reply]))
+  const lastRejected = parsed.findLast((candidate) => candidate.reply === null)
+  return {
+    reply: valid[0] ?? null,
+    contractObjects: valid.length,
+    failures: valid.length ? [] : (lastRejected?.failures ?? []),
+  }
 }

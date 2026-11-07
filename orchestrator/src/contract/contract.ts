@@ -977,7 +977,7 @@ export function parseWorkerReply(text: string): WorkerReply | null {
   return parseWorkerReplyWithCount<WorkerReply>(text, WORKER_SCHEMA, valueMatchesReplySchema).reply
 }
 
-type DialectParseResult = { reply: unknown | null; contractObjects: number }
+type DialectParseResult = { reply: unknown | null; contractObjects: number; failures: string[] }
 export type ReplyDialect = {
   schema: JsonSchema
   schemaName: string
@@ -988,12 +988,17 @@ function parseSchemaReply(text: string, schema: JsonSchema): DialectParseResult 
   let value: unknown
   try {
     value = JSON.parse(text)
-  } catch {
-    return { reply: null, contractObjects: 0 }
+  } catch (error) {
+    return {
+      reply: null,
+      contractObjects: 0,
+      failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+    }
   }
-  return valueMatchesReplySchema(value, schema)
-    ? { reply: value, contractObjects: 1 }
-    : { reply: null, contractObjects: 0 }
+  const validation = valueMatchesReplySchema(value, schema)
+  return validation.ok
+    ? { reply: value, contractObjects: 1, failures: [] }
+    : { reply: null, contractObjects: 0, failures: validation.failures }
 }
 
 /** Resolve the complete syntactic reply contract for one registered job. */
@@ -1020,13 +1025,16 @@ export function resolveReplyDialect(j: Job): ReplyDialect {
   }
   if (j.findings) {
     const inline = j.name === 'review-lens-inline'
+    const schema = inline ? INLINE_REVIEW_SCHEMA : REVIEW_SCHEMA
     return {
-      schema: inline ? INLINE_REVIEW_SCHEMA : REVIEW_SCHEMA,
+      schema,
       schemaName: 'REVIEW_SCHEMA',
-      parse: (text) => ({
-        reply: parseReviewOutput(text),
-        contractObjects: 0,
-      }),
+      parse: (text) => {
+        const reply = parseReviewOutput(text)
+        return reply
+          ? { reply, contractObjects: 0, failures: [] }
+          : { ...parseSchemaReply(text, schema), reply: null }
+      },
     }
   }
   if (j.name === 'verify-claim') {
@@ -1040,7 +1048,12 @@ export function resolveReplyDialect(j: Job): ReplyDialect {
     return {
       schema: READER_SCHEMA,
       schemaName: 'READER_SCHEMA',
-      parse: (text) => ({ reply: parseReaderOutput(text), contractObjects: 0 }),
+      parse: (text) => {
+        const reply = parseReaderOutput(text)
+        return reply
+          ? { reply, contractObjects: 0, failures: [] }
+          : { ...parseSchemaReply(text, READER_SCHEMA), reply: null }
+      },
     }
   }
   return {
