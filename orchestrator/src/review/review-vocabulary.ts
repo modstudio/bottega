@@ -41,7 +41,9 @@ export type ReviewLimits = (typeof REVIEW_LIMITS)[number]
 export type ReviewOverlap = (typeof REVIEW_OVERLAP)[number]
 export type ReviewSeverity = (typeof REVIEW_SEVERITY)[number]
 export type ReviewLensSelectionReason = (typeof REVIEW_LENS_SELECTION_REASON)[number]
-export type ReviewLensOwedReason = (typeof REVIEW_LENS_OWED_REASONS)[number]
+export type ReviewLensOwedReason =
+  | (typeof REVIEW_LENS_OWED_REASONS)[number]
+  | `decision-conformance not admitted: ${string}`
 
 const MONITOR_SEVERITY = ['informational', 'attention'] as const
 export type MonitorSeverity = (typeof MONITOR_SEVERITY)[number]

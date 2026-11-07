@@ -194,6 +194,9 @@
     "coverage",
     "limits",
     "overlap",
+    "selectionReason",
+    "taskTextInput",
+    "rulingsInput",
     "createdAt",
     "updatedAt"
   ],

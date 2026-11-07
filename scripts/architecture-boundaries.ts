@@ -305,7 +305,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/dispatch/review-lens-prompt.ts',
     [],
     'Keep review-lens prompt composition a pure decision over lens text and supplied prompt.',
-    ['./review-memory.ts'],
+    ['./review-memory.ts', '../database/review-lens-input-artifact.ts'],
   ),
   ...docBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
   boundary(
@@ -458,6 +458,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../review/review-target.ts',
       './route.ts',
       '../dispatch/probe-launch-overrides.ts',
+      '../database/review-lens-input-artifact.ts',
     ],
   ),
   boundary(

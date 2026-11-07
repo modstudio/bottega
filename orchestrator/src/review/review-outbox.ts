@@ -104,6 +104,7 @@ export function enqueueReviewLens(
       `SELECT lens.record_id,lens.lens,lens.agent,lens.model,lens.tree_inspected,lens.reviewed_tree,
               lens.standards_read,lens.files_covered,lens.commands_run,lens.could_not_verify,
               lens.mcp_tools,lens.docs_read,lens.substitutes,lens.reproduced,lens.coverage,lens.limits,lens.overlap,lens.selection_reason,
+              lens.task_text_input,lens.rulings_input,
               review.record_id AS review_record_id, run.record_id AS run_record_id,
               project.name AS project_name, project.record_id AS project_record_id
        FROM review_lens lens JOIN review ON review.record_id=lens.review_record_id
@@ -144,6 +145,8 @@ export function enqueueReviewLens(
       limits: row.limits,
       overlap: row.overlap,
       selectionReason: row.selection_reason,
+      taskTextInput: row.task_text_input,
+      rulingsInput: row.rulings_input,
       createdAt: at,
       updatedAt: at,
     },

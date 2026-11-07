@@ -331,13 +331,7 @@ export function printReviewTier(
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
       .join(', ')
-    if (lens.reason === 'tree-mismatch' || lens.reason === 'commit-mismatch') {
-      log(`${lens.id} owed: ${lens.reason}`)
-    } else {
-      log(
-        `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}${reasonLabel(lens.reason)}`,
-      )
-    }
+    log(reviewTierLensLine(lens, sources))
   }
   if (output.secondOpinion) {
     log(
@@ -348,6 +342,17 @@ export function printReviewTier(
   output.reasons.forEach((reason, index) => {
     log(`${reason}${index === 0 ? basisLabel(output.riskBasis) : ''}`)
   })
+}
+
+function reviewTierLensLine(
+  lens: ReturnType<typeof reviewTierOutputForTarget>['lens_profiles'][number],
+  sources: string,
+): string {
+  if (lens.reason?.startsWith('decision-conformance not admitted:')) return lens.reason
+  if (lens.reason === 'tree-mismatch' || lens.reason === 'commit-mismatch') {
+    return `${lens.id} owed: ${lens.reason}`
+  }
+  return `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}${reasonLabel(lens.reason)}`
 }
 
 const basisLabel = (basis: string | null | undefined): string => (basis ? `  basis: ${basis}` : '')
