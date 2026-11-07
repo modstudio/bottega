@@ -466,7 +466,7 @@ test('recorded review tree paths are extracted, normalized, and confined to the 
   expect(decisionFor('/missing/trees/other/../subject/ (detached worktree)')).toMatchObject({
     complete: true,
   })
-  expect(decisionFor('74ff6ad...70ba3dd')).toMatchObject({ complete: true })
+  expect(decisionFor('74ff6ad...7034567')).toMatchObject({ complete: true })
   expect(decisionFor()).toMatchObject({ complete: true })
   expect(decisionFor('/missing/trees/subject/src')).toMatchObject({ complete: true })
   expect(decisionFor('/missing/trees/other')).toMatchObject({
@@ -486,7 +486,7 @@ test('tree evidence extracts the first qualifying absolute path from recorded re
       'base 558e80d; (`/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-a8d3e4ed17f2`: diff origin/master...HEAD)',
     ),
   ).toBe('/Users/shmuel/Projects/bottega/.claude/worktrees/orch-review-a8d3e4ed17f2')
-  expect(treeInspectedPath('74ff6ad...70ba3dd')).toBeNull()
+  expect(treeInspectedPath('74ff6ad...7034567')).toBeNull()
   expect(treeInspectedPath(null)).toBeNull()
 })
 
