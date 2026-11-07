@@ -100,7 +100,7 @@ program.commands
   .find((command) => command.name() === 'agent')!
   .addHelpText('after', `\nValid verbs: ${AGENT_COMMAND_VERBS.join(', ')}`)
 
-refuseRepeatedOptions(program)
+const beginParse = refuseRepeatedOptions(program)
 
 export { AGENT_COMMAND_VERBS }
 
@@ -210,6 +210,7 @@ export function recordInvocationSession(argv: string[]): void {
 }
 
 export async function run(argv: string[], invocation?: PublicCommandInvocation): Promise<number> {
+  beginParse()
   setRawArgv(argv)
   applyPublicCommandPath(program, argv, invocation)
   try {

@@ -19,6 +19,8 @@ import { registerOutboxCommands } from './outbox-cli.ts'
 import { registerReportCommands } from './report-cli.ts'
 import { registerTaskCommands } from './task-cli.ts'
 
+const beginParses = new WeakMap<Command, () => void>()
+
 export function createHubProgram(): HubCommand {
   const command = new HubCommand()
     .name(PLATFORM_SLUG)
@@ -43,7 +45,7 @@ export function createHubProgram(): HubCommand {
   registerTaskCommands(command)
   registerNoteCommands(command)
   registerReportCommands(command)
-  refuseRepeatedOptions(command)
+  beginParses.set(command, refuseRepeatedOptions(command))
   return command
 }
 
@@ -88,6 +90,7 @@ export async function run(
     console.log(installationVersionText(import.meta.dir, process.env))
     return 0
   }
+  beginParses.get(command)?.()
   applyPublicCommandPath(command, argv, invocation)
   try {
     const input = literalHelp(argv.length ? argv : ['--help'])

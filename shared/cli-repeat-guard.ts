@@ -22,9 +22,11 @@ export function repeatable<T extends object>(option: T): T {
   return option
 }
 
-export function refuseRepeatedOptions(root: CliCommand): void {
+export function refuseRepeatedOptions(root: CliCommand): () => void {
+  const receivedByCommand: Map<CliOption, unknown[]>[] = []
   for (const command of [root, ...root.commands.flatMap(descendants)]) {
     const received = new Map<CliOption, unknown[]>()
+    receivedByCommand.push(received)
     for (const option of command.options) {
       if ((!option.required && !option.optional) || option.variadic || option[REPEATABLE_OPTION])
         continue
@@ -36,7 +38,6 @@ export function refuseRepeatedOptions(root: CliCommand): void {
     }
     command.hook('preAction', () => {
       const repeated = [...received].find(([, values]) => values.length > 1)
-      received.clear()
       if (!repeated) return
       const [option, values] = repeated
       const name = option.long?.replace(/^--/, '') ?? option.name()
@@ -44,6 +45,9 @@ export function refuseRepeatedOptions(root: CliCommand): void {
         `--${name} may be supplied only once; received ${String(values[0])} and ${String(values[1])}`,
       )
     })
+  }
+  return () => {
+    for (const received of receivedByCommand) received.clear()
   }
 }
 
