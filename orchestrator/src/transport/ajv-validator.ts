@@ -2,8 +2,6 @@
 /** Owns construction of the embedded Ajv validator. Must not know transports, agents, or contracts. */
 import Ajv2020 from 'ajv/dist/2020.js'
 
-export type SchemaValidationResult = { ok: true } | { ok: false; failures: string[] }
-
 type AjvValidationFailure = {
   instancePath: string
   keyword: string

@@ -1,17 +1,23 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { assetPath } from '../../../shared/install-root.ts'
-import { contractValidationFailures, validationErrorMessage } from '../contract/contract-reply.ts'
+import {
+  contractValidationFailures,
+  type SchemaValidationResult,
+  schemaCompileFailure,
+} from '../contract/contract-reply.ts'
 import type { FailureKind } from '../failure/failure.ts'
 import { classify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
-import type { AjvValidator, SchemaValidationResult } from './ajv-validator.ts'
+import type { AjvValidator } from './ajv-validator.ts'
 import { loadAjvValidator } from './ajv-validator-loader.ts'
 import type { CodexAskExposure } from './codex-ask-exposure.ts'
 import type { QuotaReadings } from './quota-readings.ts'
 import type { AgentBilling, VendorUsage } from './vendor-usage.ts'
+
+export { contractMismatchError } from '../contract/contract-reply.ts'
 
 export {
   EMPTY_VENDOR_USAGE,
@@ -742,7 +748,7 @@ export function valueMatchesStrictSchema(
   loadValidator: () => AjvValidator = loadAjvValidator,
 ): SchemaValidationResult {
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
-    return { ok: false, failures: ['schema did not compile: schema must be an object'] }
+    return { ok: false, failures: [schemaCompileFailure('schema must be an object')] }
   }
   const validator = loadValidator()
   try {
@@ -753,11 +759,7 @@ export function valueMatchesStrictSchema(
   } catch (error) {
     return {
       ok: false,
-      failures: [`schema did not compile: ${validationErrorMessage(error)}`],
+      failures: [schemaCompileFailure(error)],
     }
   }
-}
-
-export function schemaMismatchError(output: string, failures: string[]): string {
-  return `reply did not match the worker contract: ${failures.join('; ')}\n${output}`
 }

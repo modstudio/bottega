@@ -35,6 +35,7 @@ export function decideHarnessReply(
   const derived = deriveLiveOutcome({
     writesJob,
     contractStatus: (statusReply?.status as 'done' | 'asking' | 'refused' | undefined) ?? null,
+    contractFailures: parsed.failures,
     replyError: missingError,
     output: source.output,
     replyFilePresent: source.replyFilePresent,

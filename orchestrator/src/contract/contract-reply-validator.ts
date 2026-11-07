@@ -5,7 +5,7 @@ import { loadAjvValidator } from '../transport/ajv-validator-loader.ts'
 import {
   contractValidationFailures,
   type SchemaValidatorPort,
-  validationErrorMessage,
+  schemaCompileFailure,
 } from './contract-reply.ts'
 
 type CompiledReplyValidator = ReturnType<ReturnType<typeof loadAjvValidator>['compile']>
@@ -70,7 +70,7 @@ export const valueMatchesReplySchema: SchemaValidatorPort = (value, schema) => {
     } catch (error) {
       return {
         ok: false,
-        failures: [`schema did not compile: ${validationErrorMessage(error)}`],
+        failures: [schemaCompileFailure(error)],
       }
     }
   }

@@ -178,9 +178,15 @@ function jsonObjects(text: string): unknown[] {
 }
 
 export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
-  const found = jsonObjects(text).find((value) => valueMatchesReplySchema(value, schema).ok)
-  if (!found) throw new Error('issue worker reply did not match its structured contract')
-  return found as T
+  const candidates = jsonObjects(text)
+  let lastRejected: string[] | null = null
+  for (const value of candidates) {
+    const validation = valueMatchesReplySchema(value, schema)
+    if (validation.ok) return value as T
+    lastRejected = validation.failures
+  }
+  const failures = lastRejected?.join('; ') ?? 'no JSON object found'
+  throw new Error(`issue worker reply did not match its structured contract: ${failures}`)
 }
 
 async function hub(args: string[]): Promise<string> {

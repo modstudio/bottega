@@ -4,9 +4,13 @@
  * files, stores, processes, or run terminalisation.
  */
 import { REPLY_FILE_NAME, type ReplyDialect, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
-import type { JsonSchema } from '../contract/contract-reply.ts'
+import {
+  contractMismatchError,
+  type JsonSchema,
+  notJsonFailure,
+} from '../contract/contract-reply.ts'
 import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
-import { schemaMismatchError, valueMatchesStrictSchema } from '../transport/transport.ts'
+import { valueMatchesStrictSchema } from '../transport/transport.ts'
 
 export type ReplyContract = 'none' | 'text' | 'custom'
 
@@ -49,7 +53,7 @@ export function decideReplySource(facts: ReplySourceFacts): ReplySourceRuling {
       output,
       replyFileError: facts.replyFile.matches
         ? null
-        : `${REPLY_FILE_NAME} did not match the worker contract: ${facts.replyFile.failures.join('; ')}\n${facts.replyFile.text}`,
+        : contractMismatchError(REPLY_FILE_NAME, facts.replyFile.failures, facts.replyFile.text),
       replyFilePresent: true,
       replyFileValue: facts.replyFile.parsed,
       rewriteOutputFile: true,
@@ -63,7 +67,7 @@ export function decideReplySource(facts: ReplySourceFacts): ReplySourceRuling {
   return {
     output,
     replyFileError: !facts.fallback.matches
-      ? `${REPLY_FILE_NAME} missing; final message ${schemaMismatchError(facts.fallback.text, facts.fallback.failures)}`
+      ? `${REPLY_FILE_NAME} missing; final message ${contractMismatchError('reply', facts.fallback.failures, facts.fallback.text)}`
       : null,
     replyFilePresent: false,
     replyFileValue: null,
@@ -85,7 +89,7 @@ function parseReplyFile(
     } catch (error) {
       return {
         matches: false,
-        failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+        failures: [notJsonFailure(error)],
         parsed: null,
       }
     }
@@ -99,7 +103,7 @@ function parseReplyFile(
   } catch (error) {
     return {
       matches: false,
-      failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+      failures: [notJsonFailure(error)],
       parsed: null,
     }
   }
@@ -121,7 +125,7 @@ function matchesFallback(
   } catch (error) {
     return {
       matches: false,
-      failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+      failures: [notJsonFailure(error)],
     }
   }
   const validation =

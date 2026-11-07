@@ -16,6 +16,7 @@ import { composeCodexThrottleNotice } from './transport/codex-throttle.ts'
 const base: LiveOutcomeFacts = {
   writesJob: true,
   contractStatus: null,
+  contractFailures: [],
   replyError: null,
   output: 'useful answer',
   replyFilePresent: false,
@@ -159,6 +160,20 @@ describe('live outcome derivation', () => {
       status: 'failed',
       failureKind: 'contract',
       error: `${stderr}\n${replyNotice.trimEnd()}`,
+    })
+  })
+
+  test('a missing writer contract names the rejected rule', () => {
+    expect(
+      outcome({
+        contractFailures: ["/ required: must have required property 'status'"],
+      }),
+    ).toEqual({
+      status: 'failed',
+      failureKind: 'contract',
+      error:
+        "reply did not match the worker contract: / required: must have required property 'status'\n" +
+        'useful answer',
     })
   })
 })

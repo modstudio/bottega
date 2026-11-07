@@ -641,7 +641,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let replyFileError: string | null = null
   let replyFilePresent = false
   let contract: WorkerReply | null = null
-  let contractObjects = 0
+  let contractValidation: [number, string[]] = [0, []]
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
@@ -962,12 +962,12 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     if (writesJob && output) {
       const parsed = resolvedDialect.parse(output)
       contract = parsed.reply as WorkerReply | null
-      contractObjects = parsed.contractObjects
+      contractValidation = [parsed.contractObjects, parsed.failures]
     }
     acceptedQuestions = await acceptedQuestionsWithNotice(claim.id, contract, transportQuestions)
     const derived = deriveLiveOutcome({
       writesJob,
-      contractStatus: contract?.status ?? null,
+      ...{ contractStatus: contract?.status ?? null, contractFailures: contractValidation[1] },
       replyError,
       output,
       replyFilePresent,
@@ -1067,7 +1067,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     replyFileError,
     replyFilePresent,
     contract,
-    contractObjects,
+    contractObjects: contractValidation[0],
     acceptedQuestions,
     status,
     error,

@@ -35,7 +35,7 @@ export type JsonSchema = {
   additionalProperties?: boolean
 }
 
-type SchemaValidationResult = { ok: true } | { ok: false; failures: string[] }
+export type SchemaValidationResult = { ok: true } | { ok: false; failures: string[] }
 
 export type SchemaValidatorPort = (value: unknown, schema: JsonSchema) => SchemaValidationResult
 
@@ -61,8 +61,20 @@ export function contractValidationFailures(
   return failures
 }
 
-export function validationErrorMessage(error: unknown): string {
+function validationErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+export function notJsonFailure(error: unknown): string {
+  return `not JSON: ${validationErrorMessage(error)}`
+}
+
+export function schemaCompileFailure(error: unknown): string {
+  return `schema did not compile: ${validationErrorMessage(error)}`
+}
+
+export function contractMismatchError(subject: string, failures: string[], text: string): string {
+  return `${subject} did not match the worker contract: ${failures.join('; ')}\n${text}`
 }
 
 /**
@@ -183,9 +195,15 @@ function parseCandidate<T>(
   } catch (error) {
     return {
       reply: null,
-      failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+      failures: [notJsonFailure(error)],
     }
   }
+}
+
+export type ContractReplyParseResult<T> = {
+  reply: T | null
+  contractObjects: number
+  failures: string[]
 }
 
 /**
@@ -200,7 +218,7 @@ export function parseWorkerReplyWithCount<T>(
   text: string,
   schema: JsonSchema,
   validatesSchema: SchemaValidatorPort,
-): { reply: T | null; contractObjects: number; failures: string[] } {
+): ContractReplyParseResult<T> {
   const trimmed = text.trim()
   const scanned = scanJsonObjects(trimmed)
   const candidates = scanned.length ? scanned : [trimmed]

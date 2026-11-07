@@ -8,7 +8,9 @@ import { REVIEW_SEVERITY } from '../review/review-vocabulary.ts'
 import { progressFileInstruction } from '../run/checkpoint.ts'
 import {
   CANON_SOURCE_SCHEMA,
+  type ContractReplyParseResult,
   type JsonSchema,
+  notJsonFailure,
   parseWorkerReplyWithCount,
   VERIFY_CLAIM_SCHEMA,
 } from './contract-reply.ts'
@@ -977,14 +979,13 @@ export function parseWorkerReply(text: string): WorkerReply | null {
   return parseWorkerReplyWithCount<WorkerReply>(text, WORKER_SCHEMA, valueMatchesReplySchema).reply
 }
 
-type DialectParseResult = { reply: unknown | null; contractObjects: number; failures: string[] }
 export type ReplyDialect = {
   schema: JsonSchema
   schemaName: string
-  parse: (text: string) => DialectParseResult
+  parse: (text: string) => ContractReplyParseResult<unknown>
 }
 
-function parseSchemaReply(text: string, schema: JsonSchema): DialectParseResult {
+function parseSchemaReply(text: string, schema: JsonSchema): ContractReplyParseResult<unknown> {
   let value: unknown
   try {
     value = JSON.parse(text)
@@ -992,7 +993,7 @@ function parseSchemaReply(text: string, schema: JsonSchema): DialectParseResult 
     return {
       reply: null,
       contractObjects: 0,
-      failures: [`not JSON: ${error instanceof Error ? error.message : String(error)}`],
+      failures: [notJsonFailure(error)],
     }
   }
   const validation = valueMatchesReplySchema(value, schema)

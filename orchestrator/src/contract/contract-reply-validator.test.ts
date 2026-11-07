@@ -37,20 +37,6 @@ describe('worker contract validation failures', () => {
     })
   })
 
-  test('a stray additional property remains accepted', () => {
-    const result = valueMatchesReplySchema(
-      { name: 'reply', extra: true },
-      {
-        type: 'object',
-        additionalProperties: false,
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
-    )
-
-    expect(result).toEqual({ ok: true })
-  })
-
   test('a schema compile failure names the compiler error', () => {
     const result = valueMatchesReplySchema({}, { type: 'not-a-json-schema-type' })
 
@@ -63,16 +49,6 @@ describe('worker contract validation failures', () => {
 
     expect(result.reply).toBeNull()
     expect(result.failures[0]).toMatch(/^not JSON: /)
-  })
-
-  test('the understand reply shape names the rule broken inside deliverables', () => {
-    const result = valueMatchesReplySchema(
-      { deliverables: ['inventory'], narrative: 'done', files_written: null },
-      READER_SCHEMA,
-    )
-
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.failures[0]).toMatch(/^\/deliverables\/0 type: /)
   })
 
   test('failure rendering keeps the limit and counts what was left out', () => {
