@@ -1,6 +1,7 @@
 // concern: code-search-adapter
 /** Applies project policy, spawns retrieval code search, and validates its JSON contract. */
 
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { type CodeSearchOutput, CodeSearchOutputSchema } from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { Project } from '../project/projects.ts'
@@ -8,19 +9,11 @@ import type { Project } from '../project/projects.ts'
 type Runner = (argv: string[]) => Promise<{ stdout: string; stderr: string; exitCode: number }>
 
 async function runRetrieval(argv: string[]) {
-  const child = Bun.spawn([...bottegaEntryArgv('retrieval-search'), ...argv], {
+  return startBounded([...bottegaEntryArgv('retrieval-search'), ...argv], {
+    budget: 'self-cli',
     cwd: process.cwd(),
     env: { ...process.env },
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  return { stdout, stderr, exitCode }
 }
 
 export async function searchProjectCode(

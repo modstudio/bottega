@@ -183,6 +183,7 @@ export const modules: ArchitectureModule[] = [
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   module('orchestrator/src/doc/doc-search.ts', [
+    '../../../shared/bounded-process.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
   ]),
@@ -206,6 +207,7 @@ export const modules: ArchitectureModule[] = [
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/code/code-search.ts', [
+    '../../../shared/bounded-process.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
     '../project/projects.ts',

@@ -35,7 +35,47 @@ export type JsonSchema = {
   additionalProperties?: boolean
 }
 
-export type SchemaValidatorPort = (value: unknown, schema: JsonSchema) => boolean
+export type SchemaValidationResult = { ok: true } | { ok: false; failures: string[] }
+
+export type SchemaValidatorPort = (value: unknown, schema: JsonSchema) => SchemaValidationResult
+
+export const CONTRACT_FAILURE_LIMIT = 5
+
+export type ContractValidationFailure = {
+  instancePath: string
+  keyword: string
+  message?: string
+}
+
+export function contractValidationFailures(
+  errors: readonly ContractValidationFailure[] | null | undefined,
+): string[] {
+  const failures = (errors ?? []).slice(0, CONTRACT_FAILURE_LIMIT).map((error) => {
+    const path = error.instancePath || '/'
+    return `${path} ${error.keyword}: ${error.message ?? 'validation failed'}`
+  })
+  const omitted = (errors?.length ?? 0) - failures.length
+  if (omitted > 0 && failures.length > 0) {
+    failures[failures.length - 1] += `; ${omitted} more failure${omitted === 1 ? '' : 's'} left out`
+  }
+  return failures
+}
+
+function validationErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+export function notJsonFailure(error: unknown): string {
+  return `not JSON: ${validationErrorMessage(error)}`
+}
+
+export function schemaCompileFailure(error: unknown): string {
+  return `schema did not compile: ${validationErrorMessage(error)}`
+}
+
+export function contractMismatchError(subject: string, failures: string[], text: string): string {
+  return `${subject} did not match the worker contract: ${failures.join('; ')}\n${text}`
+}
 
 /**
  * Which authoritative canon source was available to a run.
@@ -142,16 +182,28 @@ function parseCandidate<T>(
   candidate: string,
   schema: JsonSchema,
   validatesSchema: SchemaValidatorPort,
-): T | null {
+): { reply: T | null; failures: string[] } {
   try {
     let o = JSON.parse(candidate)
     if (o && typeof o === 'object' && !Array.isArray(o) && o.status === 'blocked') {
       o = { ...o, status: 'asking' }
     }
-    return validatesSchema(o, schema) ? o : null
-  } catch {
-    return null
+    const validation = validatesSchema(o, schema)
+    return validation.ok
+      ? { reply: o, failures: [] }
+      : { reply: null, failures: validation.failures }
+  } catch (error) {
+    return {
+      reply: null,
+      failures: [notJsonFailure(error)],
+    }
   }
+}
+
+export type ContractReplyParseResult<T> = {
+  reply: T | null
+  contractObjects: number
+  failures: string[]
 }
 
 /**
@@ -166,9 +218,18 @@ export function parseWorkerReplyWithCount<T>(
   text: string,
   schema: JsonSchema,
   validatesSchema: SchemaValidatorPort,
-): { reply: T | null; contractObjects: number } {
-  const valid = scanJsonObjects(text.trim())
-    .map((candidate) => parseCandidate<T>(candidate, schema, validatesSchema))
-    .filter((value): value is T => value !== null)
-  return { reply: valid[0] ?? null, contractObjects: valid.length }
+): ContractReplyParseResult<T> {
+  const trimmed = text.trim()
+  const scanned = scanJsonObjects(trimmed)
+  const candidates = scanned.length ? scanned : [trimmed]
+  const parsed = candidates.map((candidate) =>
+    parseCandidate<T>(candidate, schema, validatesSchema),
+  )
+  const valid = parsed.flatMap((candidate) => (candidate.reply === null ? [] : [candidate.reply]))
+  const lastRejected = parsed.findLast((candidate) => candidate.reply === null)
+  return {
+    reply: valid[0] ?? null,
+    contractObjects: valid.length,
+    failures: valid.length ? [] : (lastRejected?.failures ?? []),
+  }
 }
