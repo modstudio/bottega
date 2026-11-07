@@ -2,8 +2,9 @@
 /** Registers judgment adapters and validates their CLI-only inputs. */
 
 import { readFileSync } from 'node:fs'
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
 import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { db, writableDb } from '../database/db.ts'
@@ -23,6 +24,9 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { recalibrate } from '../score/recalibration.ts'
 import type { CliFlags } from './support.ts'
 import { collect, log, optionFlags, write } from './support.ts'
+
+const collectedOption = (flags: string, description: string) =>
+  repeatable(new Option(flags, description).argParser(collect).default([]))
 
 const commonValueFlags = [
   '--finding',
@@ -105,13 +109,12 @@ const cleanupPresentation: CleanupPresentation = {
 }
 
 function addJudgmentOptions(command: Command): Command {
-  command.option(
-    '--finding <value>',
-    `record N=${FINDING_VALUE}; ${FINDING_DETAIL_RULE}`,
-    collect,
-    [],
+  command.addOption(
+    collectedOption('--finding <value>', `record N=${FINDING_VALUE}; ${FINDING_DETAIL_RULE}`),
   )
-  command.option('--duplicate <value>', 'link N to the same finding in another run', collect, [])
+  command.addOption(
+    collectedOption('--duplicate <value>', 'link N to the same finding in another run'),
+  )
   const descriptions: Record<
     Exclude<(typeof commonValueFlags)[number], '--finding' | '--duplicate'>,
     string

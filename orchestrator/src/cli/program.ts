@@ -2,6 +2,7 @@
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { Command, CommanderError } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refuseRepeatedOptions } from '../../../shared/cli-repeat-guard.ts'
 import {
   applyPublicCommandPath,
   type PublicCommandInvocation,
@@ -98,6 +99,8 @@ registerTestSubstance(program)
 program.commands
   .find((command) => command.name() === 'agent')!
   .addHelpText('after', `\nValid verbs: ${AGENT_COMMAND_VERBS.join(', ')}`)
+
+refuseRepeatedOptions(program)
 
 export { AGENT_COMMAND_VERBS }
 

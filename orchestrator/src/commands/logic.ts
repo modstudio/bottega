@@ -1,8 +1,9 @@
 // concern: cli
 /** Registers extracted logic-verb adapters. Must not own application decisions. */
 
-import type { Command, OptionValues } from 'commander'
+import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
@@ -690,7 +691,9 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   )
   for (const option of ORCH_DO_OPTIONS) {
     if ('name' in option && option.name === 'deliverable')
-      doVerb.option(option.flags, option.description, collect, [])
+      doVerb.addOption(
+        repeatable(new Option(option.flags, option.description).argParser(collect).default([])),
+      )
     else doVerb.option(option.flags, option.description)
   }
   doVerb.action((_job, _prompt, _options, command) =>

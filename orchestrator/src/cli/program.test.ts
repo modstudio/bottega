@@ -139,6 +139,23 @@ test('the retired top-level probe spelling is not registered', () => {
   expect(program.commands.some((command) => command.name() === 'probe')).toBeFalse()
 })
 
+test('workflow next refuses repeated artifact evidence before its floor runs', async () => {
+  const workflow = program.commands.find((command) => command.name() === 'workflow')!
+  const next = workflow.commands.find((command) => command.name() === 'next')!
+  let floorRan = false
+  next.hook('preAction', () => {
+    floorRan = true
+  })
+
+  await expect(
+    program.parseAsync(
+      ['workflow', 'next', '--artifact', 'exec:1', '--artifact', 'exec:2'],
+      { from: 'user' },
+    ),
+  ).rejects.toThrow('--artifact may be supplied only once; received exec:1 and exec:2')
+  expect(floorRan).toBeFalse()
+})
+
 test('an unknown command keeps exit 2 and migration drain refusals carry their declared code', async () => {
   expect(exitCodeFor(new CommanderError(1, 'commander.unknownCommand', 'unknown command'))).toBe(2)
   expect(await run(['definitely-not-a-command'])).toBe(2)

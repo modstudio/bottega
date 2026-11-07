@@ -2,6 +2,7 @@
 /** Owns the bought CLI grammar. Must not own application behavior. */
 import { type Command, CommanderError } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { refuseRepeatedOptions } from '../../shared/cli-repeat-guard.ts'
 import {
   applyPublicCommandPath,
   type PublicCommandInvocation,
@@ -42,6 +43,7 @@ export function createHubProgram(): HubCommand {
   registerTaskCommands(command)
   registerNoteCommands(command)
   registerReportCommands(command)
+  refuseRepeatedOptions(command)
   return command
 }
 
@@ -86,7 +88,6 @@ export async function run(
     console.log(installationVersionText(import.meta.dir, process.env))
     return 0
   }
-  HubCommand.beginParse()
   applyPublicCommandPath(command, argv, invocation)
   try {
     const input = literalHelp(argv.length ? argv : ['--help'])
