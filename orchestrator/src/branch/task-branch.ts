@@ -233,6 +233,7 @@ export function taskBranchPullRequestCheck(input: {
   try {
     nameListing = targetedTaskBranchPullRequests(input.project, input.branch)
   } catch (error) {
+    if (error instanceof Error && error.name === 'BoundExceededError') throw error
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
   }
   const namePullRequests = nameListing.pullRequests
@@ -259,6 +260,7 @@ export function taskBranchPullRequestCheck(input: {
         ? { pullRequests: [], truncated: false }
         : targetedMergedPullRequests(input.project, { search: input.launchKey })
   } catch (error) {
+    if (error instanceof Error && error.name === 'BoundExceededError') throw error
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
   }
   const commitPullRequests = commitListing.pullRequests.sort((left, right) =>

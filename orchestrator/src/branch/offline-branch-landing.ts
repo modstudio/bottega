@@ -2,6 +2,8 @@
 /** Observes the local facts consumed by the branch landing classifier without consulting GitHub. */
 
 import type { Database } from 'bun:sqlite'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
@@ -27,16 +29,15 @@ export type OfflineBranchLandingObservation = OfflineBranchLandingCandidate & {
 }
 
 function git(cwd: string, ...args: string[]): string {
-  const process = Bun.spawnSync(['git', ...args], {
+  const process = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (process.exitCode !== 0) {
-    throw new Error(process.stderr.toString().trim() || `git ${args.join(' ')} failed`)
+    throw new Error(process.stderr.trim() || `git ${args.join(' ')} failed`)
   }
-  return process.stdout.toString().trim()
+  return process.stdout.trim()
 }
 
 function localBranches(project: Project): Map<string, string> {
@@ -117,7 +118,8 @@ function observeProject(
     if (!tip) return [{ ...candidate, branchExists: false, landed: false }]
     try {
       return [classifyExistingBranch({ candidate, project, tip, trunkTip, records })]
-    } catch {
+    } catch (error) {
+      if (error instanceof BoundExceededError) throw error
       return []
     }
   })
@@ -137,7 +139,8 @@ export function offlineBranchLandingObservations(
       if (!project) return []
       try {
         return observeProject(project, projectCandidates, records)
-      } catch {
+      } catch (error) {
+        if (error instanceof BoundExceededError) throw error
         return []
       }
     },

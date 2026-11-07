@@ -5,6 +5,8 @@ export type { PullRequestView } from './pull-request-view.ts'
 
 /** Lists merged pull requests and checks whether branch content landed through one. */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 
@@ -33,25 +35,23 @@ export type PullRequestNameCheck<T extends PullRequestHead = MergedPullRequest> 
   | null
 
 function command(cwd: string, argv: string[], label: string): string {
-  let process: ReturnType<typeof Bun.spawnSync>
+  let process: ReturnType<typeof startBoundedSync>
   try {
     // Output is parsed, so a forced-color environment must not reach gh or git.
     const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
-    process = Bun.spawnSync(argv, {
+    process = startBoundedSync(argv, {
+      budget: budgetForArgv(argv),
       cwd,
       env: { ...env, NO_COLOR: '1' },
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
   }
   if (process.exitCode !== 0) {
-    throw new Error(
-      `${label} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
-    )
+    throw new Error(`${label} failed: ${process.stderr.trim() || `exit ${process.exitCode}`}`)
   }
-  return process.stdout?.toString().trim() ?? ''
+  return process.stdout.trim()
 }
 
 function git(cwd: string, ...args: string[]): string {
@@ -240,6 +240,7 @@ function fetchPullRequest(project: Project, pullRequest: PullRequestHead): strin
     )
     return null
   } catch (shaError) {
+    if (shaError instanceof BoundExceededError) throw shaError
     try {
       git(
         project.path,
@@ -251,6 +252,7 @@ function fetchPullRequest(project: Project, pullRequest: PullRequestHead): strin
       )
       return null
     } catch (refError) {
+      if (refError instanceof BoundExceededError) throw refError
       return `PR #${pullRequest.number} fetch failed by SHA (${String(shaError)}) and pull ref (${String(refError)})`
     }
   }
@@ -288,6 +290,7 @@ export function pullRequestCommitCheck(
         return { number: pullRequest.number }
       }
     } catch (error) {
+      if (error instanceof BoundExceededError) throw error
       failure ??= `PR #${pullRequest.number} commit check failed: ${String(error)}`
     }
   }
@@ -314,6 +317,7 @@ export function pullRequestNameCheck<T extends PullRequestHead>(
       if (mergeBase === branchTip) return { pullRequest, containsTip: true }
       mismatch = pullRequest
     } catch (error) {
+      if (error instanceof BoundExceededError) throw error
       failure ??= `PR #${pullRequest.number} head containment check failed: ${String(error)}`
     }
   }

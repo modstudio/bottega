@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { closeDatabaseForFixture, db } from '../database/db.ts'
 import { migrationJournal } from '../database/migrations.ts'
 import { projectByName } from '../project/projects.ts'
@@ -216,9 +217,11 @@ test('an already-merged pull request skips admission and resumes post-merge stag
   expect(released).toBe(true)
 })
 
-test('a merged pull request records evidence before refusing a failed merge-commit lookup', () => {
-  registerProject([])
-  recordPassingGate()
+test.each([
+  new Error('merge-commit lookup failed: forge unavailable'),
+  new BoundExceededError('gh pr view 42', 'gh', 'deadline', 60_000),
+])('a merged pull request reconciles a $name merge-commit lookup failure', (failure) => {
+  registerProject([]), recordPassingGate()
   const evidence: string[] = []
   let releaseReached = false
   expect(() =>
@@ -227,21 +230,20 @@ test('a merged pull request records evidence before refusing a failed merge-comm
       cwd,
       adapter({
         mergeCommit: () => {
-          throw new Error('merge-commit lookup failed: forge unavailable')
+          throw failure
         },
         recordLandings: () => evidence.push('landing'),
-        recordCi: () => {
-          evidence.push('ci')
-          return undefined
-        },
+        recordCi: () => (evidence.push('ci'), undefined),
         releaseRequired: () => {
           releaseReached = true
-          throw new Error('release must not run without a merge commit')
+          throw new Error('release must not run')
         },
       }),
+      undefined,
+      true,
     ),
   ).toThrow(
-    `pull request #42 merged, but the merge commit could not be read: merge-commit lookup failed: forge unavailable; retry with: ${PLATFORM_SLUG} pr merge 42`,
+    `pull request #42 merged, but the merge commit could not be read: ${failure.message}; retry with: ${PLATFORM_SLUG} pr merge 42`,
   )
   expect(evidence).toEqual(['landing', 'ci'])
   expect(releaseReached).toBeFalse()

@@ -1,7 +1,23 @@
 import { describe, expect, test } from 'bun:test'
-import { BoundExceededError } from './call-budgets.ts'
+import { BoundExceededError, budgetForArgv } from './call-budgets.ts'
 
 describe('call budgets', () => {
+  test.each([
+    { argv: ['gh'], budget: 'gh' },
+    { argv: ['git', 'fetch'], budget: 'git-network' },
+    { argv: ['git', '-C', '/x', 'ls-remote'], budget: 'git-network' },
+    { argv: ['git', 'rev-parse'], budget: 'git-plumbing' },
+    { argv: ['git', '-c', 'a=b', 'push'], budget: 'git-network' },
+    { argv: ['git', '--git-dir', '.git', 'fetch'], budget: 'git-network' },
+    { argv: ['git', '--work-tree', '/w', 'push', 'origin', 'main'], budget: 'git-network' },
+    { argv: ['git', '--namespace', 'ns', 'ls-remote'], budget: 'git-network' },
+    { argv: ['git', '--git-dir', '.git', 'status'], budget: 'git-plumbing' },
+    { argv: ['git', '--config-env', 'A=B', 'fetch'], budget: 'git-network' },
+    { argv: ['git', '--git-dir=.git', 'fetch'], budget: 'git-network' },
+  ] as const)('$argv selects $budget', ({ argv, budget }) => {
+    expect(budgetForArgv(argv)).toBe(budget)
+  })
+
   test('deadline refusal names the command, budget, value, and remedy', () => {
     expect(
       new BoundExceededError('https://example.test', 'hosted-api', 'deadline', 30_000).message,

@@ -4,6 +4,7 @@
  * run claims, worktree creation, transports, or contracts.
  */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { resolveTaskBranch, type TaskBranchCandidate, taskBranchIsAncestor } from './task-branch.ts'
 
@@ -98,19 +99,18 @@ export function taskBranchDivergenceRefusal(
 }
 
 function taskBranchGit(cwd: string, args: string[], allowExitOne = false): string | null {
-  const process = Bun.spawnSync(['git', '-C', cwd, ...args], {
+  const process = startBoundedSync(['git', '-C', cwd, ...args], {
+    budget: 'git-plumbing',
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (allowExitOne && process.exitCode === 1) return null
   if (process.exitCode !== 0) {
     throw new Error(
       `git ${args.join(' ')} failed while checking task branch compatibility: ` +
-        (process.stderr.toString().trim() || `exit ${process.exitCode}`),
+        (process.stderr.trim() || `exit ${process.exitCode}`),
     )
   }
-  return process.stdout.toString().trim()
+  return process.stdout.trim()
 }
 
 /** Gather the caller's Git facts once and apply the pure reuse decision. */

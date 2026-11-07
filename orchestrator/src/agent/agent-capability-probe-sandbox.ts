@@ -2,6 +2,7 @@
 /** Owns the disposable worktree, ask listener, sandbox selection, and teardown shared by capability probes. */
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
@@ -41,14 +42,13 @@ export type CapabilityProbeSandboxInput = {
 
 function createScratchGitWorktree(path: string): void {
   mkdirSync(path, { recursive: true })
-  const initialized = Bun.spawnSync(['git', 'init', '--quiet', path], {
+  const initialized = startBoundedSync(['git', 'init', '--quiet', path], {
+    budget: 'git-plumbing',
     env: scrubbedGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (initialized.exitCode !== 0) {
     throw new Error(
-      `registration capability probe could not create its git worktree: ${initialized.stderr.toString().trim() || `git init exited ${initialized.exitCode ?? 'unknown'}`}`,
+      `registration capability probe could not create its git worktree: ${initialized.stderr.trim() || `git init exited ${initialized.exitCode ?? 'unknown'}`}`,
     )
   }
 }

@@ -38,6 +38,9 @@ export const databaseModules: ArchitectureModule[] = [
     'node:path',
     'node:url',
     '../../../shared/brand.ts',
+    '../../../shared/bounded-fetch.ts',
+    '../../../shared/bounded-process.ts',
+    '../../../shared/call-budgets.ts',
     '../../../shared/install-root.ts',
     '../../../shared/release-artifacts.ts',
     '../../../shared/state-directory.ts',
@@ -74,6 +77,7 @@ export const databaseModules: ArchitectureModule[] = [
   module('orchestrator/src/database/machine-update-mover.ts', [
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/bounded-process.ts',
     '../../../shared/embedded-assets.ts',
     '../../../shared/install-root.ts',
   ]),

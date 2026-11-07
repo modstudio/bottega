@@ -3,7 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
 import {
@@ -407,7 +409,7 @@ export function completePullRequestPostLanding(input: {
 }
 
 function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {
-  const result = Bun.spawnSync(
+  const result = startBoundedSync(
     [
       join(project.path, 'bin', PLATFORM_SLUG),
       'workflow',
@@ -417,13 +419,13 @@ function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotio
       '--reason',
       reason,
     ],
-    { cwd: project.path, env: process.env, stdout: 'pipe', stderr: 'pipe' },
+    { budget: 'self-cli', cwd: project.path, env: process.env },
   )
-  if (result.exitCode === 0) return { ok: true, output: result.stdout.toString().trim() }
+  if (result.exitCode === 0) return { ok: true, output: result.stdout.trim() }
   return {
     ok: false,
     stage: 'promote',
-    detail: result.stderr.toString().trim() || `exit ${result.exitCode}`,
+    detail: result.stderr.trim() || `exit ${result.exitCode}`,
   }
 }
 
@@ -489,6 +491,7 @@ function workflowPromotionResultForChild(input: {
       `merged PR #${input.payload.prNumber} (${input.payload.mergeCommit})`,
     )
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     return {
       ok: false,
       stage: 'promote',

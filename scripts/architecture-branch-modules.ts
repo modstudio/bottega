@@ -3,6 +3,8 @@ export const branchModuleSpecs = [
     file: 'orchestrator/src/branch/branches.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/project-lock.ts',
@@ -24,11 +26,16 @@ export const branchModuleSpecs = [
   { file: 'orchestrator/src/branch/branch-containment.ts', allowed: [] },
   {
     file: 'orchestrator/src/branch/branch-ref-guard.ts',
-    allowed: ['../database/db.ts', '../git/git-environment.ts'],
+    allowed: [
+      '../../../shared/bounded-process.ts',
+      '../database/db.ts',
+      '../git/git-environment.ts',
+    ],
   },
   {
     file: 'orchestrator/src/branch/branch-proof-observer.ts',
     allowed: [
+      '../../../shared/bounded-process.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
       './branch-landing-match.ts',
@@ -69,6 +76,8 @@ export const branchModuleSpecs = [
   {
     file: 'orchestrator/src/branch/branch-landing-service.ts',
     allowed: [
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../../../shared/record-id.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
@@ -91,6 +100,8 @@ export const branchModuleSpecs = [
     file: 'orchestrator/src/branch/offline-branch-landing.ts',
     allowed: [
       'bun:sqlite',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
@@ -102,11 +113,21 @@ export const branchModuleSpecs = [
   },
   {
     file: 'orchestrator/src/branch/task-branch-reuse.ts',
-    allowed: ['../git/git-environment.ts', './task-branch.ts'],
+    allowed: [
+      '../../../shared/bounded-process.ts',
+      '../git/git-environment.ts',
+      './task-branch.ts',
+    ],
   },
   {
     file: 'orchestrator/src/branch/merged-pull-request.ts',
-    allowed: ['../git/git-environment.ts', '../project/projects.ts', './pull-request-view.ts'],
+    allowed: [
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
+      '../git/git-environment.ts',
+      '../project/projects.ts',
+      './pull-request-view.ts',
+    ],
   },
   { file: 'orchestrator/src/branch/pull-request-view.ts', allowed: [] },
   {
