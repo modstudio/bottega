@@ -71,6 +71,57 @@ type Imports = {
   kyCalls: Set<string>
 }
 
+const CHILD_PROCESS_MODULES = new Set(['node:child_process', 'child_process'])
+const CHILD_PROCESS_CALLS = new Set([
+  'spawn',
+  'spawnSync',
+  'exec',
+  'execSync',
+  'execFile',
+  'execFileSync',
+  'fork',
+])
+const EXECA_CALLS = new Set(['execa', 'execaSync', '$'])
+
+function registerNamespaceImport(imports: Imports, module: string, name: string): void {
+  if (CHILD_PROCESS_MODULES.has(module)) imports.childNamespaces.add(name)
+  if (module === 'execa') imports.execaNamespaces.add(name)
+}
+
+function registerNamedImport(
+  imports: Imports,
+  module: string,
+  imported: string,
+  local: string,
+): void {
+  if (CHILD_PROCESS_MODULES.has(module) && CHILD_PROCESS_CALLS.has(imported))
+    imports.childCalls.add(local)
+  if (module === 'execa' && EXECA_CALLS.has(imported)) imports.execaCalls.add(local)
+  if (module === 'ky' && imported === 'default') imports.kyCalls.add(local)
+}
+
+function registerStartImports(imports: Imports, statement: ts.ImportDeclaration): void {
+  if (!ts.isStringLiteral(statement.moduleSpecifier)) return
+  const module = statement.moduleSpecifier.text
+  const clause = statement.importClause
+  if (!clause) return
+  if (module === 'ky' && clause.name) imports.kyCalls.add(clause.name.text)
+  const bindings = clause.namedBindings
+  if (!bindings) return
+  if (ts.isNamespaceImport(bindings)) {
+    registerNamespaceImport(imports, module, bindings.name.text)
+    return
+  }
+  for (const element of bindings.elements) {
+    registerNamedImport(
+      imports,
+      module,
+      element.propertyName?.text ?? element.name.text,
+      element.name.text,
+    )
+  }
+}
+
 function importedStarts(file: ts.SourceFile): Imports {
   const imports: Imports = {
     childCalls: new Set(),
@@ -80,33 +131,7 @@ function importedStarts(file: ts.SourceFile): Imports {
     kyCalls: new Set(),
   }
   for (const statement of file.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
-      continue
-    const module = statement.moduleSpecifier.text
-    const clause = statement.importClause
-    if (!clause) continue
-    if (module === 'ky' && clause.name) imports.kyCalls.add(clause.name.text)
-    const bindings = clause.namedBindings
-    if (!bindings) continue
-    if (ts.isNamespaceImport(bindings)) {
-      if (module === 'node:child_process' || module === 'child_process')
-        imports.childNamespaces.add(bindings.name.text)
-      if (module === 'execa') imports.execaNamespaces.add(bindings.name.text)
-      continue
-    }
-    for (const element of bindings.elements) {
-      const imported = element.propertyName?.text ?? element.name.text
-      if (
-        (module === 'node:child_process' || module === 'child_process') &&
-        ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'].includes(
-          imported,
-        )
-      )
-        imports.childCalls.add(element.name.text)
-      if (module === 'execa' && ['execa', 'execaSync', '$'].includes(imported))
-        imports.execaCalls.add(element.name.text)
-      if (module === 'ky' && imported === 'default') imports.kyCalls.add(element.name.text)
-    }
+    if (ts.isImportDeclaration(statement)) registerStartImports(imports, statement)
   }
   return imports
 }
@@ -160,6 +185,66 @@ function gitFacts(node: ts.CallExpression, file: ts.SourceFile) {
   return { rawGit, hasScrubbedEnvironment: Boolean(env && !rawEnvironment) }
 }
 
+function processStart(node: ts.CallExpression, imports: Imports): boolean {
+  const identifier = ts.isIdentifier(node.expression) ? node.expression.text : undefined
+  const childProperty = propertyCall(node, imports.childNamespaces)
+  const execaProperty = propertyCall(node, imports.execaNamespaces)
+  return (
+    bunStart(node) ||
+    Boolean(
+      identifier && (imports.childCalls.has(identifier) || imports.execaCalls.has(identifier)),
+    ) ||
+    Boolean(childProperty && CHILD_PROCESS_CALLS.has(childProperty)) ||
+    Boolean(execaProperty && EXECA_CALLS.has(execaProperty))
+  )
+}
+
+function callFinding(
+  node: ts.CallExpression,
+  file: ts.SourceFile,
+  path: string,
+  imports: Imports,
+): RawStart | undefined {
+  const isProcess = processStart(node, imports)
+  if (!isProcess && !globalFetch(node) && !kyStart(node, imports)) return undefined
+  const git = bunStart(node)
+    ? gitFacts(node, file)
+    : { rawGit: false, hasScrubbedEnvironment: false }
+  return {
+    file: path,
+    line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
+    kind: isProcess ? 'process' : 'http',
+    ...git,
+  }
+}
+
+function taggedFinding(
+  node: ts.TaggedTemplateExpression,
+  file: ts.SourceFile,
+  path: string,
+  imports: Imports,
+): RawStart | undefined {
+  if (!ts.isIdentifier(node.tag) || !imports.execaCalls.has(node.tag.text)) return undefined
+  return {
+    file: path,
+    line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
+    kind: 'process',
+    rawGit: false,
+    hasScrubbedEnvironment: false,
+  }
+}
+
+function startFinding(
+  node: ts.Node,
+  file: ts.SourceFile,
+  path: string,
+  imports: Imports,
+): RawStart | undefined {
+  if (ts.isCallExpression(node)) return callFinding(node, file, path, imports)
+  if (ts.isTaggedTemplateExpression(node)) return taggedFinding(node, file, path, imports)
+  return undefined
+}
+
 export function rawStarts(files: Readonly<Record<string, string>>): RawStart[] {
   const findings: RawStart[] = []
   for (const [path, source] of Object.entries(files).sort(([left], [right]) =>
@@ -169,54 +254,8 @@ export function rawStarts(files: Readonly<Record<string, string>>): RawStart[] {
     const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const imports = importedStarts(file)
     const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node)) {
-        const identifier = ts.isIdentifier(node.expression) ? node.expression.text : undefined
-        const childProperty = propertyCall(node, imports.childNamespaces)
-        const execaProperty = propertyCall(node, imports.execaNamespaces)
-        const isProcess =
-          bunStart(node) ||
-          Boolean(
-            identifier &&
-              (imports.childCalls.has(identifier) || imports.execaCalls.has(identifier)),
-          ) ||
-          Boolean(
-            childProperty &&
-              [
-                'spawn',
-                'spawnSync',
-                'exec',
-                'execSync',
-                'execFile',
-                'execFileSync',
-                'fork',
-              ].includes(childProperty),
-          ) ||
-          Boolean(execaProperty && ['execa', 'execaSync', '$'].includes(execaProperty))
-        const isHttp = globalFetch(node) || kyStart(node, imports)
-        if (isProcess || isHttp) {
-          const git = bunStart(node)
-            ? gitFacts(node, file)
-            : { rawGit: false, hasScrubbedEnvironment: false }
-          findings.push({
-            file: path,
-            line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
-            kind: isProcess ? 'process' : 'http',
-            ...git,
-          })
-        }
-      } else if (
-        ts.isTaggedTemplateExpression(node) &&
-        ts.isIdentifier(node.tag) &&
-        imports.execaCalls.has(node.tag.text)
-      ) {
-        findings.push({
-          file: path,
-          line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
-          kind: 'process',
-          rawGit: false,
-          hasScrubbedEnvironment: false,
-        })
-      }
+      const finding = startFinding(node, file, path, imports)
+      if (finding) findings.push(finding)
       ts.forEachChild(node, visit)
     }
     visit(file)
@@ -289,13 +328,6 @@ export function gitEnvironmentViolations(findings: readonly RawStart[]): string[
       (finding) =>
         `${finding.file}:${finding.line}: production git spawn must supply a scrubbed environment; ${GIT_ENV_REMEDY}`,
     )
-}
-
-export function baselineMatchesTree(
-  findings: readonly RawStart[],
-  baseline: RawStartBaseline,
-): boolean {
-  return JSON.stringify(counts(findings)) === JSON.stringify(baseline.files)
 }
 
 function checkRawStarts(

@@ -2,6 +2,7 @@ export type CallBudgetName =
   | 'git-plumbing'
   | 'git-network'
   | 'process-table'
+  | 'self-cli'
   | 'hosted-api'
   | 'release-download'
   | 'agent-cli'
@@ -21,6 +22,7 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   'git-plumbing': { deadlineMs: 30_000, outputBytes: 16 * MIB, graceMs: 2_000 },
   'git-network': { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'process-table': { deadlineMs: 10_000, outputBytes: 4 * MIB, graceMs: 1_000 },
+  'self-cli': { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'hosted-api': {
     deadlineMs: 30_000,
     totalMs: 60_000,

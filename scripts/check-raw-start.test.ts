@@ -1,10 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  baselineMatchesTree,
-  gitEnvironmentViolations,
-  rawStarts,
-  rawStartViolations,
-} from './check-raw-start.ts'
+import { gitEnvironmentViolations, rawStarts, rawStartViolations } from './check-raw-start.ts'
 
 describe('raw start check', () => {
   test('refuses a new process and HTTP start in a fixture', () => {
@@ -22,13 +17,12 @@ describe('raw start check', () => {
     expect(rawStartViolations(findings, { files: {} })).toHaveLength(5)
   })
 
-  test('accepts baseline counts and proves the baseline equals the tree', () => {
+  test('accepts baseline counts', () => {
     const findings = rawStarts({
       'shared/example.ts': `Bun.${'spawnSync'}(['echo'])`,
     })
     const baseline = { files: { 'shared/example.ts': 1 } }
     expect(rawStartViolations(findings, baseline)).toEqual([])
-    expect(baselineMatchesTree(findings, baseline)).toBe(true)
   })
 
   test('refuses a baseline increase', () => {

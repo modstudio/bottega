@@ -396,6 +396,10 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/serve-lifecycle.ts',
-    allowed: ['../../shared/process-identity.ts', '../../shared/state-directory.ts'],
+    allowed: [
+      '../../shared/bounded-process.ts',
+      '../../shared/process-identity.ts',
+      '../../shared/state-directory.ts',
+    ],
   },
 ] as const

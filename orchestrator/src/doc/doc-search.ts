@@ -1,6 +1,7 @@
 // concern: doc-search-adapter
 /** Spawns retrieval semantic search and validates its stable JSON contract. */
 
+import { startBounded } from '../../../shared/bounded-process.ts'
 import {
   type RetrievalDocSearchOutput,
   RetrievalDocSearchOutputSchema,
@@ -14,19 +15,11 @@ async function runRetrieval(argv: string[]): Promise<{
   stderr: string
   exitCode: number
 }> {
-  const child = Bun.spawn([...bottegaEntryArgv('retrieval-search'), ...argv], {
+  return startBounded([...bottegaEntryArgv('retrieval-search'), ...argv], {
+    budget: 'self-cli',
     cwd: process.cwd(),
     env: { ...process.env },
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  return { stdout, stderr, exitCode }
 }
 
 function parseDocSearchOutput(stdout: string) {
