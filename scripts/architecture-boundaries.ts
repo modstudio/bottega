@@ -7,6 +7,7 @@ import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
 import { gateBoundarySpecs } from './architecture-gate-modules.ts'
+import { HUB_UI_ROOT, HUB_VIEWS_ROOT, TYPESCRIPT_TEST_PATH } from './architecture-hub-packages.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
 import { proseBoundarySpecs } from './architecture-prose-modules.ts'
@@ -40,25 +41,25 @@ type DependencyCruiserOptions = ReturnType<
   typeof import('./architecture.ts').dependencyCruiserConfig
 >['options']
 
+export const hubBrowserRoots = [HUB_VIEWS_ROOT, HUB_UI_ROOT, 'hub/web'].map((x) => `${x}/src`)
+
 export function hubBrowserNoNodeBuiltinConfig(sharedOptions: DependencyCruiserOptions) {
-  const escapedBuiltins = [
-    ...new Set(builtinModules.map((name) => name.replace(/^node:/, ''))),
-  ].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  const builtinPath = `^(?:(?:node:)?(?:${escapedBuiltins.join('|')})|bun:.*)$`
+  const esc = (x: string) => x.replace(/^node:/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const builtinPath = `^(?:node:.*|(?:${builtinModules.map(esc).join('|')})|bun:.*)$`
   return {
     forbidden: [
       {
         name: 'hub-browser-reaches-no-node-builtin',
         severity: 'error' as const,
         comment: 'Browser hub packages must not reach Node or Bun built-in modules.',
-        from: { path: '^hub/(?:views|ui|web)/src/' },
+        from: { path: `^(?:${hubBrowserRoots.join('|')})/` },
         to: { path: builtinPath, reachable: true },
       },
     ],
     options: {
       ...sharedOptions,
       tsPreCompilationDeps: false,
-      exclude: { path: '\\.test\\.tsx?$|^hub/web/src/routeTree\\.gen\\.ts$' },
+      exclude: { path: `${TYPESCRIPT_TEST_PATH}|^hub/web/src/routeTree\\.gen\\.ts$` },
     },
   }
 }

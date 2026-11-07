@@ -7,7 +7,11 @@ import type { ICruiseResult } from 'dependency-cruiser'
 import { CONCERNS } from '../shared/brand.ts'
 import { inspectionGitEnv } from '../shared/git'
 import { dependencyCruiserConfig, modules } from './architecture.ts'
-import { hubBrowserNoNodeBuiltinConfig, importBoundaries } from './architecture-boundaries.ts'
+import {
+  hubBrowserNoNodeBuiltinConfig,
+  hubBrowserRoots,
+  importBoundaries,
+} from './architecture-boundaries.ts'
 import {
   ARCHITECTURE_CRUISE_ENTRIES,
   ARCHITECTURE_CRUISE_ROOTS,
@@ -205,14 +209,25 @@ if (ratchet.newViolations.length || ratchet.fixedBaseline.length) {
 
 const hubBrowserCruise = await runArchitectureCruise({
   config: hubBrowserNoNodeBuiltinConfig(dependencyCruiserConfig().options),
-  entries: ['hub/views/src', 'hub/ui/src', 'hub/web/src'],
+  entries: hubBrowserRoots,
   extraArgs: ['--output-type', 'json'],
   stdout: 'pipe',
 })
+if (hubBrowserCruise.exitCode !== 0) {
+  console.error(
+    `check-architecture: hub browser dependency cruise exited ${hubBrowserCruise.exitCode}`,
+  )
+  process.exit(1)
+}
 const hubBrowserResult = architectureResult(hubBrowserCruise.stdout)
 const hubBrowserViolations = hubBrowserResult.summary.violations.filter(
   ({ rule }) => rule.severity === 'error',
 )
+const hubBrowserCoverageViolations = architectureCruiseCoverageViolations({
+  moduleSources: hubBrowserResult.modules.map(({ source }) => source),
+  manifestSources: [],
+  roots: hubBrowserRoots,
+})
 if (hubBrowserViolations.length) {
   for (const { from, to, via } of hubBrowserViolations) {
     const chain = via?.map(({ name }) => name).join(' -> ') ?? `${from} -> ${to}`
@@ -221,8 +236,10 @@ if (hubBrowserViolations.length) {
   console.error(
     'Browser hub packages must import a browser-safe shared/ module, or use import type.',
   )
-  process.exit(1)
 }
+for (const violation of hubBrowserCoverageViolations)
+  console.error(`check-architecture: hub browser ${violation}`)
+if (hubBrowserViolations.length || hubBrowserCoverageViolations.length) process.exit(1)
 
 console.log(
   `check-architecture: ok (${modules.length} manifest modules, ${result.modules.length} cruised modules, ${undeclaredCount} undeclared, depcruise ${((performance.now() - startedAt) / 1000).toFixed(2)}s)`,
