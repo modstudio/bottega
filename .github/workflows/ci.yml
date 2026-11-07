@@ -201,7 +201,6 @@ jobs:
       - name: Install
         run: bun install --silent
       - name: Install Chromium
-        timeout-minutes: 6
         run: scripts/ci/install-chromium.sh hub/web
       - name: Build
         run: bun run --cwd hub/web build
@@ -219,7 +218,6 @@ jobs:
       - name: Install
         run: bun install --silent
       - name: Install Chromium
-        timeout-minutes: 6
         run: scripts/ci/install-chromium.sh hub/ui
       - name: Build stories
         run: bun run --cwd hub/ui storybook:build
