@@ -4,9 +4,8 @@ import {
   escapedSeedPath,
   seedPaths,
   selectedTestSources,
-  typescriptCruiseEntries,
 } from './affected-tests.ts'
-import { ARCHITECTURE_CRUISE_ENTRIES } from './architecture-cruise.ts'
+import { ARCHITECTURE_CRUISE_ENTRIES, typescriptCruiseEntries } from './architecture-cruise.ts'
 
 test('every regular-expression metacharacter in a seed path is escaped', () => {
   expect(escapedSeedPath('orchestrator/src/a+b(c)[d].ts')).toBe(

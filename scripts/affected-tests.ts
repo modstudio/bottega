@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
-import { ARCHITECTURE_CRUISE_ENTRIES } from './architecture-cruise.ts'
+import { ARCHITECTURE_CRUISE_ENTRIES, typescriptCruiseEntries } from './architecture-cruise.ts'
 
 /**
  * Prints the tests of every module that reaches what changed since a base commit.
@@ -11,7 +11,6 @@ import { ARCHITECTURE_CRUISE_ENTRIES } from './architecture-cruise.ts'
  * project-relative test path per line from its stdout. No changed seed prints nothing and exits 0.
  */
 
-const TYPESCRIPT_EXTENSIONS = ['ts', 'tsx']
 const TYPESCRIPT_SOURCE = /\.tsx?$/
 const TEST_MODULE = /\.test\.tsx?$/
 
@@ -33,19 +32,6 @@ export function affectedSeedPattern(seeds: readonly string[]): string {
 /** The changed and untracked TypeScript sources among `git` output, which are the seeds. */
 export function seedPaths(changed: readonly string[]): string[] {
   return [...new Set(changed.filter((path) => TYPESCRIPT_SOURCE.test(path)))].sort()
-}
-
-/** The architecture cruise entries narrowed to their TypeScript sources. */
-export function typescriptCruiseEntries(entries: readonly string[]): string[] {
-  const selected: string[] = []
-  for (const entry of entries) {
-    const extensions = /\{([^{}]+)\}$/.exec(entry)
-    if (!extensions) continue
-    const names = extensions[1]!.split(',').map((name) => name.trim())
-    if (!TYPESCRIPT_EXTENSIONS.every((extension) => names.includes(extension))) continue
-    selected.push(`${entry.slice(0, extensions.index)}{ts,tsx}`)
-  }
-  return selected
 }
 
 /** The test modules a cruise selected, each named once. */

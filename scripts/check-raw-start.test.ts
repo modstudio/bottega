@@ -1,7 +1,30 @@
 import { describe, expect, test } from 'bun:test'
-import { gitEnvironmentViolations, rawStarts, rawStartViolations } from './check-raw-start.ts'
+import {
+  gitEnvironmentViolations,
+  RAW_START_DETECTOR_TERMS,
+  rawStarts,
+  rawStartViolations,
+} from './check-raw-start.ts'
 
 describe('raw start check', () => {
+  test('the pre-filter vocabulary covers every raw-start detector', () => {
+    expect(RAW_START_DETECTOR_TERMS).toEqual(
+      expect.arrayContaining([
+        'node:child_process',
+        'execa',
+        '$',
+        'ky',
+        'fetch',
+        'bounded-process',
+        'startBounded',
+        'startBoundedSync',
+        'Bun.spawn',
+        'Bun.spawnSync',
+        'Bun.$',
+      ]),
+    )
+  })
+
   test('refuses new process and HTTP starts in production', () => {
     const findings = rawStarts({
       'orchestrator/src/example.ts': `
@@ -78,6 +101,19 @@ describe('raw start check', () => {
         import { startBounded, startBoundedSync as sync } from '../../../shared/bounded-process.ts'
         startBounded(['git', 'status'], { budget: 'git-plumbing' })
         sync(['git', 'status'], { budget: 'git-plumbing', env })
+      `,
+    })
+    expect(gitEnvironmentViolations(findings)).toEqual([
+      'orchestrator/src/bounded.ts:3: production git spawn must supply a scrubbed environment; use the guarded helpers in orchestrator/src/git/git-environment.ts, or gitAt in shared/git.ts',
+    ])
+    expect(rawStartViolations(findings, { files: {} })).toEqual([])
+  })
+
+  test('requires namespace-imported bounded git starts to supply an environment', () => {
+    const findings = rawStarts({
+      'orchestrator/src/bounded.ts': `
+        import * as bounded from '../../../shared/bounded-process.ts'
+        bounded.startBounded(['git', 'status'], { budget: 'git-plumbing' })
       `,
     })
     expect(gitEnvironmentViolations(findings)).toEqual([
