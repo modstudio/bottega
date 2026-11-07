@@ -32,7 +32,8 @@ const task: TrackerTask = {
 const source = (lookup: TrackerSource['lookup']): TrackerSource => ({
   project: 'fixture',
   env: 'FIXTURE',
-  fetch: async () => [],
+  supportsUpdatedSince: false,
+  fetch: async () => ({ tasks: [], complete: true, deletedKeys: [] }),
   lookup,
 })
 

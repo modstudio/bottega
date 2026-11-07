@@ -12,6 +12,7 @@ import {
 import {
   refuseHubActionOverrides,
   refuseNonCursorProjectId,
+  refuseUnsupportedUpdatedSince,
   trackerActionsShape,
   trackerReviewStagesShape,
   trackerSettingsShape,
@@ -231,6 +232,7 @@ const OrchTrackerSettingsSchema = z
   .superRefine((tracker, context) => {
     refuseHubActionOverrides(tracker, context)
     refuseNonCursorProjectId(tracker, context)
+    refuseUnsupportedUpdatedSince(tracker, context)
   })
 
 export const OrchProjectSchema = z
