@@ -244,7 +244,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
     'real-retrieval-command',
     'Where does orchestrator spawn the retrieval search command and parse its output?',
     'orchestrator/src/doc/doc-search.ts',
-    'const child = Bun.spawn([',
+    "return startBounded([...bottegaEntryArgv('retrieval-search'), ...argv], {",
   ),
   codeQuestion(
     'real-reply-source',
