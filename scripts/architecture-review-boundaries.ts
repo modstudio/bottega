@@ -51,6 +51,11 @@ export const reviewModuleSpecs = [
     ],
   },
   {
+    file: 'orchestrator/src/review/review-lens-provenance.ts',
+    allowed: ['node:path'],
+    typeOnlyAllowed: ['./review-vocabulary.ts'],
+  },
+  {
     file: 'orchestrator/src/review/review-lens-dispatch-reason.ts',
     allowed: [
       '../database/db.ts',
@@ -66,7 +71,12 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
-    allowed: ['./review-applicability.ts', './review-role.ts', './review-second-opinion.ts'],
+    allowed: [
+      './review-applicability.ts',
+      './review-lens-provenance.ts',
+      './review-role.ts',
+      './review-second-opinion.ts',
+    ],
     typeOnlyAllowed: [
       './review-group.ts',
       './review-post-fix.ts',
@@ -371,9 +381,21 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     reason: 'Keep historical review-round writes beside the identity rule they apply.',
   },
   {
+    name: 'review-lens-provenance-boundary',
+    file: 'orchestrator/src/review/review-lens-provenance.ts',
+    allowed: ['node:path'],
+    typeOnlyAllowed: ['./review-vocabulary.ts'],
+    reason: 'Keep review provenance admission a pure decision over canonical subject facts.',
+  },
+  {
     name: 'review-round-lens-plan-boundary',
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
-    allowed: ['./review-applicability.ts', './review-role.ts', './review-second-opinion.ts'],
+    allowed: [
+      './review-applicability.ts',
+      './review-lens-provenance.ts',
+      './review-role.ts',
+      './review-second-opinion.ts',
+    ],
     typeOnlyAllowed: [
       './review-group.ts',
       './review-post-fix.ts',
@@ -408,6 +430,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../database/db.ts',
       './review-evidence-sql.ts',
       './review-group.ts',
+      './review-lens-provenance.ts',
       './review-role.ts',
       './review-lineage-store.ts',
       './review-round-identity.ts',
