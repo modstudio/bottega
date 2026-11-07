@@ -8,7 +8,11 @@ import { recordSpaceMembership } from '../../../shared/record-space-membership.t
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import type { MachineNamePair } from './machine-name.ts'
 import { claimCurrentMachineNames } from './machine-name-command.ts'
-import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
+import {
+  deleteTrialSpaceRequest,
+  type RecordApiClient,
+  recordApiClient,
+} from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { readHostedProjects } from './record-cache-projects.ts'
 import type { HiddenRow } from './record-moderation-hide.ts'
@@ -307,11 +311,8 @@ export async function createRecordSpace(
   }
 }
 
-export async function deleteTrialSpace(
-  slug: string,
-  client: Pick<RecordApiClient, 'deleteTrialSpace'> = recordApiClient(),
-) {
-  return client.deleteTrialSpace(slug)
+export async function deleteTrialSpace(slug: string, request = deleteTrialSpaceRequest) {
+  return request(slug)
 }
 
 export async function inviteToActiveRecordSpace(

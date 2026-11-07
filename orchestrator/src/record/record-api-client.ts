@@ -233,7 +233,6 @@ export type RecordApiClient = ProjectIdentityClient &
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
-    deleteTrialSpace(slug: string): Promise<TrialSpaceDeleteResult>
     setActiveOrganization(input: {
       organizationId?: string
       organizationSlug?: string
@@ -710,6 +709,10 @@ const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) 
   })
 const postJson = (body: unknown) => ({ method: 'POST', body: JSON.stringify(body) })
 
+export function deleteTrialSpaceRequest(slug: string): Promise<TrialSpaceDeleteResult> {
+  return defaultRequest('/v1/spaces/delete-trial', postJson({ slug }))
+}
+
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
 ): RecordApiClient {
@@ -723,8 +726,6 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return {
     storage: () => request('/v1/storage'),
-    deleteTrialSpace: (slug) =>
-      request<TrialSpaceDeleteResult>('/v1/spaces/delete-trial', postJson({ slug })),
     ...recordChangesClient(request),
     ...recordMachineClient(request),
     ...recordConfigAccessClient(request),

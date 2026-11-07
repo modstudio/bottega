@@ -20,7 +20,7 @@ export type RecordSessionRouteDeps = RecordMachineRouteDeps &
   RecordInvitationRouteDeps &
   RecordSyncRouteDeps &
   RoutingEvidenceRouteDeps &
-  Parameters<typeof registerRecordTrialSpaceRoutes>[1]
+  Partial<Parameters<typeof registerRecordTrialSpaceRoutes>[1]>
 
 export function registerRecordSessionRoutes(
   app: Hono<ApiEnvironment>,
@@ -30,5 +30,10 @@ export function registerRecordSessionRoutes(
   registerRecordInvitationRoute(app, deps)
   registerRecordSyncRoute(app, deps)
   registerRecordRoutingEvidenceRoute(app, deps)
-  registerRecordTrialSpaceRoutes(app, deps)
+  if (deps.deleteTrialSpace && deps.recordUrl)
+    registerRecordTrialSpaceRoutes(app, {
+      ...deps,
+      deleteTrialSpace: deps.deleteTrialSpace,
+      recordUrl: deps.recordUrl,
+    })
 }
