@@ -2,8 +2,9 @@
 /** Registers setup detection and project-register adapters. Must not own setup policy. */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { type Command, InvalidArgumentError } from 'commander'
+import { type Command, InvalidArgumentError, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
 import { signInCommand } from '../record/record-auth-command.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
@@ -16,6 +17,9 @@ import { gatherSetupFacts } from '../setup/setup-facts.ts'
 import { runInteractiveSetup, runSetupSignIn, SETUP_CANCEL } from '../setup/setup-interactive.ts'
 import { type SetupService, setupService } from '../setup/setup-service.ts'
 import { collect, log } from './support.ts'
+
+const collectedOption = (flags: string, description: string) =>
+  repeatable(new Option(flags, description).argParser(collect).default([]))
 
 type SetupOptions = {
   in?: string[]
@@ -157,7 +161,7 @@ export function register(program: Command, service: SetupService = setupService)
   const setup = program
     .command('setup')
     .description('inspect and configure this machine interactively')
-    .option('--in <folder>', 'folder to inspect', collect, [])
+    .addOption(collectedOption('--in <folder>', 'folder to inspect'))
     .option('--level <record|full>', 'set the install level', parseMachineLevel)
     .allowExcessArguments(false)
     .action((options: SetupOptions) => applyInteractiveSetup(options, service))
@@ -179,10 +183,10 @@ export function register(program: Command, service: SetupService = setupService)
   setup
     .command('plan')
     .description('plan recommended machine setup actions')
-    .option('--in <folder>', 'folder to inspect', collect, [])
+    .addOption(collectedOption('--in <folder>', 'folder to inspect'))
     .option('--json', 'write the setup plan as compact JSON')
     .option('--level <record|full>', 'answer the install-level question', parseMachineLevel)
-    .option('--include <folder>', 'include an unregistered project folder', collect, [])
+    .addOption(collectedOption('--include <folder>', 'include an unregistered project folder'))
     .allowExcessArguments(false)
     .action(async (options: SetupOptions, command: Command) => {
       const resolved = inheritedSetupOptions(options, command)
@@ -196,12 +200,12 @@ export function register(program: Command, service: SetupService = setupService)
   setup
     .command('apply')
     .description('apply a machine setup plan without prompts')
-    .option('--in <folder>', 'folder to inspect', collect, [])
+    .addOption(collectedOption('--in <folder>', 'folder to inspect'))
     .option('--yes', 'apply every recommended setup answer')
     .option('--answers <file>', 'JSON file containing explicit setup answers')
     .option('--json', 'write the setup result as compact JSON')
     .option('--level <record|full>', 'answer the install-level question', parseMachineLevel)
-    .option('--include <folder>', 'include an unregistered project folder', collect, [])
+    .addOption(collectedOption('--include <folder>', 'include an unregistered project folder'))
     .allowExcessArguments(false)
     .action((options: SetupOptions, command: Command) =>
       applyNonInteractiveSetup(inheritedSetupOptions(options, command), service),

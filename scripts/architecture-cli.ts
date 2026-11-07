@@ -46,6 +46,7 @@ export const cliModules = [
     allowed: [
       'commander',
       'shared/brand.ts',
+      'shared/cli-repeat-guard.ts',
       'shared/commander-public-path.ts',
       'hub/src/cli-program.ts',
       'orchestrator/src/cli/program.ts',

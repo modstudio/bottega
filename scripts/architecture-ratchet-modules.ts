@@ -4,7 +4,12 @@
 export const ratchetModules = [
   {
     file: 'orchestrator/src/commands/ratchet.ts',
-    allowed: ['../../../shared/brand.ts', 'commander', '../ratchet/ratchet-service.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/cli-repeat-guard.ts',
+      'commander',
+      '../ratchet/ratchet-service.ts',
+    ],
   },
   {
     file: 'orchestrator/src/ratchet/ratchet-service.ts',

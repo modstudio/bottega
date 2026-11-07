@@ -1,0 +1,26 @@
+{
+  "project": "fixture-project",
+  "target": "42",
+  "prNumber": 42,
+  "headBranch": "DEV-2032-post-landing",
+  "headCommit": "head",
+  "mergeCommit": "merge",
+  "requiredRungs": ["hosted-api"],
+  "rungPlans": [
+    {
+      "rung": "hosted-api",
+      "branch": "main",
+      "required": true,
+      "requiredBy": "reach",
+      "reason": null,
+      "declaresLive": false,
+      "declaresDeploy": true
+    }
+  ],
+  "rungDecisionError": null,
+  "releaseRequired": true,
+  "depth": "hosted-api",
+  "promoteWorkflowDrafts": true,
+  "recordingError": null,
+  "requeueOutput": null
+}
