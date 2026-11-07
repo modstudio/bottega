@@ -276,6 +276,29 @@ async function updateDistribution(input: {
   input.presentation.log(current.message)
 }
 
+function restoreMainAfterMigrationFailure(input: {
+  target: string
+  before: string
+  runGit: (cwd: string, args: string[]) => string
+  cause: unknown
+}): never {
+  const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  try {
+    input.runGit(input.target, ['reset', '--keep', input.before])
+  } catch (restoreCause) {
+    const restoreFailure =
+      restoreCause instanceof Error ? restoreCause.message : String(restoreCause)
+    throw new Error(
+      `migration failed: ${migrationFailure}; restoring main to ${input.before} failed: ${restoreFailure}; ` +
+        `manually run git -C ${input.target} reset --keep ${input.before}, then ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  throw new Error(
+    `migration failed: ${migrationFailure}; main was restored to ${input.before}; ` +
+      `rerun ${PLATFORM_SLUG} machine update`,
+  )
+}
+
 export async function machineUpdateCommand(
   presentation: Presentation,
   deps: UpdateDependencies = {},
@@ -349,8 +372,13 @@ export async function machineUpdateCommand(
     pendingMigration: initial.pendingMigration,
     deps,
     apply: () => {
+      const before = runGit(target, ['rev-parse', 'HEAD'])
       runGit(target, ['pull', '--ff-only', 'origin', branch])
-      migrate(target)
+      try {
+        migrate(target)
+      } catch (cause) {
+        restoreMainAfterMigrationFailure({ target, before, runGit, cause })
+      }
     },
   })
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate

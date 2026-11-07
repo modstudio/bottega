@@ -815,7 +815,7 @@ test('the selected depth is carried to the child and its recovery command', () =
   )
 })
 
-test('a partial move that changes HEAD still fences and hands off', () => {
+test('a move failure after main changed reports the failure and does not hand off', () => {
   const events: string[] = []
   let head = 'before'
   const outcome = complete({
@@ -835,11 +835,14 @@ test('a partial move that changes HEAD still fences and hands off', () => {
     },
   })
 
-  expect(outcome).toEqual({ output: 'child verifies main', exitCode: 0 })
-  expect(events).toEqual(['fence', 'hand-off'])
+  expect(outcome.exitCode).toBe(21)
+  expect(outcome.output).toContain(
+    'main is at a different commit than before and the move did not complete: verification raced with a dirty checkout',
+  )
+  expect(events).toEqual([])
 })
 
-test('a bounded move that changes HEAD still reconciles, fences, and hands off', () => {
+test('a bounded move failure after main changed does not fence or hand off', () => {
   const events: string[] = []
   let head = 'before'
   const outcome = complete({
@@ -859,11 +862,14 @@ test('a bounded move that changes HEAD still reconciles, fences, and hands off',
     },
   })
 
-  expect(outcome).toEqual({ output: 'child verifies bounded move', exitCode: 0 })
-  expect(events).toEqual(['fence', 'hand-off'])
+  expect(outcome.exitCode).toBe(21)
+  expect(outcome.output).toContain(
+    'main is at a different commit than before and the move did not complete: machine update exceeded its machine-update deadline bound',
+  )
+  expect(events).toEqual([])
 })
 
-test('a failed HEAD re-read after a move attempt still fences and hands off', () => {
+test('a failed HEAD re-read after a move failure does not fence or hand off', () => {
   const events: string[] = []
   let headReads = 0
   const outcome = complete({
@@ -886,8 +892,11 @@ test('a failed HEAD re-read after a move attempt still fences and hands off', ()
     },
   })
 
-  expect(outcome).toEqual({ output: 'child verifies main', exitCode: 0 })
-  expect(events).toEqual(['fence', 'hand-off'])
+  expect(outcome.exitCode).toBe(21)
+  expect(outcome.output).toContain(
+    'main is at a different commit than before and the move did not complete: move verification failed',
+  )
+  expect(events).toEqual([])
 })
 
 test('a non-ladder child exit keeps its code and adds the parent recovery', () => {

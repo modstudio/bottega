@@ -112,10 +112,102 @@ test("machine update clears a dead holder's marker before deciding", async () =>
     'branch',
     'fetch',
     'show',
+    'rev-parse',
     'pull',
     'branch',
     'status',
   ])
+})
+
+test('machine update restores main when migrate fails after the pull', async () => {
+  const gitCalls: string[][] = []
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          gitCalls.push(args)
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          return ''
+        },
+        migrate: () => {
+          throw new Error('injected migration failure')
+        },
+      },
+    ),
+  ).rejects.toThrow(
+    `migration failed: injected migration failure; main was restored to before-commit; rerun ${PLATFORM_SLUG} machine update`,
+  )
+  expect(gitCalls.slice(-3)).toEqual([
+    ['rev-parse', 'HEAD'],
+    ['pull', '--ff-only', 'origin', 'main'],
+    ['reset', '--keep', 'before-commit'],
+  ])
+})
+
+test('machine update names both failures and the manual remedy when restoring main fails', async () => {
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          if (args[0] === 'reset') throw new Error('injected restore failure')
+          return ''
+        },
+        migrate: () => {
+          throw new Error('injected migration failure')
+        },
+      },
+    ),
+  ).rejects.toThrow(
+    `migration failed: injected migration failure; restoring main to before-commit failed: injected restore failure; manually run git -C ${dir} reset --keep before-commit, then ${PLATFORM_SLUG} machine update`,
+  )
+})
+
+test('machine update does not reset main when migrate succeeds', async () => {
+  const gitCalls: string[][] = []
+  await machineUpdateCommand(
+    { log: () => {} },
+    {
+      cwd: dir,
+      authorityRefusal: () => null,
+      project: () => ({
+        name: 'migration-update-fixture',
+        path: dir,
+        settings: { trunk: 'main' },
+      }),
+      git: (_cwd, args) => {
+        gitCalls.push(args)
+        if (args[0] === 'branch') return 'main'
+        if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+        if (args[0] === 'rev-parse') return 'before-commit'
+        return ''
+      },
+      migrate: () => {},
+      maintainStore: () => {},
+      runLaunchAgentsRefreshVerb: () => {},
+    },
+  )
+  expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
 })
 
 test('machine update refuses when the install root is tracked-dirty after refresh', async () => {
@@ -509,7 +601,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
     /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target])
+  expect(gitCwds).toEqual([target, target, target, target, target, target, target])
 })
 
 test('machine update defaults the target to the installation root', async () => {
@@ -540,7 +632,7 @@ test('machine update defaults the target to the installation root', async () => 
     },
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target])
+  expect(gitCwds).toEqual([target, target, target, target, target, target, target])
   expect(journalRef).toBe(`origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`)
 })
 

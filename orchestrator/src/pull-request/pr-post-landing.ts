@@ -108,7 +108,12 @@ function moveMainForPostLanding(
         }
       }
     } catch {
-      return { moved: true }
+      // A failed HEAD read cannot establish that the checkout stayed put.
+    }
+    return {
+      moved: false,
+      detail: `main is at a different commit than before and the move did not complete: ${failure}`,
+      recovery,
     }
   }
   return { moved: true }
