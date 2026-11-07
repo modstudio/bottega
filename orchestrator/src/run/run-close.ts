@@ -11,6 +11,10 @@ import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import {
+  type ReviewLensInputStatuses,
+  successorReviewLensInputStatusesFromPrompt,
+} from '../database/review-lens-input-artifact.ts'
+import {
   billingHoldForFailure,
   type classify,
   type EffectiveBillingKey,
@@ -66,6 +70,7 @@ type SuccessorOptions = {
   probeReaderSuites: boolean | undefined
   label: string | undefined
   lens: string | undefined
+  lensInputs: ReviewLensInputStatuses
   reviewRole: ReviewRole | undefined
   cwd: string
   repo: string | undefined
@@ -446,6 +451,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           probeReaderSuites: opts.probeReaderSuites,
           label: first.label ?? undefined,
           lens: first.lens ?? undefined,
+          lensInputs: successorReviewLensInputStatusesFromPrompt(first.prompt_path),
           reviewRole: first.review_role ?? undefined,
           cwd: first.launch_cwd ?? callerCwd,
           repo: first.repo ?? undefined,

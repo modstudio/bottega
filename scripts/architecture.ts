@@ -349,6 +349,12 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/agent/capabilities.ts', []),
   module('orchestrator/src/agent/worker-launch-env.ts', []),
   module('orchestrator/src/agent/cli-version.ts', []),
+  module('orchestrator/src/dispatch/task-cli-read.ts', [
+    '../../../shared/bounded-process.ts',
+    '../../../shared/brand.ts',
+    '../../../shared/self-spawn.ts',
+    '../project/projects.ts',
+  ]),
   ...mcpModules,
   module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [
     '../mcp/mcp-tool-list.ts',

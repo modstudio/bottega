@@ -17,6 +17,7 @@ import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
+import type { ReviewLensInputStatuses } from '../database/review-lens-input-artifact.ts'
 import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
 import { appendRunEvent } from '../events.ts'
@@ -109,6 +110,7 @@ type ClaimOptions = {
   review?: string
   model?: string
   lens?: string
+  lensInputs?: ReviewLensInputStatuses
   reviewRole?: ReviewRole
   keepTree?: KeepTreeExemption
   noFailover?: boolean
@@ -250,6 +252,17 @@ async function claimLinks(
     probe: Boolean(input.opts.probe),
   })
 }
+
+function prepareClaimFiles(input: ClaimInput, recordId: string, claimedPrompt: string | null) {
+  return prepareFiles(
+    input.runsDir,
+    recordId,
+    claimedPrompt,
+    input.originalPrompt,
+    input.opts.lensInputs,
+  )
+}
+
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -299,7 +312,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       )?.prompt_path ?? null)
     : null
   const recordId = claimRecordId(opts.reserveId)
-  const { promptPath, outputPath } = prepareFiles(runsDir, recordId, claimedPrompt, originalPrompt)
+  const { promptPath, outputPath } = prepareClaimFiles(input, recordId, claimedPrompt)
   /**
    * The return contract is written to disk: codex's `--output-schema` wants a
    * path and grok's `--json-schema`

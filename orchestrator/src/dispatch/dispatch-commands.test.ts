@@ -21,6 +21,12 @@ const noEarlierReviewRejections = () => ({
   branchLineage: [],
   rows: [],
 })
+const noLensInputs = async () => ({
+  taskTextInput: 'unavailable: test has no task' as const,
+  rulingsInput: null,
+  taskText: '',
+  rulings: '',
+})
 
 test('findings dispatch leaves the default role to run dispatch unless explicitly supplementary', () => {
   expect(reviewRoleForDispatch(true, false)).toBeUndefined()
@@ -168,7 +174,7 @@ test('unsettled-spec evidence uses the composed prompt identity and raw spec sta
   const asked: Parameters<
     Parameters<typeof composeDispatchPrompt>[0]['presentation']['askTypedQuestion']
   >[0][] = []
-  const prompt = await composeDispatchPrompt({
+  const { prompt } = await composeDispatchPrompt({
     presentation: {
       readPrompt: async () => rawSpec,
       askTypedQuestion: async (input) => {
@@ -178,6 +184,7 @@ test('unsettled-spec evidence uses the composed prompt identity and raw spec sta
       error: () => {},
       specIdentity: sha,
       earlierReviewRejections: noEarlierReviewRejections,
+      reviewLensInputs: noLensInputs,
     },
     project: null,
     requested: job('implement'),
@@ -206,6 +213,7 @@ test('an empty implementation spec is refused before asking the typed question',
         error: () => {},
         specIdentity: sha,
         earlierReviewRejections: noEarlierReviewRejections,
+        reviewLensInputs: noLensInputs,
       },
       project: null,
       requested: job('implement'),

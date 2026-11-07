@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { compareReviewedCommit, lensProvenanceSubject } from './review-lens-provenance.ts'
+import { unavailableStatus } from '../database/review-lens-input-artifact.ts'
+import {
+  compareReviewedCommit,
+  countsAsLensEvidence,
+  inadmissibleLensReason,
+  lensProvenanceSubject,
+} from './review-lens-provenance.ts'
 
 describe('reviewed commit comparison', () => {
   test.each([
@@ -11,6 +17,54 @@ describe('reviewed commit comparison', () => {
     ['missing', undefined, 'missing'],
   ] as const)('%s', (_name, reviewed, expected) => {
     expect(compareReviewedCommit('abcdef1234567890', reviewed)).toBe(expected)
+  })
+})
+
+describe('lens pack input admissibility', () => {
+  test('credits decision conformance when both inputs were carried', () => {
+    expect(
+      countsAsLensEvidence({
+        lens: 'decision-conformance',
+        graded: true,
+        taskTextInput: 'carried',
+        rulingsInput: 'carried',
+      }),
+    ).toBeTrue()
+  })
+
+  test('does not admit decision conformance when an input was unavailable and keeps its reason', () => {
+    const row = {
+      lens: 'decision-conformance',
+      graded: true,
+      taskTextInput: unavailableStatus('linear tracker has no CLI task read'),
+      rulingsInput: 'carried',
+    } as const
+    expect(countsAsLensEvidence(row)).toBeFalse()
+    expect(inadmissibleLensReason(row)).toBe(
+      'decision-conformance not admitted: linear tracker has no CLI task read',
+    )
+  })
+
+  test('credits another lens without task text', () => {
+    expect(
+      countsAsLensEvidence({
+        lens: 'correctness',
+        graded: true,
+        taskTextInput: 'unavailable: fixture tracker is offline',
+        rulingsInput: null,
+      }),
+    ).toBeTrue()
+  })
+
+  test('credits a decision-conformance row recorded before input statuses existed', () => {
+    expect(
+      countsAsLensEvidence({
+        lens: 'decision-conformance',
+        graded: true,
+        taskTextInput: null,
+        rulingsInput: null,
+      }),
+    ).toBeTrue()
   })
 })
 

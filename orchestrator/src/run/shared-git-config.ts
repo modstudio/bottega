@@ -3,6 +3,7 @@
 
 import { chmodSync, lstatSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { recordRunWarning } from '../events.ts'
 import { commonGitDir, targetGitEnvironment } from '../git/git-environment.ts'
@@ -75,17 +76,15 @@ function gitConfig(
   configPath: string,
   args: string[],
 ): { ok: boolean; code: number | null; stdout: string; error: string } {
-  const result = Bun.spawnSync(['git', 'config', '--file', configPath, ...args], {
+  const result = startBoundedSync(['git', 'config', '--file', configPath, ...args], {
+    budget: 'git-plumbing',
     env: targetGitEnvironment(configPath),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return {
     ok: result.exitCode === 0,
     code: result.exitCode,
-    stdout: result.stdout.toString(),
-    error:
-      result.stderr.toString().trim() || `git config ${args[0] ?? ''} exited ${result.exitCode}`,
+    stdout: result.stdout,
+    error: result.stderr.trim() || `git config ${args[0] ?? ''} exited ${result.exitCode}`,
   }
 }
 

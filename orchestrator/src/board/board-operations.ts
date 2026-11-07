@@ -9,6 +9,7 @@ import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
+import { DEFAULT_TASK_KEY_PATTERN } from '../project/project-settings.ts'
 import { projectAt, projectByName, projectRowByName } from '../project/projects.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -31,7 +32,7 @@ import {
   fileAcceptedAnswerNote,
   resolveAcceptedAnswerNoteLabel,
 } from './board-answer-note.ts'
-import { BOARD_CLAIM_DEFAULT_MS } from './board-claim-policy.ts'
+import { BOARD_CLAIM_DEFAULT_MS, releaseTaskKey } from './board-claim-policy.ts'
 import {
   type ClaimView,
   claimProject,
@@ -865,11 +866,18 @@ export async function boardClaimList(
 }
 export async function boardClaimReleaseTask(key: string, project: string, inputContext?: Context) {
   const c = context(inputContext)
+  const targetProject = projectByName(project)
+  if (!targetProject)
+    throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
+  const normalizedKey = releaseTaskKey(
+    key,
+    targetProject.settings.worktree?.keyPattern ?? DEFAULT_TASK_KEY_PATTERN,
+  )
   return boardMode('shared', c.env) === 'local'
-    ? releaseTaskClaims(key, project, c.env, c.clock)
+    ? releaseTaskClaims(normalizedKey, project, c.env, c.clock)
     : hostedClient(c).releaseBoardTaskClaims({
-        key,
+        key: normalizedKey,
         project,
-        projectId: projectRowByName(project)?.recordId ?? null,
+        projectId: targetProject.recordId,
       })
 }

@@ -11,6 +11,7 @@ import {
   mayReleaseClaim,
   mayRenewClaim,
   parseClaimSubject,
+  releaseTaskKey,
 } from './board-claim-policy.ts'
 
 const architect = { kind: 'architect' as const, session: 'holder' }
@@ -64,6 +65,14 @@ test('claim subject, note, and duration refusals match the local adapter rules',
   expect(() => claimNote('held\u2028forged')).toThrow(/claim note contains a line break/)
   expect(claimDurationRefusal(0)).toContain('positive')
   expect(claimDurationRefusal(BOARD_CLAIM_DEFAULT_MS)).toBeNull()
+})
+
+test('release task keys accept bare and task subject forms while refusing other shapes', () => {
+  const pattern = '^DEV-[0-9]+$'
+  expect(releaseTaskKey('DEV-1', pattern)).toBe('DEV-1')
+  expect(releaseTaskKey('task:DEV-1', pattern)).toBe('DEV-1')
+  for (const expression of ['path:DEV-1', 'task:', 'dev 1'])
+    expect(() => releaseTaskKey(expression, pattern)).toThrow('use <KEY> or task:<KEY> matching')
 })
 
 test('take decision covers take, renewal, refusal, stale takeover, and operator force', () => {
