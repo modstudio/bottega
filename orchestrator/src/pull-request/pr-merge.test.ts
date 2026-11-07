@@ -239,6 +239,8 @@ test.each([
           throw new Error('release must not run')
         },
       }),
+      undefined,
+      true,
     ),
   ).toThrow(
     `pull request #42 merged, but the merge commit could not be read: ${failure.message}; retry with: ${PLATFORM_SLUG} pr merge 42`,

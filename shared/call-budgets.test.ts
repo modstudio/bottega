@@ -12,6 +12,8 @@ describe('call budgets', () => {
     { argv: ['git', '--work-tree', '/w', 'push', 'origin', 'main'], budget: 'git-network' },
     { argv: ['git', '--namespace', 'ns', 'ls-remote'], budget: 'git-network' },
     { argv: ['git', '--git-dir', '.git', 'status'], budget: 'git-plumbing' },
+    { argv: ['git', '--config-env', 'A=B', 'fetch'], budget: 'git-network' },
+    { argv: ['git', '--git-dir=.git', 'fetch'], budget: 'git-network' },
   ] as const)('$argv selects $budget', ({ argv, budget }) => {
     expect(budgetForArgv(argv)).toBe(budget)
   })
