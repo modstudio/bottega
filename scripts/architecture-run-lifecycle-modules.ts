@@ -472,6 +472,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/host-reservation.ts', []),
   module('orchestrator/src/run/run-agent-capacity.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
     '../database/db.ts',
     '../events.ts',
     '../route/routing-refusal.ts',

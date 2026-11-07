@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { CommanderError } from 'commander'
 import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
 import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
+import { refusal } from '../../../shared/refusal.ts'
 import { readStoreLockRefusalsSince } from '../../../shared/store-lock-refusal-log.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import {
@@ -141,7 +142,7 @@ test('the retired top-level probe spelling is not registered', () => {
 test('an unknown command keeps exit 2 and migration drain refusals carry their declared code', async () => {
   expect(exitCodeFor(new CommanderError(1, 'commander.unknownCommand', 'unknown command'))).toBe(2)
   expect(await run(['definitely-not-a-command'])).toBe(2)
-  expect(exitCodeFor(new MigrationDrainRefusalError('draining'))).toBe(
+  expect(exitCodeFor(new MigrationDrainRefusalError(refusal('draining')))).toBe(
     MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
   )
 })

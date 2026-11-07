@@ -357,6 +357,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     allowed: [
       '../../../shared/git-path-list.ts',
       './review-applicability.ts',
+      './review-coverage-match.ts',
       './review-evidence-sql.ts',
       './review-group.ts',
       './review-role.ts',

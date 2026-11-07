@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   recordRequestNature,
@@ -182,7 +183,7 @@ export async function reportApi(
   const identity = await taskSpaceIdentity(
     request,
     config.recordApiUrl,
-    (dependencies.fetch ?? fetch) as typeof fetch,
+    (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
     false,
   )
   const refusal = identityRefusal(identity)

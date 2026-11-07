@@ -1,5 +1,7 @@
 // concern: porting-import-contract
 /** Shared shape and refusal contract for local and hosted legacy port imports. */
+import { refusal } from '../../../shared/refusal.ts'
+import { RefusalError } from '../refusal-error.ts'
 
 type ImportIssue = {
   kind: 'refusal' | 'exclusion'
@@ -44,11 +46,11 @@ export type ImportFiles = {
 
 export type SourceCoverageGap = { file: string; offset: number; text: string }
 
-export class ImportRefusalError extends Error {
+export class ImportRefusalError extends RefusalError {
   public refusals: ImportRefusal[]
 
   constructor(refusals: ImportRefusal[]) {
-    super(`port import refused with ${refusals.length} refusal(s)`)
+    super(refusal(`port import refused with ${refusals.length} refusal(s)`))
     this.refusals = refusals
   }
 }

@@ -18,7 +18,7 @@ import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
 import { candidates, EVIDENCE_WINDOW, evidenceFor, pick, scoreboard } from './route.ts'
 import { meteredRouteEligibility } from './route-metered-policy.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
-import { RoutingRefusalError } from './routing-refusal.ts'
+import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 beforeEach(() => seedNeutralCodexQuotaReading())
@@ -52,6 +52,37 @@ test('candidate running-run map matches per-agent fixture counts from one groupe
   expect(running.codex).toBe(2)
   expect(running.grok).toBe(1)
   expect(Object.values(running).reduce((sum, count) => sum + count, 0)).toBe(3)
+})
+
+test('a preferred lane at declared capacity refuses without no-wait-capacity', () => {
+  const original = db()
+    .query("SELECT preferred_jobs,max_concurrent FROM agent WHERE name='codex'")
+    .get() as { preferred_jobs: string | null; max_concurrent: number | null }
+  try {
+    db()
+      .query(
+        "UPDATE agent SET preferred_jobs='[\"file-question\"]',max_concurrent=1 WHERE name='codex'",
+      )
+      .run()
+    refreshAgents()
+    addRun({ agent: 'codex', job: 'file-question', status: 'running' })
+
+    let refusal: unknown
+    try {
+      pick('file-question', undefined, 0, false)
+    } catch (error) {
+      refusal = error
+    }
+    expect(refusal).toBeInstanceOf(AgentCapacityError)
+    expect((refusal as Error).message).toContain(
+      'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\ncleared by: wait for the named runs or pass --no-wait-capacity',
+    )
+  } finally {
+    db()
+      .query("UPDATE agent SET preferred_jobs=?,max_concurrent=? WHERE name='codex'")
+      .run(original.preferred_jobs, original.max_concurrent)
+    refreshAgents()
+  }
 })
 
 test('training-data eligibility requires a declared public project even when named', () => {
