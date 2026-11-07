@@ -185,14 +185,6 @@ function reportRegisteredMainCheckouts<T extends RegisteredCheckout>(
   return failed
 }
 
-function registerMainCheckoutProblems<T extends RegisteredCheckout>(
-  inspection: RegisteredMainCheckoutInspection<T>,
-): string[] {
-  const { branch } = inspection
-  if (!branch.landing) return branch.problems
-  return branch.problems
-}
-
 function reportProjectLifecycles(
   projects: ReadonlyArray<{
     name: string
@@ -251,7 +243,7 @@ export function reportCheckoutRegister<T extends RegisteredCheckout>(
     inspections.map((inspection) => [inspection.project, inspection]),
   )
   const questions = projectRegisterQuestions(projects, (project) =>
-    registerMainCheckoutProblems(inspectionsByProject.get(project)!),
+    inspectionsByProject.get(project)!.branch.problems,
   )
   if (questions.length) {
     log('\nregister questions (not run failures):')
