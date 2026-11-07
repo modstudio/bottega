@@ -14,6 +14,7 @@ export const releaseModules = [
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/project/project-lock.ts',
       'orchestrator/src/project/projects.ts',
+      'orchestrator/src/project/main-checkout-invariant.ts',
       'shared/install-root.ts',
       'shared/secret-shaped.ts',
       'shared/record/schema.ts',

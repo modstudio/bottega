@@ -32,6 +32,9 @@ import { runTotals } from '../evidence/evidence-query.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
+import { activeSpaceInvariant } from '../record/active-space-invariant.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { recordMembershipsFromIdentity } from '../record/record-space.ts'
 import {
   classifiedDockerResources,
   dockerRemovalCommand,
@@ -76,6 +79,118 @@ type DoctorPresentation = {
   jobs(): string[]
   acpRuntimeGaps(): string | null
   retrievalCheck(): Promise<{ stdout: string; stderr: string; exitCode: number }>
+}
+
+export async function activeSpaceDoctorDiagnosis(
+  whoami: () => Promise<Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>>> = () =>
+    recordApiClient().whoami(),
+): Promise<{ line: string; failed: boolean }> {
+  try {
+    const decision = activeSpaceInvariant(recordMembershipsFromIdentity(await whoami()))
+    if (!decision.holds) return { line: `active space   FAIL — ${decision.message}`, failed: true }
+    return {
+      line: `active space   pass — ${decision.active?.slug ?? decision.active?.spaceId ?? 'no space'}`,
+      failed: false,
+    }
+  } catch (error) {
+    return {
+      line: `active space   check could not run — ${error instanceof Error ? error.message : String(error)}`,
+      failed: true,
+    }
+  }
+}
+
+async function reportActiveSpaceDoctor(presentation: DoctorPresentation): Promise<void> {
+  const diagnosis = await activeSpaceDoctorDiagnosis()
+  presentation.log(diagnosis.line)
+  if (diagnosis.failed) presentation.exitCode(1)
+}
+
+type RegisteredCheckout = { name: string; path: string; settings: { trunk?: string } }
+type BranchInspection = { landing: string | null; problems: string[] }
+type CheckoutInspection = { branch: string | null; trunk: string; trackedModified: boolean }
+type CheckoutDecision = { holds: true } | { holds: false; message: string }
+
+function reportRegisteredMainCheckouts(
+  projects: readonly RegisteredCheckout[],
+  log: DoctorPresentation['log'],
+  inspectBranch: (project: RegisteredCheckout) => BranchInspection,
+  inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
+  decide: (facts: CheckoutInspection) => CheckoutDecision,
+): void {
+  log('\nregistered main checkouts')
+  for (const project of projects) {
+    const branch = inspectBranch(project)
+    if (!branch.landing) {
+      log(`  ${project.name} check could not run — no registered landing branch`)
+      continue
+    }
+    const facts = inspectCheckout(project.path, branch.landing)
+    const invariant = decide(facts)
+    log(
+      invariant.holds
+        ? `  ${project.name} pass — branch ${facts.branch}, tracked clean`
+        : `  ${project.name} FAIL — ${invariant.message}`,
+    )
+  }
+}
+
+function registerMainCheckoutProblems(
+  project: RegisteredCheckout,
+  inspectBranch: (project: RegisteredCheckout) => BranchInspection,
+  inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
+  decide: (facts: CheckoutInspection) => CheckoutDecision,
+): string[] {
+  const branch = inspectBranch(project)
+  if (!branch.landing) return branch.problems
+  const checkout = inspectCheckout(project.path, branch.landing)
+  const invariant = decide(checkout)
+  return checkout.trackedModified && !invariant.holds
+    ? [...branch.problems, invariant.message]
+    : branch.problems
+}
+
+function reportProjectLifecycles(
+  projects: ReadonlyArray<{
+    name: string
+    path: string
+    settings: { worktree?: Parameters<typeof lifecycleReportLines>[0][number]['worktree'] }
+  }>,
+  log: DoctorPresentation['log'],
+): void {
+  for (const line of lifecycleReportLines(
+    projects.map((project) => ({
+      name: project.name,
+      path: project.path,
+      worktree: project.settings.worktree,
+    })),
+    existsSync,
+  )) {
+    log(line)
+  }
+}
+
+function reportCheckoutRegister(
+  projects: readonly RegisteredCheckout[],
+  log: DoctorPresentation['log'],
+  hookFinding: (project: RegisteredCheckout) => string | null,
+  inspectBranch: (project: RegisteredCheckout) => BranchInspection,
+  inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
+  decide: (facts: CheckoutInspection) => CheckoutDecision,
+): void {
+  const hookFlags = projects.map(hookFinding).filter(Boolean)
+  if (hookFlags.length) {
+    log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
+    for (const line of hookFlags) log(`  ${line}`)
+  }
+  reportRegisteredMainCheckouts(projects, log, inspectBranch, inspectCheckout, decide)
+  const questions = projectRegisterQuestions(projects, (project) =>
+    registerMainCheckoutProblems(project, inspectBranch, inspectCheckout, decide),
+  )
+  if (questions.length) {
+    log('\nregister questions (not run failures):')
+    for (const question of questions) log(`  ${question}`)
+  }
 }
 
 export function canonEvalDoctorDecision(input: {
@@ -570,6 +685,7 @@ export async function doctorCommand(
     log(`FAILING CANON EVALS: ${failingEvalSlugs.join(', ')}`)
   }
   await reportInstallationStatus(presentation, machineLevel)
+  await reportActiveSpaceDoctor(presentation)
   const { harnessHealth } = await import('./health.ts')
   const costlyFailures = harnessHealth()
     .classes.filter((row) => row.count > 0)
@@ -759,30 +875,19 @@ export async function doctorCommand(
     undeclaredCommitHooks,
     registerBranchCheck,
   } = await import('../project/projects.ts')
-  const repositoryProjects = registeredProjects().filter(isProjectRepository)
-  lifecycleReportLines(
-    repositoryProjects.map((project) => ({
-      name: project.name,
-      path: project.path,
-      worktree: project.settings.worktree,
-    })),
-    existsSync,
-  ).forEach((line) => {
-    log(line)
-  })
-  const hookFlags = repositoryProjects.map(undeclaredCommitHooks).filter(Boolean)
-  if (hookFlags.length) {
-    log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
-    for (const line of hookFlags) log(`  ${line}`)
-  }
-  const registerQuestions = projectRegisterQuestions(
-    repositoryProjects,
-    (project) => registerBranchCheck(project).problems,
+  const { mainCheckoutFacts, mainCheckoutInvariant } = await import(
+    '../project/main-checkout-invariant.ts'
   )
-  if (registerQuestions.length) {
-    log('\nregister questions (not run failures):')
-    for (const question of registerQuestions) log(`  ${question}`)
-  }
+  const repositoryProjects = registeredProjects().filter(isProjectRepository)
+  reportProjectLifecycles(repositoryProjects, log)
+  reportCheckoutRegister(
+    repositoryProjects,
+    log,
+    undeclaredCommitHooks,
+    registerBranchCheck,
+    mainCheckoutFacts,
+    mainCheckoutInvariant,
+  )
   const docker = dockerRunResources(repositoryProjects.map(({ path }) => path))
   const dockerResources = docker.ascertainable ? docker.resources : []
   const dockerOwnerIds = new Set(dockerResources.map(({ runId }) => runId))

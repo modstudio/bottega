@@ -9,6 +9,7 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { verifyMainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
 import { projectLockState, withReleaseLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import {
@@ -173,6 +174,21 @@ function releaseCheckoutRestoreWarning(path: string, trunk: string, cause: unkno
   return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run git -C ${path} switch ${trunk}`
 }
 
+function verifiedReleaseCheckoutRestore(
+  path: string,
+  trunk: string,
+  restoreWarning: string | null,
+  shouldVerify: boolean,
+): string | null {
+  if (!shouldVerify || restoreWarning !== null) return restoreWarning
+  try {
+    verifyMainCheckoutInvariant(path, trunk)
+    return null
+  } catch (cause) {
+    return releaseCheckoutRestoreWarning(path, trunk, cause)
+  }
+}
+
 function fastForwardReleaseBranch(path: string, branch: string): void {
   const head = git(['rev-parse', 'HEAD'], path)
   const remoteHead = git(['rev-parse', `origin/${branch}`], path)
@@ -219,6 +235,12 @@ function withReleaseCheckout(
       }
     }
   }
+  restoreWarning = verifiedReleaseCheckoutRestore(
+    path,
+    trunk,
+    restoreWarning,
+    transition.restoreToTrunk,
+  )
   const composed = releaseCheckoutOutcomeDecision({
     failure: failed ? (failure instanceof Error ? failure.message : String(failure)) : null,
     warning: outcome?.result.warning ?? null,

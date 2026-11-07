@@ -5,10 +5,12 @@ import { writeRecordSessionToken } from '../../../shared/record-session.ts'
 import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { claimCurrentMachineKey } from '../config/config-service.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
+import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { recordApiClient, recordApiSignIn, recordApiSignUp } from './record-api-client.ts'
 import { recordApiSendVerificationEmail } from './record-email-verification-client.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
+import { recordMemberships } from './record-space.ts'
 
 type Presentation = { log(value: string): void }
 
@@ -71,7 +73,11 @@ export async function completeSignInCommand(
   writeRecordSessionToken(result.token)
   rememberSignedInRecordUser(result.user)
   rememberHostedRecord()
+  const identity = await recordMemberships()
+  const active = activeSpaceInvariant(identity)
+  if (!active.holds) throw new Error(active.message)
   presentation.log(`signed in ${result.user.email}`)
+  presentation.log(`active record space ${active.active?.slug ?? active.active?.spaceId ?? 'none'}`)
   try {
     await claimCurrentMachineKey()
   } catch (error) {

@@ -409,6 +409,7 @@ describe('record sign-in machine key claim failure', () => {
     )
     expect(output).toEqual([
       'signed in a@example.test',
+      'active record space none',
       `machine key claim failed: ${RECORD_ACTIVE_SPACE_REMEDY}`,
       `automatic board adoption failed: hosted board is unused in this fixture; run ${PLATFORM_SLUG} board adopt`,
     ])

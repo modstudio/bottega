@@ -321,8 +321,10 @@ export async function recordSpaceAcceptCommand(
   presentation: Presentation,
   names?: { shortName: string; displayName: string },
 ): Promise<void> {
-  const spaceId = await acceptRecordInvitation(invitationId, undefined, names)
-  presentation.log(`accepted record invitation ${invitationId}; active space ${spaceId}`)
+  const active = await acceptRecordInvitation(invitationId, undefined, names)
+  presentation.log(
+    `accepted record invitation ${invitationId}; active space ${active?.slug ?? active?.spaceId ?? 'none'}`,
+  )
 }
 
 export async function recordSpaceMoveProjectCommand(

@@ -8,11 +8,38 @@ import {
 import { mergeProjectSettings, parseSettingsPatch } from '../project/project-settings-patch.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import {
+  activeSpaceDoctorDiagnosis,
   affectedSelectorDoctorFinding,
   canonEvalDoctorDecision,
   doctorAcpStatus,
   workerCheckDoctorFinding,
 } from './doctor.ts'
+
+test('machine doctor reports whoami active-space results without claiming unavailable checks pass', async () => {
+  const passing = await activeSpaceDoctorDiagnosis(async () => ({
+    user: { id: 'user-a' },
+    activeSpaceId: 'space-a',
+    personalSpaceId: null,
+    memberships: [
+      {
+        space_id: 'space-a',
+        name: 'Alpha',
+        slug: 'alpha',
+        role: 'owner',
+        permission: 'write',
+      },
+    ],
+  }))
+  expect(passing).toEqual({ line: 'active space   pass — alpha', failed: false })
+
+  const unavailable = await activeSpaceDoctorDiagnosis(async () => {
+    throw new Error('signed out')
+  })
+  expect(unavailable).toEqual({
+    line: 'active space   check could not run — signed out',
+    failed: true,
+  })
+})
 
 afterEach(() => registerEmbeddedAssets(null))
 

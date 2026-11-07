@@ -19,6 +19,9 @@ const cacheDeleteImports = ['bun:sqlite', '../database/db.ts', '../database/tole
 export const recordModules: RecordModule[] = [
   ...recordChangeModules,
   ...storageRecordModules,
+  module('orchestrator/src/record/active-space-invariant.ts', [
+    '../../../shared/record-remedies.ts',
+  ]),
   module('orchestrator/src/record/record-pool.ts', [
     'bun',
     '../../../shared/record/service-connection.ts',
@@ -677,6 +680,7 @@ export const recordModules: RecordModule[] = [
     './record-project-destination.ts',
     './record-session.ts',
     './record-pool.ts',
+    './active-space-invariant.ts',
   ]),
   module('orchestrator/src/record/outbox-failure.ts', [
     '../../../shared/record/postgres-error.ts',
@@ -729,6 +733,7 @@ export const recordModules: RecordModule[] = [
     './record-cache-projects.ts',
     './record-moderation-hide.ts',
     './record-session.ts',
+    './active-space-invariant.ts',
   ]),
   module('orchestrator/src/record/record-invitation.ts', []),
   module('orchestrator/src/record/record-api-access.ts', [
