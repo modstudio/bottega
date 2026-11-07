@@ -131,7 +131,9 @@ function rejectEmptyAsking<FailureKind extends string>(
 ): FinalizationDecision<FailureKind> {
   if (reply?.status !== 'asking' || acceptedQuestions.length > 0) return decision
   const rejected =
-    reply.questions?.map((item) => JSON.stringify(item.question)).join(', ') || '(no question text)'
+    reply.questions
+      ?.map((item) => `${JSON.stringify(item.question)} (${droppedQuestionReason(item)})`)
+      .join(', ') || '(no question text)'
   return {
     status: 'failed',
     failureKind: 'contract',

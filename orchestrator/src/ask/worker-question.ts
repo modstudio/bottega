@@ -7,9 +7,18 @@ import { WORKER_QUESTION_KINDS } from '../../../shared/orch-contract.ts'
 const nullableAbsent = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === null ? undefined : value), schema.optional())
 const requiredQuestion = z.preprocess((value) => String(value ?? ''), z.string())
+
+export function normalizeWorkerQuestionChoice(value: string): string {
+  return value
+    .replace(/\p{Cf}/gu, '')
+    .trim()
+    .replace(/\s+/gu, ' ')
+    .toLocaleLowerCase('und')
+}
+
 const choiceOption = z
   .object({
-    name: z.string().trim().min(1),
+    name: z.string(),
     criteria: nullableAbsent(z.string()),
   })
   .transform(({ name, criteria }) => ({ name, ...(criteria === undefined ? {} : { criteria }) }))
@@ -24,27 +33,28 @@ const choice = z
       .superRefine((options, context) => {
         const names = new Set<string>()
         options.forEach((option, index) => {
-          if (names.has(option.name))
+          const normalizedName = normalizeWorkerQuestionChoice(option.name)
+          if (names.has(normalizedName))
             context.addIssue({
               code: 'custom',
               path: [index, 'name'],
               message: `duplicate option name ${option.name}`,
             })
-          names.add(option.name)
+          names.add(normalizedName)
         })
       }),
     recommendation: nullableAbsent(z.string()),
   })
-  .superRefine((question, context) => {
-    if (
-      question.recommendation &&
-      !question.options.some(({ name }) => name === question.recommendation)
+  .transform((question) => {
+    if (question.recommendation === undefined) return question
+    const recommendation = normalizeWorkerQuestionChoice(question.recommendation)
+    const option = question.options.find(
+      ({ name }) => normalizeWorkerQuestionChoice(name) === recommendation,
     )
-      context.addIssue({
-        code: 'custom',
-        path: ['recommendation'],
-        message: `recommendation must name one of: ${question.options.map(({ name }) => name).join(', ')}`,
-      })
+    const { recommendation: _recommendation, ...withoutRecommendation } = question
+    return option
+      ? { ...withoutRecommendation, recommendation: option.name }
+      : withoutRecommendation
   })
 const yesno = z.object({
   kind: z.literal('yesno'),
@@ -58,7 +68,7 @@ const score = z.object({
   kind: z.literal('score'),
   question: requiredQuestion,
   why: nullableAbsent(z.string().trim()).default(''),
-  levels: z.array(z.string().trim().min(1)).min(2).max(10),
+  levels: z.array(z.string()).min(2).max(10),
 })
 const text = z.object({
   kind: z.literal('text'),
@@ -178,7 +188,10 @@ export function decodeWorkerQuestion(question: StoredWorkerQuestion): WorkerQues
 
 function choiceAnswer(question: Extract<WorkerQuestion, { kind: 'choice' }>, raw: unknown): string {
   if (typeof raw === 'string') {
-    const option = question.options.find(({ name }) => name === raw)
+    const normalizedAnswer = normalizeWorkerQuestionChoice(raw)
+    const option = question.options.find(
+      ({ name }) => normalizeWorkerQuestionChoice(name) === normalizedAnswer,
+    )
     if (option) return option.name
   }
   throw new Error(`allowed values: ${question.options.map(({ name }) => name).join(', ')}`)
