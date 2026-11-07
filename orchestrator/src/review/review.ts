@@ -1,11 +1,10 @@
 // concern: review
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { ReviewReply } from '../contract/contract.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { readReviewLensInputArtifact } from '../database/review-lens-input-artifact.ts'
 import { nextReviewNumber } from './review-number.ts'
 import { enqueueReview } from './review-outbox.ts'
 
@@ -579,30 +578,28 @@ function loadFindingsRuns(entries: { runId: string }[], database: Database): Run
   })
 }
 
-function reviewLensInputStatuses(run: RunRow): {
-  taskTextInput: string | null
-  rulingsInput: string | null
-} {
-  if (!run.prompt_path) return { taskTextInput: null, rulingsInput: null }
-  const path = join(dirname(run.prompt_path), 'review-lens-inputs.json')
-  if (!existsSync(path)) return { taskTextInput: null, rulingsInput: null }
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
-    return {
-      taskTextInput: typeof parsed.taskTextInput === 'string' ? parsed.taskTextInput : null,
-      rulingsInput: typeof parsed.rulingsInput === 'string' ? parsed.rulingsInput : null,
-    }
-  } catch {
-    return { taskTextInput: null, rulingsInput: null }
-  }
-}
-
 function reviewProjectName(database: Database, projectRecordId: string | null): string | null {
   if (!projectRecordId) return null
   return (
     database
       .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
       .get(projectRecordId)?.name ?? null
+  )
+}
+
+function measuredReviewForRuns(runs: readonly RunRow[], database: Database) {
+  const run = runs[0]!
+  if (!run.project_record_id || !run.head_commit) return null
+  const project = database
+    .query<{ name: string; path: string; settings: string }, [string]>(
+      'SELECT name,path,settings FROM project WHERE record_id=?',
+    )
+    .get(run.project_record_id)
+  if (!project) return null
+  return measureReviewChange(
+    project.path,
+    { name: project.name, settings: JSON.parse(project.settings) },
+    run.head_commit,
   )
 }
 
@@ -627,21 +624,7 @@ export function recordReviews(
         .join('\n')}`,
     )
   }
-  const measured = (() => {
-    const run = runs[0]!
-    if (!run.project_record_id || !run.head_commit) return null
-    const project = database
-      .query<{ name: string; path: string; settings: string }, [string]>(
-        'SELECT name,path,settings FROM project WHERE record_id=?',
-      )
-      .get(run.project_record_id)
-    if (!project) return null
-    return measureReviewChange(
-      project.path,
-      { name: project.name, settings: JSON.parse(project.settings) },
-      run.head_commit,
-    )
-  })()
+  const measured = measuredReviewForRuns(runs, database)
   const [projectRecordId, role] = reviewProjectAndRole(runs)
   const pathSet = measured ? serializePathSet(measured.pathSet) : null
   const reviewRecordId = writeTransaction(() => {
@@ -693,7 +676,7 @@ export function recordReviews(
     let ordinal = 0
     entries.forEach(({ output }, index) => {
       const run = runs[index]!
-      const inputStatuses = reviewLensInputStatuses(run)
+      const inputStatuses = readReviewLensInputArtifact(run.prompt_path)
       output.provenance.files_covered = output.provenance.files_covered.map(normalizeCoveredPath)
       const lens = insertLens.get(
         newRecordId(),

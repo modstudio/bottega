@@ -149,6 +149,42 @@ const detachRouting = (spec: DetachSpec) => ({
   probeReaderSuites: spec.probeReaderSuites,
 })
 
+function completeDetachSpec(spec: DetachSpec) {
+  const complete: Required<Record<Exclude<keyof DetachSpec, 'transportPinSource'>, unknown>> = {
+    agent: spec.agent,
+    ...detachRouting(spec),
+    schema: spec.schema,
+    mcp: spec.mcp,
+    model: spec.model,
+    probe: spec.probe,
+    transport: spec.transport,
+    label: spec.label,
+    lens: spec.lens,
+    lensInputs: spec.lensInputs,
+    seed: spec.seed,
+    key: spec.key,
+    repo: spec.repo,
+    base: spec.base,
+    launchBase: spec.launchBase,
+    avoid: spec.avoid,
+    distinctModels: spec.distinctModels,
+    retryOf: spec.retryOf,
+    cwd: spec.cwd,
+    launchCwd: spec.launchCwd,
+    noFailover: spec.noFailover,
+    noWaitCapacity: spec.noWaitCapacity,
+    carry: spec.carry,
+    review: spec.review,
+    ownerSession: spec.ownerSession,
+    resume: spec.resume,
+    deliverables: spec.deliverables,
+    timeoutMinutes: spec.timeoutMinutes,
+    keepTree: spec.keepTree,
+    resolvedTaskBranch: spec.resolvedTaskBranch,
+  }
+  return complete
+}
+
 export function detachedRunOptions(
   jobName: string,
   prompt: string,
@@ -185,38 +221,7 @@ export function detachedRunOptions(
     keepTree,
     resolvedTaskBranch,
   } = spec
-  const consumed: Required<Record<Exclude<keyof DetachSpec, 'transportPinSource'>, unknown>> = {
-    agent,
-    ...detachRouting(spec),
-    schema: spec.schema,
-    mcp,
-    model,
-    probe,
-    transport,
-    label,
-    lens,
-    lensInputs,
-    seed,
-    key,
-    repo,
-    base,
-    launchBase,
-    avoid,
-    distinctModels,
-    retryOf,
-    cwd,
-    launchCwd,
-    noFailover,
-    noWaitCapacity,
-    carry,
-    review,
-    ownerSession,
-    resume,
-    deliverables,
-    timeoutMinutes,
-    keepTree,
-    resolvedTaskBranch,
-  }
+  const consumed = completeDetachSpec(spec)
   return {
     job: jobName,
     prompt,

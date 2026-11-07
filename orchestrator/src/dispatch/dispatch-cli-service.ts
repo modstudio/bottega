@@ -82,8 +82,8 @@ import {
 } from '../worktree/worktree-caller.ts'
 import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-preflight.ts'
-import type { ReviewFindingMemory } from './review-memory.ts'
 import type { ReviewLensPackInputs } from './review-lens-prompt.ts'
+import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey, readLensTask } from './task-key-lookup.ts'
 
 type Presentation = {
@@ -118,10 +118,7 @@ async function lookupTaskKey(project: string, key: string) {
 
 function answeredTaskRulings(project: string, key: string): string[] {
   return db()
-    .query<
-      { question: string; answer: string; replacement: string | null },
-      [string, string]
-    >(
+    .query<{ question: string; answer: string; replacement: string | null }, [string, string]>(
       `SELECT q.question,q.answer,q.replacement FROM question q
        JOIN run owner ON owner.record_id=q.run_record_id
        JOIN run root ON root.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
@@ -132,7 +129,10 @@ function answeredTaskRulings(project: string, key: string): string[] {
        ORDER BY COALESCE(q.overturned_at,q.answered_at),q.number`,
     )
     .all(project, key)
-    .map(({ question, answer, replacement }) => `Question: ${question}\nRuling: ${replacement ?? answer}`)
+    .map(
+      ({ question, answer, replacement }) =>
+        `Question: ${question}\nRuling: ${replacement ?? answer}`,
+    )
 }
 
 async function reviewLensInputs(

@@ -157,6 +157,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../../../shared/process-identity.ts',
       '../database/db.ts',
       '../database/migration-drain.ts',
+      '../database/review-lens-input-artifact.ts',
       '../dispatch/dispatch-preflight.ts',
       '../jobs/jobs.ts',
       '../mcp/mcp-preflight.ts',

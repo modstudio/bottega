@@ -35,10 +35,7 @@ import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
 import { decideProbeLaunchOverrides } from './probe-launch-overrides.ts'
-import {
-  type ReviewLensPackInputs,
-  reviewLensPrompt,
-} from './review-lens-prompt.ts'
+import { type ReviewLensPackInputs, reviewLensPrompt } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { checkTaskKeyAdmission, type TaskKeyLookup } from './task-key-admission.ts'
 
@@ -202,7 +199,11 @@ type DispatchPresentation = {
     cwd: string,
     explicitBranch: string | null,
   ): ReviewFindingMemory
-  reviewLensInputs(project: Project, key: string | undefined, lens: string | undefined): Promise<ReviewLensPackInputs>
+  reviewLensInputs(
+    project: Project,
+    key: string | undefined,
+    lens: string | undefined,
+  ): Promise<ReviewLensPackInputs>
   detach(
     jobName: string,
     prompt: string,
@@ -289,9 +290,10 @@ export async function composeDispatchPrompt(input: {
   key?: string
 }): Promise<{ prompt: string; lensInputs?: ReviewLensPackInputs }> {
   const spec = await input.presentation.readPrompt()
-  const lensInputs = input.requested.findings && input.project
-    ? await input.presentation.reviewLensInputs(input.project, input.key, input.lens)
-    : undefined
+  const lensInputs =
+    input.requested.findings && input.project
+      ? await input.presentation.reviewLensInputs(input.project, input.key, input.lens)
+      : undefined
   const prompt = await compose(
     input.presentation,
     input.project,
@@ -314,6 +316,30 @@ export async function composeDispatchPrompt(input: {
     input.presentation.error,
   )
   return { prompt, ...(lensInputs ? { lensInputs } : {}) }
+}
+
+function composePromptForDispatch(
+  presentation: DispatchPresentation,
+  project: Project | null,
+  requested: ReturnType<typeof job>,
+  lens: string | undefined,
+  cwd: string,
+  reviewBranch: string | null,
+  jobName: string,
+  continuation: boolean,
+  key?: string,
+) {
+  return composeDispatchPrompt({
+    presentation,
+    project,
+    requested,
+    lens,
+    cwd,
+    reviewBranch,
+    jobName,
+    continuation,
+    key,
+  })
 }
 
 function reportGeneralDispatchWarnings(input: {
@@ -629,6 +655,14 @@ function validatedDeliverables(values: string[], jobName: string): string[] {
   return values
 }
 
+function dispatchKeepTree(flags: DispatchFlags) {
+  return keepTreeExemptionFromOption(
+    flags.has('keep-tree'),
+    flags.flag('keep-tree'),
+    flags.flag('keep-tree-reason'),
+  )
+}
+
 export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
@@ -732,22 +766,18 @@ export async function dispatchCommand(
     checkoutHasUncommittedWork: () => checkoutHasUncommittedWork(callerCwd),
     error,
   })
-  const { prompt, lensInputs } = await composeDispatchPrompt({
+  const { prompt, lensInputs } = await composePromptForDispatch(
     presentation,
-    project: dispatchProject,
+    dispatchProject,
     requested,
     lens,
-    cwd: callerCwd,
-    reviewBranch: resolvedReviewTarget?.branch ?? null,
+    callerCwd,
+    resolvedReviewTarget?.branch ?? null,
     jobName,
-    continuation: Boolean(flag('continue')),
-    key: flag('key'),
-  })
-  const keepTree = keepTreeExemptionFromOption(
-    has('keep-tree'),
-    flag('keep-tree'),
-    flag('keep-tree-reason'),
+    Boolean(flag('continue')),
+    flag('key'),
   )
+  const keepTree = dispatchKeepTree(flags)
   // A fan-out cannot be run synchronously, and that is not a caller's problem
   // to solve.
   //

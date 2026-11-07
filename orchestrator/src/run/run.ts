@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { mkdirSync } from 'node:fs'
+import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
@@ -568,12 +568,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
-  if (opts.lensInputs) {
-    writeFileSync(
-      join(dirname(promptPath), 'review-lens-inputs.json'),
-      `${JSON.stringify(opts.lensInputs)}\n`,
-    )
-  }
   const localMachineId = machineId()
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath

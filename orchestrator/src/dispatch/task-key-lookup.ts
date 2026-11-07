@@ -1,6 +1,7 @@
 // concern: task-key-lookup
 /** Reads a task through the tracker protocol declared by its registered project. */
 
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
@@ -42,11 +43,12 @@ export async function readLensTask(project: Project, key: string): Promise<LensT
   if (project.settings.tracker?.protocol !== 'hub') {
     return {
       available: false,
-      reason: "tracker reachable only through the project's MCP; declare a CLI task read in the project register",
+      reason:
+        "tracker reachable only through the project's MCP; declare a CLI task read in the project register",
     }
   }
   try {
-    const child = Bun.spawn(
+    const result = await startBounded(
       [
         ...bottegaEntryArgv(PLATFORM_SLUG),
         'task',
@@ -56,17 +58,15 @@ export async function readLensTask(project: Project, key: string): Promise<LensT
         project.name,
         '--json',
       ],
-      { cwd: project.path, stdout: 'pipe', stderr: 'pipe', env: { ...process.env } },
+      { budget: 'self-cli', cwd: project.path, env: { ...process.env } },
     )
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ])
-    if (code !== 0) {
-      return { available: false, reason: errorText(stderr || stdout || `exit ${code}`) }
+    if (result.exitCode !== 0) {
+      return {
+        available: false,
+        reason: errorText(result.stderr || result.stdout || `exit ${result.exitCode}`),
+      }
     }
-    const shown = JSON.parse(stdout) as {
+    const shown = JSON.parse(result.stdout) as {
       task?: { record_id?: unknown; key?: unknown; title?: unknown; body?: unknown }
       comments?: Array<{ body?: unknown }>
     }

@@ -294,6 +294,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../../../shared/brand.ts',
       '../../../shared/record/schema.ts',
       '../database/db.ts',
+      '../database/review-lens-input-artifact.ts',
       './review-outbox.ts',
       './review-number.ts',
       '../contract/contract.ts',

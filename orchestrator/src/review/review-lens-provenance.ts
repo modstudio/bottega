@@ -75,7 +75,7 @@ function unavailableReason(status: string | null | undefined): string | null {
 }
 
 /** Why decision-conformance lacks one of the pack inputs that defines its subject. */
-export function lensInputReason(row: ProvenanceLensRow): ReviewLensOwedReason | null {
+function lensInputReason(row: ProvenanceLensRow): ReviewLensOwedReason | null {
   if (row.lens !== 'decision-conformance') return null
   const reason = unavailableReason(row.taskTextInput) ?? unavailableReason(row.rulingsInput)
   return reason ? `decision-conformance not admitted: ${reason}` : null

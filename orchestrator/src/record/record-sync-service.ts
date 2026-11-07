@@ -41,6 +41,7 @@ import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
 import { typedQuestionRecordValues } from './record-question-values.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
+import { nullableReviewLensValues } from './record-review-lens-values.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
@@ -373,9 +374,7 @@ export function reviewLensValues(row: Payload) {
     runId: String(row.runId),
     lens: String(row.lens),
     agent: String(row.agent),
-    model: nullableString(row.model),
-    treeInspected: nullableString(row.treeInspected),
-    reviewedTree: nullableString(row.reviewedTree),
+    ...nullableReviewLensValues(row),
     standardsRead: row.standardsRead,
     filesCovered: row.filesCovered,
     commandsRun: row.commandsRun,
@@ -387,9 +386,6 @@ export function reviewLensValues(row: Payload) {
     coverage: nullableString(row.coverage),
     limits: nullableString(row.limits),
     overlap: nullableString(row.overlap),
-    selectionReason: nullableString(row.selectionReason),
-    taskTextInput: nullableString(row.taskTextInput),
-    rulingsInput: nullableString(row.rulingsInput),
   }
 }
 

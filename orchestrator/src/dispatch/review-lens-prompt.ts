@@ -16,7 +16,7 @@ type MechanicallyEnforcedCheck = {
   tool: string
 }
 
-export type ReviewLensInputStatus = 'carried' | `unavailable: ${string}`
+type ReviewLensInputStatus = 'carried' | `unavailable: ${string}`
 export type ReviewLensPackInputs = {
   taskTextInput: ReviewLensInputStatus
   rulingsInput: ReviewLensInputStatus | null
@@ -86,12 +86,8 @@ export function reviewLensPrompt(input: {
 }): string {
   const extra = input.supplied.trim()
   const earlier = renderEarlierRoundRejections(input.earlierRejections)
-  const taskText = input.packInputs?.taskText
-    ? `TASK TEXT\n${input.packInputs.taskText}`
-    : ''
-  const rulings = input.packInputs?.rulings
-    ? `RECORDED RULINGS\n${input.packInputs.rulings}`
-    : ''
+  const taskText = input.packInputs?.taskText ? `TASK TEXT\n${input.packInputs.taskText}` : ''
+  const rulings = input.packInputs?.rulings ? `RECORDED RULINGS\n${input.packInputs.rulings}` : ''
   if (!input.lens) {
     if (!extra && !earlier && !taskText && !rulings) throw new Error('empty prompt')
     return [earlier, taskText, rulings, extra].filter(Boolean).join('\n\n')
