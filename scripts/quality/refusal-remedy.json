@@ -117,9 +117,6 @@
     },
     "orchestrator/src/jobs/delegation.ts#harnessDelegationRefusal": {
       "test": "orchestrator/src/jobs/delegation.test.ts: the command remedy clears the harness-delegation refusal"
-    },
-    "orchestrator/src/run/run-agent-capacity.ts#refusalAtWaitBound": {
-      "test": "orchestrator/src/run/run-agent-capacity.test.ts: detached selection leaves the retry remedy to startup failure recording"
     }
   }
 }

@@ -934,9 +934,11 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/branch/task-branch.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/refusal.ts',
       '../git/checkout-identity.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
+      '../refusal-error.ts',
       './merged-pull-request.ts',
       '../project/projects.ts',
       '../resources/resource-claims.ts',

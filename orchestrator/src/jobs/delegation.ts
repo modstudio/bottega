@@ -1,11 +1,11 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type Refusal, refusal } from '../../../shared/refusal.ts'
 import {
   DELEGATION_SETTING_KEYS,
   type DelegationClass,
   type DelegationMode,
   type DelegationSettings,
 } from '../../../shared/delegation-mode.ts'
+import { type Refusal, refusal } from '../../../shared/refusal.ts'
 import type { Job } from './jobs.ts'
 
 const DELEGATION_CLASS_LABELS = {

@@ -6,9 +6,9 @@
  */
 import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type Refusal, refusal } from '../../../shared/refusal.ts'
-import { RefusalError } from '../refusal-error.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { listMcpToolPages, type McpToolListLaunch } from '../mcp/mcp-tool-list.ts'
+import { RefusalError } from '../refusal-error.ts'
 import {
   type ProjectMcpSelection,
   type ProjectMcpWithheld,
@@ -114,7 +114,7 @@ export function requiredMcpProbeDecision(facts: RequiredMcpProbeFacts): Required
   return {
     refusal: refusal(
       `--mcp require was asked for, but the project MCP launch did not start:\n${failureLines}` +
-      `\ninvariant: --mcp require refuses a launch that affirmatively failed or a required server` +
+        `\ninvariant: --mcp require refuses a launch that affirmatively failed or a required server` +
         ` the run did not get, never a merely unverified connection`,
       { kind: 'edit', text: remedy },
     ),

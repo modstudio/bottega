@@ -142,8 +142,8 @@ function refusalAtWaitBound(
         detached
           ? refusal(`${error.message}; capacity wait bound reached after ${maxWaitMs}ms`)
           : refusal(`${error.message}; capacity wait bound reached after ${maxWaitMs}ms`, {
-              kind: 'command',
-              argv: [PLATFORM_SLUG, 'run', 'start', '--detach'],
+              kind: 'edit',
+              text: `retry this command with ${PLATFORM_SLUG} run start --detach`,
             }),
         error.runningCounts,
       )

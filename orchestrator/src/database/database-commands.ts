@@ -5,9 +5,9 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, statfsSync, statSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal } from '../../../shared/refusal.ts'
-import { RefusalError } from '../refusal-error.ts'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
 import { drainDeliveredOutboxPayloads, drainSupersededOutboxRows } from '../record/outbox-prune.ts'
+import { RefusalError } from '../refusal-error.ts'
 import {
   formatMigrationInFlightRun,
   type MigrationInFlightRun,

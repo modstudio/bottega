@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   type RefusalRemedyBaseline,
   refusalRemedyFindings,
@@ -34,7 +35,7 @@ test('requires every command remedy to name one clearing test or exemption', () 
   const findings = refusalRemedyFindings({
     'orchestrator/src/example.ts': `
       function decide() {
-        return refusal('stopped', { kind: 'command', argv: ['bottega', 'repair'] })
+        return refusal('stopped', { kind: 'command', argv: ['${PLATFORM_SLUG}', 'repair'] })
       }
     `,
   })

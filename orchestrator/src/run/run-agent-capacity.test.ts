@@ -100,7 +100,7 @@ test('selection names the exhausted wait bound in its refusal', async () => {
 
 test('detached selection leaves the retry remedy to startup failure recording', async () => {
   let now = 0
-  let refusal: unknown
+  let caughtRefusal: unknown
   try {
     await waitForAgentSelection({
       select: () => {
@@ -114,9 +114,9 @@ test('detached selection leaves the retry remedy to startup failure recording', 
       runningCounts: () => ({ codex: 2 }),
     })
   } catch (error) {
-    refusal = error
+    caughtRefusal = error
   }
-  const [recorded] = capacityStartupFailure(refusal, 'run-id')
+  const [recorded] = capacityStartupFailure(caughtRefusal, 'run-id')
   const message = (recorded as Error).message
   expect(message).not.toContain('retry this command')
   expect(message.match(/cleared by:/g)).toHaveLength(1)

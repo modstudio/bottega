@@ -1,8 +1,6 @@
 // concern: refusal
 
-export type RefusalRemedy =
-  | { kind: 'command'; argv: string[] }
-  | { kind: 'edit'; text: string }
+export type RefusalRemedy = { kind: 'command'; argv: string[] } | { kind: 'edit'; text: string }
 
 export type Refusal = {
   condition: string

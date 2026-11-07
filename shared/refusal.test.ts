@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import { refusal, renderRefusal } from './refusal.ts'
 
 describe('refusal rendering', () => {
@@ -8,8 +9,8 @@ describe('refusal rendering', () => {
 
   test('renders command remedies as argv', () => {
     expect(
-      renderRefusal(refusal('the condition', { kind: 'command', argv: ['bottega', 'repair'] })),
-    ).toBe('the condition\ncleared by: bottega repair')
+      renderRefusal(refusal('the condition', { kind: 'command', argv: [PLATFORM_SLUG, 'repair'] })),
+    ).toBe(`the condition\ncleared by: ${PLATFORM_SLUG} repair`)
   })
 
   test('renders edit remedies without interpreting their text', () => {

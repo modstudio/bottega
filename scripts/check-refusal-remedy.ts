@@ -40,7 +40,10 @@ function lineOf(source: ts.SourceFile, node: ts.Node): number {
   return source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
 }
 
-function propertyNamed(object: ts.ObjectLiteralExpression, name: string): ts.PropertyAssignment | null {
+function propertyNamed(
+  object: ts.ObjectLiteralExpression,
+  name: string,
+): ts.PropertyAssignment | null {
   const property = object.properties.find(
     (candidate) => ts.isPropertyAssignment(candidate) && candidate.name.getText() === name,
   )
@@ -56,10 +59,7 @@ function commandRemedy(argument: ts.Expression | undefined): boolean {
 function enclosingName(node: ts.Node): string {
   let current: ts.Node | undefined = node.parent
   while (current) {
-    if (
-      (ts.isFunctionDeclaration(current) || ts.isMethodDeclaration(current)) &&
-      current.name
-    )
+    if ((ts.isFunctionDeclaration(current) || ts.isMethodDeclaration(current)) && current.name)
       return current.name.getText()
     if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) return current.name.text
     current = current.parent
@@ -81,8 +81,11 @@ export function refusalRemedyFindings(
     const visit = (node: ts.Node): void => {
       if (
         file !== RENDERER &&
-        (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) ||
-          ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) &&
+        (ts.isStringLiteral(node) ||
+          ts.isNoSubstitutionTemplateLiteral(node) ||
+          ts.isTemplateHead(node) ||
+          ts.isTemplateMiddle(node) ||
+          ts.isTemplateTail(node)) &&
         node.text.includes('cleared by:')
       ) {
         findings.rawLiterals.push({ file, line: lineOf(source, node) })
@@ -92,8 +95,7 @@ export function refusalRemedyFindings(
         ts.isIdentifier(node.expression) &&
         (node.expression.text === 'refusal' || node.expression.text === 'refusalValue')
       ) {
-        if (!node.arguments[1])
-          findings.missingRemedies.push({ file, line: lineOf(source, node) })
+        if (!node.arguments[1]) findings.missingRemedies.push({ file, line: lineOf(source, node) })
         if (commandRemedy(node.arguments[1])) {
           findings.commandRemedies.push({
             id: `${file}#${enclosingName(node)}`,
@@ -160,8 +162,7 @@ export function refusalRemedyViolations(
       violations.push(`${finding.id}: command remedy must record exactly one test or exemption`)
   }
   for (const id of Object.keys(baseline.commandCases)) {
-    if (!actualCommands.has(id))
-      violations.push(`${id}: stale command-remedy case must be removed`)
+    if (!actualCommands.has(id)) violations.push(`${id}: stale command-remedy case must be removed`)
   }
   return violations
 }
