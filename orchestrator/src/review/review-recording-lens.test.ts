@@ -8,6 +8,7 @@ import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { recordReviews } from './review.ts'
+import { countsAsLensEvidence } from './review-lens-provenance.ts'
 import { completeReview, gradeReviewLens, recordReview, triageFinding } from './review-triage.ts'
 
 describe('review discipline', () => {
@@ -255,6 +256,66 @@ describe('review discipline', () => {
       ).toEqual({
         task_text_input: 'carried',
         rulings_input: 'unavailable: tracker comments could not be read',
+      })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+  test('records an absent decision-conformance sidecar as not carried and inadmissible', () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'decision-conformance',
+    })
+    const directory = mkdtempSync(join(tmpdir(), 'review-lens-inputs-'))
+    const promptPath = join(directory, 'prompt.txt')
+    writeFileSync(promptPath, 'review prompt')
+    try {
+      db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, runId)
+      recordReview(runId, reviewReply(0), db())
+      const row = db()
+        .query<{ task_text_input: string; rulings_input: string }, [string]>(
+          'SELECT task_text_input,rulings_input FROM review_lens WHERE run_record_id=?',
+        )
+        .get(runId)!
+      expect(row).toEqual({
+        task_text_input: 'unavailable: input statuses were not carried to this run',
+        rulings_input: 'unavailable: input statuses were not carried to this run',
+      })
+      expect(
+        countsAsLensEvidence({
+          lens: 'decision-conformance',
+          graded: true,
+          taskTextInput: row.task_text_input,
+          rulingsInput: row.rulings_input,
+        }),
+      ).toBeFalse()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+  test('records a corrupt decision-conformance sidecar as unreadable', () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'decision-conformance',
+    })
+    const directory = mkdtempSync(join(tmpdir(), 'review-lens-inputs-'))
+    const promptPath = join(directory, 'prompt.txt')
+    writeFileSync(promptPath, 'review prompt')
+    writeFileSync(join(directory, 'review-lens-inputs.json'), '{not json')
+    try {
+      db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, runId)
+      recordReview(runId, reviewReply(0), db())
+      expect(
+        db()
+          .query('SELECT task_text_input,rulings_input FROM review_lens WHERE run_record_id=?')
+          .get(runId),
+      ).toEqual({
+        task_text_input: 'unavailable: input statuses could not be read',
+        rulings_input: 'unavailable: input statuses could not be read',
       })
     } finally {
       rmSync(directory, { recursive: true, force: true })

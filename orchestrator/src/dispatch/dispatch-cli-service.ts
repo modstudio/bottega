@@ -28,6 +28,7 @@ import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { resolveReplyDialect } from '../contract/contract.ts'
 import { db, sessionId } from '../database/db.ts'
+import { unavailableStatus } from '../database/review-lens-input-artifact.ts'
 import { recordRunWarning } from '../events.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { branchOf } from '../git/git-environment.ts'
@@ -65,6 +66,8 @@ import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { routedPromptBytes, routedPromptText } from '../run/run-routing-input.ts'
+import { renderTaskRulings } from '../run/task-rulings.ts'
+import { taskRulingsForDispatch } from '../run/task-rulings-store.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import {
   assertAcpReady,
@@ -116,25 +119,6 @@ async function lookupTaskKey(project: string, key: string) {
   return lookupProjectTaskKey(registered, key)
 }
 
-function answeredTaskRulings(project: string, key: string): string[] {
-  return db()
-    .query<{ question: string; answer: string; replacement: string | null }, [string, string]>(
-      `SELECT q.question,q.answer,q.replacement FROM question q
-       JOIN run owner ON owner.record_id=q.run_record_id
-       JOIN run root ON root.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
-       WHERE root.project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND upper(trim(root.launch_key))=upper(trim(?))
-         AND q.answered_at IS NOT NULL
-         AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
-       ORDER BY COALESCE(q.overturned_at,q.answered_at),q.number`,
-    )
-    .all(project, key)
-    .map(
-      ({ question, answer, replacement }) =>
-        `Question: ${question}\nRuling: ${replacement ?? answer}`,
-    )
-}
-
 async function reviewLensInputs(
   project: NonNullable<ReturnType<typeof projectByName>>,
   key: string | undefined,
@@ -142,7 +126,7 @@ async function reviewLensInputs(
 ): Promise<ReviewLensPackInputs> {
   const decisionConformance = lens === 'decision-conformance'
   if (!key) {
-    const status = 'unavailable: no task key was declared' as const
+    const status = unavailableStatus('no task key was declared')
     return {
       taskTextInput: status,
       rulingsInput: decisionConformance ? status : null,
@@ -152,7 +136,7 @@ async function reviewLensInputs(
   }
   const task = await readLensTask(project, key)
   if (!task.available) {
-    const status = `unavailable: ${task.reason}` as const
+    const status = unavailableStatus(task.reason)
     return {
       taskTextInput: status,
       rulingsInput: decisionConformance ? status : null,
@@ -162,9 +146,15 @@ async function reviewLensInputs(
   }
   const rulings = decisionConformance
     ? [
-        ...answeredTaskRulings(project.name, key),
+        renderTaskRulings(
+          taskRulingsForDispatch({
+            resume: false,
+            project: project.name,
+            taskRecordId: task.recordId,
+          }),
+        ),
         ...task.comments.map((comment) => `Task comment: ${comment}`),
-      ]
+      ].filter(Boolean)
     : []
   return {
     taskTextInput: 'carried',

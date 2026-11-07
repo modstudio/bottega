@@ -2,6 +2,8 @@
 /** Pure policy for deciding whether review-lens provenance names its dispatched subject. */
 
 import { isAbsolute, relative } from 'node:path'
+import type { ReviewLensInputStatus } from '../database/review-lens-input-artifact.ts'
+import { unavailableReason } from '../database/review-lens-input-artifact.ts'
 import type { ReviewLensOwedReason } from './review-vocabulary.ts'
 
 export type LensProvenanceSubjectFacts = {
@@ -64,14 +66,8 @@ export type ProvenanceLensRow = {
   lens?: string
   graded: boolean
   provenance?: LensProvenanceSubjectFacts
-  taskTextInput?: string | null
-  rulingsInput?: string | null
-}
-
-function unavailableReason(status: string | null | undefined): string | null {
-  const prefix = 'unavailable:'
-  if (!status?.startsWith(prefix)) return null
-  return status.slice(prefix.length).trim() || 'reason not recorded'
+  taskTextInput?: ReviewLensInputStatus | null
+  rulingsInput?: ReviewLensInputStatus | null
 }
 
 /** Why decision-conformance lacks one of the pack inputs that defines its subject. */

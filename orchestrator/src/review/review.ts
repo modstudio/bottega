@@ -4,11 +4,30 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { ReviewReply } from '../contract/contract.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
-import { readReviewLensInputArtifact } from '../database/review-lens-input-artifact.ts'
+import {
+  readReviewLensInputArtifact,
+  type ReviewLensInputStatus,
+  unavailableStatus,
+} from '../database/review-lens-input-artifact.ts'
 import { nextReviewNumber } from './review-number.ts'
 import { enqueueReview } from './review-outbox.ts'
 
 export { parseReviewOutput, parseReviewReply } from '../contract/contract.ts'
+
+function recordedLensInputStatuses(
+  lens: string | null,
+  promptPath: string | null,
+): { taskTextInput: ReviewLensInputStatus | null; rulingsInput: ReviewLensInputStatus | null } {
+  const artifact = readReviewLensInputArtifact(promptPath)
+  if (artifact.outcome === 'statuses') return artifact
+  if (lens !== 'decision-conformance') return { taskTextInput: null, rulingsInput: null }
+  const status = unavailableStatus(
+    artifact.outcome === 'absent'
+      ? 'input statuses were not carried to this run'
+      : 'input statuses could not be read',
+  )
+  return { taskTextInput: status, rulingsInput: status }
+}
 
 import { job } from '../jobs/jobs.ts'
 import { currentCoverage, projectRecord, reviewBranchNames } from './review-coverage.ts'
@@ -676,7 +695,7 @@ export function recordReviews(
     let ordinal = 0
     entries.forEach(({ output }, index) => {
       const run = runs[index]!
-      const inputStatuses = readReviewLensInputArtifact(run.prompt_path)
+      const inputStatuses = recordedLensInputStatuses(run.lens, run.prompt_path)
       output.provenance.files_covered = output.provenance.files_covered.map(normalizeCoveredPath)
       const lens = insertLens.get(
         newRecordId(),

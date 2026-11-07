@@ -48,7 +48,6 @@
     "orchestrator/src/database/machine-update-mover.ts": 1,
     "orchestrator/src/database/machine-update.ts": 2,
     "orchestrator/src/database/release-update.ts": 4,
-    "orchestrator/src/dispatch/task-key-lookup.ts": 1,
     "orchestrator/src/doc/doc-lint-adapter.ts": 1,
     "orchestrator/src/doc/reference-publish.ts": 1,
     "orchestrator/src/epic/epic.ts": 1,

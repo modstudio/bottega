@@ -35,25 +35,35 @@ describe('lens pack input admissibility', () => {
     const row = {
       lens: 'decision-conformance',
       graded: true,
-      taskTextInput:
-        "unavailable: tracker reachable only through the project's MCP; declare a CLI task read in the project register",
+      taskTextInput: 'unavailable: linear tracker has no CLI task read',
       rulingsInput: 'carried',
     }
     expect(countsAsLensEvidence(row)).toBeFalse()
     expect(inadmissibleLensReason(row)).toBe(
-      "decision-conformance not admitted: tracker reachable only through the project's MCP; declare a CLI task read in the project register",
+      'decision-conformance not admitted: linear tracker has no CLI task read',
     )
   })
 
-  test('credits another lens without task text while retaining the recorded status', () => {
-    const row = {
-      lens: 'correctness',
-      graded: true,
-      taskTextInput: 'unavailable: fixture tracker is offline',
-      rulingsInput: null,
-    }
-    expect(countsAsLensEvidence(row)).toBeTrue()
-    expect(row.taskTextInput).toBe('unavailable: fixture tracker is offline')
+  test('credits another lens without task text', () => {
+    expect(
+      countsAsLensEvidence({
+        lens: 'correctness',
+        graded: true,
+        taskTextInput: 'unavailable: fixture tracker is offline',
+        rulingsInput: null,
+      }),
+    ).toBeTrue()
+  })
+
+  test('credits a decision-conformance row recorded before input statuses existed', () => {
+    expect(
+      countsAsLensEvidence({
+        lens: 'decision-conformance',
+        graded: true,
+        taskTextInput: null,
+        rulingsInput: null,
+      }),
+    ).toBeTrue()
   })
 })
 

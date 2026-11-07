@@ -102,7 +102,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
       '../worktree/keep-tree-hold.ts',
       './run-resume-options.ts',
     ],
-    ['../dispatch/probe-launch-overrides.ts', '../review/review-target.ts'],
+    [
+      '../dispatch/probe-launch-overrides.ts',
+      '../review/review-target.ts',
+      '../database/review-lens-input-artifact.ts',
+    ],
   ),
   module('orchestrator/src/run/run-resume-claim.ts', [
     '../branch/branch-ref-guard.ts',
@@ -318,6 +322,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
       '../close/close-out.ts',
       '../contract/contract.ts',
       '../database/db.ts',
+      '../database/review-lens-input-artifact.ts',
       '../route/failover.ts',
       '../route/billing-key-hold.ts',
       '../failure/failure.ts',

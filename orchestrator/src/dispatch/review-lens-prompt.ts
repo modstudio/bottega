@@ -4,6 +4,7 @@
  * and any supplied extra context. Must not know the store, CLI, or jobs.
  */
 
+import type { ReviewLensInputStatus } from '../database/review-lens-input-artifact.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 
 type ReviewLensDefinition = {
@@ -16,7 +17,6 @@ type MechanicallyEnforcedCheck = {
   tool: string
 }
 
-type ReviewLensInputStatus = 'carried' | `unavailable: ${string}`
 export type ReviewLensPackInputs = {
   taskTextInput: ReviewLensInputStatus
   rulingsInput: ReviewLensInputStatus | null

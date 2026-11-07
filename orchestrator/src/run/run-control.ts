@@ -10,6 +10,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../collect/collect.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { successorReviewLensInputStatusesFromPrompt } from '../database/review-lens-input-artifact.ts'
 import { appendRunEvent } from '../events.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environment.ts'
@@ -350,6 +351,7 @@ export type ChainTurn = {
   base_commit: string | null
   worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
   executor?: 'external' | 'harness'
+  prompt_path?: string | null
 }
 
 function continuationWorker(rootId: string, latest: ChainTurn, hasCheckpoint: boolean) {
@@ -418,6 +420,7 @@ type ResumeLaunchOptions = {
   mcp: ReturnType<typeof mcpRequestFromStored>
   lens: string | undefined
   reviewRole: ReviewRole | undefined
+  lensInputs?: ReturnType<typeof successorReviewLensInputStatusesFromPrompt>
 }
 
 /** Map a stored launch row to the detach options a resumed turn inherits. */
@@ -512,9 +515,11 @@ function continuationLaunch(
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
   project: Project | null,
+  promptPath: string | null,
 ): ResumeLaunchOptions {
   return {
     ...inherited,
+    lensInputs: successorReviewLensInputStatusesFromPrompt(promptPath),
     seed: requireContinuationProvision({
       rootId: id,
       treeDecision,
@@ -687,7 +692,7 @@ export async function continueRun(
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
     .query(
-      `SELECT record_id, job, parent_run_record_id, status, cwd, repo, base_commit,
+      `SELECT record_id, job, parent_run_record_id, status, cwd, repo, base_commit, prompt_path,
               branch_kept, branch_kept_tip FROM run WHERE record_id = ?`,
     )
     .get(id) as {
@@ -698,6 +703,7 @@ export async function continueRun(
     cwd: string | null
     repo: string | null
     base_commit: string | null
+    prompt_path: string | null
     branch_kept: string | null
     branch_kept_tip: string | null
   } | null
@@ -744,7 +750,7 @@ export async function continueRun(
     id,
     db()
       .query(
-        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source, executor
+        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source, executor, prompt_path
          FROM run WHERE record_id = ? OR parent_run_record_id = ?`,
       )
       .all(id, id) as ChainTurn[],
@@ -793,6 +799,7 @@ export async function continueRun(
     treeDecision,
     Boolean(jobNeeds.writesRepo),
     project,
+    latest.prompt_path ?? row.prompt_path,
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   refuseOversizedResumePrompt({

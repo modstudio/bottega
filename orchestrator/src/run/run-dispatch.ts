@@ -31,7 +31,6 @@ import {
   assertMigrationDispatchAllowedAndRecord,
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
-import { writeReviewLensInputArtifact } from '../database/review-lens-input-artifact.ts'
 import {
   callerCheckoutFacts,
   installLevelDispatchDecision,
@@ -63,17 +62,6 @@ function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string):
   mkdirSync(runDirectory, { recursive: true })
   const promptPath = join(runDirectory, 'prompt.txt')
   writeFileSync(promptPath, prompt)
-  return promptPath
-}
-
-function writeDetachedReviewPrompt(
-  runsDir: string,
-  recordId: string,
-  prompt: string,
-  spec: DetachSpec,
-): string {
-  const promptPath = writeDetachedPrompt(runsDir, recordId, prompt)
-  if (spec.lensInputs) writeReviewLensInputArtifact(promptPath, spec.lensInputs)
   return promptPath
 }
 
@@ -424,7 +412,7 @@ async function detachResolved(
   try {
     // The row now exists, so its id replaces that temporary random name and is
     // also stored on the row for run() to reuse rather than creating a second file.
-    const promptPath = writeDetachedReviewPrompt(RUNS_DIR, recordId, prompt, spec)
+    const promptPath = writeDetachedPrompt(RUNS_DIR, recordId, prompt)
     handoffStep = 'record prompt artifact'
     db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, recordId)
     /**

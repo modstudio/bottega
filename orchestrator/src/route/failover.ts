@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import type { ReviewLensInputStatuses } from '../database/review-lens-input-artifact.ts'
 import type { ProbeContextLimit } from '../dispatch/probe-launch-overrides.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import type { ReviewRole } from '../review/review-role.ts'
@@ -57,10 +58,7 @@ export type DetachSpec = {
   transportPinSource?: 'explicit' | 'environment'
   label?: string
   lens?: string
-  lensInputs?: {
-    taskTextInput: string
-    rulingsInput: string | null
-  }
+  lensInputs?: ReviewLensInputStatuses
   reviewRole?: ReviewRole
   seed?: string
   key?: string

@@ -1,6 +1,7 @@
 // concern: run-options
 /** Declares the caller-owned inputs to one run lifecycle. */
 import type { Pack } from '../canon/canon.ts'
+import type { ReviewLensInputStatuses } from '../database/review-lens-input-artifact.ts'
 import type { ProbeContextLimit } from '../dispatch/probe-launch-overrides.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import type { ReviewRole } from '../review/review-role.ts'
@@ -25,10 +26,7 @@ export type RunOptions = {
   probeReaderSuites?: boolean
   label?: string
   lens?: string
-  lensInputs?: {
-    taskTextInput: string
-    rulingsInput: string | null
-  }
+  lensInputs?: ReviewLensInputStatuses
   reviewRole?: ReviewRole
   model?: string
   transport?: TransportName

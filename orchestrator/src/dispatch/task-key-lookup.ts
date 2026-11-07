@@ -2,7 +2,6 @@
 /** Reads a task through the tracker protocol declared by its registered project. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
 import { resolveProjectMcpCommand } from '../mcp/mcp-command.ts'
 import { McpHeadersHelperError, resolveMcpHeaders } from '../mcp/mcp-headers-helper.ts'
@@ -43,8 +42,7 @@ export async function readLensTask(project: Project, key: string): Promise<LensT
   if (project.settings.tracker?.protocol !== 'hub') {
     return {
       available: false,
-      reason:
-        "tracker reachable only through the project's MCP; declare a CLI task read in the project register",
+      reason: `${project.settings.tracker?.protocol ?? '(missing)'} tracker has no CLI task read`,
     }
   }
   try {
@@ -102,24 +100,8 @@ export function classifyHubTaskLookup(
 
 async function lookupHubTask(project: Project, key: string): Promise<TaskKeyLookupResult> {
   try {
-    const child = Bun.spawn(
-      [
-        ...bottegaEntryArgv(PLATFORM_SLUG),
-        'task',
-        'show',
-        key,
-        '--project',
-        project.name,
-        '--json',
-      ],
-      { cwd: project.path, stdout: 'pipe', stderr: 'pipe', env: { ...process.env } },
-    )
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ])
-    return classifyHubTaskLookup(key, code, stdout, stderr)
+    const result = await readTaskThroughCli(project, key)
+    return classifyHubTaskLookup(key, result.exitCode, result.stdout, result.stderr)
   } catch (cause) {
     return {
       state: 'unreachable',
