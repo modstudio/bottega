@@ -6,5 +6,7 @@ test('flags a static-check fixture that exits successfully without reporting unc
     uncheckedExitViolations([
       { path: 'scripts/fixture.ts', source: "console.log('skipped')\nprocess.exit(0)\n" },
     ]),
-  ).toEqual(['scripts/fixture.ts:2: replace an explicit successful exit with exitUnchecked'])
+  ).toEqual([
+    'scripts/fixture.ts:2: process.exit(0) is refused in a gate check; let success fall through, or call exitUnchecked when the check could not run',
+  ])
 })

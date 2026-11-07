@@ -11,7 +11,9 @@ export function uncheckedExitViolations(sources: readonly UncheckedExitSource[])
       .split('\n')
       .flatMap((line, index) =>
         forbidden.test(line)
-          ? [`${path}:${index + 1}: replace an explicit successful exit with exitUnchecked`]
+          ? [
+              `${path}:${index + 1}: process.exit(0) is refused in a gate check; let success fall through, or call exitUnchecked when the check could not run`,
+            ]
           : [],
       ),
   )
