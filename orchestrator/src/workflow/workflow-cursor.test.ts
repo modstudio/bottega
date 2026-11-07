@@ -26,6 +26,7 @@ import {
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
+import { attachWorkflowText } from './workflow-text.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
 
 describe('workflow cursor adapter', () => {
@@ -537,6 +538,61 @@ describe('workflow cursor adapter', () => {
       if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = prior
     }
+  })
+
+  test('a relayed operator ruling preserves the cursor owner and their attach authority', async () => {
+    const d = database()
+    const current = productionStepCatalogue(d).definition
+    const draft = setStepCatalogueLocal(
+      {
+        ...current,
+        steps: current.steps.map((step) =>
+          step.slug === 'rebase' ? { ...step, floor: ['ruling'], operatorRuling: true } : step,
+        ),
+      },
+      'relayed operator ruling fixture',
+      'test',
+      d,
+    )
+    promoteStepCatalogueLocal(draft.n, 'relayed operator ruling fixture', 'test', d)
+    const ownerContext = { ...context, session: 'session-a' }
+    const relayingContext = { ...context, session: 'session-b' }
+    const composition = composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      ownerContext,
+      d,
+      {},
+      {},
+    )
+    awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', ownerContext, d, () => {})
+
+    await ruleWorkflow(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      'Proceed.',
+      true,
+      'cli',
+      relayingContext,
+      d,
+    )
+
+    await expect(
+      attachWorkflowText(
+        { project: 'fixture', workflow: 'flow', mode: 'default', key: args.key },
+        composition.cursor!.id,
+        'Owner attachment.',
+        ownerContext,
+        d,
+      ),
+    ).resolves.toMatch(/^attached-text:/)
+    expect(d.query('SELECT session_id FROM workflow_cursor').get()).toEqual({
+      session_id: 'session-a',
+    })
   })
 
   test('a plain operator may rule when the workflow owner is gone', async () => {
