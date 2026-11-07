@@ -47,7 +47,8 @@ export function databaseLockHolder(
  * another process and may carry a secret, and this refusal reaches recorded run output.
  */
 export function databaseLockHolderCommandSummary(command: string): string {
-  const [executable = '', script] = command.trim().split(/\s+/)
+  const [executable = '', ...tokens] = command.trim().split(/\s+/)
+  const script = tokens.find((token) => !token.startsWith('-'))
   const base = (token: string) => token.split('/').pop() ?? token
   return script?.includes('/') ? `${base(executable)} ${base(script)}` : base(executable)
 }

@@ -301,6 +301,23 @@ describe('harness health', () => {
           caller: 'hub/src/outbox.ts:452',
         },
       ],
+      () => [
+        {
+          at: '2026-09-07T10:06:00.000Z',
+          waiter: 'fresh-task:DEV-1:12',
+          waitedMs: 30_000,
+          holder: 'collect:11',
+          holderAgeMs: 35_000,
+        },
+      ],
+      () => [
+        {
+          at: '2026-09-07T10:07:00.000Z',
+          holder: 'collect:11',
+          heldMs: 2_000,
+          legs: 'runs=2000ms',
+        },
+      ],
     )
 
     expect(
@@ -308,22 +325,25 @@ describe('harness health', () => {
     ).toEqual([
       {
         kind: STORE_LOCK_REFUSAL_KIND,
-        count: 4,
+        count: 5,
         totalDurationMs: 0,
         meanDurationMs: 0,
         topKeys: [
           { key: `hub.db held by ${PLATFORM_SLUG} record`, count: 2 },
+          { key: 'collect lease held by collect:11', count: 1 },
           { key: `hub.db held by ${PLATFORM_SLUG} serve`, count: 1 },
-          { key: 'orchestrator.db held by unknown', count: 1 },
         ],
       },
     ])
     expect(report.contention.resources.find((row) => row.kind === STORE_WRITE_HOLD_KIND)).toEqual({
       kind: STORE_WRITE_HOLD_KIND,
-      count: 2,
-      totalDurationMs: 3_000,
-      meanDurationMs: 1_500,
-      topKeys: [{ key: 'hub.db hub/src/outbox.ts:452', count: 2 }],
+      count: 3,
+      totalDurationMs: 5_000,
+      meanDurationMs: 1_667,
+      topKeys: [
+        { key: 'hub.db hub/src/outbox.ts:452', count: 2 },
+        { key: 'collect lease runs=2000ms', count: 1 },
+      ],
     })
   })
 })

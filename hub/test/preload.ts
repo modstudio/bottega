@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { machineId } from '../../shared/machine-config.ts'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from './migration-values.ts'
 
@@ -19,8 +20,12 @@ const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 const originalTypesafeKey = process.env.TYPESAFE_KEY
+const originalStateHome = process.env[STATE_HOME_ENV]
 const configDir = mkdtempSync(join(tmpdir(), 'hub-test-config-'))
 process.env[CONFIG_HOME_ENV] = configDir
+// Best-effort contention and hold logs must land in a throwaway root, never the operator's.
+const stateDir = mkdtempSync(join(tmpdir(), 'hub-test-state-'))
+process.env[STATE_HOME_ENV] = stateDir
 machineId(HUB_MIGRATION_BACKFILL_VALUES.machine_id)
 process.env[HARNESS_ENV_FILE_ENV] = ''
 delete process.env.BOTTEGA_RECORD_API_URL
@@ -45,6 +50,9 @@ afterAll(() => {
   else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
   if (originalTypesafeKey === undefined) delete process.env.TYPESAFE_KEY
   else process.env.TYPESAFE_KEY = originalTypesafeKey
+  if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
+  else process.env[STATE_HOME_ENV] = originalStateHome
   rmSync(configDir, { recursive: true, force: true })
+  rmSync(stateDir, { recursive: true, force: true })
   rmSync(databaseDir, { recursive: true, force: true })
 })
