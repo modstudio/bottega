@@ -17,6 +17,7 @@ describe('raw start check', () => {
         'bounded-process',
         'startBounded',
         'startBoundedSync',
+        'startBoundedSyncBytes',
         'Bun.spawn',
         'Bun.spawnSync',
         'Bun.$',

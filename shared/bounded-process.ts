@@ -1,7 +1,14 @@
 import { execa } from 'execa'
 import { BoundExceededError, CALL_BUDGETS, type CallBudgetName } from './call-budgets.ts'
 
+/**
+ * A breached bound throws BoundExceededError naming its budget and remedy. A wrapper whose
+ * documented contract is never to fail its caller may catch it and return that contract's
+ * no-answer; every other wrapper lets it escape.
+ */
+
 export type BoundedResult = { exitCode: number; stdout: string; stderr: string }
+export type BoundedBytesResult = { exitCode: number; stdout: Uint8Array; stderr: string }
 
 type BoundedProcessOptions = {
   budget: CallBudgetName
@@ -21,9 +28,9 @@ function exitCode(code: number | null | undefined): number {
   return code ?? 1
 }
 
-function stdinBlob(stdin: string | Uint8Array | undefined): Blob | undefined {
+function stdinInput(stdin: string | Uint8Array | undefined): Blob | Uint8Array | undefined {
   if (stdin === undefined) return undefined
-  return new Blob([typeof stdin === 'string' ? stdin : new Uint8Array(stdin)])
+  return typeof stdin === 'string' ? new Blob([stdin]) : stdin
 }
 
 export async function startBounded(
@@ -63,17 +70,16 @@ function killProcessGroup(pid: number): void {
   }
 }
 
-export function startBoundedSync(
+export function startBoundedSyncBytes(
   argv: readonly string[],
   options: BoundedSyncOptions,
-): BoundedResult {
+): BoundedBytesResult {
   if (argv.length === 0) throw new TypeError('startBoundedSync requires a non-empty argv')
   const budget = CALL_BUDGETS[options.budget]
-  const result = Bun.spawnSync({
-    cmd: [...argv],
+  const result = Bun.spawnSync([...argv], {
     cwd: options.cwd,
     env: options.env,
-    stdin: stdinBlob(options.stdin),
+    stdin: stdinInput(options.stdin),
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: budget.deadlineMs,
@@ -95,7 +101,16 @@ export function startBoundedSync(
   }
   return {
     exitCode: exitCode(result.exitCode),
-    stdout: result.stdout.toString(),
+    stdout: result.stdout,
     stderr: result.stderr.toString(),
   }
+}
+
+export function startBoundedSync(
+  argv: readonly string[],
+  options: BoundedSyncOptions,
+): BoundedResult {
+  const result = startBoundedSyncBytes(argv, options)
+  // ignoreBOM keeps a leading byte-order mark, as Buffer.toString did before the migration.
+  return { ...result, stdout: new TextDecoder('utf-8', { ignoreBOM: true }).decode(result.stdout) }
 }

@@ -148,7 +148,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'checkout-identity-boundary',
     'orchestrator/src/git/checkout-identity.ts',
-    ['node:fs', 'node:path', './git-environment.ts', '../project/projects.ts'],
+    [
+      'node:fs',
+      'node:path',
+      '../../../shared/bounded-process.ts',
+      './git-environment.ts',
+      '../project/projects.ts',
+    ],
     'Keep checkout addressing independent of databases and lifecycle policy.',
   ),
   boundary(
@@ -475,6 +481,8 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       'node:os',
       'node:path',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../../../shared/git.ts',
       '../../../shared/git-path-list.ts',
     ],
