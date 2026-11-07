@@ -183,6 +183,7 @@ function containsTestTitle(file: string, text: string, title: string): boolean {
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
       (node.expression.text === 'test' || node.expression.text === 'it') &&
+      node.arguments[0] !== undefined &&
       ts.isStringLiteralLike(node.arguments[0]) &&
       node.arguments[0].text === title
     ) {
