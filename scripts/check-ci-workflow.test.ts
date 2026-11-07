@@ -6,7 +6,6 @@ import {
   suiteRunLine,
 } from './check-ci-workflow.ts'
 import { CI_ONLY_SUITES } from './check-plan.ts'
-import { RELEASE_BUN_VERSION } from './release-config.ts'
 
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
 const processSuite = CI_ONLY_SUITES[0]!
@@ -74,14 +73,6 @@ test('pins the real-Postgres leg', () => {
     checkCiWorkflow(workflow.replace('image: postgres:18-alpine', 'image: postgres:17-alpine')),
   ).toThrow('must use Postgres 18')
   expect(() =>
-    checkCiWorkflow(workflow.replace(`bun-version: ${RELEASE_BUN_VERSION}`, 'bun-version: 1.4.2')),
-  ).toThrow(`must use Bun ${RELEASE_BUN_VERSION}`)
-  expect(() =>
-    checkCiWorkflow(
-      workflow.replace(`bun-version: ${RELEASE_BUN_VERSION}`, `bun-version-pinned: 1.4.2`),
-    ),
-  ).toThrow(`CI workflow must pin Bun ${RELEASE_BUN_VERSION}`)
-  expect(() =>
     checkCiWorkflow(workflow.replace('run: bun install --silent', 'run: bun install')),
   ).toThrow('must install the workspace')
   expect(() =>
@@ -120,25 +111,6 @@ test('requires the story job to run the hub-views story-test script', () => {
   ).toThrow('must run the hub-views story-test script')
 })
 
-test('pins every release workflow Bun to the release build version', () => {
-  expect(() => checkReleaseWorkflow(releaseWorkflowFixture())).not.toThrow()
-  expect(() => checkReleaseWorkflow(releaseWorkflowFixture('bun-version: 1.3.14'))).toThrow(
-    `must use Bun ${RELEASE_BUN_VERSION}; got 1.3.14`,
-  )
-  const acceptedForm =
-    'must declare its Bun pin as "bun-version: <version>", unquoted and without a comment'
-  for (const pin of [
-    `bun-version: '${RELEASE_BUN_VERSION}'`,
-    `bun-version: ${RELEASE_BUN_VERSION} # keep in step with CI`,
-  ]) {
-    expect(() => checkReleaseWorkflow(releaseWorkflowFixture(pin))).toThrow(acceptedForm)
-    expect(() => checkReleaseWorkflow(releaseWorkflowFixture(pin))).toThrow(pin)
-  }
-  expect(() => checkReleaseWorkflow(releaseWorkflowFixture(null))).toThrow(
-    `must pin Bun ${RELEASE_BUN_VERSION}`,
-  )
-})
-
 test('refuses a release upload outside the release publisher', () => {
   expect(() =>
     checkReleaseWorkflow(releaseWorkflowFixture(undefined, 'gh release upload "$TAG" artifact')),
@@ -160,7 +132,7 @@ test('refuses release creation outside the release publisher', () => {
 })
 
 function releaseWorkflowFixture(
-  pin: string | null = `bun-version: ${RELEASE_BUN_VERSION}`,
+  pin: string | null = 'bun-version-file: .bun-version',
   command?: string,
 ) {
   return `name: release
@@ -204,7 +176,7 @@ function postgresJobFixture() {
     steps:
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${RELEASE_BUN_VERSION}
+          bun-version-file: .bun-version
       - run: bun install --silent
       - env:
           BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}
