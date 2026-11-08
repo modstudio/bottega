@@ -12,11 +12,11 @@ import {
   type CredentialEnvironment,
   type CredentialMode,
 } from '../../../shared/credential.ts'
+import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import {
   credentialDisplayName,
   credentialPayerFromScope,
@@ -33,9 +33,7 @@ import {
 } from '../config/credential-service.ts'
 import { runWithEnvironment } from '../config/secret-run.ts'
 import { projectByName } from '../project/projects.ts'
-import {
-  noActiveRecordSpaceRefusal,
-} from '../record/record-project-destination.ts'
+import { noActiveRecordSpaceRefusal } from '../record/record-project-destination.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { log } from './support.ts'
 

@@ -56,9 +56,14 @@ test('config client preserves a JSON refusal error and remedy', async () => {
       ),
     'test',
   )
-  await expect(client.listSecrets()).rejects.toThrow(
+  const refusal = client.listSecrets()
+  await expect(refusal).rejects.toThrow(
     'signed-in user lacks config access; ask a space owner to grant it',
   )
+  await expect(refusal).rejects.toMatchObject({
+    error: 'signed-in user lacks config access',
+    remedy: 'ask a space owner to grant it',
+  })
 })
 
 test('config client refuses a non-JSON response with its source and response facts', async () => {

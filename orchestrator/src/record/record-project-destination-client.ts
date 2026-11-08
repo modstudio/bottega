@@ -1,8 +1,8 @@
 // concern: record-project-destination-client
 /** Adapts the pure project destination decision to authenticated record clients. */
 
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import type { ProjectSettings, StoredProjectSettings } from '../project/project-settings.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {

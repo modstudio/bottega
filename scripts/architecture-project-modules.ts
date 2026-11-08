@@ -49,6 +49,7 @@ export const projectModules: ProjectModule[] = [
   module('orchestrator/src/project/project-hosted-write.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
     '../record/record-api-client.ts',
     '../record/record-project-destination.ts',

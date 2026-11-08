@@ -17,10 +17,7 @@ import {
   readHostedConfigIdentity,
   writeHostedConfigIdentity,
 } from '../../../shared/hosted-config-space.ts'
-import {
-  HOSTED_CONFIG_ENVIRONMENT,
-  hostedIdentity,
-} from '../../../shared/hosted-secret-opening.ts'
+import { HOSTED_CONFIG_ENVIRONMENT, hostedIdentity } from '../../../shared/hosted-secret-opening.ts'
 import {
   type ConfigHome,
   configHomes,

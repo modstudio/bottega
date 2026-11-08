@@ -1,8 +1,6 @@
 import { PLATFORM_SLUG } from './brand.ts'
 import type { ConfigClient, ConfigSecret, DataKey } from './config-client.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
-import { parseRecordSpaceMemberships } from './record-space-membership.ts'
-import { recordSpaceRequestDecision } from './record-space-request.ts'
 import {
   machineNotTrustedRemedy,
   pinnedSpaceMismatchRemedy,
@@ -10,6 +8,8 @@ import {
   RECORD_ACTIVE_SPACE_REMEDY,
   recordSpaceMembershipRefusal,
 } from './record-remedies.ts'
+import { parseRecordSpaceMemberships } from './record-space-membership.ts'
+import { recordSpaceRequestDecision } from './record-space-request.ts'
 import type { MachineKeyPair } from './secret-envelope.ts'
 import { openValue, SecretEnvelopeError, unwrapDataKey } from './secret-envelope.ts'
 import type { TrustList } from './trust-list.ts'
@@ -81,8 +81,7 @@ export async function destinationHostedIdentity(
     current.activeSpaceId,
     parseRecordSpaceMemberships(current.memberships),
   )
-  if (!membership.allowed)
-    throw new Error(recordSpaceMembershipRefusal(membership.requestedSpace))
+  if (!membership.allowed) throw new Error(recordSpaceMembershipRefusal(membership.requestedSpace))
   const machines = await client.listMachineKeys({ destinationSpaceId: destination.spaceId })
   const decision = decideHostedSpaceOpen({
     destinationSpaceId: destination.spaceId,

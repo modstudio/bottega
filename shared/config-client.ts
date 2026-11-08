@@ -16,7 +16,7 @@ export class ConfigClientError extends Error {
   readonly reason: ConfigClientErrorReason
   readonly route: string
   readonly status?: number
-  readonly responseError?: string
+  readonly error?: string
   readonly remedy?: string
   constructor(
     reason: ConfigClientErrorReason,
@@ -38,7 +38,7 @@ export class ConfigClientError extends Error {
     this.reason = reason
     this.route = route
     this.status = status
-    this.responseError = details?.error
+    this.error = details?.error
     this.remedy = details?.remedy
   }
 }

@@ -93,6 +93,7 @@ export const settingsModules: SettingsModule[] = [
     'commander',
     '../../../shared/config-client.ts',
     '../../../shared/credential.ts',
+    '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
     '../config/credential-service.ts',
     '../config/credential.ts',

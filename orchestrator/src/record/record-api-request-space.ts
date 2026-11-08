@@ -2,8 +2,8 @@
 /** Authorizes an optional request destination against server-owned memberships. */
 
 import type { Context, Hono, Next } from 'hono'
-import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
   recordSpaceAccessDecision,

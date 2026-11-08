@@ -76,6 +76,8 @@ export const sharedModules: ArchitectureModule[] = [
     './brand.ts',
     './config-client.ts',
     './hosted-config-space.ts',
+    './record-space-membership.ts',
+    './record-space-request.ts',
     './record-remedies.ts',
     './secret-envelope.ts',
     './trust-list.ts',

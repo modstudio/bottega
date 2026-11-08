@@ -2,10 +2,10 @@
 /** Owns opening one hosted secret row for this machine in the active or a destination space. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  type ConfigClient,
-  type ConfigDestination,
-  type ConfigSecret,
+import type {
+  ConfigClient,
+  ConfigDestination,
+  ConfigSecret,
 } from '../../../shared/config-client.ts'
 import {
   destinationHostedIdentity,

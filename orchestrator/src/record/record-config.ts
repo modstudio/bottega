@@ -7,8 +7,8 @@ import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { recordDate, recordIso } from '../../../shared/record-timestamp.ts'
 import { configAccessRemedy } from '../../../shared/record-remedies.ts'
+import { recordDate, recordIso } from '../../../shared/record-timestamp.ts'
 import {
   generateMachineKeyPair,
   KEY_SIZE,
