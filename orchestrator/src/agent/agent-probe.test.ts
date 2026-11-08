@@ -39,6 +39,7 @@ test('the registration probe verifies MCP for goose and for any job that asks fo
 function result(
   writing: boolean | null,
   resuming: boolean | null = writing,
+  compacts = true,
 ): RegistrationProbeResult {
   return {
     harness: 'goose',
@@ -48,6 +49,7 @@ function result(
     schema: { ok: true, output: 'ok' },
     file: { ok: true, output: '{"status":"ok"}' },
     mcp: { verifiable: true, output: 'ok' },
+    compaction: { ok: compacts, output: compacts ? 'continued' : 'compaction refused' },
     writing: { ok: writing, output: writing ? 'created' : 'not created' },
     resuming: { ok: resuming, output: resuming ? 'recalled token' : 'did not recall token' },
     contextTokens: null,
@@ -71,6 +73,29 @@ test('a passing writing observation sets writesRepo and a failing one leaves it 
     schema: true,
     writesRepo: false,
   })
+})
+
+test('a Goose compaction observation is stored in caps without changing probe eligibility', () => {
+  registered('compaction-capability-fixture')
+  recordAgentProbe('compaction-capability-fixture', result(true, true, false))
+  expect(JSON.parse(registeredCaps('compaction-capability-fixture')).compacts).toBe(false)
+  expect(
+    registrationProbeCacheReusable('acp', result(true, true, false), true, false, true, true),
+  ).toBe(true)
+})
+
+test('a pre-capability Goose probe is not reused until compaction has been observed', () => {
+  const { compaction: _compaction, ...previous } = result(true)
+  expect(
+    registrationProbeCacheReusable(
+      'acp',
+      previous as RegistrationProbeResult,
+      true,
+      false,
+      true,
+      true,
+    ),
+  ).toBe(false)
 })
 
 test('an observed ACP resume result sets or clears resumable', () => {

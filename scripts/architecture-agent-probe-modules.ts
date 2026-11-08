@@ -43,6 +43,7 @@ export const agentProbeModules = [
     '../transport/transport.ts',
     './agent-writing-probe.ts',
     './agent-resume-probe.ts',
+    './agent-compaction-probe.ts',
     './agent-probe-turn.ts',
     './openrouter-key-budget.ts',
   ]),
@@ -65,6 +66,7 @@ export const agentProbeModules = [
     './agent-capability-probe-policy.ts',
     './agent-capability-probe-sandbox.ts',
   ]),
+  module('orchestrator/src/agent/agent-compaction-probe.ts', []),
   module('orchestrator/src/agent/agent-probe-turn.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',

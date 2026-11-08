@@ -7,6 +7,7 @@ import {
   GOOSE_CONTEXT_CEILING,
   GOOSE_READING_MAX_TURNS,
   gooseContextLimit,
+  gooseContextManagementEnvironment,
   rowAgent,
 } from './agent-registry.ts'
 import { type Agent, assertResumableAgent } from './agents.ts'
@@ -16,7 +17,7 @@ function codexRow(probeResult: unknown): AgentRow {
   return { ...row, probe_result: JSON.stringify(probeResult) }
 }
 
-function gooseRow(contextTokens?: number): AgentRow {
+function gooseRow(contextTokens?: number, compacts?: boolean): AgentRow {
   const row = codexRow({ ok: true })
   const { contextTokens: _contextTokens, ...caps } = JSON.parse(row.caps)
   return {
@@ -27,6 +28,7 @@ function gooseRow(contextTokens?: number): AgentRow {
     caps: JSON.stringify({
       ...caps,
       ...(contextTokens === undefined ? {} : { contextTokens }),
+      ...(compacts === undefined ? {} : { compacts }),
     }),
   }
 }
@@ -75,6 +77,29 @@ test('a goose row without a declared context window keeps the goose default', ()
   expect(env).not.toHaveProperty('GOOSE_CONTEXT_LIMIT')
   expect(env).not.toHaveProperty('GOOSE_MAX_TURNS')
 })
+
+test('a Goose row that cannot compact uses its served window with compaction disabled', () => {
+  const env = rowAgent(gooseRow(1_000_000, false)).env?.(DEEP_JOB_TOKENS, null, false)
+  expect(env).toMatchObject({
+    GOOSE_CONTEXT_LIMIT: '1000000',
+    GOOSE_AUTO_COMPACT_THRESHOLD: '0',
+    GOOSE_TOOL_PAIR_SUMMARIZATION: 'false',
+  })
+})
+
+test.each([true, undefined])(
+  'a Goose row whose compacts capability is %s keeps the ceilinged launch environment',
+  (compacts) => {
+    expect(
+      gooseContextManagementEnvironment({
+        compacts,
+        servedWindow: 1_000_000,
+        jobContextTokens: DEEP_JOB_TOKENS,
+        promptBytes: null,
+      }),
+    ).toEqual({ GOOSE_CONTEXT_LIMIT: String(GOOSE_CONTEXT_CEILING) })
+  },
+)
 
 test('a Goose reading job sets the turn ceiling; a writing job and a non-Goose row do not', () => {
   const goose = rowAgent(gooseRow(200_000))

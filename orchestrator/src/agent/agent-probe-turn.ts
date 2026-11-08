@@ -34,6 +34,7 @@ type ProbeTurnInput = {
   mcp?: boolean
   writing?: WritingProbeConfinement
   session?: string
+  environment?: Record<string, string>
 }
 
 type ProbeTurnResult = {
@@ -136,6 +137,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
     // A refused probe environment must record a failed probe turn, not escape
     // with the row left 'running'.
     const environment = await probeEnvironment(input.name, input.agent, scratchDir)
+    Object.assign(environment, input.environment)
     if (input.writing) environment.HOME = input.writing.workerHomeDir
     const handle = await input.transport.start({
       agent: input.agent,
