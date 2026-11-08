@@ -10,22 +10,30 @@ import { checkoutLanding } from './workflow-checkout-landing.ts'
 import { type CheckoutResolution, decideCheckoutAnswer } from './workflow-checkout-refusal.ts'
 
 export function gitText(cwd: string, args: string[]): string | null {
-  const result = startBoundedSync(['git', ...args], {
-    budget: 'git-plumbing',
-    cwd,
-    env: inspectionGitEnv(),
-  })
-  return result.exitCode === 0 ? result.stdout.trim() : null
-}
-
-function gitOk(cwd: string, args: string[]): boolean {
-  return (
-    startBoundedSync(['git', ...args], {
+  try {
+    const result = startBoundedSync(['git', ...args], {
       budget: 'git-plumbing',
       cwd,
       env: inspectionGitEnv(),
-    }).exitCode === 0
-  )
+    })
+    return result.exitCode === 0 ? result.stdout.trim() : null
+  } catch {
+    return null
+  }
+}
+
+function gitOk(cwd: string, args: string[]): boolean {
+  try {
+    return (
+      startBoundedSync(['git', ...args], {
+        budget: 'git-plumbing',
+        cwd,
+        env: inspectionGitEnv(),
+      }).exitCode === 0
+    )
+  } catch {
+    return false
+  }
 }
 
 function cwdProject(

@@ -480,8 +480,12 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
   }
 }
 
-export async function epicChildren(project: string, epicKey: string): Promise<EpicChild[]> {
-  const child = await startBounded(
+export async function epicChildren(
+  project: string,
+  epicKey: string,
+  starter: typeof startBounded = startBounded,
+): Promise<EpicChild[]> {
+  const child = await starter(
     [
       ...bottegaEntryArgv(PLATFORM_SLUG),
       'task',

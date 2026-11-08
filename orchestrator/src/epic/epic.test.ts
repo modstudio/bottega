@@ -424,28 +424,24 @@ describe('epic scoreboard', () => {
       { key: 'DEV-501', title: 'child one' },
       { key: 'DEV-502', title: 'child two' },
     ]
-    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
-      stdout: JSON.stringify(children),
-      stderr: '',
-      exited: Promise.resolve(0),
-      args,
-    })) as unknown as typeof Bun.spawn)
-    try {
-      expect(await epicChildren(PLATFORM_SLUG, 'DEV-500')).toEqual(children)
-      expect(spawn).toHaveBeenCalledTimes(1)
-      expect(spawn.mock.calls[0]![0]).toEqual(
-        expect.arrayContaining([
-          'task',
-          'list',
-          '--project',
-          PLATFORM_SLUG,
-          '--parent',
-          'DEV-500',
-          '--json',
-        ]),
-      )
-    } finally {
-      spawn.mockRestore()
-    }
+    const starts: string[][] = []
+    expect(
+      await epicChildren(PLATFORM_SLUG, 'DEV-500', async (args) => {
+        starts.push([...args])
+        return { stdout: JSON.stringify(children), stderr: '', exitCode: 0 }
+      }),
+    ).toEqual(children)
+    expect(starts).toHaveLength(1)
+    expect(starts[0]).toEqual(
+      expect.arrayContaining([
+        'task',
+        'list',
+        '--project',
+        PLATFORM_SLUG,
+        '--parent',
+        'DEV-500',
+        '--json',
+      ]),
+    )
   })
 })

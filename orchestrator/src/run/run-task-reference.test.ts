@@ -8,18 +8,11 @@ afterEach(() => {
 
 describe('run task reference', () => {
   test('resolves a record id within the recorded project for the run claim', async () => {
-    spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
-      stdout: JSON.stringify([
-        {
-          record_id: '01990000-0000-7000-8000-000000000895',
-          key: 'SHARED-42',
-          project: 'beta',
-        },
-      ]),
-      stderr: '',
-      exited: Promise.resolve(0),
-      args,
-    })) as unknown as typeof Bun.spawn)
+    const task = {
+      record_id: '01990000-0000-7000-8000-000000000895',
+      key: 'SHARED-42',
+      project: 'beta',
+    }
 
     expect(
       await admitNewRunReference({
@@ -29,6 +22,7 @@ describe('run task reference', () => {
         cwd: null,
         launchCwd: null,
         probe: false,
+        hubTaskReader: async () => [task],
       }),
     ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })
   })
