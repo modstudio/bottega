@@ -117,7 +117,7 @@ export const CODE_QUERIES: BenchmarkQuery[] = [
   ),
   rule(
     'secrets-gate',
-    'Gitleaks gates the repository, and its allowlist is limited to named fake fixture credentials in .gitleaks.toml.',
+    'Gitleaks gates the repository; allow only named fake fixture credentials in .gitleaks.toml.',
     'scripts/check-gitleaks.ts',
     'AGENTS.md',
   ),

@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { machineKeyId } from '../../shared/machine-key-id.ts'
 import {
   newRecordId,
@@ -63,9 +63,6 @@ export function registerHostedConfigProofs(
        INSERT INTO secret_dek (id, space_id, version, created_at) VALUES
          ('${DEK_A}', '${spaceA}', 1, now()),
          ('${DEK_B}', '${spaceB}', 1, now());
-       INSERT INTO project (id, space_id, name, key_prefixes, created_at) VALUES
-         ('${PROJECT_A}', '${spaceA}', 'config-proof-a', ARRAY['CPA'], now()),
-         ('${PROJECT_B}', '${spaceB}', 'config-proof-b', ARRAY['CPB'], now());
        INSERT INTO config_entry
          (id, space_id, user_id, key, environment, value, row_version, updated_at)
        VALUES
@@ -526,22 +523,44 @@ export function registerHostedConfigProofs(
     ).rejects.toMatchObject({ status: 409 })
   })
 
-  test('config secret service addresses space and project bindings independently', async () => {
-    await proveCredentialSecretProjectAddressing({
-      tenant: serviceTenant,
-      dekId: DEK_A,
-      projectId: PROJECT_A,
-      foreignProjectId: PROJECT_B,
+  describe('credential project bindings', () => {
+    beforeAll(() => {
+      succeeds(
+        'postgres',
+        'postgres',
+        `INSERT INTO project (id, space_id, name, key_prefixes, created_at) VALUES
+           ('${PROJECT_A}', '${spaceA}', 'config-proof-a', ARRAY['CPA'], now()),
+           ('${PROJECT_B}', '${spaceB}', 'config-proof-b', ARRAY['CPB'], now());`,
+      )
     })
-  })
 
-  test('credential payer preferences update, list, and delete only the addressed user slot', async () => {
-    await proveCredentialPreferencePersistence({
-      tenant: serviceTenant,
-      spaceId: spaceA,
-      userId: userA,
-      otherUserId: USER_B,
-      projectId: PROJECT_A,
+    afterAll(() => {
+      succeeds(
+        'postgres',
+        'postgres',
+        `DELETE FROM credential_payer_preference WHERE project_id IN ('${PROJECT_A}', '${PROJECT_B}');
+         DELETE FROM config_secret WHERE project_id IN ('${PROJECT_A}', '${PROJECT_B}');
+         DELETE FROM project WHERE id IN ('${PROJECT_A}', '${PROJECT_B}');`,
+      )
+    })
+
+    test('config secret service addresses space and project bindings independently', async () => {
+      await proveCredentialSecretProjectAddressing({
+        tenant: serviceTenant,
+        dekId: DEK_A,
+        projectId: PROJECT_A,
+        foreignProjectId: PROJECT_B,
+      })
+    })
+
+    test('credential payer preferences update, list, and delete only the addressed user slot', async () => {
+      await proveCredentialPreferencePersistence({
+        tenant: serviceTenant,
+        spaceId: spaceA,
+        userId: userA,
+        otherUserId: USER_B,
+        projectId: PROJECT_A,
+      })
     })
   })
 
