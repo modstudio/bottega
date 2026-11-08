@@ -3,6 +3,7 @@
 
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -34,6 +35,17 @@ import {
 import { machineUpdateLockHeldEnvironment } from '../../../shared/update-lock.ts'
 import { MACHINE_JOURNAL_SCHEMA, MACHINE_JOURNAL_SCHEMA_VERSION } from '../machine-journal.ts'
 import { withSynchronousDatabaseForMigrationStep } from './db.ts'
+import {
+  clearMachineUpdateIntent,
+  localStoreJournalPositions,
+  requiredLocalStoreJournalPositions,
+  writeMachineUpdateIntent,
+} from './machine-update-intent.ts'
+import {
+  decideMachineUpdateRecovery,
+  type StoreJournalPositions,
+  type SwappedUpdateState,
+} from './machine-update-recovery.ts'
 import type { MigrationJournalEntryWithHash } from './migration-compatibility.ts'
 import {
   type CandidateStoreDecision,
@@ -198,6 +210,113 @@ export function migrateInstalledBinary(target: string): void {
   }
 }
 
+export function releaseUpdatePriorBinaryPath(target: string): string {
+  return join(dirname(target), `.${PLATFORM_SLUG}-prior`)
+}
+
+type ApplyStagedReleaseInput = {
+  staged: string
+  target: string
+  prior: string
+  migrate?: (target: string) => void
+  positions?: () => StoreJournalPositions | null
+  writeIntent?: typeof writeMachineUpdateIntent
+  clearIntent?: typeof clearMachineUpdateIntent
+}
+
+function failureMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
+function restoreDistributionBinary(input: {
+  before: StoreJournalPositions
+  swapped: Extract<SwappedUpdateState, { kind: 'distribution' }>
+  prior: string
+  target: string
+  clearIntent: () => void
+  cause: unknown
+  migrationFailure: boolean
+}): never {
+  const failure = failureMessage(input.cause)
+  let restored = false
+  try {
+    if (existsSync(input.prior)) {
+      renameSync(input.prior, input.target)
+      restored = true
+    }
+  } catch (restoreCause) {
+    const decision = decideMachineUpdateRecovery({
+      before: input.before,
+      swapped: input.swapped,
+      restoreFailure: failureMessage(restoreCause),
+    })
+    const prefix = input.migrationFailure ? `migration failed: ${failure}` : failure
+    throw new Error(`${prefix}; ${decision.message}`)
+  }
+  input.clearIntent()
+  const prefix = input.migrationFailure ? `migration failed: ${failure}` : failure
+  throw new Error(
+    `${prefix}; ${restored ? `the prior binary was restored at ${input.target}` : `the installed binary at ${input.target} was left in place`}` +
+      (input.migrationFailure ? `; rerun ${PLATFORM_SLUG} machine update` : ''),
+  )
+}
+
+export function applyStagedRelease({
+  staged,
+  target,
+  prior,
+  migrate = migrateInstalledBinary,
+  positions = localStoreJournalPositions,
+  writeIntent = writeMachineUpdateIntent,
+  clearIntent = clearMachineUpdateIntent,
+}: ApplyStagedReleaseInput): void {
+  const before = requiredLocalStoreJournalPositions(positions())
+  const swapped = {
+    kind: 'distribution' as const,
+    installedBinary: target,
+    priorBinary: prior,
+  }
+  writeIntent({ before, swapped })
+  try {
+    renameSync(target, prior)
+    renameSync(staged, target)
+  } catch (cause) {
+    restoreDistributionBinary({
+      before,
+      swapped,
+      prior,
+      target,
+      clearIntent,
+      cause,
+      migrationFailure: false,
+    })
+  }
+  try {
+    migrate(target)
+  } catch (cause) {
+    const decision = decideMachineUpdateRecovery({ before, after: positions(), swapped })
+    const migrationFailure = failureMessage(cause)
+    if (decision.action === 'restore') {
+      restoreDistributionBinary({
+        before,
+        swapped,
+        prior,
+        target,
+        clearIntent,
+        cause,
+        migrationFailure: true,
+      })
+    }
+    if (decision.action === 'keep') {
+      rmSync(prior, { force: true })
+      clearIntent()
+    }
+    throw new Error(`migration failed: ${migrationFailure}; ${decision.message}`)
+  }
+  rmSync(prior, { force: true })
+  clearIntent()
+}
+
 export async function prepareReleaseUpdate(input: {
   manifest: DistributionManifest
   requestedVersion?: string
@@ -273,8 +392,11 @@ export async function prepareReleaseUpdate(input: {
         decision,
         pendingMigration: journal[decision.position]?.tag ?? null,
         apply() {
-          renameSync(staged, target)
-          migrateInstalledBinary(target)
+          applyStagedRelease({
+            staged,
+            target,
+            prior: releaseUpdatePriorBinaryPath(target),
+          })
           input.presentation.log(`updated ${input.manifest.version} → ${resolution.version}`)
           const onPath = Bun.which(PLATFORM_SLUG)
           if (onPath && realpathSync(onPath) !== target) {

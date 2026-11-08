@@ -47,6 +47,8 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/update-lock.ts',
     '../machine-journal.ts',
     './db.ts',
+    './machine-update-intent.ts',
+    './machine-update-recovery.ts',
     './migration-compatibility.ts',
     './release-update-decision.ts',
   ]),
