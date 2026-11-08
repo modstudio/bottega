@@ -21,12 +21,12 @@ import {
   credentialPayerFromScope,
   credentialSlot,
   parseCredentialSlot,
-  resolveCredential,
 } from '../config/credential.ts'
 import {
   type CredentialAddress,
   deleteCredential,
   listCredentials,
+  resolveProjectCredential,
   resolveCredentialValue,
   setCredential,
 } from '../config/credential-service.ts'
@@ -152,44 +152,19 @@ async function resolveAction(
 ): Promise<void> {
   const target = await address(name, options)
   const client = configClient()
-  const rows = await listCredentials(target.destinationSpaceId, {}, client)
-  const preferences = await client.listCredentialPreferences({
-    destinationSpaceId: target.destinationSpaceId,
-  })
-  const result = resolveCredential({
-    spaceId: target.destinationSpaceId,
-    projectId: target.projectId!,
-    projectName: target.projectName!,
-    provider: target.provider,
-    name: target.name,
-    type: target.type,
-    mode: target.mode,
-    environment: target.environment,
-    candidates: rows.map((row) => ({
-      spaceId: target.destinationSpaceId,
-      projectId: row.projectId ?? null,
-      payer: credentialPayerFromScope(row.scope),
-      provider: row.provider,
-      name: row.name,
-      type: row.type,
-      mode: row.mode,
-      environment: row.environment,
-    })),
-    preferences,
-  })
-  if (result.kind === 'refused') throw new Error(result.refusal)
   if (options.revealToEnv) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(options.revealToEnv))
       throw new Error('--reveal-to-env must be an environment-variable name')
     if (argv.length === 0) throw new Error('--reveal-to-env requires -- <argv>')
-    const value = await resolveCredentialValue(target, client)
+    const result = await resolveCredentialValue(target, client)
     process.exitCode = await runWithEnvironment(argv, {
       ...process.env,
-      [options.revealToEnv]: value,
+      [options.revealToEnv]: result.value,
     })
     return
   }
   if (argv.length > 0) throw new Error('command argv requires --reveal-to-env <VAR>')
+  const result = await resolveProjectCredential(target, client)
   log(
     `${credentialDisplayName(target.provider, target.name, target.type, target.mode, target.environment)}\t${credentialSlot(result.credential.payer, result.credential.projectId)}\t${result.reason}`,
   )

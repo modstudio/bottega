@@ -73,20 +73,20 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/credential.ts',
   ]),
   module('orchestrator/src/config/credential-service.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
     '../../../shared/credential.ts',
+    '../../../shared/record-remedies.ts',
     '../../../shared/sealed-value.ts',
     './config-service.ts',
     './credential.ts',
     './hosted-secret-destination.ts',
   ]),
   module('orchestrator/src/config/hosted-secret-destination.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
     '../../../shared/hosted-secret-opening.ts',
-    '../../../shared/machine-key-store.ts',
+    '../../../shared/record-remedies.ts',
     '../../../shared/trust-list.ts',
+    './config-service.ts',
   ]),
   module('orchestrator/src/commands/credential.ts', [
     'commander',

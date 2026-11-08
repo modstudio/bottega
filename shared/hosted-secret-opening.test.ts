@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { decideHostedSpaceOpen } from './hosted-secret-opening.ts'
+import {
+  decideHostedSpaceOpen,
+  HostedOpenError,
+  openHostedSecret,
+} from './hosted-secret-opening.ts'
 
 const space = '01990000-0000-7000-8000-000000000001'
 const user = '01990000-0000-7000-8000-000000000002'
@@ -46,4 +50,32 @@ test('a project destination never substitutes membership from another space', ()
       machine,
     }),
   ).toEqual({ allowed: false, reason: 'not-member' })
+})
+
+test('destination opening reports an untrusted sender before a missing machine wrap', async () => {
+  const opening = openHostedSecret({
+    client: {} as never,
+    row: {
+      key: 'credential',
+      scope: 'space',
+      environment: 'local',
+      dekId: 'dek',
+      rowVersion: 1,
+      updatedAt: '2026-11-08T00:00:00.000Z',
+      envelope: '',
+    },
+    key: {
+      id: 'dek',
+      version: 1,
+      createdAt: '2026-11-08T00:00:00.000Z',
+      retiredAt: null,
+      wraps: [{ recipientKeyId: 'recipient', senderKeyId: 'unknown', enc: '', ciphertext: '' }],
+    },
+    machine: { keyId: 'recipient', publicKey: new Uint8Array(), privateKey: new Uint8Array() },
+    trust: {},
+    expected: { key: 'credential', scope: 'space', environment: 'local' },
+    identity: { spaceId: space, userId: user },
+  })
+
+  await expect(opening).rejects.toMatchObject<HostedOpenError>({ reason: 'untrusted-sender' })
 })

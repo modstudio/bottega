@@ -25,10 +25,10 @@ export type CredentialCandidate = CredentialIdentity & {
   payer: CredentialPayer
 }
 
-export type CredentialResolution =
+export type CredentialResolution<Candidate extends CredentialCandidate = CredentialCandidate> =
   | {
       kind: 'resolved'
-      credential: CredentialCandidate
+      credential: Candidate
       reason: 'project-preference' | 'space-preference' | 'default-order'
     }
   | { kind: 'refused'; refusal: string }
@@ -112,7 +112,7 @@ export function credentialSetRefusalText(
   return `credential ${name} (mode ${target.mode}, env ${target.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${modeOption}${environmentOption}\``
 }
 
-export function resolveCredential(input: {
+export function resolveCredential<Candidate extends CredentialCandidate>(input: {
   spaceId: string
   projectId: string
   projectName: string
@@ -121,9 +121,9 @@ export function resolveCredential(input: {
   type: string
   mode: CredentialMode
   environment: CredentialEnvironment
-  candidates: readonly CredentialCandidate[]
+  candidates: readonly Candidate[]
   preferences: readonly CredentialPreferencePayload[]
-}): CredentialResolution {
+}): CredentialResolution<Candidate> {
   const candidates = input.candidates.filter(
     (row) =>
       row.spaceId === input.spaceId &&

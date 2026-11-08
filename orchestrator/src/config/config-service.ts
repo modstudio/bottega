@@ -111,7 +111,7 @@ export function planRotation(
   }
 }
 
-async function localMachine() {
+export function localMachine() {
   const pair = readMachineKey()
   if (!pair)
     throw new Error(

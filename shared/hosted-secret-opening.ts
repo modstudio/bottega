@@ -2,6 +2,8 @@ import { PLATFORM_SLUG } from './brand.ts'
 import type { ConfigClient, ConfigSecret, DataKey } from './config-client.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
 import {
+  configAccessRemedy,
+  machineNotTrustedRemedy,
   pinnedSpaceMismatchRemedy,
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
@@ -77,12 +79,8 @@ export async function hostedIdentity(
     if (decision.reason === 'not-member')
       throw new Error(`signed-in user is not a member of record space ${destination.spaceId}`)
     if (decision.reason === 'no-config-access')
-      throw new Error(
-        `signed-in user lacks config access in record space ${destination.spaceId}; a space owner or admin grants it with \`${PLATFORM_SLUG} record space access grant <email>\``,
-      )
-    throw new Error(
-      `this machine is not trusted in record space ${destination.spaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``,
-    )
+      throw new Error(configAccessRemedy(destination.spaceId))
+    throw new Error(machineNotTrustedRemedy(destination.spaceId))
   }
   if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   if (current.activeSpaceId !== pinned.spaceId)
@@ -94,17 +92,14 @@ export async function hostedIdentity(
 function trustedWrap(input: {
   key: DataKey
   trust: TrustList
-  destinationSpaceId?: string
+  identity?: HostedConfigIdentity
 }): DataKey['wraps'][number] {
   const wrap = input.key.wraps.find((candidate) => input.trust[candidate.senderKeyId])
   if (wrap) return wrap
-  if (input.destinationSpaceId)
-    throw new HostedOpenError(
-      'missing-wrap',
-      `this machine is not trusted in record space ${input.destinationSpaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``,
-    )
   if (input.key.wraps.length)
     throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
+  if (input.identity)
+    throw new HostedOpenError('missing-wrap', machineNotTrustedRemedy(input.identity.spaceId))
   throw new HostedOpenError('missing-wrap', 'hosted secret data key has no wrap for this machine')
 }
 
@@ -117,7 +112,7 @@ export async function openHostedSecret(input: {
   trust: TrustList
   expected: { key: string; scope: ConfigSecret['scope']; environment: string }
   pinnedIdentity?: HostedConfigIdentity | null
-  destinationSpaceId?: string
+  identity?: HostedConfigIdentity
 }): Promise<Uint8Array> {
   const { row, expected } = input
   if (
@@ -131,17 +126,7 @@ export async function openHostedSecret(input: {
   if (!sender)
     throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
   try {
-    const identity = await hostedIdentity(
-      input.client,
-      input.pinnedIdentity,
-      input.destinationSpaceId
-        ? {
-            spaceId: input.destinationSpaceId,
-            machineKeyId: input.machine.keyId,
-            configAccess: true,
-          }
-        : undefined,
-    )
+    const identity = input.identity ?? (await hostedIdentity(input.client, input.pinnedIdentity))
     const dek = await unwrapDataKey({
       enc: bytes(wrap.enc),
       ciphertext: bytes(wrap.ciphertext),

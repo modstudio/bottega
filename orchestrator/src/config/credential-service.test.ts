@@ -9,10 +9,16 @@ import { writeMachineKey } from '../../../shared/machine-key-store.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
+  sealValue,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine } from '../../../shared/trust-list.ts'
-import { type CredentialAddress, deleteCredential, setCredential } from './credential-service.ts'
+import {
+  type CredentialAddress,
+  deleteCredential,
+  resolveCredentialValue,
+  setCredential,
+} from './credential-service.ts'
 
 let root: string
 let previousConfigHome: string | undefined
@@ -150,4 +156,111 @@ test('delete credential explains how to recreate an absent project credential', 
   await expect(deleteCredential(address, client)).rejects.toThrow(
     'credential set openrouter/api-key --project alpha',
   )
+})
+
+test('service resolution opens the selected payer row once and honors a shared preference', async () => {
+  const userId = '01990000-0000-7000-8000-000000000003'
+  const dekId = '01990000-0000-7000-8000-000000000004'
+  const keyId = await machineKeyId(pair.publicKey)
+  await pinTrustedMachine(keyId, pair.publicKey, 'current')
+  writeHostedConfigIdentity({ spaceId: address.destinationSpaceId, userId })
+  const dek = generateDataKey()
+  const wrapped = await wrapDataKey({
+    dek,
+    wrapContext: { spaceId: address.destinationSpaceId, dekId, dekVersion: 1 },
+    senderPrivateKey: pair.privateKey,
+    senderPublicKey: pair.publicKey,
+    recipientPublicKey: pair.publicKey,
+  })
+  const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
+  const row = (key: string, scope: 'user' | 'space', projectId: string | null, value: string) => ({
+    key,
+    scope,
+    projectId,
+    environment: address.environment,
+    provider: address.provider,
+    name: address.name,
+    type: address.type,
+    hint: '4 characters',
+    mode: address.mode,
+    dekId,
+    rowVersion: 1,
+    updatedAt: '2026-11-08T00:00:00.000Z',
+    envelope: encode(
+      sealValue({
+        dek,
+        plaintext: new TextEncoder().encode(value),
+        valueContext: {
+          spaceId: address.destinationSpaceId,
+          userId: scope === 'user' ? userId : null,
+          keyName: key,
+          environment: address.environment,
+          dekId,
+          rowVersion: 1,
+        },
+      }),
+    ),
+  })
+  const personal = row('personal-row', 'user', address.projectId, 'personal-value')
+  const shared = row('shared-row', 'space', null, 'shared-value')
+  let preferences: object[] = []
+  const getSecret = mock(async (key: string) => {
+    const selected = [personal, shared].find((candidate) => candidate.key === key)
+    if (!selected) throw new Error(`unexpected secret ${key}`)
+    return selected
+  })
+  const client = {
+    listSecrets: async () => [personal, shared],
+    listCredentialPreferences: async () => preferences,
+    getSecret,
+    getDataKey: async () => ({
+      id: dekId,
+      version: 1,
+      createdAt: '2026-11-08T00:00:00.000Z',
+      retiredAt: null,
+      wraps: [
+        {
+          recipientKeyId: keyId,
+          senderKeyId: keyId,
+          enc: encode(wrapped.enc),
+          ciphertext: encode(wrapped.ciphertext),
+        },
+      ],
+    }),
+    whoami: async () => ({
+      user: { id: userId },
+      activeSpaceId: 'another-space',
+      memberships: [
+        { space_id: address.destinationSpaceId, slug: address.spaceName, permission: 'write' },
+      ],
+    }),
+    listMachineKeys: async () => [
+      {
+        keyId,
+        publicKey: encode(pair.publicKey),
+        label: 'current',
+        createdAt: '2026-11-08T00:00:00.000Z',
+        revokedAt: null,
+        userId,
+      },
+    ],
+  } as unknown as ConfigClient
+
+  expect((await resolveCredentialValue(address, client)).value).toBe('personal-value')
+  expect(getSecret.mock.calls.map((call) => call[0])).toEqual(['personal-row'])
+
+  preferences = [
+    {
+      projectId: address.projectId,
+      provider: address.provider,
+      name: address.name,
+      type: address.type,
+      mode: address.mode,
+      environment: address.environment,
+      payer: 'shared',
+      binding: 'space',
+    },
+  ]
+  expect((await resolveCredentialValue(address, client)).value).toBe('shared-value')
+  expect(getSecret.mock.calls.map((call) => call[0])).toEqual(['personal-row', 'shared-row'])
 })
