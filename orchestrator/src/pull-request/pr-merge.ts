@@ -41,7 +41,7 @@ import {
   githubMergeQueueState,
   requeuePullRequest,
 } from './merge-queue-forge.ts'
-import { decideMergeability } from './mergeability-decision.ts'
+import { decideMergeability, type MergeabilityFacts } from './mergeability-decision.ts'
 import {
   admissionDecision,
   type PullRequestChange,
@@ -178,7 +178,6 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       baseRefName?: unknown
       title?: unknown
       state?: unknown
-      mergeable?: unknown
       mergeStateStatus?: unknown
       mergeCommit?: { oid?: unknown } | null
     }>(
@@ -190,7 +189,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
           'view',
           target,
           '--json',
-          'id,number,url,headRefOid,headRefName,baseRefName,title,state,mergeable,mergeStateStatus,mergeCommit',
+          'id,number,url,headRefOid,headRefName,baseRefName,title,state,mergeStateStatus,mergeCommit',
         ],
         'pull-request lookup',
       ),
@@ -205,7 +204,6 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       typeof value.baseRefName !== 'string' ||
       typeof value.title !== 'string' ||
       typeof value.state !== 'string' ||
-      typeof value.mergeable !== 'string' ||
       typeof value.mergeStateStatus !== 'string'
     ) {
       throw new Error('pull-request lookup returned an unexpected JSON shape')
@@ -219,7 +217,6 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       baseBranch: value.baseRefName,
       title: value.title,
       state: value.state,
-      mergeable: value.mergeable,
       mergeStateStatus: value.mergeStateStatus,
       mergeCommit: typeof value.mergeCommit?.oid === 'string' ? value.mergeCommit.oid : null,
     }
@@ -677,12 +674,13 @@ function admitViewedPullRequest(
     mergeQueue: boolean
   },
 ): PullRequestChange {
-  const mergeability = decideMergeability({
-    mergeStateStatus: pullRequest.mergeStateStatus ?? '',
-    url: pullRequest.url ?? `pull request #${pullRequest.number}`,
+  const mergeabilityFacts: MergeabilityFacts = {
+    mergeStateStatus: pullRequest.mergeStateStatus,
+    url: pullRequest.url,
     landingBranch: input.landingBranch,
     boundReached: true,
-  })
+  }
+  const mergeability = decideMergeability(mergeabilityFacts)
   if (mergeability.kind === 'report' && mergeability.conflict) {
     throw new Error(`refusing merge: ${mergeability.message}`)
   }

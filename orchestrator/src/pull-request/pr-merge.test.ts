@@ -8,7 +8,6 @@ import { migrationJournal } from '../database/migrations.ts'
 import { projectByName } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
-import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
@@ -17,7 +16,11 @@ import {
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
 } from './pr-merge.ts'
-import { recordPassingMergeGate, requiredRelease } from './pr-merge-required-release.fixture.ts'
+import {
+  cleanupReport,
+  recordPassingMergeGate,
+  requiredRelease,
+} from './pr-merge-required-release.fixture.ts'
 import { inProcessPostLandingAdapter } from './pr-post-landing.fixture.ts'
 import type { WorkflowPromotionResult } from './pr-post-landing.ts'
 
@@ -44,11 +47,13 @@ const recordPassingGate = () => recordPassingMergeGate(pullRequest.headCommit, c
 const pullRequest: PullRequestMergeFacts = {
   nodeId: 'PR_node_id',
   number: 42,
+  url: 'https://github.example/pulls/42',
   headCommit: 'head-commit',
   headBranch: 'DEV-1255-admission',
   baseBranch: 'main',
   title: 'Prove the pull request head',
   state: 'OPEN',
+  mergeStateStatus: 'CLEAN',
   mergeCommit: null,
 }
 
@@ -329,26 +334,6 @@ test.each([
   expect(outcome.output).toContain(`workflow draft promotion failed at ${stage}`)
   expect(outcome.output).toContain(remedy)
   expect(outcome.output).toContain('workflow promote-tree')
-})
-
-const cleanupReport = (
-  overrides: Partial<Pick<ShipCleanupReport, 'kept' | 'errors'>> = {},
-): ShipCleanupReport => ({
-  project: 'merge-fixture',
-  branch: pullRequest.headBranch,
-  landingBranch: 'main',
-  mainCheckoutPath: cwd,
-  freed: { artifacts: 0, scratch: 0, worktrees: 0 },
-  removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
-  absentWorktrees: [],
-  reclaimed: { processes: [], compose: [] },
-  gone: [],
-  kept: overrides.kept ?? [],
-  errors: overrides.errors ?? [],
-  verdict: decideShipCleanupVerdict({
-    kept: overrides.kept ?? [],
-    errors: overrides.errors ?? [],
-  }),
 })
 
 test('an injected forge adapter merges all-passing checks with the method, subject, and proven head', () => {
@@ -748,6 +733,27 @@ test('an incomplete admission refuses with its review remedy without merging', (
       }),
     ),
   ).toThrow('missing review for patch patch; cleared by: run and record the tier 2 review')
+  expect(merged).toBe(false)
+})
+
+test('a dirty pull request refuses with the rebase remedy without merging', () => {
+  registerProject([])
+  let merged = false
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        view: () => ({ ...pullRequest, mergeStateStatus: 'DIRTY' }),
+        merge: () => {
+          merged = true
+          return 'must-not-merge'
+        },
+      }),
+    ),
+  ).toThrow(
+    'refusing merge: https://github.example/pulls/42 conflicts with main: rebase it on the landing branch before merging',
+  )
   expect(merged).toBe(false)
 })
 

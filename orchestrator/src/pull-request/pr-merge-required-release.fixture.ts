@@ -1,6 +1,31 @@
 import { newRecordId } from '../../../shared/record-id.ts'
+import { fileURLToPath } from 'node:url'
 import { db } from '../database/db.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
+import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
+import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.ts'
+
+const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
+
+export const cleanupReport = (
+  overrides: Partial<Pick<ShipCleanupReport, 'kept' | 'errors'>> = {},
+): ShipCleanupReport => ({
+  project: 'merge-fixture',
+  branch: 'DEV-1255-admission',
+  landingBranch: 'main',
+  mainCheckoutPath: cwd,
+  freed: { artifacts: 0, scratch: 0, worktrees: 0 },
+  removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+  absentWorktrees: [],
+  reclaimed: { processes: [], compose: [] },
+  gone: [],
+  kept: overrides.kept ?? [],
+  errors: overrides.errors ?? [],
+  verdict: decideShipCleanupVerdict({
+    kept: overrides.kept ?? [],
+    errors: overrides.errors ?? [],
+  }),
+})
 
 export const requiredRelease = (
   overrides: Partial<RequiredReleaseReport> = {},

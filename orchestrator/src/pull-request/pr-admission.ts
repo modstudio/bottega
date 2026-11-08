@@ -34,7 +34,11 @@ import {
   type AdmissionOverride,
   decideAdmission,
 } from './admission-decision.ts'
-import { decideMergeability } from './mergeability-decision.ts'
+import {
+  decideMergeability,
+  type MergeabilityDecision,
+  type MergeabilityFacts,
+} from './mergeability-decision.ts'
 import {
   ceilingRulingGuidance,
   decideTriageOverride,
@@ -550,16 +554,17 @@ export function recordMergeAdmission(
 type BranchPullRequest = {
   number: number
   url: string
-  mergeable: string
   mergeStateStatus: string
-  mergeabilityBoundReached: boolean
+  mergeability: MergeabilityDecision
 }
+
+type BranchPullRequestRead = Omit<BranchPullRequest, 'mergeability'>
 
 const PULL_REQUEST_MERGEABILITY_POLL_MS = 1_000
 
-function readPullRequestForBranch(cwd: string, branch: string): BranchPullRequest | null {
+function readPullRequestForBranch(cwd: string, branch: string): BranchPullRequestRead | null {
   const process = startBoundedSync(
-    ['gh', 'pr', 'view', branch, '--json', 'number,url,mergeable,mergeStateStatus'],
+    ['gh', 'pr', 'view', branch, '--json', 'number,url,mergeStateStatus'],
     { budget: 'gh', cwd, env: targetGitEnvironment(cwd) },
   )
   if (process.exitCode !== 0) return null
@@ -567,14 +572,11 @@ function readPullRequestForBranch(cwd: string, branch: string): BranchPullReques
     const value = JSON.parse(process.stdout) as Record<string, unknown>
     return Number.isSafeInteger(value.number) &&
       typeof value.url === 'string' &&
-      typeof value.mergeable === 'string' &&
       typeof value.mergeStateStatus === 'string'
       ? {
           number: Number(value.number),
           url: value.url,
-          mergeable: value.mergeable,
           mergeStateStatus: value.mergeStateStatus,
-          mergeabilityBoundReached: false,
         }
       : null
   } catch {
@@ -588,43 +590,57 @@ function pullRequestForBranch(
   landingBranch: string,
 ): BranchPullRequest | null {
   const deadline = Date.now() + CALL_BUDGETS.gh.deadlineMs
-  let lastRead: BranchPullRequest | null = null
+  let lastRead: BranchPullRequestRead | null = null
   while (true) {
+    let read: BranchPullRequestRead | null
     try {
-      lastRead = readPullRequestForBranch(cwd, branch)
+      read = readPullRequestForBranch(cwd, branch)
     } catch (error) {
-      if (error instanceof BoundExceededError && lastRead) {
-        return { ...lastRead, mergeabilityBoundReached: true }
-      }
-      if (error instanceof BoundExceededError) throw error
-      return null
+      return failedPullRequestRead(lastRead, landingBranch, error)
     }
-    if (!lastRead) return null
+    if (!read) return lastRead ? pullRequestAtBound(lastRead, landingBranch) : null
+    lastRead = read
     const now = Date.now()
-    const decision = decideMergeability({
-      ...lastRead,
+    const facts: MergeabilityFacts = {
+      ...read,
       landingBranch,
       boundReached: now >= deadline,
-    })
+    }
+    const decision = decideMergeability(facts)
     if (decision.kind !== 'poll') {
-      return { ...lastRead, mergeabilityBoundReached: now >= deadline }
+      return { ...read, mergeability: decision }
     }
     Bun.sleepSync(Math.min(PULL_REQUEST_MERGEABILITY_POLL_MS, deadline - now))
   }
 }
 
-function pullRequestOutput(
-  output: string,
-  pullRequest: BranchPullRequest,
+function failedPullRequestRead(
+  lastRead: BranchPullRequestRead | null,
   landingBranch: string,
-): string {
-  const decision = decideMergeability({
+  error: unknown,
+): BranchPullRequest | null {
+  if (lastRead) return pullRequestAtBound(lastRead, landingBranch)
+  if (error instanceof BoundExceededError) throw error
+  return null
+}
+
+function pullRequestAtBound(
+  pullRequest: BranchPullRequestRead,
+  landingBranch: string,
+): BranchPullRequest {
+  const facts: MergeabilityFacts = {
     ...pullRequest,
     landingBranch,
-    boundReached: pullRequest.mergeabilityBoundReached,
-  })
+    boundReached: true,
+  }
+  return { ...pullRequest, mergeability: decideMergeability(facts) }
+}
+
+function pullRequestOutput(output: string, pullRequest: BranchPullRequest): string {
   const primary = output || pullRequest.url
-  return decision.kind === 'report' ? `${primary}\n${decision.message}` : primary
+  return pullRequest.mergeability.kind === 'report'
+    ? `${primary}\n${pullRequest.mergeability.message}`
+    : primary
 }
 
 function pendingIntent(database: Database, project: string, branch: string): boolean {
@@ -698,18 +714,23 @@ export function createPullRequest(
   } catch (cause) {
     failure = String((cause as Error)?.message ?? cause)
   }
+  if (failure !== null) throw new Error(`gh pr create failed: ${failure}`)
   let created: BranchPullRequest | null = null
   try {
     created = pullRequestForBranch(cwd, change.branch, trunk)
   } catch {
-    if (failure !== null) throw new Error(`gh pr create failed: ${failure}`)
-    return { output, overrideId: checked.overrideId }
+    created = null
   }
-  const pullRequest = created ?? existing
-  if (pullRequest) finalizeTriageIntent(change.project.name, change.branch, pullRequest.number)
-  if (!pullRequest && failure !== null) throw new Error(`gh pr create failed: ${failure}`)
+  if (!created) {
+    const unresolved = `gh pr view ${change.branch} could not resolve the created pull request; mergeability was not checked and the triage intent remains pending; rerun ${PLATFORM_SLUG} pr create to record it`
+    return {
+      output: output ? `${output}\n${unresolved}` : unresolved,
+      overrideId: checked.overrideId,
+    }
+  }
+  finalizeTriageIntent(change.project.name, change.branch, created.number)
   return {
-    output: pullRequest ? pullRequestOutput(output, pullRequest, trunk) : output,
+    output: pullRequestOutput(output, created),
     overrideId: checked.overrideId,
   }
 }

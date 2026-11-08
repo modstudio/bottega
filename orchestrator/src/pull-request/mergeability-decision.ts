@@ -6,12 +6,14 @@ export type MergeabilityDecision =
   | { kind: 'poll' }
   | { kind: 'report'; conflict: boolean; message: string }
 
-export function decideMergeability(input: {
+export type MergeabilityFacts = {
   mergeStateStatus: string
   url: string
   landingBranch: string
   boundReached: boolean
-}): MergeabilityDecision {
+}
+
+export function decideMergeability(input: MergeabilityFacts): MergeabilityDecision {
   const status = input.mergeStateStatus.toUpperCase()
   if (status === 'DIRTY') {
     return {
