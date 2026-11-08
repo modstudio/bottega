@@ -17,7 +17,7 @@ import { nextNoteNumber } from './note-number.ts'
 import {
   type NotePromotionAnchor,
   notePromotionBody,
-  PROMOTED_TASK_TITLE_REFUSAL,
+  requiredPromotionTitle,
 } from './note-promotion-body.ts'
 
 export type HostedNote = {
@@ -55,7 +55,9 @@ export type HostedAcknowledgement = {
   updated_at: string
   deleted_at: string | null
 }
-export type PromoteNoteInput = { task?: string; title?: string }
+export type PromoteNoteInput =
+  | { task?: undefined; title: string }
+  | { task: string; title?: undefined }
 
 export const hostedNotePullSerializers = {
   hub_note: (row: HostedNote) => row,
@@ -183,7 +185,7 @@ export async function promoteHostedNote(
   url: SQL,
   identity: TaskIdentity,
   recordId: string,
-  input: PromoteNoteInput = {},
+  input: PromoteNoteInput,
   createTask = createHostedTaskInTransaction,
 ): Promise<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null } | null> {
   return withHostedTenant(url, identity, async (tx) => {
@@ -221,12 +223,10 @@ export async function promoteHostedNote(
           AND key=${key} AND source='local' AND deleted_at IS NULL`,
         )[0] ?? null,
       () => {
-        const title = input.title?.trim()
-        if (input.title !== undefined && !title) throw new Error(PROMOTED_TASK_TITLE_REFUSAL)
         return createTask(tx, identity, {
           project: note.project,
           projectId: noteProjectId,
-          title: title ?? note.text,
+          title: requiredPromotionTitle(input.title),
           body,
         })
       },
