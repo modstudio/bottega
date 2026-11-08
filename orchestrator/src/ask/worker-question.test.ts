@@ -86,4 +86,16 @@ describe('worker question answerability', () => {
     const question = WorkerQuestionSchema.parse(choice())
     expect(decodeAnswerValue(question, 'alpha choice')).toBe('Alpha Choice')
   })
+
+  test('decodes the yesno vocabulary through the shared codec', () => {
+    const question = WorkerQuestionSchema.parse({
+      kind: 'yesno',
+      question: 'Proceed?',
+      why: 'The next step depends on it.',
+    })
+    expect(decodeAnswerValue(question, 'YES')).toBe(true)
+    expect(decodeAnswerValue(question, 'no')).toBe(false)
+    expect(decodeAnswerValue(question, 'true')).toBe(true)
+    expect(() => decodeAnswerValue(question, 'maybe')).toThrow('allowed values: yes, no')
+  })
 })

@@ -37,7 +37,7 @@ type TypedAnswerValue =
 type AnswerableKind = 'choice' | 'yesno' | 'score'
 
 function leadingAnswerSegment(answer: string): string {
-  return answer.split(/\.|:|;|[\r\n]| — | - /u, 1)[0]!.trim()
+  return answer.split(/\.|:|;|,|[\r\n]| — | - /u, 1)[0]!.trim()
 }
 
 function inferredAnswerSegments(answer: string): string[] {
@@ -58,51 +58,32 @@ function missingTypedValueRefusal(
   kind: AnswerableKind,
   values: string[],
 ): Error {
-  const noneRemedy = kind === 'choice' || kind === 'score' ? ' (or --value none)' : ''
+  const noOptionFits = kind === 'choice' || kind === 'score'
+  const noneRemedy = noOptionFits ? ' (or --value none)' : ''
   const leading =
     kind === 'choice' ? 'the option name' : kind === 'yesno' ? 'yes or no' : 'the level number'
   return new Error(
     `question ${question.number} requires a typed value; allowed values: ${values.join(', ')}; ` +
-      `pass --value <name>${noneRemedy}, or start the ruling with ${leading}`,
+      `pass --value <name>${noneRemedy}, or start the ruling with ${leading}` +
+      (noOptionFits ? ' or None:' : ''),
   )
 }
 
-function inferredChoiceValue(
-  typed: Extract<WorkerQuestion, { kind: 'choice' }>,
-  answer: string,
-): string | undefined {
-  for (const segment of inferredAnswerSegments(answer)) {
-    const normalized = normalizeWorkerQuestionChoice(segment)
-    const matches = typed.options.filter(
-      ({ name }) => normalizeWorkerQuestionChoice(name) === normalized,
-    )
-    if (matches.length === 1) return matches[0]!.name
-  }
-  return undefined
-}
-
-function inferredYesnoValue(answer: string): boolean | undefined {
-  for (const segment of inferredAnswerSegments(answer)) {
-    const normalized = segment.toLowerCase()
-    if (normalized === 'yes' || normalized === 'true') return true
-    if (normalized === 'no' || normalized === 'false') return false
-  }
-  return undefined
-}
-
 function inferredAnswerValue(typed: WorkerQuestion, answer: string): unknown {
-  if (typed.kind === 'choice') return inferredChoiceValue(typed, answer)
-  if (typed.kind === 'yesno') return inferredYesnoValue(answer)
-  if (typed.kind === 'score')
-    return inferredAnswerSegments(answer).find((segment) => /^\d+$/.test(segment))
+  for (const segment of inferredAnswerSegments(answer)) {
+    try {
+      decodeAnswerValue(typed, segment)
+      return segment
+    } catch {
+      // Try the leading segment after the whole ruling.
+    }
+  }
+  if (
+    (typed.kind === 'choice' || typed.kind === 'score') &&
+    normalizeWorkerQuestionChoice(leadingAnswerSegment(answer)) === 'none'
+  )
+    return leadingAnswerSegment(answer)
   return undefined
-}
-
-function explicitAnswerValue(typed: WorkerQuestion, explicit: unknown): unknown {
-  if (typed.kind !== 'yesno' || typeof explicit !== 'string') return explicit
-  if (explicit.toLowerCase() === 'yes') return true
-  if (explicit.toLowerCase() === 'no') return false
-  return explicit
 }
 
 function isNoOptionFits(typed: WorkerQuestion, value: unknown): boolean {
@@ -122,9 +103,17 @@ function decodeTypedAnswer(
     return { value: decodeAnswerValue(typed, value) }
   } catch (error) {
     if (isNoOptionFits(typed, value)) return { noOptionFits: true }
-    const detail = typed.kind === 'yesno' ? 'allowed values: yes, no' : (error as Error).message
-    throw new Error(`question ${question.number} refuses that typed value; ${detail}`)
+    throw new Error(
+      `question ${question.number} refuses that typed value; ${(error as Error).message}`,
+    )
   }
+}
+
+function bareNoOptionFitsRefusal(question: TypedAnswerQuestion): Error {
+  return new Error(
+    `question ${question.number} refuses a bare none ruling; the ruling needs a sentence saying what to do instead; ` +
+      'use --value none "<what to do>" or None: <what to do>',
+  )
 }
 
 function typedAnswerValue(
@@ -138,14 +127,15 @@ function typedAnswerValue(
   } catch {
     return undefined
   }
-  if (typed.kind === 'text') return undefined
-  const value =
-    explicit === undefined
-      ? inferredAnswerValue(typed, answer)
-      : explicitAnswerValue(typed, explicit)
+  if (typed.kind === 'text')
+    return explicit === undefined ? undefined : decodeTypedAnswer(question, typed, explicit)
+  const value = explicit === undefined ? inferredAnswerValue(typed, answer) : explicit
   if (value === undefined)
     throw missingTypedValueRefusal(question, typed.kind, allowedValues(typed))
-  return decodeTypedAnswer(question, typed, value)
+  const decoded = decodeTypedAnswer(question, typed, value)
+  if (decoded.noOptionFits && normalizeWorkerQuestionChoice(answer) === 'none')
+    throw bareNoOptionFitsRefusal(question)
+  return decoded
 }
 
 export function answeredQuestion(

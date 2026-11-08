@@ -148,16 +148,28 @@ describe('typed values through the answer service', () => {
 
   test('leading segments infer yesno and score values', async () => {
     const yesno = typedRun('yesno', 'criteria', { yes: 'proceed', no: 'stop' })
-    await answerRun(yesno, { argv: ['false — unsafe'], recordOnly: true, flags }, helpers)
+    await answerRun(yesno, { argv: ['Yes, proceed'], recordOnly: true, flags }, helpers)
     expect(
       db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(yesno),
-    ).toEqual({ answer_value: 'false' })
+    ).toEqual({ answer_value: 'true' })
 
     const score = typedRun('score', 'levels', ['low', 'high'])
     await answerRun(score, { argv: ['1: high confidence'], recordOnly: true, flags }, helpers)
     expect(
       db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(score),
     ).toEqual({ answer_value: '1' })
+  })
+
+  test('a comma ends the leading choice segment', async () => {
+    const id = typedRun('choice', 'typed_options', [{ name: 'Existing' }, { name: 'New' }])
+    await answerRun(
+      id,
+      { argv: ['Existing, because it already works'], recordOnly: true, flags },
+      helpers,
+    )
+    expect(db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(id)).toEqual({
+      answer_value: '"Existing"',
+    })
   })
 
   test('choice ruling without a leading match refuses and stores nothing', async () => {
@@ -189,6 +201,38 @@ describe('typed values through the answer service', () => {
     ).toEqual({ answer: 'Neither option applies', answer_value: null, jev_agreed: 0 })
   })
 
+  test('none leaves agreement null without Jev advice', async () => {
+    const id = typedRun('choice', 'typed_options', [{ name: 'existing' }, { name: 'new' }])
+    await answerRun(
+      id,
+      { argv: ['--value', 'none', 'Build a third shape instead'], recordOnly: true, flags },
+      helpers,
+    )
+    expect(
+      db().query('SELECT answer_value,jev_agreed FROM question WHERE run_record_id=?').get(id),
+    ).toEqual({ answer_value: null, jev_agreed: null })
+  })
+
+  test('a leading None segment records that no choice fits', async () => {
+    const id = typedRun('choice', 'typed_options', [{ name: 'existing' }, { name: 'new' }])
+    await answerRun(id, { argv: ['None: neither fits'], recordOnly: true, flags }, helpers)
+    expect(db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(id)).toEqual({
+      answer_value: null,
+    })
+  })
+
+  test('bare none is refused and leaves the question open', async () => {
+    const id = typedRun('choice', 'typed_options', [{ name: 'existing' }, { name: 'new' }])
+    await expect(
+      answerRun(id, { argv: ['--value', 'none'], recordOnly: true, flags }, helpers),
+    ).rejects.toThrow('--value none "<what to do>" or None: <what to do>')
+    expect(
+      db()
+        .query('SELECT answer,answer_value,answered_at FROM question WHERE run_record_id=?')
+        .get(id),
+    ).toEqual({ answer: null, answer_value: null, answered_at: null })
+  })
+
   test('a choice option literally named none takes precedence', async () => {
     const id = typedRun('choice', 'typed_options', [{ name: 'none' }, { name: 'existing' }])
     await answerRun(id, { argv: ['--value', 'none'], recordOnly: true, flags }, helpers)
@@ -201,12 +245,33 @@ describe('typed values through the answer service', () => {
     const id = typedRun('yesno', 'criteria', { yes: 'proceed', no: 'stop' })
     await expect(
       answerRun(id, { argv: ['--value', 'none'], recordOnly: true, flags }, helpers),
-    ).rejects.toThrow('question')
+    ).rejects.toThrow(/question \d+ refuses that typed value; allowed values: yes, no/)
     expect(
       db()
         .query('SELECT answer,answer_value,answered_at FROM question WHERE run_record_id=?')
         .get(id),
     ).toEqual({ answer: null, answer_value: null, answered_at: null })
+  })
+
+  test('a text question records an explicit value', async () => {
+    const id = insert('asking')
+    db()
+      .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
+      .run('orch-test-session', 'valid-session', id)
+    db()
+      .query(
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,kind)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?)`,
+      )
+      .run(id, new Date().toISOString(), 'text question?', 'text')
+    await answerRun(
+      id,
+      { argv: ['--value', 'stored value', 'Use it'], recordOnly: true, flags },
+      helpers,
+    )
+    expect(db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(id)).toEqual({
+      answer_value: '"stored value"',
+    })
   })
 
   test('CLI records disagreement and leaves agreement null without Jev advice', async () => {
