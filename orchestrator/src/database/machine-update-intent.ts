@@ -16,6 +16,7 @@ import {
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MACHINE_UPDATE_HUB_READ_BUSY_TIMEOUT_MS } from '../../../shared/call-budgets.ts'
 import {
   resolveHubDatabase,
   resolveOrchestratorDatabase,
@@ -31,8 +32,6 @@ export type MachineUpdateIntent = {
 }
 
 const MACHINE_UPDATE_INTENT_FILE = 'machine-update-intent.json'
-// Matches the read-only hub connection timeout in hub/src/db.ts.
-const READ_ONLY_HUB_BUSY_TIMEOUT_MS = 15_000
 
 export function machineUpdateIntentPath(env: StateEnvironment): string {
   return join(resolveStateRoot(env), MACHINE_UPDATE_INTENT_FILE)
@@ -55,7 +54,7 @@ const MACHINE_UPDATE_INTENT_SCHEMA = z.object({
   ]),
 })
 
-function orchestratorAppliedPosition(path: string): number | null {
+function orchestratorAppliedPosition(path: string): number {
   if (!existsSync(path)) return 0
   const database = openReadOnlyDatabase(path)
   try {
@@ -67,11 +66,11 @@ function orchestratorAppliedPosition(path: string): number | null {
   }
 }
 
-function hubAppliedPosition(path: string): number | null {
+function hubAppliedPosition(path: string): number {
   if (!existsSync(path)) return 0
   const database = new Database(path, { readonly: true, create: false })
   try {
-    database.exec(`PRAGMA busy_timeout = ${READ_ONLY_HUB_BUSY_TIMEOUT_MS}`)
+    database.exec(`PRAGMA busy_timeout = ${MACHINE_UPDATE_HUB_READ_BUSY_TIMEOUT_MS}`)
     return database.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version
   } finally {
     database.close()
@@ -84,7 +83,7 @@ export function localStoreJournalPositions(
   try {
     const orchestrator = orchestratorAppliedPosition(resolveOrchestratorDatabase(env))
     const hub = hubAppliedPosition(resolveHubDatabase(env))
-    return orchestrator === null || hub === null ? null : { orchestrator, hub }
+    return { orchestrator, hub }
   } catch {
     return null
   }
@@ -117,12 +116,7 @@ export function writeMachineUpdateIntent(
     fsyncSync(descriptor)
     closeSync(descriptor)
     renameSync(temporary, path)
-    const directoryDescriptor = openSync(dirname(path), 'r')
-    try {
-      fsyncSync(directoryDescriptor)
-    } finally {
-      closeSync(directoryDescriptor)
-    }
+    fsyncContainingDirectory(path)
   } catch (error) {
     try {
       closeSync(descriptor)
@@ -133,8 +127,20 @@ export function writeMachineUpdateIntent(
   }
 }
 
+function fsyncContainingDirectory(path: string): void {
+  const directoryDescriptor = openSync(dirname(path), 'r')
+  try {
+    fsyncSync(directoryDescriptor)
+  } finally {
+    closeSync(directoryDescriptor)
+  }
+}
+
 export function clearMachineUpdateIntent(
   env: Record<string, string | undefined> = process.env,
 ): void {
-  rmSync(machineUpdateIntentPath(env), { force: true })
+  const path = machineUpdateIntentPath(env)
+  if (!existsSync(path)) return
+  rmSync(path)
+  fsyncContainingDirectory(path)
 }

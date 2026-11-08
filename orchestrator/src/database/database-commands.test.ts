@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -62,10 +62,20 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
   }
 }
 
-test('machine migrate takes the update lock and honors the inherited marker', async () => {
-  const scenario = actions(async () => {})
-  const previous = process.env[MACHINE_UPDATE_LOCK_HELD_ENV]
-  try {
+describe('machine migrate update lock', () => {
+  let previous: string | undefined
+
+  beforeEach(() => {
+    previous = process.env[MACHINE_UPDATE_LOCK_HELD_ENV]
+  })
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env[MACHINE_UPDATE_LOCK_HELD_ENV]
+    else process.env[MACHINE_UPDATE_LOCK_HELD_ENV] = previous
+  })
+
+  test('takes the update lock and honors the inherited marker', async () => {
+    const scenario = actions(async () => {})
     await withMachineUpdateLock(async () => {
       await expect(
         migrateCommand({ log: () => {} }, scenario.value, { lockWaitMs: 0 }),
@@ -74,10 +84,7 @@ test('machine migrate takes the update lock and honors the inherited marker', as
       await migrateCommand({ log: () => {} }, scenario.value, { lockWaitMs: 0 })
     })
     expect(scenario.calls).not.toHaveLength(0)
-  } finally {
-    if (previous === undefined) delete process.env[MACHINE_UPDATE_LOCK_HELD_ENV]
-    else process.env[MACHINE_UPDATE_LOCK_HELD_ENV] = previous
-  }
+  })
 })
 
 test('incremental vacuum setup waits for twice the store size in free space', () => {

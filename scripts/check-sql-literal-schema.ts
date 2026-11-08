@@ -187,6 +187,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'hosted-pressure claim restores the numeric busy_timeout captured from the same connection',
   ),
   ...exempt(
+    'orchestrator/src/database/machine-update-intent.ts',
+    ['73d0a0a91537afc7'],
+    'machine update sets busy_timeout from its imported numeric call budget',
+  ),
+  ...exempt(
     'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
     [
       '745f7343b84fd5a4',

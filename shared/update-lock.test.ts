@@ -7,7 +7,6 @@ import { databaseLockHolderCommandSummary } from './database-lock-refusal.ts'
 import { STATE_HOME_ENV } from './state-directory.ts'
 import {
   MACHINE_UPDATE_LOCK_HELD_ENV,
-  machineUpdateLockHeldEnvironment,
   machineUpdateLockRefusal,
   withMachineUpdateLock,
   withMachineUpdateLockUnlessHeld,
@@ -29,10 +28,6 @@ test('machine update lock refusal accepts the refused migrate verb', () => {
   expect(machineUpdateLockRefusal(null, 'machine migrate')).toEndWith(
     `then rerun ${PLATFORM_SLUG} machine migrate`,
   )
-})
-
-test('the held child environment marks the lock as inherited', () => {
-  expect(machineUpdateLockHeldEnvironment()).toEqual({ [MACHINE_UPDATE_LOCK_HELD_ENV]: '1' })
 })
 
 test('a second waiter acquires the machine update lock after the first releases it', async () => {

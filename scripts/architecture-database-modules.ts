@@ -88,6 +88,7 @@ export const databaseModules: ArchitectureModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/call-budgets.ts',
     '../../../shared/state-directory.ts',
     './db.ts',
     './machine-update-recovery.ts',

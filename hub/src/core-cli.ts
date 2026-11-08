@@ -235,7 +235,7 @@ async function migrateHubDatabase(): Promise<void> {
     },
     process.env,
     {},
-    'hub migrate',
+    'machine migrate',
   )
 }
 
