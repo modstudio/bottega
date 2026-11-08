@@ -318,13 +318,13 @@ function liveReadingRefusal(
   return new Error(`${purpose} ${failure.failure.replace(/^live /, '')}; ${remedy}`)
 }
 
-type ReleaseLiveObservation = { commit: string; matchesCandidate: boolean }
+type RungLiveObservation = { commit: string; matchesCandidate: boolean }
 
 function releaseLiveObservation(
   target: ReturnType<typeof releaseTarget>,
   candidate: string,
   purpose: string,
-): ReleaseLiveObservation {
+): RungLiveObservation {
   const { project, selected, trunk } = target
   if (selected.liveVersion) {
     const reading = readLiveVersion(selected.liveVersion, project.path, candidate, trunk)
@@ -431,7 +431,7 @@ function postDeployFacts(
   project: string,
   rung: string,
   candidate: string,
-  initialLive: ReleaseLiveObservation,
+  initialLive: RungLiveObservation,
 ) {
   if (deployed.exitCode !== 0) {
     return {
@@ -542,7 +542,7 @@ function alreadyLiveReleaseResult(
 function preActionReleaseObservation(
   target: ReturnType<typeof releaseTarget>,
   candidate: string,
-  live: ReleaseLiveObservation,
+  live: RungLiveObservation,
   redeployReason: string | undefined,
   rollbackReason: string | undefined,
 ) {
@@ -619,7 +619,7 @@ function waitForCiDeploy(
   target: ReturnType<typeof releaseTarget>,
   rung: string,
   candidate: string,
-  initialLive: ReleaseLiveObservation,
+  initialLive: RungLiveObservation,
   livePurpose = 'CI-deployed release live',
 ) {
   const startedAt = Date.now()
@@ -660,7 +660,15 @@ function releaseCiDeployedTarget(
   redeployReason: string | undefined,
 ): ReleaseResult {
   const { project, selected } = target
-  git(['fetch', 'origin', selected.branch], project.path)
+  git(
+    [
+      'fetch',
+      'origin',
+      selected.branch,
+      ...(selected.branch === target.trunk ? [] : [target.trunk]),
+    ],
+    project.path,
+  )
   const candidate = git(['rev-parse', `origin/${selected.branch}`], project.path)
   const live = releaseLiveObservation(target, candidate, 'CI-deployed release live')
   const { position, alreadyLive } = preActionReleaseObservation(

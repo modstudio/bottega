@@ -47,17 +47,8 @@ function capturedText(text: string): string {
 
 /** Parse a captured live command without observing a process or clock. */
 function parseLiveReading(capture: LiveReadingCapture): LiveReading {
-  if (capture.timedOut) {
-    return { ok: false, kind: 'timeout', failure: 'live reading timed out' }
-  }
-  if (capture.exitCode !== 0) {
-    const output = capturedText(capture.output.trim())
-    return {
-      ok: false,
-      kind: 'nonzero-exit',
-      failure: `live command failed (exit ${capture.exitCode}): ${output || '(no output)'}`,
-    }
-  }
+  const failed = captureFailure(capture)
+  if (failed) return failed
   const commit = capture.output.trim()
   if (!/^[0-9a-f]{40}$/i.test(commit)) {
     return {
@@ -144,28 +135,49 @@ function readVersionAtCommit(
   )
 }
 
-function mappedVersionCommit(
+export type VersionCommitReader = {
+  log: (cwd: string, args: string[]) => { code: number; stdout: string }
+  blob: (cwd: string, commit: string, file: string, maxBytes: number) => string | null
+  isAncestor: (cwd: string, commit: string, branchRef: string) => boolean
+}
+
+const versionCommitReader: VersionCommitReader = {
+  log: gitAt,
+  blob: gitBlobPrefix,
+  isAncestor: (cwd, commit, branchRef) =>
+    gitAt(cwd, ['merge-base', '--is-ancestor', commit, branchRef]).code === 0,
+}
+
+export function mappedVersionCommit(
   cwd: string,
   branch: string,
   settings: Pick<LiveVersionSettings, 'file' | 'key'>,
   version: string,
+  reader: VersionCommitReader = versionCommitReader,
 ): string | null {
   const branchRef = `origin/${branch}`
   const leafKey = settings.key.split('.').at(-1)!
   const literal = `${JSON.stringify(leafKey)}: ${JSON.stringify(version)}`
-  const log = gitAt(cwd, ['log', '--format=%H', `-S${literal}`, branchRef, '--', settings.file])
+  const log = reader.log(cwd, [
+    'log',
+    '--format=%H',
+    `-S${literal}`,
+    branchRef,
+    '--',
+    settings.file,
+  ])
   if (log.code !== 0) return null
   const commits = log.stdout.split(/\r?\n/).filter(Boolean)
   return newestVersionIntroduction(
     commits.map((commit) => ({
       commit,
       introduced: versionIntroducedAtCommit({
-        current: gitBlobPrefix(cwd, commit, settings.file, RELEASE_VERSION_FILE_BYTES),
-        firstParent: gitBlobPrefix(cwd, `${commit}^`, settings.file, RELEASE_VERSION_FILE_BYTES),
+        current: reader.blob(cwd, commit, settings.file, RELEASE_VERSION_FILE_BYTES),
+        firstParent: reader.blob(cwd, `${commit}^`, settings.file, RELEASE_VERSION_FILE_BYTES),
         key: settings.key,
         version,
       }),
-      branchAncestor: gitAt(cwd, ['merge-base', '--is-ancestor', commit, branchRef]).code === 0,
+      branchAncestor: reader.isAncestor(cwd, commit, branchRef),
     })),
   )
 }
@@ -237,6 +249,6 @@ export function readLiveVersion(
     commit,
     version,
     candidateVersion,
-    matchesCandidate: liveVersionMatchesCandidate(version, candidateVersion),
+    matchesCandidate: false,
   }
 }

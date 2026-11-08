@@ -94,6 +94,10 @@ type ReleaseRungLiveIssue = {
   message: string
 }
 
+function rungDeclaresLiveProbe(rung: { live?: string; liveVersion?: unknown }): boolean {
+  return rung.live !== undefined || rung.liveVersion !== undefined
+}
+
 function releaseRungLiveVersionIssues(
   rung: {
     name: string
@@ -106,7 +110,7 @@ function releaseRungLiveVersionIssues(
   mode: SettingsObjectMode,
 ): ReleaseRungLiveIssue[] {
   const issues: ReleaseRungLiveIssue[] = []
-  const hasLiveProbe = rung.live !== undefined || rung.liveVersion !== undefined
+  const hasLiveProbe = rungDeclaresLiveProbe(rung)
   if (rung.live !== undefined && rung.liveVersion !== undefined) {
     issues.push({
       path: [index, 'liveVersion'],
@@ -161,7 +165,7 @@ const releaseSchema = (mode: SettingsObjectMode) =>
       .superRefine((rungs, context) => {
         const seen = new Set<string>()
         for (const [index, rung] of rungs.entries()) {
-          const hasLiveProbe = rung.live !== undefined || rung.liveVersion !== undefined
+          const hasLiveProbe = rungDeclaresLiveProbe(rung)
           for (const issue of releaseRungLiveVersionIssues(rung, index, mode)) {
             context.addIssue({ code: 'custom', ...issue })
           }
