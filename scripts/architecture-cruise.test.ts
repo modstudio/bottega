@@ -1,8 +1,18 @@
 import { expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import {
   architectureCruiseCoverageViolations,
   dependencyCruiserNodeVersionRefusal,
+  NON_TYPESCRIPT_TEST_DEPENDENCIES,
 } from './architecture-cruise.ts'
+
+test('every non-TypeScript test dependency exists in the tree', () => {
+  for (const tests of Object.values(NON_TYPESCRIPT_TEST_DEPENDENCIES)) {
+    for (const path of tests) {
+      expect(existsSync(new URL(`../${path}`, import.meta.url)), `${path} must exist`).toBeTrue()
+    }
+  }
+})
 
 test('dependency-cruiser Node version guard accepts the minimum and refuses older Node', () => {
   expect(dependencyCruiserNodeVersionRefusal('v24.0.0\n')).toBeUndefined()
