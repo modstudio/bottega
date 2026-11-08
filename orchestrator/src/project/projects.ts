@@ -44,7 +44,7 @@ import {
 } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import { RecordProjectSpaceConflictError } from '../record/record-project-space-refusal.ts'
+import { RecordProjectSpaceConflictError } from '../record/record-project-space-contract.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { autonomySettingsForStorage } from '../workflow/autonomy.ts'
 import {

@@ -58,7 +58,7 @@ export const projectModules: ProjectModule[] = [
   ]),
   module('orchestrator/src/project/project-push-refusal.ts', [
     '../../../shared/record-space-membership.ts',
-    '../record/record-project-space-refusal.ts',
+    '../record/record-project-space-contract.ts',
   ]),
   module('orchestrator/src/project/project-record-identity.ts', [
     '../../../shared/brand.ts',

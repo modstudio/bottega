@@ -8,8 +8,7 @@ import { RecordDocError } from './record-docs.ts'
 import {
   projectSpaceConflictResponse,
   RecordProjectSpaceConflictError,
-  RecordProjectWriteRefusalError,
-} from './record-project-space-refusal.ts'
+} from './record-project-space-contract.ts'
 import { RecordProjectError } from './record-projects.ts'
 import { TrialSpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
@@ -19,7 +18,6 @@ export function renderRecordApiRefusal(context: Context, error: unknown): Respon
     return context.json(projectSpaceConflictResponse(error), error.status)
   if (
     error instanceof RecordDocError ||
-    error instanceof RecordProjectWriteRefusalError ||
     error instanceof RecordVerdictError ||
     error instanceof ConfigServiceError ||
     error instanceof RecordProjectError ||

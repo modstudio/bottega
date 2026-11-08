@@ -111,6 +111,9 @@
     "orchestrator/src/run/run-agent-capacity.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/record/record-project-space-contract.ts#projectSpaceConflictMessage": {
+      "test": "orchestrator/src/record/record-api-client.test.ts: a project-space 409 becomes a typed conflict carrying its remedy"
+    },
     "orchestrator/src/database/database-commands.ts#assertInFlightMigrationAllowed": {
       "exemption": "machine update drains live processes and applies migrations, so its effect is not a pure decision"
     },

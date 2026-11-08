@@ -54,7 +54,7 @@ import {
   responseMessage,
   responseRecord,
 } from './record-api-client-response.ts'
-import { parseProjectSpaceConflictResponse } from './record-project-space-refusal.ts'
+import { parseProjectSpaceConflictResponse } from './record-project-space-contract.ts'
 
 export { RecordApiRequestError } from './record-api-client-response.ts'
 

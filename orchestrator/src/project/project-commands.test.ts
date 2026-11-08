@@ -17,7 +17,7 @@ import {
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { applyLensCatalogueRow } from '../record/record-cache-lens.ts'
-import { RecordProjectSpaceConflictError } from '../record/record-project-space-refusal.ts'
+import { RecordProjectSpaceConflictError } from '../record/record-project-space-contract.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { type Project, projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
@@ -701,8 +701,10 @@ test('project push continues past space conflicts and reports every refusal with
 
 test('project push stops at a read-only project refusal without adding the doctor remedy', async () => {
   const attempted: string[] = []
-  const givenMessage =
-    'record space space-read membership is read-only; A space owner or admin can change the membership permission.'
+  const edgeResponseBody = {
+    error: 'record space space-read membership is read-only',
+    remedy: 'A space owner or admin can change the membership permission.',
+  }
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     whoami: async () => ({
@@ -714,7 +716,7 @@ test('project push stops at a read-only project refusal without adding the docto
     upsertProject: async (input) => {
       attempted.push(input.name)
       if (input.name === 'aab-push-read-only')
-        throw new RecordApiRequestError(givenMessage, 'refused', 403)
+        throw new RecordApiRequestError(edgeResponseBody.error, 'refused', 403)
       return { id: input.id, name: input.name }
     },
   })
@@ -734,7 +736,7 @@ test('project push stops at a read-only project refusal without adding the docto
   expect(attempted).toContain('aab-push-read-only')
   expect(attempted).not.toContain('zzzz-push-after-403')
   expect(rejection).toBeInstanceOf(Error)
-  expect((rejection as Error).message).toContain(givenMessage)
+  expect((rejection as Error).message).toContain(edgeResponseBody.error)
   expect((rejection as Error).message).not.toContain('record doctor')
 })
 

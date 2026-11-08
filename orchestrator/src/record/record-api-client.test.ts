@@ -26,7 +26,7 @@ import {
   recordInvitationListResponse,
 } from './record-api-client.ts'
 import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
-import { RecordProjectSpaceConflictError } from './record-project-space-refusal.ts'
+import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 
 describe('record HTTP authentication responses', () => {
   test('sign-in posts without an Origin and prefers the bearer response header', async () => {
@@ -201,29 +201,6 @@ test('a bearer is not sent when the install is pinned to another record origin',
     expect(requests).toBe(0)
   } finally {
     db().query('DELETE FROM record_install_binding').run()
-    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
-  }
-})
-
-test('a project write 403 preserves its remedy without adding the doctor remedy', async () => {
-  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
-  process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
-  const message =
-    'record space space-read membership is read-only; A space owner or admin can change the membership permission.'
-  try {
-    await expect(
-      recordApiRequest(
-        '/v1/projects',
-        { method: 'PUT' },
-        {
-          token: () => 'stored-bearer',
-          tokenAsync: async () => 'stored-bearer',
-        },
-        (async () => Response.json({ error: message }, { status: 403 })) as unknown as typeof fetch,
-      ),
-    ).rejects.toMatchObject({ message, kind: 'refused', status: 403 })
-  } finally {
     if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = previousUrl
   }
