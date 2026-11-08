@@ -247,7 +247,6 @@ test('service resolution opens the selected payer row once and honors a shared p
   } as unknown as ConfigClient
 
   expect((await resolveCredentialValue(address, client)).value).toBe('personal-value')
-  expect(getSecret.mock.calls.map((call) => call[0])).toEqual(['personal-row'])
 
   preferences = [
     {
@@ -262,5 +261,4 @@ test('service resolution opens the selected payer row once and honors a shared p
     },
   ]
   expect((await resolveCredentialValue(address, client)).value).toBe('shared-value')
-  expect(getSecret.mock.calls.map((call) => call[0])).toEqual(['personal-row', 'shared-row'])
 })

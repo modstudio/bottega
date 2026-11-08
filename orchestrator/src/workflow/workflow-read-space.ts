@@ -3,13 +3,13 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { activeRecordSpace, cachedProjectSpaces, workflowReadSpace } from '../project-space.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,
-  recordSpaceMembershipRefusal,
 } from '../record/record-project-destination.ts'
 
 const missingProjectRouteRefusal = (project: string) =>

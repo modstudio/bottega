@@ -1,10 +1,10 @@
 {
-  "version": "8",
-  "dialect": "postgres",
-  "id": "886cba40-dae1-4205-9b58-6151eca5eb5b",
+  "id": "c8f749c5-9fec-4028-a00c-db3c529cb6e5",
   "prevIds": [
     "a44599a7-54c2-4496-8cfa-3b17a86cf5a5"
   ],
+  "version": "8",
+  "dialect": "postgres",
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -24274,13 +24274,6 @@
     {
       "value": "(\"provider\" IS NULL AND \"name\" IS NULL AND \"type\" IS NULL AND \"hint\" IS NULL AND \"project_id\" IS NULL AND \"mode\" IS NULL) OR\n          (\"provider\" IS NOT NULL AND (\"name\" IS NULL OR \"name\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$') AND \"type\" IS NOT NULL AND \"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"hint\" IS NOT NULL AND \"mode\" IN ('live','test','default') AND \"environment\" IN ('local'))",
       "name": "config_secret_credential_fields_check",
-      "entityType": "checks",
-      "schema": "public",
-      "table": "config_secret"
-    },
-    {
-      "value": "\"provider\" IS NULL OR \"key\" = \"provider\" || '/' || CASE WHEN \"name\" IS NULL THEN '' ELSE \"name\" || '/' END || \"type\" || '#' || \"mode\" || '@' || \"environment\"",
-      "name": "config_secret_credential_identity_key_check",
       "entityType": "checks",
       "schema": "public",
       "table": "config_secret"

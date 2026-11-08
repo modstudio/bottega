@@ -161,7 +161,7 @@ export const configSecret = pgTable.withRLS(
     ),
     check(
       'config_secret_credential_identity_key_check',
-      sql`${table.provider} IS NULL OR ${table.key} = ${table.provider} || '/' || CASE WHEN ${table.name} IS NULL THEN '' ELSE ${table.name} || '/' END || ${table.type} || '#' || ${table.mode} || '@' || ${table.environment}`,
+      sql`${table.provider} IS NULL OR (${table.mode} IS NOT NULL AND ${table.key} = ${table.provider} || '/' || CASE WHEN ${table.name} IS NULL THEN '' ELSE ${table.name} || '/' END || ${table.type} || '#' || ${table.mode} || '@' || ${table.environment})`,
     ),
     foreignKey({
       columns: [table.spaceId, table.dekId],

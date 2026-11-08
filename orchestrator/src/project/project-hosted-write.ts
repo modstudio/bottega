@@ -4,11 +4,9 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
-import {
-  declaredRecordSpace,
-  recordSpaceMembershipRefusal,
-} from '../record/record-project-destination.ts'
+import { declaredRecordSpace } from '../record/record-project-destination.ts'
 import {
   projectDestinationFromIdentity,
   requireProjectRecordDestination,

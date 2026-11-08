@@ -65,6 +65,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/ship-to.ts',
     '../../../shared/trust-list.ts',
     './hosted-config-call-outcome.ts',
+    './hosted-secret-row.ts',
     '../record/machine-name-command.ts',
     '../record/machine-name.ts',
   ]),
@@ -79,14 +80,14 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/sealed-value.ts',
     './config-service.ts',
     './credential.ts',
-    './hosted-secret-destination.ts',
+    './hosted-secret-row.ts',
   ]),
-  module('orchestrator/src/config/hosted-secret-destination.ts', [
+  module('orchestrator/src/config/hosted-secret-row.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
     '../../../shared/hosted-secret-opening.ts',
-    '../../../shared/record-remedies.ts',
+    '../../../shared/machine-key-store.ts',
     '../../../shared/trust-list.ts',
-    './config-service.ts',
   ]),
   module('orchestrator/src/commands/credential.ts', [
     'commander',

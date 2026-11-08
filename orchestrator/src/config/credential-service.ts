@@ -26,7 +26,7 @@ import {
   credentialSetRefusalText,
   resolveCredential,
 } from './credential.ts'
-import { openSecretInDestination } from './hosted-secret-destination.ts'
+import { openHostedSecretRow } from './hosted-secret-row.ts'
 
 export type CredentialAddress = {
   provider: string
@@ -50,7 +50,7 @@ function missingProjectWrapRefusal(address: CredentialAddress): Error {
     ? `project ${address.projectName} in space ${address.spaceName}`
     : `space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: ${machineNotTrustedRemedy(address.destinationSpaceId)}; ${configAccessRemedy(address.destinationSpaceId)}`,
+    `cannot access credentials for ${binding}: ${machineNotTrustedRemedy(address.spaceName)}; ${configAccessRemedy(address.spaceName)}`,
   )
 }
 
@@ -183,5 +183,6 @@ export async function resolveCredentialValue(address: CredentialAddress, client 
   const result = await resolveProjectCredential(address, client)
   const { row } = result
   const target = { destinationSpaceId: address.destinationSpaceId, projectId: row.projectId }
-  return { ...result, value: await openSecretInDestination(row, target, client) }
+  const plaintext = await openHostedSecretRow(client, row, target)
+  return { ...result, value: new TextDecoder('utf-8', { fatal: true }).decode(plaintext) }
 }
