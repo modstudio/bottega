@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
-import { evidenceModel, evidenceModelSql } from './evidence-model.ts'
+import { evidenceModel, evidenceModelIdentity, evidenceModelSql } from './evidence-model.ts'
 
 const openRouter = 'https://openrouter.ai/api/v1'
 
@@ -29,6 +29,10 @@ test('non-OpenRouter model strings are unchanged', () => {
 test('the SQL evidence-model decision matches the pure decision', () => {
   const expression = evidenceModelSql('?1', '?2')
   for (const model of [
+    null,
+    'floor',
+    'nitro',
+    'exacto',
     'x/y',
     'x/y:floor',
     'x/y:exacto:nitro',
@@ -37,7 +41,9 @@ test('the SQL evidence-model decision matches the pure decision', () => {
     'x/y:nitro:nitro',
     'x/y:free:floor:floor',
   ]) {
-    const row = db().query(`SELECT ${expression} AS model`).get(model, 1) as { model: string }
-    expect(row.model).toBe(evidenceModel(model, openRouter))
+    const row = db().query(`SELECT ${expression} AS model`).get(model, 1) as {
+      model: string | null
+    }
+    expect(row.model).toBe(evidenceModelIdentity(model, openRouter).model)
   }
 })

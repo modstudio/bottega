@@ -1,8 +1,7 @@
 // concern: review-calibration
 import type { Database } from 'bun:sqlite'
-import { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
 import { db } from '../database/db.ts'
-import { evidenceModel, evidenceModelSql } from '../route/evidence-model.ts'
+import { evidenceModel, evidenceModelIdentity, evidenceModelSql } from '../route/evidence-model.ts'
 import { median } from '../state/statistics.ts'
 import { completedReviewEvidenceSql, REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { MIN_REVIEW_TRIAGED } from './review-triage.ts'
@@ -106,12 +105,11 @@ function severityAgreement(
 function calibrationModelDecision(
   model: string | null | undefined,
   baseUrl: string | null | undefined,
-): { model: string | null | undefined; openRouter: string; params: (string | null)[] } {
-  const normalized = model == null ? model : evidenceModel(model, baseUrl)
+) {
+  const identity = evidenceModelIdentity(model, baseUrl)
   return {
-    model: normalized,
-    openRouter: isOpenRouterBaseUrl(baseUrl) ? '1' : '0',
-    params: normalized === undefined ? [] : [normalized],
+    ...identity,
+    params: identity.model === undefined ? [] : [identity.model],
   }
 }
 

@@ -1,9 +1,8 @@
 // concern: routing-evidence-query
 /** Reads only the current-model evidence window consumed by routing. */
-import { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE, NOT_EVIDENCE_SQL } from '../failure/failure.ts'
-import { evidenceModel, evidenceModelSql } from './evidence-model.ts'
+import { evidenceModelIdentity, evidenceModelSql } from './evidence-model.ts'
 import { promptBucketSql } from './prompt-size-bucket.ts'
 import { weightCase } from './route-selection.ts'
 import { POOL_ROUTING_EVIDENCE_ROWS_SQL, poolScopeParams } from './routing-pool-evidence.ts'
@@ -58,15 +57,14 @@ export function boundedRoutingEvidenceRows(input: {
   const { jobName, promptBytes, stack, lens, currentAgents, limit } = input
   const evidenceAgents = Object.entries(currentAgents).map(([agent, current]) => ({
     agent,
-    model: evidenceModel(current.model, current.baseUrl),
-    openrouter: isOpenRouterBaseUrl(current.baseUrl) ? 1 : 0,
+    ...evidenceModelIdentity(current.model, current.baseUrl),
   }))
   const localEvidenceModel = evidenceModelSql('r.model', 'ca.openrouter')
   const rows = db()
     .query(
       `WITH current_agent(agent, model, openrouter) AS (
          SELECT json_extract(value, '$.agent'), json_extract(value, '$.model'),
-                json_extract(value, '$.openrouter')
+                json_extract(value, '$.openRouter')
            FROM json_each(?)
        ), evidence_rows AS (
        SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,

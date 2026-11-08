@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
+import { addAgent } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { state } from '../state/serve.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -230,6 +231,12 @@ describe('review discipline', () => {
   })
   test('OpenRouter routing variants share one model-specific calibration cell', () => {
     const baseUrl = 'https://openrouter.ai/api/v1'
+    addAgent('openrouter-cal', {
+      harness: 'codex',
+      backend: 'vendor',
+      model: 'x/y:floor',
+      baseUrl,
+    })
     const models = ['x/y', 'x/y:floor']
     for (const [index, model] of models.entries()) {
       const runId = addRun({ agent: 'openrouter-cal', job: 'review-lens', model, lens: 'variant' })
@@ -271,6 +278,15 @@ describe('review discipline', () => {
         last_graded_at: '2026-11-02T00:00:00.000Z',
       },
     ])
+    const stateCells = state().reviewCalibration.filter(
+      (cell) => cell.lens === 'variant' && cell.agent === 'openrouter-cal',
+    )
+    expect(stateCells).toHaveLength(1)
+    expect(stateCells[0]).toMatchObject({
+      model: 'x/y',
+      triaged: MIN_REVIEW_TRIAGED,
+      basis: 'model',
+    })
   })
   test('precision counts accepted and modified as hits, rejects as misses, and skips nothing', () => {
     const make = (
