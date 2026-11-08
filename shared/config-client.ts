@@ -1,6 +1,7 @@
 import type {
   CredentialEnvironment,
   CredentialMetadataFields,
+  CredentialMode,
   CredentialPreference,
 } from './credential.ts'
 import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
@@ -56,6 +57,7 @@ export type ConfigSecret = {
   provider?: CredentialMetadataFields['provider'] | null
   type?: CredentialMetadataFields['type'] | null
   hint?: CredentialMetadataFields['hint'] | null
+  mode?: CredentialMode | null
   dekId: string
   rowVersion: number
   updatedAt: string
@@ -147,7 +149,7 @@ function configValueClient(request: Request, query: Query) {
       key: string,
       input: {
         scope: ConfigScope
-        environment: CredentialEnvironment | string
+        environment: string
         value: string
         expectedRowVersion: number | null
       },
@@ -164,9 +166,9 @@ function configValueClient(request: Request, query: Query) {
         method: 'DELETE',
         body: JSON.stringify(input),
       }),
-    listSecrets: (environment = 'default', destination: ConfigDestination = {}) =>
+    listSecrets: (environment: string | null = 'default', destination: ConfigDestination = {}) =>
       request<{ items: ConfigSecret[] }>(
-        `/v1/config/secrets${query({ environment })}`,
+        environment === null ? '/v1/config/secrets' : `/v1/config/secrets${query({ environment })}`,
         destination,
       ).then((x) => x.items),
     getSecret: (
@@ -184,6 +186,7 @@ function configValueClient(request: Request, query: Query) {
       input: {
         scope: ConfigScope
         environment: CredentialEnvironment | string
+        mode?: CredentialMode | null
         dekId: string
         envelope: string
         expectedRowVersion: number | null
@@ -240,7 +243,10 @@ function credentialPreferenceClient(request: Request) {
         body: JSON.stringify(input),
       }),
     deleteCredentialPreference: (
-      input: Pick<CredentialPreference, 'projectId' | 'provider' | 'type' | 'environment'> &
+      input: Pick<
+        CredentialPreference,
+        'projectId' | 'provider' | 'type' | 'mode' | 'environment'
+      > &
         ConfigDestination,
     ) =>
       request<{ deleted: true }>('/v1/config/credential-preferences', {

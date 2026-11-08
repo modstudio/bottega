@@ -6,9 +6,11 @@ import { configClient } from '../../../shared/config-client.ts'
 import {
   CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_MODES,
   CREDENTIAL_PAYERS,
   CREDENTIAL_SLUG_PATTERN,
   type CredentialEnvironment,
+  type CredentialMode,
 } from '../../../shared/credential.ts'
 import {
   parseRecordSpaceMemberships,
@@ -35,7 +37,13 @@ import {
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { log } from './support.ts'
 
-type BindingOptions = { project?: string; space?: string; shared?: boolean; env?: string }
+type BindingOptions = {
+  project?: string
+  space?: string
+  shared?: boolean
+  mode?: string
+  env?: string
+}
 const credentialSlots = CREDENTIAL_PAYERS.flatMap((payer) =>
   CREDENTIAL_BINDINGS.map((binding) => `${payer}@${binding}`),
 )
@@ -54,18 +62,22 @@ function identityName(value: string): { provider: string; type: string } {
 }
 
 function environment(value?: string): CredentialEnvironment {
-  const selected = value ?? 'default'
-  if (
-    !CREDENTIAL_ENVIRONMENTS.includes(selected as CredentialEnvironment) ||
-    (selected === 'default' && value)
-  )
-    throw new Error('--env must be live or test')
+  const selected = value ?? 'local'
+  if (!CREDENTIAL_ENVIRONMENTS.includes(selected as CredentialEnvironment))
+    throw new Error(`--env must be ${CREDENTIAL_ENVIRONMENTS.join(' or ')}`)
   return selected as CredentialEnvironment
+}
+
+function mode(value?: string): CredentialMode {
+  const selected = value ?? 'default'
+  if (!CREDENTIAL_MODES.includes(selected as CredentialMode))
+    throw new Error(`--mode must be ${CREDENTIAL_MODES.join(' or ')}`)
+  return selected as CredentialMode
 }
 
 type CredentialBindingAddress = Omit<
   CredentialAddress,
-  'provider' | 'type' | 'environment' | 'payer'
+  'provider' | 'type' | 'mode' | 'environment' | 'payer'
 >
 
 async function bindingAddress(options: BindingOptions): Promise<CredentialBindingAddress> {
@@ -107,6 +119,7 @@ async function address(name: string, options: BindingOptions): Promise<Credentia
   return {
     ...identityName(name),
     ...(await bindingAddress(options)),
+    mode: mode(options.mode),
     environment: environment(options.env),
     payer: options.shared ? 'shared' : 'personal',
   }
@@ -116,7 +129,41 @@ function addBindingOptions(command: Command, includeShared = true): Command {
   command.option('--project <name>', 'bind to a registered project')
   command.option('--space <slug>', 'bind to a record space')
   if (includeShared) command.option('--shared', 'use the shared payer instead of personal')
-  return command.option('--env <environment>', 'live or test')
+  return command
+    .option('--mode <mode>', CREDENTIAL_MODES.join(' or '))
+    .option('--env <environment>', CREDENTIAL_ENVIRONMENTS.join(' or '))
+}
+
+async function resolveAction(name: string, options: BindingOptions): Promise<void> {
+  const target = await address(name, options)
+  const client = configClient()
+  const rows = await listCredentials(target.destinationSpaceId, {}, client)
+  const preferences = await client.listCredentialPreferences({
+    destinationSpaceId: target.destinationSpaceId,
+  })
+  const result = resolveCredential({
+    spaceId: target.destinationSpaceId,
+    projectId: target.projectId!,
+    projectName: target.projectName!,
+    provider: target.provider,
+    type: target.type,
+    mode: target.mode,
+    environment: target.environment,
+    candidates: rows.map((row) => ({
+      spaceId: target.destinationSpaceId,
+      projectId: row.projectId ?? null,
+      payer: credentialPayerFromScope(row.scope),
+      provider: row.provider,
+      type: row.type,
+      mode: row.mode,
+      environment: row.environment,
+    })),
+    preferences,
+  })
+  if (result.kind === 'refused') throw new Error(result.refusal)
+  log(
+    `${credentialDisplayName(target.provider, target.type, target.mode, target.environment)}\t${credentialSlot(result.credential.payer, result.credential.projectId)}\t${result.reason}`,
+  )
 }
 
 export function registerCredentialCommands(program: Command): void {
@@ -136,13 +183,15 @@ export function registerCredentialCommands(program: Command): void {
     .description('list credential metadata and masked hints')
     .action(async (options: BindingOptions) => {
       const target = await bindingAddress(options)
+      const selectedMode = options.mode ? mode(options.mode) : undefined
       const selectedEnvironment = options.env ? environment(options.env) : undefined
       for (const row of await listCredentials(target.destinationSpaceId, {
+        mode: selectedMode,
         environment: selectedEnvironment,
         projectId: options.project ? target.projectId! : undefined,
       })) {
         log(
-          `${credentialDisplayName(row.provider, row.type, row.environment)}\t${credentialSlot(credentialPayerFromScope(row.scope), row.projectId ?? null)}\t${row.hint}`,
+          `${credentialDisplayName(row.provider, row.type, row.mode, row.environment)}\t${credentialSlot(credentialPayerFromScope(row.scope), row.projectId ?? null)}\t${row.hint}`,
         )
       }
     })
@@ -161,6 +210,7 @@ export function registerCredentialCommands(program: Command): void {
         projectId: target.projectId,
         provider: target.provider,
         type: target.type,
+        mode: target.mode,
         environment: target.environment,
         destinationSpaceId: target.destinationSpaceId,
       }
@@ -178,35 +228,8 @@ export function registerCredentialCommands(program: Command): void {
   credential
     .command('resolve <provider/type>')
     .requiredOption('--project <name>', 'resolve for a registered project')
-    .option('--env <environment>', 'live or test')
+    .option('--mode <mode>', CREDENTIAL_MODES.join(' or '))
+    .option('--env <environment>', CREDENTIAL_ENVIRONMENTS.join(' or '))
     .description('show which credential would pay for a project')
-    .action(async (name, options: BindingOptions) => {
-      const target = await address(name, options)
-      const client = configClient()
-      const rows = await listCredentials(target.destinationSpaceId, {}, client)
-      const preferences = await client.listCredentialPreferences({
-        destinationSpaceId: target.destinationSpaceId,
-      })
-      const result = resolveCredential({
-        spaceId: target.destinationSpaceId,
-        projectId: target.projectId!,
-        projectName: target.projectName!,
-        provider: target.provider,
-        type: target.type,
-        environment: target.environment,
-        candidates: rows.map((row) => ({
-          spaceId: target.destinationSpaceId,
-          projectId: row.projectId ?? null,
-          payer: credentialPayerFromScope(row.scope),
-          provider: row.provider,
-          type: row.type,
-          environment: row.environment,
-        })),
-        preferences,
-      })
-      if (result.kind === 'refused') throw new Error(result.refusal)
-      log(
-        `${credentialDisplayName(target.provider, target.type, target.environment)}\t${credentialSlot(result.credential.payer, result.credential.projectId)}\t${result.reason}`,
-      )
-    })
+    .action(resolveAction)
 }

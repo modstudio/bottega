@@ -56,6 +56,7 @@ export type RecordConfigRouteDeps = {
       provider?: string | null
       type?: string | null
       hint?: string | null
+      mode?: string | null
     },
   ): Promise<ConfigSecretMetadata>
   deleteConfigSecret(

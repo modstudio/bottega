@@ -366,7 +366,7 @@ export async function listConfigSecrets(
   return tenant(input, async (tx) => {
     // Deliberately enumerate metadata columns: an envelope must never reach this surface.
     const rows = await tx`
-      SELECT id, key, environment, user_id, project_id, provider, type, hint,
+      SELECT id, key, environment, user_id, project_id, provider, type, hint, mode,
         dek_id, row_version, updated_at
       FROM config_secret
       WHERE space_id=${input.spaceId}::uuid
@@ -416,6 +416,7 @@ export async function putConfigSecret(
     provider?: string | null
     type?: string | null
     hint?: string | null
+    mode?: string | null
   },
 ): Promise<ConfigSecretMetadata> {
   try {
@@ -455,14 +456,14 @@ export async function putConfigSecret(
         try {
           const rows = await tx`
           INSERT INTO config_secret
-            (id, space_id, user_id, project_id, key, provider, type, environment, hint,
+            (id, space_id, user_id, project_id, key, provider, type, mode, environment, hint,
              dek_id, row_version, envelope, updated_at)
           VALUES
             (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${scopedUser(input, input.scope)}::uuid,
              ${input.projectId ?? null}::uuid, ${input.key}, ${input.provider ?? null},
-             ${input.type ?? null}, ${input.environment}, ${input.hint ?? null},
+             ${input.type ?? null}, ${input.mode ?? null}, ${input.environment}, ${input.hint ?? null},
              ${input.dekId}::uuid, 1, ${input.envelope}, now())
-          RETURNING id, key, environment, user_id, project_id, provider, type, hint,
+          RETURNING id, key, environment, user_id, project_id, provider, type, hint, mode,
             dek_id, row_version, updated_at
         `
           return secretMetadata(rows[0] as Record<string, unknown>)
@@ -478,10 +479,10 @@ export async function putConfigSecret(
       UPDATE config_secret
       SET dek_id=${input.dekId}::uuid, envelope=${input.envelope},
           project_id=${input.projectId ?? null}::uuid, provider=${input.provider ?? null},
-          type=${input.type ?? null}, hint=${input.hint ?? null},
+          type=${input.type ?? null}, hint=${input.hint ?? null}, mode=${input.mode ?? null},
           row_version=row_version + 1, updated_at=now()
       WHERE id=${String(occupancy.existing.id)}::uuid
-      RETURNING id, key, environment, user_id, project_id, provider, type, hint,
+      RETURNING id, key, environment, user_id, project_id, provider, type, hint, mode,
         dek_id, row_version, updated_at
     `
       return secretMetadata(rows[0] as Record<string, unknown>)

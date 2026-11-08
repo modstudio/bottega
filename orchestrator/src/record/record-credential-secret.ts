@@ -19,6 +19,7 @@ type LegacyConfigSecretMetadata = ConfigSecretBase & {
   provider: null
   type: null
   hint: null
+  mode: null
 }
 type CredentialSecretMetadata = ConfigSecretBase &
   CompleteCredentialFields & {
@@ -37,6 +38,7 @@ export function secretMetadata(row: Record<string, unknown>): ConfigSecretMetada
     provider: row.provider == null ? null : String(row.provider),
     type: row.type == null ? null : String(row.type),
     hint: row.hint == null ? null : String(row.hint),
+    mode: row.mode == null ? null : String(row.mode),
     dekId: String(row.dek_id),
     rowVersion: Number(row.row_version),
     updatedAt: recordIso(row.updated_at),

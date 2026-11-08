@@ -10,7 +10,8 @@ export async function proveCredentialRouteProjectAddressing(
   const base = {
     id: '01990000-0000-7000-8000-000000000010',
     key: 'OPENROUTER_API_KEY',
-    environment: 'default',
+    mode: 'default',
+    environment: 'local',
     scope: 'user' as const,
     provider: 'openrouter',
     type: 'api-key',
@@ -36,12 +37,12 @@ export async function proveCredentialRouteProjectAddressing(
     else spacePresent = false
   }
   const app = appWith({ getConfigSecret, deleteConfigSecret })
-  const query = `environment=default&scope=user&projectId=${projectId}`
+  const query = `environment=local&scope=user&projectId=${projectId}`
   const projectRead = await app.request(`/v1/config/secrets/${base.key}?${query}`)
   expect(projectRead.status).toBe(200)
   expect(await projectRead.json()).toMatchObject({ projectId, envelope: 'Ag' })
 
-  const body = JSON.stringify({ environment: 'default', scope: 'user', expectedRowVersion: 1 })
+  const body = JSON.stringify({ environment: 'local', scope: 'user', expectedRowVersion: 1 })
   expect(
     (
       await app.request(`/v1/config/secrets/${base.key}`, {

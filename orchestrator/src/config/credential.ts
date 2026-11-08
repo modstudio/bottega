@@ -6,6 +6,7 @@ import type {
   CredentialBinding,
   CredentialEnvironment,
   CredentialIdentity,
+  CredentialMode,
   CredentialPayer,
   CredentialPreferencePayload,
 } from '../../../shared/credential.ts'
@@ -13,7 +14,11 @@ import { CREDENTIAL_BINDINGS, CREDENTIAL_PAYERS } from '../../../shared/credenti
 
 const CREDENTIAL_HINT_MIN_LENGTH = 20
 
-export type { CredentialEnvironment, CredentialPayer } from '../../../shared/credential.ts'
+export type {
+  CredentialEnvironment,
+  CredentialMode,
+  CredentialPayer,
+} from '../../../shared/credential.ts'
 
 export type CredentialCandidate = CredentialIdentity & {
   spaceId: string
@@ -39,18 +44,19 @@ const upperSnake = (value: string) => value.toUpperCase().replaceAll('-', '_')
 export function credentialVariableName(
   provider: string,
   type: string,
-  environment: CredentialEnvironment,
+  mode: CredentialMode,
 ): string {
   const base = `${upperSnake(provider)}_${upperSnake(type)}`
-  return environment === 'test' ? `${base}_TEST` : base
+  return mode === 'test' ? `${base}_TEST` : base
 }
 
 export function credentialDisplayName(
   provider: string,
   type: string,
+  mode: CredentialMode,
   environment: CredentialEnvironment,
 ): string {
-  return `${provider}/${type}${environment === 'test' ? '/test' : ''}`
+  return `${provider}/${type} (mode ${mode}, env ${environment})`
 }
 
 function matchesSlot(
@@ -91,6 +97,7 @@ export function credentialScopeFromPayer(payer: CredentialPayer): 'user' | 'spac
 export type CredentialSetTarget = {
   provider: string
   type: string
+  mode: CredentialMode
   environment: CredentialEnvironment
   payer: CredentialPayer
   projectName?: string | null
@@ -109,8 +116,9 @@ export function credentialSetRefusalText(
     ? ` --project ${target.projectName}`
     : ` --space ${target.spaceName}`
   const payerOption = target.payer === 'shared' ? ' --shared' : ''
-  const environmentOption = target.environment === 'default' ? '' : ` --env ${target.environment}`
-  return `credential ${name} (${target.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${environmentOption}\``
+  const modeOption = target.mode === 'default' ? '' : ` --mode ${target.mode}`
+  const environmentOption = target.environment === 'local' ? '' : ` --env ${target.environment}`
+  return `credential ${name} (mode ${target.mode}, env ${target.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${modeOption}${environmentOption}\``
 }
 
 export function resolveCredential(input: {
@@ -119,6 +127,7 @@ export function resolveCredential(input: {
   projectName: string
   provider: string
   type: string
+  mode: CredentialMode
   environment: CredentialEnvironment
   candidates: readonly CredentialCandidate[]
   preferences: readonly CredentialPreferencePayload[]
@@ -128,6 +137,7 @@ export function resolveCredential(input: {
       row.spaceId === input.spaceId &&
       row.provider === input.provider &&
       row.type === input.type &&
+      row.mode === input.mode &&
       row.environment === input.environment &&
       (row.projectId === input.projectId || row.projectId === null),
   )
@@ -135,6 +145,7 @@ export function resolveCredential(input: {
     (row) =>
       row.provider === input.provider &&
       row.type === input.type &&
+      row.mode === input.mode &&
       row.environment === input.environment,
   )
   const preference =

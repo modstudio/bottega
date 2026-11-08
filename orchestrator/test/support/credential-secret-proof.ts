@@ -16,7 +16,8 @@ export async function proveCredentialSecretProjectAddressing(input: {
   const identity = {
     ...input.tenant,
     key: 'ROUTED_API_KEY',
-    environment: 'test',
+    mode: 'default' as const,
+    environment: 'local',
     scope: 'user' as const,
     dekId: input.dekId,
     provider: 'routed',
@@ -41,7 +42,7 @@ export async function proveCredentialSecretProjectAddressing(input: {
       'postgres',
       `SELECT count(*) FROM config_secret
        WHERE space_id='${input.tenant.spaceId}' AND key='ROUTED_API_KEY'
-         AND environment='test' AND user_id='${input.tenant.userId}';`,
+         AND environment='local' AND user_id='${input.tenant.userId}';`,
     ),
   ).toBe('2')
   expect((await getConfigSecret({ ...identity, projectId: null }))?.envelope).toEqual(
@@ -82,4 +83,52 @@ export async function proveCredentialSecretProjectAddressing(input: {
       expectedRowVersion: null,
     }),
   ).rejects.toMatchObject({ status: 422 })
+
+  await expect(
+    putConfigSecret({
+      ...identity,
+      key: 'PRODUCTION_API_KEY',
+      environment: 'production',
+      projectId: null,
+      envelope: Uint8Array.of(36),
+      expectedRowVersion: null,
+    }),
+  ).rejects.toThrow()
+
+  const defaultMode = await putConfigSecret({
+    ...identity,
+    key: 'MODE_API_KEY',
+    projectId: null,
+    envelope: Uint8Array.of(37),
+    expectedRowVersion: null,
+  })
+  const testMode = await putConfigSecret({
+    ...identity,
+    key: 'MODE_API_KEY_TEST',
+    mode: 'test',
+    projectId: null,
+    envelope: Uint8Array.of(38),
+    expectedRowVersion: null,
+  })
+  expect(
+    succeeds(
+      'postgres',
+      'postgres',
+      `SELECT string_agg(mode, ',' ORDER BY mode) FROM config_secret
+       WHERE space_id='${input.tenant.spaceId}' AND provider='routed' AND type='api-key'
+         AND key LIKE 'MODE_API_KEY%';`,
+    ),
+  ).toBe('default,test')
+  await deleteConfigSecret({
+    ...identity,
+    key: defaultMode.key,
+    projectId: null,
+    expectedRowVersion: defaultMode.rowVersion,
+  })
+  await deleteConfigSecret({
+    ...identity,
+    key: testMode.key,
+    projectId: null,
+    expectedRowVersion: testMode.rowVersion,
+  })
 }

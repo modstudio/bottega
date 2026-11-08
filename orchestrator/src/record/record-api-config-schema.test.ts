@@ -22,10 +22,22 @@ test('config secret writes require complete credential metadata', () => {
   expect(
     configSecretPutBody.safeParse({
       ...base,
+      environment: 'local',
       projectId: id,
       provider: 'openrouter',
       type: 'api-key',
       hint: 'open…hint',
+      mode: 'default',
     }).success,
   ).toBe(true)
+  expect(
+    configSecretPutBody.safeParse({
+      ...base,
+      environment: 'production',
+      provider: 'openrouter',
+      type: 'api-key',
+      hint: 'open…hint',
+      mode: 'default',
+    }).success,
+  ).toBe(false)
 })

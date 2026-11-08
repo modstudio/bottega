@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "490ebcbd-7a40-442e-9084-09ca00f2b395",
+  "id": "c06b9b93-0418-4323-a25a-3bef53226533",
   "prevIds": [
     "16c62a67-2fd7-4984-9700-b94ec7ac5239",
     "b50e7cc3-5ea7-43d3-9a59-335bd5aa3463"
@@ -11974,6 +11974,19 @@
     {
       "type": "text",
       "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "mode",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "config_secret"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
       "notNull": true,
       "dimensions": 0,
       "default": "'default'",
@@ -12133,6 +12146,19 @@
       "notNull": true,
       "dimensions": 0,
       "default": "'default'",
+      "generated": null,
+      "identity": null,
+      "name": "mode",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "credential_payer_preference"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'local'",
       "generated": null,
       "identity": null,
       "name": "environment",
@@ -23261,6 +23287,7 @@
         "project_id",
         "provider",
         "type",
+        "mode",
         "environment"
       ],
       "nullsNotDistinct": true,
@@ -24180,7 +24207,7 @@
       "table": "orch_snapshot"
     },
     {
-      "value": "(\"provider\" IS NULL AND \"type\" IS NULL AND \"hint\" IS NULL AND \"project_id\" IS NULL) OR\n          (\"provider\" IS NOT NULL AND \"type\" IS NOT NULL AND \"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"hint\" IS NOT NULL AND \"environment\" IN ('live','test','default'))",
+      "value": "(\"provider\" IS NULL AND \"type\" IS NULL AND \"hint\" IS NULL AND \"project_id\" IS NULL AND \"mode\" IS NULL) OR\n          (\"provider\" IS NOT NULL AND \"type\" IS NOT NULL AND \"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"hint\" IS NOT NULL AND \"mode\" IN ('live','test','default') AND \"environment\" IN ('local'))",
       "name": "config_secret_credential_fields_check",
       "entityType": "checks",
       "schema": "public",
@@ -24194,7 +24221,7 @@
       "table": "credential_payer_preference"
     },
     {
-      "value": "\"environment\" IN ('live','test','default') AND \"preferred_payer\" IN ('personal','shared') AND \"preferred_binding\" IN ('project','space')",
+      "value": "\"mode\" IN ('live','test','default') AND \"environment\" IN ('local') AND \"preferred_payer\" IN ('personal','shared') AND \"preferred_binding\" IN ('project','space')",
       "name": "credential_payer_preference_values_check",
       "entityType": "checks",
       "schema": "public",

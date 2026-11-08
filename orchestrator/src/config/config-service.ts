@@ -12,7 +12,7 @@ import {
   type DataKey,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import type { CredentialMetadataFields } from '../../../shared/credential.ts'
+import type { CredentialMetadataFields, CredentialMode } from '../../../shared/credential.ts'
 import {
   readHostedConfigIdentity,
   writeHostedConfigIdentity,
@@ -390,7 +390,7 @@ async function rotateDataKey(
   } else {
     dek = await unwrap(client, current, machine, trust)
   }
-  const rows = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
+  const rows = await client.listSecrets(null)
   const plan = planRotation(rows, current, await client.listDataKeys())
   const completed: string[] = []
   try {
@@ -413,6 +413,10 @@ async function rotateDataKey(
         scope: row.scope,
         environment: row.environment,
         projectId: row.projectId ?? null,
+        provider: row.provider ?? null,
+        type: row.type ?? null,
+        hint: row.hint ?? null,
+        mode: row.mode ?? null,
         dekId: current.id,
         envelope: encoded(envelope),
         expectedRowVersion: row.rowVersion,
@@ -560,7 +564,7 @@ export async function setSecret(
   options: {
     destination?: ConfigDestination
     environment?: string
-    metadata?: CredentialMetadataFields & { projectId: string | null }
+    metadata?: CredentialMetadataFields & { projectId: string | null; mode: CredentialMode }
     createDataKey?: boolean
     missingDestinationAccessRefusal?: () => Error
   } = {},

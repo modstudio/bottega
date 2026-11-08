@@ -20,7 +20,8 @@ export async function proveCredentialPreferencePersistence(input: {
     ...input.tenant,
     provider: 'preference-proof',
     type: 'api-key',
-    environment: 'test' as const,
+    mode: 'test' as const,
+    environment: 'local' as const,
   }
   await putCredentialPreference({
     ...identity,
@@ -40,7 +41,7 @@ export async function proveCredentialPreferencePersistence(input: {
       'postgres',
       `SELECT count(*) FROM credential_payer_preference
        WHERE space_id='${input.spaceId}' AND user_id='${input.userId}' AND project_id='${input.projectId}'
-         AND provider='preference-proof' AND type='api-key' AND environment='test';`,
+         AND provider='preference-proof' AND type='api-key' AND mode='test' AND environment='local';`,
     ),
   ).toBe('1')
   expect(
@@ -48,7 +49,7 @@ export async function proveCredentialPreferencePersistence(input: {
       (row: CredentialPreference) =>
         row.provider === identity.provider && row.projectId === input.projectId,
     ),
-  ).toMatchObject({ payer: 'shared', binding: 'space', environment: 'test' })
+  ).toMatchObject({ payer: 'shared', binding: 'space', mode: 'test', environment: 'local' })
 
   await putCredentialPreference({
     ...identity,
@@ -60,8 +61,8 @@ export async function proveCredentialPreferencePersistence(input: {
     'postgres',
     'postgres',
     `INSERT INTO credential_payer_preference
-     (id,space_id,user_id,project_id,provider,type,environment,preferred_payer,preferred_binding,updated_at)
-     VALUES ('${newRecordId()}','${input.spaceId}','${input.otherUserId}',NULL,'preference-proof','api-key','test','shared','space',now());`,
+     (id,space_id,user_id,project_id,provider,type,mode,environment,preferred_payer,preferred_binding,updated_at)
+     VALUES ('${newRecordId()}','${input.spaceId}','${input.otherUserId}',NULL,'preference-proof','api-key','test','local','shared','space',now());`,
   )
   await deleteCredentialPreference({ ...identity, projectId: input.projectId })
   await deleteCredentialPreference({ ...identity, projectId: null })

@@ -14,7 +14,8 @@ const base = {
   projectName: 'alpha',
   provider: 'openrouter',
   type: 'api-key',
-  environment: 'default' as const,
+  mode: 'default' as const,
+  environment: 'local' as const,
 }
 const candidate = (
   payer: CredentialCandidate['payer'],
@@ -59,12 +60,12 @@ test('a project preference wins while a stale preference falls back', () => {
   expect(stale).toMatchObject({ kind: 'resolved', credential: rows[0]!, reason: 'default-order' })
 })
 
-test('preferences match the complete provider, type, and environment identity', () => {
+test('preferences match the complete provider, type, mode, and environment identity', () => {
   const rows = [candidate('personal', base.projectId), candidate('shared', null)]
   for (const mismatch of [
     { provider: 'inception' },
     { type: 'token' },
-    { environment: 'test' as const },
+    { mode: 'test' as const },
   ]) {
     expect(
       resolveCredential({
@@ -124,6 +125,16 @@ test("another space's credential is never selected", () => {
   expect(result.kind).toBe('refused')
 })
 
+test('resolver matches credential mode', () => {
+  const testMode = { ...candidate('personal', base.projectId), mode: 'test' as const }
+  expect(
+    resolveCredential({ ...base, candidates: [testMode], preferences: [] }),
+  ).toMatchObject({ kind: 'refused' })
+  expect(
+    resolveCredential({ ...base, mode: 'test', candidates: [testMode], preferences: [] }),
+  ).toMatchObject({ kind: 'resolved', credential: testMode })
+})
+
 test('hints mask only long values and names are derived', () => {
   expect(credentialHint('12345678901234567890')).toBe('1234…7890')
   expect(credentialHint('short')).toBe('5 characters')
@@ -131,5 +142,7 @@ test('hints mask only long values and names are derived', () => {
     'BETTER_AUTH_SECRET_KEY',
   )
   expect(credentialVariableName('openrouter', 'api-key', 'test')).toBe('OPENROUTER_API_KEY_TEST')
-  expect(credentialDisplayName('openrouter', 'api-key', 'test')).toBe('openrouter/api-key/test')
+  expect(credentialDisplayName('openrouter', 'api-key', 'test', 'local')).toBe(
+    'openrouter/api-key (mode test, env local)',
+  )
 })

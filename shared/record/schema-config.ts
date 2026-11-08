@@ -18,6 +18,7 @@ import {
 import {
   CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_MODES,
   CREDENTIAL_PAYERS,
   CREDENTIAL_SLUG_SOURCE,
 } from '../credential.ts'
@@ -140,6 +141,7 @@ export const configSecret = pgTable.withRLS(
     key: text().notNull(),
     provider: text(),
     type: text(),
+    mode: text(),
     environment: text().notNull().default('default'),
     hint: text(),
     dekId: uuid('dek_id').notNull(),
@@ -153,8 +155,8 @@ export const configSecret = pgTable.withRLS(
       .nullsNotDistinct(),
     check(
       'config_secret_credential_fields_check',
-      sql`(${table.provider} IS NULL AND ${table.type} IS NULL AND ${table.hint} IS NULL AND ${table.projectId} IS NULL) OR
-          (${table.provider} IS NOT NULL AND ${table.type} IS NOT NULL AND ${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.hint} IS NOT NULL AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)})`,
+      sql`(${table.provider} IS NULL AND ${table.type} IS NULL AND ${table.hint} IS NULL AND ${table.projectId} IS NULL AND ${table.mode} IS NULL) OR
+          (${table.provider} IS NOT NULL AND ${table.type} IS NOT NULL AND ${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.hint} IS NOT NULL AND ${table.mode} IN ${sql.raw(`(${CREDENTIAL_MODES.map((value) => `'${value}'`).join(',')})`)} AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)})`,
     ),
     foreignKey({
       columns: [table.spaceId, table.dekId],
@@ -181,7 +183,8 @@ export const credentialPayerPreference = pgTable.withRLS(
     projectId: uuid('project_id').references(() => project.id),
     provider: text().notNull(),
     type: text().notNull(),
-    environment: text().notNull().default('default'),
+    mode: text().notNull().default('default'),
+    environment: text().notNull().default('local'),
     preferredPayer: text('preferred_payer').notNull(),
     preferredBinding: text('preferred_binding').notNull(),
     updatedAt: updatedAt(),
@@ -194,6 +197,7 @@ export const credentialPayerPreference = pgTable.withRLS(
         table.projectId,
         table.provider,
         table.type,
+        table.mode,
         table.environment,
       )
       .nullsNotDistinct(),
@@ -203,7 +207,7 @@ export const credentialPayerPreference = pgTable.withRLS(
     ),
     check(
       'credential_payer_preference_values_check',
-      sql`${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)} AND ${table.preferredPayer} IN ${sql.raw(`(${CREDENTIAL_PAYERS.map((value) => `'${value}'`).join(',')})`)} AND ${table.preferredBinding} IN ${sql.raw(`(${CREDENTIAL_BINDINGS.map((value) => `'${value}'`).join(',')})`)}`,
+      sql`${table.mode} IN ${sql.raw(`(${CREDENTIAL_MODES.map((value) => `'${value}'`).join(',')})`)} AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)} AND ${table.preferredPayer} IN ${sql.raw(`(${CREDENTIAL_PAYERS.map((value) => `'${value}'`).join(',')})`)} AND ${table.preferredBinding} IN ${sql.raw(`(${CREDENTIAL_BINDINGS.map((value) => `'${value}'`).join(',')})`)}`,
     ),
     ...actorPolicies('credential_payer_preference', table.spaceId, table.userId),
     pgPolicy('credential_payer_preference_owner_select', {

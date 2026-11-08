@@ -17,6 +17,7 @@ import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed
 import { deleteSecret, setSecret } from './config-service.ts'
 import {
   type CredentialEnvironment,
+  type CredentialMode,
   type CredentialPayer,
   credentialHint,
   credentialScopeFromPayer,
@@ -27,6 +28,7 @@ import {
 export type CredentialAddress = {
   provider: string
   type: string
+  mode: CredentialMode
   environment: CredentialEnvironment
   payer: CredentialPayer
   projectId: string | null
@@ -65,7 +67,7 @@ export async function setCredential(
   const plaintext = stripTrailingNewline(value)
   try {
     return await setSecret(
-      credentialVariableName(address.provider, address.type, address.environment),
+      credentialVariableName(address.provider, address.type, address.mode),
       plaintext,
       credentialScopeFromPayer(address.payer),
       client,
@@ -77,6 +79,7 @@ export async function setCredential(
           provider: address.provider,
           type: address.type,
           hint: credentialHint(plaintext),
+          mode: address.mode,
         },
         createDataKey: false,
         missingDestinationAccessRefusal: () => missingProjectWrapRefusal(address),
@@ -93,7 +96,11 @@ type CredentialRow = ConfigSecret & CompleteCredentialFields
 
 export async function listCredentials(
   spaceId: string,
-  filters: { environment?: CredentialEnvironment; projectId?: string } = {},
+  filters: {
+    mode?: CredentialMode
+    environment?: CredentialEnvironment
+    projectId?: string
+  } = {},
   client = configClient(),
 ): Promise<CredentialRow[]> {
   const target = { destinationSpaceId: spaceId }
@@ -105,11 +112,15 @@ export async function listCredentials(
       const fields = completeCredentialFields(row)
       return fields ? [{ ...row, ...fields }] : []
     })
-    .filter((row) => filters.projectId === undefined || row.projectId === filters.projectId)
+    .filter(
+      (row) =>
+        (filters.mode === undefined || row.mode === filters.mode) &&
+        (filters.projectId === undefined || row.projectId === filters.projectId),
+    )
 }
 
 export async function deleteCredential(address: CredentialAddress, client = configClient()) {
-  const key = credentialVariableName(address.provider, address.type, address.environment)
+  const key = credentialVariableName(address.provider, address.type, address.mode)
   try {
     return await deleteSecret(key, credentialScopeFromPayer(address.payer), client, {
       destination: destination(address),

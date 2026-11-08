@@ -6,6 +6,7 @@ import { z } from 'zod'
 import {
   CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_MODES,
   CREDENTIAL_PAYERS,
   CREDENTIAL_SLUG_PATTERN,
   type CredentialPreferencePayload,
@@ -22,13 +23,15 @@ export type RecordCredentialRouteDeps = {
     input: Tenant & CredentialPreferencePayload,
   ): Promise<CredentialPreference>
   deleteCredentialPreference(
-    input: Tenant & Pick<CredentialPreference, 'projectId' | 'provider' | 'type' | 'environment'>,
+    input: Tenant &
+      Pick<CredentialPreference, 'projectId' | 'provider' | 'type' | 'mode' | 'environment'>,
   ): Promise<void>
 }
 const address = z.object({
   projectId: z.string().uuid().nullable(),
   provider: z.string().regex(CREDENTIAL_SLUG_PATTERN),
   type: z.string().regex(CREDENTIAL_SLUG_PATTERN),
+  mode: z.enum(CREDENTIAL_MODES),
   environment: z.enum(CREDENTIAL_ENVIRONMENTS),
 })
 
