@@ -55,6 +55,7 @@ export type ConfigSecret = {
   scope: ConfigScope
   projectId?: string | null
   provider?: CredentialMetadataFields['provider'] | null
+  name?: CredentialMetadataFields['name']
   type?: CredentialMetadataFields['type'] | null
   hint?: CredentialMetadataFields['hint'] | null
   mode?: CredentialMode | null
@@ -192,6 +193,7 @@ function configValueClient(request: Request, query: Query) {
         expectedRowVersion: number | null
         projectId?: string | null
         provider?: CredentialMetadataFields['provider'] | null
+        name?: CredentialMetadataFields['name']
         type?: CredentialMetadataFields['type'] | null
         hint?: CredentialMetadataFields['hint'] | null
       } & ConfigDestination,
@@ -245,7 +247,7 @@ function credentialPreferenceClient(request: Request) {
     deleteCredentialPreference: (
       input: Pick<
         CredentialPreference,
-        'projectId' | 'provider' | 'type' | 'mode' | 'environment'
+        'projectId' | 'provider' | 'name' | 'type' | 'mode' | 'environment'
       > &
         ConfigDestination,
     ) =>

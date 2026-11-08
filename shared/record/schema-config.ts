@@ -140,6 +140,7 @@ export const configSecret = pgTable.withRLS(
     projectId: uuid('project_id').references(() => project.id),
     key: text().notNull(),
     provider: text(),
+    name: text(),
     type: text(),
     mode: text(),
     environment: text().notNull().default('default'),
@@ -155,8 +156,8 @@ export const configSecret = pgTable.withRLS(
       .nullsNotDistinct(),
     check(
       'config_secret_credential_fields_check',
-      sql`(${table.provider} IS NULL AND ${table.type} IS NULL AND ${table.hint} IS NULL AND ${table.projectId} IS NULL AND ${table.mode} IS NULL) OR
-          (${table.provider} IS NOT NULL AND ${table.type} IS NOT NULL AND ${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.hint} IS NOT NULL AND ${table.mode} IN ${sql.raw(`(${CREDENTIAL_MODES.map((value) => `'${value}'`).join(',')})`)} AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)})`,
+      sql`(${table.provider} IS NULL AND ${table.name} IS NULL AND ${table.type} IS NULL AND ${table.hint} IS NULL AND ${table.projectId} IS NULL AND ${table.mode} IS NULL) OR
+          (${table.provider} IS NOT NULL AND (${table.name} IS NULL OR ${table.name} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}) AND ${table.type} IS NOT NULL AND ${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.hint} IS NOT NULL AND ${table.mode} IN ${sql.raw(`(${CREDENTIAL_MODES.map((value) => `'${value}'`).join(',')})`)} AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)})`,
     ),
     foreignKey({
       columns: [table.spaceId, table.dekId],
@@ -182,6 +183,7 @@ export const credentialPayerPreference = pgTable.withRLS(
       .references(() => user.id),
     projectId: uuid('project_id').references(() => project.id),
     provider: text().notNull(),
+    name: text(),
     type: text().notNull(),
     mode: text().notNull().default('default'),
     environment: text().notNull().default('local'),
@@ -196,6 +198,7 @@ export const credentialPayerPreference = pgTable.withRLS(
         table.userId,
         table.projectId,
         table.provider,
+        table.name,
         table.type,
         table.mode,
         table.environment,
@@ -203,7 +206,7 @@ export const credentialPayerPreference = pgTable.withRLS(
       .nullsNotDistinct(),
     check(
       'credential_payer_preference_slug_check',
-      sql`${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}`,
+      sql`${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND (${table.name} IS NULL OR ${table.name} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}) AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}`,
     ),
     check(
       'credential_payer_preference_values_check',

@@ -17,6 +17,7 @@ type ConfigSecretBase = {
 type LegacyConfigSecretMetadata = ConfigSecretBase & {
   projectId: null
   provider: null
+  name: null
   type: null
   hint: null
   mode: null
@@ -36,6 +37,7 @@ export function secretMetadata(row: Record<string, unknown>): ConfigSecretMetada
     scope: row.user_id == null ? 'space' : 'user',
     projectId: row.project_id == null ? null : String(row.project_id),
     provider: row.provider == null ? null : String(row.provider),
+    name: row.name == null ? null : String(row.name),
     type: row.type == null ? null : String(row.type),
     hint: row.hint == null ? null : String(row.hint),
     mode: row.mode == null ? null : String(row.mode),

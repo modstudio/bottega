@@ -21,6 +21,7 @@ export async function proveCredentialSecretProjectAddressing(input: {
     scope: 'user' as const,
     dekId: input.dekId,
     provider: 'routed',
+    name: null,
     type: 'api-key',
     hint: 'rout…hint',
   }
@@ -131,4 +132,37 @@ export async function proveCredentialSecretProjectAddressing(input: {
     projectId: null,
     expectedRowVersion: testMode.rowVersion,
   })
+
+  const backup = await putConfigSecret({
+    ...identity,
+    key: 'ROUTED_BACKUP_API_KEY',
+    name: 'backup',
+    projectId: null,
+    envelope: Uint8Array.of(39),
+    expectedRowVersion: null,
+  })
+  const ses = await putConfigSecret({
+    ...identity,
+    key: 'ROUTED_SES_API_KEY',
+    name: 'ses',
+    projectId: null,
+    envelope: Uint8Array.of(40),
+    expectedRowVersion: null,
+  })
+  expect(
+    succeeds(
+      'postgres',
+      'postgres',
+      `SELECT string_agg(name, ',' ORDER BY name) FROM config_secret
+       WHERE space_id='${input.tenant.spaceId}' AND provider='routed' AND type='api-key'
+         AND name IS NOT NULL;`,
+    ),
+  ).toBe('backup,ses')
+  for (const row of [backup, ses])
+    await deleteConfigSecret({
+      ...identity,
+      key: row.key,
+      projectId: null,
+      expectedRowVersion: row.rowVersion,
+    })
 }

@@ -14,6 +14,7 @@ export async function proveCredentialRouteProjectAddressing(
     environment: 'local',
     scope: 'user' as const,
     provider: 'openrouter',
+    name: null,
     type: 'api-key',
     hint: 'open…test',
     dekId: '01990000-0000-7000-8000-000000000011',

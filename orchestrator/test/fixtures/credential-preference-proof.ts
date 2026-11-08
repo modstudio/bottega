@@ -19,6 +19,7 @@ export async function proveCredentialPreferencePersistence(input: {
   const identity = {
     ...input.tenant,
     provider: 'preference-proof',
+    name: null,
     type: 'api-key',
     mode: 'test' as const,
     environment: 'local' as const,
@@ -61,8 +62,8 @@ export async function proveCredentialPreferencePersistence(input: {
     'postgres',
     'postgres',
     `INSERT INTO credential_payer_preference
-     (id,space_id,user_id,project_id,provider,type,mode,environment,preferred_payer,preferred_binding,updated_at)
-     VALUES ('${newRecordId()}','${input.spaceId}','${input.otherUserId}',NULL,'preference-proof','api-key','test','local','shared','space',now());`,
+     (id,space_id,user_id,project_id,provider,name,type,mode,environment,preferred_payer,preferred_binding,updated_at)
+     VALUES ('${newRecordId()}','${input.spaceId}','${input.otherUserId}',NULL,'preference-proof',NULL,'api-key','test','local','shared','space',now());`,
   )
   await deleteCredentialPreference({ ...identity, projectId: input.projectId })
   await deleteCredentialPreference({ ...identity, projectId: null })

@@ -39,6 +39,7 @@ afterEach(() => {
 
 const address: CredentialAddress = {
   provider: 'openrouter',
+  name: null,
   type: 'api-key',
   mode: 'default',
   environment: 'local',
@@ -132,6 +133,7 @@ test('set credential writes a project-bound row with its metadata and hint', asy
     destinationSpaceId: address.destinationSpaceId,
     projectId: address.projectId,
     provider: address.provider,
+    name: address.name,
     type: address.type,
     mode: address.mode,
     environment: address.environment,

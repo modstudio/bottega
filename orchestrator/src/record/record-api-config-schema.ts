@@ -19,17 +19,21 @@ export const configSecretPutBody = z
     envelope: base64urlSchema,
     projectId: idSchema.nullable().optional(),
     provider: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable().optional(),
+    name: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable().optional(),
     type: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable().optional(),
     hint: z.string().min(1).nullable().optional(),
     mode: z.enum(CREDENTIAL_MODES).nullable().optional(),
   })
   .refine(
-    ({ projectId, provider, type, hint, mode, environment }) => {
+    ({ projectId, provider, name, type, hint, mode, environment }) => {
       const values = [provider ?? null, type ?? null, hint ?? null, mode ?? null]
       const credential =
         values.every((value) => value !== null) &&
         CREDENTIAL_ENVIRONMENTS.includes(environment as (typeof CREDENTIAL_ENVIRONMENTS)[number])
-      const legacy = values.every((value) => value === null) && (projectId ?? null) === null
+      const legacy =
+        values.every((value) => value === null) &&
+        (name ?? null) === null &&
+        (projectId ?? null) === null
       return credential || legacy
     },
     { message: 'credential metadata must be complete and projectId requires credential metadata' },

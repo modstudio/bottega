@@ -24,12 +24,16 @@ export type RecordCredentialRouteDeps = {
   ): Promise<CredentialPreference>
   deleteCredentialPreference(
     input: Tenant &
-      Pick<CredentialPreference, 'projectId' | 'provider' | 'type' | 'mode' | 'environment'>,
+      Pick<
+        CredentialPreference,
+        'projectId' | 'provider' | 'name' | 'type' | 'mode' | 'environment'
+      >,
   ): Promise<void>
 }
 const address = z.object({
   projectId: z.string().uuid().nullable(),
   provider: z.string().regex(CREDENTIAL_SLUG_PATTERN),
+  name: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable(),
   type: z.string().regex(CREDENTIAL_SLUG_PATTERN),
   mode: z.enum(CREDENTIAL_MODES),
   environment: z.enum(CREDENTIAL_ENVIRONMENTS),

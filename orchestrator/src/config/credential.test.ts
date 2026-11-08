@@ -13,6 +13,7 @@ const base = {
   projectId: 'project-a',
   projectName: 'alpha',
   provider: 'openrouter',
+  name: null,
   type: 'api-key',
   mode: 'default' as const,
   environment: 'local' as const,
@@ -60,10 +61,11 @@ test('a project preference wins while a stale preference falls back', () => {
   expect(stale).toMatchObject({ kind: 'resolved', credential: rows[0]!, reason: 'default-order' })
 })
 
-test('preferences match the complete provider, type, mode, and environment identity', () => {
+test('preferences match the complete provider, name, type, mode, and environment identity', () => {
   const rows = [candidate('personal', base.projectId), candidate('shared', null)]
   for (const mismatch of [
     { provider: 'inception' },
+    { name: 'backup' },
     { type: 'token' },
     { mode: 'test' as const },
   ]) {
@@ -135,14 +137,29 @@ test('resolver matches credential mode', () => {
   ).toMatchObject({ kind: 'resolved', credential: testMode })
 })
 
+test('resolver never crosses credential names', () => {
+  const named = { ...candidate('personal', base.projectId), name: 'backup' }
+  expect(resolveCredential({ ...base, candidates: [named], preferences: [] })).toMatchObject({
+    kind: 'refused',
+  })
+  expect(
+    resolveCredential({ ...base, name: 'backup', candidates: [named], preferences: [] }),
+  ).toMatchObject({ kind: 'resolved', credential: named })
+})
+
 test('hints mask only long values and names are derived', () => {
   expect(credentialHint('12345678901234567890')).toBe('1234…7890')
   expect(credentialHint('short')).toBe('5 characters')
-  expect(credentialVariableName('better-auth', 'secret-key', 'default')).toBe(
+  expect(credentialVariableName('better-auth', null, 'secret-key', 'default')).toBe(
     'BETTER_AUTH_SECRET_KEY',
   )
-  expect(credentialVariableName('openrouter', 'api-key', 'test')).toBe('OPENROUTER_API_KEY_TEST')
-  expect(credentialDisplayName('openrouter', 'api-key', 'test', 'local')).toBe(
+  expect(credentialVariableName('openrouter', null, 'api-key', 'test')).toBe(
+    'OPENROUTER_API_KEY_TEST',
+  )
+  expect(credentialVariableName('aws', 'backup', 'access-key', 'default')).toBe(
+    'AWS_BACKUP_ACCESS_KEY',
+  )
+  expect(credentialDisplayName('openrouter', null, 'api-key', 'test', 'local')).toBe(
     'openrouter/api-key (mode test, env local)',
   )
 })

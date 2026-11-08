@@ -27,6 +27,7 @@ import {
 
 export type CredentialAddress = {
   provider: string
+  name: string | null
   type: string
   mode: CredentialMode
   environment: CredentialEnvironment
@@ -67,7 +68,7 @@ export async function setCredential(
   const plaintext = stripTrailingNewline(value)
   try {
     return await setSecret(
-      credentialVariableName(address.provider, address.type, address.mode),
+      credentialVariableName(address.provider, address.name, address.type, address.mode),
       plaintext,
       credentialScopeFromPayer(address.payer),
       client,
@@ -77,6 +78,7 @@ export async function setCredential(
         metadata: {
           projectId: address.projectId,
           provider: address.provider,
+          name: address.name,
           type: address.type,
           hint: credentialHint(plaintext),
           mode: address.mode,
@@ -120,7 +122,7 @@ export async function listCredentials(
 }
 
 export async function deleteCredential(address: CredentialAddress, client = configClient()) {
-  const key = credentialVariableName(address.provider, address.type, address.mode)
+  const key = credentialVariableName(address.provider, address.name, address.type, address.mode)
   try {
     return await deleteSecret(key, credentialScopeFromPayer(address.payer), client, {
       destination: destination(address),

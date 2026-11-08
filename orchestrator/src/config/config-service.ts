@@ -414,6 +414,7 @@ async function rotateDataKey(
         environment: row.environment,
         projectId: row.projectId ?? null,
         provider: row.provider ?? null,
+        name: row.name ?? null,
         type: row.type ?? null,
         hint: row.hint ?? null,
         mode: row.mode ?? null,

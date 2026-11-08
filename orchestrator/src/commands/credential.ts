@@ -48,17 +48,26 @@ const credentialSlots = CREDENTIAL_PAYERS.flatMap((payer) =>
   CREDENTIAL_BINDINGS.map((binding) => `${payer}@${binding}`),
 )
 
-function identityName(value: string): { provider: string; type: string } {
-  const [provider, type, extra] = value.split('/')
+function identityName(value: string): { provider: string; name: string | null; type: string } {
+  const parts = value.split('/')
+  if (parts.length !== 2 && parts.length !== 3)
+    throw new Error(
+      'credential name must be <provider>/<type> or <provider>/<name>/<type> using lowercase slugs',
+    )
+  const provider = parts[0] ?? ''
+  const name = parts.length === 3 ? (parts[1] ?? '') : null
+  const type = parts.at(-1) ?? ''
   if (
     !provider ||
     !type ||
-    extra ||
     !CREDENTIAL_SLUG_PATTERN.test(provider) ||
+    (name !== null && !CREDENTIAL_SLUG_PATTERN.test(name)) ||
     !CREDENTIAL_SLUG_PATTERN.test(type)
   )
-    throw new Error('credential name must be <lowercase-provider>/<lowercase-type>')
-  return { provider, type }
+    throw new Error(
+      'credential name must be <provider>/<type> or <provider>/<name>/<type> using lowercase slugs',
+    )
+  return { provider, name, type }
 }
 
 function environment(value?: string): CredentialEnvironment {
@@ -77,7 +86,7 @@ function mode(value?: string): CredentialMode {
 
 type CredentialBindingAddress = Omit<
   CredentialAddress,
-  'provider' | 'type' | 'mode' | 'environment' | 'payer'
+  'provider' | 'name' | 'type' | 'mode' | 'environment' | 'payer'
 >
 
 async function bindingAddress(options: BindingOptions): Promise<CredentialBindingAddress> {
@@ -146,6 +155,7 @@ async function resolveAction(name: string, options: BindingOptions): Promise<voi
     projectId: target.projectId!,
     projectName: target.projectName!,
     provider: target.provider,
+    name: target.name,
     type: target.type,
     mode: target.mode,
     environment: target.environment,
@@ -154,6 +164,7 @@ async function resolveAction(name: string, options: BindingOptions): Promise<voi
       projectId: row.projectId ?? null,
       payer: credentialPayerFromScope(row.scope),
       provider: row.provider,
+      name: row.name,
       type: row.type,
       mode: row.mode,
       environment: row.environment,
@@ -162,7 +173,7 @@ async function resolveAction(name: string, options: BindingOptions): Promise<voi
   })
   if (result.kind === 'refused') throw new Error(result.refusal)
   log(
-    `${credentialDisplayName(target.provider, target.type, target.mode, target.environment)}\t${credentialSlot(result.credential.payer, result.credential.projectId)}\t${result.reason}`,
+    `${credentialDisplayName(target.provider, target.name, target.type, target.mode, target.environment)}\t${credentialSlot(result.credential.payer, result.credential.projectId)}\t${result.reason}`,
   )
 }
 
@@ -191,7 +202,7 @@ export function registerCredentialCommands(program: Command): void {
         projectId: options.project ? target.projectId! : undefined,
       })) {
         log(
-          `${credentialDisplayName(row.provider, row.type, row.mode, row.environment)}\t${credentialSlot(credentialPayerFromScope(row.scope), row.projectId ?? null)}\t${row.hint}`,
+          `${credentialDisplayName(row.provider, row.name, row.type, row.mode, row.environment)}\t${credentialSlot(credentialPayerFromScope(row.scope), row.projectId ?? null)}\t${row.hint}`,
         )
       }
     })
@@ -209,6 +220,7 @@ export function registerCredentialCommands(program: Command): void {
       const input = {
         projectId: target.projectId,
         provider: target.provider,
+        name: target.name,
         type: target.type,
         mode: target.mode,
         environment: target.environment,

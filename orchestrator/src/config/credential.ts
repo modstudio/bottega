@@ -43,20 +43,25 @@ const upperSnake = (value: string) => value.toUpperCase().replaceAll('-', '_')
 
 export function credentialVariableName(
   provider: string,
+  name: string | null,
   type: string,
   mode: CredentialMode,
 ): string {
-  const base = `${upperSnake(provider)}_${upperSnake(type)}`
+  const base = [provider, name, type]
+    .filter((part): part is string => part !== null)
+    .map(upperSnake)
+    .join('_')
   return mode === 'test' ? `${base}_TEST` : base
 }
 
 export function credentialDisplayName(
   provider: string,
+  name: string | null,
   type: string,
   mode: CredentialMode,
   environment: CredentialEnvironment,
 ): string {
-  return `${provider}/${type} (mode ${mode}, env ${environment})`
+  return `${[provider, name, type].filter((part) => part !== null).join('/')} (mode ${mode}, env ${environment})`
 }
 
 function matchesSlot(
@@ -96,6 +101,7 @@ export function credentialScopeFromPayer(payer: CredentialPayer): 'user' | 'spac
 /** Where a credential set is aimed; a project binding wins over its space. */
 export type CredentialSetTarget = {
   provider: string
+  name: string | null
   type: string
   mode: CredentialMode
   environment: CredentialEnvironment
@@ -110,7 +116,7 @@ export function credentialSetRefusalText(
   condition: string,
   action: string,
 ): string {
-  const name = `${target.provider}/${target.type}`
+  const name = [target.provider, target.name, target.type].filter((part) => part !== null).join('/')
   const binding = target.projectName ? `project ${target.projectName}` : `space ${target.spaceName}`
   const bindOption = target.projectName
     ? ` --project ${target.projectName}`
@@ -126,6 +132,7 @@ export function resolveCredential(input: {
   projectId: string
   projectName: string
   provider: string
+  name: string | null
   type: string
   mode: CredentialMode
   environment: CredentialEnvironment
@@ -136,6 +143,7 @@ export function resolveCredential(input: {
     (row) =>
       row.spaceId === input.spaceId &&
       row.provider === input.provider &&
+      row.name === input.name &&
       row.type === input.type &&
       row.mode === input.mode &&
       row.environment === input.environment &&
@@ -144,6 +152,7 @@ export function resolveCredential(input: {
   const preferences = input.preferences.filter(
     (row) =>
       row.provider === input.provider &&
+      row.name === input.name &&
       row.type === input.type &&
       row.mode === input.mode &&
       row.environment === input.environment,

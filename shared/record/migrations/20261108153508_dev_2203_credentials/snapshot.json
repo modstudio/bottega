@@ -11966,6 +11966,19 @@
       "default": null,
       "generated": null,
       "identity": null,
+      "name": "name",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "config_secret"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
       "name": "type",
       "entityType": "columns",
       "schema": "public",
@@ -12123,6 +12136,19 @@
       "generated": null,
       "identity": null,
       "name": "provider",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "credential_payer_preference"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "name",
       "entityType": "columns",
       "schema": "public",
       "table": "credential_payer_preference"
@@ -23286,6 +23312,7 @@
         "user_id",
         "project_id",
         "provider",
+        "name",
         "type",
         "mode",
         "environment"
@@ -24207,14 +24234,14 @@
       "table": "orch_snapshot"
     },
     {
-      "value": "(\"provider\" IS NULL AND \"type\" IS NULL AND \"hint\" IS NULL AND \"project_id\" IS NULL AND \"mode\" IS NULL) OR\n          (\"provider\" IS NOT NULL AND \"type\" IS NOT NULL AND \"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"hint\" IS NOT NULL AND \"mode\" IN ('live','test','default') AND \"environment\" IN ('local'))",
+      "value": "(\"provider\" IS NULL AND \"name\" IS NULL AND \"type\" IS NULL AND \"hint\" IS NULL AND \"project_id\" IS NULL AND \"mode\" IS NULL) OR\n          (\"provider\" IS NOT NULL AND (\"name\" IS NULL OR \"name\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$') AND \"type\" IS NOT NULL AND \"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"hint\" IS NOT NULL AND \"mode\" IN ('live','test','default') AND \"environment\" IN ('local'))",
       "name": "config_secret_credential_fields_check",
       "entityType": "checks",
       "schema": "public",
       "table": "config_secret"
     },
     {
-      "value": "\"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'",
+      "value": "\"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND (\"name\" IS NULL OR \"name\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$') AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'",
       "name": "credential_payer_preference_slug_check",
       "entityType": "checks",
       "schema": "public",

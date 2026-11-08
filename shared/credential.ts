@@ -14,11 +14,12 @@ export type CredentialBinding = (typeof CREDENTIAL_BINDINGS)[number]
 
 export type CredentialMetadataFields = {
   provider: string
+  name: string | null
   type: string
   hint: string
 }
 
-export type CredentialIdentity = Pick<CredentialMetadataFields, 'provider' | 'type'> & {
+export type CredentialIdentity = Pick<CredentialMetadataFields, 'provider' | 'name' | 'type'> & {
   projectId: string | null
   mode: CredentialMode
   environment: CredentialEnvironment
@@ -38,6 +39,7 @@ export type CompleteCredentialFields = CredentialMetadataFields & {
 
 export function completeCredentialFields(row: {
   provider?: string | null
+  name?: string | null
   type?: string | null
   hint?: string | null
   mode?: string | null
@@ -54,6 +56,7 @@ export function completeCredentialFields(row: {
     return null
   return {
     provider: row.provider,
+    name: row.name ?? null,
     type: row.type,
     hint: row.hint,
     mode: row.mode as CredentialMode,
