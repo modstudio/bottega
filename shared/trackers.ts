@@ -122,7 +122,12 @@ export const trackerReviewStagesShape = {
   active: trackerNameSchema,
 }
 
-// The two inner objects are strict here; a consumer that must accept a newer
+export const trackerWriteStatesShape = {
+  active: trackerNameSchema.optional(),
+  done: trackerNameSchema.optional(),
+}
+
+// The inner objects are strict here; a consumer that must accept a newer
 // key rebuilds them over these shapes.
 export const trackerSettingsShape = {
   kind: trackerNameSchema.optional(),
@@ -136,6 +141,7 @@ export const trackerSettingsShape = {
   completesOnMerge: z.boolean().optional(),
   states: z.record(trackerNameSchema, z.enum(['backlog', ...TASK_STATUSES])).optional(),
   reviewStages: z.strictObject(trackerReviewStagesShape).optional(),
+  writeStates: z.strictObject(trackerWriteStatesShape).optional(),
   actions: z.strictObject(trackerActionsShape).optional(),
 }
 
@@ -216,6 +222,53 @@ export function refuseInvalidReviewStages(
       message: `value "${stages.active}" must differ from reviewStages.waiting; ${remedy}`,
     })
   }
+}
+
+/** Write state names select raw states already categorized for their transition. */
+export function refuseInvalidWriteStates(
+  tracker: TrackerSettings,
+  context: z.core.$RefinementCtx<TrackerSettings>,
+): void {
+  const writeStates = tracker.writeStates
+  if (!writeStates) return
+  for (const [category, raw] of Object.entries(writeStates)) {
+    const writeStateRemedy =
+      `set it with: ${PLATFORM_SLUG} project set <name> --settings ` +
+      `'${JSON.stringify({ tracker: { writeStates: { [category]: `<${category}-state>` } } })}'`
+    const mapped = tracker.states?.[raw]
+    if (mapped !== category) {
+      const absentStateRemedy =
+        `set it with: ${PLATFORM_SLUG} project set <name> --settings ` +
+        `'${JSON.stringify({ tracker: { states: { [raw]: category }, writeStates: { [category]: raw } } })}'`
+      context.addIssue({
+        code: 'custom',
+        path: ['writeStates', category],
+        message:
+          mapped === undefined
+            ? `value "${raw}" is not a key of tracker.states; ${absentStateRemedy}`
+            : `value "${raw}" maps to "${mapped}", not "${category}"; ${writeStateRemedy}`,
+      })
+    }
+  }
+}
+
+/** Select the raw state accepted by a tracker for a writable task category. */
+export function resolveTrackerWriteState(
+  projectName: string,
+  tracker: TrackerSettings,
+  protocol: TrackerProtocol,
+  category: 'active' | 'done',
+): string | undefined {
+  const rawStates = Object.entries(tracker.states ?? {}).flatMap(([raw, mapped]) =>
+    mapped === category ? [raw] : [],
+  )
+  const selected = tracker.writeStates?.[category]
+  if (!selected && rawStates.length > 1) {
+    throw new Error(
+      `project ${projectName} tracker has several ${category} states (${rawStates.join(', ')}) but no writeStates.${category} selection; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '${JSON.stringify({ tracker: { writeStates: { [category]: `<${category}-state>` } } })}'`,
+    )
+  }
+  return selected ?? rawStates[0] ?? (protocol === 'hub' ? category : undefined)
 }
 
 export type TrackerProject = {

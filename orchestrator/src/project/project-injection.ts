@@ -11,9 +11,11 @@ import {
 import {
   refuseHubActionOverrides,
   refuseInvalidReviewStages,
+  refuseInvalidWriteStates,
   refuseNonCursorProjectId,
   refuseUnsupportedUpdatedSince,
   resolveTrackerAgentActions,
+  resolveTrackerWriteState,
   TRACKER_PROTOCOLS,
   type TrackerAction,
   type TrackerProtocol,
@@ -21,6 +23,7 @@ import {
   trackerActionsShape,
   trackerReviewStagesShape,
   trackerSettingsShape,
+  trackerWriteStatesShape,
 } from '../../../shared/trackers.ts'
 import { mechanicalCheckEntryIssues } from '../enforcement/mechanical-check-declaration.ts'
 import {
@@ -382,15 +385,17 @@ const trackerSchema = (mode: SettingsObjectMode) =>
   objectIn(mode)({
     ...trackerSettingsShape,
     protocol: z.enum(TRACKER_PROTOCOLS),
-    // The shared shape fixes these two inner objects strict, so a reader
+    // The shared shape fixes these inner objects strict, so a reader
     // overrides them with the same fields in the mode it declares.
     reviewStages: objectIn(mode)(trackerReviewStagesShape).optional(),
+    writeStates: objectIn(mode)(trackerWriteStatesShape).optional(),
     actions: objectIn(mode)(trackerActionsShape).optional(),
   }).superRefine((tracker, context) => {
     refuseHubActionOverrides(tracker, context)
     refuseNonCursorProjectId(tracker, context)
     refuseUnsupportedUpdatedSince(tracker, context)
     refuseInvalidReviewStages(tracker, context)
+    refuseInvalidWriteStates(tracker, context)
   })
 
 export type ReleaseSettings = z.infer<ReturnType<typeof releaseSchema>>
@@ -514,10 +519,8 @@ function resolvedTracker(
   ) as Partial<Record<TrackerAction, string>>
   const states = Object.fromEntries(
     (['active', 'done'] as const).flatMap((category) => {
-      const raw = Object.entries(tracker.states ?? {}).find(
-        ([, mapped]) => mapped === category,
-      )?.[0]
-      return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
+      const raw = resolveTrackerWriteState(project.name, tracker, protocol, category)
+      return raw ? [[category, raw]] : []
     }),
   ) as ResolvedTracker['states']
   const reviewStages = resolvedReviewStages(

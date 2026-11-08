@@ -253,6 +253,7 @@ const listedProjectRow = {
       protocol: 'cursor-mcp',
       actions: { search: 'task_list', newVerb: 'tool' },
       reviewStages: { waiting: 'waiting-review', active: 'in-review', brandNew: 'x' },
+      writeStates: { done: 'complete', brandNew: 'x' },
     },
   },
   visibility: null,
@@ -264,12 +265,13 @@ const listedProjectRow = {
   gate: null,
 }
 
-test('the published register accepts a tracker action and stage this binary does not know', () => {
+test('the published register accepts tracker settings this binary does not know', () => {
   const parsed = OrchProjectSchema.parse(listedProjectRow)
   expect(parsed.settings.tracker).toMatchObject({
     protocol: 'cursor-mcp',
     actions: { search: 'task_list' },
     reviewStages: { waiting: 'waiting-review', active: 'in-review' },
+    writeStates: { done: 'complete' },
   })
 })
 

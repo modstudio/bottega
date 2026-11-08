@@ -1,6 +1,7 @@
 import {
   type CreateTrackerTask,
   createTrackerTask,
+  resolveTrackerWriteState,
   type ToolCaller,
   type TrackerProject,
   type TrackerProtocol,
@@ -32,8 +33,16 @@ export function trackerTaskInput(
       `--parent is not supported for project ${project.name}; set the parent in the ${tracker.kind ?? tracker.protocol ?? 'project'} tracker`,
     )
   const mapped = Object.entries(tracker.states ?? {})
-  const status = input.status
-    ? mapped.find(([, category]) => category === input.status)?.[0]
+  const requested = input.status
+  const status = requested
+    ? requested === 'active' || requested === 'done'
+      ? resolveTrackerWriteState(
+          project.name,
+          tracker,
+          tracker.protocol as TrackerProtocol,
+          requested,
+        )
+      : mapped.find(([, category]) => category === requested)?.[0]
     : tracker.openStatuses?.[0]
   if (!status) {
     const choices = mapped.map(([name, category]) => `${category} -> ${name}`).join(', ')

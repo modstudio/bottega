@@ -121,6 +121,45 @@ describe('array-mcp task writes', () => {
     expect(row).toMatchObject({ status: 'in_progress', status_category: 'active' })
   })
 
+  test('set uses the selected raw done state (mutation: ignore writeStates in array writes)', async () => {
+    const selected = {
+      ...project,
+      settings: {
+        ...project.settings,
+        tracker: {
+          ...project.settings.tracker,
+          states: {
+            backlog: 'backlog' as const,
+            todo: 'open' as const,
+            in_progress: 'active' as const,
+            completed: 'done' as const,
+            complete: 'done' as const,
+            cancelled: 'dropped' as const,
+          },
+          writeStates: { done: 'complete' },
+        },
+      },
+    }
+    const calls: Record<string, unknown>[] = []
+
+    await setTaskThroughTracker(
+      'ADN-1659',
+      {},
+      { status: 'done' },
+      UNATTRIBUTED,
+      { confirm: 'production' },
+      {
+        ...dependencies(async (_name, args) => {
+          calls.push(args)
+          return {}
+        }),
+        registeredProjects: () => [selected],
+      },
+    )
+
+    expect(calls).toEqual([{ id: taskId, status: 'complete', confirm: 'production' }])
+  })
+
   test('set refuses a hub status with no tracker state and names valid states', async () => {
     await expect(
       setTaskThroughTracker(

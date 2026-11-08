@@ -77,6 +77,39 @@ describe('tracker-new MCP creation', () => {
     )
   })
 
+  test('uses the selected raw done state when creating a task (mutation: first-match done states)', () => {
+    const selected = {
+      ...trackerProject,
+      settings: {
+        tracker: {
+          ...trackerProject.settings.tracker,
+          states: { Done: 'done' as const, Complete: 'done' as const },
+          writeStates: { done: 'Complete' },
+        },
+      },
+    }
+
+    expect(trackerTaskInput(selected, { title: 'Selected', status: 'done' }).status).toBe(
+      'Complete',
+    )
+  })
+
+  test('refuses ambiguous done states when creating a task (mutation: accept first done state)', () => {
+    const ambiguous = {
+      ...trackerProject,
+      settings: {
+        tracker: {
+          ...trackerProject.settings.tracker,
+          states: { Done: 'done' as const, Complete: 'done' as const },
+        },
+      },
+    }
+
+    expect(() => trackerTaskInput(ambiguous, { title: 'Ambiguous', status: 'done' })).toThrow(
+      'project tasks tracker has several done states (Done, Complete) but no writeStates.done selection',
+    )
+  })
+
   test('refuses parent creation in the external tracker', () => {
     expect(() => trackerTaskInput(trackerProject, { title: 'Child', parent: 'TSK-1' })).toThrow(
       'set the parent in the Array tracker',

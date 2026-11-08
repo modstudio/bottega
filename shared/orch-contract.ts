@@ -16,6 +16,7 @@ import {
   trackerActionsShape,
   trackerReviewStagesShape,
   trackerSettingsShape,
+  trackerWriteStatesShape,
 } from './trackers.ts'
 
 export const WORKER_QUESTION_KINDS = ['choice', 'yesno', 'score', 'text'] as const
@@ -227,6 +228,7 @@ const OrchTrackerSettingsSchema = z
   .looseObject({
     ...trackerSettingsShape,
     reviewStages: z.looseObject(trackerReviewStagesShape).optional(),
+    writeStates: z.looseObject(trackerWriteStatesShape).optional(),
     actions: z.looseObject(trackerActionsShape).optional(),
   })
   .superRefine((tracker, context) => {
