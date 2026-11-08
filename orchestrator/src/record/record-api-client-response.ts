@@ -15,7 +15,10 @@ export class RecordApiRequestError extends Error {
     existingAccount = false,
   ) {
     super(message)
-    Object.assign(this, { kind, status, code, existingAccount })
+    this.kind = kind
+    this.status = status
+    this.code = code
+    this.existingAccount = existingAccount
   }
 }
 

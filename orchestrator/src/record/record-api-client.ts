@@ -54,7 +54,9 @@ import {
   responseMessage,
   responseRecord,
 } from './record-api-client-response.ts'
+
 export { RecordApiRequestError } from './record-api-client-response.ts'
+
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
