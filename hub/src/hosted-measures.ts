@@ -1,4 +1,5 @@
 import type { SQL } from 'bun'
+import { hubInterval } from '../../shared/record/schema-hub.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import {
@@ -9,6 +10,7 @@ import {
   type Measures,
   type MeasureWindow,
 } from './measures.ts'
+import { bigintColumns, decodeRecordBigintColumns } from './record-bigint.ts'
 
 type SqlTime = string | Date
 const iso = (value: SqlTime) => new Date(value).toISOString()
@@ -38,7 +40,10 @@ type RawEvent = {
   to_status: string
 }
 
-export function asInterval(row: RawInterval): MeasureInterval {
+const hubIntervalBigintColumns = bigintColumns(hubInterval)
+
+export function asInterval(source: RawInterval): MeasureInterval {
+  const row = decodeRecordBigintColumns(source, hubIntervalBigintColumns)
   return {
     source: row.source,
     startAt: iso(row.start_at),
@@ -49,7 +54,7 @@ export function asInterval(row: RawInterval): MeasureInterval {
     taskKey: row.task_key,
     project: row.project_name,
     projectId: row.project_id,
-    vendorTokens: number(row.vendor_tokens),
+    vendorTokens: Number(row.vendor_tokens),
     vendorCostUsd: row.vendor_cost_usd == null ? null : Number(row.vendor_cost_usd),
   }
 }

@@ -125,6 +125,7 @@ async function pullDocsForSpace(
   let skippedDocs = 0
   const client = recordApiClient()
   let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
+  let cursorFrozen = false
   for (;;) {
     const page = await client.listDocs(
       {
@@ -134,7 +135,9 @@ async function pullDocsForSpace(
       },
       { destinationSpaceId: input.spaceId },
     )
-    if (!page.items.length) break
+    const unreadable = page.unreadable ?? []
+    for (const row of unreadable)
+      console.warn(`unreadable hosted document ${row.id}: ${row.reason}`)
     writeTransaction(() => {
       const applied = applyDocPage(
         local,
@@ -144,9 +147,13 @@ async function pullDocsForSpace(
       )
       docs += applied.docs
       skippedDocs += applied.skippedDocs
-      cursor = page.endCursor ? decodeRecordCursor(page.endCursor) : (applied.cursor ?? cursor)
+      if (!cursorFrozen) {
+        if (page.endCursor) cursor = decodeRecordCursor(page.endCursor)
+        else if (unreadable.length === 0) cursor = applied.cursor ?? cursor
+      }
       if (cursor && input.unresolvedParents.size === 0) writeRecordCursor(local, cursorKey, cursor)
     }, local)
+    if (unreadable.length > 0) cursorFrozen = true
     if (!page.nextCursor) break
     requestCursor = page.nextCursor
   }

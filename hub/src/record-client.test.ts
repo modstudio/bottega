@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { TRPCError } from '@trpc/server'
-import { createRecordClient, type RecordFetch } from './record-client.ts'
+import { getTableColumns } from 'drizzle-orm'
+import type { z } from 'zod'
+import { run } from '../../shared/record/schema-run.ts'
+import { createRecordClient, type RecordFetch, recordRunDetailSchema } from './record-client.ts'
 
 const whoamiBody = {
   user: { id: 'user-a', email: 'a@example.test' },
@@ -74,6 +77,16 @@ function clientWith(fetch: RecordFetch, headers: { cookie?: string; authorizatio
 }
 
 describe('record client', () => {
+  test('every run bigint field parsed by the record client accepts its decimal string', () => {
+    const shape = recordRunDetailSchema.shape as Record<string, z.ZodType>
+    const servedBigintFields = Object.entries(getTableColumns(run)).filter(
+      ([field, column]) => column.getSQLType() === 'bigint' && field in shape,
+    )
+    expect(servedBigintFields.length).toBeGreaterThan(0)
+    for (const [field] of servedBigintFields)
+      expect(shape[field]!.parse('18234'), field).toBe(18234)
+  })
+
   test('secret listing keeps names and drops any value or envelope the record sends', async () => {
     const urls: string[] = []
     const client = clientWith(async (url) => {

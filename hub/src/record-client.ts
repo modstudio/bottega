@@ -34,6 +34,7 @@ import {
   DocTreeItemSchema,
   DocTreeSchema,
 } from './doc-contract.ts'
+import { recordBigintSchema } from './record-bigint.ts'
 
 type RecordAuthHeaders = {
   cookie?: string
@@ -115,11 +116,11 @@ const runSchema = z.object({
   agent: z.string(),
   job: z.string(),
   status: z.string(),
-  latencyMs: z.number().nullable(),
+  latencyMs: recordBigintSchema.nullable(),
   promptHead: z.string(),
   taskKey: z.string().nullable(),
   failureKind: z.string().nullable(),
-  vendorTokens: z.number().nullable(),
+  vendorTokens: recordBigintSchema.nullable(),
   vendorCostUsd: z.number().nullable(),
   label: z.string().nullable(),
   lens: z.string().nullable(),
@@ -194,10 +195,9 @@ const runDetailReviewLensSchema: z.ZodType<RunDetailReviewLens> = z.object({
   findings: z.array(runDetailReviewFindingSchema),
 })
 
-const runDetailSchema = runSchema.passthrough().extend({
+export const recordRunDetailSchema = runSchema.passthrough().extend({
   machineId: z.string().uuid(),
-  // The record serializes a Postgres bigint column as a decimal string.
-  promptBytes: z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]),
+  promptBytes: recordBigintSchema,
   error: z.string().nullable(),
   reviews: z.array(runDetailReviewLensSchema),
 })
@@ -373,7 +373,12 @@ const docSchema = DocSchema.extend({
   deletedAt: z.string().datetime({ offset: true }).nullable(),
 }).extend(ArticleDocFieldsSchema.shape)
 
-const docsSchema = z.object({ items: z.array(docSchema), nextCursor: z.string().nullable() })
+const unreadableRecordDocSchema = z.object({ id: z.string().uuid(), reason: z.string() })
+const docsSchema = z.object({
+  items: z.array(docSchema),
+  unreadable: z.array(unreadableRecordDocSchema).default([]),
+  nextCursor: z.string().nullable(),
+})
 const subjectsSchema = z.object({
   items: z.array(SubjectOutputSchema),
   nextCursor: z.string().nullable(),
@@ -846,7 +851,11 @@ function recordDocReadClient(options: RecordClientOptions) {
         }),
         docsSchema,
         destination(spaceId),
-      ),
+      ).then((page) => {
+        for (const row of page.unreadable)
+          console.warn(`unreadable hosted document ${row.id}: ${row.reason}`)
+        return page
+      }),
     doc: (id: string, audience?: DocAudience, spaceId?: string) =>
       request(options, query(`/v1/docs/${encodeURIComponent(id)}`, { audience }), docSchema, {
         headers: destination(spaceId)?.headers,
@@ -885,7 +894,7 @@ export function createRecordClient(options: RecordClientOptions) {
         }),
         runWindowSchema,
       ),
-    run: (id: string) => request(options, `/v1/runs/${id}`, runDetailSchema),
+    run: (id: string) => request(options, `/v1/runs/${id}`, recordRunDetailSchema),
     score: (id: string, input: z.input<typeof scoreInputSchema>) =>
       request(options, `/v1/runs/${id}/score`, verdictResponseSchema, {
         method: 'PUT',

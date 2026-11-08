@@ -166,6 +166,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-doc-tenant.ts',
       './record-api-tenant.ts',
       './record-api-doc-order.ts',
+      './record-api-doc-list.ts',
       './record-api-write-routes.ts',
       './record-api-settings.ts',
       './record-api-subjects.ts',

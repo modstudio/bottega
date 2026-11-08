@@ -617,6 +617,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-access.ts', [
     'hono',
     'hono/cors',
+    'zod',
     '../../../shared/record-client-addresses.ts',
   ]),
   module('orchestrator/src/record/record-api-errors.ts', [
@@ -672,6 +673,10 @@ export const recordModules: RecordModule[] = [
     '../../../shared/personal-item-space.ts',
     './record-api-doc-schemas.ts',
     './record-auth.ts',
+    './record-docs.ts',
+  ]),
+  module('orchestrator/src/record/record-api-doc-list.ts', [
+    './record-cursor.ts',
     './record-docs.ts',
   ]),
   module('orchestrator/src/record/record-api-config-access-routes.ts', [

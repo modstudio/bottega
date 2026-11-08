@@ -1,4 +1,8 @@
 export const hubModuleSpecs = [
+  {
+    file: 'hub/src/record-bigint.ts',
+    allowed: ['drizzle-orm', 'drizzle-orm/pg-core', 'zod'],
+  },
   { file: 'hub/src/ingest/tracker-read-mode.ts', allowed: [] },
   {
     file: 'hub/src/hosted-push-decision.ts',
