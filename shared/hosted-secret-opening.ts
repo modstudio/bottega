@@ -24,17 +24,66 @@ export class HostedOpenError extends Error {
   }
 }
 
+export type HostedSpaceOpenDecision =
+  | { allowed: true; identity: { spaceId: string; userId: string } }
+  | { allowed: false; reason: 'not-member' | 'no-config-access' | 'machine-not-trusted' }
+
+/** Decide whether this user and machine may open values in one destination space. */
+export function decideHostedSpaceOpen(input: {
+  destinationSpaceId: string
+  userId: string
+  memberships: readonly { spaceId: string; slug: string; permission: string }[]
+  configAccess: boolean
+  machine: { userId: string | null; revokedAt: string | null } | undefined
+}): HostedSpaceOpenDecision {
+  if (!input.memberships.some((membership) => membership.spaceId === input.destinationSpaceId))
+    return { allowed: false, reason: 'not-member' }
+  if (!input.configAccess) return { allowed: false, reason: 'no-config-access' }
+  if (!input.machine || input.machine.userId !== input.userId || input.machine.revokedAt !== null)
+    return { allowed: false, reason: 'machine-not-trusted' }
+  return {
+    allowed: true,
+    identity: { spaceId: input.destinationSpaceId, userId: input.userId },
+  }
+}
+
 const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
 
 export async function hostedIdentity(
   client: ConfigClient,
   pinned = readHostedConfigIdentity(),
+  destination?: { spaceId: string; machineKeyId: string; configAccess: boolean },
 ): Promise<{ spaceId: string; userId: string }> {
   if (!pinned)
     throw new Error(
       `hosted config machine is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
     )
   const current = await client.whoami()
+  if (destination) {
+    if (current.user.id !== pinned.userId) throw new Error(pinnedUserMismatchRemedy(pinned.userId))
+    const machines = await client.listMachineKeys({ destinationSpaceId: destination.spaceId })
+    const decision = decideHostedSpaceOpen({
+      destinationSpaceId: destination.spaceId,
+      userId: current.user.id,
+      memberships: current.memberships.map((membership) => ({
+        spaceId: membership.space_id,
+        slug: membership.slug,
+        permission: membership.permission,
+      })),
+      configAccess: destination.configAccess,
+      machine: machines.find((machine) => machine.keyId === destination.machineKeyId),
+    })
+    if (decision.allowed) return decision.identity
+    if (decision.reason === 'not-member')
+      throw new Error(`signed-in user is not a member of record space ${destination.spaceId}`)
+    if (decision.reason === 'no-config-access')
+      throw new Error(
+        `signed-in user lacks config access in record space ${destination.spaceId}; a space owner or admin grants it with \`${PLATFORM_SLUG} record space access grant <email>\``,
+      )
+    throw new Error(
+      `this machine is not trusted in record space ${destination.spaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``,
+    )
+  }
   if (!current.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
   if (current.activeSpaceId !== pinned.spaceId)
     throw new Error(pinnedSpaceMismatchRemedy(pinned.spaceId))
@@ -51,6 +100,7 @@ export async function openHostedSecret(input: {
   trust: TrustList
   expected: { key: string; scope: ConfigSecret['scope']; environment: string }
   pinnedIdentity?: HostedConfigIdentity | null
+  destinationSpaceId?: string
 }): Promise<Uint8Array> {
   const { row, expected } = input
   if (
@@ -61,6 +111,11 @@ export async function openHostedSecret(input: {
     throw new HostedOpenError('authentication-failed', 'hosted secret response identity mismatch')
   const wrap = input.key.wraps.find((candidate) => input.trust[candidate.senderKeyId])
   if (!wrap) {
+    if (input.destinationSpaceId)
+      throw new HostedOpenError(
+        'missing-wrap',
+        `this machine is not trusted in record space ${input.destinationSpaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``,
+      )
     if (input.key.wraps.length)
       throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
     throw new HostedOpenError('missing-wrap', 'hosted secret data key has no wrap for this machine')
@@ -69,7 +124,17 @@ export async function openHostedSecret(input: {
   if (!sender)
     throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
   try {
-    const identity = await hostedIdentity(input.client, input.pinnedIdentity)
+    const identity = await hostedIdentity(
+      input.client,
+      input.pinnedIdentity,
+      input.destinationSpaceId
+        ? {
+            spaceId: input.destinationSpaceId,
+            machineKeyId: input.machine.keyId,
+            configAccess: true,
+          }
+        : undefined,
+    )
     const dek = await unwrapDataKey({
       enc: bytes(wrap.enc),
       ciphertext: bytes(wrap.ciphertext),

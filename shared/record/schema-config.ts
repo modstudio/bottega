@@ -159,6 +159,10 @@ export const configSecret = pgTable.withRLS(
       sql`(${table.provider} IS NULL AND ${table.name} IS NULL AND ${table.type} IS NULL AND ${table.hint} IS NULL AND ${table.projectId} IS NULL AND ${table.mode} IS NULL) OR
           (${table.provider} IS NOT NULL AND (${table.name} IS NULL OR ${table.name} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}) AND ${table.type} IS NOT NULL AND ${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.hint} IS NOT NULL AND ${table.mode} IN ${sql.raw(`(${CREDENTIAL_MODES.map((value) => `'${value}'`).join(',')})`)} AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)})`,
     ),
+    check(
+      'config_secret_credential_identity_key_check',
+      sql`${table.provider} IS NULL OR ${table.key} = ${table.provider} || '/' || CASE WHEN ${table.name} IS NULL THEN '' ELSE ${table.name} || '/' END || ${table.type} || '#' || ${table.mode} || '@' || ${table.environment}`,
+    ),
     foreignKey({
       columns: [table.spaceId, table.dekId],
       foreignColumns: [secretDek.spaceId, secretDek.id],

@@ -284,8 +284,8 @@ function configKeyClient(request: Request, query: Query) {
       request<{ retired: true }>(`/v1/config/data-keys/${encodeURIComponent(dekId)}/retire`, {
         method: 'POST',
       }),
-    listMachineKeys: () =>
-      request<{ items: MachineKey[] }>('/v1/config/machine-keys').then((x) => x.items),
+    listMachineKeys: (destination: ConfigDestination = {}) =>
+      request<{ items: MachineKey[] }>('/v1/config/machine-keys', destination).then((x) => x.items),
     registerMachineKey: (keyId: string, publicKey: string, label: string) =>
       request<MachineKey>(`/v1/config/machine-keys/${keyId}`, {
         method: 'PUT',

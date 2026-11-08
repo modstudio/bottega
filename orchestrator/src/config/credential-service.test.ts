@@ -65,9 +65,8 @@ test('set credential gives the project access remedy for every missing wrap outc
   ]) {
     const createDataKey = mock(async () => ({ id: '', version: 1 }))
     const client = { currentDataKey, createDataKey } as unknown as ConfigClient
-    await expect(setCredential(address, 'secret', client)).rejects.toThrow('record space switch')
     await expect(setCredential(address, 'secret', client)).rejects.toThrow(
-      'record space access grant',
+      'machine config machine trust',
     )
     expect(createDataKey).not.toHaveBeenCalled()
   }
@@ -129,6 +128,7 @@ test('set credential writes a project-bound row with its metadata and hint', asy
   await setCredential(address, 'abcd-credential-value-wxyz', client)
 
   expect(putSecret).toHaveBeenCalledTimes(1)
+  expect(putSecret.mock.calls[0]?.[0]).toBe('openrouter/api-key#default@local')
   expect(putSecret.mock.calls[0]?.[1]).toMatchObject({
     destinationSpaceId: address.destinationSpaceId,
     projectId: address.projectId,

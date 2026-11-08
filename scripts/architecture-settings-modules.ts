@@ -87,6 +87,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-space-membership.ts',
     '../config/credential-service.ts',
     '../config/credential.ts',
+    '../config/secret-run.ts',
     '../project/projects.ts',
     '../record/record-project-destination.ts',
     '../record/record-project-destination-client.ts',
