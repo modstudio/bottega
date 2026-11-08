@@ -50,6 +50,13 @@ export function orderedPublicDocs(items: readonly PublicTextDoc[]): PublicTextDo
     .flatMap((item) => [item, ...descendants(item.id, children)])
 }
 
+export function directPublicDocChildren(
+  doc: PublicTextDoc,
+  ordered: readonly PublicTextDoc[],
+): PublicTextDoc[] {
+  return ordered.filter((item) => item.parentId === doc.id)
+}
+
 function encoded(value: string): string {
   return encodeURIComponent(value)
 }

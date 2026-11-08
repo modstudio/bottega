@@ -20,6 +20,36 @@ const dependencies = {
 }
 const articlePath = `/docs/project/${PLATFORM_SLUG}/install`
 
+const section: PublicTextDoc = {
+  ...install,
+  id: 'section-id',
+  slug: 'getting-started',
+  title: 'Getting started',
+  position: 0,
+}
+const firstJob: PublicTextDoc = {
+  ...install,
+  id: 'first-job-id',
+  slug: 'first-job',
+  title: 'First job',
+  parentId: section.id,
+  position: 1,
+}
+const nested: PublicTextDoc = {
+  ...install,
+  id: 'review-id',
+  slug: 'review',
+  title: 'Review',
+  parentId: firstJob.id,
+  position: 1,
+}
+const sectionDependencies = {
+  tree: async () => ({
+    items: [section, { ...install, parentId: section.id, position: 2 }, nested, firstJob],
+  }),
+  doc: async () => ({ body: '# Getting started\n\nBegin here.' }),
+}
+
 describe('public docs text API', () => {
   test('serves llms.txt as cached plain text', async () => {
     const response = await publicDocsTextApi(
@@ -42,6 +72,25 @@ describe('public docs text API', () => {
     expect(await response?.text()).toBe(
       `# Install\n\nRun the [next step](${PUBLIC_SITE_ORIGIN}/docs/first-job.md).`,
     )
+  })
+
+  test('appends direct children in sibling order to both Markdown addresses', async () => {
+    const expected =
+      `# Getting started\n\nBegin here.\n\n## Pages in this section\n\n` +
+      `- [First job](/docs/project/${PLATFORM_SLUG}/first-job.md)\n` +
+      `- [Install](/docs/project/${PLATFORM_SLUG}/install.md)`
+    for (const path of [
+      '/docs/getting-started.md',
+      `/docs/project/${PLATFORM_SLUG}/getting-started.md`,
+    ]) {
+      const response = await publicDocsTextApi(
+        new Request(`https://hub.example.test${path}`),
+        sectionDependencies,
+      )
+      const body = await response?.text()
+      expect(body).toBe(expected)
+      expect(body).not.toContain('review.md')
+    }
   })
 
   test('redirects a unique short address relatively and keeps its query', async () => {
