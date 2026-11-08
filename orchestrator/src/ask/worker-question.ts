@@ -18,7 +18,7 @@ export function normalizeWorkerQuestionChoice(value: string): string {
 
 const choiceOption = z
   .object({
-    name: z.string(),
+    name: z.string().trim(),
     criteria: nullableAbsent(z.string()),
   })
   .transform(({ name, criteria }) => ({ name, ...(criteria === undefined ? {} : { criteria }) }))
@@ -28,7 +28,15 @@ const choice = z
     question: requiredQuestion,
     why: nullableAbsent(z.string().trim()).default(''),
     options: z
-      .array(z.union([z.string().transform((name) => ({ name })), choiceOption]))
+      .array(
+        z.union([
+          z
+            .string()
+            .trim()
+            .transform((name) => ({ name })),
+          choiceOption,
+        ]),
+      )
       .min(2, 'choice needs at least two options')
       .superRefine((options, context) => {
         const names = new Set<string>()
@@ -68,7 +76,7 @@ const score = z.object({
   kind: z.literal('score'),
   question: requiredQuestion,
   why: nullableAbsent(z.string().trim()).default(''),
-  levels: z.array(z.string()).min(2).max(10),
+  levels: z.array(z.string().trim()).min(2).max(10),
 })
 const text = z.object({
   kind: z.literal('text'),

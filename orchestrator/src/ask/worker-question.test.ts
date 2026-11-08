@@ -35,6 +35,11 @@ describe('worker question answerability', () => {
     expect(parsed.kind === 'choice' ? parsed.recommendation : undefined).toBe(expected)
   })
 
+  test.each([['  Alpha  ', 'Alpha']])('stores option name %j as %j', (name, expected) => {
+    const parsed = WorkerQuestionSchema.parse({ ...choice(), options: [name, 'Beta'] })
+    expect(parsed.kind === 'choice' ? parsed.options[0]?.name : undefined).toBe(expected)
+  })
+
   const unanswerable: [string, WorkerQuestionInput][] = [
     ['empty question', { ...choice('Alpha Choice'), question: '' }],
     ['one option', { ...choice('Alpha Choice'), options: ['Alpha Choice'] }],
