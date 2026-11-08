@@ -115,6 +115,25 @@ test('stale cached context JSON includes its status and resolution time', () => 
   expect(json.resolvedAt).toBe('2026-09-28T12:34:56.000Z')
 })
 
+test('a context with no stale hosted winner retains its autonomy note', () => {
+  const note = 'hosted autonomy settings unavailable: offline; resolved from built-in'
+  const slice = staleSessionContext(
+    {
+      ...resolvedFixture,
+      note,
+      rulings: { value: 'user', scope: 'project' },
+      stages: resolvedFixture.stages.map((stage) => ({ ...stage, scope: 'project' })),
+      shipTo: { ...resolvedFixture.shipTo, scope: 'project' },
+    },
+    cachedFixture.resolvedAt,
+    'offline',
+  )
+
+  if (!slice.registered) throw new Error('expected a registered slice')
+  expect(slice.note).toBe(note)
+  expect(slice.text).toContain(note)
+})
+
 test('an unregistered cwd prints nothing and JSON says unregistered', async () => {
   expect(await contextText('/unregistered-session-context')).toBe('')
   expect(await contextJson('/unregistered-session-context')).toEqual({ registered: false })
@@ -155,7 +174,7 @@ test('a registered project reports rulings and one value when a stage agrees', a
   expect(text).toContain('rulings: user (project)')
   expect(text).toContain('plan: review (project)')
   expect(text).toContain('ship to: trunk (merge into main) (built-in)')
-  expect(text.split('\n').at(-1)).toBe('ship to: trunk (merge into main) (built-in)')
+  expect(text.split('\n').at(-2)).toBe('ship to: trunk (merge into main) (built-in)')
   expect(text.split('\n').filter((line) => line.startsWith('plan:'))).toHaveLength(1)
   expect(await contextText(join(path, 'tree'))).toBe(text)
 })
@@ -209,7 +228,7 @@ test('ship-to renders every register branch phrase', async () => {
       landing: 'develop',
       production: item.productionBranch ?? null,
     })
-    expect((slice.text as string).split('\n').at(-1)).toBe(item.line)
+    expect((slice.text as string).split('\n').at(-2)).toBe(item.line)
   }
 })
 
@@ -543,8 +562,14 @@ test('a hosted-read failure without a cache serves the local-scope resolution', 
 
   expect(degraded.stale).toBeUndefined()
   expect(degraded.resolvedAt).toBeUndefined()
+  expect(degraded.note).toBe(
+    'hosted autonomy settings unavailable: record is offline; resolved from local and project scopes, then built-in',
+  )
   expect(degraded.text).toContain('plan: auto (project)')
   expect(degraded.text).toContain('review: ask (project)')
+  expect(degraded.text).toContain(
+    'hosted autonomy settings unavailable: record is offline; resolved from local and project scopes, then built-in',
+  )
   expect(degraded.text).toStartWith(`Autonomy for ${name}, resolved now from ${PLATFORM_NAME}`)
 })
 

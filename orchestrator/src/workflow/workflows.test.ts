@@ -1,14 +1,17 @@
-import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import { catalogueStepsForAutonomy } from './autonomy.ts'
+import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { seedWorkflows } from './workflow-seeds.ts'
-import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
+import { database } from './workflow-cursor-test.fixture.ts'
+import { renderWorkflowComposition } from './workflow-render.ts'
 import {
   composeWorkflow,
   getWorkflowStep,
@@ -20,103 +23,16 @@ import {
   validateWorkflowDefinition,
   type WorkflowDefinition,
 } from './workflows.ts'
-
-const valid = (): WorkflowDefinition => ({
-  title: 'A workflow',
-  description: 'Does work.',
-  arguments: [
-    { name: 'key', required: true, description: 'Task key' },
-    { name: 'branch', required: true, description: 'Branch' },
-    { name: 'worktree', required: true, description: 'Worktree' },
-  ],
-  modes: [{ slug: 'default', title: 'Default', default: true, steps: ['lens'] }],
-})
-const release = {
-  rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],
-  mergeMethod: 'squash' as const,
-  requiredChecks: ['gate'],
-  observationWindowHours: 24,
-}
-const database = testDatabaseFixture((d) => {
-  seedWorkflows(d)
-  installWorkflowStoreFixture(d)
-  d.query(
-    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
-  ).run(
-    'fixture',
-    '/fixture',
-    'bun',
-    JSON.stringify({
-      gate: 'bun run check',
-      trunk: 'develop',
-      docs: { protocol: 'orch-docs' },
-      tracker: { protocol: 'hub' },
-    }),
-  )
-})
-const promotePlanTask = (d: Database) => {
-  const current = productionStepCatalogue(d).definition
-  const catalogue = setStepCatalogueLocal(
-    {
-      steps: [
-        ...current.steps,
-        {
-          slug: 'injection-search',
-          stage: 'plan',
-          title: 'Search',
-          body: 'Search with {{tracker.actions.search}}.',
-          floor: ['ruling'],
-          job: null,
-          autonomy: 'ask',
-          needs: ['tracker'],
-        },
-        {
-          slug: 'injection-start',
-          stage: 'plan',
-          title: 'Start',
-          body: 'Move to {{tracker.states.active}} with {{tracker.actions.status}} after {{tracker.actions.get}}.',
-          floor: ['tracker-transition'],
-          job: null,
-          autonomy: 'auto',
-          needs: ['tracker'],
-        },
-      ],
-    },
-    'workflow injection fixture',
-    'test',
-    d,
-  )
-  promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
-  const draft = setWorkflowLocal(
-    'plan-task',
-    {
-      title: 'Plan a task',
-      description: 'Plan.',
-      arguments: [{ name: 'key', required: false, description: 'Existing task key.' }],
-      modes: [
-        {
-          slug: 'default',
-          title: 'Plan',
-          default: true,
-          steps: ['injection-search', 'injection-start'],
-        },
-      ],
-    },
-    'workflow injection fixture',
-    'test',
-    d,
-  )
-  promoteWorkflowLocal('plan-task', draft.n, 'publish', 'test', d)
-}
+import { promotePlanTaskFixture, releaseFixture, validWorkflow } from './workflows-test.fixture.ts'
 
 describe('workflow definition validation', () => {
   test('accepts catalogue references and rejects inline or missing steps', () => {
     const d = database()
-    expect(validateWorkflowDefinition(valid(), d)).toEqual([])
-    expect(validateWorkflowDefinition({ ...valid(), steps: [] }, d)).toContain(
+    expect(validateWorkflowDefinition(validWorkflow(), d)).toEqual([])
+    expect(validateWorkflowDefinition({ ...validWorkflow(), steps: [] }, d)).toContain(
       'steps belongs in the shared step catalogue',
     )
-    const missing = valid()
+    const missing = validWorkflow()
     missing.modes[0]!.steps = ['absent']
     expect(validateWorkflowDefinition(missing, d).join('\n')).toContain('references missing step')
   })
@@ -135,15 +51,18 @@ describe('workflow definition validation', () => {
     promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
     expect(
       validateWorkflowDefinition(
-        { ...valid(), modes: [{ ...valid().modes[0]!, steps: [{ step: 'lens' }] }] },
+        {
+          ...validWorkflow(),
+          modes: [{ ...validWorkflow().modes[0]!, steps: [{ step: 'lens' }] }],
+        },
         d,
       ).join('\n'),
     ).toContain('must be a step slug or exactly')
     expect(
       validateWorkflowDefinition(
         {
-          ...valid(),
-          modes: [{ ...valid().modes[0]!, steps: ['lens', { sequence: 'quality' }] }],
+          ...validWorkflow(),
+          modes: [{ ...validWorkflow().modes[0]!, steps: ['lens', { sequence: 'quality' }] }],
         },
         d,
       ).join('\n'),
@@ -164,17 +83,20 @@ describe('workflow definition validation', () => {
       d,
     )
     promoteStepCatalogueLocal(catalogue.n, 'publish', 'test', d)
-    const mode = valid().modes[0]!
+    const mode = validWorkflow().modes[0]!
     expect(
       validateWorkflowDefinition(
-        { ...valid(), modes: [{ ...mode, steps: [{ sequence: 'quality', omit: ['absent'] }] }] },
+        {
+          ...validWorkflow(),
+          modes: [{ ...mode, steps: [{ sequence: 'quality', omit: ['absent'] }] }],
+        },
         d,
       ).join('\n'),
     ).toContain('cannot omit non-member step "absent"')
     expect(
       validateWorkflowDefinition(
         {
-          ...valid(),
+          ...validWorkflow(),
           modes: [
             {
               ...mode,
@@ -188,7 +110,7 @@ describe('workflow definition validation', () => {
     expect(
       validateWorkflowDefinition(
         {
-          ...valid(),
+          ...validWorkflow(),
           modes: [
             {
               ...mode,
@@ -202,7 +124,7 @@ describe('workflow definition validation', () => {
   })
   test('validates modes and arguments', () => {
     const d = database(),
-      definition = valid()
+      definition = validWorkflow()
     definition.modes.push({ slug: 'other', title: 'Other', default: true, steps: ['lens'] })
     expect(validateWorkflowDefinition(definition, d)).toContain(
       'exactly one default mode is allowed',
@@ -213,7 +135,7 @@ describe('workflow definition validation', () => {
     expect(
       validateWorkflowDefinition(
         {
-          ...valid(),
+          ...validWorkflow(),
           arguments: [
             { name: 'key', required: true, description: 'Task key' },
             { name: 'worktree', required: true, description: 'Worktree path', rebind: true },
@@ -225,7 +147,7 @@ describe('workflow definition validation', () => {
     expect(
       validateWorkflowDefinition(
         {
-          ...valid(),
+          ...validWorkflow(),
           arguments: [
             { name: 'key', required: true, description: 'Task key' },
             { name: 'worktree', required: true, description: 'Worktree path', rebind: 'yes' },
@@ -237,7 +159,7 @@ describe('workflow definition validation', () => {
     expect(
       validateWorkflowDefinition(
         {
-          ...valid(),
+          ...validWorkflow(),
           arguments: [{ name: 'key', required: true, description: 'Task key', rebind: true }],
         },
         d,
@@ -246,29 +168,31 @@ describe('workflow definition validation', () => {
   })
   test('validates the workflow default preset', () => {
     const d = database()
-    expect(validateWorkflowDefinition({ ...valid(), defaultPreset: 'autonomous' }, d)).toEqual([])
-    expect(validateWorkflowDefinition({ ...valid(), defaultPreset: 'automatic' }, d)).toContain(
-      'defaultPreset must be manual, guided, or autonomous',
-    )
+    expect(
+      validateWorkflowDefinition({ ...validWorkflow(), defaultPreset: 'autonomous' }, d),
+    ).toEqual([])
+    expect(
+      validateWorkflowDefinition({ ...validWorkflow(), defaultPreset: 'automatic' }, d),
+    ).toContain('defaultPreset must be manual, guided, or autonomous')
   })
   test('refuses malformed or undeclared mode requirements', () => {
     const d = database()
     expect(
       validateWorkflowDefinition(
-        { ...valid(), modes: [{ ...valid().modes[0]!, requires: ['absent'] }] },
+        { ...validWorkflow(), modes: [{ ...validWorkflow().modes[0]!, requires: ['absent'] }] },
         d,
       ),
     ).toContain('mode "default" requires undeclared argument "absent"')
     expect(
       validateWorkflowDefinition(
-        { ...valid(), modes: [{ ...valid().modes[0]!, requires: 'key' }] },
+        { ...validWorkflow(), modes: [{ ...validWorkflow().modes[0]!, requires: 'key' }] },
         d,
       ),
     ).toContain('mode "default" requires must be a string array')
   })
   test('reserves workflow prompt argument names', () => {
     const d = database(),
-      definition = valid()
+      definition = validWorkflow()
     definition.arguments.push(
       { name: 'mode', required: false, description: 'Mode.' },
       { name: 'project', required: false, description: 'Project.' },
@@ -285,6 +209,74 @@ describe('workflow definition validation', () => {
 })
 
 describe('workflow versions and project composition', () => {
+  test('composition carries a hosted fallback note only when the resolution has one', async () => {
+    const d = database()
+    const state = mkdtempSync(join(tmpdir(), 'workflow-compose-autonomy-'))
+    const environment = {
+      BOTTEGA_CONFIG_HOME: join(state, 'config'),
+      BOTTEGA_STATE_HOME: state,
+    }
+    let hostedAvailable = false
+    const clientFactory = () =>
+      ({
+        listEntries: async () => {
+          if (!hostedAvailable) throw new Error('offline')
+          return []
+        },
+      }) as never
+    const steps = catalogueStepsForAutonomy(productionStepCatalogue(d).definition.steps)
+    const fallback = await resolveProjectAutonomy(
+      'fixture',
+      'flow',
+      undefined,
+      steps,
+      {},
+      clientFactory,
+      d,
+      environment,
+    )
+    const reason =
+      'hosted autonomy settings unavailable: offline; resolved from local and project scopes, then built-in'
+    const fallbackComposition = composeWorkflow(
+      'flow',
+      'fixture',
+      'default',
+      { key: 'DEV-2176', branch: 'DEV-2176-work', worktree: '/tmp/work' },
+      d,
+      {},
+      fallback,
+    )
+
+    expect(fallbackComposition.autonomyNote).toBe(reason)
+    expect(renderWorkflowComposition(fallbackComposition)).toContain(reason)
+
+    hostedAvailable = true
+    const available = await resolveProjectAutonomy(
+      'fixture',
+      'flow',
+      undefined,
+      steps,
+      {},
+      clientFactory,
+      d,
+      environment,
+    )
+    const availableComposition = composeWorkflow(
+      'flow',
+      'fixture',
+      'default',
+      { key: 'DEV-2176', branch: 'DEV-2176-work', worktree: '/tmp/work' },
+      d,
+      {},
+      available,
+    )
+
+    expect(availableComposition).not.toHaveProperty('autonomyNote')
+    expect(renderWorkflowComposition(availableComposition)).not.toContain(
+      'hosted autonomy settings unavailable:',
+    )
+  })
+
   test('separate ship-to and tracker needs do not require a tracker review state', () => {
     const d = database()
     const current = productionStepCatalogue(d).definition
@@ -342,7 +334,7 @@ describe('workflow versions and project composition', () => {
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
         tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
-        release,
+        release: releaseFixture,
         docs: { protocol: 'orch-docs' },
       }),
       'fixture',
@@ -495,7 +487,7 @@ describe('workflow versions and project composition', () => {
       draft = setWorkflowLocal(
         'flow',
         {
-          ...valid(),
+          ...validWorkflow(),
           modes: [{ slug: 'cohort', title: 'Cohort', default: true, steps: ['lens'] }],
         },
         'draft mode fixture',
@@ -523,7 +515,7 @@ describe('workflow versions and project composition', () => {
   test('compose without a workflow version still uses production', () => {
     const d = database(),
       production = showResolvedWorkflow('flow', undefined, null, d),
-      draft = setWorkflowLocal('flow', valid(), 'ignored draft fixture', 'test', d)
+      draft = setWorkflowLocal('flow', validWorkflow(), 'ignored draft fixture', 'test', d)
 
     const composed = composeWorkflow('flow', 'fixture', undefined, {}, d)
 
@@ -558,7 +550,7 @@ describe('workflow versions and project composition', () => {
       workflow = importWorkflowLocal(
         'draft-flow',
         {
-          ...valid(),
+          ...validWorkflow(),
           modes: [{ slug: 'default', title: 'Default', default: true, steps: ['draft-step'] }],
         },
         'draft workflow fixture',
@@ -608,8 +600,8 @@ describe('workflow versions and project composition', () => {
   })
   test('keeps immutable workflow history', () => {
     const d = database(),
-      first = setWorkflowLocal('test-flow', valid(), 'first', 'author', d)
-    const changed = valid()
+      first = setWorkflowLocal('test-flow', validWorkflow(), 'first', 'author', d)
+    const changed = validWorkflow()
     changed.title = 'Changed'
     const second = setWorkflowLocal('test-flow', changed, 'second', 'author', d)
     promoteWorkflowLocal('test-flow', first.n, 'publish', 'architect', d)
@@ -671,7 +663,7 @@ describe('workflow versions and project composition', () => {
   test('returns only the resolved facts needed by composed steps', () => {
     const d = database()
     d.query('UPDATE project SET settings=? WHERE name=?').run(
-      JSON.stringify({ release, docs: { protocol: 'orch-docs' } }),
+      JSON.stringify({ release: releaseFixture, docs: { protocol: 'orch-docs' } }),
       'fixture',
     )
     const current = productionStepCatalogue(d).definition
@@ -718,8 +710,8 @@ describe('workflow versions and project composition', () => {
     promoteWorkflowLocal('release-facts', workflow.n, 'publish', 'test', d)
 
     const facts = composeWorkflow('release-facts', 'fixture', undefined, {}, d).facts
-    expect(facts.release!.rungs).toEqual(release.rungs)
-    expect(facts).toEqual({ release })
+    expect(facts.release!.rungs).toEqual(releaseFixture.rungs)
+    expect(facts).toEqual({ release: releaseFixture })
   })
   test('composes dedupe with the workspace tracker search tool', () => {
     const d = database()
@@ -776,7 +768,7 @@ describe('workflow versions and project composition', () => {
   })
   test('uses hub state defaults but refuses an absent remote state', () => {
     const d = database()
-    promotePlanTask(d)
+    promotePlanTaskFixture(d)
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
         tracker: { protocol: 'hub' },
@@ -801,7 +793,7 @@ describe('workflow versions and project composition', () => {
   })
   test('refuses hostile hub placeholder values and names them', () => {
     const d = database()
-    promotePlanTask(d)
+    promotePlanTaskFixture(d)
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
         docs: { protocol: 'orch-docs' },
@@ -909,7 +901,7 @@ describe('workflow versions and project composition', () => {
       d,
     )
     promoteStepCatalogueLocal(withTemp.n, 'publish', 'a', d)
-    const definition = valid()
+    const definition = validWorkflow()
     definition.modes[0]!.steps = ['temp']
     const draft = setWorkflowLocal('stale-flow', definition, 'uses temp', 'a', d)
     const withoutTemp = setStepCatalogueLocal({ steps: current.steps }, 'drop temp', 'a', d)
@@ -932,8 +924,8 @@ describe('workflow versions and project composition', () => {
     )
     promoteStepCatalogueLocal(withSequence.n, 'publish', 'test', d)
     const definition = {
-      ...valid(),
-      modes: [{ ...valid().modes[0]!, steps: [{ sequence: 'quality' }] }],
+      ...validWorkflow(),
+      modes: [{ ...validWorkflow().modes[0]!, steps: [{ sequence: 'quality' }] }],
     }
     const flow = setWorkflowLocal('sequence-guard', definition, 'use sequence', 'test', d)
     promoteWorkflowLocal('sequence-guard', flow.n, 'publish', 'test', d)
@@ -965,8 +957,8 @@ describe('workflow versions and project composition', () => {
     const flow = setWorkflowLocal(
       'sequence-step-guard',
       {
-        ...valid(),
-        modes: [{ ...valid().modes[0]!, steps: [{ sequence: 'quality' }] }],
+        ...validWorkflow(),
+        modes: [{ ...validWorkflow().modes[0]!, steps: [{ sequence: 'quality' }] }],
       },
       'use sequence',
       'test',
@@ -1003,8 +995,8 @@ describe('workflow versions and project composition', () => {
     const draft = setWorkflowLocal(
       'sequence-draft',
       {
-        ...valid(),
-        modes: [{ ...valid().modes[0]!, steps: [{ sequence: 'quality' }] }],
+        ...validWorkflow(),
+        modes: [{ ...validWorkflow().modes[0]!, steps: [{ sequence: 'quality' }] }],
       },
       'use sequence',
       'test',
