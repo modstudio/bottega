@@ -22,12 +22,12 @@ const input = {
 }
 
 describe('pull-request create outcome', () => {
-  test('an existing dirty pull request is reported without running create or finalizing again', () => {
+  test('an existing dirty pull request is reported without running create and finalizes its number', () => {
     expect(decideCreateOutcome({ ...input, existing: dirty, createResult: null })).toEqual({
       throwMessage: null,
       output:
         'pull request already exists for DEV-2189-create-outcome: https://github.example/pulls/42; gh pr create was not run\nhttps://github.example/pulls/42 conflicts with main: rebase it on the landing branch before merging',
-      finalizePullRequestNumber: null,
+      finalizePullRequestNumber: 42,
     })
   })
 

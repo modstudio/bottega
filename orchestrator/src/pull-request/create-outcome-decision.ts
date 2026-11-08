@@ -32,7 +32,7 @@ export function decideCreateOutcome(input: {
     return {
       throwMessage: null,
       output: pullRequestOutput(output, input.existing),
-      finalizePullRequestNumber: null,
+      finalizePullRequestNumber: input.existing.number,
     }
   }
 
