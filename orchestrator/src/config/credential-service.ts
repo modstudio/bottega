@@ -13,8 +13,8 @@ import {
   completeCredentialFields,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
-import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import { configAccessRemedy, machineNotTrustedRemedy } from '../../../shared/record-remedies.ts'
+import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
 import {
   type CredentialEnvironment,

@@ -1,9 +1,5 @@
 import { expect, test } from 'bun:test'
-import {
-  decideHostedSpaceOpen,
-  HostedOpenError,
-  openHostedSecret,
-} from './hosted-secret-opening.ts'
+import { decideHostedSpaceOpen, openHostedSecret } from './hosted-secret-opening.ts'
 
 const space = '01990000-0000-7000-8000-000000000001'
 const user = '01990000-0000-7000-8000-000000000002'
@@ -77,5 +73,5 @@ test('destination opening reports an untrusted sender before a missing machine w
     identity: { spaceId: space, userId: user },
   })
 
-  await expect(opening).rejects.toMatchObject<HostedOpenError>({ reason: 'untrusted-sender' })
+  await expect(opening).rejects.toMatchObject({ reason: 'untrusted-sender' })
 })

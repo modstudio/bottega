@@ -26,8 +26,8 @@ import {
   type CredentialAddress,
   deleteCredential,
   listCredentials,
-  resolveProjectCredential,
   resolveCredentialValue,
+  resolveProjectCredential,
   setCredential,
 } from '../config/credential-service.ts'
 import { runWithEnvironment } from '../config/secret-run.ts'
