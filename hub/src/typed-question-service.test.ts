@@ -72,4 +72,5 @@ test('asks and records again when the state differs from the recorded one', asyn
   expect(answer).toEqual({ noul: 0.2 })
   expect(recorded).toHaveLength(1)
   expect(recorded[0]?.[4]).toBe(subjectRef)
+  expect(recorded[0]?.[6]).toBe(JSON.stringify({ ...state, existing: 'a different note' }))
 })

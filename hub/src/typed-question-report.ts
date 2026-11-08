@@ -8,7 +8,8 @@ import {
 } from '../../shared/typed-question/typed-question-blocks.ts'
 import type { TypedQuestionReportBlock } from '../../shared/typed-question/typed-question-render.ts'
 import { db } from './db.ts'
-import { NOTE_DUPLICATE_QUESTION, noteDuplicateLabel } from './note-duplicate-question.ts'
+import { noteDuplicateLabel } from './note-duplicate-question.ts'
+import { TYPED_QUESTION_DECLARATIONS } from './typed-question-declarations.ts'
 
 export function hubTypedQuestionReport(
   options: { days?: number },
@@ -23,13 +24,12 @@ export function hubTypedQuestionReport(
     )
     .all(...(options.days === undefined ? [] : [options.days])) as TypedQuestionAnswerRow[]
   return typedQuestionBlocks(rows, (questionId, questionVersion) => {
-    const declared = questionId === NOTE_DUPLICATE_QUESTION.id
+    const declared = TYPED_QUESTION_DECLARATIONS.find(
+      (question) => question.id === questionId && question.version === questionVersion,
+    )
     return {
       label: declared ? (subjectRef) => noteDuplicateLabel(database, subjectRef) : null,
-      threshold:
-        declared && questionVersion === NOTE_DUPLICATE_QUESTION.version
-          ? NOTE_DUPLICATE_QUESTION.threshold
-          : null,
+      threshold: declared?.threshold ?? null,
     }
   })
 }

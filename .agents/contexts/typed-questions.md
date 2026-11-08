@@ -4,6 +4,7 @@ paths:
   - orchestrator/src/typed-question/*.ts
   - orchestrator/src/collect/finding-duplicate-suggestions.ts
   - hub/src/note-duplicate-question.ts
+  - hub/src/note-duplicate-backtest.ts
   - shared/typed-question/*.ts
   - orchestrator/src/ask/jev-*.ts
   - orchestrator/src/ask/worker-question.ts
@@ -27,6 +28,6 @@ An architect's answer to a typed question records its value, inferred from a lea
 
 **A version with answers is frozen.** Changed instructions, context or threshold make a new version. Older versions stay declared in `TYPED_QUESTION_DECLARATIONS` so reports and backtests can read their answers.
 
-**A version reaches live use only after its backtest beats the incumbent** by more than its added cost, on the same subjects. A question with no backtest source, such as `NOTE_DUPLICATE_QUESTION`, is judged on its live answers. `DISPATCH_SPEC_QUESTIONS` lists the spec versions dispatch asks; `SPEC_UNSETTLED_QUESTION` is the one that warns. `bottega agent typed-question backtest` measures a version; `bottega agent typed-question` reports live answers.
+**A version reaches live use only after its backtest beats the incumbent** by more than its added cost, on the same subjects. A question with no backtest source is judged on its live answers. `DISPATCH_SPEC_QUESTIONS` lists the spec versions dispatch asks; `SPEC_UNSETTLED_QUESTION` is the one that warns. `bottega agent typed-question backtest` measures a version; `bottega agent typed-question` reports live answers. `bottega note typed-question backtest` measures a note-duplicate version.
 
 **A backtest reads cited files at each run's base commit.** A run whose commit is missing from the checkout counts as unreadable and is never asked without its context.
