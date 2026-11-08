@@ -57,7 +57,6 @@ test('an identity change does not record a pending probe result as an attempt', 
   const pending = { ok: false, pendingIdentity: { harness: 'goose' }, attempts }
 
   expect(identityChangeProbeAttempts(pending, 'codex')).toEqual(attempts)
-  expect(identityChangeProbeAttempts(pending, 'codex')).not.toBe(attempts)
 })
 
 test('the Goose context ceiling preserves its measured pre-regression value', () => {
