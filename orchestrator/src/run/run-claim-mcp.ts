@@ -18,7 +18,6 @@ import { recordTrustEntryClaims } from '../resources/resource-claims.ts'
 import {
   beginResourceStep,
   completeResourceStep,
-  recordResourceStep,
 } from '../resources/resource-step-recorder.ts'
 import {
   addedGrokTrustHeadings,
@@ -33,6 +32,7 @@ import {
   prepareClaimedGrokMcpScope,
   prepareClaimedWorkerMcpConfig,
 } from './run-worker-home.ts'
+import { prepareSandboxHomeStepSync } from './run-resource-step-recording.ts'
 
 type PlanInput = {
   plan: DeferredCwdMcpStep[]
@@ -70,8 +70,7 @@ function requiredProject(project: Project | null, step: string): Project {
 
 function prepareScope(input: PlanInput, project: Project) {
   const prepare = () =>
-    prepareClaimedGrokMcpScope(
-      {
+    prepareClaimedGrokMcpScope({
         agent: input.agent,
         runDir: input.runtimeDir,
         runDirExisted: input.runtimeDirExisted,
@@ -84,23 +83,21 @@ function prepareScope(input: PlanInput, project: Project) {
           writesRepository: input.writesJob,
         }),
         ...claimedGrokReaderConfig(input.agent, input.writesJob, input.cwd, project, input.repoJob),
-      },
-      () => undefined,
-    )
-  if (input.writesJob || input.runtimeDirExisted) return prepare()
-  return recordResourceStep(
+      })
+  return prepareSandboxHomeStepSync(
     db(),
     {
       rootRunId: input.sandboxRootId,
       runId: input.runId,
       projectId: input.runProjectId,
-      kind: 'sandbox_dir',
-      allocationKey: input.runtimeDir,
-      identity: input.runtimeDir,
-      label: input.sandboxRootId,
+      repoJob: input.repoJob,
+      writesJob: input.writesJob,
+      harness: 'grok',
+      sandbox: 'host',
+      path: input.runtimeDir,
       claimedAt: nowIso(),
+      effect: prepare,
     },
-    prepare,
   )
 }
 
@@ -110,25 +107,42 @@ function recordTrust(
   before: string[],
 ): void {
   const added = addedGrokTrustHeadings(before, grokTrustHeadings(environment))
+  writeTrustOutcome(input, environment, added, null)
+}
+
+function writeTrustOutcome(
+  input: PlanInput,
+  environment: Record<string, string>,
+  added: string[],
+  pending: ReturnType<typeof beginResourceStep> | null,
+): void {
   writeTransaction(() => {
     db()
       .query('UPDATE run SET mcp_trust_path=? WHERE record_id=?')
       .run(added.length ? JSON.stringify(added) : null, input.runId)
-    recordTrustEntryClaims(db(), {
-      rootRunId: input.sandboxRootId,
-      runId: input.runId,
-      projectId: input.runProjectId,
-      headings: added,
-      storePath: grokTrustStorePath(environment),
-      claimedAt: nowIso(),
-    })
+    if (pending) {
+      completeResourceStep(db(), pending, {
+        allocationKey: added[0],
+        identity: grokTrustStorePath(environment),
+      })
+    } else {
+      recordTrustEntryClaims(db(), {
+        rootRunId: input.sandboxRootId,
+        runId: input.runId,
+        projectId: input.runProjectId,
+        headings: added,
+        storePath: grokTrustStorePath(environment),
+        claimedAt: nowIso(),
+      })
+    }
   })
 }
 
-function probeConnection(
+export function probeConnection(
   input: PlanInput,
   server: string,
   environment: Record<string, string>,
+  connect: typeof mcpConnectionFor = mcpConnectionFor,
 ): { connection: McpConnection; trustGranted: boolean } {
   const trustGranted = input.agentName === 'grok'
   const recorded = db()
@@ -168,7 +182,7 @@ function probeConnection(
   let effectError: unknown
   try {
     result = {
-      connection: mcpConnectionFor(
+      connection: connect(
         input.agentName,
         input.cwd,
         server,
@@ -184,16 +198,24 @@ function probeConnection(
   if (trustGranted) {
     const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings(environment))
     if (pendingTrust && added.length === 1) {
+      writeTrustOutcome(input, environment, added, pendingTrust)
+    } else if (pendingTrust && added.length > 1) {
       writeTransaction(() => {
         db()
           .query('UPDATE run SET mcp_trust_path=? WHERE record_id=?')
           .run(JSON.stringify(added), input.runId)
-        completeResourceStep(db(), pendingTrust, {
-          allocationKey: added[0],
-          identity: grokTrustStorePath(environment),
-        })
+        db()
+          .query(
+            `UPDATE resource_claim
+             SET state='stuck',settled_at=?,settled_detail=?
+             WHERE record_id=? AND state='pending'`,
+          )
+          .run(
+            nowIso(),
+            `observed trust headings: ${JSON.stringify(added)}`,
+            pendingTrust.recordId,
+          )
       })
-    } else if (pendingTrust && added.length > 1) {
       throw new Error(`Grok trust for ${input.cwd} created ${added.length} entries; expected one`)
     } else if (!pendingTrust) recordTrust(input, environment, beforeTrust)
   }

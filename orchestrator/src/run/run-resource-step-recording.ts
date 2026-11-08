@@ -14,13 +14,15 @@ import {
 import {
   beginResourceStep,
   completeResourceStep,
+  insertClaim,
   type ResourceStep,
+  recordResourceStep,
   recordResourceStepAsync,
 } from '../resources/resource-step-recorder.ts'
 import type { RunSandbox } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { workerMcpLaunchScope } from './run-mcp-launch-scope.ts'
-import { prepareWorkerHomeLaunch } from './run-worker-home.ts'
+import { prepareWorkerHomeLaunch, runScopedHome } from './run-worker-home.ts'
 
 type RunClaimIdentity = {
   rootRunId: string
@@ -100,7 +102,7 @@ export function recordRunWorktree(
   }, database)
 }
 
-function prepareSandboxHomeStep<T>(
+export async function prepareSandboxHomeStep<T>(
   database: Database,
   input: RunClaimIdentity & {
     repoJob: boolean
@@ -112,23 +114,50 @@ function prepareSandboxHomeStep<T>(
     effect: () => Promise<T>
   },
 ): Promise<T> {
-  const records =
-    input.repoJob &&
-    !input.writesJob &&
-    !existsSync(input.path) &&
-    (input.harness === 'codex' || input.harness === 'grok' || input.sandbox === 'srt')
+  const records = input.repoJob && !input.writesJob && runScopedHome(input.harness, input.sandbox)
   if (!records) return input.effect()
-  return recordResourceStepAsync(
-    database,
-    {
-      ...input,
-      kind: 'sandbox_dir',
-      allocationKey: input.path,
-      identity: input.path,
-      label: input.rootRunId,
-    },
-    input.effect,
-  )
+  const claim = {
+    ...input,
+    kind: 'sandbox_dir' as const,
+    allocationKey: input.path,
+    identity: input.path,
+    label: input.rootRunId,
+  }
+  if (!existsSync(input.path)) return recordResourceStepAsync(database, claim, input.effect)
+  const result = await input.effect()
+  const decision = insertClaim(database, claim)
+  if (decision === 'collision')
+    throw new Error(`sandbox_dir resource ${input.path} is already claimed by another run`)
+  return result
+}
+
+export function prepareSandboxHomeStepSync<T>(
+  database: Database,
+  input: RunClaimIdentity & {
+    repoJob: boolean
+    writesJob: boolean
+    harness: string
+    sandbox: RunSandbox
+    path: string
+    claimedAt: string
+    effect: () => T
+  },
+): T {
+  const records = input.repoJob && !input.writesJob && runScopedHome(input.harness, input.sandbox)
+  if (!records) return input.effect()
+  const claim = {
+    ...input,
+    kind: 'sandbox_dir' as const,
+    allocationKey: input.path,
+    identity: input.path,
+    label: input.rootRunId,
+  }
+  if (!existsSync(input.path)) return recordResourceStep(database, claim, input.effect)
+  const result = input.effect()
+  const decision = insertClaim(database, claim)
+  if (decision === 'collision')
+    throw new Error(`sandbox_dir resource ${input.path} is already claimed by another run`)
+  return result
 }
 
 export function prepareRecordedWorkerHome(
@@ -173,23 +202,12 @@ export function prepareRecordedWorkerHome(
 
 export function recordLegacySandboxHome(
   database: Database,
-  runId: string,
-  path: string,
-  enabled: boolean,
+  input: RunClaimIdentity & { path: string; enabled: boolean },
 ): void {
-  if (!enabled) return
-  const run = database
-    .query<{ root_id: string; project_record_id: string | null }, [string]>(
-      `SELECT COALESCE(parent_run_record_id,record_id) root_id,project_record_id
-       FROM run WHERE record_id=?`,
-    )
-    .get(runId)
-  if (!run) throw new Error(`run ${runId} could not record its sandbox home`)
+  if (!input.enabled) return
   recordSandboxDirectoryClaim(database, {
-    rootRunId: run.root_id,
-    runId,
-    projectId: run.project_record_id,
-    path,
+    ...input,
+    path: input.path,
     claimedAt: new Date().toISOString(),
   })
 }

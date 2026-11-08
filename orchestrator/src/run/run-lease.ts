@@ -9,7 +9,9 @@ import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesyste
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { acquireKernelLease, type KernelLease, tryKernelLease } from '../project/project-lock.ts'
 import { recordResourceStep } from '../resources/resource-step-recorder.ts'
+import { settleClaims } from '../resources/resource-claims.ts'
 import type { RunLeaseState } from './run-alive.ts'
+import { runRootRecord } from './run-root-record.ts'
 
 const leaseDirectory = () => join(resolveRunsDirectory(process.env), 'leases')
 
@@ -121,20 +123,16 @@ function acquireLease(runId: string, purpose: string, fileName: LeaseFileName): 
 
 function acquireRunCoordinatorLease(runId: string): KernelLease {
   const database = db()
-  const run = database
-    .query<{ root_id: string; project_record_id: string | null; job: string }, [string]>(
-      `SELECT COALESCE(parent_run_record_id,record_id) root_id,project_record_id,job
-       FROM run WHERE record_id=?`,
-    )
-    .get(runId)
-  if (!run || !isReadOnlyRepositoryJob(run.job)) return acquireLease(runId, 'run', runLeaseFileName)
+  const job = database.query<{ job: string }, [string]>('SELECT job FROM run WHERE record_id=?').get(runId)
+  if (!job || !isReadOnlyRepositoryJob(job.job)) return acquireLease(runId, 'run', runLeaseFileName)
+  const run = runRootRecord(runId, database)!
   const path = runLeasePath(runId, 'run', runLeaseFileName)
-  return recordResourceStep(
+  const lease = recordResourceStep(
     database,
     {
-      rootRunId: run.root_id,
+      rootRunId: run.rootRunId,
       runId,
-      projectId: run.project_record_id,
+      projectId: run.projectId,
       kind: 'run_lease',
       allocationKey: path,
       identity: path,
@@ -143,6 +141,29 @@ function acquireRunCoordinatorLease(runId: string): KernelLease {
     },
     () => acquireLease(runId, 'run', runLeaseFileName),
   )
+  return {
+    release: () => {
+      try {
+        lease.release()
+      } finally {
+        settleRunLeaseClaim(runId, path, 'run lease released')
+      }
+    },
+  }
+}
+
+function settleRunLeaseClaim(runId: string, path: string, detail: string): void {
+  const database = db()
+  const run = runRootRecord(runId, database)
+  if (!run) return
+  settleClaims(database, {
+    rootRunId: run.rootRunId,
+    kind: 'run_lease',
+    state: 'released',
+    settledAt: nowIso(),
+    detail,
+    allocationKey: path,
+  })
 }
 
 function requiredLease(
@@ -272,7 +293,10 @@ export function runCloseOutLeaseState(runId: string): RunLeaseState {
 
 /** Remove a free lease file while holding its lock; a held lease is untouched. */
 export function removeFreeRunLease(runId: string): 'removed' | 'held' | 'missing' {
-  return removeFreeLease(runId, 'run', runLeaseFileName)
+  const path = runLeasePath(runId, 'run', runLeaseFileName)
+  const result = removeFreeLease(runId, 'run', runLeaseFileName)
+  if (result !== 'held') settleRunLeaseClaim(runId, path, `run lease file ${result}`)
+  return result
 }
 
 /** Remove a released close-out lease file after closeRun has completed. */

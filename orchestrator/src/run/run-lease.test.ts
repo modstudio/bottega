@@ -52,6 +52,42 @@ test('withRunCloseOutLease encloses async run-lease release and cleans up on eve
   }
 })
 
+test('a read-only run lease records pending then claimed and settles on ordinary release', () => {
+  const runId = addRun({ agent: 'codex', job: 'understand', status: 'running' })
+  const database = db()
+  database.exec('CREATE TEMP TABLE run_lease_transitions (state TEXT NOT NULL)')
+  database.exec(
+    `CREATE TEMP TRIGGER run_lease_insert AFTER INSERT ON resource_claim
+     WHEN NEW.kind='run_lease' BEGIN
+       INSERT INTO run_lease_transitions VALUES (NEW.state);
+     END`,
+  )
+  database.exec(
+    `CREATE TEMP TRIGGER run_lease_update AFTER UPDATE OF state ON resource_claim
+     WHEN NEW.kind='run_lease' BEGIN
+       INSERT INTO run_lease_transitions VALUES (NEW.state);
+     END`,
+  )
+  try {
+    const lease = acquireRunLease(runId)
+    expect(database.query('SELECT state FROM run_lease_transitions').all()).toEqual([
+      { state: 'pending' },
+      { state: 'claimed' },
+    ])
+    lease.release()
+    expect(
+      database
+        .query("SELECT state FROM resource_claim WHERE root_run_record_id=? AND kind='run_lease'")
+        .get(runId),
+    ).toEqual({ state: 'released' })
+  } finally {
+    database.exec('DROP TRIGGER IF EXISTS run_lease_insert')
+    database.exec('DROP TRIGGER IF EXISTS run_lease_update')
+    database.exec('DROP TABLE IF EXISTS run_lease_transitions')
+    removeFreeRunLease(runId)
+  }
+})
+
 test('a second close-out lease acquisition in this process refuses without blocking', () => {
   const runId = addRun({ agent: 'codex', job: 'lease-second-acquire', status: 'ok' })
   let releaseFirst!: () => void

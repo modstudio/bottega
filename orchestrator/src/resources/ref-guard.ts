@@ -31,6 +31,7 @@ import { commonGitDir, gitConfigOk, linkedWorktreePaths } from '../git/git-envir
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker, worktreeNameRunId } from '../worktree/worktree-attribution.ts'
 import { resolveRefGuardHook } from './ref-guard-runtime.ts'
+import { settleClaims } from './resource-claims.ts'
 import { installWorkerHooks } from './worker-hooks.ts'
 
 export type SharedRefGuardEnvironment = {
@@ -470,13 +471,26 @@ export function prepareSharedRefGuard(
 export function removeSharedRefGuard(cwd: string, runId: string): void {
   const directory = refGuardDirectory(cwd)
   if (!directory) return
-  const owner = db()
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
+  const database = db()
+  const owner = database
+    .query<{ record_id: string; root_id: string }, [string]>(
+      `SELECT record_id,COALESCE(parent_run_record_id,record_id) root_id
+       FROM run WHERE record_id=?`,
+    )
     .get(runId)
   if (!owner) return
-  rmSync(join(directory, owner.record_id), {
+  const path = join(directory, owner.record_id)
+  rmSync(path, {
     recursive: true,
     force: true,
+  })
+  settleClaims(database, {
+    rootRunId: owner.root_id,
+    kind: 'ref_guard',
+    state: 'released',
+    settledAt: new Date().toISOString(),
+    detail: 'shared ref guard directory removed',
+    allocationKey: path,
   })
 }
 

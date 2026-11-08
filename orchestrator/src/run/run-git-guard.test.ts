@@ -11,7 +11,10 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { addRun } from '../../test/fixtures/store.ts'
 import { git, gitOk, worktreeGitDir } from '../git/git-environment.ts'
+import { db } from '../database/db.ts'
+import { removeSharedRefGuard } from '../resources/ref-guard.ts'
 import {
   HARNESS_RUN_MARKER,
   installHarnessPushGuard,
@@ -171,6 +174,66 @@ test('reader launch installs and selects a worker pre-push guard for the guarded
     )
     expect(gitOk(['show-ref', '--verify', 'refs/heads/x'], repoRoot)).toBeNull()
   } finally {
+    rmSync(repoRoot, { recursive: true, force: true })
+  }
+})
+
+test('a read-only ref guard is pending before publication, claimed afterwards, and settled on removal', () => {
+  const runId = addRun({ agent: 'codex', job: 'understand', status: 'running' })
+  const repoRoot = mkdtempSync(join(tmpdir(), 'orch-recorded-guard-main-'))
+  const path = join(repoRoot, '.claude', 'worktrees', 'recorded-reader')
+  const database = db()
+  try {
+    git(['init', '--initial-branch=main'], repoRoot)
+    git(
+      [
+        '-c',
+        'user.name=Orch Test',
+        '-c',
+        'user.email=orch@example.invalid',
+        'commit',
+        '--allow-empty',
+        '-m',
+        'initial',
+      ],
+      repoRoot,
+    )
+    git(['clone', '--shared', repoRoot, path], repoRoot)
+    git(['remote', 'remove', 'origin'], path)
+    writeFileSync(join(path, '.orch-run'), `${runId}\n${repoRoot}\nsource: clone\n`)
+    database.exec('CREATE TEMP TABLE ref_guard_transitions (state TEXT NOT NULL)')
+    database.exec(
+      `CREATE TEMP TRIGGER ref_guard_insert AFTER INSERT ON resource_claim
+       WHEN NEW.kind='ref_guard' BEGIN
+         INSERT INTO ref_guard_transitions VALUES (NEW.state);
+       END`,
+    )
+    database.exec(
+      `CREATE TEMP TRIGGER ref_guard_update AFTER UPDATE OF state ON resource_claim
+       WHEN NEW.kind='ref_guard' BEGIN
+         INSERT INTO ref_guard_transitions VALUES (NEW.state);
+       END`,
+    )
+
+    workerGitConfigEnvironment(
+      { path, branch: '', base: 'HEAD', repoRoot, source: 'clone' },
+      false,
+      'understand',
+    )
+    expect(database.query('SELECT state FROM ref_guard_transitions').all()).toEqual([
+      { state: 'pending' },
+      { state: 'claimed' },
+    ])
+    removeSharedRefGuard(repoRoot, runId)
+    expect(
+      database
+        .query("SELECT state FROM resource_claim WHERE root_run_record_id=? AND kind='ref_guard'")
+        .get(runId),
+    ).toEqual({ state: 'released' })
+  } finally {
+    database.exec('DROP TRIGGER IF EXISTS ref_guard_insert')
+    database.exec('DROP TRIGGER IF EXISTS ref_guard_update')
+    database.exec('DROP TABLE IF EXISTS ref_guard_transitions')
     rmSync(repoRoot, { recursive: true, force: true })
   }
 })

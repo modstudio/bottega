@@ -679,12 +679,15 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       db()
         .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
         .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
-      recordLegacySandboxHome(
-        db(),
-        claim.id,
-        runtimeDir,
-        hasRunScopedHome && (!repoJob || writesJob),
-      )
+      recordLegacySandboxHome(db(), {
+        rootRunId: rootRunRecordId(claim.id),
+        runId: claim.id,
+        projectId: runProjectId,
+        path: runtimeDir,
+        enabled:
+          workerHome.runScopedHome(workerHarnessName(a), sandboxSelection.sandbox) &&
+          (!repoJob || writesJob),
+      })
     })
     if (sandboxSelection.reason) {
       const header = `${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`

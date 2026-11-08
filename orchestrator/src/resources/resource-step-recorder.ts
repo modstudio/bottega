@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
 
-type ResourceStepKind =
+export type ResourceClaimKind =
   | 'worktree'
   | 'branch'
   | 'retained_ref'
@@ -25,7 +25,7 @@ export type ClaimIdentity = {
 }
 
 export type ResourceStepInput = ClaimIdentity & {
-  kind: ResourceStepKind
+  kind: ResourceClaimKind
   allocationKey: string
   identity: string | null
   label: string | null
@@ -36,17 +36,42 @@ export type ResourceStepInput = ClaimIdentity & {
 
 export type ResourceStep = { recordId: string; stepNo: number }
 
+export function claimCreationDecision(
+  existingRootRunId: string | null,
+  requestedRootRunId: string,
+  shared = false,
+): 'record' | 'duplicate' | 'collision' {
+  if (existingRootRunId === null) return 'record'
+  if (existingRootRunId === requestedRootRunId) return 'duplicate'
+  return shared ? 'record' : 'collision'
+}
+
+function existingLiveClaim(
+  database: Database,
+  input: Pick<ResourceStepInput, 'kind' | 'allocationKey' | 'rootRunId' | 'shared'>,
+): { record_id: string; root_run_record_id: string } | null {
+  return database
+    .query<{ record_id: string; root_run_record_id: string }, [string, string, string, string]>(
+      `SELECT record_id,root_run_record_id FROM resource_claim
+       WHERE kind=? AND allocation_key=? AND state='claimed'
+         AND (root_run_record_id=? OR shared=0)
+       ORDER BY (root_run_record_id=? ) DESC,shared ASC,record_id
+       LIMIT 1`,
+    )
+    .get(input.kind, input.allocationKey, input.rootRunId, input.rootRunId)
+}
+
 export function insertClaim(
   database: Database,
   claim: ResourceStepInput,
 ): 'recorded' | 'duplicate' | 'collision' {
-  const existing = database
-    .query(
-      `SELECT root_run_record_id FROM resource_claim
-       WHERE kind=? AND allocation_key=? AND state='claimed' AND shared=0`,
-    )
-    .get(claim.kind, claim.allocationKey) as { root_run_record_id: string } | null
-  if (existing) return existing.root_run_record_id === claim.rootRunId ? 'duplicate' : 'collision'
+  const existing = existingLiveClaim(database, claim)
+  const decision = claimCreationDecision(
+    existing?.root_run_record_id ?? null,
+    claim.rootRunId,
+    claim.shared ?? false,
+  )
+  if (decision !== 'record') return decision
   database
     .query(
       `INSERT INTO resource_claim
@@ -108,6 +133,53 @@ export function completeResourceStep(
   step: ResourceStep,
   completion: { allocationKey?: string; identity?: string | null } = {},
 ): void {
+  const pending = database
+    .query<
+      {
+        root_run_record_id: string
+        kind: ResourceClaimKind
+        allocation_key: string
+        shared: number
+      },
+      [string]
+    >(
+      `SELECT root_run_record_id,kind,allocation_key,shared
+       FROM resource_claim WHERE record_id=? AND state='pending'`,
+    )
+    .get(step.recordId)
+  if (!pending) throw new Error(`pending resource step ${step.recordId} was not found`)
+  const allocationKey = completion.allocationKey ?? pending.allocation_key
+  const existing = existingLiveClaim(database, {
+    rootRunId: pending.root_run_record_id,
+    kind: pending.kind,
+    allocationKey,
+    shared: pending.shared === 1,
+  })
+  const decision = claimCreationDecision(
+    existing?.root_run_record_id ?? null,
+    pending.root_run_record_id,
+    pending.shared === 1,
+  )
+  if (decision === 'collision') {
+    throw new Error(
+      `${pending.kind} resource ${allocationKey} is already claimed by ${existing!.root_run_record_id}`,
+    )
+  }
+  if (decision === 'duplicate') {
+    database
+      .query(
+        `UPDATE resource_claim
+         SET state='absent',allocation_key=?,settled_at=?,settled_detail=?
+         WHERE record_id=? AND state='pending'`,
+      )
+      .run(
+        allocationKey,
+        new Date().toISOString(),
+        `duplicate of existing resource claim ${existing!.record_id}`,
+        step.recordId,
+      )
+    return
+  }
   const result = database
     .query(
       `UPDATE resource_claim

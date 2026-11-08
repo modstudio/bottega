@@ -9,26 +9,19 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
-import { type ClaimIdentity, insertClaim } from './resource-step-recorder.ts'
+import {
+  claimCreationDecision,
+  type ClaimIdentity,
+  insertClaim,
+  type ResourceClaimKind,
+} from './resource-step-recorder.ts'
+
+export { claimCreationDecision }
+export type { ResourceClaimKind }
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
 
-const RESOURCE_CLAIM_KINDS = [
-  'worktree',
-  'branch',
-  'retained_ref',
-  'sandbox_dir',
-  'trust_entry',
-  'ref_guard',
-  'run_lease',
-  'port',
-  'database',
-  'index',
-  'string',
-] as const
-
-export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
 export type ResourceClaimState =
   | 'pending'
   | 'claimed'
@@ -82,10 +75,9 @@ export function runsClaimingWorktreePath(database: Database, path: string): Clai
   const claimed = database
     .query(
       `SELECT run.record_id,run.job,resource_claim.allocation_key
-       FROM resource_claim INDEXED BY resource_claim_one_live_allocation
+       FROM resource_claim
        JOIN run ON run.record_id=resource_claim.root_run_record_id
        WHERE resource_claim.kind='worktree' AND resource_claim.state='claimed'
-         AND resource_claim.shared=0
        ORDER BY run.number`,
     )
     .all() as ClaimedWorktreeOwner[]

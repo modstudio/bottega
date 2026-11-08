@@ -170,6 +170,10 @@ export function trackedWorkerEnvironment(
   }
 }
 
+export function runScopedHome(harness: string, sandbox: RunSandbox): boolean {
+  return harness === 'codex' || harness === 'grok' || sandbox === 'srt'
+}
+
 export async function prepareWorkerHomeLaunch(input: {
   agent: Agent
   sandbox: RunSandbox
@@ -185,7 +189,7 @@ export async function prepareWorkerHomeLaunch(input: {
   project: Project | null
 }) {
   const harness = workerHarnessName(input.agent)
-  const hasRunScopedHome = harness === 'codex' || harness === 'grok' || input.sandbox === 'srt'
+  const hasRunScopedHome = runScopedHome(harness, input.sandbox)
   const home = hasRunScopedHome
     ? prepareSandboxHome(harness, input.runDir, process.env, input.sandbox)
     : {}
@@ -253,7 +257,6 @@ export function prepareClaimedGrokMcpScope(
     treeConfig: Record<string, McpServerConfig>
     readerServers: Record<string, ReaderProxyServer> | null
   },
-  recordClaim: () => void,
 ) {
   try {
     const harness = workerHarnessName(input.agent)
@@ -302,7 +305,6 @@ export function prepareClaimedGrokMcpScope(
             readerScope.platformServers,
           )
         : null
-    if (harness === 'grok') recordClaim()
     return {
       ...scope,
       environment: {

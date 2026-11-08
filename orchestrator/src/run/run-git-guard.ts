@@ -15,6 +15,7 @@ import {
 import { resolveRefGuardHook } from '../resources/ref-guard-runtime.ts'
 import { recordResourceStep } from '../resources/resource-step-recorder.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { runRootRecord } from './run-root-record.ts'
 
 /** Shared git roots for a writing worktree, creating the branch namespace dirs if missing. */
 export function provisionWriterSharedGitRoots(
@@ -47,20 +48,15 @@ export function workerGitConfigEnvironment(
   const runId = markedWorktreeRunId(worktree.path)
   if (!runId) return prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot)
   const database = db()
-  const run = database
-    .query<{ root_id: string; project_record_id: string | null }, [string]>(
-      `SELECT COALESCE(parent_run_record_id,record_id) root_id,project_record_id
-       FROM run WHERE record_id=?`,
-    )
-    .get(runId)
+  const run = runRootRecord(runId, database)
   if (!run) return prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot)
   const path = sharedRefGuardPath(worktree.path, worktree.repoRoot)
   return recordResourceStep(
     database,
     {
-      rootRunId: run.root_id,
+      rootRunId: run.rootRunId,
       runId,
-      projectId: run.project_record_id,
+      projectId: run.projectId,
       kind: 'ref_guard',
       allocationKey: path,
       identity: worktree.path,
