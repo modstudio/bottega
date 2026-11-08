@@ -9,6 +9,7 @@ import {
   TrackerLookupUnverifiable,
   type TrackerProject,
   trackerSourceFor,
+  trackerStateMayWriteCategory,
   trackerWireAction,
   WORKSPACE_LOOKUP_PAGE_SIZE,
 } from './trackers.ts'
@@ -27,6 +28,11 @@ describe('incremental tracker read policy', () => {
       expect(categoryForTrackerRead(incremental, status, status, 'todo', states)).toBe(want)
     })
   }
+})
+
+test('backlog is a writable open state and no other category', () => {
+  expect(trackerStateMayWriteCategory('backlog', 'open')).toBeTrue()
+  expect(trackerStateMayWriteCategory('backlog', 'active')).toBeFalse()
 })
 
 describe('tracker action names', () => {
@@ -391,7 +397,8 @@ describe('tracker status protocols', () => {
     ).toEqual({
       status: 'todo',
       category: 'open',
-      refusal: 'cursor-mcp status confirmation for task STO-3 returned todo after done was requested',
+      refusal:
+        'cursor-mcp status confirmation for task STO-3 returned todo after done was requested',
     })
   })
 })

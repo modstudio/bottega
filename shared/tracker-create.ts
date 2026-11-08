@@ -1,3 +1,4 @@
+import type { ToolInputSchema } from './tracker-list-scope.ts'
 import {
   cursorProjectRefusal,
   type ToolCaller,
@@ -6,7 +7,6 @@ import {
   trackerWireAction,
   workspaceTeamRefusal,
 } from './trackers.ts'
-import type { ToolInputSchema } from './tracker-list-scope.ts'
 
 export type CreateTrackerTask = {
   title: string

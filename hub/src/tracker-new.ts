@@ -1,20 +1,17 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   type CreateTrackerTask,
   createTrackerTask,
   trackerCreatedTaskKey,
 } from '../../shared/tracker-create.ts'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { advertisedToolSchema, type ToolListingCaller } from '../../shared/tracker-list-scope.ts'
 import {
   resolveTrackerWriteState,
   type TrackerProject,
   type TrackerProtocol,
-  trackerWriteCategory,
   trackerWireAction,
+  trackerWriteCategory,
 } from '../../shared/trackers.ts'
-import {
-  advertisedToolSchema,
-  type ToolListingCaller,
-} from '../../shared/tracker-list-scope.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 
 export type TaskCreationDestination = 'tracker' | 'hosted'

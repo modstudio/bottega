@@ -3,6 +3,7 @@ export type ToolInputSchema = {
 }
 
 export type ToolListingCaller = {
+  callTool(name: string, args: Record<string, unknown>): Promise<unknown>
   listTools?: () => Promise<{ name: string; inputSchema: ToolInputSchema }[]>
 }
 

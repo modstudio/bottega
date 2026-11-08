@@ -276,7 +276,7 @@ describe('array-mcp task writes', () => {
 
   for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
     test(`${protocol} observes a confirming mismatch before refusing`, async () => {
-      const registered = {
+      const registered: RegisteredProject = {
         ...project,
         settings: {
           ...project.settings,
@@ -298,7 +298,7 @@ describe('array-mcp task writes', () => {
                   },
                 },
         },
-      } satisfies RegisteredProject
+      }
       const calls: { name: string; args: Record<string, unknown> }[] = []
 
       await expect(

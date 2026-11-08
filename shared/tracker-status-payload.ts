@@ -17,7 +17,10 @@ export function workspaceStatusPayload(
   return { id: key, [field]: status }
 }
 
-export const cursorStatusPayload = (externalId: string, status: string): Record<string, unknown> => ({
+export const cursorStatusPayload = (
+  externalId: string,
+  status: string,
+): Record<string, unknown> => ({
   id: externalId,
   status,
 })

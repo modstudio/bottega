@@ -1,7 +1,13 @@
 import { z } from 'zod'
 
 import { PLATFORM_SLUG } from './brand.ts'
-import { scopedRows, toolDeclaresInput, type ToolInputSchema } from './tracker-list-scope.ts'
+import {
+  TRACKER_ACTIONS,
+  type TrackerAction,
+  type TrackerProtocol,
+  trackerWireAction,
+} from './tracker-actions.ts'
+import { scopedRows, type ToolInputSchema, toolDeclaresInput } from './tracker-list-scope.ts'
 import {
   arrayStatusPayload,
   cursorStatusPayload,
@@ -9,100 +15,20 @@ import {
 } from './tracker-status-payload.ts'
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
+export {
+  resolveTrackerAgentActions,
+  TRACKER_PROTOCOLS,
+  type TrackerAction,
+  type TrackerProtocol,
+  trackerWireAction,
+} from './tracker-actions.ts'
 
-const TRACKER_ACTIONS = [
-  'search',
-  'get',
-  'create',
-  'update',
-  'status',
-  'comment',
-  'document',
-] as const
-export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
-export const TRACKER_PROTOCOLS = ['workspace-mcp', 'cursor-mcp', 'array-mcp', 'hub'] as const
-export type TrackerProtocol = (typeof TRACKER_PROTOCOLS)[number]
 const UPDATED_SINCE_PROTOCOLS: ReadonlySet<TrackerProtocol> = new Set([
   'workspace-mcp',
   'cursor-mcp',
 ])
 const updatedSinceProtocolList = [...UPDATED_SINCE_PROTOCOLS].join(' and ')
 export const ARRAY_MCP_STATUS_WRITE_CONFIRM = 'production'
-type TrackerActionName = { agent: string; wire?: string | null }
-
-/** The names agents and hub use for each protocol capability. */
-const trackerProtocolActions = {
-  'workspace-mcp': {
-    search: { agent: 'list-tasks-tool' },
-    get: { agent: 'get-task-tool' },
-    create: { agent: 'create-task-tool' },
-    update: { agent: 'update-task-tool' },
-    status: { agent: 'update-task-tool' },
-    comment: { agent: 'create-task-comment-tool' },
-    document: { agent: 'create-task-document-tool' },
-  },
-  'cursor-mcp': {
-    search: { agent: 'task_list', wire: 'task.list' },
-    get: { agent: 'task_getByKey', wire: 'task.getByKey' },
-    create: { agent: 'task_create', wire: 'task.create' },
-    update: { agent: 'task_update', wire: 'task.update' },
-    status: { agent: 'task_update', wire: 'task.update' },
-    comment: { agent: 'comment_add', wire: 'comment.add' },
-  },
-  'array-mcp': {
-    search: { agent: 'task_list' },
-    // The server has no single-task read; arrayMcpSource.lookup reads one by key
-    // through a task_list search, so that is its get.
-    get: { agent: 'task_list' },
-    create: { agent: 'task_create' },
-    update: { agent: 'task_update' },
-    // task_update takes status as a plain field; task_move also needs a board rank.
-    status: { agent: `${PLATFORM_SLUG} task set {key} --status`, wire: 'task_update' },
-    comment: { agent: `${PLATFORM_SLUG} workflow attach`, wire: null },
-    document: { agent: 'task_addDocument' },
-  },
-  hub: {
-    search: { agent: `${PLATFORM_SLUG} task list --project {project}` },
-    get: { agent: `${PLATFORM_SLUG} task show {key}` },
-    create: { agent: `${PLATFORM_SLUG} task new --project {project}` },
-    update: { agent: `${PLATFORM_SLUG} task set {key}` },
-    status: { agent: `${PLATFORM_SLUG} task set {key} --status` },
-    comment: { agent: `${PLATFORM_SLUG} task comment {key}` },
-    document: { agent: `${PLATFORM_SLUG} task doc new {key}` },
-  },
-} satisfies Record<TrackerProtocol, Partial<Record<TrackerAction, TrackerActionName>>>
-
-export const trackerWireAction = (protocol: TrackerProtocol, action: TrackerAction): string => {
-  const actions: Record<
-    TrackerProtocol,
-    Partial<Record<TrackerAction, TrackerActionName>>
-  > = trackerProtocolActions
-  const name = actions[protocol][action]
-  if (!name || name.wire === null)
-    throw new Error(`tracker protocol ${protocol} has no ${action} action`)
-  return name.wire ?? name.agent
-}
-/**
- * Agent-facing capability names, with register overrides replacing protocol
- * defaults. Hub commands are fixed, so a hub override is never applied, even
- * from a settings row that reached the store without register validation.
- */
-export function resolveTrackerAgentActions(
-  protocol: TrackerProtocol,
-  requested: Partial<Record<TrackerAction, string>> = {},
-): Partial<Record<TrackerAction, string>> {
-  const overrides = protocol === 'hub' ? {} : requested
-  const defaults: Record<
-    TrackerProtocol,
-    Partial<Record<TrackerAction, TrackerActionName>>
-  > = trackerProtocolActions
-  return {
-    ...Object.fromEntries(
-      Object.entries(defaults[protocol]).map(([action, name]) => [action, name.agent]),
-    ),
-    ...overrides,
-  }
-}
 
 // A tracker kind and its state names are written into workflow steps an agent
 // follows, so they are plain names with no shell syntax.
@@ -326,10 +252,10 @@ export const cursorProjectRefusal = (project: TrackerProject): string =>
   `${CURSOR_CREATE_REFUSAL}; set it with: ${PLATFORM_SLUG} project set ${project.name} --settings ` +
   `'${JSON.stringify({ tracker: { projectId: '…' } })}'`
 
-export const workspaceCollectScopeRefusal = (project: TrackerProject): string =>
+const workspaceCollectScopeRefusal = (project: TrackerProject): string =>
   `workspace-mcp collect refused: project ${project.name} tracker is missing team; ` +
   `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
-export const cursorCollectScopeRefusal = (project: TrackerProject): string =>
+const cursorCollectScopeRefusal = (project: TrackerProject): string =>
   `cursor-mcp collect refused: project ${project.name} tracker is missing projectId; ` +
   `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings ` +
   `'${JSON.stringify({ tracker: { projectId: '…' } })}'`
@@ -388,7 +314,7 @@ export type TrackerSource = {
   readCommentIds?: (m: ToolCaller, key: string) => Promise<string[] | null>
 }
 
-export type TrackerStatusWriteResult = {
+type TrackerStatusWriteResult = {
   status: string
   category: StatusCategory
   /** A refusal that must be raised after the returned observation is recorded. */
@@ -976,7 +902,7 @@ function cursorMcpSource(
       }
       return { tasks: out, complete, deletedKeys }
     },
-    async writeStatus(m, task, status, category) {
+    async writeStatus(m, task, status, _category) {
       if (!task.externalId) {
         throw new Error(`cursor-mcp status write refused: task ${task.key} has no external id`)
       }
