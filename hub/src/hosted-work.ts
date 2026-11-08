@@ -2,10 +2,17 @@ import type { SQL } from 'bun'
 import { z } from 'zod'
 import { engagedMs, human } from '../../shared/interval.ts'
 import { formatNoteLabel } from '../../shared/note-label.ts'
+import { hubDay, hubInterval } from '../../shared/record/schema-hub.ts'
 import { selectHostedReportSubscriptions } from './hosted-reports.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { computeMeasures, type MeasureInterval, type MeasureStatusEvent } from './measures.ts'
+import {
+  bigintColumns,
+  decodeRecordBigintColumns,
+  recordBigint,
+  recordBigintSchema,
+} from './record-bigint.ts'
 import {
   type HostedTaskDetailRows,
   hostedTaskDetailFromRows,
@@ -62,7 +69,7 @@ const hostedCommentRowSchema = z.object({
 })
 const hostedDocumentRowSchema = z.object({
   id: z.string(),
-  number: sqlNumberSchema,
+  number: recordBigintSchema,
   role: z.string().nullable(),
   title: z.string(),
   body: z.string(),
@@ -87,10 +94,10 @@ const hostedIntervalRowSchema = z.object({
   job: z.string().nullable(),
   start_at: sqlTimeSchema,
   end_at: sqlTimeSchema,
-  claude_tokens: sqlNumberSchema,
-  vendor_tokens: sqlNumberSchema,
+  claude_tokens: recordBigintSchema,
+  vendor_tokens: recordBigintSchema,
   vendor_cost_usd: sqlNumberSchema.nullable(),
-  open: sqlNumberSchema,
+  open: recordBigintSchema,
   user_id: z.string().nullable(),
 })
 export const parseHostedIntervalRows = (rows: unknown) =>
@@ -130,15 +137,19 @@ type RawWindow = Omit<
   task_updated_at: SqlTime | null
   task_closed_at: SqlTime | null
 }
-export const interval = (row: RawInterval): IntervalRow => ({
-  ...row,
-  start_at: iso(row.start_at)!,
-  end_at: iso(row.end_at)!,
-  claude_tokens: number(row.claude_tokens),
-  vendor_tokens: number(row.vendor_tokens),
-  vendor_cost_usd: row.vendor_cost_usd == null ? null : Number(row.vendor_cost_usd),
-  open: number(row.open),
-})
+const hubIntervalBigintColumns = bigintColumns(hubInterval)
+export const interval = (source: RawInterval): IntervalRow => {
+  const row = decodeRecordBigintColumns(source, hubIntervalBigintColumns)
+  return {
+    ...row,
+    start_at: iso(row.start_at)!,
+    end_at: iso(row.end_at)!,
+    claude_tokens: Number(row.claude_tokens),
+    vendor_tokens: Number(row.vendor_tokens),
+    vendor_cost_usd: row.vendor_cost_usd == null ? null : Number(row.vendor_cost_usd),
+    open: number(row.open),
+  }
+}
 const windowInterval = (row: RawWindow): WindowIntervalRow => ({
   ...interval(row),
   task_project: row.task_project,
@@ -151,6 +162,7 @@ const windowInterval = (row: RawWindow): WindowIntervalRow => ({
 })
 
 const rows = <T>(value: unknown) => value as T[]
+const hubDayBigintColumns = bigintColumns(hubDay)
 export function hostedDayRow(row: Record<string, unknown>): MachineDayRow {
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => [
@@ -159,7 +171,9 @@ export function hostedDayRow(row: Record<string, unknown>): MachineDayRow {
         ? key === 'collected_at'
           ? iso(value as SqlTime)!
           : value
-        : number(value as string | number | bigint),
+        : hubDayBigintColumns.has(key)
+          ? recordBigint(value as string | number | bigint)
+          : number(value as string | number | bigint),
     ]),
   ) as MachineDayRow
 }
@@ -444,7 +458,7 @@ function hostedDetailRows(
     job: row.job,
     start_at: iso(row.start_at)!,
     end_at: iso(row.end_at)!,
-    open: number(row.open),
+    open: row.open,
   }))
   const firstRecorded = intervals.reduce<string | null>((first, row) => {
     const value = iso(row.start_at)!
@@ -457,12 +471,12 @@ function hostedDetailRows(
     source: row.source,
     startAt: iso(row.start_at)!,
     endAt: iso(row.end_at)!,
-    open: number(row.open),
+    open: row.open,
     userId: row.user_id,
     taskId: task.id,
     taskKey: key,
     project: task.project,
-    vendorTokens: number(row.vendor_tokens),
+    vendorTokens: row.vendor_tokens,
     vendorCostUsd: row.vendor_cost_usd == null ? null : Number(row.vendor_cost_usd),
   }))
   const measureEvents: MeasureStatusEvent[] =
@@ -488,8 +502,8 @@ function hostedDetailRows(
     })),
     documents: documents.map((document) => ({
       id: document.id,
-      number: Number(document.number),
-      label: formatTaskDocumentLabel(key, Number(document.number)),
+      number: document.number,
+      label: formatTaskDocumentLabel(key, document.number),
       role: document.role,
       title: document.title,
       body: document.body,
@@ -561,8 +575,8 @@ export async function hostedNotes(
     return {
       notes: noteRows.map((row) => ({
         id: row.id,
-        number: number(row.number),
-        label: formatNoteLabel(row.project, number(row.number)),
+        number: recordBigint(row.number),
+        label: formatNoteLabel(row.project, recordBigint(row.number)),
         space_id: row.space_id,
         space_name: row.space_name,
         project: row.project,
@@ -644,7 +658,11 @@ export async function hostedSpend(
       FROM hub_interval WHERE space_id=${identity.spaceId}::uuid AND source='orch' AND agent IS NOT NULL
       AND start_at >= ${`${from}T00:00:00.000Z`}::timestamptz AND start_at < ${new Date(facts.now).toISOString()}::timestamptz
       GROUP BY agent HAVING SUM(vendor_tokens) > 0 ORDER BY SUM(vendor_tokens) DESC`,
-    ).map((row) => ({ agent: row.agent, tokens: number(row.tokens), cost: number(row.cost) })),
+    ).map((row) => ({
+      agent: row.agent,
+      tokens: recordBigint(row.tokens),
+      cost: number(row.cost),
+    })),
   )
   return projectSpendGrid(summary, vendors, facts.intervals, facts.now)
 }

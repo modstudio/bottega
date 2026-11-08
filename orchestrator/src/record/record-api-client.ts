@@ -281,6 +281,7 @@ export type RecordApiClient = ProjectIdentityClient &
       destination?: RecordRequestDestination,
     ): Promise<{
       items: Record<string, unknown>[]
+      unreadable?: Array<{ id: string; reason: string }>
       nextCursor: string | null
       endCursor?: string | null
     }>

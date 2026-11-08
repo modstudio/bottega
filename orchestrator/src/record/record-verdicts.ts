@@ -55,7 +55,8 @@ export async function recordScoreRows(
     | { ids: readonly string[] }
     | { spaceId: string; updatedSince?: string; limit: number; cursor: RecordCursor | null },
 ): Promise<Record<string, unknown>[]> {
-  const from = `SELECT COALESCE(s.run_id,e.run_id) AS run_id,s.delivery,s.quality,s.fidelity,s.note,s.scored_at,s.scored_by,
+  const from = `SELECT COALESCE(s.run_id,e.run_id) AS run_id,COALESCE(s.space_id,e.space_id) AS space_id,
+      s.delivery,s.quality,s.fidelity,s.note,s.scored_at,s.scored_by,
       GREATEST(s.updated_at,e.excluded_at,e.superseded_at) AS updated_at,
       CASE WHEN e.superseded_at IS NOT NULL THEN NULL ELSE COALESCE(r.evidence_excluded,e.reason) END AS evidence_excluded
     FROM run_score s FULL OUTER JOIN run_exclusion e ON e.run_id=s.run_id AND e.space_id=s.space_id

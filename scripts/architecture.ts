@@ -461,6 +461,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('hub/src/hosted-report-gather.ts', [
     '../../shared/interval.ts',
+    '../../shared/record/schema-hub.ts',
+    './record-bigint.ts',
     './measures.ts',
     './report-delivery.ts',
     './report-renderer.ts',

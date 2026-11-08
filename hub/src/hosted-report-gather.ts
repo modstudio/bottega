@@ -3,9 +3,11 @@
 
 import type { SQL } from 'bun'
 import { engagedMs, human } from '../../shared/interval.ts'
+import { hubInterval } from '../../shared/record/schema-hub.ts'
 import { hostedTaskJoin } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import type { MeasureScope } from './measures.ts'
+import { bigintColumns, decodeRecordBigintColumns } from './record-bigint.ts'
 import type { DeliveryPeriod } from './report-delivery.ts'
 import type { GatheredReport, Item } from './report-renderer.ts'
 
@@ -38,13 +40,16 @@ type RawReportRow = Omit<HostedReportRow, 'start_at' | 'end_at' | 'open' | 'vend
   vendor_tokens: string | number
 }
 
-export function asHostedReportRow(row: RawReportRow): HostedReportRow {
+const hubIntervalBigintColumns = bigintColumns(hubInterval)
+
+export function asHostedReportRow(source: RawReportRow): HostedReportRow {
+  const row = decodeRecordBigintColumns(source, hubIntervalBigintColumns)
   return {
     ...row,
     start_at: iso(row.start_at),
     end_at: iso(row.end_at),
     open: number(row.open),
-    vendor_tokens: number(row.vendor_tokens),
+    vendor_tokens: Number(row.vendor_tokens),
   }
 }
 

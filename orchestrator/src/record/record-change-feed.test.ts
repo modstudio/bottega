@@ -88,6 +88,31 @@ test('family keys map aliases, skip unserved tables, and keep each family id at 
   ])
 })
 
+test('family keys preserve one row move entry per space', () => {
+  const destination = '01990000-0000-7000-8000-000000002199'
+  expect(
+    familyKeys([
+      change('doc', 'moved-doc', 0, 'delete'),
+      { ...change('doc', 'moved-doc', 1), space: destination },
+    ]),
+  ).toEqual([
+    {
+      table: 'doc',
+      id: 'moved-doc',
+      space: spaceId,
+      op: 'delete',
+      position: 0,
+    },
+    {
+      table: 'doc',
+      id: 'moved-doc',
+      space: destination,
+      op: 'upsert',
+      position: 1,
+    },
+  ])
+})
+
 let database: PGlite
 
 beforeAll(async () => {
@@ -158,6 +183,56 @@ test('moving a document logs a delete in its old space and an upsert in its new 
     { space: spaceId, op: 'upsert' },
     { space: spaceId, op: 'delete' },
     { space: movedSpaceId, op: 'upsert' },
+  ])
+  const materialized = await readRecordChanges(
+    pgliteSql(movedDatabase),
+    { userId, spaceId, spaceIds: [spaceId, movedSpaceId] },
+    { xid: 0n, seq: 0n },
+    100,
+    ['doc'],
+    async (tx, page) => (page.resetRequired ? page : materializeRecordChangePage(tx, page)),
+  )
+  expect(materialized.resetRequired).toBe(false)
+  if (materialized.resetRequired) return
+  expect(
+    materialized.changes
+      .filter((entry) => entry.id === movedDocId)
+      .map(({ space, op }) => ({ space, op })),
+  ).toEqual([
+    { space: spaceId, op: 'delete' },
+    { space: movedSpaceId, op: 'upsert' },
+  ])
+  await movedDatabase.close()
+})
+
+test('moving a document into an unreadable space materializes only the old-space delete', async () => {
+  const movedDatabase = await createHostedRecordFixture({ spaceId, userId })
+  await movedDatabase.exec(`
+    RESET ROLE;
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${movedSpaceId}','Hidden moved document space','hidden-moved-document-space',now());
+    INSERT INTO doc (
+      id,space_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at
+    ) VALUES (
+      '${movedDocId}','${spaceId}','global',NULL,'hidden-moved-doc','Hidden moved doc','Body',
+      'demand',ARRAY['technical'],now(),now()
+    );
+    UPDATE doc SET space_id='${movedSpaceId}' WHERE id='${movedDocId}';
+    SET ROLE record_actor;
+  `)
+  const sql = pgliteSql(movedDatabase)
+  const feed = await readRecordChanges(
+    sql,
+    { userId, spaceId, spaceIds: [spaceId] },
+    { xid: 0n, seq: 0n },
+    100,
+    ['doc'],
+    async (tx, page) => (page.resetRequired ? page : materializeRecordChangePage(tx, page)),
+  )
+  expect(feed.resetRequired).toBe(false)
+  if (feed.resetRequired) return
+  expect(feed.changes.filter((entry) => entry.id === movedDocId)).toEqual([
+    { table: 'doc', id: movedDocId, space: spaceId, op: 'delete' },
   ])
   await movedDatabase.close()
 })
