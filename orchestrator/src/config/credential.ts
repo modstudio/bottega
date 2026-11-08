@@ -39,21 +39,6 @@ export function credentialHint(value: string): string {
     : `${value.length} characters`
 }
 
-const upperSnake = (value: string) => value.toUpperCase().replaceAll('-', '_')
-
-export function credentialVariableName(
-  provider: string,
-  name: string | null,
-  type: string,
-  mode: CredentialMode,
-): string {
-  const base = [provider, name, type]
-    .filter((part): part is string => part !== null)
-    .map(upperSnake)
-    .join('_')
-  return mode === 'test' ? `${base}_TEST` : base
-}
-
 export function credentialDisplayName(
   provider: string,
   name: string | null,
