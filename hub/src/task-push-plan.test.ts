@@ -204,6 +204,14 @@ test('repair verdict ignores queued machine-only and fails when drain leaves wor
   expect(
     drainFailsAudit({
       rejected: 0,
+      quarantined: 0,
+      waitingOnRouting: {},
+      deliveryOffReason: 'hosted delivery is off',
+    }),
+  ).toBeTrue()
+  expect(
+    drainFailsAudit({
+      rejected: 0,
       quarantined: 1,
       waitingOnRouting: {},
     }),

@@ -1,16 +1,19 @@
 import { afterEach, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { formatDatabaseLockRefusal } from '../../shared/database-lock-refusal.ts'
 import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
+import { realPathForPotentialPath } from '../../shared/state-directory.ts'
 import { runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
   closeDatabaseForFixture,
   DB_PATH,
   db,
+  hostedDeliveryAllowed,
+  hostedDeliveryRefusal,
   hubDatabaseLockHolder,
   hubStoreAccess,
   implicitHubDatabaseCreationRefusal,
@@ -21,6 +24,32 @@ import {
 } from './db.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
+
+test('hosted delivery requires the installation store real path', () => {
+  expect(hostedDeliveryAllowed('/state/hub/hub.db', '/state/hub/hub.db')).toBeTrue()
+  expect(hostedDeliveryAllowed('/scratch/hub.db', '/state/hub/hub.db')).toBeFalse()
+
+  const directory = mkdtempSync(join(tmpdir(), 'hub-delivery-path-'))
+  const installation = join(directory, 'hub.db')
+  const alias = join(directory, 'hub-alias.db')
+  writeFileSync(installation, '')
+  symlinkSync(installation, alias)
+  try {
+    expect(
+      hostedDeliveryAllowed(
+        realPathForPotentialPath(alias),
+        realPathForPotentialPath(installation),
+      ),
+    ).toBeTrue()
+    expect(hostedDeliveryRefusal(installation, installation)).toBeNull()
+    expect(hostedDeliveryRefusal(alias, installation)).toBeNull()
+    expect(hostedDeliveryRefusal('/scratch/hub.db', installation)).toContain(
+      'not the installation store: /scratch/hub.db',
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
 
 test('the absent explicit-store refusal names the condition and explicit remedy', () => {
   expect(missingHubDatabaseMessage('/scratch/missing.db')).toBe(

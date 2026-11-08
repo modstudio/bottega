@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, beforeEach } from 'bun:test'
-import { chmodSync, mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,6 +26,12 @@ process.env[CONFIG_HOME_ENV] = configDir
 // Best-effort contention and hold logs must land in a throwaway root, never the operator's.
 const stateDir = mkdtempSync(join(tmpdir(), 'hub-test-state-'))
 process.env[STATE_HOME_ENV] = stateDir
+const installationHubDirectory = join(stateDir, 'hub')
+mkdirSync(installationHubDirectory)
+symlinkSync(
+  process.env.BOTTEGA_HUB_DB!,
+  join(installationHubDirectory, FROZEN_STATE_NAMES.hubDatabase),
+)
 machineId(HUB_MIGRATION_BACKFILL_VALUES.machine_id)
 process.env[HARNESS_ENV_FILE_ENV] = ''
 delete process.env.BOTTEGA_RECORD_API_URL

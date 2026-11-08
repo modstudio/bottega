@@ -20,6 +20,7 @@ import {
   legacyStoreRefusal,
   realPathForPotentialPath,
   resolveHubDatabase,
+  resolveStatePaths,
   type StateEnvironment,
   temporaryStateStoreMigrationAllowed,
 } from '../../shared/state-directory.ts'
@@ -75,6 +76,29 @@ const linkedCheckout = runtime.linkedCheckout
 const livePath = runtime.livePath
 const legacyPath = runtime.legacyPath
 export const DB_PATH = livePath
+
+export const NON_INSTALLATION_STORE_DELIVERY_REASON =
+  'hosted delivery is off because this store is not the installation store'
+
+/** Decide hosted delivery from already-resolved store identities. */
+export function hostedDeliveryAllowed(
+  openStoreRealPath: string,
+  installationStoreRealPath: string,
+): boolean {
+  return openStoreRealPath === installationStoreRealPath
+}
+
+/** Name why this process's open store may not deliver to the hosted record. */
+export function hostedDeliveryRefusal(
+  openStorePath = DB_PATH,
+  installationStorePath = resolveStatePaths(process.env).hubDatabase,
+): string | null {
+  const allowed = hostedDeliveryAllowed(
+    realPathForPotentialPath(openStorePath),
+    realPathForPotentialPath(installationStorePath),
+  )
+  return allowed ? null : `${NON_INSTALLATION_STORE_DELIVERY_REASON}: ${openStorePath}`
+}
 
 function restrictedActorWriteRefusal(): string {
   return (

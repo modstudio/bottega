@@ -231,6 +231,7 @@ function drainAudit(drain: HostedOutboxReport): DrainAudit {
     waitingOnHostedHub: drain.waitingOnHostedHub,
     hostedReachable: drain.hostedReachable,
     skippedCapability: drain.skippedCapability,
+    deliveryOffReason: drain.deliveryOffReason,
   }
 }
 
@@ -291,6 +292,7 @@ function idLines(heading: string, rows: Array<{ spaceId: string; table: string; 
 
 function drainFailureLines(drain: HostedOutboxReport): string[] {
   const lines: string[] = []
+  if (drain.deliveryOffReason) lines.push(`repair drain refused: ${drain.deliveryOffReason}`)
   if (drain.rejected > 0) lines.push('repair drain rejected rows')
   if (drain.quarantined > 0) lines.push('repair drain quarantined rows')
   if (drain.skippedCapability) lines.push('repair drain left rows waiting: table not accepted')
