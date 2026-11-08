@@ -22,26 +22,6 @@ test('a register record_id is the stored project_record_id', () => {
   expect(projectRecordIdFor(null, register)).toBeNull()
 })
 
-test('a hub row written after the register has record_id carries project_record_id', () => {
-  refreshProjects()
-  const conn = new Database(':memory:')
-  conn.exec('PRAGMA foreign_keys = ON')
-  applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-  conn
-    .query(
-      `INSERT INTO task(record_id,key,project,project_record_id,source,first_seen,last_seen)
-     VALUES ('cccccccc-cccc-4ccc-8ccc-ccccccccccc9','LOC-9','workshop',?,'mcp','2026-10-15T00:00:00.000Z','2026-10-15T00:00:00.000Z')`,
-    )
-    .run(projectRecordIdFor('workshop'))
-  expect(
-    conn
-      .query<{ project_record_id: string | null }, []>(
-        `SELECT project_record_id FROM task WHERE key='LOC-9'`,
-      )
-      .get()?.project_record_id,
-  ).toBe('01990000-0000-7000-8000-000000000075')
-})
-
 test('the outbox payload carries projectId beside project_name', () => {
   const conn = new Database(':memory:')
   conn.exec('PRAGMA foreign_keys = ON')

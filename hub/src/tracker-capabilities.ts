@@ -7,7 +7,6 @@ import {
   workspaceScopeRefusal,
 } from '../../shared/trackers.ts'
 
-export type TrackerRowSource = TaskSource
 type Capability = { allowed: true } | { allowed: false; reason: string }
 export type Capabilities = {
   create: Capability
@@ -55,7 +54,7 @@ export function trackerCapabilities({
   source,
   project,
 }: {
-  source: TrackerRowSource
+  source: TaskSource
   project: TrackerProject | null
 }): Capabilities {
   if (source === 'local') {

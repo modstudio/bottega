@@ -340,7 +340,7 @@ function parseTaskRow(value: unknown, id: string): PushedTask | string {
   const timestampError = taskTimestampError(row)
   if (timestampError) return timestampError
   if (!TASK_SOURCES.includes(row.source as TaskSource))
-    return `${HOSTED_TASK_TABLE} row.source must be mcp or local`
+    return `${HOSTED_TASK_TABLE} row.source must be ${TASK_SOURCES.join(' or ')}`
   if (!Number.isSafeInteger(row.next_document_number) || Number(row.next_document_number) < 1)
     return `${HOSTED_TASK_TABLE} row.next_document_number must be a positive safe integer`
   return row as PushedTask

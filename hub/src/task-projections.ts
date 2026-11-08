@@ -1,11 +1,8 @@
 import { DEFAULT_IDLE_CAP_MS, engagedMs, human, type Span } from '../../shared/interval.ts'
+import type { TaskSource } from '../../shared/task-source.ts'
 import type { TrackerProject } from '../../shared/trackers.ts'
 import { runRef } from './run-ref.ts'
-import {
-  type Capabilities,
-  type TrackerRowSource,
-  trackerCapabilities,
-} from './tracker-capabilities.ts'
+import { type Capabilities, trackerCapabilities } from './tracker-capabilities.ts'
 
 export type ProjectionProject = TrackerProject & { spaceId?: string; spaceName?: string }
 
@@ -340,7 +337,7 @@ export function projectTasksInWindow(
       capabilities:
         key && source
           ? trackerCapabilities({
-              source: source as TrackerRowSource,
+              source: source as TaskSource,
               project: project(first.space_id, projectName),
             })
           : null,
@@ -557,7 +554,7 @@ export function projectBoardCards(
       statusCategory: row.status_category,
       source: row.source,
       sourceProtocol: row.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
-      capabilities: trackerCapabilities({ source: row.source as TrackerRowSource, project }),
+      capabilities: trackerCapabilities({ source: row.source as TaskSource, project }),
       updatedAt: row.updated_at ?? row.last_seen,
       workingNow: live.has(identity),
     }

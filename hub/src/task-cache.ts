@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { TASK_SOURCES, type TaskSource } from '../../shared/task-source.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { adoptPendingHostedRow } from './outbox.ts'
 import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
@@ -67,25 +68,32 @@ function requireChildTaskRecordId(conn: Database, kind: string, row: HostedTaskC
   return taskRecordId
 }
 
+function deleteHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
+  const stored = conn
+    .query<{ project: string; project_record_id: string | null }, [string]>(
+      `SELECT project,project_record_id FROM task WHERE record_id=?`,
+    )
+    .get(row.id)
+  const project = stored?.project ?? row.project
+  const projectRecordId = stored?.project_record_id ?? row.projectId ?? projectRecordIdFor(project)
+  conn
+    .query(
+      `UPDATE interval SET project=?,project_record_id=?
+       WHERE task_record_id=? AND project_record_id IS NULL`,
+    )
+    .run(project, projectRecordId, row.id)
+  conn.query(`DELETE FROM task WHERE record_id=?`).run(row.id)
+}
+
 export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
   persistInstallBinding(conn)
+  if (typeof row.source === 'string' && !TASK_SOURCES.includes(row.source as TaskSource)) {
+    deleteHostedTask(conn, row)
+    return false
+  }
   if (row.deleted_at) {
-    const stored = conn
-      .query<{ project: string; project_record_id: string | null }, [string]>(
-        `SELECT project,project_record_id FROM task WHERE record_id=?`,
-      )
-      .get(row.id)
-    const project = stored?.project ?? row.project
-    const projectRecordId =
-      stored?.project_record_id ?? row.projectId ?? projectRecordIdFor(project)
-    conn
-      .query(
-        `UPDATE interval SET project=?,project_record_id=?
-         WHERE task_record_id=? AND project_record_id IS NULL`,
-      )
-      .run(project, projectRecordId, row.id)
-    conn.query(`DELETE FROM task WHERE record_id=?`).run(row.id)
-    return
+    deleteHostedTask(conn, row)
+    return true
   }
   const parentRecordId = parentTaskRecordId(conn, row)
   conn
@@ -123,6 +131,7 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       row.last_seen,
       row.next_document_number,
     )
+  return true
 }
 
 export function applyHostedTaskComment(conn: Database, row: HostedChanges['comments'][number]) {
@@ -311,9 +320,16 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
 }
 
 export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
+  let unsupportedSources = 0
   changes.tasks.forEach((row) => {
-    applySnapshotRow(conn, 'hub_task', row.id, row, applyHostedTask)
+    applySnapshotRow(conn, 'hub_task', row.id, row, (taskConn, taskRow) => {
+      if (!applyHostedTask(taskConn, taskRow)) unsupportedSources += 1
+    })
   })
+  if (unsupportedSources)
+    console.error(
+      `hub: skipped ${unsupportedSources} hosted task ${unsupportedSources === 1 ? 'row' : 'rows'} with a source this store no longer accepts; run \`${PLATFORM_SLUG} record migrate\``,
+    )
   reconcileParentRecordIds(conn)
   changes.comments.forEach((row) => {
     applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyHostedTaskComment)

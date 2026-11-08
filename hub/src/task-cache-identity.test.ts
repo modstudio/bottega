@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
@@ -235,4 +235,56 @@ test('task pull keeps a counter higher than its live document numbers', () => {
       )
       .get(taskId)?.next_document_number,
   ).toBe(9)
+})
+
+test('task pull skips unsupported hosted sources and continues accepted rows', () => {
+  const acceptedId = '01990000-0000-7000-8000-000000000060'
+  const unsupportedId = '01990000-0000-7000-8000-000000000061'
+  seedTask(unsupportedId, 'LEGACY-61')
+  const task = (
+    id: string,
+    key: string,
+    source: 'mcp' | 'local',
+  ): Parameters<typeof applyHostedTaskRows>[1]['tasks'][number] => ({
+    id,
+    key,
+    project: 'workshop',
+    project_name: 'workshop',
+    title: key,
+    status: 'open',
+    status_category: 'open',
+    parent_key: null,
+    body: null,
+    assignee: null,
+    opened_at: AT,
+    closed_at: null,
+    source,
+    first_seen: AT,
+    last_seen: AT,
+    created_at: AT,
+    updated_at: AT,
+    deleted_at: null,
+    next_document_number: 1,
+  })
+  const error = spyOn(console, 'error').mockImplementation(() => {})
+
+  expect(() =>
+    applyHostedTaskChanges({
+      tasks: [task(acceptedId, 'DEV-60', 'mcp'), task(unsupportedId, 'DEV-61', 'git' as 'mcp')],
+      comments: [],
+      documents: [],
+      statusEvents: [],
+      cursor: AT,
+    }),
+  ).not.toThrow()
+
+  expect(db().query(`SELECT record_id FROM task WHERE record_id=?`).get(acceptedId)).toEqual({
+    record_id: acceptedId,
+  })
+  expect(db().query(`SELECT record_id FROM task WHERE record_id=?`).get(unsupportedId)).toBeNull()
+  expect(error).toHaveBeenCalledTimes(1)
+  expect(error).toHaveBeenCalledWith(
+    `hub: skipped 1 hosted task row with a source this store no longer accepts; run \`${PLATFORM_SLUG} record migrate\``,
+  )
+  error.mockRestore()
 })

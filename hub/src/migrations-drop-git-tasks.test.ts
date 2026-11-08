@@ -52,6 +52,30 @@ test('tracker-only task migration deletes git status history and preserves track
   database.close()
 })
 
+test('tracker-only task migration restores late task relinking triggers', () => {
+  const database = migratedBeforeDrop()
+  expect(applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
+    migrationTag,
+  ])
+  database.exec(`
+    INSERT INTO interval
+      (record_id,task_key,project_record_id,source,start_at,end_at,ref)
+    VALUES ('late-interval','DEV-1','project-record','orch','2026-01-01','2026-01-01','late');
+    INSERT INTO commit_key(sha,repo,task_key,at)
+    VALUES ('late-commit','workshop','DEV-1','2026-01-01');
+    INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+    VALUES ('late-task','DEV-1','workshop','mcp','2026-01-01','2026-01-01');
+  `)
+
+  expect(
+    database.query(`SELECT task_record_id FROM interval WHERE record_id='late-interval'`).get(),
+  ).toEqual({ task_record_id: 'late-task' })
+  expect(
+    database.query(`SELECT task_record_id FROM commit_key WHERE sha='late-commit'`).get(),
+  ).toEqual({ task_record_id: 'late-task' })
+  database.close()
+})
+
 for (const [kind, insert, refusal] of [
   [
     'comment',
