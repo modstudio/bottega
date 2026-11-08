@@ -47,3 +47,22 @@ test('totals input tokens and prices them at the named rate', () => {
   expect(metrics.inputTokens).toBe(1_000_000)
   expect(metrics.costUsd).toBe(0.042)
 })
+
+test('computes calibration metrics from labeled answers', () => {
+  const metrics = typedQuestionMetrics([row(0.2, false), row(0.8, true)], 0.5)
+  expect(metrics.brier).toBeCloseTo(0.04)
+  expect(metrics.logLoss).toBeCloseTo(-Math.log(0.8))
+  expect(metrics.ece).toBeCloseTo(0.2)
+})
+
+test('clamps probabilities for log loss and puts one in the last ECE bin', () => {
+  const metrics = typedQuestionMetrics([row(0, true), row(1, false), row(1, true)], 0.5)
+  expect(metrics.brier).toBeCloseTo(2 / 3)
+  expect(metrics.logLoss).toBeCloseTo((-2 * Math.log(1e-6) - Math.log(1 - 1e-6)) / 3)
+  expect(metrics.ece).toBeCloseTo(2 / 3)
+})
+
+test('returns null calibration metrics without labeled answers', () => {
+  const metrics = typedQuestionMetrics([row(0.5, null)], 0.5)
+  expect(metrics).toMatchObject({ brier: null, logLoss: null, ece: null })
+})
