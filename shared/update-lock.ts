@@ -6,15 +6,13 @@ import { closeSync, constants, mkdirSync, openSync, readFileSync, writeFileSync 
 import { platform } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
+import { MACHINE_UPDATE_LOCK_WAIT_MS } from './call-budgets.ts'
 import { databaseLockHolderCommandSummary } from './database-lock-refusal.ts'
-import { processCommandLine } from './process-identity.ts'
 import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 
 const MACHINE_UPDATE_LOCK_FILE = 'machine-update.lock'
 const MACHINE_UPDATE_INTENT_FILE = 'machine-update-intent.json'
 export const MACHINE_UPDATE_LOCK_HELD_ENV = `${PLATFORM_SLUG.toUpperCase()}_MACHINE_UPDATE_LOCK_HELD`
-// Claude command logs, measured 2026-11-07, showed a 155.033s maximum update; round upward.
-export const MACHINE_UPDATE_LOCK_WAIT_MS = 3 * 60_000
 const MACHINE_UPDATE_LOCK_POLL_MS = 100
 
 const flockLibrary = dlopen(platform() === 'darwin' ? '/usr/lib/libSystem.B.dylib' : 'libc.so.6', {
@@ -94,7 +92,7 @@ export async function withMachineUpdateLock<T>(
       path,
       JSON.stringify({
         pid: process.pid,
-        command: processCommandLine(process.pid) ?? process.argv.join(' '),
+        command: process.argv.join(' '),
       }),
       { mode: 0o600 },
     )

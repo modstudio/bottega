@@ -2,12 +2,12 @@ import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { human } from '../../shared/interval.ts'
 import { readMachineValue } from '../../shared/machine-config.ts'
-import { withMachineUpdateLockUnlessHeld } from '../../shared/update-lock.ts'
 import {
   ANSWERER_KIND_VALUES,
   ASKED_VIA_VALUES,
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
+import { withMachineUpdateLockUnlessHeld } from '../../shared/update-lock.ts'
 import {
   type CollectLegResult,
   collectHostedOutboxOnce,
@@ -218,7 +218,7 @@ function printCollectLease(json: boolean): void {
     )
 }
 
-export async function migrateHubDatabase(): Promise<void> {
+async function migrateHubDatabase(): Promise<void> {
   return withMachineUpdateLockUnlessHeld(async () => {
     const migrated = await migrateDatabaseWithQuestionIdentityMap(
       readQuestionIdentityMap,

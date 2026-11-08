@@ -306,6 +306,7 @@ export const hubModuleSpecs = [
       '../../shared/interval.ts',
       '../../shared/machine-config.ts',
       '../../shared/question-vocabulary.ts',
+      '../../shared/update-lock.ts',
       './collect.ts',
       './db.ts',
       './doctor.ts',

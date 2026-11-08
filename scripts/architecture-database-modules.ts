@@ -84,7 +84,9 @@ export const databaseModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/database/machine-update-intent.ts', [
     'bun:sqlite',
+    'node:crypto',
     'node:fs',
+    '../../../shared/brand.ts',
     '../../../shared/state-directory.ts',
     '../../../shared/update-lock.ts',
     './machine-update-recovery.ts',

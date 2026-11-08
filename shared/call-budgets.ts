@@ -1,5 +1,3 @@
-import { MACHINE_UPDATE_LOCK_WAIT_MS } from './update-lock.ts'
-
 export type CallBudgetName =
   | 'git-plumbing'
   | 'git-probe'
@@ -23,6 +21,8 @@ export type CallBudget = {
 }
 
 const MIB = 1024 * 1024
+// Claude command logs, measured 2026-11-07, showed a 155.033s maximum update; round upward.
+export const MACHINE_UPDATE_LOCK_WAIT_MS = 3 * 60_000
 
 export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object.freeze({
   'git-plumbing': { deadlineMs: 30_000, outputBytes: 16 * MIB, graceMs: 2_000 },

@@ -423,6 +423,12 @@ function recoverAbandonedMachineUpdate(
   presentation.log(`recovered interrupted machine update: ${decision.message}`)
 }
 
+function requiredLocalStoreJournalPositions() {
+  const positions = localStoreJournalPositions()
+  if (!positions) throw new Error('store journal positions could not be read before update')
+  return positions
+}
+
 function verifiedLandingBranch(
   project: { name: string; path: string; settings: { trunk?: string } },
   runGit: (cwd: string, args: string[]) => string,
@@ -509,10 +515,7 @@ export async function machineUpdateCommandUnderLock(
       deps,
       apply: () => {
         const before = runGit(target, ['rev-parse', 'HEAD'])
-        const beforePositions = localStoreJournalPositions()
-        if (!beforePositions) {
-          throw new Error('store journal positions could not be read before machine update')
-        }
+        const beforePositions = requiredLocalStoreJournalPositions()
         writeMachineUpdateIntent({
           before: beforePositions,
           swapped: { kind: 'checkout', target, priorCommit: before },

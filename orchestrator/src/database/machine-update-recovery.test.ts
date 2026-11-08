@@ -17,9 +17,7 @@ test('a moved position keeps the new state and names the rerun', () => {
 })
 
 test('a failed restore names the manual remedy', () => {
-  expect(
-    decideMachineUpdateRecovery({ before, swapped, restoreFailure: 'denied' }),
-  ).toEqual({
+  expect(decideMachineUpdateRecovery({ before, swapped, restoreFailure: 'denied' })).toEqual({
     action: 'manual',
     message: `restoring main to before failed: denied; manually run git -C /main reset --keep before, then ${PLATFORM_SLUG} machine update`,
   })
