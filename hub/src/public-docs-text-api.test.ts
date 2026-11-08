@@ -77,8 +77,8 @@ describe('public docs text API', () => {
   test('appends direct children in sibling order to both Markdown addresses', async () => {
     const expected =
       `# Getting started\n\nBegin here.\n\n## Pages in this section\n\n` +
-      `- [First job](/docs/project/${PLATFORM_SLUG}/first-job.md)\n` +
-      `- [Install](/docs/project/${PLATFORM_SLUG}/install.md)`
+      `- [First job](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/first-job.md)\n` +
+      `- [Install](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/install.md)`
     for (const path of [
       '/docs/getting-started.md',
       `/docs/project/${PLATFORM_SLUG}/getting-started.md`,
@@ -91,6 +91,21 @@ describe('public docs text API', () => {
       expect(body).toBe(expected)
       expect(body).not.toContain('review.md')
     }
+  })
+
+  test('lists children when the served page parent is absent from the public tree', async () => {
+    const detachedSection = { ...section, parentId: 'absent-parent-id' }
+    const response = await publicDocsTextApi(
+      new Request(`https://hub.example.test/docs/project/${PLATFORM_SLUG}/getting-started.md`),
+      {
+        tree: async () => ({ items: [detachedSection, firstJob] }),
+        doc: sectionDependencies.doc,
+      },
+    )
+    expect(await response?.text()).toBe(
+      `# Getting started\n\nBegin here.\n\n## Pages in this section\n\n` +
+        `- [First job](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/first-job.md)`,
+    )
   })
 
   test('redirects a unique short address relatively and keeps its query', async () => {

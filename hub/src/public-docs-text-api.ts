@@ -1,13 +1,13 @@
 import { PUBLIC_SITE_ORIGIN } from '../../shared/brand.ts'
 import { publicDoc, publicDocsTree } from './public-docs.ts'
 import {
-  directPublicDocChildren,
   orderedPublicDocs,
   type PublicDocsRequest,
   type PublicTextDoc,
   parsePublicDocsRequest,
   publicDocPath,
   renderLlmsTxt,
+  renderPublicDocMarkdown,
   rewritePublicDocLinks,
   uniquePublicDocBySlug,
 } from './public-docs-text.ts'
@@ -106,12 +106,11 @@ async function textRouteResponse(
     )
   }
   const found = await read(doc.id)
-  const children = directPublicDocChildren(doc, orderedPublicDocs(items))
-  const childLinks = children.map((child) => `- [${child.title}](${publicDocPath(child, true)})`)
-  const body = `${rewritePublicDocLinks(found.body)}${
-    childLinks.length ? `\n\n## Pages in this section\n\n${childLinks.join('\n')}` : ''
-  }`
-  return response(request, body, 'text/markdown; charset=utf-8')
+  return response(
+    request,
+    renderPublicDocMarkdown(found.body, doc, items),
+    'text/markdown; charset=utf-8',
+  )
 }
 
 export async function publicDocsTextApi(

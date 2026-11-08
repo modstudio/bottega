@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG, PUBLIC_SITE_ORIGIN } from '../../shared/brand.ts'
 import {
-  directPublicDocChildren,
   docsHtmlInsert,
   orderedPublicDocs,
   type PublicTextDoc,
@@ -71,14 +70,6 @@ describe('public docs text decisions', () => {
       'start',
       'first',
       'nested',
-      'install',
-    ])
-  })
-
-  test('selects direct children from the established public-doc order', () => {
-    const ordered = orderedPublicDocs(docs)
-    expect(directPublicDocChildren(docs[0]!, ordered).map((doc) => doc.id)).toEqual([
-      'first',
       'install',
     ])
   })
