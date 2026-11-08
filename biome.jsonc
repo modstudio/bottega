@@ -3,6 +3,10 @@
   "plugins": [
     "./hub/web/lint/layout-only-classname.grit",
     {
+      "path": "./shared/lint/no-lossy-date-string.grit",
+      "includes": ["**/*.{js,jsx,ts,tsx}", "!**/shared/record-timestamp.ts"]
+    },
+    {
       "path": "./hub/web/lint/record-api-url-resolver.grit",
       "includes": [
         "**/*.{js,jsx,ts,tsx}",

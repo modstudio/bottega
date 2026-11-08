@@ -51,6 +51,11 @@ export const reviewModuleSpecs = [
     ],
   },
   {
+    file: 'orchestrator/src/review/review-lens-provenance.ts',
+    allowed: ['node:path', '../database/review-lens-input-artifact.ts'],
+    typeOnlyAllowed: ['./review-vocabulary.ts'],
+  },
+  {
     file: 'orchestrator/src/review/review-lens-dispatch-reason.ts',
     allowed: [
       '../database/db.ts',
@@ -66,7 +71,12 @@ export const reviewModuleSpecs = [
   },
   {
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
-    allowed: ['./review-applicability.ts', './review-role.ts', './review-second-opinion.ts'],
+    allowed: [
+      './review-applicability.ts',
+      './review-lens-provenance.ts',
+      './review-role.ts',
+      './review-second-opinion.ts',
+    ],
     typeOnlyAllowed: [
       './review-group.ts',
       './review-post-fix.ts',
@@ -153,6 +163,7 @@ export const reviewModuleSpecs = [
       'node:path',
       '../../../shared/state-directory.ts',
       '../database/db.ts',
+      '../worktree/evidence-checkout.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../project/review-record-template.ts',
@@ -283,6 +294,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../../../shared/brand.ts',
       '../../../shared/record/schema.ts',
       '../database/db.ts',
+      '../database/review-lens-input-artifact.ts',
       './review-outbox.ts',
       './review-number.ts',
       '../contract/contract.ts',
@@ -345,6 +357,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     allowed: [
       '../../../shared/git-path-list.ts',
       './review-applicability.ts',
+      './review-coverage-match.ts',
       './review-evidence-sql.ts',
       './review-group.ts',
       './review-role.ts',
@@ -370,9 +383,21 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     reason: 'Keep historical review-round writes beside the identity rule they apply.',
   },
   {
+    name: 'review-lens-provenance-boundary',
+    file: 'orchestrator/src/review/review-lens-provenance.ts',
+    allowed: ['node:path', '../database/review-lens-input-artifact.ts'],
+    typeOnlyAllowed: ['./review-vocabulary.ts'],
+    reason: 'Keep review provenance admission a pure decision over canonical subject facts.',
+  },
+  {
     name: 'review-round-lens-plan-boundary',
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
-    allowed: ['./review-applicability.ts', './review-role.ts', './review-second-opinion.ts'],
+    allowed: [
+      './review-applicability.ts',
+      './review-lens-provenance.ts',
+      './review-role.ts',
+      './review-second-opinion.ts',
+    ],
     typeOnlyAllowed: [
       './review-group.ts',
       './review-post-fix.ts',
@@ -407,6 +432,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../database/db.ts',
       './review-evidence-sql.ts',
       './review-group.ts',
+      './review-lens-provenance.ts',
       './review-role.ts',
       './review-lineage-store.ts',
       './review-round-identity.ts',
@@ -483,6 +509,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../caller-classification.ts',
       '../database/db.ts',
       '../git/commit-resolution.ts',
+      '../worktree/evidence-checkout.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
       './review-command-cwd.ts',

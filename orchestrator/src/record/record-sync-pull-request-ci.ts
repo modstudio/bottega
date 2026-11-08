@@ -1,9 +1,11 @@
 // concern: hosted pull-request CI sync
 /** Writes pull-request workflow attempts and collection status into the hosted record. */
+
 import type { SQL } from 'bun'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { pullRequestCi } from '../../../shared/record/schema-landing.ts'
+import { nullableRecordDate, recordDate } from '../../../shared/record-timestamp.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
@@ -11,7 +13,6 @@ import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 
 const nullableString = (value: unknown) => (value == null ? null : String(value))
-const nullableDate = (value: unknown) => (value == null ? null : new Date(String(value)))
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 
 export function pullRequestCiValues(row: RecordPayload, projectId: string | null) {
@@ -31,12 +32,12 @@ export function pullRequestCiValues(row: RecordPayload, projectId: string | null
     headCommit: nullableString(row.headCommit),
     conclusion: nullableString(row.conclusion),
     failedJobs: row.failedJobs,
-    workflowCreatedAt: nullableDate(row.workflowCreatedAt),
-    workflowCompletedAt: nullableDate(row.workflowCompletedAt),
-    recordedAt: new Date(String(row.recordedAt)),
+    workflowCreatedAt: nullableRecordDate(row.workflowCreatedAt),
+    workflowCompletedAt: nullableRecordDate(row.workflowCompletedAt),
+    recordedAt: recordDate(row.recordedAt),
     withheldFields: row.withheldFields,
-    createdAt: new Date(String(row.createdAt)),
-    updatedAt: new Date(String(row.updatedAt)),
+    createdAt: recordDate(row.createdAt),
+    updatedAt: recordDate(row.updatedAt),
   }
 }
 

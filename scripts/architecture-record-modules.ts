@@ -3,6 +3,8 @@
 import { dirname, normalize } from 'node:path'
 import { recordBindingModules } from './architecture-record-binding-modules.ts'
 import { recordChangeModules } from './architecture-record-change-modules.ts'
+import { recordInvariantModules } from './architecture-record-invariant-modules.ts'
+import { recordSyncModules } from './architecture-record-sync-modules.ts'
 import { storageRecordModules } from './architecture-storage-modules.ts'
 
 type RecordModule = { file: string; allowed: string[] }
@@ -18,6 +20,8 @@ const cacheDeleteImports = ['bun:sqlite', '../database/db.ts', '../database/tole
 
 export const recordModules: RecordModule[] = [
   ...recordChangeModules,
+  ...recordInvariantModules,
+  ...recordSyncModules,
   ...storageRecordModules,
   module('orchestrator/src/record/record-pool.ts', [
     'bun',
@@ -48,7 +52,10 @@ export const recordModules: RecordModule[] = [
     'node:fs',
     '../project/projects.ts',
   ]),
-  module('orchestrator/src/porting/porting-import-contract.ts', []),
+  module('orchestrator/src/porting/porting-import-contract.ts', [
+    '../../../shared/refusal.ts',
+    '../refusal-error.ts',
+  ]),
   module('orchestrator/src/porting/porting-hosted-import.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
@@ -165,6 +172,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-routing-evidence-contract.ts', []),
   module('orchestrator/src/record/record-routing-evidence.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/record/tenant.ts',
     './record-cursor.ts',
@@ -259,6 +267,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-task-flow-contract.ts', ['zod']),
   module('orchestrator/src/record/record-task-flow.ts', [
+    '../../../shared/record-timestamp.ts',
     '../../../shared/record/tenant.ts',
     './record-pool.ts',
     './record-task-flow-contract.ts',
@@ -301,7 +310,6 @@ export const recordModules: RecordModule[] = [
     './record-doc-errors.ts',
     '../doc/doc-generator.ts',
   ]),
-  module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-built-ins-identity.ts', [
     '../../../shared/canonical-json.ts',
     '../database/db.ts',
@@ -310,46 +318,9 @@ export const recordModules: RecordModule[] = [
     '../lens/lens-built-ins.ts',
     '../workflow/workflow-built-ins.ts',
   ]),
-  module('orchestrator/src/record/record-sync-contract.ts', []),
-  module('orchestrator/src/record/record-sync-result-decision.ts', ['./record-sync-contract.ts']),
-  module('orchestrator/src/record/record-sync-results.ts', [
-    'bun:sqlite',
-    '../database/db.ts',
-    './outbox-dependency.ts',
-    './outbox-held-contract.ts',
-    './outbox-prune.ts',
-    './outbox-quarantine.ts',
-    './record-sync-contract.ts',
-    './record-sync-result-decision.ts',
-    './record-sync-types.ts',
-  ]),
   module('orchestrator/src/record/record-project-identity.ts', [
     'bun',
     '../../../shared/record-project-identity.ts',
-  ]),
-  module('orchestrator/src/record/record-sync-project-identity.ts', [
-    'bun',
-    '../../../shared/record-project-identity.ts',
-    './outbox-failure.ts',
-    './record-project-identity.ts',
-    './record-sync-contract.ts',
-  ]),
-  module('orchestrator/src/record/record-sync-run-task-identity.ts', []),
-  module('orchestrator/src/record/record-sync-run-values.ts', [
-    './record-run-usage.ts',
-    './record-sync-contract.ts',
-    './record-value-conversions.ts',
-  ]),
-  module('orchestrator/src/record/record-api-sync.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-remedies.ts',
-    'hono',
-    'hono/body-limit',
-    'zod',
-    './record-auth.ts',
-    './record-sync-contract.ts',
-    './record-sync-branch-disposal.ts',
-    './record-sync-decision.ts',
   ]),
   module('orchestrator/src/record/record-api-machine.ts', ['hono', 'zod', './record-auth.ts']),
   module('orchestrator/src/record/machine-name.ts', [
@@ -376,82 +347,16 @@ export const recordModules: RecordModule[] = [
     './record-api-client.ts',
     './record-sync.ts',
   ]),
-  module('orchestrator/src/record/record-sync-decision.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record-space-membership.ts',
-    '../../../shared/record-space-request.ts',
-    './record-auth.ts',
-    './record-project-destination.ts',
-    './record-sync-contract.ts',
-  ]),
-  module('orchestrator/src/record/record-sync-service.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/record/hosted-task-id.ts',
-    '../../../shared/record-id.ts',
-    'bun',
-    'drizzle-orm',
-    'drizzle-orm/bun-sql',
-    '../../../shared/record/schema-landing.ts',
-    '../../../shared/record/schema-question.ts',
-    '../../../shared/record/schema-review.ts',
-    '../../../shared/record/schema-run.ts',
-    '../verdict/verdict-rules.ts',
-    './outbox-failure.ts',
-    './outbox-held-contract.ts',
-    './outbox-payload-contracts.ts',
-    './record-payload-columns.ts',
-    './record-question-audit.ts',
-    './record-question-values.ts',
-    './record-auth.ts',
-    './record-evidence-references.ts',
-    './record-release-sync.ts',
-    './record-review-read.ts',
-    './record-review-values.ts',
-    './record-sync-branch-disposal.ts',
-    './record-sync-pull-request-ci.ts',
-    './record-sync-contract.ts',
-    './record-sync-decision.ts',
-    './machine-name-record.ts',
-    './record-sync-evidence-lookup.ts',
-    './record-sync-principal.ts',
-    './record-sync-project-identity.ts',
-    './record-sync-run-task-identity.ts',
-    './record-sync-run-values.ts',
-    './record-sync-task-flow.ts',
-    './record-value-conversions.ts',
-    './score-sync.ts',
-    './record-pool.ts',
-  ]),
+  module('orchestrator/src/record/record-review-lens-values.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-question-values.ts', []),
-  module('orchestrator/src/record/record-sync-task-flow.ts', [
-    'bun',
-    'drizzle-orm',
-    'drizzle-orm/bun-sql',
-    '../../../shared/record/schema-task-flow.ts',
-    './outbox-payload-contracts.ts',
-    './record-evidence-references.ts',
-    './record-sync-contract.ts',
-    './record-sync-principal.ts',
-  ]),
   module('orchestrator/src/record/record-question-audit.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     'drizzle-orm/bun-sql',
     '../../../shared/record/schema-question.ts',
     '../../../shared/record-id.ts',
     './outbox-failure.ts',
     './record-sync-contract.ts',
-  ]),
-  module('orchestrator/src/record/record-sync-pull-request-ci.ts', [
-    'bun',
-    'drizzle-orm',
-    'drizzle-orm/bun-sql',
-    '../../../shared/record/schema-landing.ts',
-    './outbox-failure.ts',
-    './outbox-payload-contracts.ts',
-    './record-evidence-references.ts',
-    './record-sync-contract.ts',
-    './record-sync-principal.ts',
-    './record-sync-project-identity.ts',
   ]),
   module('orchestrator/src/record/record-run-usage.ts', [
     '../process-resource-sampler.ts',
@@ -463,16 +368,17 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     './outbox-failure.ts',
   ]),
-  module('orchestrator/src/record/record-sync-evidence-lookup.ts', [
-    './record-evidence-references.ts',
-  ]),
   module('orchestrator/src/record/record-evidence-references.ts', ['./record-sync-contract.ts']),
   module('orchestrator/src/record/record-api-invitations.ts', [
     'hono',
     './record-auth.ts',
     './record-pending-invitations.ts',
   ]),
-  module('orchestrator/src/record/record-pending-invitations.ts', ['bun', './record-pool.ts']),
+  module('orchestrator/src/record/record-pending-invitations.ts', [
+    'bun',
+    '../../../shared/record-timestamp.ts',
+    './record-pool.ts',
+  ]),
   module('orchestrator/src/record/record-doc-article-fields.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-project-identity.ts',
@@ -502,6 +408,7 @@ export const recordModules: RecordModule[] = [
     './record-subjects.ts',
   ]),
   module('orchestrator/src/record/record-subjects.ts', [
+    '../../../shared/record-timestamp.ts',
     '../../../shared/brand.ts',
     '../../../shared/record-project-identity.ts',
     'bun',
@@ -559,6 +466,7 @@ export const recordModules: RecordModule[] = [
     './record-doc-mapping.ts',
   ]),
   module('orchestrator/src/record/record-doc-revision-write.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/docs.ts',
     '../../../shared/record/jsonb-sql.ts',
@@ -672,6 +580,7 @@ export const recordModules: RecordModule[] = [
     './record-project-destination.ts',
     './record-session.ts',
     './record-pool.ts',
+    './active-space-invariant.ts',
   ]),
   module('orchestrator/src/record/outbox-failure.ts', [
     '../../../shared/record/postgres-error.ts',
@@ -683,13 +592,6 @@ export const recordModules: RecordModule[] = [
     './outbox-failure.ts',
     './outbox-held-contract.ts',
   ]),
-  module('orchestrator/src/record/record-release-sync.ts', [
-    'bun',
-    'drizzle-orm/bun-sql',
-    '../../../shared/record/schema-release.ts',
-    './record-sync-contract.ts',
-  ]),
-  module('orchestrator/src/record/record-sync-principal.ts', ['bun', './record-sync-contract.ts']),
   module('orchestrator/src/record/outbox-dependency.ts', [
     'bun:sqlite',
     '../run/run-status.ts',
@@ -710,20 +612,6 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     './record-auth.ts',
     './record-pool.ts',
-  ]),
-  module('orchestrator/src/record/record-space.ts', [
-    '../../../shared/brand.ts',
-    '../../../shared/moderation-hide-reason.ts',
-    '../../../shared/record-id.ts',
-    '../../../shared/record/schema.ts',
-    '../../../shared/record-space-membership.ts',
-    './machine-name-command.ts',
-    './machine-name.ts',
-    './record-api-client.ts',
-    './record-auth.ts',
-    './record-cache-projects.ts',
-    './record-moderation-hide.ts',
-    './record-session.ts',
   ]),
   module('orchestrator/src/record/record-invitation.ts', []),
   module('orchestrator/src/record/record-api-access.ts', [
@@ -761,6 +649,7 @@ export const recordModules: RecordModule[] = [
     './record-public-docs.ts',
   ]),
   module('orchestrator/src/record/record-public-docs.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/doc-sections.ts',
     '../../../shared/doc-snippet.ts',
@@ -814,6 +703,7 @@ export const recordModules: RecordModule[] = [
     './record-row-target.ts',
   ]),
   module('orchestrator/src/record/record-moderation-hide.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/moderation-hide-reason.ts',
     '../../../shared/note-label.ts',
@@ -824,6 +714,7 @@ export const recordModules: RecordModule[] = [
     './record-row-target.ts',
   ]),
   module('orchestrator/src/record/record-outside-block.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/note-label.ts',
     '../../../shared/record-id.ts',
@@ -835,6 +726,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-row-target.ts', ['zod', '../../../shared/note-label.ts']),
   module('orchestrator/src/record/record-outside-intake.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
@@ -928,6 +820,7 @@ export const recordModules: RecordModule[] = [
     './record-project-identity.ts',
   ]),
   module('orchestrator/src/record/record-board-messages.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/board-duration.ts',
     '../../../shared/board-purpose.ts',
@@ -947,6 +840,7 @@ export const recordModules: RecordModule[] = [
     './record-outside-write.ts',
   ]),
   module('orchestrator/src/record/record-board-receipts.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
@@ -974,6 +868,7 @@ export const recordModules: RecordModule[] = [
     './record-board-tx.ts',
   ]),
   module('orchestrator/src/record/record-board-claims.ts', [
+    '../../../shared/record-timestamp.ts',
     'bun',
     '../../../shared/brand.ts',
     '../../../shared/record/schema.ts',

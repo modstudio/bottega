@@ -6,9 +6,11 @@ import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { releaseRunFailoverAttempts } from '../close/close-out.ts'
 import { ISSUE_WORKER_SCHEMA, type IssueWorkerReply } from '../contract/contract.ts'
-import { type JsonSchema, validatesSchema } from '../contract/contract-reply.ts'
+import type { JsonSchema } from '../contract/contract-reply.ts'
+import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
+import { DEFAULT_TASK_KEY_PATTERN } from '../project/project-settings.ts'
 import { type Project, projectByName } from '../project/projects.ts'
 import { run } from '../run/run.ts'
 import { abandonRun } from '../run/run-stop.ts'
@@ -141,7 +143,7 @@ export function validatedTrackerTaskKey(
   project: Project,
   source = `${PLATFORM_SLUG} task tracker-new`,
 ): string {
-  const keyPattern = project.settings.worktree?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
+  const keyPattern = project.settings.worktree?.keyPattern ?? DEFAULT_TASK_KEY_PATTERN
   if (!new RegExp(keyPattern).test(value)) {
     throw new Error(`${source} did not return a valid task key; returned ${JSON.stringify(value)}`)
   }
@@ -177,9 +179,15 @@ function jsonObjects(text: string): unknown[] {
 }
 
 export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
-  const found = jsonObjects(text).find((value) => validatesSchema(value, schema))
-  if (!found) throw new Error('issue worker reply did not match its structured contract')
-  return found as T
+  const candidates = jsonObjects(text)
+  let lastRejected: string[] | null = null
+  for (const value of candidates) {
+    const validation = valueMatchesReplySchema(value, schema)
+    if (validation.ok) return value as T
+    lastRejected = validation.failures
+  }
+  const failures = lastRejected?.join('; ') ?? 'no JSON object found'
+  throw new Error(`issue worker reply did not match its structured contract: ${failures}`)
 }
 
 async function hub(args: string[]): Promise<string> {

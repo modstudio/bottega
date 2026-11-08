@@ -283,13 +283,19 @@ async function enabledCheckFailed(
 
 async function enabledCommand(argv: string[], presentation: Presentation): Promise<void> {
   const project = selectedProject(argv, presentation.cwd())
-  const enabled = argv.includes('--pr')
+  const pullRequest = argv.includes('--pr')
+  const projectChecks = projectEnabledChecks(project)
+  const enabled = pullRequest
     ? project.settings.checks?.attribution === true
       ? (['attribution'] as const)
       : []
-    : projectEnabledChecks(project)
+    : projectChecks
   if (!enabled.length) {
-    presentation.log(`no checks enabled for ${project.name}`)
+    presentation.log(
+      pullRequest && projectChecks.length
+        ? `no pull-request checks enabled for ${project.name}; enabled tree checks (${projectChecks.join(', ')}) run without --pr`
+        : `no checks enabled for ${project.name}`,
+    )
     return
   }
 

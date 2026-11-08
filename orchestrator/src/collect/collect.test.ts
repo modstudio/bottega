@@ -18,6 +18,7 @@ import {
   releasedWritingTreeNote,
   resolveFailover,
   thinOutputWarning,
+  unfinishedResultMessage,
 } from './collect.ts'
 
 const recordedResult = (recordId: string, writingJob: () => boolean = () => false) => {
@@ -41,6 +42,28 @@ const recordedResult = (recordId: string, writingJob: () => boolean = () => fals
 
 const base = '3646a62f6abd4486aeb2c27744d2f69ba7210828'
 const changed = JSON.stringify(['.githooks/pre-commit'])
+
+test('a running failover successor preserves the original failure in result output', () => {
+  expect(
+    unfinishedResultMessage(
+      { recordId: 'root', number: 29364, status: 'failed', failureKind: 'contract' },
+      { number: 29388, status: 'running' },
+      [{ rootId: 'root' }, { rootId: 'successor' }],
+      'generic',
+    ),
+  ).toBe('run 29364 failed (contract); its failover successor 29388 is still running')
+})
+
+test('a running later turn is not described as a failover successor', () => {
+  expect(
+    unfinishedResultMessage(
+      { recordId: 'retry-turn', number: 29365, status: 'failed', failureKind: 'contract' },
+      { number: 29388, status: 'running' },
+      [{ rootId: 'root' }, { rootId: 'successor' }],
+      'run retry-turn is still running',
+    ),
+  ).toBe('run retry-turn is still running')
+})
 
 describe('no-commit report', () => {
   test('rejects comparing no-commit evidence against any base and head except the turn own', () => {

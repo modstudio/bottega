@@ -111,6 +111,7 @@ test('a live first throttle closes as quota and routes away from cooling codex',
   const derived = deriveLiveOutcome({
     writesJob: false,
     contractStatus: null,
+    contractFailures: [],
     replyError: error,
     output: '',
     replyFilePresent: false,
@@ -133,6 +134,7 @@ test('a live first throttle closes as quota and routes away from cooling codex',
     signal: 'SIGTERM',
     sandbox: 'host',
     boundMs: 20 * 60_000,
+    agentHarness: 'codex',
     agentName: 'codex',
   })
   const outcome = decideOutcome(derived.inputs)

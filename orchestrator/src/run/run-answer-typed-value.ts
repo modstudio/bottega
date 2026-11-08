@@ -5,6 +5,7 @@ import {
   type AnswerValue,
   decodeAnswerValue,
   decodeWorkerQuestion,
+  normalizeWorkerQuestionChoice,
 } from '../ask/worker-question.ts'
 
 export type TypedAnswerQuestion = {
@@ -33,11 +34,18 @@ function typedAnswerValue(
   answer: string,
   explicit: unknown,
 ): AnswerValue | undefined {
-  const typed = decodeWorkerQuestion(question)
+  let typed: ReturnType<typeof decodeWorkerQuestion>
+  try {
+    typed = decodeWorkerQuestion(question)
+  } catch {
+    return undefined
+  }
   let value = explicit
   if (value === undefined && typed.kind === 'choice') {
-    const normalized = answer.trim().toLowerCase()
-    value = typed.options.find(({ name }) => name.trim().toLowerCase() === normalized)?.name
+    const normalized = normalizeWorkerQuestionChoice(answer)
+    value = typed.options.find(
+      ({ name }) => normalizeWorkerQuestionChoice(name) === normalized,
+    )?.name
   }
   if (value === undefined && typed.kind === 'yesno') {
     const normalized = answer.trim().toLowerCase()

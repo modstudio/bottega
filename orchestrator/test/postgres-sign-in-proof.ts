@@ -46,6 +46,7 @@ export function registerPostgresSignInProofs(input: {
       })
       expect(output.filter((line) => line !== 'board now uses the hosted record')).toEqual([
         `signed in ${input.repair.email}`,
+        expect.stringMatching(/^active record space user-\S+$/),
       ])
       expect(
         input.succeeds(

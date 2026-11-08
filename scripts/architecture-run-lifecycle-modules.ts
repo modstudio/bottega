@@ -102,7 +102,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
       '../worktree/keep-tree-hold.ts',
       './run-resume-options.ts',
     ],
-    ['../dispatch/probe-launch-overrides.ts', '../review/review-target.ts'],
+    [
+      '../dispatch/probe-launch-overrides.ts',
+      '../review/review-target.ts',
+      '../database/review-lens-input-artifact.ts',
+    ],
   ),
   module('orchestrator/src/run/run-resume-claim.ts', [
     '../branch/branch-ref-guard.ts',
@@ -209,6 +213,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../git/checkout-identity.ts',
     '../contract/contract.ts',
     '../database/db.ts',
+    '../database/review-lens-input-artifact.ts',
     '../dispatch/dispatch-preflight.ts',
     '../events.ts',
     '../jobs/jobs.ts',
@@ -318,6 +323,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
       '../close/close-out.ts',
       '../contract/contract.ts',
       '../database/db.ts',
+      '../database/review-lens-input-artifact.ts',
       '../route/failover.ts',
       '../route/billing-key-hold.ts',
       '../failure/failure.ts',
@@ -466,6 +472,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/host-reservation.ts', []),
   module('orchestrator/src/run/run-agent-capacity.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
     '../database/db.ts',
     '../events.ts',
     '../route/routing-refusal.ts',
@@ -484,6 +491,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-reply-source.ts', [
     '../contract/contract.ts',
     '../contract/contract-reply.ts',
+    '../contract/contract-reply-validator.ts',
     '../transport/transport.ts',
   ]),
   module('orchestrator/src/run/run-executor.ts', ['../failure/failure.ts']),
@@ -572,6 +580,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/live-outcome.ts', [
     '../../shared/secret-shaped.ts',
+    './contract/contract-reply.ts',
     './failure/failure.ts',
     './outcome.ts',
     './run/run-process.ts',
@@ -636,6 +645,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/shared-git-config.ts', [
     'node:fs',
     'node:path',
+    '../../../shared/bounded-process.ts',
     '../database/database-location.ts',
     '../events.ts',
     '../git/git-environment.ts',

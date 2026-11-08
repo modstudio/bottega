@@ -341,6 +341,14 @@ async function registrationMcpProbeTurn(
   return runOne('mcp', 'Call the ping MCP tool and reply with exactly its result.', undefined, true)
 }
 
+function strictFileMatches(
+  schemaPath: string,
+  value: unknown,
+  matches: typeof import('../transport/transport.ts').valueMatchesStrictSchema,
+): boolean {
+  return matches(JSON.parse(readFileSync(schemaPath, 'utf8')), value).ok
+}
+
 export async function probeAgent(
   name: string,
   inputs: AgentProbeInputs,
@@ -444,7 +452,7 @@ export async function probeAgent(
     ? tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output)
     : null
   const schemaOk = needs.schema ? structured.status === 'ok' && parsedSchema?.status === 'ok' : null
-  const fileOk = valueMatchesStrictSchema(JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile)
+  const fileOk = strictFileMatches(schemaPath, parsedFile, valueMatchesStrictSchema)
   const perJob = Object.fromEntries(
     Object.keys(JOBS).map((jobName) => {
       const job = JOBS[jobName]

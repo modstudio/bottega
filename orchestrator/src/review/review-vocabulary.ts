@@ -13,12 +13,14 @@ export const REVIEW_LIMITS = ['named', 'absent'] as const
 export const REVIEW_OVERLAP = ['unique', 'shared', 'none', 'alone'] as const
 export const REVIEW_SEVERITY = ['critical', 'high', 'medium', 'low'] as const
 export const REVIEW_FILE_COUNT_BUMP_REASON = 'more than 8 raises size one tier'
+const REVIEW_LENS_OWED_REASONS = ['tree-mismatch', 'commit-mismatch'] as const
 const REVIEW_LENS_SELECTION_REASON = [
   'initial',
   'accepted-finding',
   'newly-touched-path',
   'unidentified-tip-funnel',
   'operator-ordered',
+  ...REVIEW_LENS_OWED_REASONS,
 ] as const
 export const REVIEW_GRADE_NAMES = ['reproduced', 'coverage', 'limits', 'overlap'] as const
 export const REVIEW_GRADE_VALUES = {
@@ -39,6 +41,9 @@ export type ReviewLimits = (typeof REVIEW_LIMITS)[number]
 export type ReviewOverlap = (typeof REVIEW_OVERLAP)[number]
 export type ReviewSeverity = (typeof REVIEW_SEVERITY)[number]
 export type ReviewLensSelectionReason = (typeof REVIEW_LENS_SELECTION_REASON)[number]
+export type ReviewLensOwedReason =
+  | (typeof REVIEW_LENS_OWED_REASONS)[number]
+  | `decision-conformance not admitted: ${string}`
 
 const MONITOR_SEVERITY = ['informational', 'attention'] as const
 export type MonitorSeverity = (typeof MONITOR_SEVERITY)[number]

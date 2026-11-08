@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import {
   databaseLockHolder,
+  databaseLockHolderCommandSummary,
   formatDatabaseLockRefusal,
   isDatabaseLocked,
 } from './database-lock-refusal.ts'
@@ -27,6 +29,14 @@ test('a database lock refusal names the store, holder, and remedy', () => {
       holder: { unavailable: 'inspection unavailable' },
     }),
   ).toContain('holder: unknown (inspection unavailable)')
+})
+
+test('the holder summary skips executable options before the script', () => {
+  expect(
+    databaseLockHolderCommandSummary(
+      `bun --no-env-file /x/cli/${PLATFORM_SLUG}.ts dashboard start --port 7778`,
+    ),
+  ).toBe(`bun ${PLATFORM_SLUG}.ts`)
 })
 
 test('the shared lock-holder decision names a found holder and each unavailable reason', () => {

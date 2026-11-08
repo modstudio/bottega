@@ -808,30 +808,21 @@ function nextWorkflowStepImpl(
 }
 
 export function nextWorkflowStep(
-  slug: string,
+  selected: WorkflowCloseCursor,
   project: string,
-  mode: string,
   args: Record<string, string>,
   note: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
   evidence: WorkflowEvidenceInput = {},
   ports: FloorEvidencePorts = productionFloorPorts(),
-  cursor?: number,
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
-  selected?: WorkflowCloseCursor,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
     withLinkedWorkflowTask(project, args, context, d, () => {
-      const row = selected
-        ? reselectCursor(selected, args, context, d)
-        : findCursor(project, slug, mode, args, context, d, cursor)
-      if (!row)
-        throw new Error(
-          `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
-        )
+      const row = reselectCursor(selected, args, context, d)
       adoptLinkedTask(row, args, context)
       return nextWorkflowStepImpl(
         row,
@@ -989,8 +980,8 @@ export async function ruleWorkflow(
       )
       d.query(
         `UPDATE workflow_cursor SET state='running',question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
-      ).run(adoptionReason ? null : (context.session ?? null), at, row.record_id)
+       session_id=COALESCE(session_id,?),updated_at=? WHERE record_id=?`,
+      ).run(context.session ?? null, at, row.record_id)
       recordTaskFlowCursorMutation(row.record_id, d)
       return {
         summary: `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,

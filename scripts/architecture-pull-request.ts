@@ -13,6 +13,8 @@ export const pullRequestModuleSpecs = [
       'bun:sqlite',
       'node:path',
       '../../../shared/brand.ts',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../../../shared/self-spawn.ts',
       '../database/db.ts',
       '../database/machine-update-mover.ts',
@@ -53,10 +55,12 @@ export const pullRequestModuleSpecs = [
     allowed: [
       '../review/review-applicability.ts',
       '../review/review-group.ts',
+      '../review/review-lens-provenance.ts',
       '../review/review-role.ts',
       '../review/review-second-opinion.ts',
+      '../review/review-vocabulary.ts',
     ],
-    typeOnlyAllowed: ['../review/review-group.ts'],
+    typeOnlyAllowed: ['../review/review-group.ts', '../review/review-vocabulary.ts'],
   },
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
   {
@@ -76,6 +80,8 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/pull-request/pr-admission.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       'bun:sqlite',
       '../../../shared/record/schema.ts',
       '../../../shared/secret-shaped.ts',
@@ -100,8 +106,12 @@ export const pullRequestModuleSpecs = [
     file: 'orchestrator/src/review/review-group.ts',
     allowed: [
       'bun:sqlite',
+      'node:fs',
+      'node:path',
+      '../database/review-lens-input-artifact.ts',
       '../project/projects.ts',
       './review-applicability.ts',
+      './review-lens-provenance.ts',
       './review-lineage-store.ts',
       './review-pins.ts',
       './review-role.ts',
@@ -109,6 +119,10 @@ export const pullRequestModuleSpecs = [
       './review-tier-classifier.ts',
       './review-tier.ts',
     ],
-    typeOnlyAllowed: ['./review-role.ts'],
+    typeOnlyAllowed: [
+      './review-lens-provenance.ts',
+      './review-role.ts',
+      '../database/review-lens-input-artifact.ts',
+    ],
   },
 ] as const

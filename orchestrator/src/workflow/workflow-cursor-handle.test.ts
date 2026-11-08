@@ -5,8 +5,8 @@ import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
-  nextWorkflowStep,
 } from './workflow-cursor.ts'
+import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
 import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'

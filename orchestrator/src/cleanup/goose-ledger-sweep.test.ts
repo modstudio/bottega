@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { insertRun } from '../../test/fixtures/run-answer.ts'
@@ -66,6 +66,35 @@ test('the sweep records a profile before removing a copy and keeps a copy it can
     expect(
       db().query("SELECT COUNT(*) AS n FROM outbox WHERE kind='run' AND row_id=?").get(readable),
     ).toEqual({ n: 1 })
+  } finally {
+    rmSync(runsDir, { recursive: true, force: true })
+  }
+})
+
+test('the sweep ages a copy by content when a reader rewrites its shared-memory index', () => {
+  const runsDir = mkdtempSync(join(tmpdir(), 'goose-ledger-sweep-'))
+  try {
+    const runId = insertRun('ok')
+    db().query('UPDATE run SET context_system_chars=1 WHERE record_id=?').run(runId)
+    const gooseDir = join(runsDir, runId, 'goose')
+    const sessionsDir = join(gooseDir, 'sessions')
+    const databasePath = join(sessionsDir, 'sessions.db')
+    const walPath = `${databasePath}-wal`
+    const sharedMemoryPath = `${databasePath}-shm`
+    mkdirSync(sessionsDir, { recursive: true })
+    writeFileSync(databasePath, 'content')
+    writeFileSync(walPath, 'content')
+    writeFileSync(sharedMemoryPath, 'index')
+    const now = Date.now()
+    const old = new Date(now - (GOOSE_LEDGER_KEEP_DAYS + 1) * 86_400_000)
+    for (const path of [databasePath, walPath, sessionsDir, gooseDir]) utimesSync(path, old, old)
+    utimesSync(sharedMemoryPath, new Date(now), new Date(now))
+
+    expect(sweepGooseLedgers({ dryRun: false, runsDir, database: db(), now })).toMatchObject({
+      removed: 1,
+      failed: 0,
+    })
+    expect(existsSync(gooseDir)).toBe(false)
   } finally {
     rmSync(runsDir, { recursive: true, force: true })
   }

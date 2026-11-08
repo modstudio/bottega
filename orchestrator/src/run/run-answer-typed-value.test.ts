@@ -65,6 +65,28 @@ describe('typed values through the answer service', () => {
     })
   })
 
+  test('choice ruling text matches with format characters and collapsed whitespace', async () => {
+    const id = typedRun('choice', 'typed_options', [
+      { name: 'Refresh the base' },
+      { name: 'Keep the base' },
+    ])
+    await answerRun(id, { argv: ['Refresh\u200B  the base'], recordOnly: true, flags }, helpers)
+    expect(db().query('SELECT answer_value FROM question WHERE run_record_id=?').get(id)).toEqual({
+      answer_value: '"Refresh the base"',
+    })
+  })
+
+  test('stored choice refused by the current schema records free text without a typed value', async () => {
+    const id = typedRun('choice', 'typed_options', [
+      { name: 'Refresh the base' },
+      { name: 'refresh the base' },
+    ])
+    await answerRun(id, { argv: ['Refresh the base'], recordOnly: true, flags }, helpers)
+    expect(
+      db().query('SELECT answer,answer_value FROM question WHERE run_record_id=?').get(id),
+    ).toEqual({ answer: 'Refresh the base', answer_value: null })
+  })
+
   test('legacy choice options remain answerable without typed options', async () => {
     const id = insert('asking')
     db()

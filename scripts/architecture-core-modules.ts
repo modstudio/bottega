@@ -16,7 +16,7 @@ export const coreModuleSpecs = [
     allowed: ['../../shared/process-identity.ts'],
   },
   { file: 'orchestrator/src/local-listener.ts', allowed: [] },
-  { file: 'orchestrator/src/refusal-error.ts', allowed: [] },
+  { file: 'orchestrator/src/refusal-error.ts', allowed: ['../../shared/refusal.ts'] },
   {
     file: 'orchestrator/src/secret-shaped-output.ts',
     allowed: ['../../shared/secret-shaped.ts'],
@@ -36,4 +36,13 @@ export const coreModuleSpecs = [
     allowed: ['bun:sqlite', 'node:fs', 'node:path', '../run/run-context-profile.ts'],
   },
   { file: 'orchestrator/src/worker-store-write.ts', allowed: [] },
+  {
+    file: 'orchestrator/src/worktree/evidence-checkout.ts',
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/git.ts',
+      '../project/projects.ts',
+      '../git/checkout-identity.ts',
+    ],
+  },
 ] as const

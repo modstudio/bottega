@@ -1,4 +1,14 @@
 export const hubModuleSpecs = [
+  { file: 'hub/src/ingest/tracker-read-mode.ts', allowed: [] },
+  {
+    file: 'hub/src/hosted-push-decision.ts',
+    allowed: [
+      '../../shared/record-timestamp.ts',
+      './hosted-delete.ts',
+      './note-anchor-merge.ts',
+      './push-contract.ts',
+    ],
+  },
   {
     file: 'hub/src/trpc/routers/record-router-client.ts',
     allowed: ['../../record-client.ts', '../context.ts'],
@@ -67,6 +77,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/change-api.ts',
     allowed: [
+      '../../shared/bounded-fetch.ts',
       '../../shared/brand.ts',
       '../../shared/record-space-request.ts',
       '../../shared/record/record-changes.ts',
@@ -176,6 +187,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/task-api.ts',
     allowed: [
+      '../../shared/bounded-fetch.ts',
       '../../shared/brand.ts',
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
@@ -208,6 +220,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/note-cli.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/cli-repeat-guard.ts',
       'commander',
       './attribute.ts',
       './db.ts',
@@ -262,6 +275,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/cli-program.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/cli-repeat-guard.ts',
       '../../shared/commander-public-path.ts',
       '../../shared/database-lock-refusal.ts',
       '../../shared/store-lock-refusal-log.ts',
@@ -312,6 +326,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/report-cli.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/cli-repeat-guard.ts',
       'commander',
       './db.ts',
       './projects.ts',
@@ -396,6 +411,10 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/serve-lifecycle.ts',
-    allowed: ['../../shared/process-identity.ts', '../../shared/state-directory.ts'],
+    allowed: [
+      '../../shared/bounded-process.ts',
+      '../../shared/process-identity.ts',
+      '../../shared/state-directory.ts',
+    ],
   },
 ] as const

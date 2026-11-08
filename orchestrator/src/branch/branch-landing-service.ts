@@ -1,6 +1,8 @@
 // concern: branch-landing-service
 /** Verifies GitHub landing evidence and persists explicit run-branch landing records. */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -38,39 +40,36 @@ type PreparedAutomaticLanding = {
 }
 
 function command(cwd: string, argv: string[], label: string): string {
-  let process: ReturnType<typeof Bun.spawnSync>
+  let process: ReturnType<typeof startBoundedSync>
   try {
     const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
-    process = Bun.spawnSync(argv, {
+    process = startBoundedSync(argv, {
+      budget: budgetForArgv(argv),
       cwd,
       env: { ...env, NO_COLOR: '1' },
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
   } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`)
   }
   if (process.exitCode !== 0) {
-    throw new Error(
-      `${label} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
-    )
+    throw new Error(`${label} failed: ${process.stderr.trim() || `exit ${process.exitCode}`}`)
   }
-  return process.stdout?.toString().trim() ?? ''
+  return process.stdout.trim()
 }
 
 function localBranchTip(cwd: string, branch: string): string | null {
   const args = ['rev-parse', '--verify', '--quiet', '--end-of-options', `${branch}^{commit}`]
   const { FORCE_COLOR: _force, CLICOLOR_FORCE: _clicolor, ...env } = targetGitEnvironment(cwd)
-  const process = Bun.spawnSync(['git', ...args], {
+  const process = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: { ...env, NO_COLOR: '1' },
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  if (process.exitCode === 0) return process.stdout?.toString().trim() ?? ''
+  if (process.exitCode === 0) return process.stdout.trim()
   if (process.exitCode === 1) return null
   throw new Error(
-    `git ${args.join(' ')} failed: ${process.stderr?.toString().trim() || `exit ${process.exitCode}`}`,
+    `git ${args.join(' ')} failed: ${process.stderr.trim() || `exit ${process.exitCode}`}`,
   )
 }
 

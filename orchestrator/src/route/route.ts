@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal } from '../../../shared/refusal.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import {
@@ -667,7 +668,7 @@ function namedCandidate(
     projectName: constraints.project,
   })
   const candidate = rows.find((row) => row.agent === name)
-  if (!candidate) throw new RoutingRefusalError(`unknown agent "${name}"`)
+  if (!candidate) throw new RoutingRefusalError(refusal(`unknown agent "${name}"`))
   return candidate
 }
 
@@ -695,9 +696,11 @@ function admittedCandidates(
   )
   if (blockedPreferred && !constraints.noWaitCapacity) {
     throw new AgentCapacityError(
-      `${capacityRefusal(blockedPreferred)}\n` +
-        'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
-        'cleared by: wait for the named runs or pass --no-wait-capacity',
+      refusal(
+        `${capacityRefusal(blockedPreferred)}\n` +
+          'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane',
+        { kind: 'edit', text: 'wait for the named runs or pass --no-wait-capacity' },
+      ),
       capacityCounts([blockedPreferred]),
     )
   }
@@ -717,16 +720,18 @@ function admittedCandidates(
     )
     if (capacityBlocked.length)
       throw new AgentCapacityError(
-        `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
+        refusal(`waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`),
         capacityCounts(capacityBlocked),
       )
     throw new RoutingRefusalError(
-      noEligibleAgentRefusal({
-        jobName,
-        capabilities: job(jobName).needs,
-        excluded,
-        undeclaredAgents,
-      }),
+      refusal(
+        noEligibleAgentRefusal({
+          jobName,
+          capabilities: job(jobName).needs,
+          excluded,
+          undeclaredAgents,
+        }),
+      ),
     )
   }
   const constrained = eligible.filter(
@@ -743,10 +748,12 @@ function admittedCandidates(
     return `${candidate.agent}: ${reasons.join(' and ')}`
   })
   throw new RoutingRefusalError(
-    `routing constraints leave no eligible agent for job "${jobName}"; ` +
-      `excluded by constraint: ${avoided.join('; ')}` +
-      (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +
-      `. Widen --avoid or --distinct-from deliberately.`,
+    refusal(
+      `routing constraints leave no eligible agent for job "${jobName}"; ` +
+        `excluded by constraint: ${avoided.join('; ')}` +
+        (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +
+        `. Widen --avoid or --distinct-from deliberately.`,
+    ),
   )
 }
 
@@ -796,10 +803,12 @@ function pickExternal(
     // Keep candidates()' view unchanged. Naming bypasses opt-in; only a probe bypasses cooling.
     const c = namedCandidate(jobName, override, promptBytes, ev, avoid, probe)
     if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
-      throw new AgentCapacityError(capacityRefusal(c), capacityCounts([c]))
+      throw new AgentCapacityError(refusal(capacityRefusal(c)), capacityCounts([c]))
     }
     if (!c.eligible)
-      throw new RoutingRefusalError(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
+      throw new RoutingRefusalError(
+        refusal(`agent "${override}" not eligible for ${jobName}: ${c.why}`),
+      )
     return { agent: override, reason: 'explicit --agent' }
   }
   let eligible = admittedCandidates(jobName, ev.cands, avoid, promptBytes)

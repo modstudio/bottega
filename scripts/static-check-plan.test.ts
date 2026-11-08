@@ -112,6 +112,7 @@ describe('worker static check plan', () => {
       'scripts/check-gitleaks.ts',
       'scripts/check-machine-state.ts',
       'scripts/check-launchd-templates.ts',
+      'scripts/check-unchecked-exits.ts',
       'scripts/check-hook-binary.ts',
       'orchestrator/scripts/check-canon-lint.ts',
       'scripts/quality/check-test-substance.ts',

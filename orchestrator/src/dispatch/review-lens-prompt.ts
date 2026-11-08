@@ -4,6 +4,7 @@
  * and any supplied extra context. Must not know the store, CLI, or jobs.
  */
 
+import type { ReviewLensInputStatus } from '../database/review-lens-input-artifact.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 
 type ReviewLensDefinition = {
@@ -14,6 +15,13 @@ type ReviewLensDefinition = {
 type MechanicallyEnforcedCheck = {
   title: string
   tool: string
+}
+
+export type ReviewLensPackInputs = {
+  taskTextInput: ReviewLensInputStatus
+  rulingsInput: ReviewLensInputStatus | null
+  taskText: string
+  rulings: string
 }
 
 export const MAX_EARLIER_ROUND_REJECTIONS = 20
@@ -74,12 +82,15 @@ export function reviewLensPrompt(input: {
   mechanicallyEnforced: readonly MechanicallyEnforcedCheck[]
   earlierRejections: ReviewFindingMemory
   supplied: string
+  packInputs?: ReviewLensPackInputs
 }): string {
   const extra = input.supplied.trim()
   const earlier = renderEarlierRoundRejections(input.earlierRejections)
+  const taskText = input.packInputs?.taskText ? `TASK TEXT\n${input.packInputs.taskText}` : ''
+  const rulings = input.packInputs?.rulings ? `RECORDED RULINGS\n${input.packInputs.rulings}` : ''
   if (!input.lens) {
-    if (!extra && !earlier) throw new Error('empty prompt')
-    return [earlier, extra].filter(Boolean).join('\n\n')
+    if (!extra && !earlier && !taskText && !rulings) throw new Error('empty prompt')
+    return [earlier, taskText, rulings, extra].filter(Boolean).join('\n\n')
   }
   const enforced = input.mechanicallyEnforced.length
     ? `\n\nENFORCED BY TOOL IN THIS PROJECT\n${input.mechanicallyEnforced
@@ -87,6 +98,7 @@ export function reviewLensPrompt(input: {
         .join('\n')}\n\n${ENFORCED_BY_TOOL_EXPLANATION}`
     : ''
   const memory = earlier ? `\n\n${earlier}` : ''
-  const definition = `${lensText(input.lens)}${enforced}${memory}`
+  const inputs = [taskText, rulings].filter(Boolean).join('\n\n')
+  const definition = `${lensText(input.lens)}${enforced}${memory}${inputs ? `\n\n${inputs}` : ''}`
   return extra ? `${definition}\n\n${extra}` : definition
 }

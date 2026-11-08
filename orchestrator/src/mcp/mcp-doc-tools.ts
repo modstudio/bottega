@@ -18,7 +18,7 @@ import { db } from '../database/db.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
-import type { SelectedDocWriteTree } from '../doc/doc-write-tree.ts'
+import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
   getDoc,
   getDocForAudience,
@@ -300,33 +300,35 @@ function registerSetDocTool(server: McpServer, ports: DocToolPorts): void {
       if (refusal) throw new Error(refusal)
       const canonTree = ports.selectDocWriteTree({ scope, subject: subject ?? null, cwd })
       const doc = await withMcpDocWriteRemedy(() =>
-        setDoc({
-          scope,
-          subject: subject ?? null,
-          slug,
-          title,
-          body,
-          delivery,
-          audiences,
-          parentSlug: parent,
-          position,
-          featured,
-          status,
-          kind,
-          form,
-          articleSubject: article_subject,
-          relatedSubjects: related_subjects,
-          sourceFiles: source_files,
-          checkedAgainstCommit: checked_against_commit,
-          summary,
-          replacementSlug: replacement,
-          forceInject: force_inject,
-          reason,
-          author,
-          expectedRevision: expected_revision,
-          canonTree,
-          collectCanonLintInput: ports.collectCanonLintInput,
-        }),
+        withDocWriteTreeRemedy(canonTree, 'cwd', () =>
+          setDoc({
+            scope,
+            subject: subject ?? null,
+            slug,
+            title,
+            body,
+            delivery,
+            audiences,
+            parentSlug: parent,
+            position,
+            featured,
+            status,
+            kind,
+            form,
+            articleSubject: article_subject,
+            relatedSubjects: related_subjects,
+            sourceFiles: source_files,
+            checkedAgainstCommit: checked_against_commit,
+            summary,
+            replacementSlug: replacement,
+            forceInject: force_inject,
+            reason,
+            author,
+            expectedRevision: expected_revision,
+            canonTree,
+            collectCanonLintInput: ports.collectCanonLintInput,
+          }),
+        ),
       )
       return text(setDocToolPayload(doc, body, canonTree?.root, ports.collectCanonLintInput))
     },
@@ -388,13 +390,15 @@ function registerRemoveDocTool(server: McpServer, ports: DocToolPorts): void {
       if (refusal) throw new Error(refusal)
       const canonTree = ports.selectDocWriteTree({ scope, subject: subject ?? null, cwd })
       const removed = await withMcpDocWriteRemedy(() =>
-        removeDoc(scope, subject ?? null, slug, {
-          reason,
-          author,
-          expectedRevision: expected_revision,
-          canonTree,
-          collectCanonLintInput: ports.collectCanonLintInput,
-        }),
+        withDocWriteTreeRemedy(canonTree, 'cwd', () =>
+          removeDoc(scope, subject ?? null, slug, {
+            reason,
+            author,
+            expectedRevision: expected_revision,
+            canonTree,
+            collectCanonLintInput: ports.collectCanonLintInput,
+          }),
+        ),
       )
       return text({ removed, tree: canonTree?.root })
     },

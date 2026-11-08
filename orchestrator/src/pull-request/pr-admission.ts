@@ -1,7 +1,9 @@
 // concern: pull-request-admission
 /** Resolves the caller's exact change, applies triage policy, and records admission evidence. */
 import type { Database } from 'bun:sqlite'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -63,18 +65,15 @@ export type PullRequestChange = {
 }
 
 const command = (cwd: string, argv: string[], label: string): string => {
-  const process = Bun.spawnSync(argv, {
+  const process = startBoundedSync(argv, {
+    budget: budgetForArgv(argv),
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (process.exitCode !== 0) {
-    throw new Error(
-      `${label} failed: ${process.stderr.toString().trim() || `exit ${process.exitCode}`}`,
-    )
+    throw new Error(`${label} failed: ${process.stderr.trim() || `exit ${process.exitCode}`}`)
   }
-  return process.stdout.toString().trim()
+  return process.stdout.trim()
 }
 
 const git: Git = (cwd, args) => command(cwd, ['git', ...args], `git ${args.join(' ')}`)
@@ -102,11 +101,10 @@ export function resolvePullRequestChange(
   const remoteTrackingRefExists = reviewRemoteTrunkRefExists(
     trunk,
     (args) =>
-      Bun.spawnSync(['git', ...args], {
+      startBoundedSync(['git', ...args], {
+        budget: 'git-plumbing',
         cwd,
         env: targetGitEnvironment(cwd),
-        stdout: 'pipe',
-        stderr: 'pipe',
       }).exitCode === 0,
   )
   const postFix = postFixReviewDecision({
@@ -211,6 +209,7 @@ export function ceilingGuidanceForTier(input: {
       commandName: PLATFORM_SLUG,
     })
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     const message = cause instanceof Error ? cause.message : String(cause)
     return (
       `${REVIEW_CEILING_REACHED}; ruling eligibility could not be established: ` +
@@ -269,6 +268,9 @@ export function admissionDecision(
 
 /** The line refusing one applicable lens, naming the path a fix used to bring it into scope. */
 function missingLensLine(change: PullRequestChange, missing: MissingLens): string {
+  if (missing.reason) {
+    return `${missing.lens} owed: ${missing.reason}; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${missing.lens} "Review ${change.branch} with ${missing.lens}."`
+  }
   const condition = missing.recordedOnBranch
     ? 'has no recorded result for this change'
     : 'has no recorded result on this branch'
@@ -545,20 +547,20 @@ export function recordMergeAdmission(
 }
 
 function pullRequestForBranch(cwd: string, branch: string): { number: number; url: string } | null {
-  let process: ReturnType<typeof Bun.spawnSync>
+  let process: ReturnType<typeof startBoundedSync>
   try {
-    process = Bun.spawnSync(['gh', 'pr', 'view', branch, '--json', 'number,url'], {
+    process = startBoundedSync(['gh', 'pr', 'view', branch, '--json', 'number,url'], {
+      budget: 'gh',
       cwd,
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof BoundExceededError) throw error
     return null
   }
   if (process.exitCode !== 0) return null
   try {
-    const value = JSON.parse(process.stdout?.toString() ?? '') as {
+    const value = JSON.parse(process.stdout) as {
       number?: unknown
       url?: unknown
     }
@@ -631,15 +633,13 @@ export function createPullRequest(
   let output = ''
   let failure: string | null = null
   try {
-    const process = Bun.spawnSync(['gh', 'pr', 'create', ...args, '--base', trunk], {
+    const process = startBoundedSync(['gh', 'pr', 'create', ...args, '--base', trunk], {
+      budget: 'gh',
       cwd,
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
-    output = process.stdout.toString().trim()
-    if (process.exitCode !== 0)
-      failure = process.stderr.toString().trim() || `exit ${process.exitCode}`
+    output = process.stdout.trim()
+    if (process.exitCode !== 0) failure = process.stderr.trim() || `exit ${process.exitCode}`
   } catch (cause) {
     failure = String((cause as Error)?.message ?? cause)
   }
@@ -718,6 +718,7 @@ export function checkPushedTip(cwd: string, sha: string, remoteRef: string): Pus
       overrideId: decision.overrideId,
     }
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     return {
       known: true,
       complete: true,

@@ -5,11 +5,13 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal as refusalValue } from '../../../shared/refusal.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { projectAt, projects } from '../project/projects.ts'
+import { RefusalError } from '../refusal-error.ts'
 import { runsClaimingWorktreePath } from '../resources/resource-claims.ts'
 import { reviewRunEvidenceSql } from '../review/review-evidence-sql.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
@@ -111,11 +113,11 @@ export type TaskBranchLandingDecision =
 
 export type TaskBranchLandingRefusal = Extract<TaskBranchLandingDecision, { action: 'refuse' }>
 
-export class TaskBranchLandingRefusalError extends Error {
+export class TaskBranchLandingRefusalError extends RefusalError {
   readonly refusal: TaskBranchLandingRefusal
 
   constructor(refusal: TaskBranchLandingRefusal, trunk: string) {
-    super(taskBranchLandingRefusalMessage(refusal, trunk))
+    super(refusalValue(taskBranchLandingRefusalMessage(refusal, trunk)))
     this.refusal = refusal
   }
 }
@@ -231,6 +233,7 @@ export function taskBranchPullRequestCheck(input: {
   try {
     nameListing = targetedTaskBranchPullRequests(input.project, input.branch)
   } catch (error) {
+    if (error instanceof Error && error.name === 'BoundExceededError') throw error
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
   }
   const namePullRequests = nameListing.pullRequests
@@ -257,6 +260,7 @@ export function taskBranchPullRequestCheck(input: {
         ? { pullRequests: [], truncated: false }
         : targetedMergedPullRequests(input.project, { search: input.launchKey })
   } catch (error) {
+    if (error instanceof Error && error.name === 'BoundExceededError') throw error
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
   }
   const commitPullRequests = commitListing.pullRequests.sort((left, right) =>

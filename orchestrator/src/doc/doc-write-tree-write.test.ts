@@ -5,9 +5,10 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { collectCanonLintInput } from '../canon/canon-files.ts'
-import { upsertProject } from '../project/projects.ts'
+import { projectByName, upsertProject } from '../project/projects.ts'
 import { docCommand } from './doc-commands.ts'
-import { selectDocWriteTree } from './doc-write-tree.ts'
+import { canonRemovalRefusal } from './doc-write-allowed.ts'
+import { selectDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import { getDoc } from './docs.ts'
 
 let fixtureRoot: string | null = null
@@ -47,7 +48,7 @@ afterEach(() => {
   fixtureRoot = null
 })
 
-async function command(args: string[], stdin = '') {
+async function command(args: string[], stdin = '', shellCwd = process.cwd()) {
   const values = new Map<string, string>()
   const present = new Set<string>()
   for (let i = 0; i < args.length; i++) {
@@ -70,7 +71,7 @@ async function command(args: string[], stdin = '') {
         write: (value) => out.push(value),
         stdinText: async () => stdin,
         stdinIsTTY: false,
-        cwd: () => process.cwd(),
+        cwd: () => shellCwd,
         exitCode: (value) => {
           code = value
         },
@@ -99,7 +100,7 @@ always: true
 Read [the workflow](.github/workflows/workflows-sync.yml).
 `
 
-test('a branch-only citation requires the subject worktree named by --cwd', async () => {
+test('a branch-only citation uses the subject worktree containing the shell cwd', async () => {
   const subject = repository()
   upsertProject({
     recordId: newRecordId(),
@@ -122,12 +123,19 @@ test('a branch-only citation requires the subject worktree named by --cwd', asyn
     'test branch citation',
   ]
 
-  const refused = await command(base, body)
+  const refused = await command(
+    base,
+    body.replace('.github/workflows/workflows-sync.yml', '.github/workflows/missing.yml'),
+    subject.worktree,
+  )
   expect(refused.code).toBe(1)
-  expect(refused.out).toBe(`tree: ${subject.main}`)
+  expect(refused.out).toBe(`tree: ${realpathSync(subject.worktree)}`)
   expect(refused.err).toContain('canon/reference-path')
+  expect(refused.err).toContain(
+    `judged against ${realpathSync(subject.worktree)}; pass --cwd <checkout> to validate against another checkout of subject`,
+  )
 
-  const accepted = await command([...base, '--cwd', subject.worktree], body)
+  const accepted = await command(base, body, subject.worktree)
   expect(accepted.code).toBe(0)
   expect(accepted.out).toContain(`tree: ${realpathSync(subject.worktree)}`)
   expect(accepted.err).not.toContain('is not tracked')
@@ -151,4 +159,36 @@ test('a branch-only citation requires the subject worktree named by --cwd', asyn
   ])
   expect(removed.code).toBe(0)
   expect(removed.out).toContain(`tree: ${realpathSync(subject.worktree)}`)
+})
+
+test('a refused canon removal names the judged tree and CLI remedy', async () => {
+  const subject = repository()
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'subject',
+    path: subject.main,
+    canon: true,
+    settings: {},
+  })
+
+  await expect(
+    withDocWriteTreeRemedy(
+      { project: projectByName('subject')!, root: subject.worktree },
+      '--cwd',
+      async () => {
+        throw new Error(
+          canonRemovalRefusal([
+            {
+              file: 'workflow step verify',
+              line: 4,
+              rule: 'canon/reference-path',
+              message: 'repository path .agents/reference/target.md is not tracked',
+            },
+          ])!,
+        )
+      },
+    ),
+  ).rejects.toThrow(
+    `judged against ${subject.worktree}; pass --cwd <checkout> to validate against another checkout of subject`,
+  )
 })

@@ -1,5 +1,5 @@
 const WRITE_HOLD_BURST_GAP_MS = 5
-const WRITE_HOLD_LOG_MS = 1_000
+export const WRITE_HOLD_LOG_MS = 1_000
 const WRITE_HOLD_CALLER_MS = 50
 
 export type FinishedWriteTransaction = {

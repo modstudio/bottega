@@ -119,6 +119,18 @@ export const modules: ArchitectureModule[] = [
     '../database/migrations.ts',
     '../machine-journal.ts',
   ]),
+  module('orchestrator/src/commands/launch-agent-refresh.ts', [
+    'commander',
+    '../health/launch-agent-refresh.ts',
+  ]),
+  module('orchestrator/src/health/launch-agent-refresh.ts', [
+    'node:path',
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+    '../setup/launchd-owners.ts',
+    '../setup/setup-schedules.ts',
+    './launch-agent-doctor.ts',
+  ]),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',
@@ -171,6 +183,7 @@ export const modules: ArchitectureModule[] = [
     module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed]),
   ),
   module('orchestrator/src/doc/doc-search.ts', [
+    '../../../shared/bounded-process.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
   ]),
@@ -194,6 +207,7 @@ export const modules: ArchitectureModule[] = [
     './doc-write-allowed.ts',
   ]),
   module('orchestrator/src/code/code-search.ts', [
+    '../../../shared/bounded-process.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/orch-contract.ts',
     '../project/projects.ts',
@@ -335,6 +349,12 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/agent/capabilities.ts', []),
   module('orchestrator/src/agent/worker-launch-env.ts', []),
   module('orchestrator/src/agent/cli-version.ts', []),
+  module('orchestrator/src/dispatch/task-cli-read.ts', [
+    '../../../shared/bounded-process.ts',
+    '../../../shared/brand.ts',
+    '../../../shared/self-spawn.ts',
+    '../project/projects.ts',
+  ]),
   ...mcpModules,
   module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [
     '../mcp/mcp-tool-list.ts',
@@ -350,6 +370,10 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/contract/codex-schema.ts', []),
   module('orchestrator/src/contract/codex-mcp-tool.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/contract/contract-reply.ts', []),
+  module('orchestrator/src/contract/contract-reply-validator.ts', [
+    '../transport/ajv-validator-loader.ts',
+    './contract-reply.ts',
+  ]),
   ...recipeModules,
   module('orchestrator/src/hook-tree/hook-tree.ts', [
     '../../../shared/brand.ts',
@@ -542,6 +566,7 @@ export const modules: ArchitectureModule[] = [
     '../caller-classification.ts',
     '../database/db.ts',
     '../git/commit-resolution.ts',
+    '../worktree/evidence-checkout.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',
     './review-command-cwd.ts',
@@ -576,6 +601,7 @@ export const modules: ArchitectureModule[] = [
     './standard-transports.ts',
   ]),
   module('orchestrator/src/transport/ajv-validator.ts', []),
+  module('orchestrator/src/transport/ajv-validator-loader.ts', ['./ajv-validator.ts']),
   module('orchestrator/src/transport/acp-trace.ts', [
     'node:child_process',
     'node:fs',

@@ -53,12 +53,16 @@ function normalizeQuestionField(value: string | null | undefined): string {
   return (value ?? '').replace(/\p{Cf}/gu, '').trim()
 }
 
+function normalizedQuestionText(value: string | null | undefined): string {
+  return normalizeQuestionField(value)
+    .replace(/^\p{P}+|\p{P}+$/gu, '')
+    .trim()
+}
+
 /** Whether one schema-valid question contains both a decision and its consequence. */
 function isRealQuestion(item: WorkerQuestion): boolean {
   const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
-  const question = normalizeQuestionField(item.question)
-    .replace(/^\p{P}+|\p{P}+$/gu, '')
-    .trim()
+  const question = normalizedQuestionText(item.question)
   const why = normalizeQuestionField(item.why)
   return question.length > 0 && !generic.has(question.toLowerCase()) && why.length > 0
 }
@@ -75,7 +79,7 @@ export function realQuestions(r: FinalizationReply | null | undefined): WorkerQu
 function droppedQuestionReason(question: WorkerQuestionInput): string {
   const parsed = WorkerQuestionSchema.safeParse(question)
   if (!parsed.success) return parsed.error.issues.map((issue) => issue.message).join('; ')
-  const normalized = normalizeQuestionField(parsed.data.question)
+  const normalized = normalizedQuestionText(parsed.data.question)
   if (!normalized) return 'question is empty'
   if (!normalizeQuestionField(parsed.data.why)) return 'why is empty'
   return 'question is generic'
@@ -131,7 +135,9 @@ function rejectEmptyAsking<FailureKind extends string>(
 ): FinalizationDecision<FailureKind> {
   if (reply?.status !== 'asking' || acceptedQuestions.length > 0) return decision
   const rejected =
-    reply.questions?.map((item) => JSON.stringify(item.question)).join(', ') || '(no question text)'
+    reply.questions
+      ?.map((item) => `${JSON.stringify(item.question)} (${droppedQuestionReason(item)})`)
+      .join(', ') || '(no question text)'
   return {
     status: 'failed',
     failureKind: 'contract',
@@ -236,6 +242,7 @@ export type OutcomeInputs<FailureKind extends string = string> = {
   completedReplyAtTimeout: boolean
   replyError: boolean
   replyErrorFailureKind: FailureKind
+  gooseVendorFailureKind: FailureKind | null
   nonAnswer: boolean
   nonAnswerFailureKind: FailureKind
   contractStatus: 'done' | 'asking' | 'refused' | null
@@ -263,6 +270,7 @@ export type OutcomeRule =
   | 'timeout-completed'
   | 'timeout'
   | 'reply-error'
+  | 'goose-vendor-failure'
   | 'non-answer'
   | 'missing-reply-contract'
   | 'contract-asking'
@@ -304,6 +312,7 @@ function decideContractOutcomeRule<FailureKind extends string>(
   inputs: OutcomeInputs<FailureKind>,
 ): OutcomeRule | null {
   if (inputs.replyError) return 'reply-error'
+  if (inputs.gooseVendorFailureKind) return 'goose-vendor-failure'
   if (
     inputs.exitCode === 0 &&
     inputs.nonAnswer &&
@@ -360,6 +369,7 @@ export function decideOutcome<FailureKind extends string>(
     'timeout-completed': completed,
     timeout: () => failed('timeout'),
     'reply-error': () => failed(inputs.replyErrorFailureKind),
+    'goose-vendor-failure': () => failed(inputs.gooseVendorFailureKind!),
     'non-answer': () => failed(inputs.nonAnswerFailureKind),
     'missing-reply-contract': () => failed('contract'),
     'contract-asking': () => failed('contract'),

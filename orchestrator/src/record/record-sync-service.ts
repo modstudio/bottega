@@ -1,5 +1,6 @@
 // concern: record-sync-service
 /** Validates and writes ordered evidence batches under the hosted session's authority. */
+
 import type { SQL } from 'bun'
 import { and, sql as drizzleSql, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
@@ -25,6 +26,7 @@ import {
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { nullableRecordDate, recordDate } from '../../../shared/record-timestamp.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { upsertHostedMachine } from './machine-name-record.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
@@ -41,6 +43,7 @@ import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
 import { typedQuestionRecordValues } from './record-question-values.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
+import { nullableReviewLensValues } from './record-review-lens-values.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
 import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
@@ -86,8 +89,6 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   return parsed as Payload
 }
 
-const date = (value: unknown) => new Date(String(value))
-const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 
 function evidenceCollision(kind: string, id: string): OutboxRowError {
@@ -296,8 +297,8 @@ export function reviewValues(row: Payload, projectId: string | null) {
   return {
     ...commonReviewRecordValues(row),
     projectId,
-    recordedAt: date(row.recordedAt),
-    completedAt: nullableDate(row.completedAt),
+    recordedAt: recordDate(row.recordedAt),
+    completedAt: nullableRecordDate(row.completedAt),
     tier: nullableNumber(row.tier),
     tierRisk: nullableNumber(row.tierRisk),
     tierSize: nullableNumber(row.tierSize),
@@ -309,7 +310,7 @@ export function reviewValues(row: Payload, projectId: string | null) {
     patchId: nullableString(row.patchId),
     pathSet: row.pathSet,
     commitMessage: nullableString(row.commitMessage),
-    outdatedAt: nullableDate(row.outdatedAt),
+    outdatedAt: nullableRecordDate(row.outdatedAt),
     outdatedReason: nullableString(row.outdatedReason),
     round: nullableNumber(row.round),
   }
@@ -333,7 +334,7 @@ export const questionValues = (
   projectId,
   machineId: String(row.machineId),
   revision: Number(row.revision),
-  askedAt: date(row.askedAt),
+  askedAt: recordDate(row.askedAt),
   question: String(row.question),
   options: row.options,
   recommendation: nullableString(row.recommendation),
@@ -342,14 +343,14 @@ export const questionValues = (
   ...typedQuestionRecordValues(row),
   answer: nullableString(row.answer),
   answerBasis: nullableString(row.answerBasis),
-  answeredAt: nullableDate(row.answeredAt),
+  answeredAt: nullableRecordDate(row.answeredAt),
   answeredBy: nullableString(row.answeredBy),
   answeredByName: nullableString(row.answeredByName),
   answererKind: nullableString(row.answererKind),
   answerChannel: nullableString(row.answerChannel),
-  awaitingOperatorAt: nullableDate(row.awaitingOperatorAt),
+  awaitingOperatorAt: nullableRecordDate(row.awaitingOperatorAt),
   relayedBy: nullableString(row.relayedBy),
-  overturnedAt: nullableDate(row.overturnedAt),
+  overturnedAt: nullableRecordDate(row.overturnedAt),
   overturnedBy: nullableString(row.overturnedBy),
   overturnedByName: nullableString(row.overturnedByName),
   overturnReason: nullableString(row.overturnReason),
@@ -358,12 +359,12 @@ export const questionValues = (
   filedRef: nullableString(row.filedRef),
   filedRecordId: nullableString(row.filedRecordId),
   filedLabel: nullableString(row.filedLabel),
-  filedAt: nullableDate(row.filedAt),
-  closedAt: nullableDate(row.closedAt),
+  filedAt: nullableRecordDate(row.filedAt),
+  closedAt: nullableRecordDate(row.closedAt),
   closeReason: nullableString(row.closeReason),
   withheldFields: row.withheldFields,
-  createdAt: date(row.createdAt),
-  updatedAt: date(row.updatedAt),
+  createdAt: recordDate(row.createdAt),
+  updatedAt: recordDate(row.updatedAt),
 })
 
 export function reviewLensValues(row: Payload) {
@@ -373,9 +374,7 @@ export function reviewLensValues(row: Payload) {
     runId: String(row.runId),
     lens: String(row.lens),
     agent: String(row.agent),
-    model: nullableString(row.model),
-    treeInspected: nullableString(row.treeInspected),
-    reviewedTree: nullableString(row.reviewedTree),
+    ...nullableReviewLensValues(row),
     standardsRead: row.standardsRead,
     filesCovered: row.filesCovered,
     commandsRun: row.commandsRun,
@@ -387,7 +386,6 @@ export function reviewLensValues(row: Payload) {
     coverage: nullableString(row.coverage),
     limits: nullableString(row.limits),
     overlap: nullableString(row.overlap),
-    selectionReason: nullableString(row.selectionReason),
   }
 }
 
@@ -404,7 +402,7 @@ export function reviewFindingValues(row: Payload) {
     disposition: nullableString(row.disposition),
     rejectionCategory: nullableString(row.rejectionCategory),
     triagedSeverity: nullableString(row.triagedSeverity),
-    triagedAt: nullableDate(row.triagedAt),
+    triagedAt: nullableRecordDate(row.triagedAt),
     duplicateOfFindingId: nullableString(row.duplicateOfFindingId),
   }
 }
@@ -413,8 +411,8 @@ const landingCommonValues = (row: Payload) => ({
   id: String(row.id),
   spaceId: String(row.spaceId),
   machineId: String(row.machineId),
-  createdAt: date(row.createdAt),
-  updatedAt: date(row.updatedAt),
+  createdAt: recordDate(row.createdAt),
+  updatedAt: recordDate(row.updatedAt),
 })
 
 export function landingValues(row: Payload, projectId: string | null) {
@@ -427,10 +425,10 @@ export function landingValues(row: Payload, projectId: string | null) {
     status: String(row.status),
     error: nullableString(row.error),
     sessionId: nullableString(row.sessionId),
-    startedAt: date(row.startedAt),
-    finishedAt: nullableDate(row.finishedAt),
+    startedAt: recordDate(row.startedAt),
+    finishedAt: nullableRecordDate(row.finishedAt),
     pathSet: row.pathSet,
-    requestedAt: nullableDate(row.requestedAt),
+    requestedAt: nullableRecordDate(row.requestedAt),
     steps: row.steps,
     causingLandingId: nullableString(row.causingLandingId),
     withheldFields: row.withheldFields,
@@ -450,7 +448,7 @@ export function landingOverrideValues(row: Payload, projectId: string | null) {
     attribution: String(row.attribution),
     missingLenses: row.missingLenses,
     sessionId: nullableString(row.sessionId),
-    at: date(row.at),
+    at: recordDate(row.at),
     withheldFields: row.withheldFields,
   }
 }
@@ -469,7 +467,7 @@ function landingReviewCarryValues(row: Payload, projectId: string | null) {
     oldBase: String(row.oldBase),
     newBase: String(row.newBase),
     sessionId: nullableString(row.sessionId),
-    at: date(row.at),
+    at: recordDate(row.at),
   }
 }
 
@@ -493,7 +491,7 @@ function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
     readId: nullableString(row.readId),
     overrideId: nullableString(row.overrideId),
     sessionId: nullableString(row.sessionId),
-    at: date(row.at),
+    at: recordDate(row.at),
   }
 }
 
@@ -507,7 +505,7 @@ export function contentionValues(row: Payload) {
   }
   return {
     ...landingCommonValues(row),
-    at: date(row.at),
+    at: recordDate(row.at),
     sessionId: nullableString(row.sessionId),
     resourceKind: String(row.resourceKind),
     resourceKey: String(row.resourceKey),
@@ -530,7 +528,7 @@ export function testFlakeValues(row: Payload) {
     file: String(row.file),
     loadAtFailure: row.loadAtFailure,
     signal: nullableString(row.signal),
-    at: date(row.at),
+    at: recordDate(row.at),
     withheldFields: row.withheldFields,
   }
 }

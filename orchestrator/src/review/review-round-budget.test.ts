@@ -58,6 +58,7 @@ function addEvidence(input: {
   deliveryNone?: boolean
   lens?: string
   role?: 'round' | 'supplementary'
+  treeInspected?: string
 }): void {
   const project = input.project ?? 'fixture'
   db()
@@ -92,6 +93,19 @@ function addEvidence(input: {
       'UPDATE run SET branch=?,launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE record_id=?',
     )
     .run(input.branch, input.launchKey === undefined ? 'DEV-1256' : input.launchKey, project, run)
+  if (input.treeInspected) {
+    db()
+      .query('UPDATE run SET worktree=?,head_commit=?,review_provenance=? WHERE record_id=?')
+      .run(
+        '/missing/trees/subject',
+        'abcdef1234567890',
+        JSON.stringify({
+          tree_inspected: input.treeInspected,
+          reviewed_commit: 'abcdef1',
+        }),
+        run,
+      )
+  }
   if (input.excluded)
     db().query("UPDATE run SET evidence_excluded='void' WHERE record_id=?").run(run)
   if (input.deliveryNone) score(run, 'none')
@@ -123,6 +137,26 @@ function addMintFact(input: {
 }
 
 describe('review budget query', () => {
+  test('only subject-matching provenance consumes the review budget', () => {
+    addEvidence({
+      branch: 'DEV-2157-matching',
+      at: '2026-10-01T00:00:00Z',
+      patch: 'matching',
+      tier: 1,
+      treeInspected: '/missing/trees/subject',
+    })
+    addEvidence({
+      branch: 'DEV-2157-mismatch',
+      at: '2026-10-01T00:00:00Z',
+      patch: 'mismatch',
+      tier: 1,
+      treeInspected: '/missing/trees/other',
+    })
+
+    expect(reviewBudgetForBranch(db(), 'fixture', 'DEV-2157-matching', null).roundsUsed).toBe(1)
+    expect(reviewBudgetForBranch(db(), 'fixture', 'DEV-2157-mismatch', null).roundsUsed).toBe(0)
+  })
+
   test('a supplementary result does not consume a review round', () => {
     addEvidence({
       branch: 'DEV-1723',

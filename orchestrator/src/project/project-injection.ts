@@ -11,6 +11,7 @@ import {
   refuseHubActionOverrides,
   refuseInvalidReviewStages,
   refuseNonCursorProjectId,
+  refuseUnsupportedUpdatedSince,
   resolveTrackerAgentActions,
   TRACKER_PROTOCOLS,
   type TrackerAction,
@@ -316,6 +317,7 @@ const trackerSchema = (mode: SettingsObjectMode) =>
   }).superRefine((tracker, context) => {
     refuseHubActionOverrides(tracker, context)
     refuseNonCursorProjectId(tracker, context)
+    refuseUnsupportedUpdatedSince(tracker, context)
     refuseInvalidReviewStages(tracker, context)
   })
 

@@ -20,6 +20,7 @@ export const contractBoundarySpecs: ContractBoundarySpec[] = [
       '../review/review-vocabulary.ts',
       '../run/checkpoint.ts',
       './contract-reply.ts',
+      './contract-reply-validator.ts',
     ],
     typeOnlyAllowed: [],
     reason: 'Keep reply dialect resolution independent of lifecycle and impure transport concerns.',

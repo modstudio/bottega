@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { renderRefusal } from '../../../shared/refusal.ts'
 import {
   PROJECT_RELATIVE_NO_TREE_REASON,
   PROJECT_RELATIVE_NO_TREE_REMEDY,
@@ -17,6 +18,8 @@ import {
 
 const requiredMcpProbeRefusal = (facts: RequiredMcpProbeFacts) =>
   requiredMcpProbeDecision(facts).refusal
+    ? renderRefusal(requiredMcpProbeDecision(facts).refusal!)
+    : null
 
 const project = { name: 'starship', path: '/opt/starship' }
 const failure = { server: 'starship', error: 'Connection closed\nstderr: not configured' }
@@ -80,8 +83,8 @@ test('a failed required server refuses only its failure and reports another fail
     selectedServers: ['starship', 'youtrack'],
   })
 
-  expect(decision.refusal).toContain('starship: Connection closed')
-  expect(decision.refusal).not.toContain('youtrack')
+  expect(renderRefusal(decision.refusal!)).toContain('starship: Connection closed')
+  expect(renderRefusal(decision.refusal!)).not.toContain('youtrack')
   expect(decision.unrelatedFailures).toEqual([unrelated])
 })
 
@@ -93,7 +96,7 @@ test('an unscoped required server keeps refusing any affirmative failure', () =>
     requiredServer: null,
   })
 
-  expect(decision.refusal).toContain('stripe: missing credentials')
+  expect(renderRefusal(decision.refusal!)).toContain('stripe: missing credentials')
   expect(decision.unrelatedFailures).toEqual([])
 })
 
@@ -190,7 +193,7 @@ test('a handed-over required server, and the platform server, are never refused'
 
 test('the refusal error carries only the reason, never the run failure kind', () => {
   const refusal = new RequiredMcpProbeRefusalError(
-    requiredMcpProbeRefusal({ mode: 'require', project, failures: [failure] })!,
+    requiredMcpProbeDecision({ mode: 'require', project, failures: [failure] }).refusal!,
   )
 
   // The run concern owns the failure-kind vocabulary, so a refusal cannot be

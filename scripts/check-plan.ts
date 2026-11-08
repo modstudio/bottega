@@ -1,5 +1,7 @@
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
 
+export const DEPENDENCY_AUDIT_SCRIPT = 'scripts/check-dependency-audit.ts'
+
 const HOOKS_FOCUSED_FORM = {
   directory: 'orchestrator/hooks',
   argv: ['python3', '-m', 'unittest'],
@@ -189,6 +191,7 @@ export const CHECK_LEGS = [
 ] as const
 
 export const ROOT_TEST_FILES = [
+  'scripts/check-refusal-remedy.test.ts',
   'scripts/check-hook-binary.test.ts',
   'scripts/check-install-paths.test.ts',
   'scripts/check-rehearsal-image-imports.test.ts',
@@ -208,8 +211,10 @@ export const ROOT_TEST_FILES = [
   'scripts/check-docker-workspaces.test.ts',
   'scripts/check-hosted-memory.test.ts',
   'scripts/check-dependency-audit.test.ts',
+  'scripts/check-execution-completeness.test.ts',
   'scripts/check-runtime.test.ts',
   'scripts/static-check-plan.test.ts',
+  'scripts/check-unchecked-exits.test.ts',
   'scripts/check-ci-workflow.test.ts',
   'scripts/check-storybook.test.ts',
   'scripts/check-outcome.test.ts',
@@ -238,8 +243,9 @@ export const ROOT_TEST_FILES = [
   'orchestrator/src/ratchet/biome-adapter.test.ts',
   'orchestrator/src/ratchet/ratchet-plan.test.ts',
   'scripts/check-file-ceiling.test.ts',
-  'scripts/check-git-environment-spawn.test.ts',
+  'scripts/check-raw-start.test.ts',
   'scripts/check-main-checkout-moves.test.ts',
+  'scripts/check-active-space-moves.test.ts',
   'scripts/check-git-path-list.test.ts',
   'scripts/command-descriptions.test.ts',
   'scripts/command-reference.test.ts',

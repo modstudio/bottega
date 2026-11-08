@@ -183,6 +183,7 @@ test(`formatRecordedGateResult names ${PLATFORM_SLUG} gate run when the row has 
       elapsedMs: 10,
       finishedAt: '2026-10-01T12:00:00.000Z',
       outputTail: 'ok',
+      uncheckedChecks: [],
     },
   })
   expect(formatted).toBe(
@@ -197,5 +198,33 @@ test(`formatRecordedGateResult names ${PLATFORM_SLUG} gate run when the row has 
       'output tail:',
       'ok',
     ].join('\n'),
+  )
+})
+
+test('recorded gate result lists persisted unchecked checks with reasons', () => {
+  const commit = 'unchecked-commit'
+  const projectId = insertProject('unchecked-reader', readerPath)
+  const reader = insertRun(projectId, 'review-lens', commit)
+  const gate = insertGate({
+    runId: null,
+    finishedAt: '2026-10-01T11:00:00.000Z',
+    exitCode: 0,
+    headCommit: commit,
+    cwd: readerPath,
+  })
+  db()
+    .query(
+      `INSERT INTO check_execution
+      (record_id,gate_execution_record_id,check_name,wall_ms,exit_code,unchecked_reason)
+     VALUES (?,?,?,?,?,?)`,
+    )
+    .run(newRecordId(), gate, 'dependency audit', 12, 77, 'audit host unavailable')
+
+  const recorded = recordedGateResult(reader)
+  expect(recorded.result?.uncheckedChecks).toEqual([
+    { check: 'dependency audit', reason: 'audit host unavailable' },
+  ])
+  expect(formatRecordedGateResult(recorded)).toContain(
+    'unchecked checks:\n- dependency audit (audit host unavailable)',
   )
 })

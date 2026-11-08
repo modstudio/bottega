@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
@@ -130,7 +131,8 @@ test('inserts valid check records in the transaction with the gate row', async (
           category: 'file-length',
           wallMs: 12.5,
           cpuMs: 8,
-          exitCode: 0,
+          exitCode: 77,
+          unchecked: 'fixture dependency is unavailable',
           remaining: 2,
         })}\n`,
       )
@@ -146,7 +148,7 @@ test('inserts valid check records in the transaction with the gate row', async (
   expect(
     d
       .query(
-        `SELECT gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,remaining_count
+        `SELECT gate_execution_record_id,check_name,category,wall_ms,cpu_ms,exit_code,unchecked_reason,remaining_count
            FROM check_execution`,
       )
       .get(),
@@ -158,7 +160,8 @@ test('inserts valid check records in the transaction with the gate row', async (
     category: 'file-length',
     wall_ms: 12.5,
     cpu_ms: 8,
-    exit_code: 0,
+    exit_code: 77,
+    unchecked_reason: 'fixture dependency is unavailable',
     remaining_count: 2,
   })
   expect(
@@ -289,6 +292,34 @@ test('runs and records a relative gate from the caller checkout top level', asyn
     cwd: checkoutTopLevel,
     resolved_command: expectedCommand,
   })
+})
+
+test('refuses a stranded directory below the worktree base before the gate runs', async () => {
+  const worktreeBase = join(repositoryPath, '.claude', 'worktrees')
+  mkdirSync(worktreeBase, { recursive: true })
+  const cwd = mkdtempSync(join(worktreeBase, 'stranded-gate-'))
+  let ran = false
+  try {
+    await expect(
+      runArchitectGate({
+        cwd,
+        d: database(),
+        topLevel: () => repositoryPath,
+        checkout: cleanCheckout,
+        gitState: cleanGitState,
+        write: () => {},
+        runner: () => {
+          ran = true
+          throw new Error('should not run')
+        },
+      }),
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} gate run: ${cwd} is not a worktree; git resolves it to ${repositoryPath}`,
+    )
+    expect(ran).toBe(false)
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
 })
 
 test('refuses a merge in progress before the gate runs', async () => {

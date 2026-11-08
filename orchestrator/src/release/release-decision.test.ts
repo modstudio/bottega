@@ -463,6 +463,19 @@ describe('release checkout outcome', () => {
       }),
     ).toEqual({ ok: true, warning: 'live probe failed; restore failed' }))
 
+  test('fails a completed release when the restored checkout breaches its invariant', () =>
+    expect(
+      releaseCheckoutOutcomeDecision({
+        failure: null,
+        warning: null,
+        restoreWarning: null,
+        restoreBreach: 'checkout is dirty; restore it',
+      }),
+    ).toEqual({
+      ok: false,
+      message: 'release steps completed; checkout is dirty; restore it',
+    }))
+
   test('adds a restore failure after the original body failure', () =>
     expect(
       releaseCheckoutOutcomeDecision({

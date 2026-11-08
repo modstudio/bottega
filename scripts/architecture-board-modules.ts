@@ -138,6 +138,7 @@ export const boardModules: BoardModule[] = [
     '../../../shared/board-purpose.ts',
     '../../../shared/record/schema.ts',
     '../database/db.ts',
+    '../project/project-settings.ts',
     '../project/projects.ts',
     '../prose-service.ts',
     '../record/machine-identity.ts',
@@ -274,6 +275,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-commands.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/cli-repeat-guard.ts',
     'commander',
     '../../../shared/board-duration.ts',
     '../database/db.ts',

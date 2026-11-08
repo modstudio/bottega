@@ -947,9 +947,9 @@ describe('strict schema matching used on the ACP path', () => {
       required: ['verdict'],
       properties: { verdict: { type: 'string' } },
     }
-    expect(valueMatchesStrictSchema(schema, { verdict: 'true' })).toBe(true)
-    expect(valueMatchesStrictSchema(schema, { verdict: 'true', extra: 1 })).toBe(false)
-    expect(valueMatchesStrictSchema(schema, '{')).toBe(false)
+    expect(valueMatchesStrictSchema(schema, { verdict: 'true' }).ok).toBe(true)
+    expect(valueMatchesStrictSchema(schema, { verdict: 'true', extra: 1 }).ok).toBe(false)
+    expect(valueMatchesStrictSchema(schema, '{').ok).toBe(false)
   })
 
   test('a validator load failure is an error naming the cause, not a mismatch', () => {
@@ -964,5 +964,11 @@ describe('strict schema matching used on the ACP path', () => {
         throw new Error('Cannot find module ajv/dist/2020.js from /$bunfs/root')
       }),
     ).toThrow('Cannot find module ajv/dist/2020.js from /$bunfs/root')
+  })
+
+  test('a schema compile failure is returned with its cause', () => {
+    const result = valueMatchesStrictSchema({ type: 'not-a-json-schema-type' }, {})
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.failures[0]).toMatch(/^schema did not compile: /)
   })
 })

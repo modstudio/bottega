@@ -5,7 +5,9 @@
  */
 
 import type { Database } from 'bun:sqlite'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
@@ -131,16 +133,15 @@ export type PullRequestMergeAdapter = {
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
 
 function run(cwd: string, argv: string[]): ProcessResult {
-  const result = Bun.spawnSync(argv, {
+  const result = startBoundedSync(argv, {
+    budget: budgetForArgv(argv),
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return {
     exitCode: result.exitCode,
-    stdout: result.stdout.toString().trim(),
-    stderr: result.stderr.toString().trim(),
+    stdout: result.stdout.trim(),
+    stderr: result.stderr.trim(),
   }
 }
 
@@ -407,7 +408,8 @@ function readCheckRollup(
   if (number === undefined) return null
   try {
     return adapter.checks(cwd, number)
-  } catch {
+  } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     return null
   }
 }
@@ -423,6 +425,7 @@ function throwMergeOperationError(
   cause: unknown,
   input: MergeErrorContext & { fallback: (message: string) => Error },
 ): never {
+  if (cause instanceof BoundExceededError) throw cause
   const message = cause instanceof Error ? cause.message : String(cause)
   const decision = decideMergePolicyRefusal({
     message,
@@ -556,6 +559,7 @@ function failedMergeGroupRunEvidence(
       ? `${run.conclusion} merge-group run ${run.id} (${run.url})`
       : `no merge-group run that failed since ${enqueuedAt} was found`
   } catch (cause) {
+    if (cause instanceof BoundExceededError) throw cause
     return `failed merge-group run could not be read: ${cause instanceof Error ? cause.message : String(cause)}`
   }
 }

@@ -18,7 +18,8 @@ export async function handleDocConsumeCommand(input: {
   sub: string
   argv: string[]
   scope: string | undefined
-  subject: string | null
+  /** Absent when the caller named no subject; the store resolves the only match. */
+  subject: string | null | undefined
   flags: ConsumeFlags
   log(...values: unknown[]): void
   handoff: ConsumeDocHandoff

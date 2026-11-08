@@ -4,6 +4,7 @@ import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-led
 import {
   newestSuccessfulProvenReleaseCommit,
   newestSuccessfulReleasedCommit,
+  verifiedReleaseCheckoutRestore,
 } from './release-service.ts'
 
 const PROJECT_RECORD_ID = '01990000-0000-7000-8000-000000002151'
@@ -65,4 +66,40 @@ test('release baselines use only a live-proved successful row', () => {
     'proved-candidate',
   )
   expect(newestSuccessfulReleasedCommit('fixture', 'production', database)).toBe('proved-live')
+})
+
+test('release checkout verification is skipped when no trunk restore occurred', () => {
+  let calls = 0
+  expect(verifiedReleaseCheckoutRestore('/project', 'main', null, false, () => calls++)).toEqual({
+    restoreWarning: null,
+    restoreBreach: null,
+  })
+  expect(calls).toBe(0)
+})
+
+test('release checkout verification is skipped when restore already warned', () => {
+  let calls = 0
+  expect(
+    verifiedReleaseCheckoutRestore('/project', 'main', 'restore failed', true, () => calls++),
+  ).toEqual({ restoreWarning: 'restore failed', restoreBreach: null })
+  expect(calls).toBe(0)
+})
+
+test('release checkout verification reports a breach', () => {
+  expect(
+    verifiedReleaseCheckoutRestore('/project', 'main', null, true, () => {
+      throw new Error('checkout has tracked modifications; restore it')
+    }),
+  ).toEqual({
+    restoreWarning: null,
+    restoreBreach:
+      'registered main checkout could not be restored to landing branch main: checkout has tracked modifications; restore it; run git -C /project switch main',
+  })
+})
+
+test('release checkout verification accepts a clean restore', () => {
+  expect(verifiedReleaseCheckoutRestore('/project', 'main', null, true, () => {})).toEqual({
+    restoreWarning: null,
+    restoreBreach: null,
+  })
 })

@@ -26,6 +26,13 @@ export const MAINTENANCE_SCHEDULE_LABELS = [
 ] as const
 
 type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
+
+const maintenanceScheduleLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
+
+export function isMaintenanceScheduleLabel(label: string): label is MaintenanceScheduleLabel {
+  return maintenanceScheduleLabels.has(label)
+}
+
 export type ScheduleSetupFact = {
   label: MaintenanceScheduleLabel
   loaded: boolean

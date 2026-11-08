@@ -581,6 +581,55 @@ export type CollectResultPresentation = {
   exit(code: number): never
 }
 
+export function unfinishedResultMessage(
+  requested: {
+    recordId: string
+    number: number
+    status: string
+    failureKind: string | null
+  },
+  final: { number: number; status: string },
+  attempts: readonly Pick<FailoverAttempt, 'rootId'>[],
+  fallback: string,
+): string {
+  if (
+    requested.status === 'failed' &&
+    final.status === 'running' &&
+    attempts.length >= 2 &&
+    attempts[0]!.rootId === requested.recordId
+  ) {
+    return (
+      `run ${requested.number} failed (${requested.failureKind ?? 'unknown'}); ` +
+      `its failover successor ${final.number} is still running`
+    )
+  }
+  return fallback
+}
+
+function unfinishedResultMessageForRun(
+  database: Database,
+  requestedId: string,
+  final: CollectedRunRow,
+  attempts: readonly FailoverAttempt[],
+): string {
+  const requested = database
+    .query<{ number: number; status: string; failure_kind: string | null }, [string]>(
+      'SELECT number,status,failure_kind FROM run WHERE record_id=?',
+    )
+    .get(requestedId)!
+  return unfinishedResultMessage(
+    {
+      recordId: requestedId,
+      number: requested.number,
+      status: requested.status,
+      failureKind: requested.failure_kind,
+    },
+    { number: final.number, status: final.status },
+    attempts,
+    `run ${requestedId} (${final.agent}/${final.job}) is still running`,
+  )
+}
+
 /** A successful run may carry a non-failing outcome note in its error column. */
 export function okOutcomeNote(row: { status: string; error: string | null }): string {
   return row.status === 'ok' && row.error ? `\n  ${row.error}` : ''
@@ -675,10 +724,10 @@ export function collectResult(
   const outcome = outcomeOf(row)
   const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}${row.executor === HARNESS_EXECUTOR ? `\n  executor:  ${row.executor}` : ''}\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
-    presentation.error(`run ${id} (${row.agent}/${row.job}) is still running`)
+    presentation.error(unfinishedResultMessageForRun(database, id, row, chain.attempts))
     presentation.exit(2)
   }
-  const output = collectedOutput(row)
+  const output = persistedRunOutput(row)
   if (row.review_provenance) {
     try {
       const provenance = JSON.parse(row.review_provenance) as {
@@ -744,7 +793,10 @@ export function collectResult(
   }
 }
 
-function collectedOutput(row: CollectedRunRow): string | null {
+/** Read the persisted result text by the same rules as `run result`. */
+export function persistedRunOutput(
+  row: Pick<CollectedRunRow, 'record_id' | 'output_path' | 'executor'>,
+): string | null {
   if (row.output_path && existsSync(row.output_path)) return readFileSync(row.output_path, 'utf8')
   const replyPath = runScratchReplyPath(row.record_id, resolveRunsDirectory(process.env))
   return row.executor === 'harness' && existsSync(replyPath)

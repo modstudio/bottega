@@ -1,13 +1,17 @@
 import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import { getWorkflowStepWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
-import { abandonCursor } from './workflow-cursor-test.fixture.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor.ts'
+import {
+  abandonCursor,
+  selectAndNextWorkflowStep as nextWorkflowStep,
+} from './workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
   attachedTextReferenceMeetsFloor,
@@ -25,6 +29,7 @@ import {
   showWorkflowText,
   type WorkflowTaskDocument,
   type WorkflowTextDocumentPorts,
+  workflowTextCopyReport,
   workflowTextUncopiedReport,
 } from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
@@ -407,6 +412,88 @@ function documentFake(initial: WorkflowTaskDocument[] = []): {
 }
 
 describe('task-linked workflow text preservation', () => {
+  test('a task kept in its own tracker reports unsupported once and preserves every text', async () => {
+    const d = database()
+    const cursor = open(d)
+    linkCursor(d, cursor)
+    const references = [
+      await attachWorkflowTextByHandle(cursor, 'first external text', context, d),
+      await attachWorkflowTextByHandle(cursor, 'second external text', context, d),
+    ]
+    let documentCalls = 0
+    const documents: WorkflowTextDocumentPorts = {
+      async list() {
+        documentCalls += 1
+        return []
+      },
+      async create() {
+        documentCalls += 1
+        return 'DEV-1975/1'
+      },
+    }
+
+    const result = await copyWorkflowTextForCursor(
+      cursorForWorkflowTextCopy(cursor, d),
+      d,
+      async () => [
+        {
+          key: 'STAR-6294',
+          record_id: 'task-dev-1975',
+          project: 'fixture',
+          source: 'git',
+        },
+      ],
+      documents,
+    )
+    const expected =
+      `task STAR-6294 is kept in its project's own tracker; workflow text copy does not support it, ` +
+      `and each text stays readable with ${PLATFORM_SLUG} workflow text show <reference>: ${references.join(', ')}`
+    const reports = [workflowTextCopyReport(result), workflowTextUncopiedReport(result)]
+
+    expect(reports).toEqual([expected, expected])
+    expect(reports.join('\n')).not.toContain('retry:')
+    expect(documentCalls).toBe(0)
+    expect(rowCount(d, cursor)).toBe(2)
+    expect(references.map((reference) => showWorkflowText(reference, d))).toEqual([
+      expect.objectContaining({ kind: 'live', body: 'first external text' }),
+      expect.objectContaining({ kind: 'live', body: 'second external text' }),
+    ])
+  })
+
+  test("a task whose source is 'local' copies every text normally", async () => {
+    const d = database()
+    const cursor = open(d)
+    linkCursor(d, cursor)
+    await attachWorkflowTextByHandle(cursor, 'first local text', context, d)
+    await attachWorkflowTextByHandle(cursor, 'second local text', context, d)
+    const fake = documentFake()
+
+    const result = await copyWorkflowTextForCursor(
+      cursorForWorkflowTextCopy(cursor, d),
+      d,
+      async () => [
+        {
+          key: 'DEV-1975',
+          record_id: 'task-dev-1975',
+          project: 'fixture',
+          source: 'local',
+        },
+      ],
+      fake.ports,
+    )
+    const reports = [workflowTextCopyReport(result), workflowTextUncopiedReport(result)]
+
+    expect(fake.created.map((row) => row.body)).toEqual(['first local text', 'second local text'])
+    expect(
+      d.query<{ count: number }, []>('SELECT COUNT(*) count FROM workflow_text_copy').get()?.count,
+    ).toBe(2)
+    expect(result.copied).toHaveLength(2)
+    expect(result.unsupported).toBeNull()
+    expect(
+      reports.every((report) => !report.includes('workflow text copy does not support it')),
+    ).toBe(true)
+  })
+
   test('the close service copies through a context-only task link and leaves a redirect', async () => {
     const d = database()
     const cursor = open(d)

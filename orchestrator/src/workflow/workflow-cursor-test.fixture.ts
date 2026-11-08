@@ -1,15 +1,33 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
+import type { LiveCursorAutonomy } from './autonomy.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
+import {
+  abandonSelectedWorkflowCursorForClose,
+  awaitWorkflowRuling,
+  composeWorkflowWithCursor,
+  nextWorkflowStep,
+  ruleWorkflow,
+} from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { cursorName } from './workflow-cursor-format.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
+import {
+  type FloorEvidencePorts,
+  productionFloorPorts,
+  type WorkflowEvidenceInput,
+} from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 
 export const database = testDatabaseFixture((d) => {
@@ -36,6 +54,47 @@ export const matchingCheckout = {
   headIsTipOrAncestor: true,
   landingBranch: 'main',
   ...{ project: 'fixture', branch: args.branch, checkoutPath: '/tmp/work' },
+}
+
+export function prepareOperatorRulingCursor(d: Database, session: string | null) {
+  const current = productionStepCatalogue(d).definition
+  const steps = current.steps.map((step) =>
+    step.slug === 'rebase' ? { ...step, floor: ['ruling'], operatorRuling: true } : step,
+  )
+  const draft = setStepCatalogueLocal(
+    { ...current, steps },
+    'relayed operator ruling fixture',
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(draft.n, 'relayed operator ruling fixture', 'test', d)
+  const ownerContext = { ...context, session }
+  const composition = composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    ownerContext,
+    d,
+    {},
+    {},
+  )
+  awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', ownerContext, d, () => {})
+  return composition.cursor!.id
+}
+
+export function relayOperatorRuling(d: Database, session: string) {
+  return ruleWorkflow(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    'Proceed.',
+    true,
+    'cli',
+    { ...context, session },
+    d,
+  )
 }
 
 export const testPorts = {
@@ -146,7 +205,7 @@ export function closeStep(
   callContext: { session?: string | null; instance?: string },
   d: Database,
 ) {
-  return nextWorkflowStep(
+  return selectAndNextWorkflowStep(
     slug,
     project,
     mode,
@@ -156,6 +215,48 @@ export function closeStep(
     d,
     installEvidence(d, project, slug, mode, callArgs, callContext),
     testPorts,
+  )
+}
+
+/** Selects a cursor through the same path as the production close service, then advances it. */
+export function selectAndNextWorkflowStep(
+  slug: string,
+  project: string,
+  mode: string,
+  callArgs: Record<string, string>,
+  note: string | undefined,
+  callContext: WorkflowCursorContext,
+  d: Database,
+  evidence: WorkflowEvidenceInput = {},
+  ports: FloorEvidencePorts = productionFloorPorts(),
+  cursor?: number,
+  selfRuling?: WorkflowSelfRulingInput,
+  outcome?: string,
+  live?: LiveCursorAutonomy,
+): string {
+  const key = workflowKeyOf(callArgs)
+  const row = selectWorkflowCursorForClose(
+    { project, workflow: slug, mode, ...(key ? { key } : {}) },
+    cursor,
+    callContext.session,
+    d,
+    callContext.taskRecordId,
+    callContext.taskStatusCategory,
+  ) as WorkflowCloseCursor | null
+  if (!row)
+    throw new Error(`${cursorName(slug, mode, key)} has no cursor; compose the workflow first`)
+  return nextWorkflowStep(
+    row,
+    project,
+    callArgs,
+    note,
+    callContext,
+    d,
+    evidence,
+    ports,
+    selfRuling,
+    outcome,
+    live,
   )
 }
 

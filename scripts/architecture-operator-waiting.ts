@@ -122,6 +122,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   ]),
   module('hub/src/operator-waiting-email-contract.ts', ['zod']),
   module('hub/src/operator-waiting-email-api.ts', [
+    '../../shared/bounded-fetch.ts',
     '../../shared/record-space-request.ts',
     './hosted-route-identity.ts',
     './operator-waiting-email-contract.ts',

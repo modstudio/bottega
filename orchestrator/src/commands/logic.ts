@@ -1,8 +1,9 @@
 // concern: cli
 /** Registers extracted logic-verb adapters. Must not own application decisions. */
 
-import type { Command, OptionValues } from 'commander'
+import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
@@ -65,10 +66,14 @@ import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
 import { registerHostLoadCommands } from './host-load.ts'
+import { registerLaunchAgentRefreshCommand } from './launch-agent-refresh.ts'
 import { registerLensCommands } from './lens.ts'
 import { registerMachineJournalCommand } from './machine-journal.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
+
+const collectedOption = (flags: string, description: string) =>
+  repeatable(new Option(flags, description).argParser(collect).default([]))
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`
@@ -218,12 +223,7 @@ function registerEfficiencyCommands(program: Command): void {
     .command('efficiency')
     .description('report orchestration efficiency; median is nearest-rank 50th percentile')
     .option('--since <duration>', 'limit the current window by age (default: 7d)')
-    .option(
-      '--section <name>',
-      'print one section; repeat to select more',
-      (name, names: string[]) => [...names, name],
-      [],
-    )
+    .addOption(collectedOption('--section <name>', 'print one section; repeat to select more'))
     .option('--project <name>', 'limit project-keyed evidence to one project')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
@@ -263,6 +263,7 @@ function registerMachineInspectionCommands(program: Command): void {
   registerEfficiencyCommands(program)
   registerHostLoadCommands(program)
   registerMachineJournalCommand(program, { write })
+  registerLaunchAgentRefreshCommand(program, { log })
 }
 
 function registerMachineAttentionCommands(program: Command): void {
@@ -688,7 +689,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   )
   for (const option of ORCH_DO_OPTIONS) {
     if ('name' in option && option.name === 'deliverable')
-      doVerb.option(option.flags, option.description, collect, [])
+      doVerb.addOption(collectedOption(option.flags, option.description))
     else doVerb.option(option.flags, option.description)
   }
   doVerb.action((_job, _prompt, _options, command) =>

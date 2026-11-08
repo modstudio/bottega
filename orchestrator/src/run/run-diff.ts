@@ -1,6 +1,7 @@
 // concern: run-diff
 /** Knows run diff rendering. Must not know run control, transports, routing, the CLI, or worktrees by value. */
 
+import { startBoundedSync, startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db } from '../database/db.ts'
@@ -84,36 +85,33 @@ export function unchangedSinceReadMessage(read: ArchitectRead | null, diff: stri
 }
 
 export function commitAt(cwd: string, ref: string): string {
-  const result = Bun.spawnSync(['git', 'rev-parse', '--verify', `${ref}^{commit}`], {
+  const result = startBoundedSync(['git', 'rev-parse', '--verify', `${ref}^{commit}`], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim())
-  return result.stdout.toString().trim()
+  if (result.exitCode !== 0) throw new Error(result.stderr.trim())
+  return result.stdout.trim()
 }
 
 export function isAncestor(cwd: string, ancestor: string, descendant: string): boolean {
   return (
-    Bun.spawnSync(['git', 'merge-base', '--is-ancestor', ancestor, descendant], {
+    startBoundedSync(['git', 'merge-base', '--is-ancestor', ancestor, descendant], {
+      budget: 'git-plumbing',
       cwd,
       env: targetGitEnvironment(cwd),
-      stdout: 'ignore',
-      stderr: 'ignore',
     }).exitCode === 0
   )
 }
 
 export function commitsBetween(cwd: string, since: string, tip: string): string {
-  const result = Bun.spawnSync(['git', 'log', '--oneline', `${since}..${tip}`], {
+  const result = startBoundedSync(['git', 'log', '--oneline', `${since}..${tip}`], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim())
-  return result.stdout.toString()
+  if (result.exitCode !== 0) throw new Error(result.stderr.trim())
+  return result.stdout
 }
 
 function evidenceLowerBound(input: {
@@ -127,14 +125,13 @@ function evidenceLowerBound(input: {
 }): { since: string; usedRecordedFallback: boolean } {
   if (input.read) return { since: input.read.tip, usedRecordedFallback: false }
   if (input.sinceBase) return { since: input.baseCommit, usedRecordedFallback: true }
-  const mergeBase = Bun.spawnSync(['git', 'merge-base', input.evidenceBranch, input.trunk], {
+  const mergeBase = startBoundedSync(['git', 'merge-base', input.evidenceBranch, input.trunk], {
+    budget: 'git-plumbing',
     cwd: input.repoRoot,
     env: targetGitEnvironment(input.repoRoot),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (mergeBase.exitCode === 0) {
-    return { since: mergeBase.stdout.toString().trim(), usedRecordedFallback: false }
+    return { since: mergeBase.stdout.trim(), usedRecordedFallback: false }
   }
   if (input.configuredTrunk) {
     throw new Error(`cannot find merge-base between the run tip and trunk ${input.trunk}`)
@@ -233,13 +230,12 @@ export async function runDiffCommand(
     readEvidence: () => {
       const branchPresent = Boolean(
         evidenceBranch &&
-          Bun.spawnSync(
+          startBoundedSync(
             ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${evidenceBranch}`],
             {
+              budget: 'git-plumbing',
               cwd: repoRoot,
               env: targetGitEnvironment(repoRoot),
-              stdout: 'ignore',
-              stderr: 'ignore',
             },
           ).exitCode === 0,
       )
@@ -259,32 +255,30 @@ export async function runDiffCommand(
         sinceBase: has('since-base'),
         read,
       })
-      const diff = Bun.spawnSync(
+      const diff = startBoundedSyncBytes(
         ['git', 'diff', '--no-ext-diff', '--binary', since, evidenceBranch],
         {
+          budget: 'git-object',
           cwd: repoRoot,
           env: targetGitEnvironment(repoRoot),
-          stdout: 'pipe',
-          stderr: 'pipe',
         },
       )
-      if (diff.exitCode !== 0) throw new Error(diff.stderr.toString().trim())
+      if (diff.exitCode !== 0) throw new Error(diff.stderr.trim())
       const names = splitNulPaths(
-        Bun.spawnSync(['git', ...nulPathListArgs(['diff', '--name-only', since, evidenceBranch])], {
-          cwd: repoRoot,
-          env: targetGitEnvironment(repoRoot),
-          stdout: 'pipe',
-          stderr: 'pipe',
-        }).stdout.toString(),
+        startBoundedSync(
+          ['git', ...nulPathListArgs(['diff', '--name-only', since, evidenceBranch])],
+          {
+            budget: 'git-plumbing',
+            cwd: repoRoot,
+            env: targetGitEnvironment(repoRoot),
+          },
+        ).stdout,
       )
-      const stat = Bun.spawnSync(['git', 'diff', '--numstat', since, evidenceBranch], {
+      const stat = startBoundedSync(['git', 'diff', '--numstat', since, evidenceBranch], {
+        budget: 'git-plumbing',
         cwd: repoRoot,
         env: targetGitEnvironment(repoRoot),
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-        .stdout.toString()
-        .trim()
+      }).stdout.trim()
       let insertions = 0
       let deletions = 0
       for (const line of stat.split('\n')) {
@@ -293,7 +287,7 @@ export async function runDiffCommand(
         deletions += Number(del) || 0
       }
       const c = {
-        diff: diff.stdout.toString(),
+        diff: Buffer.from(diff.stdout).toString(),
         files: names,
         insertions,
         deletions,
@@ -301,13 +295,12 @@ export async function runDiffCommand(
         trunk,
         trunkConfigured: Boolean(configuredTrunk),
       }
-      const logged = Bun.spawnSync(['git', 'log', '--oneline', `${since}..${evidenceBranch}`], {
+      const logged = startBoundedSync(['git', 'log', '--oneline', `${since}..${evidenceBranch}`], {
+        budget: 'git-plumbing',
         cwd: repoRoot,
         env: targetGitEnvironment(repoRoot),
-        stdout: 'pipe',
-        stderr: 'pipe',
       })
-      const commits = logged.exitCode === 0 ? logged.stdout.toString() : ''
+      const commits = logged.exitCode === 0 ? logged.stdout : ''
       const sinceNote = usedRecordedFallback
         ? `${has('since-base') ? 'recorded; --since-base' : 'recorded fallback'}; worktree discarded`
         : read

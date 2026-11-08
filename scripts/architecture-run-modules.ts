@@ -1,7 +1,12 @@
 export const runModuleSpecs = [
   {
     file: 'orchestrator/src/jobs/delegation.ts',
-    allowed: ['../../../shared/brand.ts', '../../../shared/delegation-mode.ts', './jobs.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/delegation-mode.ts',
+      '../../../shared/refusal.ts',
+      './jobs.ts',
+    ],
   },
   {
     file: 'orchestrator/src/health/delegation-doctor.ts',
@@ -222,7 +227,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/routing-refusal.ts',
-    allowed: ['../refusal-error.ts'],
+    allowed: ['../../../shared/refusal.ts', '../refusal-error.ts'],
   },
   {
     file: 'orchestrator/src/route/harness-delegation.ts',
@@ -278,6 +283,7 @@ export const runModuleBoundarySpecs = [
     file: 'orchestrator/src/run/run-diff.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/bounded-process.ts',
       '../../../shared/git-path-list.ts',
       'node:fs',
       '../database/db.ts',

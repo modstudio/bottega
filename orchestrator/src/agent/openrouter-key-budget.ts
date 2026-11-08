@@ -1,6 +1,7 @@
 // concern: openrouter-key-budget
 /** Decides and checks whether a configured OpenRouter key can spend. */
 
+import { boundedFetch } from '../../../shared/bounded-fetch.ts'
 import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
 
 type OpenRouterKeyRow = {
@@ -98,7 +99,7 @@ type BudgetDependencies = {
 
 const budgetDependencies: BudgetDependencies = {
   resolve: resolveEndpointApiKeyEnv,
-  fetch: (input, init) => globalThis.fetch(input, init),
+  fetch: boundedFetch('hosted-api'),
 }
 
 /** Resolve the named key at use time and ask OpenRouter without exposing response metadata. */

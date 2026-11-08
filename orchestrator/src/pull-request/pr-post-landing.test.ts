@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, fenceStoreAfterCheckoutMove, writableDb } from '../database/db.ts'
 import { projectMovesInstallation } from '../database/machine-update-mover.ts'
@@ -814,10 +815,12 @@ test('the selected depth is carried to the child and its recovery command', () =
   )
 })
 
-test('a partial move that changes HEAD still fences and hands off', () => {
+test('a move failure after main changed reports the failure and does not hand off', () => {
   const events: string[] = []
+  const calls: string[] = []
   let head = 'before'
   const outcome = complete({
+    calls,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       entryClosure: () => new Map(),
@@ -834,11 +837,45 @@ test('a partial move that changes HEAD still fences and hands off', () => {
     },
   })
 
-  expect(outcome).toEqual({ output: 'child verifies main', exitCode: 0 })
-  expect(events).toEqual(['fence', 'hand-off'])
+  expect(outcome.exitCode).toBe(20)
+  expect(outcome.output).toContain(
+    'main moved from before and the move did not complete: verification raced with a dirty checkout',
+  )
+  expect(outcome.output).toContain(
+    `cleanup was not run; recover with: git -C ${project.path} fetch origin, then git -C ${project.path} merge --ff-only merge-commit, then ${PLATFORM_SLUG} pr merge 42 --release-required`,
+  )
+  expect(events).toEqual(['fence'])
+  expect(calls).toEqual([])
 })
 
-test('a failed HEAD re-read after a move attempt still fences and hands off', () => {
+test('a bounded move failure after main changed fences and does not hand off', () => {
+  const events: string[] = []
+  let head = 'before'
+  const outcome = complete({
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => head,
+      moveMain: () => {
+        head = 'after'
+        throw new BoundExceededError('machine update', 'machine-update', 'deadline', 1_200_000)
+      },
+      fence: () => events.push('fence'),
+      handOff: () => {
+        events.push('hand-off')
+        return { output: 'child verifies bounded move', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(outcome.exitCode).toBe(20)
+  expect(outcome.output).toContain(
+    'main moved from before and the move did not complete: machine update exceeded its machine-update deadline bound',
+  )
+  expect(events).toEqual(['fence'])
+})
+
+test('a failed HEAD re-read after a move failure fences and does not hand off', () => {
   const events: string[] = []
   let headReads = 0
   const outcome = complete({
@@ -861,8 +898,11 @@ test('a failed HEAD re-read after a move attempt still fences and hands off', ()
     },
   })
 
-  expect(outcome).toEqual({ output: 'child verifies main', exitCode: 0 })
-  expect(events).toEqual(['fence', 'hand-off'])
+  expect(outcome.exitCode).toBe(20)
+  expect(outcome.output).toContain(
+    'main did not verifiably stay at before and the move did not complete: move verification failed',
+  )
+  expect(events).toEqual(['fence'])
 })
 
 test('a non-ladder child exit keeps its code and adds the parent recovery', () => {

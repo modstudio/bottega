@@ -1,6 +1,7 @@
 // concern: record-api-client
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import type {
   DocAudience,
   DocAudiences,
@@ -519,7 +520,7 @@ async function recordEmailAuthRequest(
 ) {
   let response: Response
   try {
-    response = await fetch(`${recordApiBaseUrl()}${path}`, {
+    response = await hostedApiFetch(`${recordApiBaseUrl()}${path}`, {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify(body),
@@ -565,7 +566,7 @@ export async function recordApiRequest<T>(
     destinationSpaceId?: string
   } = {},
   authentication?: RecordApiAuthentication,
-  transport: typeof fetch = fetch,
+  transport: typeof fetch = hostedApiFetch,
 ): Promise<T> {
   throwIfRecordApiRequestRefused()
   const token = init.signal
@@ -606,7 +607,7 @@ const defaultRequest = recordApiRequest
 async function publicRequest<T>(path: string): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`${recordApiBaseUrl()}${path}`, {
+    response = await hostedApiFetch(`${recordApiBaseUrl()}${path}`, {
       method: 'GET',
       credentials: 'omit',
       headers: new Headers(),
@@ -1016,6 +1017,7 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
   }
   try {
     throwIfRecordApiRequestRefused()
+    // The stream is unbounded until a streaming budget exists.
     const response = await fetch(`${recordApiBaseUrl()}/v1/board/stream`, {
       method: 'GET',
       headers: boardStreamHeaders(token),

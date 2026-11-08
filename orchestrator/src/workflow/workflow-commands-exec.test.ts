@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { program } from '../cli/program.ts'
@@ -12,6 +15,9 @@ import {
   registerCurrentWorkflowProject as registerCurrentProject,
   runWorkflowCommand as workflowCommand,
 } from './workflow-store.fixture.ts'
+
+const probeRowCount = (): number =>
+  (db().query('SELECT count(*) AS n FROM probe').get() as { n: number }).n
 
 test('Commander refuses workflow exec without a separator before running the child', async () => {
   const priorDepth = process.env.BOTTEGA_DEPTH
@@ -96,6 +102,7 @@ test('workflow exec --record-evidence records the payload row with the receiving
   try {
     delete process.env.BOTTEGA_DEPTH
     process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    registerCurrentProject('workflow-exec-record-evidence')
     const shown = outcomePresentation()
     const payload = {
       command: ['env'],
@@ -176,6 +183,74 @@ test('workflow exec refuses the separator-less child shape with the -- remedy', 
       },
     ),
   ).rejects.toThrow('requires -- before the child command')
+})
+
+test('workflow exec refuses a child --cwd outside its checkout before running or recording it', async () => {
+  const priorDepth = process.env.BOTTEGA_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const outside = mkdtempSync(join(tmpdir(), 'workflow-exec-outside-'))
+  let invocations = 0
+  try {
+    delete process.env.BOTTEGA_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    registerCurrentProject('workflow-exec-checkout-refusal')
+    const before = probeRowCount()
+
+    await expect(
+      workflowCommand(
+        ['workflow', 'exec', '--', 'bun', 'run', '--cwd', outside, 'check all'],
+        presentation([]),
+        {
+          probeRunner: () => {
+            invocations += 1
+            return { exitCode: 0, output: '' }
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      `but the command names --cwd ${outside}; run it as: ${PLATFORM_SLUG} workflow exec --cwd ${outside} -- bun run --cwd ${outside} 'check all'`,
+    )
+    expect(invocations).toBe(0)
+    expect(probeRowCount()).toBe(before)
+  } finally {
+    rmSync(outside, { recursive: true, force: true })
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('workflow exec permits a child --cwd in a subdirectory of the same checkout', async () => {
+  const priorDepth = process.env.BOTTEGA_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  let invocations = 0
+  try {
+    delete process.env.BOTTEGA_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    registerCurrentProject('workflow-exec-checkout-subdirectory')
+    const before = probeRowCount()
+    const subdirectory = join(process.cwd(), 'src')
+
+    await workflowCommand(
+      ['workflow', 'exec', '--', 'bun', 'run', '--cwd', subdirectory, 'check'],
+      presentation([]),
+      {
+        probeRunner: () => {
+          invocations += 1
+          return { exitCode: 0, output: '' }
+        },
+      },
+    )
+
+    expect(invocations).toBe(1)
+    expect(probeRowCount()).toBe(before + 1)
+  } finally {
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
 })
 
 test('workflow exec --record-evidence refuses a stray token after the flag', async () => {

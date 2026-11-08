@@ -1,6 +1,7 @@
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { db } from '../database/db.ts'
 import { adoptHostedBoard } from './board-adoption.ts'
 import { registerBoardClaimCommands } from './board-claim-commands.ts'
@@ -29,6 +30,11 @@ import { watchHostedBoard } from './board-watch.ts'
 
 const ARCHITECTS_AUDIENCE_HELP =
   'recipient; architects means this project, architects:all means every project, architects:<project> names one project'
+
+const collectedOption = (flags: string, description: string, initial?: string[]) => {
+  const option = repeatable(new Option(flags, description).argParser(collect))
+  return initial === undefined ? option : option.default(initial)
+}
 
 function parseIsoInstant(flag: string) {
   return (value: string) => {
@@ -161,12 +167,13 @@ function registerBoardPostCommand(board: Command): void {
       'information sends one line, request sends the full body and lives four hours by default (set --expires for longer), standing also reaches later sessions',
     )
     .option('--task <key>', 'tag the notice with this task')
-    .option('--path <glob>', 'add a repository-relative path glob', collect, [])
-    .option(
-      '--topic <name>',
-      'add a controlled board topic; platform is for notices about changes to the platform every project depends on',
-      collect,
-      [],
+    .addOption(collectedOption('--path <glob>', 'add a repository-relative path glob', []))
+    .addOption(
+      collectedOption(
+        '--topic <name>',
+        'add a controlled board topic; platform is for notices about changes to the platform every project depends on',
+        [],
+      ),
     )
     .option(
       '--ack-required',
@@ -205,8 +212,8 @@ function registerBoardSuggestionCommands(board: Command): void {
     .option('--title <text>', 'replace the suggested title')
     .option('--body <text>', 'replace the suggested body')
     .option('--task <key>', 'replace the suggested task tag')
-    .option('--path <glob>', 'replace repository-relative path globs', collect)
-    .option('--topic <name>', 'replace controlled board topics', collect)
+    .addOption(collectedOption('--path <glob>', 'replace repository-relative path globs'))
+    .addOption(collectedOption('--topic <name>', 'replace controlled board topics'))
     .action((id, options) => {
       console.log(
         JSON.stringify(
@@ -320,8 +327,8 @@ export function registerBoardCommands(program: Command): void {
     .requiredOption('--title <text>', 'set the question title')
     .requiredOption('--body <text>', 'set the question body')
     .option('--task <key>', 'tag the question with this task')
-    .option('--path <glob>', 'add a repository-relative path glob', collect, [])
-    .option('--topic <name>', 'add a controlled board topic', collect, [])
+    .addOption(collectedOption('--path <glob>', 'add a repository-relative path glob', []))
+    .addOption(collectedOption('--topic <name>', 'add a controlled board topic', []))
     .option('--expires <duration>', 'set how long the question remains live')
     .action(async (options) => {
       console.log(

@@ -21,8 +21,10 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
+import { projectAt } from '../project/projects.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
+import { assertEvidenceCheckoutIdentity } from '../worktree/evidence-checkout.ts'
 import { handOffWorkflowEvidence } from './workflow-evidence-handoff.ts'
 import type { WorkflowEvidencePayload } from './workflow-evidence-payload.ts'
 import {
@@ -148,6 +150,12 @@ function resolveEvidenceHead(
   return input.commit === undefined ? (input.resolveHeadCommit ?? headCommit)(cwd) : input.commit
 }
 
+function assertWorkflowEvidenceCheckout(cwd: string, database: Database, verb: string): void {
+  const project = projectAt(cwd, database)
+  if (!project) return
+  assertEvidenceCheckoutIdentity({ cwd, projectPath: project.path, verb })
+}
+
 export async function recordWorkflowProbe(
   command: string[],
   input: {
@@ -161,6 +169,7 @@ export async function recordWorkflowProbe(
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow probe needs a command after --`)
   const cwd = input.cwd ?? process.cwd()
   const database = input.d ?? db()
+  assertWorkflowEvidenceCheckout(cwd, database, 'workflow probe')
   // Capture the head the probe command will run against.
   const preCommandHead = resolveEvidenceHead(cwd, input)
   probeSandboxProfileForCwd({ allowWriteDir: cwd, cwd, database })
@@ -344,6 +353,8 @@ export async function recordWorkflowExec(
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow exec needs a command after --`)
   assertWorkflowExecCaller()
   const cwd = input.cwd ?? process.cwd()
+  const database = input.d ?? db()
+  assertWorkflowEvidenceCheckout(cwd, database, 'workflow exec')
   // Capture the head the exec command will run against.
   const commandHead = resolveEvidenceHead(cwd, input)
   if (input.registeredProject === false)
@@ -406,6 +417,8 @@ export async function recordWorkflowEvidence(
   input: { d?: Database } = {},
 ): Promise<ProbeRecord> {
   assertWorkflowExecCaller()
+  const database = input.d ?? db()
+  assertWorkflowEvidenceCheckout(payload.cwd, database, 'workflow exec --record-evidence')
   const ran: ProbeRunResult = {
     exitCode: payload.exitCode,
     output: payload.output,

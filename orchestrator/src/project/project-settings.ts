@@ -22,6 +22,8 @@ import type {
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
 
+export const DEFAULT_TASK_KEY_PATTERN = '^[A-Z][A-Z0-9]+-[0-9]+$'
+
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {
   /** Whether this project's create command can check out a requested base detached. */

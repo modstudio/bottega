@@ -3,6 +3,20 @@ import { PLATFORM_SLUG } from './brand.ts'
 
 export const CHECK_EXECUTION_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECK_EXECUTION_FILE`
 export const UNIT_TEST_CHECK_CATEGORY = 'unit-tests'
+export const UNCHECKED_EXIT_CODE = 77
+export const UNCHECKED_LINE_PREFIX = 'unchecked: '
+
+export function exitUnchecked(reason: string): never {
+  console.log(`${UNCHECKED_LINE_PREFIX}${reason}`)
+  process.exit(UNCHECKED_EXIT_CODE)
+}
+
+export function uncheckedReasonFromLines(lines: readonly string[]): string | undefined {
+  return lines
+    .filter((line) => line.startsWith(UNCHECKED_LINE_PREFIX))
+    .map((line) => line.slice(UNCHECKED_LINE_PREFIX.length).trim())
+    .find((reason) => reason.length > 0)
+}
 
 const CheckExecutionRecordSchema = z
   .object({
@@ -11,9 +25,13 @@ const CheckExecutionRecordSchema = z
     wallMs: z.number().finite().nonnegative(),
     cpuMs: z.number().finite().nonnegative().optional(),
     exitCode: z.number().int(),
+    unchecked: z.string().min(1).optional(),
     remaining: z.number().int().nonnegative().optional(),
   })
   .strict()
+  .refine((record) => record.unchecked === undefined || record.exitCode === UNCHECKED_EXIT_CODE, {
+    message: `unchecked records must use exit code ${UNCHECKED_EXIT_CODE}`,
+  })
 
 export type CheckExecutionRecord = z.infer<typeof CheckExecutionRecordSchema>
 

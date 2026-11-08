@@ -1,3 +1,4 @@
+import { builtinModules } from 'node:module'
 import { dirname, normalize } from 'node:path'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
@@ -6,6 +7,7 @@ import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
 import { gateBoundarySpecs } from './architecture-gate-modules.ts'
+import { HUB_UI_ROOT, HUB_VIEWS_ROOT, TYPESCRIPT_TEST_PATH } from './architecture-hub-packages.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
 import { proseBoundarySpecs } from './architecture-prose-modules.ts'
@@ -28,11 +30,39 @@ import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { runStopBoundarySpecs } from './architecture-run-stop.ts'
 import { settingsBoundarySpecs } from './architecture-settings-boundaries.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
+import { manifestTypeOnlyImportBoundaries } from './architecture-type-only-boundaries.ts'
 import { workflowBoundarySpecs } from './architecture-workflow-boundaries.ts'
 import { worktreeBoundarySpecs } from './architecture-worktree-boundaries.ts'
 
 const normalizeTarget = (file: string, target: string) =>
   target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target
+
+type DependencyCruiserOptions = ReturnType<
+  typeof import('./architecture.ts').dependencyCruiserConfig
+>['options']
+
+export const hubBrowserRoots = [HUB_VIEWS_ROOT, HUB_UI_ROOT, 'hub/web'].map((x) => `${x}/src`)
+
+export function hubBrowserNoNodeBuiltinConfig(sharedOptions: DependencyCruiserOptions) {
+  const esc = (x: string) => x.replace(/^node:/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const builtinPath = `^(?:node:.*|(?:${builtinModules.map(esc).join('|')})|bun:.*)$`
+  return {
+    forbidden: [
+      {
+        name: 'hub-browser-reaches-no-node-builtin',
+        severity: 'error' as const,
+        comment: 'Browser hub packages must not reach Node or Bun built-in modules.',
+        from: { path: `^(?:${hubBrowserRoots.join('|')})/` },
+        to: { path: builtinPath, reachable: true },
+      },
+    ],
+    options: {
+      ...sharedOptions,
+      tsPreCompilationDeps: false,
+      exclude: { path: `${TYPESCRIPT_TEST_PATH}|^hub/web/src/routeTree\\.gen\\.ts$` },
+    },
+  }
+}
 
 export type ImportBoundary = {
   name: string
@@ -56,33 +86,28 @@ const boundary = (
   reason,
 })
 
+type BoundarySpec = Omit<ImportBoundary, 'allowed' | 'typeOnlyAllowed'> & {
+  allowed: readonly string[]
+  typeOnlyAllowed?: readonly string[]
+}
+
+const boundaries = (specs: readonly BoundarySpec[]) =>
+  specs.map(({ name, file, allowed, reason, typeOnlyAllowed }) =>
+    boundary(name, file, [...allowed], reason, [...(typeOnlyAllowed ?? [])]),
+  )
+
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
-  ...proseBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...gateBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
-  ...runRetryModuleSpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...runStopBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...runLivenessBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...runLifecycleTypeOnlyBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
-  ...runModuleBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
-  ...branchStoreModuleSpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
+  ...manifestTypeOnlyImportBoundaries,
+  ...boundaries(proseBoundarySpecs),
+  ...boundaries(gateBoundarySpecs),
+  ...boundaries(runRetryModuleSpecs),
+  ...boundaries(runStopBoundarySpecs),
+  ...boundaries(runLivenessBoundarySpecs),
+  ...boundaries(runLifecycleTypeOnlyBoundarySpecs),
+  ...boundaries(runModuleBoundarySpecs),
+  ...boundaries(branchStoreModuleSpecs),
   boundary(
     'code-commands-boundary',
     'orchestrator/src/code/code-commands.ts',
@@ -148,7 +173,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'checkout-identity-boundary',
     'orchestrator/src/git/checkout-identity.ts',
-    ['node:fs', 'node:path', './git-environment.ts', '../project/projects.ts'],
+    [
+      'node:fs',
+      'node:path',
+      '../../../shared/bounded-process.ts',
+      './git-environment.ts',
+      '../project/projects.ts',
+    ],
     'Keep checkout addressing independent of databases and lifecycle policy.',
   ),
   boundary(
@@ -176,9 +207,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep cleanup independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   ),
-  ...cleanupBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(cleanupBoundarySpecs),
 
   boundary(
     'close-out-boundary',
@@ -238,9 +267,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep confinement rulings independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
   ),
-  ...contractBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(contractBoundarySpecs),
   ...databaseBoundarySpecs,
   boundary(
     'dispatch-commands-boundary',
@@ -305,9 +332,9 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/dispatch/review-lens-prompt.ts',
     [],
     'Keep review-lens prompt composition a pure decision over lens text and supplied prompt.',
-    ['./review-memory.ts'],
+    ['./review-memory.ts', '../database/review-lens-input-artifact.ts'],
   ),
-  ...docBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
+  ...boundaries(docBoundarySpecs),
   boundary(
     'doc-write-identity-boundary',
     'orchestrator/src/doc/doc-write-identity.ts',
@@ -392,6 +419,10 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/migrations.ts',
       ...['./health.ts', './delegation-doctor.ts', './launch-agent-doctor.ts'],
       '../project/projects.ts',
+      '../project/main-checkout-invariant.ts',
+      '../record/active-space-invariant.ts',
+      '../record/record-api-client.ts',
+      '../record/record-space.ts',
       '../run/run-task-linking.ts',
     ],
     'Keep doctor independent of transports, routing, run control, the CLI, and reviews by value.',
@@ -416,7 +447,12 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'evidence-boundary',
     'orchestrator/src/evidence/evidence.ts',
-    ['../contract/contract.ts', '../mcp/mcp-preflight.ts', '../review/review-triage.ts'],
+    [
+      '../contract/contract.ts',
+      '../mcp/mcp-preflight.ts',
+      '../review/review-lens-provenance.ts',
+      '../review/review-triage.ts',
+    ],
     'Keep evidence assessment independent of execution and transaction ownership.',
     ['bun:sqlite', '../outcome.ts', '../review/review.ts'],
   ),
@@ -453,6 +489,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../review/review-target.ts',
       './route.ts',
       '../dispatch/probe-launch-overrides.ts',
+      '../database/review-lens-input-artifact.ts',
     ],
   ),
   boundary(
@@ -469,6 +506,8 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       'node:os',
       'node:path',
+      '../../../shared/bounded-process.ts',
+      '../../../shared/call-budgets.ts',
       '../../../shared/git.ts',
       '../../../shared/git-path-list.ts',
     ],
@@ -607,9 +646,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../shared/brand.ts', './ask/worker-question.ts'],
     'Keep outcome decisions and interpretation independent of lifecycle concerns.',
   ),
-  ...portBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(portBoundarySpecs),
   boundary(
     'record-api-client-port-boundary',
     'orchestrator/src/record/record-api-client-port.ts',
@@ -844,13 +881,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-review-read-boundary',
     'orchestrator/src/record/record-review-read.ts',
-    [],
+    ['../../../shared/record-timestamp.ts'],
     'Keep hosted review-read value mapping independent of record delivery.',
   ),
   boundary(
     'record-review-values-boundary',
     'orchestrator/src/record/record-review-values.ts',
-    [],
+    ['../../../shared/record-timestamp.ts'],
     'Keep hosted review value mapping independent of record delivery.',
   ),
   boundary(
@@ -877,9 +914,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Enforce the resource-ownership concern boundary.',
   ),
-  ...reviewBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, spec.allowed, spec.reason, spec.typeOnlyAllowed),
-  ),
+  ...boundaries(reviewBoundarySpecs),
   boundary(
     'routing-commands-boundary',
     'orchestrator/src/route/routing-commands.ts',
@@ -912,9 +947,7 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../../shared/brand.ts', '../review/review-vocabulary.ts', './score.ts'],
     'Keep the missing-score decision independent of adapters and state.',
   ),
-  ...setupModuleSpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(setupModuleSpecs),
   boundary(
     'store-hooks-boundary',
     'orchestrator/src/runtime/store-hooks.ts',
@@ -934,9 +967,11 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/branch/task-branch.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/refusal.ts',
       '../git/checkout-identity.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
+      '../refusal-error.ts',
       './merged-pull-request.ts',
       '../project/projects.ts',
       '../resources/resource-claims.ts',
@@ -949,9 +984,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep task branch identity independent of transports, contracts, and routing.',
     ['../run/run-types.ts'],
   ),
-  ...workflowBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
-  ),
+  ...boundaries(workflowBoundarySpecs),
   boundary(
     'workflow-built-ins-boundary',
     'orchestrator/src/workflow/workflow-built-ins.ts',
@@ -975,7 +1008,5 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep workflow seeds dependent only on database transactions, review vocabulary, and catalogue validation.',
     ['./autonomy.ts'],
   ),
-  ...worktreeBoundarySpecs.map((spec) =>
-    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
-  ),
+  ...boundaries(worktreeBoundarySpecs),
 ]

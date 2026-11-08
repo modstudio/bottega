@@ -73,9 +73,11 @@ function validateRungPlans(value: unknown): void {
     throw refusal('rungPlans', 'an array of release-rung plans')
 }
 
-function validateDepth(value: unknown): void {
+function validateDepth(value: unknown): string | null {
+  if (value === undefined) return null
   if (!(value === null || (typeof value === 'string' && value)))
     throw refusal('depth', 'a non-empty string or null')
+  return value
 }
 
 export function parsePullRequestPostLandingPayload(text: string): PullRequestPostLandingPayload {
@@ -102,7 +104,7 @@ export function parsePullRequestPostLandingPayload(text: string): PullRequestPos
   if (!(row.rungDecisionError === null || typeof row.rungDecisionError === 'string'))
     throw refusal('rungDecisionError', 'a string or null')
   if (typeof row.releaseRequired !== 'boolean') throw refusal('releaseRequired', 'a boolean')
-  validateDepth(row.depth)
+  row.depth = validateDepth(row.depth)
   if (typeof row.promoteWorkflowDrafts !== 'boolean')
     throw refusal('promoteWorkflowDrafts', 'a boolean')
   if (!(row.recordingError === null || typeof row.recordingError === 'string'))

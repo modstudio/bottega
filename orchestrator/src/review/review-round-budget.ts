@@ -4,6 +4,8 @@ import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import { provenanceSubjectFacts } from './review-group.ts'
+import { lensProvenanceSubject } from './review-lens-provenance.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { reviewCountsAsRound } from './review-role.ts'
 import { reviewRoundIdentity } from './review-round-identity.ts'
@@ -83,12 +85,17 @@ type BranchEvidence = {
 }
 
 type ReviewBudgetEvidenceRow = ReviewRoundEvidenceRow
+type ReviewBudgetProvenanceRow = ReviewBudgetEvidenceRow & {
+  review_provenance: string | null
+  worktree: string | null
+  cwd: string | null
+}
 
 export function eligibleReviewRoundRows(
   database: Database,
   since?: string,
   target?: { project: string; branch: string },
-): ReviewBudgetEvidenceRow[] {
+): ReviewBudgetProvenanceRow[] {
   const lineage = target ? reviewLineage(database, target.project, target.branch) : []
   const targetFilter = target
     ? `AND run.project_record_id=(SELECT record_id FROM project WHERE name=?)
@@ -100,7 +107,8 @@ export function eligibleReviewRoundRows(
               r.patch_id, r.path_set, r.role, p.name AS project,
               run.repo AS run_repo,
               run.launch_key, run.branch, rl.lens, rl.agent, rl.model,
-              run.latency_ms, run.input_tree, run.head_commit, rl.overlap
+              run.latency_ms, run.input_tree, run.head_commit, run.review_provenance,
+              run.worktree, run.cwd, rl.overlap
          FROM review_lens rl
          JOIN review r ON r.record_id=rl.review_record_id
          JOIN run ON run.record_id=rl.run_record_id
@@ -114,7 +122,7 @@ export function eligibleReviewRoundRows(
       since ?? null,
       since ?? null,
       ...(target ? [target.project, ...lineage] : []),
-    ) as ReviewBudgetEvidenceRow[]
+    ) as ReviewBudgetProvenanceRow[]
   return rows.filter((row) => reviewCountsAsRound(row.role))
 }
 
@@ -142,7 +150,9 @@ function branchEvidence(
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
   const lineageRoots = new Map<string, string>()
-  const rows = eligibleReviewRoundRows(database, since, target)
+  const rows = eligibleReviewRoundRows(database, since, target).filter(
+    (row) => lensProvenanceSubject(provenanceSubjectFacts(row)).admissible,
+  )
   for (const row of rows) {
     if (!row.branch) continue
     const evidenceBranch =

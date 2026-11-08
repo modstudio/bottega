@@ -5,6 +5,7 @@
  */
 import { realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { projects } from '../project/projects.ts'
 import { targetGitEnvironment } from './git-environment.ts'
 
@@ -59,13 +60,12 @@ export type CheckoutWatchFailure = CheckoutToWatch & { error: string }
 
 function checkoutRootAsAddressed(cwd: string): string | null {
   try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
+    const p = startBoundedSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
+      budget: 'git-plumbing',
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
-    const prefix = new TextDecoder().decode(p.stdout).trim()
+    const prefix = p.stdout.trim()
     let root = cwd
     for (const _segment of prefix.split('/').filter(Boolean)) root = dirname(root)
     return root
@@ -76,13 +76,12 @@ function checkoutRootAsAddressed(cwd: string): string | null {
 
 function gitTopLevel(cwd: string): string | null {
   try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
+    const p = startBoundedSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
+      budget: 'git-plumbing',
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
-    return new TextDecoder().decode(p.stdout).trim() || null
+    return p.stdout.trim() || null
   } catch {
     return null
   }
@@ -164,17 +163,37 @@ export function checkoutPathsSame(left: string, right: string): boolean | null {
   return fold(leftPhysical) === fold(rightPhysical)
 }
 
+function atOrBelow(
+  path: string,
+  root: string,
+  fold: (value: string) => string = (value) => value,
+): boolean {
+  const offset = relative(fold(root), fold(path))
+  return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset))
+}
+
 /** Compare containment using physical path identity and the checkout volume's case rules. */
 export function checkoutPathsOverlap(left: string, right: string): boolean | null {
   const pair = physicalPathPair(left, right)
   if (!pair) return null
   const [leftPhysical, rightPhysical, caseInsensitive] = pair
   const fold = caseInsensitive ? partialUnicodeCaseFold : (value: string) => value
-  const atOrBelow = (path: string, root: string): boolean => {
-    const offset = relative(fold(root), fold(path))
-    return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset))
-  }
-  return atOrBelow(leftPhysical, rightPhysical) || atOrBelow(rightPhysical, leftPhysical)
+  return (
+    atOrBelow(leftPhysical, rightPhysical, fold) || atOrBelow(rightPhysical, leftPhysical, fold)
+  )
+}
+
+export type EvidenceCheckoutRefusal = 'worktree-area-resolved-outside'
+
+/** Decide whether Git escaped from the worktree area while resolving an evidence cwd. */
+export function evidenceCheckoutRefusal(input: {
+  cwd: string
+  topLevel: string
+  worktreeBase: string
+}): EvidenceCheckoutRefusal | null {
+  return atOrBelow(input.cwd, input.worktreeBase) && !atOrBelow(input.topLevel, input.worktreeBase)
+    ? 'worktree-area-resolved-outside'
+    : null
 }
 
 /**

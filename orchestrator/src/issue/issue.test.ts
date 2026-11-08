@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ISSUE_WORKER_SCHEMA, type IssueWorkerReply } from '../contract/contract.ts'
 import { parseWorkerReplyWithCount } from '../contract/contract-reply.ts'
+import { valueMatchesReplySchema } from '../contract/contract-reply-validator.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import type { Project } from '../project/projects.ts'
 import {
@@ -317,7 +318,13 @@ describe('filed issue coordinator inputs', () => {
     ).toEqual(reply)
     const { not_established: _, ...missing } = reply
     expect(() => parseIssueReply(JSON.stringify(missing), ISSUE_DIAGNOSIS_SCHEMA)).toThrow(
-      'structured contract',
+      "issue worker reply did not match its structured contract: / required: must have required property 'not_established'",
+    )
+  })
+
+  test('an issue reply with no JSON object names that absence', () => {
+    expect(() => parseIssueReply('plain narration', ISSUE_DIAGNOSIS_SCHEMA)).toThrow(
+      'issue worker reply did not match its structured contract: no JSON object found',
     )
   })
 
@@ -350,9 +357,10 @@ describe('filed issue coordinator inputs', () => {
       deviations: null,
       tests: { command: 'bun test', ran: true, passed: true, detail: '1 test' },
     }
-    expect(parseWorkerReplyWithCount(JSON.stringify(reply), ISSUE_WORKER_SCHEMA).reply).toEqual(
-      reply,
-    )
+    expect(
+      parseWorkerReplyWithCount(JSON.stringify(reply), ISSUE_WORKER_SCHEMA, valueMatchesReplySchema)
+        .reply,
+    ).toEqual(reply)
     expect(JOBS['issue-worker']!.needs).toEqual({
       readsRepo: true,
       writesRepo: true,
