@@ -4,9 +4,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import type { ICruiseResult } from 'dependency-cruiser'
-import { startBoundedSync } from '../shared/bounded-process.ts'
 import { CONCERNS } from '../shared/brand.ts'
-import { inspectionGitEnv } from '../shared/git'
+import { gitAt } from '../shared/git'
 import { dependencyCruiserConfig, modules } from './architecture.ts'
 import {
   hubBrowserNoNodeBuiltinConfig,
@@ -75,13 +74,9 @@ function baseArgumentOrExit(argv: readonly string[]): string | null {
  */
 function baseBaselineOrExit(commit: string | null): string[] | null {
   if (!commit) return null
-  const result = startBoundedSync(['git', 'show', `${commit}:${BASELINE_FILE}`], {
-    budget: 'git-plumbing',
-    cwd: ROOT,
-    env: inspectionGitEnv(),
-  })
-  if (result.exitCode === 0) return parseUndeclaredModulesBaseline(result.stdout.toString())
-  const error = result.stderr.toString()
+  const result = gitAt(ROOT, ['show', `${commit}:${BASELINE_FILE}`])
+  if (result.code === 0) return parseUndeclaredModulesBaseline(result.stdout)
+  const error = result.stderr
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))
     return null
   console.error(

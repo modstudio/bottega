@@ -29,7 +29,6 @@ async function spawnOutput(entry: BottegaEntry, args: string[], cwd: string): Pr
     budget: 'self-cli',
     cwd,
     env: { ...process.env },
-    stdin: 'ignore',
   })
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {

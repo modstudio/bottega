@@ -350,7 +350,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),
   module('orchestrator/src/agent/worker-launch-env.ts', []),
-  module('orchestrator/src/agent/cli-version.ts', ['../../../shared/bounded-process.ts']),
+  module('orchestrator/src/agent/cli-version.ts', []),
   module('orchestrator/src/dispatch/task-cli-read.ts', [
     '../../../shared/bounded-process.ts',
     '../../../shared/brand.ts',

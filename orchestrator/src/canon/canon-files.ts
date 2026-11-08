@@ -2,8 +2,7 @@
 /** Knows how to collect committed canon files from a git tree. Must not know stores, commands, runs, routing, transports, or worktrees. */
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { posix, resolve } from 'node:path'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
   type CanonFile,
@@ -18,15 +17,12 @@ export type CanonLintInputCollector = (
 ) => Pick<CanonLintInput, 'trackedPaths' | 'packageScripts' | 'sourceTexts'>
 
 function git(cwd: string, args: string[]): string {
-  const result = startBoundedSync(['git', '-C', cwd, ...args], {
-    budget: 'git-plumbing',
-    env: inspectionGitEnv(),
-  })
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim()
+  const result = gitAt(cwd, args)
+  if (result.code !== 0) {
+    const detail = result.stderr.trim()
     throw new Error(`git -C ${cwd} ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)
   }
-  return result.stdout.toString()
+  return result.stdout
 }
 
 export function isCanonPath(path: string): boolean {

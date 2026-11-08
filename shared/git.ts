@@ -95,14 +95,14 @@ export function inspectionGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.
   return env
 }
 
-type GitResult = { code: number; stdout: string; timedOut: boolean }
+type GitResult = { code: number; stdout: string; stderr: string; timedOut: boolean }
 
 export function gitAt(
   path: string,
   args: string[],
   options: { budget?: CallBudgetName } = {},
 ): GitResult {
-  if (!existsSync(path)) return { code: 128, stdout: '', timedOut: false }
+  if (!existsSync(path)) return { code: 128, stdout: '', stderr: '', timedOut: false }
   try {
     const env = inspectionGitEnv()
     delete env.LANGUAGE
@@ -115,15 +115,16 @@ export function gitAt(
     return {
       code: result.exitCode,
       stdout: result.stdout,
+      stderr: result.stderr,
       timedOut: false,
     }
   } catch (error) {
     // A deadline breach keeps the timed-out answer callers report; an output breach still escapes.
     if (error instanceof BoundExceededError && error.bound === 'deadline') {
-      return { code: 128, stdout: '', timedOut: true }
+      return { code: 128, stdout: '', stderr: '', timedOut: true }
     }
     if (error instanceof BoundExceededError) throw error
-    return { code: 128, stdout: '', timedOut: false }
+    return { code: 128, stdout: '', stderr: '', timedOut: false }
   }
 }
 

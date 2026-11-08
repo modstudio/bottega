@@ -141,9 +141,12 @@ export function changeFacts(
 
 function git(cwd: string, args: string[]) {
   const result = gitAt(cwd, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+  }
   if (result.code !== 0) {
     throw new Error(
-      `could not inspect change with git ${args.join(' ')}. Verify that the commit and its objects exist, then retry.`,
+      `could not inspect change with git ${args.join(' ')}: ${result.stderr.trim() || 'no error output'}. Verify that the commit and its objects exist, then retry.`,
     )
   }
   return result.stdout

@@ -3,9 +3,8 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { startBoundedSync } from '../shared/bounded-process.ts'
 import { FROZEN_STATE_NAMES } from '../shared/brand.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
+import { gitAt } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { resolveStatePaths, type StateEnvironment } from '../shared/state-directory.ts'
 
@@ -73,15 +72,11 @@ const exactLegacyPaths = [
 ]
 
 function gitPaths(root: string, argv: string[], tracked: boolean): MachineStatePath[] {
-  const result = startBoundedSync(['git', ...nulPathListArgs(['ls-files', ...argv])], {
-    budget: 'git-plumbing',
-    cwd: root,
-    env: inspectionGitEnv(),
-  })
-  if (result.exitCode !== 0) {
-    throw new Error(`could not inspect checkout paths: ${result.stderr.toString().trim()}`)
+  const result = gitAt(root, nulPathListArgs(['ls-files', ...argv]))
+  if (result.code !== 0) {
+    throw new Error(`could not inspect checkout paths: ${result.stderr.trim()}`)
   }
-  return splitNulPaths(result.stdout.toString()).map((path) => ({ path, tracked }))
+  return splitNulPaths(result.stdout).map((path) => ({ path, tracked }))
 }
 
 function checkoutPaths(root: string): MachineStatePath[] {

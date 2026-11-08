@@ -269,8 +269,16 @@ export function commentFindingsInSources(
 }
 
 function trackedSources(root: string): SourceFile[] {
-  const result = gitAt(root, nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS]))
-  if (result.code !== 0) throw new Error('could not list tracked source files')
+  const args = nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS])
+  const result = gitAt(root, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+  }
+  if (result.code !== 0) {
+    throw new Error(
+      `could not list tracked source files: ${result.stderr.trim() || 'no error output'}`,
+    )
+  }
   return splitNulPaths(result.stdout).flatMap((file) => {
     try {
       return [{ file, source: readFileSync(resolve(root, file), 'utf8') }]

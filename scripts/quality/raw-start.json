@@ -13,6 +13,7 @@
     "orchestrator/src/agent/agent-auth.ts": 1,
     "orchestrator/src/agent/cli-version.ts": 1,
     "orchestrator/src/agent/model-host.ts": 1,
+    "orchestrator/src/check/check-commands.ts": 1,
     "orchestrator/src/database/machine-update.ts": 2,
     "orchestrator/src/database/release-update.ts": 2,
     "orchestrator/src/failure/failure.ts": 1,

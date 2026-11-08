@@ -47,6 +47,7 @@ export async function startBounded(
   const result = await execa(file, args, {
     cwd: options.cwd,
     env: options.env,
+    ...(options.env === undefined ? {} : { extendEnv: false }),
     ...(options.stdin === undefined ? { stdin: 'ignore' as const } : { input: options.stdin }),
     cancelSignal: options.signal,
     timeout: budget.deadlineMs,

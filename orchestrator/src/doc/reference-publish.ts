@@ -36,8 +36,16 @@ export function slugLinkedBody(body: string, indexName: string): string {
 }
 
 function trackedReferenceFiles(root: string): string[] {
-  const result = gitAt(root, nulPathListArgs(['ls-files', 'docs/reference/*.md']))
-  if (result.code !== 0) throw new Error('could not read tracked reference pages')
+  const args = nulPathListArgs(['ls-files', 'docs/reference/*.md'])
+  const result = gitAt(root, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+  }
+  if (result.code !== 0) {
+    throw new Error(
+      `could not read tracked reference pages: ${result.stderr.trim() || 'no error output'}`,
+    )
+  }
   return splitNulPaths(result.stdout)
 }
 

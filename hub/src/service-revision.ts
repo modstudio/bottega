@@ -1,5 +1,4 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../../shared/git.ts'
+import { gitAt } from '../../shared/git.ts'
 // concern: service-revision
 /** Identity and revision policy for long-running processes in the hub concern. */
 
@@ -92,16 +91,14 @@ export function serviceRevisionStatus(
 
 function readInstallHead(): RevisionRead {
   try {
-    const result = startBoundedSync(['git', 'rev-parse', 'HEAD'], {
-      budget: 'git-plumbing',
-      cwd: installRoot(),
-      env: inspectionGitEnv(),
-    })
-    const revision = result.stdout.toString().trim()
-    if (result.exitCode === 0 && revision) return { revision, error: null }
+    const result = gitAt(installRoot(), ['rev-parse', 'HEAD'])
+    const revision = result.stdout.trim()
+    if (result.code === 0 && revision) return { revision, error: null }
     return {
       revision: null,
-      error: result.stderr.toString().trim() || `git rev-parse HEAD exited ${result.exitCode}`,
+      error: result.timedOut
+        ? 'git rev-parse HEAD exceeded its bounded-call deadline'
+        : result.stderr.trim() || `git rev-parse HEAD exited ${result.code}`,
     }
   } catch (error) {
     return { revision: null, error: error instanceof Error ? error.message : String(error) }

@@ -21,7 +21,11 @@ try {
 const range = `${mergeBase}..HEAD`
 const rangeCount = gitAt(root, ['rev-list', '--count', range])
 if (rangeCount.code !== 0) {
-  console.error(`check-gitleaks could not inspect ${range}`)
+  console.error(
+    rangeCount.timedOut
+      ? `git rev-list --count ${range} exceeded its bounded-call deadline`
+      : `check-gitleaks could not inspect ${range}: ${rangeCount.stderr.trim() || 'no error output'}`,
+  )
   process.exit(1)
 }
 const rangeCommitCount = Number(rangeCount.stdout.trim())
@@ -35,7 +39,11 @@ const scans = planGitleaksScans({
 if (rangeCommitCount === 0) {
   const untracked = gitAt(root, nulPathListArgs(['ls-files', '--others', '--exclude-standard']))
   if (untracked.code !== 0) {
-    console.error('check-gitleaks could not inspect untracked files')
+    console.error(
+      untracked.timedOut
+        ? 'git ls-files --others --exclude-standard -z exceeded its bounded-call deadline'
+        : `check-gitleaks could not inspect untracked files: ${untracked.stderr.trim() || 'no error output'}`,
+    )
     process.exit(1)
   }
   if (splitNulPaths(untracked.stdout).length) {

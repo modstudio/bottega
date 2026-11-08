@@ -39,7 +39,12 @@ const LINTER_TIMEOUT_MS = 120_000
 
 function git(root: string, args: string[]): string {
   const result = gitAt(root, args)
-  if (result.code !== 0) throw new Error(`git ${args.join(' ')} failed`)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+  }
+  if (result.code !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.stderr.trim() || 'no error output'}`)
+  }
   return result.stdout.trim()
 }
 

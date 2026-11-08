@@ -210,7 +210,12 @@ function collectFindings(root: string, verifyProductionEntries = false) {
 
 function git(args: string[], step: string) {
   const result = gitAt(ROOT, args)
-  if (result.code !== 0) throw new Error(`check-dead-code: ${step} failed`)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+  }
+  if (result.code !== 0) {
+    throw new Error(`check-dead-code: ${step} failed: ${result.stderr.trim() || 'no error output'}`)
+  }
   return result.stdout
 }
 

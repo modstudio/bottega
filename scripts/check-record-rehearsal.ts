@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startBoundedSync } from '../shared/bounded-process.ts'
+import { budgetForArgv } from '../shared/call-budgets.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { recordMigrationSetHashFrom } from './record-migration-set.ts'
 import {
@@ -76,7 +77,7 @@ type GitHubEvent = {
 }
 
 function command(argv: string[]): string {
-  const result = startBoundedSync(argv, { budget: 'process-table' })
+  const result = startBoundedSync(argv, { budget: budgetForArgv(argv) })
   if (result.exitCode !== 0) {
     throw new Error(`${argv.join(' ')} failed: ${result.stderr.toString().trim()}`)
   }

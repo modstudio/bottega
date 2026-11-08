@@ -41,8 +41,14 @@ export function docReferenceTargetProjects(
 }
 
 function gitHead(root: string): string {
-  const result = gitAt(root, ['rev-parse', 'HEAD'])
-  if (result.code !== 0) throw new Error('git rev-parse HEAD failed')
+  const args = ['rev-parse', 'HEAD']
+  const result = gitAt(root, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+  }
+  if (result.code !== 0) {
+    throw new Error(`git rev-parse HEAD failed: ${result.stderr.trim() || 'no error output'}`)
+  }
   return result.stdout.trim()
 }
 

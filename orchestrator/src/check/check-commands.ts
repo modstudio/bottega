@@ -76,7 +76,9 @@ function spellingCommand(argv: string[], presentation: Presentation): void {
   const command = [binary!, '--format', 'json', '--locale', 'en-us']
   if (argv.includes('--fix')) command.push('--write-changes')
   command.push('.')
-  const result = startBoundedSync(command, { budget: 'process-table', cwd: root })
+  const result = argv.includes('--fix')
+    ? Bun.spawnSync(command, { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+    : startBoundedSync(command, { budget: 'process-table', cwd: root })
   let findings: ReturnType<typeof spellingFindings>
   try {
     findings = spellingFindings(result.stdout.toString())

@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { startBounded } from '../../shared/bounded-process.ts'
+import { isDeadlineAbort, startBounded } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { optionalCheckoutRoot } from '../../shared/install-root.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
@@ -195,7 +195,7 @@ async function runInstalledJudge(
     }
     return JSON.parse(child.stdout) as HubImportJudgment
   } catch (error) {
-    if (!(error instanceof DOMException) || error.name !== 'TimeoutError') throw error
+    if (!isDeadlineAbort(error)) throw error
     return {
       status: 'unchecked',
       findings: [],
