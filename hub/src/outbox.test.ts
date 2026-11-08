@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
@@ -68,6 +72,35 @@ function queueTransition(key: string, at: string) {
 beforeEach(resetFixtureStore)
 
 describe('hosted outbox', () => {
+  test('a non-installation store keeps pending rows and sends nothing', async () => {
+    queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
+    const previousStateHome = process.env[STATE_HOME_ENV]
+    const otherStateHome = mkdtempSync(join(tmpdir(), 'hub-non-installation-'))
+    let pushes = 0
+    process.env[STATE_HOME_ENV] = otherStateHome
+    try {
+      const report = await drainHostedOutbox({
+        identity: async () => identity,
+        registered: () => [project],
+        push: async () => {
+          pushes++
+          return []
+        },
+      })
+      expect(report).toMatchObject({
+        queued: 1,
+        sent: 0,
+        deliveryOffReason: expect.stringContaining('not the installation store'),
+      })
+      expect(pushes).toBe(0)
+      expect(listHostedOutbox()).toHaveLength(1)
+    } finally {
+      if (previousStateHome === undefined) delete process.env[STATE_HOME_ENV]
+      else process.env[STATE_HOME_ENV] = previousStateHome
+      rmSync(otherStateHome, { recursive: true, force: true })
+    }
+  })
+
   test('field-list merging preserves one-entry whole-row and delete semantics', () => {
     expect(
       mergeQueuedHostedChange(

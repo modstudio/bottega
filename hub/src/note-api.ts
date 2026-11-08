@@ -26,6 +26,7 @@ import {
   identityRefusal,
   taskSpaceIdentity,
 } from './hosted-route-identity.ts'
+import { HOSTED_PROMOTION_TITLE_REFUSAL, requiredPromotionTitle } from './note-promotion-body.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
@@ -123,9 +124,20 @@ async function noteActionRoute(context: RouteContext): Promise<Response | null> 
   if (request.method !== 'POST') return null
   const promote = /^\/v1\/notes\/([0-9a-f-]{36})\/promote$/i.exec(url.pathname)
   if (promote) {
-    const input: PromoteNoteInput = {
-      task: typeof body?.task === 'string' ? body.task : undefined,
-      title: typeof body?.title === 'string' ? body.title : undefined,
+    const task = typeof body?.task === 'string' ? body.task : undefined
+    let input: PromoteNoteInput
+    if (task !== undefined) input = { task }
+    else {
+      try {
+        input = {
+          title: requiredPromotionTitle(
+            typeof body?.title === 'string' ? body.title : undefined,
+            HOSTED_PROMOTION_TITLE_REFUSAL,
+          ),
+        }
+      } catch (error) {
+        return json({ error: (error as Error).message }, 400)
+      }
     }
     const value = await call(dependencies.promote, promoteHostedNote)(
       config.recordDatabaseUrl,

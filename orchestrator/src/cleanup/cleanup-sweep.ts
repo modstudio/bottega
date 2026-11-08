@@ -15,6 +15,7 @@ import { releaseIncrementalVacuumPages } from '../database/database-commands.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
+import { pruneHostedCallOutcomes } from '../hosted-call-outcome.ts'
 import { filedIssueLoopRun } from '../issue/issue-queue.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import { pruneMonitorRows } from '../monitor/monitor-retention.ts'
@@ -158,6 +159,7 @@ export type SweepHelpers = {
     rollupContention: typeof rollupContentionDays
     pruneContention: typeof pruneContentionRows
     pruneMonitor: typeof pruneMonitorRows
+    pruneHostedCalls?: typeof pruneHostedCallOutcomes
   }
 }
 
@@ -171,6 +173,7 @@ const DEFAULT_TELEMETRY_MAINTENANCE: NonNullable<SweepHelpers['telemetryMaintena
   rollupContention: rollupContentionDays,
   pruneContention: pruneContentionRows,
   pruneMonitor: pruneMonitorRows,
+  pruneHostedCalls: pruneHostedCallOutcomes,
 }
 const DEFAULT_SWEEP_OUTBOX_MAINTENANCE: SweepOutboxMaintenance = {
   ...DEFAULT_OUTBOX_MAINTENANCE,
@@ -211,6 +214,17 @@ function maintainTelemetryForSweep(
         ? `monitor would prune ${result.invocations} invocations (${result.conditions} conditions)`
         : `monitor pruned ${result.invocations} invocations (${result.conditions} conditions); backlog remains ${result.more ? 'yes' : 'no'}`,
   )
+  if (maintenance.pruneHostedCalls) {
+    reportMaintenanceStep(
+      'hosted call outcome prune',
+      presentation,
+      () => maintenance.pruneHostedCalls!(database, Date.now(), dryRun),
+      (result) =>
+        dryRun
+          ? `hosted call outcomes would prune ${result.rows} rows`
+          : `hosted call outcomes pruned ${result.rows} rows`,
+    )
+  }
 }
 
 function releaseMaintenancePages(

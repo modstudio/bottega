@@ -262,6 +262,7 @@ export const cleanupBoundarySpecs = [
       '../issue/issue-queue.ts',
       '../monitor/monitor-retention.ts',
       '../record/outbox-prune.ts',
+      '../hosted-call-outcome.ts',
       '../resources/docker-resources.ts',
       '../hook-tree/hook-tree.ts',
       '../landing-tree/release-observation.ts',

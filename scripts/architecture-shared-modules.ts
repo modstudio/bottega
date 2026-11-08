@@ -51,11 +51,13 @@ export const sharedModules: ArchitectureModule[] = [
     './settings-permission-lists.ts',
   ]),
   module('shared/config-client.ts', [
+    './hosted-call-observation.ts',
     './http-json.ts',
     './record-api-url.ts',
     './record-session.ts',
     './record-remedies.ts',
   ]),
+  module('shared/hosted-call-observation.ts', []),
   module('shared/record-api-url.ts', ['./brand.ts', './config-directory.ts', './env-values.ts']),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', ['./ship-to.ts']),

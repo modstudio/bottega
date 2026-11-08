@@ -8,6 +8,7 @@ import type { TypedQuestion } from './registry.ts'
 const TYPED_QUESTION_TIMEOUT_MS = 5_000
 const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
 const TYPESAFE_KEY = 'TYPESAFE_KEY'
+const JEV_MODEL = 'jev-1.14.0'
 
 type NoulAnswer = { noul: number }
 type ChoiceAnswer = {
@@ -45,14 +46,18 @@ export type TypedQuestionClientResult =
     }
   | { kind: 'error'; error: string; latencyMs: number }
 
-type TypedQuestionClientDependencies = {
+export type TypedQuestionClientDependencies = {
   resolve: typeof readEnvValuesWithHosted
   fetch(input: string, init: RequestInit): Promise<Response>
+  sleep?(ms: number): Promise<void>
+  random?(): number
 }
 
 const clientDependencies: TypedQuestionClientDependencies = {
   resolve: readEnvValuesWithHosted,
   fetch: (input, init) => hostedApiFetch(input, init),
+  sleep: (ms) => Bun.sleep(ms),
+  random: Math.random,
 }
 
 function finiteProbability(value: unknown): value is number {
@@ -201,7 +206,36 @@ async function parsedAnswer(question: TypedQuestion, response: Response) {
   }
 }
 
-/** Resolve the key at call time, make one bounded request, and retry only rate backoff statuses. */
+function retryable(result: Response | 'timeout' | 'transport'): boolean {
+  return (
+    typeof result === 'string' ||
+    result.status === 408 ||
+    result.status === 429 ||
+    (result.status >= 500 && result.status <= 599)
+  )
+}
+
+function numericHeader(response: Response, name: string): number | null {
+  const value = response.headers.get(name)?.trim()
+  if (!value || !/^\d+(?:\.\d+)?$/.test(value)) return null
+  return Number(value)
+}
+
+function retryDelay(
+  result: Response | 'timeout' | 'transport',
+  retry: number,
+  random: () => number,
+): number {
+  if (typeof result !== 'string') {
+    const milliseconds = numericHeader(result, 'retry-after-ms')
+    if (milliseconds !== null) return Math.min(5_000, milliseconds)
+    const seconds = numericHeader(result, 'retry-after')
+    if (seconds !== null) return Math.min(5_000, seconds * 1_000)
+  }
+  return Math.min(5_000, 500 * 2 ** retry * (0.75 + random() * 0.5))
+}
+
+/** Resolve the key at call time and retry bounded transient failures with backoff. */
 export async function askTypedQuestionClient(
   question: TypedQuestion,
   state: string | Record<string, unknown>,
@@ -214,21 +248,26 @@ export async function askTypedQuestionClient(
   }
   if (resolved.kind === 'missing-key') return resolved
   const body = JSON.stringify({
-    model: 'jev-latest',
+    model: JEV_MODEL,
     state,
     questions: { [question.id]: questionBody(question) },
   })
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const sleep = dependencies.sleep ?? clientDependencies.sleep!
+  const random = dependencies.random ?? clientDependencies.random!
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     const response = await sendRequest(resolved.value, body, dependencies.fetch)
+    if (retryable(response) && attempt < 2) {
+      await sleep(retryDelay(response, attempt, random))
+      continue
+    }
     if (typeof response === 'string')
       return { kind: 'error', error: response, latencyMs: elapsed(started) }
     if (!response.ok) {
-      if ((response.status === 429 || response.status === 529) && attempt === 0) continue
       return { kind: 'error', error: `http_${response.status}`, latencyMs: elapsed(started) }
     }
     const parsed = await parsedAnswer(question, response)
     if (!parsed) return { kind: 'error', error: 'unparsable_body', latencyMs: elapsed(started) }
     return { kind: 'answer', ...parsed, latencyMs: elapsed(started) }
   }
-  return { kind: 'error', error: 'transport', latencyMs: elapsed(started) }
+  throw new Error('unreachable typed-question retry loop')
 }

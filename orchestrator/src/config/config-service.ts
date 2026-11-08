@@ -71,6 +71,10 @@ import {
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
+import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
+
+const hostedConfigClient = (env: ConfigEnvironment = process.env): ConfigClient =>
+  configClient(env, fetch, undefined, undefined, recordConfigCallOutcome)
 
 const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
 const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
@@ -200,7 +204,7 @@ async function currentOrCreate(client: ConfigClient) {
 
 export async function machineInit(
   label = hostname(),
-  client = configClient(),
+  client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
   names?: MachineNamePair,
 ): Promise<string> {
@@ -253,7 +257,7 @@ async function claimMachineKey(
 }
 
 export async function claimCurrentMachineKey(
-  client = configClient(),
+  client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
 ): Promise<void> {
   const pair = readMachineKey(env)
@@ -275,7 +279,7 @@ export async function machineTrust(
   keyId: string,
   publicKey: string,
   label: string,
-  client = configClient(),
+  client = hostedConfigClient(),
 ) {
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
@@ -453,7 +457,10 @@ async function revokeIfNeeded(
   return (await client.listMachineKeys()).find((item) => item.keyId === keyId)?.revokedAt
 }
 
-export async function machineRevoke(keyId: string, client = configClient()): Promise<string[]> {
+export async function machineRevoke(
+  keyId: string,
+  client = hostedConfigClient(),
+): Promise<string[]> {
   const machine = await localMachine()
   if (keyId === machine.keyId)
     throw new Error('cannot revoke this machine own key; revoke it from another trusted machine')
@@ -521,7 +528,7 @@ export async function setSecret(
   key: string,
   value: string,
   scope: ConfigScope,
-  client = configClient(),
+  client = hostedConfigClient(),
 ) {
   if (sealedValueIsEmpty(value)) throw new Error(sealedEmptyRefusal(key, scope))
   const { key: dataKey, dek } = await currentOrCreate(client)
@@ -554,7 +561,7 @@ export async function setSecret(
   })
 }
 
-export async function deleteSecret(key: string, scope: ConfigScope, client = configClient()) {
+export async function deleteSecret(key: string, scope: ConfigScope, client = hostedConfigClient()) {
   const row = await client.getSecret(key, scope, HOSTED_CONFIG_ENVIRONMENT)
   return client.deleteSecret(key, {
     scope,
@@ -638,7 +645,7 @@ export async function applyLegacyEnvironmentSecretMigration(
 
 /** The config service has no rename verb, so setup opens, sets, and deletes in one operation. */
 export async function migrateLegacyEnvironmentSecrets(
-  client = configClient(),
+  client = hostedConfigClient(),
   adapters: {
     plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
     write?: (
@@ -687,7 +694,7 @@ export async function migrateLegacyEnvironmentSecrets(
 /** Reverse only the sealed-secret renames recorded by setup, without persisting plaintext. */
 export async function restoreLegacyEnvironmentSecrets(
   migrations: ReadonlyArray<SecretEnvironmentMigration>,
-  client = configClient(),
+  client = hostedConfigClient(),
   adapters: {
     plaintext?: (client: ConfigClient, row: ConfigSecret) => Promise<Uint8Array>
     write?: (
@@ -736,7 +743,7 @@ export async function restoreLegacyEnvironmentSecrets(
   }
 }
 
-export async function getEntry(key: string, scope: ConfigScope, client = configClient()) {
+export async function getEntry(key: string, scope: ConfigScope, client = hostedConfigClient()) {
   return client.getEntry(key, scope, HOSTED_CONFIG_ENVIRONMENT)
 }
 
@@ -819,7 +826,7 @@ export async function setConfigEntry(
   expectedRowVersion?: number | null,
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
-  clientFactory: () => ConfigClient = () => configClient(env),
+  clientFactory: () => ConfigClient = () => hostedConfigClient(env),
 ) {
   const home = configHome(key, requested)
   if (home === 'machine') {
@@ -862,7 +869,7 @@ export async function getConfigEntry(
   requested: ConfigHome | undefined,
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
-  clientFactory: () => ConfigClient = () => configClient(env),
+  clientFactory: () => ConfigClient = () => hostedConfigClient(env),
 ): Promise<ConfigReadResult> {
   const home = configHome(key, requested, 'get')
   if (home === 'machine') {
@@ -924,7 +931,7 @@ export async function setEntry(
   value: string,
   scope: ConfigScope,
   expectedRowVersion?: number | null,
-  client = configClient(),
+  client = hostedConfigClient(),
 ) {
   const shipTo = isShipToConfigKey(key)
   const storedKey = shipTo ? SHIP_TO_CONFIG_KEY : key
@@ -955,7 +962,7 @@ export async function setEntry(
   return written
 }
 
-export async function listEntries(client = configClient()) {
+export async function listEntries(client = hostedConfigClient()) {
   return client.listEntries(HOSTED_CONFIG_ENVIRONMENT)
 }
 
@@ -963,7 +970,7 @@ export async function deleteEntry(
   key: string,
   scope: ConfigScope,
   expectedRowVersion?: number,
-  client = configClient(),
+  client = hostedConfigClient(),
 ) {
   const version = expectedRowVersion ?? (await getEntry(key, scope, client)).rowVersion
   return client.deleteEntry(key, {
@@ -995,6 +1002,6 @@ export function deleteMachineEntry(key: string, env: ConfigEnvironment = process
   deleteMachineAutonomy(key, env)
 }
 
-export async function listSecrets(client = configClient()) {
+export async function listSecrets(client = hostedConfigClient()) {
   return client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
 }

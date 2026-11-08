@@ -552,6 +552,30 @@ test('repair fails when the drain rejects a queued row', async () => {
   expect(formatTaskPushReport(report)).toContain('repair drain rejected rows')
 })
 
+test('repair fails and names a delivery-off drain', async () => {
+  insertMachineTask(missingHosted, 'DEV-miss', 'workshop')
+  const report = await pushTasks({
+    repair: true,
+    identity: async () => identity,
+    listIds,
+    registered: () => registered,
+    drain: async () => ({
+      queued: 1,
+      sent: 0,
+      rejected: 0,
+      quarantined: 0,
+      dropped: 0,
+      waitingOnRouting: {},
+      skippedCapability: false,
+      deliveryOffReason: 'hosted delivery is off for this store',
+    }),
+  })
+  expect(report.ok).toBeFalse()
+  expect(formatTaskPushReport(report)).toContain(
+    'repair drain refused: hosted delivery is off for this store',
+  )
+})
+
 test('--repair with an unroutable project reports the refusal and queues nothing', async () => {
   const ghost = '01990000-0000-7000-8000-000000008516'
   insertMachineTask(ghost, 'GHO-1', 'ghost')

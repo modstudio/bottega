@@ -1,7 +1,8 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { StoredMachineNames } from '../../../shared/machine-config.ts'
+import { type StoredMachineNames, storedMachineNames } from '../../../shared/machine-config.ts'
 import {
   isUnnamedMachinePrefix,
+  resolveMachineDisplayName,
   type MachineNamePair as SharedMachineNamePair,
 } from '../../../shared/machine-label.ts'
 
@@ -14,6 +15,13 @@ export function shortNameRefusal(value: string): string | null {
 
 export type MachineIdentifierNames = Pick<StoredMachineNames, 'shortName' | 'formerShortNames'>
 export type MachineNamePair = SharedMachineNamePair
+
+export function storedMachineNamePair(): MachineNamePair | null {
+  const stored = storedMachineNames()
+  return stored
+    ? { shortName: stored.shortName, displayName: resolveMachineDisplayName(stored) }
+    : null
+}
 
 export type MachineLabelDecision =
   | { kind: 'bare'; remainder: string }

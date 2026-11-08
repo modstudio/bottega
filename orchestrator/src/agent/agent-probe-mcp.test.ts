@@ -109,6 +109,7 @@ test('a fresh probe runs turns even when the registration result is reusable', a
     ...seeded,
     ok: true,
     file: { ok: true, output: '{"status":"ok"}' },
+    compaction: { ok: true, output: 'compaction observed' },
     writing: { ok: true, output: 'created' },
   })
   const runCount = () =>

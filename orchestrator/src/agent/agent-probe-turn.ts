@@ -19,6 +19,7 @@ import type {
   TransportResult,
 } from '../transport/transport.ts'
 import { withTransportDeadline } from '../transport/transport.ts'
+import { gooseSessionContextProfile } from '../transport/transport-goose-context-profile.ts'
 import type { WritingProbeConfinement } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
 import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
@@ -34,6 +35,7 @@ type ProbeTurnInput = {
   mcp?: boolean
   writing?: WritingProbeConfinement
   session?: string
+  environment?: Record<string, string>
 }
 
 type ProbeTurnResult = {
@@ -43,6 +45,7 @@ type ProbeTurnResult = {
   events: NormalizedEvent[]
   sessionId: string | null
   loadSessionAdvertised: boolean
+  compactions: number | null
 }
 
 const probeCwd = (input: ProbeTurnInput): string =>
@@ -126,6 +129,15 @@ async function collectTurn(
   return outcome
 }
 
+function observedProbeCompactions(
+  input: ProbeTurnInput,
+  scratchDir: string,
+  sessionId: string | null,
+): number | null {
+  if (input.agent.harness !== 'goose' || !sessionId) return null
+  return gooseSessionContextProfile(join(scratchDir, 'goose'), sessionId)?.compactions ?? null
+}
+
 /** Start through the selected transport, collect, and persist the turn outcome. */
 export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResult> {
   const started = Date.now()
@@ -136,6 +148,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
     // A refused probe environment must record a failed probe turn, not escape
     // with the row left 'running'.
     const environment = await probeEnvironment(input.name, input.agent, scratchDir)
+    Object.assign(environment, input.environment)
     if (input.writing) environment.HOME = input.writing.workerHomeDir
     const handle = await input.transport.start({
       agent: input.agent,
@@ -200,6 +213,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
         ...outcome,
         sessionId: outcome.sessionId,
         loadSessionAdvertised: handle.loadSessionAdvertised === true,
+        compactions: observedProbeCompactions(input, scratchDir, outcome.sessionId),
       }
     } finally {
       try {
@@ -221,6 +235,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
       events: [] as NormalizedEvent[],
       sessionId: null,
       loadSessionAdvertised: false,
+      compactions: null,
     }
   }
 }

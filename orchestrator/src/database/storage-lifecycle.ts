@@ -193,6 +193,13 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
     keep: 'Raw samples stay for HOST_PRESSURE_SAMPLE_RETENTION_MS.',
     remover: 'orchestrator/src/host-pressure/host-pressure-service.ts#sampleHostPressure',
   },
+  {
+    store: 'orchestrator',
+    table: 'hosted_call_outcome',
+    class: 'telemetry',
+    keep: 'Raw outcomes stay for HOSTED_CALL_OUTCOME_KEEP_MS.',
+    remover: 'orchestrator/src/hosted-call-outcome.ts#pruneHostedCallOutcomes',
+  },
   ...boundedMachine(
     ['collect_change_counter', 'entity_number_counter', 'schema_meta'],
     'One row per declared machine-local key is kept for the lifetime of that key.',

@@ -18,6 +18,7 @@ import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { trackerProjects } from './ingest/trackers.ts'
 import type { HostedOutboxReport } from './outbox.ts'
+import type { HostedOutboxDrainSchedule } from './outbox-fast-cycle.ts'
 import { acquireStoredLeaseIntent, releaseStoredLease } from './store-lease.ts'
 import { hostedCreateTask } from './task-client.ts'
 
@@ -26,6 +27,7 @@ const {
   acquireLease,
   collectFastHostedOutbox,
   collectIncremental,
+  deliverOperatorWaitingEmailsWhenAllowed,
   explicitRequestMayAcquire,
   formatCollectLeaseRefusal,
   releaseLease,
@@ -264,6 +266,52 @@ const waitingOutboxReport = (): HostedOutboxReport => ({
   dropped: 0,
   waitingOnRouting: { unregistered: 1 },
   skippedCapability: false,
+})
+
+test('watch builds a refusing outbox schedule for a non-installation store', async () => {
+  const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+  const previousStateHome = process.env[STATE_HOME_ENV]
+  const otherStateHome = mkdtempSync(join(tmpdir(), 'hub-non-installation-watch-'))
+  const log = spyOn(console, 'log').mockImplementation(() => {})
+  process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
+  process.env[STATE_HOME_ENV] = otherStateHome
+  let observed: HostedOutboxDrainSchedule<HostedOutboxReport> | null | undefined
+  let initialized!: () => void
+  const ready = new Promise<void>((resolve) => (initialized = resolve))
+  const stop = watch('non-installation-watch', undefined, {
+    initial: async (_guard, schedule) => {
+      observed = schedule
+      const report = await schedule!.slow()
+      initialized()
+      return [{ source: 'hosted outbox', ok: true, durationMs: 0, hostedOutbox: report }]
+    },
+  })
+  try {
+    await ready
+    expect(observed).not.toBeNull()
+    await waitFor(() => log.mock.calls.length > 0)
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'skipped: hosted delivery is off because this store is not the installation store',
+      ),
+    )
+  } finally {
+    await stop()
+    log.mockRestore()
+    if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+    else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
+    if (previousStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = previousStateHome
+    rmSync(otherStateHome, { recursive: true, force: true })
+  }
+})
+
+test('a non-installation store does not deliver operator waiting emails', async () => {
+  let deliveries = 0
+  await deliverOperatorWaitingEmailsWhenAllowed('hosted delivery is off', async () => {
+    deliveries++
+  })
+  expect(deliveries).toBe(0)
 })
 
 async function waitFor(check: () => boolean) {

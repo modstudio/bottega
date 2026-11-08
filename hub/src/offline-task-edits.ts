@@ -24,6 +24,7 @@ function classifyHostedEditDelivery(
   report: Awaited<ReturnType<typeof drainHostedOutbox>>,
   leaseRoutingWait: HostedRoutingWait | null,
 ): HostedEditDelivery {
+  if (report.deliveryOffReason) return { kind: 'queued', reason: report.deliveryOffReason }
   const waitingOnRouting = remaining
     .map((entry) => parseHostedRoutingWait(entry.last_error))
     .find((wait) => wait !== null)

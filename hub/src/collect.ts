@@ -8,7 +8,7 @@ import {
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
-import { db, nowIso, writeTransaction } from './db.ts'
+import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
   type HostedChangesReport,
@@ -265,14 +265,14 @@ async function settleLeg<T>(
 }
 
 type HostedCollectDependencies = {
-  outbox?: () => Promise<HostedOutboxReport>
+  outbox: () => Promise<HostedOutboxReport>
   correctIntervals?: () => void
   changes?: () => Promise<HostedChangesReport | HostedChangeLegReport | null | undefined>
 }
 
 async function hostedCollectLegs(
-  guard?: LeaseGuard,
-  dependencies: HostedCollectDependencies = {},
+  guard: LeaseGuard | undefined,
+  dependencies: HostedCollectDependencies,
 ): Promise<CollectLegResult[]> {
   ;(dependencies.correctIntervals ?? correctStoredIntervalProjects)()
   const results: CollectLegResult[] = []
@@ -781,6 +781,21 @@ export async function deliverOperatorNotifications(
   }
 }
 
+/** Keep waiting-email delivery behind the store identity decided once when the watcher starts. */
+export async function deliverOperatorWaitingEmailsWhenAllowed(
+  deliveryOffReason: string | null,
+  deliver: typeof deliverOperatorWaitingEmails = deliverOperatorWaitingEmails,
+): Promise<void> {
+  if (!deliveryOffReason) await deliver()
+}
+
+function reportWatchDeliveryRefusal(results: CollectCycleResult): boolean {
+  const refused = results?.find((leg) => leg.ok && leg.hostedOutbox?.deliveryOffReason)
+  if (!refused) return false
+  console.log(formatCollectLeg(refused))
+  return true
+}
+
 async function collectSlowSourceLegs(
   scheduled: boolean,
   guard: LeaseGuard | undefined,
@@ -851,11 +866,11 @@ async function collectSlow(
     pruneOutboxTrace()
   }
   if (!only && resolveHostedUrl()) {
+    const outbox = outboxSchedule
+      ? () => outboxSchedule.slow()
+      : () => drainHostedOutbox({ processKind: 'collector' })
     guard?.assertHeld(lastCompleted)
-    const hostedResults = await hostedCollectLegs(
-      guard,
-      outboxSchedule ? { outbox: () => outboxSchedule.slow() } : {},
-    )
+    const hostedResults = await hostedCollectLegs(guard, { outbox })
     results.push(...hostedResults)
     lastCompleted = hostedResults.at(-1)?.source ?? lastCompleted
     guard?.assertHeld('hosted')
@@ -963,8 +978,9 @@ export async function collectOnce(
     guard.assertHeld(previous)
   }
   if (!only && resolveHostedUrl()) {
+    const outbox = () => drainHostedOutbox({ processKind: 'collector' })
     guard.assertHeld(previous)
-    const hostedResults = await hostedCollectLegs(guard)
+    const hostedResults = await hostedCollectLegs(guard, { outbox })
     results.push(...hostedResults)
     previous = hostedResults.at(-1)?.source ?? previous
     guard.assertHeld(previous)
@@ -983,36 +999,45 @@ export async function collectOnce(
  * it takes a holder name: whichever acquires the lease does the work, and the
  * other waits without duplicating it.
  */
+type WatchDependencies = {
+  initial?: (
+    guard: LeaseGuard,
+    outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+  ) => Promise<CollectCycleResult>
+  fast?: (
+    guard: LeaseGuard,
+    outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+  ) => Promise<CollectCycleResult>
+  slow?: (
+    guard: LeaseGuard,
+    outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
+  ) => Promise<CollectCycleResult>
+  outbox?: () => Promise<HostedOutboxReport>
+  pendingOutbox?: () => PendingHostedOutbox
+  outboxClock?: () => string
+  renewEveryMs?: number
+}
+
+function watchOutboxSchedule(
+  dependencies: WatchDependencies,
+): HostedOutboxDrainSchedule<HostedOutboxReport> | null {
+  if (!resolveHostedUrl()) return null
+  return new HostedOutboxDrainSchedule(
+    dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
+    dependencies.outboxClock ?? nowIso,
+  )
+}
+
 export function watch(
   holder: string,
   onError = (e: Error) => console.error(`hub: ${e.message}`),
-  dependencies: {
-    initial?: (
-      guard: LeaseGuard,
-      outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
-    ) => Promise<CollectCycleResult>
-    fast?: (
-      guard: LeaseGuard,
-      outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
-    ) => Promise<CollectCycleResult>
-    slow?: (
-      guard: LeaseGuard,
-      outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
-    ) => Promise<CollectCycleResult>
-    outbox?: () => Promise<HostedOutboxReport>
-    pendingOutbox?: () => PendingHostedOutbox
-    outboxClock?: () => string
-    renewEveryMs?: number
-  } = {},
+  dependencies: WatchDependencies = {},
 ) {
-  const outboxSchedule = resolveHostedUrl()
-    ? new HostedOutboxDrainSchedule(
-        dependencies.outbox ?? (() => drainHostedOutbox({ processKind: 'collector' })),
-        dependencies.outboxClock ?? nowIso,
-      )
-    : null
+  const outboxSchedule = watchOutboxSchedule(dependencies)
+  const deliveryOffReason = hostedDeliveryRefusal()
   let busy = false
   let stopping = false
+  let reportedDeliveryOff = false
   const runCycle =
     (
       work: (
@@ -1037,6 +1062,8 @@ export function watch(
           dependencies.renewEveryMs ?? LEASE_RENEW_MS,
         )
         if (!result.ran) onError(result.error)
+        else if (!reportedDeliveryOff)
+          reportedDeliveryOff = reportWatchDeliveryRefusal(result.value)
       } catch (e) {
         onError(e as Error)
       } finally {
@@ -1050,7 +1077,7 @@ export function watch(
         leaseGuard.assertHeld()
         await deliverOperatorNotifications()
         leaseGuard.assertHeld('operator notifications')
-        await deliverOperatorWaitingEmails()
+        await deliverOperatorWaitingEmailsWhenAllowed(deliveryOffReason)
         leaseGuard.assertHeld('operator waiting emails')
         const results = await collectFast({}, leaseGuard)
         if (outboxSchedule) {
@@ -1059,7 +1086,8 @@ export function watch(
             { pending: dependencies.pendingOutbox },
             leaseGuard,
           )
-          if (result) console.log(formatCollectLeg(result))
+          if (result && (!result.ok || !result.hostedOutbox?.deliveryOffReason))
+            console.log(formatCollectLeg(result))
           if (result) results.push(result)
         }
         return results
@@ -1079,7 +1107,7 @@ export function watch(
       leaseGuard.assertHeld()
       await deliverOperatorNotifications()
       leaseGuard.assertHeld('operator notifications')
-      await deliverOperatorWaitingEmails()
+      await deliverOperatorWaitingEmailsWhenAllowed(deliveryOffReason)
       leaseGuard.assertHeld('operator waiting emails')
       const fastResults = await collectFast({}, leaseGuard)
       const slowResults = await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)

@@ -23,7 +23,7 @@ test('resource claim step migration preserves existing claim identity', () => {
       )
       .run(claimId, runId, runId)
 
-    expect(applyMigrations(database)).toEqual(['0212_resource_claim_steps'])
+    expect(applyMigrations(database)).toContain('0212_resource_claim_steps')
     expect(
       database
         .query(

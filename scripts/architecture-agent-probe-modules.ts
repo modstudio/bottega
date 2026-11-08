@@ -9,6 +9,16 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const agentProbeModules = [
+  module('orchestrator/src/agent/agent-capacity-loss.ts', []),
+  module('orchestrator/src/agent/agent-set-capacity.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    '../jobs/jobs.ts',
+    '../refusal-error.ts',
+    '../route/route.ts',
+    './agent-capacity-loss.ts',
+    './agent-registry.ts',
+  ]),
   module('orchestrator/src/agent/endpoint-api-key.ts', [
     '../../../shared/brand.ts',
     '../../../shared/env-source.ts',
@@ -43,6 +53,7 @@ export const agentProbeModules = [
     '../transport/transport.ts',
     './agent-writing-probe.ts',
     './agent-resume-probe.ts',
+    './agent-compaction-probe.ts',
     './agent-probe-turn.ts',
     './openrouter-key-budget.ts',
   ]),
@@ -65,6 +76,7 @@ export const agentProbeModules = [
     './agent-capability-probe-policy.ts',
     './agent-capability-probe-sandbox.ts',
   ]),
+  module('orchestrator/src/agent/agent-compaction-probe.ts', []),
   module('orchestrator/src/agent/agent-probe-turn.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
@@ -78,6 +90,7 @@ export const agentProbeModules = [
     '../sandbox/sandbox.ts',
     '../transport/codex-quota.ts',
     '../transport/quota-readings.ts',
+    '../transport/transport-goose-context-profile.ts',
     '../transport/transport.ts',
     './agents.ts',
     './endpoint-api-key.ts',

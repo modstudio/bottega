@@ -12,6 +12,8 @@ export type Caps = {
   schema: boolean
   /** Proved by registration: writes the universal structured reply artifact. */
   replyFile?: boolean
+  /** A Goose model accepts the harness's automatic compaction request. */
+  compacts?: boolean
   /**
    * Can EDIT the checkout it is pointed at, headlessly, without a prompt.
    *

@@ -23,6 +23,7 @@ export function applyQuestionAnswer(input: {
   questionId: string
   answer: string
   value?: string | boolean | number
+  noOptionFits?: boolean
   answeredAt: string
   answeredBy: string | null
   answeredByName: string | null
@@ -41,7 +42,11 @@ export function applyQuestionAnswer(input: {
     .query(
       `UPDATE question
        SET answer=?,answer_value=?,answered_by_kind=?,
-           jev_agreed=CASE WHEN ?='jev' OR jev_pick IS NULL OR ? IS NULL THEN NULL WHEN jev_pick=? THEN 1 ELSE 0 END,
+           jev_agreed=CASE
+             WHEN ?='jev' OR jev_pick IS NULL THEN NULL
+             WHEN ? THEN 0
+             WHEN ? IS NULL THEN NULL
+             WHEN jev_pick=? THEN 1 ELSE 0 END,
            answered_at=?,answered_by=?,answered_by_name=?,answerer_kind=?,answer_channel=?,revision=revision+1,
            delivery_pending_at=?,awaiting_operator_at=NULL
        WHERE record_id=? AND ${questionOpenSql('question')}`,
@@ -51,6 +56,7 @@ export function applyQuestionAnswer(input: {
       encodedValue,
       input.answeredByKind,
       input.answeredByKind,
+      input.noOptionFits ? 1 : 0,
       encodedValue,
       encodedValue,
       input.answeredAt,
@@ -102,6 +108,7 @@ export function applyArchitectQuestionAnswers(input: {
       questionId: answer.record_id,
       answer: answer.answer,
       value: answer.typedValue,
+      noOptionFits: answer.noOptionFits,
       answeredAt: input.answeredAt,
       answeredBy,
       answeredByName,
