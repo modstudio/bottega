@@ -6,7 +6,7 @@ import { join } from 'node:path'
 // concern; moving those parameters into shared/ would make shared know both.
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { readInstallAsset } from '../../shared/embedded-assets.ts'
-import { assetPath } from '../../shared/install-root.ts'
+import { assetPath, runningInstallationKind } from '../../shared/install-root.ts'
 import {
   assertMigrationForeignKeyIntegrity,
   enterMigrationConnectionPolicy,
@@ -14,6 +14,10 @@ import {
 } from '../../shared/migration-connection-policy.ts'
 import { splitMigrationSource } from '../../shared/migration-source.ts'
 import type { QuestionIdentity, WorkflowCursorIdentityRow } from '../../shared/orch-contract.ts'
+import {
+  storeAheadMigrationRefusal,
+  storeAheadOfJournalRefusal,
+} from '../../shared/store-ahead-remedy.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
 export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
@@ -158,9 +162,10 @@ export function pendingMigrationTags(d: Database, folder = MIGRATIONS_FOLDER): s
 export function migrationRefusal(d: Database): string | null {
   const state = migrationState(d)
   if (state.ahead) {
-    return (
-      `refusing to open a store ahead of this binary's migration journal: ${state.ahead}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
+    return storeAheadOfJournalRefusal(
+      state.ahead,
+      runningInstallationKind(import.meta.dir, process.env),
+      SCHEMA_INVARIANT,
     )
   }
   if (state.pending.length) {
@@ -708,7 +713,10 @@ export function applyMigrations(
     const state = migrationState(d, folder)
     if (state.ahead) {
       throw new Error(
-        `refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`,
+        storeAheadMigrationRefusal(
+          state.ahead,
+          runningInstallationKind(import.meta.dir, process.env),
+        ),
       )
     }
     for (const entry of state.pending) {

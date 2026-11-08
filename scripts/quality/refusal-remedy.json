@@ -1,7 +1,7 @@
 {
   "rawLiterals": {
     "hub/src/db.ts": 4,
-    "hub/src/migrations.ts": 4,
+    "hub/src/migrations.ts": 3,
     "hub/src/trpc/routers/record.ts": 1,
     "orchestrator/src/agent/agent-commands.ts": 1,
     "orchestrator/src/agent/endpoint-api-key.ts": 2,
@@ -26,7 +26,7 @@
     "orchestrator/src/database/db.ts": 1,
     "orchestrator/src/database/lens-profile-pin-contract-preflight.ts": 2,
     "orchestrator/src/database/metric-receipt-cache-uuid-migration-preflight.ts": 1,
-    "orchestrator/src/database/migrations.ts": 4,
+    "orchestrator/src/database/migrations.ts": 3,
     "orchestrator/src/database/store-actor.ts": 4,
     "orchestrator/src/database/workflow-uuid-migration-preflight.ts": 3,
     "orchestrator/src/dispatch/dispatch-preflight.ts": 1,

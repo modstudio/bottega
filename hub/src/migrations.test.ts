@@ -184,7 +184,7 @@ describe('hub migration journal', () => {
       )
       .run()
     expect(migrationRefusal(ahead)).toContain('refusing to open a store ahead')
-    expect(migrationRefusal(ahead)).toContain(`cleared by: ${PLATFORM_SLUG} machine migrate`)
+    expect(migrationRefusal(ahead)).toContain(`cleared by: ${PLATFORM_SLUG} machine update`)
     ahead.close()
   })
 

@@ -13,6 +13,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/session-liveness.ts', []),
   module('shared/run-process-marker.ts', []),
   module('shared/migration-source.ts', []),
+  module('shared/store-ahead-remedy.ts', ['./brand.ts', './install-root.ts', './refusal.ts']),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/command-spellings.ts', []),
   module('shared/note-label.ts', []),

@@ -78,6 +78,7 @@ export function isStoreFreeInvocation(
     (argv[0] === 'hub-import' && argv[1] === 'judge') ||
     (argv[0] === 'release' && argv[1] === 'check') ||
     argv[0] === 'journal' ||
+    argv[0] === 'store-path' ||
     (argv[0] === 'load' && argv[1] === 'sample') ||
     (argv[0] === 'machine' && argv[1] === 'config' && (argv[2] === 'get' || argv[2] === 'list')) ||
     (argv[0] === 'gate' &&

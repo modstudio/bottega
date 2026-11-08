@@ -3,13 +3,17 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
-import { assetPath } from '../../../shared/install-root.ts'
+import { assetPath, runningInstallationKind } from '../../../shared/install-root.ts'
 import {
   assertMigrationForeignKeyIntegrity,
   enterMigrationConnectionPolicy,
   leaveMigrationConnectionPolicy,
 } from '../../../shared/migration-connection-policy.ts'
 import { splitMigrationSource } from '../../../shared/migration-source.ts'
+import {
+  storeAheadMigrationRefusal,
+  storeAheadOfJournalRefusal,
+} from '../../../shared/store-ahead-remedy.ts'
 import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import {
   hasMigrationCompatibilityColumn,
@@ -232,9 +236,10 @@ export function migrationApplied(d: Database, tag: string, folder = MIGRATIONS_F
 export function migrationRefusal(d: Database): string | null {
   const state = migrationState(d)
   if (state.ahead) {
-    return (
-      `refusing to open a store ahead of this binary's migration journal: ${state.ahead}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
+    return storeAheadOfJournalRefusal(
+      state.ahead,
+      runningInstallationKind(import.meta.dir, process.env),
+      SCHEMA_INVARIANT,
     )
   }
   if (state.pending.length) {
@@ -975,7 +980,10 @@ function applyMigrationRange(
     const state = migrationState(d, folder)
     if (state.ahead) {
       throw new Error(
-        `refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`,
+        storeAheadMigrationRefusal(
+          state.ahead,
+          runningInstallationKind(import.meta.dir, process.env),
+        ),
       )
     }
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))

@@ -119,6 +119,10 @@ export const modules: ArchitectureModule[] = [
     '../database/migrations.ts',
     '../machine-journal.ts',
   ]),
+  module('orchestrator/src/commands/machine-store-path.ts', [
+    'commander',
+    '../../../shared/state-directory.ts',
+  ]),
   module('orchestrator/src/commands/launch-agent-refresh.ts', [
     'commander',
     '../health/launch-agent-refresh.ts',
