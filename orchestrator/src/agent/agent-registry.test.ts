@@ -8,6 +8,7 @@ import {
   GOOSE_READING_MAX_TURNS,
   gooseContextLimit,
   gooseContextManagementEnvironment,
+  identityChangeProbeAttempts,
   rowAgent,
 } from './agent-registry.ts'
 import { type Agent, assertResumableAgent } from './agents.ts'
@@ -38,6 +39,25 @@ const DEEP_JOB_BUDGET = DEEP_JOB_TOKENS + OUTPUT_RESERVE
 /** A prompt whose estimate is 5K tokens bigger than the job's whole budget. */
 const BIG_PROMPT_TOKENS = DEEP_JOB_BUDGET + 5_000
 const BIG_PROMPT_BYTES = BIG_PROMPT_TOKENS * PROMPT_BYTES_PER_TOKEN
+
+test('successive identity changes keep a flat serializable probe history', () => {
+  const first = identityChangeProbeAttempts({ harness: 'codex', ok: true }, 'codex')
+  const storedAfterProbe = JSON.parse(
+    JSON.stringify({ harness: 'goose', ok: true, attempts: first }),
+  )
+  const second = identityChangeProbeAttempts(storedAfterProbe, 'goose')
+
+  expect(() => JSON.stringify(second)).not.toThrow()
+  expect(second).toHaveLength(2)
+  expect(second.every((attempt) => !Object.hasOwn(attempt.result, 'attempts'))).toBe(true)
+})
+
+test('an identity change does not record a pending probe result as an attempt', () => {
+  const attempts = [{ harness: 'codex', result: { harness: 'codex', ok: true } }]
+  const pending = { ok: false, pendingIdentity: { harness: 'goose' }, attempts }
+
+  expect(identityChangeProbeAttempts(pending, 'codex')).toEqual(attempts)
+})
 
 test('the Goose context ceiling preserves its measured pre-regression value', () => {
   expect(GOOSE_CONTEXT_CEILING).toBe(128_000)

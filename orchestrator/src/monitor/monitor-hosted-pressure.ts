@@ -14,9 +14,11 @@ import { hostedBoardPostInput } from '../board/board-operations.ts'
 import { boardActor } from '../board/board-store.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import type { HostedBoardOverview } from '../record/record-board-contract.ts'
 import {
   decideHostedPressureAnnouncement,
   HOSTED_PRESSURE_NOTICE_PREFIX,
+  type HostedPressureAnnouncementAction,
 } from './hosted-pressure-announcement.ts'
 import {
   CLEAR_HOSTED_PRESSURE_STATE,
@@ -59,6 +61,10 @@ type Dependencies = {
   env?: Record<string, string | undefined>
   cwd?: string
 }
+export type HostedPressureAnnouncementDependencies = Pick<
+  Dependencies,
+  'boardClient' | 'env' | 'cwd'
+>
 type CacheRow = {
   checked_at: string
   state: string
@@ -192,6 +198,19 @@ async function announceHostedPressureTransition(
   dependencies: Dependencies,
   clock: number,
 ): Promise<void> {
+  await announceHostedPressureActions(
+    (messages) => decideHostedPressureAnnouncement(previous, decision.state, observation, messages),
+    dependencies,
+    clock,
+  )
+}
+
+/** Apply notice actions through the one hosted-pressure board announcement path. */
+export async function announceHostedPressureActions(
+  decide: (messages: HostedBoardOverview['messages']) => HostedPressureAnnouncementAction[],
+  dependencies: HostedPressureAnnouncementDependencies,
+  clock: number,
+): Promise<void> {
   const env = dependencies.env ?? process.env
   if (!recordApiConfigured(env)) return
   const client = dependencies.boardClient ?? recordApiClient()
@@ -200,12 +219,7 @@ async function announceHostedPressureTransition(
       { kind: 'notice', ownTitlePrefix: HOSTED_PRESSURE_NOTICE_PREFIX },
       signal,
     )
-    const actions = decideHostedPressureAnnouncement(
-      previous,
-      decision.state,
-      observation,
-      overview.messages,
-    )
+    const actions = decide(overview.messages)
     for (const action of actions) {
       if (action.kind === 'withdraw') {
         await client.withdrawBoardMessage(

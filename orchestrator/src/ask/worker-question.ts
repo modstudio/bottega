@@ -226,8 +226,9 @@ function choiceAnswer(question: Extract<WorkerQuestion, { kind: 'choice' }>, raw
 
 function yesnoAnswer(raw: unknown): boolean {
   if (typeof raw === 'boolean') return raw
-  if (typeof raw === 'string' && /^(true|false)$/i.test(raw)) return raw.toLowerCase() === 'true'
-  throw new Error('allowed values: true, false')
+  if (typeof raw === 'string' && /^(yes|no|true|false)$/i.test(raw))
+    return /^(yes|true)$/i.test(raw)
+  throw new Error('allowed values: yes, no')
 }
 
 function scoreAnswer(question: Extract<WorkerQuestion, { kind: 'score' }>, raw: unknown): number {

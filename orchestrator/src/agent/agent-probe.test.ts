@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { db, writableDb } from '../database/db.ts'
 import {
+  carryRegistrationProbeAudit,
   recordAgentProbe,
   recordSuccessfulRegistrationProbe,
   registrationProbeCacheReusable,
@@ -56,6 +57,16 @@ function result(
     contextSource: null,
   }
 }
+
+test('a registration probe keeps an allowed capacity-loss audit', () => {
+  const capacityLossAllowed = {
+    jobs: ['review-lens'],
+    at: '2026-11-08T12:00:00.000Z',
+  }
+  const reprobed = carryRegistrationProbeAudit({ capacityLossAllowed }, result(true))
+
+  expect(reprobed.capacityLossAllowed).toEqual(capacityLossAllowed)
+})
 
 function registered(name: string): AgentRow {
   addAgent(name, { harness: 'goose', backend: 'vendor', model: 'fixture' })
