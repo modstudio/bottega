@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { startBoundedSync } from '../../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../../shared/git.ts'
+import { gitAt } from '../../shared/git.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import { projectOf, writeCommitKey } from './attribute.ts'
 import { writeTransaction } from './db.ts'
@@ -19,10 +18,7 @@ export async function importTasks(file: string): Promise<number> {
     closed: string | null
     shas: string[]
   }[]
-  const log = startBoundedSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], {
-    budget: 'git-plumbing',
-    env: inspectionGitEnv(),
-  })
+  const log = gitAt(checkout, ['log', '--all', '--format=%H%x09%cI'])
   const stamps = new Map(
     log.stdout
       .split('\n')

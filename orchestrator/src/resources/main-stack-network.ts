@@ -1,5 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
-
 // concern: exact host network destinations exposed by a declared main stack
 
 type PublishedPort = {
@@ -58,15 +56,20 @@ export function mainStackGateAddresses(project: GateMainStackProject): string[] 
   const declaration = project.settings.mainStack
   if (!declaration?.consumers.includes('gate')) return []
   const command = ['docker', 'compose', 'config', '--format', 'json']
-  let result: ReturnType<typeof startBoundedSync>
+  let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = startBoundedSync(command, { budget: 'docker', cwd: project.path })
+    result = Bun.spawnSync(command, {
+      cwd: project.path,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 120_000,
+    })
   } catch (error) {
     throw new Error(
       `writing ACP sandbox could not resolve the gate main-stack network: ${(error as Error).message}; run ${command.join(' ')} in ${project.path}, then retry`,
     )
   }
-  if (result.exitCode !== 0) {
+  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
     throw new Error(
       `writing ACP sandbox could not resolve the gate main-stack network: ${result.stderr?.toString().trim() || 'timed out'}; run ${command.join(' ')} in ${project.path}, then retry`,
     )

@@ -1,11 +1,10 @@
 /** Live vendor event log: append-only JSONL plus last_event_at, and bottega run peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { startBoundedSync } from '../../shared/bounded-process.ts'
+import { gitAt } from '../../shared/git.ts'
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
-import { targetGitEnvironment } from './git/git-environment.ts'
 import { capToolEventText } from './tool-event-text.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
@@ -839,12 +838,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = startBoundedSync(['git', ...args], {
-    budget: 'git-plumbing',
-    cwd,
-    env: targetGitEnvironment(cwd),
-  })
-  return p.exitCode === 0 ? p.stdout.toString().trim() : null
+  const p = gitAt(cwd, args)
+  return p.code === 0 ? p.stdout.trim() : null
 }
 
 function worktreeFiles(worktree: string | null, locations: string[]): string[] {

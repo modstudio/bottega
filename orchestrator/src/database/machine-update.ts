@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: checkout and installed-release database update
 /** Updates either installation kind while holding its migration drain or window. */
 
@@ -89,10 +88,11 @@ function incomingJournal(
 }
 
 function runMigration(cwd: string): void {
-  const result = startBoundedSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
-    budget: 'self-cli',
+  const result = Bun.spawnSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
     cwd,
     env: targetGitEnvironment(cwd),
+    stdout: 'inherit',
+    stderr: 'inherit',
   })
   if (result.exitCode !== 0)
     throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
@@ -141,8 +141,9 @@ type UpdateDependencies = {
 }
 
 function runLaunchAgentsRefreshVerb(binary: string): void {
-  const result = startBoundedSync([binary, 'machine', 'launch-agents', 'refresh'], {
-    budget: 'agent-cli',
+  const result = Bun.spawnSync([binary, 'machine', 'launch-agents', 'refresh'], {
+    stdout: 'inherit',
+    stderr: 'inherit',
   })
   if (result.exitCode !== 0) {
     throw new Error(

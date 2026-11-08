@@ -4,14 +4,13 @@ import bash from '@ast-grep/lang-bash'
 import php from '@ast-grep/lang-php'
 import python from '@ast-grep/lang-python'
 import { type DynamicLangRegistrations, Lang, parse, registerDynamicLanguage } from '@ast-grep/napi'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import {
   embeddedDistributionManifest,
   embeddedRuntimeDigest,
   extractEmbeddedRuntime,
   resolveInstallFile,
 } from '../../../shared/embedded-assets.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { installationIdentity, runningInstallRoot } from '../../../shared/install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
@@ -270,14 +269,9 @@ export function commentFindingsInSources(
 }
 
 function trackedSources(root: string): SourceFile[] {
-  const result = startBoundedSync(
-    ['git', ...nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS])],
-    { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() },
-  )
-  if (result.exitCode !== 0) {
-    throw new Error(`could not list tracked source files: ${result.stderr.toString().trim()}`)
-  }
-  return splitNulPaths(result.stdout.toString()).flatMap((file) => {
+  const result = gitAt(root, nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS]))
+  if (result.code !== 0) throw new Error('could not list tracked source files')
+  return splitNulPaths(result.stdout).flatMap((file) => {
     try {
       return [{ file, source: readFileSync(resolve(root, file), 'utf8') }]
     } catch (error) {

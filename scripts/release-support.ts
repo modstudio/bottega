@@ -1,5 +1,4 @@
 import { fileURLToPath } from 'node:url'
-import { startBounded } from '../shared/bounded-process.ts'
 import { PLATFORM_NAME } from '../shared/brand.ts'
 import type { DistributionManifest } from '../shared/install-root.ts'
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../shared/release-tag.ts'
@@ -23,7 +22,13 @@ export function distributionManifest(
 }
 
 export async function run(argv: string[], cwd = repositoryRoot): Promise<string> {
-  const child = await startBounded(argv, { budget: 'self-cli', cwd })
-  if (child.exitCode !== 0) throw new Error(`${argv.join(' ')} exited ${child.exitCode}`)
-  return child.stdout.trim()
+  const child = Bun.spawn(argv, {
+    cwd,
+    stdout: 'pipe',
+    stderr: 'inherit',
+  })
+  const output = await new Response(child.stdout).text()
+  const exitCode = await child.exited
+  if (exitCode !== 0) throw new Error(`${argv.join(' ')} exited ${exitCode}`)
+  return output.trim()
 }

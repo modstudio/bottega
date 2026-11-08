@@ -185,9 +185,10 @@ function appliedMigrations(): { when: number; hash: string }[] {
 }
 
 export function migrateInstalledBinary(target: string): void {
-  const result = startBoundedSync([target, 'machine', 'migrate'], {
-    budget: 'machine-update',
+  const result = Bun.spawnSync([target, 'machine', 'migrate'], {
     env: databaseOverrideFreeEnvironment(),
+    stdout: 'inherit',
+    stderr: 'inherit',
   })
   if (result.exitCode !== 0) {
     throw new Error(
@@ -240,8 +241,9 @@ export async function prepareReleaseUpdate(input: {
   try {
     const archivePath = join(stage, resolution.asset)
     writeFileSync(archivePath, archive)
-    const unpack = startBoundedSync(['tar', '-xzf', archivePath, '-C', stage], {
-      budget: 'release-download',
+    const unpack = Bun.spawnSync(['tar', '-xzf', archivePath, '-C', stage], {
+      stdout: 'inherit',
+      stderr: 'inherit',
     })
     if (unpack.exitCode !== 0) {
       throw new Error(`could not unpack ${resolution.asset}; retry the update`)

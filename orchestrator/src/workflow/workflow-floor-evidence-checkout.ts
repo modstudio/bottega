@@ -3,20 +3,15 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync, statSync } from 'node:fs'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { checkoutLanding } from './workflow-checkout-landing.ts'
 import { type CheckoutResolution, decideCheckoutAnswer } from './workflow-checkout-refusal.ts'
 
 export function gitText(cwd: string, args: string[]): string | null {
   try {
-    const result = startBoundedSync(['git', ...args], {
-      budget: 'git-plumbing',
-      cwd,
-      env: inspectionGitEnv(),
-    })
-    return result.exitCode === 0 ? result.stdout.trim() : null
+    const result = gitAt(cwd, args)
+    return result.code === 0 ? result.stdout.trim() : null
   } catch {
     return null
   }
@@ -25,11 +20,7 @@ export function gitText(cwd: string, args: string[]): string | null {
 function gitOk(cwd: string, args: string[]): boolean {
   try {
     return (
-      startBoundedSync(['git', ...args], {
-        budget: 'git-plumbing',
-        cwd,
-        env: inspectionGitEnv(),
-      }).exitCode === 0
+      gitAt(cwd, args).code === 0
     )
   } catch {
     return false

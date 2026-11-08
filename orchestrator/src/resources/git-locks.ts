@@ -1,8 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
 
 export type GitLock = {
   path: string
@@ -22,12 +21,8 @@ export function shellQuote(value: string): string {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = startBoundedSync(['git', ...args], {
-    budget: 'git-plumbing',
-    cwd,
-    env: targetGitEnvironment(cwd),
-  })
-  return p.exitCode === 0 ? p.stdout.toString().trim() : null
+  const p = gitAt(cwd, args)
+  return p.code === 0 ? p.stdout.trim() : null
 }
 
 function lockFiles(root: string): string[] {

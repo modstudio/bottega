@@ -4,7 +4,6 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { startBounded, startBoundedSync } from '../../shared/bounded-process.ts'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import {
   RECORD_ACTOR_ROLE,
@@ -54,9 +53,9 @@ function runLeg(argv: readonly string[]): string {
 }
 
 // A sampler that cannot start leaves the guard informational instead of failing the run.
-function spawnSampler(command: string[]): ReturnType<typeof startBoundedSync> | { reason: string } {
+function spawnSampler(command: string[]): Bun.SyncSubprocess<'pipe', 'pipe'> | { reason: string } {
   try {
-    return startBoundedSync(command, { budget: 'process-table' })
+    return Bun.spawnSync(command)
   } catch (error) {
     return {
       reason: `${command[0]} could not run: ${error instanceof Error ? error.message : String(error)}`,
@@ -175,18 +174,18 @@ function copyDatabase(source: string, target: string): void {
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
   currentLeg = runLeg(argv)
-  const child = await startBounded(argv, {
-    budget: 'self-cli',
+  const child = Bun.spawn(argv, {
     cwd: fileURLToPath(new URL('..', import.meta.url)),
     env: testPostgresSpawnEnvironment(process.env, stateRoot, env),
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
   })
-  if (child.stdout) console.log(child.stdout)
-  if (child.stderr) console.error(child.stderr)
-  return child.exitCode
+  return child.exited
 }
 
 function postgres(source: string, database = 'postgres'): void {
-  const result = startBoundedSync(
+  const result = Bun.spawnSync(
     [
       'docker',
       'exec',
@@ -200,7 +199,7 @@ function postgres(source: string, database = 'postgres'): void {
       '-v',
       'ON_ERROR_STOP=1',
     ],
-    { budget: 'docker', stdin: source },
+    { stdin: new Blob([source]), stdout: 'inherit', stderr: 'inherit' },
   )
   if (result.exitCode !== 0) throw new Error(`Postgres fixture command exited ${result.exitCode}`)
 }
@@ -260,7 +259,8 @@ function release(): void {
     }
   }
   // An interrupted start can still have created the container, so removal does not wait on readiness.
-  if (launched) startBoundedSync(['docker', 'rm', '-f', '-v', container], { budget: 'docker' })
+  if (launched)
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' })
   rmSync(sourceCopies, { recursive: true, force: true })
   rmSync(stateRoot, { recursive: true, force: true })
 }
@@ -288,7 +288,7 @@ try {
   if (!provisionedContainer) {
     launched = true
     // Synchronous so no signal handler runs between the container starting and `started` being set.
-    const start = startBoundedSync(
+    const start = Bun.spawnSync(
       [
         'docker',
         'run',
@@ -304,7 +304,7 @@ try {
         '-c',
         'max_connections=200',
       ],
-      { budget: 'docker' },
+      { stdout: 'inherit', stderr: 'inherit' },
     ).exitCode
     if (start !== 0) throw new EarlyExit(start)
   }
@@ -312,9 +312,9 @@ try {
 
   let ready = false
   for (let attempt = 0; attempt < 40; attempt++) {
-    const probe = startBoundedSync(
+    const probe = Bun.spawnSync(
       ['docker', 'exec', container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'],
-      { budget: 'docker' },
+      { stdout: 'ignore', stderr: 'ignore' },
     )
     if (probe.exitCode === 0) {
       ready = true
@@ -324,8 +324,9 @@ try {
   }
   if (!ready) throw new Error('disposable Postgres did not become ready')
 
-  const portResult = startBoundedSync(['docker', 'port', container, '5432/tcp'], {
-    budget: 'docker',
+  const portResult = Bun.spawnSync(['docker', 'port', container, '5432/tcp'], {
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   if (portResult.exitCode !== 0) throw new Error(portResult.stderr.toString())
   const port = portResult.stdout.toString().trim().split(':').at(-1)

@@ -1,10 +1,9 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
-import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'
+import { borrowedCheckoutOf, gitAt } from '../../../shared/git.ts'
 import {
   isAuthorizedPlatformInstallation,
   runningInstallRoot,
@@ -44,12 +43,9 @@ type RepositoryRoot = {
 
 function repositoryRootFromGit(cwd: string): RepositoryRoot | null {
   try {
-    const git = startBoundedSync(
-      ['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'],
-      { budget: 'git-plumbing', cwd, env: inspectionGitEnv() },
-    )
-    if (git.exitCode !== 0) return null
-    const [bare, gitDirOutput, commonOutput] = git.stdout.toString().trim().split('\n')
+    const git = gitAt(cwd, ['rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'])
+    if (git.code !== 0) return null
+    const [bare, gitDirOutput, commonOutput] = git.stdout.trim().split('\n')
     if (!gitDirOutput || !commonOutput || (bare !== 'true' && bare !== 'false')) return null
     const gitDir = resolve(cwd, gitDirOutput)
     const common = resolve(cwd, commonOutput)

@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: main-checkout Docker stack adapter
 
 import type { Database } from 'bun:sqlite'
@@ -26,16 +25,28 @@ import {
 
 export const MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT = 4 * 60 * 60 * 1_000
 const MAIN_STACK_IDLE_STOP_AFTER_KEY = 'BOTTEGA_MAIN_STACK_IDLE_STOP_AFTER_MS'
+const MAIN_STACK_COMMAND_TIMEOUT_MS = 120_000
 
 type CommandResult = { ok: true; output: string } | { ok: false; reason: string }
 
 function dockerCompose(cwd: string, args: string[]): CommandResult {
   const command = ['docker', 'compose', ...args]
-  let result: ReturnType<typeof startBoundedSync>
+  let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = startBoundedSync(command, { budget: 'docker', cwd })
+    result = Bun.spawnSync(command, {
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
+    })
   } catch (error) {
     return { ok: false, reason: `${command.join(' ')} failed: ${(error as Error).message}` }
+  }
+  if (result.exitedDueToTimeout) {
+    return {
+      ok: false,
+      reason: `${command.join(' ')} failed: timed out after ${MAIN_STACK_COMMAND_TIMEOUT_MS}ms`,
+    }
   }
   if (result.exitCode !== 0) {
     return {
@@ -238,7 +249,7 @@ export function ensureProjectMainStack(
 }
 
 function runningMainStackPaths(): CommandResult {
-  let result: ReturnType<typeof startBoundedSync>
+  let result: ReturnType<typeof Bun.spawnSync>
   const command = [
     'docker',
     'ps',
@@ -246,11 +257,15 @@ function runningMainStackPaths(): CommandResult {
     '{{.Label "com.docker.compose.project.working_dir"}}',
   ]
   try {
-    result = startBoundedSync(command, { budget: 'docker' })
+    result = Bun.spawnSync(command, {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
+    })
   } catch (error) {
     return { ok: false, reason: `main stack inventory unavailable: ${(error as Error).message}` }
   }
-  if (result.exitCode !== 0) {
+  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
     return {
       ok: false,
       reason: `main stack inventory unavailable: ${result.stderr?.toString().trim() || 'timed out'}`,
@@ -275,9 +290,13 @@ export function mainStackServedWorktree(input: {
     '--format',
     '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}',
   ]
-  let result: ReturnType<typeof startBoundedSync>
+  let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = startBoundedSync(command, { budget: 'docker' })
+    result = Bun.spawnSync(command, {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
+    })
   } catch (error) {
     return {
       value: 'unknown',
@@ -285,7 +304,7 @@ export function mainStackServedWorktree(input: {
       orphans: [],
     }
   }
-  if (result.exitCode !== 0) {
+  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
     return {
       value: 'unknown',
       reason: `${command.join(' ')} failed: ${result.stderr?.toString().trim() || 'timed out'}`,
@@ -338,11 +357,22 @@ export function mainStackExecInProgress(
   if (ids.length === 0) return { value: false }
 
   const command = ['docker', 'inspect', '-f', '{{json .ExecIDs}}', ...ids]
-  let result: ReturnType<typeof startBoundedSync>
+  let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = startBoundedSync(command, { budget: 'docker', cwd: projectPath })
+    result = Bun.spawnSync(command, {
+      cwd: projectPath,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
+    })
   } catch (error) {
     return { value: 'unknown', reason: `${command.join(' ')} failed: ${(error as Error).message}` }
+  }
+  if (result.exitedDueToTimeout) {
+    return {
+      value: 'unknown',
+      reason: `${command.join(' ')} failed: timed out after ${MAIN_STACK_COMMAND_TIMEOUT_MS}ms`,
+    }
   }
   if (result.exitCode !== 0) {
     return {

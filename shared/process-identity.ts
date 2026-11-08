@@ -4,8 +4,6 @@
  * worktrees, databases, routing, transports, or command adapters.
  */
 import { platform } from 'node:os'
-import { startBoundedSync } from './bounded-process.ts'
-import { BoundExceededError } from './call-budgets.ts'
 
 const PROCESS_START_TIME =
   /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3]\d [0-2]\d:[0-5]\d:[0-5]\d \d{4}$/
@@ -49,40 +47,17 @@ export function processObservationError(
 export function observeBoundedSubprocess(
   command: string,
   argv: string[],
-  options: {
-    env?: Record<string, string | undefined>
-    stdout?: 'pipe' | 'ignore'
-    stderr?: 'pipe' | 'ignore'
-  },
+  options: NonNullable<Parameters<typeof Bun.spawnSync>[1]>,
   timeoutMs: number,
   retryCount = DEFAULT_PROCESS_OBSERVATION_RETRY_COUNT,
-): {
-  process: ReturnType<typeof Bun.spawnSync>
-  error: string | null
-} {
-  let observed: ProcessObservationResult & { stdout: string }
+): { process: ReturnType<typeof Bun.spawnSync>; error: string | null } {
+  let observed: ReturnType<typeof Bun.spawnSync>
   for (let attempt = 0; ; attempt += 1) {
-    try {
-      const result = startBoundedSync(argv, { budget: 'process-table', env: options.env })
-      observed = {
-        ...result,
-        signalCode: null,
-        exitedDueToTimeout: false,
-      }
-    } catch (error) {
-      if (!(error instanceof BoundExceededError) || error.bound !== 'deadline') throw error
-      observed = {
-        exitCode: null,
-        signalCode: 'SIGKILL',
-        exitedDueToTimeout: true,
-        stdout: '',
-        stderr: error.message,
-      }
-    }
+    observed = Bun.spawnSync(argv, { ...options, timeout: timeoutMs })
     if (observed.exitedDueToTimeout !== true || attempt >= retryCount) break
   }
   return {
-    process: observed as unknown as ReturnType<typeof Bun.spawnSync>,
+    process: observed,
     error: processObservationError(command, timeoutMs, {
       exitCode: observed.exitCode,
       signalCode: observed.signalCode,

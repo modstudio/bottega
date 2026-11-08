@@ -1,6 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
+import { gitAt } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { decideGitleaksScan, planGitleaksScans } from './check-gitleaks-plan'
 import { resolveLandingBase } from './landing-base'
@@ -20,17 +19,12 @@ try {
   process.exit(1)
 }
 const range = `${mergeBase}..HEAD`
-const rangeCount = startBoundedSync(['git', 'rev-list', '--count', range], {
-  budget: 'git-plumbing',
-  cwd: root,
-  env: inspectionGitEnv(),
-})
-if (rangeCount.exitCode !== 0) {
-  const detail = rangeCount.stderr.toString().trim()
-  console.error(`check-gitleaks could not inspect ${range}${detail ? `: ${detail}` : ''}`)
+const rangeCount = gitAt(root, ['rev-list', '--count', range])
+if (rangeCount.code !== 0) {
+  console.error(`check-gitleaks could not inspect ${range}`)
   process.exit(1)
 }
-const rangeCommitCount = Number(rangeCount.stdout.toString().trim())
+const rangeCommitCount = Number(rangeCount.stdout.trim())
 const scans = planGitleaksScans({
   rangeCommitCount,
   range,
@@ -39,16 +33,12 @@ const scans = planGitleaksScans({
 })
 
 if (rangeCommitCount === 0) {
-  const untracked = startBoundedSync(
-    ['git', ...nulPathListArgs(['ls-files', '--others', '--exclude-standard'])],
-    { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() },
-  )
-  if (untracked.exitCode !== 0) {
-    const detail = untracked.stderr.toString().trim()
-    console.error(`check-gitleaks could not inspect untracked files${detail ? `: ${detail}` : ''}`)
+  const untracked = gitAt(root, nulPathListArgs(['ls-files', '--others', '--exclude-standard']))
+  if (untracked.code !== 0) {
+    console.error('check-gitleaks could not inspect untracked files')
     process.exit(1)
   }
-  if (splitNulPaths(untracked.stdout.toString()).length) {
+  if (splitNulPaths(untracked.stdout).length) {
     console.log(
       'check-gitleaks: untracked files are not scanned; they are scanned once staged or committed',
     )
@@ -58,7 +48,10 @@ if (rangeCommitCount === 0) {
 let failed = false
 for (const scan of scans) {
   try {
-    const result = startBoundedSync([gitleaks, ...scan.args], { budget: 'process-table' })
+    const result = Bun.spawnSync([gitleaks, ...scan.args], {
+      stdout: 'inherit',
+      stderr: 'pipe',
+    })
     const log = result.stderr.toString()
     process.stderr.write(result.stderr)
     const decision = decideGitleaksScan({ exitCode: result.exitCode, log })

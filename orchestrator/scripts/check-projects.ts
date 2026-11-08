@@ -1,6 +1,5 @@
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
-import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { migrationRefusal } from '../src/database/migrations.ts'
 import { GATE_FACTS_ENV } from '../src/gate/gate-facts.ts'
@@ -16,17 +15,19 @@ import {
 const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
 
 function run(store?: string): number {
-  const child = startBoundedSync([`${root}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled'], {
-    budget: 'self-cli',
+  const child = Bun.spawnSync([`${root}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled'], {
     env: store ? { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store } : process.env,
+    stdout: 'inherit',
+    stderr: 'inherit',
   })
   return child.exitCode ?? 1
 }
 
 function runGateFacts(path: string): number {
-  const child = startBoundedSync([`${root}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled'], {
-    budget: 'self-cli',
+  const child = Bun.spawnSync([`${root}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled'], {
     env: { ...process.env, [GATE_FACTS_ENV]: path },
+    stdout: 'inherit',
+    stderr: 'inherit',
   })
   return child.exitCode ?? 1
 }

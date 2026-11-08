@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { startBounded } from '../shared/bounded-process.ts'
+import { isDeadlineAbort, startBounded } from '../shared/bounded-process.ts'
 import { exitUnchecked } from '../shared/check-execution.ts'
 
 const DEPENDENCY_AUDIT_TIMEOUT_MS = 10_000
@@ -142,7 +142,7 @@ async function runAuditCommand(): Promise<AuditCommandResult> {
       stderr: child.stderr,
     }
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'TimeoutError') return { kind: 'timeout' }
+    if (isDeadlineAbort(error)) return { kind: 'timeout' }
     return { kind: 'start-failure', error }
   }
 }

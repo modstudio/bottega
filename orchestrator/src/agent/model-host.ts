@@ -4,7 +4,6 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
-import { startBounded } from '../../../shared/bounded-process.ts'
 /** Where the model host's OpenAI-compatible endpoint lives. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
@@ -148,9 +147,11 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
     /* best effort */
   }
   try {
-    void startBounded(['wakeonlan', modelHostWolMac()], { budget: 'agent-cli' }).catch(
-      () => undefined,
-    )
+    Bun.spawn(['wakeonlan', modelHostWolMac()], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+      stdin: 'ignore',
+    }).unref()
   } catch {
     return { sent: false, detail: 'wakeonlan could not be spawned' }
   }

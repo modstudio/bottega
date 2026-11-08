@@ -1,4 +1,3 @@
-import { startBounded, startBoundedSync } from '../../shared/bounded-process.ts'
 /**
  * The orchestrator, read through its CLI.
  *
@@ -210,15 +209,31 @@ async function orchProcess(
 ): Promise<string> {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const env = { ...process.env, ...opts.env }
-  for (const key of opts.unsetEnv ?? []) env[key] = undefined
+  for (const key of opts.unsetEnv ?? []) delete env[key]
+  const proc = Bun.spawn([...command, ...args], {
+    env,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    stdin: opts.stdin !== undefined ? Buffer.from(opts.stdin) : 'ignore',
+  })
+  let killedAtDeadline = false
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          killedAtDeadline = true
+          proc.kill()
+        }, timeoutMs)
+      : null
   try {
-    const proc = await startBounded([...command, ...args], {
-      budget: 'self-cli',
-      env,
-      stdin: opts.stdin,
-      ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
-    })
-    const { stdout: out, stderr: err, exitCode: code } = proc
+    const [out, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    if (killedAtDeadline)
+      throw new Error(
+        `hub killed ${PLATFORM_SLUG} ${args.join(' ')} after its ${timeoutMs / 1_000} second deadline`,
+      )
     if (code !== 0) {
       const accepted =
         opts.acceptedExitCodes?.includes(code) &&
@@ -227,13 +242,8 @@ async function orchProcess(
         throw new Error(err.trim() || out.trim() || `${PLATFORM_SLUG} ${args[0]} exited ${code}`)
     }
     return out.trim()
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'TimeoutError') {
-      throw new Error(
-        `hub killed ${PLATFORM_SLUG} ${args.join(' ')} after its ${timeoutMs / 1_000} second deadline`,
-      )
-    }
-    throw error
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -484,16 +494,18 @@ export function projectListProcessError(result: ProjectListProcessResult): strin
 export function projectList(): OrchProject[] {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const args = ['project', 'list', '--json']
-  const proc = startBoundedSync([...command, ...args], {
-    budget: 'self-cli',
+  const proc = Bun.spawnSync([...command, ...args], {
     env: { ...process.env },
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: PROJECT_LIST_TIMEOUT_MS,
   })
   const out = proc.stdout.toString()
   const error = projectListProcessError({
     command: `${PLATFORM_SLUG} ${args.join(' ')}`,
     exitCode: proc.exitCode,
-    signalCode: null,
-    exitedDueToTimeout: false,
+    signalCode: proc.signalCode,
+    exitedDueToTimeout: proc.exitedDueToTimeout === true,
     stderr: proc.stderr.toString(),
     stdout: out,
     timeoutMs: PROJECT_LIST_TIMEOUT_MS,

@@ -2,6 +2,7 @@
 /** Gathers workflow-autonomy scopes from the project, machine, hosted config, and cursor. */
 
 import type { Database } from 'bun:sqlite'
+import { isDeadlineAbort } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
@@ -76,7 +77,7 @@ async function readHosted(
     if (error instanceof ConfigClientError && error.reason === 'not-configured')
       return { status: 'not-configured', user: {}, space: {}, reason: error.message, warnings: [] }
     const reason =
-      error instanceof DOMException && error.name === 'TimeoutError'
+      isDeadlineAbort(error)
         ? `timed out after ${timeoutMs} ms`
         : error instanceof Error
           ? error.message

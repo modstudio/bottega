@@ -1,4 +1,5 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { gitAt } from '../../../shared/git.ts'
 // concern: monitor-conditions
 /** Owns monitor condition detection and the row queries and helpers those detectors share with composition and notice revalidation. */
 
@@ -16,7 +17,6 @@ import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
 import { db, liveRuns, SESSION_LIVE_MS } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
@@ -188,12 +188,8 @@ export function hookTreeConditions(database = db(), clock = Date.now()): Monitor
 }
 
 export function git(cwd: string, args: string[]): string | null {
-  const p = startBoundedSync(['git', ...args], {
-    budget: 'git-plumbing',
-    cwd,
-    env: targetGitEnvironment(cwd),
-  })
-  return p.exitCode === 0 ? p.stdout.toString().trim() : null
+  const p = gitAt(cwd, args)
+  return p.code === 0 ? p.stdout.trim() : null
 }
 
 function durationMs(value: string): number | null {

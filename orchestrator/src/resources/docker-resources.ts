@@ -1,11 +1,32 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { markMainCheckoutResources } from './docker-main-checkout.ts'
+
+const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
+const DOCKER_INVENTORY_RETRY_TIMEOUT_MS = 10_000
+const DOCKER_REMOVAL_TIMEOUT_MS = 10_000
+
+export function dockerInventoryTimeoutMs(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
+  if (raw === undefined || raw === '') return DOCKER_INVENTORY_TIMEOUT_MS
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : DOCKER_INVENTORY_TIMEOUT_MS
+}
+
+export function dockerRemovalTimeoutMs(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env.BOTTEGA_DOCKER_REMOVAL_TIMEOUT_MS
+  if (raw === undefined || raw === '') return DOCKER_REMOVAL_TIMEOUT_MS
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : DOCKER_REMOVAL_TIMEOUT_MS
+}
 
 type DockerResourceKind = 'container' | 'network' | 'volume'
 
@@ -45,6 +66,7 @@ export type DockerNetworkInventory =
 
 function list(
   kind: 'container' | 'volume',
+  timeout: number,
 ):
   | { ascertainable: true; rows: { name: string; labels: Record<string, string> }[] }
   | { ascertainable: false; reason: string } {
@@ -64,13 +86,25 @@ function list(
           '--format',
           `{{.Name}}\t{{.Label "${ORCH_RUN_LABEL_KEY}"}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}`,
         ]
-  let p: ReturnType<typeof startBoundedSync>
+  let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = startBoundedSync(args, { budget: 'docker' })
+    p = Bun.spawnSync(args, {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout,
+    })
   } catch (error) {
     return {
       ascertainable: false,
       reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (p.exitedDueToTimeout) {
+    return {
+      ascertainable: false,
+      reason:
+        `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
+        `timed out after ${timeout}ms`,
     }
   }
   if (p.exitCode !== 0) {
@@ -291,8 +325,15 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
   const composeContainerProjects = new Set<string>()
   const composeContainers: ComposeContainerFact[] = []
   const observed: { workingDir: string | null; composeProject: string | null }[] = []
+  const configuredTimeout = dockerInventoryTimeoutMs()
+  const explicitTimeout = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
   for (const kind of ['container', 'volume'] as const) {
-    const found = list(kind)
+    let found = list(kind, configuredTimeout)
+    // The idle-machine default gets one materially longer chance under load.
+    // An explicit bound remains exact for the test gate and other callers.
+    if (!found.ascertainable && !explicitTimeout && found.reason.includes('timed out')) {
+      found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
+    }
     if (!found.ascertainable) return found
     const compose = listedComposeFacts(kind, found.rows)
     observed.push(...compose.observed)
@@ -361,15 +402,24 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
 
 /** Inventory Compose networks and the two ownership signals the monitor can prove. */
 export function dockerNetworkInventory(): DockerNetworkInventory {
-  let listed: ReturnType<typeof startBoundedSync>
+  const timeout = dockerInventoryTimeoutMs()
+  let listed: ReturnType<typeof Bun.spawnSync>
   try {
-    listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
-      budget: 'docker',
+    listed = Bun.spawnSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout,
     })
   } catch (error) {
     return {
       ascertainable: false,
       reason: `docker network inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (listed.exitedDueToTimeout) {
+    return {
+      ascertainable: false,
+      reason: `docker network inventory unavailable: timed out after ${timeout}ms`,
     }
   }
   if (listed.exitCode !== 0) {
@@ -384,13 +434,23 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
     .filter(Boolean)
   if (!names.length) return { ascertainable: true, networks: [] }
 
-  let inspected: ReturnType<typeof startBoundedSync>
+  let inspected: ReturnType<typeof Bun.spawnSync>
   try {
-    inspected = startBoundedSync(['docker', 'network', 'inspect', ...names], { budget: 'docker' })
+    inspected = Bun.spawnSync(['docker', 'network', 'inspect', ...names], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout,
+    })
   } catch (error) {
     return {
       ascertainable: false,
       reason: `docker network inspection unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (inspected.exitedDueToTimeout) {
+    return {
+      ascertainable: false,
+      reason: `docker network inspection unavailable: timed out after ${timeout}ms`,
     }
   }
   if (inspected.exitCode !== 0) {
@@ -451,12 +511,18 @@ export function removeDockerResource(
   resource: Pick<DockerResource, 'kind' | 'name'>,
 ): string | null {
   const command = dockerRemovalCommand(resource)
-  let process: ReturnType<typeof startBoundedSync>
+  let process: ReturnType<typeof Bun.spawnSync>
   try {
-    process = startBoundedSync(command.split(' '), { budget: 'docker' })
+    process = Bun.spawnSync(command.split(' '), {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: dockerRemovalTimeoutMs(),
+    })
   } catch (error) {
     return `${command} failed: ${(error as Error).message}`
   }
+  if (process.exitedDueToTimeout)
+    return `${command} failed: timed out after ${dockerRemovalTimeoutMs()}ms`
   if (process.exitCode === 0) return null
   const detail = process.stderr?.toString().trim() || `exit ${process.exitCode}`
   return /no such (?:container|network|volume)/i.test(detail)

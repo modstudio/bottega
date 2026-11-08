@@ -2,7 +2,6 @@
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
 import { recordApiConfigured, resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
@@ -24,6 +23,8 @@ import {
   stableMcpServers,
 } from './setup-mcp.ts'
 import { gatherScheduleSetupFacts, type ScheduleSetupFact } from './setup-schedules.ts'
+
+const COMMAND_TIMEOUT_MS = 3_000
 
 export type { HarnessName } from './setup-mcp.ts'
 export const KNOWN_HARNESSES = Object.keys(HARNESS_MCP_CATALOGUE) as HarnessName[]
@@ -120,12 +121,16 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
 
 function runCommand(argv: string[]): CommandCapture {
   try {
-    const child = startBoundedSync(argv, { budget: 'process-table' })
+    const child = Bun.spawnSync(argv, {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: COMMAND_TIMEOUT_MS,
+    })
     return {
       exitCode: child.exitCode,
       stdout: child.stdout.toString(),
       stderr: child.stderr.toString(),
-      timedOut: false,
+      timedOut: child.exitedDueToTimeout === true,
       error: null,
     }
   } catch (error) {

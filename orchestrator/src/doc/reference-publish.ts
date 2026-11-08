@@ -1,11 +1,10 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: reference-publish
 /** Publishes tracked generated command-reference pages through the document service. */
 
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { scrubbedGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
@@ -37,14 +36,9 @@ export function slugLinkedBody(body: string, indexName: string): string {
 }
 
 function trackedReferenceFiles(root: string): string[] {
-  const result = startBoundedSync(
-    ['git', ...nulPathListArgs(['ls-files', 'docs/reference/*.md'])],
-    { budget: 'git-plumbing', cwd: root, env: scrubbedGitEnv() },
-  )
-  if (result.exitCode !== 0) {
-    throw new Error(`could not read tracked reference pages: ${result.stderr.toString().trim()}`)
-  }
-  return splitNulPaths(result.stdout.toString())
+  const result = gitAt(root, nulPathListArgs(['ls-files', 'docs/reference/*.md']))
+  if (result.code !== 0) throw new Error('could not read tracked reference pages')
+  return splitNulPaths(result.stdout)
 }
 
 function orderedReferenceFiles(files: string[], indexFile: string, indexBody: string): string[] {

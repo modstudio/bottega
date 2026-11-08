@@ -180,10 +180,11 @@ export function reviewRecordCommandOperations(
       ),
     write: writeReviewRecordFindings,
     run: (argv, cwd) => {
-      const result = startBoundedSync(argv, {
-        budget: 'git-plumbing',
+      const result = Bun.spawnSync(argv, {
         cwd,
         env: targetGitEnvironment(cwd),
+        stdout: 'pipe',
+        stderr: 'pipe',
       })
       return {
         exitCode: result.exitCode,

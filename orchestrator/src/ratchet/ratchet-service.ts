@@ -11,9 +11,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { type ChangeViewMode, openChangeView } from '../../../shared/change-view.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { type Finding, findingLine, ratchetDecision } from '../../../shared/ratchet.ts'
 import { WORKER_GATE_BASE_ENV } from '../gate/gate-decision.ts'
 import { projectAt } from '../project/projects.ts'
@@ -36,17 +35,12 @@ type RatchetOptions = {
   measures?: MeasurePattern[]
 }
 
+const LINTER_TIMEOUT_MS = 120_000
+
 function git(root: string, args: string[]): string {
-  const result = startBoundedSync(['git', '-C', root, '--no-optional-locks', ...args], {
-    budget: 'git-plumbing',
-    env: inspectionGitEnv(),
-  })
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} failed: ${result.stderr.toString().trim() || 'no error output'}`,
-    )
-  }
-  return result.stdout.toString().trim()
+  const result = gitAt(root, args)
+  if (result.code !== 0) throw new Error(`git ${args.join(' ')} failed`)
+  return result.stdout.trim()
 }
 
 function checkoutRoot(cwd: string) {
@@ -135,13 +129,24 @@ function runSide(
   if (!files.length) return { ok: true as const, findings: [] }
   const argv = commandForSide(command, files, root)
   if (!argv.length) return { ok: false as const, reason: 'the linter command is empty' }
-  let result: ReturnType<typeof startBoundedSync>
+  let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = startBoundedSync(argv, { budget: 'self-cli', cwd })
+    result = Bun.spawnSync(argv, {
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: LINTER_TIMEOUT_MS,
+    })
   } catch (error) {
     return {
       ok: false as const,
       reason: `${argv[0]} could not run: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+  if (result.exitedDueToTimeout) {
+    return {
+      ok: false as const,
+      reason: `${argv[0]} timed out after ${LINTER_TIMEOUT_MS}ms`,
     }
   }
   let findings: Finding[]

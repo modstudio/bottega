@@ -1,4 +1,3 @@
-import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isCodexThrottleNotice } from '../transport/codex-throttle.ts'
 
@@ -546,14 +545,14 @@ export function pendingAgentVoidAllowed(failureKind: string | null): boolean {
 export function notify(title: string, message: string): void {
   try {
     const esc = (s: string) => s.replace(/["\\]/g, '\\$&').slice(0, 200)
-    void startBounded(
+    Bun.spawn(
       [
         'osascript',
         '-e',
         `display notification "${esc(message)}" with title "orch" subtitle "${esc(title)}"`,
       ],
-      { budget: 'process-table' },
-    ).catch(() => undefined)
+      { stdout: 'ignore', stderr: 'ignore', stdin: 'ignore' },
+    ).unref()
   } catch {
     /* a missing osascript must not fail a run */
   }

@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: launch-agent definition refresh
 /** Plans and applies refreshes only for installed launch-agent definitions that drifted. */
 
@@ -109,7 +108,11 @@ function distributionObservations(
 }
 
 function runCheckoutInstaller(root: string, command: string): void {
-  const result = startBoundedSync([join(root, command)], { budget: 'process-table', cwd: root })
+  const result = Bun.spawnSync([join(root, command)], {
+    cwd: root,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
   if (result.exitCode !== 0) {
     throw new Error(`${command} failed with exit ${result.exitCode}; run ${command} from ${root}`)
   }

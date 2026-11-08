@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 /**
  * Observation-only inventory of recipe databases, retained-branch refs, and
  * shared ref-guard metadata. The monitor reports what it finds; nothing here
@@ -18,6 +17,8 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { isProjectRepository, type Project, projects } from '../project/projects.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+
+const RESOURCE_INVENTORY_TIMEOUT_MS = 1_000
 
 type WorktreeDatabase = {
   engine: 'postgres' | 'mysql'
@@ -264,13 +265,24 @@ function listCommand(
   argv: string[],
   cwd: string,
 ): { ascertainable: true; names: string[] } | { ascertainable: false; reason: string } {
-  let p: ReturnType<typeof startBoundedSync>
+  let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = startBoundedSync(argv, { budget: 'process-table', cwd })
+    p = Bun.spawnSync(argv, {
+      cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: RESOURCE_INVENTORY_TIMEOUT_MS,
+    })
   } catch (error) {
     return {
       ascertainable: false,
       reason: `${argv[0]} inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (p.exitedDueToTimeout) {
+    return {
+      ascertainable: false,
+      reason: `${argv[0]} inventory unavailable: timed out after ${RESOURCE_INVENTORY_TIMEOUT_MS}ms`,
     }
   }
   if (p.exitCode !== 0) {
@@ -338,18 +350,27 @@ function git(
   args: string[],
   stdin?: string,
 ): { ok: true; out: string } | { ok: false; reason: string; exitCode: number | null } {
-  let p: ReturnType<typeof startBoundedSync>
+  let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = startBoundedSync(['git', ...args], {
-      budget: 'git-plumbing',
+    p = Bun.spawnSync(['git', ...args], {
       cwd,
       env: targetGitEnvironment(cwd),
       stdin: stdin === undefined ? undefined : Buffer.from(stdin),
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: RESOURCE_INVENTORY_TIMEOUT_MS,
     })
   } catch (error) {
     return {
       ok: false,
       reason: `git inventory unavailable: ${(error as Error).message}`,
+      exitCode: null,
+    }
+  }
+  if (p.exitedDueToTimeout) {
+    return {
+      ok: false,
+      reason: `git inventory unavailable: timed out after ${RESOURCE_INVENTORY_TIMEOUT_MS}ms`,
       exitCode: null,
     }
   }

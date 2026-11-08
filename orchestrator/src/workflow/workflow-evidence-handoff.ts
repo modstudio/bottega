@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: workflows
 /** Runs the installation's own binary to record evidence this process must not write. Must not decide when. */
 
@@ -27,14 +26,15 @@ export type WorkflowEvidenceHandOff =
  * one of those as evidence not recorded against the wrapped command's own exit code.
  */
 export function handOffWorkflowEvidence(payload: WorkflowEvidencePayload): WorkflowEvidenceHandOff {
-  let result: ReturnType<typeof startBoundedSync>
+  let result: ReturnType<typeof Bun.spawnSync>
   try {
-    result = startBoundedSync(
+    result = Bun.spawnSync(
       [...bottegaEntryArgv(PLATFORM_SLUG), 'workflow', 'exec', RECORD_EVIDENCE_FLAG, '--json'],
       {
-        budget: 'self-cli',
         env: process.env,
         stdin: Buffer.from(encodeWorkflowEvidencePayload(payload)),
+        stdout: 'pipe',
+        stderr: 'inherit',
       },
     )
   } catch (error) {

@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 /**
  * Generated files, which are not work.
  *
@@ -9,7 +8,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
  */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes, writeCommitKey } from '../attribute.ts'
@@ -84,19 +83,13 @@ function scanGit(since: string) {
 
   for (const project of projects().filter((project) => project.repository)) {
     const repo = project.name
-    const proc = startBoundedSync(
-      [
-        'git',
-        '-C',
-        project.path,
+    const proc = gitAt(project.path, [
         'log',
         '--all',
         `--since=${since}`,
         '--numstat',
         '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
-      ],
-      { budget: 'git-plumbing', env: inspectionGitEnv() },
-    )
+      ])
     let day: string | null = null
     for (const line of proc.stdout.split('\n')) {
       if (line.startsWith('\u0000')) {

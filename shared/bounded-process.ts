@@ -20,6 +20,10 @@ type BoundedProcessOptions = {
 
 type BoundedSyncOptions = Omit<BoundedProcessOptions, 'signal'>
 
+export function isDeadlineAbort(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'TimeoutError'
+}
+
 function commandText(argv: readonly string[]): string {
   return argv.join(' ')
 }

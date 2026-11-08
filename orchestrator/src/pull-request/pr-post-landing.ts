@@ -183,13 +183,14 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
   handOff(payload, project, movesInstallation) {
     try {
       const command = postLandingHandOffInvocation(project.path, movesInstallation)
-      const result = startBoundedSync(
+      const result = Bun.spawnSync(
         [...command.argv, 'pr', 'merge', payload.target, POST_LANDING_FLAG],
         {
-          budget: 'self-cli',
           cwd: command.cwd,
           env: process.env,
           stdin: Buffer.from(encodePullRequestPostLandingPayload(payload)),
+          stdout: 'pipe',
+          stderr: 'inherit',
         },
       )
       return { exitCode: result.exitCode, output: result.stdout.toString().replace(/\n$/, '') }
