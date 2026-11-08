@@ -94,8 +94,13 @@ function runMigration(cwd: string): void {
     cwd,
     env: targetGitEnvironment(cwd),
   })
-  if (result.exitCode !== 0)
-    throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
+  process.stdout.write(result.stdout)
+  process.stderr.write(result.stderr)
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.trim()
+    const detail = stderr ? `: ${stderr}` : ''
+    throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}${detail}`)
+  }
 }
 
 function applyImmediateUpdate(input: { migration: string | null; apply: () => void }): void {
@@ -144,9 +149,13 @@ function runLaunchAgentsRefreshVerb(binary: string): void {
   const result = startBoundedSync([binary, 'machine', 'launch-agents', 'refresh'], {
     budget: 'machine-update',
   })
+  process.stdout.write(result.stdout)
+  process.stderr.write(result.stderr)
   if (result.exitCode !== 0) {
+    const stderr = result.stderr.trim()
+    const detail = stderr ? `: ${stderr}` : ''
     throw new Error(
-      `launch-agent refresh failed with exit ${result.exitCode}; run ${binary} machine launch-agents refresh`,
+      `launch-agent refresh failed with exit ${result.exitCode}${detail}; run ${binary} machine launch-agents refresh`,
     )
   }
 }
