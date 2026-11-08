@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 
@@ -36,13 +37,13 @@ export async function requireOwner(tx: SQL, input: Tenant, action: string): Prom
 }
 
 function intakeFromRow(row: Record<string, unknown>): OutsideIntake {
-  const pausedUntil = row.paused_until ? new Date(String(row.paused_until)) : null
+  const pausedUntil = row.paused_until ? recordDate(row.paused_until) : null
   return {
     projectId: String(row.project_id),
     project: String(row.name),
     pausedUntil:
       pausedUntil && pausedUntil.getTime() > Date.now() ? pausedUntil.toISOString() : null,
-    updatedAt: new Date(String(row.updated_at)).toISOString(),
+    updatedAt: recordDate(row.updated_at).toISOString(),
   }
 }
 
@@ -91,7 +92,7 @@ export async function setOutsideIntake(
       projectId: String(projectId),
       project: input.project,
       pausedUntil: null,
-      updatedAt: new Date(String(rows[0].updated_at)).toISOString(),
+      updatedAt: recordDate(rows[0].updated_at).toISOString(),
     }
   })
 }

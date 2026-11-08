@@ -1,11 +1,13 @@
 // concern: record-config
 /** Owns tenant-bound hosted config, ciphertext, DEK, wrap, and machine-key operations. */
+
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordDate, recordIso } from '../../../shared/record-timestamp.ts'
 import {
   generateMachineKeyPair,
   KEY_SIZE,
@@ -65,8 +67,7 @@ export type MachineKeyClaimChallenge = {
 }
 const MACHINE_KEY_CLAIM_TTL_MS = 5 * 60 * 1000
 
-const iso = (value: unknown) => new Date(String(value)).toISOString()
-const nullableIso = (value: unknown) => (value == null ? null : iso(value))
+const nullableIso = (value: unknown) => (value == null ? null : recordIso(value))
 const bytes = (value: unknown) => new Uint8Array(value as ArrayBufferLike)
 const rowScope = (row: Record<string, unknown>): ConfigScope =>
   row.user_id == null ? 'space' : 'user'
@@ -100,7 +101,7 @@ function entryRow(row: Record<string, unknown>): ConfigEntry {
     scope: rowScope(row),
     value: String(row.value),
     rowVersion: Number(row.row_version),
-    updatedAt: iso(row.updated_at),
+    updatedAt: recordIso(row.updated_at),
   }
 }
 
@@ -111,7 +112,7 @@ function secretMetadata(row: Record<string, unknown>): ConfigSecretMetadata {
     scope: rowScope(row),
     dekId: String(row.dek_id),
     rowVersion: Number(row.row_version),
-    updatedAt: iso(row.updated_at),
+    updatedAt: recordIso(row.updated_at),
   }
 }
 
@@ -527,7 +528,7 @@ export async function currentDataKey(
     return {
       id: String(row.id),
       version: Number(row.version),
-      createdAt: iso(row.created_at),
+      createdAt: recordIso(row.created_at),
       retiredAt: nullableIso(row.retired_at),
       wraps: wraps.map((item: Record<string, unknown>) => wrapRow(item)),
     }
@@ -557,7 +558,7 @@ export async function getDataKey(
     return {
       id: String(row.id),
       version: Number(row.version),
-      createdAt: iso(row.created_at),
+      createdAt: recordIso(row.created_at),
       retiredAt: nullableIso(row.retired_at),
       wraps: wraps.map((item: Record<string, unknown>) => wrapRow(item)),
     }
@@ -575,7 +576,7 @@ export async function listDataKeys(input: ConfigTenant): Promise<DataKey[]> {
     return rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),
       version: Number(row.version),
-      createdAt: iso(row.created_at),
+      createdAt: recordIso(row.created_at),
       retiredAt: nullableIso(row.retired_at),
       wraps: [],
     }))
@@ -784,7 +785,7 @@ export async function listMachineKeys(input: ConfigTenant): Promise<MachineKey[]
       keyId: String(row.key_id),
       publicKey: bytes(row.public_key),
       label: String(row.label),
-      createdAt: iso(row.created_at),
+      createdAt: recordIso(row.created_at),
       revokedAt: nullableIso(row.revoked_at),
       userId: row.user_id == null ? null : String(row.user_id),
     }))
@@ -830,7 +831,7 @@ export async function registerMachineKey(
       keyId: String(row.key_id),
       publicKey: bytes(row.public_key),
       label: String(row.label),
-      createdAt: iso(row.created_at),
+      createdAt: recordIso(row.created_at),
       revokedAt: nullableIso(row.revoked_at),
       userId: row.user_id == null ? null : String(row.user_id),
     }
@@ -894,7 +895,7 @@ export async function claimMachineKey(
       String(challenge.space_id) === input.spaceId &&
       String(challenge.key_id) === input.keyId &&
       String(challenge.user_id) === input.userId &&
-      new Date(String(challenge.expires_at)).getTime() > Date.now() &&
+      recordDate(challenge.expires_at).getTime() > Date.now() &&
       Buffer.from(bytes(challenge.nonce_hash)).equals(Buffer.from(nonceHash))
     if (!matches) return 'invalid' as const
     const claimed = await tx`

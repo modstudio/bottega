@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { branchDisposal } from '../../../shared/record/schema-landing.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { OutboxRowError } from './outbox-failure.ts'
 import type { ExistingEvidenceOwned } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
@@ -23,12 +24,12 @@ export function branchDisposalValues(row: RecordPayload, projectId: string | nul
     reason: String(row.reason),
     note: String(row.note),
     archiveRef: String(row.archiveRef),
-    archiveExpiresAt: new Date(String(row.archiveExpiresAt)),
+    archiveExpiresAt: recordDate(row.archiveExpiresAt),
     actorSession: String(row.actorSession),
-    disposedAt: new Date(String(row.disposedAt)),
+    disposedAt: recordDate(row.disposedAt),
     withheldFields: row.withheldFields,
-    createdAt: new Date(String(row.createdAt)),
-    updatedAt: new Date(String(row.updatedAt)),
+    createdAt: recordDate(row.createdAt),
+    updatedAt: recordDate(row.updatedAt),
   }
 }
 

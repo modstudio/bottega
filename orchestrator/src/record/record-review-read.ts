@@ -1,5 +1,6 @@
 // concern: record-review-read
 /** Maps a local architect read payload to hosted record values. */
+import { recordDate } from '../../../shared/record-timestamp.ts'
 
 type Payload = Record<string, unknown>
 type CommonValues = {
@@ -25,6 +26,6 @@ export function reviewReadRecordValues(
     tier: Number(row.tier),
     note: String(row.note),
     sessionId: row.sessionId == null ? null : String(row.sessionId),
-    recordedAt: new Date(String(row.recordedAt)),
+    recordedAt: recordDate(row.recordedAt),
   }
 }

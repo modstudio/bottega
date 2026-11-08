@@ -1,8 +1,10 @@
 // concern: record-runs
 /** Owns tenant-bound record run reads. Must not know local run phases or CLI presentation. */
+
 import type { SQL } from 'bun'
 import { crossMachineLabel, type MachineRef } from '../../../shared/machine-label.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { nullableRecordIso } from '../../../shared/record-timestamp.ts'
 import type { RunDetailReviewLens } from '../../../shared/review-presentation.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
@@ -96,7 +98,6 @@ export type RecordRunsWindow = {
   live: RecordRun[]
 }
 
-const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 const numeric = (value: unknown) => (value == null ? null : Number(value))
 function runMachineLabel(number: number | null, machine: RecordRun['machine']): string | null {
   return number === null ? null : crossMachineLabel('run', number, machine)
@@ -112,8 +113,8 @@ export function runRow(row: Record<string, unknown>): RecordRun {
     spaceId: String(row.space_id),
     spaceName: String(row.space_name),
     projectName: row.project_name == null ? null : String(row.project_name),
-    startedAt: iso(row.started_at)!,
-    finishedAt: iso(row.finished_at),
+    startedAt: nullableRecordIso(row.started_at)!,
+    finishedAt: nullableRecordIso(row.finished_at),
     agent: String(row.agent),
     job: String(row.job),
     status: String(row.status),
@@ -146,7 +147,7 @@ export function runRow(row: Record<string, unknown>): RecordRun {
             delivery: String(row.delivery),
             quality: row.quality == null ? null : String(row.quality),
             fidelity: row.fidelity == null ? null : String(row.fidelity),
-            scoredAt: iso(row.scored_at)!,
+            scoredAt: nullableRecordIso(row.scored_at)!,
           },
   }
 }
@@ -327,7 +328,7 @@ export async function getRecordRun(input: {
         runId: String(row.id),
         note: row.note == null ? null : String(row.note),
         scoredBy: String(row.scored_by),
-        updatedAt: iso(row.score_updated_at)!,
+        updatedAt: nullableRecordIso(row.score_updated_at)!,
       })
     const lenses = await tx`
       SELECT l.*, rv.project_id AS review_project_id, rv.recorded_at, rv.completed_at,

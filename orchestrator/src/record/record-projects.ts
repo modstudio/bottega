@@ -1,9 +1,11 @@
 // concern: record-projects
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
+
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { recordPool } from './record-pool.ts'
 import {
@@ -223,7 +225,7 @@ export function mapRecordProjectRow(row: Record<string, unknown>): RecordProject
     landingBranch: columns.landingBranch,
     color: columns.color,
     colorDark: columns.colorDark,
-    retiredAt: row.retired_at == null ? null : new Date(String(row.retired_at)).toISOString(),
+    retiredAt: row.retired_at == null ? null : recordDate(row.retired_at).toISOString(),
     canon: row.canon === true,
     settings: hostedProjectSettings(columns),
   }

@@ -1,5 +1,6 @@
 // concern: record-doc-mapping
 /** Maps untrusted SQL row shapes into the hosted document service model. */
+
 import {
   type DocArticleSubject,
   type DocAudiences,
@@ -8,6 +9,7 @@ import {
   type DocStatus,
   effectiveDocSummary,
 } from '../../../shared/docs.ts'
+import { nullableRecordIso } from '../../../shared/record-timestamp.ts'
 import type { DocDelivery, DocRevisionOp } from '../doc/doc-write-allowed.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
@@ -330,15 +332,12 @@ export function newerHostedImportRefusal(
 ): string | null {
   if (!existing || existing.deleted_at != null || String(existing.body) === incoming.body)
     return null
-  const hostedUpdated = Date.parse(recordDocIso(existing.updated_at) ?? '')
+  const hostedUpdated = Date.parse(nullableRecordIso(existing.updated_at) ?? '')
   if (!Number.isFinite(hostedUpdated) || hostedUpdated <= Date.parse(incoming.updatedAt))
     return null
   const subject = existing.subject == null ? '' : String(existing.subject)
   return `refusing import: hosted doc at ${String(existing.scope)}/${subject}/${String(existing.slug)} has a different body and newer updated_at`
 }
-
-const recordDocIso = (value: unknown) =>
-  value == null ? null : (value instanceof Date ? value : new Date(String(value))).toISOString()
 
 export function recordDocRow(row: Record<string, unknown>): RecordDoc {
   const document = `${String(row.scope)}/${row.subject == null ? '_' : String(row.subject)}/${String(row.slug)} (${String(row.id)})`
@@ -383,9 +382,9 @@ export function recordDocRow(row: Record<string, unknown>): RecordDoc {
     replacementSlug: row.replacement_slug == null ? null : String(row.replacement_slug),
     ...effectiveDocSummary(row.summary == null ? null : String(row.summary), String(row.body)),
     projectName: row.project_name == null ? null : String(row.project_name),
-    createdAt: recordDocIso(row.created_at)!,
-    updatedAt: recordDocIso(row.updated_at)!,
-    deletedAt: recordDocIso(row.deleted_at),
+    createdAt: nullableRecordIso(row.created_at)!,
+    updatedAt: nullableRecordIso(row.updated_at)!,
+    deletedAt: nullableRecordIso(row.deleted_at),
   }
 }
 
@@ -436,6 +435,6 @@ export function recordDocRevisionRow(row: Record<string, unknown>): RecordDocRev
     authorName: row.author_name == null ? null : String(row.author_name),
     reason: String(row.reason),
     sessionId: row.session_id == null ? null : String(row.session_id),
-    at: recordDocIso(row.at)!,
+    at: nullableRecordIso(row.at)!,
   }
 }

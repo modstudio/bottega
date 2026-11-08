@@ -9,6 +9,7 @@ import {
   parseBoardPurpose,
 } from '../../../shared/board-purpose.ts'
 import { replyAudienceValue } from '../../../shared/board-reply-audience-options.ts'
+import { nullableRecordIso, recordDate } from '../../../shared/record-timestamp.ts'
 import {
   type Audience,
   acknowledgementRefusal,
@@ -89,12 +90,6 @@ type PreparedHostedPost = {
 export const RATE_LIMITED =
   'board post rate limit reached; retry after the ten-minute author window'
 
-const iso = (value: unknown) => {
-  if (value == null) return null
-  if (value instanceof Date) return value.toISOString()
-  return new Date(String(value)).toISOString()
-}
-
 function hostedBoardOrigin(row: Record<string, unknown>): HostedBoardMessage['origin'] {
   return {
     kind: row.author_session ? 'architect' : 'operator',
@@ -110,7 +105,7 @@ function rootState(row: Record<string, unknown>, clock: number): string | null {
   if (String(row.kind) === 'reply') return null
   if (row.accepted_reply_id != null) return 'accepted'
   if (row.withdrawn_at != null) return 'withdrawn'
-  const expiresAt = iso(row.expires_at)
+  const expiresAt = nullableRecordIso(row.expires_at)
   if (expiresAt && Date.parse(expiresAt) <= clock) return 'expired'
   return 'open'
 }
@@ -136,13 +131,13 @@ export function hostedBoardMessageView(
     senderTags: tags
       .filter((tag) => tag.origin === 'sender')
       .map(({ kind, value }) => ({ kind, value })),
-    createdAt: iso(row.created_at)!,
-    expiresAt: iso(row.expires_at),
-    withdrawnAt: iso(row.withdrawn_at),
+    createdAt: nullableRecordIso(row.created_at)!,
+    expiresAt: nullableRecordIso(row.expires_at),
+    withdrawnAt: nullableRecordIso(row.withdrawn_at),
     state: rootState(row, clock),
     acceptedReplyId: row.accepted_reply_id == null ? null : String(row.accepted_reply_id),
     acceptedBy: row.accepted_by_user_id == null ? null : String(row.accepted_by_user_id),
-    acceptedAt: iso(row.accepted_at),
+    acceptedAt: nullableRecordIso(row.accepted_at),
     noteId: row.note_id == null ? null : String(row.note_id),
     notePendingError: row.note_pending_error == null ? null : String(row.note_pending_error),
     revision: String(row.revision),
@@ -153,8 +148,8 @@ export function hostedBoardMessageView(
     authorUserId: String(row.author_user_id),
     authorSession: row.author_session == null ? null : String(row.author_session),
     ackRequired: Boolean(row.ack_required),
-    ackDeadline: iso(row.ack_deadline),
-    hiddenAt: iso(row.hidden_at),
+    ackDeadline: nullableRecordIso(row.ack_deadline),
+    hiddenAt: nullableRecordIso(row.hidden_at),
     hiddenByUserId: row.hidden_by_user_id == null ? null : String(row.hidden_by_user_id),
     hiddenReason: row.hidden_reason == null ? null : String(row.hidden_reason),
   }
@@ -165,7 +160,7 @@ function hostedBoardReplyView(row: Record<string, unknown>): HostedBoardReply {
     id: String(row.id),
     body: String(row.body),
     origin: hostedBoardOrigin(row),
-    createdAt: iso(row.created_at)!,
+    createdAt: nullableRecordIso(row.created_at)!,
   }
 }
 
@@ -177,8 +172,8 @@ function createContent(row: Record<string, unknown>, tags: BoardTag[]): HostedBo
     title: row.title == null ? null : String(row.title),
     body: String(row.body),
     ackRequired: Boolean(row.ack_required),
-    ackDeadline: iso(row.ack_deadline),
-    expiresAt: iso(row.expires_at),
+    ackDeadline: nullableRecordIso(row.ack_deadline),
+    expiresAt: nullableRecordIso(row.expires_at),
     threadRootId: row.thread_root_id == null ? null : String(row.thread_root_id),
     scopeProjectIds: hostedUuidList(row.scope_project_ids),
     recipientUserIds: hostedUuidList(row.recipient_user_ids),
@@ -589,8 +584,8 @@ function liveRoot(row: Record<string, unknown>, clock: number): boolean {
   if (row.expires_at == null) return false
   return messageIsLive(
     {
-      expiresAt: Date.parse(String(row.expires_at)),
-      withdrawnAt: row.withdrawn_at ? Date.parse(String(row.withdrawn_at)) : null,
+      expiresAt: recordDate(row.expires_at).getTime(),
+      withdrawnAt: row.withdrawn_at ? recordDate(row.withdrawn_at).getTime() : null,
     },
     clock,
   )
@@ -682,7 +677,7 @@ async function replyMember(
     return viewById(tx, String(duplicate[0].id), clock)
   if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
   const computedExpiry = extendedBoardThreadExpiry(
-    iso(root.expires_at),
+    nullableRecordIso(root.expires_at),
     clock,
     root.purpose == null ? null : parseBoardPurpose(String(root.purpose)),
   )

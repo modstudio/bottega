@@ -1,6 +1,15 @@
 export const hubModuleSpecs = [
   { file: 'hub/src/ingest/tracker-read-mode.ts', allowed: [] },
   {
+    file: 'hub/src/hosted-push-decision.ts',
+    allowed: [
+      '../../shared/record-timestamp.ts',
+      './hosted-delete.ts',
+      './note-anchor-merge.ts',
+      './push-contract.ts',
+    ],
+  },
+  {
     file: 'hub/src/trpc/routers/record-router-client.ts',
     allowed: ['../../record-client.ts', '../context.ts'],
   },
