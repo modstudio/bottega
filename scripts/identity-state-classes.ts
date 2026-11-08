@@ -149,6 +149,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     "This machine's hosted-pressure probe cache",
     PORTABLE_RULING,
   ),
+  local(
+    'orchestrator',
+    'hosted_call_outcome',
+    "This machine's hosted-call outcomes",
+    "Shmuel Barkin's ruling on DEV-2036 (2026-11-02): a local machine-only table",
+  ),
   evidence('landing', 'Outbox source for landing'),
   evidence('landing_override', 'Outbox source for landing override'),
   evidence('landing_review_carry', 'Outbox source for landing review carry'),

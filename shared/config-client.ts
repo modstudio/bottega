@@ -1,3 +1,4 @@
+import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
@@ -78,6 +79,14 @@ type Transport = (
   init?: Parameters<typeof fetch>[1],
 ) => ReturnType<typeof fetch>
 type Request = <T>(route: string, init?: RequestInit) => Promise<T>
+export type ConfigCallObservation = {
+  route: string
+  observedAt: string
+  latencyMs: number
+  status: number | null
+  error: unknown | null
+}
+export type ConfigCallOutcomeRecorder = (observation: ConfigCallObservation) => void | Promise<void>
 
 function configAuthorizationClient(request: Request) {
   return {
@@ -202,22 +211,38 @@ function createConfigClient(
   token: string,
   transport: Transport,
   signal?: AbortSignal,
+  recorder?: ConfigCallOutcomeRecorder,
 ) {
   const request = async <T>(route: string, init: RequestInit = {}): Promise<T> => {
     const headers = new Headers(init.headers)
     headers.set('authorization', `Bearer ${token}`)
     if (init.body) headers.set('content-type', 'application/json')
     let response: Response
+    const startedAt = performance.now()
     try {
       response = await transport(`${baseUrl}${route}`, {
         ...init,
         headers,
         signal: init.signal ?? signal,
       })
-    } catch {
+    } catch (error) {
+      scheduleHostedCallObservation(recorder, {
+        route,
+        observedAt: new Date().toISOString(),
+        latencyMs: performance.now() - startedAt,
+        status: null,
+        error,
+      })
       if (signal?.aborted) throw signal.reason
       throw new ConfigClientError('unreachable', route)
     }
+    scheduleHostedCallObservation(recorder, {
+      route,
+      observedAt: new Date().toISOString(),
+      latencyMs: performance.now() - startedAt,
+      status: response.status,
+      error: null,
+    })
     const body = await jsonBody(response, `${baseUrl}${route}`)
     if (!body.ok)
       throw new ConfigClientError('response', route, response.status, {
@@ -241,9 +266,10 @@ export function configClient(
   transport: Transport = fetch,
   token?: string | null,
   signal?: AbortSignal,
+  recorder?: ConfigCallOutcomeRecorder,
 ): ConfigClient {
   const url = resolveRecordApiUrl(env)
   const resolvedToken = token === undefined ? readRecordSessionToken() : token
   if (!resolvedToken) throw new ConfigClientError('not-configured', '/v1/config')
-  return createConfigClient(url.replace(/\/$/, ''), resolvedToken, transport, signal)
+  return createConfigClient(url.replace(/\/$/, ''), resolvedToken, transport, signal, recorder)
 }

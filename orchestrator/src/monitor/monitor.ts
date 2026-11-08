@@ -73,6 +73,7 @@ import {
 import { staleCustomerGuideCommandConditions } from './monitor-customer-guides.ts'
 import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
+import { checkHostedHealth } from './monitor-hosted-health.ts'
 import { checkHostedPressureCached } from './monitor-hosted-pressure.ts'
 import { fileUnavailableMonitorIssues } from './monitor-issue-filing.ts'
 import { outboxConditions } from './monitor-outbox.ts'
@@ -130,8 +131,10 @@ async function initialMonitorObservations(
   const hostPressure = hostPressureObservation(database, clock)
   const collectLease = observeCollectLease(clock)
   const hostedPressure = await checkHostedPressureCached({ database, clock })
+  const hostedHealth = await checkHostedHealth(database, clock)
   return {
     conditions: [
+      ...hostedHealth.conditions,
       ...hostedPressure.conditions,
       ...hostPressure.conditions,
       ...staleCustomerGuideCommandConditions(),
