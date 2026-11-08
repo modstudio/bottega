@@ -1,11 +1,53 @@
 import { describe, expect, test } from 'bun:test'
+import type { WorkerQuestionInput } from './ask/worker-question.ts'
 import {
   decideOutcome,
+  finalizeWorkerReply,
   isSchemaEnvelopeReply,
   type OutcomeInputs,
   SCHEMA_ENVELOPE_ERROR_PREFIX,
   schemaEnvelopeContractError,
 } from './outcome.ts'
+
+describe('worker question finalization regression', () => {
+  const finalize = (question: WorkerQuestionInput) =>
+    finalizeWorkerReply({
+      reply: { status: 'asking', questions: [question] },
+      measuredFiles: [],
+      turnChanged: false,
+      status: 'asking',
+      failureKind: null,
+      error: null,
+    })
+
+  test('run 29914 prose recommendation remains an answerable asking outcome', () => {
+    const result = finalize({
+      kind: 'choice',
+      question: 'Which option?',
+      why: 'The implementation depends on the selection.',
+      options: ['one', 'two'],
+      recommendation: 'I recommend one because it is safer.',
+    })
+
+    expect(result).toMatchObject({ status: 'asking', failureKind: null })
+    expect(result.acceptedQuestions).toHaveLength(1)
+    expect(result.acceptedQuestions[0]).not.toHaveProperty('recommendation')
+  })
+
+  test('a placeholder remains a contract failure and names its drop reason', () => {
+    const result = finalize({ question: 'placeholder', why: 'A reason was claimed.' })
+
+    expect(result).toMatchObject({ status: 'failed', failureKind: 'contract' })
+    expect(result.error).toContain('"placeholder" (question is generic)')
+  })
+
+  test('a punctuation-only question names the empty drop reason', () => {
+    const result = finalize({ question: '...', why: 'A reason was claimed.' })
+
+    expect(result).toMatchObject({ status: 'failed', failureKind: 'contract' })
+    expect(result.error).toContain('"..." (question is empty)')
+  })
+})
 
 const base: OutcomeInputs = {
   idleKilled: false,

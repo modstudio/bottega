@@ -79,7 +79,7 @@ describe('worker reply finalization', () => {
       failureKind: 'contract',
       acceptedQuestions: [],
     })
-    expect(result.error).toContain('rejected question text: "placeholder"')
+    expect(result.error).toContain('rejected question text: "placeholder" (why is empty)')
   })
 
   test('an asking reply with only an invalid typed question names the parse defect', () => {
