@@ -73,7 +73,7 @@ function discoverReachedTables(
   tableNames: readonly string[],
   exclusions: Readonly<Record<string, string>>,
 ): Map<string, SpaceTeardownReach[]> {
-  const reachedBy = new Map<string, SpaceTeardownReach[]>()
+  const reached = new Set<string>()
   const remaining = new Set(tableNames)
   let parents = new Set(['space'])
   while (parents.size) {
@@ -84,16 +84,26 @@ function discoverReachedTables(
         (fact) => fact.table === name && parents.has(fact.parent) && blocksParentDelete(fact),
       )
       if (!reaches.length) continue
-      reachedBy.set(
-        name,
-        reaches.map(({ columns, parent, parentColumns }) => ({ columns, parent, parentColumns })),
-      )
+      reached.add(name)
       added.add(name)
     }
     for (const name of added) remaining.delete(name)
     parents = added
   }
-  return reachedBy
+  return new Map(
+    [...reached].map((name) => [
+      name,
+      facts
+        .filter(
+          (fact) =>
+            fact.table === name &&
+            fact.table !== fact.parent &&
+            (fact.parent === 'space' || reached.has(fact.parent)) &&
+            blocksParentDelete(fact),
+        )
+        .map(({ columns, parent, parentColumns }) => ({ columns, parent, parentColumns })),
+    ]),
+  )
 }
 
 function orderReachedTables(
@@ -129,7 +139,7 @@ function orderReachedTables(
   return plan
 }
 
-function deriveSpaceTeardownPlan(
+export function deriveSpaceTeardownPlan(
   tables: readonly PgTable[] = hostedRecordTables,
   exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
 ): SpaceTeardownStep[] {

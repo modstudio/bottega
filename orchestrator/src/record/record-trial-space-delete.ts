@@ -6,7 +6,7 @@ import { bindTenant } from '../../../shared/record/tenant.ts'
 import {
   isTrialSpaceMetadata,
   TRIAL_IDENTIFIER_PREFIX,
-} from '../../../shared/record/trial-space.ts'
+} from './record-trial-space.ts'
 import { recordPool } from './record-pool.ts'
 import { SPACE_TEARDOWN_PLAN, type SpaceTeardownReach } from './record-space-teardown-plan.ts'
 import {
@@ -31,7 +31,7 @@ export function decideTrialSpaceDelete(facts: TrialDeleteFacts): TrialDeleteDeci
   if (!facts.slug.startsWith(TRIAL_IDENTIFIER_PREFIX))
     return {
       allowed: false,
-      refusal: `trial-slug guard failed: ${facts.slug} does not start with trial-; ${retry}`,
+      refusal: `trial-slug guard failed: ${facts.slug} does not start with ${TRIAL_IDENTIFIER_PREFIX}; ${retry}`,
     }
   if (!facts.marked)
     return {
@@ -45,7 +45,7 @@ export function decideTrialSpaceDelete(facts: TrialDeleteFacts): TrialDeleteDeci
     }
   for (const member of facts.members) {
     if (member.userId === facts.callerUserId) continue
-    if (!member.email.startsWith('trial-'))
+    if (!member.email.startsWith(TRIAL_IDENTIFIER_PREFIX))
       return {
         allowed: false,
         refusal: `trial-member-email guard failed: ${member.email} is not a trial account; remove that member, then retry`,

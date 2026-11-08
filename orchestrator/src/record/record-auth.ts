@@ -16,7 +16,7 @@ import {
   verification,
 } from '../../../shared/record/schema-auth.ts'
 import { recordServiceUrl } from '../../../shared/record/service-connection.ts'
-import { isTrialSpaceMetadata } from '../../../shared/record/trial-space.ts'
+import { isTrialSpaceMetadata } from './record-trial-space.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendEmailVerificationEmail } from '../mail/email-verification-mailer.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'

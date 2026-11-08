@@ -3,10 +3,6 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
-import {
-  TRIAL_IDENTIFIER_PREFIX,
-  TRIAL_SPACE_MARKER_KEY,
-} from '../../../shared/record/trial-space.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
@@ -17,6 +13,10 @@ import type { RecordIdentity } from './record-auth.ts'
 import { readHostedProjects } from './record-cache-projects.ts'
 import type { HiddenRow } from './record-moderation-hide.ts'
 import { cachedSignedInRecordUser } from './record-session.ts'
+import {
+  TRIAL_IDENTIFIER_PREFIX,
+  TRIAL_SPACE_MARKER_KEY,
+} from './record-trial-space.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
