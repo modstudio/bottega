@@ -2,6 +2,7 @@
 /** Computes descriptive statistics for one routing evidence window. */
 
 import { median } from '../state/statistics.ts'
+import { evidenceModel } from './evidence-model.ts'
 
 type EvidenceRow = { delivery: string | null; pts: number | null }
 
@@ -53,13 +54,19 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
   rows: T[],
   agent: string,
   currentModel: string,
+  baseUrl: string | null | undefined,
   limit: number,
 ): { rows: T[]; evidenceModel: string | null } {
+  const currentEvidenceModel = evidenceModel(currentModel, baseUrl)
   const modelRows = rows
-    .filter((row) => row.agent === agent && (row.model === currentModel || row.model === null))
+    .filter(
+      (row) =>
+        row.agent === agent &&
+        (row.model === null || evidenceModel(row.model, baseUrl) === currentEvidenceModel),
+    )
     .sort(
       (a, b) => b.startedAt.localeCompare(a.startedAt) || b.record_id.localeCompare(a.record_id),
     )
     .slice(0, limit)
-  return { rows: modelRows, evidenceModel: currentModel }
+  return { rows: modelRows, evidenceModel: currentEvidenceModel }
 }
