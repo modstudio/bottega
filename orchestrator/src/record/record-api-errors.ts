@@ -5,11 +5,17 @@ import type { Context } from 'hono'
 import { RecordBoardError } from './record-board-contract.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { RecordDocError } from './record-docs.ts'
+import {
+  projectSpaceConflictResponse,
+  RecordProjectSpaceConflictError,
+} from './record-project-space-contract.ts'
 import { RecordProjectError } from './record-projects.ts'
 import { TrialSpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 
 export function renderRecordApiRefusal(context: Context, error: unknown): Response | null {
+  if (error instanceof RecordProjectSpaceConflictError)
+    return context.json(projectSpaceConflictResponse(error), error.status)
   if (
     error instanceof RecordDocError ||
     error instanceof RecordVerdictError ||

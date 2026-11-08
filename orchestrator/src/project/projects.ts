@@ -35,6 +35,7 @@ import {
   type SequenceState,
 } from '../../../shared/git.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
@@ -42,6 +43,8 @@ import {
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
+import { RecordProjectSpaceConflictError } from '../record/record-project-space-contract.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { autonomySettingsForStorage } from '../workflow/autonomy.ts'
 import {
@@ -64,6 +67,7 @@ import {
   writeProjectToHostedRecord,
 } from './project-hosted-write.ts'
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
+import { projectPushRefusalMessage } from './project-push-refusal.ts'
 import {
   PROJECT_REFERENCES,
   type ProjectReferenceCounts,
@@ -390,19 +394,35 @@ export async function writeHostedProject(
 export async function pushProjects(): Promise<string[]> {
   requireHostedProjectPush()
   const names: string[] = []
+  const refusals: RecordProjectSpaceConflictError[] = []
   for (const project of [...projects(), ...projects({ retired: true })]) {
-    const recordId = await writeHostedProject({
-      recordId: project.recordId,
-      name: project.name,
-      path: project.path,
-      stack: project.stack,
-      canon: project.canon,
-      settings: project.settings,
-      retiredAt: project.retiredAt,
-    })
+    let recordId: string
+    try {
+      recordId = await writeHostedProject({
+        recordId: project.recordId,
+        name: project.name,
+        path: project.path,
+        stack: project.stack,
+        canon: project.canon,
+        settings: project.settings,
+        retiredAt: project.retiredAt,
+      })
+    } catch (error) {
+      if (!(error instanceof RecordProjectSpaceConflictError)) throw error
+      refusals.push(error)
+      continue
+    }
     if (project.recordId !== recordId)
       throw new Error(`hosted project identity changed for ${project.name}`)
     names.push(project.name)
+  }
+  if (refusals.length) {
+    // Slugs only make the summary friendlier; a failed lookup keeps the ids rather than hiding the refusals.
+    const memberships = await recordApiClient()
+      .whoami()
+      .then((identity) => parseRecordSpaceMemberships(identity.memberships))
+      .catch(() => [])
+    throw new Error(projectPushRefusalMessage(refusals, memberships))
   }
   return names
 }

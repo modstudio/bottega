@@ -98,7 +98,10 @@ export async function syncCommand(
     result = await dependencies.sync({ backfill: options.backfill })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const enhanced = recordTunnelFailure(message, readMachineValue('record.tunnel_app'))
+    const enhanced = recordTunnelFailure(message, {
+      tunnelApp: readMachineValue('record.tunnel_app'),
+      requiresTunnel: false,
+    })
     if (enhanced === message) throw error
     throw new Error(enhanced, { cause: error })
   }
