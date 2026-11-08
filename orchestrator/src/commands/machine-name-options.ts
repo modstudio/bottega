@@ -2,9 +2,13 @@
 /** Owns interactive CLI collection of machine names. */
 import { hostname } from 'node:os'
 import { createInterface } from 'node:readline/promises'
-import { storedMachineNamePair } from '../record/machine-identity.ts'
-import type { MachineNamePair } from '../record/machine-name.ts'
-import { defaultShortName, displayNameRefusal, shortNameRefusal } from '../record/machine-name.ts'
+import {
+  defaultShortName,
+  displayNameRefusal,
+  type MachineNamePair,
+  shortNameRefusal,
+  storedMachineNamePair,
+} from '../record/machine-name.ts'
 
 export function resolveRequestedMachineNames(
   shortName: string | undefined,
