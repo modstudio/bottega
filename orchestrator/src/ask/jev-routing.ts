@@ -74,7 +74,8 @@ export function routeJevAnswer(input: {
   const pick = answerPick(input.question, answer)
   const probabilities =
     'probabilities' in answer ? answer.probabilities : { yes: answer.noul, no: 1 - answer.noul }
-  const confidence = pick === null ? null : pickProbability(input.question.kind, pick, probabilities)
+  const confidence =
+    pick === null ? null : pickProbability(input.question.kind, pick, probabilities)
   if (
     !input.canResume ||
     !input.autoRule ||

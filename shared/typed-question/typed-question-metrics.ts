@@ -50,7 +50,9 @@ function auc(rows: readonly { probability: number; label: boolean }[]): number |
   return wins / (positive.length * negative.length)
 }
 
-export function typedQuestionCalibration(rows: readonly { probability: number; label: boolean }[]): {
+export function typedQuestionCalibration(
+  rows: readonly { probability: number; label: boolean }[],
+): {
   brier: number | null
   logLoss: number | null
   ece: number | null
