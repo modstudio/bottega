@@ -1,5 +1,6 @@
 // concern: record-doc-errors
 /** Turns pure document-write decisions into hosted-service errors. */
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 
 export class RecordDocError extends Error {
@@ -32,5 +33,10 @@ export function assertRevisionWrite(input: {
     subject: input.subject,
     slug: input.slug,
   })
-  if (!decision.allow) throw new RecordDocError(decision.reason, 409)
+  if (!decision.allow) {
+    const message = decision.remedy
+      ? renderRefusal(refusal(decision.reason, { kind: 'edit', text: decision.remedy }))
+      : decision.reason
+    throw new RecordDocError(message, 409)
+  }
 }

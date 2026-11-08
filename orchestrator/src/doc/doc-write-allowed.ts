@@ -8,7 +8,6 @@ import {
   type DocScope,
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
-import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   type CanonFinding,
@@ -241,7 +240,9 @@ export function refuseSettingsAddress(
   )
 }
 
-export type DocRevisionDecision = { allow: true } | { allow: false; reason: string }
+export type DocRevisionDecision =
+  | { allow: true }
+  | { allow: false; reason: string; remedy?: string }
 
 /** Decides optimistic document writes without knowing either backing store. */
 export function decideDocRevisionWrite(input: {
@@ -258,15 +259,8 @@ export function decideDocRevisionWrite(input: {
     const subjectFlag = input.subject === null ? '' : ` --subject ${input.subject}`
     return {
       allow: false,
-      reason: renderRefusal(
-        refusal(
-          `refusing create for ${address}: the row already exists at revision ${input.current}`,
-          {
-            kind: 'edit',
-            text: `read the doc, then write it with ${PLATFORM_SLUG} doc set ${input.slug ?? '(unknown)'} --scope ${input.scope}${subjectFlag} --expect ${input.current}`,
-          },
-        ),
-      ),
+      reason: `refusing create for ${address}: the row already exists at revision ${input.current}`,
+      remedy: `read the doc, then write it with ${PLATFORM_SLUG} doc set ${input.slug ?? '(unknown)'} --scope ${input.scope}${subjectFlag} --expect ${input.current}`,
     }
   }
   if (!input.isCreate && input.scope === 'canon' && input.current === null) {
