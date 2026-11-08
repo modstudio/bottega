@@ -34,6 +34,13 @@ const NEXT_ACTION_HEADING = /^[ \t]{0,3}#{1,6}[ \t]+NEXT ACTION[ \t]*#*[ \t]*$/i
 const PATH_TOKEN = /\/?[A-Za-z0-9._~:@%+=-]+(?:\/[A-Za-z0-9._~:@%+=-]+)*\/?/g
 const URL_SPAN = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/g
 
+export function resumeTimestampMs(updatedAt: string, createdAt: string): number {
+  const updated = Date.parse(updatedAt)
+  if (!Number.isNaN(updated)) return updated
+  const fallback = Date.parse(createdAt)
+  return Number.isNaN(fallback) ? 0 : fallback
+}
+
 export function isScratchLocation(path: string): boolean {
   return (
     path.startsWith('/tmp/') ||

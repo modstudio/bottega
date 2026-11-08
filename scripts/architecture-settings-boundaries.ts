@@ -90,6 +90,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     allowed: [
       'shared/brand.ts',
       'shared/ratchet.ts',
+      'shared/refusal.ts',
       'shared/settings-summary.ts',
       'shared/install-root.ts',
       'shared/machine-config.ts',

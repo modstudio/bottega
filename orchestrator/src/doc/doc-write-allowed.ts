@@ -8,6 +8,7 @@ import {
   type DocScope,
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
+import { type Refusal, refusal } from '../../../shared/refusal.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   type CanonFinding,
@@ -146,8 +147,8 @@ export function refuseArticleDelivery(input: {
   delivery: DocDelivery
 }): string | null {
   if (input.kind !== 'article') return null
-  const address = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
-  const command = `${PLATFORM_SLUG} doc set ${input.slug} --scope ${input.scope}${input.subject === null ? '' : ` --subject ${input.subject}`}`
+  const address = docAddress(input)
+  const command = docSetCommand(input)
   if (input.scope === 'canon') {
     return (
       `refusing article document ${address}: canon scope requires kind working\n` +
@@ -240,21 +241,54 @@ export function refuseSettingsAddress(
   )
 }
 
-export type DocRevisionDecision = { allow: true } | { allow: false; reason: string }
+export type DocRevisionDecision = { allow: true } | { allow: false; refusal: Refusal }
+
+type RevisionAddress = { scope: string; subject: string | null; slug: string }
+
+function docAddress(input: RevisionAddress): string {
+  return `${input.scope}/${input.subject ?? '_'}/${input.slug}`
+}
+
+function docSetCommand(input: RevisionAddress): string {
+  return `${PLATFORM_SLUG} doc set ${input.slug} --scope ${input.scope}${input.subject === null ? '' : ` --subject ${input.subject}`}`
+}
 
 /** Decides optimistic document writes without knowing either backing store. */
-export function decideDocRevisionWrite(input: {
+export type DocRevisionWriteInput = {
   expected?: string
   current: string | null
   isCreate: boolean
+  op?: DocRevisionOp
   scope: string
-}): DocRevisionDecision {
-  if (!input.isCreate && input.scope === 'canon' && input.current === null) {
+  subject: string | null
+  slug: string
+}
+
+export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisionDecision {
+  const address = docAddress(input)
+  if (
+    !input.isCreate &&
+    input.current === null &&
+    (input.scope === 'canon' || input.op === 'create')
+  ) {
     return {
       allow: false,
-      reason:
-        "refusing canon write: this row's latest revision is missing, so its revision cannot be checked\n" +
-        MISSING_HOSTED_REVISION_REMEDY,
+      refusal: refusal(
+        `refusing ${input.scope} write for ${address}: this row's latest revision is missing, so its revision cannot be checked`,
+        {
+          kind: 'edit',
+          text: MISSING_HOSTED_REVISION_REMEDY.replace(/^cleared by: /, ''),
+        },
+      ),
+    }
+  }
+  if (input.op === 'create' && !input.isCreate) {
+    return {
+      allow: false,
+      refusal: refusal(
+        `refusing create for ${address}: the row already exists at revision ${input.current}`,
+        { kind: 'edit', text: revisionRemedy(input, input.current!, 'create') },
+      ),
     }
   }
   if (input.isCreate && input.expected === undefined) return { allow: true }
@@ -269,33 +303,44 @@ export function decideDocRevisionWrite(input: {
   }
 
   const current = input.current ?? '(no current revision)'
-  const remedy = revisionRemedy(input.scope, current)
+  const remedy = revisionRemedy(input, current, 'update')
   if (!input.isCreate && input.expected === undefined) {
     return {
       allow: false,
-      reason: `refusing ${input.scope} update at current revision ${current}; pass ${remedy.flag}\n${remedy.reread}`,
+      refusal: refusal(`refusing ${input.scope} update at current revision ${current}`, {
+        kind: 'edit',
+        text: remedy,
+      }),
     }
   }
   if (input.expected !== input.current) {
     return {
       allow: false,
-      reason: `refusing stale document update: expected revision ${input.expected}, current revision ${current}\n${remedy.reread}`,
+      refusal: refusal(
+        `refusing stale document update: expected revision ${input.expected}, current revision ${current}`,
+        { kind: 'edit', text: remedy },
+      ),
     }
   }
   return { allow: true }
 }
 
-/** Context items are revised through their own verbs, so their refusal names those verbs' flag. */
-function revisionRemedy(scope: string, current: string) {
-  return scope === 'context'
-    ? {
-        flag: `--expected-revision ${current} (expected_revision over MCP)`,
-        reread: `re-read with ${PLATFORM_SLUG} context show (get_context over MCP) and re-apply the edit`,
-      }
-    : {
-        flag: `--expect ${current}`,
-        reread: `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
-      }
+/** Every revision refusal names the write verb that owns the addressed scope. */
+function revisionRemedy(
+  input: RevisionAddress,
+  current: string,
+  operation: 'create' | 'update',
+): string {
+  if (input.scope === 'context') {
+    return `read the context item with ${PLATFORM_SLUG} context show, then re-apply it with ${PLATFORM_SLUG} context set --id ${input.slug} --expected-revision ${current} (expected_revision over MCP)`
+  }
+  if (input.scope === 'settings') {
+    return `read the settings, then write them with ${PLATFORM_SLUG} machine settings import ${input.subject === null ? '--user' : `--project ${input.subject}`}`
+  }
+  const command = `${docSetCommand(input)} --expect ${current}`
+  return operation === 'create'
+    ? `read the doc, then write it with ${command}`
+    : `re-read the doc, then re-apply the edit with ${command}`
 }
 
 /** Hosted services have no checkout inventory, so they enforce every pure rule except references. */

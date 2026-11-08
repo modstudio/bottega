@@ -2,7 +2,6 @@
 /** Applies tenant-bound settings edits through the hosted document service. Must not know HTTP or local stores. */
 
 import { resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
-import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
 import {
   type AutoModeList,
   type PermissionList,
@@ -20,6 +19,7 @@ import {
   type SettingsPermissionOperation,
 } from '../settings/settings-permission.ts'
 import {
+  assertRevisionWrite,
   listRecordDocRevisions,
   listRecordDocs,
   RecordDocError,
@@ -139,13 +139,14 @@ async function applyRecordSettingsEdit<
   if (!row) throw new RecordDocError('settings doc not found', 404)
   const revisions = await dependencies.listRevisions({ ...tenant, id: row.id })
   const current = revisions?.[0]?.id ?? null
-  const decision = decideDocRevisionWrite({
-    expected: input.expectedRevision,
+  assertRevisionWrite({
+    expectedRevision: input.expectedRevision,
     current,
     isCreate: false,
     scope: SETTINGS_SCOPE,
+    subject,
+    slug: SETTINGS_SLUG,
   })
-  if (!decision.allow) throw new RecordDocError(decision.reason, 409)
   const edit = editSettings(parseStoredOwnedSettings(row.body))
   if (!edit.changed) return result(current!, edit)
   const written = await dependencies.upsertDoc({

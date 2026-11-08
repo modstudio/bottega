@@ -694,7 +694,10 @@ export const recordModules: RecordModule[] = [
     './record-doc-audiences.ts',
     './record-pool.ts',
   ]),
-  module('orchestrator/src/record/record-doc-errors.ts', ['../doc/doc-write-allowed.ts']),
+  module('orchestrator/src/record/record-doc-errors.ts', [
+    '../../../shared/refusal.ts',
+    '../doc/doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/record/record-doc-order.ts', [
     'bun',
     '../../../shared/record/tenant.ts',

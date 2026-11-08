@@ -68,7 +68,7 @@ describe('context document integration', () => {
         body,
         delivery: 'demand',
       }),
-    ).rejects.toThrow(`pass --expected-revision ${second.revision}`)
+    ).rejects.toThrow(`context set --id next --expected-revision ${second.revision}`)
   })
 
   test('every write verb applies the context policy, not only set', async () => {

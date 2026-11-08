@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import type { DocAudiences, DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
+import { renderRefusal } from '../../../shared/refusal.ts'
 import { db, sessionId } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
@@ -71,7 +72,7 @@ export function docWriteIdentity(
 }
 
 export function assertLocalRevisionWrite(
-  input: { scope: string; slug?: string; expectedRevision?: string },
+  input: { scope: string; subject: string | null; slug: string; expectedRevision?: string },
   current: string | null,
   isCreate: boolean,
 ): void {
@@ -80,13 +81,12 @@ export function assertLocalRevisionWrite(
     current,
     isCreate,
     scope: input.scope,
+    subject: input.subject,
+    slug: input.slug,
   })
   if (!decision.allow) {
-    throw new Error(
-      input.scope === 'context'
-        ? `context item ${input.slug ?? '(unknown)'}: ${decision.reason}`
-        : decision.reason,
-    )
+    const message = renderRefusal(decision.refusal)
+    throw new Error(input.scope === 'context' ? `context item ${input.slug}: ${message}` : message)
   }
 }
 

@@ -346,6 +346,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'bun:sqlite',
       '../../../shared/docs.ts',
+      '../../../shared/refusal.ts',
       '../database/db.ts',
       '../database/entity-number.ts',
       './doc-audiences-codec.ts',
@@ -366,6 +367,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../canon/canon-lint.ts',
       '../settings/settings.ts',
       '../../../shared/docs.ts',
+      '../../../shared/refusal.ts',
       './doc-lint.ts',
       './doc-generator.ts',
     ],
