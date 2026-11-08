@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +26,7 @@ import {
   recordInvitationListResponse,
 } from './record-api-client.ts'
 import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
+import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 
 describe('record HTTP authentication responses', () => {
   test('sign-in posts without an Origin and prefers the bearer response header', async () => {
@@ -203,6 +204,51 @@ test('a bearer is not sent when the install is pinned to another record origin',
     if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = previousUrl
   }
+})
+
+describe('project-space conflict response', () => {
+  let previousUrl: string | undefined
+  beforeEach(() => {
+    previousUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
+  })
+  afterEach(() => {
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+  })
+
+  test('a project-space 409 becomes a typed conflict carrying its remedy', async () => {
+    const conflict = {
+      projectId: '01990000-0000-7000-8000-000000000001',
+      projectName: 'alpha',
+      spaceId: '01990000-0000-7000-8000-000000000002',
+    }
+    let rejection: unknown
+    try {
+      await recordApiRequest(
+        '/v1/projects',
+        { method: 'PUT' },
+        {
+          token: () => 'stored-bearer',
+          tokenAsync: async () => 'stored-bearer',
+        },
+        (async () =>
+          Response.json(
+            { code: 'project_space_conflict', error: 'server message', ...conflict },
+            { status: 409 },
+          )) as unknown as typeof fetch,
+      )
+    } catch (error) {
+      rejection = error
+    }
+
+    expect(rejection).toBeInstanceOf(RecordProjectSpaceConflictError)
+    expect(rejection).toMatchObject(conflict)
+    expect((rejection as Error).message).toContain(
+      `${PLATFORM_SLUG} project set alpha --settings '{"space":"<owning-space-slug>"}'`,
+    )
+    expect((rejection as Error).message).toContain(`${PLATFORM_SLUG} record space switch <slug>`)
+  })
 })
 
 test('a bearer is not sent when the bound install has no recorded origin', async () => {

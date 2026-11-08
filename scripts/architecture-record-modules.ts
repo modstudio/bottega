@@ -651,8 +651,16 @@ export const recordModules: RecordModule[] = [
     './record-config-error.ts',
     './record-docs.ts',
     './record-projects.ts',
+    './record-project-space-contract.ts',
     './record-trial-space-contract.ts',
     './record-verdicts.ts',
+  ]),
+  module('orchestrator/src/record/record-project-space-contract.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+  ]),
+  module('orchestrator/src/record/record-project-space-server.ts', [
+    '../../../shared/record/postgres-error.ts',
   ]),
   module('orchestrator/src/record/record-config-error.ts', []),
   module('orchestrator/src/record/record-migration-requirement.ts', [
