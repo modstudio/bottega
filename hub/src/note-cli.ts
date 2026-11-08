@@ -17,12 +17,13 @@ import {
   setCuratorEnabled,
   staleNotes,
 } from './note.ts'
+import { recordNoteDuplicateDistinct } from './note-duplicate-question.ts'
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
 import { projects } from './projects.ts'
 import { showTask } from './task.ts'
 import { taskCreationDestination } from './tracker-new.ts'
-import { hubTypedQuestionCommand } from './typed-question-cli.ts'
+import { hubTypedQuestionBacktestCommand, hubTypedQuestionCommand } from './typed-question-cli.ts'
 
 type NoteOptions = {
   actionable?: boolean
@@ -189,6 +190,24 @@ async function resolveDuplicateNote(
 
 function registerNoteReferenceCommands(note: Command): void {
   note
+    .command('distinct <a> <b>')
+    .description('record that two notes are related but distinct')
+    .option('--project <name>', 'resolve both notes in this project')
+    .action(async (a, b, options: NoteOptions) => {
+      open()
+      const recorded = await recordNoteDuplicateDistinct(
+        reference(a, options.project),
+        reference(b, options.project),
+      )
+      if (recorded) console.log('notes recorded as distinct')
+      else {
+        console.error(
+          'no note-duplicate answer is available, so the distinct ruling was not recorded; check TYPESAFE_KEY and retry',
+        )
+        process.exitCode = 1
+      }
+    })
+  note
     .command('same <target> <source>')
     .description('merge another sighting into an existing note')
     .option('--project <name>', 'resolve both notes in this project')
@@ -255,6 +274,17 @@ function registerNoteMaintenanceCommands(note: Command): void {
       open()
       hubTypedQuestionCommand(
         { days: options.days, json: Boolean(options.json) },
+        { log: (value) => console.log(value) },
+      )
+    })
+    .command('backtest')
+    .description('replay a note-duplicate question version over ruled pairs')
+    .requiredOption('--version <n>', 'select a declared question version')
+    .option('--json', 'write the report as JSON')
+    .action((options: { version: string; json?: boolean }) => {
+      open()
+      return hubTypedQuestionBacktestCommand(
+        { version: options.version, json: Boolean(options.json) },
         { log: (value) => console.log(value) },
       )
     })

@@ -7,6 +7,7 @@ observations and their lifecycle
 - [bottega note](#bottega-note)
 - [bottega note curate](#bottega-note-curate)
 - [bottega note curator](#bottega-note-curator)
+- [bottega note distinct](#bottega-note-distinct)
 - [bottega note drop](#bottega-note-drop)
 - [bottega note keep](#bottega-note-keep)
 - [bottega note list](#bottega-note-list)
@@ -16,6 +17,7 @@ observations and their lifecycle
 - [bottega note same](#bottega-note-same)
 - [bottega note stale](#bottega-note-stale)
 - [bottega note typed-question](#bottega-note-typed-question)
+- [bottega note typed-question backtest](#bottega-note-typed-question-backtest)
 
 ## bottega note
 
@@ -27,6 +29,7 @@ observations and their lifecycle
 
 - [bottega note curate](./note.md#bottega-note-curate)
 - [bottega note curator](./note.md#bottega-note-curator)
+- [bottega note distinct](./note.md#bottega-note-distinct)
 - [bottega note drop](./note.md#bottega-note-drop)
 - [bottega note keep](./note.md#bottega-note-keep)
 - [bottega note list](./note.md#bottega-note-list)
@@ -61,6 +64,20 @@ show or change scheduled note curation
 
 - `--enable`: enable scheduled note curation
 - `--disable`: disable scheduled note curation
+
+### Related
+
+- [bottega note](./note.md#bottega-note)
+
+## bottega note distinct
+
+**Synopsis:** `bottega note distinct <a> <b> [--project <name>]`
+
+record that two notes are related but distinct
+
+### Options
+
+- `--project <name>`: resolve both notes in this project
 
 ### Related
 
@@ -202,3 +219,19 @@ report typed-question outcomes and operating cost
 ### Related
 
 - [bottega note](./note.md#bottega-note)
+- [bottega note typed-question backtest](./note.md#bottega-note-typed-question-backtest)
+
+## bottega note typed-question backtest
+
+**Synopsis:** `bottega note typed-question backtest [--version <n>] [--json]`
+
+replay a note-duplicate question version over ruled pairs
+
+### Options
+
+- `--version <n>`: select a declared question version
+- `--json`: write the report as JSON
+
+### Related
+
+- [bottega note typed-question](./note.md#bottega-note-typed-question)
