@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { missingTaskMessage } from '../../shared/task-missing.ts'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { writeCommitKey } from './attribute.ts'
 import { applyMigrations } from './migrations.ts'
@@ -102,7 +103,7 @@ describe('resolveTask', () => {
   test('reports a missing key exactly', () => {
     const conn = new Database(':memory:')
     applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-    expect(() => resolveTask(conn, 'none-1')).toThrow('no task NONE-1')
+    expect(() => resolveTask(conn, 'none-1')).toThrow(missingTaskMessage('NONE-1'))
     conn.close()
   })
 })

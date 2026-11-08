@@ -187,7 +187,13 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/task-identity.ts',
-    allowed: ['bun:sqlite', './db.ts', './project-record-id.ts', './task-adoption.ts'],
+    allowed: [
+      'bun:sqlite',
+      '../../shared/task-missing.ts',
+      './db.ts',
+      './project-record-id.ts',
+      './task-adoption.ts',
+    ],
   },
   {
     file: 'hub/src/task-api.ts',
