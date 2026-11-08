@@ -6,7 +6,6 @@ import {
   ProtocolError,
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client'
-import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { readEnvValuesWithHosted } from '../../shared/env-source.ts'
 import { containsSecretShaped } from '../../shared/secret-shaped.ts'
 
@@ -174,7 +173,7 @@ export class Mcp {
         : requestSignal
           ? AbortSignal.any([requestSignal, AbortSignal.timeout(this.timeoutMs)])
           : AbortSignal.timeout(this.timeoutMs)
-    const response = await hostedApiFetch(input, { ...init, signal })
+    const response = await globalThis.fetch(input, { ...init, signal })
     if (!message) return response
 
     const raw = await response.clone().text()

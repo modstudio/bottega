@@ -9,11 +9,6 @@ import {
 
 const originalFetch = globalThis.fetch
 
-async function requestMessage(input: RequestInfo | URL, init?: RequestInit) {
-  const body = init?.body ?? (input instanceof Request ? await input.clone().text() : undefined)
-  return JSON.parse(String(body)) as { id?: number; method: string }
-}
-
 afterEach(() => {
   globalThis.fetch = originalFetch
 })
@@ -60,8 +55,8 @@ describe('Mcp tool discovery', () => {
 
   test('observes modern discovery and exposes its negotiated protocol version', async () => {
     const exchanges: McpExchange[] = []
-    globalThis.fetch = (async (input, init) => {
-      const message = await requestMessage(input, init)
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
       expect(message.method).toBe('server/discover')
       return Response.json({
         jsonrpc: '2.0',
@@ -90,8 +85,8 @@ describe('Mcp tool discovery', () => {
   test('falls back to legacy initialization when discovery returns 404', async () => {
     const exchanges: McpExchange[] = []
     const methods: string[] = []
-    globalThis.fetch = (async (input, init) => {
-      const message = await requestMessage(input, init)
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
       methods.push(message.method)
       if (message.method === 'server/discover') {
         return new Response('not found', { status: 404 })
@@ -128,8 +123,8 @@ describe('Mcp tool discovery', () => {
 
   test('lists advertised tools without calling one', async () => {
     const methods: string[] = []
-    globalThis.fetch = (async (input, init) => {
-      const message = await requestMessage(input, init)
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
       methods.push(message.method)
       if (message.method === 'notifications/initialized') return new Response(null)
       const result =
@@ -169,8 +164,8 @@ describe('Mcp tool discovery', () => {
 
   test('allows the evidence harness to override the requested protocol version', async () => {
     let requestedProtocolVersion: unknown
-    globalThis.fetch = (async (input, init) => {
-      const message = (await requestMessage(input, init)) as {
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as {
         id?: number
         method: string
         params?: { protocolVersion?: unknown }
@@ -198,8 +193,8 @@ describe('Mcp tool discovery', () => {
   test('observes protocol and transport metadata without response content', async () => {
     const exchanges: McpExchange[] = []
     const authorizations: (string | null)[] = []
-    globalThis.fetch = (async (input, init) => {
-      const message = await requestMessage(input, init)
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
       authorizations.push(new Headers(init?.headers).get('authorization'))
       const headers = new Headers({
         'content-type': 'application/json',
@@ -303,8 +298,8 @@ describe('Mcp tool discovery', () => {
   })
 
   test('maps HTTP and protocol failures to condition-named McpError messages', async () => {
-    globalThis.fetch = (async (input, init) => {
-      const message = await requestMessage(input, init)
+    globalThis.fetch = (async (_input, init) => {
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
       if (message.method === 'initialize') {
         return Response.json({
           jsonrpc: '2.0',
@@ -350,7 +345,7 @@ describe('Mcp tool discovery', () => {
     const streamStarted = new Promise<void>((resolve) => {
       markStreamStarted = resolve
     })
-    globalThis.fetch = (async (input, init) => {
+    globalThis.fetch = (async (_input, init) => {
       if (init?.method === 'GET') {
         openStreams++
         const signal = init.signal
@@ -376,7 +371,7 @@ describe('Mcp tool discovery', () => {
         return new Response(null)
       }
 
-      const message = await requestMessage(input, init)
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
       if (message.method === 'notifications/initialized') return new Response(null, { status: 202 })
       const result =
         message.method === 'initialize'
@@ -418,7 +413,7 @@ describe('Mcp tool discovery', () => {
     const streamStarted = new Promise<void>((resolve) => {
       markStreamStarted = resolve
     })
-    globalThis.fetch = (async (input, init) => {
+    globalThis.fetch = (async (_input, init) => {
       if (init?.method === 'GET') {
         openStreams++
         const signal = init.signal
@@ -441,7 +436,7 @@ describe('Mcp tool discovery', () => {
       }
       if (init?.method === 'DELETE') return new Response(null)
 
-      const message = await requestMessage(input, init)
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
       if (message.method === 'notifications/initialized') return new Response(null, { status: 202 })
       return Response.json(
         {
@@ -473,7 +468,7 @@ describe('Mcp tool discovery', () => {
     const streamStarted = new Promise<void>((resolve) => {
       markStreamStarted = resolve
     })
-    globalThis.fetch = (async (input, init) => {
+    globalThis.fetch = (async (_input, init) => {
       if (init?.method === 'GET') {
         openStreams++
         const signal = init.signal
@@ -496,7 +491,7 @@ describe('Mcp tool discovery', () => {
       }
       if (init?.method === 'DELETE') return new Response('fixture failure', { status: 503 })
 
-      const message = await requestMessage(input, init)
+      const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
       if (message.method === 'notifications/initialized') return new Response(null, { status: 202 })
       return Response.json(
         {
