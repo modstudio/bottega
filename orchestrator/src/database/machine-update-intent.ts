@@ -16,7 +16,10 @@ function appliedPosition(path: string, table: string): number {
   if (!existsSync(path)) return 0
   const database = new Database(path, { readonly: true, create: false })
   try {
-    return database.query<{ count: number }, []>(`SELECT COUNT(*) count FROM ${table}`).get()!.count
+    return table === 'orch_migrations'
+      ? database.query<{ count: number }, []>('SELECT COUNT(*) count FROM orch_migrations').get()!
+          .count
+      : database.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version
   } finally {
     database.close()
   }

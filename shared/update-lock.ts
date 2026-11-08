@@ -9,11 +9,11 @@ import { PLATFORM_SLUG } from './brand.ts'
 import { processCommandLine } from './process-identity.ts'
 import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 
-export const MACHINE_UPDATE_LOCK_FILE = 'machine-update.lock'
-export const MACHINE_UPDATE_INTENT_FILE = 'machine-update-intent.json'
+const MACHINE_UPDATE_LOCK_FILE = 'machine-update.lock'
+const MACHINE_UPDATE_INTENT_FILE = 'machine-update-intent.json'
 export const MACHINE_UPDATE_LOCK_HELD_ENV = `${PLATFORM_SLUG.toUpperCase()}_MACHINE_UPDATE_LOCK_HELD`
 // Claude command logs, measured 2026-11-07, showed a 155.033s maximum update; round upward.
-export const MACHINE_UPDATE_LOCK_WAIT_MS = 3 * 60_000
+const MACHINE_UPDATE_LOCK_WAIT_MS = 3 * 60_000
 const MACHINE_UPDATE_LOCK_POLL_MS = 100
 
 const flockLibrary = dlopen(platform() === 'darwin' ? '/usr/lib/libSystem.B.dylib' : 'libc.so.6', {
@@ -26,7 +26,7 @@ const LOCK_UN = 8
 
 export type MachineUpdateLockHolder = { pid: number; command: string }
 
-export function machineUpdateLockPath(env: StateEnvironment): string {
+function machineUpdateLockPath(env: StateEnvironment): string {
   return join(resolveStateRoot(env), MACHINE_UPDATE_LOCK_FILE)
 }
 
