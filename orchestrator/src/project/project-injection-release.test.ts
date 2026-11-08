@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ReleaseSettings } from './project-injection.ts'
+import { liveCommandRunsGit, type ReleaseSettings } from './project-injection.ts'
 import { validateProjectSettings } from './projects.ts'
 
 const release: ReleaseSettings = {
@@ -85,6 +85,95 @@ describe('release rung settings', () => {
       expect.stringContaining(
         'release rung "production" declares a deploy command; add a live probe that prints the commit the running deployment was built from, or drop deploy',
       ),
+    ])
+    expect(validateProjectSettings(settings, 'strip')).toEqual([])
+  })
+
+  test('accepts liveVersion wherever a live probe is required', () => {
+    const liveVersion = {
+      command: 'npm view @segnavia/format version',
+      file: 'packages/format/package.json',
+      key: 'release.version',
+    }
+    expect(
+      validateProjectSettings(
+        {
+          release: {
+            ...release,
+            rungs: [
+              {
+                name: 'production',
+                branch: 'production',
+                deploy: 'bun run deploy',
+                requiredWhenChanged: ['packages/format/**'],
+                entryPoints: ['packages/format/package.json'],
+                liveVersion,
+              },
+            ],
+          },
+        },
+        'strict',
+      ),
+    ).toEqual([])
+  })
+
+  test('refuses a rung that declares both live probe forms', () => {
+    expect(
+      validateProjectSettings(
+        {
+          release: {
+            ...release,
+            rungs: [
+              {
+                ...release.rungs[0]!,
+                liveVersion: {
+                  command: 'npm view package version',
+                  file: 'package.json',
+                  key: 'version',
+                },
+              },
+            ],
+          },
+        },
+        'strict',
+      ),
+    ).toEqual([
+      expect.stringContaining('rung production declares both live and liveVersion; keep one'),
+    ])
+  })
+})
+
+describe('live command Git refusal', () => {
+  test.each([
+    'git log --oneline',
+    'cd x && git rev-parse HEAD',
+    '$(git log --oneline)',
+    '`git status`',
+    "sh -c 'git status'",
+    'bash -c "echo ready; git status"',
+    '/usr/bin/git status',
+    "eval 'git status'",
+  ])('finds Git in %j', (command) => {
+    expect(liveCommandRunsGit(command)).not.toBeNull()
+  })
+
+  test.each([
+    'curl https://api.github.com/repos/example/project',
+    'gh api repos/example/project',
+    'npm view @segnavia/format version',
+  ])('allows deployed-system probe %j', (command) => {
+    expect(liveCommandRunsGit(command)).toBeNull()
+  })
+
+  test('strict register writes apply the refusal while strip reads preserve compatibility', () => {
+    const settings = {
+      release: {
+        ...release,
+        rungs: [{ ...release.rungs[0]!, live: "sh -c 'git rev-parse HEAD'" }],
+      },
+    }
+    expect(validateProjectSettings(settings, 'strict')).toEqual([
+      expect.stringContaining('live runs git against the local checkout'),
     ])
     expect(validateProjectSettings(settings, 'strip')).toEqual([])
   })

@@ -187,6 +187,7 @@ export function ciDeployWaitOutcome(facts: {
 
 type ReleaseRungForRemedy = {
   name: string
+  liveVersion?: { command: string; file: string; key: string }
   [field: string]: unknown
 }
 
@@ -238,7 +239,8 @@ export function releaseRungProofRefusal(
   branch: string,
   rungs: readonly ReleaseRungForRemedy[],
 ): string | null {
-  if (rungs.find((candidate) => candidate.name === rung)?.live) return null
+  const selected = rungs.find((candidate) => candidate.name === rung)
+  if (selected?.live || selected?.liveVersion) return null
   return unprovableReleaseRungMessage(platformSlug, project, rung, branch, rungs)
 }
 
