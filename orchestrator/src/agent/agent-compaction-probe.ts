@@ -1,7 +1,7 @@
 // concern: Goose registration compaction probe
 /** Proves whether a Goose model accepts the harness's automatic compaction request. */
 
-export const GOOSE_COMPACTION_PROBE_CONTEXT_LIMIT = 16_384
+const GOOSE_COMPACTION_PROBE_CONTEXT_LIMIT = 16_384
 const COMPACTION_PROBE_SENTINEL = 'GOOSE_COMPACTION_PROBE_OK'
 const SECOND_TURN_FILLER = `${'x '.repeat(8_000)}\n`
 const COMPACTION_ERROR_MARKER = 'Ran into this error trying to compact'

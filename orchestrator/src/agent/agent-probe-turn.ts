@@ -12,7 +12,6 @@ import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
 import { prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
-import { gooseSessionContextProfile } from '../transport/transport-goose-context-profile.ts'
 import type {
   AgentTransport,
   NormalizedEvent,
@@ -20,6 +19,7 @@ import type {
   TransportResult,
 } from '../transport/transport.ts'
 import { withTransportDeadline } from '../transport/transport.ts'
+import { gooseSessionContextProfile } from '../transport/transport-goose-context-profile.ts'
 import type { WritingProbeConfinement } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
 import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
@@ -129,6 +129,15 @@ async function collectTurn(
   return outcome
 }
 
+function observedProbeCompactions(
+  input: ProbeTurnInput,
+  scratchDir: string,
+  sessionId: string | null,
+): number | null {
+  if (input.agent.harness !== 'goose' || !sessionId) return null
+  return gooseSessionContextProfile(join(scratchDir, 'goose'), sessionId)?.compactions ?? null
+}
+
 /** Start through the selected transport, collect, and persist the turn outcome. */
 export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResult> {
   const started = Date.now()
@@ -204,11 +213,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
         ...outcome,
         sessionId: outcome.sessionId,
         loadSessionAdvertised: handle.loadSessionAdvertised === true,
-        compactions:
-          input.agent.harness === 'goose' && outcome.sessionId
-            ? gooseSessionContextProfile(join(scratchDir, 'goose'), outcome.sessionId)?.compactions ??
-              null
-            : null,
+        compactions: observedProbeCompactions(input, scratchDir, outcome.sessionId),
       }
     } finally {
       try {

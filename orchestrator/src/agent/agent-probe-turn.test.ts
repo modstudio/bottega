@@ -4,12 +4,7 @@ import { join } from 'node:path'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
-import type {
-  AgentTransport,
-  TransportHandle,
-  TransportResult,
-  TransportStartOpts,
-} from '../transport/transport.ts'
+import type { AgentTransport, TransportHandle, TransportResult } from '../transport/transport.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
 import { probeEnvironment, runProbeTurn } from './agent-probe-turn.ts'
 import { BUILTIN_AGENTS } from './agents.ts'
@@ -140,11 +135,11 @@ function probeTransport(status: 'ok' | 'failed' = 'ok'): AgentTransport {
 
 test("a probe turn's environment reaches transport start and overrides the agent value", async () => {
   const base = probeTransport('ok')
-  let started: TransportStartOpts | null = null
+  let startedEnvironment: Record<string, string> = {}
   const capturing: AgentTransport = {
     ...base,
     start: async (opts) => {
-      started = opts
+      startedEnvironment = opts.env
       return base.start(opts)
     },
   }
@@ -159,7 +154,7 @@ test("a probe turn's environment reaches transport start and overrides the agent
     environment: { PROBE_OVERRIDE: 'turn' },
   })
 
-  expect(started?.env.PROBE_OVERRIDE).toBe('turn')
+  expect(startedEnvironment.PROBE_OVERRIDE).toBe('turn')
 })
 
 test.each(['ok', 'failed'] as const)(

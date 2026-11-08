@@ -389,6 +389,23 @@ function strictFileMatches(
   return matches(JSON.parse(readFileSync(schemaPath, 'utf8')), value).ok
 }
 
+function registrationProbeScratch(): { scratch: string; schemaPath: string } {
+  const scratch = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'orch-agent-probe-'))
+  mkdirSync(join(scratch, 'repo'))
+  writeFileSync(join(scratch, 'repo', REGISTRATION_PROBE_FILE), `${REGISTRATION_PROBE_SENTINEL}\n`)
+  const schemaPath = join(scratch, 'schema.json')
+  writeFileSync(
+    schemaPath,
+    JSON.stringify({
+      type: 'object',
+      additionalProperties: false,
+      required: ['status'],
+      properties: { status: { type: 'string', enum: ['ok'] } },
+    }),
+  )
+  return { scratch, schemaPath }
+}
+
 export async function probeAgent(
   name: string,
   inputs: AgentProbeInputs,
@@ -416,19 +433,7 @@ export async function probeAgent(
   const agent = rowAgent(row)
   if (which(agent.bin, { PATH: inputs.path }) === null)
     throw new Error(`${agent.harness} harness is not installed`)
-  const scratch = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'orch-agent-probe-'))
-  mkdirSync(join(scratch, 'repo'))
-  writeFileSync(join(scratch, 'repo', REGISTRATION_PROBE_FILE), `${REGISTRATION_PROBE_SENTINEL}\n`)
-  const schemaPath = join(scratch, 'schema.json')
-  writeFileSync(
-    schemaPath,
-    JSON.stringify({
-      type: 'object',
-      additionalProperties: false,
-      required: ['status'],
-      properties: { status: { type: 'string', enum: ['ok'] } },
-    }),
-  )
+  const { scratch, schemaPath } = registrationProbeScratch()
   const { transportFor, valueMatchesStrictSchema } = await import('../transport/transport.ts')
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
   mintStdioPingServer(join(scratch, 'repo'))

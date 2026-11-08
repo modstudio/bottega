@@ -91,21 +91,21 @@ function usageRows(gooseDir: string, sessionId?: string): GooseUsageRow[] | null
       readonly: true,
       strict: true,
     })
-    const query = sessionId
-      ? database.query<
-          { is_compaction: number | null; cache_read_tokens: number | null },
-          [string]
-        >(
-          'SELECT is_compaction, cache_read_tokens FROM usage_ledger WHERE session_id=?',
-        )
-      : database.query<{ is_compaction: number | null; cache_read_tokens: number | null }, []>(
-          'SELECT is_compaction, cache_read_tokens FROM usage_ledger',
-        )
-    return (sessionId ? query.all(sessionId) : query.all())
-      .map((row) => ({
-        isCompaction: row.is_compaction,
-        cacheReadTokens: row.cache_read_tokens,
-      }))
+    const rows = sessionId
+      ? database
+          .query<{ is_compaction: number | null; cache_read_tokens: number | null }, [string]>(
+            'SELECT is_compaction, cache_read_tokens FROM usage_ledger WHERE session_id=?',
+          )
+          .all(sessionId)
+      : database
+          .query<{ is_compaction: number | null; cache_read_tokens: number | null }, []>(
+            'SELECT is_compaction, cache_read_tokens FROM usage_ledger',
+          )
+          .all()
+    return rows.map((row) => ({
+      isCompaction: row.is_compaction,
+      cacheReadTokens: row.cache_read_tokens,
+    }))
   } catch {
     return null
   } finally {
