@@ -78,10 +78,9 @@ function teardownPredicate(table: string): string {
 async function facts(tx: SQL, slug: string, userId: string) {
   await tx`SELECT set_config('app.user_id', ${userId}, true)`
   const spaces = await tx`
-    SELECT s.id,s.metadata FROM space s
+    SELECT s.id FROM space s
     JOIN membership m ON m.space_id=s.id
     WHERE s.slug=${slug} AND m.user_id=${userId}::uuid
-    FOR UPDATE OF s
   `
   if (!spaces[0])
     return {
@@ -96,6 +95,18 @@ async function facts(tx: SQL, slug: string, userId: string) {
     }
   const spaceId = String(spaces[0].id)
   await bindTenant(tx, { userId, spaceId })
+  const locked = await tx`SELECT metadata FROM space WHERE id=${spaceId}::uuid FOR UPDATE`
+  if (!locked[0])
+    return {
+      spaceId: null,
+      value: {
+        exists: false,
+        slug,
+        marked: false,
+        callerUserId: userId,
+        members: [],
+      } satisfies TrialDeleteFacts,
+    }
   const rows =
     await tx`SELECT m.user_id,u.email,m.role FROM membership m JOIN "user" u ON u.id=m.user_id WHERE m.space_id=${spaceId}::uuid ORDER BY u.email FOR UPDATE OF m`
   const members: TrialMemberFact[] = []
@@ -114,7 +125,7 @@ async function facts(tx: SQL, slug: string, userId: string) {
     value: {
       exists: true,
       slug,
-      marked: isTrialSpaceMetadata(spaces[0].metadata),
+      marked: isTrialSpaceMetadata(locked[0].metadata),
       callerUserId: userId,
       members,
     } satisfies TrialDeleteFacts,

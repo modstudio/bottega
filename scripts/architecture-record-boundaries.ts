@@ -293,6 +293,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       'better-auth/plugins',
       'bun',
       'drizzle-orm/bun-sql',
+      'node:util',
       '../../../shared/record/schema.ts',
       '../../../shared/record-remedies.ts',
       '../../../shared/record/schema-auth.ts',

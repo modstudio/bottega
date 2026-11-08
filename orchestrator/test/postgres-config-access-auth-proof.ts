@@ -32,6 +32,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
     actorUrl: input.actorUrl,
     authUrl: input.authUrl,
     token: input.token,
+    userId: input.userId,
     admin: input.succeeds,
     psql: (user, password, source) => input.psql(source, user, password),
   })

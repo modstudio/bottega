@@ -15,6 +15,7 @@ export function registerTrialSpaceTeardownProof(input: {
   actorUrl: () => string
   authUrl: () => string
   token: () => string
+  userId: () => string
   admin: (sql: string) => string
   psql: (user: string, password: string, sql: string) => PsqlResult
 }): void {
@@ -214,13 +215,15 @@ export function registerTrialSpaceTeardownProof(input: {
 
   test('the real organization update hook preserves but never changes a trial marker', async () => {
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
+    const slug = `trial-hook-${newRecordId()}`
+    let organization: { id: string } | undefined
     try {
       const marker = { createdByUserId: 'proof', createdAt: new Date().toISOString() }
-      const organization = await auth.api.createOrganization({
+      organization = await auth.api.createOrganization({
         headers: bearerHeaders(input.token()),
         body: {
           name: `Trial marker hook ${marker.createdAt}`,
-          slug: `trial-hook-${newRecordId()}`,
+          slug,
           metadata: { trial: marker },
           keepCurrentActiveOrganization: true,
         },
@@ -241,6 +244,13 @@ export function registerTrialSpaceTeardownProof(input: {
         }),
       ).rejects.toThrow('metadata.trial is immutable')
     } finally {
+      if (organization)
+        await deleteTrialRecordSpace({
+          url: input.actorUrl(),
+          slug,
+          userId: input.userId(),
+          activeSpaceId: organization.id,
+        })
       await auth.close()
     }
   })

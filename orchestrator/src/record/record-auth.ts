@@ -1,6 +1,7 @@
 // concern: record-auth
 /** Owns record identity, bearer sessions, and personal-space repair. Must not know run phases. */
 
+import { isDeepStrictEqual } from 'node:util'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter/relations-v2'
 import { APIError, betterAuth } from 'better-auth'
 import { bearer, organization } from 'better-auth/plugins'
@@ -311,7 +312,7 @@ export function refuseTrialMarkerUpdate(current: unknown, replacement: unknown):
     isTrialSpaceMetadata(recordJsonbValue(value))
       ? (recordJsonbValue(value) as { trial: Record<string, unknown> }).trial
       : undefined
-  if (JSON.stringify(trial(current)) !== JSON.stringify(trial(replacement))) {
+  if (!isDeepStrictEqual(trial(current), trial(replacement))) {
     throw new APIError('BAD_REQUEST', {
       message: 'metadata.trial is immutable; create a new trial space instead',
     })
