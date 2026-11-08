@@ -4,6 +4,7 @@ paths:
   - orchestrator/src/typed-question/*.ts
   - orchestrator/src/collect/finding-duplicate-suggestions.ts
   - hub/src/note-duplicate-question.ts
+  - hub/src/note-duplicate-backtest.ts
   - shared/typed-question/*.ts
   - orchestrator/src/ask/jev-*.ts
   - orchestrator/src/ask/worker-question.ts
