@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { askTypedQuestionClient, JEV_MODEL } from './client.ts'
+import { askTypedQuestionClient } from './client.ts'
 import type { ChoiceQuestion, NoulQuestion, ScoreQuestion } from './registry.ts'
 
 const FIXTURE_QUESTION = {
@@ -38,7 +38,7 @@ test('sends the declared noul question and parses its probability', async () => 
   expect(new Headers(request!.init.headers).get('Authorization')).toBe('Bearer fixture-secret')
   expect(request!.init.signal).toBeInstanceOf(AbortSignal)
   expect(JSON.parse(String(request!.init.body))).toEqual({
-    model: JEV_MODEL,
+    model: 'jev-1.14.0',
     state: 'choose one',
     questions: {
       spec_unsettled: {
@@ -82,7 +82,7 @@ test('sends criteria and parses a choice answer', async () => {
   )
 
   expect(sent).toEqual({
-    model: JEV_MODEL,
+    model: 'jev-1.14.0',
     state: { text: 'portable evidence' },
     questions: {
       destination: {

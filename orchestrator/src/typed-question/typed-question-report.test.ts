@@ -3,6 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { SPEC_UNSETTLED_QUESTION } from './spec-unsettled-question.ts'
+import { typedQuestionCommand } from './typed-question-commands.ts'
 import {
   findingDuplicateLabel,
   specUnsettledLabel,
@@ -253,4 +254,14 @@ test('a job filter on implement keeps legacy spec answers and drops other jobs',
     (block) => block.subjectKind,
   )
   expect(kinds.sort()).toEqual(['spec', 'spec:implement'])
+})
+
+test('question and job filters omit the Jev worker-question report', () => {
+  const question = `filtered-command-${newRecordId()}`
+  answer({ question, version: 1, subject: 'filtered', noul: 0.5 })
+  for (const options of [{ question }, { job: 'implement' }]) {
+    const output: string[] = []
+    typedQuestionCommand({ ...options, json: true }, { log: (value) => output.push(value) })
+    expect(JSON.parse(output.join('\n'))).toMatchObject({ jevWorkerQuestions: null })
+  }
 })

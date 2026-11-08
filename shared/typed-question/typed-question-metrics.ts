@@ -50,7 +50,7 @@ function auc(rows: readonly { probability: number; label: boolean }[]): number |
   return wins / (positive.length * negative.length)
 }
 
-function calibration(rows: readonly { probability: number; label: boolean }[]): {
+export function typedQuestionCalibration(rows: readonly { probability: number; label: boolean }[]): {
   brier: number | null
   logLoss: number | null
   ece: number | null
@@ -106,7 +106,7 @@ export function typedQuestionMetrics(
   for (const row of rows) {
     if (row.error !== null) errors[row.error] = (errors[row.error] ?? 0) + 1
   }
-  const calibrationMetrics = calibration(labeled)
+  const calibrationMetrics = typedQuestionCalibration(labeled)
   return {
     recorded: rows.length,
     answered: answered.length,

@@ -16,7 +16,7 @@ import {
 } from '../run/question-vocabulary.ts'
 import { auditRunMutation, runMutationAuthority } from '../run/run-authority.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
-import { routeJevAnswer } from './jev-routing.ts'
+import { isJevConfidenceThreshold, routeJevAnswer } from './jev-routing.ts'
 import type { WorkerQuestion } from './worker-question.ts'
 
 type RunContext = { job: string; launch_key: string | null; repo: string | null }
@@ -137,9 +137,10 @@ export async function preAnswerWorkerQuestion(
       return { applied: false }
     }
     const readMachine = input.readMachine ?? readMachineValue
-    const threshold = Number(readMachine('jev.confidence_threshold'))
-    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
-      storeInvalidThreshold(database, input, result, readMachine('jev.confidence_threshold'))
+    const rawThreshold = readMachine('jev.confidence_threshold')
+    const threshold = Number(rawThreshold)
+    if (!isJevConfidenceThreshold(threshold)) {
+      storeInvalidThreshold(database, input, result, rawThreshold)
       return { applied: false }
     }
     const rulings = input.resolveRulings

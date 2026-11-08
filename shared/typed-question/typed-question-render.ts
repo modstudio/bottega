@@ -12,7 +12,7 @@ export type TypedQuestionReportBlock = Omit<TypedQuestionMetrics, 'labeled' | 'p
 
 type Presentation = { log(value: string): void }
 
-const value = (measurement: number | null, digits = 2): string =>
+export const formatMetricValue = (measurement: number | null, digits = 2): string =>
   measurement === null ? 'none' : measurement.toFixed(digits)
 
 export function renderTypedQuestionBlock(
@@ -20,24 +20,24 @@ export function renderTypedQuestionBlock(
   presentation: Presentation,
 ): void {
   const lines: [string, string][] = [
-    ['threshold', value(block.threshold)],
+    ['threshold', formatMetricValue(block.threshold)],
     ['recorded', String(block.recorded)],
     ['answered', String(block.answered)],
     ['errors', JSON.stringify(block.errors)],
     ['labeled', block.labeled === null ? 'none' : String(block.labeled)],
     ['pending', block.pending === null ? 'none' : String(block.pending)],
-    ['baseRate', value(block.baseRate)],
-    ['auc', value(block.auc)],
-    ['brier', value(block.brier)],
-    ['logLoss', value(block.logLoss)],
-    ['ece', value(block.ece)],
-    ['precision', value(block.precision)],
-    ['recall', value(block.recall)],
-    ['warnedRate', value(block.warnedRate)],
+    ['baseRate', formatMetricValue(block.baseRate)],
+    ['auc', formatMetricValue(block.auc)],
+    ['brier', formatMetricValue(block.brier)],
+    ['logLoss', formatMetricValue(block.logLoss)],
+    ['ece', formatMetricValue(block.ece)],
+    ['precision', formatMetricValue(block.precision)],
+    ['recall', formatMetricValue(block.recall)],
+    ['warnedRate', formatMetricValue(block.warnedRate)],
     ['latencyP50Ms', String(block.latencyP50Ms)],
     ['latencyP95Ms', String(block.latencyP95Ms)],
     ['inputTokens', String(block.inputTokens)],
-    ['costUsd', value(block.costUsd, 6)],
+    ['costUsd', formatMetricValue(block.costUsd, 6)],
   ]
   presentation.log(
     `\n${block.questionId} v${block.questionVersion} (${block.subjectKind}) ${block.model ?? 'model none'}`,

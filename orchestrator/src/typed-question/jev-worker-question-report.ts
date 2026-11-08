@@ -1,6 +1,9 @@
 // concern: jev-worker-question-report
 /** Measures Jev advice against later architect rulings from plain stored values. */
 
+import { typedQuestionCalibration } from '../../../shared/typed-question/typed-question-metrics.ts'
+import { pickProbability } from '../ask/jev-routing.ts'
+
 export type JevWorkerQuestionRow = {
   kind: 'choice' | 'yesno' | 'score'
   jev_model: string | null
@@ -34,24 +37,11 @@ const BAND_LIMITS = [0, 0.5, 0.7, 0.8, 0.9, 0.95, 1] as const
 
 type MeasuredRow = JevWorkerQuestionRow & { probability: number | null }
 
-function finiteProbability(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
-}
-
-function probabilityKey(row: JevWorkerQuestionRow, pick: unknown): string | null {
-  if (row.kind === 'yesno') return typeof pick === 'boolean' ? (pick ? 'yes' : 'no') : null
-  if (row.kind === 'choice') return typeof pick === 'string' ? pick : null
-  return typeof pick === 'number' && Number.isInteger(pick) ? String(pick) : null
-}
-
-function pickProbability(row: JevWorkerQuestionRow): number | null {
+function storedPickProbability(row: JevWorkerQuestionRow): number | null {
   try {
     const pick = JSON.parse(row.jev_pick) as unknown
     const probabilities = JSON.parse(row.jev_probabilities ?? '') as unknown
-    if (!probabilities || typeof probabilities !== 'object') return null
-    const key = probabilityKey(row, pick)
-    const probability = key === null ? null : (probabilities as Record<string, unknown>)[key]
-    return finiteProbability(probability) ? probability : null
+    return pickProbability(row.kind, pick, probabilities)
   } catch {
     return null
   }
@@ -103,12 +93,9 @@ function measureGroup(
     agreementAtThreshold: thresholdRows.length
       ? thresholdRows.filter((row) => row.jev_agreed === 1).length / thresholdRows.length
       : null,
-    brier: readable.length
-      ? readable.reduce(
-          (total, row) => total + (row.probability - (row.jev_agreed === 1 ? 1 : 0)) ** 2,
-          0,
-        ) / readable.length
-      : null,
+    brier: typedQuestionCalibration(
+      readable.map((row) => ({ probability: row.probability, label: row.jev_agreed === 1 })),
+    ).brier,
   }
 }
 
@@ -118,7 +105,7 @@ export function jevWorkerQuestionMetrics(
   threshold: number,
 ): JevWorkerQuestionMetrics[] {
   if (!rows.length) return []
-  const measured = rows.map((row) => ({ ...row, probability: pickProbability(row) }))
+  const measured = rows.map((row) => ({ ...row, probability: storedPickProbability(row) }))
   const groups = Map.groupBy(measured, (row) => JSON.stringify([row.kind, row.jev_model]))
   return [
     measureGroup(measured, threshold, 'all', null),

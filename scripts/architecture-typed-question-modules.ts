@@ -50,10 +50,15 @@ export const typedQuestionModules = [
     './finding-duplicate-question.ts',
     './spec-unsettled-question.ts',
   ]),
-  module('orchestrator/src/typed-question/jev-worker-question-report.ts', []),
+  module('orchestrator/src/typed-question/jev-worker-question-report.ts', [
+    '../../../shared/typed-question/typed-question-metrics.ts',
+    '../ask/jev-routing.ts',
+  ]),
   module('orchestrator/src/typed-question/jev-worker-question-report-reader.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
+    '../ask/jev-routing.ts',
     '../database/db.ts',
     './jev-worker-question-report.ts',
   ]),
