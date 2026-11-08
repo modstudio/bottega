@@ -89,6 +89,51 @@ export function liveCommandRunsGit(command: string): string | null {
   return inspect(command)
 }
 
+type ReleaseRungLiveIssue = {
+  path: [number, 'liveVersion' | 'live' | 'requiredWhenChanged' | 'entryPoints']
+  message: string
+}
+
+function releaseRungLiveVersionIssues(
+  rung: {
+    name: string
+    live?: string
+    liveVersion?: unknown
+    requiredWhenChanged?: readonly string[]
+    entryPoints?: readonly string[]
+  },
+  index: number,
+  mode: SettingsObjectMode,
+): ReleaseRungLiveIssue[] {
+  const issues: ReleaseRungLiveIssue[] = []
+  const hasLiveProbe = rung.live !== undefined || rung.liveVersion !== undefined
+  if (rung.live !== undefined && rung.liveVersion !== undefined) {
+    issues.push({
+      path: [index, 'liveVersion'],
+      message: `rung ${rung.name} declares both live and liveVersion; keep one`,
+    })
+  }
+  if (mode === 'strict' && rung.live && liveCommandRunsGit(rung.live)) {
+    issues.push({
+      path: [index, 'live'],
+      message: `rung ${rung.name}: live runs git against the local checkout; declare liveVersion {command, file, key} or a probe that queries the deployed system`,
+    })
+  }
+  if (rung.requiredWhenChanged !== undefined && !hasLiveProbe) {
+    issues.push({
+      path: [index, 'requiredWhenChanged'],
+      message: `release rung "${rung.name}" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged`,
+    })
+  }
+  if (rung.entryPoints !== undefined && !hasLiveProbe) {
+    issues.push({
+      path: [index, 'entryPoints'],
+      message: `release rung "${rung.name}" declares entryPoints; add a live probe or drop entryPoints`,
+    })
+  }
+  return issues
+}
+
 const releaseSchema = (mode: SettingsObjectMode) =>
   objectIn(mode)({
     rungs: z
@@ -117,39 +162,14 @@ const releaseSchema = (mode: SettingsObjectMode) =>
         const seen = new Set<string>()
         for (const [index, rung] of rungs.entries()) {
           const hasLiveProbe = rung.live !== undefined || rung.liveVersion !== undefined
-          if (rung.live !== undefined && rung.liveVersion !== undefined) {
-            context.addIssue({
-              code: 'custom',
-              path: [index, 'liveVersion'],
-              message: `rung ${rung.name} declares both live and liveVersion; keep one`,
-            })
-          }
-          if (mode === 'strict' && rung.live && liveCommandRunsGit(rung.live)) {
-            context.addIssue({
-              code: 'custom',
-              path: [index, 'live'],
-              message: `rung ${rung.name}: live runs git against the local checkout; declare liveVersion {command, file, key} or a probe that queries the deployed system`,
-            })
+          for (const issue of releaseRungLiveVersionIssues(rung, index, mode)) {
+            context.addIssue({ code: 'custom', ...issue })
           }
           if (mode === 'strict' && rung.deploy !== undefined && !hasLiveProbe) {
             context.addIssue({
               code: 'custom',
               path: [index, 'deploy'],
               message: `release rung "${rung.name}" declares a deploy command; add a live probe that prints the commit the running deployment was built from, or drop deploy`,
-            })
-          }
-          if (rung.requiredWhenChanged !== undefined && !hasLiveProbe) {
-            context.addIssue({
-              code: 'custom',
-              path: [index, 'requiredWhenChanged'],
-              message: `release rung "${rung.name}" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged`,
-            })
-          }
-          if (rung.entryPoints !== undefined && !hasLiveProbe) {
-            context.addIssue({
-              code: 'custom',
-              path: [index, 'entryPoints'],
-              message: `release rung "${rung.name}" declares entryPoints; add a live probe or drop entryPoints`,
             })
           }
           if (seen.has(rung.name)) {
