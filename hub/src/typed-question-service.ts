@@ -32,8 +32,9 @@ const dependencies: Dependencies = {
       database
         .query(
           `INSERT INTO typed_question_answer
-           (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
-            model,input_tokens,latency_ms,error,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+           (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,state_json,
+            answer_json,model,input_tokens,latency_ms,error,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(...values)
     })
@@ -80,6 +81,7 @@ export async function askHubTypedQuestion(
       input.subjectKind,
       input.subjectRef,
       typedQuestionStateIdentity(input.state),
+      JSON.stringify(input.state),
     ]
     if (result.kind === 'error') {
       deps.record(database, [...common, null, null, null, result.latencyMs, result.error, nowIso()])

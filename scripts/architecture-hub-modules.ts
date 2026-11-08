@@ -236,6 +236,7 @@ export const hubModuleSpecs = [
       './attribute.ts',
       './db.ts',
       './note.ts',
+      './note-duplicate-question.ts',
       './note-outside.ts',
       './note-promote-cli.ts',
       './note-push.ts',

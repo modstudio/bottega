@@ -522,7 +522,7 @@ export async function mergeNote(
       conn.query('DELETE FROM note WHERE record_id=?').run(source.record_id)
     })
     const merged = getNote(targetRecordId)
-    recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
+    await recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
     return merged
   }
   const queuedAt = nowIso()
@@ -549,7 +549,7 @@ export async function mergeNote(
   })
   await drainHostedEditOutbox(queuedAt, options.hosted)
   const merged = getNote(targetRecordId)
-  recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
+  await recordNoteDuplicateMerge(targetRecordId, sourceNote.text)
   return merged
 }
 
