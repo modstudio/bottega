@@ -52,6 +52,30 @@ describe('Jev worker-question routing', () => {
     ).toBe('escalate')
   })
 
+  test('applies when pick probability is above threshold despite API confidence', () => {
+    const decision = routeJevAnswer({
+      question: choice,
+      answer: { choice: 'a', confidence: 0.7, probabilities: { a: 0.92, b: 0.08 } },
+      threshold: 0.9,
+      rulings: 'agent',
+      autoRule: true,
+      canResume: true,
+    })
+    expect(decision).toMatchObject({ action: 'apply', confidence: 0.92 })
+  })
+
+  test('escalates when pick probability is below threshold despite API confidence', () => {
+    const decision = routeJevAnswer({
+      question: choice,
+      answer: { choice: 'a', confidence: 0.95, probabilities: { a: 0.85, b: 0.15 } },
+      threshold: 0.9,
+      rulings: 'agent',
+      autoRule: true,
+      canResume: true,
+    })
+    expect(decision).toMatchObject({ action: 'escalate', confidence: 0.85 })
+  })
+
   test('text and failures escalate', () => {
     const text = { kind: 'text' as const, question: 'Explain?', why: 'Changes it.' }
     expect(
@@ -102,7 +126,7 @@ describe('Jev worker-question routing', () => {
           legend: { '0': 'low', '1': 'medium', '2': 'high' },
           probabilities: { '0': 0, '1': 0.57, '2': 0.43 },
         },
-        threshold: 0.9,
+        threshold: 0.5,
         rulings: 'agent',
         autoRule: true,
         canResume: true,
@@ -112,7 +136,7 @@ describe('Jev worker-question routing', () => {
       value: 1,
       pick: 1,
       probabilities: { '0': 0, '1': 0.57, '2': 0.43 },
-      confidence: 0.9,
+      confidence: 0.57,
     })
   })
 
