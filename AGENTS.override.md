@@ -602,10 +602,10 @@ after research and a build-or-buy ruling, by a root fix with a class guard.
 File an observation with `bottega note new`. A note is one line of free text; project,
 run, branch, session, commit and any file anchor are derived at write time.
 
-Search for near entries when filing. Mark a repeated observation through `bottega
-note same`, which increments its count and adds a sighting. Never run scheduled
-text-similarity merging, because similar findings may be distinct. Repetition
-with cost is the promotion signal.
+Mark a repeated observation with `bottega note same`, which increments its count
+and adds a sighting. Never run scheduled text-similarity merging, because similar
+findings may be distinct; record such a pair with `bottega note distinct`.
+Repetition with cost is the promotion signal.
 
 Staleness is mechanical: an anchor vanishes when its branch is deleted or
 landed, or its run, file or line text is gone. Triage is
