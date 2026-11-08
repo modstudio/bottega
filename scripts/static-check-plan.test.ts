@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS } from './check-plan.ts'
 import {
+  biomePluginSupport,
   classifyWorkerOmissionEvidence,
   staticCheckPlan,
   workerBiomeFiles,
@@ -188,5 +189,36 @@ describe('worker static check plan', () => {
     ])
 
     expect(projection.forced).toEqual([])
+  })
+})
+
+describe('function-length ratchet support', () => {
+  test('mirrors the directory of every lint plugin biome.jsonc loads', () => {
+    const config = Bun.JSONC.parse(readFileSync(join(REPOSITORY_ROOT, 'biome.jsonc'), 'utf8'))
+    const ratchet = STATIC_CHECKS.find(
+      (check) => check.name === 'function length and naming ratchet',
+    )
+    const argv = ratchet?.argv({ root: REPOSITORY_ROOT, qualityBase: 'origin/main' }) ?? []
+    const supported = argv.flatMap((arg, index) => (argv[index - 1] === '--support' ? [arg] : []))
+    const directories = biomePluginSupport(config)
+    expect(directories.length).toBeGreaterThan(0)
+    for (const directory of directories) {
+      expect(supported).toContain(directory)
+      expect(existsSync(join(REPOSITORY_ROOT, directory))).toBe(true)
+    }
+  })
+
+  test('reads plugins at the root and under overrides, as strings or objects, once each', () => {
+    expect(
+      biomePluginSupport({
+        plugins: ['./a/lint/x.grit', { path: './a/lint/y.grit' }, 3],
+        overrides: [{ includes: ['b/**'], plugins: ['b/z.grit'] }, { includes: ['c/**'] }],
+      }),
+    ).toEqual(['a/lint', 'b'])
+    expect(biomePluginSupport({})).toEqual([])
+  })
+
+  test('mirrors a root-level plugin as its file, never as the root itself', () => {
+    expect(biomePluginSupport({ plugins: ['./root.grit'] })).toEqual(['root.grit'])
   })
 })
