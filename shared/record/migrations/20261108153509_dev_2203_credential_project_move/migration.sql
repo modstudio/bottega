@@ -19,3 +19,5 @@ BEGIN
   EXECUTE replace(definition, previous_ownership, replacement_ownership);
 END
 $migration$;
+--> statement-breakpoint
+ALTER TABLE "credential_payer_preference" FORCE ROW LEVEL SECURITY;
