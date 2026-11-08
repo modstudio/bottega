@@ -1,10 +1,10 @@
 import { Database } from 'bun:sqlite'
-import { spyOn } from 'bun:test'
 import type { OrchRun } from '../../shared/orch-contract.ts'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 import { refreshKeyPrefixes } from '../src/attribute.ts'
 import { db } from '../src/db.ts'
 import { ingestRuns } from '../src/ingest/runs.ts'
+import { decodeRunsJson } from '../src/orch.ts'
 import { MIGRATIONS_TABLE } from '../src/migrations.ts'
 import { clearOrchCache } from '../src/serve.ts'
 
@@ -148,16 +148,12 @@ export async function ingestStdout(
   rulings = '[]',
   options: Parameters<typeof ingestRuns>[1] = {},
 ) {
-  const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
-    stdout: new Blob([args.includes('ruling') ? rulings : stdout]),
-    stderr: new Blob(['']),
-    exited: Promise.resolve(0),
-  })) as unknown as typeof Bun.spawn)
-  try {
-    return await ingestRuns('2026-09-01T00:00:00.000Z', options)
-  } finally {
-    spawn.mockRestore()
-  }
+  return await ingestRuns('2026-09-01T00:00:00.000Z', {
+    ...options,
+    runReader: async () =>
+      decodeRunsJson(stdout).filter((row): row is OrchRun => !('unknown' in row)),
+    rulingReader: async () => JSON.parse(rulings),
+  })
 }
 
 export async function ingestRunFixtures(...runs: ReturnType<typeof runFixture>[]) {

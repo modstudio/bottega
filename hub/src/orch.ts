@@ -210,7 +210,7 @@ async function orchProcess(
 ): Promise<string> {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
   const env = { ...process.env, ...opts.env }
-  for (const key of opts.unsetEnv ?? []) delete env[key]
+  for (const key of opts.unsetEnv ?? []) env[key] = undefined
   try {
     const proc = await startBounded([...command, ...args], {
       budget: 'self-cli',
