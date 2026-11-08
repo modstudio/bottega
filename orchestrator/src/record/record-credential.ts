@@ -1,12 +1,12 @@
 // concern: record-credential
 /** Owns personal payer preferences in the hosted config schema. */
 
-import { newRecordId } from '../../../shared/record/schema.ts'
-import { recordIso } from '../../../shared/record-timestamp.ts'
 import type {
   CredentialPreference,
   CredentialPreferencePayload,
 } from '../../../shared/credential.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
+import { recordIso } from '../../../shared/record-timestamp.ts'
 import { type ConfigTenant, requireConfigAccess, tenant } from './record-config.ts'
 
 export type { CredentialPreference } from '../../../shared/credential.ts'

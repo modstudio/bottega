@@ -8,7 +8,7 @@ export const CREDENTIAL_BINDINGS = ['project', 'space'] as const
 
 export type CredentialEnvironment = (typeof CREDENTIAL_ENVIRONMENTS)[number]
 export type CredentialPayer = (typeof CREDENTIAL_PAYERS)[number]
-export type CredentialBinding = (typeof CREDENTIAL_BINDINGS)[number]
+type CredentialBinding = (typeof CREDENTIAL_BINDINGS)[number]
 
 export type CredentialMetadataFields = {
   provider: string

@@ -705,6 +705,12 @@ export const recordModules: RecordModule[] = [
     './record-credential.ts',
   ]),
   module('orchestrator/src/record/record-api-config-contract.ts', ['./record-config.ts']),
+  module('orchestrator/src/record/record-api-config-schema.ts', [
+    '../../../shared/credential.ts',
+    'zod',
+    './record-api-wire.ts',
+    './record-config.ts',
+  ]),
   module('orchestrator/src/record/record-credential.ts', [
     '../../../shared/credential.ts',
     '../../../shared/record/schema.ts',

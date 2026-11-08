@@ -1,8 +1,8 @@
 // concern: record-credential-secret
 /** Maps hosted secret rows without exposing ciphertext on metadata surfaces. */
 
-import { recordIso } from '../../../shared/record-timestamp.ts'
 import type { CredentialEnvironment, CredentialMetadataFields } from '../../../shared/credential.ts'
+import { recordIso } from '../../../shared/record-timestamp.ts'
 
 type ConfigSecretBase = {
   id: string
@@ -14,23 +14,19 @@ type ConfigSecretBase = {
   rowVersion: number
   updatedAt: string
 }
-export type LegacyConfigSecretMetadata = ConfigSecretBase & {
+type LegacyConfigSecretMetadata = ConfigSecretBase & {
   projectId: null
   provider: null
   type: null
   hint: null
 }
-export type CredentialSecretMetadata = ConfigSecretBase &
+type CredentialSecretMetadata = ConfigSecretBase &
   CredentialMetadataFields & {
     environment: CredentialEnvironment
     projectId: string | null
   }
 export type ConfigSecretMetadata = LegacyConfigSecretMetadata | CredentialSecretMetadata
 export type ConfigSecret = ConfigSecretMetadata & { envelope: Uint8Array }
-
-export function isCredentialSecret(row: ConfigSecretMetadata): row is CredentialSecretMetadata {
-  return row.provider !== null && row.type !== null && row.hint !== null
-}
 
 export function secretMetadata(row: Record<string, unknown>): ConfigSecretMetadata {
   return {

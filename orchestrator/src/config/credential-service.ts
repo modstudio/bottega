@@ -13,6 +13,7 @@ import {
   type CredentialMetadataFields,
 } from '../../../shared/credential.ts'
 import { stripTrailingNewline } from '../../../shared/sealed-value.ts'
+import { deleteSecret, setSecret } from './config-service.ts'
 import {
   type CredentialEnvironment,
   type CredentialPayer,
@@ -20,7 +21,6 @@ import {
   credentialScopeFromPayer,
   credentialVariableName,
 } from './credential.ts'
-import { deleteSecret, setSecret } from './config-service.ts'
 
 export type CredentialAddress = {
   provider: string

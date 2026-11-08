@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/credential.ts'
 
 const CREDENTIAL_HINT_MIN_LENGTH = 20
+
 export type { CredentialEnvironment, CredentialPayer } from '../../../shared/credential.ts'
 
 export type CredentialCandidate = CredentialIdentity & {

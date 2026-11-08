@@ -1,12 +1,12 @@
-import { jsonBody } from './http-json.ts'
-import { resolveRecordApiUrl } from './record-api-url.ts'
-import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
-import { readRecordSessionToken } from './record-session.ts'
 import type {
   CredentialEnvironment,
   CredentialMetadataFields,
   CredentialPreference,
 } from './credential.ts'
+import { jsonBody } from './http-json.ts'
+import { resolveRecordApiUrl } from './record-api-url.ts'
+import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
+import { readRecordSessionToken } from './record-session.ts'
 
 export type ConfigClientErrorReason = 'not-configured' | 'unreachable' | 'response'
 
@@ -60,7 +60,6 @@ export type ConfigSecret = {
   updatedAt: string
   envelope?: string
 }
-export type { CredentialPreference } from './credential.ts'
 type DataKeyWrap = {
   recipientKeyId: string
   senderKeyId: string

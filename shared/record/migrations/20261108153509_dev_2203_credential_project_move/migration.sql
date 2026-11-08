@@ -1,3 +1,5 @@
+ALTER TABLE "config_secret" NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
 DO $migration$
 DECLARE
   definition text;
@@ -42,5 +44,7 @@ BEGIN
   EXECUTE replace(definition, preflight_anchor, preflight_replacement);
 END
 $migration$;
+--> statement-breakpoint
+ALTER TABLE "config_secret" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE "credential_payer_preference" FORCE ROW LEVEL SECURITY;

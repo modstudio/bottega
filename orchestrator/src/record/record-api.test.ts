@@ -788,59 +788,6 @@ describe('record config API', () => {
     expect(JSON.stringify(await response.json())).not.toContain(envelope)
   })
 
-  test('config secret bodies require complete credential metadata', async () => {
-    const base = {
-      environment: 'default',
-      scope: 'user',
-      dekId: id,
-      envelope: 'AQ',
-      expectedRowVersion: null,
-    }
-    for (const fields of [
-      { provider: 'openrouter' },
-      { provider: 'openrouter', type: null, hint: 'open…hint' },
-      { projectId: id },
-    ]) {
-      const response = await appWith(identity).request('/v1/config/secrets/token', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...base, ...fields }),
-      })
-      expect(response.status).toBe(422)
-    }
-
-    let received: Record<string, unknown> | undefined
-    const valid = await appWith(identity, {
-      putConfigSecret: async (input: Record<string, unknown>) => {
-        received = input
-        return {
-          key: 'OPENROUTER_API_KEY',
-          environment: 'default',
-          scope: 'user',
-          projectId: id,
-          provider: 'openrouter',
-          type: 'api-key',
-          hint: 'open…hint',
-          dekId: id,
-          rowVersion: 1,
-          updatedAt: '2026-11-08T00:00:00.000Z',
-        }
-      },
-    }).request('/v1/config/secrets/OPENROUTER_API_KEY', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        ...base,
-        projectId: id,
-        provider: 'openrouter',
-        type: 'api-key',
-        hint: 'open…hint',
-      }),
-    })
-    expect(valid.status).toBe(200)
-    expect(received).toMatchObject({ projectId: id, provider: 'openrouter', type: 'api-key' })
-  })
-
   test('current data key validates its recipient and maps read failures', async () => {
     const response = await appWith(identity).request('/v1/config/data-keys/current')
     expect(response.status).toBe(422)

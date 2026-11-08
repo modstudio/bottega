@@ -6,7 +6,6 @@ import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
-import { CREDENTIAL_SLUG_PATTERN } from '../../../shared/credential.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
@@ -18,6 +17,7 @@ import { registerRecordAccessRoutes, registerRecordCors } from './record-api-acc
 import type { RecordBoardDeps } from './record-api-board.ts'
 import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
 import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
+import { configSecretPutBody } from './record-api-config-schema.ts'
 import {
   type RecordCredentialRouteDeps,
   registerRecordCredentialRoutes,
@@ -225,22 +225,6 @@ const configBody = z.object({
   scope: configScopeSchema,
   expectedRowVersion: expectedVersionSchema.nullable(),
 })
-const credentialFields = z
-  .object({
-    projectId: idSchema.nullable().optional(),
-    provider: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable().optional(),
-    type: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable().optional(),
-    hint: z.string().min(1).nullable().optional(),
-  })
-  .refine(
-    ({ projectId, provider, type, hint }) => {
-      const values = [provider ?? null, type ?? null, hint ?? null]
-      const credential = values.every((value) => value !== null)
-      const legacy = values.every((value) => value === null) && (projectId ?? null) === null
-      return credential || legacy
-    },
-    { message: 'credential metadata must be complete and projectId requires credential metadata' },
-  )
 const wrapSchema = z.object({
   recipientKeyId: keyIdSchema,
   senderKeyId: keyIdSchema,
@@ -513,10 +497,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.put('/v1/config/secrets/:key', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)
-    const body = configBody
-      .extend({ dekId: idSchema, envelope: base64urlSchema })
-      .and(credentialFields)
-      .safeParse(await context.req.json().catch(() => null))
+    const body = configSecretPutBody.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config secret body' }, 422)
     try {
       return context.json(
