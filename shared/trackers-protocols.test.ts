@@ -700,7 +700,10 @@ describe('tracker source construction', () => {
     ] as const
     for (const entry of cases) {
       const source = trackerSourceFor(project('identity', entry.protocol))!
-      const fetched = await source.fetch({ listTools: scopeTools, callTool: async () => entry.reply })
+      const fetched = await source.fetch({
+        listTools: scopeTools,
+        callTool: async () => entry.reply,
+      })
       expect(fetched.tasks.map((task) => task.externalId)).toEqual([
         `${entry.protocol.split('-')[0]}-uuid`,
       ])

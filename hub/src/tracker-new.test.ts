@@ -174,7 +174,7 @@ describe('tracker-new MCP creation', () => {
         tracker: {
           protocol: 'workspace-mcp',
           team: 'TEAM',
-          states: { unstarted: 'open', Open: 'open' },
+          states: { Open: 'open' },
           writeStates: { open: 'Open' },
         },
       },

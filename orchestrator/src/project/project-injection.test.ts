@@ -679,6 +679,7 @@ describe('project workflow injection', () => {
               checking: 'review',
               completed: 'done',
             },
+            writeStates: { active: 'started', done: 'completed' },
           },
         },
       },
@@ -703,7 +704,11 @@ describe('project workflow injection', () => {
         name: 'fixture',
         stack: 'node',
         settings: {
-          tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
+          tracker: {
+            protocol: 'workspace-mcp',
+            states: { completed: 'done' },
+            writeStates: { done: 'completed' },
+          },
         },
       },
       ['tracker'],

@@ -333,7 +333,11 @@ describe('workflow versions and project composition', () => {
     promoteWorkflowLocal('separate-ship-to-tracker', workflow.n, 'publish', 'test', d)
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
-        tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
+        tracker: {
+          protocol: 'workspace-mcp',
+          states: { completed: 'done' },
+          writeStates: { done: 'completed' },
+        },
         release: releaseFixture,
         docs: { protocol: 'orch-docs' },
       }),
@@ -722,6 +726,7 @@ describe('workflow versions and project composition', () => {
           kind: 'workspace',
           protocol: 'workspace-mcp',
           states: { completed: 'done' },
+          writeStates: { done: 'completed' },
         },
       }),
       'fixture',
@@ -782,7 +787,11 @@ describe('workflow versions and project composition', () => {
 
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
-        tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
+        tracker: {
+          protocol: 'workspace-mcp',
+          states: { completed: 'done' },
+          writeStates: { done: 'completed' },
+        },
         worktree: { branch: '{key}-orch-{id}' },
       }),
       'fixture',

@@ -519,6 +519,9 @@ function resolvedTracker(
   ) as Partial<Record<TrackerAction, string>>
   const states = Object.fromEntries(
     (['active', 'done'] as const).flatMap((category) => {
+      const declaresCategory =
+        protocol === 'hub' || Object.values(tracker.states ?? {}).includes(category)
+      if (!declaresCategory && !tracker.writeStates?.[category]) return []
       const raw = resolveTrackerWriteState(project.name, tracker, protocol, category)
       return raw ? [[category, raw]] : []
     }),

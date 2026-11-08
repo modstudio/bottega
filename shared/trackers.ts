@@ -265,14 +265,14 @@ export function resolveTrackerWriteState(
     mapped === category || (category === 'open' && mapped === 'backlog') ? [raw] : [],
   )
   const selected = tracker.writeStates?.[category]
-  if (protocol === 'workspace-mcp' && !selected) {
-    throw new Error(
-      `project ${projectName} tracker has no writeStates.${category} selection; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '${JSON.stringify({ tracker: { writeStates: { [category]: `<${category}-state>` } } })}'`,
-    )
-  }
   if (!selected && rawStates.length > 1) {
     throw new Error(
       `project ${projectName} tracker has several ${category} states (${rawStates.join(', ')}) but no writeStates.${category} selection; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '${JSON.stringify({ tracker: { writeStates: { [category]: `<${category}-state>` } } })}'`,
+    )
+  }
+  if (protocol === 'workspace-mcp' && !selected) {
+    throw new Error(
+      `project ${projectName} tracker has no writeStates.${category} selection; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '${JSON.stringify({ tracker: { writeStates: { [category]: `<${category}-state>` } } })}'`,
     )
   }
   return selected ?? rawStates[0] ?? (protocol === 'hub' ? category : undefined)
