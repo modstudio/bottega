@@ -27,7 +27,16 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/record/service-connection.ts',
   ]),
-  module('orchestrator/src/record/record-retention.ts', ['bun', './record-pool.ts']),
+  module('orchestrator/src/record/record-retention.ts', [
+    'bun',
+    './record-board-presence.ts',
+    './record-pool.ts',
+  ]),
+  module('orchestrator/src/record/record-board-presence.ts', [
+    'bun',
+    '../../../shared/record-id.ts',
+    './record-board-contract.ts',
+  ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', [
     '../../../shared/install-root.ts',
     '../../../shared/record/migration-session.ts',
@@ -856,8 +865,10 @@ export const recordModules: RecordModule[] = [
     './record-board-tx.ts',
   ]),
   module('orchestrator/src/record/record-board-changes.ts', [
+    '../../../shared/record-id.ts',
     '../board/board-tags.ts',
     './record-board-contract.ts',
+    './record-board-presence.ts',
     './record-board-message-tags.ts',
     './record-board-messages.ts',
     './record-board-receipts.ts',

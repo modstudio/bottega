@@ -77,6 +77,8 @@ import {
   type HostedBoardReplyInput,
   type HostedBoardSessionInput,
   type HostedBoardStatus,
+  type HostedBoardSuccessorInput,
+  type HostedBoardSuccessorResult,
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
   hostedBoardReplyBody,
@@ -407,8 +409,11 @@ export type RecordApiClient = ProjectIdentityClient &
     listBoardChanges(query: {
       after?: string
       limit?: number
+      machineId?: string | null
+      presence?: import('./record-board-contract.ts').HostedBoardPresenceInput[]
       signal?: AbortSignal
     }): Promise<HostedBoardChanges>
+    takeBoardSuccessor(input: HostedBoardSuccessorInput): Promise<HostedBoardSuccessorResult>
     takeBoardClaim(
       input: HostedBoardTakeClaimInput,
     ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
@@ -930,7 +935,8 @@ const recordBoardClient = (request = defaultRequest): Pick<RecordApiClient, Reco
   getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
   putBoardReceipt: (input, signal) =>
     request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input), signal }),
-  listBoardChanges: listBoardChangesRequest,
+  takeBoardSuccessor: (input) =>
+    request('/v1/board/successor', { method: 'PUT', body: JSON.stringify(input) }),
   takeBoardClaim: (input) =>
     request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
   renewBoardClaim: (id, input) =>
@@ -980,21 +986,6 @@ function recordIdentityAndSpaceClient(
     deleteTrialSpace: (slug) =>
       request('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),
   }
-}
-
-function listBoardChangesRequest(query: {
-  after?: string
-  limit?: number
-  signal?: AbortSignal
-}): Promise<HostedBoardChanges> {
-  const search = new URLSearchParams()
-  if (query.after) search.set('after', query.after)
-  if (query.limit) search.set('limit', String(query.limit))
-  const suffix = search.toString()
-  return defaultRequest(
-    `/v1/board/changes${suffix ? `?${suffix}` : ''}`,
-    query.signal ? { signal: query.signal } : {},
-  )
 }
 
 function recordApiBoardWatchClient(): Pick<RecordApiClient, RecordBoardWatchMethod> {

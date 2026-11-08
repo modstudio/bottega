@@ -25,6 +25,8 @@ import {
   type HostedBoardReplyInput,
   type HostedBoardSessionInput,
   type HostedBoardStatus,
+  type HostedBoardSuccessorInput,
+  type HostedBoardSuccessorResult,
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
   RecordBoardError,
@@ -38,6 +40,7 @@ import {
 import { type BoardTenant, hostedBoardStoreRefusal } from './record-board-tx.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity } }
+type BoardRouteContext = Context<ApiEnvironment>
 
 const idSchema = z.string().uuid()
 const isoSchema = z.string().datetime({ offset: true })
@@ -146,6 +149,18 @@ const releaseTaskSchema = z
   })
   .strict()
 const claimListSchema = z.object({ project: z.string().min(1), projectId: idSchema })
+const successorSchema = z
+  .object({ messageId: idSchema, candidateSession: z.string().min(1) })
+  .strict()
+const presenceSchema = z.array(
+  z.object({
+    session: z.string().min(1),
+    projectId: idSchema,
+    role: z.literal('architect'),
+    firstSeen: isoSchema,
+    lastSeen: isoSchema,
+  }),
+)
 
 export type RecordBoardDeps = {
   boardWakeSource: BoardWakeSource
@@ -176,8 +191,16 @@ export type RecordBoardDeps = {
   boardStatus(input: BoardTenant & { id: string }): Promise<HostedBoardStatus>
   putBoardReceipt(input: BoardTenant & HostedBoardReceiptInput): Promise<HostedBoardReceipt>
   listBoardChanges(
-    input: BoardTenant & { after: string; limit?: number },
+    input: BoardTenant & {
+      after: string
+      limit?: number
+      machineId?: string | null
+      presence?: import('./record-board-contract.ts').HostedBoardPresenceInput[]
+    },
   ): Promise<HostedBoardChanges>
+  takeBoardSuccessor(
+    input: BoardTenant & HostedBoardSuccessorInput,
+  ): Promise<HostedBoardSuccessorResult>
   takeBoardClaim(
     input: BoardTenant & HostedBoardTakeClaimInput,
   ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
@@ -279,6 +302,55 @@ function registerBoardWriteRoutes(
   })
 }
 
+function registerBoardCoordinationRoutes(
+  app: Hono<ApiEnvironment>,
+  deps: RecordBoardDeps,
+  helpers: { noSpace(context: BoardRouteContext): Response },
+  tenantOf: (context: BoardRouteContext) => BoardTenant | null,
+  writeError: (context: BoardRouteContext, error: unknown) => Response | Promise<Response>,
+): void {
+  app.get('/v1/board/changes', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant) return helpers.noSpace(context)
+    const query = z
+      .object({
+        after: z.string().regex(/^\d+$/).default('0'),
+        limit: z.coerce.number().int().min(1).max(BOARD_CHANGES_PAGE_LIMIT).optional(),
+        machineId: idSchema.nullable().optional(),
+        presence: z
+          .string()
+          .optional()
+          .transform((value, context) => {
+            if (!value) return undefined
+            try {
+              const parsed = presenceSchema.safeParse(JSON.parse(value))
+              if (parsed.success) return parsed.data
+            } catch {}
+            context.addIssue({ code: 'custom', message: 'invalid board presence' })
+            return z.NEVER
+          }),
+      })
+      .safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid board changes query' }, 400)
+    try {
+      return context.json(await deps.listBoardChanges({ ...tenant, ...query.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.put('/v1/board/successor', async (context) => {
+    const tenant = tenantOf(context)
+    if (!tenant) return helpers.noSpace(context)
+    const body = successorSchema.safeParse(await readJson(context))
+    if (!body.success) return context.json({ error: 'invalid board successor take' }, 400)
+    try {
+      return context.json(await deps.takeBoardSuccessor({ ...tenant, ...body.data }))
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+}
+
 export function registerRecordBoardRoutes(
   app: Hono<ApiEnvironment>,
   deps: {
@@ -296,6 +368,7 @@ export function registerRecordBoardRoutes(
     helpers.writeError(context, hostedBoardStoreRefusal(error) ?? error)
 
   registerBoardStreamRoute(app, deps)
+  registerBoardCoordinationRoutes(app, deps, helpers, tenantOf, writeError)
 
   app.get('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
@@ -403,22 +476,6 @@ export function registerRecordBoardRoutes(
     if (!body.success) return context.json({ error: 'invalid board receipt' }, 400)
     try {
       return context.json(await deps.putBoardReceipt({ ...tenant, ...body.data }))
-    } catch (error) {
-      return writeError(context, error)
-    }
-  })
-  app.get('/v1/board/changes', async (context) => {
-    const tenant = tenantOf(context)
-    if (!tenant) return helpers.noSpace(context)
-    const query = z
-      .object({
-        after: z.string().regex(/^\d+$/).default('0'),
-        limit: z.coerce.number().int().min(1).max(BOARD_CHANGES_PAGE_LIMIT).optional(),
-      })
-      .safeParse(context.req.query())
-    if (!query.success) return context.json({ error: 'invalid board changes query' }, 400)
-    try {
-      return context.json(await deps.listBoardChanges({ ...tenant, ...query.data }))
     } catch (error) {
       return writeError(context, error)
     }

@@ -311,6 +311,7 @@ function capturingClient(calls: string[], failTitle?: string) {
         audienceAtPosting: input.audienceAtPosting,
         deliveredAt: input.delivered ? new Date(NOW).toISOString() : null,
         acknowledgedAt: input.acknowledged ? new Date(NOW).toISOString() : null,
+        successor: false,
       }
       receipts.push(receipt)
       return receipt

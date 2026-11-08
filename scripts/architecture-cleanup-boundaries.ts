@@ -265,6 +265,7 @@ export const cleanupBoundarySpecs = [
       '../hook-tree/hook-tree.ts',
       '../landing-tree/release-observation.ts',
       '../../../shared/process-identity.ts',
+      '../../../shared/session-liveness.ts',
       '../project/projects.ts',
       '../resources/process-inventory.ts',
       '../reclaim/orphan-process-reclaim.ts',
@@ -313,6 +314,7 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/cleanup/cleanup-sweep-orphan-candidate.ts',
     allowed: [
       '../../../shared/process-identity.ts',
+      '../../../shared/session-liveness.ts',
       'node:path',
       '../database/db.ts',
       '../project/projects.ts',

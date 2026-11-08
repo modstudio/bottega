@@ -65,6 +65,7 @@ export type RecordBoardMethod =
   | 'getBoardStatus'
   | 'putBoardReceipt'
   | 'listBoardChanges'
+  | 'takeBoardSuccessor'
   | 'takeBoardClaim'
   | 'renewBoardClaim'
   | 'releaseBoardClaim'

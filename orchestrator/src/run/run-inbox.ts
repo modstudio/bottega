@@ -1,8 +1,9 @@
 // concern: run-inbox
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
+import { db, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'

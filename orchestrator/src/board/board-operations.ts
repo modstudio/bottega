@@ -44,11 +44,8 @@ import {
   takeClaim,
 } from './board-claim-service.ts'
 import { markBoardDeliveriesDelivered } from './board-delivery.ts'
-import {
-  cachedAudienceAtPosting,
-  cacheHostedBoardReceipt,
-  queueHostedBoardAcknowledgement,
-} from './board-hosted-cache.ts'
+import { cachedAudienceAtPosting, queueHostedBoardAcknowledgement } from './board-hosted-cache.ts'
+import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import {
   resolveBoardClaimIdentifier,
   resolveBoardMessageIdentifier,

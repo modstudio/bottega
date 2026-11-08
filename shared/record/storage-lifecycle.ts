@@ -96,6 +96,11 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
     'kept',
   ),
   ...entries(
+    ['board_presence'],
+    'record',
+    'orchestrator/src/record/record-retention.ts#pruneRecordRetention',
+  ),
+  ...entries(
     ['contention'],
     'telemetry',
     'orchestrator/src/record/record-retention.ts#pruneRecordRetention',

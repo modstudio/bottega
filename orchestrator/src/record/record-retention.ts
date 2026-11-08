@@ -2,6 +2,7 @@
 /** Runs hosted retention under one cross-instance lock without coupling the job to the API lifecycle. */
 
 import type { SQL } from 'bun'
+import { BOARD_PRESENCE_RETENTION_MS } from './record-board-presence.ts'
 import { recordPool } from './record-pool.ts'
 
 export const RECORD_RETENTION_INTERVAL_MS = 60 * 60_000
@@ -12,7 +13,11 @@ export const RECORD_RETENTION_ADVISORY_LOCK_KEY = 2_121_000_001
 type IntervalTimer = ReturnType<typeof setInterval>
 type TimeoutTimer = ReturnType<typeof setTimeout>
 type PruneOutcome = { deleted: number } | { failure: string }
-type PruneOutcomes = { recordChange: PruneOutcome; contention: PruneOutcome }
+type PruneOutcomes = {
+  recordChange: PruneOutcome
+  contention: PruneOutcome
+  boardPresence: PruneOutcome
+}
 
 export type RecordRetentionResult =
   | { acquired: false }
@@ -42,13 +47,15 @@ export async function runLockedRecordRetention(input: {
   tryLock(): Promise<boolean>
   pruneRecordChanges(): Promise<number>
   pruneContention(): Promise<number>
+  pruneBoardPresence(): Promise<number>
 }): Promise<RecordRetentionResult> {
   if (!(await input.tryLock())) return { acquired: false }
   const recordChange = await pruneOutcome(input.pruneRecordChanges)
   const contention = await pruneOutcome(input.pruneContention)
+  const boardPresence = await pruneOutcome(input.pruneBoardPresence)
   return {
     acquired: true,
-    outcomes: { recordChange, contention },
+    outcomes: { recordChange, contention, boardPresence },
   }
 }
 
@@ -81,6 +88,17 @@ export async function pruneRecordRetention(
       tryLock: async () => acquired,
       pruneRecordChanges: () => pruneFunction(connection, 'record_change_prune'),
       pruneContention: () => pruneFunction(connection, 'contention_prune'),
+      pruneBoardPresence: async () => {
+        const result = rows<{ deleted: number | bigint | string }>(
+          await connection`SELECT public.board_presence_prune() AS deleted`,
+        )[0]
+        if (!result) {
+          throw new Error(
+            `board_presence_prune() returned no result for the ${BOARD_PRESENCE_RETENTION_MS}ms retention window; verify the record retention migrations are applied`,
+          )
+        }
+        return Number(result.deleted)
+      },
     })
   } finally {
     try {
@@ -112,7 +130,7 @@ export async function runRecordRetentionPass(
       `record retention: ${format('record_change', result.outcomes.recordChange)}, ${format(
         'contention',
         result.outcomes.contention,
-      )} in ${durationMs}ms`,
+      )}, ${format('board_presence', result.outcomes.boardPresence)} in ${durationMs}ms`,
     )
   } catch (error) {
     const durationMs = adapters.now() - startedAt

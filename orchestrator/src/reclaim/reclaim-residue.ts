@@ -1,4 +1,5 @@
 // concern: reclaim-residue
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Observes and releases one explicitly named piece of monitor residue. */
 
 import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync } from 'node:fs'
@@ -7,7 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive, processSignalOutcome } from '../../../shared/process-identity.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { db, nowIso, SESSION_LIVE_MS, writableDb } from '../database/db.ts'
+import { db, nowIso, writableDb } from '../database/db.ts'
 import { settleRunEvidence } from '../evidence/unjudged-expiry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'

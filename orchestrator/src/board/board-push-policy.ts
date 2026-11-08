@@ -1,5 +1,8 @@
 // concern: board-push-policy
-/** Decides whether a board message belongs in a reader's pushed delivery. */
+/**
+ * Decides whether a board message belongs in a reader's pushed delivery.
+ * Hosted successor authority is public.board_reply_elect_successor; these predicates serve local delivery.
+ */
 
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { boardHeaderValue, type PresenceFact, resolveAudience } from './board-policy.ts'

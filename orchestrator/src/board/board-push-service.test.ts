@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import {
   addCandidate,
   createHookFixture,
@@ -25,7 +26,7 @@ import {
   writeTranscript,
 } from '../../test/fixtures/board-hook.ts'
 import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { db, SESSION_LIVE_MS } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'

@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db, SESSION_LIVE_MS } from '../database/db.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { db } from '../database/db.ts'
 import {
   listClaims,
   releaseClaim,

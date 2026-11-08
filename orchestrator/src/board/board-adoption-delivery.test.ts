@@ -98,6 +98,7 @@ test('delivery stamps hosted receipt and reach for an uploaded local shadow UUID
         audienceAtPosting: input.audienceAtPosting,
         deliveredAt: new Date(clock + 2).toISOString(),
         acknowledgedAt: null,
+        successor: false,
       }
     },
   })

@@ -131,6 +131,12 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ...writeEntries(
     'orchestrator',
     'recordApiClient',
+    ['hosted_board_message_cache', 'hosted_board_receipt_cache'],
+    ['takeBoardSuccessor'],
+  ),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
     [],
     ['renameMachine', 'retireMachine'],
     'no local table; machine identity comes from machine.toml',

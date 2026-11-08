@@ -1,4 +1,5 @@
 // concern: resource-ownership
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /**
  * Knows worktree claims, live sharing, and terminal resource teardown. Must not know routing, transports, reviews, contracts, or CLI adapters.
  */
@@ -6,7 +7,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { SESSION_LIVE_MS, sessionId } from '../database/db.ts'
+import { sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'

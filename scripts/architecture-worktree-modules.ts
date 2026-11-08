@@ -20,6 +20,7 @@ export const worktreeModules: WorktreeModule[] = [
   module('orchestrator/src/reclaim/reclaim-residue.ts', [
     '../../../shared/brand.ts',
     '../../../shared/process-identity.ts',
+    '../../../shared/session-liveness.ts',
     '../../../shared/state-directory.ts',
     'node:fs',
     'node:path',
