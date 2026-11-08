@@ -99,20 +99,15 @@ async function expectExistingAccountSignInRemedy(apiError: Error): Promise<void>
   ).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} record sign-in --email person@example.test`)
 }
 
-test('sign-up directs an existing account to sign in', async () => {
+test('sign-up directs an existing account fact to sign in', async () => {
   await expectExistingAccountSignInRemedy(
     new RecordApiRequestError(
       'changed upstream message',
       'refused',
       422,
       'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+      true,
     ),
-  )
-})
-
-test('sign-up falls back to the existing-account text when the API returns no code', async () => {
-  await expectExistingAccountSignInRemedy(
-    new RecordApiRequestError('User already exists. Use another email.', 'refused', 422),
   )
 })
 

@@ -15,6 +15,7 @@ import {
 } from '../../test/fixtures/record-session.ts'
 import { db } from '../database/db.ts'
 import {
+  RecordApiRequestError,
   recordApiBaseUrl,
   recordApiClient,
   recordApiRequest,
@@ -93,6 +94,20 @@ describe('record HTTP authentication responses', () => {
       ),
     ).toMatchObject({ code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' })
   })
+
+  test.each([
+    ['USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL', 'changed upstream message', true],
+    ['USER_ALREADY_EXISTS', 'changed upstream message', true],
+    [null, 'User already exists. Use another email.', true],
+    ['DIFFERENT_ERROR', 'User already exists. Use another email.', false],
+  ])(
+    'classifies an existing account from auth code %p before message %p',
+    (code, message, existingAccount) => {
+      const error = recordAuthRefusal(422, code ? { code, message } : { message }, new Headers())
+      expect(error).toBeInstanceOf(RecordApiRequestError)
+      expect(error).toMatchObject({ existingAccount })
+    },
+  )
 
   test('validates and maps whoami identity at the HTTP edge', () => {
     const mapped = recordIdentityResponse({

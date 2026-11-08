@@ -1,6 +1,24 @@
 // concern: record-api-client-response
 /** Owns generic record API response shape and message parsing. */
 
+export class RecordApiRequestError extends Error {
+  readonly kind: 'unreachable' | 'server' | 'refused'
+  readonly status: number | null
+  readonly code: string | null
+  readonly existingAccount: boolean
+
+  constructor(
+    message: string,
+    kind: 'unreachable' | 'server' | 'refused',
+    status: number | null = null,
+    code: string | null = null,
+    existingAccount = false,
+  ) {
+    super(message)
+    Object.assign(this, { kind, status, code, existingAccount })
+  }
+}
+
 export const responseRecord = (body: unknown): Record<string, unknown> =>
   body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
 

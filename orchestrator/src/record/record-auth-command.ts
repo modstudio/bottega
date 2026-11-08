@@ -84,12 +84,8 @@ export async function signUpCommand(
 }
 
 function existingAccountSignUpRefusal(error: unknown, email: string): never {
-  const code = error instanceof RecordApiRequestError ? error.code : null
   const message = error instanceof Error ? error.message : String(error)
-  const existingAccount = code
-    ? code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' || code === 'USER_ALREADY_EXISTS'
-    : message.startsWith('User already exists')
-  if (!existingAccount) throw error
+  if (!(error instanceof RecordApiRequestError) || !error.existingAccount) throw error
   throw new RefusalError(refusal(message, recordSignInRemedy(email)))
 }
 

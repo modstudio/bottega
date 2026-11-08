@@ -48,7 +48,13 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
-import { responseCode, responseMessage, responseRecord } from './record-api-client-response.ts'
+import {
+  RecordApiRequestError,
+  responseCode,
+  responseMessage,
+  responseRecord,
+} from './record-api-client-response.ts'
+export { RecordApiRequestError } from './record-api-client-response.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -452,24 +458,6 @@ function injectSlot(): InjectSlot {
 const injectedClient = (): RecordApiClient | null => injectSlot().current
 export const recordApiClientInjected = (): boolean => injectedClient() !== null
 
-export class RecordApiRequestError extends Error {
-  readonly kind: 'unreachable' | 'server' | 'refused'
-  readonly status: number | null
-  readonly code: string | null
-
-  constructor(
-    message: string,
-    kind: 'unreachable' | 'server' | 'refused',
-    status: number | null = null,
-    code: string | null = null,
-  ) {
-    super(message)
-    this.kind = kind
-    this.status = status
-    this.code = code
-  }
-}
-
 const recordApiStatus = (status: number) => `record API ${status}`
 
 function recordApiUnreachable(error: unknown): Error {
@@ -522,8 +510,13 @@ export function recordAuthRefusal(status: number, body: unknown, headers: Header
     )
   }
   const message = responseMessage(body, recordApiStatus(status))
-  if (status >= 400 && status < 500)
-    return new RecordApiRequestError(message, 'refused', status, responseCode(body))
+  if (status >= 400 && status < 500) {
+    const code = responseCode(body)
+    const existingAccount = code
+      ? code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' || code === 'USER_ALREADY_EXISTS'
+      : message.startsWith('User already exists')
+    return new RecordApiRequestError(message, 'refused', status, code, existingAccount)
+  }
   return recordApiServerError(message, status)
 }
 
