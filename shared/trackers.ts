@@ -7,7 +7,7 @@ import {
   type TrackerProtocol,
   trackerWireAction,
 } from './tracker-actions.ts'
-import { scopedRows, type ToolInputSchema, toolDeclaresInput } from './tracker-list-scope.ts'
+import { scopedRows, type ToolCaller, toolDeclaresInput } from './tracker-list-scope.ts'
 import {
   arrayStatusPayload,
   cursorStatusPayload,
@@ -15,14 +15,6 @@ import {
 } from './tracker-status-payload.ts'
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
-export {
-  resolveTrackerAgentActions,
-  TRACKER_PROTOCOLS,
-  type TrackerAction,
-  type TrackerProtocol,
-  trackerWireAction,
-} from './tracker-actions.ts'
-
 const UPDATED_SINCE_PROTOCOLS: ReadonlySet<TrackerProtocol> = new Set([
   'workspace-mcp',
   'cursor-mcp',
@@ -187,7 +179,7 @@ export function refuseInvalidWriteStates(
 }
 
 /** Whether a raw state mapping is writable for a requested category. */
-export function trackerStateMayWriteCategory(
+function trackerStateMayWriteCategory(
   mapped: string | undefined,
   category: StatusCategory,
 ): boolean {
@@ -245,25 +237,12 @@ export function trackerEnvPrefix(project: TrackerProject): string {
 
 export const CURSOR_CREATE_REFUSAL =
   'cursor-mcp create refused: required projectId has no value in the tracker register'
-export const workspaceTeamRefusal = (project: TrackerProject): string =>
-  `workspace-mcp create refused: project ${project.name} tracker is missing team; ` +
-  `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
-export const cursorProjectRefusal = (project: TrackerProject): string =>
-  `${CURSOR_CREATE_REFUSAL}; set it with: ${PLATFORM_SLUG} project set ${project.name} --settings ` +
+export const workspaceScopeRefusal = (verb: 'create' | 'collect', project: string): string =>
+  `workspace-mcp ${verb} refused: project ${project} tracker is missing team; ` +
+  `set it with: ${PLATFORM_SLUG} project set ${project} --settings '{"tracker":{"team":"…"}}'`
+export const cursorScopeRefusal = (verb: 'create' | 'collect', project: string): string =>
+  `${verb === 'create' ? CURSOR_CREATE_REFUSAL : `cursor-mcp collect refused: project ${project} tracker is missing projectId`}; set it with: ${PLATFORM_SLUG} project set ${project} --settings ` +
   `'${JSON.stringify({ tracker: { projectId: '…' } })}'`
-
-const workspaceCollectScopeRefusal = (project: TrackerProject): string =>
-  `workspace-mcp collect refused: project ${project.name} tracker is missing team; ` +
-  `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
-const cursorCollectScopeRefusal = (project: TrackerProject): string =>
-  `cursor-mcp collect refused: project ${project.name} tracker is missing projectId; ` +
-  `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings ` +
-  `'${JSON.stringify({ tracker: { projectId: '…' } })}'`
-
-export type ToolCaller = {
-  callTool(name: string, args: Record<string, unknown>): Promise<unknown>
-  listTools?: () => Promise<{ name: string; inputSchema: ToolInputSchema }[]>
-}
 
 export type TrackerTask = {
   externalId: string | null
@@ -392,8 +371,6 @@ function categoryOf(
 ): StatusCategory {
   return establishedCategory(rawStatus, category, states) ?? 'open'
 }
-
-const trackerStatusCategory = categoryOf
 
 async function readTrackerPages(
   readPage: (pageIndex: number) => Promise<boolean>,
@@ -675,9 +652,7 @@ function workspaceSource(
     supportsUpdatedSince,
     async fetch(m, updatedSince) {
       if (!team) {
-        throw new Error(
-          workspaceCollectScopeRefusal({ name: project, settings: { tracker: { team } } }),
-        )
+        throw new Error(workspaceScopeRefusal('collect', project))
       }
       const sendsScope = await toolDeclaresInput(m, searchAction, 'team_id')
       const out: TrackerTask[] = []
@@ -708,18 +683,18 @@ function workspaceSource(
       await m.callTool(statusAction, workspaceStatusPayload(statusAction, task.key, status))
       const detail = (await m.callTool(getAction, { id: task.key })) as WorkspaceTaskDetail
       const normalized = normalizeWorkspaceTaskDetail(detail)
-      if (!normalized) {
+      if (!normalized?.status?.trim()) {
         throw new Error(
           `workspace-mcp status confirmation for task ${task.key} returned no status after category ${category} was requested`,
         )
       }
-      const confirmedCategory = trackerStatusCategory(
-        normalized.status ?? '',
+      const confirmedCategory = categoryOf(
+        normalized.status,
         normalized.status_category ?? '',
         states,
       )
       return {
-        status: normalized.status ?? status,
+        status: normalized.status,
         category: confirmedCategory,
         ...(confirmedCategory === category
           ? {}
@@ -855,9 +830,7 @@ function cursorMcpSource(
     supportsUpdatedSince,
     async fetch(m, updatedSince) {
       if (!projectId) {
-        throw new Error(
-          cursorCollectScopeRefusal({ name: project, settings: { tracker: { projectId } } }),
-        )
+        throw new Error(cursorScopeRefusal('collect', project))
       }
       const sendsScope = await toolDeclaresInput(m, searchAction, 'projectId')
       const out: TrackerTask[] = []
@@ -909,17 +882,22 @@ function cursorMcpSource(
       const reply = (await m.callTool(
         statusAction,
         cursorStatusPayload(task.externalId, status),
-      )) as { data?: { status?: unknown } }
+      )) as { success?: unknown; data?: { status?: unknown }; error?: unknown }
       const confirmed = reply.data?.status
-      const observedStatus = typeof confirmed === 'string' ? confirmed : String(confirmed)
-      const observedCategory = trackerStatusCategory(observedStatus, observedStatus, states)
+      if (reply.success !== true || typeof confirmed !== 'string' || !confirmed.trim()) {
+        throw new Error(
+          `cursor-mcp status confirmation for task ${task.key} returned ${JSON.stringify(reply)} after ${status} was requested`,
+        )
+      }
+      const observedStatus = confirmed
+      const observedCategory = categoryOf(observedStatus, observedStatus, states)
       return {
         status: observedStatus,
         category: observedCategory,
-        ...(confirmed === status
+        ...(observedStatus === status
           ? {}
           : {
-              refusal: `cursor-mcp status confirmation for task ${task.key} returned ${String(confirmed)} after ${status} was requested`,
+              refusal: `cursor-mcp status confirmation for task ${task.key} returned ${observedStatus} after ${status} was requested`,
             }),
       }
     },
@@ -985,7 +963,7 @@ function arrayMcpSource(
       const observedStatus = confirmed ?? status
       return {
         status: observedStatus,
-        category: confirmed ? trackerStatusCategory(confirmed, confirmed, states) : category,
+        category: confirmed ? categoryOf(confirmed, confirmed, states) : category,
         ...(observedStatus === status
           ? {}
           : {

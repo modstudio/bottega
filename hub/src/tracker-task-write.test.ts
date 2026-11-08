@@ -342,6 +342,83 @@ describe('array-mcp task writes', () => {
     })
   }
 
+  for (const { label, reply } of [
+    { label: 'an unsuccessful cursor reply', reply: { success: false, error: 'x' } },
+    { label: 'an empty cursor reply', reply: {} },
+    { label: 'a cursor reply without data status', reply: { success: true, data: {} } },
+  ] as const) {
+    test(`${label} records no observation`, async () => {
+      const registered: RegisteredProject = {
+        ...project,
+        settings: {
+          ...project.settings,
+          tracker: {
+            protocol: 'cursor-mcp',
+            projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+            states: { todo: 'open', in_progress: 'active' },
+          },
+        },
+      }
+
+      await expect(
+        setTaskThroughTracker(
+          'ADN-1659',
+          {},
+          { status: 'active' },
+          UNATTRIBUTED,
+          { confirm: 'production' },
+          {
+            ...dependencies(async () => reply),
+            registeredProjects: () => [registered],
+          },
+        ),
+      ).rejects.toThrow('cursor-mcp status confirmation for task ADN-1659 returned')
+      expect(showTask('ADN-1659').task).toMatchObject({
+        status: 'todo',
+        status_category: 'open',
+      })
+      expect(db().query('SELECT count(*) count FROM task_status_event').get()).toEqual({ count: 0 })
+    })
+  }
+
+  test('a blank workspace confirmation records no observation', async () => {
+    const registered: RegisteredProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        tracker: {
+          protocol: 'workspace-mcp',
+          team: 'TEAM',
+          states: { Open: 'open', 'In Progress': 'active' },
+          writeStates: { active: 'In Progress' },
+        },
+      },
+    }
+
+    await expect(
+      setTaskThroughTracker(
+        'ADN-1659',
+        {},
+        { status: 'active' },
+        UNATTRIBUTED,
+        { confirm: 'production' },
+        {
+          ...dependencies(async (name) =>
+            name === 'update-task-tool'
+              ? { id: taskId }
+              : { short_id: 'ADN-1659', status: '', status_category: 'open' },
+          ),
+          registeredProjects: () => [registered],
+        },
+      ),
+    ).rejects.toThrow('workspace-mcp status confirmation for task ADN-1659 returned no status')
+    expect(showTask('ADN-1659').task).toMatchObject({
+      status: 'todo',
+      status_category: 'open',
+    })
+    expect(db().query('SELECT count(*) count FROM task_status_event').get()).toEqual({ count: 0 })
+  })
+
   test('the local close service refuses a tracker row', async () => {
     await expect(closeTask('ADN-1659', {}, UNATTRIBUTED)).rejects.toThrow(
       'task ADN-1659 is not local',

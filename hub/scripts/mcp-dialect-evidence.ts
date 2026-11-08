@@ -6,7 +6,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { concernStateDirectory } from '../../shared/state-directory.ts'
-import { type TrackerProtocol, trackerWireAction } from '../../shared/trackers.ts'
+import { type TrackerProtocol, trackerWireAction } from '../../shared/tracker-actions.ts'
 import { credentials, MCP_PROTOCOL_VERSION, Mcp, type McpExchange } from '../src/mcp.ts'
 import { projects, type RegisteredProject } from '../src/projects.ts'
 

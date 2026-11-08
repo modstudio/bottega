@@ -2,13 +2,13 @@ export type ToolInputSchema = {
   properties?: Record<string, unknown>
 }
 
-export type ToolListingCaller = {
+export type ToolCaller = {
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>
   listTools?: () => Promise<{ name: string; inputSchema: ToolInputSchema }[]>
 }
 
 export async function advertisedToolSchema(
-  caller: ToolListingCaller,
+  caller: ToolCaller,
   toolName: string,
 ): Promise<ToolInputSchema | undefined> {
   const tools = await caller.listTools?.()
@@ -16,7 +16,7 @@ export async function advertisedToolSchema(
 }
 
 export async function toolDeclaresInput(
-  caller: ToolListingCaller,
+  caller: ToolCaller,
   toolName: string,
   field: string,
 ): Promise<boolean> {

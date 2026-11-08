@@ -1,9 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import type { ToolCaller } from '../../../shared/tracker-list-scope.ts'
 import {
   type AssigneeRef,
   resolveAssigneeIds,
-  type ToolCaller,
   type TrackerFetchResult,
   TrackerLookupUnverifiable,
   type TrackerSource,

@@ -1,15 +1,14 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { type TrackerProtocol, trackerWireAction } from '../../shared/tracker-actions.ts'
 import {
   type CreateTrackerTask,
   createTrackerTask,
   trackerCreatedTaskKey,
 } from '../../shared/tracker-create.ts'
-import { advertisedToolSchema, type ToolListingCaller } from '../../shared/tracker-list-scope.ts'
+import { advertisedToolSchema, type ToolCaller } from '../../shared/tracker-list-scope.ts'
 import {
   resolveTrackerWriteState,
   type TrackerProject,
-  type TrackerProtocol,
-  trackerWireAction,
   trackerWriteCategory,
 } from '../../shared/trackers.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
@@ -49,7 +48,7 @@ export function trackerTaskInput(
 }
 
 export async function createAdvertisedTrackerTaskKey(
-  client: ToolListingCaller,
+  client: ToolCaller,
   project: TrackerProject,
   task: CreateTrackerTask,
 ): Promise<string> {
@@ -63,7 +62,7 @@ export async function createAdvertisedTrackerTaskKey(
 
 /** Create only through the schema advertised by the selected, initialized MCP server. */
 export async function createAdvertisedTrackerTask(
-  client: ToolListingCaller,
+  client: ToolCaller,
   project: TrackerProject,
   task: CreateTrackerTask,
 ): Promise<unknown> {

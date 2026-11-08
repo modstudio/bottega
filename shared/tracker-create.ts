@@ -1,12 +1,6 @@
-import type { ToolInputSchema } from './tracker-list-scope.ts'
-import {
-  cursorProjectRefusal,
-  type ToolCaller,
-  type TrackerProject,
-  type TrackerProtocol,
-  trackerWireAction,
-  workspaceTeamRefusal,
-} from './trackers.ts'
+import { type TrackerProtocol, trackerWireAction } from './tracker-actions.ts'
+import type { ToolCaller, ToolInputSchema } from './tracker-list-scope.ts'
+import { cursorScopeRefusal, type TrackerProject, workspaceScopeRefusal } from './trackers.ts'
 
 export type CreateTrackerTask = {
   title: string
@@ -86,14 +80,14 @@ export async function createTrackerTask(
   assertKnownStatus(project, task.status)
 
   if (tracker.protocol === 'workspace-mcp') {
-    if (!tracker.team) throw new Error(workspaceTeamRefusal(project))
+    if (!tracker.team) throw new Error(workspaceScopeRefusal('create', project.name))
     const createAction = tracker.actions?.create ?? trackerWireAction('workspace-mcp', 'create')
     return m.callTool(createAction, {
       ...workspaceCreatePayload(task, tracker.team, Object.keys(inputSchema?.properties ?? {})),
     })
   }
   if (tracker.protocol === 'cursor-mcp') {
-    if (!tracker.projectId) throw new Error(cursorProjectRefusal(project))
+    if (!tracker.projectId) throw new Error(cursorScopeRefusal('create', project.name))
     const createAction = tracker.actions?.create ?? trackerWireAction('cursor-mcp', 'create')
     return m.callTool(createAction, {
       projectId: tracker.projectId,

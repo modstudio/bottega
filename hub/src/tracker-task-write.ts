@@ -1,8 +1,8 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { TRACKER_PROTOCOLS } from '../../shared/tracker-actions.ts'
 import {
   resolveTrackerWriteState,
   type StatusCategory,
-  TRACKER_PROTOCOLS,
   type TrackerTask,
   trackerSourceFor,
   trackerWriteCategory,

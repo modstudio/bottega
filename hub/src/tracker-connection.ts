@@ -1,4 +1,5 @@
-import { type ToolCaller, trackerEnvPrefix } from '../../shared/trackers.ts'
+import type { ToolCaller } from '../../shared/tracker-list-scope.ts'
+import { trackerEnvPrefix } from '../../shared/trackers.ts'
 import { credentials, failureDetail, Mcp } from './mcp.ts'
 import type { RegisteredProject } from './projects.ts'
 

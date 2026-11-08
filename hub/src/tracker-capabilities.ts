@@ -1,9 +1,9 @@
 import {
-  cursorProjectRefusal,
+  cursorScopeRefusal,
   TASK_STATUSES,
   type TrackerProject,
   trackerSourceFor,
-  workspaceTeamRefusal,
+  workspaceScopeRefusal,
 } from '../../shared/trackers.ts'
 
 export type TrackerRowSource = 'local' | 'mcp' | 'git'
@@ -115,8 +115,8 @@ export function trackerCapabilities({
         ? allow
         : refuse(
             protocol === 'workspace-mcp'
-              ? workspaceTeamRefusal(project)
-              : cursorProjectRefusal(project),
+              ? workspaceScopeRefusal('create', project.name)
+              : cursorScopeRefusal('create', project.name),
           ),
     setStatus: statusWriteCapability(project),
     setTitle: refuse(TRACKER_TITLE_WRITE_REFUSAL),

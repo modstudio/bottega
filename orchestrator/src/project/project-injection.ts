@@ -9,16 +9,18 @@ import {
   type PhpPolicyRule,
 } from '../../../shared/test-substance/test-substance.ts'
 import {
+  resolveTrackerAgentActions,
+  TRACKER_PROTOCOLS,
+  type TrackerAction,
+  type TrackerProtocol,
+} from '../../../shared/tracker-actions.ts'
+import {
   refuseHubActionOverrides,
   refuseInvalidReviewStages,
   refuseInvalidWriteStates,
   refuseNonCursorProjectId,
   refuseUnsupportedUpdatedSince,
-  resolveTrackerAgentActions,
   resolveTrackerWriteState,
-  TRACKER_PROTOCOLS,
-  type TrackerAction,
-  type TrackerProtocol,
   type TrackerSettings,
   trackerActionsShape,
   trackerReviewStagesShape,

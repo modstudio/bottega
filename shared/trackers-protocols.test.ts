@@ -1,16 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
+import { resolveTrackerAgentActions, trackerWireAction } from './tracker-actions.ts'
 import { createTrackerTask, trackerCreatedTaskKey } from './tracker-create.ts'
+import type { ToolCaller } from './tracker-list-scope.ts'
 import {
   categoryForTrackerRead,
   MAX_PAGES,
-  resolveTrackerAgentActions,
-  type ToolCaller,
+  resolveTrackerWriteState,
   TrackerLookupUnverifiable,
   type TrackerProject,
   trackerSourceFor,
-  trackerStateMayWriteCategory,
-  trackerWireAction,
   WORKSPACE_LOOKUP_PAGE_SIZE,
 } from './trackers.ts'
 
@@ -28,11 +27,6 @@ describe('incremental tracker read policy', () => {
       expect(categoryForTrackerRead(incremental, status, status, 'todo', states)).toBe(want)
     })
   }
-})
-
-test('backlog is a writable open state and no other category', () => {
-  expect(trackerStateMayWriteCategory('backlog', 'open')).toBeTrue()
-  expect(trackerStateMayWriteCategory('backlog', 'active')).toBeFalse()
 })
 
 describe('tracker action names', () => {
@@ -127,6 +121,10 @@ const scopeTools = async () => [
 describe('tracker create protocols', () => {
   test('array-mcp uses its underscored tool and evidenced payload', async () => {
     const fixture = fixtureCaller()
+
+    expect(
+      resolveTrackerWriteState('adanim', { states: { backlog: 'backlog' } }, 'array-mcp', 'open'),
+    ).toBe('backlog')
 
     expect(await createTrackerTask(fixture.caller, project('adanim', 'array-mcp'), task)).toEqual({
       key: 'ADN-1',
@@ -438,6 +436,26 @@ describe('tracker list scope', () => {
       }),
     })
     expect(cursorRead.tasks.map((task) => task.key)).toEqual(['STO-1'])
+  })
+
+  test('workspace-mcp refuses collect without a team and names the project-set remedy', async () => {
+    const fixture = project('workspace', 'workspace-mcp')
+    delete fixture.settings.tracker!.team
+    await expect(
+      trackerSourceFor(fixture)!.fetch({ callTool: async () => ({ tasks: [] }) }),
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} project set workspace --settings '{"tracker":{"team":"…"}}'`,
+    )
+  })
+
+  test('cursor-mcp refuses collect without a projectId and names the project-set remedy', async () => {
+    const fixture = project('stopal', 'cursor-mcp')
+    delete fixture.settings.tracker!.projectId
+    await expect(
+      trackerSourceFor(fixture)!.fetch({ callTool: async () => ({ data: { items: [] } }) }),
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
+    )
   })
 
   for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
