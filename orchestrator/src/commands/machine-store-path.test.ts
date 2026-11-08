@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { machineStorePathCommand } from './machine-store-path.ts'
 
-test('resolves the store path without creating the store', () => {
+test('resolves both store paths without creating either store', () => {
   const stateHome = mkdtempSync(join(tmpdir(), 'machine-store-path-'))
   try {
     const environment = { BOTTEGA_STATE_HOME: stateHome }

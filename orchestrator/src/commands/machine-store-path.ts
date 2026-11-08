@@ -10,7 +10,7 @@ import {
 
 export type MachineStorePathPresentation = { write(value: string): void }
 
-/** Print the resolved store path without opening or creating it. */
+/** Print the resolved orchestrator store path, then the hub store path, one per line, without opening or creating either. */
 export function machineStorePathCommand(
   presentation: MachineStorePathPresentation,
   environment: StateEnvironment = process.env,
