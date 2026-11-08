@@ -16,7 +16,6 @@ import {
   verification,
 } from '../../../shared/record/schema-auth.ts'
 import { recordServiceUrl } from '../../../shared/record/service-connection.ts'
-import { isTrialSpaceMetadata } from './record-trial-space.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendEmailVerificationEmail } from '../mail/email-verification-mailer.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
@@ -25,6 +24,7 @@ import { ensureMemberConfigRemovalSafe } from './record-config-access-removal.ts
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 import { keepOwnerWrite } from './record-member-permission.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
+import { isTrialSpaceMetadata } from './record-trial-space.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 

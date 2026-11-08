@@ -31,6 +31,7 @@ export const recordInvariantModules = [
     './active-space-invariant.ts',
   ]),
   module('orchestrator/src/record/record-trial-space-contract.ts', []),
+  module('orchestrator/src/record/record-trial-space.ts', []),
   module('orchestrator/src/record/record-api-trial-space-routes.ts', [
     'hono',
     'zod',

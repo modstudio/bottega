@@ -3,12 +3,9 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
-import {
-  isTrialSpaceMetadata,
-  TRIAL_IDENTIFIER_PREFIX,
-} from './record-trial-space.ts'
 import { recordPool } from './record-pool.ts'
 import { SPACE_TEARDOWN_PLAN, type SpaceTeardownReach } from './record-space-teardown-plan.ts'
+import { isTrialSpaceMetadata, TRIAL_IDENTIFIER_PREFIX } from './record-trial-space.ts'
 import {
   TrialSpaceDeleteError,
   type TrialSpaceDeleteResult,
