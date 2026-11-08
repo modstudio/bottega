@@ -9,6 +9,11 @@ import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
 import { machineUpdateCommand, unregisteredMainCheckoutRefusal } from './machine-update.ts'
+import {
+  clearMachineUpdateIntent,
+  localStoreJournalPositions,
+  writeMachineUpdateIntent,
+} from './machine-update-intent.ts'
 import { setMigrationDrain } from './migration-drain.ts'
 import { migrationDrain } from './migration-drain-state.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
@@ -130,6 +135,39 @@ test("machine update clears a dead holder's marker before deciding", async () =>
     'branch',
     'status',
   ])
+})
+
+test("machine update recovers a dead holder's intent before the new update", async () => {
+  writeMachineUpdateIntent({
+    before: localStoreJournalPositions(),
+    swapped: { kind: 'checkout', target: dir, priorCommit: 'abandoned-before' },
+  })
+  const gitCalls: string[][] = []
+  try {
+    await machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          gitCalls.push(args)
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          return args[0] === 'rev-parse' ? 'current-before' : ''
+        },
+        migrate: () => {},
+        runLaunchAgentsRefreshVerb: () => {},
+      },
+    )
+  } finally {
+    clearMachineUpdateIntent()
+  }
+  expect(gitCalls[0]).toEqual(['reset', '--keep', 'abandoned-before'])
 })
 
 test('machine update restores main when migrate fails after the pull', async () => {
@@ -372,6 +410,44 @@ test('an additive machine update clears the store-open window when migrate throw
     expect(migrationWindow(db())).toBeNull()
     expect(migrationDrain(db())).toBeNull()
   } finally {
+    held.restore()
+  }
+})
+
+test('a throwing window clear does not replace the migrate failure', async () => {
+  const held = incomingAdditiveMigration()
+  const hiddenDatabase = `${DB_PATH}.window-clear-failure-test`
+  let databaseHidden = false
+  try {
+    await expect(
+      machineUpdateCommand(
+        { log: () => {} },
+        {
+          cwd: dir,
+          authorityRefusal: () => null,
+          project: () => ({
+            name: 'migration-update-fixture',
+            path: dir,
+            settings: { trunk: 'main' },
+          }),
+          git: (_cwd, args) =>
+            args[0] === 'branch'
+              ? 'main'
+              : args[0] === 'show'
+                ? JSON.stringify({ entries: held.journal })
+                : args[0] === 'rev-parse'
+                  ? 'before-commit'
+                  : '',
+          migrate: () => {
+            renameSync(DB_PATH, hiddenDatabase)
+            databaseHidden = true
+            throw new Error('original migrate failure')
+          },
+        },
+      ),
+    ).rejects.toThrow(/original migrate failure.*clearing the migration guard also failed/)
+  } finally {
+    if (databaseHidden) renameSync(hiddenDatabase, DB_PATH)
     held.restore()
   }
 })
