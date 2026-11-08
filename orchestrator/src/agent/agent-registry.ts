@@ -321,6 +321,7 @@ export type AgentMutation = {
   maxConcurrent?: number | null
   routeMetered?: boolean
   trainsOnInputs?: boolean
+  capacityLossAllowed?: { jobs: string[]; at: string }
 }
 
 function assertApiKeySecret(value: string | null | undefined): void {
@@ -424,7 +425,7 @@ function storedApiKeySecret(current: AgentRow, input: AgentMutation): string | n
   return input.apiKeySecret === undefined ? current.api_key_secret : input.apiKeySecret
 }
 
-function agentIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
+export function agentIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
   return (
     (input.harness !== undefined && input.harness !== current.harness) ||
     (input.backend !== undefined && input.backend !== current.backend) ||
@@ -488,6 +489,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
         baseUrl: input.baseUrl === undefined ? current.base_url : input.baseUrl,
         apiKeySecret: storedApiKeySecret(current, input),
       },
+      ...(input.capacityLossAllowed ? { capacityLossAllowed: input.capacityLossAllowed } : {}),
       attempts,
     })
   } else if (input.contextTokens !== undefined) {

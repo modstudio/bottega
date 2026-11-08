@@ -13,6 +13,15 @@ import { setRawArgv } from './support.ts'
 
 const trackResidue = trackedTestResidue()
 
+test('agent help describes the capacity-loss override', () => {
+  const program = new Command()
+  register(program)
+  const agent = program.commands.find((command) => command.name() === 'agent')!
+  expect(agent.options.find((option) => option.long === '--allow-capacity-loss')?.description).toBe(
+    'apply an identity change that leaves a job with no eligible agent',
+  )
+})
+
 test('answer refuses a question-sibling option instead of recording it as ruling text', async () => {
   const recordId = addRun({
     agent: 'codex',
