@@ -22,7 +22,8 @@ function currentInventory() {
   ][]) {
     const registered = new Set(programs[owner].commands.map((command) => command.name()))
     for (const name of names)
-      if (!registered.has(name)) throw new Error(`${owner} hidden command is not registered: ${name}`)
+      if (!registered.has(name))
+        throw new Error(`${owner} hidden command is not registered: ${name}`)
   }
   return documentationInventory(GROUPS, ROUTES, programs)
 }
