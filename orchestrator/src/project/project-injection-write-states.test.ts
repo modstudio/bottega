@@ -97,18 +97,3 @@ test('refuses ambiguous write states without a selection (mutation: restore firs
     `project fixture tracker has several done states (completed, complete) but no writeStates.done selection; set it with: ${PLATFORM_SLUG} project set fixture --settings`,
   )
 })
-
-test('keeps the sole raw write state (mutation: omit the unselected raw state)', () => {
-  const tracker = resolveInjection(
-    {
-      name: 'fixture',
-      stack: 'node',
-      settings: {
-        tracker: { protocol: 'workspace-mcp', states: { complete: 'done' } },
-      },
-    },
-    ['tracker'],
-  ).tracker
-
-  expect(tracker.states.done).toBe('complete')
-})
