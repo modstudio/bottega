@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  identity,
+  idleRecordApiDeps,
+  idleSubjectDeps,
+} from '../../test/fixtures/record-api.ts'
 import { recordApi } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { assertRevisionWrite } from './record-doc-errors.ts'
 import {
   applyRecordSettingsPermission,
   type RecordSettingsPermissionInput,
@@ -96,27 +100,20 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
   })
 
 test('an explicit create against an existing document returns the typed 409 remedy', async () => {
-  const revision = '01990000-0000-7000-8000-000000000010'
-  const app = appWith(identity, {
-    upsertDoc: async (input: {
-      expectedRevision?: string
-      op?: 'create'
-      scope: string
-      subject: string | null
-      slug: string
-    }) => {
-      assertRevisionWrite({
-        current: revision,
-        expectedRevision: input.expectedRevision,
-        isCreate: false,
-        op: input.op,
-        scope: input.scope,
-        subject: input.subject,
-        slug: input.slug,
-      })
-      return { id, revisionId: revision }
-    },
+  const client = createMemoryRecordApiClient()
+  const created = await client.upsertDoc({
+    scope: 'project',
+    subject: PLATFORM_NAME,
+    slug: 'existing',
+    title: 'Existing',
+    body: 'Original body.',
+    delivery: 'demand',
+    audiences: [],
+    position: 0,
+    reason: 'create route fixture',
+    author: 'tester',
   })
+  const app = appWith(identity, client)
   const response = await app.request('/v1/docs', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
@@ -136,8 +133,8 @@ test('an explicit create against an existing document returns the typed 409 reme
   expect(response.status).toBe(409)
   expect(await response.json()).toEqual({
     error:
-      `refusing create for project/${PLATFORM_NAME}/existing: the row already exists at revision ${revision}\n` +
-      `cleared by: read the doc, then write it with ${PLATFORM_SLUG} doc set existing --scope project --subject ${PLATFORM_NAME} --expect ${revision}`,
+      `refusing create for project/${PLATFORM_NAME}/existing: the row already exists at revision ${created.revisionId}\n` +
+      `cleared by: read the doc, then write it with ${PLATFORM_SLUG} doc set existing --scope project --subject ${PLATFORM_NAME} --expect ${created.revisionId}`,
   })
 })
 

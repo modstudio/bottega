@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
+import { renderRefusal } from '../../../shared/refusal.ts'
 import { summarizeSettings } from '../../../shared/settings-summary.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
@@ -157,8 +158,10 @@ async function applySettingsListEdit<Counts>(input: {
     current: row.revision ?? null,
     isCreate: false,
     scope: SETTINGS_SCOPE,
+    subject: input.target.kind === 'project' ? input.target.name : null,
+    slug: SETTINGS_SLUG,
   })
-  if (!revision.allow) throw new Error(revision.reason)
+  if (!revision.allow) throw new Error(renderRefusal(revision.refusal))
   const edit = input.edit(parseStoredOwnedSettings(row.body))
   if (!edit.changed) {
     return {

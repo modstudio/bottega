@@ -1,7 +1,11 @@
 // concern: record-doc-errors
 /** Turns pure document-write decisions into hosted-service errors. */
-import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { decideDocRevisionWrite } from '../doc/doc-write-allowed.ts'
+import { renderRefusal } from '../../../shared/refusal.ts'
+import {
+  type DocRevisionOp,
+  type DocRevisionWriteInput,
+  decideDocRevisionWrite,
+} from '../doc/doc-write-allowed.ts'
 
 export class RecordDocError extends Error {
   status: 400 | 404 | 409 | 422
@@ -15,14 +19,10 @@ export function assertWrite(refusal: string | null): void {
   if (refusal) throw new RecordDocError(refusal)
 }
 
-export function assertRevisionWrite(input: {
+export function assertRevisionWrite(input: Omit<DocRevisionWriteInput, 'expected' | 'current' | 'op'> & {
   expectedRevision?: string
   current: unknown
-  isCreate: boolean
-  op?: Parameters<typeof decideDocRevisionWrite>[0]['op']
-  scope: string
-  subject?: string | null
-  slug?: string
+  op?: DocRevisionOp
 }): void {
   const decision = decideDocRevisionWrite({
     expected: input.expectedRevision,
@@ -34,9 +34,6 @@ export function assertRevisionWrite(input: {
     slug: input.slug,
   })
   if (!decision.allow) {
-    const message = decision.remedy
-      ? renderRefusal(refusal(decision.reason, { kind: 'edit', text: decision.remedy }))
-      : decision.reason
-    throw new RecordDocError(message, 409)
+    throw new RecordDocError(renderRefusal(decision.refusal), 409)
   }
 }

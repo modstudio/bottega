@@ -3,7 +3,6 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { planCanonImport } from '../../src/canon/canon-import-policy.ts'
 import {
   consumeDocBody,
-  decideDocRevisionWrite,
   refuseDocWrite,
 } from '../../src/doc/doc-write-allowed.ts'
 import type { RecordBoardDeps } from '../../src/record/record-api-board.ts'
@@ -16,6 +15,7 @@ import {
 } from '../../src/record/record-api-client.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
+import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 import {
   type HostedBoardChange,
   type HostedBoardPresenceInput,
@@ -620,13 +620,11 @@ export function createMemoryRecordApiClient(
       const now = input.at ?? new Date().toISOString()
       const existing = live(input.scope, input.subject, input.slug)
       const current = existing ? (revisions.get(existing.id)?.at(-1)?.id ?? null) : null
-      const revisionDecision = decideDocRevisionWrite({
-        expected: input.expectedRevision,
+      assertRevisionWrite({
+        ...input,
         current,
         isCreate: !existing,
-        scope: input.scope,
       })
-      if (!revisionDecision.allow) throw new Error(revisionDecision.reason)
       const id = existing?.id ?? input.id ?? newRecordId()
       const revisionId = input.revisionId ?? newRecordId()
       docs.set(id, {
@@ -681,13 +679,15 @@ export function createMemoryRecordApiClient(
         liveDoc ??
         [...atAddress].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
       const current = existing ? (revisions.get(existing.id)?.at(-1)?.id ?? null) : null
-      const decision = decideDocRevisionWrite({
-        expected: input.expectedRevision,
+      assertRevisionWrite({
+        expectedRevision: input.expectedRevision,
         current,
         isCreate: !existing,
+        op: 'import',
         scope: input.doc.scope,
+        subject: input.doc.subject,
+        slug: input.doc.slug,
       })
-      if (!decision.allow) throw new Error(decision.reason)
       const id = existing?.id ?? newRecordId()
       docs.set(id, {
         id,
@@ -818,13 +818,15 @@ export function createMemoryRecordApiClient(
     async deleteDoc(id, input) {
       const doc = docs.get(id)
       if (!doc) throw new Error('doc not found')
-      const decision = decideDocRevisionWrite({
-        expected: input.expectedRevision,
+      assertRevisionWrite({
+        expectedRevision: input.expectedRevision,
         current: revisions.get(id)?.at(-1)?.id ?? null,
         isCreate: false,
+        op: 'delete',
         scope: doc.scope,
+        subject: doc.subject,
+        slug: doc.slug,
       })
-      if (!decision.allow) throw new Error(decision.reason)
       const now = new Date().toISOString()
       const revisionId = newRecordId()
       docs.set(id, { ...doc, deletedAt: now, updatedAt: now })
@@ -849,13 +851,15 @@ export function createMemoryRecordApiClient(
     async consumeDoc(id, input) {
       const doc = docs.get(id)
       if (!doc || doc.deletedAt) throw new Error('doc not found')
-      const decision = decideDocRevisionWrite({
-        expected: input.expectedRevision,
+      assertRevisionWrite({
+        expectedRevision: input.expectedRevision,
         current: revisions.get(id)?.at(-1)?.id ?? null,
         isCreate: false,
+        op: 'consume',
         scope: doc.scope,
+        subject: doc.subject,
+        slug: doc.slug,
       })
-      if (!decision.allow) throw new Error(decision.reason)
       const now = new Date().toISOString()
       const consumed = consumeDocBody(doc.body, now, input.author)
       if (consumed.alreadyConsumed) return { id, revisionId: '', alreadyConsumed: true }
@@ -884,13 +888,15 @@ export function createMemoryRecordApiClient(
       const list = revisions.get(id) ?? []
       const revision = list.find((row) => row.id === input.revisionId) ?? list.at(-1)
       if (!doc && !revision) throw new Error('revision not found')
-      const decision = decideDocRevisionWrite({
-        expected: input.expectedRevision,
+      assertRevisionWrite({
+        expectedRevision: input.expectedRevision,
         current: list.at(-1)?.id ?? null,
         isCreate: false,
+        op: 'restore',
         scope: doc?.scope ?? revision!.scope,
+        subject: doc?.subject ?? revision!.subject,
+        slug: doc?.slug ?? revision!.slug,
       })
-      if (!decision.allow) throw new Error(decision.reason)
       const source = revision ?? {
         title: doc!.title,
         body: doc!.body,

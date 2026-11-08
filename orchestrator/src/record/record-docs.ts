@@ -347,7 +347,10 @@ export async function deleteRecordDoc(
       expectedRevision: input.expectedRevision,
       current: doc.latest_revision_id,
       isCreate: false,
+      op: 'delete',
       scope: String(doc.scope),
+      subject: doc.subject == null ? null : String(doc.subject),
+      slug: String(doc.slug),
     })
     if (rows.length !== 1)
       throw new RecordDocError('refusing to delete more than one document', 409)
@@ -427,7 +430,10 @@ export async function consumeRecordDoc(
       expectedRevision: input.expectedRevision,
       current: doc.latest_revision_id,
       isCreate: false,
+      op: 'consume',
       scope: String(doc.scope),
+      subject: doc.subject == null ? null : String(doc.subject),
+      slug: String(doc.slug),
     })
     const now = new Date().toISOString()
     const relatedSubjectIds = (
@@ -493,7 +499,10 @@ export async function restoreRecordDoc(
       expectedRevision: input.expectedRevision,
       current: live.latest_revision_id,
       isCreate: false,
+      op: 'restore',
       scope: String(live.scope),
+      subject: live.subject == null ? null : String(live.subject),
+      slug: String(live.slug),
     })
     const revisionRows = await tx`
       SELECT * FROM doc_revision
@@ -741,7 +750,10 @@ export async function importRecordDoc(
       expectedRevision: input.expectedRevision,
       current: existing?.latest_revision_id,
       isCreate: !existing,
+      op: 'import',
       scope: importedDoc.scope,
+      subject: importedDoc.subject,
+      slug: importedDoc.slug,
     })
     if (existing && importedDoc.deletedAt !== null && existing.deleted_at == null) {
       const subject = existing.subject == null ? '' : String(existing.subject)

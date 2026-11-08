@@ -109,7 +109,12 @@ export async function importCanon(input: {
   const current = allRows.filter((row) => row.status === 'current')
   for (const row of current) {
     assertLocalRevisionWrite(
-      { scope: 'canon', expectedRevision: row.revision ?? undefined },
+      {
+        scope: 'canon',
+        subject: row.subject,
+        slug: row.slug,
+        expectedRevision: row.revision ?? undefined,
+      },
       row.revision,
       false,
     )
@@ -143,7 +148,12 @@ export async function importCanon(input: {
     for (const row of current) {
       const existing = liveBySlug.get(row.slug)
       assertLocalRevisionWrite(
-        { scope: 'canon', expectedRevision: row.revision ?? undefined },
+        {
+          scope: 'canon',
+          subject: row.subject,
+          slug: row.slug,
+          expectedRevision: row.revision ?? undefined,
+        },
         existing?.revision ?? null,
         existing === undefined,
       )

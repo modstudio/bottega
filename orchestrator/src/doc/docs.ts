@@ -26,7 +26,10 @@ import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
-import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import {
+  applyRecordWriteAuthority,
+  currentRecordWriteDecision,
+} from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { assertContextDropAllowed, assertContextSetAllowed } from './context-write-adapter.ts'
 import {
@@ -396,7 +399,10 @@ async function setDocWithOp(
   const identity = resolvedDocWriteIdentity(input)
   const owner = input.owner ?? null
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
-  assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
+  const writesHosted = currentRecordWriteDecision().verdict === 'hosted'
+  if (!(writesHosted && prior === null && input.expectedRevision !== undefined)) {
+    assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
+  }
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
   const projectName = docWriteProjectName(input.scope, input.subject)
@@ -449,7 +455,9 @@ async function setDocWithOp(
         projectName,
         ...hostedDocWriteIdentity(identity),
         forceInject: input.forceInject,
-        op: requestedOp,
+        op:
+          requestedOp ??
+          (prior === null && input.expectedRevision === undefined ? 'create' : 'set'),
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
       }
@@ -458,6 +466,7 @@ async function setDocWithOp(
       if (compatibilityRefusal) throw new Error(compatibilityRefusal)
       return commitDocSet({
         ...input,
+        expectedRevision: prior?.revision ?? undefined,
         owner,
         projectId: projectName ? projectByName(input.subject!)!.recordId : null,
         delivery,
@@ -599,7 +608,7 @@ export async function removeDoc(
   await assertContextDropAllowed(doc)
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
-    { scope, slug, expectedRevision: context.expectedRevision },
+    { scope, subject, slug, expectedRevision: context.expectedRevision },
     doc.revision,
     false,
   )
@@ -687,7 +696,7 @@ export async function consumeDoc(
   if (patched.alreadyConsumed) return { ...doc, already_consumed: true }
   assertDocSections(patched.body, doc.audiences)
   assertLocalRevisionWrite(
-    { scope, expectedRevision: context.expectedRevision },
+    { scope, subject: doc.subject, slug: doc.slug, expectedRevision: context.expectedRevision },
     doc.revision,
     false,
   )
@@ -903,7 +912,7 @@ export async function restoreDoc(
   }
   const [expectedCurrent, current] = referenceRestoreState(scope, subject, slug, owner, revision)
   assertLocalRevisionWrite(
-    { scope, expectedRevision: context.expectedRevision },
+    { scope, subject, slug, expectedRevision: context.expectedRevision },
     expectedCurrent,
     false,
   )
