@@ -189,9 +189,10 @@ function baseExemptions(commit: string): TestReachExemption[] | null {
   const error = result.stderr
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))
     return null
-  throw new Error(
-    `could not read the base test-reach exemptions at ${commit}: ${error.trim() || `git show exited ${result.exitCode ?? 'unknown'}`}`,
-  )
+  const detail = result.timedOut
+    ? `git show ${commit}:${EXEMPTIONS_FILE} exceeded its bounded-call deadline`
+    : error.trim() || `git show exited ${result.code}`
+  throw new Error(`could not read the base test-reach exemptions at ${commit}: ${detail}`)
 }
 
 function run(): number {

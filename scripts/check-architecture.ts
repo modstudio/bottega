@@ -79,9 +79,10 @@ function baseBaselineOrExit(commit: string | null): string[] | null {
   const error = result.stderr
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))
     return null
-  console.error(
-    `could not read the base undeclared-modules baseline at ${commit}: ${error.trim() || `git show exited ${result.exitCode ?? 'unknown'}`}`,
-  )
+  const detail = result.timedOut
+    ? `git show ${commit}:${BASELINE_FILE} exceeded its bounded-call deadline`
+    : error.trim() || `git show exited ${result.code}`
+  console.error(`could not read the base undeclared-modules baseline at ${commit}: ${detail}`)
   process.exit(1)
 }
 
