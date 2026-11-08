@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError, type ConfigClientErrorReason } from '../../../shared/config-client.ts'
 import { type MachineLevel, setMachineValue } from '../../../shared/machine-config.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { readRecordSessionToken } from '../../../shared/record-session.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import {
   migrateLegacyEnvironmentSecrets,
@@ -69,10 +70,12 @@ export type EnvironmentRecordSessionDecision =
 
 export function environmentRecordSessionDecision(
   authority: RecordWriteDecision,
+  sessionPresent: boolean,
   render: EnvironmentRecordRenderResult,
 ): EnvironmentRecordSessionDecision {
   if (authority.verdict === 'local-authoritative') return { action: 'local-authoritative' }
   if (authority.verdict === 'refused') return { action: 'refuse', refusal: authority.refusal }
+  if (!sessionPresent) return { action: 'wait-for-sign-in' }
   if (render.kind === 'not-run' || render.kind === 'rendered') return { action: 'hosted' }
   if (
     (render.kind === 'config-error' &&
@@ -197,6 +200,7 @@ export const setupEnvironmentService = {
     withMigratedProcessEnvironment(process.env, async (processNamesRenamed) => {
       const notes: string[] = []
       const authority = currentRecordWriteDecision()
+      const sessionPresent = readRecordSessionToken() !== null
       let recordSessionUnavailable = false
       const waitForSignIn = () => {
         recordSessionUnavailable = true
@@ -206,21 +210,28 @@ export const setupEnvironmentService = {
           )
         }
       }
-      const home = homedir()
-      const report = await migrateOperatorEnvironment(home, {
+      const initial = environmentRecordSessionDecision(authority, sessionPresent, {
+        kind: 'not-run',
+      })
+      if (initial.action === 'wait-for-sign-in') waitForSignIn()
+      const report = await migrateOperatorEnvironment(homedir(), {
         platform: process.platform,
         backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
         migrateSecrets: async (record) => {
-          const initial = environmentRecordSessionDecision(authority, { kind: 'not-run' })
           if (initial.action === 'refuse') throw new Error(initial.refusal)
           if (initial.action === 'local-authoritative') {
             notes.push('no hosted record: nothing to migrate')
             return []
           }
+          if (initial.action === 'wait-for-sign-in') return []
           try {
             return await migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
           } catch (error) {
-            const decision = environmentRecordSessionDecision(authority, recordRenderResult(error))
+            const decision = environmentRecordSessionDecision(
+              authority,
+              sessionPresent,
+              recordRenderResult(error),
+            )
             if (decision.action === 'wait-for-sign-in') {
               waitForSignIn()
               return []
@@ -240,7 +251,11 @@ export const setupEnvironmentService = {
           try {
             results = await applyMachineSettings({ check: false })
           } catch (error) {
-            const decision = environmentRecordSessionDecision(authority, recordRenderResult(error))
+            const decision = environmentRecordSessionDecision(
+              authority,
+              sessionPresent,
+              recordRenderResult(error),
+            )
             if (decision.action === 'wait-for-sign-in') {
               waitForSignIn()
               return false
