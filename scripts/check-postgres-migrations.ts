@@ -2,6 +2,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { analyzeForcedRlsDml, type ForcedRlsDmlFinding } from './postgres-migration-rls.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -94,11 +95,7 @@ const APPLIED_MIGRATION_EXCEPTIONS: readonly MigrationException[] = [
 ]
 
 function run(args: string[]): string {
-  const result = Bun.spawnSync([drizzleKit, ...args], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync([drizzleKit, ...args], { budget: 'process-table', cwd: root })
   const stdout = result.stdout.toString().trim()
   const stderr = result.stderr.toString().trim()
   if (stdout) console.log(stdout)

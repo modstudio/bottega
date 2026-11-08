@@ -4,6 +4,7 @@
  * know transports, database write paths, contracts, or routing.
  */
 import { basename } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import {
   branchOf,
   contentTree,
@@ -54,10 +55,9 @@ export function reviewRemoteTrunkRefExists(
 /** Run a git probe whose result is determined only by its exit code. */
 export function spawnGitProbe(cwd: string): (args: string[]) => boolean {
   return (args) =>
-    Bun.spawnSync(['git', '-C', cwd, ...args], {
+    startBoundedSync(['git', '-C', cwd, ...args], {
+      budget: 'git-plumbing',
       env: targetGitEnvironment(cwd),
-      stdout: 'ignore',
-      stderr: 'ignore',
     }).exitCode === 0
 }
 
@@ -310,10 +310,9 @@ export function resolveReviewTarget(
 
 export function implicitReviewWarning(cwd: string): string {
   const branch = branchOf(cwd) ?? '(detached HEAD)'
-  const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--verify', 'HEAD^{commit}'], {
+  const p = startBoundedSync(['git', '-C', cwd, 'rev-parse', '--verify', 'HEAD^{commit}'], {
+    budget: 'git-plumbing',
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'ignore',
   })
   const commit = p.exitCode === 0 ? p.stdout.toString().trim() : null
   return `reviewing ${branch} at ${commit?.slice(0, 8) ?? 'unknown'}; pass --review <branch> to be explicit`

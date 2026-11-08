@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { $ } from 'bun'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { CONCERNS, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
@@ -216,11 +217,10 @@ export function numericLiteralReport(text: string, source: string): NumericLiter
 function checkoutRoot(cwd: string): string | null {
   if (!existsSync(cwd)) return null
   try {
-    const result = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
+    const result = startBoundedSync(['git', 'rev-parse', '--show-toplevel'], {
+      budget: 'git-plumbing',
       cwd,
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
     return result.exitCode === 0 ? result.stdout.toString().trim() : null
   } catch {
@@ -475,11 +475,10 @@ function tracked(root: string): Set<string> | null {
   if (!existsSync(root)) return null
   const cached = trackedCache.get(root)
   if (cached) return cached
-  const p = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files'])], {
+  const p = startBoundedSync(['git', ...nulPathListArgs(['ls-files'])], {
+    budget: 'git-plumbing',
     cwd: root,
     env: targetGitEnvironment(root),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (p.exitCode !== 0) return null
   const result = new Set(splitNulPaths(p.stdout.toString()))

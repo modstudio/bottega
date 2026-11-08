@@ -2,6 +2,7 @@
 /** Updates either installation kind while holding its migration drain or window. */
 
 import { existsSync, realpathSync } from 'node:fs'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   INSTALL_HOME_ENV,
@@ -88,14 +89,18 @@ function incomingJournal(
 }
 
 function runMigration(cwd: string): void {
-  const result = Bun.spawnSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
+  const result = startBoundedSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
+    budget: 'machine-update',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'inherit',
-    stderr: 'inherit',
   })
-  if (result.exitCode !== 0)
-    throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
+  process.stdout.write(result.stdout)
+  process.stderr.write(result.stderr)
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.trim()
+    const detail = stderr ? `: ${stderr}` : ''
+    throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}${detail}`)
+  }
 }
 
 function applyImmediateUpdate(input: { migration: string | null; apply: () => void }): void {
@@ -141,13 +146,16 @@ type UpdateDependencies = {
 }
 
 function runLaunchAgentsRefreshVerb(binary: string): void {
-  const result = Bun.spawnSync([binary, 'machine', 'launch-agents', 'refresh'], {
-    stdout: 'inherit',
-    stderr: 'inherit',
+  const result = startBoundedSync([binary, 'machine', 'launch-agents', 'refresh'], {
+    budget: 'machine-update',
   })
+  process.stdout.write(result.stdout)
+  process.stderr.write(result.stderr)
   if (result.exitCode !== 0) {
+    const stderr = result.stderr.trim()
+    const detail = stderr ? `: ${stderr}` : ''
     throw new Error(
-      `launch-agent refresh failed with exit ${result.exitCode}; run ${binary} machine launch-agents refresh`,
+      `launch-agent refresh failed with exit ${result.exitCode}${detail}; run ${binary} machine launch-agents refresh`,
     )
   }
 }

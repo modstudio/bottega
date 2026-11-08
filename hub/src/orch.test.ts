@@ -39,12 +39,42 @@ import {
   machinePermissionListArgv,
   projectArgv,
   projectListProcessError,
+  readRunChangesArgv,
+  readRunsArgv,
+  readRunsByIdArgv,
   settingsCheck,
   settingsCheckArgv,
   settingsPermissionArgv,
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
+
+test('readRunsById builds one id option per id and no since option', () => {
+  expect(readRunsByIdArgv([42, '00000000-0000-4000-8000-000000000043'])).toEqual([
+    'run',
+    'list',
+    '--json',
+    '--id',
+    '42',
+    '--id',
+    '00000000-0000-4000-8000-000000000043',
+  ])
+  expect(readRunsByIdArgv([42])).not.toContain('--since')
+})
+
+test('readRunChanges builds the changed-after cursor option', () => {
+  expect(readRunChangesArgv(73)).toEqual(['run', 'list', '--json', '--changed-after', '73'])
+})
+
+test('readRuns builds the since option', () => {
+  expect(readRunsArgv('2026-11-07T00:00:00.000Z')).toEqual([
+    'run',
+    'list',
+    '--json',
+    '--since',
+    '2026-11-07T00:00:00.000Z',
+  ])
+})
 
 test('board post bridge carries its resolved purpose', () => {
   const argv = boardPostArgv({

@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path'
+import { startBounded } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 import { requireCheckoutRoot } from '../../shared/install-root.ts'
 // concern: retrieval-search-cli
 /** Presents the stable semantic document-search contract. */
@@ -24,27 +26,19 @@ function usage(): never {
 }
 
 async function registeredCodeProject(path: string): Promise<{ name: string; path: string }> {
-  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), 'project', 'list', '--json'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const child = await startBounded(
+    [...bottegaEntryArgv(PLATFORM_SLUG), 'project', 'list', '--json'],
+    { budget: 'self-cli' },
+  )
+  const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) throw new Error(stderr.trim() || 'could not read the project register')
   const projects = OrchProjectListSchema.parse(JSON.parse(stdout))
   const requested = resolve(path)
-  const git = Bun.spawn(['git', '-C', requested, 'rev-parse', '--show-toplevel'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
+  const git = await startBounded(['git', '-C', requested, 'rev-parse', '--show-toplevel'], {
+    budget: 'git-plumbing',
+    env: inspectionGitEnv(),
   })
-  const [gitStdout, gitStderr, gitExitCode] = await Promise.all([
-    new Response(git.stdout).text(),
-    new Response(git.stderr).text(),
-    git.exited,
-  ])
+  const { stdout: gitStdout, stderr: gitStderr, exitCode: gitExitCode } = git
   if (gitExitCode !== 0) {
     throw new Error(gitStderr.trim() || `${requested} is not inside a git checkout`)
   }

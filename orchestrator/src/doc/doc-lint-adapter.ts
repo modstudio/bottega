@@ -2,7 +2,7 @@
 /** Gathers registered checkout trees for the pure stored-document lint decision. */
 import { existsSync } from 'node:fs'
 import type { DocKind } from '../../../shared/docs.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { canonGitRoot, collectCanonLintInput } from '../canon/canon-files.ts'
 import { type Project, projects } from '../project/projects.ts'
 import {
@@ -41,16 +41,15 @@ export function docReferenceTargetProjects(
 }
 
 function gitHead(root: string): string {
-  const result = Bun.spawnSync(['git', '-C', root, 'rev-parse', 'HEAD'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: inspectionGitEnv(),
-  })
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim()
-    throw new Error(detail || 'git rev-parse HEAD failed')
+  const args = ['rev-parse', 'HEAD']
+  const result = gitAt(root, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
   }
-  return result.stdout.toString().trim()
+  if (result.code !== 0) {
+    throw new Error(`git rev-parse HEAD failed: ${result.stderr.trim() || 'no error output'}`)
+  }
+  return result.stdout.trim()
 }
 
 export function collectDocReferenceProjects(

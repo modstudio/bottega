@@ -37,3 +37,23 @@ export const confinementModules: ConfinementModule[] = [
     './sandbox.ts',
   ]),
 ]
+
+export const confinementRulingBoundary = {
+  name: 'confinement-ruling-boundary',
+  file: 'orchestrator/src/confinement/confinement-ruling.ts',
+  allowed: [
+    'node:fs',
+    'orchestrator/src/confinement/confinement.ts',
+    'orchestrator/src/database/db.ts',
+    'orchestrator/src/git/git-environment.ts',
+    'orchestrator/src/project/projects.ts',
+    'orchestrator/src/record/machine-identity.ts',
+    'orchestrator/src/run/run-authority.ts',
+    'orchestrator/src/run/run-liveness.ts',
+    'orchestrator/src/run/run-outbox.ts',
+    'shared/bounded-process.ts',
+  ],
+  typeOnlyAllowed: [],
+  reason:
+    'Keep confinement rulings independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+}

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { gitAt } from '../../shared/git.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import { projectOf, writeCommitKey } from './attribute.ts'
 import { writeTransaction } from './db.ts'
@@ -17,13 +18,17 @@ export async function importTasks(file: string): Promise<number> {
     closed: string | null
     shas: string[]
   }[]
-  const log = Bun.spawnSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], {
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
+  const log = gitAt(checkout, ['log', '--all', '--format=%H%x09%cI'])
+  if (log.timedOut) {
+    throw new Error('git log --all --format=%H%x09%cI exceeded its bounded-call deadline')
+  }
+  if (log.code !== 0) {
+    throw new Error(
+      `git log --all --format=%H%x09%cI failed: ${log.stderr.trim() || 'no error output'}`,
+    )
+  }
   const stamps = new Map(
-    new TextDecoder()
-      .decode(log.stdout)
+    log.stdout
       .split('\n')
       .filter(Boolean)
       .map((line) => line.split('\t') as [string, string]),

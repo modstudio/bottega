@@ -10,7 +10,7 @@ import {
   extractEmbeddedRuntime,
   resolveInstallFile,
 } from '../../../shared/embedded-assets.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { installationIdentity, runningInstallRoot } from '../../../shared/install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
@@ -269,16 +269,17 @@ export function commentFindingsInSources(
 }
 
 function trackedSources(root: string): SourceFile[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS])], {
-    cwd: root,
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) {
-    throw new Error(`could not list tracked source files: ${result.stderr.toString().trim()}`)
+  const args = nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS])
+  const result = gitAt(root, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
   }
-  return splitNulPaths(result.stdout.toString()).flatMap((file) => {
+  if (result.code !== 0) {
+    throw new Error(
+      `could not list tracked source files: ${result.stderr.trim() || 'no error output'}`,
+    )
+  }
+  return splitNulPaths(result.stdout).flatMap((file) => {
     try {
       return [{ file, source: readFileSync(resolve(root, file), 'utf8') }]
     } catch (error) {

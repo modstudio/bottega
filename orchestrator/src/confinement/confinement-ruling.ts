@@ -5,6 +5,7 @@
  * reviews, contracts, the CLI, or durable execution.
  */
 import { existsSync } from 'node:fs'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { contentTree, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
@@ -82,11 +83,10 @@ export function clearConfinement(
   const project = projectByName(repo)
   if (!project) throw new Error(`run ${id}'s recorded project ${repo} is not registered`)
   const inspect = (cwd: string, args: string[]) => {
-    const child = Bun.spawnSync(['git', ...args], {
+    const child = startBoundedSync(['git', ...args], {
+      budget: 'git-plumbing',
       cwd,
       env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
     return child.exitCode === 0 ? child.stdout.toString().trim() : null
   }

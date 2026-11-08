@@ -1,6 +1,7 @@
 // concern: review-read
 /** Records an architect's read of one exact branch change group. */
 import type { Database } from 'bun:sqlite'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
@@ -26,11 +27,10 @@ type ReviewReadDeps = {
 }
 
 const git: Git = (cwd, args) => {
-  const result = Bun.spawnSync(['git', ...args], {
+  const result = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (result.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${result.stderr.toString().trim()}`)

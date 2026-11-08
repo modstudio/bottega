@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { NoteAnchorWire } from '../../../shared/note-anchor.ts'
 import { type BottegaEntry, bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -24,18 +25,12 @@ export type HubNote = z.infer<typeof noteRowsSchema>[number]
 export type FiledNoteAnchor = NoteAnchorWire
 
 async function spawnOutput(entry: BottegaEntry, args: string[], cwd: string): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv(entry), ...args], {
+  const child = await startBounded([...bottegaEntryArgv(entry), ...args], {
+    budget: 'self-cli',
     cwd,
     env: { ...process.env },
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
   }

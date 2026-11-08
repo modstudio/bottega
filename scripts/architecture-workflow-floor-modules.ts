@@ -82,6 +82,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/workflow/workflow-text-copy.ts', [
     'node:fs',
@@ -154,6 +155,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/trackers.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/workflow/workflow-checkout-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
@@ -169,6 +171,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../project/projects.ts',
     './workflow-checkout-landing.ts',
     './workflow-checkout-refusal.ts',
+    '../../../shared/git.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-evidence-input.ts', []),
   module('orchestrator/src/workflow/workflow-step-question-evidence.ts', [
@@ -268,6 +272,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
     './workflow-evidence-payload.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor.ts', [
     'bun:sqlite',

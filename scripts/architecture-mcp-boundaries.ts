@@ -75,6 +75,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
       '../project/projects.ts',
       '../run/run-process.ts',
       './mcp-mode.ts',
+      '../../../shared/bounded-process.ts',
     ],
     'Keep MCP preflight independent of execution, transport, routing, and mutation.',
     ['../contract/contract.ts', './mcp-compatibility.ts'],

@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type CleanupPresentation, discardRun } from '../cleanup/cleanup.ts'
@@ -67,11 +68,10 @@ const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
 })
 
 function git(cwd: string, args: string[]): string {
-  const p = Bun.spawnSync(['git', ...args], {
+  const p = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: hermeticGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(p.stderr.toString().trim() || `git ${args.join(' ')} exited ${p.exitCode}`)

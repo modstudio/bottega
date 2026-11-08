@@ -1,9 +1,12 @@
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
+
 type CpuTime = { user: number | bigint; system: number | bigint }
 
 type LandingBase = {
   commit: string
   command: string[]
-  cpuTime: CpuTime
+  cpuTime?: CpuTime
 }
 
 export function resolveLandingBase(root: string, checkName: string): LandingBase {
@@ -18,10 +21,10 @@ function resolveRemoteLandingBase(
 ): LandingBase {
   const remoteBranch = `origin/${landingBranch}`
   const command = ['git', 'merge-base', remoteBranch, 'HEAD']
-  const result = Bun.spawnSync(command, {
+  const result = startBoundedSync(command, {
+    budget: 'git-plumbing',
     cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
+    env: inspectionGitEnv(),
   })
   if (result.exitCode !== 0) {
     const detail = result.stderr.toString().trim()
@@ -32,7 +35,6 @@ function resolveRemoteLandingBase(
   return {
     commit: result.stdout.toString().trim(),
     command,
-    cpuTime: result.resourceUsage.cpuTime,
   }
 }
 

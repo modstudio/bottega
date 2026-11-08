@@ -1,5 +1,6 @@
-import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
 import { fixtureRecordId, resetFixtureStore } from '../test/run-fixtures.ts'
+import { decodeRunsJson } from './orch.ts'
 
 const { db, writeTransaction } = await import('./db.ts')
 const { indexRunAnswers, reconcileOpenIntervals, runRef, statusFor } = await import(
@@ -21,26 +22,10 @@ function add(recordId: string, ref: string, endAt: string) {
 }
 
 function orchAnswers(rows: object[]) {
-  return spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
-    expect(args).toEqual([
-      expect.any(String),
-      'run',
-      'list',
-      '--json',
-      '--id',
-      fixtureRecordId(1205),
-      '--id',
-      fixtureRecordId(1206),
-      '--id',
-      fixtureRecordId(9999),
-    ])
-    expect(args).not.toContain('--since')
-    return {
-      stdout: new Blob([rows.map(runLine).join('\n')]),
-      stderr: new Blob(['']),
-      exited: Promise.resolve(0),
-    }
-  }) as unknown as typeof Bun.spawn)
+  return async (ids: (string | number)[]) => {
+    expect(ids).toEqual([fixtureRecordId(1205), fixtureRecordId(1206), fixtureRecordId(9999)])
+    return decodeRunsJson(rows.map(runLine).join('\n'))
+  }
 }
 
 function runLine(row: object): string {
@@ -154,72 +139,58 @@ describe('open interval reconciliation', () => {
     add('interval-1', `orch:${fixtureRecordId(1205)}`, '2026-09-03T00:00:01.000Z')
     add('interval-2', `orch:${fixtureRecordId(1206)}`, '2026-09-03T00:00:02.000Z')
     add('interval-3', `orch:${fixtureRecordId(9999)}`, '2026-09-03T00:00:03.000Z')
-    const spawn = orchAnswers([
+    const runReader = orchAnswers([
       { id: 1205, status: 'ok' },
       { id: 1206, status: 'running' },
       { id: 9999, status: 'unknown', unknown: true },
     ])
-    try {
-      const result = await reconcileOpenIntervals({
-        dryRun: true,
-        now: new Date('2026-09-03T02:00:01.000Z').getTime(),
-      })
-      expect(result.closed.map((row) => [row.record_id, row.status, row.removesMs])).toEqual([
-        ['interval-1', 'ok', 7_200_000],
-      ])
-      expect(result.leftOpen.map((row) => [row.record_id, row.reason])).toEqual([
-        ['interval-2', `run ${fixtureRecordId(1206)} is still running`],
-        ['interval-3', `run ${fixtureRecordId(9999)} is unknown to orch; needs a decision`],
-      ])
-      expect(db().query('SELECT record_id, open FROM interval ORDER BY record_id').all()).toEqual([
-        { record_id: 'interval-1', open: 1 },
-        { record_id: 'interval-2', open: 1 },
-        { record_id: 'interval-3', open: 1 },
-      ])
-    } finally {
-      spawn.mockRestore()
-    }
+    const result = await reconcileOpenIntervals({
+      dryRun: true,
+      now: new Date('2026-09-03T02:00:01.000Z').getTime(),
+      runReader,
+    })
+    expect(result.closed.map((row) => [row.record_id, row.status, row.removesMs])).toEqual([
+      ['interval-1', 'ok', 7_200_000],
+    ])
+    expect(result.leftOpen.map((row) => [row.record_id, row.reason])).toEqual([
+      ['interval-2', `run ${fixtureRecordId(1206)} is still running`],
+      ['interval-3', `run ${fixtureRecordId(9999)} is unknown to orch; needs a decision`],
+    ])
+    expect(db().query('SELECT record_id, open FROM interval ORDER BY record_id').all()).toEqual([
+      { record_id: 'interval-1', open: 1 },
+      { record_id: 'interval-2', open: 1 },
+      { record_id: 'interval-3', open: 1 },
+    ])
   })
 
   test('a real run closes terminal rows, preserves end_at, and is idempotent', async () => {
-    const spawn = orchAnswers([
+    const runReader = orchAnswers([
       { id: 1205, status: 'ok' },
       { id: 1206, status: 'running' },
       { id: 9999, status: 'unknown', unknown: true },
     ])
-    try {
-      const before = db().query('SELECT end_at FROM interval WHERE record_id = ?').get('interval-1')
-      const first = await reconcileOpenIntervals()
-      expect(first.closed.map((row) => row.record_id)).toEqual(['interval-1'])
-      expect(
-        db().query('SELECT open, end_at FROM interval WHERE record_id = ?').get('interval-1'),
-      ).toEqual({
-        open: 0,
-        ...(before as { end_at: string }),
-      })
-    } finally {
-      spawn.mockRestore()
-    }
-
-    const secondSpawn = spyOn(Bun, 'spawn').mockImplementation((() => ({
-      stdout: new Blob([
-        [
-          { id: 1206, status: 'running' },
-          { id: 9999, status: 'unknown', unknown: true },
-        ]
-          .map(runLine)
-          .join('\n'),
-      ]),
-      stderr: new Blob(['']),
-      exited: Promise.resolve(0),
-    })) as unknown as typeof Bun.spawn)
-    try {
-      const second = await reconcileOpenIntervals()
-      expect(second.closed).toEqual([])
-      expect(second.leftOpen).toHaveLength(2)
-    } finally {
-      secondSpawn.mockRestore()
-    }
+    const before = db().query('SELECT end_at FROM interval WHERE record_id = ?').get('interval-1')
+    const first = await reconcileOpenIntervals({ runReader })
+    expect(first.closed.map((row) => row.record_id)).toEqual(['interval-1'])
+    expect(
+      db().query('SELECT open, end_at FROM interval WHERE record_id = ?').get('interval-1'),
+    ).toEqual({
+      open: 0,
+      ...(before as { end_at: string }),
+    })
+    const second = await reconcileOpenIntervals({
+      runReader: async () =>
+        decodeRunsJson(
+          [
+            { id: 1206, status: 'running' },
+            { id: 9999, status: 'unknown', unknown: true },
+          ]
+            .map(runLine)
+            .join('\n'),
+        ),
+    })
+    expect(second.closed).toEqual([])
+    expect(second.leftOpen).toHaveLength(2)
   })
 
   test('bare turn ref resolves to the turn status (mutation: index answers only by id)', () => {

@@ -3,6 +3,7 @@ import { Database } from 'bun:sqlite'
 import { copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 
 const LARGE_TABLE_ROW_THRESHOLD = 10_000
@@ -71,10 +72,9 @@ function sqliteStats(
 ): { pages: number | null; ms: number } {
   const target = join(work, `statement-${crypto.randomUUID()}.db`)
   copyFileSync(store, target)
-  const child = Bun.spawnSync(['sqlite3', target], {
+  const child = startBoundedSync(['sqlite3', target], {
+    budget: 'process-table',
     stdin: Buffer.from(`.stats on\n.timer on\n${sql.replace(/;?\s*$/, ';')}\n`),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   const output = `${child.stdout.toString()}\n${child.stderr.toString()}`
   const misses = output.match(/Page cache misses:\s+(\d+)/i)

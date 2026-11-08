@@ -3,6 +3,8 @@
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -16,17 +18,12 @@ export const pipedOutput = (stream: Bun.Subprocess['stdout']): ReadableStream<Ui
   stream as ReadableStream<Uint8Array>
 
 export async function command(args: string[], env: Environment): Promise<string> {
-  const child = Bun.spawn([executable, ...args], {
+  const child = await startBounded([executable, ...args], {
+    budget: 'self-cli',
     cwd: repoRoot,
     env,
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) {
     throw new Error(
       `${executable} ${args.join(' ')} exited ${exitCode}: ${stderr.trim() || stdout.trim()}`,
@@ -54,7 +51,7 @@ export async function waitForServer(origin: string, exited: Promise<number>): Pr
   let lastFailure = 'no response'
   for (let attempt = 0; attempt < 200; attempt++) {
     try {
-      await fetch(origin)
+      await hostedApiFetch(origin)
       return
     } catch (error) {
       lastFailure = String(error)

@@ -501,13 +501,18 @@ async function writeHostedFillCandidate(
 }
 
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
-export async function fillAbsentProjectSettings(input: FillAbsentProjectInput): Promise<void> {
+export async function fillAbsentProjectSettings(
+  input: FillAbsentProjectInput,
+  dependencies: { branchChecker?: typeof registerBranchCheck } = {},
+): Promise<void> {
   let candidate: Project | null = null
   for (let restart = 0; restart <= MAX_FILL_ABSENT_PROJECT_RESTARTS; restart += 1) {
     const snapshot = projectByName(input.name)
     if (!snapshot) throw new Error(`no project "${input.name}"`)
     const checked = fillCandidate(snapshot, input)
-    const branchCheck = checked.project ? registerBranchCheck(checked.project) : null
+    const branchCheck = checked.project
+      ? (dependencies.branchChecker ?? registerBranchCheck)(checked.project)
+      : null
     try {
       const recordId = await writeHostedFillCandidate(snapshot, checked)
       writeTransaction(() => {

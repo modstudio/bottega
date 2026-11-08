@@ -10,7 +10,9 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { startBounded } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { artifactName, BINARY_TARGETS } from '../shared/release-artifacts.ts'
 import { buildBinary } from './build-binary.ts'
 import { RELEASE_BUN_VERSION, requireReleaseBun } from './release-config.ts'
@@ -32,12 +34,8 @@ export type ArtifactPorts = {
 }
 
 async function command(argv: string[]): Promise<CommandResult> {
-  const child = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const child = await startBounded(argv, { budget: 'git-plumbing', env: inspectionGitEnv() })
+  const { stdout, stderr, exitCode } = child
   if (stderr.trim()) console.error(stderr.trim())
   return { exitCode, stdout: stdout.trim() }
 }

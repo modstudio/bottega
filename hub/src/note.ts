@@ -26,6 +26,7 @@ import {
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
 } from './note-duplicate-question.ts'
+import { noteGit } from './note-git.ts'
 import { createOutsideProjectNote, listOutsideProjectNotes } from './note-outside.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { notePromotionBody } from './note-promotion-body.ts'
@@ -110,11 +111,6 @@ export type CreateNoteInput = {
   forceNew?: boolean
   anchor?: NoteAnchor
   project?: string
-}
-
-const git = (cwd: string, ...args: string[]): string | null => {
-  const result = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'ignore' })
-  return result.exitCode === 0 ? result.stdout.toString().trim() : null
 }
 
 function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): NoteRow {
@@ -266,8 +262,8 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
     project,
     files,
     run_record_id: runRecordId && hasRecordIdShape(runRecordId) ? runRecordId.toLowerCase() : null,
-    branch: git(cwd, 'branch', '--show-current') || null,
-    commit: git(cwd, 'rev-parse', 'HEAD') || null,
+    branch: noteGit(cwd, 'branch', '--show-current') || null,
+    commit: noteGit(cwd, 'rev-parse', 'HEAD') || null,
     session_id: env.CLAUDE_CODE_SESSION_ID ?? env.CODEX_THREAD_ID ?? null,
   }
 }
@@ -927,7 +923,7 @@ function observeStalenessAnchor(
 }
 
 export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleResult> {
-  const runGit = deps.git ?? git
+  const runGit = deps.git ?? noteGit
   const readFile = deps.readFile ?? stalenessFileReader
   const clock = deps.now?.() ?? new Date()
   const notes = listNotes()

@@ -28,7 +28,9 @@ import {
   readGateFactsFile,
 } from '../orchestrator/src/gate/gate-facts.ts'
 import { type Project, projectAt } from '../orchestrator/src/project/projects.ts'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
@@ -36,7 +38,11 @@ const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const remedy = `edit canon in the store with ${PLATFORM_SLUG} doc set, then run ${PLATFORM_SLUG} doc canon hydrate in the worktree and commit`
 
 function run(argv: string[], cwd: string): { exitCode: number; stdout: string; stderr: string } {
-  const result = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const result = startBoundedSync(argv, {
+    budget: 'git-plumbing',
+    cwd,
+    env: inspectionGitEnv(),
+  })
   return {
     exitCode: result.exitCode,
     stdout: result.stdout.toString(),

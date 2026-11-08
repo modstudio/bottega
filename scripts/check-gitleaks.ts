@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { gitAt } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { decideGitleaksScan, planGitleaksScans } from './check-gitleaks-plan'
 import { resolveLandingBase } from './landing-base'
@@ -18,17 +19,16 @@ try {
   process.exit(1)
 }
 const range = `${mergeBase}..HEAD`
-const rangeCount = Bun.spawnSync(['git', 'rev-list', '--count', range], {
-  cwd: root,
-  stdout: 'pipe',
-  stderr: 'pipe',
-})
-if (rangeCount.exitCode !== 0) {
-  const detail = rangeCount.stderr.toString().trim()
-  console.error(`check-gitleaks could not inspect ${range}${detail ? `: ${detail}` : ''}`)
+const rangeCount = gitAt(root, ['rev-list', '--count', range])
+if (rangeCount.code !== 0) {
+  console.error(
+    rangeCount.timedOut
+      ? `git rev-list --count ${range} exceeded its bounded-call deadline`
+      : `check-gitleaks could not inspect ${range}: ${rangeCount.stderr.trim() || 'no error output'}`,
+  )
   process.exit(1)
 }
-const rangeCommitCount = Number(rangeCount.stdout.toString().trim())
+const rangeCommitCount = Number(rangeCount.stdout.trim())
 const scans = planGitleaksScans({
   rangeCommitCount,
   range,
@@ -37,20 +37,16 @@ const scans = planGitleaksScans({
 })
 
 if (rangeCommitCount === 0) {
-  const untracked = Bun.spawnSync(
-    ['git', ...nulPathListArgs(['ls-files', '--others', '--exclude-standard'])],
-    {
-      cwd: root,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  )
-  if (untracked.exitCode !== 0) {
-    const detail = untracked.stderr.toString().trim()
-    console.error(`check-gitleaks could not inspect untracked files${detail ? `: ${detail}` : ''}`)
+  const untracked = gitAt(root, nulPathListArgs(['ls-files', '--others', '--exclude-standard']))
+  if (untracked.code !== 0) {
+    console.error(
+      untracked.timedOut
+        ? 'git ls-files --others --exclude-standard -z exceeded its bounded-call deadline'
+        : `check-gitleaks could not inspect untracked files: ${untracked.stderr.trim() || 'no error output'}`,
+    )
     process.exit(1)
   }
-  if (splitNulPaths(untracked.stdout.toString()).length) {
+  if (splitNulPaths(untracked.stdout).length) {
     console.log(
       'check-gitleaks: untracked files are not scanned; they are scanned once staged or committed',
     )

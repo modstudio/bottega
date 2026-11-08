@@ -169,6 +169,7 @@ export const cleanupBoundarySpecs = [
       './branch-state.ts',
       './branches.ts',
       './task-status-observation.ts',
+      '../../../shared/bounded-process.ts',
     ],
     typeOnlyAllowed: [],
     reason:

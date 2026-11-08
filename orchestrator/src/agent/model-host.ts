@@ -3,6 +3,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 /** Where the model host's OpenAI-compatible endpoint lives. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
@@ -272,7 +273,7 @@ export async function localReachable(
 ): Promise<LocalHealth> {
   if (!baseUrl) return { ok: false, detail: 'BOTTEGA_MODEL_HOST_URL not set' }
   try {
-    const res = await fetch(new URL('models', baseUrl.replace(/\/?$/, '/')), {
+    const res = await hostedApiFetch(new URL('models', baseUrl.replace(/\/?$/, '/')), {
       signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` }

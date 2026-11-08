@@ -142,8 +142,7 @@ function deliveryAuthorized(): boolean {
       MONITOR_CAPABILITY_PS_TIMEOUT_MS,
     )
     if (observed.exitCode !== 0) return false
-    const words = new TextDecoder()
-      .decode(observed.stdout ?? new Uint8Array())
+    const words = String(observed.stdout ?? '')
       .trim()
       .split(/\s+/)
     let executable = words[0]

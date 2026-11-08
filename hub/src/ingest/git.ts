@@ -8,6 +8,7 @@
  */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes, writeCommitKey } from '../attribute.ts'
@@ -61,6 +62,17 @@ function blank(): DayActivity {
   }
 }
 
+function readGitLog(path: string, args: string[]): string {
+  const result = gitAt(path, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+  }
+  if (result.code !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.stderr.trim() || 'no error output'}`)
+  }
+  return result.stdout
+}
+
 /**
  * What each repo produced, per day and per task key.
  *
@@ -82,21 +94,16 @@ function scanGit(since: string) {
 
   for (const project of projects().filter((project) => project.repository)) {
     const repo = project.name
-    const proc = Bun.spawnSync(
-      [
-        'git',
-        '-C',
-        project.path,
-        'log',
-        '--all',
-        `--since=${since}`,
-        '--numstat',
-        '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
-      ],
-      { stdout: 'pipe', stderr: 'ignore' },
-    )
+    const args = [
+      'log',
+      '--all',
+      `--since=${since}`,
+      '--numstat',
+      '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
+    ]
+    const output = readGitLog(project.path, args)
     let day: string | null = null
-    for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {
+    for (const line of output.split('\n')) {
       if (line.startsWith('\u0000')) {
         const [d, at, sha, subject] = line.slice(1).split('\t')
         if (!d) {

@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: release-service
 /** Gathers release facts, executes a registered deploy under the project lock, and owns its ledger. */
 
@@ -107,11 +108,10 @@ function run(
   cwd: string,
   extraEnvironment?: Record<string, string>,
 ): CommandResult {
-  const result = Bun.spawnSync(argv, {
+  const result = startBoundedSync(argv, {
+    budget: argv[0] === 'git' ? 'git-plumbing' : 'self-cli',
     cwd,
     env: releaseProcessEnvironment(targetGitEnvironment(cwd), extraEnvironment),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return {
     exitCode: result.exitCode ?? -1,
@@ -133,7 +133,16 @@ function shell(
   cwd: string,
   extraEnvironment?: Record<string, string>,
 ): CommandResult {
-  return run(['/bin/sh', '-lc', command], cwd, extraEnvironment)
+  const result = Bun.spawnSync(['/bin/sh', '-lc', command], {
+    cwd,
+    env: releaseProcessEnvironment(targetGitEnvironment(cwd), extraEnvironment),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  return {
+    exitCode: result.exitCode ?? -1,
+    output: [result.stdout.toString(), result.stderr.toString()].filter(Boolean).join(''),
+  }
 }
 
 function releaseAncestry(live: string | null, candidate: string, cwd: string): boolean | null {

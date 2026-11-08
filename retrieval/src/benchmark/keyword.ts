@@ -1,3 +1,4 @@
+import { startBounded } from '../../../shared/bounded-process.ts'
 // concern: retrieval-keyword
 /** Ranks the shared in-memory corpus from literal query-term matches returned by ripgrep. */
 import type { Chunk } from '../corpus/chunks.ts'
@@ -46,16 +47,11 @@ export async function keywordRanking(query: string, chunks: Chunk[]): Promise<Ch
   const scores = new Map<string, Set<string>>()
   if (terms.length) {
     const corpus = chunks.map((chunk) => chunk.text.replaceAll('\n', ' ')).join('\n')
-    const child = Bun.spawn(['rg', '--json', '--ignore-case', '--regexp', terms.join('|'), '-'], {
-      stdin: new Blob([corpus]),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ])
+    const child = await startBounded(
+      ['rg', '--json', '--ignore-case', '--regexp', terms.join('|'), '-'],
+      { budget: 'process-table', stdin: corpus },
+    )
+    const { stdout, stderr, exitCode } = child
     if (exitCode !== 0 && exitCode !== 1) {
       throw new Error(`ripgrep keyword baseline failed: ${stderr.trim() || `exit ${exitCode}`}`)
     }

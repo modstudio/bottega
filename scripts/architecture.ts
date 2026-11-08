@@ -130,11 +130,13 @@ export const modules: ArchitectureModule[] = [
     '../setup/launchd-owners.ts',
     '../setup/setup-schedules.ts',
     './launch-agent-doctor.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',
     '../../../shared/repository-visibility.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/route/routing-cooldown.ts', [
     'bun:sqlite',
@@ -348,7 +350,10 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),
   module('orchestrator/src/agent/worker-launch-env.ts', []),
-  module('orchestrator/src/agent/cli-version.ts', []),
+  module('orchestrator/src/agent/cli-version.ts', [
+    '../../../shared/bounded-process.ts',
+    '../../../shared/call-budgets.ts',
+  ]),
   module('orchestrator/src/dispatch/task-cli-read.ts', [
     '../../../shared/bounded-process.ts',
     '../../../shared/brand.ts',
@@ -388,6 +393,8 @@ export const modules: ArchitectureModule[] = [
     './agent-registry.ts',
     './agents.ts',
     '../database/db.ts',
+    '../../../shared/bounded-process.ts',
+    '../../../shared/bounded-fetch.ts',
   ]),
   ...workflowAutonomyModules,
   ...workflowCommandModules,
@@ -399,6 +406,8 @@ export const modules: ArchitectureModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/call-budgets.ts',
+    '../../../shared/git.ts',
     '../../../shared/self-spawn.ts',
     '../database/db.ts',
     '../cleanup/cleanup-sweep-docker.ts',
@@ -427,6 +436,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-owner-session-liveness.ts',
     '../run/question-open.ts',
     '../run/synthetic-lifecycle-job.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
     'node:net',
@@ -547,6 +557,7 @@ export const modules: ArchitectureModule[] = [
     './review-pins.ts',
     './review-target.ts',
     './review-types.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-declared-globs.ts', []),
@@ -578,6 +589,7 @@ export const modules: ArchitectureModule[] = [
     './review-group.ts',
     './review-lineage-store.ts',
     './review-outbox.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/review/review-pins.ts', [
     '../../../shared/git-path-list.ts',
@@ -585,6 +597,7 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     './change-identity.ts',
     './review-types.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/review/review-triage.ts', [
     '../../../shared/brand.ts',
@@ -626,6 +639,7 @@ export const modules: ArchitectureModule[] = [
     '../sandbox/sandbox-runtime.ts',
     './setup-mcp.ts',
     './setup-schedules.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),
   ...spareModules,

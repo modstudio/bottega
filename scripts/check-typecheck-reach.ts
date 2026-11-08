@@ -2,6 +2,8 @@
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { CHECK_LEGS } from './check-plan.ts'
 
@@ -44,11 +46,10 @@ function resolvedTypecheckFileSets(root: string, configPaths: readonly string[])
 }
 
 function trackedTypeScriptPaths(root: string): string[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', '--', '*.ts', '*.tsx'])], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = startBoundedSync(
+    ['git', ...nulPathListArgs(['ls-files', '--', '*.ts', '*.tsx'])],
+    { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() },
+  )
   if (result.exitCode !== 0) {
     throw new Error(`git ls-files failed: ${result.stderr.toString().trim()}`)
   }

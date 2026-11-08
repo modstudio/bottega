@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { startBounded, startBoundedSync } from '../../../shared/bounded-process.ts'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -191,18 +192,13 @@ export function parseIssueReply<T>(text: string, schema: JsonSchema): T {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
+  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
+    budget: 'self-cli',
     env: { ...process.env },
   })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (code !== 0)
-    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
+  const { stdout, stderr, exitCode } = child
+  if (exitCode !== 0)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
   return stdout.trim()
 }
 
@@ -399,7 +395,7 @@ function argv(
   cwd: string,
   env = process.env,
 ): { ok: boolean; text: string; exitCode: number } {
-  const p = Bun.spawnSync(command, { cwd, env, stdout: 'pipe', stderr: 'pipe' })
+  const p = startBoundedSync(command, { budget: 'agent-cli', cwd, env })
   const text = `${p.stdout.toString()}${p.stderr.toString()}`.trim()
   return { ok: p.exitCode === 0, text: text || `exit ${p.exitCode}`, exitCode: p.exitCode }
 }

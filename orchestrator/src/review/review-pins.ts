@@ -1,5 +1,6 @@
 // concern: review-pins
 import type { Database } from 'bun:sqlite'
+import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db, writableDb } from '../database/db.ts'
 import { changeIdentity } from './change-identity.ts'
@@ -76,17 +77,16 @@ export function git(
   _hermetic = false,
   stdin?: Uint8Array,
 ): { ok: boolean; out: string; err: string; stdout: Uint8Array } {
-  const p = Bun.spawnSync(['git', ...args], {
+  const p = startBoundedSyncBytes(['git', ...args], {
+    budget: 'git-plumbing',
     cwd: repo,
     env: targetGitEnvironment(repo),
     stdin,
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,
-    out: p.stdout.toString().trim(),
-    err: p.stderr.toString().trim() || `exit ${p.exitCode}`,
+    out: new TextDecoder().decode(p.stdout).trim(),
+    err: p.stderr.trim() || `exit ${p.exitCode}`,
     stdout: p.stdout,
   }
 }

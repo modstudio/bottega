@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { gitAt } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
 import { ARCHITECTURE_CRUISE_ENTRIES, typescriptCruiseEntries } from './architecture-cruise.ts'
@@ -46,12 +47,12 @@ export function selectedTestSources(modules: readonly { source: string }[]): str
 }
 
 function gitLines(args: readonly string[]): string[] {
-  const result = Bun.spawnSync(['git', ...args], { stdout: 'pipe', stderr: 'pipe' })
-  const stderr = result.stderr.toString().trim()
-  if (result.exitCode !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${stderr || `exit ${result.exitCode}`}`)
+  const result = gitAt(process.cwd(), [...args])
+  const stderr = result.stderr.trim()
+  if (result.code !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${stderr || `exit ${result.code}`}`)
   }
-  return splitNulPaths(result.stdout.toString())
+  return splitNulPaths(result.stdout)
 }
 
 /** The tests that reach what changed since `baseCommit`, in this worktree. */

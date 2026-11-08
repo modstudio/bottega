@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: task-branch
 /**
  * Knows the project register, branch content status, and database reads. Must
@@ -434,11 +435,7 @@ function taskBranchGit(
   args: string[],
   env: NodeJS.ProcessEnv = targetGitEnvironment(cwd),
 ): string {
-  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const p = startBoundedSync(['git', '-C', cwd, ...args], { budget: 'git-plumbing', env })
   if (p.exitCode !== 0) {
     throw new Error(
       `git ${args.join(' ')} failed while resolving the task branch: ` +
@@ -450,13 +447,9 @@ function taskBranchGit(
 
 /** Exit zero is true, exit one is false; any other exit throws naming the command. */
 export function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: string): boolean {
-  const process = Bun.spawnSync(
+  const process = startBoundedSync(
     ['git', '-C', cwd, 'merge-base', '--is-ancestor', ancestor, descendant],
-    {
-      env: targetGitEnvironment(cwd),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
+    { budget: 'git-plumbing', env: targetGitEnvironment(cwd) },
   )
   if (process.exitCode === 0) return true
   if (process.exitCode === 1) return false

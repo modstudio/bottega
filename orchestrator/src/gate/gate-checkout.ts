@@ -1,10 +1,10 @@
 // concern: worker gate checkout
 /** Observes checkout state that makes a gate unsafe to run. */
 
-import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { decideGateCheckoutRefusal, GATE_CHECKOUT_OPERATION_MARKERS } from './gate-decision.ts'
 
@@ -45,20 +45,22 @@ function observeGateCheckoutFacts(cwd: string): {
   presentMarkers: string[]
   unmergedPaths: string[]
 } {
-  const gitDir = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-dir'], {
-    cwd,
-    encoding: 'utf8',
-  })
-  if (gitDir.status !== 0) throw new Error(gitCommandError(cwd, gitDir, 'git dir'))
+  let gitDir: ReturnType<typeof gitAt>
+  try {
+    if (!existsSync(cwd)) throw new Error('checkout path does not exist')
+    gitDir = gitAt(cwd, ['rev-parse', '--path-format=absolute', '--git-dir'])
+  } catch (error) {
+    throw new Error(gitCommandError(cwd, { status: null, error: error as Error }, 'git dir'))
+  }
+  if (gitDir.code !== 0)
+    throw new Error(gitCommandError(cwd, { ...gitDir, status: gitDir.code }, 'git dir'))
   const dir = gitDir.stdout.trim()
   const presentMarkers = GATE_CHECKOUT_OPERATION_MARKERS.filter((marker) =>
     existsSync(join(dir, marker)),
   )
-  const unmerged = spawnSync('git', nulPathListArgs(['ls-files', '-u']), {
-    cwd,
-    encoding: 'utf8',
-  })
-  if (unmerged.status !== 0) throw new Error(gitCommandError(cwd, unmerged, 'git ls-files'))
+  const unmerged = gitAt(cwd, nulPathListArgs(['ls-files', '-u']))
+  if (unmerged.code !== 0)
+    throw new Error(gitCommandError(cwd, { ...unmerged, status: unmerged.code }, 'git ls-files'))
   return {
     presentMarkers: [...presentMarkers],
     unmergedPaths: uniqueUnmergedPaths(unmerged.stdout),

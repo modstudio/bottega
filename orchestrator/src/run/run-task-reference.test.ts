@@ -1,25 +1,14 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { parseHubTaskResponse } from '../workflow/workflow-task-reference.ts'
 import { admitNewRunReference, RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
-afterEach(() => {
-  spyOn(Bun, 'spawn').mockRestore()
-})
-
 describe('run task reference', () => {
   test('resolves a record id within the recorded project for the run claim', async () => {
-    spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
-      stdout: JSON.stringify([
-        {
-          record_id: '01990000-0000-7000-8000-000000000895',
-          key: 'SHARED-42',
-          project: 'beta',
-        },
-      ]),
-      stderr: '',
-      exited: Promise.resolve(0),
-      args,
-    })) as unknown as typeof Bun.spawn)
+    const task = {
+      record_id: '01990000-0000-7000-8000-000000000895',
+      key: 'SHARED-42',
+      project: 'beta',
+    }
 
     expect(
       await admitNewRunReference({
@@ -29,6 +18,7 @@ describe('run task reference', () => {
         cwd: null,
         launchCwd: null,
         probe: false,
+        hubTaskReader: async () => [task],
       }),
     ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })
   })
@@ -59,9 +49,6 @@ describe('run task reference', () => {
   })
 
   test('refuses with the remedy when hub is unavailable and no project can be derived', async () => {
-    spyOn(Bun, 'spawn').mockImplementation((() => {
-      throw new Error('hub unavailable')
-    }) as unknown as typeof Bun.spawn)
     expect(
       admitNewRunReference({
         projectName: 'beta',
@@ -70,12 +57,14 @@ describe('run task reference', () => {
         cwd: null,
         launchCwd: null,
         probe: false,
+        hubTaskReader: async () => {
+          throw new Error('hub unavailable')
+        },
       }),
     ).rejects.toThrow(RUN_REFERENCE_REFUSAL)
   })
 
   test('admits a turn with the links already read from its parent', async () => {
-    const spawn = spyOn(Bun, 'spawn')
     expect(
       await admitNewRunReference({
         inheritedTaskRecordId: 'parent-task',
@@ -88,6 +77,5 @@ describe('run task reference', () => {
         probe: false,
       }),
     ).toEqual({ taskRecordId: 'parent-task', projectRecordId: 'parent-project' })
-    expect(spawn).not.toHaveBeenCalled()
   })
 })
