@@ -57,7 +57,7 @@ test('hosted failures are visible and leave rulings incomplete without a higher 
     missingConfig,
   )
   expect(result.note).toBe(
-    'hosted autonomy settings unavailable: offline; resolved from local and project scopes, then built-in because no cache exists',
+    'hosted autonomy settings unavailable: offline; resolved from local and project scopes, then built-in',
   )
   expect(result.hosted).toEqual({ status: 'unavailable', reason: 'offline' })
   expect(result.rulings).toMatchObject({ complete: false, unavailableReason: 'offline' })
@@ -143,7 +143,7 @@ test('a never-resolving hosted transport is bounded by the adapter timeout', asy
     10,
   )
   expect(result.note).toBe(
-    'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes, then built-in because no cache exists',
+    'hosted autonomy settings unavailable: timed out after 10 ms; resolved from local and project scopes, then built-in',
   )
 })
 

@@ -14,13 +14,7 @@ import {
   promoteWorkflowLocal,
   setWorkflowLocal,
 } from './workflows.ts'
-
-const release = {
-  rungs: [{ name: 'production', branch: 'production', deploy: 'bun run deploy' }],
-  mergeMethod: 'squash' as const,
-  requiredChecks: ['gate'],
-  observationWindowHours: 24,
-}
+import { releaseFixture } from './workflows-test.fixture.ts'
 
 const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
@@ -151,7 +145,7 @@ describe('ship-to workflow composition', () => {
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
         tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
-        release,
+        release: releaseFixture,
         docs: { protocol: 'orch-docs' },
       }),
       'fixture',
@@ -191,7 +185,7 @@ describe('ship-to workflow composition', () => {
       JSON.stringify({
         tracker: { protocol: 'hub' },
         release: {
-          ...release,
+          ...releaseFixture,
           rungs: [{ name: 'hosted', branch: 'main', onDemand: true }],
         },
         docs: { protocol: 'orch-docs' },
@@ -220,7 +214,7 @@ describe('ship-to workflow composition', () => {
       JSON.stringify({
         tracker: { protocol: 'hub' },
         release: {
-          ...release,
+          ...releaseFixture,
           rungs: [
             { name: 'production', branch: 'production' },
             { name: 'hosted', branch: 'main', onDemand: true },
@@ -260,7 +254,7 @@ describe('ship-to workflow composition', () => {
       d.query('UPDATE project SET settings=? WHERE name=?').run(
         JSON.stringify({
           release: {
-            ...release,
+            ...releaseFixture,
             rungs: [{ name: 'hosted', branch: 'main', onDemand: true }],
           },
           docs: { protocol: 'orch-docs' },
@@ -294,7 +288,7 @@ describe('ship-to workflow composition', () => {
           states: { waiting: 'review', reviewing: 'review', completed: 'done' },
           reviewStages: { waiting: 'waiting', active: 'reviewing' },
         },
-        release,
+        release: releaseFixture,
         docs: { protocol: 'orch-docs' },
       }),
       'fixture',
@@ -328,7 +322,7 @@ describe('ship-to workflow composition', () => {
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
         tracker: { protocol: 'workspace-mcp', states: { checking: 'review' } },
-        release: { ...release, rungs: [] },
+        release: { ...releaseFixture, rungs: [] },
         docs: { protocol: 'orch-docs' },
       }),
       'fixture',

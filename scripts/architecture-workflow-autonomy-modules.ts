@@ -12,6 +12,14 @@ const module = (file: string, allowed: string[]): WorkflowAutonomyModule => ({
 })
 
 export const workflowAutonomyModules: WorkflowAutonomyModule[] = [
+  module('orchestrator/src/workflow/workflows-test.fixture.ts', [
+    'bun:sqlite',
+    '../database/test-database.fixture.ts',
+    './step-catalogue.ts',
+    './workflow-seeds.ts',
+    './workflow-store.fixture.ts',
+    './workflows.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-render.ts', [
     '../../../shared/brand.ts',
     './autonomy.ts',
