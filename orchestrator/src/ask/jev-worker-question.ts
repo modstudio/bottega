@@ -23,8 +23,8 @@ import { combineJevChoice } from './jev-choice-combination.ts'
 import { isJevConfidenceThreshold, routeJevAnswer } from './jev-routing.ts'
 import type { WorkerQuestion } from './worker-question.ts'
 
-export const JEV_WORKER_QUESTION_VERSION = 2
-export const JEV_STATE_TEXT_LIMIT = 48_000
+const JEV_WORKER_QUESTION_VERSION = 2
+const JEV_STATE_TEXT_LIMIT = 48_000
 const CUT_MARKER = '\n[Content cut at JEV_STATE_TEXT_LIMIT.]'
 type RunContext = {
   job: string
@@ -48,6 +48,7 @@ type PreAnswerInput = {
   resolveRulings?: () => Promise<'agent' | 'user'>
 }
 type BatchInput = PreAnswerInput & { client?: typeof askTypedQuestionsClient }
+type PreAnswerResult = { applied: boolean; value?: string | boolean | number }
 
 function cappedFile(path: string | null): string | undefined {
   if (!path) return undefined
@@ -159,12 +160,24 @@ function storeAdvice(
 function invalidConfig(key: string, raw: string | number): string {
   return `invalid ${key} ${JSON.stringify(raw)}; run ${PLATFORM_SLUG} machine config set ${key} <0-1>`
 }
+async function resolvedRulings(
+  input: PreAnswerInput,
+  run: RunContext,
+  database: Database,
+  configError: string | null,
+): Promise<'agent' | 'user'> {
+  if (configError) return 'user'
+  if (input.resolveRulings) return input.resolveRulings()
+  if (!run.repo) return 'user'
+  return (await resolveProjectAutonomy(run.repo, undefined, undefined, [], {}, undefined, database))
+    .rulings.value
+}
 async function routeAndStore(
   input: PreAnswerInput,
   run: RunContext,
   result: BatchAnswer,
   inputTokens: number,
-) {
+): Promise<PreAnswerResult> {
   const database = input.database ?? db()
   const combined = combinedAnswer(input.recordId, input.question, result.answers)
   const readMachine = input.readMachine ?? readMachineValue
@@ -178,23 +191,7 @@ async function routeAndStore(
       ? invalidConfig('jev.fit_threshold', fitRaw)
       : null
   try {
-    const rulings = configError
-      ? 'user'
-      : input.resolveRulings
-        ? await input.resolveRulings()
-        : run.repo
-          ? (
-              await resolveProjectAutonomy(
-                run.repo,
-                undefined,
-                undefined,
-                [],
-                {},
-                undefined,
-                database,
-              )
-            ).rulings.value
-          : 'user'
+    const rulings = await resolvedRulings(input, run, database, configError)
     const decision = routeJevAnswer({
       question: input.question,
       answer: combined.answer,
@@ -263,7 +260,9 @@ async function routeAndStore(
     return { applied: false }
   }
 }
-export async function preAnswerWorkerQuestions(inputs: readonly BatchInput[]) {
+export async function preAnswerWorkerQuestions(
+  inputs: readonly BatchInput[],
+): Promise<PreAnswerResult[]> {
   if (!inputs.length) return []
   const database = inputs[0]!.database ?? db()
   const run = database
@@ -311,6 +310,6 @@ export async function preAnswerWorkerQuestions(inputs: readonly BatchInput[]) {
     ),
   )
 }
-export async function preAnswerWorkerQuestion(input: BatchInput) {
+export async function preAnswerWorkerQuestion(input: BatchInput): Promise<PreAnswerResult> {
   return (await preAnswerWorkerQuestions([input]))[0]!
 }

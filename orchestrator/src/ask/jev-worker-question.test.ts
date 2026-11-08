@@ -151,7 +151,15 @@ describe('Jev worker-question apply path', () => {
         readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'),
         resolveRulings: async () => 'agent',
       },
-      { recordId: second, runId, question: choice, canResume: false, answerChannel: 'cli', readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'), resolveRulings: async () => 'agent' },
+      {
+        recordId: second,
+        runId,
+        question: choice,
+        canResume: false,
+        answerChannel: 'cli',
+        readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'),
+        resolveRulings: async () => 'agent',
+      },
     ])
     expect(calls).toBe(1)
     expect(
@@ -187,12 +195,40 @@ describe('Jev worker-question apply path', () => {
       db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(prompt, runId)
       const recordId = storedQuestion(runId)
       let seen: unknown
-      await preAnswerWorkerQuestion({ recordId, runId, question: choice, canResume: false, answerChannel: 'cli', client: async (_questions, state) => { seen = state; return batchChoice(recordId, 0.9, 0.1) }, readMachine: (key) => key === 'jev.auto_rule' ? 'off' : '0.7', resolveRulings: async () => 'agent' })
+      await preAnswerWorkerQuestion({
+        recordId,
+        runId,
+        question: choice,
+        canResume: false,
+        answerChannel: 'cli',
+        client: async (_questions, state) => {
+          seen = state
+          return batchChoice(recordId, 0.9, 0.1)
+        },
+        readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'),
+        resolveRulings: async () => 'agent',
+      })
       expect(seen).toMatchObject({ spec: 'root specification' })
-      db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(join(directory, 'missing'), runId)
-      await preAnswerWorkerQuestion({ recordId, runId, question: choice, canResume: false, answerChannel: 'cli', client: async (_questions, state) => { seen = state; return batchChoice(recordId, 0.9, 0.1) }, readMachine: (key) => key === 'jev.auto_rule' ? 'off' : '0.7', resolveRulings: async () => 'agent' })
+      db()
+        .query('UPDATE run SET prompt_path=? WHERE record_id=?')
+        .run(join(directory, 'missing'), runId)
+      await preAnswerWorkerQuestion({
+        recordId,
+        runId,
+        question: choice,
+        canResume: false,
+        answerChannel: 'cli',
+        client: async (_questions, state) => {
+          seen = state
+          return batchChoice(recordId, 0.9, 0.1)
+        },
+        readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'),
+        resolveRulings: async () => 'agent',
+      })
       expect(seen).not.toHaveProperty('spec')
-    } finally { rmSync(directory, { recursive: true }) }
+    } finally {
+      rmSync(directory, { recursive: true })
+    }
   })
 
   test('an architect answer that wins the race is not overwritten', async () => {

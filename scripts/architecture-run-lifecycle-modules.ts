@@ -44,8 +44,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/typed-question/client.ts',
     './worker-question.ts',
   ]),
+  module('orchestrator/src/ask/jev-choice-combination.ts', [
+    '../../../shared/typed-question/client.ts',
+  ]),
   module('orchestrator/src/ask/jev-worker-question.ts', [
     'bun:sqlite',
+    'node:fs',
     '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/typed-question/client.ts',
@@ -57,6 +61,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../run/question-vocabulary.ts',
     '../workflow/autonomy-scopes.ts',
     './jev-routing.ts',
+    './jev-choice-combination.ts',
     './worker-question.ts',
   ]),
   module('orchestrator/src/run/run-answer-typed-value.ts', ['../ask/worker-question.ts']),
