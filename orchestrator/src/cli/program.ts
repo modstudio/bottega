@@ -22,6 +22,7 @@ import { register as registerCleanup } from '../commands/cleanup.ts'
 import { register as registerCode } from '../commands/code.ts'
 import { register as registerConfig } from '../commands/config.ts'
 import { register as registerContext } from '../commands/context.ts'
+import { registerCredentialCommands } from '../commands/credential.ts'
 import { register as registerDocs } from '../commands/docs.ts'
 import { register as registerHealth } from '../commands/health.ts'
 import { register as registerHubImport } from '../commands/hub-import.ts'
@@ -84,6 +85,7 @@ registerHubImport(program)
 registerInbox(program)
 registerCleanup(program)
 registerConfig(program)
+registerCredentialCommands(program)
 registerContext(program)
 registerJudgment(program)
 registerRouting(program)

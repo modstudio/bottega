@@ -32,6 +32,7 @@ export class ConfigClientError extends Error {
 }
 
 export type ConfigScope = 'user' | 'space'
+export type ConfigDestination = { destinationSpaceId?: string; projectId?: string | null }
 export type ConfigEntry = {
   key: string
   environment: string
@@ -41,13 +42,27 @@ export type ConfigEntry = {
   updatedAt: string
 }
 export type ConfigSecret = {
+  id?: string
   key: string
   environment: string
   scope: ConfigScope
+  projectId?: string | null
+  provider?: string | null
+  type?: string | null
+  hint?: string | null
   dekId: string
   rowVersion: number
   updatedAt: string
   envelope?: string
+}
+export type CredentialPreference = {
+  projectId: string | null
+  provider: string
+  type: string
+  environment: 'live' | 'test' | 'default'
+  payer: 'personal' | 'shared'
+  binding: 'project' | 'space'
+  updatedAt: string
 }
 type DataKeyWrap = {
   recipientKeyId: string
@@ -70,14 +85,20 @@ type MachineKey = {
   revokedAt: string | null
   userId: string | null
 }
-type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
+type ConfigIdentity = {
+  user: { id: string }
+  activeSpaceId: string | null
+  personalSpaceId: string | null
+  memberships: Array<{ space_id: string; slug?: string; name?: string }>
+}
 
 export type ConfigClient = ReturnType<typeof createConfigClient>
 type Transport = (
   input: Parameters<typeof fetch>[0],
   init?: Parameters<typeof fetch>[1],
 ) => ReturnType<typeof fetch>
-type Request = <T>(route: string, init?: RequestInit) => Promise<T>
+type ConfigRequestInit = RequestInit & ConfigDestination
+type Request = <T>(route: string, init?: ConfigRequestInit) => Promise<T>
 
 function configAuthorizationClient(request: Request) {
   return {
@@ -102,13 +123,20 @@ type Query = (values: Record<string, string>) => string
 
 function configValueClient(request: Request, query: Query) {
   return {
-    listEntries: (environment = 'default') =>
-      request<{ items: ConfigEntry[] }>(`/v1/config/entries${query({ environment })}`).then(
-        (x) => x.items,
-      ),
-    getEntry: (key: string, scope: ConfigScope, environment = 'default') =>
+    listEntries: (environment = 'default', destination: ConfigDestination = {}) =>
+      request<{ items: ConfigEntry[] }>(
+        `/v1/config/entries${query({ environment })}`,
+        destination,
+      ).then((x) => x.items),
+    getEntry: (
+      key: string,
+      scope: ConfigScope,
+      environment = 'default',
+      destination: ConfigDestination = {},
+    ) =>
       request<ConfigEntry>(
         `/v1/config/entries/${encodeURIComponent(key)}${query({ scope, environment })}`,
+        destination,
       ),
     putEntry: (
       key: string,
@@ -117,7 +145,11 @@ function configValueClient(request: Request, query: Query) {
         environment: string
         value: string
         expectedRowVersion: number | null
-      },
+        projectId?: string | null
+        provider?: string | null
+        type?: string | null
+        hint?: string | null
+      } & ConfigDestination,
     ) =>
       request<ConfigEntry>(`/v1/config/entries/${encodeURIComponent(key)}`, {
         method: 'PUT',
@@ -131,13 +163,20 @@ function configValueClient(request: Request, query: Query) {
         method: 'DELETE',
         body: JSON.stringify(input),
       }),
-    listSecrets: (environment = 'default') =>
-      request<{ items: ConfigSecret[] }>(`/v1/config/secrets${query({ environment })}`).then(
-        (x) => x.items,
-      ),
-    getSecret: (key: string, scope: ConfigScope, environment = 'default') =>
+    listSecrets: (environment = 'default', destination: ConfigDestination = {}) =>
+      request<{ items: ConfigSecret[] }>(
+        `/v1/config/secrets${query({ environment })}`,
+        destination,
+      ).then((x) => x.items),
+    getSecret: (
+      key: string,
+      scope: ConfigScope,
+      environment = 'default',
+      destination: ConfigDestination = {},
+    ) =>
       request<ConfigSecret & { envelope: string }>(
-        `/v1/config/secrets/${encodeURIComponent(key)}${query({ scope, environment })}`,
+        `/v1/config/secrets/${encodeURIComponent(key)}${query({ scope, environment, ...(destination.projectId ? { projectId: destination.projectId } : {}) })}`,
+        destination,
       ),
     putSecret: (
       key: string,
@@ -147,7 +186,7 @@ function configValueClient(request: Request, query: Query) {
         dekId: string
         envelope: string
         expectedRowVersion: number | null
-      },
+      } & ConfigDestination,
     ) =>
       request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
         method: 'PUT',
@@ -155,10 +194,34 @@ function configValueClient(request: Request, query: Query) {
       }),
     deleteSecret: (
       key: string,
-      input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+      input: {
+        scope: ConfigScope
+        environment: string
+        expectedRowVersion: number
+      } & ConfigDestination,
     ) =>
       request<{ deleted: true }>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
         method: 'DELETE',
+        body: JSON.stringify(input),
+      }),
+    listCredentialPreferences: (destination: ConfigDestination = {}) =>
+      request<{ items: CredentialPreference[] }>(
+        '/v1/config/credential-preferences',
+        destination,
+      ).then((x) => x.items),
+    putCredentialPreference: (input: Omit<CredentialPreference, 'updatedAt'> & ConfigDestination) =>
+      request<CredentialPreference>('/v1/config/credential-preferences', {
+        method: 'PUT',
+        ...input,
+        body: JSON.stringify(input),
+      }),
+    deleteCredentialPreference: (
+      input: Pick<CredentialPreference, 'projectId' | 'provider' | 'type' | 'environment'> &
+        ConfigDestination,
+    ) =>
+      request<{ deleted: true }>('/v1/config/credential-preferences', {
+        method: 'DELETE',
+        ...input,
         body: JSON.stringify(input),
       }),
   }
@@ -166,12 +229,14 @@ function configValueClient(request: Request, query: Query) {
 
 function configKeyClient(request: Request, query: Query) {
   return {
-    currentDataKey: (recipientKeyId: string) =>
-      request<DataKey>(`/v1/config/data-keys/current${query({ recipientKeyId })}`),
-    listDataKeys: () => request<{ items: DataKey[] }>('/v1/config/data-keys').then((x) => x.items),
-    getDataKey: (dekId: string, recipientKeyId: string) =>
+    currentDataKey: (recipientKeyId: string, destination: ConfigDestination = {}) =>
+      request<DataKey>(`/v1/config/data-keys/current${query({ recipientKeyId })}`, destination),
+    listDataKeys: (destination: ConfigDestination = {}) =>
+      request<{ items: DataKey[] }>('/v1/config/data-keys', destination).then((x) => x.items),
+    getDataKey: (dekId: string, recipientKeyId: string, destination: ConfigDestination = {}) =>
       request<DataKey>(
         `/v1/config/data-keys/${encodeURIComponent(dekId)}${query({ recipientKeyId })}`,
+        destination,
       ),
     createDataKey: (input: { dekId: string; version: number; wraps: DataKeyWrap[] }) =>
       request<{ id: string; version: number }>('/v1/config/data-keys', {
@@ -203,9 +268,10 @@ function createConfigClient(
   transport: Transport,
   signal?: AbortSignal,
 ) {
-  const request = async <T>(route: string, init: RequestInit = {}): Promise<T> => {
+  const request = async <T>(route: string, init: ConfigRequestInit = {}): Promise<T> => {
     const headers = new Headers(init.headers)
     headers.set('authorization', `Bearer ${token}`)
+    if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
     if (init.body) headers.set('content-type', 'application/json')
     let response: Response
     try {

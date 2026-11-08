@@ -62,6 +62,7 @@ import type {
   ConfigSecretMetadata,
   ConfigTenant,
   ConfigWrapInput,
+  CredentialPreference,
   DataKey,
   MachineKey,
 } from './record-config.ts'
@@ -216,7 +217,12 @@ type RecordApiDeps = RecordSessionRouteDeps &
     listSnapshots(input: Tenant): Promise<RecordSnapshot[]>
     listConfigEntries(input: Tenant & { environment?: string }): Promise<ConfigEntry[]>
     getConfigEntry(
-      input: Tenant & { key: string; environment: string; scope: ConfigScope },
+      input: Tenant & {
+        key: string
+        environment: string
+        scope: ConfigScope
+        projectId?: string | null
+      },
     ): Promise<ConfigEntry | null>
     putConfigEntry(
       input: Tenant & {
@@ -233,6 +239,7 @@ type RecordApiDeps = RecordSessionRouteDeps &
         environment: string
         scope: ConfigScope
         expectedRowVersion: number
+        projectId?: string | null
       },
     ): Promise<void>
     listConfigSecrets(input: Tenant & { environment?: string }): Promise<ConfigSecretMetadata[]>
@@ -247,6 +254,10 @@ type RecordApiDeps = RecordSessionRouteDeps &
         dekId: string
         envelope: Uint8Array
         expectedRowVersion: number | null
+        projectId?: string | null
+        provider?: string | null
+        type?: string | null
+        hint?: string | null
       },
     ): Promise<ConfigSecretMetadata>
     deleteConfigSecret(
@@ -256,6 +267,13 @@ type RecordApiDeps = RecordSessionRouteDeps &
         scope: ConfigScope
         expectedRowVersion: number
       },
+    ): Promise<void>
+    listCredentialPreferences(input: Tenant): Promise<CredentialPreference[]>
+    putCredentialPreference(
+      input: Tenant & Omit<CredentialPreference, 'updatedAt'>,
+    ): Promise<CredentialPreference>
+    deleteCredentialPreference(
+      input: Tenant & Pick<CredentialPreference, 'projectId' | 'provider' | 'type' | 'environment'>,
     ): Promise<void>
     currentDataKey(input: Tenant & { recipientKeyId: string }): Promise<DataKey | null>
     listDataKeys(input: Tenant): Promise<DataKey[]>
@@ -298,7 +316,11 @@ const registerRecordIdentityRoutes = (app: Hono<ApiEnvironment>, deps: Deps) => 
   registerRecordChangeRoute(app, deps)
 }
 
-const configAddress = z.object({ environment: z.string().min(1), scope: configScopeSchema })
+const configAddress = z.object({
+  environment: z.string().min(1),
+  scope: configScopeSchema,
+  projectId: idSchema.optional(),
+})
 const configList = z.object({ environment: z.string().min(1).optional() })
 const docTarget = (scope: string, subject: string | null, ownerUserId: string | null) =>
   ({ kind: 'document', scope, subject, ownerUserId }) as const
@@ -461,6 +483,20 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     scope: configScopeSchema,
     expectedRowVersion: expectedVersionSchema.nullable(),
   })
+  const credentialFields = z.object({
+    projectId: idSchema.nullable().optional(),
+    provider: z
+      .string()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .nullable()
+      .optional(),
+    type: z
+      .string()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .nullable()
+      .optional(),
+    hint: z.string().min(1).nullable().optional(),
+  })
 
   app.get('/v1/config/entries', async (context) => {
     const active = scope(context)
@@ -507,7 +543,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!active) return noSpace(context)
     const body = configBody
       .omit({ expectedRowVersion: true })
-      .extend({ expectedRowVersion: expectedVersionSchema })
+      .extend({
+        expectedRowVersion: expectedVersionSchema,
+        projectId: idSchema.nullable().optional(),
+      })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config entry delete body' }, 422)
     try {
@@ -553,6 +592,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!active) return noSpace(context)
     const body = configBody
       .extend({ dekId: idSchema, envelope: base64urlSchema })
+      .and(credentialFields)
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config secret body' }, 422)
     try {
@@ -586,6 +626,34 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     } catch (error) {
       return writeError(context, error)
     }
+  })
+  const credentialPreference = z.object({
+    projectId: idSchema.nullable(),
+    provider: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    type: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    environment: z.enum(['live', 'test', 'default']),
+  })
+  app.get('/v1/config/credential-preferences', async (context) => {
+    const active = scope(context)
+    if (!active) return noSpace(context)
+    return context.json({ items: await deps.listCredentialPreferences(active) })
+  })
+  app.put('/v1/config/credential-preferences', async (context) => {
+    const active = scope(context)
+    if (!active) return noSpace(context)
+    const body = credentialPreference
+      .extend({ payer: z.enum(['personal', 'shared']), binding: z.enum(['project', 'space']) })
+      .safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid credential preference body' }, 422)
+    return context.json(await deps.putCredentialPreference({ ...active, ...body.data }))
+  })
+  app.delete('/v1/config/credential-preferences', async (context) => {
+    const active = scope(context)
+    if (!active) return noSpace(context)
+    const body = credentialPreference.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid credential preference body' }, 422)
+    await deps.deleteCredentialPreference({ ...active, ...body.data })
+    return context.json({ deleted: true })
   })
   // The client identifies its machine key with the recipientKeyId query parameter.
   app.get('/v1/config/data-keys/current', async (context) => {

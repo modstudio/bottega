@@ -21,6 +21,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'branch_disposal',
       'config_entry',
       'config_secret',
+      'credential_payer_preference',
       'doc',
       'doc_related_subject',
       'doc_revision',

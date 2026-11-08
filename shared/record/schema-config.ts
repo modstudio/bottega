@@ -16,6 +16,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import {
+  project,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
@@ -129,8 +130,12 @@ export const configSecret = pgTable.withRLS(
     id: identity(),
     spaceId: spaceIdentity(),
     userId: uuid('user_id').references(() => user.id),
+    projectId: uuid('project_id').references(() => project.id),
     key: text().notNull(),
+    provider: text(),
+    type: text(),
     environment: text().notNull().default('default'),
+    hint: text(),
     dekId: uuid('dek_id').notNull(),
     rowVersion: integer('row_version').notNull(),
     envelope: bytea().notNull(),
@@ -138,8 +143,13 @@ export const configSecret = pgTable.withRLS(
   },
   (table) => [
     unique('config_secret_scope_unique')
-      .on(table.spaceId, table.userId, table.key, table.environment)
+      .on(table.spaceId, table.userId, table.projectId, table.key, table.environment)
       .nullsNotDistinct(),
+    check(
+      'config_secret_credential_fields_check',
+      sql`(${table.provider} IS NULL AND ${table.type} IS NULL AND ${table.hint} IS NULL AND ${table.projectId} IS NULL) OR
+          (${table.provider} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND ${table.type} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND ${table.hint} IS NOT NULL AND ${table.environment} IN ('live','test','default'))`,
+    ),
     foreignKey({
       columns: [table.spaceId, table.dekId],
       foreignColumns: [secretDek.spaceId, secretDek.id],
@@ -147,6 +157,50 @@ export const configSecret = pgTable.withRLS(
     }),
     ...actorPolicies('config_secret', table.spaceId, table.userId),
     pgPolicy('config_secret_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
+  ],
+)
+
+export const credentialPayerPreference = pgTable.withRLS(
+  'credential_payer_preference',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    projectId: uuid('project_id').references(() => project.id),
+    provider: text().notNull(),
+    type: text().notNull(),
+    environment: text().notNull().default('default'),
+    preferredPayer: text('preferred_payer').notNull(),
+    preferredBinding: text('preferred_binding').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    unique('credential_payer_preference_identity_unique')
+      .on(
+        table.spaceId,
+        table.userId,
+        table.projectId,
+        table.provider,
+        table.type,
+        table.environment,
+      )
+      .nullsNotDistinct(),
+    check(
+      'credential_payer_preference_slug_check',
+      sql`${table.provider} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND ${table.type} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`,
+    ),
+    check(
+      'credential_payer_preference_values_check',
+      sql`${table.environment} IN ('live','test','default') AND ${table.preferredPayer} IN ('personal','shared') AND ${table.preferredBinding} IN ('project','space')`,
+    ),
+    ...actorPolicies('credential_payer_preference', table.spaceId, table.userId),
+    pgPolicy('credential_payer_preference_owner_select', {
       for: 'select',
       to: RECORD_OWNER_ROLE,
       using: sql`true`,

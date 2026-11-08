@@ -221,6 +221,7 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
     parents: [{ table: 'run', column: 'run_id' }],
   },
   { table: 'secret_dek', kind: 'space', reason: 'space encryption key' },
+  { table: 'credential_payer_preference', kind: 'space', reason: 'credential payer choice' },
   { table: 'space_outside_intake', kind: 'project', ownerColumns: ['project_id'] },
   {
     table: 'space_outside_write',
