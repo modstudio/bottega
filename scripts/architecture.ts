@@ -553,6 +553,7 @@ export const modules: ArchitectureModule[] = [
   ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [
     '../database/db.ts',
+    '../route/evidence-model.ts',
     './review-vocabulary.ts',
     '../state/statistics.ts',
     './review-evidence-sql.ts',

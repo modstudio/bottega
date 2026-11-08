@@ -28,7 +28,15 @@ test('non-OpenRouter model strings are unchanged', () => {
 
 test('the SQL evidence-model decision matches the pure decision', () => {
   const expression = evidenceModelSql('?1', '?2')
-  for (const model of ['x/y', 'x/y:floor', 'x/y:exacto:nitro', 'x/y:free:nitro']) {
+  for (const model of [
+    'x/y',
+    'x/y:floor',
+    'x/y:exacto:nitro',
+    'x/y:free:nitro',
+    'x/y:floor:floor',
+    'x/y:nitro:nitro',
+    'x/y:free:floor:floor',
+  ]) {
     const row = db().query(`SELECT ${expression} AS model`).get(model, 1) as { model: string }
     expect(row.model).toBe(evidenceModel(model, openRouter))
   }

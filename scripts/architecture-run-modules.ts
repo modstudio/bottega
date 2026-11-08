@@ -104,7 +104,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/evidence-model.ts',
-    allowed: [],
+    allowed: ['../agent/openrouter.ts'],
   },
   {
     file: 'orchestrator/src/route/prompt-size-bucket.ts',

@@ -826,8 +826,12 @@ function pickExternal(
   if (j.findings && lens?.trim()) {
     eligible = eligible.map((candidate) => ({
       ...candidate,
-      precision: calibrationFor(lens.trim(), candidate.agent, effectiveModel(candidate, avoid))
-        .precision,
+      precision: calibrationFor(
+        lens.trim(),
+        candidate.agent,
+        effectiveModel(candidate, avoid),
+        AGENTS[candidate.agent]!.baseUrl,
+      ).precision,
     }))
   }
   const preparedCostPolicy = prepareCostPolicy({

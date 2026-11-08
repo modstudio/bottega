@@ -322,6 +322,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       'zod',
       '../../../shared/git.ts',
       '../../../shared/record-id.ts',
+      '../agent/agent-registry.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../jobs/jobs.ts',

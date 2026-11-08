@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
+import { AGENTS, requireAgent } from '../agent/agent-registry.ts'
 import { DB_PATH, db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
@@ -575,7 +576,7 @@ export function calibrationReviewCommand(
 ): void {
   const [lens, agent, model] = argv.slice(2).filter((value) => value !== '--json')
   if (!lens && !agent && !model) {
-    const fleet = reviewCalibrationFleet()
+    const fleet = reviewCalibrationFleet((name) => AGENTS[name]?.baseUrl)
     if (flags.has('json')) log(JSON.stringify(fleet))
     else {
       log(
@@ -595,7 +596,7 @@ export function calibrationReviewCommand(
   }
   if (!lens || !agent || !model)
     throw new Error(`${PLATFORM_SLUG} review calibration [<lens> <agent> <model>] [--json]`)
-  const calibration = reviewCalibration(lens, agent, model)
+  const calibration = reviewCalibration(lens, agent, model, requireAgent(agent).baseUrl)
   if (flags.has('json')) {
     log(JSON.stringify(calibration))
   } else {

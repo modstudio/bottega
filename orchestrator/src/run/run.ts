@@ -448,9 +448,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const { decideMcpLaunchRuling } = mcpAttachment
   const mcpLaunchRuling = decideMcpLaunchRuling(mcpRequest, requiredMcp, a, transportPin)
   enforceRunStartupRefusal(opts.reserveId, mcpLaunchRuling.refusalReason)
-  // Append after routing, before prompt files, hashes, or metadata.
   if (requestedJob.findings && resume.isFirstTurn) {
-    const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
+    const calibration = reviewCalibration(opts.lens!, name, opts.model ?? a.model, a.baseUrl)
+    const suffix = calibrationLine(calibration)
     if (Buffer.byteLength(suffix) > CALIBRATION_SUFFIX_RESERVE_BYTES) {
       throw new Error('review calibration line exceeded its reserved routing allowance')
     }

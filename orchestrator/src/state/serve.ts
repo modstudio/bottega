@@ -41,6 +41,11 @@ registerStandardRuntime()
 const jsonArray = (value: unknown) =>
   typeof value === 'string' ? (JSON.parse(value) as unknown[]) : []
 
+const calibrateStateReview =
+  (d: ReturnType<typeof db>) =>
+  ({ lens, agent, model }: { lens: string; agent: string; model: string }) =>
+    reviewCalibration(lens, agent, model, AGENTS[agent]?.baseUrl, d)
+
 function reviewsForRun(runId: string): RunDetailReviewLens[] {
   const lenses = db()
     .query(
@@ -393,7 +398,7 @@ export function state(sinceDays: number | null = null) {
       WHERE model IS NOT NULL ORDER BY lens, agent, model`,
       )
       .all() as { lens: string; agent: string; model: string }[]
-  ).map(({ lens, agent, model }) => reviewCalibration(lens, agent, model, d))
+  ).map(calibrateStateReview(d))
 
   return {
     live,

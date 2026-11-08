@@ -1,18 +1,12 @@
 // concern: routing evidence model
 /** Decides which effective model identity owns routing evidence. */
 
-const OPENROUTER_HOST = 'openrouter.ai'
+import { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
+
 const ROUTING_VARIANTS = ['floor', 'nitro', 'exacto'] as const
 const ROUTING_VARIANT_SET = new Set<string>(ROUTING_VARIANTS)
 
-export function isOpenRouterBaseUrl(baseUrl: string | null | undefined): boolean {
-  if (!baseUrl) return false
-  try {
-    return new URL(baseUrl).hostname === OPENROUTER_HOST
-  } catch {
-    return false
-  }
-}
+export { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
 
 /** OpenRouter routing variants select providers, while every other suffix remains model identity. */
 export function evidenceModel(model: string, baseUrl: string | null | undefined): string {
@@ -23,9 +17,7 @@ export function evidenceModel(model: string, baseUrl: string | null | undefined)
 
 /** SQL form of evidenceModel for persisted run models already scoped by an OpenRouter agent row. */
 export function evidenceModelSql(model: string, openRouter: string): string {
-  const withSentinel = ROUTING_VARIANTS.reduce(
-    (expression, variant) => `replace(${expression}, ':${variant}:', ':')`,
-    `(${model} || ':')`,
-  )
-  return `CASE WHEN ${openRouter} THEN substr(${withSentinel}, 1, length(${withSentinel}) - 1) ELSE ${model} END`
+  const jsonSegments = `'["' || replace(substr(json_quote(${model}), 2, length(json_quote(${model})) - 2), ':', '","') || '"]'`
+  const routingVariants = ROUTING_VARIANTS.map((variant) => `'${variant}'`).join(',')
+  return `CASE WHEN ${openRouter} THEN (SELECT group_concat(value, ':') FROM json_each(${jsonSegments}) WHERE value NOT IN (${routingVariants})) ELSE ${model} END`
 }
