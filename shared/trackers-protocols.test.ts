@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
 import {
+  categoryForTrackerRead,
   createTrackerTask,
+  MAX_PAGES,
   resolveTrackerAgentActions,
   type ToolCaller,
   TrackerLookupUnverifiable,
@@ -12,6 +14,22 @@ import {
   updateArrayMcpTaskStatus,
   WORKSPACE_LOOKUP_PAGE_SIZE,
 } from './trackers.ts'
+
+describe('incremental tracker read policy', () => {
+  const states = { todo: 'open', done: 'done' } as const
+  const cases = [
+    { name: 'full read with unknown status', incremental: false, status: 'unknown', want: 'open' },
+    { name: 'incremental with unknown status', incremental: true, status: 'unknown', want: null },
+    { name: 'incremental with no status', incremental: true, status: undefined, want: null },
+    { name: 'incremental with mapped status', incremental: true, status: 'done', want: 'done' },
+  ] as const
+
+  for (const { name, incremental, status, want } of cases) {
+    test(name, () => {
+      expect(categoryForTrackerRead(incremental, status, status, 'todo', states)).toBe(want)
+    })
+  }
+})
 
 describe('tracker action names', () => {
   test('uses the agent name as the wire-name fallback', () => {
@@ -710,11 +728,27 @@ describe('tracker source construction', () => {
         return { tasks: [], last_page: 2 }
       },
     }
-    await source.fetch(caller)
+    expect((await source.fetch(caller)).complete).toBeTrue()
     expect(calls).toBe(6)
     calls = 0
-    await source.fetch(caller, '2026-11-06T11:50:00.000Z')
+    expect((await source.fetch(caller, '2026-11-06T11:50:00.000Z')).complete).toBeTrue()
     expect(calls).toBe(2)
+  })
+
+  test('a workspace read truncated at the paging bound reports partial', async () => {
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+    let calls = 0
+    const fetched = await source.fetch(
+      {
+        async callTool() {
+          calls++
+          return { tasks: [], last_page: MAX_PAGES + 1 }
+        },
+      },
+      '2026-11-06T11:50:00.000Z',
+    )
+    expect(calls).toBe(MAX_PAGES)
+    expect(fetched.complete).toBeFalse()
   })
 
   test('an incremental read reports the cursor paging bound as partial', async () => {
@@ -729,7 +763,7 @@ describe('tracker source construction', () => {
       },
       '2026-11-06T11:50:00.000Z',
     )
-    expect(calls).toBe(40)
+    expect(calls).toBe(MAX_PAGES)
     expect(fetched.complete).toBeFalse()
   })
 
