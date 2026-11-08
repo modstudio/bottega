@@ -159,3 +159,11 @@ test('refuses an invalid configured threshold with the remedy', () => {
     `invalid jev.confidence_threshold "invalid"; run ${PLATFORM_SLUG} machine config set jev.confidence_threshold <0-1>`,
   )
 })
+
+test('puts certain advice in the closed top band', () => {
+  const [all] = jevWorkerQuestionMetrics(
+    [row({ jev_probabilities: '{"a":1,"b":0}', jev_agreed: 1 })],
+    0.9,
+  )
+  expect(all!.bands.at(-1)).toEqual({ range: '[0.95,1]', n: 1, agreementRate: 1 })
+})

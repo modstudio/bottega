@@ -19,7 +19,7 @@ export type JevRoutingDecision =
       confidence: number | null
     }
 
-type JevQuestionKind = Exclude<WorkerQuestion['kind'], 'text'>
+export type JevQuestionKind = Exclude<WorkerQuestion['kind'], 'text'>
 
 /** Returns the probability assigned to the selected answer, when it is valid. */
 export function pickProbability(

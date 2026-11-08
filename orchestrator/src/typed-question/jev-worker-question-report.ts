@@ -2,10 +2,10 @@
 /** Measures Jev advice against later architect rulings from plain stored values. */
 
 import { typedQuestionCalibration } from '../../../shared/typed-question/typed-question-metrics.ts'
-import { pickProbability } from '../ask/jev-routing.ts'
+import { type JevQuestionKind, pickProbability } from '../ask/jev-routing.ts'
 
 export type JevWorkerQuestionRow = {
-  kind: 'choice' | 'yesno' | 'score'
+  kind: JevQuestionKind
   jev_model: string | null
   jev_pick: string
   jev_probabilities: string | null
