@@ -21,7 +21,7 @@ import { newRecordId } from '../shared/record-id.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { buildHostBinary } from './build-binary.ts'
 import { FAKE_HARNESS_SCRIPT } from './fake-harness.ts'
-import { run } from './release-support.ts'
+import { run, stripInheritedOverrides } from './release-support.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-smoke-`))
 let recordApiUrl: string | undefined
@@ -43,11 +43,7 @@ function smokeEnvironment(stateHome: string): Record<string, string | undefined>
     ...(mcpRecord ? { SMOKE_MCP_RECORD: mcpRecord } : {}),
     ...(mcpState ? { SMOKE_MCP_STATE: mcpState } : {}),
   }
-  for (const key of Object.keys(env)) {
-    if (key.startsWith('BOTTEGA_') || key.startsWith('CLAUDE_') || key.startsWith('ANTHROPIC_')) {
-      delete env[key]
-    }
-  }
+  stripInheritedOverrides(env)
   env.BOTTEGA_STATE_HOME = stateHome
   env[HARNESS_ENV_FILE_ENV] = ''
   env.CLAUDE_CODE_SESSION_ID = 'DEV-997-binary-smoke'

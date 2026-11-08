@@ -13,6 +13,14 @@ export function releaseVersion(tag: string): string {
   return version
 }
 
+export function stripInheritedOverrides(env: Record<string, string | undefined>): void {
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('BOTTEGA_') || key.startsWith('CLAUDE_') || key.startsWith('ANTHROPIC_')) {
+      delete env[key]
+    }
+  }
+}
+
 export function distributionManifest(
   version: string,
   built: string,
