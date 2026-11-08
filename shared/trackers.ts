@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 import { PLATFORM_SLUG } from './brand.ts'
+import { scopedRows, toolDeclaresInput } from './tracker-list-scope.ts'
+import { workspaceStatusPayload } from './tracker-status-payload.ts'
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
@@ -356,7 +358,7 @@ export type TrackerSource = {
   readCommentIds?: (m: ToolCaller, key: string) => Promise<string[] | null>
 }
 
-export type TrackerStatusWriteResult = {
+type TrackerStatusWriteResult = {
   status: string
   category: StatusCategory
   /** A refusal that must be raised after the returned observation is recorded. */
@@ -376,13 +378,7 @@ export class TrackerLookupUnverifiable extends Error {
   }
 }
 
-export type CreateTrackerTask = {
-  title: string
-  body: string
-  status: string
-}
-
-export type ToolInputSchema = {
+type ToolInputSchema = {
   properties?: Record<string, unknown>
 }
 
@@ -445,7 +441,7 @@ function categoryOf(
   return establishedCategory(rawStatus, category, states) ?? 'open'
 }
 
-export const trackerStatusCategory = categoryOf
+const trackerStatusCategory = categoryOf
 
 async function readTrackerPages(
   readPage: (pageIndex: number) => Promise<boolean>,
@@ -492,14 +488,6 @@ export async function resolveAssigneeIds(
 
 const uncachedAssignees: AssigneeResolver = (_namespace, refs, lookup) =>
   resolveAssigneeIds(refs, new Map(), lookup)
-
-const nonEmptyUppercase = (value: unknown): string | undefined =>
-  typeof value === 'string' && value.trim() ? value.toUpperCase() : undefined
-
-const workspaceCreatedTaskKey = (result: unknown): string | undefined => {
-  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
-  return nonEmptyUppercase(record.short_id)
-}
 
 /** Whether a tracker reply entry names a comment: a non-empty string or an integer. */
 export const isTrackerCommentId = (id: unknown): id is string | number =>
@@ -553,44 +541,6 @@ type WorkspaceTaskDetail = Omit<WorkspaceTask, 'status'> & {
 }
 
 type WorkspaceAssignees = (m: ToolCaller, refs: AssigneeRef[]) => Promise<(string | null)[]>
-
-const WORKSPACE_STATUS_FIELDS = {
-  'change-task-status-tool': 'task_status_id',
-  'update-task-tool': 'status',
-} as const
-
-async function toolDeclaresInput(m: ToolCaller, toolName: string, field: string): Promise<boolean> {
-  const tools = await m.listTools?.()
-  if (!tools) return false
-  const tool = tools?.find((candidate) => candidate.name === toolName)
-  return field in (tool?.inputSchema.properties ?? {})
-}
-
-function scopedRows<Row extends Record<string, unknown>>(
-  rows: Row[],
-  field: keyof Row & string,
-  scope: string,
-  refusal: string,
-): Row[] {
-  if (!rows.length || rows.some((row) => typeof row[field] !== 'string')) {
-    throw new Error(refusal)
-  }
-  return rows.filter((row) => row[field] === scope)
-}
-
-function workspaceStatusPayload(
-  action: string,
-  key: string,
-  status: string,
-): Record<string, unknown> {
-  const field = WORKSPACE_STATUS_FIELDS[action as keyof typeof WORKSPACE_STATUS_FIELDS]
-  if (!field) {
-    throw new Error(
-      `workspace-mcp status write refused: action ${action} has no proven status payload`,
-    )
-  }
-  return { id: key, [field]: status }
-}
 
 async function mappedWorkspaceTask(
   m: ToolCaller,
@@ -831,12 +781,6 @@ function workspaceSource(
   }
 }
 
-const cursorCreatedTaskKey = (result: unknown): string | undefined => {
-  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
-  const data = record.data && typeof record.data === 'object' ? record.data : {}
-  return nonEmptyUppercase('humanKey' in data ? data.humanKey : undefined)
-}
-
 type CursorTask = {
   id?: string
   humanKey?: string
@@ -881,6 +825,52 @@ function appendCursorTasks(
     })
   }
   return { deletedKeys, complete }
+}
+
+async function lookupCursorTask(
+  m: ToolCaller,
+  key: string,
+  project: string,
+  states: TrackerSettings['states'],
+): Promise<TrackerTask | null> {
+  let response: unknown
+  try {
+    response = await m.callTool(trackerWireAction('cursor-mcp', 'get'), { taskKey: key })
+  } catch (cause) {
+    const structuredContent =
+      cause instanceof Error && cause.name === 'McpToolCallError' && 'structuredContent' in cause
+        ? cause.structuredContent
+        : undefined
+    if (
+      structuredContent &&
+      typeof structuredContent === 'object' &&
+      (structuredContent as { success?: unknown }).success === false &&
+      (structuredContent as { code?: unknown }).code === 'NOT_FOUND'
+    ) {
+      return null
+    }
+    throw cause
+  }
+  const r = response as {
+    success?: boolean
+    data?: CursorTask
+  }
+  const task = r.data
+  if (r.success !== true || !task?.humanKey) {
+    throw new TrackerLookupUnverifiable(
+      `cursor-mcp lookup for ${key} returned an unexpected response`,
+    )
+  }
+  return {
+    externalId: task.id ?? null,
+    key,
+    project,
+    title: decode(task.title ?? ''),
+    status: task.status ?? '',
+    category: categoryOf(task.status ?? '', task.status ?? 'done', states),
+    updatedAt: task.updatedAt ?? null,
+    assignee: task.assigneeName?.trim() || null,
+  }
 }
 
 /**
@@ -968,60 +958,9 @@ function cursorMcpSource(
       return { status, category }
     },
     async lookup(m, key) {
-      let response: unknown
-      try {
-        response = await m.callTool(trackerWireAction('cursor-mcp', 'get'), { taskKey: key })
-      } catch (cause) {
-        const structuredContent =
-          cause instanceof Error &&
-          cause.name === 'McpToolCallError' &&
-          'structuredContent' in cause
-            ? cause.structuredContent
-            : undefined
-        if (
-          structuredContent &&
-          typeof structuredContent === 'object' &&
-          (structuredContent as { success?: unknown }).success === false &&
-          (structuredContent as { code?: unknown }).code === 'NOT_FOUND'
-        ) {
-          return null
-        }
-        throw cause
-      }
-      const r = response as {
-        success?: boolean
-        data?: {
-          id?: string
-          humanKey?: string
-          title?: string
-          status?: string
-          updatedAt?: string
-          assigneeName?: string | null
-        }
-      }
-      const t = r.data
-      if (r.success !== true || !t?.humanKey) {
-        throw new TrackerLookupUnverifiable(
-          `cursor-mcp lookup for ${key} returned an unexpected response`,
-        )
-      }
-      return {
-        externalId: t.id ?? null,
-        key,
-        project,
-        title: decode(t.title ?? ''),
-        status: t.status ?? '',
-        category: categoryOf(t.status ?? '', t.status ?? 'done', states),
-        updatedAt: t.updatedAt ?? null,
-        assignee: t.assigneeName?.trim() || null,
-      }
+      return lookupCursorTask(m, key, project, states)
     },
   }
-}
-
-const arrayCreatedTaskKey = (result: unknown): string | undefined => {
-  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {}
-  return nonEmptyUppercase(record.key)
 }
 
 /**
@@ -1117,17 +1056,6 @@ function arrayMcpSource(
   }
 }
 
-/** Read a created task key only from the field owned by its tracker protocol. */
-export function trackerCreatedTaskKey(
-  protocol: TrackerProtocol,
-  result: unknown,
-): string | undefined {
-  if (protocol === 'workspace-mcp') return workspaceCreatedTaskKey(result)
-  if (protocol === 'cursor-mcp') return cursorCreatedTaskKey(result)
-  if (protocol === 'array-mcp') return arrayCreatedTaskKey(result)
-  return undefined
-}
-
 export function trackerSourceFor(
   project: TrackerProject,
   resolveAssignees: AssigneeResolver = uncachedAssignees,
@@ -1172,88 +1100,4 @@ export function trackerSourceFor(
   }
   // Exhaustive above; kept explicit so a future protocol cannot silently build nothing.
   throw new Error(`project ${project.name} tracker has unrecognized protocol ${tracker.protocol}`)
-}
-
-function assertKnownStatus(project: TrackerProject, status: string): void {
-  const tracker = project.settings.tracker!
-  const vocabulary = new Set([
-    ...(tracker.openStatuses ?? []),
-    ...Object.keys(tracker.states ?? {}),
-  ])
-  if (!vocabulary.size) {
-    throw new Error(`project ${project.name} has no tracker status vocabulary configured`)
-  }
-  if (!vocabulary.has(status)) {
-    throw new Error(`status ${status} is not in project ${project.name}'s tracker vocabulary`)
-  }
-}
-
-function workspaceCreatePayload(
-  task: CreateTrackerTask,
-  team: string,
-  properties: string[],
-): Record<string, unknown> {
-  const fieldsSeen = () => (properties.length ? [...properties].sort().join(', ') : '(none)')
-  const statusFields = properties.filter((field) => ['status', 'task_status_id'].includes(field))
-  if (statusFields.length !== 1) {
-    throw new Error(
-      'workspace-mcp create refused: expected exactly one of status or task_status_id; ' +
-        `fields seen: ${fieldsSeen()}`,
-    )
-  }
-  const teamFields = properties.filter((field) => ['team', 'team_id'].includes(field))
-  if (teamFields.length !== 1) {
-    throw new Error(
-      'workspace-mcp create refused: expected exactly one of team or team_id; ' +
-        `fields seen: ${fieldsSeen()}`,
-    )
-  }
-  return {
-    summary: task.title,
-    description: task.body,
-    [teamFields[0]!]: team,
-    [statusFields[0]!]: task.status,
-  }
-}
-
-/** Create through a caller whose connection and lifetime remain owned by the caller. */
-export async function createTrackerTask(
-  m: ToolCaller,
-  project: TrackerProject,
-  task: CreateTrackerTask,
-  inputSchema?: ToolInputSchema,
-): Promise<unknown> {
-  const tracker = project.settings.tracker
-  if (!tracker) throw new Error(`project ${project.name} has no tracker configured`)
-  assertKnownStatus(project, task.status)
-
-  if (tracker.protocol === 'workspace-mcp') {
-    if (!tracker.team) {
-      throw new Error(workspaceTeamRefusal(project))
-    }
-    return m.callTool(tracker.actions?.create ?? trackerWireAction('workspace-mcp', 'create'), {
-      ...workspaceCreatePayload(task, tracker.team, Object.keys(inputSchema?.properties ?? {})),
-    })
-  }
-  if (tracker.protocol === 'cursor-mcp') {
-    if (!tracker.projectId) {
-      throw new Error(cursorProjectRefusal(project))
-    }
-    return m.callTool(tracker.actions?.create ?? trackerWireAction('cursor-mcp', 'create'), {
-      projectId: tracker.projectId,
-      title: task.title,
-      description: task.body,
-      status: task.status,
-    })
-  }
-  if (tracker.protocol === 'array-mcp') {
-    // The reflected task.create schema establishes these names; the MCP bridge
-    // exposes its dotted procedure name on the wire with an underscore.
-    return m.callTool(trackerWireAction('array-mcp', 'create'), {
-      title: task.title,
-      description: task.body,
-      status: task.status,
-    })
-  }
-  throw new Error(`tracker protocol ${tracker.protocol ?? '(missing)'} has no create support`)
 }
