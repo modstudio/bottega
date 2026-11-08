@@ -167,6 +167,7 @@ test('distribution refresh verifies maintenance drift with setup facts after app
       readScheduleFacts: () => [
         {
           label: 'com.user.orch-record-sync',
+          installed: true,
           loaded: true,
           plistMatches: ++factsRead > 1,
         },
@@ -195,7 +196,12 @@ test('distribution refresh logs a skipped maintenance label without reporting dr
         return {}
       },
       readScheduleFacts: () => [
-        { label: 'com.user.orch-record-sync', loaded: true, plistMatches: false },
+        {
+          label: 'com.user.orch-record-sync',
+          installed: true,
+          loaded: true,
+          plistMatches: false,
+        },
       ],
       applyMaintenance: async () => [
         {

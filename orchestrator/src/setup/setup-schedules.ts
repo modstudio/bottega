@@ -37,6 +37,7 @@ export function isMaintenanceScheduleLabel(label: string): label is MaintenanceS
 
 export type ScheduleSetupFact = {
   label: MaintenanceScheduleLabel
+  installed: boolean
   loaded: boolean
   plistMatches: boolean
 }
@@ -59,7 +60,7 @@ export type MaintenanceSchedulePlanItem = {
   skipReason: string | null
 }
 
-/** Select the canonical setup labels for this install level and apply the shared skip ruling. */
+/** Apply the shared skip ruling to the canonical setup label set. */
 export function maintenanceSchedulePlan(
   skipFacts: LaunchAgentSkipFacts,
 ): MaintenanceSchedulePlanItem[] {
@@ -123,10 +124,12 @@ export function gatherScheduleSetupFacts(): ScheduleSetupFact[] {
   return MAINTENANCE_SCHEDULE_LABELS.map((label) => {
     const target = join(values.home, 'Library', 'LaunchAgents', `${label}.plist`)
     const expected = renderedSchedule(label)
+    const installed = existsSync(target)
     return {
       label,
+      installed,
       loaded: launchctl !== null && uid !== undefined && launchctlLoaded(launchctl, uid, label),
-      plistMatches: existsSync(target) && readFileSync(target, 'utf8') === expected,
+      plistMatches: installed && readFileSync(target, 'utf8') === expected,
     }
   })
 }

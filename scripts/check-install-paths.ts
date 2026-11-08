@@ -173,7 +173,10 @@ function isRemedyFindingExemption(node: ts.Node, path: string): boolean {
   if (path === 'shared/self-spawn.ts') return true
   if (path !== 'shared/install-root.ts') return false
   for (let current: ts.Node | undefined = node; current; current = current.parent) {
-    if (ts.isFunctionDeclaration(current) && current.name?.text === 'resolveInstallationPaths') {
+    if (
+      ts.isFunctionDeclaration(current) &&
+      ['installationExecutable', 'resolveInstallationPaths'].includes(current.name?.text ?? '')
+    ) {
       return true
     }
   }

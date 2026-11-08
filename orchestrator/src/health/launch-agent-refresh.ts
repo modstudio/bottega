@@ -113,6 +113,7 @@ function distributionObservations(
     'distribution',
   )
   for (const fact of readScheduleFacts()) {
+    if (!fact.installed) continue
     observations[fact.label] = {
       programPath: null,
       programExists: true,
