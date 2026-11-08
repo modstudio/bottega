@@ -26,9 +26,8 @@ export function typedQuestionBlocks(
   rows: readonly TypedQuestionAnswerRow[],
   judgment: (questionId: string, questionVersion: number) => TypedQuestionJudgment,
 ): TypedQuestionReportBlock[] {
-  const groups = Map.groupBy(
-    rows,
-    (row) => `${row.question_id}\0${row.question_version}\0${row.subject_kind}\0${row.model ?? ''}`,
+  const groups = Map.groupBy(rows, (row) =>
+    JSON.stringify([row.question_id, row.question_version, row.subject_kind, row.model]),
   )
   return [...groups.values()].map((answers) => {
     const first = answers[0]!
