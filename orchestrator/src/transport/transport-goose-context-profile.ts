@@ -84,22 +84,28 @@ function requestLinesNewestFirst(gooseDir: string): unknown[] {
   })
 }
 
-function usageRows(gooseDir: string): GooseUsageRow[] | null {
+function usageRows(gooseDir: string, sessionId?: string): GooseUsageRow[] | null {
   let database: Database | null = null
   try {
     database = new Database(join(gooseDir, 'sessions', 'sessions.db'), {
       readonly: true,
       strict: true,
     })
-    return database
-      .query<{ is_compaction: number | null; cache_read_tokens: number | null }, []>(
-        'SELECT is_compaction, cache_read_tokens FROM usage_ledger',
-      )
-      .all()
-      .map((row) => ({
-        isCompaction: row.is_compaction,
-        cacheReadTokens: row.cache_read_tokens,
-      }))
+    const rows = sessionId
+      ? database
+          .query<{ is_compaction: number | null; cache_read_tokens: number | null }, [string]>(
+            'SELECT is_compaction, cache_read_tokens FROM usage_ledger WHERE session_id=?',
+          )
+          .all(sessionId)
+      : database
+          .query<{ is_compaction: number | null; cache_read_tokens: number | null }, []>(
+            'SELECT is_compaction, cache_read_tokens FROM usage_ledger',
+          )
+          .all()
+    return rows.map((row) => ({
+      isCompaction: row.is_compaction,
+      cacheReadTokens: row.cache_read_tokens,
+    }))
   } catch {
     return null
   } finally {
@@ -118,6 +124,18 @@ export function gooseContextProfile(gooseDir: string): GooseContextProfile | nul
       chooseProfileRequest(requestLinesNewestFirst(gooseDir)),
       usageRows(gooseDir),
     )
+  } catch {
+    return null
+  }
+}
+
+/** Read usage for one Goose session without folding in other sessions in the same state home. */
+export function gooseSessionContextProfile(
+  gooseDir: string,
+  sessionId: string,
+): GooseContextProfile | null {
+  try {
+    return foldGooseContextProfile(null, usageRows(gooseDir, sessionId))
   } catch {
     return null
   }

@@ -13,10 +13,12 @@ import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachmen
 import { machineId } from '../record/machine-identity.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
+import { probeAgentCompacts } from './agent-compaction-probe.ts'
 import { runProbeTurn } from './agent-probe-turn.ts'
 import {
   type AgentRow,
   agentRows,
+  compactionAnswered,
   HARNESSES,
   type Harness,
   type RegistrationProbeResult,
@@ -129,6 +131,9 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
     ...(result.schema.ok !== null ? { schema: result.schema.ok } : {}),
     ...(result.mcp?.verifiable != null ? { mcp: result.mcp.verifiable } : {}),
     ...(result.file?.ok != null ? { replyFile: result.file.ok } : {}),
+    ...(compactionProbeApplies(row) && compactionAnswered(result)
+      ? { compacts: result.compaction.ok }
+      : {}),
     ...(writing.writesRepo !== null ? { writesRepo: writing.writesRepo } : {}),
     ...(resuming.resumable !== null ? { resumable: resuming.resumable } : {}),
     ...(result.contextTokens !== null ? { contextTokens: result.contextTokens } : {}),
@@ -221,6 +226,7 @@ export function registrationProbeCacheReusable(
   replyFile: boolean | undefined,
   resumableRequired: boolean,
   mcpRequired: boolean,
+  compactionRequired = false,
 ): boolean {
   return Boolean(
     previous?.ok === true &&
@@ -228,8 +234,13 @@ export function registrationProbeCacheReusable(
       replyFile === true &&
       writingCapabilityPolicy(transport, previous.writing?.ok).jobSuccess &&
       (!resumableRequired || resumeCapabilityPolicy(transport, previous.resuming?.ok).jobSuccess) &&
-      (!mcpRequired || previous.mcp?.verifiable === true),
+      (!mcpRequired || previous.mcp?.verifiable === true) &&
+      (!compactionRequired || compactionAnswered(previous)),
   )
+}
+
+function compactionProbeApplies(row: Pick<AgentRow, 'harness'>): boolean {
+  return row.harness === 'goose'
 }
 
 function registrationProbeShouldUseCache(
@@ -238,6 +249,7 @@ function registrationProbeShouldUseCache(
   previous: RegistrationProbeResult | null,
   resumableRequired: boolean,
   mcpRequired: boolean,
+  compactionRequired: boolean,
 ): boolean {
   if (fresh) return false
   const priorCaps = JSON.parse(row.caps) as Caps
@@ -247,6 +259,7 @@ function registrationProbeShouldUseCache(
     priorCaps.replyFile,
     resumableRequired,
     mcpRequired,
+    compactionRequired,
   )
 }
 
@@ -317,6 +330,32 @@ async function probeContextWindow(row: AgentRow, prior: Caps & { contextTokens?:
 }
 
 type ProbeTurn = Awaited<ReturnType<typeof runProbeTurn>>
+type RegistrationProbeRunner = (
+  id: string,
+  prompt: string,
+  schema?: string,
+  mcp?: boolean,
+  writing?: WritingProbeConfinement,
+  session?: string,
+  environment?: Record<string, string>,
+) => Promise<ProbeTurn>
+
+function registrationProbeRunner(input: {
+  name: string
+  scratch: string
+  agent: import('./agents.ts').Agent
+  transport: import('../transport/transport.ts').AgentTransport
+}): RegistrationProbeRunner {
+  return (id, prompt, schema, mcp = false, writing, session, environment) =>
+    runProbeTurn({ ...input, id, prompt, schema, mcp, writing, session, environment })
+}
+
+async function registrationCompactionProbe(applies: boolean, runOne: RegistrationProbeRunner) {
+  if (!applies) return undefined
+  return probeAgentCompacts(({ prompt, session, environment }) =>
+    runOne('compaction', prompt, undefined, false, undefined, session, environment),
+  )
+}
 
 /** Run the MCP step only for a row that must prove MCP; the skip keeps its recorded wording. */
 async function registrationMcpProbeTurn(
@@ -336,6 +375,7 @@ async function registrationMcpProbeTurn(
       events: [],
       sessionId: null,
       loadSessionAdvertised: false,
+      compactions: null,
     }
   }
   return runOne('mcp', 'Call the ping MCP tool and reply with exactly its result.', undefined, true)
@@ -349,25 +389,7 @@ function strictFileMatches(
   return matches(JSON.parse(readFileSync(schemaPath, 'utf8')), value).ok
 }
 
-export async function probeAgent(
-  name: string,
-  inputs: AgentProbeInputs,
-): Promise<RegistrationProbeResult> {
-  const row = agentRows().find((candidate) => candidate.name === name)
-  if (!row) throw new Error(`unknown agent "${name}"`)
-  const previous = row.probe_result ? JSON.parse(row.probe_result) : null
-  const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
-  const needs = registrationProbeRequirements(declared)
-  const mcpProbeRequired = registrationProbeNeedsMcp(needs.mcp, declared !== null, row.harness)
-  if (
-    registrationProbeShouldUseCache(inputs.fresh, row, previous, needs.resumable, mcpProbeRequired)
-  )
-    return recordBudgetProbe(name, row, previous as RegistrationProbeResult)
-  if (!HARNESSES.includes(row.harness as Harness))
-    throw new Error(`legacy agent "${name}" has no runnable harness`)
-  const agent = rowAgent(row)
-  if (which(agent.bin, { PATH: inputs.path }) === null)
-    throw new Error(`${agent.harness} harness is not installed`)
+function registrationProbeScratch(): { scratch: string; schemaPath: string } {
   const scratch = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'orch-agent-probe-'))
   mkdirSync(join(scratch, 'repo'))
   writeFileSync(join(scratch, 'repo', REGISTRATION_PROBE_FILE), `${REGISTRATION_PROBE_SENTINEL}\n`)
@@ -381,18 +403,42 @@ export async function probeAgent(
       properties: { status: { type: 'string', enum: ['ok'] } },
     }),
   )
+  return { scratch, schemaPath }
+}
+
+export async function probeAgent(
+  name: string,
+  inputs: AgentProbeInputs,
+): Promise<RegistrationProbeResult> {
+  const row = agentRows().find((candidate) => candidate.name === name)
+  if (!row) throw new Error(`unknown agent "${name}"`)
+  const previous = row.probe_result ? JSON.parse(row.probe_result) : null
+  const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
+  const needs = registrationProbeRequirements(declared)
+  const mcpProbeRequired = registrationProbeNeedsMcp(needs.mcp, declared !== null, row.harness)
+  const compactionApplies = compactionProbeApplies(row)
+  if (
+    registrationProbeShouldUseCache(
+      inputs.fresh,
+      row,
+      previous,
+      needs.resumable,
+      mcpProbeRequired,
+      compactionApplies,
+    )
+  )
+    return recordBudgetProbe(name, row, previous as RegistrationProbeResult)
+  if (!HARNESSES.includes(row.harness as Harness))
+    throw new Error(`legacy agent "${name}" has no runnable harness`)
+  const agent = rowAgent(row)
+  if (which(agent.bin, { PATH: inputs.path }) === null)
+    throw new Error(`${agent.harness} harness is not installed`)
+  const { scratch, schemaPath } = registrationProbeScratch()
   const { transportFor, valueMatchesStrictSchema } = await import('../transport/transport.ts')
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
   mintStdioPingServer(join(scratch, 'repo'))
   const transport = transportFor(agent.defaultTransport)
-  const runOne = (
-    id: string,
-    prompt: string,
-    schema?: string,
-    mcp = false,
-    writing?: WritingProbeConfinement,
-    session?: string,
-  ) => runProbeTurn({ name, scratch, agent, transport, id, prompt, schema, mcp, writing, session })
+  const runOne = registrationProbeRunner({ name, scratch, agent, transport })
   const reply = await runOne('reply', 'Reply with exactly: ok')
   const tool = needs.tool
     ? await runOne(
@@ -414,6 +460,7 @@ export async function probeAgent(
     needs.schema ? schemaPath : undefined,
   )
   const mcpRun = await registrationMcpProbeTurn(runOne, mcpProbeRequired)
+  const compaction = await registrationCompactionProbe(compactionApplies, runOne)
   const { writing, resuming } = await registrationWriterCapabilities({
     transport: row.transport,
     scratch,
@@ -487,6 +534,7 @@ export async function probeAgent(
     schema: { ok: schemaOk, output: structured.output },
     file: { ok: fileOk, output: fileOutput },
     mcp: { verifiable: mcpVerifiable, output: mcpRun.output },
+    compaction,
     writing,
     resuming,
     jobs: perJob,

@@ -74,6 +74,28 @@ function servedContextTokens(stored: Caps & { contextTokens?: number | null }): 
   return typeof stored.contextTokens === 'number' ? stored.contextTokens : null
 }
 
+/** Pure context-management launch policy for one Goose registry row. */
+export function gooseContextManagementEnvironment(input: {
+  compacts: boolean | undefined
+  servedWindow: number | null
+  jobContextTokens: number | null
+  promptBytes: number | null
+}): Record<string, string> {
+  if (input.compacts === false) {
+    return {
+      ...(input.servedWindow === null ? {} : { GOOSE_CONTEXT_LIMIT: String(input.servedWindow) }),
+      GOOSE_AUTO_COMPACT_THRESHOLD: '0',
+      GOOSE_TOOL_PAIR_SUMMARIZATION: 'false',
+    }
+  }
+  const contextLimit = gooseContextLimit(
+    input.servedWindow,
+    input.jobContextTokens,
+    input.promptBytes,
+  )
+  return contextLimit === null ? {} : { GOOSE_CONTEXT_LIMIT: String(contextLimit) }
+}
+
 function rowLaunchEnvironment(
   row: AgentRow,
   jobContextTokens: number | null,
@@ -83,7 +105,6 @@ function rowLaunchEnvironment(
   if (!row.base_url) return {}
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const servedWindow = servedContextTokens(stored)
-  const contextLimit = gooseContextLimit(servedWindow, jobContextTokens, promptBytes)
   return {
     BOTTEGA_MODEL_HOST_URL: row.base_url,
     OPENAI_BASE_URL: row.base_url,
@@ -92,7 +113,12 @@ function rowLaunchEnvironment(
           GOOSE_PROVIDER: 'openai',
           GOOSE_MODEL: row.model,
           GOOSE_TELEMETRY_ENABLED: 'false',
-          ...(contextLimit === null ? {} : { GOOSE_CONTEXT_LIMIT: String(contextLimit) }),
+          ...gooseContextManagementEnvironment({
+            compacts: stored.compacts,
+            servedWindow,
+            jobContextTokens,
+            promptBytes,
+          }),
           ...(writesRepo === false ? { GOOSE_MAX_TURNS: String(GOOSE_READING_MAX_TURNS) } : {}),
         }
       : {}),
@@ -539,6 +565,7 @@ export type RegistrationProbeResult = {
   schema: { ok: boolean | null; output: string }
   file?: { ok: boolean | null; output: string }
   mcp?: { verifiable: boolean | null; output: string }
+  compaction?: { ok: boolean | null; output: string }
   writing?: { ok: boolean | null; output: string }
   resuming?: { ok: boolean | null; output: string }
   jobs?: Record<
@@ -558,4 +585,11 @@ export type RegistrationProbeResult = {
   billingHold?: boolean
   refusal?: string
   attempts?: { harness: string; result: unknown }[]
+}
+
+/** Whether the optional compaction step established a reusable boolean capability. */
+export function compactionAnswered(
+  result: RegistrationProbeResult,
+): result is RegistrationProbeResult & { compaction: { ok: boolean; output: string } } {
+  return typeof result.compaction?.ok === 'boolean'
 }

@@ -133,6 +133,30 @@ function probeTransport(status: 'ok' | 'failed' = 'ok'): AgentTransport {
   }
 }
 
+test("a probe turn's environment reaches transport start and overrides the agent value", async () => {
+  const base = probeTransport('ok')
+  let startedEnvironment: Record<string, string> = {}
+  const capturing: AgentTransport = {
+    ...base,
+    start: async (opts) => {
+      startedEnvironment = opts.env
+      return base.start(opts)
+    },
+  }
+
+  await runProbeTurn({
+    name: 'grok',
+    scratch: dir,
+    agent: { ...BUILTIN_AGENTS.grok!, env: () => ({ PROBE_OVERRIDE: 'agent' }) },
+    transport: capturing,
+    id: 'environment-override',
+    prompt: 'probe',
+    environment: { PROBE_OVERRIDE: 'turn' },
+  })
+
+  expect(startedEnvironment.PROBE_OVERRIDE).toBe('turn')
+})
+
 test.each(['ok', 'failed'] as const)(
   'a collected %s probe turn persists its quota reading',
   async (status) => {
