@@ -17,8 +17,9 @@ import {
   type PullRequestMergeFacts,
 } from './pr-merge.ts'
 import {
-  cleanupReport,
+  mergeCleanupReport,
   recordPassingMergeGate,
+  registerMergeProject,
   requiredRelease,
 } from './pr-merge-required-release.fixture.ts'
 import { inProcessPostLandingAdapter } from './pr-post-landing.fixture.ts'
@@ -26,21 +27,10 @@ import type { WorkflowPromotionResult } from './pr-post-landing.ts'
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
-function registerProject(requiredChecks: string[], mergeQueue = false): void {
-  db()
-    .query(
-      'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
-    )
-    .run(
-      'merge-fixture',
-      cwd,
-      'bun',
-      JSON.stringify({
-        trunk: 'main',
-        release: { rungs: [], mergeMethod: 'squash', requiredChecks, mergeQueue },
-      }),
-    )
-}
+const registerProject = (requiredChecks: string[], mergeQueue = false) =>
+  registerMergeProject(cwd, requiredChecks, mergeQueue)
+const cleanupReport = (overrides?: Partial<Pick<ShipCleanupReport, 'kept' | 'errors'>>) =>
+  mergeCleanupReport(cwd, pullRequest.headBranch, overrides)
 
 const recordPassingGate = () => recordPassingMergeGate(pullRequest.headCommit, cwd)
 
