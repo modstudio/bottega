@@ -68,28 +68,41 @@ function recordOwnerUrl(): string {
   return url
 }
 
-export async function recordMigrateCommand(presentation: Presentation): Promise<void> {
+export async function recordMigrateCommand(
+  presentation: Presentation,
+  dependencies = {
+    appliedMigrationCount: appliedRecordMigrationCount,
+    migrate: migratePostgres,
+    migrationCount: recordMigrationCount,
+    ensureBuiltIns: ensureAllSpaceBuiltIns,
+  },
+): Promise<void> {
   const url = process.env.BOTTEGA_RECORD_MIGRATE_URL
   if (!url) throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required to migrate the record')
   let before: number
   let after: number
   try {
-    before = await appliedRecordMigrationCount(url)
-    await migratePostgres(url)
-    after = await appliedRecordMigrationCount(url)
+    before = await dependencies.appliedMigrationCount(url)
+    await dependencies.migrate(url)
+    after = await dependencies.appliedMigrationCount(url)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const redacted = redactRecordPasswords(message, [url])
-    throw new Error(recordTunnelFailure(redacted, readMachineValue('record.tunnel_app')))
+    throw new Error(
+      recordTunnelFailure(redacted, {
+        tunnelApp: readMachineValue('record.tunnel_app'),
+        requiresTunnel: true,
+      }),
+    )
   }
-  const shipped = recordMigrationCount()
+  const shipped = dependencies.migrationCount()
   presentation.log(`record migrations applied before ${before}; after ${after}; shipped ${shipped}`)
   if (after !== shipped) {
     throw new Error(
       `record migration confirmation failed: applied ${after}; shipped ${shipped}; resolve the schema mismatch before deploying`,
     )
   }
-  const builtIns = await ensureAllSpaceBuiltIns(url)
+  const builtIns = await dependencies.ensureBuiltIns(url)
   presentation.log(
     `space built-ins inserted ${builtIns.inserted}; already present ${builtIns.alreadyPresent}`,
   )
