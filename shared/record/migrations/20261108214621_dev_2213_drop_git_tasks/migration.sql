@@ -1,3 +1,9 @@
+ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE hub_task_comment NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE hub_task_document NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE hub_task_status_event NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE task_flow NO FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
 DO $$
 DECLARE
   dependents text;
@@ -23,3 +29,9 @@ BEGIN
 END $$;
 --> statement-breakpoint
 DELETE FROM hub_task WHERE source='git';
+--> statement-breakpoint
+ALTER TABLE task_flow FORCE ROW LEVEL SECURITY;
+ALTER TABLE hub_task_status_event FORCE ROW LEVEL SECURITY;
+ALTER TABLE hub_task_document FORCE ROW LEVEL SECURITY;
+ALTER TABLE hub_task_comment FORCE ROW LEVEL SECURITY;
+ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;

@@ -184,7 +184,7 @@ const HOSTED_COMMENT_UPDATE_COLUMNS = [
 ] as const
 const HOSTED_DOCUMENT_UPDATE_COLUMNS = ['role', 'title', 'body', 'version'] as const
 
-export const HOSTED_TASK_UPDATE_COLUMNS = [
+const HOSTED_TASK_UPDATE_COLUMNS = [
   'title',
   'status',
   'status_category',

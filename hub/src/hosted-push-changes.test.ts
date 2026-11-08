@@ -8,11 +8,11 @@ import { db, writeTransaction } from './db.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { drainHostedOutbox } from './outbox.ts'
-import {
-  type HostedPushChange,
-  type PushedInterval,
-  type PushedStatusEvent,
-  type PushedTask,
+import type {
+  HostedPushChange,
+  PushedInterval,
+  PushedStatusEvent,
+  PushedTask,
 } from './push-contract.ts'
 import { closeTask, commentTask, setTask } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'

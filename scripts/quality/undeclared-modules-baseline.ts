@@ -37,7 +37,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'hub/src/hosted-work.ts',
   'hub/src/hosted-write-mode.ts',
   'hub/src/hosted.ts',
-  'hub/src/ingest/git-task-cache.ts',
   'hub/src/ingest/git.ts',
   'hub/src/ingest/runs.ts',
   'hub/src/ingest/trackers.ts',
