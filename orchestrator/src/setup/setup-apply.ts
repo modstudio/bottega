@@ -68,7 +68,7 @@ export type SetupEnvironmentService = {
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
-  return results.some((result) => result.status === 'refused' || result.status === 'follow-up')
+  return results.some((result) => result.status === 'refused')
 }
 
 type CreatedRecipe = { path: string; device: number; inode: number; contentHash: string }

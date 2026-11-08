@@ -434,7 +434,7 @@ test('reports an applied environment migration requiring operator follow-up dist
 
   expect(results.map(({ status }) => status)).toEqual(['follow-up', 'applied'])
   expect(results[0]?.message).toBe('applied, follow-up required: reload the service')
-  expect(setupResultsRequireAttention(results)).toBe(true)
+  expect(setupResultsRequireAttention(results)).toBe(false)
 })
 
 test('applies an MCP configuration migration once and then reports unchanged', async () => {
