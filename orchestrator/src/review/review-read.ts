@@ -1,7 +1,7 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: review-read
 /** Records an architect's read of one exact branch change group. */
 import type { Database } from 'bun:sqlite'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'

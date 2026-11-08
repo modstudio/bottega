@@ -1,7 +1,7 @@
 /** Chooses and invokes the best available desktop notification. */
 
-import type { OperatorNotification } from './operator-notification-contract.ts'
 import { startBounded } from './bounded-process.ts'
+import type { OperatorNotification } from './operator-notification-contract.ts'
 
 export type { OperatorNotification } from './operator-notification-contract.ts'
 export type NotificationCommand = { argv: string[] } | null

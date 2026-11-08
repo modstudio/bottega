@@ -1,8 +1,8 @@
-import { inspectionGitEnv } from '../shared/git.ts'
-import { startBounded } from '../shared/bounded-process.ts'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { startBounded } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import {
   artifactName,
   BINARY_TARGETS,

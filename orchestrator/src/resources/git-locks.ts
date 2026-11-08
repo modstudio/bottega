@@ -1,6 +1,6 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 

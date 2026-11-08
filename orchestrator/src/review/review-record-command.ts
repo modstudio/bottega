@@ -1,8 +1,8 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: review-record-command
 /** Resolves finished review facts, writes their interchange file, and invokes a project's recorder. */
 import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'

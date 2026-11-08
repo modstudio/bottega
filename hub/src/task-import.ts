@@ -1,6 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { inspectionGitEnv } from '../../shared/git.ts'
-import { readFileSync } from 'node:fs'
 import { assetPath } from '../../shared/install-root.ts'
 import { projectOf, writeCommitKey } from './attribute.ts'
 import { writeTransaction } from './db.ts'

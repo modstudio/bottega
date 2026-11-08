@@ -1,10 +1,10 @@
-import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
-import { startBounded } from '../../../shared/bounded-process.ts'
 // concern: model-host
 /** Owns model-host wake, health, reachability, and availability. Must not know probes or CLI grammar. */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
+import { startBounded } from '../../../shared/bounded-process.ts'
 /** Where the model host's OpenAI-compatible endpoint lives. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'

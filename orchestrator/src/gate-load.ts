@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { randomUUID } from 'node:crypto'
 import {
   closeSync,
@@ -15,6 +14,7 @@ import {
 } from 'node:fs'
 import { cpus, freemem, loadavg } from 'node:os'
 import { join } from 'node:path'
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { pidAlive } from '../../shared/process-identity.ts'
 import { resolveStatePaths } from '../../shared/state-directory.ts'
 

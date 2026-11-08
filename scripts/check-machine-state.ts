@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
 /** Machine state belongs in the per-user state root, never inside the checkout. */
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { FROZEN_STATE_NAMES } from '../shared/brand.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { resolveStatePaths, type StateEnvironment } from '../shared/state-directory.ts'
 

@@ -1,5 +1,3 @@
-import { inspectionGitEnv } from '../shared/git.ts'
-import { startBounded } from '../shared/bounded-process.ts'
 import { createHash } from 'node:crypto'
 import {
   copyFileSync,
@@ -12,7 +10,9 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { startBounded } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { artifactName, BINARY_TARGETS } from '../shared/release-artifacts.ts'
 import { buildBinary } from './build-binary.ts'
 import { RELEASE_BUN_VERSION, requireReleaseBun } from './release-config.ts'

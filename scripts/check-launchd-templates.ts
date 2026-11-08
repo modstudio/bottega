@@ -1,9 +1,9 @@
-import { startBoundedSync } from '../shared/bounded-process.ts'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { exitUnchecked } from '../shared/check-execution.ts'
 import {

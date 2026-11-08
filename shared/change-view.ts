@@ -1,6 +1,6 @@
-import { startBoundedSync } from './bounded-process.ts'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { startBoundedSync } from './bounded-process.ts'
 import { inspectionGitEnv } from './git'
 import { nulPathListArgs, splitNulNameStatus, splitNulPaths } from './git-path-list.ts'
 import type { ChangeFacts, LineRange } from './ratchet'

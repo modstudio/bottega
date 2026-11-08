@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: confinement-ruling
 /**
  * Knows confinement classifications, chain authority, recorded artifacts, and
@@ -6,6 +5,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
  * reviews, contracts, the CLI, or durable execution.
  */
 import { existsSync } from 'node:fs'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { contentTree, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'

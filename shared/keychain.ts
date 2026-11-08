@@ -1,4 +1,5 @@
 import { startBounded, startBoundedSyncBytes } from './bounded-process.ts'
+
 type SecurityResult = {
   exitCode: number
   stdout: Uint8Array

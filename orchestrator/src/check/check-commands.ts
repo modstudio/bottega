@@ -1,6 +1,6 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { readFileSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'

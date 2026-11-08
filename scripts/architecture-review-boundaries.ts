@@ -171,6 +171,7 @@ export const reviewModuleSpecs = [
       './review-lineage-store.ts',
       './review-record-findings-file.ts',
       './review-record-findings.ts',
+      '../../../shared/bounded-process.ts',
     ],
   },
   {
@@ -347,6 +348,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-triage.ts',
       './review-vocabulary.ts',
       './review-yield.ts',
+      '../../../shared/bounded-process.ts',
     ],
     reason:
       'Keep review commands independent of runs, transports, routing by value, the CLI, and worktrees by value.',
@@ -516,6 +518,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       './review-group.ts',
       './review-lineage-store.ts',
       './review-outbox.ts',
+      '../../../shared/bounded-process.ts',
     ],
     reason: 'Keep architect review reads inside the review evidence concern.',
   },
@@ -527,6 +530,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../worktree/worktree-caller.ts',
+      '../../../shared/bounded-process.ts',
     ],
     reason: 'Keep review-target resolution independent of execution and mutation concerns.',
   },

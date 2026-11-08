@@ -356,6 +356,8 @@ export const hubModuleSpecs = [
       './db.ts',
       './projects.ts',
       './task.ts',
+      '../../shared/git.ts',
+      '../../shared/bounded-process.ts',
     ],
   },
   {
@@ -397,7 +399,13 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/service-revision.ts',
-    allowed: ['../../shared/install-root.ts', '../../shared/process-identity.ts', './db.ts'],
+    allowed: [
+      '../../shared/install-root.ts',
+      '../../shared/process-identity.ts',
+      './db.ts',
+      '../../shared/git.ts',
+      '../../shared/bounded-process.ts',
+    ],
   },
   {
     file: 'hub/src/serve-lifecycle.ts',

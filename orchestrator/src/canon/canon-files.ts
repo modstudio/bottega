@@ -1,8 +1,8 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: canon-files
 /** Knows how to collect committed canon files from a git tree. Must not know stores, commands, runs, routing, transports, or worktrees. */
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { posix, resolve } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {

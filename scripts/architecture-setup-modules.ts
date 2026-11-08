@@ -189,6 +189,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/launch-agent-skip.ts',
       '../../../shared/state-directory.ts',
       './launchd-owners.ts',
+      '../../../shared/bounded-process.ts',
     ],
     typeOnlyAllowed: [],
     reason:
@@ -251,6 +252,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/secret-shaped.ts',
       '../../../shared/self-spawn.ts',
       './setup-mcp-config.ts',
+      '../../../shared/bounded-process.ts',
     ],
     typeOnlyAllowed: [],
     reason: 'Keep harness MCP CLI grammar independent of setup policy, stores, and projects.',

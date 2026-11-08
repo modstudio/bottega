@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import { copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 
 const LARGE_TABLE_ROW_THRESHOLD = 10_000

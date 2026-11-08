@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
@@ -21,7 +19,9 @@ import { recordPortClient } from '../orchestrator/src/record/record-api-client-p
 import { recordWorkflowClient } from '../orchestrator/src/record/record-api-client-workflow.ts'
 import * as recordEmailVerificationClient from '../orchestrator/src/record/record-email-verification-client.ts'
 import { SNAPSHOT_KINDS } from '../orchestrator/src/record/record-snapshots.ts'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { configClient } from '../shared/config-client.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { hostedTableLifecycles } from '../shared/record/storage-lifecycle.ts'
 import { enumerateClientMethods } from './identity-client-enumeration.ts'
 import {

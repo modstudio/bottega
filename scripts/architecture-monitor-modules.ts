@@ -310,6 +310,7 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-retrieval-pins.ts', [
     '../../../shared/self-spawn.ts',
     './monitor-types.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/monitor/monitor-store-write-lock.ts', [
     '../../../shared/process-identity.ts',

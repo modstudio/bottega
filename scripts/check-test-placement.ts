@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
 /** Tests live beside a same-named module or a module named by a hyphen prefix. */
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 
 const ROOTS = ['orchestrator', 'hub', 'retrieval', 'shared', 'scripts']

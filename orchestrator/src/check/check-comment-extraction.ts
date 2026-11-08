@@ -1,10 +1,10 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import bash from '@ast-grep/lang-bash'
 import php from '@ast-grep/lang-php'
 import python from '@ast-grep/lang-python'
 import { type DynamicLangRegistrations, Lang, parse, registerDynamicLanguage } from '@ast-grep/napi'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import {
   embeddedDistributionManifest,
   embeddedRuntimeDigest,

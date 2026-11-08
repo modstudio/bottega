@@ -1,7 +1,7 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: doc-lint
 /** Gathers registered checkout trees for the pure stored-document lint decision. */
 import { existsSync } from 'node:fs'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import type { DocKind } from '../../../shared/docs.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { canonGitRoot, collectCanonLintInput } from '../canon/canon-files.ts'

@@ -1,9 +1,8 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../../shared/git.ts'
 import type { Database } from 'bun:sqlite'
 import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { gitAt } from '../../shared/git.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { parseNoteAnchorWire } from '../../shared/note-anchor.ts'
 import { formatNoteLabel, parseNoteLabel } from '../../shared/note-label.ts'
@@ -114,13 +113,8 @@ export type CreateNoteInput = {
   project?: string
 }
 
-const git = (cwd: string, ...args: string[]): string | null => {
-  const result = startBoundedSync(['git', '-C', cwd, ...args], {
-    budget: 'git-plumbing',
-    env: inspectionGitEnv(),
-  })
-  return result.exitCode === 0 ? result.stdout.toString().trim() : null
-}
+const git = (cwd: string, ...args: string[]): string | null =>
+  ((result) => (result.code === 0 ? result.stdout.trim() : null))(gitAt(cwd, args))
 
 function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): NoteRow {
   return {

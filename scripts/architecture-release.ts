@@ -21,6 +21,7 @@ export const releaseModules = [
       'orchestrator/src/release/release-decision.ts',
       'orchestrator/src/release/live-reading.ts',
       'orchestrator/src/release/release-ledger.ts',
+      'shared/bounded-process.ts',
     ],
   },
   {
@@ -33,6 +34,7 @@ export const releaseModules = [
       'node:path',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/project/projects.ts',
+      'shared/bounded-process.ts',
     ],
   },
   {
@@ -89,6 +91,7 @@ export const releaseModules = [
       'shared/secret-shaped.ts',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/release/release-decision.ts',
+      'shared/bounded-process.ts',
     ],
   },
 ]

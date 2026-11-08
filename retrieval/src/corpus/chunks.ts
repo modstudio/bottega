@@ -1,11 +1,11 @@
-import { inspectionGitEnv } from '../../../shared/git.ts'
-import { startBounded } from '../../../shared/bounded-process.ts'
 // concern: retrieval-corpus
 /** Builds bounded, overlapping retrieval units from the repository source corpus. */
 import { readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { Glob } from 'bun'
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { inspectionGitEnv } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
   type RetrievalDocSearchOutput,

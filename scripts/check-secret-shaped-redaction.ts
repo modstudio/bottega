@@ -1,7 +1,7 @@
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 
 const ROOTS = ['shared', 'orchestrator', 'scripts', 'hub'] as const

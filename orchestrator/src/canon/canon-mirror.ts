@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: canon-mirror
 /** Owns the scheduled store-to-repository canon publication lifecycle. */
 import type { Database } from 'bun:sqlite'
@@ -6,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { newRecordId } from '../../../shared/record-id.ts'

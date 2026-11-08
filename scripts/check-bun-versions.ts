@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { BUN_VERSION_FILE, declaredBunVersion } from './release-config.ts'
 

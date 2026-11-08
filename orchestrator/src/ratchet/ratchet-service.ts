@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import {
   copyFileSync,
   existsSync,
@@ -12,6 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { type ChangeViewMode, openChangeView } from '../../../shared/change-view.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { type Finding, findingLine, ratchetDecision } from '../../../shared/ratchet.ts'

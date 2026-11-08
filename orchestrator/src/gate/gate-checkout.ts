@@ -3,8 +3,8 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { decideGateCheckoutRefusal, GATE_CHECKOUT_OPERATION_MARKERS } from './gate-decision.ts'
@@ -54,9 +54,7 @@ function observeGateCheckoutFacts(cwd: string): {
       env: inspectionGitEnv(),
     })
   } catch (error) {
-    throw new Error(
-      gitCommandError(cwd, { status: null, error: error as Error }, 'git dir'),
-    )
+    throw new Error(gitCommandError(cwd, { status: null, error: error as Error }, 'git dir'))
   }
   if (gitDir.exitCode !== 0)
     throw new Error(gitCommandError(cwd, { ...gitDir, status: gitDir.exitCode }, 'git dir'))

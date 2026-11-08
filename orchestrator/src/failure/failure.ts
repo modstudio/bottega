@@ -1,5 +1,5 @@
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { startBounded } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isCodexThrottleNotice } from '../transport/codex-throttle.ts'
 
 /**

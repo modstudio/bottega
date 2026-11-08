@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { startBounded } from '../../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../../shared/git.ts'
 import { resolve } from 'node:path'
+import { startBounded } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 import { requireCheckoutRoot } from '../../shared/install-root.ts'
 // concern: retrieval-search-cli
 /** Presents the stable semantic document-search contract. */

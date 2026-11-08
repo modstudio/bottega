@@ -1,5 +1,3 @@
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import {
@@ -30,7 +28,9 @@ import {
   readGateFactsFile,
 } from '../orchestrator/src/gate/gate-facts.ts'
 import { type Project, projectAt } from '../orchestrator/src/project/projects.ts'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 

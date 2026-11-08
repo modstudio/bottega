@@ -34,7 +34,11 @@ export const docModules: DocModule[] = [
     './docs.ts',
   ]),
   module('orchestrator/src/secret-scan/secret-scan-decision.ts', []),
-  module('orchestrator/src/secret-scan/secret-scan.ts', ['node:os', './secret-scan-decision.ts']),
+  module('orchestrator/src/secret-scan/secret-scan.ts', [
+    'node:os',
+    '../../../shared/bounded-process.ts',
+    './secret-scan-decision.ts',
+  ]),
   module('orchestrator/src/doc/doc-secret-scan.ts', [
     '../../../shared/brand.ts',
     '../secret-scan/secret-scan.ts',
@@ -88,6 +92,7 @@ export const docModules: DocModule[] = [
     '../../../shared/git-path-list.ts',
     './docs.ts',
     './doc-generator.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/doc/doc-generator.ts', []),
   module('orchestrator/src/doc/doc-source-files.ts', []),

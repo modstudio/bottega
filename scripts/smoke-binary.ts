@@ -1,5 +1,3 @@
-import { hostedApiFetch } from '../shared/bounded-fetch.ts'
-import { startBounded } from '../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import {
   chmodSync,
@@ -15,6 +13,8 @@ import {
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { hostedApiFetch } from '../shared/bounded-fetch.ts'
+import { startBounded } from '../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { HARNESS_ENV_FILE_ENV } from '../shared/config-directory.ts'
 import { newRecordId } from '../shared/record-id.ts'

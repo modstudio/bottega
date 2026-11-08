@@ -14,8 +14,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { startBounded } from '../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { optionalCheckoutRoot } from '../../shared/install-root.ts'
 import { openReadOnlyDatabase } from './database/db.ts'
 import { type Project, projectAt } from './project/projects.ts'

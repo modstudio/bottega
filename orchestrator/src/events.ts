@@ -1,7 +1,7 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
 /** Live vendor event log: append-only JSONL plus last_event_at, and bottega run peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'

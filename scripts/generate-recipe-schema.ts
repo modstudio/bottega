@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
 /** Generate the editor-facing project config schema from its one Zod definition. */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { recipeJsonSchema } from '../orchestrator/src/recipe/recipe-schema.ts'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 
 const outputPath = fileURLToPath(
   new URL('../orchestrator/schemas/project-config.schema.json', import.meta.url),

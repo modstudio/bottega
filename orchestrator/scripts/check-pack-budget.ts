@@ -1,6 +1,6 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { CanonBudgetError, compilePack, compilePackFromGateFacts } from '../src/canon/canon.ts'
 import { DEFAULT_PACK_BYTES } from '../src/canon/pack-budget.ts'
 import { migrationRefusal } from '../src/database/migrations.ts'

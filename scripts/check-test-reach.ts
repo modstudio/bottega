@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES } from './check-plan.ts'
 

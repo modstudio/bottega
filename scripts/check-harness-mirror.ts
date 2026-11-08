@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
 import { readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 
 export type HarnessMirrorEntry = { path: string; isSymlink: boolean; target?: string }

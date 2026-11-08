@@ -1,8 +1,8 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import {
   FROZEN_ENV_NAMES,
   FROZEN_STATE_NAMES,

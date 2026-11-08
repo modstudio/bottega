@@ -1,5 +1,5 @@
-import { startBounded } from '../../../shared/bounded-process.ts'
 import type { Database } from 'bun:sqlite'
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { engagedMs } from '../../../shared/interval.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'

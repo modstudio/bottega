@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
-import { startBounded, startBoundedSync } from '../../shared/bounded-process.ts'
 import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBounded, startBoundedSync } from '../../shared/bounded-process.ts'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import {
   RECORD_ACTOR_ROLE,

@@ -1,10 +1,10 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: review-target
 /**
  * Knows the project register, worktree base rules, and branch refs. Must not
  * know transports, database write paths, contracts, or routing.
  */
 import { basename } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import {
   branchOf,
   contentTree,

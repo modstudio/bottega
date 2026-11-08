@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { recordMigrationSetHashFrom } from './record-migration-set.ts'
 import {

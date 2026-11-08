@@ -1,33 +1,11 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { markMainCheckoutResources } from './docker-main-checkout.ts'
-
-const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
-const DOCKER_INVENTORY_RETRY_TIMEOUT_MS = 10_000
-const DOCKER_REMOVAL_TIMEOUT_MS = 10_000
-
-export function dockerInventoryTimeoutMs(
-  env: Record<string, string | undefined> = process.env,
-): number {
-  const raw = env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
-  if (raw === undefined || raw === '') return DOCKER_INVENTORY_TIMEOUT_MS
-  const n = Number(raw)
-  return Number.isFinite(n) && n > 0 ? n : DOCKER_INVENTORY_TIMEOUT_MS
-}
-
-export function dockerRemovalTimeoutMs(
-  env: Record<string, string | undefined> = process.env,
-): number {
-  const raw = env.BOTTEGA_DOCKER_REMOVAL_TIMEOUT_MS
-  if (raw === undefined || raw === '') return DOCKER_REMOVAL_TIMEOUT_MS
-  const n = Number(raw)
-  return Number.isFinite(n) && n > 0 ? n : DOCKER_REMOVAL_TIMEOUT_MS
-}
 
 type DockerResourceKind = 'container' | 'network' | 'volume'
 
@@ -67,7 +45,6 @@ export type DockerNetworkInventory =
 
 function list(
   kind: 'container' | 'volume',
-  timeout: number,
 ):
   | { ascertainable: true; rows: { name: string; labels: Record<string, string> }[] }
   | { ascertainable: false; reason: string } {
@@ -314,15 +291,8 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
   const composeContainerProjects = new Set<string>()
   const composeContainers: ComposeContainerFact[] = []
   const observed: { workingDir: string | null; composeProject: string | null }[] = []
-  const configuredTimeout = dockerInventoryTimeoutMs()
-  const explicitTimeout = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
   for (const kind of ['container', 'volume'] as const) {
-    let found = list(kind, configuredTimeout)
-    // The idle-machine default gets one materially longer chance under load.
-    // An explicit bound remains exact for the test gate and other callers.
-    if (!found.ascertainable && !explicitTimeout && found.reason.includes('timed out')) {
-      found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
-    }
+    const found = list(kind)
     if (!found.ascertainable) return found
     const compose = listedComposeFacts(kind, found.rows)
     observed.push(...compose.observed)

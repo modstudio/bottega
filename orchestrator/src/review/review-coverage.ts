@@ -1,6 +1,6 @@
-import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 // concern: review-coverage
 import type { Database } from 'bun:sqlite'
+import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db } from '../database/db.ts'
 import { changeIdentity } from './change-identity.ts'

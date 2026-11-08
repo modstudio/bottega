@@ -1,4 +1,3 @@
-import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import {
   Client,
   type ClientOptions,
@@ -7,6 +6,7 @@ import {
   ProtocolError,
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client'
+import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { readEnvValuesWithHosted } from '../../shared/env-source.ts'
 import { containsSecretShaped } from '../../shared/secret-shaped.ts'
 

@@ -1,7 +1,7 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { borrowedCheckoutOf, inspectionGitEnv } from '../../../shared/git.ts'

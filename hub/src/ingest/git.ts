@@ -1,5 +1,4 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
 /**
  * Generated files, which are not work.
  *
@@ -10,6 +9,7 @@ import { inspectionGitEnv } from '../../../shared/git.ts'
  */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
+import { inspectionGitEnv } from '../../../shared/git.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes, writeCommitKey } from '../attribute.ts'

@@ -3,6 +3,7 @@ import { dirname, normalize } from 'node:path'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
+import { confinementRulingBoundary } from './architecture-confinement-modules.ts'
 import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
@@ -251,22 +252,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep close-out independent of routing, contracts, transports, reviews, and the CLI.',
   ),
-  boundary(
-    'confinement-ruling-boundary',
-    'orchestrator/src/confinement/confinement-ruling.ts',
-    [
-      'node:fs',
-      './confinement.ts',
-      '../database/db.ts',
-      '../git/git-environment.ts',
-      '../project/projects.ts',
-      '../record/machine-identity.ts',
-      '../run/run-authority.ts',
-      '../run/run-liveness.ts',
-      '../run/run-outbox.ts',
-    ],
-    'Keep confinement rulings independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
-  ),
+  confinementRulingBoundary,
   ...boundaries(contractBoundarySpecs),
   ...databaseBoundarySpecs,
   boundary(
@@ -980,6 +966,7 @@ export const importBoundaries: ImportBoundary[] = [
       './branch-trunk-tip.ts',
       '../run/run-status.ts',
       '../worktree/worktree-types.ts',
+      '../../../shared/bounded-process.ts',
     ],
     'Keep task branch identity independent of transports, contracts, and routing.',
     ['../run/run-types.ts'],

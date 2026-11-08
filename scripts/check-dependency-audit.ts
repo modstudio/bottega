@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { exitUnchecked } from '../shared/check-execution.ts'
 import { startBounded } from '../shared/bounded-process.ts'
+import { exitUnchecked } from '../shared/check-execution.ts'
 
 const DEPENDENCY_AUDIT_TIMEOUT_MS = 10_000
 const DEPENDENCY_AUDIT_OUTPUT_LIMIT = 500

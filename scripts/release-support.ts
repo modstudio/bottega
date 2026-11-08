@@ -1,5 +1,5 @@
-import { startBounded } from '../shared/bounded-process.ts'
 import { fileURLToPath } from 'node:url'
+import { startBounded } from '../shared/bounded-process.ts'
 import { PLATFORM_NAME } from '../shared/brand.ts'
 import type { DistributionManifest } from '../shared/install-root.ts'
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../shared/release-tag.ts'

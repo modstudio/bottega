@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { analyzeForcedRlsDml, type ForcedRlsDmlFinding } from './postgres-migration-rls.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))

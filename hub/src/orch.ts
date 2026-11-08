@@ -1,5 +1,4 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
-import { startBounded } from '../../shared/bounded-process.ts'
+import { startBounded, startBoundedSync } from '../../shared/bounded-process.ts'
 /**
  * The orchestrator, read through its CLI.
  *

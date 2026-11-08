@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
-import { startBoundedSync } from '../shared/bounded-process.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import type { ICruiseResult } from 'dependency-cruiser'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { CONCERNS } from '../shared/brand.ts'
 import { inspectionGitEnv } from '../shared/git'
 import { dependencyCruiserConfig, modules } from './architecture.ts'

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { hostedApiFetch } from '../shared/bounded-fetch.ts'
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
+import { hostedApiFetch } from '../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   RECORD_REHEARSAL_STATUS_CONTEXT,

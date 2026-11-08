@@ -1,8 +1,8 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: setup-facts
 /** Owns read-only machine setup facts. Must not know the store, registered agents, routing, or CLI grammar. */
 import { existsSync, readFileSync } from 'node:fs'
 import { which } from 'bun'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import { type MachineLevel, readMachineFileValue } from '../../../shared/machine-config.ts'
 import { recordApiConfigured, resolveRecordApiUrl } from '../../../shared/record-api-url.ts'

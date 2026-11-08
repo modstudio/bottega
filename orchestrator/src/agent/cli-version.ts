@@ -1,4 +1,5 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+
 // concern: agent-cli-version
 /** Captures one bounded CLI version probe for agent eligibility and setup facts. */
 

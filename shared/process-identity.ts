@@ -1,11 +1,11 @@
-import { startBoundedSync } from './bounded-process.ts'
-import { BoundExceededError } from './call-budgets.ts'
 // concern: process-identity
 /**
  * Knows how to identify an operating-system process. Must not know runs,
  * worktrees, databases, routing, transports, or command adapters.
  */
 import { platform } from 'node:os'
+import { startBoundedSync } from './bounded-process.ts'
+import { BoundExceededError } from './call-budgets.ts'
 
 const PROCESS_START_TIME =
   /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3]\d [0-2]\d:[0-5]\d:[0-5]\d \d{4}$/

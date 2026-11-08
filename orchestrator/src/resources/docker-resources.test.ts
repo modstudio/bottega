@@ -7,9 +7,7 @@ import { db } from '../database/db.ts'
 import {
   classifiedDockerResources,
   type DockerResource,
-  dockerInventoryTimeoutMs,
   dockerNetworkInventory,
-  dockerRemovalTimeoutMs,
   dockerRunResource,
   dockerRunResources,
   orchRunLabel,
@@ -283,51 +281,16 @@ test('container, volume, and network inventory attribute project names from labe
   })
 })
 
-test('docker inventory timeout is configurable and defaults to 1s', () => {
-  expect(dockerInventoryTimeoutMs({})).toBe(1_000)
-  expect(dockerInventoryTimeoutMs({ BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS: '4000' })).toBe(4_000)
-  expect(dockerInventoryTimeoutMs({ BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS: '0' })).toBe(1_000)
-  expect(dockerInventoryTimeoutMs({ BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS: 'nope' })).toBe(1_000)
-  expect(dockerRemovalTimeoutMs({})).toBe(10_000)
-  expect(dockerRemovalTimeoutMs({ BOTTEGA_DOCKER_REMOVAL_TIMEOUT_MS: '25000' })).toBe(25_000)
-})
-
 test('a timed-out Docker inventory is unascertainable and discards partial rows', () => {
-  const prior = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
-  process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS = '25'
+  spyOn(process, 'kill').mockImplementation(() => true)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     if (args[1] === 'ps') return result('app-orch-41-web')
-    return { ...result(''), exitedDueToTimeout: true }
+    return { ...result(''), exitedDueToTimeout: true, pid: 999_999 }
   }) as typeof Bun.spawnSync)
-  try {
-    expect(dockerRunResources()).toEqual({
-      ascertainable: false,
-      reason: 'docker volume ls inventory unavailable: timed out after 25ms',
-    })
-  } finally {
-    if (prior === undefined) delete process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
-    else process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS = prior
-  }
-})
-
-test('the default Docker inventory timeout retries once with the longer load bound', () => {
-  const prior = process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
-  delete process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
-  const timeouts: number[] = []
-  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: { timeout?: number }) => {
-    timeouts.push(options?.timeout ?? 0)
-    if (args[1] === 'ps' && timeouts.length === 1) {
-      return { ...result(''), exitedDueToTimeout: true }
-    }
-    return result('')
-  }) as typeof Bun.spawnSync)
-  try {
-    expect(dockerRunResources()).toEqual({ ascertainable: true, resources: [] })
-    expect(timeouts).toEqual([1_000, 10_000, 1_000, 1_000])
-  } finally {
-    if (prior === undefined) delete process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
-    else process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS = prior
-  }
+  expect(dockerRunResources()).toEqual({
+    ascertainable: false,
+    reason: expect.stringContaining('exceeded its docker deadline bound of 120000 ms'),
+  })
 })
 
 test('run teardown removes containers, networks, and volumes idempotently for one run', () => {

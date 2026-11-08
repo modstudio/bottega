@@ -1,6 +1,6 @@
+import { fileURLToPath } from 'node:url'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
-import { fileURLToPath } from 'node:url'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { decideGitleaksScan, planGitleaksScans } from './check-gitleaks-plan'
 import { resolveLandingBase } from './landing-base'

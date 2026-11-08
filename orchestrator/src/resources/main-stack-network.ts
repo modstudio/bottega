@@ -1,4 +1,5 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+
 // concern: exact host network destinations exposed by a declared main stack
 
 type PublishedPort = {

@@ -14,6 +14,7 @@ export const hubImportModules = [
       '../../shared/process-identity.ts',
       './database/db.ts',
       './project/projects.ts',
+      '../../shared/bounded-process.ts',
     ],
   },
   {

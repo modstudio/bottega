@@ -1,6 +1,6 @@
-import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { migrationRefusal } from '../src/database/migrations.ts'
 import { GATE_FACTS_ENV } from '../src/gate/gate-facts.ts'
