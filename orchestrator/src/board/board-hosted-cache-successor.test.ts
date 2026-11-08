@@ -117,6 +117,28 @@ function machine(projectId: string, session: string, lastSeen = Date.now()): Dat
   return database
 }
 
+function addPresence(
+  database: Database,
+  projectId: string,
+  session: string,
+  firstSeen: number,
+  lastSeen: number,
+): void {
+  database
+    .query(
+      `INSERT INTO presence
+       (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+       VALUES (?,'codex','architect','machine',?,?,'/tmp',?,?)`,
+    )
+    .run(
+      session,
+      projectName,
+      projectId,
+      new Date(firstSeen).toISOString(),
+      new Date(lastSeen).toISOString(),
+    )
+}
+
 async function refresh(database: Database, client: ReturnType<typeof createMemoryRecordApiClient>) {
   await refreshHostedBoard({
     budgetMs: 1_000,
@@ -126,17 +148,55 @@ async function refresh(database: Database, client: ReturnType<typeof createMemor
   })
 }
 
-test('two machine caches sharing one memory record elect exactly one successor', async () => {
-  const { client, projectId, reply } = fixture()
-  const one = machine(projectId, 'candidate-one')
-  const two = machine(projectId, 'candidate-two')
-  await refresh(one, client)
-  await refresh(two, client)
-  const results = await Promise.all([
-    claimCachedHostedForPush('candidate-one', false, Date.now(), one, true, null, client),
-    claimCachedHostedForPush('candidate-two', false, Date.now(), two, true, null, client),
-  ])
-  expect(results.flatMap((result) => result.notices.map((notice) => notice.id))).toEqual([reply.id])
+test('a live root author prevents a hosted successor election request', async () => {
+  const { client, projectId } = fixture()
+  const database = machine(projectId, 'candidate')
+  addPresence(database, projectId, 'author', Date.now() - 60_000, Date.now())
+  await refresh(database, client)
+  let calls = 0
+  const countingClient = {
+    ...client,
+    takeBoardSuccessor: async () => {
+      calls += 1
+      return { elected: true, holder: 'candidate' }
+    },
+  }
+
+  expect(
+    (
+      await claimCachedHostedForPush(
+        'candidate',
+        false,
+        Date.now(),
+        database,
+        true,
+        null,
+        countingClient,
+      )
+    ).notices,
+  ).toEqual([])
+  expect(calls).toBe(0)
+})
+
+test('a lost hosted election suppresses another request on the next poll', async () => {
+  const { client, projectId } = fixture()
+  const database = machine(projectId, 'candidate')
+  const authorLastSeen = Date.now() - SESSION_LIVE_MS - 60_000
+  addPresence(database, projectId, 'author', authorLastSeen - 60_000, authorLastSeen)
+  await refresh(database, client)
+  let calls = 0
+  const losingClient = {
+    ...client,
+    takeBoardSuccessor: async () => {
+      calls += 1
+      return { elected: false, holder: 'other-holder' }
+    },
+  }
+
+  await claimCachedHostedForPush('candidate', false, Date.now(), database, true, null, losingClient)
+  await claimCachedHostedForPush('candidate', false, Date.now(), database, true, null, losingClient)
+
+  expect(calls).toBe(1)
 })
 
 test('the read path offers a reply only to the hosted successor receipt holder', async () => {
@@ -153,16 +213,15 @@ test('the read path offers a reply only to the hosted successor receipt holder',
   ])
 })
 
-test('a revived former holder clears its local successor bit and cannot offer the reply', async () => {
+test('a demoted former holder clears its local successor bit and cannot offer the reply', async () => {
   const { client, projectId, reply } = fixture({ session: 'old-holder' })
   const old = machine(projectId, 'old-holder', Date.now() - SESSION_LIVE_MS - 1)
   const next = machine(projectId, 'new-holder')
   await refresh(old, client)
   await refresh(next, client)
   expect(
-    (await claimCachedHostedForPush('new-holder', false, Date.now(), next, true, null, client))
-      .notices,
-  ).toHaveLength(1)
+    await client.takeBoardSuccessor({ messageId: reply.id, candidateSession: 'new-holder' }),
+  ).toEqual(expect.objectContaining({ holder: 'new-holder' }))
   await refresh(old, client)
   expect(
     old
@@ -171,8 +230,5 @@ test('a revived former holder clears its local successor bit and cannot offer th
       )
       .get(reply.id, 'old-holder'),
   ).toEqual({ successor: 0 })
-  expect(
-    (await claimCachedHostedForPush('old-holder', false, Date.now(), old, true, null, client))
-      .notices,
-  ).toEqual([])
+  expect(claimCachedHosted('old-holder', false, Date.now(), old)).toEqual([])
 })

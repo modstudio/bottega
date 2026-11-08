@@ -18,7 +18,23 @@ export async function takeHostedReportReplySuccessor(input: {
     messageId: input.message.id,
     candidateSession: input.reader,
   })
-  if (result.holder !== input.reader) return false
+  if (result.holder !== input.reader) {
+    if (result.holder !== null)
+      cacheHostedBoardReceipt(
+        {
+          messageId: input.message.id,
+          readerUserId: input.readerUserId,
+          readerSession: result.holder,
+          readerRunRecordId: null,
+          audienceAtPosting: false,
+          deliveredAt: null,
+          acknowledgedAt: null,
+          successor: true,
+        },
+        input.database,
+      )
+    return false
+  }
   cacheHostedBoardReceipt(
     {
       messageId: input.message.id,
