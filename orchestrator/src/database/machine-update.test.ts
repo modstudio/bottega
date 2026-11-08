@@ -1,14 +1,26 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DIST_MANIFEST, INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
+import { HUB_DATABASE_ENV } from '../../../shared/state-directory.ts'
+import { withMachineUpdateLock } from '../../../shared/update-lock.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
-import { machineUpdateCommand, unregisteredMainCheckoutRefusal } from './machine-update.ts'
+import {
+  machineUpdateCommand as lockedMachineUpdateCommand,
+  machineUpdateCommandUnderLock as machineUpdateCommand,
+  unregisteredMainCheckoutRefusal,
+} from './machine-update.ts'
+import {
+  clearMachineUpdateIntent,
+  localStoreJournalPositions,
+  machineUpdateIntentPath,
+  writeMachineUpdateIntent,
+} from './machine-update-intent.ts'
 import { setMigrationDrain } from './migration-drain.ts'
 import { migrationDrain } from './migration-drain-state.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
@@ -17,7 +29,6 @@ import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
 const fixturePackage = join(dir, 'package.json')
-
 beforeAll(() => {
   writeFileSync(fixturePackage, JSON.stringify({ name: PLATFORM_SLUG }))
 })
@@ -121,6 +132,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
   )
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
+  expect(existsSync(machineUpdateIntentPath(process.env))).toBeFalse()
   expect(gitCalls.map((args) => args[0])).toEqual([
     'branch',
     'fetch',
@@ -130,6 +142,74 @@ test("machine update clears a dead holder's marker before deciding", async () =>
     'branch',
     'status',
   ])
+})
+
+test('machine update proceeds when the hub store is absent and records position zero', async () => {
+  const previous = process.env[HUB_DATABASE_ENV]
+  const absentHub = join(tmpdir(), `absent-hub-${randomUUID()}`, 'hub.db')
+  process.env[HUB_DATABASE_ENV] = absentHub
+  let migrated = false
+  try {
+    expect(localStoreJournalPositions()).toMatchObject({ hub: 0 })
+    await machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          return ''
+        },
+        migrate: () => {
+          migrated = true
+        },
+        runLaunchAgentsRefreshVerb: () => {},
+      },
+    )
+    expect(migrated).toBeTrue()
+  } finally {
+    if (previous === undefined) delete process.env[HUB_DATABASE_ENV]
+    else process.env[HUB_DATABASE_ENV] = previous
+  }
+})
+
+test("machine update recovers a dead holder's intent before the new update", async () => {
+  writeMachineUpdateIntent({
+    before: localStoreJournalPositions()!,
+    swapped: { kind: 'checkout', target: dir, priorCommit: 'abandoned-before' },
+  })
+  const gitCalls: string[][] = []
+  try {
+    await machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          gitCalls.push(args)
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          return args[0] === 'rev-parse' ? 'current-before' : ''
+        },
+        migrate: () => {},
+        runLaunchAgentsRefreshVerb: () => {},
+      },
+    )
+  } finally {
+    clearMachineUpdateIntent()
+  }
+  expect(gitCalls[0]).toEqual(['reset', '--keep', 'abandoned-before'])
 })
 
 test('machine update restores main when migrate fails after the pull', async () => {
@@ -225,7 +305,7 @@ test('machine update leaves main pulled when migrate partly commits before faili
         },
       ),
     ).rejects.toThrow(
-      `migration failed: injected migration failure after commit; main was left at the pulled commit because the store's migration position moved from ${held.pending.idx} to ${migrationJournal().length} in the incoming journal; rerun ${PLATFORM_SLUG} machine update`,
+      `migration failed: injected migration failure after commit; main was left at the pulled commit; the new state was kept because a store journal position moved; rerun ${PLATFORM_SLUG} machine update; the orchestrator journal position moved from ${held.pending.idx} to ${migrationJournal().length} in the incoming journal`,
     )
     expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
   } finally {
@@ -259,16 +339,20 @@ test('machine update leaves main pulled when the store position cannot be read a
           migrate: () => {
             renameSync(DB_PATH, hiddenDatabase)
             databaseHidden = true
+            writeFileSync(DB_PATH, 'not a sqlite store')
             throw new Error('injected migration failure')
           },
         },
       ),
     ).rejects.toThrow(
-      `migration failed: injected migration failure; main was left at the pulled commit because the store's migration position could not be read:`,
+      `migration failed: injected migration failure; main was left at the pulled commit; the store journal positions could not be read; leave the new state in place and rerun ${PLATFORM_SLUG} machine update`,
     )
     expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
   } finally {
-    if (databaseHidden) renameSync(hiddenDatabase, DB_PATH)
+    if (databaseHidden) {
+      rmSync(DB_PATH, { force: true })
+      renameSync(hiddenDatabase, DB_PATH)
+    }
   }
 })
 
@@ -372,6 +456,44 @@ test('an additive machine update clears the store-open window when migrate throw
     expect(migrationWindow(db())).toBeNull()
     expect(migrationDrain(db())).toBeNull()
   } finally {
+    held.restore()
+  }
+})
+
+test('a throwing window clear does not replace the migrate failure', async () => {
+  const held = incomingAdditiveMigration()
+  const hiddenDatabase = `${DB_PATH}.window-clear-failure-test`
+  let databaseHidden = false
+  try {
+    await expect(
+      machineUpdateCommand(
+        { log: () => {} },
+        {
+          cwd: dir,
+          authorityRefusal: () => null,
+          project: () => ({
+            name: 'migration-update-fixture',
+            path: dir,
+            settings: { trunk: 'main' },
+          }),
+          git: (_cwd, args) =>
+            args[0] === 'branch'
+              ? 'main'
+              : args[0] === 'show'
+                ? JSON.stringify({ entries: held.journal })
+                : args[0] === 'rev-parse'
+                  ? 'before-commit'
+                  : '',
+          migrate: () => {
+            renameSync(DB_PATH, hiddenDatabase)
+            databaseHidden = true
+            throw new Error('original migrate failure')
+          },
+        },
+      ),
+    ).rejects.toThrow(/original migrate failure.*clearing the migration guard also failed/)
+  } finally {
+    if (databaseHidden) renameSync(hiddenDatabase, DB_PATH)
     held.restore()
   }
 })
@@ -564,9 +686,20 @@ test('machine update requires the registered landing branch in the main checkout
 })
 
 test('machine update refuses the BOTTEGA_ORCHESTRATOR_DB override', async () => {
-  await expect(machineUpdateCommand({ log: () => {} })).rejects.toThrow(
+  await expect(lockedMachineUpdateCommand({ log: () => {} })).rejects.toThrow(
     'refusing machine update through BOTTEGA_ORCHESTRATOR_DB',
   )
+})
+
+test('machine update takes the update lock', async () => {
+  await withMachineUpdateLock(async () => {
+    await expect(
+      lockedMachineUpdateCommand(
+        { log: () => {} },
+        { authorityRefusal: () => null, lockWaitMs: 0, now: () => 0, sleep: async () => {} },
+      ),
+    ).rejects.toThrow('another update is running')
+  })
 })
 
 test('machine update refuses a version argument for a checkout', async () => {

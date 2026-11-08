@@ -7,6 +7,7 @@ import {
   ASKED_VIA_VALUES,
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
+import { withMachineUpdateLockUnlessHeld } from '../../shared/update-lock.ts'
 import {
   type CollectLegResult,
   collectHostedOutboxOnce,
@@ -217,18 +218,9 @@ function printCollectLease(json: boolean): void {
     )
 }
 
-function registerCollectionCommands(program: Command): void {
-  program
-    .command('lease')
-    .description('show the current collect lease without changing it')
-    .option('--json', 'write the lease state as JSON')
-    .action((options: { json?: boolean }) => {
-      printCollectLease(options.json ?? false)
-    })
-  program
-    .command('migrate')
-    .description('apply pending checksummed schema migrations')
-    .action(async () => {
+async function migrateHubDatabase(): Promise<void> {
+  return withMachineUpdateLockUnlessHeld(
+    async () => {
       const migrated = await migrateDatabaseWithQuestionIdentityMap(
         readQuestionIdentityMap,
         readWorkflowCursorIdentityMap,
@@ -240,7 +232,25 @@ function registerCollectionCommands(program: Command): void {
       }
       const repairs = formatMigrationRepairSummary(migrated.repairs)
       if (repairs) console.log(repairs)
+    },
+    process.env,
+    {},
+    'machine migrate',
+  )
+}
+
+function registerCollectionCommands(program: Command): void {
+  program
+    .command('lease')
+    .description('show the current collect lease without changing it')
+    .option('--json', 'write the lease state as JSON')
+    .action((options: { json?: boolean }) => {
+      printCollectLease(options.json ?? false)
     })
+  program
+    .command('migrate')
+    .description('apply pending checksummed schema migrations')
+    .action(() => migrateHubDatabase())
   program
     .command('doctor')
     .description('report the live structural schema hash and user_version')

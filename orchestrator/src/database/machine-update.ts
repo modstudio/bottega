@@ -1,7 +1,7 @@
 // concern: checkout and installed-release database update
 /** Updates either installation kind while holding its migration drain or window. */
 
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, realpathSync, renameSync } from 'node:fs'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -11,6 +11,11 @@ import {
   resolveInstallationPaths,
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
+import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
+import {
+  machineUpdateLockHeldEnvironment,
+  withMachineUpdateLock,
+} from '../../../shared/update-lock.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import { verifyMainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
@@ -23,6 +28,16 @@ import {
   migrationAuthorityRefusal,
   withSynchronousDatabaseForMigrationStep,
 } from './db.ts'
+import {
+  clearMachineUpdateIntent,
+  localStoreJournalPositions,
+  readMachineUpdateIntent,
+  writeMachineUpdateIntent,
+} from './machine-update-intent.ts'
+import {
+  decideMachineUpdateRecovery,
+  type StoreJournalPositions,
+} from './machine-update-recovery.ts'
 import {
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
@@ -92,7 +107,7 @@ function runMigration(cwd: string): void {
   const result = startBoundedSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
     budget: 'machine-update',
     cwd,
-    env: targetGitEnvironment(cwd),
+    env: { ...targetGitEnvironment(cwd), ...machineUpdateLockHeldEnvironment() },
   })
   process.stdout.write(result.stdout)
   process.stderr.write(result.stderr)
@@ -103,6 +118,44 @@ function runMigration(cwd: string): void {
   }
 }
 
+function cleanupFailureMessage(failure: unknown, cleanupError: unknown): string {
+  const original = failure instanceof Error ? failure.message : String(failure)
+  const cleanup = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+  return `${original}; clearing the migration guard also failed: ${cleanup}`
+}
+
+function runWithCleanup(apply: () => void, cleanup: () => void): void {
+  let failure: unknown
+  try {
+    apply()
+  } catch (error) {
+    failure = error
+  }
+  try {
+    cleanup()
+  } catch (cleanupError) {
+    if (failure) throw new Error(cleanupFailureMessage(failure, cleanupError))
+    throw cleanupError
+  }
+  if (failure) throw failure
+}
+
+async function runWithCleanupAsync(apply: () => Promise<void>, cleanup: () => void): Promise<void> {
+  let failure: unknown
+  try {
+    await apply()
+  } catch (error) {
+    failure = error
+  }
+  try {
+    cleanup()
+  } catch (cleanupError) {
+    if (failure) throw new Error(cleanupFailureMessage(failure, cleanupError))
+    throw cleanupError
+  }
+  if (failure) throw failure
+}
+
 function applyImmediateUpdate(input: { migration: string | null; apply: () => void }): void {
   const migration = input.migration
   if (!migration) {
@@ -110,16 +163,15 @@ function applyImmediateUpdate(input: { migration: string | null; apply: () => vo
     return
   }
   withSynchronousDatabaseForMigrationStep((database) => claimMigrationWindow(database, migration))
-  try {
-    input.apply()
-  } finally {
-    withSynchronousDatabaseForMigrationStep((database) => clearMigrationWindow(database))
-  }
+  runWithCleanup(input.apply, () =>
+    withSynchronousDatabaseForMigrationStep((database) => clearMigrationWindow(database)),
+  )
 }
 
 type UpdateDependencies = {
   now?: () => number
   sleep?: (ms: number) => Promise<void>
+  lockWaitMs?: number
   cwd?: string
   callerCwd?: string
   authorityRefusal?: () => string | null
@@ -187,35 +239,38 @@ async function applyWithMigrationGuard(input: {
     withSynchronousDatabaseForMigrationStep((database) =>
       setMigrationDrain(database, migration, 'draining'),
     )
-    try {
-      const now = deps.now ?? Date.now
-      const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
-      const drainStartedAt = now()
-      const inFlight = () =>
-        withSynchronousDatabaseForMigrationStep((database) => migrationInFlightRuns(database))
-      for (;;) {
-        await waitForMigrationDrain({
-          migration,
-          presentation,
-          startedAt: drainStartedAt,
-          now,
-          sleep,
-          inFlight,
-        })
-        withSynchronousDatabaseForMigrationStep((database) =>
-          setMigrationDrainPhase(database, 'migrating'),
-        )
-        deps.afterDrainPromoted?.()
-        const raced = inFlight()
-        if (raced.length === 0) break
-        withSynchronousDatabaseForMigrationStep((database) =>
-          setMigrationDrainPhase(database, 'draining'),
-        )
-      }
-      input.apply()
-    } finally {
-      withSynchronousDatabaseForMigrationStep((database) => clearMigrationDrain(database))
-    }
+    await runWithCleanupAsync(
+      async () => {
+        const now = deps.now ?? Date.now
+        const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
+        const drainStartedAt = now()
+        const inFlight = () =>
+          withSynchronousDatabaseForMigrationStep((database) => migrationInFlightRuns(database))
+        for (;;) {
+          await waitForMigrationDrain({
+            migration,
+            presentation,
+            startedAt: drainStartedAt,
+            now,
+            sleep,
+            inFlight,
+          })
+          withSynchronousDatabaseForMigrationStep((database) =>
+            setMigrationDrainPhase(database, 'migrating'),
+          )
+          deps.afterDrainPromoted?.()
+          const raced = inFlight()
+          if (raced.length === 0) break
+          withSynchronousDatabaseForMigrationStep((database) =>
+            setMigrationDrainPhase(database, 'draining'),
+          )
+        }
+        input.apply()
+      },
+      () => {
+        withSynchronousDatabaseForMigrationStep((database) => clearMigrationDrain(database))
+      },
+    )
     return
   }
   applyImmediateUpdate({ migration: input.pendingMigration, apply: input.apply })
@@ -289,6 +344,7 @@ function restoreMainAfterMigrationFailure(input: {
   before: string
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
+  beforePositions: StoreJournalPositions
 }): never {
   const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
   try {
@@ -296,10 +352,12 @@ function restoreMainAfterMigrationFailure(input: {
   } catch (restoreCause) {
     const restoreFailure =
       restoreCause instanceof Error ? restoreCause.message : String(restoreCause)
-    throw new Error(
-      `migration failed: ${migrationFailure}; restoring main to ${input.before} failed: ${restoreFailure}; ` +
-        `manually run git -C ${input.target} reset --keep ${input.before}, then ${PLATFORM_SLUG} machine update`,
-    )
+    const decision = decideMachineUpdateRecovery({
+      before: input.beforePositions,
+      swapped: { kind: 'checkout', target: input.target, priorCommit: input.before },
+      restoreFailure,
+    })
+    throw new Error(`migration failed: ${migrationFailure}; ${decision.message}`)
   }
   throw new Error(
     `migration failed: ${migrationFailure}; main was restored to ${input.before}; ` +
@@ -323,32 +381,94 @@ function handleMigrationFailureAfterPull(input: {
   before: string
   journal: MigrationJournalEntry[]
   initialStoreVersion: number
+  beforePositions: StoreJournalPositions
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
 }): never {
   const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
-  let storeVersion: number
+  let storeVersion: number | null = null
   try {
     storeVersion = withSynchronousDatabaseForMigrationStep((database) =>
       storePositionInIncomingJournal(database, input.journal),
     )
-  } catch (storeCause) {
-    const storeFailure = storeCause instanceof Error ? storeCause.message : String(storeCause)
+  } catch {}
+  const afterPositions = localStoreJournalPositions()
+  const decision = decideMachineUpdateRecovery({
+    before: input.beforePositions,
+    after: afterPositions,
+    swapped: { kind: 'checkout', target: input.target, priorCommit: input.before },
+  })
+  if (decision.action === 'keep' || decision.action === 'manual') {
+    const incomingJournalDetail =
+      storeVersion === null || storeVersion === input.initialStoreVersion
+        ? ''
+        : `; the orchestrator journal position moved from ${input.initialStoreVersion} to ${storeVersion} in the incoming journal`
     throw new Error(
-      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store's migration position could not be read: ${storeFailure}; ` +
-        `rerun ${PLATFORM_SLUG} machine update`,
-    )
-  }
-  if (storeVersion !== input.initialStoreVersion) {
-    throw new Error(
-      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store's migration position moved from ${input.initialStoreVersion} to ${storeVersion} in the incoming journal; ` +
-        `rerun ${PLATFORM_SLUG} machine update`,
+      `migration failed: ${migrationFailure}; main was left at the pulled commit; ` +
+        `${decision.message}${incomingJournalDetail}`,
     )
   }
   restoreMainAfterMigrationFailure(input)
 }
 
-export async function machineUpdateCommand(
+function recoverAbandonedMachineUpdate(
+  presentation: Presentation,
+  runGit: (cwd: string, args: string[]) => string,
+): void {
+  const intent = readMachineUpdateIntent()
+  if (!intent) return
+  const after = localStoreJournalPositions()
+  const decision = decideMachineUpdateRecovery({ ...intent, after })
+  if (decision.action === 'keep') {
+    presentation.log(`recovered interrupted machine update: ${decision.message}`)
+    clearMachineUpdateIntent()
+    return
+  }
+  if (decision.action === 'manual') throw new Error(decision.message)
+  try {
+    if (intent.swapped.kind === 'checkout') {
+      runGit(intent.swapped.target, ['reset', '--keep', intent.swapped.priorCommit])
+    } else {
+      renameSync(intent.swapped.priorBinary, intent.swapped.installedBinary)
+    }
+  } catch (error) {
+    const restoreFailure = error instanceof Error ? error.message : String(error)
+    throw new Error(decideMachineUpdateRecovery({ ...intent, after, restoreFailure }).message)
+  }
+  clearMachineUpdateIntent()
+  presentation.log(`recovered interrupted machine update: ${decision.message}`)
+}
+
+function requiredLocalStoreJournalPositions() {
+  const positions = localStoreJournalPositions()
+  if (!positions) {
+    const orchestrator = resolveOrchestratorDatabase(process.env)
+    const hub = resolveHubDatabase(process.env)
+    throw new Error(
+      `store journal positions could not be read before update from ${orchestrator} and ${hub}; ` +
+        `repair or remove the unreadable store, then rerun ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  return positions
+}
+
+function verifiedLandingBranch(
+  project: { name: string; path: string; settings: { trunk?: string } },
+  runGit: (cwd: string, args: string[]) => string,
+): string {
+  const branch = project.settings.trunk?.trim()
+  if (!branch) throw new Error(`${project.name}: no registered landing branch`)
+  const current = runGit(project.path, ['branch', '--show-current']) || '(detached HEAD)'
+  if (current !== branch) {
+    throw new Error(
+      `refusing machine update: registered landing branch is ${branch}, but ${project.path} is on ${current}; ` +
+        `check out ${branch} in ${project.path}`,
+    )
+  }
+  return branch
+}
+
+export async function machineUpdateCommandUnderLock(
   presentation: Presentation,
   deps: UpdateDependencies = {},
   requestedVersion?: string,
@@ -362,6 +482,10 @@ export async function machineUpdateCommand(
   const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
   const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
+  recoverAbandonedMachineUpdate(
+    presentation,
+    deps.git ?? ((workingDirectory, args) => git(args, workingDirectory)),
+  )
   const path = decideUpdatePath(identity.kind, requestedVersion)
   if (path.action === 'refuse') throw new Error(path.reason)
   if (identity.kind === 'distribution') {
@@ -387,15 +511,7 @@ export async function machineUpdateCommand(
   const unregistered = unregisteredMainCheckoutRefusal(target, lookedUp, sameCheckout)
   if (unregistered) throw new Error(unregistered)
   const project = lookedUp!
-  const branch = project.settings.trunk?.trim()
-  if (!branch) throw new Error(`${project.name}: no registered landing branch`)
-  const currentBranch = runGit(target, ['branch', '--show-current']) || '(detached HEAD)'
-  if (currentBranch !== branch) {
-    throw new Error(
-      `refusing machine update: registered landing branch is ${branch}, but ${project.path} is on ${currentBranch}; ` +
-        `check out ${branch} in ${project.path}`,
-    )
-  }
+  const branch = verifiedLandingBranch(project, runGit)
   if (!sameCheckout(callerCwd, target)) {
     presentation.log(`updating the ${PLATFORM_NAME} checkout at ${target}`)
   }
@@ -414,31 +530,52 @@ export async function machineUpdateCommand(
     }
   })
   assertNoActiveDrain(initial.activeDrain)
-  await applyWithMigrationGuard({
-    presentation,
-    decision: initial.decision,
-    pendingMigration: initial.pendingMigration,
-    deps,
-    apply: () => {
-      const before = runGit(target, ['rev-parse', 'HEAD'])
-      runGit(target, ['pull', '--ff-only', 'origin', branch])
-      try {
-        migrate(target)
-      } catch (cause) {
-        handleMigrationFailureAfterPull({
-          target,
-          before,
-          journal,
-          initialStoreVersion: initial.storeVersion,
-          runGit,
-          cause,
+  try {
+    await applyWithMigrationGuard({
+      presentation,
+      decision: initial.decision,
+      pendingMigration: initial.pendingMigration,
+      deps,
+      apply: () => {
+        const before = runGit(target, ['rev-parse', 'HEAD'])
+        const beforePositions = requiredLocalStoreJournalPositions()
+        writeMachineUpdateIntent({
+          before: beforePositions,
+          swapped: { kind: 'checkout', target, priorCommit: before },
         })
-      }
-    },
-  })
+        runGit(target, ['pull', '--ff-only', 'origin', branch])
+        try {
+          migrate(target)
+        } catch (cause) {
+          handleMigrationFailureAfterPull({
+            target,
+            before,
+            journal,
+            initialStoreVersion: initial.storeVersion,
+            beforePositions,
+            runGit,
+            cause,
+          })
+        }
+      },
+    })
+  } finally {
+    clearMachineUpdateIntent()
+  }
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
   maintainStoreAfterUpdate(presentation, maintainStore)
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
   refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
   ;(deps.verifyMainCheckout ?? verifyMainCheckoutInvariant)(target, branch, runGit)
+}
+
+export async function machineUpdateCommand(
+  presentation: Presentation,
+  deps: UpdateDependencies = {},
+  requestedVersion?: string,
+): Promise<void> {
+  return withMachineUpdateLock(
+    () => machineUpdateCommandUnderLock(presentation, deps, requestedVersion),
+    { waitMs: deps.lockWaitMs, now: deps.now, sleep: deps.sleep },
+  )
 }

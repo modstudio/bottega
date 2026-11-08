@@ -1,10 +1,11 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MACHINE_UPDATE_LOCK_HELD_ENV, withMachineUpdateLock } from '../../../shared/update-lock.ts'
 import { PRELOAD_RUNS } from '../../test/preload.ts'
 import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
@@ -60,6 +61,31 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
     },
   }
 }
+
+describe('machine migrate update lock', () => {
+  let previous: string | undefined
+
+  beforeEach(() => {
+    previous = process.env[MACHINE_UPDATE_LOCK_HELD_ENV]
+  })
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env[MACHINE_UPDATE_LOCK_HELD_ENV]
+    else process.env[MACHINE_UPDATE_LOCK_HELD_ENV] = previous
+  })
+
+  test('takes the update lock and honors the inherited marker', async () => {
+    const scenario = actions(async () => {})
+    await withMachineUpdateLock(async () => {
+      await expect(
+        migrateCommand({ log: () => {} }, scenario.value, { lockWaitMs: 0 }),
+      ).rejects.toThrow('another update is running')
+      process.env[MACHINE_UPDATE_LOCK_HELD_ENV] = '1'
+      await migrateCommand({ log: () => {} }, scenario.value, { lockWaitMs: 0 })
+    })
+    expect(scenario.calls).not.toHaveLength(0)
+  })
+})
 
 test('incremental vacuum setup waits for twice the store size in free space', () => {
   const lines: string[] = []
