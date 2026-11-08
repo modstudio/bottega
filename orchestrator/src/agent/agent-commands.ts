@@ -4,22 +4,18 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { JOBS } from '../jobs/jobs.ts'
-import { candidates } from '../route/route.ts'
-import { jobsLosingCapacityFromRouting } from './agent-capacity-loss.ts'
 import { probeAgent, recordSuccessfulRegistrationProbe } from './agent-probe.ts'
 import {
   AGENTS,
   type AgentMutation,
   addAgent,
-  agentIdentityChanged,
   agentRows,
   type Backend,
   type Harness,
   type RegistrationProbeResult,
   removeAgent,
-  setAgent,
 } from './agent-registry.ts'
+import { setAgentWithCapacityGuard } from './agent-set-capacity.ts'
 import {
   available,
   ensureLocalHealth,
@@ -52,28 +48,14 @@ const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
   show: (name, _argv, presentation) => showCommand(name, presentation),
 }
 
-function identityCapacityLoss(name: string, input: AgentMutation): string[] {
-  const current = agentRows().find((row) => row.name === name)
-  if (!current) throw new Error(`unknown agent "${name}"`)
-  if (!agentIdentityChanged(current, input)) return []
-  const routedByJob = Object.fromEntries(Object.keys(JOBS).map((job) => [job, candidates(job)]))
-  return jobsLosingCapacityFromRouting(true, name, routedByJob)
-}
-
 function setCommand(name: string, argv: string[], presentation: Presentation): void {
   const input = mutation(argv)
-  const jobs = identityCapacityLoss(name, input)
   const allowed = argv.includes('--allow-capacity-loss')
-  if (jobs.length && !allowed) {
-    throw new Error(
-      `refusing identity change for agent "${name}": it would leave these jobs with no eligible agent: ${jobs.join(', ')}\n` +
-        `cleared by: register the new identity as a separate agent row with ${PLATFORM_SLUG} agent add, probe it with ${PLATFORM_SLUG} agent probe, then disable or change the old row\n` +
-        'override: pass --allow-capacity-loss',
-    )
+  const result = setAgentWithCapacityGuard(name, input, allowed)
+  presentation.log(JSON.stringify(result.row))
+  if (result.capacityLossJobs.length) {
+    presentation.log(`capacity loss allowed for jobs: ${result.capacityLossJobs.join(', ')}`)
   }
-  if (jobs.length) input.capacityLossAllowed = { jobs, at: new Date().toISOString() }
-  presentation.log(JSON.stringify(setAgent(name, input)))
-  if (jobs.length) presentation.log(`capacity loss allowed for jobs: ${jobs.join(', ')}`)
 }
 
 export const AGENT_COMMAND_VERBS = Object.keys(AGENT_COMMAND_HANDLERS) as AgentCommandVerb[]

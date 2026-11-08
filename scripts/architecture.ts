@@ -354,7 +354,6 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../jobs/jobs.ts',
   ]),
-  module('orchestrator/src/agent/agent-capacity-loss.ts', []),
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),
   module('orchestrator/src/agent/worker-launch-env.ts', []),

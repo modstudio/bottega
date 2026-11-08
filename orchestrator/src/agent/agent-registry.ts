@@ -452,6 +452,10 @@ function storedTrainsOnInputs(current: AgentRow, input: AgentMutation): number {
   return input.trainsOnInputs ? 1 : 0
 }
 
+function capacityLossAudit(input: AgentMutation): object {
+  return input.capacityLossAllowed ? { capacityLossAllowed: input.capacityLossAllowed } : {}
+}
+
 export function setAgent(name: string, input: AgentMutation): AgentRow {
   assertAgentMutation(input, false)
   const current = agentRows().find((row) => row.name === name)
@@ -489,7 +493,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
         baseUrl: input.baseUrl === undefined ? current.base_url : input.baseUrl,
         apiKeySecret: storedApiKeySecret(current, input),
       },
-      ...(input.capacityLossAllowed ? { capacityLossAllowed: input.capacityLossAllowed } : {}),
+      ...capacityLossAudit(input),
       attempts,
     })
   } else if (input.contextTokens !== undefined) {
