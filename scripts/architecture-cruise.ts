@@ -32,8 +32,13 @@ export const ARCHITECTURE_CRUISE_ENTRIES = [
   'scripts/**/*.{ts,tsx,js,jsx,mjs,cjs}',
 ] as const
 
-export const NON_TYPESCRIPT_TEST_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
+/** Tests that read the real files under the key's directory and run without an environment gate. */
+export const NON_TYPESCRIPT_TEST_DEPENDENCIES: Readonly<Record<`${string}/`, readonly string[]>> = {
   'shared/record/migrations/': [
+    'orchestrator/src/record/record-board-presence.test.ts',
+    'orchestrator/src/database/contention-retention.test.ts',
+    'scripts/check-record-project-space-ownership.test.ts',
+    'hub/src/hosted-evidence.test.ts',
     'shared/record/schema-record-change.test.ts',
     'shared/record/schema-remaining-uuid-keys.test.ts',
     'shared/record/schema-board-receipt-revision.test.ts',

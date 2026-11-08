@@ -63,7 +63,11 @@ test('a record migration selects every test that reads the migrations directory'
     ]),
   ).toEqual({
     tests: [
+      'hub/src/hosted-evidence.test.ts',
+      'orchestrator/src/database/contention-retention.test.ts',
+      'orchestrator/src/record/record-board-presence.test.ts',
       'scripts/check-record-jsonb-string-checks.test.ts',
+      'scripts/check-record-project-space-ownership.test.ts',
       'shared/record/drizzle.config.test.ts',
       'shared/record/schema-board-receipt-revision.test.ts',
       'shared/record/schema-board-thread-expiry.test.ts',

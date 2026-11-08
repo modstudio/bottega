@@ -18,6 +18,7 @@ import {
 
 const TYPESCRIPT_SOURCE = /\.tsx?$/
 const TEST_MODULE = /\.test\.tsx?$/
+type AffectedTestSelection = { tests: string[]; unselected: string[] }
 
 /** One seed path as a regular-expression alternative, with every metacharacter escaped. */
 export function escapedSeedPath(path: string): string {
@@ -39,15 +40,12 @@ export function seedPaths(changed: readonly string[]): string[] {
   return [...new Set(changed.filter((path) => TYPESCRIPT_SOURCE.test(path)))].sort()
 }
 
-export function nonTypeScriptSelections(
-  changed: readonly string[],
-  dependencies: Readonly<Record<string, readonly string[]>> = NON_TYPESCRIPT_TEST_DEPENDENCIES,
-): { tests: string[]; unselected: string[] } {
+export function nonTypeScriptSelections(changed: readonly string[]): AffectedTestSelection {
   const tests = new Set<string>()
   const unselected = new Set<string>()
   for (const path of changed) {
     if (!path || TYPESCRIPT_SOURCE.test(path)) continue
-    const matchingTests = Object.entries(dependencies)
+    const matchingTests = Object.entries(NON_TYPESCRIPT_TEST_DEPENDENCIES)
       .filter(([prefix]) => path.startsWith(prefix))
       .flatMap(([, selected]) => selected)
     if (!matchingTests.length) unselected.add(path)
@@ -77,9 +75,7 @@ function gitLines(args: readonly string[]): string[] {
 }
 
 /** The tests that reach what changed since `baseCommit`, in this worktree. */
-async function selectAffectedTests(
-  baseCommit: string,
-): Promise<{ tests: string[]; unselected: string[] }> {
+async function selectAffectedTests(baseCommit: string): Promise<AffectedTestSelection> {
   const changed = [
     ...gitLines(nulPathListArgs(['diff', '--name-only', baseCommit])),
     ...gitLines(nulPathListArgs(['ls-files', '--others', '--exclude-standard'])),

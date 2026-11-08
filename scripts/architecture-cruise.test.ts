@@ -1,18 +1,17 @@
 import { expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import {
   architectureCruiseCoverageViolations,
   dependencyCruiserNodeVersionRefusal,
   NON_TYPESCRIPT_TEST_DEPENDENCIES,
 } from './architecture-cruise.ts'
 
-test('non-TypeScript test dependencies name project-relative test files', () => {
-  expect(Object.keys(NON_TYPESCRIPT_TEST_DEPENDENCIES)).toEqual(['shared/record/migrations/'])
-  expect(NON_TYPESCRIPT_TEST_DEPENDENCIES['shared/record/migrations/']).toHaveLength(8)
-  expect(
-    NON_TYPESCRIPT_TEST_DEPENDENCIES['shared/record/migrations/']?.every((path) =>
-      path.endsWith('.test.ts'),
-    ),
-  ).toBeTrue()
+test('every non-TypeScript test dependency exists in the tree', () => {
+  for (const tests of Object.values(NON_TYPESCRIPT_TEST_DEPENDENCIES)) {
+    for (const path of tests) {
+      expect(existsSync(new URL(`../${path}`, import.meta.url)), `${path} must exist`).toBeTrue()
+    }
+  }
 })
 
 test('dependency-cruiser Node version guard accepts the minimum and refuses older Node', () => {
