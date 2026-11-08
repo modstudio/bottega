@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { DOC_SCOPES } from '../../../shared/docs.ts'
+import { renderRefusal } from '../../../shared/refusal.ts'
 import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import {
@@ -10,6 +12,7 @@ import {
   decideDocRevisionWrite,
   docWriteProjectName,
   globalCanonWriteTargets,
+  MISSING_HOSTED_REVISION_REMEDY,
   referenceWriteRefusal,
   refuseArticleDelivery,
   refuseCanonWrite,
@@ -253,15 +256,75 @@ describe('globalCanonWriteTargets', () => {
   })
 })
 
+const revisionOperations = ['create', 'set', undefined] as const
+const revisionRows = ['present', 'absent'] as const
+const revisionExpectations = ['none', 'matching', 'stale'] as const
+const guardedRevisionScopes = new Set(['canon', 'settings', 'context'])
+
+function matrixExpectedRevision(
+  row: (typeof revisionRows)[number],
+  expectation: (typeof revisionExpectations)[number],
+): string | undefined {
+  if (expectation === 'none' || (expectation === 'matching' && row === 'absent')) return undefined
+  return expectation === 'matching' ? 'revision-2' : 'revision-1'
+}
+
+function matrixExpectedAllow(
+  scope: string,
+  op: (typeof revisionOperations)[number],
+  row: (typeof revisionRows)[number],
+  expectation: (typeof revisionExpectations)[number],
+): boolean {
+  if (op === 'create' && row === 'present') return false
+  if (expectation === 'stale') return false
+  return !(row === 'present' && expectation === 'none' && guardedRevisionScopes.has(scope))
+}
+
+const revisionMatrix = DOC_SCOPES.flatMap((scope) =>
+  revisionOperations.flatMap((op) =>
+    revisionRows.flatMap((row) =>
+      revisionExpectations.map((expectation) => ({ scope, op, row, expectation })),
+    ),
+  ),
+)
+
 describe('decideDocRevisionWrite', () => {
+  const address = { subject: null, slug: 'revision-test' }
+
+  test('pins every scope, requested op, row state, and expected revision state', () => {
+    for (const { scope, op, row, expectation } of revisionMatrix) {
+      const decision = decideDocRevisionWrite({
+        current: row === 'present' ? 'revision-2' : null,
+        expected: matrixExpectedRevision(row, expectation),
+        isCreate: row === 'absent',
+        op,
+        scope,
+        subject: 'subject',
+        slug: 'slug',
+      })
+      expect(decision.allow, `${scope}/${op ?? 'implicit'}/${row}/${expectation}`).toBe(
+        matrixExpectedAllow(scope, op, row, expectation),
+      )
+    }
+  })
+
   test('requires the current revision for an existing canon doc', () => {
     expect(
-      decideDocRevisionWrite({ current: 'revision-2', isCreate: false, scope: 'canon' }),
+      decideDocRevisionWrite({
+        current: 'revision-2',
+        isCreate: false,
+        scope: 'canon',
+        ...address,
+      }),
     ).toEqual({
       allow: false,
-      reason:
-        'refusing canon update at current revision revision-2; pass --expect revision-2\n' +
-        `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
+      refusal: {
+        condition: 'refusing canon update at current revision revision-2',
+        remedy: {
+          kind: 'edit',
+          text: `re-read the doc, then re-apply the edit with ${PLATFORM_SLUG} doc set revision-test --scope canon --expect revision-2`,
+        },
+      },
     })
     expect(
       decideDocRevisionWrite({
@@ -269,52 +332,132 @@ describe('decideDocRevisionWrite', () => {
         current: 'revision-2',
         isCreate: false,
         scope: 'canon',
+        ...address,
       }),
     ).toEqual({ allow: true })
   })
 
   test('requires the current revision for an existing settings doc', () => {
     expect(
-      decideDocRevisionWrite({ current: 'revision-2', isCreate: false, scope: 'settings' }),
+      decideDocRevisionWrite({
+        current: 'revision-2',
+        isCreate: false,
+        scope: 'settings',
+        ...address,
+      }),
     ).toEqual({
       allow: false,
-      reason:
-        'refusing settings update at current revision revision-2; pass --expect revision-2\n' +
-        `re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`,
+      refusal: {
+        condition: 'refusing settings update at current revision revision-2',
+        remedy: {
+          kind: 'edit',
+          text: `read the settings, then write them with ${PLATFORM_SLUG} machine settings import --user`,
+        },
+      },
     })
   })
 
   test('refuses stale optional tokens in other scopes and tokens for a create', () => {
     expect(
-      decideDocRevisionWrite({ current: 'revision-2', isCreate: false, scope: 'global' }),
+      decideDocRevisionWrite({
+        current: 'revision-2',
+        isCreate: false,
+        scope: 'global',
+        ...address,
+      }),
     ).toEqual({ allow: true })
     for (const input of [
-      { expected: 'revision-1', current: 'revision-2', isCreate: false, scope: 'global' },
-      { expected: 'revision-1', current: null, isCreate: true, scope: 'canon' },
+      {
+        expected: 'revision-1',
+        current: 'revision-2',
+        isCreate: false,
+        scope: 'global',
+        ...address,
+      },
+      {
+        expected: 'revision-1',
+        current: null,
+        isCreate: true,
+        scope: 'canon',
+        ...address,
+      },
     ]) {
       const decision = decideDocRevisionWrite(input)
       expect(decision.allow).toBe(false)
       if (!decision.allow) {
-        expect(decision.reason).toContain('expected revision revision-1')
-        expect(decision.reason).toContain(`re-read with ${PLATFORM_SLUG} doc get and re-apply`)
+        const message = renderRefusal(decision.refusal)
+        expect(message).toContain('expected revision revision-1')
+        expect(message).toContain(`${PLATFORM_SLUG} doc set revision-test`)
       }
     }
   })
 
   test('allows creates without a token in every scope', () => {
-    expect(decideDocRevisionWrite({ current: null, isCreate: true, scope: 'canon' })).toEqual({
-      allow: true,
-    })
+    expect(
+      decideDocRevisionWrite({ current: null, isCreate: true, scope: 'canon', ...address }),
+    ).toEqual({ allow: true })
   })
 
-  test('refuses an existing canon row whose revision is absent without inventing a token', () => {
-    const decision = decideDocRevisionWrite({ current: null, isCreate: false, scope: 'canon' })
-    expect(decision).toEqual({
-      allow: false,
-      reason:
-        "refusing canon write: this row's latest revision is missing, so its revision cannot be checked\n" +
-        'cleared by: repair the document revision state, then retry the write',
-    })
-    if (!decision.allow) expect(decision.reason).not.toContain('--expect')
+  test("create collisions name each scope family's own write verb", () => {
+    const cases = [
+      {
+        scope: 'project',
+        subject: 'project-name',
+        remedy: `${PLATFORM_SLUG} doc set revision-test --scope project --subject project-name --expect revision-2`,
+      },
+      {
+        scope: 'context',
+        subject: null,
+        remedy: `${PLATFORM_SLUG} context set --id revision-test --expected-revision revision-2`,
+      },
+      {
+        scope: 'settings',
+        subject: null,
+        remedy: `${PLATFORM_SLUG} machine settings import --user`,
+      },
+      {
+        scope: 'settings',
+        subject: 'project-name',
+        remedy: `${PLATFORM_SLUG} machine settings import --project project-name`,
+      },
+    ]
+    for (const { scope, subject, remedy } of cases) {
+      const decision = decideDocRevisionWrite({
+        current: 'revision-2',
+        isCreate: false,
+        op: 'create',
+        scope,
+        subject,
+        slug: 'revision-test',
+      })
+      expect(decision.allow).toBe(false)
+      if (!decision.allow) expect(renderRefusal(decision.refusal)).toContain(remedy)
+    }
+  })
+
+  test('refuses a canon write or an explicit create on a row whose revision is absent', () => {
+    for (const scope of DOC_SCOPES) {
+      for (const op of revisionOperations) {
+        const decision = decideDocRevisionWrite({
+          current: null,
+          isCreate: false,
+          op,
+          scope,
+          ...address,
+        })
+        const refused = scope === 'canon' || op === 'create'
+        if (!refused) {
+          if (!decision.allow)
+            expect(renderRefusal(decision.refusal)).not.toContain('--expect null')
+          continue
+        }
+        expect(decision.allow, `${scope}/${op ?? 'implicit'}`).toBe(false)
+        if (!decision.allow) {
+          const message = renderRefusal(decision.refusal)
+          expect(message).toContain(MISSING_HOSTED_REVISION_REMEDY)
+          expect(message).not.toContain('--expect null')
+        }
+      }
+    }
   })
 })

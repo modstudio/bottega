@@ -53,14 +53,17 @@ function rethrowMcpDocWriteError(error: unknown): never {
   const currentRevision = message.match(/current revision ([^;,\s]+)/)?.[1]
   if (
     !currentRevision ||
-    !message.includes(`re-read with ${PLATFORM_SLUG} doc get and re-apply the edit`)
+    !message.includes(`re-read the doc, then re-apply the edit with ${PLATFORM_SLUG} doc set`)
   ) {
     throw error
   }
 
-  const withoutCliRemedy = message
-    .replace(/; pass --expect [^\s]+/, '')
-    .replace(new RegExp(`\\nre-read with ${PLATFORM_SLUG} doc get and re-apply the edit`), '')
+  const withoutCliRemedy = message.replace(
+    new RegExp(
+      `\\n[^\\n]*re-read the doc, then re-apply the edit with ${PLATFORM_SLUG} doc set .* --expect [^\\s]+$`,
+    ),
+    '',
+  )
   throw new Error(
     `${withoutCliRemedy}; pass expected_revision ${currentRevision}; ` +
       're-read with get_doc and re-apply the edit',

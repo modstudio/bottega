@@ -58,7 +58,10 @@ function indexCanonBatch(input: Tenant & RecordCanonImportInput, currentRows: St
       expectedRevision: input.expectedRevisions[String(row.slug)],
       current: row.latest_revision_id,
       isCreate: false,
+      op: 'import',
       scope: 'canon',
+      subject: row.subject == null ? null : String(row.subject),
+      slug: String(row.slug),
     })
   }
   for (const slug of Object.keys(input.expectedRevisions)) {
