@@ -3,6 +3,7 @@
 
 import { existsSync, realpathSync } from 'node:fs'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import {
   INSTALL_HOME_ENV,
   type InstallationIdentity,
@@ -88,11 +89,10 @@ function incomingJournal(
 }
 
 function runMigration(cwd: string): void {
-  const result = Bun.spawnSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
+  const result = startBoundedSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
+    budget: 'machine-update',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'inherit',
-    stderr: 'inherit',
   })
   if (result.exitCode !== 0)
     throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
@@ -141,9 +141,8 @@ type UpdateDependencies = {
 }
 
 function runLaunchAgentsRefreshVerb(binary: string): void {
-  const result = Bun.spawnSync([binary, 'machine', 'launch-agents', 'refresh'], {
-    stdout: 'inherit',
-    stderr: 'inherit',
+  const result = startBoundedSync([binary, 'machine', 'launch-agents', 'refresh'], {
+    budget: 'machine-update',
   })
   if (result.exitCode !== 0) {
     throw new Error(

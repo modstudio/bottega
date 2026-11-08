@@ -20,8 +20,10 @@ export type PublishPorts = {
 }
 
 async function command(argv: string[]): Promise<CommandResult> {
+  const releaseUpload =
+    argv[0] === 'gh' && argv[1] === 'release' && ['create', 'upload'].includes(argv[2] ?? '')
   const child = await startBounded(argv, {
-    budget: argv[0] === 'gh' ? 'gh' : 'git-plumbing',
+    budget: releaseUpload ? 'release-publish' : argv[0] === 'gh' ? 'gh' : 'git-plumbing',
     env: inspectionGitEnv(),
   })
   const { stdout, stderr, exitCode } = child

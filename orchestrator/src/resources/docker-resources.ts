@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
@@ -402,13 +403,10 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
 
 /** Inventory Compose networks and the two ownership signals the monitor can prove. */
 export function dockerNetworkInventory(): DockerNetworkInventory {
-  const timeout = dockerInventoryTimeoutMs()
-  let listed: ReturnType<typeof Bun.spawnSync>
+  let listed
   try {
-    listed = Bun.spawnSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout,
+    listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
+      budget: 'docker',
     })
   } catch (error) {
     return {
@@ -416,30 +414,22 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
       reason: `docker network inventory unavailable: ${(error as Error).message}`,
     }
   }
-  if (listed.exitedDueToTimeout) {
-    return {
-      ascertainable: false,
-      reason: `docker network inventory unavailable: timed out after ${timeout}ms`,
-    }
-  }
   if (listed.exitCode !== 0) {
     return {
       ascertainable: false,
-      reason: `docker network inventory unavailable: ${listed.stderr?.toString().trim() || `exit ${listed.exitCode}`}`,
+      reason: `docker network inventory unavailable: ${listed.stderr.trim() || `exit ${listed.exitCode}`}`,
     }
   }
-  const names = (listed.stdout?.toString() ?? '')
+  const names = listed.stdout
     .split('\n')
     .map((name) => name.trim())
     .filter(Boolean)
   if (!names.length) return { ascertainable: true, networks: [] }
 
-  let inspected: ReturnType<typeof Bun.spawnSync>
+  let inspected
   try {
-    inspected = Bun.spawnSync(['docker', 'network', 'inspect', ...names], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout,
+    inspected = startBoundedSync(['docker', 'network', 'inspect', ...names], {
+      budget: 'docker',
     })
   } catch (error) {
     return {
@@ -447,20 +437,14 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
       reason: `docker network inspection unavailable: ${(error as Error).message}`,
     }
   }
-  if (inspected.exitedDueToTimeout) {
-    return {
-      ascertainable: false,
-      reason: `docker network inspection unavailable: timed out after ${timeout}ms`,
-    }
-  }
   if (inspected.exitCode !== 0) {
     return {
       ascertainable: false,
-      reason: `docker network inspection unavailable: ${inspected.stderr?.toString().trim() || `exit ${inspected.exitCode}`}`,
+      reason: `docker network inspection unavailable: ${inspected.stderr.trim() || `exit ${inspected.exitCode}`}`,
     }
   }
   try {
-    const rows = JSON.parse(inspected.stdout?.toString() ?? '') as {
+    const rows = JSON.parse(inspected.stdout) as {
       Name: string
       Created?: string
       Labels?: Record<string, string> | null

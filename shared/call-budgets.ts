@@ -8,7 +8,9 @@ export type CallBudgetName =
   | 'machine-update'
   | 'hosted-api'
   | 'release-download'
+  | 'release-publish'
   | 'agent-cli'
+  | 'keychain'
   | 'docker'
   | 'gh'
 
@@ -44,7 +46,9 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
     outputBytes: 512 * MIB,
     graceMs: 0,
   },
+  'release-publish': { deadlineMs: 1_800_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'agent-cli': { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
+  keychain: { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   docker: { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   gh: { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
 })

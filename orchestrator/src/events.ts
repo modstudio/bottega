@@ -6,6 +6,7 @@ import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
 import { capToolEventText } from './tool-event-text.ts'
+import { targetGitEnvironment } from './git/git-environment.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
 export type StreamEvent =
@@ -838,7 +839,7 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = gitAt(cwd, args)
+  const p = gitAt(cwd, args, { env: targetGitEnvironment(cwd) })
   return p.code === 0 ? p.stdout.trim() : null
 }
 

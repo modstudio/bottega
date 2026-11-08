@@ -100,11 +100,11 @@ type GitResult = { code: number; stdout: string; stderr: string; timedOut: boole
 export function gitAt(
   path: string,
   args: string[],
-  options: { budget?: CallBudgetName } = {},
+  options: { budget?: CallBudgetName; env?: NodeJS.ProcessEnv } = {},
 ): GitResult {
   if (!existsSync(path)) return { code: 128, stdout: '', stderr: '', timedOut: false }
   try {
-    const env = inspectionGitEnv()
+    const env = { ...(options.env ?? inspectionGitEnv()) }
     delete env.LANGUAGE
     env.LC_ALL = 'C'
     env.LANG = 'C'

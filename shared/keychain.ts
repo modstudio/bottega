@@ -86,7 +86,7 @@ function runSecurity(argv: string[], stdin?: Uint8Array, env?: RunnerEnvironment
   if (process.env.NODE_ENV === 'test')
     throw new Error('keychain access requires an injected security runner in tests')
   const result = startBoundedSyncBytes(argv, {
-    budget: 'process-table',
+    budget: 'keychain',
     ...(stdin ? { stdin } : {}),
     ...(env ? { env } : {}),
   })
@@ -104,7 +104,7 @@ async function runSecurityAsync(
   if (process.env.NODE_ENV === 'test')
     throw new Error('keychain access requires an injected security runner in tests')
   const result = await startBounded(argv, {
-    budget: 'process-table',
+    budget: 'keychain',
     ...(stdin ? { stdin } : {}),
     ...(env ? { env } : {}),
     signal,

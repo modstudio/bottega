@@ -19,6 +19,14 @@ export async function importTasks(file: string): Promise<number> {
     shas: string[]
   }[]
   const log = gitAt(checkout, ['log', '--all', '--format=%H%x09%cI'])
+  if (log.timedOut) {
+    throw new Error('git log --all --format=%H%x09%cI exceeded its bounded-call deadline')
+  }
+  if (log.code !== 0) {
+    throw new Error(
+      `git log --all --format=%H%x09%cI failed: ${log.stderr.trim() || 'no error output'}`,
+    )
+  }
   const stamps = new Map(
     log.stdout
       .split('\n')

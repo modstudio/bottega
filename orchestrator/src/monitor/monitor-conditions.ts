@@ -1,4 +1,5 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { gitAt } from '../../../shared/git.ts'
 // concern: monitor-conditions
 /** Owns monitor condition detection and the row queries and helpers those detectors share with composition and notice revalidation. */
@@ -18,6 +19,7 @@ import { db, liveRuns, SESSION_LIVE_MS } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
+import { targetGitEnvironment } from '../git/git-environment.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
@@ -188,7 +190,7 @@ export function hookTreeConditions(database = db(), clock = Date.now()): Monitor
 }
 
 export function git(cwd: string, args: string[]): string | null {
-  const p = gitAt(cwd, args)
+  const p = gitAt(cwd, args, { env: targetGitEnvironment(cwd) })
   return p.code === 0 ? p.stdout.trim() : null
 }
 
@@ -687,9 +689,15 @@ export function rulingConditions(clock = Date.now()): {
 
 /** The hub reconciler owns the repair; the monitor invokes it and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
-  const p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'], {
-    budget: 'self-cli',
-  })
+  let p
+  try {
+    p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'], {
+      budget: 'self-cli',
+    })
+  } catch (error) {
+    if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
+    throw error
+  }
   if (p.exitCode !== 0) {
     return {
       conditions: [],
@@ -733,9 +741,15 @@ export function dockerConditions(clock: number): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  const listed = startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
-    budget: 'docker',
-  })
+  let listed
+  try {
+    listed = startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
+      budget: 'docker',
+    })
+  } catch (error) {
+    if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
+    throw error
+  }
   if (listed.exitCode !== 0) {
     return {
       conditions: [],
@@ -749,9 +763,15 @@ export function dockerConditions(clock: number): {
   // volumes and classify only compose workdirs under vanished worktrees.
   const candidates = listed.stdout.toString().split('\n').filter(Boolean)
   if (!candidates.length) return { conditions: [], errors: [] }
-  const inspected = startBoundedSync(['docker', 'volume', 'inspect', ...candidates], {
-    budget: 'docker',
-  })
+  let inspected
+  try {
+    inspected = startBoundedSync(['docker', 'volume', 'inspect', ...candidates], {
+      budget: 'docker',
+    })
+  } catch (error) {
+    if (error instanceof BoundExceededError) return { conditions: [], errors: [error.message] }
+    throw error
+  }
   if (inspected.exitCode !== 0) {
     return {
       conditions: [],

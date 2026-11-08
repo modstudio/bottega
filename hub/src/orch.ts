@@ -325,9 +325,11 @@ export function decodeRunsJson(text: string): OrchRunLineData[] {
   return rows
 }
 
+export const readRunsArgv = (since: string): string[] => ['run', 'list', '--json', '--since', since]
+
 export async function readRuns(since: string): Promise<OrchRun[]> {
   const rows = decodeRunsJson(
-    await orchProcess(['run', 'list', '--json', '--since', since], RUNS_DEADLINE_MS),
+    await orchProcess(readRunsArgv(since), RUNS_DEADLINE_MS),
   )
   return rows.filter((row): row is OrchRun => !('unknown' in row))
 }
@@ -349,12 +351,17 @@ function decodeRunChangesJson(text: string): { rows: OrchRun[]; cursor: number }
   return { rows, cursor }
 }
 
+export const readRunChangesArgv = (after: number): string[] => [
+  'run',
+  'list',
+  '--json',
+  '--changed-after',
+  String(after),
+]
+
 export async function readRunChanges(after: number): Promise<{ rows: OrchRun[]; cursor: number }> {
   return decodeRunChangesJson(
-    await orchProcess(
-      ['run', 'list', '--json', '--changed-after', String(after)],
-      RUNS_DEADLINE_MS,
-    ),
+    await orchProcess(readRunChangesArgv(after), RUNS_DEADLINE_MS),
   )
 }
 
@@ -395,11 +402,18 @@ export const readWorkflowRulingChanges = (
     RulingChangesSchema,
   )
 
+export const readRunsByIdArgv = (ids: (string | number)[]): string[] => [
+  'run',
+  'list',
+  '--json',
+  ...ids.flatMap((id) => ['--id', String(id)]),
+]
+
 export async function readRunsById(ids: (string | number)[]): Promise<OrchRunLineData[]> {
   if (!ids.length) return []
   return decodeRunsJson(
     await orchProcess(
-      ['run', 'list', '--json', ...ids.flatMap((id) => ['--id', String(id)])],
+      readRunsByIdArgv(ids),
       RUNS_DEADLINE_MS,
     ),
   )

@@ -38,12 +38,11 @@ afterEach(() => {
 })
 
 test('an explicit environment replaces the parent environment', async () => {
-  const result = await startBounded(['bounded-process-env-probe'], {
+  const env = { PATH: process.env.PATH }
+  await startBounded(['bounded-process-env-probe'], {
     budget: 'process-table',
-    env: { PATH: process.env.PATH },
+    env,
   })
 
-  expect(result.stdout).toBe('')
-  expect(execaMock).toHaveBeenCalledTimes(1)
-  expect(execaMock.mock.calls[0]?.[2]).toMatchObject({ extendEnv: false })
+  expect(execaMock.mock.calls[0]?.[2]).toMatchObject({ env, extendEnv: false })
 })

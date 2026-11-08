@@ -1,6 +1,8 @@
 // concern: agent-cli-version
 /** Captures one bounded CLI version probe for agent eligibility and setup facts. */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+
 const CLI_VERSION_TIMEOUT_MS = 3_000
 
 export type CliVersionCapture = {
@@ -23,19 +25,17 @@ export function capturedCliVersion(capture: CliVersionCapture | null): string | 
 
 export function captureCliVersion(
   bin: string,
-  timeoutMs = CLI_VERSION_TIMEOUT_MS,
+  _timeoutMs = CLI_VERSION_TIMEOUT_MS,
 ): CliVersionCapture {
   try {
-    const child = Bun.spawnSync([bin, '--version'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: timeoutMs,
+    const child = startBoundedSync([bin, '--version'], {
+      budget: 'agent-cli',
     })
     return {
       exitCode: child.exitCode,
-      stdout: child.stdout.toString(),
-      stderr: child.stderr.toString(),
-      timedOut: child.exitedDueToTimeout === true,
+      stdout: child.stdout,
+      stderr: child.stderr,
+      timedOut: false,
       error: null,
     }
   } catch (error) {

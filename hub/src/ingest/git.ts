@@ -90,6 +90,19 @@ function scanGit(since: string) {
       '--numstat',
       '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
     ])
+    const args = [
+      'log',
+      '--all',
+      `--since=${since}`,
+      '--numstat',
+      '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
+    ]
+    if (proc.timedOut) {
+      throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+    }
+    if (proc.code !== 0) {
+      throw new Error(`git ${args.join(' ')} failed: ${proc.stderr.trim() || 'no error output'}`)
+    }
     let day: string | null = null
     for (const line of proc.stdout.split('\n')) {
       if (line.startsWith('\u0000')) {
