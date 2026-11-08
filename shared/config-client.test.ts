@@ -107,7 +107,7 @@ test('a throwing outcome recorder does not fail the hosted config call', async (
   })
   const client = configClient(
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
-    async () => Response.json({ user: { id: 'user' }, activeSpaceId: null }),
+    async () => Response.json({ user: { id: 'user' }, activeSpaceId: null, personalSpaceId: null, memberships: [] }),
     'test',
     undefined,
     (received) => {
@@ -116,7 +116,7 @@ test('a throwing outcome recorder does not fail the hosted config call', async (
       throw new Error('fixture recording failure')
     },
   )
-  await expect(client.whoami()).resolves.toEqual({ user: { id: 'user' }, activeSpaceId: null })
+  await expect(client.whoami()).resolves.toEqual({ user: { id: 'user' }, activeSpaceId: null, personalSpaceId: null, memberships: [] })
   await invoked
   expect(observation).toMatchObject({ route: '/v1/whoami', status: 200, error: null })
 })
