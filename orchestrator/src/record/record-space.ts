@@ -13,6 +13,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import { readHostedProjects } from './record-cache-projects.ts'
 import type { HiddenRow } from './record-moderation-hide.ts'
 import { cachedSignedInRecordUser } from './record-session.ts'
+import { TRIAL_IDENTIFIER_PREFIX, TRIAL_SPACE_MARKER_KEY } from './record-trial-space.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
@@ -269,6 +270,7 @@ export async function createRecordSpace(
   name: string,
   slug: string,
   client: Pick<RecordApiClient, 'whoami' | 'createOrganization'> = recordApiClient(),
+  trial = false,
 ): Promise<
   {
     before: HostedActiveSpace
@@ -277,16 +279,40 @@ export async function createRecordSpace(
 > {
   if (!name.trim()) throw new Error('record space name must be non-empty')
   if (!slug.trim()) throw new Error('record space slug must be non-empty')
+  if (trial && !slug.startsWith(TRIAL_IDENTIFIER_PREFIX))
+    throw new Error(
+      'record space create --trial requires a slug starting with trial-; change the slug and retry',
+    )
   const listed = await recordMemberships(client)
   refuseDuplicateRecordSpaceSlug(slug, listed.memberships)
   const before = hostedActiveSpace(listed.activeSpaceId, listed.memberships)
-  const created = await client.createOrganization({ name, slug })
+  const created = await client.createOrganization({
+    name,
+    slug,
+    ...(trial
+      ? {
+          metadata: {
+            [TRIAL_SPACE_MARKER_KEY]: {
+              createdByUserId: (await client.whoami()).user.id,
+              createdAt: new Date().toISOString(),
+            },
+          },
+        }
+      : {}),
+  })
   const afterIdentity = await recordMemberships(client)
   return {
     ...created,
     before,
     after: hostedActiveSpace(afterIdentity.activeSpaceId, afterIdentity.memberships),
   }
+}
+
+export async function deleteTrialSpace(
+  slug: string,
+  client: Pick<RecordApiClient, 'deleteTrialSpace'> = recordApiClient(),
+) {
+  return client.deleteTrialSpace(slug)
 }
 
 export async function inviteToActiveRecordSpace(

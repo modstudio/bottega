@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   foreignKey,
   jsonb,
   pgPolicy,
@@ -26,6 +27,14 @@ export const MEMBERSHIP_ROLES = ['owner', 'admin', 'member'] as const
 export const MEMBERSHIP_PERMISSIONS = ['read', 'write'] as const
 
 const identity = () => uuid('id').primaryKey()
+export const recordJsonbValue = (value: unknown): unknown =>
+  typeof value === 'string' ? JSON.parse(value) : value
+const recordJsonb = customType<{ data: unknown; driverData: unknown; driverOutput: unknown }>({
+  dataType: () => 'jsonb',
+  codec: 'jsonb',
+  toDriver: recordJsonbValue,
+  fromDriver: recordJsonbValue,
+})
 export const spaceIdentity = () =>
   uuid('space_id')
     .notNull()
@@ -71,7 +80,7 @@ export const space = pgTable.withRLS(
     name: text().notNull().unique(),
     slug: text().notNull().unique(),
     logo: text(),
-    metadata: jsonb(),
+    metadata: recordJsonb(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => {
@@ -100,6 +109,11 @@ export const space = pgTable.withRLS(
         to: RECORD_AUTH_ROLE,
         using: sql`true`,
         withCheck: sql`true`,
+      }),
+      pgPolicy('space_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`jsonb_typeof(${table.metadata}->'trial') = 'object'`,
       }),
     ]
   },

@@ -115,6 +115,11 @@ export const secretDek = pgTable.withRLS(
       to: RECORD_OWNER_ROLE,
       using: sql`true`,
     }),
+    pgPolicy('secret_dek_owner_delete', {
+      for: 'delete',
+      to: RECORD_OWNER_ROLE,
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
   ],
 )
 

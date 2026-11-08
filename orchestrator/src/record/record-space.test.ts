@@ -202,6 +202,41 @@ describe('record space decisions', () => {
     )
   })
 
+  test('create --trial refuses a slug without the trial prefix', async () => {
+    await expect(createRecordSpace('Demo', 'demo', undefined, true)).rejects.toThrow(
+      'requires a slug starting with trial-',
+    )
+  })
+
+  test('sends the creator marker only when creating a trial space', async () => {
+    const createInputs: unknown[] = []
+    const client = {
+      whoami: async () => ({
+        user: { id: 'caller' },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [],
+      }),
+      createOrganization: async (input: unknown) => {
+        createInputs.push(input)
+        const slug = (input as { slug: string }).slug
+        return { id: `space-${slug}`, slug }
+      },
+    }
+
+    await createRecordSpace('Trial Demo', 'trial-demo', client, true)
+    await createRecordSpace('Team', 'team', client)
+
+    const trialInput = createInputs[0] as {
+      metadata: { trial: { createdByUserId: string; createdAt: string } }
+    }
+    expect(trialInput.metadata.trial.createdByUserId).toBe('caller')
+    expect(new Date(trialInput.metadata.trial.createdAt).toISOString()).toBe(
+      trialInput.metadata.trial.createdAt,
+    )
+    expect(createInputs[1]).toEqual({ name: 'Team', slug: 'team' })
+  })
+
   test('passes hosted invitations through with their ISO expiry', async () => {
     const invitations = [
       {

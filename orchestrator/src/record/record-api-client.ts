@@ -94,6 +94,7 @@ import type {
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
+import { trialSpaceDeleteTransport } from './record-trial-space-contract.ts'
 import { currentRecordWriteDecision } from './record-write-authority.ts'
 
 export type RecordDocUpsertInput = {
@@ -130,6 +131,7 @@ export type RecordDocUpsertInput = {
   expectedRevision?: string
   generator?: DocGenerator
 }
+type CreateOrganizationInput = { name: string; slug: string; metadata?: Record<string, unknown> }
 type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
 type RecordDocWriteContext = Pick<
   RecordDocUpsertInput,
@@ -230,7 +232,8 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordConfigAccessClient> & {
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
-    createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
+    createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
+    deleteTrialSpace(slug: string): Promise<ReturnType<typeof trialSpaceDeleteTransport.response>>
     setActiveOrganization(input: {
       organizationId?: string
       organizationSlug?: string
@@ -706,7 +709,6 @@ const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) 
     body: JSON.stringify(input),
     ...destination,
   })
-
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
 ): RecordApiClient {
@@ -975,6 +977,8 @@ function recordIdentityAndSpaceClient(
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    deleteTrialSpace: (slug) =>
+      request('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),
   }
 }
 
