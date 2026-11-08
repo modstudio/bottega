@@ -1,21 +1,12 @@
-import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DIST_MANIFEST, INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
-import { resolveHubDatabase } from '../../../shared/state-directory.ts'
-import { machineUpdateIntentPath } from '../../../shared/update-lock.ts'
+import { HUB_DATABASE_ENV } from '../../../shared/state-directory.ts'
+import { withMachineUpdateLock } from '../../../shared/update-lock.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
@@ -27,6 +18,7 @@ import {
 import {
   clearMachineUpdateIntent,
   localStoreJournalPositions,
+  machineUpdateIntentPath,
   writeMachineUpdateIntent,
 } from './machine-update-intent.ts'
 import { setMigrationDrain } from './migration-drain.ts'
@@ -37,20 +29,12 @@ import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
 const fixturePackage = join(dir, 'package.json')
-const fixtureHubDatabase = resolveHubDatabase(process.env)
-const fixtureHubDatabaseExisted = existsSync(fixtureHubDatabase)
-
 beforeAll(() => {
   writeFileSync(fixturePackage, JSON.stringify({ name: PLATFORM_SLUG }))
-  if (!fixtureHubDatabaseExisted) {
-    mkdirSync(dirname(fixtureHubDatabase), { recursive: true })
-    new Database(fixtureHubDatabase).close()
-  }
 })
 
 afterAll(() => {
   rmSync(fixturePackage, { force: true })
-  if (!fixtureHubDatabaseExisted) rmSync(fixtureHubDatabase, { force: true })
 })
 
 function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
@@ -158,6 +142,41 @@ test("machine update clears a dead holder's marker before deciding", async () =>
     'branch',
     'status',
   ])
+})
+
+test('machine update proceeds when the hub store is absent and records position zero', async () => {
+  const previous = process.env[HUB_DATABASE_ENV]
+  const absentHub = join(tmpdir(), `absent-hub-${randomUUID()}`, 'hub.db')
+  process.env[HUB_DATABASE_ENV] = absentHub
+  let migrated = false
+  try {
+    expect(localStoreJournalPositions()).toMatchObject({ hub: 0 })
+    await machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          return ''
+        },
+        migrate: () => {
+          migrated = true
+        },
+        runLaunchAgentsRefreshVerb: () => {},
+      },
+    )
+    expect(migrated).toBeTrue()
+  } finally {
+    if (previous === undefined) delete process.env[HUB_DATABASE_ENV]
+    else process.env[HUB_DATABASE_ENV] = previous
+  }
 })
 
 test("machine update recovers a dead holder's intent before the new update", async () => {
@@ -320,6 +339,7 @@ test('machine update leaves main pulled when the store position cannot be read a
           migrate: () => {
             renameSync(DB_PATH, hiddenDatabase)
             databaseHidden = true
+            writeFileSync(DB_PATH, 'not a sqlite store')
             throw new Error('injected migration failure')
           },
         },
@@ -329,7 +349,10 @@ test('machine update leaves main pulled when the store position cannot be read a
     )
     expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
   } finally {
-    if (databaseHidden) renameSync(hiddenDatabase, DB_PATH)
+    if (databaseHidden) {
+      rmSync(DB_PATH, { force: true })
+      renameSync(hiddenDatabase, DB_PATH)
+    }
   }
 })
 
@@ -666,6 +689,17 @@ test('machine update refuses the BOTTEGA_ORCHESTRATOR_DB override', async () => 
   await expect(lockedMachineUpdateCommand({ log: () => {} })).rejects.toThrow(
     'refusing machine update through BOTTEGA_ORCHESTRATOR_DB',
   )
+})
+
+test('machine update takes the update lock', async () => {
+  await withMachineUpdateLock(async () => {
+    await expect(
+      lockedMachineUpdateCommand(
+        { log: () => {} },
+        { authorityRefusal: () => null, lockWaitMs: 0, now: () => 0, sleep: async () => {} },
+      ),
+    ).rejects.toThrow('another update is running')
+  })
 })
 
 test('machine update refuses a version argument for a checkout', async () => {

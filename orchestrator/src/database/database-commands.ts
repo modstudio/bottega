@@ -70,6 +70,7 @@ type MigrateCommandOptions = {
   authorityRefusal?: () => string | null
   forceInFlight?: string
   fromOperator?: boolean
+  lockWaitMs?: number
 }
 
 export const MIGRATION_DRAIN_REFUSAL_EXIT_CODE = 75
@@ -388,8 +389,11 @@ export async function migrateCommand(
   actions?: MigrateCommandActions,
   options: MigrateCommandOptions = {},
 ): Promise<void> {
-  return withMachineUpdateLockUnlessHeld(() =>
-    migrateCommandUnderLock(presentation, actions, options),
+  return withMachineUpdateLockUnlessHeld(
+    () => migrateCommandUnderLock(presentation, actions, options),
+    process.env,
+    { waitMs: options.lockWaitMs },
+    'machine migrate',
   )
 }
 

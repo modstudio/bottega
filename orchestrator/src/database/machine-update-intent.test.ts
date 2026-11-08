@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import { machineUpdateIntentPath } from '../../../shared/update-lock.ts'
+import { resolveOrchestratorDatabase, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import {
   localStoreJournalPositions,
+  machineUpdateIntentPath,
   readMachineUpdateIntent,
   writeMachineUpdateIntent,
 } from './machine-update-intent.ts'
@@ -44,10 +44,15 @@ test('an invalid intent names its path and removal remedy', () => {
   }
 })
 
-test('journal positions are unavailable when either store is absent', () => {
+test('absent stores have position zero and an unreadable store makes positions unavailable', () => {
   const root = mkdtempSync(join(tmpdir(), 'machine-update-positions.'))
+  const env = { [STATE_HOME_ENV]: root }
   try {
-    expect(localStoreJournalPositions({ [STATE_HOME_ENV]: root })).toBeNull()
+    expect(localStoreJournalPositions(env)).toEqual({ orchestrator: 0, hub: 0 })
+    const orchestrator = resolveOrchestratorDatabase(env)
+    mkdirSync(join(root, 'orchestrator'), { recursive: true })
+    writeFileSync(orchestrator, 'not a sqlite store')
+    expect(localStoreJournalPositions(env)).toBeNull()
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

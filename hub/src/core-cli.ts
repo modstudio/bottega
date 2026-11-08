@@ -219,19 +219,24 @@ function printCollectLease(json: boolean): void {
 }
 
 async function migrateHubDatabase(): Promise<void> {
-  return withMachineUpdateLockUnlessHeld(async () => {
-    const migrated = await migrateDatabaseWithQuestionIdentityMap(
-      readQuestionIdentityMap,
-      readWorkflowCursorIdentityMap,
-    )
-    if (!migrated.versions.length) console.log(`schema already current: ${migrated.path}`)
-    else {
-      console.log(`migrated ${migrated.path}`)
-      for (const version of migrated.versions) console.log(`  applied ${version}`)
-    }
-    const repairs = formatMigrationRepairSummary(migrated.repairs)
-    if (repairs) console.log(repairs)
-  })
+  return withMachineUpdateLockUnlessHeld(
+    async () => {
+      const migrated = await migrateDatabaseWithQuestionIdentityMap(
+        readQuestionIdentityMap,
+        readWorkflowCursorIdentityMap,
+      )
+      if (!migrated.versions.length) console.log(`schema already current: ${migrated.path}`)
+      else {
+        console.log(`migrated ${migrated.path}`)
+        for (const version of migrated.versions) console.log(`  applied ${version}`)
+      }
+      const repairs = formatMigrationRepairSummary(migrated.repairs)
+      if (repairs) console.log(repairs)
+    },
+    process.env,
+    {},
+    'hub migrate',
+  )
 }
 
 function registerCollectionCommands(program: Command): void {

@@ -31,7 +31,7 @@ import {
   ORCHESTRATOR_DATABASE_WRITE_ENV,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
-import { MACHINE_UPDATE_LOCK_HELD_ENV } from '../../../shared/update-lock.ts'
+import { machineUpdateLockHeldEnvironment } from '../../../shared/update-lock.ts'
 import { MACHINE_JOURNAL_SCHEMA, MACHINE_JOURNAL_SCHEMA_VERSION } from '../machine-journal.ts'
 import { withSynchronousDatabaseForMigrationStep } from './db.ts'
 import type { MigrationJournalEntryWithHash } from './migration-compatibility.ts'
@@ -187,7 +187,7 @@ function appliedMigrations(): { when: number; hash: string }[] {
 
 export function migrateInstalledBinary(target: string): void {
   const result = Bun.spawnSync([target, 'machine', 'migrate'], {
-    env: { ...databaseOverrideFreeEnvironment(), [MACHINE_UPDATE_LOCK_HELD_ENV]: '1' },
+    env: { ...databaseOverrideFreeEnvironment(), ...machineUpdateLockHeldEnvironment() },
     stdout: 'inherit',
     stderr: 'inherit',
   })

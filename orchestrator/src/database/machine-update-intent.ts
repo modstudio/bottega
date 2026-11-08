@@ -13,15 +13,29 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
-import { machineUpdateIntentPath } from '../../../shared/update-lock.ts'
+import {
+  resolveHubDatabase,
+  resolveOrchestratorDatabase,
+  resolveStateRoot,
+  type StateEnvironment,
+} from '../../../shared/state-directory.ts'
+import { openReadOnlyDatabase } from './db.ts'
 import type { StoreJournalPositions, SwappedUpdateState } from './machine-update-recovery.ts'
 
 export type MachineUpdateIntent = {
   before: StoreJournalPositions
   swapped: SwappedUpdateState
+}
+
+const MACHINE_UPDATE_INTENT_FILE = 'machine-update-intent.json'
+// Matches the read-only hub connection timeout in hub/src/db.ts.
+const READ_ONLY_HUB_BUSY_TIMEOUT_MS = 15_000
+
+export function machineUpdateIntentPath(env: StateEnvironment): string {
+  return join(resolveStateRoot(env), MACHINE_UPDATE_INTENT_FILE)
 }
 
 const STORE_JOURNAL_POSITIONS_SCHEMA = z.object({
@@ -41,14 +55,24 @@ const MACHINE_UPDATE_INTENT_SCHEMA = z.object({
   ]),
 })
 
-function appliedPosition(path: string, table: string): number | null {
-  if (!existsSync(path)) return null
+function orchestratorAppliedPosition(path: string): number | null {
+  if (!existsSync(path)) return 0
+  const database = openReadOnlyDatabase(path)
+  try {
+    return database
+      .query<{ count: number }, []>('SELECT COUNT(*) count FROM orch_migrations')
+      .get()!.count
+  } finally {
+    database.close()
+  }
+}
+
+function hubAppliedPosition(path: string): number | null {
+  if (!existsSync(path)) return 0
   const database = new Database(path, { readonly: true, create: false })
   try {
-    return table === 'orch_migrations'
-      ? database.query<{ count: number }, []>('SELECT COUNT(*) count FROM orch_migrations').get()!
-          .count
-      : database.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version
+    database.exec(`PRAGMA busy_timeout = ${READ_ONLY_HUB_BUSY_TIMEOUT_MS}`)
+    return database.query<{ user_version: number }, []>('PRAGMA user_version').get()!.user_version
   } finally {
     database.close()
   }
@@ -58,8 +82,8 @@ export function localStoreJournalPositions(
   env: Record<string, string | undefined> = process.env,
 ): StoreJournalPositions | null {
   try {
-    const orchestrator = appliedPosition(resolveOrchestratorDatabase(env), 'orch_migrations')
-    const hub = appliedPosition(resolveHubDatabase(env), 'hub_migrations')
+    const orchestrator = orchestratorAppliedPosition(resolveOrchestratorDatabase(env))
+    const hub = hubAppliedPosition(resolveHubDatabase(env))
     return orchestrator === null || hub === null ? null : { orchestrator, hub }
   } catch {
     return null
@@ -93,6 +117,12 @@ export function writeMachineUpdateIntent(
     fsyncSync(descriptor)
     closeSync(descriptor)
     renameSync(temporary, path)
+    const directoryDescriptor = openSync(dirname(path), 'r')
+    try {
+      fsyncSync(directoryDescriptor)
+    } finally {
+      closeSync(directoryDescriptor)
+    }
   } catch (error) {
     try {
       closeSync(descriptor)

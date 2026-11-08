@@ -10,7 +10,11 @@ import {
   resolveInstallationPaths,
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
-import { MACHINE_UPDATE_LOCK_HELD_ENV, withMachineUpdateLock } from '../../../shared/update-lock.ts'
+import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
+import {
+  machineUpdateLockHeldEnvironment,
+  withMachineUpdateLock,
+} from '../../../shared/update-lock.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import { verifyMainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
@@ -101,7 +105,7 @@ function incomingJournal(
 function runMigration(cwd: string): void {
   const result = Bun.spawnSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
     cwd,
-    env: { ...targetGitEnvironment(cwd), [MACHINE_UPDATE_LOCK_HELD_ENV]: '1' },
+    env: { ...targetGitEnvironment(cwd), ...machineUpdateLockHeldEnvironment() },
     stdout: 'inherit',
     stderr: 'inherit',
   })
@@ -162,6 +166,7 @@ function applyImmediateUpdate(input: { migration: string | null; apply: () => vo
 type UpdateDependencies = {
   now?: () => number
   sleep?: (ms: number) => Promise<void>
+  lockWaitMs?: number
   cwd?: string
   callerCwd?: string
   authorityRefusal?: () => string | null
@@ -428,7 +433,14 @@ function recoverAbandonedMachineUpdate(
 
 function requiredLocalStoreJournalPositions() {
   const positions = localStoreJournalPositions()
-  if (!positions) throw new Error('store journal positions could not be read before update')
+  if (!positions) {
+    const orchestrator = resolveOrchestratorDatabase(process.env)
+    const hub = resolveHubDatabase(process.env)
+    throw new Error(
+      `store journal positions could not be read before update from ${orchestrator} and ${hub}; ` +
+        `repair or remove the unreadable store, then rerun ${PLATFORM_SLUG} machine update`,
+    )
+  }
   return positions
 }
 
@@ -554,7 +566,8 @@ export async function machineUpdateCommand(
   deps: UpdateDependencies = {},
   requestedVersion?: string,
 ): Promise<void> {
-  return withMachineUpdateLock(() =>
-    machineUpdateCommandUnderLock(presentation, deps, requestedVersion),
+  return withMachineUpdateLock(
+    () => machineUpdateCommandUnderLock(presentation, deps, requestedVersion),
+    { waitMs: deps.lockWaitMs, now: deps.now, sleep: deps.sleep },
   )
 }
