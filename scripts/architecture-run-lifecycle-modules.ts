@@ -274,6 +274,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/run-claim-mcp.ts', [
     '../agent/agents.ts',
+    '../agent/worker-launch-env.ts',
     '../database/db.ts',
     '../mcp/mcp-preflight.ts',
     '../mcp/mcp-probe.ts',
@@ -284,6 +285,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../sandbox/grok-trust.ts',
     '../worktree/worktree-mcp.ts',
     './run-artifacts.ts',
+    './run-resource-step-recording.ts',
     './run-worker-home.ts',
   ]),
   module('orchestrator/src/run/run-claim-host-capacity.ts', [
@@ -359,15 +361,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/database-location.ts',
     '../database/db.ts',
     '../project/project-lock.ts',
-    '../jobs/jobs.ts',
-    '../resources/resource-claims.ts',
-    '../resources/resource-step-recorder.ts',
     './run-alive.ts',
-    './run-root-record.ts',
   ]),
   module('orchestrator/src/run/run-resource-step-recording.ts', [
     'bun:sqlite',
-    'node:fs',
     '../agent/agents.ts',
     '../database/db.ts',
     '../mcp/mcp-preflight.ts',

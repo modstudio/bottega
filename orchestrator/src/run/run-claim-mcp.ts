@@ -2,6 +2,7 @@
 /** Executes the deferred MCP plan after the worker directory has its final address. */
 
 import type { Agent } from '../agent/agents.ts'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
   assertGrokTrustEligible,
@@ -18,7 +19,7 @@ import { recordTrustEntryClaims } from '../resources/resource-claims.ts'
 import {
   beginResourceStep,
   completeResourceStep,
-  insertClaim,
+  markResourceStepStuck,
   recordResourceStep,
 } from '../resources/resource-step-recorder.ts'
 import {
@@ -29,11 +30,11 @@ import {
 } from '../sandbox/grok-trust.ts'
 import type { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import { noRepoIsolatePath } from './run-artifacts.ts'
+import { claimSandboxHomeStep } from './run-resource-step-recording.ts'
 import {
   claimedGrokReaderConfig,
   prepareClaimedGrokMcpScope,
   prepareClaimedWorkerMcpConfig,
-  runScopedHome,
 } from './run-worker-home.ts'
 
 type PlanInput = {
@@ -86,23 +87,18 @@ function prepareScope(input: PlanInput, project: Project) {
       }),
       ...claimedGrokReaderConfig(input.agent, input.writesJob, input.cwd, project, input.repoJob),
     })
-  if (!input.repoJob || input.writesJob || !runScopedHome('grok', 'host')) return prepare()
-  const claim = {
+  return claimSandboxHomeStep(db(), {
     rootRunId: input.sandboxRootId,
     runId: input.runId,
     projectId: input.runProjectId,
-    kind: 'sandbox_dir' as const,
-    allocationKey: input.runtimeDir,
-    identity: input.runtimeDir,
-    label: input.sandboxRootId,
+    repoJob: input.repoJob,
+    writesJob: input.writesJob,
+    harness: workerHarnessName(input.agent),
+    sandbox: 'host',
+    path: input.runtimeDir,
     claimedAt: nowIso(),
-  }
-  if (!input.runtimeDirExisted) return recordResourceStep(db(), claim, prepare)
-  const result = prepare()
-  const decision = insertClaim(db(), claim)
-  if (decision === 'collision')
-    throw new Error(`sandbox_dir resource ${input.runtimeDir} is already claimed by another run`)
-  return result
+    effect: prepare,
+  })
 }
 
 function recordTrust(
@@ -208,13 +204,12 @@ export function probeConnection(
         db()
           .query('UPDATE run SET mcp_trust_path=? WHERE record_id=?')
           .run(JSON.stringify(added), input.runId)
-        db()
-          .query(
-            `UPDATE resource_claim
-             SET state='stuck',settled_at=?,settled_detail=?
-             WHERE record_id=? AND state='pending'`,
-          )
-          .run(nowIso(), `observed trust headings: ${JSON.stringify(added)}`, pendingTrust.recordId)
+        markResourceStepStuck(
+          db(),
+          pendingTrust,
+          `observed trust headings: ${JSON.stringify(added)}`,
+          nowIso(),
+        )
       })
       throw new Error(`Grok trust for ${input.cwd} created ${added.length} entries; expected one`)
     } else if (!pendingTrust) recordTrust(input, environment, beforeTrust)

@@ -91,7 +91,12 @@ import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
-import { type acquireRunLease, requiredRunLease, withRunCloseOutLease } from './run-lease.ts'
+import {
+  type acquireRunLease,
+  requiredRunLease,
+  runLeaseAllocationPath,
+  withRunCloseOutLease,
+} from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
@@ -121,6 +126,7 @@ import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import {
   prepareRecordedWorkerHome,
   recordLegacySandboxHome,
+  recordRunLeaseStep,
 } from './run-resource-step-recording.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
@@ -678,9 +684,10 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         runId: claim.id,
         projectId: runProjectId,
         path: runtimeDir,
-        enabled:
-          workerHome.runScopedHome(workerHarnessName(a), sandboxSelection.sandbox) &&
-          (!repoJob || writesJob),
+        repoJob,
+        writesJob,
+        harness: workerHarnessName(a),
+        sandbox: sandboxSelection.sandbox,
       })
     })
     if (sandboxSelection.reason) {
@@ -877,9 +884,18 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one close-out lease encloses the lifecycle's terminal ownership boundary
     async () => {
       try {
-        runLease = requiredRunLease(claim.id, (cause) => {
-          error = String((cause as Error).message ?? cause)
-          failureKind = 'harness'
+        runLease = recordRunLeaseStep(db(), {
+          rootRunId: rootRunRecordId(claim.id),
+          runId: claim.id,
+          projectId: runProjectId,
+          repoJob,
+          writesJob,
+          path: runLeaseAllocationPath(claim.id),
+          effect: () =>
+            requiredRunLease(claim.id, (cause) => {
+              error = String((cause as Error).message ?? cause)
+              failureKind = 'harness'
+            }),
         })
         ;({
           proc,

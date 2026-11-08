@@ -2,36 +2,30 @@
 /** Adapts known run creation effects to the ordered resource-step recorder. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
 import type { Agent } from '../agent/agents.ts'
-import { writeTransaction } from '../database/db.ts'
+import { nowIso, writeTransaction } from '../database/db.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import type { Project } from '../project/projects.ts'
 import {
   recordCreatedWorktreeClaims,
   recordSandboxDirectoryClaim,
+  settleClaims,
 } from '../resources/resource-claims.ts'
 import {
   beginResourceStep,
+  type ClaimOwner,
   completeResourceStep,
-  insertClaim,
+  recordResourceStep,
   type ResourceStep,
-  recordResourceStepAsync,
 } from '../resources/resource-step-recorder.ts'
 import type { RunSandbox } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { workerMcpLaunchScope } from './run-mcp-launch-scope.ts'
 import { prepareWorkerHomeLaunch, runScopedHome } from './run-worker-home.ts'
 
-type RunClaimIdentity = {
-  rootRunId: string
-  runId: string
-  projectId: string | null
-}
-
 export function readOnlyWorktreeStepRecorder(
   database: Database,
-  input: RunClaimIdentity & { writesJob: boolean; claimedAt: () => string },
+  input: ClaimOwner & { writesJob: boolean; claimedAt: () => string },
 ): { recordPending: ((planned: Worktree) => void) | undefined; complete: () => boolean } {
   let pending: ResourceStep | null = null
   return {
@@ -62,7 +56,7 @@ export function readOnlyWorktreeStepRecorder(
 
 export function recordRunWorktree(
   database: Database,
-  input: RunClaimIdentity & {
+  input: ClaimOwner & {
     coverageBase: string | null
     branch: string | null
     steps: { complete: () => boolean }
@@ -101,20 +95,68 @@ export function recordRunWorktree(
   }, database)
 }
 
-export async function prepareSandboxHomeStep<T>(
+export function recordRunLeaseStep<T extends { release(): void }>(
   database: Database,
-  input: RunClaimIdentity & {
+  input: ClaimOwner & {
     repoJob: boolean
     writesJob: boolean
-    harness: string
-    sandbox: RunSandbox
     path: string
-    claimedAt: string
-    effect: () => Promise<T>
+    effect: () => T
   },
-): Promise<T> {
-  const records = input.repoJob && !input.writesJob && runScopedHome(input.harness, input.sandbox)
-  if (!records) return input.effect()
+): T {
+  if (!input.repoJob || input.writesJob) return input.effect()
+  const lease = recordResourceStep(database, {
+    ...input,
+    kind: 'run_lease',
+    allocationKey: input.path,
+    identity: input.path,
+    label: input.runId,
+    claimedAt: nowIso(),
+  }, input.effect)
+  return {
+    ...lease,
+    release: () => {
+      try {
+        lease.release()
+      } finally {
+        settleClaims(database, {
+          rootRunId: input.rootRunId,
+          kind: 'run_lease',
+          state: 'released',
+          settledAt: nowIso(),
+          detail: 'run lease released',
+          allocationKey: input.path,
+        })
+      }
+    },
+  }
+}
+
+function sandboxHomeClaimMode(input: {
+  repoJob: boolean
+  writesJob: boolean
+  harness: string
+  sandbox: RunSandbox
+}): 'step' | 'legacy' | 'none' {
+  if (!runScopedHome(input.harness, input.sandbox)) return 'none'
+  return input.repoJob && !input.writesJob ? 'step' : 'legacy'
+}
+
+type SandboxHomeStepInput<T> = ClaimOwner & {
+  repoJob: boolean
+  writesJob: boolean
+  harness: string
+  sandbox: RunSandbox
+  path: string
+  claimedAt: string
+  effect: () => T
+}
+
+export function claimSandboxHomeStep<T>(
+  database: Database,
+  input: SandboxHomeStepInput<T>,
+): T {
+  if (sandboxHomeClaimMode(input) !== 'step') return input.effect()
   const claim = {
     ...input,
     kind: 'sandbox_dir' as const,
@@ -122,17 +164,21 @@ export async function prepareSandboxHomeStep<T>(
     identity: input.path,
     label: input.rootRunId,
   }
-  if (!existsSync(input.path)) return recordResourceStepAsync(database, claim, input.effect)
-  const result = await input.effect()
-  const decision = insertClaim(database, claim)
-  if (decision === 'collision')
-    throw new Error(`sandbox_dir resource ${input.path} is already claimed by another run`)
+  const step = beginResourceStep(database, claim)
+  const result = input.effect()
+  if (result instanceof Promise) {
+    return result.then((resolved) => {
+      completeResourceStep(database, step)
+      return resolved
+    }) as T
+  }
+  completeResourceStep(database, step)
   return result
 }
 
 export function prepareRecordedWorkerHome(
   database: Database,
-  input: RunClaimIdentity & {
+  input: ClaimOwner & {
     agent: Agent
     harness: string
     sandbox: RunSandbox
@@ -163,7 +209,7 @@ export function prepareRecordedWorkerHome(
       mcpMode: input.mcpMode,
       project: input.project,
     })
-  return prepareSandboxHomeStep(database, {
+  return claimSandboxHomeStep(database, {
     ...input,
     claimedAt: new Date().toISOString(),
     effect,
@@ -172,9 +218,15 @@ export function prepareRecordedWorkerHome(
 
 export function recordLegacySandboxHome(
   database: Database,
-  input: RunClaimIdentity & { path: string; enabled: boolean },
+  input: ClaimOwner & {
+    path: string
+    repoJob: boolean
+    writesJob: boolean
+    harness: string
+    sandbox: RunSandbox
+  },
 ): void {
-  if (!input.enabled) return
+  if (sandboxHomeClaimMode(input) !== 'legacy') return
   recordSandboxDirectoryClaim(database, {
     ...input,
     path: input.path,

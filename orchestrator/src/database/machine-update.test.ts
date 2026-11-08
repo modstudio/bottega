@@ -79,6 +79,8 @@ function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
       )
       .get(entry.when)!,
   }))
+  expect(held.length).toBeGreaterThan(0)
+  expect(held.every(({ entry }) => entry.compatibility === 'additive')).toBe(true)
   for (const { entry } of held)
     database.query('DELETE FROM orch_migrations WHERE created_at=?').run(entry.when)
   return {

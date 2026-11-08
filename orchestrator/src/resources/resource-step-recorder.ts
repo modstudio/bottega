@@ -21,13 +21,13 @@ export const RESOURCE_CLAIM_KINDS = [
 
 export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
 
-export type ClaimIdentity = {
+export type ClaimOwner = {
   rootRunId: string
   runId: string
   projectId: string | null
 }
 
-export type ResourceStepInput = ClaimIdentity & {
+export type ResourceStepInput = ClaimOwner & {
   kind: ResourceClaimKind
   allocationKey: string
   identity: string | null
@@ -79,8 +79,8 @@ export function insertClaim(
     .query(
       `INSERT INTO resource_claim
        (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,
-        identity,label,state,claimed_at)
-       VALUES (?,?,?,?,?,?,?,?,'claimed',?)`,
+        identity,label,state,claimed_at,lifetime,shared)
+       VALUES (?,?,?,?,?,?,?,?,'claimed',?,?,?)`,
     )
     .run(
       newRecordId(),
@@ -92,8 +92,26 @@ export function insertClaim(
       claim.identity,
       claim.label,
       claim.claimedAt,
+      claim.lifetime ?? 'runtime',
+      claim.shared ? 1 : 0,
     )
   return 'recorded'
+}
+
+/** Mark a failed pending creation discoverable without allowing later transitions to overwrite it. */
+export function markResourceStepStuck(
+  database: Database,
+  step: ResourceStep,
+  detail: string,
+  settledAt: string,
+): void {
+  const result = database
+    .query(
+      `UPDATE resource_claim SET state='stuck',settled_at=?,settled_detail=?
+       WHERE record_id=? AND state='pending'`,
+    )
+    .run(settledAt, detail, step.recordId)
+  if (result.changes !== 1) throw new Error(`pending resource step ${step.recordId} was not found`)
 }
 
 /** Write the ordered intent in its own transaction, before the resource effect begins. */

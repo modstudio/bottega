@@ -20,7 +20,7 @@ import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
-import type { ResourceClaimKind } from '../resources/resource-claims.ts'
+import type { ResourceClaimKind } from '../resources/resource-step-recorder.ts'
 import {
   refGuardInventory,
   retainedRefInventory,

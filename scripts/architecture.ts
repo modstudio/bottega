@@ -414,6 +414,7 @@ export const modules: ArchitectureModule[] = [
     '../reclaim/reclaim-kind.ts',
     '../project/projects.ts',
     '../resources/resource-claims.ts',
+    '../resources/resource-step-recorder.ts',
     '../resources/resource-inventory.ts',
     '../run/run-alive.ts',
     '../run/run-status.ts',

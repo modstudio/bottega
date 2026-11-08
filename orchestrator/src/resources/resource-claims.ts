@@ -10,13 +10,11 @@ import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
 import {
-  type ClaimIdentity,
+  type ClaimOwner,
   insertClaim,
   RESOURCE_CLAIM_KINDS,
   type ResourceClaimKind,
 } from './resource-step-recorder.ts'
-
-export type { ResourceClaimKind }
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
@@ -230,7 +228,7 @@ export function sandboxDirectoryRelease(
 
 export function recordSandboxDirectoryClaim(
   database: Database,
-  input: ClaimIdentity & { path: string; claimedAt: string },
+  input: ClaimOwner & { path: string; claimedAt: string },
 ): void {
   insertClaim(database, {
     ...input,
@@ -243,7 +241,7 @@ export function recordSandboxDirectoryClaim(
 
 export function recordTrustEntryClaims(
   database: Database,
-  input: ClaimIdentity & { headings: string[]; storePath: string; claimedAt: string },
+  input: ClaimOwner & { headings: string[]; storePath: string; claimedAt: string },
 ): void {
   for (const heading of input.headings) {
     insertClaim(database, {
@@ -258,7 +256,7 @@ export function recordTrustEntryClaims(
 
 export function claimRecipePort(
   database: Database,
-  input: ClaimIdentity & { claimedAt: string; band: PortBand; name?: string },
+  input: ClaimOwner & { claimedAt: string; band: PortBand; name?: string },
 ): number {
   const nameFilter =
     input.name === undefined
@@ -334,7 +332,7 @@ export function claimRecipePort(
 
 export function claimIndex(
   database: Database,
-  input: ClaimIdentity & { projectId: string; claimedAt: string },
+  input: ClaimOwner & { projectId: string; claimedAt: string },
 ): number {
   const existing = database
     .query(
@@ -386,7 +384,7 @@ export function claimIndex(
 
 export function claimString(
   database: Database,
-  input: ClaimIdentity & { projectId: string; name: string; value: string; claimedAt: string },
+  input: ClaimOwner & { projectId: string; name: string; value: string; claimedAt: string },
 ): string {
   const existing = database
     .query(
@@ -452,7 +450,7 @@ export function claimString(
 
 export function claimDatabaseName(
   database: Database,
-  input: ClaimIdentity & {
+  input: ClaimOwner & {
     projectId: string
     name: string
     engine: string
@@ -551,7 +549,7 @@ export function recipePortClaimForRun(database: Database, runId: string): number
 
 export function recordDatabaseClaim(
   database: Database,
-  input: ClaimIdentity & {
+  input: ClaimOwner & {
     provider: RecipeDatabaseProvider
     name: string
     claimedAt: string
@@ -568,7 +566,7 @@ export function recordDatabaseClaim(
 
 export function recordCreatedWorktreeClaims(
   database: Database,
-  input: ClaimIdentity & {
+  input: ClaimOwner & {
     owned: boolean
     path: string
     head: string
@@ -601,7 +599,7 @@ export function recordCreatedWorktreeClaims(
 
 export function recordRetainedRefClaim(
   database: Database,
-  input: ClaimIdentity & {
+  input: ClaimOwner & {
     ref: string
     tip: string
     claimedAt: string
