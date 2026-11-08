@@ -457,6 +457,22 @@ function capacityLossAudit(audit: CapacityLossAudit | undefined): object {
   return audit ? { capacityLossAllowed: audit } : {}
 }
 
+export function identityChangeProbeAttempts(
+  previous: Record<string, unknown> | null,
+  currentHarness: string,
+): { harness: string; result: Record<string, unknown> }[] {
+  const attempts = Array.isArray(previous?.attempts) ? [...previous.attempts] : []
+  if (!previous || previous.pendingIdentity) return attempts
+  const { attempts: _attempts, ...result } = previous
+  return [
+    ...attempts,
+    {
+      harness: typeof previous.harness === 'string' ? previous.harness : currentHarness,
+      result,
+    },
+  ]
+}
+
 export function setAgent(
   name: string,
   input: AgentMutation,
@@ -472,10 +488,7 @@ export function setAgent(
   let probeResult = current.probe_result
   if (identityChanged) {
     const previous = current.probe_result ? JSON.parse(current.probe_result) : null
-    const attempts = Array.isArray(previous?.attempts) ? previous.attempts : []
-    if (previous && !previous.pendingIdentity) {
-      attempts.push({ harness: previous.harness ?? current.harness, result: previous })
-    }
+    const attempts = identityChangeProbeAttempts(previous, current.harness)
     const declaredContext =
       input.contextTokens ??
       (previous?.contextSource === 'declared' ? Number(caps.contextTokens) : undefined)

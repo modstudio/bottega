@@ -3,7 +3,6 @@
     "board_hosted_adoption_receipt:primary-key",
     "board_reach_recording:primary-key",
     "branch_landing_record:primary-key",
-    "contention.resource_key:reference",
     "hosted_board_message_tag_cache:primary-key",
     "main_stack_activity:primary-key",
     "operator_notification.item_id:reference",
@@ -34,5 +33,5 @@
     "task_identity_claim:primary-key",
     "task_identity_migration_repairs:primary-key"
   ],
-  "hosted": ["contention.resource_key:reference"]
+  "hosted": []
 }

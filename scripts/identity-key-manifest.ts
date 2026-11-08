@@ -482,6 +482,16 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ...TELEMETRY_IDENTITY.externalIdentifiers,
   ...BOARD_READER_EXTERNAL_IDENTIFIERS,
   ...TYPED_QUESTION_IDENTITY.externalIdentifiers,
+  ...manifest(
+    'orchestrator',
+    'name of the contended resource (a lock, checkout path, capacity pool or vendor; a project lock records the project name), a label nothing resolves to a row',
+    ['contention.resource_key'],
+  ),
+  ...manifest(
+    'hosted',
+    'name of the contended resource (a lock, checkout path, capacity pool or vendor; a project lock records the project name), a label nothing resolves to a row',
+    ['contention.resource_key'],
+  ),
   ...manifest('hosted', 'fingerprint derived from a machine public key', [
     'machine_public_key.key_id',
   ]),
