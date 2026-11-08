@@ -70,11 +70,20 @@ function ownsAnyScopedProject(scopeProjectIds: AnyPgColumn) {
     )`
 }
 
+function ownsAuthorRun(authorRunId: AnyPgColumn) {
+  return sql`${authorRunId} IS NOT NULL AND EXISTS (
+    SELECT 1 FROM ${run} r
+    JOIN ${membership} m ON m.space_id = r.space_id
+    WHERE r.id = ${authorRunId} AND m.user_id = ${currentUser} AND m.role = 'owner'
+  )`
+}
+
 function hiddenBoardRowRules(table: {
   hiddenAt: AnyPgColumn
   hiddenByUserId: AnyPgColumn
   hiddenReason: AnyPgColumn
   authorUserId: AnyPgColumn
+  authorRunId: AnyPgColumn
   scopeProjectIds: AnyPgColumn
 }) {
   return [
@@ -91,7 +100,7 @@ function hiddenBoardRowRules(table: {
       as: 'restrictive',
       for: 'select',
       to: RECORD_ACTOR_ROLE,
-      using: sql`${table.hiddenAt} IS NULL OR ${table.authorUserId} = ${currentUser} OR ${ownsAnyScopedProject(table.scopeProjectIds)}`,
+      using: sql`${table.hiddenAt} IS NULL OR ${table.authorUserId} = ${currentUser} OR ${ownsAnyScopedProject(table.scopeProjectIds)} OR ${ownsAuthorRun(table.authorRunId)}`,
     }),
   ]
 }
@@ -305,6 +314,11 @@ export const boardMessage = pgTable.withRLS(
         to: RECORD_ACTOR_ROLE,
         using: visible,
       }),
+      pgPolicy('board_message_run_owner_select', {
+        for: 'select',
+        to: RECORD_ACTOR_ROLE,
+        using: ownsAuthorRun(table.authorRunId),
+      }),
       pgPolicy('board_message_actor_insert', {
         for: 'insert',
         to: RECORD_ACTOR_ROLE,
@@ -324,11 +338,7 @@ export const boardMessage = pgTable.withRLS(
       pgPolicy('board_message_run_owner_delete', {
         for: 'delete',
         to: RECORD_ACTOR_ROLE,
-        using: sql`${table.authorRunId} IS NOT NULL AND EXISTS (
-          SELECT 1 FROM ${run} r
-          JOIN ${membership} m ON m.space_id = r.space_id
-          WHERE r.id = ${table.authorRunId} AND m.user_id = ${currentUser} AND m.role = 'owner'
-        )`,
+        using: ownsAuthorRun(table.authorRunId),
       }),
       // A first acknowledgement advances this message's revision for the change feed. No actor
       // policy can allow it: a reader may only write their own receipt, and the message belongs

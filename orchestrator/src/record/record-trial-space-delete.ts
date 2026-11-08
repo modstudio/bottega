@@ -62,12 +62,13 @@ export function decideTrialSpaceDelete(facts: TrialDeleteFacts): TrialDeleteDeci
 const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`
 const tuple = (columns: readonly string[]) =>
   columns.length === 1 ? identifier(columns[0]!) : `(${columns.map(identifier).join(',')})`
+const selectList = (columns: readonly string[]) => columns.map(identifier).join(',')
 const teardownByTable = new Map(SPACE_TEARDOWN_PLAN.map((step) => [step.table, step]))
 function reachPredicate(reach: SpaceTeardownReach): string {
   if (reach.parent === 'space') return `${tuple(reach.columns)}=$1`
   const parent = teardownByTable.get(reach.parent)
   if (!parent) throw new Error(`space teardown parent is not planned: ${reach.parent}`)
-  return `${tuple(reach.columns)} IN (SELECT ${tuple(reach.parentColumns)} FROM ${identifier(reach.parent)} WHERE ${teardownPredicate(parent.table)})`
+  return `${tuple(reach.columns)} IN (SELECT ${selectList(reach.parentColumns)} FROM ${identifier(reach.parent)} WHERE ${teardownPredicate(parent.table)})`
 }
 function teardownPredicate(table: string): string {
   const step = teardownByTable.get(table)

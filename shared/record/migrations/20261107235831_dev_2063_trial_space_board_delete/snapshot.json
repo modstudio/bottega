@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "8b7f5f62-a605-43ce-91a6-96dcc1d0fb5f",
+  "id": "6c90bb17-7542-40f2-ac2d-5b5142cd0188",
   "prevIds": [
     "6c707ede-ef44-4fcf-af1e-e9b3ec038bde"
   ],
@@ -27101,7 +27101,7 @@
       "roles": [
         "record_actor"
       ],
-      "using": "\"board_message\".\"hidden_at\" IS NULL OR \"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR EXISTS (\n      SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") scoped(project_id)\n      JOIN \"project\" p ON p.id = scoped.project_id\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.role = 'owner'\n    )",
+      "using": "\"board_message\".\"hidden_at\" IS NULL OR \"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR EXISTS (\n      SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") scoped(project_id)\n      JOIN \"project\" p ON p.id = scoped.project_id\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.role = 'owner'\n    ) OR \"board_message\".\"author_run_id\" IS NOT NULL AND EXISTS (\n    SELECT 1 FROM \"run\" r\n    JOIN \"membership\" m ON m.space_id = r.space_id\n    WHERE r.id = \"board_message\".\"author_run_id\" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.role = 'owner'\n  )",
       "withCheck": null,
       "name": "board_message_hidden_select",
       "entityType": "policies",
@@ -27117,6 +27117,19 @@
       "using": "\"board_message\".\"author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR\n      \"board_message\".\"thread_root_author_user_id\" = nullif(current_setting('app.user_id', true), '')::uuid OR\n      (\"board_message\".\"shared_space_reach\" AND record_board_author_shares_space(\"board_message\".\"thread_root_author_user_id\")) OR\n      (cardinality(\"board_message\".\"scope_project_ids\") > 0 AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n    )\n  )) OR\n      (nullif(current_setting('app.user_id', true), '')::uuid = ANY(\"board_message\".\"recipient_user_ids\") AND NOT EXISTS (\n    SELECT 1 FROM unnest(\"board_message\".\"scope_project_ids\") AS scoped(project_id)\n    WHERE NOT EXISTS (\n      SELECT 1 FROM \"project\" p\n      JOIN \"membership\" m ON m.space_id = p.space_id\n      WHERE p.id = scoped.project_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n    )\n  ))",
       "withCheck": null,
       "name": "board_message_actor_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "board_message"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "record_actor"
+      ],
+      "using": "\"board_message\".\"author_run_id\" IS NOT NULL AND EXISTS (\n    SELECT 1 FROM \"run\" r\n    JOIN \"membership\" m ON m.space_id = r.space_id\n    WHERE r.id = \"board_message\".\"author_run_id\" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.role = 'owner'\n  )",
+      "withCheck": null,
+      "name": "board_message_run_owner_select",
       "entityType": "policies",
       "schema": "public",
       "table": "board_message"
@@ -27166,7 +27179,7 @@
       "roles": [
         "record_actor"
       ],
-      "using": "\"board_message\".\"author_run_id\" IS NOT NULL AND EXISTS (\n          SELECT 1 FROM \"run\" r\n          JOIN \"membership\" m ON m.space_id = r.space_id\n          WHERE r.id = \"board_message\".\"author_run_id\" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.role = 'owner'\n        )",
+      "using": "\"board_message\".\"author_run_id\" IS NOT NULL AND EXISTS (\n    SELECT 1 FROM \"run\" r\n    JOIN \"membership\" m ON m.space_id = r.space_id\n    WHERE r.id = \"board_message\".\"author_run_id\" AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid AND m.role = 'owner'\n  )",
       "withCheck": null,
       "name": "board_message_run_owner_delete",
       "entityType": "policies",
