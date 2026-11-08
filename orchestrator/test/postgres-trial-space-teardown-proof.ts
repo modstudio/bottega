@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId, RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
-import { closeRecordPools } from '../src/record/record-pool.ts'
 import { bearerHeaders } from '../src/record/record-auth.ts'
-import { TrialSpaceDeleteError } from '../src/record/record-trial-space-contract.ts'
+import { closeRecordPools } from '../src/record/record-pool.ts'
 import { deleteTrialRecordSpace } from '../src/record/record-trial-space-delete.ts'
 import type { PsqlResult } from './fixtures/postgres-rls.ts'
 import { testRecordAuth } from './fixtures/record-auth-postgres.ts'
@@ -91,11 +90,7 @@ export function registerTrialSpaceTeardownProof(input: {
         userId: owner,
         activeSpaceId: trial,
       }),
-    ).rejects.toEqual(
-      expect.objectContaining<Partial<TrialSpaceDeleteError>>({
-        message: expect.stringContaining('trial-member-spaces guard failed'),
-      }),
-    )
+    ).rejects.toThrow('trial-member-spaces guard failed')
     expect(
       input.psql(
         RECORD_ACTOR_ROLE,

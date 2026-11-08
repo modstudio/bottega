@@ -3,12 +3,12 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import {
   TRIAL_IDENTIFIER_PREFIX,
   TRIAL_SPACE_MARKER_KEY,
 } from '../../../shared/record/trial-space.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import type { MachineNamePair } from './machine-name.ts'
 import { claimCurrentMachineNames } from './machine-name-command.ts'

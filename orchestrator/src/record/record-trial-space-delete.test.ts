@@ -40,7 +40,7 @@ describe('trial space delete guard', () => {
     expect(decideTrialSpaceDelete(base)).toEqual({
       allowed: true,
       nothing: false,
-      neutralize: [base.members[1]],
+      neutralize: [base.members[1]!],
     })
     expect(decideTrialSpaceDelete({ ...base, exists: false, members: [] })).toEqual({
       allowed: true,

@@ -209,6 +209,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'storage'
   | 'whoami'
   | 'createOrganization'
+  | 'deleteTrialSpace'
   | 'setActiveOrganization'
   | 'listInvitations'
   | 'acceptInvitation'
@@ -231,6 +232,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     storage: unusedIdentityAndSpace,
     whoami: unusedIdentityAndSpace,
     createOrganization: unusedIdentityAndSpace,
+    deleteTrialSpace: unusedIdentityAndSpace,
     setActiveOrganization: unusedIdentityAndSpace,
     listInvitations: unusedIdentityAndSpace,
     acceptInvitation: unusedIdentityAndSpace,

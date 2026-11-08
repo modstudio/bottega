@@ -94,7 +94,7 @@ import type {
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
-import type { TrialSpaceDeleteResult } from './record-trial-space-contract.ts'
+import { trialSpaceDeleteTransport } from './record-trial-space-contract.ts'
 import { currentRecordWriteDecision } from './record-write-authority.ts'
 
 export type RecordDocUpsertInput = {
@@ -233,7 +233,7 @@ export type RecordApiClient = ProjectIdentityClient &
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
-    deleteTrialSpace(slug: string): Promise<TrialSpaceDeleteResult>
+    deleteTrialSpace(slug: string): Promise<ReturnType<typeof trialSpaceDeleteTransport.response>>
     setActiveOrganization(input: {
       organizationId?: string
       organizationSlug?: string
@@ -708,21 +708,6 @@ const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) 
     body: JSON.stringify(input),
     ...destination,
   })
-const postJson = (body: unknown) => ({ method: 'POST', body: JSON.stringify(body) })
-
-function trialSpaceDeleteResponse(body: unknown): TrialSpaceDeleteResult {
-  const value = responseRecord(body)
-  if (
-    typeof value.nothingToRemove !== 'boolean' ||
-    typeof value.activeSpaceCleared !== 'boolean' ||
-    typeof value.tables !== 'object' ||
-    value.tables === null ||
-    !Array.isArray(value.neutralized)
-  )
-    throw recordApiUnreachable(new Error('record API returned an invalid trial-space deletion'))
-  return value as TrialSpaceDeleteResult
-}
-
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
 ): RecordApiClient {
@@ -992,10 +977,7 @@ function recordIdentityAndSpaceClient(
         body: JSON.stringify(input),
       }),
     deleteTrialSpace: (slug) =>
-      request('/v1/spaces/delete-trial', {
-        ...postJson({ slug }),
-        schema: trialSpaceDeleteResponse,
-      }),
+      request('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),
   }
 }
 
