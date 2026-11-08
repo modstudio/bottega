@@ -213,6 +213,35 @@ test('the read path offers a reply only to the hosted successor receipt holder',
   ])
 })
 
+test('a hosted successor receipt holder receives the reply without another election request', async () => {
+  const { client, projectId, reply } = fixture({ session: 'reader' })
+  const database = machine(projectId, 'reader')
+  await refresh(database, client)
+  let calls = 0
+  const countingClient = {
+    ...client,
+    takeBoardSuccessor: async () => {
+      calls += 1
+      return { elected: false, holder: 'reader' }
+    },
+  }
+
+  expect(
+    (
+      await claimCachedHostedForPush(
+        'reader',
+        false,
+        Date.now(),
+        database,
+        true,
+        null,
+        countingClient,
+      )
+    ).notices,
+  ).toEqual([expect.objectContaining({ id: reply.id, reportReplySuccessor: true })])
+  expect(calls).toBe(0)
+})
+
 test('a demoted former holder clears its local successor bit and cannot offer the reply', async () => {
   const { client, projectId, reply } = fixture({ session: 'old-holder' })
   const old = machine(projectId, 'old-holder', Date.now() - SESSION_LIVE_MS - 1)

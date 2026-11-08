@@ -65,6 +65,7 @@ export type HostedCacheNotice = {
   expiresAt: string | null
   purpose: import('../../../shared/board-purpose.ts').BoardPurpose
   reportReplySuccessor?: boolean
+  successorHeld?: boolean
   threadTitle?: string
 }
 
@@ -840,7 +841,11 @@ function claimCachedHostedFromContext(
       return message.kind === 'reply' &&
         (successor === 1 ||
           (offerSuccessorCandidates && hostedReplySuccessorPush(message, context)))
-        ? { ...notice, reportReplySuccessor: true }
+        ? {
+            ...notice,
+            reportReplySuccessor: true,
+            ...(successor === 1 ? { successorHeld: true } : {}),
+          }
         : notice
     })
 }
@@ -873,7 +878,7 @@ export async function claimCachedHostedForPush(
     threadTitle: notice.threadTitle!,
   }))
   for (const notice of selected.notices) {
-    if (!notice.reportReplySuccessor) {
+    if (!notice.reportReplySuccessor || notice.successorHeld) {
       notices.push(notice)
       continue
     }
