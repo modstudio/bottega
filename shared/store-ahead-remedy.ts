@@ -9,7 +9,7 @@ export function storeAheadRemedy(kind: InstallationKind): string {
     : `reinstall the ${PLATFORM_SLUG} release that wrote this store, or a later one, with the installer`
 }
 
-export function storeAheadRefusal(
+export function storeAheadOfJournalRefusal(
   ahead: string,
   kind: InstallationKind,
   invariant: string,
@@ -21,4 +21,13 @@ export function storeAheadRefusal(
       { kind: 'edit', text: storeAheadRemedy(kind) },
     ),
   )
+}
+
+export function storeAheadMigrationRefusal(ahead: string, kind: InstallationKind): string {
+  return renderRefusal(
+    refusal(`refusing to migrate a store ahead of this binary's migration journal: ${ahead}`, {
+      kind: 'edit',
+      text: storeAheadRemedy(kind),
+    }),
+  ).replace('\n', '; ')
 }

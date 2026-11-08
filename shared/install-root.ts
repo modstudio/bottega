@@ -88,6 +88,18 @@ export function runningInstallationIdentity(
   return installationIdentity(fromDirectory, runningInstallEnvironment(env))
 }
 
+/** Read the running installation kind, defaulting to checkout when it cannot be identified. */
+export function runningInstallationKind(
+  fromDirectory: string,
+  env: InstallEnvironment,
+): InstallationKind {
+  try {
+    return runningInstallationIdentity(fromDirectory, env).kind
+  } catch {
+    return 'checkout'
+  }
+}
+
 /** Resolve the running code's own distribution or checkout, ignoring a designated install. */
 export function runningInstallRoot(fromDirectory: string, env: InstallEnvironment): string {
   return resolveInstallRoot(fromDirectory, runningInstallEnvironment(env))

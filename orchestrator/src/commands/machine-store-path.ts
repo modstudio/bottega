@@ -3,6 +3,7 @@
 
 import type { Command } from 'commander'
 import {
+  resolveHubDatabase,
   resolveOrchestratorDatabase,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
@@ -15,6 +16,7 @@ export function machineStorePathCommand(
   environment: StateEnvironment = process.env,
 ): void {
   presentation.write(`${resolveOrchestratorDatabase(environment)}\n`)
+  presentation.write(`${resolveHubDatabase(environment)}\n`)
 }
 
 export function registerMachineStorePathCommand(
