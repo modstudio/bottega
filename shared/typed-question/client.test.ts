@@ -103,7 +103,7 @@ test('sends criteria and parses a choice answer', async () => {
 })
 
 describe('backoff response', () => {
-  test('honours retry-after-ms before retrying', async () => {
+  test('honors retry-after-ms before retrying', async () => {
     let calls = 0
     const delays: number[] = []
     const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
