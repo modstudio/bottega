@@ -76,12 +76,11 @@ async function readHosted(
   } catch (error) {
     if (error instanceof ConfigClientError && error.reason === 'not-configured')
       return { status: 'not-configured', user: {}, space: {}, reason: error.message, warnings: [] }
-    const reason =
-      isDeadlineAbort(error)
-        ? `timed out after ${timeoutMs} ms`
-        : error instanceof Error
-          ? error.message
-          : String(error)
+    const reason = isDeadlineAbort(error)
+      ? `timed out after ${timeoutMs} ms`
+      : error instanceof Error
+        ? error.message
+        : String(error)
     return { status: 'unavailable', user: {}, space: {}, reason, warnings: [] }
   }
   const user = hostedSettings(rows, 'user')

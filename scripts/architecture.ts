@@ -402,6 +402,7 @@ export const modules: ArchitectureModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/git.ts',
     '../../../shared/self-spawn.ts',
     '../database/db.ts',
     '../cleanup/cleanup-sweep-docker.ts',

@@ -27,8 +27,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  gitToplevel,
   gitAt,
+  gitToplevel,
   inspectCheckout,
   resolvedPathsEqual,
   type SequenceKind,
@@ -735,9 +735,7 @@ export function registerBranchCheck(
   const headResult = gitAt(project.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
   const head = headResult.code === 0 ? headResult.stdout.trim() || null : null
   const tagResult =
-    headResult.code === 1
-      ? gitAt(project.path, ['tag', '--points-at', 'HEAD'])
-      : null
+    headResult.code === 1 ? gitAt(project.path, ['tag', '--points-at', 'HEAD']) : null
   const tagsAtHead =
     tagResult?.code === 0 ? tagResult.stdout.trim().split('\n').filter(Boolean) : []
   const detachedDecision = detachedCheckoutDecision(

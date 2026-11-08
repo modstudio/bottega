@@ -19,9 +19,7 @@ export function gitText(cwd: string, args: string[]): string | null {
 
 function gitOk(cwd: string, args: string[]): boolean {
   try {
-    return (
-      gitAt(cwd, args).code === 0
-    )
+    return gitAt(cwd, args).code === 0
   } catch {
     return false
   }
