@@ -2,18 +2,18 @@
 import { statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { db, nowIso } from '../database/db.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
   ensureWorkerBranchNamespaceDirs,
-  prepareSharedRefGuard,
   markedWorktreeRunId,
+  prepareSharedRefGuard,
   sharedRefGuardPath,
   workerSharedGitRoots,
 } from '../resources/ref-guard.ts'
-import { db, nowIso } from '../database/db.ts'
-import { recordResourceStep } from '../resources/resource-step-recorder.ts'
 import { resolveRefGuardHook } from '../resources/ref-guard-runtime.ts'
+import { recordResourceStep } from '../resources/resource-step-recorder.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 
 /** Shared git roots for a writing worktree, creating the branch namespace dirs if missing. */

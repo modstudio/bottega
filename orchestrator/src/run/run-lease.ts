@@ -6,9 +6,9 @@ import { join } from 'node:path'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, nowIso } from '../database/db.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
+import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { acquireKernelLease, type KernelLease, tryKernelLease } from '../project/project-lock.ts'
 import { recordResourceStep } from '../resources/resource-step-recorder.ts'
-import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import type { RunLeaseState } from './run-alive.ts'
 
 const leaseDirectory = () => join(resolveRunsDirectory(process.env), 'leases')
@@ -122,10 +122,7 @@ function acquireLease(runId: string, purpose: string, fileName: LeaseFileName): 
 function acquireRunCoordinatorLease(runId: string): KernelLease {
   const database = db()
   const run = database
-    .query<
-      { root_id: string; project_record_id: string | null; job: string },
-      [string]
-    >(
+    .query<{ root_id: string; project_record_id: string | null; job: string }, [string]>(
       `SELECT COALESCE(parent_run_record_id,record_id) root_id,project_record_id,job
        FROM run WHERE record_id=?`,
     )

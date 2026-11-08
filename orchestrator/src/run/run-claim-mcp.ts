@@ -14,11 +14,12 @@ import {
 import { wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { ensureProjectMainStack } from '../resources/main-stack.ts'
+import { recordTrustEntryClaims } from '../resources/resource-claims.ts'
 import {
-  recordTrustEntryClaims,
-} from '../resources/resource-claims.ts'
-import { recordResourceStep } from '../resources/resource-step-recorder.ts'
-import { beginResourceStep, completeResourceStep } from '../resources/resource-step-recorder.ts'
+  beginResourceStep,
+  completeResourceStep,
+  recordResourceStep,
+} from '../resources/resource-step-recorder.ts'
 import {
   addedGrokTrustHeadings,
   grokTrustHeadings,
@@ -71,18 +72,18 @@ function prepareScope(input: PlanInput, project: Project) {
   const prepare = () =>
     prepareClaimedGrokMcpScope(
       {
-      agent: input.agent,
-      runDir: input.runtimeDir,
-      runDirExisted: input.runtimeDirExisted,
-      cwd: input.cwd,
-      project,
-      config: prepareClaimedWorkerMcpConfig({
+        agent: input.agent,
+        runDir: input.runtimeDir,
+        runDirExisted: input.runtimeDirExisted,
         cwd: input.cwd,
-        checkout: project.path,
-        inherited: input.inherited,
-        writesRepository: input.writesJob,
-      }),
-      ...claimedGrokReaderConfig(input.agent, input.writesJob, input.cwd, project, input.repoJob),
+        project,
+        config: prepareClaimedWorkerMcpConfig({
+          cwd: input.cwd,
+          checkout: project.path,
+          inherited: input.inherited,
+          writesRepository: input.writesJob,
+        }),
+        ...claimedGrokReaderConfig(input.agent, input.writesJob, input.cwd, project, input.repoJob),
       },
       () => undefined,
     )
@@ -163,8 +164,10 @@ function probeConnection(
       : null
   if (trustGranted)
     db().query('UPDATE run SET mcp_trust_granted=1 WHERE record_id=?').run(input.runId)
+  let result: { connection: McpConnection; trustGranted: boolean } | undefined
+  let effectError: unknown
   try {
-    return {
+    result = {
       connection: mcpConnectionFor(
         input.agentName,
         input.cwd,
@@ -175,24 +178,27 @@ function probeConnection(
       ),
       trustGranted,
     }
-  } finally {
-    if (trustGranted) {
-      const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings(environment))
-      if (pendingTrust && added.length === 1) {
-        writeTransaction(() => {
-          db()
-            .query('UPDATE run SET mcp_trust_path=? WHERE record_id=?')
-            .run(JSON.stringify(added), input.runId)
-          completeResourceStep(db(), pendingTrust, {
-            allocationKey: added[0],
-            identity: grokTrustStorePath(environment),
-          })
-        })
-      } else if (pendingTrust && added.length > 1) {
-        throw new Error(`Grok trust for ${input.cwd} created ${added.length} entries; expected one`)
-      } else if (!pendingTrust) recordTrust(input, environment, beforeTrust)
-    }
+  } catch (error) {
+    effectError = error
   }
+  if (trustGranted) {
+    const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings(environment))
+    if (pendingTrust && added.length === 1) {
+      writeTransaction(() => {
+        db()
+          .query('UPDATE run SET mcp_trust_path=? WHERE record_id=?')
+          .run(JSON.stringify(added), input.runId)
+        completeResourceStep(db(), pendingTrust, {
+          allocationKey: added[0],
+          identity: grokTrustStorePath(environment),
+        })
+      })
+    } else if (pendingTrust && added.length > 1) {
+      throw new Error(`Grok trust for ${input.cwd} created ${added.length} entries; expected one`)
+    } else if (!pendingTrust) recordTrust(input, environment, beforeTrust)
+  }
+  if (effectError) throw effectError
+  return result!
 }
 
 function normalizeConnection(

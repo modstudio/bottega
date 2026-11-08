@@ -26,9 +26,7 @@ test('resource steps are pending before effects and complete in root order', () 
   const observed: unknown[] = []
   recordResourceStep(db(), input(root, '/tmp/first'), () => {
     observed.push(
-      db()
-        .query('SELECT state,step_no FROM resource_claim WHERE root_run_record_id=?')
-        .get(root),
+      db().query('SELECT state,step_no FROM resource_claim WHERE root_run_record_id=?').get(root),
     )
   })
   recordResourceStep(db(), input(root, '/tmp/second'), () => undefined)
@@ -54,9 +52,7 @@ test('a failed effect leaves its ordered row pending', () => {
     }),
   ).toThrow('effect failed')
   expect(
-    db()
-      .query('SELECT state,step_no FROM resource_claim WHERE root_run_record_id=?')
-      .get(root),
+    db().query('SELECT state,step_no FROM resource_claim WHERE root_run_record_id=?').get(root),
   ).toEqual({ state: 'pending', step_no: 1 })
 })
 
@@ -77,7 +73,9 @@ test('shared claims coexist while a second unshared completion collides', () => 
   const colliding = addRun({ agent: 'codex', job: 'understand', status: 'running' })
   const pending = beginResourceStep(db(), input(colliding, '/tmp/exclusive'))
   expect(() => completeResourceStep(db(), pending)).toThrow(/UNIQUE constraint failed/)
-  expect(db().query('SELECT state FROM resource_claim WHERE record_id=?').get(pending.recordId)).toEqual({
+  expect(
+    db().query('SELECT state FROM resource_claim WHERE record_id=?').get(pending.recordId),
+  ).toEqual({
     state: 'pending',
   })
 })

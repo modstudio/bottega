@@ -11,8 +11,8 @@ test('resource claim step migration preserves existing claim identity', () => {
     database
       .query(
         `INSERT INTO run
-         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES (?,991,'2026-11-07','codex','understand','sha',1,'prompt','running')`,
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,probe)
+         VALUES (?,991,'2026-11-07','codex','understand','sha',1,'prompt','running',1)`,
       )
       .run(runId)
     database

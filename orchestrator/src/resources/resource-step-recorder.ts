@@ -4,7 +4,19 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
-import type { ResourceClaimKind } from './resource-claims.ts'
+
+export type ResourceStepKind =
+  | 'worktree'
+  | 'branch'
+  | 'retained_ref'
+  | 'sandbox_dir'
+  | 'trust_entry'
+  | 'ref_guard'
+  | 'run_lease'
+  | 'port'
+  | 'database'
+  | 'index'
+  | 'string'
 
 export type ClaimIdentity = {
   rootRunId: string
@@ -13,7 +25,7 @@ export type ClaimIdentity = {
 }
 
 export type ResourceStepInput = ClaimIdentity & {
-  kind: ResourceClaimKind
+  kind: ResourceStepKind
   allocationKey: string
   identity: string | null
   label: string | null
@@ -71,7 +83,7 @@ export function beginResourceStep(database: Database, input: ResourceStepInput):
         `INSERT INTO resource_claim
          (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,
           identity,label,state,claimed_at,step_no,lifetime,shared)
-         VALUES (?,?,?,?,?,?,?,?,'pending',?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,'pending',?,?,?,?)`,
       )
       .run(
         recordId,

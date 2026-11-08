@@ -44,7 +44,6 @@ import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
-import { recordResourceStepAsync } from '../resources/resource-step-recorder.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
@@ -120,6 +119,7 @@ import {
 import { completeRunStartup } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
+import { prepareRecordedWorkerHome } from './run-resource-step-recording.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
@@ -625,46 +625,25 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         sharedReader: worktree?.sharedReader === true,
         ...writingAcpAsk.sandbox,
       })
-      const prepareHome = () => workerHome.prepareWorkerHomeLaunch({
+      const home = await prepareRecordedWorkerHome(db(), {
+        rootRunId: rootRunRecordId(claim.id),
+        runId: claim.id,
+        projectId: runProjectId,
         agent: a,
+        harness: workerHarnessName(a),
         sandbox: sandboxSelection.sandbox,
-        runDir: runtimeDir,
+        path: runtimeDir,
         runNumber: claim.number,
-        runRecordId: claim.recordId,
         runToken,
-        environment: {
-          ...(gitConfigEnvironment ?? {}),
-          ...(await endpoint.resolve()),
-        },
+        environment: { ...(gitConfigEnvironment ?? {}), ...(await endpoint.resolve()) },
         grokEnvironment: grokMcpEnvironment,
-        includeStore: repoJob,
+        repoJob,
+        writesJob,
         mcpLaunch,
         mcpMode,
         project: runProject,
+        claimedAt: nowIso(),
       })
-      const createsReadOnlyHome =
-        repoJob &&
-        !writesJob &&
-        !existsSync(runtimeDir) &&
-        (workerHarnessName(a) === 'codex' ||
-          workerHarnessName(a) === 'grok' ||
-          sandboxSelection.sandbox === 'srt')
-      const home = createsReadOnlyHome
-        ? await recordResourceStepAsync(
-            db(),
-            {
-              rootRunId: rootRunRecordId(claim.id),
-              runId: claim.id,
-              projectId: runProjectId,
-              kind: 'sandbox_dir',
-              allocationKey: runtimeDir,
-              identity: runtimeDir,
-              label: rootRunRecordId(claim.id),
-              claimedAt: nowIso(),
-            },
-            prepareHome,
-          )
-        : await prepareHome()
       ;({
         codexMcpCatalogues,
         environment: mcpEnvironment,
@@ -699,7 +678,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       db()
         .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
         .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
-      if (hasRunScopedHome && !createsReadOnlyHome) {
+      if (hasRunScopedHome && (!repoJob || writesJob)) {
         const rootRunId = rootRunRecordId(claim.id)
         recordSandboxDirectoryClaim(db(), {
           rootRunId,
