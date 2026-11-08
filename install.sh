@@ -125,10 +125,25 @@ mkdir -p "$INSTALL_DIR"
 STAGED_BINARY=$(mktemp "$INSTALL_DIR/.bottega-install.XXXXXX") || fail "could not create staging file in $INSTALL_DIR"
 cp "$EXTRACTED/bottega" "$STAGED_BINARY"
 chmod 755 "$STAGED_BINARY"
-mv -f "$STAGED_BINARY" "$INSTALL_DIR/bottega"
-echo "installed: $INSTALL_DIR/bottega ($VERSION)"
+if ! STORE_PATH=$(unset BOTTEGA_ORCHESTRATOR_DB BOTTEGA_HUB_DB BOTTEGA_ORCHESTRATOR_DB_WRITE; "$STAGED_BINARY" machine store-path); then
+  rm -f "$STAGED_BINARY"
+  STAGED_BINARY=
+  fail "installed binary left unchanged: the $VERSION release could not resolve this machine's store path"
+fi
+if [ -f "$STORE_PATH" ]; then
+  if ! (unset BOTTEGA_ORCHESTRATOR_DB BOTTEGA_HUB_DB BOTTEGA_ORCHESTRATOR_DB_WRITE; "$STAGED_BINARY" machine migrate); then
+    rm -f "$STAGED_BINARY"
+    STAGED_BINARY=
+    fail "installed binary left unchanged: the $VERSION release refuses this machine's stores; install the release that wrote them, or a later one"
+  fi
+  mv -f "$STAGED_BINARY" "$INSTALL_DIR/bottega"
+  echo "installed: $INSTALL_DIR/bottega ($VERSION)"
+else
+  mv -f "$STAGED_BINARY" "$INSTALL_DIR/bottega"
+  echo "installed: $INSTALL_DIR/bottega ($VERSION)"
 
-(unset BOTTEGA_ORCHESTRATOR_DB BOTTEGA_HUB_DB BOTTEGA_ORCHESTRATOR_DB_WRITE; "$INSTALL_DIR/bottega" machine migrate)
+  (unset BOTTEGA_ORCHESTRATOR_DB BOTTEGA_HUB_DB BOTTEGA_ORCHESTRATOR_DB_WRITE; "$INSTALL_DIR/bottega" machine migrate)
+fi
 
 case ":${PATH:-}:" in
   *":$INSTALL_DIR:"*) ;;

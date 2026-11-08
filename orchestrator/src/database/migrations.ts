@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
-import { assetPath } from '../../../shared/install-root.ts'
+import { assetPath, runningInstallationIdentity } from '../../../shared/install-root.ts'
 import {
   assertMigrationForeignKeyIntegrity,
   enterMigrationConnectionPolicy,
@@ -42,6 +42,7 @@ import {
   workflowUuidReferenceOrphanCounts,
 } from './workflow-uuid-migration-preflight.ts'
 import { isWriteProbeTable } from './write-probe.ts'
+import { storeAheadRemedy } from './store-ahead-remedy.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
 const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."
@@ -232,9 +233,15 @@ export function migrationApplied(d: Database, tag: string, folder = MIGRATIONS_F
 export function migrationRefusal(d: Database): string | null {
   const state = migrationState(d)
   if (state.ahead) {
+    let kind: 'checkout' | 'distribution' = 'checkout'
+    try {
+      kind = runningInstallationIdentity(import.meta.dir, process.env).kind
+    } catch {
+      // A checkout is the safe default when the running installation cannot be identified.
+    }
     return (
       `refusing to open a store ahead of this binary's migration journal: ${state.ahead}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${PLATFORM_SLUG} machine migrate`
+      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${storeAheadRemedy(kind)}`
     )
   }
   if (state.pending.length) {

@@ -69,6 +69,7 @@ import { registerHostLoadCommands } from './host-load.ts'
 import { registerLaunchAgentRefreshCommand } from './launch-agent-refresh.ts'
 import { registerLensCommands } from './lens.ts'
 import { registerMachineJournalCommand } from './machine-journal.ts'
+import { registerMachineStorePathCommand } from './machine-store-path.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
 
@@ -263,6 +264,7 @@ function registerMachineInspectionCommands(program: Command): void {
   registerEfficiencyCommands(program)
   registerHostLoadCommands(program)
   registerMachineJournalCommand(program, { write })
+  registerMachineStorePathCommand(program, { write })
   registerLaunchAgentRefreshCommand(program, { log })
 }
 

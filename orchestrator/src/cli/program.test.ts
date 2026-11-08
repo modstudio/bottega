@@ -48,6 +48,7 @@ test('the outer CLI classifies every informational invocation without consulting
   expect(isStoreFreeInvocation(['setup'])).toBeTrue()
   expect(isStoreFreeInvocation(['release', 'check', 'v0.2.0'])).toBeTrue()
   expect(isStoreFreeInvocation(['journal', '--json'])).toBeTrue()
+  expect(isStoreFreeInvocation(['store-path'])).toBeTrue()
   expect(isStoreFreeInvocation(['load', 'sample'])).toBeTrue()
   expect(
     isStoreFreeInvocation(['machine', 'config', 'get', 'delegation.review', '--json']),
@@ -105,6 +106,11 @@ test('public routes preserve every store-free owner invocation at the executable
       argv: ['journal', '--json'],
       ownerPath: ['journal'],
       publicPath: ['machine', 'journal'],
+    },
+    {
+      argv: ['store-path'],
+      ownerPath: ['store-path'],
+      publicPath: ['machine', 'store-path'],
     },
     { argv: ['check', '--enabled'], ownerPath: ['check'], publicPath: ['gate', 'check'] },
   ] satisfies Array<{ argv: string[] } & PublicCommandInvocation>

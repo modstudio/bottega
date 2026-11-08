@@ -69,10 +69,12 @@ export const databaseModules: ArchitectureModule[] = [
     './migration-backfill-compatibility.ts',
     './migration-compatibility.ts',
     './monitor-release-claim-uuid-migration-preflight.ts',
+    './store-ahead-remedy.ts',
     './task-flow-migration-preflight.ts',
     './workflow-uuid-migration-preflight.ts',
     './write-probe.ts',
   ]),
+  module('orchestrator/src/database/store-ahead-remedy.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/database/tolerant-delete.ts', ['bun:sqlite']),
   module('orchestrator/src/database/task-flow-migration-preflight.ts', ['bun:sqlite']),
   module('orchestrator/src/database/machine-update-mover.ts', [

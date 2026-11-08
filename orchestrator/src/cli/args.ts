@@ -521,6 +521,7 @@ export const CLI_COMMANDS = new Set([
   'spawns',
   'state',
   'stats',
+  'store-path',
   'storage',
   'stop',
   'sync',
