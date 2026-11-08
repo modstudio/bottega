@@ -316,11 +316,45 @@ export function staticCheckPlan(): readonly StaticCheckDeclaration[] {
 type WorkerLegDeclaration = {
   name: string
   typecheck: unknown
-  worker: { run: true } | WorkerOmissionBase
+  worker: WorkerDecision
 }
 
 export type WorkerOmission = { name: string; reason: string }
 export type ForcedWorkerCheck = { name: string; subject: string; file: string }
+
+function forcedWorkerChecks(
+  declarations: readonly { name: string; worker: WorkerDecision }[],
+  changedFiles: readonly string[],
+  name: (declaration: { name: string }) => string = (declaration) => declaration.name,
+  preferSpecificSubject = false,
+): ForcedWorkerCheck[] {
+  const omitted = declarations.filter(
+    (declaration): declaration is { name: string; worker: WorkerOmissionBase & WorkerSubjects } =>
+      !declaration.worker.run,
+  )
+  const sortedFiles = [...changedFiles].sort()
+  return omitted.flatMap((declaration): ForcedWorkerCheck[] => {
+    if (declaration.worker.subjects === undefined) return []
+    for (const subject of declaration.worker.subjects) {
+      const file = sortedFiles.find((candidate) => {
+        if (!candidate.startsWith(subject)) return false
+        return (
+          !preferSpecificSubject ||
+          !omitted.some(
+            (other) =>
+              other !== declaration &&
+              other.worker.subjects?.some(
+                (otherSubject) =>
+                  otherSubject.length > subject.length && candidate.startsWith(otherSubject),
+              ),
+          )
+        )
+      })
+      if (file) return [{ name: name(declaration), subject, file }]
+    }
+    return []
+  })
+}
 
 /** Project the shared gate declaration into the worker's commands and complete omission report. */
 export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
@@ -339,19 +373,15 @@ export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
     throw new Error('the worker check must declare exactly one worker-specific Biome command')
   }
   const biome = biomeCandidates[0]!
-  const typecheckLegs = legs.filter((leg) => leg.typecheck !== null && leg.worker.run)
-  const sortedFiles = [...changedFiles].sort()
-  const forced = staticChecks.flatMap((check): ForcedWorkerCheck[] => {
-    if (check.worker.run || check.worker.subjects === undefined) return []
-    for (const subject of check.worker.subjects) {
-      const file = sortedFiles.find((candidate) => candidate.startsWith(subject))
-      if (file) return [{ name: check.name, subject, file }]
-    }
-    return []
-  })
-  const forcedNames = new Set(forced.map((check) => check.name))
+  const forcedLegs = forcedWorkerChecks(legs, changedFiles, (leg) => `${leg.name} typecheck`, true)
+  const forcedStaticChecks = forcedWorkerChecks(staticChecks, changedFiles)
+  const forced = [...forcedLegs, ...forcedStaticChecks]
+  const forcedLegNames = new Set(forcedLegs.map((check) => check.name.replace(/ typecheck$/, '')))
+  const forcedStaticCheckNames = new Set(forcedStaticChecks.map((check) => check.name))
+  const runsLegInWorker = (leg: TLeg) => leg.worker.run || forcedLegNames.has(leg.name)
+  const typecheckLegs = legs.filter((leg) => leg.typecheck !== null && runsLegInWorker(leg))
   const runsInWorker = (check: StaticCheckDeclaration) =>
-    check.worker.run || forcedNames.has(check.name)
+    check.worker.run || forcedStaticCheckNames.has(check.name)
   const workerStaticChecks = staticChecks.filter((check) => check !== biome && runsInWorker(check))
   const omitted: WorkerOmission[] = [
     {
@@ -359,7 +389,7 @@ export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
       reason: 'worker check runs no test suites; bun run check runs them',
     },
     ...legs.flatMap((leg) =>
-      leg.typecheck !== null && leg.worker.run
+      leg.typecheck !== null && runsLegInWorker(leg)
         ? []
         : [
             {

@@ -62,7 +62,7 @@ describe('worker static check plan', () => {
     expect(classifyWorkerOmissionEvidence(evidence).kind).toBe(kind)
   })
 
-  test('requires valid, resolvable evidence for every worker omission', () => {
+  test('requires subjects or an explicit noSubjects reason for every worker omission', () => {
     expect(STATIC_CHECKS.length).toBeGreaterThan(0)
     const omissions = [
       ...STATIC_CHECKS.flatMap((check) => (check.worker.run ? [] : [check.worker])),
@@ -71,6 +71,12 @@ describe('worker static check plan', () => {
     expect(omissions.length).toBeGreaterThan(0)
 
     for (const omission of omissions) {
+      expect(
+        ('subjects' in omission && omission.subjects !== undefined) ||
+          ('noSubjects' in omission && omission.noSubjects.trim() !== ''),
+        `${omission.reason} must declare subjects or noSubjects`,
+      ).toBe(true)
+
       if ('subjects' in omission && omission.subjects !== undefined) {
         for (const subject of omission.subjects) {
           const subjectPath = join(REPOSITORY_ROOT, subject)
@@ -159,7 +165,9 @@ describe('worker static check plan', () => {
       expect.arrayContaining(expected),
     )
     expect(projection.forced).toEqual(
-      expected.map((name) => ({ name, subject: 'shared/record/migrations/', file })),
+      expect.arrayContaining(
+        expected.map((name) => ({ name, subject: 'shared/record/migrations/', file })),
+      ),
     )
     const omittedNames = projection.omitted.map((omission) => omission.name)
     for (const name of expected) expect(omittedNames).not.toContain(name)
@@ -174,6 +182,48 @@ describe('worker static check plan', () => {
     ])
   })
 
+  test('forces every omitted typecheck leg that checks shared files', () => {
+    const file = 'shared/x.ts'
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [file])
+
+    expect(projection.typecheckLegs.map((leg) => leg.name)).toEqual(
+      expect.arrayContaining(['hub/data', 'hub/web', 'scripts']),
+    )
+    expect(projection.forced).toEqual(
+      expect.arrayContaining([
+        { name: 'hub/data typecheck', subject: 'shared/', file },
+        { name: 'hub/web typecheck', subject: 'shared/', file },
+        { name: 'scripts typecheck', subject: 'shared/', file },
+      ]),
+    )
+  })
+
+  test('forces hub/web but not hub/data for a changed web file', () => {
+    const file = 'hub/web/src/x.tsx'
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [file])
+
+    expect(projection.typecheckLegs.map((leg) => leg.name)).toContain('hub/web')
+    expect(projection.typecheckLegs.map((leg) => leg.name)).not.toContain('hub/data')
+    expect(projection.forced).toContainEqual({
+      name: 'hub/web typecheck',
+      subject: 'hub/',
+      file,
+    })
+  })
+
+  test('forces hub/data instead of hub/web for a changed data file', () => {
+    const file = 'hub/data/src/x.ts'
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [file])
+
+    expect(projection.typecheckLegs.map((leg) => leg.name)).toContain('hub/data')
+    expect(projection.typecheckLegs.map((leg) => leg.name)).not.toContain('hub/web')
+    expect(projection.forced).toContainEqual({
+      name: 'hub/data typecheck',
+      subject: 'hub/data/',
+      file,
+    })
+  })
+
   test('leaves every omission omitted for an ordinary source change', () => {
     const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, ['orchestrator/src/x.ts'])
     const unchanged = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [])
@@ -181,14 +231,19 @@ describe('worker static check plan', () => {
     expect(projection.forced).toEqual([])
     expect(projection.omitted).toEqual(unchanged.omitted)
     expect(projection.staticChecks).toEqual(unchanged.staticChecks)
+    for (const name of ['scripts', 'hub/data', 'hub/web']) {
+      expect(projection.typecheckLegs.map((leg) => leg.name)).not.toContain(name)
+    }
   })
 
-  test('does not match a path that only shares the subject prefix text', () => {
+  test('does not force a migration check for a path that only shares its prefix text', () => {
     const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [
       'shared/record/migrations-old/x',
     ])
 
-    expect(projection.forced).toEqual([])
+    expect(projection.forced).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ subject: 'shared/record/migrations/' })]),
+    )
   })
 })
 
