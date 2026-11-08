@@ -3,7 +3,6 @@
 
 import { projects } from '../project/projects.ts'
 import {
-  type HubTaskByKeyReader,
   type HubTaskReader,
   type HubTaskReference,
   resolveHubTaskReference,
@@ -28,10 +27,9 @@ async function bestEffortTaskReference(
   project: string | null,
   key: string,
   reader?: HubTaskReader,
-  keyReader?: HubTaskByKeyReader,
 ): Promise<HubTaskReference | null> {
   try {
-    return await resolveHubTaskReference(project, key, reader, keyReader)
+    return await resolveHubTaskReference(project, key, reader)
   } catch {
     return null
   }
@@ -48,15 +46,9 @@ export async function admitNewRunReference(input: {
   launchCwd: string | null
   probe: boolean
   hubTaskReader?: HubTaskReader
-  hubTaskByKeyReader?: HubTaskByKeyReader
 }): Promise<{ taskRecordId: string | null; projectRecordId: string | null }> {
   const task = input.key
-    ? await bestEffortTaskReference(
-        input.projectName,
-        input.key,
-        input.hubTaskReader,
-        input.hubTaskByKeyReader,
-      )
+    ? await bestEffortTaskReference(input.projectName, input.key, input.hubTaskReader)
     : null
   const taskMap = new Map<string, HubTaskReference>()
   if (task) taskMap.set(task.key, task)

@@ -341,11 +341,7 @@ async function hubTaskMap(
     try {
       rows = await reader(project.name)
     } catch (error) {
-      throw taskReadRefusal(
-        project.name,
-        '',
-        error instanceof Error ? error.message : String(error),
-      )
+      throw taskReadRefusal(project.name, error instanceof Error ? error.message : String(error))
     }
     for (const task of rows) {
       byProjectKey.set(projectTaskKey(task.project, task.key), task)

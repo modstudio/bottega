@@ -31,8 +31,8 @@ describe('run task reference', () => {
         cwd: null,
         launchCwd: null,
         probe: false,
-        hubTaskByKeyReader: async () => {
-          throw new Error('unscoped reader must not be called')
+        hubTaskReader: async () => {
+          throw new Error('a project-less key must not read any project')
         },
       }),
     ).rejects.toThrow(RUN_REFERENCE_REFUSAL)

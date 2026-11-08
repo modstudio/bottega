@@ -14,9 +14,8 @@ export type HubTaskReference = {
   status_category?: string | null
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
-export type HubTaskByKeyReader = (key: string) => Promise<HubTaskReference | null>
 
-export function taskReadRefusal(project: string, _key: string, detail: string): Error {
+export function taskReadRefusal(project: string, detail: string): Error {
   return new Error(
     `could not read task data for project ${project}: ${withholdSecretShapedDetail(detail)}; retry: ${PLATFORM_SLUG} task list --project ${project} --json`,
   )
@@ -64,7 +63,6 @@ export async function resolveHubTaskReference(
   project: string | null,
   key: string,
   reader: HubTaskReader = readHubTasks,
-  _keyReader?: HubTaskByKeyReader,
 ): Promise<HubTaskReference | null> {
   if (!project) return null
   try {
@@ -72,6 +70,6 @@ export async function resolveHubTaskReference(
     const matches = rows.filter((task) => task.key === key && task.project === project)
     return matches.length === 1 ? matches[0]! : null
   } catch (error) {
-    throw taskReadRefusal(project, key, error instanceof Error ? error.message : String(error))
+    throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
   }
 }
