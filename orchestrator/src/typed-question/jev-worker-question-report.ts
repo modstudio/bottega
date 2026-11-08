@@ -9,7 +9,7 @@ export type JevWorkerQuestionRow = {
   jev_agreed: number | null
 }
 
-export type JevAgreementBand = {
+type JevAgreementBand = {
   range: string
   n: number
   agreementRate: number | null
@@ -38,24 +38,19 @@ function finiteProbability(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
 }
 
+function probabilityKey(row: JevWorkerQuestionRow, pick: unknown): string | null {
+  if (row.kind === 'yesno') return typeof pick === 'boolean' ? (pick ? 'yes' : 'no') : null
+  if (row.kind === 'choice') return typeof pick === 'string' ? pick : null
+  return typeof pick === 'number' && Number.isInteger(pick) ? String(pick) : null
+}
+
 function pickProbability(row: JevWorkerQuestionRow): number | null {
   try {
     const pick = JSON.parse(row.jev_pick) as unknown
     const probabilities = JSON.parse(row.jev_probabilities ?? '') as unknown
     if (!probabilities || typeof probabilities !== 'object') return null
-    const values = probabilities as Record<string, unknown>
-    const probability =
-      row.kind === 'yesno'
-        ? typeof pick === 'boolean'
-          ? values[pick ? 'yes' : 'no']
-          : null
-        : row.kind === 'choice'
-          ? typeof pick === 'string'
-            ? values[pick]
-            : null
-          : typeof pick === 'number' && Number.isInteger(pick)
-            ? values[String(pick)]
-            : null
+    const key = probabilityKey(row, pick)
+    const probability = key === null ? null : (probabilities as Record<string, unknown>)[key]
     return finiteProbability(probability) ? probability : null
   } catch {
     return null

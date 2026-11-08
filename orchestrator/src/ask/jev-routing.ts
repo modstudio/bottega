@@ -19,6 +19,20 @@ export type JevRoutingDecision =
       confidence: number | null
     }
 
+function answerPick(
+  question: WorkerQuestion,
+  answer: TypedQuestionAnswer,
+): string | boolean | number | null {
+  if (question.kind === 'yesno' && 'noul' in answer) return answer.noul >= 0.5
+  if (question.kind === 'choice' && 'choice' in answer) return answer.choice
+  if (question.kind !== 'score' || !('score' in answer)) return null
+  return Object.entries(answer.probabilities).reduce(
+    (best, [level, probability]) =>
+      probability > best.probability ? { level: Number(level), probability } : best,
+    { level: 0, probability: -1 },
+  ).level
+}
+
 export function routeJevAnswer(input: {
   question: WorkerQuestion
   answer: TypedQuestionAnswer | null
@@ -30,18 +44,7 @@ export function routeJevAnswer(input: {
   if (input.question.kind === 'text' || !input.answer)
     return { action: 'escalate', pick: null, probabilities: null, confidence: null }
   const answer = input.answer
-  const pick =
-    input.question.kind === 'yesno' && 'noul' in answer
-      ? answer.noul >= 0.5
-      : input.question.kind === 'choice' && 'choice' in answer
-        ? answer.choice
-        : input.question.kind === 'score' && 'score' in answer
-          ? Object.entries(answer.probabilities).reduce(
-              (best, [level, probability]) =>
-                probability > best.probability ? { level: Number(level), probability } : best,
-              { level: 0, probability: -1 },
-            ).level
-          : null
+  const pick = answerPick(input.question, answer)
   const probabilities =
     'probabilities' in answer ? answer.probabilities : { yes: answer.noul, no: 1 - answer.noul }
   const confidence =
