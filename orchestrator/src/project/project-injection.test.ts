@@ -676,7 +676,6 @@ describe('project workflow injection', () => {
             protocol: 'workspace-mcp',
             states: {
               started: 'active',
-              working: 'active',
               checking: 'review',
               completed: 'done',
             },

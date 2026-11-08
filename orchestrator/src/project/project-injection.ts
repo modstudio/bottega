@@ -11,6 +11,7 @@ import {
 import {
   refuseHubActionOverrides,
   refuseInvalidReviewStages,
+  refuseInvalidWriteStates,
   refuseNonCursorProjectId,
   refuseUnsupportedUpdatedSince,
   resolveTrackerAgentActions,
@@ -21,6 +22,7 @@ import {
   trackerActionsShape,
   trackerReviewStagesShape,
   trackerSettingsShape,
+  trackerWriteStatesShape,
 } from '../../../shared/trackers.ts'
 import { mechanicalCheckEntryIssues } from '../enforcement/mechanical-check-declaration.ts'
 import {
@@ -382,15 +384,17 @@ const trackerSchema = (mode: SettingsObjectMode) =>
   objectIn(mode)({
     ...trackerSettingsShape,
     protocol: z.enum(TRACKER_PROTOCOLS),
-    // The shared shape fixes these two inner objects strict, so a reader
+    // The shared shape fixes these inner objects strict, so a reader
     // overrides them with the same fields in the mode it declares.
     reviewStages: objectIn(mode)(trackerReviewStagesShape).optional(),
+    writeStates: objectIn(mode)(trackerWriteStatesShape).optional(),
     actions: objectIn(mode)(trackerActionsShape).optional(),
   }).superRefine((tracker, context) => {
     refuseHubActionOverrides(tracker, context)
     refuseNonCursorProjectId(tracker, context)
     refuseUnsupportedUpdatedSince(tracker, context)
     refuseInvalidReviewStages(tracker, context)
+    refuseInvalidWriteStates(tracker, context)
   })
 
 export type ReleaseSettings = z.infer<ReturnType<typeof releaseSchema>>
@@ -499,6 +503,24 @@ function resolvedReviewStages(
   return { waitingReview: stage(waiting), inReview }
 }
 
+function resolvedWriteState(
+  projectName: string,
+  tracker: TrackerSettings,
+  protocol: TrackerProtocol,
+  category: 'active' | 'done',
+): string | undefined {
+  const rawStates = Object.entries(tracker.states ?? {}).flatMap(([raw, mapped]) =>
+    mapped === category ? [raw] : [],
+  )
+  const selected = tracker.writeStates?.[category]
+  if (!selected && rawStates.length > 1) {
+    throw new Error(
+      `project ${projectName} tracker has several ${category} states (${rawStates.join(', ')}) but no writeStates.${category} selection; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '${JSON.stringify({ tracker: { writeStates: { [category]: `<${category}-state>` } } })}'`,
+    )
+  }
+  return selected ?? rawStates[0] ?? (protocol === 'hub' ? category : undefined)
+}
+
 function resolvedTracker(
   project: InjectableProject,
   tracker: TrackerSettings,
@@ -514,10 +536,8 @@ function resolvedTracker(
   ) as Partial<Record<TrackerAction, string>>
   const states = Object.fromEntries(
     (['active', 'done'] as const).flatMap((category) => {
-      const raw = Object.entries(tracker.states ?? {}).find(
-        ([, mapped]) => mapped === category,
-      )?.[0]
-      return raw ? [[category, raw]] : protocol === 'hub' ? [[category, category]] : []
+      const raw = resolvedWriteState(project.name, tracker, protocol, category)
+      return raw ? [[category, raw]] : []
     }),
   ) as ResolvedTracker['states']
   const reviewStages = resolvedReviewStages(
