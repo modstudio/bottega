@@ -512,7 +512,7 @@ export async function probeAgent(
     schema: { ok: schemaOk, output: structured.output },
     file: { ok: fileOk, output: fileOutput },
     mcp: { verifiable: mcpVerifiable, output: mcpRun.output },
-    ...(compaction ? { compaction } : {}),
+    compaction,
     writing,
     resuming,
     jobs: perJob,
