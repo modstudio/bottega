@@ -14,6 +14,7 @@ import {
   collectLease,
   collectOnce,
   currentLiveWatcher,
+  formatCollectLeaseRefusal,
   formatCollectLeg,
   releaseLease,
   resolveHostedUrl,
@@ -111,10 +112,7 @@ export async function runOneShotCollect(
     (legs) => legs,
   )
   if (!result.ran) {
-    console.error(
-      `hub: ${result.heldBy ?? 'another process'} is collecting and did not ` +
-        'finish in 30s; nothing collected',
-    )
+    console.error(`hub: ${formatCollectLeaseRefusal('nothing collected', result)}`)
     process.exitCode = 1
   }
 }

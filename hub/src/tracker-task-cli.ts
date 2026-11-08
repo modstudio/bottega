@@ -1,5 +1,5 @@
 import { type TrackerSource, trackerSourceFor } from '../../shared/trackers.ts'
-import { type LeaseGuard, withLease } from './collect.ts'
+import { formatCollectLeaseRefusal, type LeaseGuard, withLease } from './collect.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import { credentials, Mcp } from './mcp.ts'
 import { projects, type RegisteredProject } from './projects.ts'
@@ -111,9 +111,7 @@ export async function refreshTrackerTask(
         dependencies.leaseWaitMs,
       )
       if (!leased.ran)
-        throw new Error(
-          `${leased.heldBy ?? 'another process'} holds the collect lease; fresh task read was not performed`,
-        )
+        throw new Error(formatCollectLeaseRefusal('fresh task read was not performed', leased))
       const { commentIds, shown } = leased.value
       return {
         trackerRead: true,

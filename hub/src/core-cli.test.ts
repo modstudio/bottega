@@ -188,3 +188,33 @@ test('--only tasks forces tracker collection despite a live watcher', async () =
   }
   expect(selected).toEqual(['tasks'])
 })
+
+test('a refused one-shot collection names its effect, holder age, and remedy', async () => {
+  const output: string[] = []
+  const error = spyOn(console, 'error').mockImplementation((value) => output.push(String(value)))
+  const previousExitCode = process.exitCode
+  process.exitCode = 0
+  try {
+    await runOneShotCollect(
+      {},
+      {
+        watcher: () => null,
+        lease: async () => ({
+          ran: false,
+          heldBy: 'serve:42',
+          holderAgeMs: 7_500,
+          waitedMs: 30_000,
+        }),
+      },
+    )
+    expect(process.exitCode).toBe(1)
+    expect(output).toEqual([
+      'hub: nothing collected; ' +
+        'holder: serve:42 for 7.5s\n' +
+        `cleared by: retry the command; the collect lease is held only while one collection runs; see the holder with ${PLATFORM_SLUG} record lease`,
+    ])
+  } finally {
+    process.exitCode = previousExitCode
+    error.mockRestore()
+  }
+})

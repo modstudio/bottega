@@ -1,6 +1,11 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import {
+  appendCollectLeaseHold,
+  appendCollectLeaseRefusal,
+} from '../../shared/collect-lease-log.ts'
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
+import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
@@ -49,6 +54,7 @@ import {
   storedLeaseSnapshot,
 } from './store-lease.ts'
 import { hoursAgo } from './time.ts'
+import { WRITE_HOLD_LOG_MS } from './write-hold.ts'
 
 /**
  * Two cadences, because the legs cost very different amounts.
@@ -309,6 +315,35 @@ const COLLECT_INTENT_KEY = 'collect.lease.intent'
 
 export type LeaseGuard = StoredLeaseGuard
 
+export type CollectLeaseRefusalObservation = {
+  heldBy: string | null
+  holderAgeMs: number | null
+  waitedMs: number
+  /** The lease row exists but could not be parsed, so no holder could be observed. */
+  leaseUnreadable?: true
+}
+
+function collectLeaseHolderClause(observation: CollectLeaseRefusalObservation): string {
+  if (observation.leaseUnreadable) return 'holder: the lease row could not be read'
+  if (!observation.heldBy) return 'holder: unknown'
+  const age = observation.holderAgeMs === null ? '' : ` for ${observation.holderAgeMs / 1_000}s`
+  return `holder: ${observation.heldBy}${age}`
+}
+
+/** Add the one collect-lease holder observation and remedy to a site's effect statement. */
+export function formatCollectLeaseRefusal(
+  firstClause: string,
+  observation: CollectLeaseRefusalObservation,
+): string {
+  const holder = collectLeaseHolderClause(observation)
+  return renderRefusal(
+    refusal(`${firstClause}; ${holder}`, {
+      kind: 'edit',
+      text: `retry the command; the collect lease is held only while one collection runs; see the holder with ${PLATFORM_SLUG} record lease`,
+    }),
+  )
+}
+
 /** Run work under one renewing lease that has already been acquired. */
 async function holdAndRenewLease(
   holder: string,
@@ -325,10 +360,14 @@ async function holdAndRenewLease(
       renewEveryMs,
       trackSince: true,
       work: fn,
-      lostMessage: (heldBy, afterLeg) =>
-        `${heldBy ?? 'another process'} holds the collect lease; collection stopped${
-          afterLeg ? ` after ${afterLeg}` : ''
-        }; a leg already running was allowed to finish`,
+      lostMessage: (heldBy, afterLeg) => {
+        const lease = collectLease()
+        const observed = lease && !('unreadable' in lease) && lease.holder === heldBy ? lease : null
+        return formatCollectLeaseRefusal(
+          `collection stopped${afterLeg ? ` after ${afterLeg}` : ''}, a running leg was allowed to finish`,
+          { heldBy, holderAgeMs: observed?.age ?? null, waitedMs: 0 },
+        )
+      },
     })
     if (result.value) legs = result.value
     return result
@@ -343,9 +382,17 @@ async function holdAndRenewLease(
         }`
       })
       .join(' ')
+    const heldMs = Date.now() - startedAt
     console.error(
-      `hub: collect lease hold holder=${JSON.stringify(holder)} held_ms=${Date.now() - startedAt}${legDurations ? ` legs ${legDurations}` : ''}`,
+      `hub: collect lease hold holder=${JSON.stringify(holder)} held_ms=${heldMs}${legDurations ? ` legs ${legDurations}` : ''}`,
     )
+    if (heldMs >= WRITE_HOLD_LOG_MS)
+      appendCollectLeaseHold({
+        at: new Date().toISOString(),
+        holder,
+        heldMs,
+        legs: legDurations,
+      })
   }
 }
 
@@ -418,6 +465,34 @@ export function releaseLease(holder: string) {
   releaseStoredLease(COLLECT_LEASE_KEY, holder)
 }
 
+/** Observe the holder that outlasted a wait, record the refusal, and return it. */
+function refuseLeaseWait(
+  waiter: string,
+  waitedMs: number,
+): { ran: false } & CollectLeaseRefusalObservation {
+  const lease = collectLease()
+  const unreadable = lease !== null && 'unreadable' in lease
+  const observed = lease && !('unreadable' in lease) ? lease : null
+  const observation = {
+    ran: false as const,
+    heldBy: observed?.holder ?? null,
+    holderAgeMs: observed?.age ?? null,
+    waitedMs,
+    ...(unreadable ? { leaseUnreadable: true as const } : {}),
+  }
+  console.error(
+    `hub: collect lease wait waiter=${JSON.stringify(waiter)} waited_ms=${waitedMs} refused holder=${JSON.stringify(observed?.holder ?? 'unknown')} holder_age_ms=${observed?.age ?? 'unknown'}`,
+  )
+  appendCollectLeaseRefusal({
+    at: new Date().toISOString(),
+    waiter,
+    waitedMs,
+    holder: observation.heldBy,
+    holderAgeMs: observation.holderAgeMs,
+  })
+  return observation
+}
+
 /**
  * Run something holding the lease, WAITING for it rather than racing it.
  *
@@ -442,7 +517,7 @@ export async function withLease<T>(
   waitMs = 30_000,
   renewEveryMs = LEASE_RENEW_MS,
   collectLegs?: (value: T) => CollectLegResult[],
-): Promise<{ ran: true; value: T } | { ran: false; heldBy: string | null }> {
+): Promise<{ ran: true; value: T } | ({ ran: false } & CollectLeaseRefusalObservation)> {
   const startedAt = Date.now()
   const deadline = startedAt + waitMs
   let polls = 0
@@ -452,12 +527,7 @@ export async function withLease<T>(
       polls++
       if (!ownsIntent) ownsIntent = acquireStoredLeaseIntent(COLLECT_INTENT_KEY, holder, deadline)
       if (Date.now() >= deadline) {
-        const lease = collectLease()
-        const observed = lease && !('unreadable' in lease) ? lease : null
-        console.error(
-          `hub: collect lease wait waiter=${JSON.stringify(holder)} waited_ms=${Date.now() - startedAt} refused holder=${JSON.stringify(observed?.holder ?? 'unknown')} holder_age_ms=${observed?.age ?? 'unknown'}`,
-        )
-        return { ran: false, heldBy: observed?.holder ?? null }
+        return refuseLeaseWait(holder, Date.now() - startedAt)
       }
       await new Promise((r) => setTimeout(r, 250))
     }
@@ -478,7 +548,16 @@ export async function withLease<T>(
       },
       renewEveryMs,
     )
-    return result.ran ? { ran: true, value: value as T } : { ran: false, heldBy: result.heldBy }
+    if (result.ran) return { ran: true, value: value as T }
+    const lease = collectLease()
+    const observed =
+      lease && !('unreadable' in lease) && lease.holder === result.heldBy ? lease : null
+    return {
+      ran: false,
+      heldBy: result.heldBy,
+      holderAgeMs: observed?.age ?? null,
+      waitedMs: Date.now() - startedAt,
+    }
   } finally {
     if (ownsIntent) releaseStoredLease(COLLECT_INTENT_KEY, holder)
   }
