@@ -304,7 +304,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
     'real-model-host-reachability',
     'How does orchestrator decide the local model host is reachable?',
     'orchestrator/src/agent/model-host.ts',
-    "const res = await fetch(new URL('models', baseUrl.replace(/\\/?$/, '/')), {",
+    "const res = await hostedApiFetch(new URL('models', baseUrl.replace(/\\/?$/, '/')), {",
   ),
   codeQuestion(
     'real-workflow-step-slug',
