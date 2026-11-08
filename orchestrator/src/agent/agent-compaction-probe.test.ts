@@ -28,7 +28,7 @@ test('the second Goose turn forces compaction and a continued session passes', a
   })
 })
 
-test('a Goose compaction error records the capability as false', async () => {
+test('a Goose compaction refusal records the capability as false', async () => {
   const result = await probeAgentCompacts(async (turn) =>
     turn.session
       ? {
@@ -42,5 +42,36 @@ test('a Goose compaction error records the capability as false', async () => {
   expect(result).toEqual({
     ok: false,
     output: 'Ran into this error trying to compact: provider refused',
+  })
+})
+
+test('a transient provider error leaves the compaction capability absent', async () => {
+  const result = await probeAgentCompacts(async (turn) =>
+    turn.session
+      ? {
+          status: 'failed',
+          output: 'Provider rate limit exceeded',
+          sessionId: turn.session,
+        }
+      : { status: 'ok', output: 'ready', sessionId: 'session-1' },
+  )
+
+  expect(result).toEqual({
+    ok: null,
+    output:
+      'Compaction capability unestablished: second turn failed outside compaction: Provider rate limit exceeded',
+  })
+})
+
+test('a first-turn failure leaves the compaction capability absent', async () => {
+  const result = await probeAgentCompacts(async () => ({
+    status: 'failed',
+    output: 'Provider unavailable',
+    sessionId: null,
+  }))
+
+  expect(result).toEqual({
+    ok: null,
+    output: 'Compaction capability unestablished: first turn failed: Provider unavailable',
   })
 })

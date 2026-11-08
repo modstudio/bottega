@@ -5,7 +5,7 @@ export const GOOSE_COMPACTION_PROBE_CONTEXT_LIMIT = 8_192
 const COMPACTION_PROBE_SENTINEL = 'GOOSE_COMPACTION_PROBE_OK'
 const SECOND_TURN_FILLER = `${'x '.repeat(6_700)}\n`
 
-export type CompactionProbeResult = { ok: boolean; output: string }
+export type CompactionProbeResult = { ok: boolean | null; output: string }
 
 type CompactionProbeTurn = (input: {
   prompt: string
@@ -36,18 +36,38 @@ export async function probeAgentCompacts(
     environment,
   })
   if (first.status !== 'ok' || !first.sessionId) {
-    return { ok: false, output: first.output || 'Goose first compaction probe turn failed' }
+    return {
+      ok: null,
+      output: `Compaction capability unestablished: first turn failed${
+        first.output ? `: ${first.output}` : ''
+      }`,
+    }
   }
   const compacted = await runTurn({
     session: first.sessionId,
     prompt: `${SECOND_TURN_FILLER}Reply with exactly: ${COMPACTION_PROBE_SENTINEL}`,
     environment,
   })
+  if (compacted.output.includes('Ran into this error trying to compact')) {
+    return { ok: false, output: compacted.output }
+  }
+  if (
+    compacted.status === 'ok' &&
+    compacted.sessionId === first.sessionId &&
+    compacted.output.includes(COMPACTION_PROBE_SENTINEL)
+  ) {
+    return { ok: true, output: compacted.output }
+  }
+  const reason =
+    compacted.status !== 'ok'
+      ? 'second turn failed outside compaction'
+      : compacted.sessionId !== first.sessionId
+        ? 'second turn did not continue the same session'
+        : 'second turn did not return the sentinel'
   return {
-    ok:
-      compacted.status === 'ok' &&
-      compacted.sessionId === first.sessionId &&
-      compacted.output.includes(COMPACTION_PROBE_SENTINEL),
-    output: compacted.output,
+    ok: null,
+    output: `Compaction capability unestablished: ${reason}${
+      compacted.output ? `: ${compacted.output}` : ''
+    }`,
   }
 }

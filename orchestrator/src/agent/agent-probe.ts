@@ -130,7 +130,9 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
     ...(result.schema.ok !== null ? { schema: result.schema.ok } : {}),
     ...(result.mcp?.verifiable != null ? { mcp: result.mcp.verifiable } : {}),
     ...(result.file?.ok != null ? { replyFile: result.file.ok } : {}),
-    ...(row.harness === 'goose' && result.compaction ? { compacts: result.compaction.ok } : {}),
+    ...(row.harness === 'goose' && typeof result.compaction?.ok === 'boolean'
+      ? { compacts: result.compaction.ok }
+      : {}),
     ...(writing.writesRepo !== null ? { writesRepo: writing.writesRepo } : {}),
     ...(resuming.resumable !== null ? { resumable: resuming.resumable } : {}),
     ...(result.contextTokens !== null ? { contextTokens: result.contextTokens } : {}),
@@ -232,7 +234,7 @@ export function registrationProbeCacheReusable(
       writingCapabilityPolicy(transport, previous.writing?.ok).jobSuccess &&
       (!resumableRequired || resumeCapabilityPolicy(transport, previous.resuming?.ok).jobSuccess) &&
       (!mcpRequired || previous.mcp?.verifiable === true) &&
-      (!compactionRequired || typeof previous.compaction?.ok === 'boolean'),
+      (!compactionRequired || previous.compaction !== undefined),
   )
 }
 

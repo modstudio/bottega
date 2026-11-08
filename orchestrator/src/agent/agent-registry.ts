@@ -565,7 +565,7 @@ export type RegistrationProbeResult = {
   schema: { ok: boolean | null; output: string }
   file?: { ok: boolean | null; output: string }
   mcp?: { verifiable: boolean | null; output: string }
-  compaction?: { ok: boolean; output: string }
+  compaction?: { ok: boolean | null; output: string }
   writing?: { ok: boolean | null; output: string }
   resuming?: { ok: boolean | null; output: string }
   jobs?: Record<
