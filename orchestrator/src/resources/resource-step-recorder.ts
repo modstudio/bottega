@@ -235,8 +235,9 @@ export async function recordResourceStepAsync<T>(
   input: ResourceStepInput,
   effect: () => Promise<T>,
   completion?: (result: T) => { allocationKey?: string; identity?: string | null },
+  begunStep?: ResourceStep,
 ): Promise<T> {
-  const step = beginResourceStep(database, input)
+  const step = begunStep ?? beginResourceStep(database, input)
   const result = await effect()
   completeResourceStep(database, step, completion?.(result))
   return result

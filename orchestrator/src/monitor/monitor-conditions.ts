@@ -20,12 +20,12 @@ import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
-import type { ResourceClaimKind } from '../resources/resource-step-recorder.ts'
 import {
   refGuardInventory,
   retainedRefInventory,
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
+import type { ResourceClaimKind } from '../resources/resource-step-recorder.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 
 export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'

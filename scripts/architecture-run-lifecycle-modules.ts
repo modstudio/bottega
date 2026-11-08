@@ -374,6 +374,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../sandbox/sandbox.ts',
     '../worktree/worktree-types.ts',
     './run-mcp-launch-scope.ts',
+    './run-lease.ts',
     './run-worker-home.ts',
   ]),
   module('orchestrator/src/run/run-resume-prompt.ts', [

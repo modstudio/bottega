@@ -20,7 +20,6 @@ import {
   beginResourceStep,
   completeResourceStep,
   markResourceStepStuck,
-  recordResourceStep,
 } from '../resources/resource-step-recorder.ts'
 import {
   addedGrokTrustHeadings,

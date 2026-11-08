@@ -15,11 +15,13 @@ import {
   beginResourceStep,
   type ClaimOwner,
   completeResourceStep,
-  recordResourceStep,
   type ResourceStep,
+  recordResourceStep,
+  recordResourceStepAsync,
 } from '../resources/resource-step-recorder.ts'
 import type { RunSandbox } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { requiredRunLease, runLeaseAllocationPath } from './run-lease.ts'
 import type { workerMcpLaunchScope } from './run-mcp-launch-scope.ts'
 import { prepareWorkerHomeLaunch, runScopedHome } from './run-worker-home.ts'
 
@@ -105,14 +107,18 @@ export function recordRunLeaseStep<T extends { release(): void }>(
   },
 ): T {
   if (!input.repoJob || input.writesJob) return input.effect()
-  const lease = recordResourceStep(database, {
-    ...input,
-    kind: 'run_lease',
-    allocationKey: input.path,
-    identity: input.path,
-    label: input.runId,
-    claimedAt: nowIso(),
-  }, input.effect)
+  const lease = recordResourceStep(
+    database,
+    {
+      ...input,
+      kind: 'run_lease',
+      allocationKey: input.path,
+      identity: input.path,
+      label: input.runId,
+      claimedAt: nowIso(),
+    },
+    input.effect,
+  )
   return {
     ...lease,
     release: () => {
@@ -130,6 +136,21 @@ export function recordRunLeaseStep<T extends { release(): void }>(
       }
     },
   }
+}
+
+export function requiredRecordedRunLease(
+  database: Database,
+  input: ClaimOwner & {
+    repoJob: boolean
+    writesJob: boolean
+    failed: (cause: unknown) => void
+  },
+): { release(): void } {
+  return recordRunLeaseStep(database, {
+    ...input,
+    path: runLeaseAllocationPath(input.runId),
+    effect: () => requiredRunLease(input.runId, input.failed),
+  })
 }
 
 function sandboxHomeClaimMode(input: {
@@ -152,10 +173,7 @@ type SandboxHomeStepInput<T> = ClaimOwner & {
   effect: () => T
 }
 
-export function claimSandboxHomeStep<T>(
-  database: Database,
-  input: SandboxHomeStepInput<T>,
-): T {
+export function claimSandboxHomeStep<T>(database: Database, input: SandboxHomeStepInput<T>): T {
   if (sandboxHomeClaimMode(input) !== 'step') return input.effect()
   const claim = {
     ...input,
@@ -167,10 +185,7 @@ export function claimSandboxHomeStep<T>(
   const step = beginResourceStep(database, claim)
   const result = input.effect()
   if (result instanceof Promise) {
-    return result.then((resolved) => {
-      completeResourceStep(database, step)
-      return resolved
-    }) as T
+    return recordResourceStepAsync(database, claim, () => result, undefined, step) as T
   }
   completeResourceStep(database, step)
   return result

@@ -192,7 +192,9 @@ test('a read-only run lease is pending during acquire, claimed afterwards, and s
   })
   expect(
     db()
-      .query("SELECT state,step_no FROM resource_claim WHERE kind='run_lease' AND root_run_record_id=?")
+      .query(
+        "SELECT state,step_no FROM resource_claim WHERE kind='run_lease' AND root_run_record_id=?",
+      )
       .get(runId),
   ).toEqual({ state: 'claimed', step_no: 1 })
   lease.release()

@@ -91,12 +91,7 @@ import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
-import {
-  type acquireRunLease,
-  requiredRunLease,
-  runLeaseAllocationPath,
-  withRunCloseOutLease,
-} from './run-lease.ts'
+import { type acquireRunLease, withRunCloseOutLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
@@ -126,7 +121,7 @@ import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import {
   prepareRecordedWorkerHome,
   recordLegacySandboxHome,
-  recordRunLeaseStep,
+  requiredRecordedRunLease,
 } from './run-resource-step-recording.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
@@ -577,6 +572,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
+  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
   const localMachineId = machineId()
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
@@ -633,9 +629,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         ...writingAcpAsk.sandbox,
       })
       const home = await prepareRecordedWorkerHome(db(), {
-        rootRunId: rootRunRecordId(claim.id),
-        runId: claim.id,
-        projectId: runProjectId,
+        ...owner,
         agent: a,
         harness: workerHarnessName(a),
         sandbox: sandboxSelection.sandbox,
@@ -680,9 +674,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
         .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
       recordLegacySandboxHome(db(), {
-        rootRunId: rootRunRecordId(claim.id),
-        runId: claim.id,
-        projectId: runProjectId,
+        ...owner,
         path: runtimeDir,
         repoJob,
         writesJob,
@@ -849,7 +841,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   let vendorTerminatedStream: string | null = null
   const confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
-  let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
   const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
     srtProfile: sandboxSelection.profile,
@@ -872,7 +863,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       ? `${mcpSetupHeader}\n${skipLines.join('\n')}`
       : skipLines.join('\n')
   }
-  frozenBefore = beforeFreeze.snapshots
+  const frozenBefore = beforeFreeze.snapshots
   const watchedCheckouts = frozenBefore
   // The close-out lease covers both terminal recording and closeRun, even when either rejects.
   return await withRunCloseOutLease(
@@ -884,18 +875,14 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one close-out lease encloses the lifecycle's terminal ownership boundary
     async () => {
       try {
-        runLease = recordRunLeaseStep(db(), {
-          rootRunId: rootRunRecordId(claim.id),
-          runId: claim.id,
-          projectId: runProjectId,
+        runLease = requiredRecordedRunLease(db(), {
+          ...owner,
           repoJob,
           writesJob,
-          path: runLeaseAllocationPath(claim.id),
-          effect: () =>
-            requiredRunLease(claim.id, (cause) => {
-              error = String((cause as Error).message ?? cause)
-              failureKind = 'harness'
-            }),
+          failed: (cause) => {
+            error = String((cause as Error).message ?? cause)
+            failureKind = 'harness'
+          },
         })
         ;({
           proc,
