@@ -71,6 +71,7 @@ export type RecordBoardMethod =
   | 'listBoardClaims'
 export type RecordIdentityAndSpaceMethod =
   | 'createOrganization'
+  | 'deleteTrialSpace'
   | 'setActiveOrganization'
   | 'listInvitations'
   | 'acceptInvitation'

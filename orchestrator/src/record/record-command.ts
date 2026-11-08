@@ -28,6 +28,7 @@ import {
   acceptRecordInvitation,
   blockRecordSpaceOutsideAuthor,
   createRecordSpace,
+  deleteTrialSpace,
   grantRecordSpaceConfigAccess,
   hideRecordSpaceRow,
   inviteToActiveRecordSpace,
@@ -282,12 +283,34 @@ export async function recordSpaceCreateCommand(
   name: string,
   slug: string,
   presentation: Presentation,
+  trial = false,
 ): Promise<void> {
-  const created = await createRecordSpace(name, slug)
+  const created = await createRecordSpace(name, slug, undefined, trial)
   presentation.log(`${created.id}\t${created.slug}`)
   for (const line of recordSpaceCreateReport(created.before, created.after, created)) {
     presentation.log(line)
   }
+}
+
+export async function recordSpaceDeleteTrialCommand(
+  slug: string,
+  presentation: Presentation,
+): Promise<void> {
+  const result = await deleteTrialSpace(slug)
+  if (result.nothingToRemove) {
+    presentation.log(`no space ${slug} among your spaces; nothing removed`)
+    return
+  }
+  for (const account of result.neutralized)
+    presentation.log(
+      `neutralized\t${account.email}\tsessions ${account.sessions}\tmachine keys ${account.machineKeys}`,
+    )
+  for (const [table, count] of Object.entries(result.tables).filter(([, count]) => count > 0))
+    presentation.log(`removed\t${table}\t${count}`)
+  if (result.activeSpaceCleared)
+    presentation.log(
+      `active record space is now none; select one: ${PLATFORM_SLUG} record space switch <slug>`,
+    )
 }
 
 export async function recordSpaceSwitchCommand(

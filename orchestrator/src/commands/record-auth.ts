@@ -42,6 +42,7 @@ import {
   recordSpaceAccessListCommand,
   recordSpaceAccessWithdrawCommand,
   recordSpaceCreateCommand,
+  recordSpaceDeleteTrialCommand,
   recordSpaceHiddenCommand,
   recordSpaceHideCommand,
   recordSpaceIntakeBlockCommand,
@@ -230,18 +231,7 @@ function registerSpaceCommands(record: Command): void {
     .command('list')
     .description('list spaces available to the signed-in account')
     .action(() => hostedRecord('space list', () => recordSpaceListCommand(presentation)))
-  space
-    .command('create')
-    .description(
-      'create a hosted record space and report the active space, with the command that switches back',
-    )
-    .requiredOption('--name <name>', 'display name for the new space')
-    .requiredOption('--slug <slug>', 'URL slug for the new space')
-    .action((options) =>
-      hostedCommand(`${PLATFORM_SLUG} record space create`, () =>
-        recordSpaceCreateCommand(String(options.name), String(options.slug), presentation),
-      ),
-    )
+  registerSpaceLifetimeCommands(space)
   space
     .command('switch')
     .description('select the active hosted record space')
@@ -305,6 +295,34 @@ function registerSpaceCommands(record: Command): void {
   registerSpaceAccessCommands(space)
   registerSpaceIntakeCommands(space)
   registerSpaceModerationCommands(space)
+}
+
+function registerSpaceLifetimeCommands(space: Command): void {
+  space
+    .command('create')
+    .description('create a hosted record space and report how to switch back')
+    .requiredOption('--name <name>', 'display name for the new space')
+    .requiredOption('--slug <slug>', 'URL slug for the new space')
+    .option('--trial', 'mark this trial-prefixed space for trial teardown')
+    .action((options) =>
+      hostedCommand(`${PLATFORM_SLUG} record space create`, () =>
+        recordSpaceCreateCommand(
+          String(options.name),
+          String(options.slug),
+          presentation,
+          Boolean(options.trial),
+        ),
+      ),
+    )
+  space
+    .command('delete-trial')
+    .description('tear down one marked trial space and neutralize its trial accounts')
+    .argument('<slug>')
+    .action((slug) =>
+      hostedCommand(`${PLATFORM_SLUG} record space delete-trial`, () =>
+        recordSpaceDeleteTrialCommand(String(slug), presentation),
+      ),
+    )
 }
 
 function moderationTarget(value: string): { message: string } | { note: string } {

@@ -38,6 +38,7 @@ the hosted record and outbox
 - [bottega record space access list](#bottega-record-space-access-list)
 - [bottega record space access withdraw](#bottega-record-space-access-withdraw)
 - [bottega record space create](#bottega-record-space-create)
+- [bottega record space delete-trial](#bottega-record-space-delete-trial)
 - [bottega record space help](#bottega-record-space-help)
 - [bottega record space hidden](#bottega-record-space-hidden)
 - [bottega record space hide](#bottega-record-space-hide)
@@ -424,6 +425,7 @@ manage hosted record spaces
 - [bottega record space accept](./record.md#bottega-record-space-accept)
 - [bottega record space access](./record.md#bottega-record-space-access)
 - [bottega record space create](./record.md#bottega-record-space-create)
+- [bottega record space delete-trial](./record.md#bottega-record-space-delete-trial)
 - [bottega record space help](./record.md#bottega-record-space-help)
 - [bottega record space hidden](./record.md#bottega-record-space-hidden)
 - [bottega record space hide](./record.md#bottega-record-space-hide)
@@ -506,14 +508,25 @@ withdraw config access from a member
 
 ## bottega record space create
 
-**Synopsis:** `bottega record space create [--name <name>] [--slug <slug>]`
+**Synopsis:** `bottega record space create [--name <name>] [--slug <slug>] [--trial]`
 
-create a hosted record space and report the active space, with the command that switches back
+create a hosted record space and report how to switch back
 
 ### Options
 
 - `--name <name>`: display name for the new space
 - `--slug <slug>`: URL slug for the new space
+- `--trial`: mark this trial-prefixed space for trial teardown
+
+### Related
+
+- [bottega record space](./record.md#bottega-record-space)
+
+## bottega record space delete-trial
+
+**Synopsis:** `bottega record space delete-trial <slug>`
+
+tear down one marked trial space and neutralize its trial accounts
 
 ### Related
 
