@@ -1,10 +1,19 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { missingTaskMessage } from '../../../shared/task-missing.ts'
 import { hubTaskReadRefusal } from './workflow-floor-task-read.ts'
 
 test(`missing ${PLATFORM_SLUG} task refusal names the fresh tracker read`, () => {
-  expect(hubTaskReadRefusal('DEV-1070', 1, 'no task DEV-1070\n', '')).toBe(
-    `--task DEV-1070 was not found in the project's tracker; ${PLATFORM_SLUG} task show DEV-1070 --json --fresh attempted the registered tracker read: no task DEV-1070`,
+  const detail = missingTaskMessage('DEV-1070')
+  expect(hubTaskReadRefusal('DEV-1070', 1, detail, '')).toBe(
+    `--task DEV-1070 was not found in the project's tracker; ${PLATFORM_SLUG} task show DEV-1070 --json --fresh attempted the registered tracker read: ${detail}`,
+  )
+})
+
+test("another task's missing line does not name this task", () => {
+  const detail = missingTaskMessage('DEV-12')
+  expect(hubTaskReadRefusal('DEV-1', 1, detail, '')).toBe(
+    `--task DEV-1 could not be read through the project's tracker by ${PLATFORM_SLUG} task show DEV-1 --json --fresh: ${detail}`,
   )
 })
 

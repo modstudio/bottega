@@ -25,6 +25,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/dispatch/task-key-lookup.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/task-missing.ts',
       '../../../shared/trackers.ts',
       '../mcp/mcp-command.ts',
       '../mcp/mcp-headers-helper.ts',

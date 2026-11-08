@@ -1,7 +1,9 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
+  appendCollectLeaseContention,
   appendCollectLeaseHold,
-  appendCollectLeaseRefusal,
+  COLLECT_LEASE_UNREADABLE_CAUSE,
+  type CollectLeaseContentionEntry,
 } from '../../shared/collect-lease-log.ts'
 import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
@@ -324,7 +326,7 @@ export type CollectLeaseRefusalObservation = {
 }
 
 function collectLeaseHolderClause(observation: CollectLeaseRefusalObservation): string {
-  if (observation.leaseUnreadable) return 'holder: the lease row could not be read'
+  if (observation.leaseUnreadable) return `holder: ${COLLECT_LEASE_UNREADABLE_CAUSE}`
   if (!observation.heldBy) return 'holder: unknown'
   const age = observation.holderAgeMs === null ? '' : ` for ${observation.holderAgeMs / 1_000}s`
   return `holder: ${observation.heldBy}${age}`
@@ -344,6 +346,40 @@ export function formatCollectLeaseRefusal(
   )
 }
 
+function collectLeaseContentionEntry(
+  outcome: CollectLeaseContentionEntry['outcome'],
+  waiter: string,
+  observation: CollectLeaseRefusalObservation,
+): CollectLeaseContentionEntry {
+  return {
+    at: new Date().toISOString(),
+    waiter,
+    waitedMs: observation.waitedMs,
+    holder: observation.heldBy,
+    holderAgeMs: observation.holderAgeMs,
+    outcome,
+    leaseUnreadable: observation.leaseUnreadable === true,
+  }
+}
+
+function collectLeaseWaitObservation(
+  lease: ReturnType<typeof collectLease>,
+  waitedMs: number,
+  expectedHolder?: string | null,
+): CollectLeaseRefusalObservation {
+  const unreadable = lease !== null && 'unreadable' in lease
+  const observed = lease && !('unreadable' in lease) ? lease : null
+  const expectsHolder = expectedHolder !== undefined
+  const matchingObserved =
+    observed && (!expectsHolder || observed.holder === expectedHolder) ? observed : null
+  return {
+    heldBy: expectsHolder ? expectedHolder : (observed?.holder ?? null),
+    holderAgeMs: matchingObserved?.age ?? null,
+    waitedMs,
+    ...(unreadable ? { leaseUnreadable: true } : {}),
+  }
+}
+
 /** Run work under one renewing lease that has already been acquired. */
 async function holdAndRenewLease(
   holder: string,
@@ -352,6 +388,7 @@ async function holdAndRenewLease(
 ) {
   const startedAt = Date.now()
   let legs: CollectLegResult[] = []
+  let lossRecorded = false
   try {
     const result = await holdStoredLease({
       key: COLLECT_LEASE_KEY,
@@ -361,11 +398,14 @@ async function holdAndRenewLease(
       trackSince: true,
       work: fn,
       lostMessage: (heldBy, afterLeg) => {
-        const lease = collectLease()
-        const observed = lease && !('unreadable' in lease) && lease.holder === heldBy ? lease : null
+        const observation = collectLeaseWaitObservation(collectLease(), 0, heldBy)
+        if (!lossRecorded) {
+          appendCollectLeaseContention(collectLeaseContentionEntry('lost', holder, observation))
+          lossRecorded = true
+        }
         return formatCollectLeaseRefusal(
           `collection stopped${afterLeg ? ` after ${afterLeg}` : ''}, a running leg was allowed to finish`,
-          { heldBy, holderAgeMs: observed?.age ?? null, waitedMs: 0 },
+          observation,
         )
       },
     })
@@ -470,27 +510,12 @@ function refuseLeaseWait(
   waiter: string,
   waitedMs: number,
 ): { ran: false } & CollectLeaseRefusalObservation {
-  const lease = collectLease()
-  const unreadable = lease !== null && 'unreadable' in lease
-  const observed = lease && !('unreadable' in lease) ? lease : null
-  const observation = {
-    ran: false as const,
-    heldBy: observed?.holder ?? null,
-    holderAgeMs: observed?.age ?? null,
-    waitedMs,
-    ...(unreadable ? { leaseUnreadable: true as const } : {}),
-  }
+  const observation = collectLeaseWaitObservation(collectLease(), waitedMs)
   console.error(
-    `hub: collect lease wait waiter=${JSON.stringify(waiter)} waited_ms=${waitedMs} refused holder=${JSON.stringify(observed?.holder ?? 'unknown')} holder_age_ms=${observed?.age ?? 'unknown'}`,
+    `hub: collect lease wait waiter=${JSON.stringify(waiter)} waited_ms=${waitedMs} refused holder=${JSON.stringify(observation.heldBy ?? 'unknown')} holder_age_ms=${observation.holderAgeMs ?? 'unknown'}`,
   )
-  appendCollectLeaseRefusal({
-    at: new Date().toISOString(),
-    waiter,
-    waitedMs,
-    holder: observation.heldBy,
-    holderAgeMs: observation.holderAgeMs,
-  })
-  return observation
+  appendCollectLeaseContention(collectLeaseContentionEntry('refused', waiter, observation))
+  return { ran: false, ...observation }
 }
 
 /**
@@ -522,19 +547,24 @@ export async function withLease<T>(
   const deadline = startedAt + waitMs
   let polls = 0
   let ownsIntent = false
+  let lastLeaseObservation: ReturnType<typeof collectLease> = null
   try {
     while (!acquireExplicitLease(holder)) {
       polls++
+      lastLeaseObservation = collectLease()
       if (!ownsIntent) ownsIntent = acquireStoredLeaseIntent(COLLECT_INTENT_KEY, holder, deadline)
       if (Date.now() >= deadline) {
         return refuseLeaseWait(holder, Date.now() - startedAt)
       }
       await new Promise((r) => setTimeout(r, 250))
     }
-    if (polls > 1)
+    if (polls > 1) {
+      const observation = collectLeaseWaitObservation(lastLeaseObservation, Date.now() - startedAt)
       console.error(
-        `hub: collect lease wait waiter=${JSON.stringify(holder)} waited_ms=${Date.now() - startedAt} acquired`,
+        `hub: collect lease wait waiter=${JSON.stringify(holder)} waited_ms=${observation.waitedMs} acquired`,
       )
+      appendCollectLeaseContention(collectLeaseContentionEntry('acquired', holder, observation))
+    }
     if (ownsIntent) {
       releaseStoredLease(COLLECT_INTENT_KEY, holder)
       ownsIntent = false
@@ -549,14 +579,9 @@ export async function withLease<T>(
       renewEveryMs,
     )
     if (result.ran) return { ran: true, value: value as T }
-    const lease = collectLease()
-    const observed =
-      lease && !('unreadable' in lease) && lease.holder === result.heldBy ? lease : null
     return {
       ran: false,
-      heldBy: result.heldBy,
-      holderAgeMs: observed?.age ?? null,
-      waitedMs: Date.now() - startedAt,
+      ...collectLeaseWaitObservation(collectLease(), Date.now() - startedAt, result.heldBy),
     }
   } finally {
     if (ownsIntent) releaseStoredLease(COLLECT_INTENT_KEY, holder)

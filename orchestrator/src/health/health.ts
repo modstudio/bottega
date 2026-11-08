@@ -1,9 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import {
+  COLLECT_LEASE_UNREADABLE_CAUSE,
+  type CollectLeaseContentionEntry,
   type CollectLeaseHoldEntry,
-  type CollectLeaseRefusalEntry,
+  readCollectLeaseContentionSince,
   readCollectLeaseHoldsSince,
-  readCollectLeaseRefusalsSince,
 } from '../../../shared/collect-lease-log.ts'
 import {
   AttributionKindSchema,
@@ -78,17 +79,32 @@ function contentionHealth(
   from: string,
   readStoreRefusals: (since: string) => StoreLockRefusalEntry[],
   readStoreHolds: (since: string) => StoreWriteHoldEntry[],
-  readLeaseRefusals: (since: string) => CollectLeaseRefusalEntry[],
+  readLeaseContention: (since: string) => CollectLeaseContentionEntry[],
   readLeaseHolds: (since: string) => CollectLeaseHoldEntry[],
 ): HarnessHealth['contention'] {
   const contention = summarizeContention(database, from)
-  const leaseRefusals: StoreLockRefusalEntry[] = readLeaseRefusals(from).map((entry) => ({
-    at: entry.at,
-    store: 'collect lease',
-    holderCommand: entry.holder,
-    holderPid: null,
-    verb: entry.waiter,
-  }))
+  const storeRefusals = readStoreRefusals(from)
+  const leaseContention = readLeaseContention(from)
+  const leaseOutcomes = { refused: 0, acquired: 0, lost: 0 }
+  for (const entry of leaseContention) leaseOutcomes[entry.outcome]++
+  const leaseRefusals: StoreLockRefusalEntry[] = leaseContention
+    .filter((entry) => entry.outcome === 'refused')
+    .map((entry) => ({
+      at: entry.at,
+      store: 'collect lease',
+      holderCommand: entry.holder,
+      holderUnavailable: entry.leaseUnreadable ? COLLECT_LEASE_UNREADABLE_CAUSE : null,
+      holderPid: null,
+      verb: entry.waiter,
+    }))
+  const unavailableReasons = new Map<string, number>()
+  for (const entry of [...storeRefusals, ...leaseRefusals]) {
+    if (entry.holderUnavailable)
+      unavailableReasons.set(
+        entry.holderUnavailable,
+        (unavailableReasons.get(entry.holderUnavailable) ?? 0) + 1,
+      )
+  }
   const leaseHolds: StoreWriteHoldEntry[] = readLeaseHolds(from).map((entry) => ({
     at: entry.at,
     store: 'collect lease',
@@ -99,9 +115,13 @@ function contentionHealth(
   }))
   return {
     ...contention,
+    collectLeaseOutcomes: leaseOutcomes,
+    storeLockHolderUnavailable: [...unavailableReasons]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason)),
     resources: [
       ...contention.resources,
-      summarizeStoreLockRefusals([...readStoreRefusals(from), ...leaseRefusals]),
+      summarizeStoreLockRefusals([...storeRefusals, ...leaseRefusals]),
       summarizeStoreWriteHolds([...readStoreHolds(from), ...leaseHolds]),
     ],
   }
@@ -196,7 +216,9 @@ export function harnessHealth(
   now = new Date(),
   readStoreRefusals: (since: string) => StoreLockRefusalEntry[] = readStoreLockRefusalsSince,
   readStoreHolds: (since: string) => StoreWriteHoldEntry[] = readStoreWriteHoldsSince,
-  readLeaseRefusals: (since: string) => CollectLeaseRefusalEntry[] = readCollectLeaseRefusalsSince,
+  readLeaseContention: (
+    since: string,
+  ) => CollectLeaseContentionEntry[] = readCollectLeaseContentionSince,
   readLeaseHolds: (since: string) => CollectLeaseHoldEntry[] = readCollectLeaseHoldsSince,
 ): HarnessHealth {
   const { from, dayKeys } = healthWindow(days, now)
@@ -381,7 +403,7 @@ export function harnessHealth(
       from,
       readStoreRefusals,
       readStoreHolds,
-      readLeaseRefusals,
+      readLeaseContention,
       readLeaseHolds,
     ),
   })

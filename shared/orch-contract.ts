@@ -718,6 +718,21 @@ export const HarnessHealthSchema = z.object({
     )
     .optional(),
   contention: z.object({
+    collectLeaseOutcomes: z
+      .object({
+        refused: z.number().int().nonnegative(),
+        acquired: z.number().int().nonnegative(),
+        lost: z.number().int().nonnegative(),
+      })
+      .optional(),
+    storeLockHolderUnavailable: z
+      .array(
+        z.object({
+          reason: z.string(),
+          count: z.number().int().positive(),
+        }),
+      )
+      .optional(),
     resources: z.array(
       z.object({
         kind: z.string(),

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { STATE_HOME_ENV } from './state-directory.ts'
@@ -40,6 +40,7 @@ test('store lock refusals append, filter by time, and rotate to one previous fil
       at: '2026-10-28T10:01:00.000Z',
       store: '/state/hub/hub.db',
       holderCommand: 'bun cli.ts',
+      holderUnavailable: null,
       holderPid: 4242,
       verb: 'note new',
     },
@@ -54,6 +55,43 @@ test('store lock refusals append, filter by time, and rotate to one previous fil
     'store-lock-refusals.previous.jsonl',
   ])
   expect(readStoreLockRefusalsSince('2026-10-28T10:00:00.000Z')).toHaveLength(3)
+})
+
+test('an unavailable holder round-trips its reason and an older row defaults it to null', () => {
+  appendStoreLockRefusal(
+    { store: '/state/hub/hub.db', holder: { unavailable: 'process inspection denied' } },
+    ['task', 'set'],
+    { now: new Date('2026-10-28T10:00:00.000Z') },
+  )
+  appendFileSync(
+    join(stateHome, 'store-lock-refusals.jsonl'),
+    `${JSON.stringify({
+      at: '2026-10-28T10:01:00.000Z',
+      store: '/state/orchestrator/orchestrator.db',
+      holderCommand: null,
+      holderPid: null,
+      verb: 'run start',
+    })}\n`,
+  )
+
+  expect(readStoreLockRefusalsSince('2026-10-28T00:00:00.000Z')).toEqual([
+    {
+      at: '2026-10-28T10:00:00.000Z',
+      store: '/state/hub/hub.db',
+      holderCommand: null,
+      holderUnavailable: 'process inspection denied',
+      holderPid: null,
+      verb: 'task set',
+    },
+    {
+      at: '2026-10-28T10:01:00.000Z',
+      store: '/state/orchestrator/orchestrator.db',
+      holderCommand: null,
+      holderUnavailable: null,
+      holderPid: null,
+      verb: 'run start',
+    },
+  ])
 })
 
 test('an append failure in an unwritable state directory does not throw', () => {

@@ -236,6 +236,7 @@ test("a locked orchestrator store refusal names the sampled holder's pid and sum
       at: expect.any(String),
       store: expect.any(String),
       holderCommand: 'bun orch.ts',
+      holderUnavailable: null,
       holderPid: 4242,
       verb: 'run start',
     },

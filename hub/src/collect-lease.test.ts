@@ -5,13 +5,13 @@
  * handle are isolated from the larger behavioral fixture.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
+  readCollectLeaseContentionSince,
   readCollectLeaseHoldsSince,
-  readCollectLeaseRefusalsSince,
 } from '../../shared/collect-lease-log.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
@@ -67,7 +67,7 @@ test('the three refusal sites share holder age and remedy formatting', () => {
   ).toBe(`nothing collected; holder: the lease row could not be read\n${refusalRemedy}`)
 })
 
-describe('collect lease refusal log', () => {
+describe('collect lease contention log', () => {
   const originalStateHome = process.env[STATE_HOME_ENV]
   let stateHome = ''
 
@@ -92,18 +92,159 @@ describe('collect lease refusal log', () => {
         waitedMs: expect.any(Number),
         holderAgeMs: expect.any(Number),
       })
-      expect(readCollectLeaseRefusalsSince('1970-01-01T00:00:00.000Z')).toEqual([
+      expect(readCollectLeaseContentionSince('1970-01-01T00:00:00.000Z')).toEqual([
         {
           at: expect.any(String),
           waiter: 'one-shot',
           waitedMs: expect.any(Number),
           holder: 'watcher',
           holderAgeMs: expect.any(Number),
+          outcome: 'refused',
+          leaseUnreadable: false,
         },
       ])
     } finally {
       releaseLease('watcher')
     }
+  })
+
+  test('an unreadable lease refusal records that cause', async () => {
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT OR REPLACE INTO setting(key,value) VALUES ('collect.lease', ?)`)
+        .run(JSON.stringify({ holder: 42, until: Date.now() + 60_000 })),
+    )
+    try {
+      const result = await withLease('unreadable-waiter', async () => {}, 0)
+      expect(result).toMatchObject({ ran: false, leaseUnreadable: true })
+      expect(
+        readCollectLeaseContentionSince('1970-01-01T00:00:00.000Z').filter(
+          (entry) => entry.waiter === 'unreadable-waiter',
+        ),
+      ).toEqual([
+        {
+          at: expect.any(String),
+          waiter: 'unreadable-waiter',
+          waitedMs: expect.any(Number),
+          holder: null,
+          holderAgeMs: null,
+          outcome: 'refused',
+          leaseUnreadable: true,
+        },
+      ])
+    } finally {
+      writeTransaction((conn) => conn.query(`DELETE FROM setting WHERE key='collect.lease'`).run())
+    }
+  })
+
+  test('a wait that acquires records the most recently observed holder', async () => {
+    expect(acquireLease('waiting-on-watcher')).toBeTrue()
+    setTimeout(() => releaseLease('waiting-on-watcher'), 300)
+    const result = await withLease('acquiring-waiter', async () => {}, 2_000)
+    expect(result.ran).toBeTrue()
+    expect(
+      readCollectLeaseContentionSince('1970-01-01T00:00:00.000Z').filter(
+        (entry) => entry.waiter === 'acquiring-waiter',
+      ),
+    ).toEqual([
+      {
+        at: expect.any(String),
+        waiter: 'acquiring-waiter',
+        waitedMs: expect.any(Number),
+        holder: 'waiting-on-watcher',
+        holderAgeMs: expect.any(Number),
+        outcome: 'acquired',
+        leaseUnreadable: false,
+      },
+    ])
+  })
+
+  test('a lost held lease records the losing and newer holders once', async () => {
+    try {
+      const result = await withLease(
+        'losing-holder',
+        async (guard) => {
+          releaseLease('losing-holder')
+          expect(acquireLease('newer-holder')).toBeTrue()
+          guard.assertHeld('first')
+        },
+        0,
+      )
+      expect(result).toMatchObject({ ran: false, heldBy: 'newer-holder' })
+      expect(
+        readCollectLeaseContentionSince('1970-01-01T00:00:00.000Z').filter(
+          (entry) => entry.waiter === 'losing-holder',
+        ),
+      ).toEqual([
+        {
+          at: expect.any(String),
+          waiter: 'losing-holder',
+          waitedMs: 0,
+          holder: 'newer-holder',
+          holderAgeMs: expect.any(Number),
+          outcome: 'lost',
+          leaseUnreadable: false,
+        },
+      ])
+    } finally {
+      releaseLease('newer-holder')
+    }
+  })
+
+  test('a lost lease returns an unreadable tail observation', async () => {
+    const stderr = spyOn(console, 'error').mockImplementation((message) => {
+      if (String(message).startsWith('hub: collect lease hold holder="tail-losing-holder"')) {
+        writeTransaction((conn) =>
+          conn
+            .query(`INSERT OR REPLACE INTO setting(key,value) VALUES ('collect.lease', ?)`)
+            .run(JSON.stringify({ holder: 42, until: Date.now() + 60_000 })),
+        )
+      }
+    })
+    try {
+      const result = await withLease(
+        'tail-losing-holder',
+        async (guard) => {
+          releaseLease('tail-losing-holder')
+          expect(acquireLease('tail-newer-holder')).toBeTrue()
+          guard.assertHeld('first')
+        },
+        0,
+      )
+      expect(result).toMatchObject({
+        ran: false,
+        heldBy: 'tail-newer-holder',
+        holderAgeMs: null,
+        leaseUnreadable: true,
+      })
+    } finally {
+      stderr.mockRestore()
+      writeTransaction((conn) => conn.query(`DELETE FROM setting WHERE key='collect.lease'`).run())
+    }
+  })
+
+  test('an older row defaults to a readable refusal', () => {
+    appendFileSync(
+      join(stateHome, 'collect-lease-refusals.jsonl'),
+      `${JSON.stringify({
+        at: '2026-10-28T10:00:00.000Z',
+        waiter: 'legacy-waiter',
+        waitedMs: 30_000,
+        holder: 'legacy-holder',
+        holderAgeMs: 35_000,
+      })}\n`,
+    )
+    expect(readCollectLeaseContentionSince('2026-10-28T00:00:00.000Z')).toEqual([
+      {
+        at: '2026-10-28T10:00:00.000Z',
+        waiter: 'legacy-waiter',
+        waitedMs: 30_000,
+        holder: 'legacy-holder',
+        holderAgeMs: 35_000,
+        outcome: 'refused',
+        leaseUnreadable: false,
+      },
+    ])
   })
   test('a hold below the log floor is not recorded', async () => {
     expect((await withLease('quick-hold', async () => {}, 0)).ran).toBeTrue()
