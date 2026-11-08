@@ -24,6 +24,13 @@ export const LAUNCHD_TEMPLATE_OWNERS = [
   { concern: 'ops', directory: 'launchd', command: 'ops/install.sh' },
 ] as const
 
+/** Return the canonical launchd template owner for one installer concern. */
+export function launchdOwnerCommand(concern: string): string {
+  const owner = LAUNCHD_TEMPLATE_OWNERS.find((candidate) => candidate.concern === concern)
+  if (!owner) throw new Error(`no launchd template owner for concern ${concern}`)
+  return owner.command
+}
+
 const CHECKOUT_ONLY_INSTALLERS = new Set<string>(
   LAUNCHD_TEMPLATE_OWNERS.map(({ command }) => command),
 )
@@ -44,11 +51,9 @@ export function installedPlistOwners(
       if (!label) throw new Error(`launchd template ${path} has no Label`)
       const standardOutPath = plistStandardOutPath(text)
       const concern = basename(dirname(dirname(path)))
-      const owner = LAUNCHD_TEMPLATE_OWNERS.find((candidate) => candidate.concern === concern)
-      if (!owner) throw new Error(`launchd template ${path} has unknown concern ${concern}`)
       return {
         label,
-        command: owner.command,
+        command: launchdOwnerCommand(concern),
         templatePath: path,
         template: text,
         ...(standardOutPath ? { standardOutPath } : {}),

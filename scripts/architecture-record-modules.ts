@@ -559,7 +559,12 @@ export const recordModules: RecordModule[] = [
     './record-space-built-ins.ts',
     './record-tunnel-error.ts',
   ]),
-  module('orchestrator/src/record/record-tunnel-error.ts', []),
+  module('orchestrator/src/record/record-tunnel-error.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+    '../health/launch-agent-doctor.ts',
+    '../setup/launchd-owners.ts',
+  ]),
   module('orchestrator/src/record/record-public-doc-designation.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',

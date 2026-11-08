@@ -447,7 +447,11 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
     'node:net',
+    '../../../shared/config-client.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/record-migrate-secret.ts',
+    '../config/config-service.ts',
+    '../record/record-tunnel-error.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-notices.ts', [

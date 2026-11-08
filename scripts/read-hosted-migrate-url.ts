@@ -1,8 +1,9 @@
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { readEnvValuesWithHosted } from '../shared/env-source.ts'
+import { RECORD_MIGRATE_SECRET_NAME } from '../shared/record-migrate-secret.ts'
 import { secretResolutionFailure } from '../shared/secret-resolution-failure.ts'
 
-const name = 'BOTTEGA_RECORD_MIGRATE_URL'
+const name = RECORD_MIGRATE_SECRET_NAME
 
 if (process.stdout.isTTY) {
   console.error('REFUSE: this command writes a credential for command substitution only')

@@ -1,11 +1,17 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { closeDatabaseForFixture, DB_PATH, registerOpenHooks } from '../database/db.ts'
 import {
   recordAuditSecretsCommand,
+  recordMigrateCommand,
   recordSpaceMoveProjectCommand,
   renderPublicDocDesignationList,
 } from './record-command.ts'
+import { recordTunnelUnconfiguredRemedy } from './record-tunnel-error.ts'
 
 const project = {
   id: 1,
@@ -17,6 +23,37 @@ const project = {
   retiredAt: null,
   settings: { space: 'source' },
 }
+
+test('record migrate names the unconfigured tunnel remedy for connection failures', async () => {
+  const configHome = mkdtempSync(join(tmpdir(), 'record-migrate-command-'))
+  const previousConfigHome = process.env[CONFIG_HOME_ENV]
+  const previousMigrateUrl = process.env.BOTTEGA_RECORD_MIGRATE_URL
+  process.env[CONFIG_HOME_ENV] = configHome
+  process.env.BOTTEGA_RECORD_MIGRATE_URL = 'postgres://record.invalid/database'
+  try {
+    await expect(
+      recordMigrateCommand(
+        { log: () => {} },
+        {
+          appliedMigrationCount: async () => 0,
+          migrate: async () => {
+            throw new Error('Failed to connect')
+          },
+          migrationCount: () => 0,
+          ensureBuiltIns: async () => ({ inserted: 0, alreadyPresent: 0 }),
+        },
+      ),
+    ).rejects.toThrow(
+      `Failed to connect\nrecord tunnel is unconfigured; ${recordTunnelUnconfiguredRemedy()}`,
+    )
+  } finally {
+    if (previousConfigHome === undefined) delete process.env[CONFIG_HOME_ENV]
+    else process.env[CONFIG_HOME_ENV] = previousConfigHome
+    if (previousMigrateUrl === undefined) delete process.env.BOTTEGA_RECORD_MIGRATE_URL
+    else process.env.BOTTEGA_RECORD_MIGRATE_URL = previousMigrateUrl
+    rmSync(configHome, { recursive: true, force: true })
+  }
+})
 
 test('break: omitting unresolved rows makes list hide an existing public designation', () => {
   const rows = [
