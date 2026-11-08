@@ -9,10 +9,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { RECORD_MIGRATE_SECRET_NAME } from '../../../shared/record-migrate-secret.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
-import {
-  RECORD_TUNNEL_DOWN_REMEDY,
-  recordTunnelUnconfiguredRemedy,
-} from '../record/record-tunnel-error.ts'
+import { RECORD_TUNNEL_DOWN_REMEDY } from '../record/record-tunnel-error.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-host-capacity.ts'
 import {
@@ -62,7 +59,6 @@ describe('record tunnel monitor condition', () => {
       kind: 'record-tunnel-unconfigured',
       subject: 'record.tunnel_app',
       detail: expect.stringContaining('record.tunnel_app is empty'),
-      action: recordTunnelUnconfiguredRemedy(),
     })
   })
 

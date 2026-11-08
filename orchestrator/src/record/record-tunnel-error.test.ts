@@ -25,7 +25,7 @@ test('non-connection failures are unchanged', () => {
 
 test('a tunnel deploy adds its unconfigured remedy when the app is empty', () => {
   expect(recordTunnelFailure('Failed to connect', { tunnelApp: '', requiresTunnel: true })).toBe(
-    `Failed to connect\nrecord tunnel is unconfigured; ${recordTunnelUnconfiguredRemedy()}`,
+    `Failed to connect\nrecord tunnel is unconfigured; run ${PLATFORM_SLUG} machine config set --machine record.tunnel_app <fly-app>, then re-run ops/install.sh to install com.user.record-tunnel`,
   )
 })
 
