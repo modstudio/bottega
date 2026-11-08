@@ -3,13 +3,18 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
-import { assetPath, runningInstallationIdentity } from '../../../shared/install-root.ts'
+import {
+  assetPath,
+  type InstallationKind,
+  runningInstallationIdentity,
+} from '../../../shared/install-root.ts'
 import {
   assertMigrationForeignKeyIntegrity,
   enterMigrationConnectionPolicy,
   leaveMigrationConnectionPolicy,
 } from '../../../shared/migration-connection-policy.ts'
 import { splitMigrationSource } from '../../../shared/migration-source.ts'
+import { storeAheadRefusal, storeAheadRemedy } from '../../../shared/store-ahead-remedy.ts'
 import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import {
   hasMigrationCompatibilityColumn,
@@ -36,7 +41,6 @@ import {
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
 import { monitorReleaseClaimOrphanCounts } from './monitor-release-claim-uuid-migration-preflight.ts'
-import { storeAheadRemedy } from './store-ahead-remedy.ts'
 import { reportTaskFlowBackfill, TASK_FLOW_MIGRATION } from './task-flow-migration-preflight.ts'
 import {
   prepareWorkflowUuidMigration,
@@ -230,19 +234,18 @@ export function migrationApplied(d: Database, tag: string, folder = MIGRATIONS_F
   )
 }
 
+function runningInstallationKind(): InstallationKind {
+  try {
+    return runningInstallationIdentity(import.meta.dir, process.env).kind
+  } catch {
+    return 'checkout'
+  }
+}
+
 export function migrationRefusal(d: Database): string | null {
   const state = migrationState(d)
   if (state.ahead) {
-    let kind: 'checkout' | 'distribution' = 'checkout'
-    try {
-      kind = runningInstallationIdentity(import.meta.dir, process.env).kind
-    } catch {
-      // A checkout is the safe default when the running installation cannot be identified.
-    }
-    return (
-      `refusing to open a store ahead of this binary's migration journal: ${state.ahead}\n` +
-      `invariant: ${SCHEMA_INVARIANT}\ncleared by: ${storeAheadRemedy(kind)}`
-    )
+    return storeAheadRefusal(state.ahead, runningInstallationKind(), SCHEMA_INVARIANT)
   }
   if (state.pending.length) {
     return (
@@ -982,7 +985,7 @@ function applyMigrationRange(
     const state = migrationState(d, folder)
     if (state.ahead) {
       throw new Error(
-        `refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`,
+        `refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}; cleared by: ${storeAheadRemedy(runningInstallationKind())}`,
       )
     }
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))

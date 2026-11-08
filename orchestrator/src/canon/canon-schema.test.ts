@@ -337,6 +337,7 @@ describe('schema coexistence', () => {
       existing.version,
     )
     expect(migrationRefusal(d)).toContain('refusing to open a store ahead')
+    expect(migrationRefusal(d)).toContain(`cleared by: ${PLATFORM_SLUG} machine update`)
     d.close()
   })
 
