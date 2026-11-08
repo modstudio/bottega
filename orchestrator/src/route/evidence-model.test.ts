@@ -5,7 +5,7 @@ import { evidenceModel, evidenceModelSql } from './evidence-model.ts'
 const openRouter = 'https://openrouter.ai/api/v1'
 
 test('OpenRouter routing variants share evidence while catalog variants remain distinct', () => {
-  for (const [model, expected] of [
+  const cases: [string, string][] = [
     ['x/y:floor', 'x/y'],
     ['x/y:nitro', 'x/y'],
     ['x/y:exacto', 'x/y'],
@@ -16,7 +16,8 @@ test('OpenRouter routing variants share evidence while catalog variants remain d
     ['x/y:extended', 'x/y:extended'],
     ['x/y:online', 'x/y:online'],
     ['x/y:free:nitro', 'x/y:free'],
-  ]) {
+  ]
+  for (const [model, expected] of cases) {
     expect(evidenceModel(model, openRouter)).toBe(expected)
   }
 })
