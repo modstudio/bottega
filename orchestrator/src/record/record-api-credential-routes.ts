@@ -3,6 +3,13 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import {
+  CREDENTIAL_BINDINGS,
+  CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_PAYERS,
+  CREDENTIAL_SLUG_PATTERN,
+  type CredentialPreferencePayload,
+} from '../../../shared/credential.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { ConfigTenant } from './record-config.ts'
 import type { CredentialPreference } from './record-credential.ts'
@@ -12,7 +19,7 @@ type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
 export type RecordCredentialRouteDeps = {
   listCredentialPreferences(input: Tenant): Promise<CredentialPreference[]>
   putCredentialPreference(
-    input: Tenant & Omit<CredentialPreference, 'updatedAt'>,
+    input: Tenant & CredentialPreferencePayload,
   ): Promise<CredentialPreference>
   deleteCredentialPreference(
     input: Tenant & Pick<CredentialPreference, 'projectId' | 'provider' | 'type' | 'environment'>,
@@ -20,9 +27,9 @@ export type RecordCredentialRouteDeps = {
 }
 const address = z.object({
   projectId: z.string().uuid().nullable(),
-  provider: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  type: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  environment: z.enum(['live', 'test', 'default']),
+  provider: z.string().regex(CREDENTIAL_SLUG_PATTERN),
+  type: z.string().regex(CREDENTIAL_SLUG_PATTERN),
+  environment: z.enum(CREDENTIAL_ENVIRONMENTS),
 })
 
 export function registerRecordCredentialRoutes(
@@ -43,7 +50,7 @@ export function registerRecordCredentialRoutes(
     const tenant = helpers.scope(context)
     if (!tenant) return helpers.noSpace(context)
     const body = address
-      .extend({ payer: z.enum(['personal', 'shared']), binding: z.enum(['project', 'space']) })
+      .extend({ payer: z.enum(CREDENTIAL_PAYERS), binding: z.enum(CREDENTIAL_BINDINGS) })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid credential preference body' }, 422)
     return context.json(await deps.putCredentialPreference({ ...tenant, ...body.data }))

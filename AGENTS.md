@@ -59,8 +59,9 @@ Summaries go through `bottega`; do not add a metered provider key for them.
 
 ## This machine
 
-Keep one checkout per project. Use disposable worktrees for parallel work.
-Only `ops/` refreshes main checkouts.
+Keep one checkout per project. Parallel work belongs in disposable git
+worktrees under the project's `.claude/worktrees/`. Nothing refreshes a
+worktree behind its owner; `ops/` refreshes main checkouts only.
 
 After cloning, configure the tracked hooks with `git config core.hooksPath
 .githooks`. The hooks refuse AI attribution in commit messages; the harness

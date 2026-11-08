@@ -16,6 +16,12 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import {
+  CREDENTIAL_BINDINGS,
+  CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_PAYERS,
+  CREDENTIAL_SLUG_SOURCE,
+} from '../credential.ts'
+import {
   project,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
@@ -148,7 +154,7 @@ export const configSecret = pgTable.withRLS(
     check(
       'config_secret_credential_fields_check',
       sql`(${table.provider} IS NULL AND ${table.type} IS NULL AND ${table.hint} IS NULL AND ${table.projectId} IS NULL) OR
-          (${table.provider} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND ${table.type} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND ${table.hint} IS NOT NULL AND ${table.environment} IN ('live','test','default'))`,
+          (${table.provider} IS NOT NULL AND ${table.type} IS NOT NULL AND ${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.hint} IS NOT NULL AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)})`,
     ),
     foreignKey({
       columns: [table.spaceId, table.dekId],
@@ -193,11 +199,11 @@ export const credentialPayerPreference = pgTable.withRLS(
       .nullsNotDistinct(),
     check(
       'credential_payer_preference_slug_check',
-      sql`${table.provider} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND ${table.type} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`,
+      sql`${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}`,
     ),
     check(
       'credential_payer_preference_values_check',
-      sql`${table.environment} IN ('live','test','default') AND ${table.preferredPayer} IN ('personal','shared') AND ${table.preferredBinding} IN ('project','space')`,
+      sql`${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)} AND ${table.preferredPayer} IN ${sql.raw(`(${CREDENTIAL_PAYERS.map((value) => `'${value}'`).join(',')})`)} AND ${table.preferredBinding} IN ${sql.raw(`(${CREDENTIAL_BINDINGS.map((value) => `'${value}'`).join(',')})`)}`,
     ),
     ...actorPolicies('credential_payer_preference', table.spaceId, table.userId),
     pgPolicy('credential_payer_preference_owner_select', {

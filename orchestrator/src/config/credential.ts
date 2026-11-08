@@ -2,30 +2,22 @@
 /** Pure credential identity, presentation, hint, and payer-resolution rules. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type {
+  CredentialEnvironment,
+  CredentialIdentity,
+  CredentialPayer,
+  CredentialPreferencePayload,
+} from '../../../shared/credential.ts'
 
 const CREDENTIAL_HINT_MIN_LENGTH = 20
-export const CREDENTIAL_ENVIRONMENTS = ['live', 'test', 'default'] as const
-export type CredentialEnvironment = (typeof CREDENTIAL_ENVIRONMENTS)[number]
-export type CredentialPayer = 'personal' | 'shared'
-type CredentialBinding = 'project' | 'space'
+export type { CredentialEnvironment, CredentialPayer } from '../../../shared/credential.ts'
 
-export type CredentialCandidate = {
+export type CredentialCandidate = CredentialIdentity & {
   spaceId: string
-  projectId: string | null
   payer: CredentialPayer
-  provider: string
-  type: string
-  environment: CredentialEnvironment
 }
 
-export type CredentialPreference = {
-  projectId: string | null
-  provider: string
-  type: string
-  environment: CredentialEnvironment
-  payer: CredentialPayer
-  binding: CredentialBinding
-}
+export type CredentialPreference = CredentialPreferencePayload
 
 export type CredentialResolution =
   | {
@@ -73,11 +65,22 @@ function matchesSlot(
   )
 }
 
+export function credentialSlot(payer: CredentialPayer, projectId: string | null): string {
+  return `${payer}@${projectId ? 'project' : 'space'}`
+}
+
+export function credentialPayerFromScope(scope: 'user' | 'space'): CredentialPayer {
+  return scope === 'user' ? 'personal' : 'shared'
+}
+
+export function credentialScopeFromPayer(payer: CredentialPayer): 'user' | 'space' {
+  return payer === 'personal' ? 'user' : 'space'
+}
+
 export function resolveCredential(input: {
   spaceId: string
   projectId: string
   projectName: string
-  userId: string
   provider: string
   type: string
   environment: CredentialEnvironment
@@ -92,9 +95,15 @@ export function resolveCredential(input: {
       row.environment === input.environment &&
       (row.projectId === input.projectId || row.projectId === null),
   )
+  const preferences = input.preferences.filter(
+    (row) =>
+      row.provider === input.provider &&
+      row.type === input.type &&
+      row.environment === input.environment,
+  )
   const preference =
-    input.preferences.find((row) => row.projectId === input.projectId) ??
-    input.preferences.find((row) => row.projectId === null)
+    preferences.find((row) => row.projectId === input.projectId) ??
+    preferences.find((row) => row.projectId === null)
   if (preference) {
     const preferred = candidates.find((row) => matchesSlot(row, preference, input.projectId))
     if (preferred)

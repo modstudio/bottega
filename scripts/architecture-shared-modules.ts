@@ -9,6 +9,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const sharedModules: ArchitectureModule[] = [
+  module('shared/credential.ts', []),
   module('shared/record-timestamp.ts', []),
   module('shared/session-liveness.ts', []),
   module('shared/run-process-marker.ts', []),
@@ -51,6 +52,7 @@ export const sharedModules: ArchitectureModule[] = [
     './settings-permission-lists.ts',
   ]),
   module('shared/config-client.ts', [
+    './credential.ts',
     './http-json.ts',
     './record-api-url.ts',
     './record-session.ts',

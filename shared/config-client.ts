@@ -2,6 +2,11 @@ import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { readRecordSessionToken } from './record-session.ts'
+import type {
+  CredentialEnvironment,
+  CredentialMetadataFields,
+  CredentialPreference,
+} from './credential.ts'
 
 export type ConfigClientErrorReason = 'not-configured' | 'unreachable' | 'response'
 
@@ -47,23 +52,15 @@ export type ConfigSecret = {
   environment: string
   scope: ConfigScope
   projectId?: string | null
-  provider?: string | null
-  type?: string | null
-  hint?: string | null
+  provider?: CredentialMetadataFields['provider'] | null
+  type?: CredentialMetadataFields['type'] | null
+  hint?: CredentialMetadataFields['hint'] | null
   dekId: string
   rowVersion: number
   updatedAt: string
   envelope?: string
 }
-export type CredentialPreference = {
-  projectId: string | null
-  provider: string
-  type: string
-  environment: 'live' | 'test' | 'default'
-  payer: 'personal' | 'shared'
-  binding: 'project' | 'space'
-  updatedAt: string
-}
+export type { CredentialPreference } from './credential.ts'
 type DataKeyWrap = {
   recipientKeyId: string
   senderKeyId: string
@@ -89,7 +86,7 @@ type ConfigIdentity = {
   user: { id: string }
   activeSpaceId: string | null
   personalSpaceId: string | null
-  memberships: Array<{ space_id: string; slug?: string; name?: string }>
+  memberships: Array<{ space_id: string; slug: string; permission: string }>
 }
 
 export type ConfigClient = ReturnType<typeof createConfigClient>
@@ -142,13 +139,13 @@ function configValueClient(request: Request, query: Query) {
       key: string,
       input: {
         scope: ConfigScope
-        environment: string
+        environment: CredentialEnvironment | string
         value: string
         expectedRowVersion: number | null
         projectId?: string | null
-        provider?: string | null
-        type?: string | null
-        hint?: string | null
+        provider?: CredentialMetadataFields['provider'] | null
+        type?: CredentialMetadataFields['type'] | null
+        hint?: CredentialMetadataFields['hint'] | null
       } & ConfigDestination,
     ) =>
       request<ConfigEntry>(`/v1/config/entries/${encodeURIComponent(key)}`, {
@@ -182,14 +179,14 @@ function configValueClient(request: Request, query: Query) {
       key: string,
       input: {
         scope: ConfigScope
-        environment: string
+        environment: CredentialEnvironment | string
         dekId: string
         envelope: string
         expectedRowVersion: number | null
         projectId?: string | null
-        provider?: string | null
-        type?: string | null
-        hint?: string | null
+        provider?: CredentialMetadataFields['provider'] | null
+        type?: CredentialMetadataFields['type'] | null
+        hint?: CredentialMetadataFields['hint'] | null
       } & ConfigDestination,
     ) =>
       request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}`, {

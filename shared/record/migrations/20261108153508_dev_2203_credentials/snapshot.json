@@ -24180,7 +24180,7 @@
       "table": "orch_snapshot"
     },
     {
-      "value": "(\"provider\" IS NULL AND \"type\" IS NULL AND \"hint\" IS NULL AND \"project_id\" IS NULL) OR\n          (\"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"hint\" IS NOT NULL AND \"environment\" IN ('live','test','default'))",
+      "value": "(\"provider\" IS NULL AND \"type\" IS NULL AND \"hint\" IS NULL AND \"project_id\" IS NULL) OR\n          (\"provider\" IS NOT NULL AND \"type\" IS NOT NULL AND \"provider\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"type\" ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' AND \"hint\" IS NOT NULL AND \"environment\" IN ('live','test','default'))",
       "name": "config_secret_credential_fields_check",
       "entityType": "checks",
       "schema": "public",

@@ -14,6 +14,7 @@ import {
   createMachineKeyClaimChallenge,
   deleteConfigEntry,
   deleteConfigSecret,
+  getConfigSecret,
   getDataKey,
   grantSpaceConfigAccess,
   listConfigEntries,
@@ -32,6 +33,8 @@ import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
 const DEK_B = '01990000-0000-7000-8000-0000000000db'
+const PROJECT_A = '01990000-0000-7000-8000-0000000000ca'
+const PROJECT_B = '01990000-0000-7000-8000-0000000000cb'
 
 export function registerHostedConfigProofs(
   actorUrl: string,
@@ -59,6 +62,9 @@ export function registerHostedConfigProofs(
        INSERT INTO secret_dek (id, space_id, version, created_at) VALUES
          ('${DEK_A}', '${spaceA}', 1, now()),
          ('${DEK_B}', '${spaceB}', 1, now());
+       INSERT INTO project (id, space_id, name, key_prefixes, created_at) VALUES
+         ('${PROJECT_A}', '${spaceA}', 'config-proof-a', ARRAY['CPA'], now()),
+         ('${PROJECT_B}', '${spaceB}', 'config-proof-b', ARRAY['CPB'], now());
        INSERT INTO config_entry
          (id, space_id, user_id, key, environment, value, row_version, updated_at)
        VALUES
@@ -517,6 +523,73 @@ export function registerHostedConfigProofs(
         expectedRowVersion: 9,
       }),
     ).rejects.toMatchObject({ status: 409 })
+  })
+
+  test('config secret service addresses space and project bindings independently', async () => {
+    const identity = {
+      ...serviceTenant,
+      key: 'ROUTED_API_KEY',
+      environment: 'test',
+      scope: 'user' as const,
+      dekId: DEK_A,
+      provider: 'routed',
+      type: 'api-key',
+      hint: 'rout…hint',
+    }
+    const spaceRow = await putConfigSecret({
+      ...identity,
+      projectId: null,
+      envelope: Uint8Array.of(31),
+      expectedRowVersion: null,
+    })
+    const projectRow = await putConfigSecret({
+      ...identity,
+      projectId: PROJECT_A,
+      envelope: Uint8Array.of(32),
+      expectedRowVersion: null,
+    })
+    expect((await getConfigSecret({ ...identity, projectId: null }))?.envelope).toEqual(
+      Uint8Array.of(31),
+    )
+    expect((await getConfigSecret({ ...identity, projectId: PROJECT_A }))?.envelope).toEqual(
+      Uint8Array.of(32),
+    )
+
+    await putConfigSecret({
+      ...identity,
+      projectId: PROJECT_A,
+      envelope: Uint8Array.of(33),
+      expectedRowVersion: projectRow.rowVersion,
+    })
+    expect((await getConfigSecret({ ...identity, projectId: null }))?.rowVersion).toBe(
+      spaceRow.rowVersion,
+    )
+    await putConfigSecret({
+      ...identity,
+      projectId: null,
+      envelope: Uint8Array.of(34),
+      expectedRowVersion: spaceRow.rowVersion,
+    })
+    expect((await getConfigSecret({ ...identity, projectId: PROJECT_A }))?.rowVersion).toBe(2)
+
+    await deleteConfigSecret({
+      ...identity,
+      projectId: PROJECT_A,
+      expectedRowVersion: 2,
+    })
+    expect(await getConfigSecret({ ...identity, projectId: PROJECT_A })).toBeNull()
+    expect(await getConfigSecret({ ...identity, projectId: null })).not.toBeNull()
+    await deleteConfigSecret({ ...identity, projectId: null, expectedRowVersion: 2 })
+    expect(await getConfigSecret({ ...identity, projectId: null })).toBeNull()
+
+    await expect(
+      putConfigSecret({
+        ...identity,
+        projectId: PROJECT_B,
+        envelope: Uint8Array.of(35),
+        expectedRowVersion: null,
+      }),
+    ).rejects.toMatchObject({ status: 422 })
   })
 
   test('config service refuses foreign and retired data keys for secret writes', async () => {

@@ -11,7 +11,6 @@ const base = {
   spaceId: 'space-a',
   projectId: 'project-a',
   projectName: 'alpha',
-  userId: 'user-a',
   provider: 'openrouter',
   type: 'api-key',
   environment: 'default' as const,
@@ -57,6 +56,42 @@ test('a project preference wins while a stale preference falls back', () => {
     preferences: [{ ...base, projectId: base.projectId, payer: 'shared', binding: 'space' }],
   })
   expect(stale).toMatchObject({ kind: 'resolved', credential: rows[0]!, reason: 'default-order' })
+})
+
+test('preferences match the complete provider, type, and environment identity', () => {
+  const rows = [candidate('personal', base.projectId), candidate('shared', null)]
+  for (const mismatch of [
+    { provider: 'inception' },
+    { type: 'token' },
+    { environment: 'test' as const },
+  ]) {
+    expect(
+      resolveCredential({
+        ...base,
+        candidates: rows,
+        preferences: [
+          {
+            ...base,
+            projectId: base.projectId,
+            payer: 'shared',
+            binding: 'space',
+            ...mismatch,
+          },
+        ],
+      }),
+    ).toMatchObject({ kind: 'resolved', credential: rows[0], reason: 'default-order' })
+  }
+})
+
+test('a space preference wins over the default order', () => {
+  const rows = [candidate('personal', base.projectId), candidate('shared', null)]
+  expect(
+    resolveCredential({
+      ...base,
+      candidates: rows,
+      preferences: [{ ...base, projectId: null, payer: 'shared', binding: 'space' }],
+    }),
+  ).toMatchObject({ kind: 'resolved', credential: rows[1], reason: 'space-preference' })
 })
 
 test("another space's credential is never selected", () => {

@@ -133,6 +133,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       'hono/cors',
       'zod',
       '../../../shared/built-commit.ts',
+      '../../../shared/credential.ts',
       '../../../shared/docs.ts',
       '../../../shared/personal-item-space.ts',
       '../../../shared/record-client-addresses.ts',
@@ -343,6 +344,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
     [
       '../../../shared/record/schema.ts',
       '../../../shared/record-timestamp.ts',
+      '../../../shared/credential.ts',
       './record-config.ts',
     ],
     'Keep credential preferences in the hosted config schema.',
@@ -738,7 +740,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'postgres-schema-config-boundary',
     'shared/record/schema-config.ts',
-    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    ['drizzle-orm', 'drizzle-orm/pg-core', '../credential.ts', './schema.ts'],
     'Enforce the hosted config schema concern boundary.',
   ),
   boundary(

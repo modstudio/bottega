@@ -2,21 +2,35 @@
 /** Maps hosted secret rows without exposing ciphertext on metadata surfaces. */
 
 import { recordIso } from '../../../shared/record-timestamp.ts'
+import type { CredentialEnvironment, CredentialMetadataFields } from '../../../shared/credential.ts'
 
-export type ConfigSecretMetadata = {
+type ConfigSecretBase = {
   id: string
   key: string
   environment: string
   scope: 'user' | 'space'
   projectId: string | null
-  provider: string | null
-  type: string | null
-  hint: string | null
   dekId: string
   rowVersion: number
   updatedAt: string
 }
+export type LegacyConfigSecretMetadata = ConfigSecretBase & {
+  projectId: null
+  provider: null
+  type: null
+  hint: null
+}
+export type CredentialSecretMetadata = ConfigSecretBase &
+  CredentialMetadataFields & {
+    environment: CredentialEnvironment
+    projectId: string | null
+  }
+export type ConfigSecretMetadata = LegacyConfigSecretMetadata | CredentialSecretMetadata
 export type ConfigSecret = ConfigSecretMetadata & { envelope: Uint8Array }
+
+export function isCredentialSecret(row: ConfigSecretMetadata): row is CredentialSecretMetadata {
+  return row.provider !== null && row.type !== null && row.hint !== null
+}
 
 export function secretMetadata(row: Record<string, unknown>): ConfigSecretMetadata {
   return {
@@ -31,5 +45,5 @@ export function secretMetadata(row: Record<string, unknown>): ConfigSecretMetada
     dekId: String(row.dek_id),
     rowVersion: Number(row.row_version),
     updatedAt: recordIso(row.updated_at),
-  }
+  } as ConfigSecretMetadata
 }

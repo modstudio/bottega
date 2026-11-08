@@ -3,17 +3,13 @@
 
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
+import type {
+  CredentialPreference,
+  CredentialPreferencePayload,
+} from '../../../shared/credential.ts'
 import { type ConfigTenant, requireConfigAccess, tenant } from './record-config.ts'
 
-export type CredentialPreference = {
-  projectId: string | null
-  provider: string
-  type: string
-  environment: 'live' | 'test' | 'default'
-  payer: 'personal' | 'shared'
-  binding: 'project' | 'space'
-  updatedAt: string
-}
+export type { CredentialPreference } from '../../../shared/credential.ts'
 
 const preferenceRow = (row: Record<string, unknown>): CredentialPreference => ({
   projectId: row.project_id == null ? null : String(row.project_id),
@@ -36,9 +32,7 @@ export async function listCredentialPreferences(input: ConfigTenant) {
   })
 }
 
-export async function putCredentialPreference(
-  input: ConfigTenant & Omit<CredentialPreference, 'updatedAt'>,
-) {
+export async function putCredentialPreference(input: ConfigTenant & CredentialPreferencePayload) {
   return tenant(input, async (tx) => {
     await requireConfigAccess(tx, input)
     const rows = await tx`INSERT INTO credential_payer_preference
