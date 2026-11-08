@@ -26,6 +26,7 @@ import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { localTaskDetail, type TaskDetail, taskBodyVersion } from './task-detail.ts'
 import { getTaskDocument, listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
 import {
+  missingTaskError,
   resolveTask,
   type TaskScope,
   taskByRecordId,
@@ -271,7 +272,7 @@ export function createLocalTaskInTransaction(
   const category = status(input.status)
   const parent = input.parent?.toUpperCase()
   const parentRecordId = parent ? taskRecordIdFor(conn, parent, input.project) : null
-  if (parent && !parentRecordId) throw new Error(`no task ${parent}`)
+  if (parent && !parentRecordId) throw missingTaskError(parent)
   const candidates = duplicateCandidates(
     conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE project = ? ORDER BY key`)
@@ -720,7 +721,7 @@ export async function setTaskBody(
     const current = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id=?`)
       .get(recordId)
-    if (!current) throw new Error(`no task ${upper}`)
+    if (!current) throw missingTaskError(upper)
     const project = projects().find((candidate) => candidate.name === current.project) ?? null
     const capability = trackerCapabilities({ source: current.source, project }).setBody
     if (!capability.allowed) throw new Error(capability.reason)
@@ -761,7 +762,7 @@ function applyLocalTaskPatch(
   const parent =
     changes.parent === undefined ? current.parent_key : (changes.parent?.toUpperCase() ?? null)
   const parentRecordId = parent ? taskRecordIdFor(conn, parent, current.project) : null
-  if (parent && !parentRecordId) throw new Error(`no task ${parent}`)
+  if (parent && !parentRecordId) throw missingTaskError(parent)
   conn
     .query(
       `UPDATE task SET title = ?, status = ?, status_category = ?, parent_key = ?, parent_record_id = ?,
@@ -994,7 +995,7 @@ export async function editTaskComment(
     const task = conn
       .query<TaskRow, [string]>('SELECT * FROM task WHERE record_id=?')
       .get(current.record_id)
-    if (!task) throw new Error(`no task ${key.toUpperCase()}`)
+    if (!task) throw missingTaskError(key.toUpperCase())
     const comment = editableComment(
       conn,
       task,
@@ -1028,7 +1029,7 @@ export async function deleteTaskComment(
     const task = conn
       .query<TaskRow, [string]>('SELECT * FROM task WHERE record_id=?')
       .get(current.record_id)
-    if (!task) throw new Error(`no task ${key.toUpperCase()}`)
+    if (!task) throw missingTaskError(key.toUpperCase())
     editableComment(
       conn,
       task,

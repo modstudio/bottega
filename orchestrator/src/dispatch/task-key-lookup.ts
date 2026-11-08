@@ -2,6 +2,7 @@
 /** Reads a task through the tracker protocol declared by its registered project. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { namesMissingTask } from '../../../shared/task-missing.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
 import { resolveProjectMcpCommand } from '../mcp/mcp-command.ts'
 import { McpHeadersHelperError, resolveMcpHeaders } from '../mcp/mcp-headers-helper.ts'
@@ -92,7 +93,7 @@ export function classifyHubTaskLookup(
 ): TaskKeyLookupResult {
   if (code === 0) return { state: 'found' }
   const detail = stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`
-  if (detail.split('\n').some((line) => line.trim() === `no task ${key}`)) {
+  if (namesMissingTask(detail, key)) {
     return { state: 'not-found' }
   }
   return { state: 'unreachable', condition: errorText(detail) }

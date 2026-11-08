@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { COLLECT_LEASE_UNREADABLE_CAUSE } from '../../../shared/collect-lease-log.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import {
@@ -258,6 +259,7 @@ describe('harness health', () => {
           at: '2026-09-07T10:00:00.000Z',
           store: '/state/hub/hub.db',
           holderCommand: `${PLATFORM_SLUG} record`,
+          holderUnavailable: null,
           holderPid: 10,
           verb: 'task set',
         },
@@ -265,6 +267,7 @@ describe('harness health', () => {
           at: '2026-09-07T10:01:00.000Z',
           store: '/state/hub/hub.db',
           holderCommand: `${PLATFORM_SLUG} record`,
+          holderUnavailable: null,
           holderPid: 10,
           verb: 'note new',
         },
@@ -272,6 +275,7 @@ describe('harness health', () => {
           at: '2026-09-07T10:02:00.000Z',
           store: '/state/hub/hub.db',
           holderCommand: `${PLATFORM_SLUG} serve`,
+          holderUnavailable: null,
           holderPid: 11,
           verb: 'task close',
         },
@@ -279,8 +283,25 @@ describe('harness health', () => {
           at: '2026-09-07T10:03:00.000Z',
           store: '/state/orchestrator/orchestrator.db',
           holderCommand: null,
+          holderUnavailable: 'process inspection denied',
           holderPid: null,
           verb: 'run start',
+        },
+        {
+          at: '2026-09-07T10:03:10.000Z',
+          store: '/state/orchestrator/orchestrator.db',
+          holderCommand: null,
+          holderUnavailable: 'process inspection denied',
+          holderPid: null,
+          verb: 'run continue',
+        },
+        {
+          at: '2026-09-07T10:03:20.000Z',
+          store: '/state/orchestrator/orchestrator.db',
+          holderCommand: null,
+          holderUnavailable: 'sampler unavailable',
+          holderPid: null,
+          verb: 'run retry',
         },
       ],
       () => [
@@ -308,6 +329,35 @@ describe('harness health', () => {
           waitedMs: 30_000,
           holder: 'collect:11',
           holderAgeMs: 35_000,
+          outcome: 'refused',
+          leaseUnreadable: false,
+        },
+        {
+          at: '2026-09-07T10:06:30.000Z',
+          waiter: 'manual-refresh:12',
+          waitedMs: 500,
+          holder: 'collect:11',
+          holderAgeMs: 5_000,
+          outcome: 'acquired',
+          leaseUnreadable: false,
+        },
+        {
+          at: '2026-09-07T10:06:45.000Z',
+          waiter: 'collect:11',
+          waitedMs: 0,
+          holder: null,
+          holderAgeMs: null,
+          outcome: 'lost',
+          leaseUnreadable: true,
+        },
+        {
+          at: '2026-09-07T10:06:50.000Z',
+          waiter: 'manual-refresh:13',
+          waitedMs: 30_000,
+          holder: null,
+          holderAgeMs: null,
+          outcome: 'refused',
+          leaseUnreadable: true,
         },
       ],
       () => [
@@ -320,18 +370,29 @@ describe('harness health', () => {
       ],
     )
 
+    expect(report.contention.collectLeaseOutcomes).toEqual({
+      refused: 2,
+      acquired: 1,
+      lost: 1,
+    })
+    expect(report.contention.storeLockHolderUnavailable).toEqual([
+      { reason: 'process inspection denied', count: 2 },
+      { reason: 'sampler unavailable', count: 1 },
+      { reason: COLLECT_LEASE_UNREADABLE_CAUSE, count: 1 },
+    ])
+
     expect(
       report.contention.resources.filter((row) => row.kind === STORE_LOCK_REFUSAL_KIND),
     ).toEqual([
       {
         kind: STORE_LOCK_REFUSAL_KIND,
-        count: 5,
+        count: 8,
         totalDurationMs: 0,
         meanDurationMs: 0,
         topKeys: [
+          { key: 'orchestrator.db held by unknown', count: 3 },
           { key: `hub.db held by ${PLATFORM_SLUG} record`, count: 2 },
           { key: 'collect lease held by collect:11', count: 1 },
-          { key: `hub.db held by ${PLATFORM_SLUG} serve`, count: 1 },
         ],
       },
     ])

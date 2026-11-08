@@ -15,6 +15,7 @@ export type StoreLockRefusalEntry = {
   at: string
   store: string
   holderCommand: string | null
+  holderUnavailable: string | null
   holderPid: number | null
   verb: string
 }
@@ -36,6 +37,7 @@ function refusalEntry(
       'pid' in facts.holder && facts.holder.command
         ? databaseLockHolderCommandSummary(facts.holder.command)
         : null,
+    holderUnavailable: 'unavailable' in facts.holder ? facts.holder.unavailable : null,
     holderPid: 'pid' in facts.holder ? facts.holder.pid : null,
     verb: argv.slice(0, 2).join(' '),
   }
@@ -70,11 +72,17 @@ function parsedEntry(value: unknown): StoreLockRefusalEntry | null {
     !Number.isFinite(Date.parse(row.at)) ||
     typeof row.store !== 'string' ||
     (row.holderCommand !== null && typeof row.holderCommand !== 'string') ||
+    (row.holderUnavailable !== undefined &&
+      row.holderUnavailable !== null &&
+      typeof row.holderUnavailable !== 'string') ||
     (row.holderPid !== null && (!Number.isInteger(row.holderPid) || Number(row.holderPid) < 1)) ||
     typeof row.verb !== 'string'
   )
     return null
-  return row as StoreLockRefusalEntry
+  return {
+    ...(row as Omit<StoreLockRefusalEntry, 'holderUnavailable'>),
+    holderUnavailable: typeof row.holderUnavailable === 'string' ? row.holderUnavailable : null,
+  }
 }
 
 /** Read valid entries in the window from the current and one previous bounded log. */

@@ -1,10 +1,18 @@
 import { describe, expect, test } from 'bun:test'
+import { missingTaskLine, missingTaskMessage } from '../../../shared/task-missing.ts'
 import { classifyHubTaskLookup, trackerLookupFailureCondition } from './task-key-lookup.ts'
 
 describe('built-in task-key lookup output', () => {
   test('classifies hub exact not-found output as established absence', () => {
-    expect(classifyHubTaskLookup('DEV-99999', 1, '', 'no task DEV-99999\n')).toEqual({
+    expect(classifyHubTaskLookup('DEV-99999', 1, '', missingTaskMessage('DEV-99999'))).toEqual({
       state: 'not-found',
+    })
+  })
+
+  test("does not classify another task's missing line as this task's absence", () => {
+    expect(classifyHubTaskLookup('DEV-12', 1, '', missingTaskMessage('DEV-1'))).toEqual({
+      state: 'unreachable',
+      condition: missingTaskLine('DEV-1'),
     })
   })
 

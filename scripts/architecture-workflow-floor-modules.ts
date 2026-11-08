@@ -154,6 +154,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
+    '../../../shared/task-missing.ts',
     '../../../shared/trackers.ts',
     '../../../shared/bounded-process.ts',
   ]),

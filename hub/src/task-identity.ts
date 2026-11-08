@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { missingTaskMessage } from '../../shared/task-missing.ts'
 import { db } from './db.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { taskAdoptionCollisionCount } from './task-adoption.ts'
@@ -142,13 +143,17 @@ function ambiguousTaskError(candidates: TaskIdentityCandidate[]) {
   )
 }
 
+export function missingTaskError(key: string): Error {
+  return new Error(missingTaskMessage(key))
+}
+
 /** Resolve a human label at the edge; internal task work uses the returned UUID. */
 export function resolveTask(conn: Database, key: string, project?: string): string {
   const upper = key.toUpperCase()
   const candidates = taskIdentityCandidates(conn, upper)
   const decision = decideTaskIdentity(candidates, project)
   if ('one' in decision) return decision.one
-  if ('none' in decision) throw new Error(`no task ${upper}`)
+  if ('none' in decision) throw missingTaskError(upper)
   if ('several' in decision) throw ambiguousTaskError(decision.several)
 
   const detail = candidateDetail(decision.uncachedOnly)

@@ -5,6 +5,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { namesMissingTask } from '../../../shared/task-missing.ts'
 import { isTrackerCommentId } from '../../../shared/trackers.ts'
 
 export type HubTaskRead = {
@@ -65,10 +66,10 @@ export function hubTaskReadRefusal(
   const detail = withholdSecretShapedDetail(rawDetail)
   const attempted = `${PLATFORM_SLUG} task show ${key} --json --fresh`
   if (
-    rawDetail.split('\n').some((line) => {
-      const text = line.trim()
-      return text === `no task ${key}` || text.includes(`task ${key} was not found in project`)
-    })
+    namesMissingTask(rawDetail, key) ||
+    rawDetail
+      .split('\n')
+      .some((line) => line.trim().includes(`task ${key} was not found in project`))
   )
     return `--task ${key} was not found in the project's tracker; ${attempted} attempted the registered tracker read: ${detail}`
   return `--task ${key} could not be read through the project's tracker by ${attempted}: ${detail}`

@@ -13,6 +13,7 @@ import {
 import type { MachineRef } from '../../../../shared/machine-label.ts'
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
+import { missingTaskLine } from '../../../../shared/task-missing.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
 import { hostedProjectReleases } from '../../hosted-releases.ts'
 import {
@@ -577,7 +578,7 @@ const recordCoreRouter = t.router({
         input.key,
         input.spaceId ?? identity.spaceId,
       )
-      if (!detail) throw new TRPCError({ code: 'NOT_FOUND', message: `no task ${input.key}` })
+      if (!detail) throw new TRPCError({ code: 'NOT_FOUND', message: missingTaskLine(input.key) })
       return detail
     }),
   routing: t.procedure.input(machineInput).query(async ({ ctx, input }) => {
