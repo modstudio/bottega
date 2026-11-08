@@ -12,6 +12,10 @@ import {
 } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
+import {
+  latestFinishedWorkerCheckExecutionRecordId,
+  uncheckedChecksForGateExecution,
+} from '../gate/worker-check-omissions.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
@@ -22,6 +26,7 @@ import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
   declaredExpectFailProbeLines,
+  lastWorkerCheckNotRunBlock,
   observedTestsLine,
   TRUNCATED_TRANSCRIPT_BYTES,
   visibleTranscriptText,
@@ -127,6 +132,19 @@ function presentObservedTests(
   for (const probeLine of declaredExpectFailProbeLines(declaredProbes(row.record_id))) {
     presentation.error(probeLine)
   }
+}
+
+function presentLastWorkerCheckOmissions(
+  database: Database,
+  runRecordId: string,
+  presentation: CollectResultPresentation,
+): void {
+  const executionRecordId = latestFinishedWorkerCheckExecutionRecordId(runRecordId, database)
+  const uncheckedChecks = executionRecordId
+    ? uncheckedChecksForGateExecution(executionRecordId, database)
+    : []
+  const block = lastWorkerCheckNotRunBlock(uncheckedChecks)
+  if (block) presentation.error(block)
 }
 
 /** Resolve what an `asking` status means across the whole conversation. */
@@ -742,6 +760,7 @@ export function collectResult(
     }
   }
   presentCollectedOutput(row, output, outcome.ok, presentation)
+  presentLastWorkerCheckOmissions(database, row.record_id, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

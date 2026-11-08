@@ -194,7 +194,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/code/code-commands.ts',
   'orchestrator/src/collect/collect.ts',
   'orchestrator/src/collect/collection-commands.ts',
-  'orchestrator/src/collect/result-output.ts',
   'orchestrator/src/commands/branches.ts',
   'orchestrator/src/commands/cleanup.ts',
   'orchestrator/src/commands/code.ts',

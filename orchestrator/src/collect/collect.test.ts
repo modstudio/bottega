@@ -644,6 +644,29 @@ describe('collection records', () => {
     )
   })
 
+  test(`${PLATFORM_SLUG} run result lists omissions from the last worker check`, () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const gateRecordId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose)
+         VALUES (?,?,?,?,0,0,20,'worker-check')`,
+      )
+      .run(gateRecordId, id, '2026-11-08T01:00:00.000Z', '2026-11-08T01:00:01.000Z')
+    db()
+      .query(
+        `INSERT INTO check_execution
+          (record_id,gate_execution_record_id,check_name,wall_ms,exit_code,unchecked_reason)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(newRecordId(), gateRecordId, 'scripts typecheck', 0, 0, 'no matching files')
+
+    expect(recordedResult(id).errors.join('\n')).toContain(
+      'Last worker check:\nnot run:\n- scripts typecheck (no matching files)',
+    )
+  })
+
   test(`${PLATFORM_SLUG} run result ignores legacy numeric note events`, () => {
     const id = addRun({ agent: 'codex', job: 'review-lens' })
     const eventsPath = runEventsPath(id)

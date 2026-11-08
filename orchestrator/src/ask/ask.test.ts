@@ -392,9 +392,21 @@ describe('the live ask channel always answers', () => {
       expect(resultText(first)).toContain('waiting 2ms for host capacity')
       expect(resultText(first)).toContain('held_on=load')
 
+      const execution = db()
+        .query('SELECT record_id FROM gate_execution WHERE run_record_id=?')
+        .get(run) as { record_id: string }
+      db()
+        .query(
+          `INSERT INTO check_execution
+            (record_id,gate_execution_record_id,check_name,wall_ms,exit_code,unchecked_reason)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .run(newRecordId(), execution.record_id, 'scripts typecheck', 0, 0, 'no matching files')
+
       const second = await connection.client.callTool({ name: 'run_check', arguments: {} })
       expect(second.isError).toBeUndefined()
-      expect(resultText(second)).toContain('Gate exit code: 0')
+      expect(resultText(second)).toContain('Worker check passed, 1 check not run')
+      expect(resultText(second)).toContain('not run:\n- scripts typecheck (no matching files)')
       expect(resultText(second)).toContain('passed')
       expect(
         (
