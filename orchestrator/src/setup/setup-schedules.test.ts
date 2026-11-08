@@ -7,7 +7,23 @@ import {
   recordSyncQueueDirectory,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
-import { MAINTENANCE_SCHEDULE_LABELS, renderMaintenanceSchedule } from './setup-schedules.ts'
+import {
+  MAINTENANCE_SCHEDULE_LABELS,
+  maintenanceSchedulePlan,
+  renderMaintenanceSchedule,
+} from './setup-schedules.ts'
+
+const skipFacts = {
+  modelHostAlias: '',
+  recordTunnelApp: '',
+  flyctlOnPath: false,
+}
+
+test('schedule install plan uses the canonical labels and shared skip decision', () => {
+  expect(maintenanceSchedulePlan(skipFacts)).toEqual(
+    MAINTENANCE_SCHEDULE_LABELS.map((label) => ({ label, skipReason: null })),
+  )
+})
 
 test('distribution schedule rendering replaces every placeholder for both labels', () => {
   for (const label of MAINTENANCE_SCHEDULE_LABELS) {

@@ -1,5 +1,5 @@
 // concern: launch-agent definition refresh
-/** Plans and applies refreshes only for installed launch-agent definitions that drifted. */
+/** Plans and applies required missing definitions and installed definitions that drifted. */
 
 import { join } from 'node:path'
 import {
@@ -38,11 +38,20 @@ function definitionIsDrifted(observation: LaunchAgentDefinitionObservation | und
   return observation?.comparison.kind === 'compared' && !observation.comparison.plistMatches
 }
 
+function maintenanceDefinitionNeedsRefresh(
+  label: string,
+  observation: LaunchAgentDefinitionObservation | undefined,
+  required: ReadonlySet<string>,
+): boolean {
+  return definitionIsDrifted(observation) || (required.has(label) && observation === undefined)
+}
+
 /** Decide which installed definitions can be refreshed by the owning installation. */
 export function decideLaunchAgentRefresh(input: {
   installationKind: InstallationKind
   owners: readonly InstalledPlistOwner[]
   observations: Readonly<Record<string, LaunchAgentDefinitionObservation>>
+  requiredMaintenanceLabels?: readonly string[]
 }): LaunchAgentRefreshPlan {
   const drifted = input.owners.filter(({ label }) => definitionIsDrifted(input.observations[label]))
   const unverified = input.owners.flatMap(({ label }) => {
@@ -61,7 +70,12 @@ export function decideLaunchAgentRefresh(input: {
       notReleaseInstalled: [],
     }
   }
-  const releaseOwned = drifted.filter(({ label }) => isMaintenanceScheduleLabel(label))
+  const required = new Set(input.requiredMaintenanceLabels ?? [])
+  const releaseOwned = input.owners.filter(
+    ({ label }) =>
+      isMaintenanceScheduleLabel(label) &&
+      maintenanceDefinitionNeedsRefresh(label, input.observations[label], required),
+  )
   return {
     labels: releaseOwned.map(({ label }) => ({
       label,
@@ -86,6 +100,7 @@ type RefreshDependencies = {
   readScheduleFacts?: () => ScheduleSetupFact[]
   runCheckoutInstaller?: (root: string, command: string) => void
   applyMaintenance?: () => Promise<ScheduleApplyResult[]>
+  requiredMaintenanceLabels?: () => readonly string[]
 }
 
 function distributionObservations(
@@ -146,10 +161,13 @@ export async function refreshLaunchAgents(
     identity.kind === 'distribution'
       ? distributionObservations(owners, observe, readScheduleFacts)
       : observe(owners, identity.kind)
+  const requiredMaintenanceLabels =
+    identity.kind === 'distribution' ? (deps.requiredMaintenanceLabels?.() ?? []) : []
   const plan = decideLaunchAgentRefresh({
     installationKind: identity.kind,
     owners,
     observations,
+    requiredMaintenanceLabels,
   })
   for (const { label, detail } of plan.unverified) {
     presentation.log(`${label} unverified — ${detail}`)
@@ -171,7 +189,9 @@ export async function refreshLaunchAgents(
       ? distributionObservations(owners, observe, readScheduleFacts)
       : observe(owners, identity.kind)
   const remaining = plan.labels.filter(
-    ({ label }) => !skippedLabels.has(label) && definitionIsDrifted(after[label]),
+    ({ label }) =>
+      !skippedLabels.has(label) &&
+      maintenanceDefinitionNeedsRefresh(label, after[label], new Set(requiredMaintenanceLabels)),
   )
   if (remaining.length > 0) {
     throw new Error(

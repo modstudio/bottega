@@ -11,6 +11,7 @@ import { installationIdentity } from '../../../shared/install-root.ts'
 import { renderLaunchAgentTemplate } from '../../../shared/launch-agent-render.ts'
 import {
   gatherLaunchAgentSkipFacts,
+  type LaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
 import {
@@ -51,6 +52,21 @@ export type ScheduleApplyResult = {
   label: MaintenanceScheduleLabel
   status: 'applied' | 'unchanged' | 'skipped'
   reason?: string
+}
+
+export type MaintenanceSchedulePlanItem = {
+  label: MaintenanceScheduleLabel
+  skipReason: string | null
+}
+
+/** Select the canonical setup labels for this install level and apply the shared skip ruling. */
+export function maintenanceSchedulePlan(
+  skipFacts: LaunchAgentSkipFacts,
+): MaintenanceSchedulePlanItem[] {
+  return MAINTENANCE_SCHEDULE_LABELS.map((label) => ({
+    label,
+    skipReason: launchAgentSkipReason(label, skipFacts),
+  }))
 }
 
 const templatePath = (label: MaintenanceScheduleLabel): string =>
@@ -148,8 +164,12 @@ export async function applyMaintenanceSchedules(): Promise<ScheduleApplyResult[]
   await mkdir(recordSyncQueueDirectory(process.env), { recursive: true })
   const skipFacts = gatherLaunchAgentSkipFacts()
   const results: ScheduleApplyResult[] = []
-  for (const label of MAINTENANCE_SCHEDULE_LABELS) {
-    results.push(await applyMaintenanceSchedule(label, launchctl, uid, agents, skipFacts))
+  for (const item of maintenanceSchedulePlan(skipFacts)) {
+    if (item.skipReason) {
+      results.push({ label: item.label, status: 'skipped', reason: item.skipReason })
+      continue
+    }
+    results.push(await applyMaintenanceSchedule(item.label, launchctl, uid, agents))
   }
   return results
 }
@@ -159,10 +179,7 @@ async function applyMaintenanceSchedule(
   launchctl: string,
   uid: number,
   agents: string,
-  skipFacts: ReturnType<typeof gatherLaunchAgentSkipFacts>,
 ): Promise<ScheduleApplyResult> {
-  const reason = launchAgentSkipReason(label, skipFacts)
-  if (reason) return { label, status: 'skipped', reason }
   const rendered = renderedSchedule(label)
   const target = join(agents, `${label}.plist`)
   const logPath = plistStandardOutPath(rendered)

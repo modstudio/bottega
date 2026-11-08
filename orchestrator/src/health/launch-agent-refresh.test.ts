@@ -51,6 +51,17 @@ test('distribution refreshes maintenance drift and leaves checkout-owned drift a
   expect(plan.notReleaseInstalled).toEqual(['ops-label'])
 })
 
+test('distribution installs required maintenance labels with no definition', () => {
+  const plan = decideLaunchAgentRefresh({
+    installationKind: 'distribution',
+    owners,
+    observations: { 'hub-label': compared(true), 'ops-label': compared(true) },
+    requiredMaintenanceLabels: ['com.user.orch-record-sync'],
+  })
+  expect(plan.applyMaintenance).toBeTrue()
+  expect(plan.labels.map(({ label }) => label)).toEqual(['com.user.orch-record-sync'])
+})
+
 test('an unavailable comparison is unverified instead of drifted', () => {
   const plan = decideLaunchAgentRefresh({
     installationKind: 'checkout',

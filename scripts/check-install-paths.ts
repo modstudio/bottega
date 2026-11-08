@@ -15,6 +15,7 @@ const INSTALL_AWARE_RESOLVERS = new Set([
   'embeddedDistributionManifest',
   'installationBuildId',
   'installationIdentity',
+  'installationExecutable',
   'installationVersionText',
   'isAuthorizedPlatformInstallation',
   'readInstallAsset',
