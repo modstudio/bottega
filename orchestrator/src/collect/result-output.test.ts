@@ -1,12 +1,15 @@
 import { expect, test } from 'bun:test'
-import { declaredExpectFailProbeLines, observedTestsLine } from './result-output.ts'
+import {
+  declaredExpectFailProbeLines,
+  lastWorkerCheckNotRunBlock,
+  observedTestsLine,
+} from './result-output.ts'
 
 test('shows observed tests and their disagreement independently of a reply', () => {
   expect(observedTestsLine({ ran: 0, passed: null, claimDisagrees: 1 })).toBe(
     'tests observed: {"ran":false,"passed":null}; tests_claim_disagrees: true',
   )
 })
-
 test('shows an unavailable runner as unobserved and non-disagreeing', () => {
   expect(observedTestsLine({ ran: null, passed: null, claimDisagrees: 0 })).toBe(
     'tests observed: not observed; tests_claim_disagrees: false',
@@ -22,7 +25,6 @@ test('shows an unverified claim beside what was observed', () => {
     'tests observed: {"ran":true,"passed":null}; tests_claim_disagrees: unverified',
   )
 })
-
 test('shows each declared expect-fail probe and its observed result', () => {
   expect(
     declaredExpectFailProbeLines([
@@ -34,4 +36,20 @@ test('shows each declared expect-fail probe and its observed result', () => {
     'declared expect-fail probe: mutation.test.ts → failed',
     'declared expect-fail probe: one.test.ts, two.test.ts → passed',
   ])
+})
+
+test('shows omissions from the last worker check in check-name order', () => {
+  expect(
+    lastWorkerCheckNotRunBlock([
+      { check: 'typecheck', reason: 'no matching files' },
+      { check: 'biome', reason: 'no files to check' },
+    ]),
+  ).toBe(
+    [
+      'Last worker check:',
+      'not run:',
+      '- biome (no files to check)',
+      '- typecheck (no matching files)',
+    ].join('\n'),
+  )
 })

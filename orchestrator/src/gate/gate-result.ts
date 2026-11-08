@@ -3,6 +3,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { uncheckedChecksForGateExecution } from './worker-check-omissions.ts'
 export type RecordedGateCandidate = {
   recordId: string
   projectId: string | null
@@ -107,15 +108,10 @@ export function recordedGateResult(runId: string): {
     { projectId: run.project_record_id, headCommit: run.head_commit },
   )
   if (!result) return { headCommit: run.head_commit, result: null }
-  const uncheckedChecks = db()
-    .query<{ check: string; reason: string }, [string]>(
-      `SELECT check_name AS "check",unchecked_reason AS reason
-       FROM check_execution
-       WHERE gate_execution_record_id=? AND unchecked_reason IS NOT NULL
-       ORDER BY check_name,record_id`,
-    )
-    .all(result.recordId)
-  return { headCommit: run.head_commit, result: { ...result, uncheckedChecks } }
+  return {
+    headCommit: run.head_commit,
+    result: { ...result, uncheckedChecks: uncheckedChecksForGateExecution(result.recordId, db()) },
+  }
 }
 
 export function formatRecordedGateResult(input: ReturnType<typeof recordedGateResult>): string {

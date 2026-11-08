@@ -1,3 +1,4 @@
+import { formatUncheckedChecksNotRunBlock } from '../gate/gate-decision.ts'
 import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts'
 
 /** Maximum recovered transcript text printed by `bottega run result` for a truncated run. */
@@ -53,4 +54,12 @@ export function declaredExpectFailProbeLines(
       (observation) =>
         `declared expect-fail probe: ${observation.paths.join(', ')} → ${observation.passed ? 'passed' : 'failed'}`,
     )
+}
+
+/** Format omissions from the newest finished worker check for run-result readers. */
+export function lastWorkerCheckNotRunBlock(
+  uncheckedChecks: readonly { check: string; reason: string }[],
+): string | null {
+  if (uncheckedChecks.length === 0) return null
+  return ['Last worker check:', formatUncheckedChecksNotRunBlock(uncheckedChecks)].join('\n')
 }
