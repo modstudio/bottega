@@ -9,6 +9,10 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
@@ -19,6 +23,7 @@ import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
 import { type Project, removeProject, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
+import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
 import { attachWorkflowTextByHandle } from '../workflow/workflow-text.ts'
 import { showWorkflowText } from '../workflow/workflow-text-copy.ts'
@@ -505,6 +510,19 @@ describe('orch MCP', () => {
     ) as {
       id: number
     }
+    const firstRow = db()
+      .query<
+        {
+          record_id: string
+          workflow_version_record_id: string
+          catalogue_version_record_id: string
+        },
+        [number]
+      >(
+        `SELECT record_id,workflow_version_record_id,catalogue_version_record_id
+         FROM workflow_cursor WHERE number=?`,
+      )
+      .get(first.id)!
     const second = insert.get(
       newRecordId(),
       project,
@@ -515,6 +533,13 @@ describe('orch MCP', () => {
     ) as {
       id: number
     }
+    db()
+      .query(
+        `UPDATE workflow_cursor
+         SET project_record_id=(SELECT record_id FROM project WHERE name=?)
+         WHERE number IN (?,?)`,
+      )
+      .run(project, first.id, second.id)
     const server = createDocsMcpServer({
       hubTaskReader: async () =>
         ['DEV-1082-MCP-A', 'DEV-1082-MCP-B'].map((key) => ({
@@ -535,6 +560,8 @@ describe('orch MCP', () => {
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
+    const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
+    const flowId = newRecordId()
     const call = async (name: string, toolArgs: Record<string, unknown>) => {
       const result = await client.callTool({ name, arguments: toolArgs })
       if (result.isError)
@@ -563,13 +590,65 @@ describe('orch MCP', () => {
       const evidenceRunNumber = db()
         .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
         .get(evidenceRun)!.number
-      await call('next_workflow_step', {
+      const taskId = 'task-DEV-1082-MCP-A'
+      const remoteMachine = newRecordId()
+      const defaultSteps = current.modes.find(({ slug }) => slug === 'default')!.steps
+      const remoteStep = defaultSteps[1]
+      if (typeof remoteStep !== 'string') throw new Error('fixture second step must be literal')
+      const hosted: HostedTaskFlow = {
+        flow: {
+          id: flowId,
+          projectId: db()
+            .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
+            .get(project)!.record_id,
+          taskId,
+          state: 'open',
+          openStageRecordId: firstRow.record_id,
+          openingMachineId: remoteMachine,
+          updatedMachineId: remoteMachine,
+          revision: 2,
+          createdAt: '2026-10-01T10:00:00.000Z',
+          updatedAt: '2026-10-01T11:00:00.000Z',
+        },
+        stage: {
+          id: firstRow.record_id,
+          flowRecordId: flowId,
+          workflow: 'fix-defect',
+          mode: 'default',
+          workflowVersionId: firstRow.workflow_version_record_id,
+          catalogueVersionId: firstRow.catalogue_version_record_id,
+          arguments: args('DEV-1082-MCP-A'),
+          activeOrdinal: 1,
+          activeSlug: remoteStep,
+          state: 'running',
+          closedStepNotes: [
+            { n: 1, slug: 'diagnose', note: 'diagnosed remotely', at: '2026-10-01T10:30:00.000Z' },
+          ],
+          totalSteps: defaultSteps.length,
+          openedMachineId: remoteMachine,
+          takenOverFromMachineId: null,
+          lastAdvancedMachineId: remoteMachine,
+          revision: 2,
+          createdAt: '2026-10-01T10:00:00.000Z',
+          updatedAt: '2026-10-01T11:00:00.000Z',
+          holder: { id: remoteMachine, displayName: 'Remote MCP machine' },
+        },
+      }
+      installRecordApiClient({
+        ...createMemoryRecordApiClient(),
+        readTaskFlow: async () => hosted,
+      })
+      process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+      const advanced = await call('next_workflow_step', {
         ...common,
-        args: args('DEV-1082-MCP-A'),
         cursor: first.id,
         note: 'closed through MCP handle',
         run: evidenceRunNumber,
       })
+      expect(advanced).toContain('Took over this workflow stage from Remote MCP machine.')
+      if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
+      installRecordApiClient(createMemoryRecordApiClient())
       await call('await_workflow_ruling', {
         ...common,
         args: args('DEV-1082-MCP-B'),
@@ -607,17 +686,35 @@ describe('orch MCP', () => {
       })
 
       expect(
-        db().query('SELECT ordinal,state FROM workflow_cursor WHERE number=?').get(first.id),
-      ).toEqual({ ordinal: 1, state: 'running' })
+        db()
+          .query('SELECT ordinal,state,task_record_id FROM workflow_cursor WHERE number=?')
+          .get(first.id),
+      ).toEqual({ ordinal: 2, state: 'running', task_record_id: taskId })
       expect(db().query('SELECT state FROM workflow_cursor WHERE number=?').get(second.id)).toEqual(
         {
           state: 'abandoned',
         },
       )
     } finally {
+      if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
+      installRecordApiClient(createMemoryRecordApiClient())
       await client.close()
       await server.close()
       db().query('DELETE FROM run WHERE repo=?').run(project)
+      db()
+        .query(
+          `UPDATE workflow_cursor SET task_flow_record_id=NULL
+           WHERE task_flow_record_id=?`,
+        )
+        .run(flowId)
+      db()
+        .query(
+          `DELETE FROM question WHERE workflow_cursor_record_id IN (
+             SELECT record_id FROM workflow_cursor
+             WHERE project_record_id=(SELECT record_id FROM project WHERE name=?))`,
+        )
+        .run(project)
       db()
         .query(
           'DELETE FROM workflow_cursor WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)',

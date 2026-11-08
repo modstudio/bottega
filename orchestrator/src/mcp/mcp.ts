@@ -47,9 +47,8 @@ import {
 import { awaitWorkflowRuling, ruleWorkflow } from '../workflow/workflow-cursor.ts'
 import {
   mcpWorkflowCursorContext,
-  resolveMcpCursorContext,
+  resolveMcpSelectedCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
-import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
   attachWorkflowTextByHandle,
@@ -70,6 +69,7 @@ import { registerSearchTools } from './mcp-search-tools.ts'
 import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
 import { advanceWorkflow } from './mcp-workflow-advance.ts'
+import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
@@ -465,12 +465,20 @@ function registerWorkflowListTool(server: McpServer): void {
 }
 
 async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports: DocsMcpPorts) {
+  const { context } = await resolveMcpSelectedCursorContext(
+    undefined,
+    undefined,
+    undefined,
+    {},
+    cursor,
+    ports.hubTaskReader,
+  )
   const result = await closeCursorWithTextCopy(
     {
       action: 'abandon',
       cursor,
       args: {},
-      context: mcpWorkflowCursorContext(),
+      context,
       reason,
     },
     undefined,
@@ -478,6 +486,94 @@ async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports
     ports.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   return text(result)
+}
+
+function registerAwaitWorkflowRulingTool(server: McpServer, ports: DocsMcpPorts): void {
+  server.registerTool(
+    'await_workflow_ruling',
+    {
+      description: 'Record that the workflow is paused on a question for the operator.',
+      inputSchema: z.object({
+        slug: z.string().trim().min(1),
+        project: z.string().trim().min(1),
+        mode: z.string().trim().min(1).optional(),
+        args: z.record(z.string(), z.string()).optional(),
+        question: z.string().trim().min(1),
+        cursor: z.number().int().positive().optional(),
+      }),
+    },
+    async ({ slug, project, mode, args, question, cursor }) => {
+      const workflowArgs = args ?? {}
+      const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
+        slug,
+        project,
+        mode,
+        workflowArgs,
+        cursor,
+        'await_workflow_ruling',
+        'pass the mode argument',
+        ports.hubTaskReader,
+      )
+      return text(
+        awaitWorkflowRuling(
+          slug,
+          project,
+          effectiveMode,
+          workflowArgs,
+          question,
+          context,
+          undefined,
+          undefined,
+          cursor,
+        ),
+      )
+    },
+  )
+}
+
+function registerRuleWorkflowTool(server: McpServer, ports: DocsMcpPorts): void {
+  server.registerTool(
+    'rule_workflow',
+    {
+      description: 'Record a ruling and resume the workflow on the same step.',
+      inputSchema: z.object({
+        slug: z.string().trim().min(1),
+        project: z.string().trim().min(1),
+        mode: z.string().trim().min(1).optional(),
+        args: z.record(z.string(), z.string()).optional(),
+        ruling: z.string().trim().min(1),
+        from_operator: z.boolean().optional(),
+        cursor: z.number().int().positive().optional(),
+      }),
+    },
+    async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
+      const workflowArgs = args ?? {}
+      const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
+        slug,
+        project,
+        mode,
+        workflowArgs,
+        cursor,
+        'rule_workflow',
+        'pass the mode argument',
+        ports.hubTaskReader,
+      )
+      return text(
+        await ruleWorkflow(
+          slug,
+          project,
+          effectiveMode,
+          workflowArgs,
+          ruling,
+          Boolean(from_operator),
+          'mcp',
+          context,
+          undefined,
+          cursor,
+        ),
+      )
+    },
+  )
 }
 
 export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
@@ -554,92 +650,8 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
     (input) => advanceWorkflow(input, ports.hubTaskReader, ports.workflowTextDocuments),
   )
 
-  server.registerTool(
-    'await_workflow_ruling',
-    {
-      description: 'Record that the workflow is paused on a question for the operator.',
-      inputSchema: z.object({
-        slug: z.string().trim().min(1),
-        project: z.string().trim().min(1),
-        mode: z.string().trim().min(1).optional(),
-        args: z.record(z.string(), z.string()).optional(),
-        question: z.string().trim().min(1),
-        cursor: z.number().int().positive().optional(),
-      }),
-    },
-    async ({ slug, project, mode, args, question, cursor }) => {
-      const workflowArgs = args ?? {}
-      const context = await resolveMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
-      const effectiveMode = resolveLinkedWorkflowCursorMode(
-        slug,
-        project,
-        mode,
-        workflowArgs,
-        context,
-        'await_workflow_ruling',
-        'pass the mode argument',
-        undefined,
-        cursor,
-      )
-      return text(
-        awaitWorkflowRuling(
-          slug,
-          project,
-          effectiveMode,
-          workflowArgs,
-          question,
-          context,
-          undefined,
-          undefined,
-          cursor,
-        ),
-      )
-    },
-  )
-
-  server.registerTool(
-    'rule_workflow',
-    {
-      description: 'Record a ruling and resume the workflow on the same step.',
-      inputSchema: z.object({
-        slug: z.string().trim().min(1),
-        project: z.string().trim().min(1),
-        mode: z.string().trim().min(1).optional(),
-        args: z.record(z.string(), z.string()).optional(),
-        ruling: z.string().trim().min(1),
-        from_operator: z.boolean().optional(),
-        cursor: z.number().int().positive().optional(),
-      }),
-    },
-    async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
-      const workflowArgs = args ?? {}
-      const context = await resolveMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
-      return text(
-        await ruleWorkflow(
-          slug,
-          project,
-          resolveLinkedWorkflowCursorMode(
-            slug,
-            project,
-            mode,
-            workflowArgs,
-            context,
-            'rule_workflow',
-            'pass the mode argument',
-            undefined,
-            cursor,
-          ),
-          workflowArgs,
-          ruling,
-          Boolean(from_operator),
-          'mcp',
-          context,
-          undefined,
-          cursor,
-        ),
-      )
-    },
-  )
+  registerAwaitWorkflowRulingTool(server, ports)
+  registerRuleWorkflowTool(server, ports)
 
   server.registerTool(
     'abandon_workflow',
