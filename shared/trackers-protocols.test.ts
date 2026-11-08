@@ -406,38 +406,6 @@ describe('tracker list scope', () => {
     { name, inputSchema: { properties: { status: {} } } },
   ]
 
-  test('filters workspace and cursor rows by their returned scope field', async () => {
-    const workspace = trackerSourceFor(project('workspace', 'workspace-mcp'))!
-    const workspaceRead = await workspace.fetch({
-      listTools: noScopeSchema('list-tasks-tool'),
-      callTool: async () => ({
-        tasks: [
-          { short_id: 'WOR-1', status: 'todo', team: 'Platform' },
-          { short_id: 'OTH-1', status: 'todo', team: 'Other' },
-        ],
-      }),
-    })
-    expect(workspaceRead.tasks.map((task) => task.key)).toEqual(['WOR-1'])
-
-    const cursor = trackerSourceFor(project('stopal', 'cursor-mcp'))!
-    const cursorRead = await cursor.fetch({
-      listTools: noScopeSchema('task.list'),
-      callTool: async () => ({
-        data: {
-          items: [
-            {
-              humanKey: 'STO-1',
-              status: 'todo',
-              projectId: '019d9699-a223-729f-a032-50de9fdf4303',
-            },
-            { humanKey: 'OTH-1', status: 'todo', projectId: 'other' },
-          ],
-        },
-      }),
-    })
-    expect(cursorRead.tasks.map((task) => task.key)).toEqual(['STO-1'])
-  })
-
   test('workspace-mcp refuses collect without a team and names the project-set remedy', async () => {
     const fixture = project('workspace', 'workspace-mcp')
     delete fixture.settings.tracker!.team

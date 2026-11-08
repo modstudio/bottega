@@ -713,7 +713,6 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     [],
     'Keep the project settings shape independent of stores, SQL, and HTTP.',
     [
-      '../../../shared/tracker-actions.ts',
       '../../../shared/trackers.ts',
       '../../../shared/repository-visibility.ts',
       '../enforcement/mechanical-check-declaration.ts',
