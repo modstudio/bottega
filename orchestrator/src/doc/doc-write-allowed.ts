@@ -266,7 +266,11 @@ export type DocRevisionWriteInput = {
 
 export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisionDecision {
   const address = docAddress(input)
-  if (!input.isCreate && input.current === null) {
+  if (
+    !input.isCreate &&
+    input.current === null &&
+    (input.scope === 'canon' || input.op === 'create')
+  ) {
     return {
       allow: false,
       refusal: refusal(

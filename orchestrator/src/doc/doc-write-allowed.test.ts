@@ -435,7 +435,7 @@ describe('decideDocRevisionWrite', () => {
     }
   })
 
-  test('refuses every existing row whose revision is absent before checking its operation', () => {
+  test('refuses a canon write or an explicit create on a row whose revision is absent', () => {
     for (const scope of DOC_SCOPES) {
       for (const op of revisionOperations) {
         const decision = decideDocRevisionWrite({
@@ -445,6 +445,12 @@ describe('decideDocRevisionWrite', () => {
           scope,
           ...address,
         })
+        const refused = scope === 'canon' || op === 'create'
+        if (!refused) {
+          if (!decision.allow)
+            expect(renderRefusal(decision.refusal)).not.toContain('--expect null')
+          continue
+        }
         expect(decision.allow, `${scope}/${op ?? 'implicit'}`).toBe(false)
         if (!decision.allow) {
           const message = renderRefusal(decision.refusal)
