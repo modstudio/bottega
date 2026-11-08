@@ -3,7 +3,9 @@
 
 import { homedir } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { ConfigClientError, type ConfigClientErrorReason } from '../../../shared/config-client.ts'
 import { type MachineLevel, setMachineValue } from '../../../shared/machine-config.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import {
   migrateLegacyEnvironmentSecrets,
@@ -17,17 +19,20 @@ import {
   restoreMigratedProjectRows,
 } from '../project/project-commands.ts'
 import { projects } from '../project/projects.ts'
-import {
-  currentRecordWriteDecision,
-  throwIfRecordRefused,
-} from '../record/record-write-authority.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
+import { storedRecordToken } from '../record/record-session.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import type { RecordWriteDecision } from '../record/record-write-decision.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
   assertStoredSettingsEnvironmentMigration,
   migrateStoredSettingsEnvironmentNames,
   restoreStoredSettingsEnvironmentNames,
 } from '../settings/settings-apply-commands.ts'
-import { applyMachineSettings } from '../settings/settings-machine-apply.ts'
+import {
+  applyMachineSettings,
+  type MachineSettingsApplyResult,
+} from '../settings/settings-machine-apply.ts'
 import {
   processEnvironmentNameMigration,
   replacementEnvironmentName,
@@ -41,6 +46,132 @@ import {
   restoreOperatorEnvironmentBackup,
   reversePreparedStateFileMigration,
 } from './setup-environment.ts'
+
+export type EnvironmentRecordRenderResult =
+  | { kind: 'not-run' }
+  | { kind: 'rendered' }
+  | {
+      kind: 'config-error'
+      reason: ConfigClientErrorReason
+      status: number | null
+      message: string
+    }
+  | {
+      kind: 'record-error'
+      errorKind: RecordApiRequestError['kind']
+      status: number | null
+      message: string
+    }
+  | { kind: 'error'; message: string }
+
+export type EnvironmentRecordSessionDecision =
+  | { action: 'local-authoritative' | 'hosted' | 'wait-for-sign-in' }
+  | { action: 'refuse'; refusal: string }
+
+export function environmentRecordStepsDecision(decision: EnvironmentRecordSessionDecision): {
+  runSessionRequiredSteps: boolean
+} {
+  return { runSessionRequiredSteps: decision.action !== 'wait-for-sign-in' }
+}
+
+export type EnvironmentSettingsApplyDecision =
+  | { action: 'continue' | 'wait-for-sign-in' }
+  | { action: 'refuse'; refusal: string }
+
+export function environmentSettingsApplyDecision(
+  sessionPresent: boolean,
+  refused: readonly MachineSettingsApplyResult[],
+): EnvironmentSettingsApplyDecision {
+  const refusal = refused.find((result) => sessionPresent || result.condition !== 'no-settings-row')
+  if (refusal) {
+    return { action: 'refuse', refusal: refusal.detail ?? `${refusal.target} refused` }
+  }
+  return refused.some((result) => result.condition === 'no-settings-row')
+    ? { action: 'wait-for-sign-in' }
+    : { action: 'continue' }
+}
+
+const RECORD_SIGN_IN_NOTE = `not signed in: record secrets and user settings wait for sign-in; run ${PLATFORM_SLUG} record sign-in --email <email>`
+
+function addRecordSignInNote(notes: string[]): void {
+  if (!notes.includes(RECORD_SIGN_IN_NOTE)) notes.push(RECORD_SIGN_IN_NOTE)
+}
+
+function initialRecordSessionDecision(
+  authority: RecordWriteDecision,
+  sessionPresent: boolean,
+): EnvironmentRecordSessionDecision {
+  return environmentRecordSessionDecision(authority, sessionPresent, { kind: 'not-run' })
+}
+
+type EnvironmentMigrationResult = {
+  status: 'applied' | 'unchanged' | 'follow-up'
+  message: string | null
+  condition?: 'waiting-for-sign-in'
+}
+
+export function environmentMigrationCondition(
+  recordSessionUnavailable: boolean,
+  followUpCount: number,
+): Pick<EnvironmentMigrationResult, 'condition'> | Record<string, never> {
+  return recordSessionUnavailable && followUpCount === 0 ? { condition: 'waiting-for-sign-in' } : {}
+}
+
+export function environmentRecordSessionDecision(
+  authority: RecordWriteDecision,
+  sessionPresent: boolean,
+  render: EnvironmentRecordRenderResult,
+): EnvironmentRecordSessionDecision {
+  if (authority.verdict === 'local-authoritative') return { action: 'local-authoritative' }
+  if (authority.verdict === 'refused') return { action: 'refuse', refusal: authority.refusal }
+  if (!sessionPresent) return { action: 'wait-for-sign-in' }
+  if (render.kind === 'not-run' || render.kind === 'rendered') return { action: 'hosted' }
+  if (
+    (render.kind === 'config-error' &&
+      (render.reason === 'not-configured' || render.status === 401)) ||
+    ((render.kind === 'record-error' || render.kind === 'error') &&
+      render.message.includes(RECORD_SIGN_IN_REMEDY))
+  ) {
+    return { action: 'wait-for-sign-in' }
+  }
+  return { action: 'refuse', refusal: render.message }
+}
+
+function recordRenderResult(error: unknown): EnvironmentRecordRenderResult {
+  if (error instanceof ConfigClientError) {
+    return {
+      kind: 'config-error',
+      reason: error.reason,
+      status: error.status ?? null,
+      message: error.message,
+    }
+  }
+  if (error instanceof RecordApiRequestError) {
+    return {
+      kind: 'record-error',
+      errorKind: error.kind,
+      status: error.status,
+      message: error.message,
+    }
+  }
+  return { kind: 'error', message: error instanceof Error ? error.message : String(error) }
+}
+
+function waitForSignInOnSessionError(
+  authority: RecordWriteDecision,
+  sessionPresent: boolean,
+  error: unknown,
+  waitForSignIn: () => void,
+): boolean {
+  const decision = environmentRecordSessionDecision(
+    authority,
+    sessionPresent,
+    recordRenderResult(error),
+  )
+  if (decision.action !== 'wait-for-sign-in') return false
+  waitForSignIn()
+  return true
+}
 
 function assertStateFileRenameAllowed(action: 'migration' | 'restore'): void {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary) {
@@ -128,35 +259,73 @@ export const setupEnvironmentService = {
   setGlobalUse: (value: 'on' | 'off') => setMachineValue('machine.global_use', value),
   migrateEnvironment: async (
     preparedStateFileMigration?: PreparedStateFileMigration | null,
-  ): Promise<{
-    status: 'applied' | 'unchanged' | 'follow-up'
-    message: string | null
-  }> =>
+  ): Promise<EnvironmentMigrationResult> =>
     withMigratedProcessEnvironment(process.env, async (processNamesRenamed) => {
       const notes: string[] = []
-      const home = homedir()
-      const report = await migrateOperatorEnvironment(home, {
+      const authority = currentRecordWriteDecision()
+      const sessionPresent = storedRecordToken() !== null
+      let recordSessionUnavailable = false
+      const waitForSignIn = () => {
+        recordSessionUnavailable = true
+        addRecordSignInNote(notes)
+      }
+      const initial = initialRecordSessionDecision(authority, sessionPresent)
+      if (initial.action === 'wait-for-sign-in') waitForSignIn()
+      const { runSessionRequiredSteps } = environmentRecordStepsDecision(initial)
+      const waitOnSessionError = (error: unknown) =>
+        waitForSignInOnSessionError(authority, sessionPresent, error, waitForSignIn)
+      const report = await migrateOperatorEnvironment(homedir(), {
         platform: process.platform,
         backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
         migrateSecrets: async (record) => {
-          const authority = currentRecordWriteDecision()
-          throwIfRecordRefused(authority)
-          if (authority.verdict === 'local-authoritative') {
+          if (initial.action === 'refuse') throw new Error(initial.refusal)
+          if (initial.action === 'local-authoritative') {
             notes.push('no hosted record: nothing to migrate')
             return []
           }
-          return migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
+          if (!runSessionRequiredSteps) return []
+          try {
+            return await migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
+          } catch (error) {
+            if (waitOnSessionError(error)) return []
+            throw error
+          }
         },
         migrateRegister: () => migrateProjectSettingsText(environmentSettingsDecision),
-        migrateSettings: () => migrateStoredSettingsEnvironmentNames(replacementEnvironmentName),
+        migrateSettings: async () => {
+          if (!runSessionRequiredSteps || recordSessionUnavailable) return []
+          try {
+            return await migrateStoredSettingsEnvironmentNames(replacementEnvironmentName)
+          } catch (error) {
+            if (waitOnSessionError(error)) return []
+            throw error
+          }
+        },
         preflight: async () => {
           await assertProjectSettingsMigrationWritable(environmentSettingsDecision)
-          await assertStoredSettingsEnvironmentMigration(replacementEnvironmentName)
+          if (!runSessionRequiredSteps) return
+          try {
+            await assertStoredSettingsEnvironmentMigration(replacementEnvironmentName)
+          } catch (error) {
+            if (waitOnSessionError(error)) return
+            throw error
+          }
         },
         rerenderSettings: async () => {
-          const results = await applyMachineSettings({ check: false })
-          const refused = results.find((result) => result.outcome === 'refused')
-          if (refused) throw new Error(refused.detail ?? `${refused.target} refused`)
+          if (recordSessionUnavailable) return false
+          let results: MachineSettingsApplyResult[]
+          try {
+            results = await applyMachineSettings({ check: false })
+          } catch (error) {
+            if (waitOnSessionError(error)) return false
+            throw error
+          }
+          const decision = environmentSettingsApplyDecision(
+            sessionPresent,
+            results.filter((result) => result.outcome === 'refused'),
+          )
+          if (decision.action === 'wait-for-sign-in') waitForSignIn()
+          if (decision.action === 'refuse') throw new Error(decision.refusal)
           return results.some((result) => result.changed)
         },
         registerBackup: async () =>
@@ -177,8 +346,14 @@ export const setupEnvironmentService = {
         report.backupDirectory !== null ||
         report.notes.length > 0
       return {
-        status: report.followUps.length ? 'follow-up' : changed ? 'applied' : 'unchanged',
+        status:
+          recordSessionUnavailable || report.followUps.length
+            ? 'follow-up'
+            : changed
+              ? 'applied'
+              : 'unchanged',
         message,
+        ...environmentMigrationCondition(recordSessionUnavailable, report.followUps.length),
       }
     }),
 }

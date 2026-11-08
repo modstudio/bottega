@@ -437,6 +437,23 @@ test('reports an applied environment migration requiring operator follow-up dist
   expect(setupResultsRequireAttention(results)).toBe(true)
 })
 
+test('does not require attention when environment migration waits for sign-in', async () => {
+  const results = await applySetupActions(
+    [{ kind: 'migrate-environment' }],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    {
+      migrateEnvironment: async () => ({
+        status: 'follow-up',
+        message: 'not signed in: record secrets and user settings wait for sign-in',
+        condition: 'waiting-for-sign-in',
+      }),
+    },
+  )
+
+  expect(setupResultsRequireAttention(results)).toBe(false)
+})
+
 test('applies an MCP configuration migration once and then reports unchanged', async () => {
   const root = mkdtempSync(join(tmpdir(), 'setup-mcp-config-'))
   const path = join(root, '.claude.json')

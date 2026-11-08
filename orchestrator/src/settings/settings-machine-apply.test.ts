@@ -117,6 +117,17 @@ function writeCurrentSettings() {
 }
 
 describe('settings apply', () => {
+  test('marks a missing user settings row as a structured refusal', async () => {
+    db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
+    expect((await applyMachineSettings({ check: false }, deps()))[0]).toEqual({
+      target: `settings ${join(root, '.claude', 'settings.json')}`,
+      outcome: 'refused',
+      condition: 'no-settings-row',
+      detail: 'refusing settings render: no settings row for user',
+      changed: false,
+    })
+  })
+
   test('--check reports current and changed targets without writing', async () => {
     writeCurrentSettings()
     const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
