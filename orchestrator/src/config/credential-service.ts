@@ -47,7 +47,11 @@ function missingProjectWrapRefusal(address: CredentialAddress): Error {
   )
 }
 
-function missingCredentialRefusal(address: CredentialAddress): Error {
+function credentialSetRefusal(
+  address: CredentialAddress,
+  condition: string,
+  action: string,
+): Error {
   const name = `${address.provider}/${address.type}`
   const binding = address.projectName
     ? `project ${address.projectName}`
@@ -58,23 +62,16 @@ function missingCredentialRefusal(address: CredentialAddress): Error {
   const payerOption = address.payer === 'shared' ? ' --shared' : ''
   const environmentOption = address.environment === 'default' ? '' : ` --env ${address.environment}`
   return new Error(
-    `credential ${name} (${address.environment}) is missing for ${binding}; pipe its value to \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${environmentOption}\``,
+    `credential ${name} (${address.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${environmentOption}\``,
   )
 }
 
+function missingCredentialRefusal(address: CredentialAddress): Error {
+  return credentialSetRefusal(address, 'missing', 'pipe its value to')
+}
+
 function blankCredentialRefusal(address: CredentialAddress): Error {
-  const name = `${address.provider}/${address.type}`
-  const binding = address.projectName
-    ? `project ${address.projectName}`
-    : `space ${address.spaceName}`
-  const bindOption = address.projectName
-    ? ` --project ${address.projectName}`
-    : ` --space ${address.spaceName}`
-  const payerOption = address.payer === 'shared' ? ' --shared' : ''
-  const environmentOption = address.environment === 'default' ? '' : ` --env ${address.environment}`
-  return new Error(
-    `credential ${name} (${address.environment}) is blank for ${binding}; pipe a non-blank value to \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${environmentOption}\``,
-  )
+  return credentialSetRefusal(address, 'blank', 'pipe a non-blank value to')
 }
 
 export async function setCredential(
