@@ -8,6 +8,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { applyQuestionAnswer } from '../run/question-answer.ts'
 import { preAnswerWorkerQuestion, preAnswerWorkerQuestions } from './jev-worker-question.ts'
+import type { WorkerQuestion } from './worker-question.ts'
 
 const choice = {
   kind: 'choice' as const,
@@ -16,7 +17,7 @@ const choice = {
   options: [{ name: 'a' }, { name: 'b' }],
 }
 
-function storedQuestion(runId: string, question = choice): string {
+function storedQuestion(runId: string, question: WorkerQuestion = choice): string {
   const recordId = newRecordId()
   db()
     .query(
