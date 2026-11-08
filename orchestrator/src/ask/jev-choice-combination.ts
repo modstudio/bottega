@@ -53,12 +53,11 @@ export function combineJevChoice(input: {
   const maximum = Math.max(...Object.values(probabilities))
   const tied = input.options.filter((option) => probabilities[option] === maximum)
   const choice = tied.includes(forward.choice) ? forward.choice : tied[0]!
-  const chance = 1 / input.options.length
   return {
     answer: {
       choice,
       probabilities,
-      confidence: (maximum - chance) / (1 - chance),
+      confidence: maximum,
     },
     fits,
     orderFlipped: forwardPick !== reversedPick,

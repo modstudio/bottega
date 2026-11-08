@@ -56,7 +56,6 @@ export const typedQuestionModules = [
   ]),
   module('orchestrator/src/typed-question/jev-worker-question-report-reader.ts', [
     'bun:sqlite',
-    '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../ask/jev-routing.ts',
     '../database/db.ts',

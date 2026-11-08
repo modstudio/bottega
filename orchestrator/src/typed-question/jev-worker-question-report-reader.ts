@@ -2,9 +2,8 @@
 /** Reads worker-question advice rows and delegates their measurement to the pure report. */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
-import { isJevConfidenceThreshold } from '../ask/jev-routing.ts'
+import { invalidJevThresholdRemedy, isJevConfidenceThreshold } from '../ask/jev-routing.ts'
 import { db } from '../database/db.ts'
 import {
   type JevWorkerQuestionMetrics,
@@ -32,14 +31,10 @@ export function jevWorkerQuestionReport(
   const rawThreshold = readMachine('jev.confidence_threshold')
   const threshold = Number(rawThreshold)
   if (!isJevConfidenceThreshold(threshold))
-    throw new Error(
-      `invalid jev.confidence_threshold ${JSON.stringify(rawThreshold)}; run ${PLATFORM_SLUG} machine config set jev.confidence_threshold <0-1>`,
-    )
+    throw new Error(invalidJevThresholdRemedy('jev.confidence_threshold', rawThreshold))
   const rawFitThreshold = readMachine('jev.fit_threshold')
   const fitThreshold = Number(rawFitThreshold)
   if (!isJevConfidenceThreshold(fitThreshold))
-    throw new Error(
-      `invalid jev.fit_threshold ${JSON.stringify(rawFitThreshold)}; run ${PLATFORM_SLUG} machine config set jev.fit_threshold <0-1>`,
-    )
+    throw new Error(invalidJevThresholdRemedy('jev.fit_threshold', rawFitThreshold))
   return jevWorkerQuestionMetrics(rows, threshold, fitThreshold)
 }

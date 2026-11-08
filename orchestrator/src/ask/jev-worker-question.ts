@@ -2,7 +2,6 @@
 /** Adapts stored worker questions to one shared TypeSafe request. */
 import type { Database } from 'bun:sqlite'
 import { readFileSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import {
   askTypedQuestionsClient,
@@ -20,7 +19,11 @@ import {
 import { auditRunMutation, runMutationAuthority } from '../run/run-authority.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { combineJevChoice } from './jev-choice-combination.ts'
-import { isJevConfidenceThreshold, routeJevAnswer } from './jev-routing.ts'
+import {
+  invalidJevThresholdRemedy,
+  isJevConfidenceThreshold,
+  routeJevAnswer,
+} from './jev-routing.ts'
 import type { WorkerQuestion } from './worker-question.ts'
 
 const JEV_WORKER_QUESTION_VERSION = 2
@@ -35,10 +38,12 @@ type RunContext = {
   root_prompt_path: string | null
 }
 type BatchAnswer = Extract<Awaited<ReturnType<typeof askTypedQuestionsClient>>, { kind: 'answer' }>
-type PreAnswerInput = {
+type PreAnswerQuestion = {
   recordId: string
-  runId: string
   question: WorkerQuestion
+}
+type PreAnswerContext = {
+  runId: string
   database?: Database
   canResume: boolean
   answerChannel: AnswerChannel
@@ -47,7 +52,12 @@ type PreAnswerInput = {
   ) => string | number
   resolveRulings?: () => Promise<'agent' | 'user'>
 }
-type BatchInput = PreAnswerInput & { client?: typeof askTypedQuestionsClient }
+type PreAnswerInput = PreAnswerContext &
+  PreAnswerQuestion & { client?: typeof askTypedQuestionsClient }
+type BatchInput = PreAnswerContext & {
+  questions: readonly PreAnswerQuestion[]
+  client?: typeof askTypedQuestionsClient
+}
 type PreAnswerResult = { applied: boolean; value?: string | boolean | number }
 
 function cappedFile(path: string | null): string | undefined {
@@ -130,6 +140,11 @@ function combinedAnswer(
     fits: answers[`${recordId}:fits`],
   })
 }
+function expectedAnswerIds(recordId: string, question: WorkerQuestion): string[] {
+  return question.kind === 'choice'
+    ? [`${recordId}:forward`, `${recordId}:reversed`, `${recordId}:fits`]
+    : [recordId]
+}
 function storeAdvice(
   database: Database,
   input: PreAnswerInput,
@@ -157,9 +172,6 @@ function storeAdvice(
       input.recordId,
     )
 }
-function invalidConfig(key: string, raw: string | number): string {
-  return `invalid ${key} ${JSON.stringify(raw)}; run ${PLATFORM_SLUG} machine config set ${key} <0-1>`
-}
 async function resolvedRulings(
   input: PreAnswerInput,
   run: RunContext,
@@ -186,22 +198,29 @@ async function routeAndStore(
   const threshold = Number(confidenceRaw)
   const fitThreshold = Number(fitRaw)
   const configError = !isJevConfidenceThreshold(threshold)
-    ? invalidConfig('jev.confidence_threshold', confidenceRaw)
+    ? invalidJevThresholdRemedy('jev.confidence_threshold', confidenceRaw)
     : !isJevConfidenceThreshold(fitThreshold)
-      ? invalidConfig('jev.fit_threshold', fitRaw)
+      ? invalidJevThresholdRemedy('jev.fit_threshold', fitRaw)
       : null
+  const missingIds = expectedAnswerIds(input.recordId, input.question).filter(
+    (id) => result.answers[id] === undefined,
+  )
+  const answerError = missingIds.length
+    ? `Jev response omitted expected answer ids: ${missingIds.join(', ')}`
+    : null
+  const jevError = [configError, answerError].filter(Boolean).join('; ') || null
   try {
-    const rulings = await resolvedRulings(input, run, database, configError)
+    const rulings = await resolvedRulings(input, run, database, jevError)
     const decision = routeJevAnswer({
       question: input.question,
       answer: combined.answer,
-      threshold: configError ? 1 : threshold,
-      fitThreshold: configError ? 1 : fitThreshold,
+      threshold: jevError ? 1 : threshold,
+      fitThreshold: jevError ? 1 : fitThreshold,
       fits: combined.fits,
       orderFlipped: combined.orderFlipped,
       bothOrdersAnswered: combined.bothOrdersAnswered,
       rulings,
-      autoRule: !configError && readMachine('jev.auto_rule') === 'on',
+      autoRule: !jevError && readMachine('jev.auto_rule') === 'on',
       canResume: input.canResume,
     })
     let applied = false
@@ -214,7 +233,7 @@ async function routeAndStore(
         inputTokens,
         combined.fits,
         input.question.kind === 'choice' ? combined.orderFlipped : null,
-        configError,
+        jevError,
       )
       if (decision.action === 'apply') {
         applied = applyQuestionAnswer({
@@ -260,56 +279,86 @@ async function routeAndStore(
     return { applied: false }
   }
 }
-export async function preAnswerWorkerQuestions(
-  inputs: readonly BatchInput[],
-): Promise<PreAnswerResult[]> {
-  if (!inputs.length) return []
-  const database = inputs[0]!.database ?? db()
-  const run = database
-    .query<RunContext, [string, string]>(
-      `WITH RECURSIVE chain AS (SELECT record_id,parent_run_record_id,prompt_path FROM run WHERE record_id=? UNION ALL SELECT r.record_id,r.parent_run_record_id,r.prompt_path FROM run r JOIN chain c ON c.parent_run_record_id=r.record_id) SELECT current.job,current.launch_key,current.repo,current.prompt_path,current.parent_run_record_id,(SELECT prompt_path FROM chain WHERE parent_run_record_id IS NULL LIMIT 1) root_prompt_path FROM run current WHERE current.record_id=?`,
-    )
-    .get(inputs[0]!.runId, inputs[0]!.runId)
-  if (!run) return inputs.map(() => ({ applied: false }))
-  const numbered = inputs.map((input) => ({
-    input,
-    number: (
-      database.query('SELECT number FROM question WHERE record_id=?').get(input.recordId) as {
-        number: number
+export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAnswerResult[]> {
+  if (!input.questions.length) return []
+  const results = input.questions.map((): PreAnswerResult => ({ applied: false }))
+  const eligible = input.questions
+    .map((question, index) => ({ question, index }))
+    .filter(({ question }) => question.question.kind !== 'text')
+  if (!eligible.length) return results
+  const database = input.database ?? db()
+  const storeBatchError = (error: string) => {
+    for (const { question } of eligible) {
+      try {
+        storeJevError(database, question.recordId, error)
+      } catch {
+        // A missing question row cannot be annotated, but must not block escalation.
       }
-    ).number,
-  }))
-  const state: Record<string, unknown> = {
-    worker: {
-      why: Object.fromEntries(
-        numbered.map(({ input, number }) => [String(number), input.question.why]),
+    }
+  }
+  try {
+    const run = database
+      .query<RunContext, [string, string]>(
+        `WITH RECURSIVE chain AS (SELECT record_id,parent_run_record_id,prompt_path FROM run WHERE record_id=? UNION ALL SELECT r.record_id,r.parent_run_record_id,r.prompt_path FROM run r JOIN chain c ON c.parent_run_record_id=r.record_id) SELECT current.job,current.launch_key,current.repo,current.prompt_path,current.parent_run_record_id,(SELECT prompt_path FROM chain WHERE parent_run_record_id IS NULL LIMIT 1) root_prompt_path FROM run current WHERE current.record_id=?`,
+      )
+      .get(input.runId, input.runId)
+    if (!run) {
+      storeBatchError(`run ${input.runId} was not found while preparing Jev advice`)
+      return results
+    }
+    const numbered = eligible.map(({ question, index }) => {
+      const row = database
+        .query('SELECT number FROM question WHERE record_id=?')
+        .get(question.recordId) as { number: number } | null
+      if (!row) throw new Error(`question ${question.recordId} was not found`)
+      return { question, index, number: row.number }
+    })
+    const state: Record<string, unknown> = {
+      worker: {
+        why: Object.fromEntries(
+          numbered.map(({ question, number }) => [String(number), question.question.why]),
+        ),
+      },
+      run: { task: run.launch_key ?? 'none', job: run.job },
+    }
+    const spec = cappedFile(run.root_prompt_path)
+    const turn = run.parent_run_record_id ? cappedFile(run.prompt_path) : undefined
+    if (spec !== undefined) state.spec = spec
+    if (turn !== undefined) state.turn = turn
+    const questions = numbered.flatMap(({ question, number }) =>
+      questionsFor(question.recordId, number, question.question),
+    )
+    const response = await (input.client ?? askTypedQuestionsClient)(questions, state)
+    if (response.kind !== 'answer') {
+      storeBatchError(
+        response.kind === 'missing-key'
+          ? 'skipped: TYPESAFE_KEY is not configured'
+          : response.error,
+      )
+      return results
+    }
+    const share = Math.floor(response.inputTokens / eligible.length)
+    const remainder = response.inputTokens % eligible.length
+    const routed = await Promise.all(
+      numbered.map(({ question }, index) =>
+        routeAndStore(
+          { ...input, ...question },
+          run,
+          response,
+          share + (index === 0 ? remainder : 0),
+        ),
       ),
-    },
-    run: { task: run.launch_key ?? 'none', job: run.job },
+    )
+    numbered.forEach(({ index }, routedIndex) => {
+      results[index] = routed[routedIndex]!
+    })
+    return results
+  } catch (error) {
+    storeBatchError(error instanceof Error ? error.message : String(error))
+    return results
   }
-  const spec = cappedFile(run.root_prompt_path)
-  const turn = run.parent_run_record_id ? cappedFile(run.prompt_path) : undefined
-  if (spec !== undefined) state.spec = spec
-  if (turn !== undefined) state.turn = turn
-  const questions = numbered.flatMap(({ input, number }) =>
-    questionsFor(input.recordId, number, input.question),
-  )
-  if (!questions.length) return inputs.map(() => ({ applied: false }))
-  const result = await (inputs[0]!.client ?? askTypedQuestionsClient)(questions, state)
-  if (result.kind !== 'answer') {
-    const error =
-      result.kind === 'missing-key' ? 'skipped: TYPESAFE_KEY is not configured' : result.error
-    for (const input of inputs) storeJevError(database, input.recordId, error)
-    return inputs.map(() => ({ applied: false }))
-  }
-  const share = Math.floor(result.inputTokens / inputs.length)
-  const remainder = result.inputTokens % inputs.length
-  return Promise.all(
-    inputs.map((input, index) =>
-      routeAndStore(input, run, result, share + (index === 0 ? remainder : 0)),
-    ),
-  )
 }
-export async function preAnswerWorkerQuestion(input: BatchInput): Promise<PreAnswerResult> {
-  return (await preAnswerWorkerQuestions([input]))[0]!
+export async function preAnswerWorkerQuestion(input: PreAnswerInput): Promise<PreAnswerResult> {
+  const { recordId, question, ...context } = input
+  return (await preAnswerWorkerQuestions({ ...context, questions: [{ recordId, question }] }))[0]!
 }

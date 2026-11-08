@@ -31,6 +31,7 @@ test('measures agreement, calibration bands, threshold reliability, and brier', 
       row({ jev_probabilities: '{"a":0.6,"b":0.4}', jev_agreed: null }),
     ],
     0.85,
+    0.7,
   )[0]!
   expect(metrics).toMatchObject({
     kind: 'all',
@@ -69,6 +70,7 @@ test('computes yes/no and score pick probabilities and splits kind-model cohorts
       }),
     ],
     0.75,
+    0.7,
   )
   expect(metrics).toHaveLength(3)
   expect(metrics[0]).toMatchObject({ coverage: 0.5, agreementAtThreshold: 1 })
@@ -80,6 +82,7 @@ test('keeps named and null models in separate cohorts for the same kind', () => 
   const metrics = jevWorkerQuestionMetrics(
     [row(), row({ jev_model: null, jev_probabilities: '{"a":0.8,"b":0.2}' })],
     0.75,
+    0.7,
   )
   expect(metrics).toHaveLength(3)
   expect(metrics[1]).toMatchObject({ kind: 'choice', model: 'jev-1.14.0', advised: 1 })
@@ -90,6 +93,7 @@ test('counts unreadable advice instead of dropping it', () => {
   const metrics = jevWorkerQuestionMetrics(
     [row({ jev_probabilities: 'not-json' }), row({ jev_pick: 'null' })],
     0.9,
+    0.7,
   )[0]!
   expect(metrics).toMatchObject({ advised: 2, ruledByArchitect: 2, unreadable: 2, coverage: 0 })
   expect(metrics.brier).toBeNull()
@@ -167,6 +171,7 @@ test('puts certain advice in the closed top band', () => {
   const [all] = jevWorkerQuestionMetrics(
     [row({ jev_probabilities: '{"a":1,"b":0}', jev_agreed: 1 })],
     0.9,
+    0.7,
   )
   expect(all!.bands.at(-1)).toEqual({ range: '[0.95,1]', n: 1, agreementRate: 1 })
 })

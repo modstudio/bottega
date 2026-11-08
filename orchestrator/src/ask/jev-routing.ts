@@ -1,6 +1,7 @@
 // concern: worker-question-routing
 /** Pure decision for whether Jev advice may become a worker ruling. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
 import type { WorkerQuestion } from './worker-question.ts'
 
@@ -44,6 +45,10 @@ export function pickProbability(
 
 export function isJevConfidenceThreshold(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 1
+}
+
+export function invalidJevThresholdRemedy(key: string, raw: string | number): string {
+  return `invalid ${key} ${JSON.stringify(raw)}; run ${PLATFORM_SLUG} machine config set ${key} <0-1>`
 }
 
 function answerPick(

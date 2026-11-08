@@ -41,6 +41,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/ask-proxy.ts', ['node:net', './ask-failure.ts']),
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
   module('orchestrator/src/ask/jev-routing.ts', [
+    '../../../shared/brand.ts',
     '../../../shared/typed-question/client.ts',
     './worker-question.ts',
   ]),

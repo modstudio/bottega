@@ -8,7 +8,7 @@ const answer = (choice: string, a: number, b: number) => ({
 })
 
 describe('Jev choice combination', () => {
-  test('averages orders and computes confidence from the averaged maximum', () => {
+  test('averages orders and keeps the averaged pick probability as confidence', () => {
     const combined = combineJevChoice({
       options: ['a', 'b'],
       forward: answer('a', 0.8, 0.2),
@@ -17,7 +17,7 @@ describe('Jev choice combination', () => {
     expect(combined.answer?.choice).toBe('a')
     expect(combined.answer?.probabilities.a).toBeCloseTo(0.7)
     expect(combined.answer?.probabilities.b).toBeCloseTo(0.3)
-    expect(combined.answer?.confidence).toBeCloseTo(0.4)
+    expect(combined.answer?.confidence).toBeCloseTo(0.7)
     expect(combined).toMatchObject({ orderFlipped: false, bothOrdersAnswered: true })
   })
 

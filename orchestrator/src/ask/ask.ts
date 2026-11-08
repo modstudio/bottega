@@ -187,15 +187,12 @@ export async function preAnswerReplyQuestions(
   runId: string,
   recorded: Array<{ recordId: string; question: WorkerQuestion }>,
 ): Promise<void> {
-  await preAnswerWorkerQuestions(
-    recorded.map(({ recordId, question }) => ({
-      recordId,
-      runId,
-      question,
-      canResume: false,
-      answerChannel: 'cli',
-    })),
-  )
+  await preAnswerWorkerQuestions({
+    runId,
+    canResume: false,
+    answerChannel: 'cli',
+    questions: recorded,
+  })
 }
 
 /** How often to look for a ruling. Cheap: one indexed read of a local file. */

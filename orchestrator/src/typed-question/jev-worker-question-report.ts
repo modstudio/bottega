@@ -41,6 +41,7 @@ export type JevWorkerQuestionMetrics = {
 }
 
 const BAND_LIMITS = [0, 0.5, 0.7, 0.8, 0.9, 0.95, 1] as const
+const LEGACY_JEV_QUESTION_VERSION = 1
 
 type MeasuredRow = JevWorkerQuestionRow & { probability: number | null }
 
@@ -125,12 +126,16 @@ function measureGroup(
 export function jevWorkerQuestionMetrics(
   rows: readonly JevWorkerQuestionRow[],
   threshold: number,
-  fitThreshold = 0.7,
+  fitThreshold: number,
 ): JevWorkerQuestionMetrics[] {
   if (!rows.length) return []
   const measured = rows.map((row) => ({ ...row, probability: storedPickProbability(row) }))
   const groups = Map.groupBy(measured, (row) =>
-    JSON.stringify([row.kind, row.jev_model, row.jev_question_version ?? 1]),
+    JSON.stringify([
+      row.kind,
+      row.jev_model,
+      row.jev_question_version ?? LEGACY_JEV_QUESTION_VERSION,
+    ]),
   )
   return [
     measureGroup(measured, threshold, 'all', null, null, fitThreshold),
@@ -140,7 +145,7 @@ export function jevWorkerQuestionMetrics(
         threshold,
         group[0]!.kind,
         group[0]!.jev_model,
-        group[0]!.jev_question_version ?? 1,
+        group[0]!.jev_question_version ?? LEGACY_JEV_QUESTION_VERSION,
         fitThreshold,
       ),
     ),
