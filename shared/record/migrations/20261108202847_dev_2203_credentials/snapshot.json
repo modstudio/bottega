@@ -1,10 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "c06b9b93-0418-4323-a25a-3bef53226533",
+  "id": "410a9510-b91a-464c-9703-e0985aca2c1c",
   "prevIds": [
-    "16c62a67-2fd7-4984-9700-b94ec7ac5239",
-    "b50e7cc3-5ea7-43d3-9a59-335bd5aa3463"
+    "64758095-856f-485d-b6d0-e3fe0a5545dc"
   ],
   "ddl": [
     {
@@ -4060,6 +4059,45 @@
       "generated": null,
       "identity": null,
       "name": "jev_agreed",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "question"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "jev_question_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "question"
+    },
+    {
+      "type": "double precision",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "jev_fits",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "question"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "jev_order_flipped",
       "entityType": "columns",
       "schema": "public",
       "table": "question"
