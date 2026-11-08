@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
-import { AGENTS } from '../agent/agent-registry.ts'
+import { AGENTS, addAgent } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { promptBucketsForJob } from './prompt-size-bucket-store.ts'
 import { candidates, pick } from './route.ts'
@@ -78,6 +78,25 @@ test('only registered agents on their current model enter the pooled window', ()
   expect(rows.find((row) => row.agent === 'codex')).toMatchObject({
     evidence: 0,
     pooledEvidence: 0,
+  })
+})
+
+test('candidates counts local and pooled base-model evidence for an OpenRouter routing variant', () => {
+  const agent = 'openrouter-route'
+  const model = 'deepseek/deepseek-v4.1-flash'
+  addAgent(agent, {
+    harness: 'codex',
+    backend: 'vendor',
+    model: `${model}:floor`,
+    baseUrl: 'https://openrouter.ai/api/v1',
+  })
+  score(addRun({ agent, job: 'craft', model }), 'full', 'right')
+  addPooledRun({ agent, job: 'craft', model })
+
+  expect(candidates('craft').find((row) => row.agent === agent)).toMatchObject({
+    evidence: 2,
+    pooledEvidence: 1,
+    evidenceModel: model,
   })
 })
 

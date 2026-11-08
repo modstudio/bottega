@@ -1,6 +1,7 @@
 // concern: review-calibration
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
+import { evidenceModel, evidenceModelIdentity, evidenceModelSql } from '../route/evidence-model.ts'
 import { median } from '../state/statistics.ts'
 import { completedReviewEvidenceSql, REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { MIN_REVIEW_TRIAGED } from './review-triage.ts'
@@ -101,13 +102,32 @@ function severityAgreement(
   }
 }
 
+function calibrationModelDecision(
+  model: string | null | undefined,
+  baseUrl: string | null | undefined,
+) {
+  const identity = evidenceModelIdentity(model, baseUrl)
+  return {
+    ...identity,
+    params: identity.model === undefined ? [] : [identity.model],
+  }
+}
+
+function reviewMarks(reviews: { record_id: string }[]): { ids: string[]; marks: string } {
+  const ids = reviews.map((review) => review.record_id)
+  return { ids, marks: ids.map(() => '?').join(',') }
+}
+
 function calibrationCell(
   lens: string,
   agent: string,
   model: string | null | undefined,
+  baseUrl: string | null | undefined,
   database: Database,
 ): Omit<ReviewCalibration, 'basis'> {
-  const modelClause = model === undefined ? '' : 'AND rl.model IS ?'
+  const modelDecision = calibrationModelDecision(model, baseUrl)
+  const persistedModel = evidenceModelSql('rl.model', modelDecision.openRouter)
+  const modelClause = modelDecision.model === undefined ? '' : `AND ${persistedModel} IS ?`
   const reviews = database
     .query(
       `SELECT DISTINCT r.record_id FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
@@ -115,9 +135,7 @@ function calibrationCell(
       WHERE rl.lens=? AND rl.agent=? AND ${completedReviewEvidenceSql('r', 'run', 'rl')} ${modelClause}
       ORDER BY r.completed_at DESC, r.number DESC LIMIT ?`,
     )
-    .all(
-      ...(model === undefined ? [lens, agent, REVIEW_WINDOW] : [lens, agent, model, REVIEW_WINDOW]),
-    ) as { record_id: string }[]
+    .all(lens, agent, ...modelDecision.params, REVIEW_WINDOW) as { record_id: string }[]
   const emptyTiers = () =>
     Object.fromEntries(
       ['0', '1', '2', '3', 'unclassified'].map((key) => [
@@ -143,7 +161,7 @@ function calibrationCell(
     return {
       lens,
       agent,
-      model: model ?? null,
+      model: modelDecision.model ?? null,
       precision: null,
       hits: 0,
       triaged: 0,
@@ -151,8 +169,7 @@ function calibrationCell(
       mirror_lenses: 0,
       ...emptyGrades(),
     }
-  const ids = reviews.map((r) => r.record_id)
-  const marks = ids.map(() => '?').join(',')
+  const { ids, marks } = reviewMarks(reviews)
   const counts = database
     .query(
       `SELECT
@@ -161,7 +178,7 @@ function calibrationCell(
      FROM review_finding rf JOIN review_lens rl ON rl.record_id=rf.review_lens_record_id
      WHERE rf.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
     )
-    .get(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
+    .get(...ids, lens, agent, ...modelDecision.params) as {
     hits: number | null
     triaged: number | null
   }
@@ -173,7 +190,7 @@ function calibrationCell(
         AND disposition='rejected' AND rejection_category IS NOT NULL
       GROUP BY rejection_category ORDER BY count DESC, category LIMIT 3`,
     )
-    .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
+    .all(...ids, lens, agent, ...modelDecision.params) as {
     category: string
     count: number
   }[]
@@ -185,13 +202,13 @@ function calibrationCell(
       WHERE rl.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
         AND run.mcp_connected=0 AND run.mcp_error LIKE 'mirror:%'`,
     )
-    .get(...ids, lens, agent, ...(model === undefined ? [] : [model])) as { count: number }
+    .get(...ids, lens, agent, ...modelDecision.params) as { count: number }
   const gradeRows = database
     .query(
       `SELECT reproduced, coverage, limits, overlap FROM review_lens rl
       WHERE rl.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
     )
-    .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as Record<string, unknown>[]
+    .all(...ids, lens, agent, ...modelDecision.params) as Record<string, unknown>[]
   const severityRows = database
     .query(
       `SELECT rf.severity, rf.triaged_severity FROM review_finding rf
@@ -199,7 +216,7 @@ function calibrationCell(
       WHERE rf.review_record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
         AND rf.disposition IS NOT NULL`,
     )
-    .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
+    .all(...ids, lens, agent, ...modelDecision.params) as {
     severity: string
     triaged_severity: string | null
   }[]
@@ -210,7 +227,7 @@ function calibrationCell(
        LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
       WHERE r.record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
     )
-    .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
+    .all(...ids, lens, agent, ...modelDecision.params) as {
     review_record_id: string
     tier: number | null
     lens_id: string
@@ -244,7 +261,7 @@ function calibrationCell(
       WHERE r.record_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
       ORDER BY r.number, run.started_at, rl.record_id`,
     )
-    .all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as {
+    .all(...ids, lens, agent, ...modelDecision.params) as {
     review_record_id: string
     tier: number | null
     lens_id: string
@@ -274,7 +291,7 @@ function calibrationCell(
   return {
     lens,
     agent,
-    model: model ?? null,
+    model: modelDecision.model ?? null,
     precision: triaged >= MIN_REVIEW_TRIAGED ? hits / triaged : null,
     hits,
     triaged,
@@ -293,11 +310,12 @@ export function reviewCalibration(
   lens: string,
   agent: string,
   model: string,
+  baseUrl: string | null | undefined,
   database: Database = db(),
 ): ReviewCalibration {
-  const specific = calibrationCell(lens, agent, model, database)
+  const specific = calibrationCell(lens, agent, model, baseUrl, database)
   if (specific.triaged >= MIN_REVIEW_TRIAGED) return { ...specific, basis: 'model' }
-  const aggregate = calibrationCell(lens, agent, undefined, database)
+  const aggregate = calibrationCell(lens, agent, undefined, baseUrl, database)
   if (aggregate.triaged >= MIN_REVIEW_TRIAGED) return { ...aggregate, model: null, basis: 'agent' }
   return { ...aggregate, precision: null, model: null, basis: null }
 }
@@ -312,13 +330,33 @@ export type ReviewCalibrationFleetCell = {
   last_graded_at: string | null
 }
 
-export function reviewCalibrationFleet(database: Database = db()): ReviewCalibrationFleetCell[] {
-  const identities = database
-    .query(`SELECT DISTINCT lens, agent FROM review_lens ORDER BY lens, agent`)
-    .all() as { lens: string; agent: string }[]
-  const lenses = [...new Set(identities.map((row) => row.lens))]
-  const agents = [...new Set(identities.map((row) => row.agent))]
-  const graded = database
+type GradedCalibrationModel = {
+  lens: string
+  agent: string
+  model: string | null
+  last_graded_at: string | null
+}
+
+function normalizedGradedModels(
+  rows: GradedCalibrationModel[],
+  baseUrlForAgent: (agent: string) => string | null | undefined,
+): GradedCalibrationModel[] {
+  const identities = new Map<string, GradedCalibrationModel>()
+  for (const row of rows) {
+    const model = row.model === null ? null : evidenceModel(row.model, baseUrlForAgent(row.agent))
+    const key = `${row.lens}\0${row.agent}\0${model ?? ''}`
+    const prior = identities.get(key)
+    if (!prior || (row.last_graded_at ?? '') > (prior.last_graded_at ?? ''))
+      identities.set(key, { ...row, model })
+  }
+  return [...identities.values()]
+}
+
+function gradedCalibrationModels(
+  database: Database,
+  baseUrlForAgent: (agent: string) => string | null | undefined,
+): GradedCalibrationModel[] {
+  const rows = database
     .query(
       `SELECT rl.lens, rl.agent, rl.model, MAX(s.scored_at) AS last_graded_at
        FROM review_lens rl JOIN review r ON r.record_id=rl.review_record_id
@@ -327,7 +365,26 @@ export function reviewCalibrationFleet(database: Database = db()): ReviewCalibra
         AND (rl.reproduced IS NOT NULL OR rl.coverage IS NOT NULL OR rl.limits IS NOT NULL OR rl.overlap IS NOT NULL)
       GROUP BY rl.lens, rl.agent, rl.model ORDER BY rl.lens, rl.agent, rl.model`,
     )
-    .all() as { lens: string; agent: string; model: string | null; last_graded_at: string | null }[]
+    .all() as GradedCalibrationModel[]
+  return normalizedGradedModels(rows, baseUrlForAgent)
+}
+
+function calibrationDimensions(rows: { lens: string; agent: string }[]) {
+  return {
+    lenses: [...new Set(rows.map((row) => row.lens))],
+    agents: [...new Set(rows.map((row) => row.agent))],
+  }
+}
+
+export function reviewCalibrationFleet(
+  baseUrlForAgent: (agent: string) => string | null | undefined,
+  database: Database = db(),
+): ReviewCalibrationFleetCell[] {
+  const identities = database
+    .query(`SELECT DISTINCT lens, agent FROM review_lens ORDER BY lens, agent`)
+    .all() as { lens: string; agent: string }[]
+  const { lenses, agents } = calibrationDimensions(identities)
+  const graded = gradedCalibrationModels(database, baseUrlForAgent)
   const pairHasGrade = new Set(graded.map((row) => `${row.lens}\0${row.agent}`))
   const pairLastGraded = new Map<string, string | null>()
   for (const row of graded) {
@@ -339,7 +396,13 @@ export function reviewCalibrationFleet(database: Database = db()): ReviewCalibra
   const cells = new Map<string, ReviewCalibrationFleetCell>()
   for (const row of graded) {
     if (row.model === null) {
-      const aggregate = calibrationCell(row.lens, row.agent, undefined, database)
+      const aggregate = calibrationCell(
+        row.lens,
+        row.agent,
+        undefined,
+        baseUrlForAgent(row.agent),
+        database,
+      )
       cells.set(`${row.lens}\0${row.agent}\0`, {
         lens: row.lens,
         agent: row.agent,
@@ -351,7 +414,13 @@ export function reviewCalibrationFleet(database: Database = db()): ReviewCalibra
       })
       continue
     }
-    const specific = calibrationCell(row.lens, row.agent, row.model, database)
+    const specific = calibrationCell(
+      row.lens,
+      row.agent,
+      row.model,
+      baseUrlForAgent(row.agent),
+      database,
+    )
     cells.set(`${row.lens}\0${row.agent}\0${row.model}`, {
       lens: row.lens,
       agent: row.agent,
@@ -362,7 +431,13 @@ export function reviewCalibrationFleet(database: Database = db()): ReviewCalibra
       last_graded_at: row.last_graded_at,
     })
     if (specific.triaged < MIN_REVIEW_TRIAGED) {
-      const aggregate = calibrationCell(row.lens, row.agent, undefined, database)
+      const aggregate = calibrationCell(
+        row.lens,
+        row.agent,
+        undefined,
+        baseUrlForAgent(row.agent),
+        database,
+      )
       if (aggregate.triaged >= MIN_REVIEW_TRIAGED) {
         cells.set(`${row.lens}\0${row.agent}\0`, {
           lens: row.lens,

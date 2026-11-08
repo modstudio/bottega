@@ -46,8 +46,8 @@ import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
+  reviewCalibration as calibrateReview,
   calibrationLine,
-  reviewCalibration,
 } from '../review/review-calibration.ts'
 import {
   attributedLaunchKey,
@@ -448,12 +448,11 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const { decideMcpLaunchRuling } = mcpAttachment
   const mcpLaunchRuling = decideMcpLaunchRuling(mcpRequest, requiredMcp, a, transportPin)
   enforceRunStartupRefusal(opts.reserveId, mcpLaunchRuling.refusalReason)
-  // Append after routing, before prompt files, hashes, or metadata.
   if (requestedJob.findings && resume.isFirstTurn) {
-    const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
-    if (Buffer.byteLength(suffix) > CALIBRATION_SUFFIX_RESERVE_BYTES) {
+    const model = opts.model ?? a.model
+    const suffix = calibrationLine(calibrateReview(opts.lens!, name, model, a.baseUrl))
+    if (Buffer.byteLength(suffix) > CALIBRATION_SUFFIX_RESERVE_BYTES)
       throw new Error('review calibration line exceeded its reserved routing allowance')
-    }
     prompt += `\n\n${suffix}`
   }
   let { deferredCwdMcpPlan, mcpConnection } = prepareRunMcpPreflight({

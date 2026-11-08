@@ -46,6 +46,17 @@ export type TypedQuestionClientResult =
     }
   | { kind: 'error'; error: string; latencyMs: number }
 
+export type TypedQuestionsClientResult =
+  | { kind: 'missing-key' }
+  | {
+      kind: 'answer'
+      answers: Record<string, TypedQuestionAnswer>
+      model: string
+      inputTokens: number
+      latencyMs: number
+    }
+  | { kind: 'error'; error: string; latencyMs: number }
+
 export type TypedQuestionClientDependencies = {
   resolve: typeof readEnvValuesWithHosted
   fetch(input: string, init: RequestInit): Promise<Response>
@@ -72,38 +83,12 @@ function questionBody(question: TypedQuestion): Record<string, unknown> {
   }
 }
 
-function parseAnswer(
-  question: TypedQuestion,
-  body: unknown,
-): {
-  answer: TypedQuestionAnswer
-  model: string
-  inputTokens: number
-} | null {
-  if (!body || typeof body !== 'object') return null
-  const response = body as Record<string, unknown>
-  const answers = response.answers
-  const usage = response.usage
-  if (
-    typeof response.model !== 'string' ||
-    !answers ||
-    typeof answers !== 'object' ||
-    !usage ||
-    typeof usage !== 'object'
-  )
-    return null
-  const inputTokens = (usage as Record<string, unknown>).input_tokens
-  if (!Number.isInteger(inputTokens) || (inputTokens as number) < 0) return null
-  const raw = (answers as Record<string, unknown>)[question.id]
+function parseQuestionAnswer(question: TypedQuestion, raw: unknown): TypedQuestionAnswer | null {
   if (!raw || typeof raw !== 'object') return null
   const values = raw as Record<string, unknown>
   if (question.type === 'noul') {
     if (!finiteProbability(values.noul)) return null
-    return {
-      answer: { noul: values.noul },
-      model: response.model,
-      inputTokens: inputTokens as number,
-    }
+    return { noul: values.noul }
   }
   if (question.type === 'score') {
     const levelKeys = question.criteria.map((_, index) => String(index))
@@ -130,14 +115,10 @@ function parseAnswer(
     )
       return null
     return {
-      answer: {
-        score: values.score as number,
-        confidence: values.confidence,
-        legend: legend as Record<string, string>,
-        probabilities: probabilities as Record<string, number>,
-      },
-      model: response.model,
-      inputTokens: inputTokens as number,
+      score: values.score as number,
+      confidence: values.confidence,
+      legend: legend as Record<string, string>,
+      probabilities: probabilities as Record<string, number>,
     }
   }
   if (
@@ -155,14 +136,36 @@ function parseAnswer(
   )
     return null
   return {
-    answer: {
-      choice: values.choice,
-      confidence: values.confidence,
-      probabilities: probabilities as Record<string, number>,
-    },
-    model: response.model,
-    inputTokens: inputTokens as number,
+    choice: values.choice,
+    confidence: values.confidence,
+    probabilities: probabilities as Record<string, number>,
   }
+}
+
+function parseAnswers(questions: readonly TypedQuestion[], body: unknown) {
+  if (!body || typeof body !== 'object') return null
+  const response = body as Record<string, unknown>
+  const rawAnswers = response.answers
+  const usage = response.usage
+  if (
+    typeof response.model !== 'string' ||
+    !rawAnswers ||
+    typeof rawAnswers !== 'object' ||
+    !usage ||
+    typeof usage !== 'object'
+  )
+    return null
+  const inputTokens = (usage as Record<string, unknown>).input_tokens
+  if (!Number.isInteger(inputTokens) || (inputTokens as number) < 0) return null
+  const answers: Record<string, TypedQuestionAnswer> = {}
+  for (const question of questions) {
+    const answer = parseQuestionAnswer(
+      question,
+      (rawAnswers as Record<string, unknown>)[question.id],
+    )
+    if (answer) answers[question.id] = answer
+  }
+  return { answers, model: response.model, inputTokens: inputTokens as number }
 }
 
 function elapsed(started: number): number {
@@ -198,9 +201,9 @@ async function sendRequest(
   }
 }
 
-async function parsedAnswer(question: TypedQuestion, response: Response) {
+async function parsedAnswers(questions: readonly TypedQuestion[], response: Response) {
   try {
-    return parseAnswer(question, await response.json())
+    return parseAnswers(questions, await response.json())
   } catch {
     return null
   }
@@ -241,6 +244,20 @@ export async function askTypedQuestionClient(
   state: string | Record<string, unknown>,
   dependencies: TypedQuestionClientDependencies = clientDependencies,
 ): Promise<TypedQuestionClientResult> {
+  const result = await askTypedQuestionsClient([question], state, dependencies)
+  if (result.kind !== 'answer') return result
+  const answer = result.answers[question.id]
+  return answer
+    ? { ...result, answer }
+    : { kind: 'error', error: 'unparsable_body', latencyMs: result.latencyMs }
+}
+
+/** Resolve the key once and ask every question sharing the supplied state. */
+export async function askTypedQuestionsClient(
+  questions: readonly TypedQuestion[],
+  state: string | Record<string, unknown>,
+  dependencies: TypedQuestionClientDependencies = clientDependencies,
+): Promise<TypedQuestionsClientResult> {
   const started = performance.now()
   const resolved = await resolveKey(dependencies)
   if (resolved.kind === 'error') {
@@ -250,7 +267,9 @@ export async function askTypedQuestionClient(
   const body = JSON.stringify({
     model: JEV_MODEL,
     state,
-    questions: { [question.id]: questionBody(question) },
+    questions: Object.fromEntries(
+      questions.map((question) => [question.id, questionBody(question)]),
+    ),
   })
   const sleep = dependencies.sleep ?? clientDependencies.sleep!
   const random = dependencies.random ?? clientDependencies.random!
@@ -265,7 +284,7 @@ export async function askTypedQuestionClient(
     if (!response.ok) {
       return { kind: 'error', error: `http_${response.status}`, latencyMs: elapsed(started) }
     }
-    const parsed = await parsedAnswer(question, response)
+    const parsed = await parsedAnswers(questions, response)
     if (!parsed) return { kind: 'error', error: 'unparsable_body', latencyMs: elapsed(started) }
     return { kind: 'answer', ...parsed, latencyMs: elapsed(started) }
   }

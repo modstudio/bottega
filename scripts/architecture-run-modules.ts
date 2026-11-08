@@ -103,6 +103,10 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/route/evidence-model.ts',
+    allowed: ['../agent/openrouter.ts'],
+  },
+  {
     file: 'orchestrator/src/route/prompt-size-bucket.ts',
     allowed: [],
   },
@@ -112,7 +116,12 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/routing-pool-evidence.ts',
-    allowed: ['../failure/failure.ts', './prompt-size-bucket.ts', './route-selection.ts'],
+    allowed: [
+      '../failure/failure.ts',
+      './evidence-model.ts',
+      './prompt-size-bucket.ts',
+      './route-selection.ts',
+    ],
   },
   {
     file: 'orchestrator/src/route/route-candidate-evidence.ts',
@@ -203,13 +212,14 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/route-statistics.ts',
-    allowed: ['../state/statistics.ts'],
+    allowed: ['../state/statistics.ts', './evidence-model.ts'],
   },
   {
     file: 'orchestrator/src/route/routing-evidence-query.ts',
     allowed: [
       '../database/db.ts',
       '../failure/failure.ts',
+      './evidence-model.ts',
       './prompt-size-bucket.ts',
       './route-selection.ts',
       './routing-pool-evidence.ts',
@@ -218,6 +228,7 @@ export const runModuleSpecs = [
   {
     file: 'orchestrator/src/route/route-cost.ts',
     allowed: [
+      '../agent/agent-registry.ts',
       '../database/db.ts',
       '../jobs/job-fidelity.ts',
       '../run/run-subscription-cost.ts',

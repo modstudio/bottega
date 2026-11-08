@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { type BoardPurpose, parseBoardPurpose } from '../../../shared/board-purpose.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
-import { projects } from '../project/projects.ts'
+import { projectForTaskKey, projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
@@ -103,15 +103,6 @@ export type PreparedBoardReach = BoardReachRecordingInput &
     sessionStartedAt: string
     concern: BoardReachConcern
   }
-
-function taskProject(key: string, database: Database): string | null {
-  const prefix = /^([A-Z][A-Z0-9]*)-/.exec(key)?.[1]
-  if (!prefix) return null
-  return (
-    projects(undefined, database).find((project) => project.settings.keyPrefixes?.includes(prefix))
-      ?.name ?? null
-  )
-}
 
 export function boardReachConcern(
   audience: Audience,
@@ -225,7 +216,9 @@ export function prepareBoardReach(
       audience,
       input.session,
       presence.project,
-      audience.kind === 'task' ? taskProject(String(audience.value), database) : null,
+      audience.kind === 'task'
+        ? (projectForTaskKey(String(audience.value), projects(undefined, database))?.name ?? null)
+        : null,
       message.postingProject,
     ),
   }

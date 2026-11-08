@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
@@ -75,7 +76,7 @@ test('the bounded SQL returns the same current-model window as the routing predi
   const actual = boundedRoutingEvidenceRows({
     jobName: job,
     promptBytes: 0,
-    currentModels: { codex: currentModel },
+    currentAgents: { codex: { model: currentModel, baseUrl: AGENTS.codex!.baseUrl } },
     limit,
   }).map((row) => row.record_id)
   const rows = db()
@@ -97,12 +98,47 @@ test('the bounded SQL returns the same current-model window as the routing predi
       samePromptSizeBucket(row.promptBytes, 0) &&
       isRoutingEvidence(row),
   )
-  const expected = routingEvidenceWindow(scoped, 'codex', currentModel, limit).rows.map(
-    (row) => row.record_id,
-  )
+  const expected = routingEvidenceWindow(
+    scoped,
+    'codex',
+    currentModel,
+    AGENTS.codex!.baseUrl,
+    limit,
+  ).rows.map((row) => row.record_id)
 
   expect(actual).toEqual(expected)
   expect(actual).toContain(newestNull)
   expect(actual).toContain([tieA, tieB].sort().at(-1)!)
   expect(actual).not.toContain([tieA, tieB].sort()[0]!)
+})
+
+test('a base-model judgment counts for an OpenRouter agent using a routing variant', () => {
+  const job = 'craft'
+  const baseModel = 'deepseek/deepseek-v4.1-flash'
+  const id = addRun({ agent: 'openrouter-fixture', job, model: baseModel })
+  score(id, 'full', 'right')
+  const pooledId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO routing_pool_run
+         (record_id,space_id,agent,model,job,prompt_bytes,status,executor,started_at,
+          delivery,quality,pulled_at)
+       VALUES (?,'space','openrouter-fixture',?,?,0,'ok','external',?,'full','right',?)`,
+    )
+    .run(pooledId, `${baseModel}:nitro`, job, new Date().toISOString(), new Date().toISOString())
+
+  const rows = boundedRoutingEvidenceRows({
+    jobName: job,
+    promptBytes: 0,
+    currentAgents: {
+      'openrouter-fixture': {
+        model: `${baseModel}:floor`,
+        baseUrl: 'https://openrouter.ai/api/v1',
+      },
+    },
+    limit: 40,
+  })
+
+  expect(rows.map((row) => row.record_id)).toContain(id)
+  expect(rows.map((row) => row.record_id)).toContain(pooledId)
 })

@@ -135,6 +135,14 @@ export type Project = {
   settings: StoredProjectSettings
 }
 
+/** The sole registered project declaring the task key's prefix, when there is one. */
+export function projectForTaskKey(key: string, registered: readonly Project[]): Project | null {
+  const prefix = /^([A-Z][A-Z0-9]*)-/.exec(key)?.[1]
+  if (!prefix) return null
+  const matches = registered.filter((project) => project.settings.keyPrefixes?.includes(prefix))
+  return matches.length === 1 ? matches[0]! : null
+}
+
 export function resolveBranchRef(value: string): {
   branch: string
   runId: string | null

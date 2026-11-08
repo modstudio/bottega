@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { applyQuestionAnswer } from '../run/question-answer.ts'
-import { preAnswerWorkerQuestion } from './jev-worker-question.ts'
+import { preAnswerWorkerQuestion, preAnswerWorkerQuestions } from './jev-worker-question.ts'
+import type { WorkerQuestion } from './worker-question.ts'
 
 const choice = {
   kind: 'choice' as const,
@@ -13,7 +17,7 @@ const choice = {
   options: [{ name: 'a' }, { name: 'b' }],
 }
 
-function storedQuestion(runId: string): string {
+function storedQuestion(runId: string, question: WorkerQuestion = choice): string {
   const recordId = newRecordId()
   db()
     .query(
@@ -25,13 +29,28 @@ function storedQuestion(runId: string): string {
       recordId,
       runId,
       new Date().toISOString(),
-      choice.question,
-      choice.why,
-      choice.kind,
-      JSON.stringify(choice.options),
+      question.question,
+      question.why,
+      question.kind,
+      question.kind === 'choice' ? JSON.stringify(question.options) : null,
       new Date().toISOString(),
     )
   return recordId
+}
+
+function batchChoice(recordId: string, a: number, b: number) {
+  const answer = { choice: 'a', confidence: a, probabilities: { a, b } }
+  return {
+    kind: 'answer' as const,
+    answers: {
+      [`${recordId}:forward`]: answer,
+      [`${recordId}:reversed`]: answer,
+      [`${recordId}:fits`]: { noul: 1 },
+    },
+    model: 'jev-test',
+    inputTokens: 12,
+    latencyMs: 1,
+  }
 }
 
 describe('Jev worker-question apply path', () => {
@@ -44,13 +63,7 @@ describe('Jev worker-question apply path', () => {
       question: choice,
       canResume: true,
       answerChannel: 'mcp',
-      client: async () => ({
-        kind: 'answer',
-        answer: { choice: 'a', confidence: 0.95, probabilities: { a: 0.95, b: 0.05 } },
-        model: 'jev-test',
-        inputTokens: 12,
-        latencyMs: 1,
-      }),
+      client: async () => batchChoice(recordId, 0.95, 0.05),
       readMachine: (key) => (key === 'jev.auto_rule' ? 'on' : '0.9'),
       resolveRulings: async () => 'agent',
     })
@@ -58,7 +71,7 @@ describe('Jev worker-question apply path', () => {
     expect(
       db()
         .query(
-          'SELECT answer_value,jev_pick,answered_by_kind,jev_agreed,awaiting_operator_at,delivery_pending_at FROM question WHERE record_id=?',
+          'SELECT answer_value,jev_pick,answered_by_kind,jev_agreed,jev_question_version,jev_fits,jev_order_flipped,awaiting_operator_at,delivery_pending_at FROM question WHERE record_id=?',
         )
         .get(recordId),
     ).toEqual({
@@ -66,6 +79,9 @@ describe('Jev worker-question apply path', () => {
       jev_pick: '"a"',
       answered_by_kind: 'jev',
       jev_agreed: null,
+      jev_question_version: 2,
+      jev_fits: 1,
+      jev_order_flipped: 0,
       awaiting_operator_at: null,
       delivery_pending_at: null,
     })
@@ -103,6 +119,200 @@ describe('Jev worker-question apply path', () => {
     ).toEqual({ jev_agreed: 1 })
   })
 
+  test('batches two worker questions into one request and splits input tokens', async () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: 'fixture' })
+    const first = storedQuestion(runId)
+    const second = storedQuestion(runId)
+    let calls = 0
+    await preAnswerWorkerQuestions({
+      runId,
+      canResume: false,
+      answerChannel: 'cli',
+      questions: [
+        { recordId: first, question: choice },
+        { recordId: second, question: choice },
+      ],
+      client: async (questions, state) => {
+        calls += 1
+        expect(questions).toHaveLength(6)
+        const forward = questions.find(({ id }) => id === `${first}:forward`)
+        const reversed = questions.find(({ id }) => id === `${first}:reversed`)
+        expect(Object.keys(forward?.criteria ?? {})).toEqual(['a', 'b'])
+        expect(Object.keys(reversed?.criteria ?? {})).toEqual(['b', 'a'])
+        expect(state).toMatchObject({
+          worker: { why: { '1': choice.why, '2': choice.why } },
+          run: { job: 'implement' },
+        })
+        return {
+          kind: 'answer',
+          answers: {
+            ...batchChoice(first, 0.9, 0.1).answers,
+            ...batchChoice(second, 0.8, 0.2).answers,
+          },
+          model: 'jev-test',
+          inputTokens: 5,
+          latencyMs: 1,
+        }
+      },
+      readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'),
+      resolveRulings: async () => 'agent',
+    })
+    expect(calls).toBe(1)
+    expect(
+      db()
+        .query(
+          'SELECT jev_question_version,jev_pick,jev_fits,jev_order_flipped,jev_input_tokens FROM question WHERE record_id IN (?,?) ORDER BY number',
+        )
+        .all(first, second),
+    ).toEqual([
+      {
+        jev_question_version: 2,
+        jev_pick: '"a"',
+        jev_fits: 1,
+        jev_order_flipped: 0,
+        jev_input_tokens: 3,
+      },
+      {
+        jev_question_version: 2,
+        jev_pick: '"a"',
+        jev_fits: 1,
+        jev_order_flipped: 0,
+        jev_input_tokens: 2,
+      },
+    ])
+  })
+
+  test('does not send or annotate text questions in a mixed batch', async () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: 'fixture' })
+    const choiceId = storedQuestion(runId)
+    const text = { kind: 'text' as const, question: 'Explain?', why: 'Need details.' }
+    const textId = storedQuestion(runId, text)
+    await preAnswerWorkerQuestions({
+      runId,
+      canResume: false,
+      answerChannel: 'cli',
+      questions: [
+        { recordId: choiceId, question: choice },
+        { recordId: textId, question: text },
+      ],
+      client: async (questions) => {
+        expect(questions).toHaveLength(3)
+        expect(questions.every(({ id }) => id.startsWith(choiceId))).toBe(true)
+        return batchChoice(choiceId, 0.9, 0.1)
+      },
+      readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'),
+      resolveRulings: async () => 'agent',
+    })
+    expect(
+      db()
+        .query(
+          'SELECT jev_question_version,jev_pick,jev_model,jev_input_tokens,jev_error FROM question WHERE record_id=?',
+        )
+        .get(textId),
+    ).toEqual({
+      jev_question_version: null,
+      jev_pick: null,
+      jev_model: null,
+      jev_input_tokens: null,
+      jev_error: null,
+    })
+  })
+
+  test('a missing run does not throw and records an error when the question is addressable', async () => {
+    const actualRunId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      repo: 'fixture',
+    })
+    const recordId = storedQuestion(actualRunId)
+    const missingRunId = newRecordId()
+    await expect(
+      preAnswerWorkerQuestions({
+        runId: missingRunId,
+        canResume: false,
+        answerChannel: 'cli',
+        questions: [{ recordId, question: choice }],
+      }),
+    ).resolves.toEqual([{ applied: false }])
+    expect(db().query('SELECT jev_error FROM question WHERE record_id=?').get(recordId)).toEqual({
+      jev_error: `run ${missingRunId} was not found while preparing Jev advice`,
+    })
+  })
+
+  test('stores partial choice advice and names a dropped fit answer', async () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: 'fixture' })
+    const recordId = storedQuestion(runId)
+    const response = batchChoice(recordId, 0.9, 0.1)
+    delete response.answers[`${recordId}:fits`]
+    const result = await preAnswerWorkerQuestion({
+      recordId,
+      runId,
+      question: choice,
+      canResume: true,
+      answerChannel: 'mcp',
+      client: async () => response,
+      readMachine: (key) => (key === 'jev.auto_rule' ? 'on' : '0.7'),
+      resolveRulings: async () => 'agent',
+    })
+    expect(result).toEqual({ applied: false })
+    expect(
+      db()
+        .query('SELECT jev_pick,jev_fits,jev_error,answered_at FROM question WHERE record_id=?')
+        .get(recordId),
+    ).toEqual({
+      jev_pick: '"a"',
+      jev_fits: null,
+      jev_error: `Jev response omitted expected answer ids: ${recordId}:fits`,
+      answered_at: null,
+    })
+  })
+
+  test('reads root spec state and omits a missing prompt file', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'jev-state-'))
+    try {
+      const prompt = join(directory, 'prompt.txt')
+      writeFileSync(prompt, 'root specification')
+      const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: 'fixture' })
+      db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(prompt, runId)
+      const recordId = storedQuestion(runId)
+      let seen: unknown
+      await preAnswerWorkerQuestion({
+        recordId,
+        runId,
+        question: choice,
+        canResume: false,
+        answerChannel: 'cli',
+        client: async (_questions, state) => {
+          seen = state
+          return batchChoice(recordId, 0.9, 0.1)
+        },
+        readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'),
+        resolveRulings: async () => 'agent',
+      })
+      expect(seen).toMatchObject({ spec: 'root specification' })
+      db()
+        .query('UPDATE run SET prompt_path=? WHERE record_id=?')
+        .run(join(directory, 'missing'), runId)
+      await preAnswerWorkerQuestion({
+        recordId,
+        runId,
+        question: choice,
+        canResume: false,
+        answerChannel: 'cli',
+        client: async (_questions, state) => {
+          seen = state
+          return batchChoice(recordId, 0.9, 0.1)
+        },
+        readMachine: (key) => (key === 'jev.auto_rule' ? 'off' : '0.7'),
+        resolveRulings: async () => 'agent',
+      })
+      expect(seen).not.toHaveProperty('spec')
+    } finally {
+      rmSync(directory, { recursive: true })
+    }
+  })
+
   test('an architect answer that wins the race is not overwritten', async () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: 'fixture' })
     const recordId = storedQuestion(runId)
@@ -128,13 +338,7 @@ describe('Jev worker-question apply path', () => {
             deliveryPendingAt: null,
           }),
         ).toBe(true)
-        return {
-          kind: 'answer',
-          answer: { choice: 'a', confidence: 0.95, probabilities: { a: 0.95, b: 0.05 } },
-          model: 'jev-test',
-          inputTokens: 12,
-          latencyMs: 1,
-        }
+        return batchChoice(recordId, 0.95, 0.05)
       },
       readMachine: (key) => (key === 'jev.auto_rule' ? 'on' : '0.9'),
       resolveRulings: async () => 'agent',
@@ -172,13 +376,7 @@ describe('Jev worker-question apply path', () => {
       question: choice,
       canResume: true,
       answerChannel: 'mcp',
-      client: async () => ({
-        kind: 'answer',
-        answer: { choice: 'a', confidence: 1, probabilities: { a: 1, b: 0 } },
-        model: 'jev-test',
-        inputTokens: 0,
-        latencyMs: 1,
-      }),
+      client: async () => batchChoice(recordId, 1, 0),
       readMachine: (key) => (key === 'jev.confidence_threshold' ? 'NaN' : 'on'),
       resolveRulings: async () => 'agent',
     })
@@ -201,13 +399,7 @@ describe('Jev worker-question apply path', () => {
       question: choice,
       canResume: true,
       answerChannel: 'mcp',
-      client: async () => ({
-        kind: 'answer',
-        answer: { choice: 'a', confidence: 1, probabilities: { a: 1, b: 0 } },
-        model: 'jev-test',
-        inputTokens: 0,
-        latencyMs: 1,
-      }),
+      client: async () => batchChoice(recordId, 1, 0),
       readMachine: (key) => (key === 'jev.auto_rule' ? 'on' : '0.9'),
       resolveRulings: async () => {
         throw new Error('rulings unavailable')

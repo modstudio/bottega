@@ -21,5 +21,8 @@ export function typedQuestionRecordValues(row: Payload) {
     jevInputTokens: number(row.jevInputTokens),
     jevError: text(row.jevError),
     jevAgreed: number(row.jevAgreed),
+    jevQuestionVersion: number(row.jevQuestionVersion),
+    jevFits: number(row.jevFits),
+    jevOrderFlipped: number(row.jevOrderFlipped),
   }
 }
