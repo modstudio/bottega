@@ -9,14 +9,13 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
-import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
-import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import {
   closeCursorWithTextCopy,
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from '../workflow/workflow-text-copy.ts'
+import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
@@ -51,20 +50,18 @@ export async function advanceWorkflow(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
     )
   const workflowArgs = args ?? {}
-  const context = await resolveMcpCursorContext(project, workflowArgs, hubTaskReader)
-  const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
-  const advanceContext = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
-  const effectiveMode = resolveLinkedWorkflowCursorMode(
+  const { context, effectiveMode } = await resolveMcpLinkedWorkflowCursor(
     slug,
     project,
     mode,
     workflowArgs,
-    context,
+    cursor,
     'next_workflow_step',
     'pass the mode argument',
-    undefined,
-    cursor,
+    hubTaskReader,
   )
+  const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
+  const advanceContext = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
   const live = await resolveCursorLiveAutonomy({
     slug,
     project,

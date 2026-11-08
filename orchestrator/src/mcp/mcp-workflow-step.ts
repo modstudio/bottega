@@ -13,9 +13,9 @@ import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-au
 import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
-import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { getWorkflowStep, workflowModeStepLists } from '../workflow/workflows.ts'
+import { resolveMcpLinkedWorkflowCursor } from './mcp-workflow-cursor.ts'
 
 const inputSchema = z.object({
   slug: z.string().trim().min(1),
@@ -33,20 +33,22 @@ async function workflowStep(
   hubTaskReader?: HubTaskReader,
 ) {
   const { slug, project, step, mode, args, autonomy, cursor } = input
-  const context = await resolveMcpCursorContext(project, args ?? {}, hubTaskReader)
-  const effectiveMode = cursor
-    ? resolveLinkedWorkflowCursorMode(
+  const workflowArgs = args ?? {}
+  const resolved = cursor
+    ? await resolveMcpLinkedWorkflowCursor(
         slug,
         project,
         mode,
-        args ?? {},
-        context,
+        workflowArgs,
+        cursor,
         'get_workflow_step',
         'pass the mode argument',
-        undefined,
-        cursor,
+        hubTaskReader,
       )
-    : mode
+    : undefined
+  const context =
+    resolved?.context ?? (await resolveMcpCursorContext(project, workflowArgs, hubTaskReader))
+  const effectiveMode = resolved?.effectiveMode ?? mode
   const stepSlug = effectiveMode
     ? step
     : resolveWorkflowStepReference(step, workflowModeStepLists(slug, project))
@@ -55,7 +57,7 @@ async function workflowStep(
     slug,
     project,
     mode: effectiveMode,
-    args: args ?? {},
+    args: workflowArgs,
     context,
     cursor,
     session,
@@ -66,7 +68,7 @@ async function workflowStep(
         slug,
         project,
         stepSlug,
-        args ?? {},
+        workflowArgs,
         effectiveMode,
         context,
         undefined,
@@ -74,7 +76,7 @@ async function workflowStep(
         cursor,
         commitCount,
       )
-    : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode }, live.resolution)
+    : getWorkflowStep(slug, project, stepSlug, workflowArgs, undefined, { mode }, live.resolution)
   return {
     content: [{ type: 'text' as const, text: renderWorkflowStep(result) }],
   }

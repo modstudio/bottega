@@ -1,15 +1,26 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
+import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
+import { cacheHostedTaskFlow } from './task-flow-read-through.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
   workflowCommandPresentation as presentation,
   publishCursorWorkflowFixture as publishCursorWorkflow,
   registerFixtureWorkflowProject as registerFixtureProject,
   runWorkflowCommand as workflowCommand,
+  workflowRecordedArtifact,
 } from './workflow-store.fixture.ts'
 
 let priorSession: string | undefined
+const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
 
 beforeEach(() => {
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
@@ -17,8 +28,117 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
   if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+})
+
+test('next by cursor alone reads through the row key and links the hosted task', async () => {
+  const slug = 'cursor-command-hosted-takeover'
+  const project = 'cursor-command-hosted-takeover-project'
+  const key = 'DEV-2174-fixture'
+  const taskId = newRecordId()
+  const flowId = newRecordId()
+  const stageId = newRecordId()
+  const remoteMachine = newRecordId()
+  const steps = ['diagnose', 'fix-defect-fix']
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/fixture/${project}`,
+    stack: 'bun',
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+      tracker: { kind: 'hub', protocol: 'hub' },
+    },
+  })
+  publishCursorWorkflow(slug, [{ slug: 'default', title: 'Default', default: true, steps }])
+  const projectId = db()
+    .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
+    .get(project)!.record_id
+  const hosted = (revision: number, ordinal: number): HostedTaskFlow => ({
+    flow: {
+      id: flowId,
+      projectId,
+      taskId,
+      state: 'open',
+      openStageRecordId: stageId,
+      openingMachineId: remoteMachine,
+      updatedMachineId: remoteMachine,
+      revision,
+      createdAt: '2026-11-07T10:00:00.000Z',
+      updatedAt: '2026-11-07T11:00:00.000Z',
+    },
+    stage: {
+      id: stageId,
+      flowRecordId: flowId,
+      workflow: slug,
+      mode: 'default',
+      workflowVersionId: workflowVersionRecordId(db(), slug),
+      catalogueVersionId: catalogueVersionRecordId(db()),
+      arguments: { key },
+      activeOrdinal: ordinal,
+      activeSlug: steps[ordinal]!,
+      state: 'running',
+      closedStepNotes:
+        ordinal === 0
+          ? []
+          : [
+              {
+                n: 1,
+                slug: steps[0]!,
+                note: 'diagnosed remotely',
+                at: '2026-11-07T10:30:00.000Z',
+              },
+            ],
+      totalSteps: steps.length,
+      openedMachineId: remoteMachine,
+      takenOverFromMachineId: null,
+      lastAdvancedMachineId: remoteMachine,
+      revision,
+      createdAt: '2026-11-07T10:00:00.000Z',
+      updatedAt: '2026-11-07T11:00:00.000Z',
+      holder: { id: remoteMachine, displayName: 'Remote CLI machine' },
+    },
+  })
+  cacheHostedTaskFlow(db(), key, hosted(1, 0))
+  db().query('UPDATE workflow_cursor SET task_record_id=NULL WHERE record_id=?').run(stageId)
+  const cursor = db()
+    .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
+    .get(stageId)!.number
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    readTaskFlow: async () => hosted(2, 1),
+  })
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  const lines: string[] = []
+  await workflowCommand(
+    [
+      'workflow',
+      'next',
+      '--cursor',
+      String(cursor),
+      '--note',
+      'closed hosted step',
+      ...workflowRecordedArtifact(project),
+    ],
+    presentation(lines),
+    {
+      json: true,
+      hubTaskReader: async () => [{ key, record_id: taskId, project }],
+    },
+  )
+
+  expect(lines.join('\n')).toContain('Took over this workflow stage from Remote CLI machine.')
+  expect(
+    db()
+      .query('SELECT ordinal,state,task_record_id FROM workflow_cursor WHERE record_id=?')
+      .get(stageId),
+  ).toEqual({ ordinal: 1, state: 'done', task_record_id: taskId })
 })
 
 test('cursor verbs parse every documented positional form before flags', async () => {
