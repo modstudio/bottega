@@ -63,13 +63,7 @@ test('readRunsById builds one id option per id and no since option', () => {
 })
 
 test('readRunChanges builds the changed-after cursor option', () => {
-  expect(readRunChangesArgv(73)).toEqual([
-    'run',
-    'list',
-    '--json',
-    '--changed-after',
-    '73',
-  ])
+  expect(readRunChangesArgv(73)).toEqual(['run', 'list', '--json', '--changed-after', '73'])
 })
 
 test('readRuns builds the since option', () => {

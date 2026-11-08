@@ -5,8 +5,8 @@ import { gitAt } from '../../shared/git.ts'
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
-import { capToolEventText } from './tool-event-text.ts'
 import { targetGitEnvironment } from './git/git-environment.ts'
+import { capToolEventText } from './tool-event-text.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
 export type StreamEvent =

@@ -18,8 +18,8 @@ import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
 import { db, liveRuns, SESSION_LIVE_MS } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
@@ -689,7 +689,7 @@ export function rulingConditions(clock = Date.now()): {
 
 /** The hub reconciler owns the repair; the monitor invokes it and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
-  let p
+  let p: ReturnType<typeof startBoundedSync>
   try {
     p = startBoundedSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'reconcile'], {
       budget: 'self-cli',
@@ -741,7 +741,7 @@ export function dockerConditions(clock: number): {
   conditions: MonitorCondition[]
   errors: string[]
 } {
-  let listed
+  let listed: ReturnType<typeof startBoundedSync>
   try {
     listed = startBoundedSync(['docker', 'volume', 'ls', '--format', '{{.Name}}'], {
       budget: 'docker',
@@ -763,7 +763,7 @@ export function dockerConditions(clock: number): {
   // volumes and classify only compose workdirs under vanished worktrees.
   const candidates = listed.stdout.toString().split('\n').filter(Boolean)
   if (!candidates.length) return { conditions: [], errors: [] }
-  let inspected
+  let inspected: ReturnType<typeof startBoundedSync>
   try {
     inspected = startBoundedSync(['docker', 'volume', 'inspect', ...candidates], {
       budget: 'docker',

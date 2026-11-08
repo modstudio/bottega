@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
@@ -403,7 +403,7 @@ export function dockerRunResources(mainCheckoutPaths: string[] = []): DockerInve
 
 /** Inventory Compose networks and the two ownership signals the monitor can prove. */
 export function dockerNetworkInventory(): DockerNetworkInventory {
-  let listed
+  let listed: ReturnType<typeof startBoundedSync>
   try {
     listed = startBoundedSync(['docker', 'network', 'ls', '--format', '{{.Name}}'], {
       budget: 'docker',
@@ -426,7 +426,7 @@ export function dockerNetworkInventory(): DockerNetworkInventory {
     .filter(Boolean)
   if (!names.length) return { ascertainable: true, networks: [] }
 
-  let inspected
+  let inspected: ReturnType<typeof startBoundedSync>
   try {
     inspected = startBoundedSync(['docker', 'network', 'inspect', ...names], {
       budget: 'docker',

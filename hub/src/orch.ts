@@ -328,9 +328,7 @@ export function decodeRunsJson(text: string): OrchRunLineData[] {
 export const readRunsArgv = (since: string): string[] => ['run', 'list', '--json', '--since', since]
 
 export async function readRuns(since: string): Promise<OrchRun[]> {
-  const rows = decodeRunsJson(
-    await orchProcess(readRunsArgv(since), RUNS_DEADLINE_MS),
-  )
+  const rows = decodeRunsJson(await orchProcess(readRunsArgv(since), RUNS_DEADLINE_MS))
   return rows.filter((row): row is OrchRun => !('unknown' in row))
 }
 
@@ -360,9 +358,7 @@ export const readRunChangesArgv = (after: number): string[] => [
 ]
 
 export async function readRunChanges(after: number): Promise<{ rows: OrchRun[]; cursor: number }> {
-  return decodeRunChangesJson(
-    await orchProcess(readRunChangesArgv(after), RUNS_DEADLINE_MS),
-  )
+  return decodeRunChangesJson(await orchProcess(readRunChangesArgv(after), RUNS_DEADLINE_MS))
 }
 
 export async function readQuestionIdentityMap(): Promise<QuestionIdentity[]> {
@@ -411,12 +407,7 @@ export const readRunsByIdArgv = (ids: (string | number)[]): string[] => [
 
 export async function readRunsById(ids: (string | number)[]): Promise<OrchRunLineData[]> {
   if (!ids.length) return []
-  return decodeRunsJson(
-    await orchProcess(
-      readRunsByIdArgv(ids),
-      RUNS_DEADLINE_MS,
-    ),
-  )
+  return decodeRunsJson(await orchProcess(readRunsByIdArgv(ids), RUNS_DEADLINE_MS))
 }
 
 export const waiting = (): Promise<OperatorWaitingItem[]> =>

@@ -2,8 +2,8 @@
 /** Updates either installation kind while holding its migration drain or window. */
 
 import { existsSync, realpathSync } from 'node:fs'
-import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   INSTALL_HOME_ENV,
   type InstallationIdentity,

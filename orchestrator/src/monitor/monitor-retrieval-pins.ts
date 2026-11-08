@@ -1,8 +1,8 @@
 // concern: monitor-retrieval-pins
 /** Runs the model-free retrieval pin report and translates stale pins into monitor conditions. */
 
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 type PinReport = {
@@ -52,10 +52,9 @@ export function staleRetrievalPinConditions(report: PinReport): MonitorCondition
 
 export function observeRetrievalPins(): { conditions: MonitorCondition[]; errors: string[] } {
   try {
-    const child = startBoundedSync(
-      [...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'],
-      { budget: 'self-cli' },
-    )
+    const child = startBoundedSync([...bottegaEntryArgv('retrieval-search'), '--check-doc-pins'], {
+      budget: 'self-cli',
+    })
     const stdout = child.stdout
     const stderr = child.stderr.trim()
     if (child.exitCode !== 0 && child.exitCode !== 1) {
