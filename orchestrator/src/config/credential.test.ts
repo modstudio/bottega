@@ -127,9 +127,9 @@ test("another space's credential is never selected", () => {
 
 test('resolver matches credential mode', () => {
   const testMode = { ...candidate('personal', base.projectId), mode: 'test' as const }
-  expect(
-    resolveCredential({ ...base, candidates: [testMode], preferences: [] }),
-  ).toMatchObject({ kind: 'refused' })
+  expect(resolveCredential({ ...base, candidates: [testMode], preferences: [] })).toMatchObject({
+    kind: 'refused',
+  })
   expect(
     resolveCredential({ ...base, mode: 'test', candidates: [testMode], preferences: [] }),
   ).toMatchObject({ kind: 'resolved', credential: testMode })
