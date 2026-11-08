@@ -1,5 +1,6 @@
 // concern: recorded gate evidence for read-only workers
 
+import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
@@ -116,8 +117,9 @@ export function recordedGateResult(runId: string): {
 /** Read every persisted omission for one gate execution in presentation order. */
 export function uncheckedChecksForGateExecution(
   executionRecordId: string,
+  database: Database = db(),
 ): readonly { check: string; reason: string }[] {
-  return db()
+  return database
     .query<{ check: string; reason: string }, [string]>(
       `SELECT check_name AS "check",unchecked_reason AS reason
        FROM check_execution
@@ -125,6 +127,21 @@ export function uncheckedChecksForGateExecution(
        ORDER BY check_name,record_id`,
     )
     .all(executionRecordId)
+}
+
+/** Read the newest finished worker-check execution attached to one run. */
+export function latestFinishedWorkerCheckExecutionRecordId(
+  runRecordId: string,
+  database: Database = db(),
+): string | null {
+  const row = database
+    .query<{ record_id: string }, [string]>(
+      `SELECT record_id FROM gate_execution
+       WHERE run_record_id=? AND purpose='worker-check' AND finished_at IS NOT NULL
+       ORDER BY requested_at DESC,record_id DESC LIMIT 1`,
+    )
+    .get(runRecordId)
+  return row?.record_id ?? null
 }
 
 export function formatRecordedGateResult(input: ReturnType<typeof recordedGateResult>): string {

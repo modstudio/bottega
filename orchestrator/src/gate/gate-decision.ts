@@ -353,7 +353,7 @@ export type GateResult = {
   outputTail: string
   outputPath?: string
   artifactPath?: string
-  purpose?: 'gate' | 'worker-check'
+  purpose: 'gate' | 'worker-check'
   uncheckedChecks: readonly { check: string; reason: string }[]
 }
 
@@ -364,7 +364,7 @@ export function shapeGateResult(input: {
   output: string
   outputPath?: string
   artifactPath?: string
-  purpose?: 'gate' | 'worker-check'
+  purpose: 'gate' | 'worker-check'
   uncheckedChecks?: readonly { check: string; reason: string }[]
 }): GateResult {
   return {
@@ -379,6 +379,18 @@ export function shapeGateResult(input: {
   }
 }
 
+/** Format persisted omissions consistently wherever a worker-check result is presented. */
+export function formatUncheckedChecksNotRunBlock(
+  uncheckedChecks: readonly { check: string; reason: string }[],
+): string {
+  return [
+    'not run:',
+    ...uncheckedChecks
+      .toSorted((left, right) => left.check.localeCompare(right.check))
+      .map((omission) => `- ${omission.check} (${omission.reason})`),
+  ].join('\n')
+}
+
 export function formatGateResult(result: GateResult): string {
   const workerOmissions = result.purpose === 'worker-check' ? result.uncheckedChecks : []
   const passingWorkerSummary =
@@ -387,14 +399,7 @@ export function formatGateResult(result: GateResult): string {
           `Worker check passed, ${workerOmissions.length} ${workerOmissions.length === 1 ? 'check' : 'checks'} not run`,
         ]
       : []
-  const notRun = workerOmissions.length
-    ? [
-        'not run:',
-        ...workerOmissions
-          .toSorted((left, right) => left.check.localeCompare(right.check))
-          .map((omission) => `- ${omission.check} (${omission.reason})`),
-      ]
-    : []
+  const notRun = workerOmissions.length ? [formatUncheckedChecksNotRunBlock(workerOmissions)] : []
   return [
     ...passingWorkerSummary,
     `Gate exit code: ${result.exitCode}`,

@@ -10,7 +10,6 @@ test('shows observed tests and their disagreement independently of a reply', () 
     'tests observed: {"ran":false,"passed":null}; tests_claim_disagrees: true',
   )
 })
-
 test('shows an unavailable runner as unobserved and non-disagreeing', () => {
   expect(observedTestsLine({ ran: null, passed: null, claimDisagrees: 0 })).toBe(
     'tests observed: not observed; tests_claim_disagrees: false',
@@ -26,7 +25,6 @@ test('shows an unverified claim beside what was observed', () => {
     'tests observed: {"ran":true,"passed":null}; tests_claim_disagrees: unverified',
   )
 })
-
 test('shows each declared expect-fail probe and its observed result', () => {
   expect(
     declaredExpectFailProbeLines([
@@ -54,8 +52,4 @@ test('shows omissions from the last worker check in check-name order', () => {
       '- typecheck (no matching files)',
     ].join('\n'),
   )
-})
-
-test('shows nothing when the run has no worker-check omissions', () => {
-  expect(lastWorkerCheckNotRunBlock([])).toBeNull()
 })

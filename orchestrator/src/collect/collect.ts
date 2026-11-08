@@ -12,6 +12,10 @@ import {
 } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
+import {
+  latestFinishedWorkerCheckExecutionRecordId,
+  uncheckedChecksForGateExecution,
+} from '../gate/gate-result.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
@@ -130,30 +134,16 @@ function presentObservedTests(
   }
 }
 
-function lastWorkerCheckUncheckedChecks(
-  database: Database,
-  runRecordId: string,
-): readonly { check: string; reason: string }[] {
-  return database
-    .query<{ check: string; reason: string }, [string]>(
-      `SELECT c.check_name AS "check",c.unchecked_reason AS reason
-       FROM check_execution c
-       WHERE c.gate_execution_record_id=(
-         SELECT g.record_id FROM gate_execution g
-         WHERE g.run_record_id=? AND g.purpose='worker-check' AND g.finished_at IS NOT NULL
-         ORDER BY g.requested_at DESC,g.record_id DESC LIMIT 1
-       ) AND c.unchecked_reason IS NOT NULL
-       ORDER BY c.check_name,c.record_id`,
-    )
-    .all(runRecordId)
-}
-
 function presentLastWorkerCheckOmissions(
   database: Database,
   runRecordId: string,
   presentation: CollectResultPresentation,
 ): void {
-  const block = lastWorkerCheckNotRunBlock(lastWorkerCheckUncheckedChecks(database, runRecordId))
+  const executionRecordId = latestFinishedWorkerCheckExecutionRecordId(runRecordId, database)
+  const uncheckedChecks = executionRecordId
+    ? uncheckedChecksForGateExecution(executionRecordId, database)
+    : []
+  const block = lastWorkerCheckNotRunBlock(uncheckedChecks)
   if (block) presentation.error(block)
 }
 

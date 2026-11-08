@@ -6,6 +6,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   formatRecordedGateResult,
+  latestFinishedWorkerCheckExecutionRecordId,
   type RecordedGateCandidate,
   recordedGateResult,
   selectRecordedGateResult,
@@ -252,4 +253,33 @@ test('unchecked-check reader returns only omissions ordered by check name', () =
     { check: 'biome', reason: 'no files to check' },
     { check: 'typecheck', reason: 'no matching files' },
   ])
+})
+
+test('latest worker-check reader returns the newest finished execution by request order', () => {
+  const projectId = insertProject('latest-worker-check-reader', readerPath)
+  const run = insertRun(projectId, 'implement', 'latest-worker-check-commit')
+  const older = insertGate({
+    runId: run,
+    finishedAt: '2026-10-01T10:00:00.000Z',
+    exitCode: 0,
+    headCommit: 'latest-worker-check-commit',
+  })
+  const newestFinished = insertGate({
+    runId: run,
+    finishedAt: '2026-10-01T11:00:00.000Z',
+    exitCode: 0,
+    headCommit: 'latest-worker-check-commit',
+  })
+  db()
+    .query("UPDATE gate_execution SET purpose='worker-check' WHERE record_id IN (?,?)")
+    .run(older, newestFinished)
+  db()
+    .query(
+      `INSERT INTO gate_execution
+        (record_id,run_record_id,requested_at,purpose)
+       VALUES (?,?,?,'worker-check')`,
+    )
+    .run(newRecordId(), run, '2026-10-01T12:00:00.000Z')
+
+  expect(latestFinishedWorkerCheckExecutionRecordId(run)).toBe(newestFinished)
 })

@@ -351,6 +351,7 @@ test('gate result bounds the combined output tail and preserves timeout evidence
     timedOut: true,
     elapsedMs: 1_200_000,
     output,
+    purpose: 'gate',
     outputPath: '/runs/42/scratch/gate-7.log',
     artifactPath: '/runs/42/artifacts/gate-7.log',
   })

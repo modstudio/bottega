@@ -1,3 +1,4 @@
+import { formatUncheckedChecksNotRunBlock } from '../gate/gate-decision.ts'
 import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts'
 
 /** Maximum recovered transcript text printed by `bottega run result` for a truncated run. */
@@ -60,11 +61,5 @@ export function lastWorkerCheckNotRunBlock(
   uncheckedChecks: readonly { check: string; reason: string }[],
 ): string | null {
   if (uncheckedChecks.length === 0) return null
-  return [
-    'Last worker check:',
-    'not run:',
-    ...uncheckedChecks
-      .toSorted((left, right) => left.check.localeCompare(right.check))
-      .map((omission) => `- ${omission.check} (${omission.reason})`),
-  ].join('\n')
+  return ['Last worker check:', formatUncheckedChecksNotRunBlock(uncheckedChecks)].join('\n')
 }
