@@ -42,7 +42,7 @@ const destination = (address: CredentialAddress): ConfigDestination => ({
 })
 const scope = (payer: CredentialPayer): ConfigScope => (payer === 'personal' ? 'user' : 'space')
 
-function localMachine() {
+async function localMachine() {
   const pair = readMachineKey()
   if (!pair)
     throw new Error(
@@ -52,7 +52,7 @@ function localMachine() {
 }
 
 async function openDataKey(key: DataKey, address: CredentialAddress): Promise<Uint8Array> {
-  const machine = localMachine()
+  const machine = await localMachine()
   const trust = await readTrustList()
   const wrap = key.wraps.find((row) => trust[row.senderKeyId])
   const sender = wrap && trust[wrap.senderKeyId]
@@ -82,7 +82,7 @@ export async function setCredential(
   client = configClient(),
 ) {
   if (sealedValueIsEmpty(value)) throw new Error('refusing to seal an empty credential')
-  const machine = localMachine()
+  const machine = await localMachine()
   const target = destination(address)
   let dataKey: DataKey
   try {

@@ -86,7 +86,9 @@ export function registerCredentialCommands(program: Command): void {
     })
   addBindingOptions(credential.command('delete <provider/type>'), true)
     .description('delete a credential')
-    .action(async (name, options: BindingOptions) => deleteCredential(await address(name, options)))
+    .action(async (name, options: BindingOptions) => {
+      await deleteCredential(await address(name, options))
+    })
   addBindingOptions(credential.command('list'), false)
     .description('list credential metadata and masked hints')
     .action(async (options: BindingOptions) => {
@@ -115,7 +117,10 @@ export function registerCredentialCommands(program: Command): void {
         environment: target.environment,
         destinationSpaceId: target.destinationSpaceId,
       }
-      if (options.clear) return client.deleteCredentialPreference(input)
+      if (options.clear) {
+        await client.deleteCredentialPreference(input)
+        return
+      }
       const match = /^(personal|shared)@(project|space)$/.exec(options.use!)
       if (!match)
         throw new Error(

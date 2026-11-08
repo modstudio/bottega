@@ -35,7 +35,7 @@ test('resolver uses personal project, personal space, project shared, then space
       candidates: rows.slice(0, index + 1),
       preferences: [],
     })
-    expect(result.kind === 'resolved' ? result.credential : null).toEqual(rows[index])
+    expect(result.kind === 'resolved' ? result.credential : null).toEqual(rows[index]!)
   }
 })
 
@@ -48,15 +48,15 @@ test('a project preference wins while a stale preference falls back', () => {
   })
   expect(preferred).toMatchObject({
     kind: 'resolved',
-    credential: rows[1],
+    credential: rows[1]!,
     reason: 'project-preference',
   })
   const stale = resolveCredential({
     ...base,
-    candidates: [rows[0]],
+    candidates: [rows[0]!],
     preferences: [{ ...base, projectId: base.projectId, payer: 'shared', binding: 'space' }],
   })
-  expect(stale).toMatchObject({ kind: 'resolved', credential: rows[0], reason: 'default-order' })
+  expect(stale).toMatchObject({ kind: 'resolved', credential: rows[0]!, reason: 'default-order' })
 })
 
 test("another space's credential is never selected", () => {

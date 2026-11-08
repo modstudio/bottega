@@ -349,7 +349,6 @@ export async function deleteConfigEntry(
       input.environment,
       input.scope,
       true,
-      input.projectId,
     )
     const occupancy = configOccupancy({
       existing,
