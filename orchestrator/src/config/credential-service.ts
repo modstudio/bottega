@@ -20,6 +20,7 @@ import {
   type CredentialPayer,
   credentialHint,
   credentialScopeFromPayer,
+  credentialSetRefusalText,
   credentialVariableName,
 } from './credential.ts'
 
@@ -47,31 +48,12 @@ function missingProjectWrapRefusal(address: CredentialAddress): Error {
   )
 }
 
-function credentialSetRefusal(
-  address: CredentialAddress,
-  condition: string,
-  action: string,
-): Error {
-  const name = `${address.provider}/${address.type}`
-  const binding = address.projectName
-    ? `project ${address.projectName}`
-    : `space ${address.spaceName}`
-  const bindOption = address.projectName
-    ? ` --project ${address.projectName}`
-    : ` --space ${address.spaceName}`
-  const payerOption = address.payer === 'shared' ? ' --shared' : ''
-  const environmentOption = address.environment === 'default' ? '' : ` --env ${address.environment}`
-  return new Error(
-    `credential ${name} (${address.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${environmentOption}\``,
-  )
-}
-
 function missingCredentialRefusal(address: CredentialAddress): Error {
-  return credentialSetRefusal(address, 'missing', 'pipe its value to')
+  return new Error(credentialSetRefusalText(address, 'missing', 'pipe its value to'))
 }
 
 function blankCredentialRefusal(address: CredentialAddress): Error {
-  return credentialSetRefusal(address, 'blank', 'pipe a non-blank value to')
+  return new Error(credentialSetRefusalText(address, 'blank', 'pipe a non-blank value to'))
 }
 
 export async function setCredential(

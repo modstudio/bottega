@@ -87,6 +87,32 @@ export function credentialScopeFromPayer(payer: CredentialPayer): 'user' | 'spac
   return payer === 'personal' ? 'user' : 'space'
 }
 
+/** Where a credential set is aimed; a project binding wins over its space. */
+export type CredentialSetTarget = {
+  provider: string
+  type: string
+  environment: CredentialEnvironment
+  payer: CredentialPayer
+  projectName?: string | null
+  spaceName?: string
+}
+
+/** One refusal shape for every credential that must be set: names the binding and the exact set command. */
+export function credentialSetRefusalText(
+  target: CredentialSetTarget,
+  condition: string,
+  action: string,
+): string {
+  const name = `${target.provider}/${target.type}`
+  const binding = target.projectName ? `project ${target.projectName}` : `space ${target.spaceName}`
+  const bindOption = target.projectName
+    ? ` --project ${target.projectName}`
+    : ` --space ${target.spaceName}`
+  const payerOption = target.payer === 'shared' ? ' --shared' : ''
+  const environmentOption = target.environment === 'default' ? '' : ` --env ${target.environment}`
+  return `credential ${name} (${target.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${environmentOption}\``
+}
+
 export function resolveCredential(input: {
   spaceId: string
   projectId: string
@@ -133,11 +159,12 @@ export function resolveCredential(input: {
     const credential = candidates.find((row) => row.payer === payer && row.projectId === projectId)
     if (credential) return { kind: 'resolved', credential, reason: 'default-order' }
   }
-  const address = `${input.provider}/${input.type}`
   return {
     kind: 'refused',
-    refusal:
-      `credential ${address} (${input.environment}) is missing for project ${input.projectName}; ` +
-      `pipe its value to \`${PLATFORM_SLUG} credential set ${address} --project ${input.projectName}${input.environment === 'default' ? '' : ` --env ${input.environment}`}\``,
+    refusal: credentialSetRefusalText(
+      { ...input, payer: 'personal' },
+      'missing',
+      'pipe its value to',
+    ),
   }
 }
