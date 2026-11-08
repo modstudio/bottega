@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -103,6 +111,25 @@ function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
           .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
           .run(applied.hash, applied.created_at, applied.version)
     },
+  }
+}
+
+function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
+  return {
+    cwd: dir,
+    authorityRefusal: () => null,
+    project: () => ({
+      name: 'migration-update-fixture',
+      path: dir,
+      settings: { trunk: 'main' },
+    }),
+    git: (_cwd: string, args: string[]) => {
+      if (args[0] === 'branch') return 'main'
+      if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+      return args[0] === 'rev-parse' ? 'current-before' : ''
+    },
+    migrate,
+    runLaunchAgentsRefreshVerb: () => {},
   }
 }
 
@@ -210,6 +237,45 @@ test("machine update recovers a dead holder's intent before the new update", asy
     clearMachineUpdateIntent()
   }
   expect(gitCalls[0]).toEqual(['reset', '--keep', 'abandoned-before'])
+})
+
+test('machine update leaves an installed distribution binary when no prior binary was moved', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'machine-update-distribution.'))
+  const installedBinary = join(root, PLATFORM_SLUG)
+  const priorBinary = join(root, `.${PLATFORM_SLUG}-prior`)
+  writeFileSync(installedBinary, 'installed')
+  writeMachineUpdateIntent({
+    before: localStoreJournalPositions()!,
+    swapped: { kind: 'distribution', installedBinary, priorBinary },
+  })
+  try {
+    await machineUpdateCommand({ log: () => {} }, successfulMachineUpdateDeps())
+    expect(readFileSync(installedBinary, 'utf8')).toBe('installed')
+    expect(existsSync(machineUpdateIntentPath(process.env))).toBeFalse()
+  } finally {
+    clearMachineUpdateIntent()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('machine update removes a stale prior distribution binary when keeping the update', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'machine-update-distribution.'))
+  const installedBinary = join(root, PLATFORM_SLUG)
+  const priorBinary = join(root, `.${PLATFORM_SLUG}-prior`)
+  const positions = localStoreJournalPositions()!
+  writeFileSync(installedBinary, 'installed')
+  writeFileSync(priorBinary, 'prior')
+  writeMachineUpdateIntent({
+    before: { ...positions, hub: positions.hub + 1 },
+    swapped: { kind: 'distribution', installedBinary, priorBinary },
+  })
+  try {
+    await machineUpdateCommand({ log: () => {} }, successfulMachineUpdateDeps())
+    expect(existsSync(priorBinary)).toBeFalse()
+  } finally {
+    clearMachineUpdateIntent()
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('machine update restores main when migrate fails after the pull', async () => {

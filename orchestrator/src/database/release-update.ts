@@ -238,11 +238,11 @@ function restoreDistributionBinary(input: {
   migrationFailure: boolean
 }): never {
   const failure = failureMessage(input.cause)
+  let restored = false
   try {
-    if (existsSync(input.prior) && !existsSync(input.target)) {
+    if (existsSync(input.prior)) {
       renameSync(input.prior, input.target)
-    } else if (input.migrationFailure) {
-      renameSync(input.prior, input.target)
+      restored = true
     }
   } catch (restoreCause) {
     const decision = decideMachineUpdateRecovery({
@@ -256,7 +256,7 @@ function restoreDistributionBinary(input: {
   input.clearIntent()
   const prefix = input.migrationFailure ? `migration failed: ${failure}` : failure
   throw new Error(
-    `${prefix}; the prior binary was restored at ${input.target}` +
+    `${prefix}; ${restored ? `the prior binary was restored at ${input.target}` : `the installed binary at ${input.target} was left in place`}` +
       (input.migrationFailure ? `; rerun ${PLATFORM_SLUG} machine update` : ''),
   )
 }

@@ -72,12 +72,15 @@ test('a failed migration after a position moves keeps the new binary', () => {
 test('a successful migration removes the prior binary', () => {
   const paths = stagedReleaseTest()
   let cleared = false
+  let intent: unknown
   try {
     applyStagedRelease({
       ...paths,
       migrate: () => {},
       positions: () => before,
-      writeIntent: () => {},
+      writeIntent: (value) => {
+        intent = value
+      },
       clearIntent: () => {
         cleared = true
       },
@@ -85,6 +88,35 @@ test('a successful migration removes the prior binary', () => {
     expect(readFileSync(paths.target, 'utf8')).toBe('new')
     expect(existsSync(paths.prior)).toBe(false)
     expect(cleared).toBe(true)
+    expect(intent).toEqual({
+      before,
+      swapped: {
+        kind: 'distribution',
+        installedBinary: paths.target,
+        priorBinary: paths.prior,
+      },
+    })
+  } finally {
+    rmSync(paths.root, { recursive: true, force: true })
+  }
+})
+
+test('a failed intent write leaves both binaries in place', () => {
+  const paths = stagedReleaseTest()
+  try {
+    expect(() =>
+      applyStagedRelease({
+        ...paths,
+        positions: () => before,
+        writeIntent: () => {
+          throw new Error('intent write broke')
+        },
+        clearIntent: () => {},
+      }),
+    ).toThrow('intent write broke')
+    expect(readFileSync(paths.target, 'utf8')).toBe('original')
+    expect(existsSync(paths.prior)).toBe(false)
+    expect(readFileSync(paths.staged, 'utf8')).toBe('new')
   } finally {
     rmSync(paths.root, { recursive: true, force: true })
   }

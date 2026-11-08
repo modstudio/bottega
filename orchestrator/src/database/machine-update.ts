@@ -1,7 +1,7 @@
 // concern: checkout and installed-release database update
 /** Updates either installation kind while holding its migration drain or window. */
 
-import { existsSync, realpathSync, renameSync } from 'node:fs'
+import { existsSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -420,11 +420,27 @@ function recoverAbandonedMachineUpdate(
   const after = localStoreJournalPositions()
   const decision = decideMachineUpdateRecovery({ ...intent, after })
   if (decision.action === 'keep') {
+    if (intent.swapped.kind === 'distribution') {
+      rmSync(intent.swapped.priorBinary, { force: true })
+    }
     presentation.log(`recovered interrupted machine update: ${decision.message}`)
     clearMachineUpdateIntent()
     return
   }
   if (decision.action === 'manual') throw new Error(decision.message)
+  if (intent.swapped.kind === 'distribution' && !existsSync(intent.swapped.priorBinary)) {
+    if (existsSync(intent.swapped.installedBinary)) {
+      clearMachineUpdateIntent()
+      presentation.log(
+        `recovered interrupted machine update: the installed binary at ${intent.swapped.installedBinary} was left in place; no prior binary was moved`,
+      )
+      return
+    }
+    throw new Error(
+      `interrupted machine update left no binary at ${intent.swapped.installedBinary} or ${intent.swapped.priorBinary}; ` +
+        `reinstall the ${PLATFORM_SLUG} release with the installer`,
+    )
+  }
   try {
     if (intent.swapped.kind === 'checkout') {
       runGit(intent.swapped.target, ['reset', '--keep', intent.swapped.priorCommit])
