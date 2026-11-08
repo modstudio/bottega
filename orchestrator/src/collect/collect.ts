@@ -141,7 +141,7 @@ function lastWorkerCheckUncheckedChecks(
        WHERE c.gate_execution_record_id=(
          SELECT g.record_id FROM gate_execution g
          WHERE g.run_record_id=? AND g.purpose='worker-check' AND g.finished_at IS NOT NULL
-         ORDER BY g.finished_at DESC,g.record_id DESC LIMIT 1
+         ORDER BY g.requested_at DESC,g.record_id DESC LIMIT 1
        ) AND c.unchecked_reason IS NOT NULL
        ORDER BY c.check_name,c.record_id`,
     )
@@ -153,9 +153,7 @@ function presentLastWorkerCheckOmissions(
   runRecordId: string,
   presentation: CollectResultPresentation,
 ): void {
-  const block = lastWorkerCheckNotRunBlock(
-    lastWorkerCheckUncheckedChecks(database, runRecordId),
-  )
+  const block = lastWorkerCheckNotRunBlock(lastWorkerCheckUncheckedChecks(database, runRecordId))
   if (block) presentation.error(block)
 }
 
