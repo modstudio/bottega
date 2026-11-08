@@ -1626,6 +1626,14 @@
       "tag": "0212_resource_claim_steps",
       "breakpoints": true,
       "compatibility": "fenced"
+    },
+    {
+      "idx": 213,
+      "version": "6",
+      "when": 1794067200001,
+      "tag": "0213_hosted_call_outcome",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

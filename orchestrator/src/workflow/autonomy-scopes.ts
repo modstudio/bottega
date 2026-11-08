@@ -11,6 +11,7 @@ import {
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readMachineAutonomy } from '../../../shared/machine-config.ts'
+import { recordConfigCallOutcome } from '../config/hosted-config-call-outcome.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import {
@@ -162,7 +163,7 @@ export async function resolveProjectAutonomy(
   steps: Pick<CatalogueStep, 'slug' | 'stage' | 'autonomy'>[] = [],
   session: AutonomySettings = {},
   clientFactory: (signal: AbortSignal) => ConfigClient = (signal) =>
-    configClient(process.env, fetch, undefined, signal),
+    configClient(process.env, fetch, undefined, signal, recordConfigCallOutcome),
   d: Database = db(),
   env: ConfigEnvironment = process.env,
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
