@@ -22,6 +22,63 @@ test('hosted task children and sends have no legacy local identity column', () =
   }
 })
 
+const hostedGitTaskMigrationFixture = async () => {
+  const database = new PGlite()
+  await database.exec(`
+    CREATE TABLE hub_task(id uuid PRIMARY KEY, source text NOT NULL);
+    CREATE TABLE hub_task_comment(id uuid PRIMARY KEY, task_id uuid REFERENCES hub_task(id));
+    CREATE TABLE hub_task_document(id uuid PRIMARY KEY, task_id uuid REFERENCES hub_task(id));
+    CREATE TABLE hub_task_status_event(id uuid PRIMARY KEY, task_id uuid REFERENCES hub_task(id));
+    CREATE TABLE task_flow(id uuid PRIMARY KEY, task_id uuid REFERENCES hub_task(id));
+    ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_comment FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_document FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_status_event FORCE ROW LEVEL SECURITY;
+    ALTER TABLE task_flow FORCE ROW LEVEL SECURITY;
+  `)
+  return database
+}
+
+test('hosted tracker-only task migration deletes git status history and preserves tracker history', async () => {
+  const database = await hostedGitTaskMigrationFixture()
+  await database.exec(`
+    INSERT INTO hub_task VALUES
+      ('01990000-0000-7000-8000-000000000001','git'),
+      ('01990000-0000-7000-8000-000000000002','mcp');
+    INSERT INTO hub_task_status_event VALUES
+      ('01990000-0000-7000-8000-000000000101','01990000-0000-7000-8000-000000000001'),
+      ('01990000-0000-7000-8000-000000000102','01990000-0000-7000-8000-000000000002');
+  `)
+
+  await database.exec(migration('20261108214621_dev_2213_drop_git_tasks'))
+  expect((await database.query(`SELECT id::text FROM hub_task ORDER BY id`)).rows).toEqual([
+    { id: '01990000-0000-7000-8000-000000000002' },
+  ])
+  expect(
+    (await database.query(`SELECT id::text FROM hub_task_status_event ORDER BY id`)).rows,
+  ).toEqual([{ id: '01990000-0000-7000-8000-000000000102' }])
+  await database.close()
+})
+
+test('hosted tracker-only task migration still refuses a git task comment', async () => {
+  const database = await hostedGitTaskMigrationFixture()
+  await database.exec(`
+    INSERT INTO hub_task VALUES ('01990000-0000-7000-8000-000000000001','git');
+    INSERT INTO hub_task_comment VALUES (
+      '01990000-0000-7000-8000-000000000101',
+      '01990000-0000-7000-8000-000000000001'
+    );
+  `)
+
+  await expect(database.exec(migration('20261108214621_dev_2213_drop_git_tasks'))).rejects.toThrow(
+    'git task rows have dependent data: hub_task_comment:01990000-0000-7000-8000-000000000101',
+  )
+  expect((await database.query(`SELECT id::text FROM hub_task WHERE source='git'`)).rows).toEqual([
+    { id: '01990000-0000-7000-8000-000000000001' },
+  ])
+  await database.close()
+})
+
 test('hosted document migration numbers live rows in UUID order and advances tasks', async () => {
   const database = new PGlite()
   await database.exec(`

@@ -16,9 +16,6 @@ FROM (
   UNION ALL
   SELECT 'task_document:' || d.record_id
   FROM task_document d JOIN task t ON t.record_id=d.task_record_id WHERE t.source='git'
-  UNION ALL
-  SELECT 'task_status_event:' || e.record_id
-  FROM task_status_event e JOIN task t ON t.record_id=e.task_record_id WHERE t.source='git'
 )
 HAVING count(*) > 0;
 --> statement-breakpoint
@@ -38,6 +35,8 @@ WHERE task_record_id IN (SELECT record_id FROM task WHERE source='git');
 UPDATE question SET workflow_task_record_id=NULL
 WHERE workflow_task_record_id IN (SELECT record_id FROM task WHERE source='git');
 UPDATE commit_key SET task_record_id=NULL
+WHERE task_record_id IN (SELECT record_id FROM task WHERE source='git');
+DELETE FROM task_status_event
 WHERE task_record_id IN (SELECT record_id FROM task WHERE source='git');
 DELETE FROM task WHERE source='git';
 --> statement-breakpoint

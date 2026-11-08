@@ -17,9 +17,6 @@ BEGIN
     SELECT 'hub_task_document', d.id
     FROM hub_task_document d JOIN hub_task t ON t.id=d.task_id WHERE t.source='git'
     UNION ALL
-    SELECT 'hub_task_status_event', e.id
-    FROM hub_task_status_event e JOIN hub_task t ON t.id=e.task_id WHERE t.source='git'
-    UNION ALL
     SELECT 'task_flow', f.id
     FROM task_flow f JOIN hub_task t ON t.id=f.task_id WHERE t.source='git'
   ) child;
@@ -27,6 +24,9 @@ BEGIN
     RAISE EXCEPTION 'git task rows have dependent data: %; preserve or reassign these rows before applying record migrations', dependents;
   END IF;
 END $$;
+--> statement-breakpoint
+DELETE FROM hub_task_status_event
+WHERE task_id IN (SELECT id FROM hub_task WHERE source='git');
 --> statement-breakpoint
 DELETE FROM hub_task WHERE source='git';
 --> statement-breakpoint

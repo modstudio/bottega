@@ -946,6 +946,53 @@ describe('hub migration journal', () => {
     d.close()
   })
 
+  test('tracker-only task migration deletes git status history and preserves tracker history', () => {
+    const migrationIndex = migrationJournal().findIndex(
+      (entry) => entry.tag === '0046_drop_git_tasks',
+    )
+    const d = migratedThrough(migrationIndex - 1)
+    d.exec(`
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
+        ('git-task','DEV-1','workshop','git','2026-01-01','2026-01-01'),
+        ('mcp-task','DEV-2','workshop','mcp','2026-01-01','2026-01-01');
+      INSERT INTO task_status_event(record_id,task_key,task_record_id,at,to_status) VALUES
+        ('git-event','DEV-1','git-task','2026-01-01','open'),
+        ('mcp-event','DEV-2','mcp-task','2026-01-01','open');
+    `)
+
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
+      '0046_drop_git_tasks',
+    ])
+    expect(d.query('SELECT record_id FROM task ORDER BY record_id').all()).toEqual([
+      { record_id: 'mcp-task' },
+    ])
+    expect(d.query('SELECT record_id FROM task_status_event ORDER BY record_id').all()).toEqual([
+      { record_id: 'mcp-event' },
+    ])
+    d.close()
+  })
+
+  test('tracker-only task migration still refuses a git task comment', () => {
+    const migrationIndex = migrationJournal().findIndex(
+      (entry) => entry.tag === '0046_drop_git_tasks',
+    )
+    const d = migratedThrough(migrationIndex - 1)
+    d.exec(`
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+      VALUES ('git-task','DEV-1','workshop','git','2026-01-01','2026-01-01');
+      INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
+      VALUES ('git-comment','DEV-1','git-task','keep me','2026-01-01');
+    `)
+
+    expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
+      'git task rows have cascade dependents: task_comment:git-comment',
+    )
+    expect(d.query("SELECT record_id FROM task WHERE source='git'").all()).toEqual([
+      { record_id: 'git-task' },
+    ])
+    d.close()
+  })
+
   test('reload mode reloads the query layer after user_version changes', () => {
     closeDatabaseForFixture()
     const seen: number[] = []
