@@ -8,7 +8,11 @@ import { DIST_MANIFEST, INSTALL_HOME_ENV, installRoot } from '../../../shared/in
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
-import { machineUpdateCommand, unregisteredMainCheckoutRefusal } from './machine-update.ts'
+import {
+  machineUpdateCommand as lockedMachineUpdateCommand,
+  machineUpdateCommandUnderLock as machineUpdateCommand,
+  unregisteredMainCheckoutRefusal,
+} from './machine-update.ts'
 import {
   clearMachineUpdateIntent,
   localStoreJournalPositions,
@@ -640,7 +644,7 @@ test('machine update requires the registered landing branch in the main checkout
 })
 
 test('machine update refuses the BOTTEGA_ORCHESTRATOR_DB override', async () => {
-  await expect(machineUpdateCommand({ log: () => {} })).rejects.toThrow(
+  await expect(lockedMachineUpdateCommand({ log: () => {} })).rejects.toThrow(
     'refusing machine update through BOTTEGA_ORCHESTRATOR_DB',
   )
 })

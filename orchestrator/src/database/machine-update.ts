@@ -106,6 +106,12 @@ function runMigration(cwd: string): void {
     throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
 }
 
+function cleanupFailureMessage(failure: unknown, cleanupError: unknown): string {
+  const original = failure instanceof Error ? failure.message : String(failure)
+  const cleanup = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+  return `${original}; clearing the migration guard also failed: ${cleanup}`
+}
+
 function runWithCleanup(apply: () => void, cleanup: () => void): void {
   let failure: unknown
   try {
@@ -116,12 +122,7 @@ function runWithCleanup(apply: () => void, cleanup: () => void): void {
   try {
     cleanup()
   } catch (cleanupError) {
-    const cleanupMessage =
-      cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-    if (failure) {
-      const original = failure instanceof Error ? failure.message : String(failure)
-      throw new Error(`${original}; clearing the migration guard also failed: ${cleanupMessage}`)
-    }
+    if (failure) throw new Error(cleanupFailureMessage(failure, cleanupError))
     throw cleanupError
   }
   if (failure) throw failure
@@ -137,12 +138,7 @@ async function runWithCleanupAsync(apply: () => Promise<void>, cleanup: () => vo
   try {
     cleanup()
   } catch (cleanupError) {
-    const cleanupMessage =
-      cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-    if (failure) {
-      const original = failure instanceof Error ? failure.message : String(failure)
-      throw new Error(`${original}; clearing the migration guard also failed: ${cleanupMessage}`)
-    }
+    if (failure) throw new Error(cleanupFailureMessage(failure, cleanupError))
     throw cleanupError
   }
   if (failure) throw failure
@@ -283,15 +279,6 @@ async function updateDistribution(input: {
     presentation: input.presentation,
   })
   if (prepared.action === 'prepared') {
-    const executable = realpathSync(process.execPath)
-    writeMachineUpdateIntent({
-      before: localStoreJournalPositions(),
-      swapped: {
-        kind: 'distribution',
-        installedBinary: executable,
-        priorBinary: `${executable}.previous`,
-      },
-    })
     try {
       assertNoActiveDrain(
         withSynchronousDatabaseForMigrationStep((database) => migrationDrainForUpdate(database)),
@@ -305,7 +292,6 @@ async function updateDistribution(input: {
       })
     } finally {
       prepared.update.cleanup()
-      clearMachineUpdateIntent()
     }
     return
   }
@@ -456,7 +442,7 @@ function verifiedLandingBranch(
   return branch
 }
 
-async function machineUpdateCommandUnderLock(
+export async function machineUpdateCommandUnderLock(
   presentation: Presentation,
   deps: UpdateDependencies = {},
   requestedVersion?: string,
@@ -562,10 +548,6 @@ export async function machineUpdateCommand(
   deps: UpdateDependencies = {},
   requestedVersion?: string,
 ): Promise<void> {
-  // Dependency-driven unit cases exercise the body directly; the command adapter passes `{}`.
-  if (Object.keys(deps).length > 0) {
-    return machineUpdateCommandUnderLock(presentation, deps, requestedVersion)
-  }
   return withMachineUpdateLock(() =>
     machineUpdateCommandUnderLock(presentation, deps, requestedVersion),
   )
