@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
 import { Command, CommanderError } from 'commander'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db, SESSION_LIVE_MS } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import { register } from './session.ts'
 import { drainStdout } from './support.ts'
 

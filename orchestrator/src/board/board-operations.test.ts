@@ -477,6 +477,7 @@ test('status results have one pinned shape in local and hosted modes', async () 
     audienceAtPosting: true,
     deliveredAt: '2026-10-05T12:01:00.000Z',
     acknowledgedAt: null,
+    successor: false,
   }
   const hosted = await boardStatus(message.id, {
     env,
@@ -761,6 +762,7 @@ test('an adopted install routes hosted-capable message verbs only to the injecte
         audienceAtPosting: input.audienceAtPosting,
         deliveredAt: null,
         acknowledgedAt: '2026-10-05T12:00:00.000Z',
+        successor: false,
       }
     },
   }
@@ -920,6 +922,7 @@ test('hosted acknowledgement uses the reserved operator reader without a session
         audienceAtPosting: input.audienceAtPosting,
         deliveredAt: null,
         acknowledgedAt: '2026-10-05T12:00:00.000Z',
+        successor: false,
       }
     },
   }

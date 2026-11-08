@@ -171,7 +171,7 @@ test('the function refuses an unacknowledged receipt and another reader\u2019s r
   }
 })
 
-test('force row level security stays on and the owner holds only these four policies', async () => {
+test('force row level security stays on and the owner holds only these six policies', async () => {
   const forced = await database.query<{ relname: string; relforcerowsecurity: boolean }>(`
     SELECT relname, relforcerowsecurity FROM pg_class
     WHERE relnamespace='public'::regnamespace
@@ -196,6 +196,8 @@ test('force row level security stays on and the owner holds only these four poli
     { tablename: 'board_message', policyname: 'board_message_owner_insert', cmd: 'INSERT' },
     { tablename: 'board_message', policyname: 'board_message_owner_select', cmd: 'SELECT' },
     { tablename: 'board_message', policyname: 'board_message_owner_update', cmd: 'UPDATE' },
+    { tablename: 'board_receipt', policyname: 'board_receipt_owner_insert', cmd: 'INSERT' },
     { tablename: 'board_receipt', policyname: 'board_receipt_owner_select', cmd: 'SELECT' },
+    { tablename: 'board_receipt', policyname: 'board_receipt_owner_update', cmd: 'UPDATE' },
   ])
 })

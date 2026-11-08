@@ -2,6 +2,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { assertBranchRefMayBeDeleted, restoreBranch } from '../branch/branch-ref-guard.ts'
 import { branchRows, type ReclaimRun, settleDeletedBranch } from '../branch/branch-settlement.ts'
 import { type BranchLanding, isPruneSafeLandingState } from '../branch/branch-state.ts'
@@ -11,7 +12,7 @@ import {
   classifyMintedBranch,
   classifyMintedBranchFromReport,
 } from '../branch/branches.ts'
-import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { borrowedCheckoutOf, gitResult } from '../git/git-environment.ts'
 import {
@@ -446,7 +447,7 @@ export function reclaimWorktree(
                 : ''
           return {
             ok: true,
-            action: `reclaimed worktree ${path}; ${removed.detail}` + kept,
+            action: `reclaimed worktree ${path}; ${removed.detail}${kept}`,
           }
         },
         5 * 60_000,

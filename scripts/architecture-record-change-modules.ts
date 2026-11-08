@@ -11,6 +11,10 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const recordChangeModules = [
+  module('orchestrator/src/record/record-board-successor.ts', [
+    './record-board-contract.ts',
+    './record-board-tx.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-changes.ts', [
     'zod',
     './record-api-client-paths.ts',

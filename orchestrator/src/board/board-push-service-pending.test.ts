@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { db, SESSION_LIVE_MS } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
@@ -837,6 +838,7 @@ test('a hosted acknowledgement immediately clears delivery from verified or unve
       audienceAtPosting: input.audienceAtPosting,
       deliveredAt: null,
       acknowledgedAt: new Date(clock + 1).toISOString(),
+      successor: false,
     }),
   }
   // The session already holds a delivered, unacknowledged receipt, as in the reported incident.
@@ -904,6 +906,7 @@ test('hosted status never counts the notice author as unacknowledged', async () 
     audienceAtPosting: true,
     deliveredAt: null,
     acknowledgedAt: null,
+    successor: false,
   }
   const readerReceipt = {
     ...authorReceipt,

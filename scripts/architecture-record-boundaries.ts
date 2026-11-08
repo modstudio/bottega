@@ -233,6 +233,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-board-claims.ts',
       './record-board-overview.ts',
       './record-board-receipts.ts',
+      './record-board-successor.ts',
       './record-subjects.ts',
       './record-pending-invitations.ts',
       './record-sync-service.ts',
@@ -249,7 +250,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
   boundary(
     'record-retention-boundary',
     'orchestrator/src/record/record-retention.ts',
-    ['bun', './record-pool.ts'],
+    ['bun', './record-board-presence.ts', './record-pool.ts'],
     'Keep hosted retention independent of HTTP, authentication, and server composition.',
   ),
 ]
@@ -598,11 +599,18 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../board/board-tags.ts',
       './record-board-message-tags.ts',
       './record-board-contract.ts',
+      './record-board-presence.ts',
       './record-board-messages.ts',
       './record-board-receipts.ts',
       './record-board-tx.ts',
     ],
     'Keep the hosted board change cursor independent of HTTP and local stores.',
+  ),
+  boundary(
+    'record-board-successor-boundary',
+    'orchestrator/src/record/record-board-successor.ts',
+    ['bun', './record-board-contract.ts', './record-board-tx.ts'],
+    'Keep hosted successor election independent of HTTP and local stores.',
   ),
   boundary(
     'record-board-wake-boundary',

@@ -1,9 +1,9 @@
 // concern: session-liveness adapter
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Gathers stored ancestry and probes the owning process for the pure liveness decision. */
 
 import type { Database } from 'bun:sqlite'
 import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
-import { SESSION_LIVE_MS } from '../database/db.ts'
 import {
   formatSessionLivenessEvidence,
   type ProcessProbeResult,

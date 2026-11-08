@@ -105,7 +105,7 @@ export async function claimBoardNotices(
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
-  const hosted = claimCachedHostedForPush(sessionReader(env), all)
+  const hosted = await claimCachedHostedForPush(sessionReader(env), all)
   return {
     notices: [
       ...local.notices.map(deliveryNotice).map(sessionStartNotice),
@@ -160,7 +160,7 @@ export async function claimRunBoardNotices(
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
-  const hosted = claimCachedHostedForPush(
+  const hosted = await claimCachedHostedForPush(
     reader,
     all,
     Date.now(),

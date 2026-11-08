@@ -54,6 +54,7 @@ const receipts: HostedBoardReceipt[] = [
     audienceAtPosting: true,
     deliveredAt: '2026-10-06T12:01:00.000Z',
     acknowledgedAt: '2026-10-06T12:02:00.000Z',
+    successor: false,
   },
   {
     messageId: message('notice').id,
@@ -62,6 +63,7 @@ const receipts: HostedBoardReceipt[] = [
     audienceAtPosting: true,
     deliveredAt: '2026-10-06T12:03:00.000Z',
     acknowledgedAt: null,
+    successor: false,
   },
 ]
 

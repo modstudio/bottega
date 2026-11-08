@@ -1,4 +1,5 @@
 // concern: monitor-conditions
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Owns monitor condition detection and the row queries and helpers those detectors share with composition and notice revalidation. */
 
 import type { Database } from 'bun:sqlite'
@@ -12,7 +13,7 @@ import {
 } from '../../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
-import { db, liveRuns, SESSION_LIVE_MS } from '../database/db.ts'
+import { db, liveRuns } from '../database/db.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'

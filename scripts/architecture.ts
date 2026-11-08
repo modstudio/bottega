@@ -395,6 +395,7 @@ export const modules: ArchitectureModule[] = [
   ...workflowFloorModules,
   ...monitorModules,
   module('orchestrator/src/monitor/monitor-conditions.ts', [
+    '../../../shared/session-liveness.ts',
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
