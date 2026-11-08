@@ -29,7 +29,10 @@ import {
   readMachineUpdateIntent,
   writeMachineUpdateIntent,
 } from './machine-update-intent.ts'
-import { decideMachineUpdateRecovery } from './machine-update-recovery.ts'
+import {
+  decideMachineUpdateRecovery,
+  type StoreJournalPositions,
+} from './machine-update-recovery.ts'
 import {
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
@@ -328,7 +331,7 @@ function restoreMainAfterMigrationFailure(input: {
   before: string
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
-  beforePositions: ReturnType<typeof localStoreJournalPositions>
+  beforePositions: StoreJournalPositions
 }): never {
   const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
   try {
@@ -365,7 +368,7 @@ function handleMigrationFailureAfterPull(input: {
   before: string
   journal: MigrationJournalEntry[]
   initialStoreVersion: number
-  beforePositions: ReturnType<typeof localStoreJournalPositions>
+  beforePositions: StoreJournalPositions
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
 }): never {
