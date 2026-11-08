@@ -25,6 +25,7 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/project/project-injection.ts', [
     '../../../shared/brand.ts',
     'zod',
+    '../../../shared/tracker-actions.ts',
     '../../../shared/trackers.ts',
     '../../../shared/test-substance/test-substance.ts',
     '../enforcement/mechanical-check-declaration.ts',
