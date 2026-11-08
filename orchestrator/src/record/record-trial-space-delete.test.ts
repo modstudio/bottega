@@ -5,6 +5,7 @@ const base: TrialDeleteFacts = {
   exists: true,
   slug: 'trial-demo',
   marked: true,
+  publiclyListed: false,
   callerUserId: 'owner',
   members: [
     { userId: 'owner', email: 'owner@example.test', role: 'owner', hasRealSpace: false },
@@ -20,6 +21,10 @@ describe('trial space delete guard', () => {
     expect(decideTrialSpaceDelete({ ...base, marked: false })).toMatchObject({
       allowed: false,
       refusal: expect.stringContaining('trial-marker'),
+    })
+    expect(decideTrialSpaceDelete({ ...base, publiclyListed: true })).toMatchObject({
+      allowed: false,
+      refusal: expect.stringContaining('public-listing'),
     })
     expect(decideTrialSpaceDelete({ ...base, callerUserId: 'other' })).toMatchObject({
       allowed: false,

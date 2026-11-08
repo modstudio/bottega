@@ -1,0 +1,1 @@
+CREATE POLICY "secret_dek_owner_delete" ON "secret_dek" AS PERMISSIVE FOR DELETE TO "record_owner" USING ("secret_dek"."space_id" = nullif(current_setting('app.space_id', true), '')::uuid);

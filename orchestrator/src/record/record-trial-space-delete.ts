@@ -16,6 +16,7 @@ export type TrialDeleteFacts = {
   exists: boolean
   slug: string
   marked: boolean
+  publiclyListed: boolean
   callerUserId: string
   members: TrialMemberFact[]
 }
@@ -34,6 +35,11 @@ export function decideTrialSpaceDelete(facts: TrialDeleteFacts): TrialDeleteDeci
     return {
       allowed: false,
       refusal: `trial-marker guard failed: ${facts.slug} has no metadata.trial marker; ${retry}`,
+    }
+  if (facts.publiclyListed)
+    return {
+      allowed: false,
+      refusal: `public-listing guard failed: trial space ${facts.slug} is publicly listed in public_doc_space; ask record_owner to remove that row, then retry`,
     }
   if (facts.members.find((member) => member.userId === facts.callerUserId)?.role !== 'owner')
     return {
@@ -90,6 +96,7 @@ async function facts(tx: SQL, slug: string, userId: string) {
         exists: false,
         slug,
         marked: false,
+        publiclyListed: false,
         callerUserId: userId,
         members: [],
       } satisfies TrialDeleteFacts,
@@ -104,10 +111,13 @@ async function facts(tx: SQL, slug: string, userId: string) {
         exists: false,
         slug,
         marked: false,
+        publiclyListed: false,
         callerUserId: userId,
         members: [],
       } satisfies TrialDeleteFacts,
     }
+  const publicRows =
+    await tx`SELECT 1 FROM public_doc_space WHERE space_id=${spaceId}::uuid LIMIT 1`
   const rows =
     await tx`SELECT m.user_id,u.email,m.role FROM membership m JOIN "user" u ON u.id=m.user_id WHERE m.space_id=${spaceId}::uuid ORDER BY u.email FOR UPDATE OF m`
   const members: TrialMemberFact[] = []
@@ -127,6 +137,7 @@ async function facts(tx: SQL, slug: string, userId: string) {
       exists: true,
       slug,
       marked: isTrialSpaceMetadata(locked[0].metadata),
+      publiclyListed: publicRows.length > 0,
       callerUserId: userId,
       members,
     } satisfies TrialDeleteFacts,
@@ -168,6 +179,10 @@ export async function deleteTrialRecordSpace(input: {
       )
       tables[step.table] = deleted.length
     }
+    const protectedRows =
+      await tx`SELECT * FROM record_delete_trial_protected_space_rows(${read.spaceId}::uuid)`
+    tables.secret_dek = Number(protectedRows[0]?.secret_dek_count ?? 0)
+    tables.routing_evidence_head = Number(protectedRows[0]?.routing_evidence_head_count ?? 0)
     const memberships =
       await tx`DELETE FROM membership WHERE space_id=${read.spaceId}::uuid RETURNING id`
     tables.membership = memberships.length

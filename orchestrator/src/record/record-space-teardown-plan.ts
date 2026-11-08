@@ -45,8 +45,12 @@ export type SpaceTeardownReach = {
 }
 export type SpaceTeardownStep = { table: string; reachedBy: SpaceTeardownReach[] }
 export const SPACE_TEARDOWN_EXCLUSIONS = {
+  public_doc_space:
+    'a published space is refused before teardown and record_actor holds SELECT only',
   record_change: 'ON DELETE CASCADE removes change-feed rows with the space',
+  routing_evidence_head: 'deleted by the trial teardown definer function; actor DELETE is revoked',
   session: 'session.active_space_id is ON DELETE SET NULL',
+  secret_dek: 'deleted by the trial teardown definer function; actor DELETE is revoked',
   user: 'personal_space_id and last_active_space_id are ON DELETE SET NULL',
 } as const
 
