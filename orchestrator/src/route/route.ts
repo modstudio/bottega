@@ -77,7 +77,7 @@ import {
   decideCoolingFailures,
   recentTerminalRuns,
 } from './routing-cooldown.ts'
-import { boundedRoutingEvidenceRows } from './routing-evidence-query.ts'
+import { boundedRoutingEvidenceRows, type RoutingEvidenceRow } from './routing-evidence-query.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
 import type { SubscriptionPacingHold } from './subscription-pacing.ts'
@@ -214,6 +214,19 @@ function routingPassFacts(
   }
 }
 
+function currentEvidenceAgents(modelOverride: string | undefined) {
+  return Object.fromEntries(
+    Object.values(AGENTS).map((agent) => [
+      agent.name,
+      { model: modelOverride ?? agent.model, baseUrl: agent.baseUrl },
+    ]),
+  )
+}
+
+function currentAgentEvidence(rows: RoutingEvidenceRow[], agent: Agent, currentModel: string) {
+  return routingEvidenceWindow(rows, agent.name, currentModel, agent.baseUrl, EVIDENCE_WINDOW)
+}
+
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one pass keeps candidate evidence and eligibility coherent
 function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptions = {}) {
   const {
@@ -242,9 +255,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     promptBytes,
     stack,
     lens,
-    currentModels: Object.fromEntries(
-      Object.values(AGENTS).map((agent) => [agent.name, modelOverride ?? agent.model]),
-    ),
+    currentAgents: currentEvidenceAgents(modelOverride),
     limit: EVIDENCE_WINDOW,
   })
   const lat = candidateLatencyRows(jobName, promptBytes, stack, lens)
@@ -326,7 +337,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       failure,
       coolingProbeAgent,
     )
-    const window = routingEvidenceWindow(evidenceRows, name, currentModel, EVIDENCE_WINDOW)
+    const window = currentAgentEvidence(evidenceRows, a, currentModel)
     const recent = aggregateEvidence(window.rows)
     const { scored, failures } = recent
     const evidence = scored + failures
