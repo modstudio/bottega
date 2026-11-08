@@ -71,7 +71,7 @@ export function statusFor(answer: RunAnswer | undefined, turnId: string | null):
 
 /** Reconcile only the facts hub currently claims are live; no clock selects rows or runs. */
 export async function reconcileOpenIntervals(
-  options: { dryRun?: boolean; now?: number } = {},
+  options: { dryRun?: boolean; now?: number; runReader?: typeof readRunsById } = {},
 ): Promise<ReconcileResult> {
   const d = db()
   const intervals = d
@@ -82,7 +82,7 @@ export async function reconcileOpenIntervals(
     .all() as OpenInterval[]
   const refs = intervals.map((interval) => runRef(interval.ref))
   const rootIds = [...new Set(refs.flatMap((ref) => (ref ? [ref.root] : [])))]
-  const answers = await readRunsById(rootIds)
+  const answers = await (options.runReader ?? readRunsById)(rootIds)
   const byId = indexRunAnswers(answers)
   const now = options.now ?? Date.now()
   const closed: ReconcileItem[] = []
