@@ -16,7 +16,7 @@ export function hubTypedQuestionReport(
 ): TypedQuestionReportBlock[] {
   const rows = database
     .query(
-      `SELECT question_id,question_version,subject_kind,subject_ref,answer_json,input_tokens,latency_ms,error
+      `SELECT question_id,question_version,subject_kind,subject_ref,answer_json,input_tokens,latency_ms,error,model
        FROM typed_question_answer
        ${options.days === undefined ? '' : "WHERE datetime(created_at) >= datetime('now', '-' || ? || ' days')"}
        ORDER BY question_id,question_version,created_at`,

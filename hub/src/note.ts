@@ -29,7 +29,11 @@ import {
 import { noteGit } from './note-git.ts'
 import { createOutsideProjectNote, listOutsideProjectNotes } from './note-outside.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
-import { notePromotionBody } from './note-promotion-body.ts'
+import {
+  notePromotionBody,
+  promotionTitleRefusal,
+  requiredPromotionTitle,
+} from './note-promotion-body.ts'
 import type { NoteRow } from './note-row.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
 import {
@@ -699,18 +703,6 @@ export async function createNote(
   return completedNoteCreation(created, candidates, input, targetProject)
 }
 
-/** The refusal every creating promotion carries, so no surface can create a task titled by a note. */
-export function promotionTitleRefusal(label: string): string {
-  return `${PLATFORM_SLUG} note promote ${label} --title "<the point>"`
-}
-
-/** A creating promotion names the new task's title; a linking promotion carries none. */
-export function requiredPromotionTitle(label: string, supplied: string | undefined): string {
-  const title = (supplied ?? '').trim()
-  if (!title) throw new Error(promotionTitleRefusal(label))
-  return title
-}
-
 export async function promoteNote(
   recordId: string,
   options: {
@@ -723,7 +715,8 @@ export async function promoteNote(
   if (note.promoted_task)
     throw new Error(`note ${note.label} is already promoted to ${note.promoted_task}`)
   const creating = options.existingTaskKey === undefined
-  const title = creating ? requiredPromotionTitle(note.label, options.title) : ''
+  const titleRefusal = promotionTitleRefusal(note.label)
+  const title = creating ? requiredPromotionTitle(options.title, titleRefusal) : ''
   const project = projects().find((candidate) => candidate.name === note.project)!
   const destination = taskCreationDestination(project)
   if (destination === 'tracker' && !options.existingTaskKey)
@@ -796,7 +789,7 @@ export async function promoteNote(
     return getNote(note.record_id)
   }
   const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
-  const promoteInput = { task: options.existingTaskKey, title: creating ? title : undefined }
+  const promoteInput = creating ? { title } : { task: options.existingTaskKey! }
   const hosted = await hostedPromoteNote(note.record_id, promoteInput, hostedOptions)
   const reference = hosted.task?.key ?? formatNoteLabel(hosted.note.project, hosted.note.number)
   const applied = applyHostedWriteLocally(

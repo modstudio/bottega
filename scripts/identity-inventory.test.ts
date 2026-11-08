@@ -662,7 +662,8 @@ test('real natural and undeclared references remain measured', () => {
       readSqliteKeyTables(database),
       KEY_MANIFESTS,
     )
-    expect(inventory.findings).toContain('contention.resource_key:reference')
+    expect(inventory.findings).toContain('operator_notification.item_id:reference')
+    expect(inventory.findings).not.toContain('contention.resource_key:reference')
   } finally {
     database.close()
   }

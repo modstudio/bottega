@@ -1,5 +1,9 @@
 import { afterAll, beforeEach, expect, spyOn, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
@@ -7,6 +11,45 @@ import { drainHostedEditOutbox } from './offline-task-edits.ts'
 
 beforeEach(resetFixtureStore)
 afterAll(resetFixtureStore)
+
+test('a delivery-off drain reports the edit as queued with the refusal reason', async () => {
+  const queuedAt = '2026-10-11T12:00:00.000Z'
+  observeTrackerTask(
+    {
+      externalId: 'tracker-fix-1',
+      key: 'FIX-1',
+      project: 'fixture',
+      title: 'Queued locally',
+      status: 'open',
+      category: 'open',
+      updatedAt: null,
+      assignee: null,
+    },
+    queuedAt,
+  )
+  const previousStateHome = process.env[STATE_HOME_ENV]
+  const otherStateHome = mkdtempSync(join(tmpdir(), 'hub-offline-edit-non-installation-'))
+  const messages: string[] = []
+  const error = spyOn(console, 'error').mockImplementation((message) =>
+    messages.push(String(message)),
+  )
+  process.env[STATE_HOME_ENV] = otherStateHome
+  try {
+    const result = await drainHostedEditOutbox(queuedAt)
+    expect(result).toEqual({
+      kind: 'queued',
+      reason: expect.stringContaining('not the installation store'),
+    })
+    expect(messages).toEqual([
+      expect.stringContaining('hosted change saved and queued: hosted delivery is off'),
+    ])
+  } finally {
+    error.mockRestore()
+    if (previousStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = previousStateHome
+    rmSync(otherStateHome, { recursive: true, force: true })
+  }
+})
 
 test('a queued write reports its routing wait instead of another drainer', async () => {
   const queuedAt = '2026-10-11T12:00:00.000Z'

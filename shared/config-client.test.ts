@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { ConfigClientError, configClient } from './config-client.ts'
+import { type ConfigCallObservation, ConfigClientError, configClient } from './config-client.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
 
 test('missing URL or session is a typed not-configured error', () => {
@@ -97,4 +97,49 @@ test('config secret and data-key reads route to a requested project space', asyn
   await client.listSecrets('default', { destinationSpaceId: 'space-project' })
   await client.listDataKeys({ destinationSpaceId: 'space-project' })
   expect(headers).toEqual(['space-project', 'space-project'])
+})
+
+test('a throwing outcome recorder does not fail the hosted config call', async () => {
+  let observation: ConfigCallObservation | undefined
+  let recorderInvoked!: () => void
+  const invoked = new Promise<void>((resolve) => {
+    recorderInvoked = resolve
+  })
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => Response.json({ user: { id: 'user' }, activeSpaceId: null }),
+    'test',
+    undefined,
+    (received) => {
+      observation = received
+      recorderInvoked()
+      throw new Error('fixture recording failure')
+    },
+  )
+  await expect(client.whoami()).resolves.toEqual({ user: { id: 'user' }, activeSpaceId: null })
+  await invoked
+  expect(observation).toMatchObject({ route: '/v1/whoami', status: 200, error: null })
+})
+
+test('config client records a failed transport observation', async () => {
+  let observationRecorded!: (observation: ConfigCallObservation) => void
+  const observation = new Promise<ConfigCallObservation>((resolve) => {
+    observationRecorded = resolve
+  })
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => {
+      throw new Error('fixture transport failure')
+    },
+    'test',
+    undefined,
+    observationRecorded,
+  )
+
+  await expect(client.whoami()).rejects.toMatchObject({ reason: 'unreachable' })
+  expect(await observation).toMatchObject({
+    route: '/v1/whoami',
+    status: null,
+    error: expect.any(Error),
+  })
 })

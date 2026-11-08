@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { db, writableDb } from '../database/db.ts'
 import {
+  carryRegistrationProbeAudit,
   recordAgentProbe,
   recordSuccessfulRegistrationProbe,
   registrationProbeCacheReusable,
@@ -39,6 +40,7 @@ test('the registration probe verifies MCP for goose and for any job that asks fo
 function result(
   writing: boolean | null,
   resuming: boolean | null = writing,
+  compacts: boolean | null = true,
 ): RegistrationProbeResult {
   return {
     harness: 'goose',
@@ -48,12 +50,23 @@ function result(
     schema: { ok: true, output: 'ok' },
     file: { ok: true, output: '{"status":"ok"}' },
     mcp: { verifiable: true, output: 'ok' },
+    compaction: { ok: compacts, output: compacts ? 'continued' : 'compaction refused' },
     writing: { ok: writing, output: writing ? 'created' : 'not created' },
     resuming: { ok: resuming, output: resuming ? 'recalled token' : 'did not recall token' },
     contextTokens: null,
     contextSource: null,
   }
 }
+
+test('a registration probe keeps an allowed capacity-loss audit', () => {
+  const capacityLossAllowed = {
+    jobs: ['review-lens'],
+    at: '2026-11-08T12:00:00.000Z',
+  }
+  const reprobed = carryRegistrationProbeAudit({ capacityLossAllowed }, result(true))
+
+  expect(reprobed.capacityLossAllowed).toEqual(capacityLossAllowed)
+})
 
 function registered(name: string): AgentRow {
   addAgent(name, { harness: 'goose', backend: 'vendor', model: 'fixture' })
@@ -71,6 +84,39 @@ test('a passing writing observation sets writesRepo and a failing one leaves it 
     schema: true,
     writesRepo: false,
   })
+})
+
+test('a Goose compaction observation is stored in caps without changing probe eligibility', () => {
+  registered('compaction-capability-fixture')
+  recordAgentProbe('compaction-capability-fixture', result(true, true, false))
+  expect(JSON.parse(registeredCaps('compaction-capability-fixture')).compacts).toBe(false)
+  expect(
+    registrationProbeCacheReusable('acp', result(true, true, false), true, false, true, true),
+  ).toBe(true)
+})
+
+test('a pre-capability Goose probe is not reused until compaction has been observed', () => {
+  const { compaction: _compaction, ...previous } = result(true)
+  expect(
+    registrationProbeCacheReusable(
+      'acp',
+      previous as RegistrationProbeResult,
+      true,
+      false,
+      true,
+      true,
+    ),
+  ).toBe(false)
+})
+
+test('an unestablished Goose compaction observation is not cacheable and is not stored in caps', () => {
+  registered('unestablished-compaction-capability-fixture')
+  const probe = result(true, true, null)
+  recordAgentProbe('unestablished-compaction-capability-fixture', probe)
+  expect(
+    JSON.parse(registeredCaps('unestablished-compaction-capability-fixture')),
+  ).not.toHaveProperty('compacts')
+  expect(registrationProbeCacheReusable('acp', probe, true, false, true, true)).toBe(false)
 })
 
 test('an observed ACP resume result sets or clears resumable', () => {

@@ -40,6 +40,7 @@ export const workflowAutonomyModules: WorkflowAutonomyModule[] = [
     '../../../shared/machine-config.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    '../config/hosted-config-call-outcome.ts',
     './autonomy.ts',
     './session-context-cache.ts',
     './step-catalogue.ts',

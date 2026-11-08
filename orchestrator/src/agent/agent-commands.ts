@@ -14,8 +14,8 @@ import {
   type Harness,
   type RegistrationProbeResult,
   removeAgent,
-  setAgent,
 } from './agent-registry.ts'
+import { setAgentWithCapacityGuard } from './agent-set-capacity.ts'
 import {
   available,
   ensureLocalHealth,
@@ -38,9 +38,7 @@ const agentCommandDependencies: AgentCommandDependencies = { probeAgent }
 
 const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
   add: addCommand,
-  set: (name, argv, presentation) => {
-    presentation.log(JSON.stringify(setAgent(name, mutation(argv))))
-  },
+  set: setCommand,
   remove: (name, _argv, presentation) => {
     removeAgent(name)
     presentation.log(`removed ${name}`)
@@ -48,6 +46,16 @@ const AGENT_COMMAND_HANDLERS: Record<AgentCommandVerb, AgentCommandHandler> = {
   probe: (name, argv, presentation, dependencies) =>
     probeCommand(name, argv, presentation, dependencies),
   show: (name, _argv, presentation) => showCommand(name, presentation),
+}
+
+function setCommand(name: string, argv: string[], presentation: Presentation): void {
+  const input = mutation(argv)
+  const allowed = argv.includes('--allow-capacity-loss')
+  const result = setAgentWithCapacityGuard(name, input, allowed)
+  presentation.log(JSON.stringify(result.row))
+  if (result.capacityLossJobs.length) {
+    presentation.log(`capacity loss allowed for jobs: ${result.capacityLossJobs.join(', ')}`)
+  }
 }
 
 export const AGENT_COMMAND_VERBS = Object.keys(AGENT_COMMAND_HANDLERS) as AgentCommandVerb[]

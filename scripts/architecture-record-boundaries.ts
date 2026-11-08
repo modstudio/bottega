@@ -100,6 +100,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-pending-invitations.ts',
       './record-write-authority.ts',
       './record-trial-space-contract.ts',
+      './record-api-client-transport.ts',
       '../doc/doc-generator.ts',
     ],
     'Enforce the record API client concern boundary.',

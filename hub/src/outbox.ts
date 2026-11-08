@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { db, nowIso, writeTransaction } from './db.ts'
+import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import type { PendingHostedOutbox } from './outbox-fast-cycle.ts'
 import { decideOutboxLifecycle } from './outbox-lifecycle.ts'
 import { loadOutboxChange } from './outbox-row.ts'
@@ -81,6 +81,7 @@ export type HostedOutboxReport = {
   skippedCapability: boolean
   hostedReachable?: boolean
   lockAcquired?: boolean
+  deliveryOffReason?: string
 }
 
 type DrainDependencies = {
@@ -93,6 +94,20 @@ type DrainDependencies = {
   registered?: () => RegisteredTaskSpace[]
   processKind?: OutboxProcessKind
   assertLock?: () => void
+}
+
+function idleOutboxReport(overrides: Partial<HostedOutboxReport> = {}): HostedOutboxReport {
+  return {
+    queued: loadPendingOutboxRows().length,
+    sent: 0,
+    rejected: 0,
+    quarantined: 0,
+    dropped: 0,
+    waitingOnRouting: {},
+    waitingOnHostedHub: {},
+    skippedCapability: false,
+    ...overrides,
+  }
 }
 
 type PreparedOutboxRow = {
@@ -767,19 +782,13 @@ async function drainHostedOutboxHeld(
 export async function drainHostedOutbox(
   dependencies: DrainDependencies = {},
 ): Promise<HostedOutboxReport> {
+  const deliveryOffReason = hostedDeliveryRefusal()
+  if (deliveryOffReason) {
+    return idleOutboxReport({ deliveryOffReason })
+  }
   const holder = `outbox:${process.pid}:${newRecordId()}`
   if (!acquireStoredLease(HOSTED_OUTBOX_LEASE_KEY, holder, HOSTED_OUTBOX_LEASE_MS)) {
-    return {
-      queued: loadPendingOutboxRows().length,
-      sent: 0,
-      rejected: 0,
-      quarantined: 0,
-      dropped: 0,
-      waitingOnRouting: {},
-      waitingOnHostedHub: {},
-      skippedCapability: false,
-      lockAcquired: false,
-    }
+    return idleOutboxReport({ lockAcquired: false })
   }
   const held = await holdStoredLease({
     key: HOSTED_OUTBOX_LEASE_KEY,
@@ -790,20 +799,12 @@ export async function drainHostedOutbox(
     work: (guard) => drainHostedOutboxHeld({ ...dependencies, assertLock: guard.assertHeld }),
   })
   if (held.value) return held.value
-  return {
-    queued: loadPendingOutboxRows().length,
-    sent: 0,
-    rejected: 0,
-    quarantined: 0,
-    dropped: 0,
-    waitingOnRouting: {},
-    waitingOnHostedHub: {},
-    skippedCapability: false,
-    lockAcquired: false,
-  }
+  return idleOutboxReport({ lockAcquired: false })
 }
 
 export function hostedOutboxLine(report: HostedOutboxReport): string {
+  if (report.deliveryOffReason)
+    return `queued=${report.queued} skipped: ${report.deliveryOffReason}`
   if (report.lockAcquired === false)
     return `queued=${report.queued} skipped: another process is draining`
   if (report.skippedCapability)

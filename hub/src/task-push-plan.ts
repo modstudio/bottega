@@ -71,6 +71,7 @@ export type DrainAudit = {
   waitingOnHostedHub?: Record<string, number>
   hostedReachable?: boolean
   skippedCapability?: boolean
+  deliveryOffReason?: string
 }
 
 export type TaskPushPlan = {
@@ -137,6 +138,7 @@ function assertNever(value: never): never {
 }
 
 export function drainFailsAudit(drain: DrainAudit): boolean {
+  if (drain.deliveryOffReason) return true
   if (drain.rejected > 0 || drain.quarantined > 0) return true
   if (drain.skippedCapability) return true
   if (drain.hostedReachable === false) return true
