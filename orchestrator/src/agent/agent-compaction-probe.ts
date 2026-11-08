@@ -1,9 +1,10 @@
 // concern: Goose registration compaction probe
 /** Proves whether a Goose model accepts the harness's automatic compaction request. */
 
-export const GOOSE_COMPACTION_PROBE_CONTEXT_LIMIT = 8_192
+export const GOOSE_COMPACTION_PROBE_CONTEXT_LIMIT = 16_384
 const COMPACTION_PROBE_SENTINEL = 'GOOSE_COMPACTION_PROBE_OK'
-const SECOND_TURN_FILLER = `${'x '.repeat(6_700)}\n`
+const SECOND_TURN_FILLER = `${'x '.repeat(8_000)}\n`
+const COMPACTION_ERROR_MARKER = 'Ran into this error trying to compact'
 
 export type CompactionProbeResult = { ok: boolean | null; output: string }
 
@@ -19,9 +20,10 @@ type CompactionProbeTurn = (input: {
 
 /**
  * Start a short session below the threshold, then make its second model call
- * cross Goose's eighty-percent auto-compaction threshold. The repeated
- * one-token words keep the current prompt below the configured window after
- * the prior turn has been compacted.
+ * cross Goose's eighty-percent auto-compaction threshold. ACP Goose run
+ * 01a1bbaf-8c3f-7756-bfef-8f7130a911a1 measured fixed request overhead at
+ * 7_000–8_600 tokens, so 16_384 leaves room for turn one and 8_000 one-token
+ * words force turn two across the threshold.
  */
 export async function probeAgentCompacts(
   runTurn: CompactionProbeTurn,
@@ -35,6 +37,9 @@ export async function probeAgentCompacts(
     prompt: 'Reply with exactly: ready',
     environment,
   })
+  if (first.output.includes(COMPACTION_ERROR_MARKER)) {
+    return { ok: false, output: first.output }
+  }
   if (first.status !== 'ok' || !first.sessionId) {
     return {
       ok: null,
@@ -48,7 +53,7 @@ export async function probeAgentCompacts(
     prompt: `${SECOND_TURN_FILLER}Reply with exactly: ${COMPACTION_PROBE_SENTINEL}`,
     environment,
   })
-  if (compacted.output.includes('Ran into this error trying to compact')) {
+  if (compacted.output.includes(COMPACTION_ERROR_MARKER)) {
     return { ok: false, output: compacted.output }
   }
   if (

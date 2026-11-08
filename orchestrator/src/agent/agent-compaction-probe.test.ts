@@ -20,7 +20,7 @@ test('the second Goose turn forces compaction and a continued session passes', a
   expect(result.ok).toBe(true)
   expect(turns).toHaveLength(2)
   expect(turns[1]!.session).toBe('session-1')
-  expect(turns[1]!.prompt.split('x ').length - 1).toBe(6_700)
+  expect(turns[1]!.prompt.split('x ').length - 1).toBe(8_000)
   expect(turns[1]!.environment).toEqual({
     GOOSE_CONTEXT_LIMIT: String(GOOSE_COMPACTION_PROBE_CONTEXT_LIMIT),
     GOOSE_AUTO_COMPACT_THRESHOLD: '0.8',
@@ -73,5 +73,18 @@ test('a first-turn failure leaves the compaction capability absent', async () =>
   expect(result).toEqual({
     ok: null,
     output: 'Compaction capability unestablished: first turn failed: Provider unavailable',
+  })
+})
+
+test('a first-turn Goose compaction refusal records the capability as false', async () => {
+  const result = await probeAgentCompacts(async () => ({
+    status: 'failed',
+    output: 'Ran into this error trying to compact: provider refused',
+    sessionId: null,
+  }))
+
+  expect(result).toEqual({
+    ok: false,
+    output: 'Ran into this error trying to compact: provider refused',
   })
 })
