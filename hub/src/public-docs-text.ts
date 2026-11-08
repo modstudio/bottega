@@ -50,6 +50,13 @@ export function orderedPublicDocs(items: readonly PublicTextDoc[]): PublicTextDo
     .flatMap((item) => [item, ...descendants(item.id, children)])
 }
 
+function directPublicDocChildren(
+  doc: PublicTextDoc,
+  items: readonly PublicTextDoc[],
+): PublicTextDoc[] {
+  return items.filter((item) => item.parentId === doc.id).sort(byPosition)
+}
+
 function encoded(value: string): string {
   return encodeURIComponent(value)
 }
@@ -58,6 +65,10 @@ export function publicDocPath(doc: PublicTextDoc, markdown = false): string {
   // Mirrors hub/data/src/docs/location.ts:docsLocation for subject-less docs.
   const subject = doc.subject ?? '_'
   return `/docs/${encoded(doc.scope)}/${encoded(subject)}/${encoded(doc.slug)}${markdown ? '.md' : ''}`
+}
+
+function publicDocMarkdownLink(doc: PublicTextDoc): string {
+  return `${PUBLIC_SITE_ORIGIN}${publicDocPath(doc, true)}`
 }
 
 export function renderLlmsTxt(items: readonly PublicTextDoc[]): string {
@@ -70,10 +81,9 @@ export function renderLlmsTxt(items: readonly PublicTextDoc[]): string {
     `Every page below is plain Markdown. The full set in one file: ${PUBLIC_SITE_ORIGIN}/llms-full.txt`,
   ]
   for (const doc of ordered) {
-    const path = publicDocPath(doc, true)
     if (doc.parentId === null) lines.push('', `## ${doc.title}`, '')
     lines.push(
-      `- [${doc.title}](${PUBLIC_SITE_ORIGIN}${path})${doc.summary ? `: ${doc.summary}` : ''}`,
+      `- [${doc.title}](${publicDocMarkdownLink(doc)})${doc.summary ? `: ${doc.summary}` : ''}`,
     )
   }
   return `${lines.join('\n')}\n`
@@ -123,6 +133,18 @@ export function rewritePublicDocLinks(body: string): string {
     (_match, slug: string, fragment: string | undefined) =>
       `](${PUBLIC_SITE_ORIGIN}/docs/${slug}.md${fragment ?? ''})`,
   )
+}
+
+export function renderPublicDocMarkdown(
+  body: string,
+  doc: PublicTextDoc,
+  items: readonly PublicTextDoc[],
+): string {
+  const children = directPublicDocChildren(doc, items)
+  const childLinks = children.map((child) => `- [${child.title}](${publicDocMarkdownLink(child)})`)
+  return `${rewritePublicDocLinks(body)}${
+    childLinks.length ? `\n\n## Pages in this section\n\n${childLinks.join('\n')}` : ''
+  }`
 }
 
 function escapeHtml(value: string): string {

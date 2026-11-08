@@ -30,6 +30,7 @@
     "audit:hot-store": "bun scripts/audit-hot-store-statements.ts",
     "release:binary": "bun scripts/build-binary.ts",
     "release:artifacts": "bun scripts/build-release-artifacts.ts",
+    "release:install-proof": "bun scripts/smoke-release-install.ts",
     "release:publish": "bun scripts/publish-release.ts",
     "format": "biome format --write .",
     "lint": "biome check .",

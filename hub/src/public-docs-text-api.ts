@@ -7,6 +7,7 @@ import {
   parsePublicDocsRequest,
   publicDocPath,
   renderLlmsTxt,
+  renderPublicDocMarkdown,
   rewritePublicDocLinks,
   uniquePublicDocBySlug,
 } from './public-docs-text.ts'
@@ -105,7 +106,11 @@ async function textRouteResponse(
     )
   }
   const found = await read(doc.id)
-  return response(request, rewritePublicDocLinks(found.body), 'text/markdown; charset=utf-8')
+  return response(
+    request,
+    renderPublicDocMarkdown(found.body, doc, items),
+    'text/markdown; charset=utf-8',
+  )
 }
 
 export async function publicDocsTextApi(

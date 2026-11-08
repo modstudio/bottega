@@ -20,6 +20,36 @@ const dependencies = {
 }
 const articlePath = `/docs/project/${PLATFORM_SLUG}/install`
 
+const section: PublicTextDoc = {
+  ...install,
+  id: 'section-id',
+  slug: 'getting-started',
+  title: 'Getting started',
+  position: 0,
+}
+const firstJob: PublicTextDoc = {
+  ...install,
+  id: 'first-job-id',
+  slug: 'first-job',
+  title: 'First job',
+  parentId: section.id,
+  position: 1,
+}
+const nested: PublicTextDoc = {
+  ...install,
+  id: 'review-id',
+  slug: 'review',
+  title: 'Review',
+  parentId: firstJob.id,
+  position: 1,
+}
+const sectionDependencies = {
+  tree: async () => ({
+    items: [section, { ...install, parentId: section.id, position: 2 }, nested, firstJob],
+  }),
+  doc: async () => ({ body: '# Getting started\n\nBegin here.' }),
+}
+
 describe('public docs text API', () => {
   test('serves llms.txt as cached plain text', async () => {
     const response = await publicDocsTextApi(
@@ -41,6 +71,40 @@ describe('public docs text API', () => {
     expect(response?.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
     expect(await response?.text()).toBe(
       `# Install\n\nRun the [next step](${PUBLIC_SITE_ORIGIN}/docs/first-job.md).`,
+    )
+  })
+
+  test('appends direct children in sibling order to both Markdown addresses', async () => {
+    const expected =
+      `# Getting started\n\nBegin here.\n\n## Pages in this section\n\n` +
+      `- [First job](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/first-job.md)\n` +
+      `- [Install](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/install.md)`
+    for (const path of [
+      '/docs/getting-started.md',
+      `/docs/project/${PLATFORM_SLUG}/getting-started.md`,
+    ]) {
+      const response = await publicDocsTextApi(
+        new Request(`https://hub.example.test${path}`),
+        sectionDependencies,
+      )
+      const body = await response?.text()
+      expect(body).toBe(expected)
+      expect(body).not.toContain('review.md')
+    }
+  })
+
+  test('lists children when the served page parent is absent from the public tree', async () => {
+    const detachedSection = { ...section, parentId: 'absent-parent-id' }
+    const response = await publicDocsTextApi(
+      new Request(`https://hub.example.test/docs/project/${PLATFORM_SLUG}/getting-started.md`),
+      {
+        tree: async () => ({ items: [detachedSection, firstJob] }),
+        doc: sectionDependencies.doc,
+      },
+    )
+    expect(await response?.text()).toBe(
+      `# Getting started\n\nBegin here.\n\n## Pages in this section\n\n` +
+        `- [First job](${PUBLIC_SITE_ORIGIN}/docs/project/${PLATFORM_SLUG}/first-job.md)`,
     )
   })
 
