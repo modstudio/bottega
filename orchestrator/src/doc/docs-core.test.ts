@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { consumeDoc, importDocs, removeDoc, resume, setDoc } from '../../test/fixtures/docs.ts'
 import {
@@ -178,7 +179,12 @@ describe('scoped operator docs', () => {
         body: '{"permissions":{"allow":[]},"hooks":{},"envKeys":[]}\n',
         reason: 'missing settings revision',
       }),
-    ).rejects.toThrow(`current revision ${created.revision}; pass --expect ${created.revision}`)
+    ).rejects.toThrow(
+      new RegExp(
+        `current revision ${created.revision}.*${PLATFORM_SLUG} machine settings import --user`,
+        's',
+      ),
+    )
   })
 
   test('owned canon is visible only through its owner address locally', async () => {
@@ -228,7 +234,9 @@ describe('scoped operator docs', () => {
         body: `${created.body}\nMore current guidance.\n`,
         reason: 'missing token',
       }),
-    ).rejects.toThrow(`current revision ${created.revision}; pass --expect ${created.revision}`)
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} doc set ${created.slug} --scope canon --expect ${created.revision}`,
+    )
 
     const updated = await writeDoc({
       scope: 'canon',
