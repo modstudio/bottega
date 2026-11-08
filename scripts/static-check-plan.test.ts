@@ -7,6 +7,7 @@ import {
   biomePluginSupport,
   classifyWorkerOmissionEvidence,
   staticCheckPlan,
+  typecheckLegCheckName,
   workerBiomeFiles,
   workerCheckProjection,
 } from './static-check-plan.ts'
@@ -146,7 +147,7 @@ describe('worker static check plan', () => {
 
     const run = new Set([
       projection.biome.name,
-      ...projection.typecheckLegs.map((leg) => `${leg.name} typecheck`),
+      ...projection.typecheckLegs.map(typecheckLegCheckName),
       ...projection.staticChecks.map((check) => check.name),
     ])
     for (const omission of projection.omitted) expect(run.has(omission.name)).toBe(false)
@@ -198,6 +199,23 @@ describe('worker static check plan', () => {
     )
   })
 
+  test('forces the scripts typecheck for a changed scripts file', () => {
+    const file = 'scripts/x.ts'
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [file])
+
+    expect(projection.typecheckLegs.map((leg) => leg.name)).toContain('scripts')
+    expect(projection.forced).toContainEqual({
+      name: typecheckLegCheckName({ name: 'scripts' }),
+      subject: 'scripts/',
+      file,
+    })
+    for (const name of ['hub/data', 'hub/web']) {
+      expect(projection.omitted).toContainEqual(
+        expect.objectContaining({ name: typecheckLegCheckName({ name }) }),
+      )
+    }
+  })
+
   test('forces hub/web but not hub/data for a changed web file', () => {
     const file = 'hub/web/src/x.tsx'
     const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [file])
@@ -222,6 +240,30 @@ describe('worker static check plan', () => {
       subject: 'hub/data/',
       file,
     })
+  })
+
+  test('forces hub/data and hub/web for their own changed files', () => {
+    const dataFile = 'hub/data/src/bar.ts'
+    const webFile = 'hub/web/src/foo.tsx'
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [dataFile, webFile])
+
+    expect(projection.typecheckLegs.map((leg) => leg.name)).toEqual(
+      expect.arrayContaining(['hub/data', 'hub/web']),
+    )
+    expect(projection.forced).toEqual(
+      expect.arrayContaining([
+        {
+          name: typecheckLegCheckName({ name: 'hub/data' }),
+          subject: 'hub/data/',
+          file: dataFile,
+        },
+        {
+          name: typecheckLegCheckName({ name: 'hub/web' }),
+          subject: 'hub/',
+          file: webFile,
+        },
+      ]),
+    )
   })
 
   test('leaves every omission omitted for an ordinary source change', () => {
