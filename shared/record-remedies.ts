@@ -1,7 +1,15 @@
 import { PLATFORM_SLUG } from './brand.ts'
+import type { RefusalRemedy } from './refusal.ts'
 export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run \`${PLATFORM_SLUG} record sign-in --email <email>\``
 export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
+
+export function recordSignInRemedy(email: string): RefusalRemedy {
+  return {
+    kind: 'command',
+    argv: [PLATFORM_SLUG, 'record', 'sign-in', '--email', email],
+  }
+}
 
 export const pinnedSpaceMismatchRemedy = (pinned: string) =>
   `record active space differs from this machine's initialized hosted-config space; switch back to ${pinned}, or remove this machine's hosted-config bootstrap and initialize it for the other space`

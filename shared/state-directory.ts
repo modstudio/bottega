@@ -123,6 +123,11 @@ export function recordSessionPath(env: StateEnvironment): string {
   return join(recordSessionDirectory(env), 'session')
 }
 
+/** Disposable file used to prove the file-backed record-session store is writable. */
+export function recordSessionProbePath(env: StateEnvironment): string {
+  return join(recordSessionDirectory(env), '.session-probe')
+}
+
 /** Machine-only record of the Claude MCP placement last applied by settings reconciliation. */
 export function claudeMcpPlacementPath(env: StateEnvironment): string {
   return join(resolveStatePaths(env).orchestratorDirectory, 'claude-mcp-placement.json')

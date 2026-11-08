@@ -1,15 +1,18 @@
 // concern: record-auth-command
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
 import { probeRecordSessionStore, writeRecordSessionToken } from '../../../shared/record-session.ts'
-import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { refusal } from '../../../shared/refusal.ts'
 import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { claimCurrentMachineKey } from '../config/config-service.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
+import { RefusalError } from '../refusal-error.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import {
   RecordApiRequestError,
+  type RecordSessionResult,
   recordApiClient,
   recordApiSignIn,
   recordApiSignUp,
@@ -38,8 +41,6 @@ type RecordAuthCommandDependencies = {
   signIn(email: string, password: string): Promise<RecordSessionResult>
   signUp(email: string, name: string, password: string): Promise<RecordSessionResult>
 }
-
-type RecordSessionResult = { token: string; user: Record<string, unknown> }
 
 const recordAuthCommandDependencies: RecordAuthCommandDependencies = {
   probeSessionStore: probeRecordSessionStore,
@@ -77,30 +78,23 @@ export async function signUpCommand(
   try {
     result = await dependencies.signUp(email, name, password)
   } catch (error) {
-    throw existingAccountSignUpRefusal(error, email)
+    existingAccountSignUpRefusal(error, email)
   }
   await completeRecordSessionCommand(result, presentation, 'signed up')
 }
 
-function existingAccountSignUpRefusal(error: unknown, email: string): unknown {
+function existingAccountSignUpRefusal(error: unknown, email: string): never {
   const code = error instanceof RecordApiRequestError ? error.code : null
   const message = error instanceof Error ? error.message : String(error)
   const existingAccount = code
     ? code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' || code === 'USER_ALREADY_EXISTS'
     : message.startsWith('User already exists')
-  if (!existingAccount) return error
-  return new Error(
-    renderRefusal(
-      refusal(message, {
-        kind: 'command',
-        argv: [PLATFORM_SLUG, 'record', 'sign-in', '--email', email],
-      }),
-    ),
-  )
+  if (!existingAccount) throw error
+  throw new RefusalError(refusal(message, recordSignInRemedy(email)))
 }
 
 async function completeRecordSessionCommand(
-  result: { token: string; user: Record<string, unknown> },
+  result: RecordSessionResult,
   presentation: Presentation,
   completion: 'signed in' | 'signed up',
 ): Promise<void> {
@@ -146,7 +140,7 @@ export async function signInCommand(
 }
 
 export async function completeSignInCommand(
-  result: { token: string; user: Record<string, unknown> },
+  result: RecordSessionResult,
   presentation: Presentation,
 ): Promise<void> {
   await completeRecordSessionCommand(result, presentation, 'signed in')

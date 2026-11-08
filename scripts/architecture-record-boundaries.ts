@@ -39,8 +39,10 @@ export const recordAuthCommandBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-auth-command.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/record-remedies.ts',
       '../../../shared/record-session.ts',
       '../../../shared/refusal.ts',
+      '../refusal-error.ts',
       '../board/board-auto-adoption.ts',
       '../config/config-service.ts',
       '../project/project-relink.ts',

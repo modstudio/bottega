@@ -13,7 +13,12 @@ import {
   writeKeychainItem,
 } from './keychain.ts'
 import { refusal, renderRefusal } from './refusal.ts'
-import { ensureRecordSessionDirectory, recordSessionPath } from './state-directory.ts'
+import {
+  ensureRecordSessionDirectory,
+  recordSessionDirectory,
+  recordSessionPath,
+  recordSessionProbePath,
+} from './state-directory.ts'
 
 export type { SecurityRunner } from './keychain.ts'
 
@@ -30,13 +35,17 @@ function readFileToken(): string | null {
   return readOwnerOnlySecretFile(recordSessionPath(process.env), 'record session')?.trim() || null
 }
 
+function keychainFailureWithFileRemedy(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error)
+  return new Error(`${message}; or ${FILE_REMEDY}`)
+}
+
 function withKeychainRemedy<T>(operation: () => T): T {
   try {
     return operation()
   } catch (error) {
     if (keychainPlatform() !== 'linux') throw error
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`${message}; or ${FILE_REMEDY}`)
+    throw keychainFailureWithFileRemedy(error)
   }
 }
 
@@ -54,8 +63,7 @@ export async function readRecordSessionTokenAsync(signal?: AbortSignal): Promise
     return await readKeychainItemAsync(SERVICE, ACCOUNT, signal)
   } catch (error) {
     if (signal?.aborted || keychainPlatform() !== 'linux') throw error
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`${message}; ${FILE_REMEDY}`)
+    throw keychainFailureWithFileRemedy(error)
   }
 }
 
@@ -81,9 +89,10 @@ function writeFileToken(path: string, token: string): void {
 
 /** Prove the selected record-session store is writable without touching the real session key. */
 export function probeRecordSessionStore(runner?: SecurityRunner): void {
+  const fileStore = useFile()
   try {
-    if (useFile()) {
-      const path = join(ensureRecordSessionDirectory(process.env), '.session-probe')
+    if (fileStore) {
+      const path = recordSessionProbePath(process.env)
       writeFileToken(path, randomUUID())
       rmSync(path, { force: true })
       return
@@ -102,7 +111,10 @@ export function probeRecordSessionStore(runner?: SecurityRunner): void {
     if (writeError) throw writeError
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(renderRefusal(refusal(message, { kind: 'edit', text: FILE_REMEDY })))
+    const remedy = fileStore
+      ? `make ${recordSessionDirectory(process.env)} a directory you own and can write`
+      : FILE_REMEDY
+    throw new Error(renderRefusal(refusal(message, { kind: 'edit', text: remedy })))
   }
 }
 

@@ -539,10 +539,8 @@ async function recordEmailAuthRequest(
       body: JSON.stringify(body),
     })
   } catch (error) {
-    throw new RecordApiRequestError(
-      `record API is unreachable: ${error instanceof Error ? error.message : String(error)}`,
-      'unreachable',
-    )
+    const message = error instanceof Error ? error.message : String(error)
+    throw new RecordApiRequestError(`record API is unreachable: ${message}`, 'unreachable')
   }
   const payload = await response.json().catch(() => null)
   if (!response.ok) throw recordAuthRefusal(response.status, payload, response.headers)
@@ -552,10 +550,16 @@ async function recordEmailAuthRequest(
   return { token, user: user as Record<string, unknown> }
 }
 
-export const recordApiSignIn = (email: string, password: string) =>
+export type RecordSessionResult = { token: string; user: Record<string, unknown> }
+
+export const recordApiSignIn = (email: string, password: string): Promise<RecordSessionResult> =>
   recordEmailAuthRequest('/api/auth/sign-in/email', { email, password })
 
-export const recordApiSignUp = (email: string, name: string, password: string) =>
+export const recordApiSignUp = (
+  email: string,
+  name: string,
+  password: string,
+): Promise<RecordSessionResult> =>
   recordEmailAuthRequest('/api/auth/sign-up/email', { email, name, password })
 
 export function recordApiBaseUrl(

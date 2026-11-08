@@ -11,7 +11,12 @@ import {
   type SecurityRunner,
   writeRecordSessionToken,
 } from './record-session.ts'
-import { recordSessionPath, STATE_HOME_ENV } from './state-directory.ts'
+import {
+  recordSessionDirectory,
+  recordSessionPath,
+  recordSessionProbePath,
+  STATE_HOME_ENV,
+} from './state-directory.ts'
 
 const bytes = (value = '') => new TextEncoder().encode(value)
 const result = (exitCode: number, stdout = '', stderr = '') => ({
@@ -199,8 +204,29 @@ describe('file-backed record session', () => {
     probeRecordSessionStore(unusedRunner)
 
     expect(readRecordSessionToken(unusedRunner)).toBe('real-token')
-    expect(existsSync(join(dirname(recordSessionPath(process.env)), '.session-probe'))).toBe(false)
+    expect(existsSync(recordSessionProbePath(process.env))).toBe(false)
     expect(runnerCalls).toBe(0)
+  })
+
+  test('an unwritable file store names its directory without suggesting file-store selection', () => {
+    const root = process.env[STATE_HOME_ENV]
+    if (!root) throw new Error('test state root is missing')
+    chmodSync(root, 0o500)
+    try {
+      let thrown: unknown
+      try {
+        probeRecordSessionStore(unusedRunner)
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toContain(
+        `cleared by: make ${recordSessionDirectory(process.env)} a directory you own and can write`,
+      )
+      expect((thrown as Error).message).not.toContain('BOTTEGA_KEYSTORE=file')
+    } finally {
+      chmodSync(root, 0o700)
+    }
   })
 
   test('clears the token and succeeds when it is already absent', () => {
