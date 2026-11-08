@@ -315,7 +315,7 @@ export type ToolInputSchema = {
  * caller needs it. Enough pages to hold any project's open work, with a stop so
  * nothing spins.
  */
-const MAX_PAGES = 40
+export const MAX_PAGES = 40
 export const WORKSPACE_LOOKUP_PAGE_SIZE = 5
 const WORKSPACE_LOOKUP_MAX_PAGES = MAX_PAGES
 
@@ -338,6 +338,29 @@ function establishedCategory(
   return mapped === 'backlog' ? 'open' : (mapped ?? null)
 }
 
+export function categoryForTrackerRead(
+  incremental: boolean,
+  rawStatus: string | undefined,
+  categoryHint: string | undefined,
+  fullReadFallbackHint: string | undefined,
+  states: TrackerSettings['states'],
+): StatusCategory | null {
+  if (incremental) {
+    return rawStatus ? establishedCategory(rawStatus, categoryHint ?? '', states) : null
+  }
+  return fullReadCategory(rawStatus, categoryHint, fullReadFallbackHint, states)
+}
+
+/** A full read lists open work by status, so a row whose status maps nowhere is open. */
+function fullReadCategory(
+  rawStatus: string | undefined,
+  categoryHint: string | undefined,
+  fallbackHint: string | undefined,
+  states: TrackerSettings['states'],
+): StatusCategory {
+  return categoryOf(rawStatus ?? '', categoryHint ?? fallbackHint ?? '', states)
+}
+
 function categoryOf(
   rawStatus: string,
   category: string,
@@ -347,6 +370,15 @@ function categoryOf(
 }
 
 export const trackerStatusCategory = categoryOf
+
+async function readTrackerPages(
+  readPage: (pageIndex: number) => Promise<boolean>,
+): Promise<{ complete: boolean }> {
+  for (let pageIndex = 0; pageIndex < MAX_PAGES; pageIndex++) {
+    if (!(await readPage(pageIndex))) return { complete: true }
+  }
+  return { complete: false }
+}
 
 const ENTITIES: Record<string, string> = {
   '&amp;': '&',
@@ -539,12 +571,13 @@ function appendWorkspaceTasks(
     if (!task.short_id) continue
     // An incremental read also returns closed rows, so a status that establishes no category
     // cannot default to open; the read is partial and the next one is full.
-    const category =
-      updatedSince === undefined
-        ? categoryOf(task.status ?? '', task.status_category ?? status ?? '', states)
-        : task.status
-          ? establishedCategory(task.status, task.status_category ?? '', states)
-          : null
+    const category = categoryForTrackerRead(
+      updatedSince !== undefined,
+      task.status,
+      task.status_category,
+      status,
+      states,
+    )
     if (category === null) {
       complete = false
       continue
@@ -575,7 +608,8 @@ async function fetchWorkspaceStatus(
   const tasks: TrackerTask[] = []
   const refs: AssigneeRef[] = []
   let complete = true
-  for (let page = 1; page <= MAX_PAGES; page++) {
+  const pages = await readTrackerPages(async (pageIndex) => {
+    const page = pageIndex + 1
     const reply = (await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
       ...(updatedSince === undefined ? { status } : { updated_since: updatedSince }),
       page,
@@ -590,9 +624,9 @@ async function fetchWorkspaceStatus(
       updatedSince,
       states,
     )
-    if (!reply.last_page || page >= reply.last_page) break
-    if (page === MAX_PAGES) complete = false
-  }
+    return Boolean(reply.last_page && page < reply.last_page)
+  })
+  complete &&= pages.complete
   return { tasks, refs, complete }
 }
 
@@ -660,6 +694,7 @@ function appendCursorTasks(
   items: CursorTask[],
   project: string,
   status: string | undefined,
+  incremental: boolean,
   states: TrackerSettings['states'],
 ): { deletedKeys: string[]; complete: boolean } {
   const deletedKeys: string[] = []
@@ -670,12 +705,7 @@ function appendCursorTasks(
       continue
     }
     if (!task.humanKey) continue
-    const category =
-      status === undefined
-        ? task.status
-          ? establishedCategory(task.status, task.status, states)
-          : null
-        : categoryOf(task.status ?? '', task.status ?? status, states)
+    const category = categoryForTrackerRead(incremental, task.status, task.status, status, states)
     if (category === null) {
       complete = false
       continue
@@ -716,7 +746,7 @@ function cursorMcpSource(
       const deletedKeys: string[] = []
       for (const status of updatedSince === undefined ? openStatuses : [undefined]) {
         let cursor: string | undefined
-        for (let page = 0; page < MAX_PAGES; page++) {
+        const pages = await readTrackerPages(async () => {
           const r = (await m.callTool(trackerWireAction('cursor-mcp', 'search'), {
             ...(updatedSince === undefined ? { status } : { updatedSince }),
             limit: 100,
@@ -727,13 +757,20 @@ function cursorMcpSource(
               nextCursor?: string
             }
           }
-          const appended = appendCursorTasks(out, r.data?.items ?? [], project, status, states)
+          const appended = appendCursorTasks(
+            out,
+            r.data?.items ?? [],
+            project,
+            status,
+            updatedSince !== undefined,
+            states,
+          )
           deletedKeys.push(...appended.deletedKeys)
           complete &&= appended.complete
           cursor = r.data?.nextCursor
-          if (!cursor) break
-          if (page === MAX_PAGES - 1) complete = false
-        }
+          return Boolean(cursor)
+        })
+        complete &&= pages.complete
       }
       return { tasks: out, complete, deletedKeys }
     },
@@ -827,7 +864,7 @@ function arrayMcpSource(
             project,
             title: decode(t.title ?? ''),
             status: t.status ?? status,
-            category: categoryOf(t.status ?? '', t.status ?? status, states),
+            category: fullReadCategory(t.status, t.status, status, states),
             updatedAt: null,
             assignee: t.assigneeName?.trim() || null,
           })
