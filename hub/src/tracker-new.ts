@@ -1,19 +1,17 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { type TrackerProtocol, trackerWireAction } from '../../shared/tracker-actions.ts'
 import {
   type CreateTrackerTask,
   createTrackerTask,
-  resolveTrackerWriteState,
-  type ToolCaller,
-  type TrackerProject,
-  type TrackerProtocol,
   trackerCreatedTaskKey,
-  trackerWireAction,
+} from '../../shared/tracker-create.ts'
+import { advertisedToolSchema, type ToolCaller } from '../../shared/tracker-list-scope.ts'
+import {
+  resolveTrackerWriteState,
+  type TrackerProject,
+  trackerWriteCategory,
 } from '../../shared/trackers.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
-import type { McpTool } from './mcp.ts'
-
-type ToolListingCaller = ToolCaller & {
-  listTools(): Promise<McpTool[]>
-}
 
 export type TaskCreationDestination = 'tracker' | 'hosted'
 
@@ -34,29 +32,23 @@ export function trackerTaskInput(
     )
   const mapped = Object.entries(tracker.states ?? {})
   const requested = input.status
-  const status = requested
-    ? requested === 'active' || requested === 'done'
-      ? resolveTrackerWriteState(
-          project.name,
-          tracker,
-          tracker.protocol as TrackerProtocol,
-          requested,
-        )
-      : mapped.find(([, category]) => category === requested)?.[0]
-    : tracker.openStatuses?.[0]
+  const category = trackerWriteCategory(tracker, requested ?? 'open')
+  const status = category
+    ? resolveTrackerWriteState(project.name, tracker, tracker.protocol as TrackerProtocol, category)
+    : undefined
   if (!status) {
     const choices = mapped.map(([name, category]) => `${category} -> ${name}`).join(', ')
     throw new Error(
       input.status
         ? `status '${input.status}' does not map to a tracker status for project ${project.name}; mapped statuses: ${choices || '(none)'}`
-        : `project ${project.name} has no open tracker status configured`,
+        : `project ${project.name} has no writable open tracker status; configure tracker.writeStates.open and tracker.states with: ${PLATFORM_SLUG} project set ${project.name} --settings '${JSON.stringify({ tracker: { states: { '<open-state>': 'open' }, writeStates: { open: '<open-state>' } } })}'`,
     )
   }
   return { title: input.title, body: input.body ?? '', status }
 }
 
 export async function createAdvertisedTrackerTaskKey(
-  client: ToolListingCaller,
+  client: ToolCaller,
   project: TrackerProject,
   task: CreateTrackerTask,
 ): Promise<string> {
@@ -70,7 +62,7 @@ export async function createAdvertisedTrackerTaskKey(
 
 /** Create only through the schema advertised by the selected, initialized MCP server. */
 export async function createAdvertisedTrackerTask(
-  client: ToolListingCaller,
+  client: ToolCaller,
   project: TrackerProject,
   task: CreateTrackerTask,
 ): Promise<unknown> {
@@ -85,7 +77,7 @@ export async function createAdvertisedTrackerTask(
       : null)
   if (!createToolName)
     throw new Error(`tracker protocol ${tracker.protocol ?? '(missing)'} has no create support`)
-  const createTool = (await client.listTools()).find((tool) => tool.name === createToolName)
-  if (!createTool) throw new Error(`tracker create tool ${createToolName} was not advertised`)
-  return createTrackerTask(client, project, task, createTool.inputSchema)
+  const inputSchema = await advertisedToolSchema(client, createToolName)
+  if (!inputSchema) throw new Error(`tracker create tool ${createToolName} was not advertised`)
+  return createTrackerTask(client, project, task, inputSchema)
 }

@@ -1,17 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
+import { resolveTrackerAgentActions, trackerWireAction } from './tracker-actions.ts'
+import { createTrackerTask, trackerCreatedTaskKey } from './tracker-create.ts'
+import type { ToolCaller } from './tracker-list-scope.ts'
 import {
   categoryForTrackerRead,
-  createTrackerTask,
   MAX_PAGES,
-  resolveTrackerAgentActions,
-  type ToolCaller,
+  resolveTrackerWriteState,
   TrackerLookupUnverifiable,
   type TrackerProject,
-  trackerCreatedTaskKey,
   trackerSourceFor,
-  trackerWireAction,
-  updateArrayMcpTaskStatus,
   WORKSPACE_LOOKUP_PAGE_SIZE,
 } from './trackers.ts'
 
@@ -115,9 +113,18 @@ const fixtureCaller = () => {
   return { caller, calls }
 }
 
+const scopeTools = async () => [
+  { name: 'list-tasks-tool', inputSchema: { properties: { team_id: {} } } },
+  { name: 'task.list', inputSchema: { properties: { projectId: {} } } },
+]
+
 describe('tracker create protocols', () => {
   test('array-mcp uses its underscored tool and evidenced payload', async () => {
     const fixture = fixtureCaller()
+
+    expect(
+      resolveTrackerWriteState('adanim', { states: { backlog: 'backlog' } }, 'array-mcp', 'open'),
+    ).toBe('backlog')
 
     expect(await createTrackerTask(fixture.caller, project('adanim', 'array-mcp'), task)).toEqual({
       key: 'ADN-1',
@@ -253,11 +260,12 @@ describe('tracker create protocols', () => {
 describe('tracker status protocols', () => {
   test('array-mcp updates the immutable task id and acknowledges a production write', async () => {
     const fixture = fixtureCaller()
+    const source = trackerSourceFor(project('adanim', 'array-mcp'))!
 
-    await updateArrayMcpTaskStatus(
+    await source.writeStatus!(
       fixture.caller,
-      project('adanim', 'array-mcp'),
-      '01990000-0000-7000-8000-000000001659',
+      { key: 'ADN-1', externalId: '01990000-0000-7000-8000-000000001659' },
+      'done',
       'done',
       'fixture-confirmation',
     )
@@ -273,6 +281,200 @@ describe('tracker status protocols', () => {
       },
     ])
   })
+
+  test('workspace-mcp selects the proven payload by resolved action and confirms by reading', async () => {
+    const cases = [
+      {
+        action: 'change-task-status-tool',
+        payload: { id: 'WOR-1', task_status_id: 'done' },
+      },
+      { action: 'update-task-tool', payload: { id: 'WOR-1', status: 'done' } },
+    ] as const
+    for (const entry of cases) {
+      const trackerProject = project('workspace', 'workspace-mcp')
+      trackerProject.settings.tracker!.actions = { status: entry.action }
+      const source = trackerSourceFor(trackerProject)!
+      const calls: { name: string; args: Record<string, unknown> }[] = []
+      const result = await source.writeStatus!(
+        {
+          async callTool(name, args) {
+            calls.push({ name, args })
+            return name === entry.action
+              ? { id: 'workspace-uuid' }
+              : { short_id: 'WOR-1', status: 'done', status_category: 'done' }
+          },
+        },
+        { key: 'WOR-1', externalId: 'workspace-uuid' },
+        'done',
+        'done',
+        'ignored',
+      )
+      expect(calls).toEqual([
+        { name: entry.action, args: entry.payload },
+        { name: 'get-task-tool', args: { id: 'WOR-1' } },
+      ])
+      expect(result).toEqual({ status: 'done', category: 'done' })
+    }
+  })
+
+  test('workspace-mcp refuses an unproven status action and reports a mismatched confirming read', async () => {
+    const unproven = project('workspace', 'workspace-mcp')
+    unproven.settings.tracker!.actions = { status: 'custom-status-tool' }
+    await expect(
+      trackerSourceFor(unproven)!.writeStatus!(
+        { callTool: async () => ({}) },
+        { key: 'WOR-1', externalId: 'workspace-uuid' },
+        'done',
+        'done',
+        'ignored',
+      ),
+    ).rejects.toThrow('action custom-status-tool has no proven status payload')
+
+    expect(
+      await trackerSourceFor(project('workspace', 'workspace-mcp'))!.writeStatus!(
+        {
+          callTool: async (name) =>
+            name === 'update-task-tool'
+              ? { id: 'workspace-uuid' }
+              : { short_id: 'WOR-1', status: 'todo', status_category: 'open' },
+        },
+        { key: 'WOR-1', externalId: 'workspace-uuid' },
+        'done',
+        'done',
+        'ignored',
+      ),
+    ).toEqual({
+      status: 'todo',
+      category: 'open',
+      refusal:
+        'workspace-mcp status confirmation for task WOR-1 returned category open after category done was requested',
+    })
+  })
+
+  test('cursor-mcp writes the immutable uuid and confirms the reply status', async () => {
+    const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
+    const fixture = fixtureCaller()
+    fixture.caller.callTool = async (name, args) => {
+      fixture.calls.push({ name, args })
+      return { success: true, data: { status: 'done' } }
+    }
+    expect(
+      await source.writeStatus!(
+        fixture.caller,
+        { key: 'STO-1', externalId: 'cursor-uuid' },
+        'done',
+        'done',
+        'ignored',
+      ),
+    ).toEqual({ status: 'done', category: 'done' })
+    expect(fixture.calls).toEqual([
+      { name: 'task.update', args: { id: 'cursor-uuid', status: 'done' } },
+    ])
+    await expect(
+      source.writeStatus!(
+        fixture.caller,
+        { key: 'STO-2', externalId: null },
+        'done',
+        'done',
+        'ignored',
+      ),
+    ).rejects.toThrow('task STO-2 has no external id')
+
+    fixture.caller.callTool = async (name, args) => {
+      fixture.calls.push({ name, args })
+      return { success: true, data: { status: 'todo' } }
+    }
+    expect(
+      await source.writeStatus!(
+        fixture.caller,
+        { key: 'STO-3', externalId: 'cursor-uuid' },
+        'done',
+        'done',
+        'ignored',
+      ),
+    ).toEqual({
+      status: 'todo',
+      category: 'open',
+      refusal:
+        'cursor-mcp status confirmation for task STO-3 returned todo after done was requested',
+    })
+  })
+})
+
+describe('tracker list scope', () => {
+  const noScopeSchema = (name: string) => async () => [
+    { name, inputSchema: { properties: { status: {} } } },
+  ]
+
+  test('workspace-mcp refuses collect without a team and names the project-set remedy', async () => {
+    const fixture = project('workspace', 'workspace-mcp')
+    delete fixture.settings.tracker!.team
+    await expect(
+      trackerSourceFor(fixture)!.fetch({ callTool: async () => ({ tasks: [] }) }),
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} project set workspace --settings '{"tracker":{"team":"…"}}'`,
+    )
+  })
+
+  test('cursor-mcp refuses collect without a projectId and names the project-set remedy', async () => {
+    const fixture = project('stopal', 'cursor-mcp')
+    delete fixture.settings.tracker!.projectId
+    await expect(
+      trackerSourceFor(fixture)!.fetch({ callTool: async () => ({ data: { items: [] } }) }),
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
+    )
+  })
+
+  for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
+    test(`${protocol} accepts empty and all-scoped pages but refuses a mixed page`, async () => {
+      const source = trackerSourceFor(
+        project(protocol === 'workspace-mcp' ? 'workspace' : 'stopal', protocol),
+      )!
+      const toolName = protocol === 'workspace-mcp' ? 'list-tasks-tool' : 'task.list'
+      const response = (rows: Record<string, unknown>[]) =>
+        protocol === 'workspace-mcp' ? { tasks: rows } : { data: { items: rows } }
+      const scoped =
+        protocol === 'workspace-mcp'
+          ? { short_id: 'WOR-1', status: 'todo', team: 'Platform' }
+          : {
+              humanKey: 'STO-1',
+              status: 'todo',
+              projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+            }
+      const outside =
+        protocol === 'workspace-mcp'
+          ? { short_id: 'OTH-1', status: 'todo', team: 'Other' }
+          : { humanKey: 'OTH-1', status: 'todo', projectId: 'other' }
+      const missing =
+        protocol === 'workspace-mcp'
+          ? { short_id: 'BAD-1', status: 'todo' }
+          : { humanKey: 'BAD-1', status: 'todo' }
+
+      expect(
+        (
+          await source.fetch({
+            listTools: noScopeSchema(toolName),
+            callTool: async () => response([]),
+          })
+        ).tasks,
+      ).toEqual([])
+      expect(
+        (
+          await source.fetch({
+            listTools: noScopeSchema(toolName),
+            callTool: async () => response([scoped, outside]),
+          })
+        ).tasks.map((task) => task.key),
+      ).toEqual([protocol === 'workspace-mcp' ? 'WOR-1' : 'STO-1'])
+      await expect(
+        source.fetch({
+          listTools: noScopeSchema(toolName),
+          callTool: async () => response([scoped, missing]),
+        }),
+      ).rejects.toThrow(protocol === 'workspace-mcp' ? 'no team scope' : 'no projectId scope')
+    })
+  }
 })
 
 describe('tracker comment ids', () => {
@@ -548,7 +750,10 @@ describe('tracker source construction', () => {
     ] as const
     for (const entry of cases) {
       const source = trackerSourceFor(project('identity', entry.protocol))!
-      const fetched = await source.fetch({ callTool: async () => entry.reply })
+      const fetched = await source.fetch({
+        listTools: scopeTools,
+        callTool: async () => entry.reply,
+      })
       expect(fetched.tasks.map((task) => task.externalId)).toEqual([
         `${entry.protocol.split('-')[0]}-uuid`,
       ])
@@ -563,6 +768,7 @@ describe('tracker source construction', () => {
       const calls: Record<string, unknown>[] = []
       const fetched = await source.fetch(
         {
+          listTools: scopeTools,
           async callTool(_name, args) {
             calls.push(args)
             if (protocol === 'workspace-mcp') {
@@ -599,13 +805,28 @@ describe('tracker source construction', () => {
       expect(calls).toEqual(
         protocol === 'workspace-mcp'
           ? [
-              { updated_since: '2026-11-06T11:50:00.000Z', page: 1, per_page: 100 },
-              { updated_since: '2026-11-06T11:50:00.000Z', page: 2, per_page: 100 },
+              {
+                updated_since: '2026-11-06T11:50:00.000Z',
+                team_id: 'Platform',
+                page: 1,
+                per_page: 100,
+              },
+              {
+                updated_since: '2026-11-06T11:50:00.000Z',
+                team_id: 'Platform',
+                page: 2,
+                per_page: 100,
+              },
             ]
           : [
-              { updatedSince: '2026-11-06T11:50:00.000Z', limit: 100 },
               {
                 updatedSince: '2026-11-06T11:50:00.000Z',
+                projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+                limit: 100,
+              },
+              {
+                updatedSince: '2026-11-06T11:50:00.000Z',
+                projectId: '019d9699-a223-729f-a032-50de9fdf4303',
                 limit: 100,
                 cursor: 'page-2',
               },
@@ -622,6 +843,7 @@ describe('tracker source construction', () => {
     const source = trackerSourceFor(project('stopal', 'cursor-mcp'))!
     const fetched = await source.fetch(
       {
+        listTools: scopeTools,
         callTool: async () => ({
           data: {
             items: [
@@ -643,6 +865,7 @@ describe('tracker source construction', () => {
     const source = trackerSourceFor(trackerProject)!
     const fetched = await source.fetch(
       {
+        listTools: scopeTools,
         callTool: async () => ({
           tasks: [
             { id: 'missing-status', short_id: 'STAR-1', summary: 'No status' },
@@ -663,6 +886,7 @@ describe('tracker source construction', () => {
     const source = trackerSourceFor(trackerProject)!
     const fetched = await source.fetch(
       {
+        listTools: scopeTools,
         callTool: async () => ({
           data: {
             items: [
@@ -684,6 +908,7 @@ describe('tracker source construction', () => {
     workspace.settings.tracker!.updatedSince = true
     const workspaceRead = await trackerSourceFor(workspace)!.fetch(
       {
+        listTools: scopeTools,
         callTool: async () => ({
           tasks: [
             { id: 'unmapped', short_id: 'STAR-1', summary: 'Closed', status: 'Completed' },
@@ -697,6 +922,7 @@ describe('tracker source construction', () => {
     cursor.settings.tracker!.updatedSince = true
     const cursorRead = await trackerSourceFor(cursor)!.fetch(
       {
+        listTools: scopeTools,
         callTool: async () => ({
           data: {
             items: [
@@ -723,6 +949,7 @@ describe('tracker source construction', () => {
     const source = trackerSourceFor(trackerProject)!
     let calls = 0
     const caller: ToolCaller = {
+      listTools: scopeTools,
       async callTool() {
         calls++
         return { tasks: [], last_page: 2 }
@@ -740,6 +967,7 @@ describe('tracker source construction', () => {
     let calls = 0
     const fetched = await source.fetch(
       {
+        listTools: scopeTools,
         async callTool() {
           calls++
           return { tasks: [], last_page: MAX_PAGES + 1 }
@@ -756,6 +984,7 @@ describe('tracker source construction', () => {
     let calls = 0
     const fetched = await source.fetch(
       {
+        listTools: scopeTools,
         async callTool() {
           calls++
           return { data: { items: [], nextCursor: `page-${calls + 1}` } }

@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { resolveTrackerAgentActions, TRACKER_PROTOCOLS } from '../../../shared/trackers.ts'
+import { resolveTrackerAgentActions, TRACKER_PROTOCOLS } from '../../../shared/tracker-actions.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {

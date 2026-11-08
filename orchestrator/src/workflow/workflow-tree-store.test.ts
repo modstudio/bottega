@@ -343,6 +343,7 @@ describe('importWorkflowTree', () => {
         tracker: {
           protocol: 'workspace-mcp',
           states: { started: 'active', checking: 'review', completed: 'done' },
+          writeStates: { active: 'started', done: 'completed' },
         },
         docs: { protocol: 'orch-docs' },
         gate: 'bun run check',
@@ -377,7 +378,11 @@ describe('importWorkflowTree', () => {
       '/fixture',
       'bun',
       JSON.stringify({
-        tracker: { protocol: 'workspace-mcp', states: { started: 'active', completed: 'done' } },
+        tracker: {
+          protocol: 'workspace-mcp',
+          states: { started: 'active', completed: 'done' },
+          writeStates: { active: 'started', done: 'completed' },
+        },
         docs: { protocol: 'orch-docs' },
         gate: 'bun run check',
         trunk: 'main',
@@ -454,6 +459,7 @@ describe('importWorkflowTree', () => {
           protocol: 'workspace-mcp',
           team: 'fixture-team',
           states: { todo: 'open', in_progress: 'active', done: 'done' },
+          writeStates: { open: 'todo', active: 'in_progress', done: 'done' },
         },
         release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
       }),

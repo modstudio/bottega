@@ -67,8 +67,8 @@ test('uses an explicit write state over an earlier raw state (mutation: ignore w
       settings: {
         tracker: {
           protocol: 'workspace-mcp',
-          states: { completed: 'done', complete: 'done' },
-          writeStates: { done: 'complete' },
+          states: { started: 'active', completed: 'done', complete: 'done' },
+          writeStates: { active: 'started', done: 'complete' },
         },
       },
     },

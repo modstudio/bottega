@@ -1,8 +1,9 @@
 import {
-  cursorProjectRefusal,
+  cursorScopeRefusal,
   TASK_STATUSES,
   type TrackerProject,
-  workspaceTeamRefusal,
+  trackerSourceFor,
+  workspaceScopeRefusal,
 } from '../../shared/trackers.ts'
 
 export type TrackerRowSource = 'local' | 'mcp' | 'git'
@@ -18,7 +19,7 @@ export type Capabilities = {
   keyFormat: string | null
 }
 
-export const TRACKER_STATUS_WRITE_REFUSAL =
+const TRACKER_STATUS_WRITE_REFUSAL =
   'No adapter has proven a status write to this tracker; hub refuses to guess a payload.'
 export const TRACKER_TITLE_WRITE_REFUSAL =
   'No adapter has proven a title write to this tracker; hub refuses to guess a payload.'
@@ -39,6 +40,14 @@ const keyFormat = (project: TrackerProject | null): string | null => {
   return Array.isArray(prefixes) && prefixes.length
     ? prefixes.map((prefix) => `${prefix}-*`).join(' | ')
     : null
+}
+
+const statusWriteCapability = (project: TrackerProject): Capability => {
+  try {
+    return trackerSourceFor(project)?.writeStatus ? allow : refuse(TRACKER_STATUS_WRITE_REFUSAL)
+  } catch (cause) {
+    return refuse(cause instanceof Error ? cause.message : String(cause))
+  }
 }
 
 /** Dashboard mutation facts for one served row. Unknown provenance stays readable and read-only. */
@@ -106,10 +115,10 @@ export function trackerCapabilities({
         ? allow
         : refuse(
             protocol === 'workspace-mcp'
-              ? workspaceTeamRefusal(project)
-              : cursorProjectRefusal(project),
+              ? workspaceScopeRefusal('create', project.name)
+              : cursorScopeRefusal('create', project.name),
           ),
-    setStatus: protocol === 'array-mcp' ? allow : refuse(TRACKER_STATUS_WRITE_REFUSAL),
+    setStatus: statusWriteCapability(project),
     setTitle: refuse(TRACKER_TITLE_WRITE_REFUSAL),
     setBody: refuse(TRACKER_BODY_WRITE_REFUSAL),
     comment: refuse(TRACKER_COMMENT_WRITE_REFUSAL),

@@ -9,16 +9,18 @@ import {
   type PhpPolicyRule,
 } from '../../../shared/test-substance/test-substance.ts'
 import {
+  resolveTrackerAgentActions,
+  TRACKER_PROTOCOLS,
+  type TrackerAction,
+  type TrackerProtocol,
+} from '../../../shared/tracker-actions.ts'
+import {
   refuseHubActionOverrides,
   refuseInvalidReviewStages,
   refuseInvalidWriteStates,
   refuseNonCursorProjectId,
   refuseUnsupportedUpdatedSince,
-  resolveTrackerAgentActions,
   resolveTrackerWriteState,
-  TRACKER_PROTOCOLS,
-  type TrackerAction,
-  type TrackerProtocol,
   type TrackerSettings,
   trackerActionsShape,
   trackerReviewStagesShape,
@@ -519,6 +521,9 @@ function resolvedTracker(
   ) as Partial<Record<TrackerAction, string>>
   const states = Object.fromEntries(
     (['active', 'done'] as const).flatMap((category) => {
+      const declaresCategory =
+        protocol === 'hub' || Object.values(tracker.states ?? {}).includes(category)
+      if (!declaresCategory && !tracker.writeStates?.[category]) return []
       const raw = resolveTrackerWriteState(project.name, tracker, protocol, category)
       return raw ? [[category, raw]] : []
     }),

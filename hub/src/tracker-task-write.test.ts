@@ -274,6 +274,151 @@ describe('array-mcp task writes', () => {
     })
   })
 
+  for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
+    test(`${protocol} observes a confirming mismatch before refusing`, async () => {
+      const registered: RegisteredProject = {
+        ...project,
+        settings: {
+          ...project.settings,
+          tracker:
+            protocol === 'workspace-mcp'
+              ? {
+                  protocol,
+                  team: 'TEAM',
+                  states: { Open: 'open' as const, 'In Progress': 'active' as const },
+                  writeStates: { active: 'In Progress' },
+                }
+              : {
+                  protocol,
+                  projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+                  states: {
+                    todo: 'open' as const,
+                    in_progress: 'active' as const,
+                    cancelled: 'dropped' as const,
+                  },
+                },
+        },
+      }
+      const calls: { name: string; args: Record<string, unknown> }[] = []
+
+      await expect(
+        setTaskThroughTracker(
+          'ADN-1659',
+          {},
+          { status: 'active' },
+          UNATTRIBUTED,
+          { confirm: 'production' },
+          {
+            ...dependencies(async (name, args) => {
+              calls.push({ name, args })
+              if (protocol === 'workspace-mcp') {
+                return name === 'update-task-tool'
+                  ? { id: taskId }
+                  : { short_id: 'ADN-1659', status: 'Open', status_category: 'open' }
+              }
+              return { success: true, data: { status: 'cancelled' } }
+            }),
+            registeredProjects: () => [registered],
+          },
+        ),
+      ).rejects.toThrow(
+        protocol === 'workspace-mcp'
+          ? 'returned category open after category active was requested'
+          : 'returned cancelled after in_progress was requested',
+      )
+      expect(showTask('ADN-1659').task).toMatchObject(
+        protocol === 'workspace-mcp'
+          ? { status: 'Open', status_category: 'open' }
+          : { status: 'cancelled', status_category: 'dropped' },
+      )
+      expect(calls).toEqual(
+        protocol === 'workspace-mcp'
+          ? [
+              { name: 'update-task-tool', args: { id: 'ADN-1659', status: 'In Progress' } },
+              { name: 'get-task-tool', args: { id: 'ADN-1659' } },
+            ]
+          : [{ name: 'task.update', args: { id: taskId, status: 'in_progress' } }],
+      )
+    })
+  }
+
+  for (const { label, reply } of [
+    { label: 'an unsuccessful cursor reply', reply: { success: false, error: 'x' } },
+    { label: 'an empty cursor reply', reply: {} },
+    { label: 'a cursor reply without data status', reply: { success: true, data: {} } },
+  ] as const) {
+    test(`${label} records no observation`, async () => {
+      const registered: RegisteredProject = {
+        ...project,
+        settings: {
+          ...project.settings,
+          tracker: {
+            protocol: 'cursor-mcp',
+            projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+            states: { todo: 'open', in_progress: 'active' },
+          },
+        },
+      }
+
+      await expect(
+        setTaskThroughTracker(
+          'ADN-1659',
+          {},
+          { status: 'active' },
+          UNATTRIBUTED,
+          { confirm: 'production' },
+          {
+            ...dependencies(async () => reply),
+            registeredProjects: () => [registered],
+          },
+        ),
+      ).rejects.toThrow('cursor-mcp status confirmation for task ADN-1659 returned')
+      expect(showTask('ADN-1659').task).toMatchObject({
+        status: 'todo',
+        status_category: 'open',
+      })
+      expect(db().query('SELECT count(*) count FROM task_status_event').get()).toEqual({ count: 0 })
+    })
+  }
+
+  test('a blank workspace confirmation records no observation', async () => {
+    const registered: RegisteredProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        tracker: {
+          protocol: 'workspace-mcp',
+          team: 'TEAM',
+          states: { Open: 'open', 'In Progress': 'active' },
+          writeStates: { active: 'In Progress' },
+        },
+      },
+    }
+
+    await expect(
+      setTaskThroughTracker(
+        'ADN-1659',
+        {},
+        { status: 'active' },
+        UNATTRIBUTED,
+        { confirm: 'production' },
+        {
+          ...dependencies(async (name) =>
+            name === 'update-task-tool'
+              ? { id: taskId }
+              : { short_id: 'ADN-1659', status: '', status_category: 'open' },
+          ),
+          registeredProjects: () => [registered],
+        },
+      ),
+    ).rejects.toThrow('workspace-mcp status confirmation for task ADN-1659 returned no status')
+    expect(showTask('ADN-1659').task).toMatchObject({
+      status: 'todo',
+      status_category: 'open',
+    })
+    expect(db().query('SELECT count(*) count FROM task_status_event').get()).toEqual({ count: 0 })
+  })
+
   test('the local close service refuses a tracker row', async () => {
     await expect(closeTask('ADN-1659', {}, UNATTRIBUTED)).rejects.toThrow(
       'task ADN-1659 is not local',
@@ -295,7 +440,7 @@ describe('array-mcp task writes', () => {
     ).rejects.toThrow('external tracker can only set status; set body in a separate call')
   })
 
-  test('an unsupported tracker protocol refuses before interpreting its vocabulary', async () => {
+  test('a workspace status without a write-state selection refuses with its remedy', async () => {
     const unsupported = {
       ...project,
       settings: {
@@ -307,12 +452,14 @@ describe('array-mcp task writes', () => {
       setTaskThroughTracker(
         'ADN-1659',
         {},
-        { status: 'not-in-vocabulary' },
+        { status: 'active' },
         UNATTRIBUTED,
         { confirm: 'production' },
         { registeredProjects: () => [unsupported] },
       ),
-    ).rejects.toThrow('tracker protocol workspace-mcp has no status writer')
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} project set adanim --settings '{"tracker":{"writeStates":{"active":"<active-state>"}}}'`,
+    )
   })
 
   test('an external done transition names a remedy that does not suggest unsupported abandon', async () => {

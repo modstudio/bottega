@@ -144,7 +144,11 @@ describe('ship-to workflow composition', () => {
     publishShipToFixture(d)
     d.query('UPDATE project SET settings=? WHERE name=?').run(
       JSON.stringify({
-        tracker: { protocol: 'workspace-mcp', states: { completed: 'done' } },
+        tracker: {
+          protocol: 'workspace-mcp',
+          states: { completed: 'done' },
+          writeStates: { done: 'completed' },
+        },
         release: releaseFixture,
         docs: { protocol: 'orch-docs' },
       }),
@@ -286,6 +290,7 @@ describe('ship-to workflow composition', () => {
         tracker: {
           protocol: 'workspace-mcp',
           states: { waiting: 'review', reviewing: 'review', completed: 'done' },
+          writeStates: { done: 'completed' },
           reviewStages: { waiting: 'waiting', active: 'reviewing' },
         },
         release: releaseFixture,

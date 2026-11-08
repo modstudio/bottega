@@ -1,11 +1,11 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { TRACKER_PROTOCOLS } from '../../shared/tracker-actions.ts'
 import {
   resolveTrackerWriteState,
   type StatusCategory,
-  TASK_STATUSES,
   type TrackerTask,
-  trackerStatusCategory,
-  updateArrayMcpTaskStatus,
+  trackerSourceFor,
+  trackerWriteCategory,
 } from '../../shared/trackers.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import { classifyTaskBranches } from './orch.ts'
@@ -52,13 +52,6 @@ function registeredProjectFor(
   return project
 }
 
-function requireArrayStatusWriter(task: TaskRow, project: RegisteredProject): void {
-  if (project.settings.tracker?.protocol === 'array-mcp') return
-  throw new Error(
-    `task ${task.key}'s tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no status writer`,
-  )
-}
-
 function validStateRefusal(project: RegisteredProject, status: string): Error {
   const valid = Object.keys(project.settings.tracker?.states ?? {})
   return new Error(
@@ -66,39 +59,26 @@ function validStateRefusal(project: RegisteredProject, status: string): Error {
   )
 }
 
-function resolveArrayStatus(
+function resolveExternalStatus(
   project: RegisteredProject,
   requested: string,
 ): { status: string; category: StatusCategory } {
-  const states = project.settings.tracker?.states ?? {}
-  if (requested in states) {
-    return {
-      status: requested,
-      category: trackerStatusCategory(requested, requested, states),
-    }
-  }
-  if (!TASK_STATUSES.includes(requested as (typeof TASK_STATUSES)[number])) {
-    throw validStateRefusal(project, requested)
-  }
-  if (requested === 'active' || requested === 'done') {
-    const status = resolveTrackerWriteState(
-      project.name,
-      project.settings.tracker ?? {},
-      'array-mcp',
-      requested,
+  const protocol = project.settings.tracker?.protocol
+  if (!protocol || !TRACKER_PROTOCOLS.includes(protocol as (typeof TRACKER_PROTOCOLS)[number])) {
+    throw new Error(
+      `tracker status write refused: project ${project.name} has ${protocol ? `unrecognized protocol ${protocol}` : 'no protocol'}; set it with: ${PLATFORM_SLUG} project set ${project.name} --settings '{"tracker":{"protocol":"<protocol>"}}'`,
     )
-    if (status) return { status, category: requested }
   }
-  const matches = Object.entries(states).filter(([, category]) => category === requested)
-  if (matches.length !== 1) throw validStateRefusal(project, requested)
-  const [status] = matches[0]!
-  return { status, category: requested as StatusCategory }
-}
-
-function replyStatus(result: unknown): string | null {
-  if (!result || typeof result !== 'object') return null
-  const status = (result as { status?: unknown }).status
-  return typeof status === 'string' && status.trim() ? status : null
+  const category = trackerWriteCategory(project.settings.tracker ?? {}, requested)
+  if (!category) throw validStateRefusal(project, requested)
+  const status = resolveTrackerWriteState(
+    project.name,
+    project.settings.tracker ?? {},
+    protocol as (typeof TRACKER_PROTOCOLS)[number],
+    category,
+  )
+  if (!status) throw validStateRefusal(project, requested)
+  return { status, category }
 }
 
 async function writeExternalStatus(
@@ -109,32 +89,36 @@ async function writeExternalStatus(
   confirm: string,
   dependencies: TrackerWriteDependencies,
 ): Promise<TaskRow> {
-  if (!task.external_id) throw new Error(`task ${task.key} has no external tracker id`)
+  const source = trackerSourceFor(project)
+  if (!source?.writeStatus) {
+    throw new Error(
+      `task ${task.key}'s tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no status writer`,
+    )
+  }
   const result = await withTrackerConnection(
     project,
-    (client) => updateArrayMcpTaskStatus(client, project, task.external_id!, status, confirm),
+    (client) =>
+      source.writeStatus!(
+        client,
+        { externalId: task.external_id, key: task.key },
+        status,
+        category,
+        confirm,
+      ),
     dependencies,
   )
-  const reportedStatus = replyStatus(result)
-  const observedStatus = reportedStatus ?? status
   const observed: TrackerTask = {
     externalId: task.external_id,
     key: task.key,
     project: task.project,
     title: task.title ?? '',
-    status: observedStatus,
-    category: reportedStatus
-      ? trackerStatusCategory(reportedStatus, reportedStatus, project.settings.tracker?.states)
-      : category,
+    status: result.status,
+    category: result.category,
     updatedAt: null,
     assignee: task.assignee,
   }
   ;(dependencies.observe ?? observeTrackerTask)(observed)
-  if (observedStatus !== status) {
-    throw new Error(
-      `tracker answered with status ${observedStatus} after ${status} was requested for task ${task.key}`,
-    )
-  }
+  if (result.refusal) throw new Error(result.refusal)
   return showTask(task.key, { recordId: task.record_id }).task
 }
 
@@ -164,7 +148,6 @@ export async function setTaskThroughTracker(
     return (dependencies.localSet ?? setTask)(key, scope, changes, attribution, options)
   }
   const project = registeredProjectFor(current, dependencies)
-  requireArrayStatusWriter(current, project)
   const fields = Object.keys(changes)
   if (fields.length !== 1 || changes.status === undefined) {
     const unsupported = fields.filter((field) => field !== 'status').join(', ') || 'other fields'
@@ -172,7 +155,7 @@ export async function setTaskThroughTracker(
       `task ${current.key}'s external tracker can only set status; set ${unsupported} in a separate call where supported`,
     )
   }
-  const resolved = resolveArrayStatus(project, changes.status)
+  const resolved = resolveExternalStatus(project, changes.status)
   const { status, category } = resolved
   if (category === 'done') {
     await prepareExternalDoneTransition(current, attribution, options.abandonReason, dependencies)
@@ -192,9 +175,8 @@ export async function closeTaskThroughTracker(
     return (dependencies.localClose ?? closeTask)(key, scope, attribution, options)
   }
   const project = registeredProjectFor(current, dependencies)
-  requireArrayStatusWriter(current, project)
   await prepareExternalDoneTransition(current, attribution, options.abandonReason, dependencies)
-  const done = resolveArrayStatus(project, 'done')
+  const done = resolveExternalStatus(project, 'done')
   return writeExternalStatus(
     current,
     project,
