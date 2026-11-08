@@ -91,6 +91,23 @@ export async function hostedIdentity(
   return pinned
 }
 
+function trustedWrap(input: {
+  key: DataKey
+  trust: TrustList
+  destinationSpaceId?: string
+}): DataKey['wraps'][number] {
+  const wrap = input.key.wraps.find((candidate) => input.trust[candidate.senderKeyId])
+  if (wrap) return wrap
+  if (input.destinationSpaceId)
+    throw new HostedOpenError(
+      'missing-wrap',
+      `this machine is not trusted in record space ${input.destinationSpaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``,
+    )
+  if (input.key.wraps.length)
+    throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
+  throw new HostedOpenError('missing-wrap', 'hosted secret data key has no wrap for this machine')
+}
+
 /** The only operation that chooses a wrap and opens a hosted secret row. */
 export async function openHostedSecret(input: {
   client: ConfigClient
@@ -109,17 +126,7 @@ export async function openHostedSecret(input: {
     row.environment !== expected.environment
   )
     throw new HostedOpenError('authentication-failed', 'hosted secret response identity mismatch')
-  const wrap = input.key.wraps.find((candidate) => input.trust[candidate.senderKeyId])
-  if (!wrap) {
-    if (input.destinationSpaceId)
-      throw new HostedOpenError(
-        'missing-wrap',
-        `this machine is not trusted in record space ${input.destinationSpaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``,
-      )
-    if (input.key.wraps.length)
-      throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
-    throw new HostedOpenError('missing-wrap', 'hosted secret data key has no wrap for this machine')
-  }
+  const wrap = trustedWrap(input)
   const sender = input.trust[wrap.senderKeyId]
   if (!sender)
     throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')

@@ -628,46 +628,6 @@ export async function deleteSecret(
   })
 }
 
-/** Open an already-selected secret in its destination space. */
-export async function openSecretInDestination(
-  row: ConfigSecret,
-  destination: ConfigDestination,
-  client = hostedConfigClient(),
-): Promise<string> {
-  if (!destination.destinationSpaceId)
-    throw new Error('opening a project secret requires a destination space')
-  const machine = await localMachine()
-  await hostedIdentity(client, undefined, {
-    spaceId: destination.destinationSpaceId,
-    machineKeyId: machine.keyId,
-    configAccess: true,
-  })
-  let full: ConfigSecret & { envelope: string }
-  let key: DataKey
-  try {
-    ;[full, key] = await Promise.all([
-      client.getSecret(row.key, row.scope, row.environment, destination),
-      client.getDataKey(row.dekId, machine.keyId, destination),
-    ])
-  } catch (error) {
-    if (error instanceof ConfigClientError && error.status === 422)
-      throw new Error(
-        `signed-in user lacks config access in record space ${destination.destinationSpaceId}; a space owner or admin grants it with \`${PLATFORM_SLUG} record space access grant <email>\``,
-      )
-    throw error
-  }
-  const plaintext = await openHostedSecret({
-    client,
-    row: full,
-    key,
-    machine,
-    trust: await readTrustList(),
-    expected: { key: row.key, scope: row.scope, environment: row.environment },
-    destinationSpaceId: destination.destinationSpaceId,
-  })
-  return new TextDecoder('utf-8', { fatal: true }).decode(plaintext)
-}
-
 export type SecretEnvironmentMigration = {
   oldName: string
   newName: string

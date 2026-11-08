@@ -20,7 +20,6 @@ import {
   credentialDisplayName,
   credentialPayerFromScope,
   credentialSlot,
-  credentialVariableName,
   parseCredentialSlot,
   resolveCredential,
 } from '../config/credential.ts'
@@ -261,10 +260,7 @@ export function registerCredentialCommands(program: Command): void {
     .requiredOption('--project <name>', 'resolve for a registered project')
     .option('--mode <mode>', CREDENTIAL_MODES.join(' or '))
     .option('--env <environment>', CREDENTIAL_ENVIRONMENTS.join(' or '))
-    .option(
-      '--reveal-to-env <variable>',
-      `run argv with the plaintext in this variable (default delivery name: ${credentialVariableName('<provider>', null, '<type>', 'default')})`,
-    )
+    .option('--reveal-to-env <variable>', 'run argv with the plaintext in this variable')
     .allowUnknownOption()
     .passThroughOptions()
     .description('show which credential would pay for a project')

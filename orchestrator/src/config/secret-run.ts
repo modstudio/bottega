@@ -103,7 +103,7 @@ export async function runWithEnvironment(
   argv: readonly string[],
   env: Record<string, string | undefined>,
 ): Promise<number> {
-  const spawned = Bun.spawn(argv, {
+  const spawned = Bun.spawn([...argv], {
     env,
     stdin: 'inherit',
     stdout: 'inherit',

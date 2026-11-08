@@ -15,7 +15,7 @@ import {
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
-import { deleteSecret, openSecretInDestination, setSecret } from './config-service.ts'
+import { deleteSecret, setSecret } from './config-service.ts'
 import {
   type CredentialEnvironment,
   type CredentialMode,
@@ -26,6 +26,7 @@ import {
   credentialSetRefusalText,
   resolveCredential,
 } from './credential.ts'
+import { openSecretInDestination } from './hosted-secret-destination.ts'
 
 export type CredentialAddress = {
   provider: string
@@ -144,15 +145,21 @@ export async function resolveCredentialValue(
 ): Promise<string> {
   if (!address.projectId || !address.projectName)
     throw new Error('credential value resolution requires a project binding')
+  const projectId = address.projectId
+  const projectName = address.projectName
   const rows = await listCredentials(address.destinationSpaceId, {}, client)
   const preferences = await client.listCredentialPreferences({
     destinationSpaceId: address.destinationSpaceId,
   })
   const result = resolveCredential({
     spaceId: address.destinationSpaceId,
-    projectId: address.projectId,
-    projectName: address.projectName,
-    ...address,
+    projectId,
+    projectName,
+    provider: address.provider,
+    name: address.name,
+    type: address.type,
+    mode: address.mode,
+    environment: address.environment,
     candidates: rows.map((row) => ({
       spaceId: address.destinationSpaceId,
       projectId: row.projectId ?? null,
