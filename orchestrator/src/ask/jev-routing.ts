@@ -43,12 +43,29 @@ export function pickProbability(
     : null
 }
 
-export function isJevConfidenceThreshold(value: number): boolean {
+function isJevConfidenceThreshold(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 1
 }
 
-export function invalidJevThresholdRemedy(key: string, raw: string | number): string {
+function invalidJevThresholdRemedy(key: string, raw: string | number): string {
   return `invalid ${key} ${JSON.stringify(raw)}; run ${PLATFORM_SLUG} machine config set ${key} <0-1>`
+}
+
+export function jevThresholds(
+  read: (key: 'jev.confidence_threshold' | 'jev.fit_threshold') => string | number,
+): { ok: true; threshold: number; fitThreshold: number } | { ok: false; error: string } {
+  const rawThreshold = read('jev.confidence_threshold')
+  const threshold = Number(rawThreshold)
+  if (!isJevConfidenceThreshold(threshold))
+    return {
+      ok: false,
+      error: invalidJevThresholdRemedy('jev.confidence_threshold', rawThreshold),
+    }
+  const rawFitThreshold = read('jev.fit_threshold')
+  const fitThreshold = Number(rawFitThreshold)
+  if (!isJevConfidenceThreshold(fitThreshold))
+    return { ok: false, error: invalidJevThresholdRemedy('jev.fit_threshold', rawFitThreshold) }
+  return { ok: true, threshold, fitThreshold }
 }
 
 function answerPick(

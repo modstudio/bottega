@@ -17,13 +17,10 @@ import {
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
 } from '../run/question-vocabulary.ts'
 import { auditRunMutation, runMutationAuthority } from '../run/run-authority.ts'
+import { runRootRecord } from '../run/run-root-record.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { combineJevChoice } from './jev-choice-combination.ts'
-import {
-  invalidJevThresholdRemedy,
-  isJevConfidenceThreshold,
-  routeJevAnswer,
-} from './jev-routing.ts'
+import { jevThresholds, routeJevAnswer } from './jev-routing.ts'
 import type { WorkerQuestion } from './worker-question.ts'
 
 const JEV_WORKER_QUESTION_VERSION = 2
@@ -79,9 +76,20 @@ function storeJevError(database: Database, recordId: string, error: string): voi
     enqueueQuestionRecord(database, recordId)
   }, database)
 }
+function choiceAnswerIds(recordId: string) {
+  return {
+    forward: `${recordId}:forward`,
+    reversed: `${recordId}:reversed`,
+    fits: `${recordId}:fits`,
+  }
+}
+function workerWhyKey(number: number): string {
+  return String(number)
+}
 function questionsFor(recordId: string, number: number, question: WorkerQuestion): TypedQuestion[] {
   if (question.kind === 'text') return []
-  const instructions = `${question.question}\nUse \`spec\`, \`turn\` when present (it is the later instruction and overrides \`spec\`), and \`worker.why["${number}"]\`.`
+  const whyKey = workerWhyKey(number)
+  const instructions = `${question.question}\nUse \`spec\`, \`turn\` when present (it is the later instruction and overrides \`spec\`), and \`worker.why[${JSON.stringify(whyKey)}]\`.`
   const common = { version: JEV_WORKER_QUESTION_VERSION, instructions, threshold: 0 }
   if (question.kind === 'yesno')
     return [
@@ -102,17 +110,18 @@ function questionsFor(recordId: string, number: number, question: WorkerQuestion
       ('criteria' in option ? option.criteria : undefined) ?? option.name,
     ]),
   )
+  const ids = choiceAnswerIds(recordId)
   return [
-    { ...common, id: `${recordId}:forward`, type: 'choice', criteria },
+    { ...common, id: ids.forward, type: 'choice', criteria },
     {
       ...common,
-      id: `${recordId}:reversed`,
+      id: ids.reversed,
       type: 'choice',
       criteria: Object.fromEntries(Object.entries(criteria).reverse()),
     },
     {
       ...common,
-      id: `${recordId}:fits`,
+      id: ids.fits,
       type: 'noul',
       criteria: {
         true: 'One listed option describes what the worker should do.',
@@ -133,17 +142,18 @@ function combinedAnswer(
       orderFlipped: null,
       bothOrdersAnswered: true,
     }
+  const ids = choiceAnswerIds(recordId)
   return combineJevChoice({
     options: question.options.map(({ name }) => name),
-    forward: answers[`${recordId}:forward`],
-    reversed: answers[`${recordId}:reversed`],
-    fits: answers[`${recordId}:fits`],
+    forward: answers[ids.forward],
+    reversed: answers[ids.reversed],
+    fits: answers[ids.fits],
   })
 }
 function expectedAnswerIds(recordId: string, question: WorkerQuestion): string[] {
-  return question.kind === 'choice'
-    ? [`${recordId}:forward`, `${recordId}:reversed`, `${recordId}:fits`]
-    : [recordId]
+  if (question.kind !== 'choice') return [recordId]
+  const ids = choiceAnswerIds(recordId)
+  return [ids.forward, ids.reversed, ids.fits]
 }
 function storeAdvice(
   database: Database,
@@ -193,15 +203,8 @@ async function routeAndStore(
   const database = input.database ?? db()
   const combined = combinedAnswer(input.recordId, input.question, result.answers)
   const readMachine = input.readMachine ?? readMachineValue
-  const confidenceRaw = readMachine('jev.confidence_threshold')
-  const fitRaw = readMachine('jev.fit_threshold')
-  const threshold = Number(confidenceRaw)
-  const fitThreshold = Number(fitRaw)
-  const configError = !isJevConfidenceThreshold(threshold)
-    ? invalidJevThresholdRemedy('jev.confidence_threshold', confidenceRaw)
-    : !isJevConfidenceThreshold(fitThreshold)
-      ? invalidJevThresholdRemedy('jev.fit_threshold', fitRaw)
-      : null
+  const thresholds = jevThresholds(readMachine)
+  const configError = thresholds.ok ? null : thresholds.error
   const missingIds = expectedAnswerIds(input.recordId, input.question).filter(
     (id) => result.answers[id] === undefined,
   )
@@ -214,8 +217,8 @@ async function routeAndStore(
     const decision = routeJevAnswer({
       question: input.question,
       answer: combined.answer,
-      threshold: jevError ? 1 : threshold,
-      fitThreshold: jevError ? 1 : fitThreshold,
+      threshold: jevError || !thresholds.ok ? 1 : thresholds.threshold,
+      fitThreshold: jevError || !thresholds.ok ? 1 : thresholds.fitThreshold,
       fits: combined.fits,
       orderFlipped: combined.orderFlipped,
       bothOrdersAnswered: combined.bothOrdersAnswered,
@@ -297,15 +300,24 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
     }
   }
   try {
-    const run = database
-      .query<RunContext, [string, string]>(
-        `WITH RECURSIVE chain AS (SELECT record_id,parent_run_record_id,prompt_path FROM run WHERE record_id=? UNION ALL SELECT r.record_id,r.parent_run_record_id,r.prompt_path FROM run r JOIN chain c ON c.parent_run_record_id=r.record_id) SELECT current.job,current.launch_key,current.repo,current.prompt_path,current.parent_run_record_id,(SELECT prompt_path FROM chain WHERE parent_run_record_id IS NULL LIMIT 1) root_prompt_path FROM run current WHERE current.record_id=?`,
+    const current = database
+      .query<Omit<RunContext, 'root_prompt_path'>, [string]>(
+        `SELECT job,launch_key,repo,prompt_path,parent_run_record_id FROM run WHERE record_id=?`,
       )
-      .get(input.runId, input.runId)
-    if (!run) {
+      .get(input.runId)
+    if (!current) {
       storeBatchError(`run ${input.runId} was not found while preparing Jev advice`)
       return results
     }
+    const root = runRootRecord(input.runId, database)
+    const rootPrompt = root
+      ? (database
+          .query<{ prompt_path: string | null }, [string]>(
+            'SELECT prompt_path FROM run WHERE record_id=?',
+          )
+          .get(root.rootRunId)?.prompt_path ?? null)
+      : null
+    const run: RunContext = { ...current, root_prompt_path: rootPrompt }
     const numbered = eligible.map(({ question, index }) => {
       const row = database
         .query('SELECT number FROM question WHERE record_id=?')
@@ -316,7 +328,7 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
     const state: Record<string, unknown> = {
       worker: {
         why: Object.fromEntries(
-          numbered.map(({ question, number }) => [String(number), question.question.why]),
+          numbered.map(({ question, number }) => [workerWhyKey(number), question.question.why]),
         ),
       },
       run: { task: run.launch_key ?? 'none', job: run.job },

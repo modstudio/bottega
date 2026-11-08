@@ -51,7 +51,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/jev-worker-question.ts', [
     'bun:sqlite',
     'node:fs',
-    '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/typed-question/client.ts',
     '../../../shared/typed-question/registry.ts',
@@ -59,6 +58,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../run/question-answer.ts',
     '../run/question-outbox.ts',
     '../run/run-authority.ts',
+    '../run/run-root-record.ts',
     '../run/question-vocabulary.ts',
     '../workflow/autonomy-scopes.ts',
     './jev-routing.ts',

@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { readMachineValue } from '../../../shared/machine-config.ts'
-import { invalidJevThresholdRemedy, isJevConfidenceThreshold } from '../ask/jev-routing.ts'
+import { jevThresholds } from '../ask/jev-routing.ts'
 import { db } from '../database/db.ts'
 import {
   type JevWorkerQuestionMetrics,
@@ -28,13 +28,7 @@ export function jevWorkerQuestionReport(
         ORDER BY asked_at`,
     )
     .all(...(options.days === undefined ? [] : [options.days])) as JevWorkerQuestionRow[]
-  const rawThreshold = readMachine('jev.confidence_threshold')
-  const threshold = Number(rawThreshold)
-  if (!isJevConfidenceThreshold(threshold))
-    throw new Error(invalidJevThresholdRemedy('jev.confidence_threshold', rawThreshold))
-  const rawFitThreshold = readMachine('jev.fit_threshold')
-  const fitThreshold = Number(rawFitThreshold)
-  if (!isJevConfidenceThreshold(fitThreshold))
-    throw new Error(invalidJevThresholdRemedy('jev.fit_threshold', rawFitThreshold))
-  return jevWorkerQuestionMetrics(rows, threshold, fitThreshold)
+  const thresholds = jevThresholds(readMachine)
+  if (!thresholds.ok) throw new Error(thresholds.error)
+  return jevWorkerQuestionMetrics(rows, thresholds.threshold, thresholds.fitThreshold)
 }
