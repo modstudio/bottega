@@ -97,6 +97,7 @@ export const CHECK_LEGS = [
       run: false,
       reason: 'slow: 5.6s CPU in the gate (gate 5311)',
       evidence: '"bun run check"',
+      subjects: ['hub/data/', 'shared/'],
     },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
@@ -121,6 +122,7 @@ export const CHECK_LEGS = [
       run: false,
       reason: 'slow: 24.0s CPU in the gate (gate 5311)',
       evidence: '"bun run check"',
+      subjects: ['hub/', 'shared/'],
     },
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
@@ -185,6 +187,7 @@ export const CHECK_LEGS = [
       run: false,
       reason: 'slow: 13.8s CPU in the gate (gate 5311)',
       evidence: '"bun run check"',
+      subjects: ['scripts/', 'shared/'],
     },
     suite: [],
   },
