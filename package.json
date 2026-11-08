@@ -41,7 +41,6 @@
     "@bottega/hub-views": "workspace:*",
     "@electric-sql/pglite": "0.5.11",
     "@types/bun": "latest",
-    "@types/shell-quote": "^1.7.5",
     "commander": "15.0.0",
     "dependency-cruiser": "18.7.0",
     "drizzle-kit": "1.0.0-rc.4",
@@ -65,7 +64,6 @@
     "mdast-util-directive": "^3.1.1",
     "mdast-util-from-markdown": "^2.1.0",
     "micromark-extension-directive": "^4.0.0",
-    "shell-quote": "^1.12.0",
     "typescript": "^5.9.3",
     "zod": "^4.6.7"
   },

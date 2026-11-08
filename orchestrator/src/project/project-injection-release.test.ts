@@ -148,6 +148,7 @@ describe('live command Git refusal', () => {
     'git log --oneline',
     'cd x && git rev-parse HEAD',
     '$(git log --oneline)',
+    '`git status`',
     "sh -c 'git status'",
     'bash -c "echo ready; git status"',
     '/usr/bin/git status',

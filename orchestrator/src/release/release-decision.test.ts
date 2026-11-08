@@ -105,6 +105,19 @@ test('a deploy-only rung names the complete live-probe remedy', () => {
   )
 })
 
+test('a liveVersion rung passes the release-target proof guard', () => {
+  const rungs = [
+    {
+      name: 'production',
+      branch: 'master',
+      liveVersion: { command: 'npm view fixture version', file: 'package.json', key: 'version' },
+    },
+  ]
+  expect(
+    releaseRungProofRefusal(PLATFORM_SLUG, 'fixture', 'production', 'master', rungs),
+  ).toBeNull()
+})
+
 test('an undeclared required rung names a register remedy that declares it', () => {
   expect(
     unprovableReleaseRungMessage(PLATFORM_SLUG, 'fixture', 'production', 'master', [
