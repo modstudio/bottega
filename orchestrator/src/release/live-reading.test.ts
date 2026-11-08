@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
   type LiveReadingCapture,
+  jsonStringAtPath,
+  liveVersionMatchesCandidate,
+  newestVersionIntroduction,
   RELEASE_LIVE_READING_TIMEOUT_MS,
   readLiveCommit,
+  unmappedVersionFailure,
+  versionIntroducedAtCommit,
 } from './live-reading.ts'
 
 const fullCommit = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01'
@@ -59,5 +64,57 @@ describe('release live reading', () => {
     expect(reading).not.toEqual(
       expect.objectContaining({ failure: expect.stringContaining(secret) }),
     )
+  })
+})
+
+describe('release live version decisions', () => {
+  const versionFile = JSON.stringify({ package: { release: { version: '0.48.0' } } })
+
+  test('reads a string through a dot path', () => {
+    expect(jsonStringAtPath(versionFile, 'package.release.version')).toBe('0.48.0')
+    expect(jsonStringAtPath(versionFile, 'package.version')).toBeNull()
+  })
+
+  test('rejects a removal hit and confirms an introduction', () => {
+    expect(
+      versionIntroducedAtCommit({
+        current: JSON.stringify({ version: '0.49.0' }),
+        firstParent: JSON.stringify({ version: '0.48.0' }),
+        key: 'version',
+        version: '0.48.0',
+      }),
+    ).toBe(false)
+    expect(
+      versionIntroducedAtCommit({
+        current: JSON.stringify({ version: '0.48.0' }),
+        firstParent: JSON.stringify({ version: '0.47.0' }),
+        key: 'version',
+        version: '0.48.0',
+      }),
+    ).toBe(true)
+  })
+
+  test('chooses the newest confirmed introduction after a re-introduction', () => {
+    expect(
+      newestVersionIntroduction([
+        { commit: 'reintroduced', introduced: true, branchAncestor: true },
+        { commit: 'removal', introduced: false, branchAncestor: true },
+        { commit: 'original', introduced: true, branchAncestor: true },
+      ]),
+    ).toBe('reintroduced')
+  })
+
+  test('returns the unmapped-version outcome when no introduction matches', () => {
+    expect(newestVersionIntroduction([])).toBeNull()
+    expect(unmappedVersionFailure('0.48.0', 'package.json', 'main')).toEqual({
+      ok: false,
+      kind: 'unmapped-version',
+      failure: 'served version 0.48.0 is not introduced in package.json on main',
+    })
+  })
+
+  test('already-live version proof holds only for equal values', () => {
+    expect(liveVersionMatchesCandidate('0.48.0', '0.48.0')).toBe(true)
+    expect(liveVersionMatchesCandidate('0.48.0', '0.49.0')).toBe(false)
   })
 })

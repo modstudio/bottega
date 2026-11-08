@@ -5,7 +5,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ShipToValue } from '../../../shared/ship-to.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 
-export type ShipToRung = { name: string; releasesWhenChanged?: readonly string[] }
+export type ShipToRung = {
+  name: string
+  liveVersion?: { command: string; file: string; key: string }
+  releasesWhenChanged?: readonly string[]
+}
 type SkippedShipToRung = { name: string; reason: string }
 
 export type ShipToReachDecision =

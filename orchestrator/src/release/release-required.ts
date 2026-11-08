@@ -21,6 +21,7 @@ export type RequiredReleaseRung = {
   deploy?: string
   onDemand?: boolean
   live?: string
+  liveVersion?: { command: string; file: string; key: string }
   requiredWhenChanged?: readonly string[]
   releasesWhenChanged?: readonly string[]
   entryPoints?: readonly string[]
@@ -115,7 +116,7 @@ function releaseRungPlans(
           : requiredBy !== null
             ? null
             : notRequiredReason(rung, depth, skipped, beyondDepth),
-      declaresLive: rung.live !== undefined,
+      declaresLive: rung.live !== undefined || rung.liveVersion !== undefined,
       declaresDeploy: rung.deploy !== undefined,
     }
   })
