@@ -331,7 +331,7 @@ export function boardTasks(
     task_key: string
     task_record_id: string
     project: string | null
-  }) => taskIdentity({ recordId: row.task_record_id, key: row.task_key, project: row.project })
+  }) => taskIdentity({ recordId: row.task_record_id, project: row.project })
   const recent = db()
     .query<{ task_key: string; task_record_id: string; project: string | null }, [string]>(
       `SELECT DISTINCT task_key,task_record_id,project FROM interval
