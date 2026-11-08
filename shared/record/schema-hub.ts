@@ -30,8 +30,6 @@ import {
   user,
 } from './schema.ts'
 
-export type TaskSource = 'mcp' | 'local'
-
 const identity = () => uuid('id').primaryKey()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
 

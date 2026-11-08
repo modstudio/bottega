@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
-import type { TaskSource } from '../../shared/record/schema-hub.ts'
+import type { TaskSource } from '../../shared/task-source.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import {

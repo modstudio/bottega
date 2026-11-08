@@ -1,4 +1,4 @@
-import type { TaskSource } from '../../shared/record/schema-hub.ts'
+import type { TaskSource } from '../../shared/task-source.ts'
 import type { PushedTask } from './push-contract.ts'
 import type { TaskRow } from './task.ts'
 

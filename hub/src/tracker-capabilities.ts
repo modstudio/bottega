@@ -1,4 +1,4 @@
-import type { TaskSource } from '../../shared/record/schema-hub.ts'
+import type { TaskSource } from '../../shared/task-source.ts'
 import {
   cursorScopeRefusal,
   TASK_STATUSES,

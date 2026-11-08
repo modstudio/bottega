@@ -1,4 +1,4 @@
-import type { TaskSource } from '../../shared/record/schema-hub.ts'
+import { TASK_SOURCES, type TaskSource } from '../../shared/task-source.ts'
 
 export const HOSTED_TASK_TABLE = 'hub_task'
 export const HOSTED_STATUS_EVENT_TABLE = 'hub_task_status_event'
@@ -339,7 +339,7 @@ function parseTaskRow(value: unknown, id: string): PushedTask | string {
   if (referenceError) return referenceError
   const timestampError = taskTimestampError(row)
   if (timestampError) return timestampError
-  if (!['mcp', 'local'].includes(String(row.source)))
+  if (!TASK_SOURCES.includes(row.source as TaskSource))
     return `${HOSTED_TASK_TABLE} row.source must be mcp or local`
   if (!Number.isSafeInteger(row.next_document_number) || Number(row.next_document_number) < 1)
     return `${HOSTED_TASK_TABLE} row.next_document_number must be a positive safe integer`

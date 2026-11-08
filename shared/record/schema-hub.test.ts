@@ -80,9 +80,9 @@ for (const dependent of [
     ).rejects.toThrow(
       `git task rows have dependent data: ${dependent.table}:01990000-0000-7000-8000-000000000101`,
     )
-    expect((await database.query(`SELECT id::text FROM hub_task WHERE source='git'`)).rows).toEqual([
-      { id: '01990000-0000-7000-8000-000000000001' },
-    ])
+    expect((await database.query(`SELECT id::text FROM hub_task WHERE source='git'`)).rows).toEqual(
+      [{ id: '01990000-0000-7000-8000-000000000001' }],
+    )
     await database.close()
   })
 }
