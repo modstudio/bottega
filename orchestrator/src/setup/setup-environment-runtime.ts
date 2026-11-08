@@ -68,6 +68,41 @@ export type EnvironmentRecordSessionDecision =
   | { action: 'local-authoritative' | 'hosted' | 'wait-for-sign-in' }
   | { action: 'refuse'; refusal: string }
 
+export type EnvironmentSettingsApplyDecision =
+  | { action: 'continue' | 'wait-for-sign-in' }
+  | { action: 'refuse'; refusal: string }
+
+export function environmentSettingsApplyDecision(
+  sessionPresent: boolean,
+  refused: readonly MachineSettingsApplyResult[],
+): EnvironmentSettingsApplyDecision {
+  const refusal = refused.find((result) => sessionPresent || result.condition !== 'no-settings-row')
+  if (refusal) {
+    return { action: 'refuse', refusal: refusal.detail ?? `${refusal.target} refused` }
+  }
+  return refused.some((result) => result.condition === 'no-settings-row')
+    ? { action: 'wait-for-sign-in' }
+    : { action: 'continue' }
+}
+
+const RECORD_SIGN_IN_NOTE = `not signed in: record secrets and user settings wait for sign-in; run ${PLATFORM_SLUG} record sign-in --email <email>`
+
+function addRecordSignInNote(notes: string[]): void {
+  if (!notes.includes(RECORD_SIGN_IN_NOTE)) notes.push(RECORD_SIGN_IN_NOTE)
+}
+
+function initialRecordSessionDecision(
+  authority: RecordWriteDecision,
+  sessionPresent: boolean,
+): EnvironmentRecordSessionDecision {
+  return environmentRecordSessionDecision(authority, sessionPresent, { kind: 'not-run' })
+}
+
+type EnvironmentMigrationResult = {
+  status: 'applied' | 'unchanged' | 'follow-up'
+  message: string | null
+}
+
 export function environmentRecordSessionDecision(
   authority: RecordWriteDecision,
   sessionPresent: boolean,
@@ -193,10 +228,7 @@ export const setupEnvironmentService = {
   setGlobalUse: (value: 'on' | 'off') => setMachineValue('machine.global_use', value),
   migrateEnvironment: async (
     preparedStateFileMigration?: PreparedStateFileMigration | null,
-  ): Promise<{
-    status: 'applied' | 'unchanged' | 'follow-up'
-    message: string | null
-  }> =>
+  ): Promise<EnvironmentMigrationResult> =>
     withMigratedProcessEnvironment(process.env, async (processNamesRenamed) => {
       const notes: string[] = []
       const authority = currentRecordWriteDecision()
@@ -204,15 +236,9 @@ export const setupEnvironmentService = {
       let recordSessionUnavailable = false
       const waitForSignIn = () => {
         recordSessionUnavailable = true
-        if (notes.length === 0) {
-          notes.push(
-            `not signed in: record secrets and user settings wait for sign-in; run ${PLATFORM_SLUG} record sign-in --email <email>`,
-          )
-        }
+        addRecordSignInNote(notes)
       }
-      const initial = environmentRecordSessionDecision(authority, sessionPresent, {
-        kind: 'not-run',
-      })
+      const initial = initialRecordSessionDecision(authority, sessionPresent)
       if (initial.action === 'wait-for-sign-in') waitForSignIn()
       const report = await migrateOperatorEnvironment(homedir(), {
         platform: process.platform,
@@ -262,8 +288,12 @@ export const setupEnvironmentService = {
             }
             throw error
           }
-          const refused = results.find((result) => result.outcome === 'refused')
-          if (refused) throw new Error(refused.detail ?? `${refused.target} refused`)
+          const decision = environmentSettingsApplyDecision(
+            sessionPresent,
+            results.filter((result) => result.outcome === 'refused'),
+          )
+          if (decision.action === 'wait-for-sign-in') waitForSignIn()
+          if (decision.action === 'refuse') throw new Error(decision.refusal)
           return results.some((result) => result.changed)
         },
         registerBackup: async () =>

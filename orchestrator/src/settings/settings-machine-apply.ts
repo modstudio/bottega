@@ -62,6 +62,7 @@ import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
 export type MachineSettingsApplyResult = {
   target: string
   outcome: 'applied' | 'current' | 'refused' | 'skipped'
+  condition?: 'no-settings-row'
   detail?: string
   changed: boolean
   superseded?: SupersededProfileHook[]
@@ -142,7 +143,15 @@ function applyUserSettings(
   const target = `settings ${path}`
   try {
     const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
-    if (!row) throw new Error('refusing settings render: no settings row for user')
+    if (!row) {
+      return {
+        target,
+        outcome: 'refused',
+        condition: 'no-settings-row',
+        detail: 'refusing settings render: no settings row for user',
+        changed: false,
+      }
+    }
     const parsed = readSettingsFile(path)
     const merged = mergeMachinePermissionOverlay(
       parseStoredOwnedSettings(row.body),
