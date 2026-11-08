@@ -14,6 +14,7 @@ test('config secret writes require complete credential metadata', () => {
   for (const fields of [
     { provider: 'openrouter' },
     { provider: 'openrouter', type: null, hint: 'open…hint' },
+    { name: 'backup' },
     { projectId: id },
   ])
     expect(configSecretPutBody.safeParse({ ...base, ...fields }).success).toBe(false)
@@ -37,6 +38,17 @@ test('config secret writes require complete credential metadata', () => {
       provider: 'openrouter',
       type: 'api-key',
       hint: 'open…hint',
+      mode: 'default',
+    }).success,
+  ).toBe(false)
+  expect(
+    configSecretPutBody.safeParse({
+      ...base,
+      environment: 'local',
+      provider: 'aws',
+      name: 'not_valid',
+      type: 'access-key',
+      hint: 'aws…hint',
       mode: 'default',
     }).success,
   ).toBe(false)

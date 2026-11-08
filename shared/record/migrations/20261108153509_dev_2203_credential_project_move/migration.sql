@@ -25,7 +25,7 @@ DECLARE
   SELECT count(*) INTO credential_count FROM config_secret
   WHERE space_id=source_id AND project_id=moving_project_id;
   IF credential_count > 0 THEN
-    RAISE EXCEPTION 'project % has % bound credential(s); delete each with `bottega credential delete <provider>/<type> --project %`, then set it again in the destination space after the move', project_name, credential_count, project_name;
+    RAISE EXCEPTION 'project % has % bound credential(s); delete each with `bottega credential delete <provider>[/<name>]/<type> --project %`, then set it again in the destination space after the move', project_name, credential_count, project_name;
   END IF;
 
   CREATE TEMP TABLE project_space_classification$anchor$;
