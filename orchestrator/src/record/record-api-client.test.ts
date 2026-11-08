@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +26,7 @@ import {
   recordInvitationListResponse,
 } from './record-api-client.ts'
 import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
+import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
 
 describe('record HTTP authentication responses', () => {
   test('sign-in posts without an Origin and prefers the bearer response header', async () => {
@@ -205,6 +206,51 @@ test('a bearer is not sent when the install is pinned to another record origin',
   }
 })
 
+describe('project-space conflict response', () => {
+  let previousUrl: string | undefined
+  beforeEach(() => {
+    previousUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
+  })
+  afterEach(() => {
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+  })
+
+  test('a project-space 409 becomes a typed conflict carrying its remedy', async () => {
+    const conflict = {
+      projectId: '01990000-0000-7000-8000-000000000001',
+      projectName: 'alpha',
+      spaceId: '01990000-0000-7000-8000-000000000002',
+    }
+    let rejection: unknown
+    try {
+      await recordApiRequest(
+        '/v1/projects',
+        { method: 'PUT' },
+        {
+          token: () => 'stored-bearer',
+          tokenAsync: async () => 'stored-bearer',
+        },
+        (async () =>
+          Response.json(
+            { code: 'project_space_conflict', error: 'server message', ...conflict },
+            { status: 409 },
+          )) as unknown as typeof fetch,
+      )
+    } catch (error) {
+      rejection = error
+    }
+
+    expect(rejection).toBeInstanceOf(RecordProjectSpaceConflictError)
+    expect(rejection).toMatchObject(conflict)
+    expect((rejection as Error).message).toContain(
+      `${PLATFORM_SLUG} project set alpha --settings '{"space":"<owning-space-slug>"}'`,
+    )
+    expect((rejection as Error).message).toContain(`${PLATFORM_SLUG} record space switch <slug>`)
+  })
+})
+
 test('a bearer is not sent when the bound install has no recorded origin', async () => {
   const previousUrl = process.env.BOTTEGA_RECORD_API_URL
   delete process.env.BOTTEGA_RECORD_API_URL
@@ -233,6 +279,63 @@ test('a bearer is not sent when the bound install has no recorded origin', async
     expect(requests).toBe(0)
   } finally {
     db().query('DELETE FROM record_install_binding').run()
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+  }
+})
+
+test('record API requests store success and transport-error outcomes', async () => {
+  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
+  const authentication = {
+    token: () => 'stored-bearer',
+    tokenAsync: async () => 'stored-bearer',
+  }
+  const cases = [
+    {
+      name: 'success',
+      transport: (async () =>
+        Response.json({ ok: true }, { status: 200 })) as unknown as typeof fetch,
+      expected: { http_status: 200, transport_error: null },
+    },
+    {
+      name: 'transport error',
+      transport: (async () => {
+        throw new Error('fixture transport failure')
+      }) as unknown as typeof fetch,
+      expected: { http_status: null, transport_error: 'other' },
+    },
+  ]
+
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    for (const fixture of cases) {
+      db().query('DELETE FROM hosted_call_outcome').run()
+      const request = recordApiRequest('/v1/docs/example', {}, authentication, fixture.transport)
+      if (fixture.name === 'success') await expect(request).resolves.toEqual({ ok: true })
+      else await expect(request).rejects.toThrow('fixture transport failure')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      const rows = db()
+        .query(
+          `SELECT route_class,http_status,transport_error,latency_ms
+           FROM hosted_call_outcome ORDER BY rowid`,
+        )
+        .all() as Array<{
+        route_class: string
+        http_status: number | null
+        transport_error: string | null
+        latency_ms: number
+      }>
+      expect(rows, fixture.name).toHaveLength(1)
+      expect(rows[0], fixture.name).toEqual({
+        route_class: 'record-docs',
+        ...fixture.expected,
+        latency_ms: expect.any(Number),
+      })
+      expect(rows[0]?.latency_ms, fixture.name).toBeGreaterThanOrEqual(0)
+    }
+  } finally {
     if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = previousUrl
   }

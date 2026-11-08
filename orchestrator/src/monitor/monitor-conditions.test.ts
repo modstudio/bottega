@@ -1,8 +1,15 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { ConfigClientError } from '../../../shared/config-client.ts'
+import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { RECORD_MIGRATE_SECRET_NAME } from '../../../shared/record-migrate-secret.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
+import { RECORD_TUNNEL_DOWN_REMEDY } from '../record/record-tunnel-error.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-host-capacity.ts'
 import {
@@ -23,7 +30,7 @@ import {
   unsettledClaimInventory,
 } from './monitor-conditions.ts'
 import { claimMonitorNotices } from './monitor-notices.ts'
-import { recordTunnelCondition } from './monitor-record-tunnel.ts'
+import { observeRecordTunnel, recordTunnelCondition } from './monitor-record-tunnel.ts'
 import {
   orphanDockerNetworkConditions,
   orphanSandboxDirectoryConditions,
@@ -31,23 +38,70 @@ import {
 } from './orphan-inventory-conditions.ts'
 
 describe('record tunnel monitor condition', () => {
-  test('is absent when the tunnel is not configured', () => {
-    expect(recordTunnelCondition({ app: '', port: 15432, reachable: false })).toBeNull()
+  async function observeUnconfigured(secretKeys: () => Promise<string[]>) {
+    const root = mkdtempSync(join(tmpdir(), 'record-tunnel-monitor-'))
+    const previous = process.env[CONFIG_HOME_ENV]
+    process.env[CONFIG_HOME_ENV] = root
+    try {
+      return await observeRecordTunnel(secretKeys)
+    } finally {
+      if (previous === undefined) delete process.env[CONFIG_HOME_ENV]
+      else process.env[CONFIG_HOME_ENV] = previous
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  test('reports the empty setting and install remedy when the secret source names the migrate secret', async () => {
+    const observation = await observeUnconfigured(async () => [RECORD_MIGRATE_SECRET_NAME])
+
+    expect(observation.errors).toEqual([])
+    expect(observation.conditions[0]).toMatchObject({
+      kind: 'record-tunnel-unconfigured',
+      subject: 'record.tunnel_app',
+      detail: expect.stringContaining('record.tunnel_app is empty'),
+    })
+  })
+
+  test('is absent when the secret source does not name the migrate secret', async () => {
+    expect(await observeUnconfigured(async () => ['ANOTHER_SECRET'])).toEqual({
+      conditions: [],
+      errors: [],
+    })
+  })
+
+  test('is absent without an observation error when hosted config is not configured', async () => {
+    expect(
+      await observeUnconfigured(async () => {
+        throw new ConfigClientError('not-configured', '/v1/config')
+      }),
+    ).toEqual({ conditions: [], errors: [] })
   })
 
   test('names the endpoint and kickstart remedy when configured but unreachable', () => {
     expect(
-      recordTunnelCondition({ app: 'record-app', port: 15432, reachable: false }),
+      recordTunnelCondition({
+        tunnelApp: 'record-app',
+        requiresTunnel: false,
+        port: 15432,
+        reachable: false,
+      }),
     ).toMatchObject({
       kind: 'record-tunnel-down',
       subject: '127.0.0.1:15432',
       detail: expect.stringContaining('com.user.record-tunnel'),
-      action: 'run launchctl kickstart -k gui/$(id -u)/com.user.record-tunnel',
+      action: RECORD_TUNNEL_DOWN_REMEDY,
     })
   })
 
   test('is absent when the configured endpoint is reachable', () => {
-    expect(recordTunnelCondition({ app: 'record-app', port: 15432, reachable: true })).toBeNull()
+    expect(
+      recordTunnelCondition({
+        tunnelApp: 'record-app',
+        requiresTunnel: false,
+        port: 15432,
+        reachable: true,
+      }),
+    ).toBeNull()
   })
 })
 

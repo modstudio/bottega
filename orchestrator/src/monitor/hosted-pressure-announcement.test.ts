@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { HostedBoardOverviewEntry } from '../record/record-board-contract.ts'
 import {
   decideHostedPressureAnnouncement,
+  HOSTED_CLIENT_HEALTH_NOTICE_PREFIX,
   HOSTED_PRESSURE_CLEARED_TITLE,
   HOSTED_PRESSURE_CLEARED_TTL_MS,
   HOSTED_PRESSURE_NOTICE_TTL_MS,
@@ -84,6 +85,40 @@ describe('hosted pressure announcement decision', () => {
         },
       })
     }
+  })
+
+  test('metric pressure transitions leave client-observed notices to their machine owner', () => {
+    const clientNotices = [
+      notice('machine-a', `${HOSTED_CLIENT_HEALTH_NOTICE_PREFIX} machine-a unreachable`),
+      notice('machine-b', `${HOSTED_CLIENT_HEALTH_NOTICE_PREFIX} machine-b unreachable`),
+    ]
+
+    expect(
+      decideHostedPressureAnnouncement(
+        CLEAR_HOSTED_PRESSURE_STATE,
+        pressure,
+        sample,
+        clientNotices,
+      ),
+    ).toEqual([
+      {
+        kind: 'post',
+        notice: expect.objectContaining({ title: 'Hosted pressure: steal=0.25' }),
+      },
+    ])
+    expect(
+      decideHostedPressureAnnouncement(
+        pressure,
+        CLEAR_HOSTED_PRESSURE_STATE,
+        sample,
+        clientNotices,
+      ),
+    ).toEqual([
+      {
+        kind: 'post',
+        notice: expect.objectContaining({ title: HOSTED_PRESSURE_CLEARED_TITLE }),
+      },
+    ])
   })
 
   test('no transition, failed observations, and unconfigured observations do nothing', () => {

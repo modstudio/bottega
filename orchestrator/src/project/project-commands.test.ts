@@ -15,7 +15,9 @@ import {
   rememberProjectSpace,
 } from '../project-space.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { applyLensCatalogueRow } from '../record/record-cache-lens.ts'
+import { RecordProjectSpaceConflictError } from '../record/record-project-space-contract.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { type Project, projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
@@ -651,6 +653,91 @@ test('project push writes every registered project to the hosted record', async 
   expect(destinations.get('push-live')).toBe('space-active')
   expect(destinations.get('push-retired')).toBe('space-other')
   expect(out).toBe(`pushed ${names.length} project${names.length === 1 ? '' : 's'}`)
+})
+
+test('project push continues past space conflicts and reports every refusal with its remedy', async () => {
+  const attempted: string[] = []
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-request',
+      personalSpaceId: 'space-request',
+      memberships: [{ space_id: 'space-request', slug: 'request', permission: 'write' }],
+    }),
+    upsertProject: async (input, destination) => {
+      attempted.push(input.name)
+      if (input.name === 'aaa-push-refused')
+        throw new RecordProjectSpaceConflictError({
+          projectId: input.id,
+          projectName: input.name,
+          spaceId: destination?.destinationSpaceId ?? 'missing',
+        })
+      return { id: input.id, name: input.name }
+    },
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'aaa-push-refused',
+    path: '/w/aaa-push-refused',
+  })
+  upsertProject({ recordId: newRecordId(), name: 'zzz-push-after', path: '/w/zzz-push-after' })
+
+  let message = ''
+  try {
+    await runProject(['project', 'push'])
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error)
+  }
+
+  expect(attempted.indexOf('zzz-push-after')).toBeGreaterThan(attempted.indexOf('aaa-push-refused'))
+  expect(message).toContain('cannot be written to request space request')
+  expect(message).toContain(
+    `${PLATFORM_SLUG} project set aaa-push-refused --settings '{"space":"<owning-space-slug>"}'`,
+  )
+  expect(message).toContain(`${PLATFORM_SLUG} record space switch <slug>`)
+  expect(message).not.toContain('record doctor')
+})
+
+test('project push stops at a read-only project refusal without adding the doctor remedy', async () => {
+  const attempted: string[] = []
+  const edgeResponseBody = {
+    error: 'record space space-read membership is read-only',
+    remedy: 'A space owner or admin can change the membership permission.',
+  }
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-read',
+      personalSpaceId: 'space-read',
+      memberships: [{ space_id: 'space-read', slug: 'read', permission: 'write' }],
+    }),
+    upsertProject: async (input) => {
+      attempted.push(input.name)
+      if (input.name === 'aab-push-read-only')
+        throw new RecordApiRequestError(edgeResponseBody.error, 'refused', 403)
+      return { id: input.id, name: input.name }
+    },
+  })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'aab-push-read-only',
+    path: '/w/aab-push-read-only',
+  })
+  upsertProject({ recordId: newRecordId(), name: 'zzzz-push-after-403', path: '/w/after-403' })
+
+  let rejection: unknown
+  try {
+    await runProject(['project', 'push'])
+  } catch (error) {
+    rejection = error
+  }
+  expect(attempted).toContain('aab-push-read-only')
+  expect(attempted).not.toContain('zzzz-push-after-403')
+  expect(rejection).toBeInstanceOf(Error)
+  expect((rejection as Error).message).toContain(edgeResponseBody.error)
+  expect((rejection as Error).message).not.toContain('record doctor')
 })
 
 test('fill absent settings refuses a stale snapshot without changing any field', async () => {

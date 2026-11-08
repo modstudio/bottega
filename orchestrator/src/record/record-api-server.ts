@@ -111,6 +111,8 @@ import {
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
 import { closeRecordPools } from './record-pool.ts'
 import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
+import { RecordProjectSpaceConflictError } from './record-project-space-contract.ts'
+import { isProjectRowLevelSecurityViolation } from './record-project-space-server.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import {
   getPublicRecordDoc,
@@ -361,7 +363,18 @@ function recordProjectDependencies() {
   return {
     readProjects: listRecordProjects,
     readTaskFlow: readRecordTaskFlow,
-    upsertProject: upsertRecordProject,
+    upsertProject: async (input: Parameters<typeof upsertRecordProject>[0]) => {
+      try {
+        return await upsertRecordProject(input)
+      } catch (error) {
+        if (!isProjectRowLevelSecurityViolation(error)) throw error
+        throw new RecordProjectSpaceConflictError({
+          projectId: input.id,
+          projectName: input.name,
+          spaceId: input.spaceId,
+        })
+      }
+    },
     retireProject: retireRecordProject,
   }
 }

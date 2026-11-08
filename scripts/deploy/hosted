@@ -121,10 +121,15 @@ fi
 
 cd "$PROJECT_ROOT"
 
-if ! BOTTEGA_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJECT_ROOT/bin/bottega" record migrate; then
-  echo "REFUSE: record migration or applied-equals-shipped confirmation failed; fly deploy was not run" >&2
+if ! migrate_output="$(BOTTEGA_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJECT_ROOT/bin/bottega" record migrate 2>&1)"; then
+  if [[ -n "$migrate_output" ]]; then
+    echo "REFUSE: $migrate_output; fly deploy was not run" >&2
+  else
+    echo "REFUSE: record migration or applied-equals-shipped confirmation failed; fly deploy was not run" >&2
+  fi
   exit 1
 fi
+printf '%s\n' "$migrate_output"
 
 if [[ "$APP" == "api" ]]; then
   exec env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml" \

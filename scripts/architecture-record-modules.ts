@@ -559,7 +559,12 @@ export const recordModules: RecordModule[] = [
     './record-space-built-ins.ts',
     './record-tunnel-error.ts',
   ]),
-  module('orchestrator/src/record/record-tunnel-error.ts', []),
+  module('orchestrator/src/record/record-tunnel-error.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+    '../health/launch-agent-doctor.ts',
+    '../setup/launchd-owners.ts',
+  ]),
   module('orchestrator/src/record/record-public-doc-designation.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
@@ -646,8 +651,16 @@ export const recordModules: RecordModule[] = [
     './record-config-error.ts',
     './record-docs.ts',
     './record-projects.ts',
+    './record-project-space-contract.ts',
     './record-trial-space-contract.ts',
     './record-verdicts.ts',
+  ]),
+  module('orchestrator/src/record/record-project-space-contract.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+  ]),
+  module('orchestrator/src/record/record-project-space-server.ts', [
+    '../../../shared/record/postgres-error.ts',
   ]),
   module('orchestrator/src/record/record-config-error.ts', []),
   module('orchestrator/src/record/record-migration-requirement.ts', [

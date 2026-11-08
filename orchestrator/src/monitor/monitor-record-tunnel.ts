@@ -1,26 +1,50 @@
 // concern: monitor-record-tunnel
-/** Owns the record tunnel TCP observation adapter. */
+/** Classifies the observed record tunnel, whether configured or unconfigured. */
 
 import { createConnection } from 'node:net'
+import { ConfigClientError } from '../../../shared/config-client.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import { RECORD_MIGRATE_SECRET_NAME } from '../../../shared/record-migrate-secret.ts'
+import { listSecrets } from '../config/config-service.ts'
+import {
+  RECORD_TUNNEL_DOWN_REMEDY,
+  type RecordTunnelConfigurationFacts,
+  recordTunnelIsUnconfigured,
+  recordTunnelUnconfiguredRemedy,
+} from '../record/record-tunnel-error.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const RECORD_TUNNEL_PROBE_TIMEOUT_MS = 500
 
-/** Classify the configured record tunnel from already-observed endpoint facts. */
-export function recordTunnelCondition(facts: {
-  app: string
-  port: number
-  reachable: boolean
-}): MonitorCondition | null {
-  if (!facts.app || facts.reachable) return null
+/** Decide whether the sealed configuration says this machine requires the record tunnel. */
+function sealedConfigurationRequiresRecordTunnel(secretKeys: readonly string[]): boolean {
+  return secretKeys.includes(RECORD_MIGRATE_SECRET_NAME)
+}
+
+/** Classify the record tunnel from already-observed configuration and endpoint facts. */
+export function recordTunnelCondition(
+  facts: RecordTunnelConfigurationFacts & {
+    port: number
+    reachable: boolean
+  },
+): MonitorCondition | null {
+  if (recordTunnelIsUnconfigured(facts))
+    return {
+      kind: 'record-tunnel-unconfigured',
+      subject: 'record.tunnel_app',
+      since: null,
+      ageMs: null,
+      detail: 'record.tunnel_app is empty, so com.user.record-tunnel cannot be installed',
+      action: recordTunnelUnconfiguredRemedy(),
+    }
+  if (!facts.tunnelApp || facts.reachable) return null
   return {
     kind: 'record-tunnel-down',
     subject: `127.0.0.1:${facts.port}`,
     since: null,
     ageMs: null,
     detail: `record tunnel com.user.record-tunnel is not accepting TCP connections on 127.0.0.1:${facts.port}`,
-    action: 'run launchctl kickstart -k gui/$(id -u)/com.user.record-tunnel',
+    action: RECORD_TUNNEL_DOWN_REMEDY,
   }
 }
 
@@ -42,21 +66,34 @@ function tcpEndpointReachable(port: number): Promise<boolean> {
   })
 }
 
-export async function observeRecordTunnel(): Promise<{
+export async function observeRecordTunnel(
+  secretKeys: () => Promise<string[]> = async () => (await listSecrets()).map(({ key }) => key),
+): Promise<{
   conditions: MonitorCondition[]
   errors: string[]
 }> {
   try {
     const app = readMachineValue('record.tunnel_app')
-    if (!app) return { conditions: [], errors: [] }
+    if (!app) {
+      const condition = recordTunnelCondition({
+        tunnelApp: app,
+        requiresTunnel: sealedConfigurationRequiresRecordTunnel(await secretKeys()),
+        port: 0,
+        reachable: false,
+      })
+      return { conditions: condition ? [condition] : [], errors: [] }
+    }
     const port = readMachineValue('record.tunnel_local_port')
     const condition = recordTunnelCondition({
-      app,
+      tunnelApp: app,
+      requiresTunnel: false,
       port,
       reachable: await tcpEndpointReachable(port),
     })
     return { conditions: condition ? [condition] : [], errors: [] }
   } catch (cause) {
+    if (cause instanceof ConfigClientError && cause.reason === 'not-configured')
+      return { conditions: [], errors: [] }
     return {
       conditions: [],
       errors: [`record tunnel observation: ${String((cause as Error).message ?? cause)}`],
