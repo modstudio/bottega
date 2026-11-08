@@ -105,11 +105,18 @@ function severityAgreement(
 function calibrationModelDecision(
   model: string | null | undefined,
   baseUrl: string | null | undefined,
-): { model: string | null | undefined; clause: string; params: string[] } {
+): { model: string | null | undefined; openRouter: string; params: (string | null)[] } {
   const normalized = model == null ? model : evidenceModel(model, baseUrl)
-  if (normalized === undefined) return { model: undefined, clause: '', params: [] }
-  const persisted = evidenceModelSql('rl.model', isOpenRouterBaseUrl(baseUrl) ? '1' : '0')
-  return { model: normalized, clause: `AND ${persisted} IS ?`, params: [normalized] }
+  return {
+    model: normalized,
+    openRouter: isOpenRouterBaseUrl(baseUrl) ? '1' : '0',
+    params: normalized === undefined ? [] : [normalized],
+  }
+}
+
+function reviewMarks(reviews: { record_id: string }[]): { ids: string[]; marks: string } {
+  const ids = reviews.map((review) => review.record_id)
+  return { ids, marks: ids.map(() => '?').join(',') }
 }
 
 function calibrationCell(
@@ -120,7 +127,8 @@ function calibrationCell(
   database: Database,
 ): Omit<ReviewCalibration, 'basis'> {
   const modelDecision = calibrationModelDecision(model, baseUrl)
-  const modelClause = modelDecision.clause
+  const persistedModel = evidenceModelSql('rl.model', modelDecision.openRouter)
+  const modelClause = modelDecision.model === undefined ? '' : `AND ${persistedModel} IS ?`
   const reviews = database
     .query(
       `SELECT DISTINCT r.record_id FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
@@ -162,8 +170,7 @@ function calibrationCell(
       mirror_lenses: 0,
       ...emptyGrades(),
     }
-  const ids = reviews.map((r) => r.record_id)
-  const marks = ids.map(() => '?').join(',')
+  const { ids, marks } = reviewMarks(reviews)
   const counts = database
     .query(
       `SELECT
@@ -346,6 +353,30 @@ function normalizedGradedModels(
   return [...identities.values()]
 }
 
+function gradedCalibrationModels(
+  database: Database,
+  baseUrlForAgent: (agent: string) => string | null | undefined,
+): GradedCalibrationModel[] {
+  const rows = database
+    .query(
+      `SELECT rl.lens, rl.agent, rl.model, MAX(s.scored_at) AS last_graded_at
+       FROM review_lens rl JOIN review r ON r.record_id=rl.review_record_id
+       LEFT JOIN score s ON s.run_record_id=rl.run_record_id
+      WHERE r.completed_at IS NOT NULL
+        AND (rl.reproduced IS NOT NULL OR rl.coverage IS NOT NULL OR rl.limits IS NOT NULL OR rl.overlap IS NOT NULL)
+      GROUP BY rl.lens, rl.agent, rl.model ORDER BY rl.lens, rl.agent, rl.model`,
+    )
+    .all() as GradedCalibrationModel[]
+  return normalizedGradedModels(rows, baseUrlForAgent)
+}
+
+function calibrationDimensions(rows: { lens: string; agent: string }[]) {
+  return {
+    lenses: [...new Set(rows.map((row) => row.lens))],
+    agents: [...new Set(rows.map((row) => row.agent))],
+  }
+}
+
 export function reviewCalibrationFleet(
   baseUrlForAgent: (agent: string) => string | null | undefined,
   database: Database = db(),
@@ -353,21 +384,8 @@ export function reviewCalibrationFleet(
   const identities = database
     .query(`SELECT DISTINCT lens, agent FROM review_lens ORDER BY lens, agent`)
     .all() as { lens: string; agent: string }[]
-  const lenses = [...new Set(identities.map((row) => row.lens))]
-  const agents = [...new Set(identities.map((row) => row.agent))]
-  const graded = normalizedGradedModels(
-    database
-      .query(
-        `SELECT rl.lens, rl.agent, rl.model, MAX(s.scored_at) AS last_graded_at
-       FROM review_lens rl JOIN review r ON r.record_id=rl.review_record_id
-       LEFT JOIN score s ON s.run_record_id=rl.run_record_id
-      WHERE r.completed_at IS NOT NULL
-        AND (rl.reproduced IS NOT NULL OR rl.coverage IS NOT NULL OR rl.limits IS NOT NULL OR rl.overlap IS NOT NULL)
-      GROUP BY rl.lens, rl.agent, rl.model ORDER BY rl.lens, rl.agent, rl.model`,
-      )
-      .all() as GradedCalibrationModel[],
-    baseUrlForAgent,
-  )
+  const { lenses, agents } = calibrationDimensions(identities)
+  const graded = gradedCalibrationModels(database, baseUrlForAgent)
   const pairHasGrade = new Set(graded.map((row) => `${row.lens}\0${row.agent}`))
   const pairLastGraded = new Map<string, string | null>()
   for (const row of graded) {
