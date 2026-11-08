@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
 import { MACHINE_UPDATE_LOCK_WAIT_MS } from './call-budgets.ts'
 import { databaseLockHolderCommandSummary } from './database-lock-refusal.ts'
+import { processCommandLine } from './process-identity.ts'
 import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 
 const MACHINE_UPDATE_LOCK_FILE = 'machine-update.lock'
@@ -92,7 +93,7 @@ export async function withMachineUpdateLock<T>(
       path,
       JSON.stringify({
         pid: process.pid,
-        command: process.argv.join(' '),
+        command: processCommandLine(process.pid) ?? process.argv.join(' '),
       }),
       { mode: 0o600 },
     )
