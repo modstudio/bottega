@@ -455,15 +455,18 @@ export const recordApiClientInjected = (): boolean => injectedClient() !== null
 export class RecordApiRequestError extends Error {
   readonly kind: 'unreachable' | 'server' | 'refused'
   readonly status: number | null
+  readonly code: string | null
 
   constructor(
     message: string,
     kind: 'unreachable' | 'server' | 'refused',
     status: number | null = null,
+    code: string | null = null,
   ) {
     super(message)
     this.kind = kind
     this.status = status
+    this.code = code
   }
 }
 
@@ -519,7 +522,14 @@ export function recordAuthRefusal(status: number, body: unknown, headers: Header
     )
   }
   const message = responseMessage(body, recordApiStatus(status))
-  if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused')
+  const record = responseRecord(body)
+  const nested = responseRecord(record.error)
+  const code =
+    (typeof record.code === 'string' && record.code) ||
+    (typeof nested.code === 'string' && nested.code) ||
+    null
+  if (status >= 400 && status < 500)
+    return new RecordApiRequestError(message, 'refused', status, code)
   return recordApiServerError(message, status)
 }
 

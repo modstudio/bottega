@@ -1,13 +1,19 @@
 // concern: record-auth-command
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { writeRecordSessionToken } from '../../../shared/record-session.ts'
+import { probeRecordSessionStore, writeRecordSessionToken } from '../../../shared/record-session.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { claimCurrentMachineKey } from '../config/config-service.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
-import { recordApiClient, recordApiSignIn, recordApiSignUp } from './record-api-client.ts'
+import {
+  recordApiClient,
+  RecordApiRequestError,
+  recordApiSignIn,
+  recordApiSignUp,
+} from './record-api-client.ts'
 import { recordApiSendVerificationEmail } from './record-email-verification-client.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 import { recordMemberships } from './record-space.ts'
@@ -26,6 +32,20 @@ type RecordPasswordDecision =
   | { action: 'use-environment'; password: string }
   | { action: 'prompt' }
   | { action: 'refuse'; message: string }
+
+type RecordAuthCommandDependencies = {
+  probeSessionStore(): void
+  signIn(email: string, password: string): Promise<RecordSessionResult>
+  signUp(email: string, name: string, password: string): Promise<RecordSessionResult>
+}
+
+type RecordSessionResult = { token: string; user: Record<string, unknown> }
+
+const recordAuthCommandDependencies: RecordAuthCommandDependencies = {
+  probeSessionStore: probeRecordSessionStore,
+  signIn: recordApiSignIn,
+  signUp: recordApiSignUp,
+}
 
 export function decideRecordPassword(
   passwordFromEnvironment: string | undefined,
@@ -49,9 +69,34 @@ export async function signUpCommand(
   name: string,
   readPassword: () => Promise<string>,
   presentation: Presentation,
+  dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
 ): Promise<void> {
-  const result = await recordApiSignUp(email, name, await recordPassword(readPassword))
+  const password = await recordPassword(readPassword)
+  dependencies.probeSessionStore()
+  let result: RecordSessionResult
+  try {
+    result = await dependencies.signUp(email, name, password)
+  } catch (error) {
+    throw existingAccountSignUpRefusal(error, email)
+  }
   await completeRecordSessionCommand(result, presentation, 'signed up')
+}
+
+function existingAccountSignUpRefusal(error: unknown, email: string): unknown {
+  const code = error instanceof RecordApiRequestError ? error.code : null
+  const message = error instanceof Error ? error.message : String(error)
+  const existingAccount = code
+    ? code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' || code === 'USER_ALREADY_EXISTS'
+    : message.startsWith('User already exists')
+  if (!existingAccount) return error
+  return new Error(
+    renderRefusal(
+      refusal(message, {
+        kind: 'command',
+        argv: [PLATFORM_SLUG, 'record', 'sign-in', '--email', email],
+      }),
+    ),
+  )
 }
 
 async function completeRecordSessionCommand(
@@ -92,8 +137,11 @@ export async function signInCommand(
   email: string,
   readPassword: () => Promise<string>,
   presentation: Presentation,
+  dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
 ): Promise<void> {
-  const result = await recordApiSignIn(email, await recordPassword(readPassword))
+  const password = await recordPassword(readPassword)
+  dependencies.probeSessionStore()
+  const result = await dependencies.signIn(email, password)
   await completeSignInCommand(result, presentation)
 }
 

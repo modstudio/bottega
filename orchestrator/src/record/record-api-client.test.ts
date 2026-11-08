@@ -82,6 +82,16 @@ describe('record HTTP authentication responses', () => {
       status: 503,
       message: `record API 503: maintenance\ncleared by: ${PLATFORM_SLUG} record doctor`,
     })
+    expect(
+      recordAuthRefusal(
+        422,
+        {
+          code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+          message: 'User already exists. Use another email.',
+        },
+        new Headers(),
+      ),
+    ).toMatchObject({ code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' })
   })
 
   test('validates and maps whoami identity at the HTTP edge', () => {
