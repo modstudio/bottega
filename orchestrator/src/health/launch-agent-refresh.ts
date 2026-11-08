@@ -51,7 +51,7 @@ export function decideLaunchAgentRefresh(input: {
   installationKind: InstallationKind
   owners: readonly InstalledPlistOwner[]
   observations: Readonly<Record<string, LaunchAgentDefinitionObservation>>
-  requiredMaintenanceLabels?: readonly string[]
+  requiredMaintenanceLabels: ReadonlySet<string>
 }): LaunchAgentRefreshPlan {
   const drifted = input.owners.filter(({ label }) => definitionIsDrifted(input.observations[label]))
   const unverified = input.owners.flatMap(({ label }) => {
@@ -70,11 +70,14 @@ export function decideLaunchAgentRefresh(input: {
       notReleaseInstalled: [],
     }
   }
-  const required = new Set(input.requiredMaintenanceLabels ?? [])
   const releaseOwned = input.owners.filter(
     ({ label }) =>
       isMaintenanceScheduleLabel(label) &&
-      maintenanceDefinitionNeedsRefresh(label, input.observations[label], required),
+      maintenanceDefinitionNeedsRefresh(
+        label,
+        input.observations[label],
+        input.requiredMaintenanceLabels,
+      ),
   )
   return {
     labels: releaseOwned.map(({ label }) => ({
@@ -162,8 +165,9 @@ export async function refreshLaunchAgents(
     identity.kind === 'distribution'
       ? distributionObservations(owners, observe, readScheduleFacts)
       : observe(owners, identity.kind)
-  const requiredMaintenanceLabels =
-    identity.kind === 'distribution' ? (deps.requiredMaintenanceLabels?.() ?? []) : []
+  const requiredMaintenanceLabels = new Set(
+    identity.kind === 'distribution' ? (deps.requiredMaintenanceLabels?.() ?? []) : [],
+  )
   const plan = decideLaunchAgentRefresh({
     installationKind: identity.kind,
     owners,
@@ -192,7 +196,7 @@ export async function refreshLaunchAgents(
   const remaining = plan.labels.filter(
     ({ label }) =>
       !skippedLabels.has(label) &&
-      maintenanceDefinitionNeedsRefresh(label, after[label], new Set(requiredMaintenanceLabels)),
+      maintenanceDefinitionNeedsRefresh(label, after[label], requiredMaintenanceLabels),
   )
   if (remaining.length > 0) {
     throw new Error(

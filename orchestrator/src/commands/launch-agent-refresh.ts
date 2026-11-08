@@ -5,7 +5,7 @@ import type { Command } from 'commander'
 import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
 import { refreshLaunchAgents } from '../health/launch-agent-refresh.ts'
-import { maintenanceSchedulePlan } from '../setup/setup-schedules.ts'
+import { requiredMaintenanceLabels } from '../setup/setup-schedules.ts'
 
 export function registerLaunchAgentRefreshCommand(
   program: Command,
@@ -18,11 +18,10 @@ export function registerLaunchAgentRefreshCommand(
     .action(() =>
       refreshLaunchAgents(process.platform, presentation, {
         requiredMaintenanceLabels: () =>
-          readMachineValue('machine.level') === ('full' satisfies MachineLevel)
-            ? maintenanceSchedulePlan(gatherLaunchAgentSkipFacts()).flatMap(
-                ({ label, skipReason }) => (skipReason ? [] : [label]),
-              )
-            : [],
+          requiredMaintenanceLabels(
+            gatherLaunchAgentSkipFacts(),
+            readMachineValue('machine.level') as MachineLevel,
+          ),
       }),
     )
 }

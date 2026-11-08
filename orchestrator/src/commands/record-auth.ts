@@ -62,13 +62,8 @@ import {
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
-import { storedRecordToken } from '../record/record-session.ts'
 import { useHostedRecord } from '../record/record-use.ts'
-import {
-  currentRecordWriteDecision,
-  requireHostedRecord,
-  throwIfRecordRefused,
-} from '../record/record-write-authority.ts'
+import { recordPublishAvailability, requireHostedRecord } from '../record/record-write-authority.ts'
 import { requestedMachineNames } from './machine-name-options.ts'
 import { log } from './support.ts'
 
@@ -128,15 +123,6 @@ function hostedCommand<T>(command: string, action: () => T): T {
 
 function hostedRecord<T>(verb: string, action: () => T): T {
   return hostedCommand(`${PLATFORM_SLUG} record ${verb}`, action)
-}
-
-function recordPublishAvailability(): { hostedConfigured: boolean; signedIn: boolean } {
-  const decision = currentRecordWriteDecision()
-  throwIfRecordRefused(decision)
-  if (decision.verdict === 'local-authoritative') {
-    return { hostedConfigured: false, signedIn: false }
-  }
-  return { hostedConfigured: true, signedIn: storedRecordToken() !== null }
 }
 
 function registerUseCommand(record: Command): void {

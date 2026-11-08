@@ -11,6 +11,7 @@ import {
   MAINTENANCE_SCHEDULE_LABELS,
   maintenanceSchedulePlan,
   renderMaintenanceSchedule,
+  requiredMaintenanceLabels,
 } from './setup-schedules.ts'
 
 const skipFacts = {
@@ -23,6 +24,11 @@ test('schedule install plan uses the canonical labels and shared skip decision',
   expect(maintenanceSchedulePlan(skipFacts)).toEqual(
     MAINTENANCE_SCHEDULE_LABELS.map((label) => ({ label, skipReason: null })),
   )
+})
+
+test('required schedules are the unskipped canonical labels only at full level', () => {
+  expect(requiredMaintenanceLabels(skipFacts, 'full')).toEqual([...MAINTENANCE_SCHEDULE_LABELS])
+  expect(requiredMaintenanceLabels(skipFacts, 'record')).toEqual([])
 })
 
 test('distribution schedule rendering replaces every placeholder for both labels', () => {

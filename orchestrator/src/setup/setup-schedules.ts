@@ -14,6 +14,7 @@ import {
   type LaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import {
   RECORD_SYNC_PENDING_MARKER,
   recordSyncQueueDirectory,
@@ -27,7 +28,7 @@ export const MAINTENANCE_SCHEDULE_LABELS = [
   'com.user.orch-record-sync',
 ] as const
 
-type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
+export type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
 
 const maintenanceScheduleLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
 
@@ -68,6 +69,17 @@ export function maintenanceSchedulePlan(
     label,
     skipReason: launchAgentSkipReason(label, skipFacts),
   }))
+}
+
+/** Return the release-owned schedules required at this machine's setup level. */
+export function requiredMaintenanceLabels(
+  skipFacts: LaunchAgentSkipFacts,
+  level: MachineLevel,
+): MaintenanceScheduleLabel[] {
+  if (level !== 'full') return []
+  return maintenanceSchedulePlan(skipFacts).flatMap(({ label, skipReason }) =>
+    skipReason ? [] : [label],
+  )
 }
 
 const templatePath = (label: MaintenanceScheduleLabel): string =>
