@@ -29,6 +29,12 @@ test('organization updates cannot change the trial marker', () => {
   expect(() => refuseTrialMarkerUpdate({ trial: { createdAt: 'then' } }, {})).toThrow(
     'metadata.trial is immutable',
   )
+  expect(() =>
+    refuseTrialMarkerUpdate(
+      { trial: { createdAt: 'then' } },
+      JSON.stringify({ trial: { createdAt: 'then' } }),
+    ),
+  ).not.toThrow()
 })
 afterAll(() => {
   if (priorSecret === undefined) delete process.env.BETTER_AUTH_SECRET

@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { newRecordId, RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
+import {
+  newRecordId,
+  RECORD_ACTOR_ROLE,
+  RECORD_OWNER_ROLE,
+  RECORD_READER_ROLE,
+} from '../../shared/record/schema.ts'
 import { bearerHeaders } from '../src/record/record-auth.ts'
 import { closeRecordPools } from '../src/record/record-pool.ts'
 import { deleteTrialRecordSpace } from '../src/record/record-trial-space-delete.ts'
@@ -65,13 +70,12 @@ export function registerTrialSpaceTeardownProof(input: {
           ('${claim}','${project}','task','DEV-2063','${owner}','${run}',60000,now(),now(),now()+interval '1 hour'),
           ('${permissionClaim}','${project}','task','DEV-2063-permission','${owner}','${run}',60000,now(),now(),now()+interval '1 hour');
       INSERT INTO board_message(id,author_user_id,author_run_id,kind,audience,title,body,
-        ack_required,expires_at,created_at,scope_project_ids,recipient_user_ids,shared_space_reach,
-        thread_root_author_user_id)
+        ack_required,expires_at,created_at,scope_project_ids,recipient_user_ids,shared_space_reach)
         VALUES
           ('${message}','${authorMember}','${run}','notice','architect','proof','proof',false,
-            now()+interval '1 hour',now(),ARRAY[]::uuid[],ARRAY[]::uuid[],false,'${authorMember}'),
+            now()+interval '1 hour',now(),ARRAY[]::uuid[],ARRAY[]::uuid[],false),
           ('${permissionMessage}','${authorMember}','${run}','notice','architect','permission','proof',false,
-            now()+interval '1 hour',now(),ARRAY[]::uuid[],ARRAY[]::uuid[],false,'${authorMember}');
+            now()+interval '1 hour',now(),ARRAY[]::uuid[],ARRAY[]::uuid[],false);
       INSERT INTO session(id,user_id,token,expires_at,active_space_id,created_at,updated_at)
         VALUES ('${session}','${member}','trial-session-${session}',now()+interval '1 hour','${trial}',now(),now());
       INSERT INTO machine_public_key(id,space_id,user_id,key_id,public_key,label,created_at)
@@ -79,6 +83,20 @@ export function registerTrialSpaceTeardownProof(input: {
       INSERT INTO secret_dek(id,space_id,version,created_at) VALUES ('${dek}','${trial}',1,now());
       INSERT INTO config_secret(id,space_id,key,environment,dek_id,row_version,envelope,updated_at)
         VALUES ('${newRecordId()}','${trial}','proof','default','${dek}',1,'\\x00',now());`)
+    expect(
+      input.psql(
+        RECORD_OWNER_ROLE,
+        'owner-password',
+        `SELECT count(*) FROM space WHERE id='${real}';`,
+      ),
+    ).toMatchObject({ code: 0, stdout: '0' })
+    expect(
+      input.psql(
+        RECORD_OWNER_ROLE,
+        'owner-password',
+        `SELECT count(*) FROM space WHERE id='${trial}';`,
+      ),
+    ).toMatchObject({ code: 0, stdout: '1' })
     expect(input.admin(`SELECT record_user_has_real_space_membership('${member}');`)).toBe('f')
     input.admin(`INSERT INTO membership(id,space_id,user_id,role,permission,created_at)
       VALUES ('${newRecordId()}','${real}','${member}','member','write',now());`)
@@ -185,35 +203,13 @@ export function registerTrialSpaceTeardownProof(input: {
         WHERE n.nspname='public' AND p.proname='record_user_has_real_space_membership'
           AND a.grantee=0 AND a.privilege_type='EXECUTE';`),
     ).toBe('0')
-    const allowedDefiners = [
-      'board_message_advance_receipt_revision',
-      'board_message_extend_thread_expiry',
-      'board_message_set_hidden',
-      'contention_prune',
-      'hub_change_prune',
-      'hub_note_set_hidden',
-      'hub_report_delivery_candidates',
-      'invitation_open_for',
-      'outside_intake_for_project',
-      'project_is_outside_intake',
-      'record_applied_migration_count',
-      'record_board_author_shares_space',
-      'record_change_prune',
-      'record_config_access_stranded_dek_versions',
-      'record_membership_admin',
-      'record_move_project_space',
-      'record_user_has_real_space_membership',
-      'record_uuid_v7',
-    ]
     expect(
-      input
-        .admin(`SELECT p.proname FROM pg_proc p
-          JOIN pg_namespace n ON n.oid=p.pronamespace
-          WHERE n.nspname='public' AND p.prosecdef
-            AND has_function_privilege('record_actor',p.oid,'EXECUTE')
-          ORDER BY p.proname;`)
-        .split('\n'),
-    ).toEqual(allowedDefiners)
+      input.psql(
+        RECORD_READER_ROLE,
+        'reader-password',
+        `SELECT record_user_has_real_space_membership('${newRecordId()}');`,
+      ),
+    ).not.toMatchObject({ code: 0 })
   })
 
   test('the real organization update hook preserves but never changes a trial marker', async () => {

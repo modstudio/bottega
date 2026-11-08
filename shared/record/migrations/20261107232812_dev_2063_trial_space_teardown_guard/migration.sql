@@ -1,4 +1,4 @@
-CREATE POLICY "space_owner_select" ON "space" AS PERMISSIVE FOR SELECT TO "record_owner" USING (true);
+CREATE POLICY "space_owner_select" ON "space" AS PERMISSIVE FOR SELECT TO "record_owner" USING (jsonb_typeof(metadata->'trial') = 'object');
 --> statement-breakpoint
 CREATE FUNCTION record_user_has_real_space_membership(target_user uuid)
 RETURNS boolean
@@ -11,10 +11,14 @@ AS $function$
     SELECT 1
     FROM membership m
     JOIN "user" u ON u.id=m.user_id
-    JOIN space s ON s.id=m.space_id
     WHERE m.user_id=target_user
       AND m.space_id IS DISTINCT FROM u.personal_space_id
-      AND jsonb_typeof(s.metadata->'trial') IS DISTINCT FROM 'object'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM space s
+        WHERE s.id=m.space_id
+          AND jsonb_typeof(s.metadata->'trial') = 'object'
+      )
   )
 $function$;
 --> statement-breakpoint

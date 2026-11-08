@@ -1,5 +1,13 @@
 import { expect, spyOn, test } from 'bun:test'
-import { newRecordId } from './schema.ts'
+import { newRecordId, recordJsonbValue, space } from './schema.ts'
+
+test('space metadata normalizes stringified JSON without changing objects', () => {
+  const metadata = { trial: { createdByUserId: 'caller' } }
+  expect(recordJsonbValue(JSON.stringify(metadata))).toEqual(metadata)
+  expect(recordJsonbValue(metadata)).toBe(metadata)
+  expect(space.metadata.mapToDriverValue(JSON.stringify(metadata))).toEqual(metadata)
+  expect(space.metadata.mapFromDriverValue(JSON.stringify(metadata))).toEqual(metadata)
+})
 
 function nextUuid(id: string): string {
   const digits = [...id]

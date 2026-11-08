@@ -7,7 +7,13 @@ import { bearer, organization } from 'better-auth/plugins'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { membership, newRecordId, space, user } from '../../../shared/record/schema.ts'
+import {
+  membership,
+  newRecordId,
+  recordJsonbValue,
+  space,
+  user,
+} from '../../../shared/record/schema.ts'
 import {
   account,
   invitation,
@@ -302,7 +308,9 @@ function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBu
 
 export function refuseTrialMarkerUpdate(current: unknown, replacement: unknown): void {
   const trial = (value: unknown) =>
-    isTrialSpaceMetadata(value) ? (value as { trial: Record<string, unknown> }).trial : undefined
+    isTrialSpaceMetadata(recordJsonbValue(value))
+      ? (recordJsonbValue(value) as { trial: Record<string, unknown> }).trial
+      : undefined
   if (JSON.stringify(trial(current)) !== JSON.stringify(trial(replacement))) {
     throw new APIError('BAD_REQUEST', {
       message: 'metadata.trial is immutable; create a new trial space instead',

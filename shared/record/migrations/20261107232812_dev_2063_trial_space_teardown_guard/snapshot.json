@@ -24033,7 +24033,7 @@
       "roles": [
         "record_owner"
       ],
-      "using": "true",
+      "using": "jsonb_typeof(\"space\".\"metadata\"->'trial') = 'object'",
       "withCheck": null,
       "name": "membership_owner_select",
       "entityType": "policies",
