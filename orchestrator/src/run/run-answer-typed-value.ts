@@ -67,32 +67,6 @@ function missingTypedValueRefusal(
   )
 }
 
-function storedAllowedValues(question: TypedAnswerQuestion, kind: AnswerableKind): string[] {
-  if (kind === 'yesno') return ['yes', 'no']
-  try {
-    const values = JSON.parse(
-      kind === 'choice'
-        ? (question.typed_options ?? question.options ?? '[]')
-        : (question.levels ?? '[]'),
-    ) as unknown
-    if (!Array.isArray(values)) return []
-    if (kind === 'score') return values.map((_, index) => String(index))
-    return values.flatMap((option) => {
-      if (typeof option === 'string') return [option]
-      if (
-        option &&
-        typeof option === 'object' &&
-        'name' in option &&
-        typeof option.name === 'string'
-      )
-        return [option.name]
-      return []
-    })
-  } catch {
-    return []
-  }
-}
-
 function inferredChoiceValue(
   typed: Extract<WorkerQuestion, { kind: 'choice' }>,
   answer: string,
@@ -162,12 +136,6 @@ function typedAnswerValue(
   try {
     typed = decodeWorkerQuestion(question)
   } catch {
-    if (question.kind === 'choice' || question.kind === 'yesno' || question.kind === 'score')
-      throw missingTypedValueRefusal(
-        question,
-        question.kind,
-        storedAllowedValues(question, question.kind),
-      )
     return undefined
   }
   if (typed.kind === 'text') return undefined

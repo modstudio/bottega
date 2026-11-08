@@ -76,19 +76,17 @@ describe('typed values through the answer service', () => {
     })
   })
 
-  test('stored choice refused by the current schema refuses the ruling', async () => {
+  test('stored choice refused by the current schema accepts prose without a typed value', async () => {
     const id = typedRun('choice', 'typed_options', [
       { name: 'Refresh the base' },
       { name: 'refresh the base' },
     ])
-    await expect(
-      answerRun(id, { argv: ['Refresh the base'], recordOnly: true, flags }, helpers),
-    ).rejects.toThrow('allowed values: Refresh the base, refresh the base')
+    await answerRun(id, { argv: ['Refresh the base'], recordOnly: true, flags }, helpers)
     expect(
       db()
         .query('SELECT answer,answer_value,answered_at FROM question WHERE run_record_id=?')
         .get(id),
-    ).toEqual({ answer: null, answer_value: null, answered_at: null })
+    ).toEqual({ answer: 'Refresh the base', answer_value: null, answered_at: expect.any(String) })
   })
 
   test('legacy choice options remain answerable without typed options', async () => {
