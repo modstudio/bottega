@@ -15,7 +15,11 @@ A typed question is one fixed recognition judgment asked of TypeSafe and recorde
 
 **An answer only advises.** It may warn or suggest; it never blocks, refuses or decides. `askTypedQuestion` fails open: a missing `TYPESAFE_KEY` or any failure returns no answer, and a missing key records nothing.
 
-**A worker's escalation question is the one exception, and it is gated.** Jev pre-answers it through the shared client and shows its pick and probabilities beside the question. It rules only on the live channel with `jev.auto_rule` on, rulings autonomy `agent` and the pick's probability at or above `jev.confidence_threshold` (`orchestrator/src/ask/jev-routing.ts:routeJevAnswer`); everything else escalates. Turn `jev.auto_rule` on only after `jev_agreed`, reported by `bottega agent typed-question`, shows the threshold is reliable. A failed pre-answer stores `jev_error` and never blocks escalation.
+**A worker's escalation question is the one exception, and it is gated.** Jev pre-answers it through the shared client and shows its pick and probabilities beside the question. It rules only on the live channel with `jev.auto_rule` on, rulings autonomy `agent` and the pick's probability at or above `jev.confidence_threshold` (`orchestrator/src/ask/jev-routing.ts:routeJevAnswer`); a choice also needs both option orders to agree and the companion fit at or above `jev.fit_threshold`. Everything else escalates.
+
+Jev's state carries the run's spec, and a worker's questions share one request.
+
+Turn `jev.auto_rule` on only after `jev_agreed`, reported by `bottega agent typed-question`, shows the threshold is reliable. A failed pre-answer stores `jev_error` and never blocks escalation.
 
 An architect's answer to a typed question records its value, inferred from a leading option name or given with `--value`; a ruling that starts with `None:`, or `--value none` with an explanation, records that no option fits.
 
