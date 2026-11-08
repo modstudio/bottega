@@ -2,7 +2,7 @@
 /** Knows the durable identity and display name of this machine. Must not know runs or hosted records. */
 import { hostname } from 'node:os'
 import { storedMachineId, storedMachineNames } from '../../../shared/machine-config.ts'
-import { resolveMachineDisplayName } from '../../../shared/machine-label.ts'
+import { type MachineNamePair, resolveMachineDisplayName } from '../../../shared/machine-label.ts'
 import { defaultShortName } from './machine-name.ts'
 
 export function machineId(): string {
@@ -14,9 +14,16 @@ export function machineId(): string {
   return id
 }
 
-export function machineNames(): { shortName: string; displayName: string } {
+export function storedMachineNamePair(): MachineNamePair | null {
   const stored = storedMachineNames()
-  if (stored) return { shortName: stored.shortName, displayName: resolveMachineDisplayName(stored) }
+  return stored
+    ? { shortName: stored.shortName, displayName: resolveMachineDisplayName(stored) }
+    : null
+}
+
+export function machineNames(): { shortName: string; displayName: string } {
+  const stored = storedMachineNamePair()
+  if (stored) return stored
   const shortName = defaultShortName(hostname())
   return { shortName, displayName: shortName }
 }
