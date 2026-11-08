@@ -330,6 +330,13 @@
       "when": 1793484596000,
       "tag": "0046_typed_question_state_json",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793570996000,
+      "tag": "0047_drop_git_tasks",
+      "breakpoints": true
     }
   ]
 }

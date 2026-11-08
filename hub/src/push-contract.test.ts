@@ -22,7 +22,7 @@ const task: HostedPushChange = {
     assignee: null,
     opened_at: at,
     closed_at: null,
-    source: 'git',
+    source: 'mcp',
     first_seen: at,
     last_seen: at,
     created_at: at,

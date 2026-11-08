@@ -59,7 +59,7 @@ export type TaskRow = {
   opened_at: string | null
   closed_at: string | null
   updated_at: string | null
-  source: 'mcp' | 'git' | 'local'
+  source: import('../../shared/task-source.ts').TaskSource
   first_seen: string
   last_seen: string
   next_document_number: number

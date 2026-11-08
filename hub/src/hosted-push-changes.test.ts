@@ -1,24 +1,18 @@
-import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
-import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { db, writeTransaction } from './db.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
-import { upsertGitTasks } from './ingest/git-task-cache.ts'
-import { applyMigrations } from './migrations.ts'
 import { drainHostedOutbox } from './outbox.ts'
-import { loadOutboxChange } from './outbox-row.ts'
-import {
-  type HostedPushChange,
-  type PushedInterval,
-  type PushedStatusEvent,
-  type PushedTask,
-  parseHostedPushItem,
+import type {
+  HostedPushChange,
+  PushedInterval,
+  PushedStatusEvent,
+  PushedTask,
 } from './push-contract.ts'
 import { closeTask, commentTask, setTask } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
@@ -47,15 +41,15 @@ const row = (id: string, at: string, task = taskId): PushedStatusEvent => ({
   deleted_at: null,
 })
 
-const taskRow = (id: string, key: string, source: PushedTask['source'] = 'git'): PushedTask => ({
+const taskRow = (id: string, key: string, source: PushedTask['source'] = 'mcp'): PushedTask => ({
   id,
   key,
   project: 'workshop',
   project_name: 'workshop',
   projectId,
-  title: source === 'git' ? null : key,
-  status: source === 'git' ? null : 'active',
-  status_category: source === 'git' ? null : 'active',
+  title: key,
+  status: 'active',
+  status_category: 'active',
   parent_key: null,
   parent_id: null,
   body: null,
@@ -353,118 +347,14 @@ test('applies and deduplicates tasks while isolating collisions and source refus
       op: 'upsert',
       row: taskRow(collisionId, 'DEV-80', 'local'),
     },
-    { table: 'hub_task', id: taskId, op: 'upsert', row: taskRow(taskId, 'DEV-1') },
     { table: 'hub_task', id: laterId, op: 'upsert', row: taskRow(laterId, 'DEV-82') },
   ])
   expect(outcomes).toEqual([
     { id: collisionId, status: 'rejected', reason: expect.stringContaining('already belongs') },
-    { id: taskId, status: 'rejected', reason: expect.stringContaining('from git over hosted mcp') },
     { id: laterId, status: 'applied' },
   ])
   expect((await database.query(`SELECT key FROM hub_task WHERE id=$1`, [laterId])).rows).toEqual([
     { key: 'DEV-82' },
-  ])
-})
-
-test('a production-shaped git task date crosses the edge and remains idempotent', async () => {
-  const machine = new Database(':memory:')
-  applyMigrations(machine, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-  upsertGitTasks(
-    machine,
-    [{ key: 'DEV-84', project: 'workshop', first: '2026-10-09', last: '2026-10-09' }],
-    '2026-10-09T11:00:00.000Z',
-  )
-  const id = machine
-    .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='DEV-84'`)
-    .get()!.record_id
-  const pointer = machine
-    .query<{ table_name: string; row_id: string; operation: 'upsert' | 'delete' }, []>(
-      `SELECT table_name,row_id,operation FROM hosted_outbox`,
-    )
-    .get()!
-  const input = loadOutboxChange(machine, pointer)!.change
-  machine.close()
-  expect(input.table).toBe('hub_task')
-  if (input.table !== 'hub_task' || input.op !== 'upsert') throw new Error('expected task upsert')
-  expect(input.row.opened_at).toBe('2026-10-09T00:00:00.000Z')
-  expect(input.row.updated_at).toBe('2026-10-09T00:00:00.000Z')
-  expect(parseHostedPushItem(input)).toEqual({ input })
-  expect(await apply([input])).toEqual([{ id, status: 'applied' }])
-  expect(await apply([input])).toEqual([{ id, status: 'duplicate' }])
-})
-
-test('later git observations cannot send cached tracker or local rows', async () => {
-  const localId = '01990000-0000-7000-8000-000000001285'
-  const hostedLocal = {
-    ...taskRow(localId, 'DEV-85', 'local'),
-    title: 'Newer local title',
-    status: 'review',
-    status_category: 'review' as const,
-    body: 'Newer local body',
-  }
-  expect(await apply([{ table: 'hub_task', id: localId, op: 'upsert', row: hostedLocal }])).toEqual(
-    [{ id: localId, status: 'applied' }],
-  )
-
-  const machine = new Database(':memory:')
-  applyMigrations(machine, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-  const insert = machine.query(
-    `INSERT INTO task
-      (record_id,key,project,title,status,status_category,body,source,first_seen,last_seen,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-  )
-  insert.run(
-    taskId,
-    'DEV-1',
-    'workshop',
-    'Stale tracker title',
-    'open',
-    'open',
-    'Stale tracker body',
-    'mcp',
-    '2026-10-01T00:00:00.000Z',
-    '2026-10-02T00:00:00.000Z',
-    '2026-10-02T00:00:00.000Z',
-  )
-  insert.run(
-    localId,
-    'DEV-85',
-    'workshop',
-    'Stale local title',
-    'open',
-    'open',
-    'Stale local body',
-    'local',
-    '2026-10-01T00:00:00.000Z',
-    '2026-10-02T00:00:00.000Z',
-    '2026-10-02T00:00:00.000Z',
-  )
-  upsertGitTasks(
-    machine,
-    [
-      { key: 'DEV-1', project: 'workshop', first: '2026-10-01', last: '2026-10-03' },
-      { key: 'DEV-85', project: 'workshop', first: '2026-10-01', last: '2026-10-03' },
-    ],
-    '2026-10-11T12:00:00.000Z',
-  )
-  expect(machine.query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
-  machine.close()
-
-  expect(
-    (
-      await database.query(
-        `SELECT key,title,status,body FROM hub_task WHERE id=ANY($1::uuid[]) ORDER BY key`,
-        [[taskId, localId]],
-      )
-    ).rows,
-  ).toEqual([
-    { key: 'DEV-1', title: 'First', status: 'active', body: null },
-    {
-      key: 'DEV-85',
-      title: 'Newer local title',
-      status: 'review',
-      body: 'Newer local body',
-    },
   ])
 })
 

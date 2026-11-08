@@ -89,6 +89,7 @@ const now = Date.parse('2026-09-17T12:00:00.000Z')
 const project = [{ name: 'workshop', settings: { keyPrefixes: ['DEV'] } }]
 const row: WindowIntervalRow = {
   task_key: 'DEV-701',
+  task_record_id: 'task-dev-701',
   project: 'workshop',
   source: 'orch',
   agent: 'codex',
@@ -193,8 +194,8 @@ test('board bucketing fields and live state are shaped outside either database a
 
 test('lens projections keep duplicate task keys separate and label their spaces', () => {
   const rows = [
-    { ...row, space_id: 'space-a', space_name: 'Personal' },
-    { ...row, space_id: 'space-b', space_name: 'Workshop' },
+    { ...row, task_record_id: 'task-space-a', space_id: 'space-a', space_name: 'Personal' },
+    { ...row, task_record_id: 'task-space-b', space_id: 'space-b', space_name: 'Workshop' },
   ]
   const tasks = projectTasksInWindow(rows, project, now)
   expect(tasks).toHaveLength(2)
@@ -219,10 +220,76 @@ test('local projection keeps one shared label separate by task record id', () =>
   ])
 })
 
+test('unresolved task keys aggregate as project unattributed work', () => {
+  const tasks = projectTasksInWindow(
+    [
+      {
+        ...row,
+        task_key: 'DEV-900',
+        task_record_id: null,
+        task_project: null,
+        task_title: null,
+        task_status: null,
+        task_status_category: null,
+        task_source: null,
+        task_updated_at: null,
+        task_closed_at: null,
+      },
+      {
+        ...row,
+        task_key: 'DEV-901',
+        task_record_id: null,
+        task_project: null,
+        task_title: null,
+        task_status: null,
+        task_status_category: null,
+        task_source: null,
+        task_updated_at: null,
+        task_closed_at: null,
+      },
+    ],
+    project,
+    now,
+  )
+
+  expect(tasks).toHaveLength(1)
+  expect(tasks[0]).toMatchObject({ key: null, project: 'workshop', source: null, intervals: 2 })
+})
+
+test('space-qualified unresolved work stays separate for the same project', () => {
+  const unresolved = {
+    ...row,
+    task_key: 'DEV-900',
+    task_record_id: null,
+    task_project: null,
+    task_title: null,
+    task_status: null,
+    task_status_category: null,
+    task_source: null,
+    task_updated_at: null,
+    task_closed_at: null,
+  }
+  const tasks = projectTasksInWindow(
+    [
+      { ...unresolved, space_id: 'space-a', space_name: 'Personal' },
+      { ...unresolved, space_id: 'space-b', space_name: 'Workshop' },
+    ],
+    project,
+    now,
+  )
+
+  expect(tasks).toHaveLength(2)
+  expect(tasks.map(({ spaceId, project, key }) => ({ spaceId, project, key }))).toEqual([
+    { spaceId: 'space-a', project: 'workshop', key: null },
+    { spaceId: 'space-b', project: 'workshop', key: null },
+  ])
+})
+
 function boardRow(
   overrides: Partial<BoardSourceRow> & Pick<BoardSourceRow, 'key'>,
 ): BoardSourceRow {
   return {
+    record_id: `task-${overrides.key}`,
     project: 'workshop',
     title: overrides.key,
     assignee: null,
@@ -251,7 +318,7 @@ test("a filtered project still receives done rows that would fall below the cap 
       updated_at: '2026-09-01T00:00:00.000Z',
     }),
   ]
-  const recentKeys = ['unattributed:segnavia:SEGNA-1']
+  const recentKeys = ['task-SEGNA-1']
   const input = {
     rows,
     recentKeys,

@@ -1,0 +1,1 @@
+ALTER TABLE "hub_task" DROP CONSTRAINT "hub_task_source_check", ADD CONSTRAINT "hub_task_source_check" CHECK ("source" IN ('mcp','local'));

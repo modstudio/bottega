@@ -39,7 +39,7 @@ test('foreign task selection shares push space rules and reports own-space prese
     task('DEF-1', 'defaulted'),
     task('HERE-1', 'here'),
     task('OTHER-1', 'other'),
-    task('MISSING-1', 'other', 'git'),
+    task('MISSING-1', 'other'),
     task('LOST-1', 'unknown-space'),
     task('ORPHAN-1', 'unregistered'),
   ]
@@ -66,7 +66,7 @@ test('foreign task selection shares push space rules and reports own-space prese
       id: 'id-MISSING-1',
       key: 'MISSING-1',
       project: 'other',
-      source: 'git',
+      source: 'mcp',
       present_elsewhere: false,
       target_space_id: 'space-other',
     },

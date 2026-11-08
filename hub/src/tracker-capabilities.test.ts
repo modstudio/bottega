@@ -9,7 +9,6 @@ import {
 } from '../../shared/trackers.ts'
 import {
   documentsRefusal,
-  GIT_WRITE_REFUSAL,
   TRACKER_BODY_WRITE_REFUSAL,
   TRACKER_COMMENT_WRITE_REFUSAL,
   TRACKER_TITLE_WRITE_REFUSAL,
@@ -143,20 +142,10 @@ describe('tracker capabilities', () => {
     })
   })
 
-  test('git and unknown provenance are read-only with their own exact reasons', () => {
-    const git = trackerCapabilities({
-      source: 'git',
-      project: {
-        name: 'old',
-        settings: { keyPrefixes: ['OLD', 'LEG'], tracker: { protocol: 'array-mcp' } },
-      },
-    })
-    expect(git.keyFormat).toBe('OLD-* | LEG-*')
-    expect(git.setTitle).toEqual({ allowed: false, reason: GIT_WRITE_REFUSAL })
+  test('unknown tracker provenance is read-only with its exact reason', () => {
     for (const unknown of [
       trackerCapabilities({ source: 'mcp', project: null }),
-      trackerCapabilities({ source: 'git', project: null }),
-      trackerCapabilities({ source: 'git', project: project('protocol-less') }),
+      trackerCapabilities({ source: 'mcp', project: project('protocol-less') }),
     ]) {
       expect(unknown.statusVocabulary).toBeNull()
       expect(unknown.keyFormat).toBeNull()

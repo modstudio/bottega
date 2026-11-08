@@ -58,9 +58,9 @@ realPostgres('populated hub project_id expand and backfill', () => {
           (id, space_id, project_name, key, project, source, first_seen, last_seen, created_at, updated_at)
         VALUES
           ('${matchTaskId}', '${PLATFORM_SPACE_ID}', 'hub-project-id-match', 'HUB-1',
-           'hub-project-id-match', 'git', now(), now(), now(), now()),
+           'hub-project-id-match', 'mcp', now(), now(), now(), now()),
           ('${unmatchedTaskId}', '${PLATFORM_SPACE_ID}', 'hub-project-id-unmatched', 'HUB-2',
-           'hub-project-id-unmatched', 'git', now(), now(), now(), now());
+           'hub-project-id-unmatched', 'mcp', now(), now(), now(), now());
         ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
         SELECT set_config('app.space_id', '', true);
         SELECT set_config('app.user_id', '', true);
