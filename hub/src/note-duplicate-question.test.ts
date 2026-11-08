@@ -9,6 +9,7 @@ import {
   NOTE_DUPLICATE_QUESTION,
   noteDuplicateLabel,
   noteDuplicateQuestionCandidates,
+  recordNoteDuplicateDistinct,
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
 } from './note-duplicate-question.ts'
@@ -151,18 +152,18 @@ test('a --same-as filing labels only the named pair as a repeat', () => {
   expect(noteDuplicateLabel(db(), `${sibling}:${hash}`)).toBeNull()
 })
 
-test('a merge labels its pair only when that pair was asked', () => {
+test('a merge labels its pair only when that pair was asked', async () => {
   const text = `merged observation ${newRecordId()}`
   const asked = newRecordId()
   const hash = seedPairs(text, [[asked, 'project-merge']])
   const unasked = newRecordId()
-  recordNoteDuplicateMerge(asked, text)
-  recordNoteDuplicateMerge(unasked, text)
+  await recordNoteDuplicateMerge(asked, text)
+  await recordNoteDuplicateMerge(unasked, text)
   expect(noteDuplicateLabel(db(), `${asked}:${hash}`)).toBeTrue()
   expect(noteDuplicateLabel(db(), `${unasked}:${hash}`)).toBeNull()
 })
 
-test('a filing with no refusal labels its asked pairs as not repeats until a merge says otherwise', () => {
+test('a filing with no refusal labels its asked pairs as not repeats until a merge says otherwise', async () => {
   const text = `fresh observation ${newRecordId()}`
   const first = newRecordId()
   const second = newRecordId()
@@ -171,7 +172,25 @@ test('a filing with no refusal labels its asked pairs as not repeats until a mer
     [second, 'project-filed'],
   ])
   recordNoteDuplicateOutcomes(text, 'project-filed', 'filed')
-  recordNoteDuplicateMerge(second, text)
+  await recordNoteDuplicateMerge(second, text)
   expect(noteDuplicateLabel(db(), `${first}:${hash}`)).toBeFalse()
   expect(noteDuplicateLabel(db(), `${second}:${hash}`)).toBeTrue()
+})
+
+test('distinct uses the older note as existing and outranks later inference', async () => {
+  const older = newRecordId()
+  const newer = newRecordId()
+  const text = `newer distinct ${newRecordId()}`
+  const hash = seedPairs(text, [[older, 'project-distinct']])
+  writeTransaction((database) => {
+    database
+      .query(
+        `INSERT INTO note (record_id,number,project,text,anchors,created_at,last_seen_at)
+         VALUES (?,2,'project-distinct',?,'[]','2026-01-02T00:00:00Z','2026-01-02T00:00:00Z')`,
+      )
+      .run(newer, text)
+  })
+  await recordNoteDuplicateDistinct(newer, older)
+  outcome(`${older}:${hash}`, true, 'same-as', '2026-02-01T00:00:00Z')
+  expect(noteDuplicateLabel(db(), `${older}:${hash}`)).toBeFalse()
 })

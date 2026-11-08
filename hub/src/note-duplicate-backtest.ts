@@ -1,0 +1,189 @@
+// concern: note-duplicate-backtest
+/** Replays note-duplicate versions over ruled note pairs and measures tuning and holdout sets. */
+
+import type { Database } from 'bun:sqlite'
+import { createHash } from 'node:crypto'
+import { typedQuestionStateIdentity } from '../../shared/typed-question/state-identity.ts'
+import { typedQuestionMetrics } from '../../shared/typed-question/typed-question-metrics.ts'
+import { db } from './db.ts'
+import {
+  NOTE_DUPLICATE_QUESTION,
+  type NoteDuplicateOutcomeSource,
+  noteDuplicateLabel,
+  noteTextHash,
+} from './note-duplicate-question.ts'
+import { askHubTypedQuestion } from './typed-question-service.ts'
+
+export const NOTE_DUPLICATE_HOLDOUT_SHARE = 0.2
+const NOTE_DUPLICATE_QUESTIONS = [NOTE_DUPLICATE_QUESTION] as const
+const NOTE_DUPLICATE_SWEEP_THRESHOLDS = Array.from(
+  { length: 10 },
+  (_, index) => (50 + index * 5) / 100,
+)
+
+type PairState = { existing: string; new: string }
+type Subject = { subjectRef: string; state: PairState; label: boolean; source: string }
+type MetricRow = {
+  probability: number | null
+  label: boolean
+  error: string | null
+  latencyMs: number
+  inputTokens: number | null
+}
+
+export function noteDuplicateHoldout(subjectRef: string): boolean {
+  return createHash('sha256').update(subjectRef).digest()[0]! < NOTE_DUPLICATE_HOLDOUT_SHARE * 256
+}
+
+function parsedState(value: string | null): PairState | null {
+  if (value === null) return null
+  try {
+    const parsed = JSON.parse(value) as Partial<PairState>
+    return typeof parsed.existing === 'string' && typeof parsed.new === 'string'
+      ? { existing: parsed.existing, new: parsed.new }
+      : null
+  } catch {
+    return null
+  }
+}
+
+export function reconstructNotePairState(database: Database, subjectRef: string): PairState | null {
+  const separator = subjectRef.lastIndexOf(':')
+  if (separator < 1) return null
+  const existingId = subjectRef.slice(0, separator)
+  const hash = subjectRef.slice(separator + 1)
+  const existing = database
+    .query<{ project: string; text: string }, [string]>(
+      'SELECT project,text FROM note WHERE record_id=?',
+    )
+    .get(existingId)
+  if (!existing) return null
+  const newer = database
+    .query<{ text: string }, [string, string]>(
+      'SELECT text FROM note WHERE project=? AND record_id<>? ORDER BY created_at,record_id',
+    )
+    .all(existing.project, existingId)
+    .find((note) => noteTextHash(note.text) === hash)
+  return newer ? { existing: existing.text, new: newer.text } : null
+}
+
+function subjects(database: Database): { readable: Subject[]; unreadable: number } {
+  const refs = database
+    .query<{ subject_ref: string }, [string]>(
+      `SELECT DISTINCT subject_ref FROM typed_question_outcome WHERE question_id=?`,
+    )
+    .all(NOTE_DUPLICATE_QUESTION.id)
+  const readable: Subject[] = []
+  let unreadable = 0
+  for (const { subject_ref: subjectRef } of refs) {
+    const label = noteDuplicateLabel(database, subjectRef)
+    if (label === null) continue
+    const outcome = database
+      .query<{ source: NoteDuplicateOutcomeSource }, [string, string]>(
+        `SELECT source FROM typed_question_outcome WHERE question_id=? AND subject_ref=?
+         ORDER BY (source IN ('merge','distinct')) DESC,created_at DESC,record_id DESC LIMIT 1`,
+      )
+      .get(NOTE_DUPLICATE_QUESTION.id, subjectRef)!
+    const stored = database
+      .query<{ state_json: string | null }, [string, string]>(
+        `SELECT state_json FROM typed_question_answer WHERE question_id=? AND subject_ref=?
+         AND state_json IS NOT NULL ORDER BY created_at DESC,record_id DESC LIMIT 1`,
+      )
+      .get(NOTE_DUPLICATE_QUESTION.id, subjectRef)
+    const state =
+      parsedState(stored?.state_json ?? null) ?? reconstructNotePairState(database, subjectRef)
+    if (!state) unreadable += 1
+    else readable.push({ subjectRef, state, label, source: outcome.source })
+  }
+  return { readable, unreadable }
+}
+
+function answerRow(database: Database, version: number, subject: Subject): MetricRow | null {
+  const row = database
+    .query<
+      {
+        answer_json: string | null
+        error: string | null
+        latency_ms: number
+        input_tokens: number | null
+      },
+      [string, number, string, string]
+    >(
+      `SELECT answer_json,error,latency_ms,input_tokens FROM typed_question_answer
+       WHERE question_id=? AND question_version=? AND subject_ref=? AND state_sha=?
+       ORDER BY created_at DESC,record_id DESC LIMIT 1`,
+    )
+    .get(
+      NOTE_DUPLICATE_QUESTION.id,
+      version,
+      subject.subjectRef,
+      typedQuestionStateIdentity(subject.state),
+    )
+  if (!row) return null
+  let probability: number | null = null
+  try {
+    const parsed = JSON.parse(row.answer_json ?? 'null') as { noul?: unknown } | null
+    if (typeof parsed?.noul === 'number') probability = parsed.noul
+  } catch {}
+  return {
+    probability,
+    label: subject.label,
+    error: row.error,
+    latencyMs: row.latency_ms,
+    inputTokens: row.input_tokens,
+  }
+}
+
+export function noteDuplicateSweep(rows: readonly MetricRow[]) {
+  return NOTE_DUPLICATE_SWEEP_THRESHOLDS.map((threshold) => {
+    const metrics = typedQuestionMetrics(rows, threshold)
+    return {
+      threshold,
+      precision: metrics.precision,
+      recall: metrics.recall,
+      warnedRate: metrics.warnedRate,
+    }
+  })
+}
+
+export async function noteDuplicateBacktest(
+  version: number,
+  database: Database = db(),
+): Promise<{
+  readable: number
+  unreadable: number
+  labelSources: Record<string, number>
+  sweep: ReturnType<typeof noteDuplicateSweep>
+  heldOut: ReturnType<typeof typedQuestionMetrics>
+}> {
+  const question = NOTE_DUPLICATE_QUESTIONS.find((candidate) => candidate.version === version)
+  if (!question) throw new Error(`note_duplicate v${version} is not declared`)
+  const sourced = subjects(database)
+  for (const subject of sourced.readable) {
+    await askHubTypedQuestion({
+      question,
+      subjectKind: 'note-pair',
+      subjectRef: subject.subjectRef,
+      state: subject.state,
+    })
+  }
+  const rows = sourced.readable
+    .map((subject) => ({ subject, row: answerRow(database, version, subject) }))
+    .filter((item): item is typeof item & { row: MetricRow } => item.row !== null)
+  const tuning = rows
+    .filter(({ subject }) => !noteDuplicateHoldout(subject.subjectRef))
+    .map(({ row }) => row)
+  const heldOut = rows
+    .filter(({ subject }) => noteDuplicateHoldout(subject.subjectRef))
+    .map(({ row }) => row)
+  const labelSources: Record<string, number> = {}
+  for (const subject of sourced.readable)
+    labelSources[subject.source] = (labelSources[subject.source] ?? 0) + 1
+  return {
+    readable: sourced.readable.length,
+    unreadable: sourced.unreadable,
+    labelSources,
+    sweep: noteDuplicateSweep(tuning),
+    heldOut: typedQuestionMetrics(heldOut, question.threshold),
+  }
+}

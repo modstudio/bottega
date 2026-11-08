@@ -47,7 +47,7 @@ export function noteDuplicateQuestionCandidates<T extends DuplicateQuestionNote>
     .slice(0, NOTE_DUPLICATE_CANDIDATES)
 }
 
-function noteTextHash(text: string): string {
+export function noteTextHash(text: string): string {
   return createHash('sha256').update(text.trim()).digest('hex').slice(0, SUBJECT_REF_HASH_HEX)
 }
 
@@ -123,7 +123,7 @@ function recordedSubjectRefs(text: string, project: string, database: Database):
     .map((row) => row.subject_ref)
 }
 
-type NoteDuplicateOutcomeSource = 'same-as' | 'new' | 'filed' | 'merge'
+export type NoteDuplicateOutcomeSource = 'same-as' | 'new' | 'filed' | 'merge' | 'distinct'
 
 /** The one definition of an outcome row; every recorder writes through it. */
 function insertOutcomes(
@@ -167,15 +167,70 @@ export function recordNoteDuplicateOutcomes(
   insertOutcomes(refs, source === 'same-as', source)
 }
 
-export function recordNoteDuplicateMerge(targetRecordId: string, sourceText: string): void {
+function pairWasAsked(subjectRef: string): boolean {
+  return Boolean(
+    db()
+      .query(
+        `SELECT 1 FROM typed_question_answer WHERE question_id=? AND question_version=?
+         AND subject_ref=? AND answer_json IS NOT NULL AND error IS NULL`,
+      )
+      .get(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, subjectRef),
+  )
+}
+
+async function ensurePairWasAsked(
+  existing: { record_id: string; text: string },
+  newText: string,
+  ask = askHubTypedQuestion,
+): Promise<boolean> {
+  const subjectRef = notePairSubjectRef(existing.record_id, newText)
+  if (pairWasAsked(subjectRef)) return true
+  return Boolean(
+    await ask({
+      question: NOTE_DUPLICATE_QUESTION,
+      subjectKind: 'note-pair',
+      subjectRef,
+      state: { existing: existing.text, new: newText },
+    }),
+  )
+}
+
+export async function recordNoteDuplicateMerge(
+  targetRecordId: string,
+  sourceText: string,
+): Promise<void> {
   const subjectRef = notePairSubjectRef(targetRecordId, sourceText)
-  const exists = db()
-    .query(
-      `SELECT 1 FROM typed_question_answer WHERE question_id=? AND question_version=?
-       AND subject_ref=?`,
+  const target = db()
+    .query<{ record_id: string; text: string }, [string]>(
+      'SELECT record_id,text FROM note WHERE record_id=?',
     )
-    .get(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, subjectRef)
-  if (exists) insertOutcomes([subjectRef], true, 'merge')
+    .get(targetRecordId)
+  if (target && (await ensurePairWasAsked(target, sourceText)))
+    insertOutcomes([subjectRef], true, 'merge')
+}
+
+export async function recordNoteDuplicateDistinct(
+  firstRecordId: string,
+  secondRecordId: string,
+): Promise<void> {
+  if (firstRecordId === secondRecordId) throw new Error('a note cannot be distinct from itself')
+  const notes = db()
+    .query<
+      { record_id: string; project: string; text: string; created_at: string },
+      [string, string]
+    >('SELECT record_id,project,text,created_at FROM note WHERE record_id IN (?,?)')
+    .all(firstRecordId, secondRecordId)
+  if (notes.length !== 2) throw new Error('both distinct notes must exist')
+  if (notes[0]!.project !== notes[1]!.project)
+    throw new Error('notes from different projects cannot be ruled distinct')
+  notes.sort(
+    (left, right) =>
+      left.created_at.localeCompare(right.created_at) ||
+      left.record_id.localeCompare(right.record_id),
+  )
+  const [existing, newer] = notes as [(typeof notes)[number], (typeof notes)[number]]
+  if (await ensurePairWasAsked(existing, newer.text))
+    insertOutcomes([notePairSubjectRef(existing.record_id, newer.text)], false, 'distinct')
 }
 
 export function noteDuplicateLabel(database: Database, subjectRef: string): boolean | null {
@@ -183,7 +238,7 @@ export function noteDuplicateLabel(database: Database, subjectRef: string): bool
     .query<{ label: number }, [string, number, string]>(
       `SELECT label FROM typed_question_outcome
        WHERE question_id=? AND question_version=? AND subject_ref=?
-       ORDER BY (source='merge') DESC, created_at DESC, record_id DESC LIMIT 1`,
+       ORDER BY (source IN ('merge','distinct')) DESC, created_at DESC, record_id DESC LIMIT 1`,
     )
     .get(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, subjectRef)
   return row ? Boolean(row.label) : null

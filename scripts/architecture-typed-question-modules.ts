@@ -103,6 +103,15 @@ export const typedQuestionModules = [
     './task.ts',
     './typed-question-service.ts',
   ]),
+  module('hub/src/note-duplicate-backtest.ts', [
+    'bun:sqlite',
+    'node:crypto',
+    '../../shared/typed-question/typed-question-metrics.ts',
+    '../../shared/typed-question/state-identity.ts',
+    './db.ts',
+    './note-duplicate-question.ts',
+    './typed-question-service.ts',
+  ]),
   module('hub/src/typed-question-report.ts', [
     'bun:sqlite',
     '../../shared/typed-question/typed-question-blocks.ts',
@@ -114,6 +123,7 @@ export const typedQuestionModules = [
     '../../shared/brand.ts',
     '../../shared/typed-question/typed-question-blocks.ts',
     '../../shared/typed-question/typed-question-render.ts',
+    './note-duplicate-backtest.ts',
     './typed-question-report.ts',
   ]),
   module('orchestrator/src/typed-question/typed-question-service.ts', [
