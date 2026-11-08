@@ -3,21 +3,19 @@ import {
   createTrackerTask,
   trackerCreatedTaskKey,
 } from '../../shared/tracker-create.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   resolveTrackerWriteState,
-  type StatusCategory,
-  TASK_STATUSES,
-  type ToolCaller,
   type TrackerProject,
   type TrackerProtocol,
+  trackerWriteCategory,
   trackerWireAction,
 } from '../../shared/trackers.ts'
+import {
+  advertisedToolSchema,
+  type ToolListingCaller,
+} from '../../shared/tracker-list-scope.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
-import type { McpTool } from './mcp.ts'
-
-type ToolListingCaller = ToolCaller & {
-  listTools(): Promise<McpTool[]>
-}
 
 export type TaskCreationDestination = 'tracker' | 'hosted'
 
@@ -38,14 +36,7 @@ export function trackerTaskInput(
     )
   const mapped = Object.entries(tracker.states ?? {})
   const requested = input.status
-  const requestedMapping = requested ? tracker.states?.[requested] : undefined
-  const category: StatusCategory | undefined = requested
-    ? TASK_STATUSES.includes(requested as (typeof TASK_STATUSES)[number])
-      ? (requested as StatusCategory)
-      : requestedMapping === 'backlog'
-        ? 'open'
-        : requestedMapping
-    : 'open'
+  const category = trackerWriteCategory(tracker, requested ?? 'open')
   const status = category
     ? resolveTrackerWriteState(project.name, tracker, tracker.protocol as TrackerProtocol, category)
     : undefined
@@ -54,7 +45,7 @@ export function trackerTaskInput(
     throw new Error(
       input.status
         ? `status '${input.status}' does not map to a tracker status for project ${project.name}; mapped statuses: ${choices || '(none)'}`
-        : `project ${project.name} has no open tracker status configured`,
+        : `project ${project.name} has no writable open tracker status; configure tracker.writeStates.open and tracker.states with: ${PLATFORM_SLUG} project set ${project.name} --settings '${JSON.stringify({ tracker: { states: { '<open-state>': 'open' }, writeStates: { open: '<open-state>' } } })}'`,
     )
   }
   return { title: input.title, body: input.body ?? '', status }
@@ -90,7 +81,7 @@ export async function createAdvertisedTrackerTask(
       : null)
   if (!createToolName)
     throw new Error(`tracker protocol ${tracker.protocol ?? '(missing)'} has no create support`)
-  const createTool = (await client.listTools()).find((tool) => tool.name === createToolName)
-  if (!createTool) throw new Error(`tracker create tool ${createToolName} was not advertised`)
-  return createTrackerTask(client, project, task, createTool.inputSchema)
+  const inputSchema = await advertisedToolSchema(client, createToolName)
+  if (!inputSchema) throw new Error(`tracker create tool ${createToolName} was not advertised`)
+  return createTrackerTask(client, project, task, inputSchema)
 }

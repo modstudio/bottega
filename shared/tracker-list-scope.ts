@@ -1,7 +1,17 @@
-type ToolListingCaller = {
-  listTools?: () => Promise<
-    { name: string; inputSchema: { properties?: Record<string, unknown> } }[]
-  >
+export type ToolInputSchema = {
+  properties?: Record<string, unknown>
+}
+
+export type ToolListingCaller = {
+  listTools?: () => Promise<{ name: string; inputSchema: ToolInputSchema }[]>
+}
+
+export async function advertisedToolSchema(
+  caller: ToolListingCaller,
+  toolName: string,
+): Promise<ToolInputSchema | undefined> {
+  const tools = await caller.listTools?.()
+  return tools?.find((candidate) => candidate.name === toolName)?.inputSchema
 }
 
 export async function toolDeclaresInput(
@@ -9,10 +19,8 @@ export async function toolDeclaresInput(
   toolName: string,
   field: string,
 ): Promise<boolean> {
-  const tools = await caller.listTools?.()
-  if (!tools) return false
-  const tool = tools.find((candidate) => candidate.name === toolName)
-  return field in (tool?.inputSchema.properties ?? {})
+  const schema = await advertisedToolSchema(caller, toolName)
+  return field in (schema?.properties ?? {})
 }
 
 export function scopedRows<Row extends Record<string, unknown>>(
@@ -21,7 +29,7 @@ export function scopedRows<Row extends Record<string, unknown>>(
   scope: string,
   refusal: string,
 ): Row[] {
-  if (!rows.length || rows.some((row) => typeof row[field] !== 'string')) {
+  if (rows.some((row) => typeof row[field] !== 'string')) {
     throw new Error(refusal)
   }
   return rows.filter((row) => row[field] === scope)

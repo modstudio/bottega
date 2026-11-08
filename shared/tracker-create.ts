@@ -6,15 +6,12 @@ import {
   trackerWireAction,
   workspaceTeamRefusal,
 } from './trackers.ts'
+import type { ToolInputSchema } from './tracker-list-scope.ts'
 
 export type CreateTrackerTask = {
   title: string
   body: string
   status: string
-}
-
-export type ToolInputSchema = {
-  properties?: Record<string, unknown>
 }
 
 const nonEmptyUppercase = (value: unknown): string | undefined =>
@@ -90,13 +87,15 @@ export async function createTrackerTask(
 
   if (tracker.protocol === 'workspace-mcp') {
     if (!tracker.team) throw new Error(workspaceTeamRefusal(project))
-    return m.callTool(tracker.actions?.create ?? trackerWireAction('workspace-mcp', 'create'), {
+    const createAction = tracker.actions?.create ?? trackerWireAction('workspace-mcp', 'create')
+    return m.callTool(createAction, {
       ...workspaceCreatePayload(task, tracker.team, Object.keys(inputSchema?.properties ?? {})),
     })
   }
   if (tracker.protocol === 'cursor-mcp') {
     if (!tracker.projectId) throw new Error(cursorProjectRefusal(project))
-    return m.callTool(tracker.actions?.create ?? trackerWireAction('cursor-mcp', 'create'), {
+    const createAction = tracker.actions?.create ?? trackerWireAction('cursor-mcp', 'create')
+    return m.callTool(createAction, {
       projectId: tracker.projectId,
       title: task.title,
       description: task.body,
@@ -104,7 +103,8 @@ export async function createTrackerTask(
     })
   }
   if (tracker.protocol === 'array-mcp') {
-    return m.callTool(trackerWireAction('array-mcp', 'create'), {
+    const createAction = tracker.actions?.create ?? trackerWireAction('array-mcp', 'create')
+    return m.callTool(createAction, {
       title: task.title,
       description: task.body,
       status: task.status,

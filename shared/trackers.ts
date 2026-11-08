@@ -1,8 +1,12 @@
 import { z } from 'zod'
 
 import { PLATFORM_SLUG } from './brand.ts'
-import { scopedRows, toolDeclaresInput } from './tracker-list-scope.ts'
-import { workspaceStatusPayload } from './tracker-status-payload.ts'
+import { scopedRows, toolDeclaresInput, type ToolInputSchema } from './tracker-list-scope.ts'
+import {
+  arrayStatusPayload,
+  cursorStatusPayload,
+  workspaceStatusPayload,
+} from './tracker-status-payload.ts'
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
@@ -240,7 +244,7 @@ export function refuseInvalidWriteStates(
       `set it with: ${PLATFORM_SLUG} project set <name> --settings ` +
       `'${JSON.stringify({ tracker: { writeStates: { [category]: `<${category}-state>` } } })}'`
     const mapped = tracker.states?.[raw]
-    if (mapped !== category) {
+    if (!trackerStateMayWriteCategory(mapped, category as StatusCategory)) {
       const absentStateRemedy =
         `set it with: ${PLATFORM_SLUG} project set <name> --settings ` +
         `'${JSON.stringify({ tracker: { states: { [raw]: category }, writeStates: { [category]: raw } } })}'`
@@ -256,6 +260,24 @@ export function refuseInvalidWriteStates(
   }
 }
 
+/** Whether a raw state mapping is writable for a requested category. */
+export function trackerStateMayWriteCategory(
+  mapped: string | undefined,
+  category: StatusCategory,
+): boolean {
+  return mapped === category || (category === 'open' && mapped === 'backlog')
+}
+
+/** Map a category word or registered raw state to the writable task category. */
+export function trackerWriteCategory(
+  tracker: TrackerSettings,
+  requested: string,
+): StatusCategory | undefined {
+  if (TASK_STATUSES.includes(requested as StatusCategory)) return requested as StatusCategory
+  const mapped = tracker.states?.[requested]
+  return mapped === 'backlog' ? 'open' : mapped
+}
+
 /** Select the raw state accepted by a tracker for a writable task category. */
 export function resolveTrackerWriteState(
   projectName: string,
@@ -264,7 +286,7 @@ export function resolveTrackerWriteState(
   category: StatusCategory,
 ): string | undefined {
   const rawStates = Object.entries(tracker.states ?? {}).flatMap(([raw, mapped]) =>
-    mapped === category || (category === 'open' && mapped === 'backlog') ? [raw] : [],
+    trackerStateMayWriteCategory(mapped, category) ? [raw] : [],
   )
   const selected = tracker.writeStates?.[category]
   if (!selected && rawStates.length > 1) {
@@ -302,6 +324,14 @@ export const workspaceTeamRefusal = (project: TrackerProject): string =>
   `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
 export const cursorProjectRefusal = (project: TrackerProject): string =>
   `${CURSOR_CREATE_REFUSAL}; set it with: ${PLATFORM_SLUG} project set ${project.name} --settings ` +
+  `'${JSON.stringify({ tracker: { projectId: '…' } })}'`
+
+export const workspaceCollectScopeRefusal = (project: TrackerProject): string =>
+  `workspace-mcp collect refused: project ${project.name} tracker is missing team; ` +
+  `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings '{"tracker":{"team":"…"}}'`
+export const cursorCollectScopeRefusal = (project: TrackerProject): string =>
+  `cursor-mcp collect refused: project ${project.name} tracker is missing projectId; ` +
+  `set it with: ${PLATFORM_SLUG} project set ${project.name} --settings ` +
   `'${JSON.stringify({ tracker: { projectId: '…' } })}'`
 
 export type ToolCaller = {
@@ -358,7 +388,7 @@ export type TrackerSource = {
   readCommentIds?: (m: ToolCaller, key: string) => Promise<string[] | null>
 }
 
-type TrackerStatusWriteResult = {
+export type TrackerStatusWriteResult = {
   status: string
   category: StatusCategory
   /** A refusal that must be raised after the returned observation is recorded. */
@@ -376,10 +406,6 @@ export class TrackerLookupUnverifiable extends Error {
     super(message)
     this.name = 'TrackerLookupUnverifiable'
   }
-}
-
-type ToolInputSchema = {
-  properties?: Record<string, unknown>
 }
 
 /**
@@ -506,13 +532,14 @@ const trackerTaskCommentIds = (reply: unknown): string[] | null => {
 /** One workspace task's assignees, resolved through the register's lookup setting. */
 function workspaceAssignees(
   project: string,
+  getAction: string,
   lookup: NonNullable<TrackerSettings['assigneeLookup']>,
   resolveAssignees: AssigneeResolver,
 ): (m: ToolCaller, refs: AssigneeRef[]) => Promise<(string | null)[]> {
   return (m, refs) =>
     resolveAssignees(project, refs, async (id, taskKey) => {
       if (lookup === 'task-detail' && taskKey) {
-        const detail = (await m.callTool(trackerWireAction('workspace-mcp', 'get'), {
+        const detail = (await m.callTool(getAction, {
           id: taskKey,
         })) as {
           assignee?: string | null
@@ -581,10 +608,12 @@ async function lookupWorkspaceTask(
   project: string,
   states: TrackerSettings['states'],
   assignees: WorkspaceAssignees,
+  getAction: string,
+  searchAction: string,
 ): Promise<TrackerTask | null> {
   const normalizedKey = key.toUpperCase()
   try {
-    const detail = await m.callTool(trackerWireAction('workspace-mcp', 'get'), { id: key })
+    const detail = await m.callTool(getAction, { id: key })
     if (detail && typeof detail === 'object') {
       const task = normalizeWorkspaceTaskDetail(detail as WorkspaceTaskDetail)
       if (task?.short_id?.toUpperCase() === normalizedKey) {
@@ -596,7 +625,7 @@ async function lookupWorkspaceTask(
   }
 
   for (let page = 1; page <= WORKSPACE_LOOKUP_MAX_PAGES; page++) {
-    const r = await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
+    const r = await m.callTool(searchAction, {
       search: key,
       page,
       per_page: WORKSPACE_LOOKUP_PAGE_SIZE,
@@ -710,17 +739,19 @@ function workspaceSource(
   lookup: NonNullable<TrackerSettings['assigneeLookup']>,
   resolveAssignees: AssigneeResolver,
 ): TrackerSource {
-  const assignees = workspaceAssignees(project, lookup, resolveAssignees)
   const searchAction = actions?.search ?? trackerWireAction('workspace-mcp', 'search')
   const getAction = actions?.get ?? trackerWireAction('workspace-mcp', 'get')
   const statusAction = actions?.status ?? trackerWireAction('workspace-mcp', 'status')
+  const assignees = workspaceAssignees(project, getAction, lookup, resolveAssignees)
   return {
     project,
     env,
     supportsUpdatedSince,
     async fetch(m, updatedSince) {
       if (!team) {
-        throw new Error(`workspace-mcp collect refused: project ${project} tracker is missing team`)
+        throw new Error(
+          workspaceCollectScopeRefusal({ name: project, settings: { tracker: { team } } }),
+        )
       }
       const sendsScope = await toolDeclaresInput(m, searchAction, 'team_id')
       const out: TrackerTask[] = []
@@ -761,22 +792,23 @@ function workspaceSource(
         normalized.status_category ?? '',
         states,
       )
-      if (confirmedCategory !== category) {
-        throw new Error(
-          `workspace-mcp status confirmation for task ${task.key} returned category ${confirmedCategory} after category ${category} was requested`,
-        )
+      return {
+        status: normalized.status ?? status,
+        category: confirmedCategory,
+        ...(confirmedCategory === category
+          ? {}
+          : {
+              refusal: `workspace-mcp status confirmation for task ${task.key} returned category ${confirmedCategory} after category ${category} was requested`,
+            }),
       }
-      return { status: normalized.status ?? status, category: confirmedCategory }
     },
     async lookup(m, key) {
-      return lookupWorkspaceTask(m, key, project, states, assignees)
+      return lookupWorkspaceTask(m, key, project, states, assignees, getAction, searchAction)
     },
     // The search page a lookup reads carries no comments; the descriptor's get
     // tool answers one task with its `comments[].id`.
     async readCommentIds(m, key) {
-      return trackerTaskCommentIds(
-        await m.callTool(trackerWireAction('workspace-mcp', 'get'), { id: key }),
-      )
+      return trackerTaskCommentIds(await m.callTool(getAction, { id: key }))
     },
   }
 }
@@ -832,10 +864,11 @@ async function lookupCursorTask(
   key: string,
   project: string,
   states: TrackerSettings['states'],
+  getAction: string,
 ): Promise<TrackerTask | null> {
   let response: unknown
   try {
-    response = await m.callTool(trackerWireAction('cursor-mcp', 'get'), { taskKey: key })
+    response = await m.callTool(getAction, { taskKey: key })
   } catch (cause) {
     const structuredContent =
       cause instanceof Error && cause.name === 'McpToolCallError' && 'structuredContent' in cause
@@ -888,6 +921,8 @@ function cursorMcpSource(
   actions: TrackerSettings['actions'],
 ): TrackerSource {
   const searchAction = actions?.search ?? trackerWireAction('cursor-mcp', 'search')
+  const getAction = actions?.get ?? trackerWireAction('cursor-mcp', 'get')
+  const statusAction = actions?.status ?? trackerWireAction('cursor-mcp', 'status')
   return {
     project,
     env,
@@ -895,7 +930,7 @@ function cursorMcpSource(
     async fetch(m, updatedSince) {
       if (!projectId) {
         throw new Error(
-          `cursor-mcp collect refused: project ${project} tracker is missing projectId`,
+          cursorCollectScopeRefusal({ name: project, settings: { tracker: { projectId } } }),
         )
       }
       const sendsScope = await toolDeclaresInput(m, searchAction, 'projectId')
@@ -945,20 +980,25 @@ function cursorMcpSource(
       if (!task.externalId) {
         throw new Error(`cursor-mcp status write refused: task ${task.key} has no external id`)
       }
-      const reply = (await m.callTool(trackerWireAction('cursor-mcp', 'status'), {
-        id: task.externalId,
-        status,
-      })) as { data?: { status?: unknown } }
+      const reply = (await m.callTool(
+        statusAction,
+        cursorStatusPayload(task.externalId, status),
+      )) as { data?: { status?: unknown } }
       const confirmed = reply.data?.status
-      if (confirmed !== status) {
-        throw new Error(
-          `cursor-mcp status confirmation for task ${task.key} returned ${String(confirmed)} after ${status} was requested`,
-        )
+      const observedStatus = typeof confirmed === 'string' ? confirmed : String(confirmed)
+      const observedCategory = trackerStatusCategory(observedStatus, observedStatus, states)
+      return {
+        status: observedStatus,
+        category: observedCategory,
+        ...(confirmed === status
+          ? {}
+          : {
+              refusal: `cursor-mcp status confirmation for task ${task.key} returned ${String(confirmed)} after ${status} was requested`,
+            }),
       }
-      return { status, category }
     },
     async lookup(m, key) {
-      return lookupCursorTask(m, key, project, states)
+      return lookupCursorTask(m, key, project, states, getAction)
     },
   }
 }
@@ -973,7 +1013,11 @@ function arrayMcpSource(
   env: string,
   openStatuses: string[],
   states: TrackerSettings['states'],
+  actions: TrackerSettings['actions'],
 ): TrackerSource {
+  const searchAction = actions?.search ?? trackerWireAction('array-mcp', 'search')
+  const getAction = actions?.get ?? trackerWireAction('array-mcp', 'get')
+  const statusAction = actions?.status ?? trackerWireAction('array-mcp', 'status')
   return {
     project,
     env,
@@ -981,7 +1025,7 @@ function arrayMcpSource(
     async fetch(m) {
       const out: TrackerTask[] = []
       for (const status of openStatuses) {
-        const r = (await m.callTool(trackerWireAction('array-mcp', 'search'), { status })) as {
+        const r = (await m.callTool(searchAction, { status })) as {
           id?: string
           key?: string
           title?: string
@@ -1006,11 +1050,10 @@ function arrayMcpSource(
     },
     async writeStatus(m, task, status, category, confirm) {
       if (!task.externalId) throw new Error(`task in project ${project} has no external id`)
-      const reply = (await m.callTool(trackerWireAction('array-mcp', 'status'), {
-        id: task.externalId,
-        status,
-        confirm,
-      })) as { status?: unknown }
+      const reply = (await m.callTool(
+        statusAction,
+        arrayStatusPayload(task.externalId, status, confirm),
+      )) as { status?: unknown }
       const confirmed =
         typeof reply?.status === 'string' && reply.status.trim() ? reply.status : null
       const observedStatus = confirmed ?? status
@@ -1025,7 +1068,7 @@ function arrayMcpSource(
       }
     },
     async lookup(m, key) {
-      const r = await m.callTool(trackerWireAction('array-mcp', 'get'), { search: key })
+      const r = await m.callTool(getAction, { search: key })
       if (!Array.isArray(r)) {
         throw new TrackerLookupUnverifiable(
           `array-mcp lookup for ${key} returned an unexpected response`,
@@ -1096,7 +1139,7 @@ export function trackerSourceFor(
     )
   }
   if (tracker.protocol === 'array-mcp') {
-    return arrayMcpSource(project.name, env, statuses, tracker.states)
+    return arrayMcpSource(project.name, env, statuses, tracker.states, tracker.actions)
   }
   // Exhaustive above; kept explicit so a future protocol cannot silently build nothing.
   throw new Error(`project ${project.name} tracker has unrecognized protocol ${tracker.protocol}`)

@@ -274,6 +274,74 @@ describe('array-mcp task writes', () => {
     })
   })
 
+  for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
+    test(`${protocol} observes a confirming mismatch before refusing`, async () => {
+      const registered = {
+        ...project,
+        settings: {
+          ...project.settings,
+          tracker:
+            protocol === 'workspace-mcp'
+              ? {
+                  protocol,
+                  team: 'TEAM',
+                  states: { Open: 'open' as const, 'In Progress': 'active' as const },
+                  writeStates: { active: 'In Progress' },
+                }
+              : {
+                  protocol,
+                  projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+                  states: {
+                    todo: 'open' as const,
+                    in_progress: 'active' as const,
+                    cancelled: 'dropped' as const,
+                  },
+                },
+        },
+      } satisfies RegisteredProject
+      const calls: { name: string; args: Record<string, unknown> }[] = []
+
+      await expect(
+        setTaskThroughTracker(
+          'ADN-1659',
+          {},
+          { status: 'active' },
+          UNATTRIBUTED,
+          { confirm: 'production' },
+          {
+            ...dependencies(async (name, args) => {
+              calls.push({ name, args })
+              if (protocol === 'workspace-mcp') {
+                return name === 'update-task-tool'
+                  ? { id: taskId }
+                  : { short_id: 'ADN-1659', status: 'Open', status_category: 'open' }
+              }
+              return { success: true, data: { status: 'cancelled' } }
+            }),
+            registeredProjects: () => [registered],
+          },
+        ),
+      ).rejects.toThrow(
+        protocol === 'workspace-mcp'
+          ? 'returned category open after category active was requested'
+          : 'returned cancelled after in_progress was requested',
+      )
+      expect(showTask('ADN-1659').task).toMatchObject(
+        protocol === 'workspace-mcp'
+          ? { status: 'Open', status_category: 'open' }
+          : { status: 'cancelled', status_category: 'dropped' },
+      )
+      expect(calls).toEqual(
+        protocol === 'workspace-mcp'
+          ? [
+              { name: 'update-task-tool', args: { id: 'ADN-1659', status: 'In Progress' } },
+              { name: 'get-task-tool', args: { id: 'ADN-1659' } },
+            ]
+          : [{ name: 'task.update', args: { id: taskId, status: 'in_progress' } }],
+      )
+    })
+  }
+
   test('the local close service refuses a tracker row', async () => {
     await expect(closeTask('ADN-1659', {}, UNATTRIBUTED)).rejects.toThrow(
       'task ADN-1659 is not local',

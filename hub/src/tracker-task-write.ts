@@ -2,10 +2,10 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   resolveTrackerWriteState,
   type StatusCategory,
-  TASK_STATUSES,
   TRACKER_PROTOCOLS,
   type TrackerTask,
   trackerSourceFor,
+  trackerWriteCategory,
 } from '../../shared/trackers.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import { classifyTaskBranches } from './orch.ts'
@@ -63,28 +63,22 @@ function resolveExternalStatus(
   project: RegisteredProject,
   requested: string,
 ): { status: string; category: StatusCategory } {
-  const states = project.settings.tracker?.states ?? {}
-  const mapped = states[requested]
-  const category = TASK_STATUSES.includes(requested as (typeof TASK_STATUSES)[number])
-    ? (requested as StatusCategory)
-    : mapped === 'backlog'
-      ? 'open'
-      : mapped
-  if (!category || !TASK_STATUSES.includes(category as (typeof TASK_STATUSES)[number])) {
-    throw validStateRefusal(project, requested)
-  }
   const protocol = project.settings.tracker?.protocol
   if (!protocol || !TRACKER_PROTOCOLS.includes(protocol as (typeof TRACKER_PROTOCOLS)[number])) {
-    throw validStateRefusal(project, requested)
+    throw new Error(
+      `tracker status write refused: project ${project.name} has ${protocol ? `unrecognized protocol ${protocol}` : 'no protocol'}; set it with: ${PLATFORM_SLUG} project set ${project.name} --settings '{"tracker":{"protocol":"<protocol>"}}'`,
+    )
   }
+  const category = trackerWriteCategory(project.settings.tracker ?? {}, requested)
+  if (!category) throw validStateRefusal(project, requested)
   const status = resolveTrackerWriteState(
     project.name,
     project.settings.tracker ?? {},
     protocol as (typeof TRACKER_PROTOCOLS)[number],
-    category as StatusCategory,
+    category,
   )
   if (!status) throw validStateRefusal(project, requested)
-  return { status, category: category as StatusCategory }
+  return { status, category }
 }
 
 async function writeExternalStatus(

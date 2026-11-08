@@ -42,11 +42,11 @@ const keyFormat = (project: TrackerProject | null): string | null => {
     : null
 }
 
-const hasStatusWriter = (project: TrackerProject): boolean => {
+const statusWriteCapability = (project: TrackerProject): Capability => {
   try {
-    return trackerSourceFor(project)?.writeStatus !== undefined
-  } catch {
-    return false
+    return trackerSourceFor(project)?.writeStatus ? allow : refuse(TRACKER_STATUS_WRITE_REFUSAL)
+  } catch (cause) {
+    return refuse(cause instanceof Error ? cause.message : String(cause))
   }
 }
 
@@ -118,7 +118,7 @@ export function trackerCapabilities({
               ? workspaceTeamRefusal(project)
               : cursorProjectRefusal(project),
           ),
-    setStatus: hasStatusWriter(project) ? allow : refuse(TRACKER_STATUS_WRITE_REFUSAL),
+    setStatus: statusWriteCapability(project),
     setTitle: refuse(TRACKER_TITLE_WRITE_REFUSAL),
     setBody: refuse(TRACKER_BODY_WRITE_REFUSAL),
     comment: refuse(TRACKER_COMMENT_WRITE_REFUSAL),

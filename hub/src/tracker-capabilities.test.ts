@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   CURSOR_CREATE_REFUSAL,
@@ -82,16 +81,6 @@ describe('tracker capabilities', () => {
         expect(calls[0]?.args.projectId).toBe('019d9699-a223-729f-a032-50de9fdf4303')
       }
     }
-
-    const capabilitySource = readFileSync(
-      new URL('./tracker-capabilities.ts', import.meta.url),
-      'utf8',
-    )
-    const statusDeclaration = capabilitySource.slice(
-      capabilitySource.lastIndexOf('setStatus:'),
-      capabilitySource.lastIndexOf('setTitle:'),
-    )
-    expect(statusDeclaration).not.toMatch(/protocol\s*===/)
   })
 
   test('local records expose every hub write', () => {
@@ -142,6 +131,15 @@ describe('tracker capabilities', () => {
       reason:
         `${CURSOR_CREATE_REFUSAL}; set it with: ` +
         `${PLATFORM_SLUG} project set stopal --settings '{"tracker":{"projectId":"…"}}'`,
+    })
+  })
+
+  test('status capability preserves a source-construction refusal', () => {
+    const missingEnv = project('workspace', 'workspace-mcp')
+    delete missingEnv.settings.tracker!.envPrefix
+    expect(trackerCapabilities({ source: 'mcp', project: missingEnv }).setStatus).toEqual({
+      allowed: false,
+      reason: 'project workspace tracker is missing envPrefix',
     })
   })
 

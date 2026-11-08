@@ -313,7 +313,7 @@ describe('tracker status protocols', () => {
     }
   })
 
-  test('workspace-mcp refuses an unproven status action and a mismatched confirming read', async () => {
+  test('workspace-mcp refuses an unproven status action and reports a mismatched confirming read', async () => {
     const unproven = project('workspace', 'workspace-mcp')
     unproven.settings.tracker!.actions = { status: 'custom-status-tool' }
     await expect(
@@ -326,8 +326,8 @@ describe('tracker status protocols', () => {
       ),
     ).rejects.toThrow('action custom-status-tool has no proven status payload')
 
-    await expect(
-      trackerSourceFor(project('workspace', 'workspace-mcp'))!.writeStatus!(
+    expect(
+      await trackerSourceFor(project('workspace', 'workspace-mcp'))!.writeStatus!(
         {
           callTool: async (name) =>
             name === 'update-task-tool'
@@ -339,7 +339,12 @@ describe('tracker status protocols', () => {
         'done',
         'ignored',
       ),
-    ).rejects.toThrow('returned category open after category done was requested')
+    ).toEqual({
+      status: 'todo',
+      category: 'open',
+      refusal:
+        'workspace-mcp status confirmation for task WOR-1 returned category open after category done was requested',
+    })
   })
 
   test('cursor-mcp writes the immutable uuid and confirms the reply status', async () => {
@@ -370,6 +375,24 @@ describe('tracker status protocols', () => {
         'ignored',
       ),
     ).rejects.toThrow('task STO-2 has no external id')
+
+    fixture.caller.callTool = async (name, args) => {
+      fixture.calls.push({ name, args })
+      return { success: true, data: { status: 'todo' } }
+    }
+    expect(
+      await source.writeStatus!(
+        fixture.caller,
+        { key: 'STO-3', externalId: 'cursor-uuid' },
+        'done',
+        'done',
+        'ignored',
+      ),
+    ).toEqual({
+      status: 'todo',
+      category: 'open',
+      refusal: 'cursor-mcp status confirmation for task STO-3 returned todo after done was requested',
+    })
   })
 })
 
@@ -410,20 +433,55 @@ describe('tracker list scope', () => {
     expect(cursorRead.tasks.map((task) => task.key)).toEqual(['STO-1'])
   })
 
-  test('refuses a collect when neither request nor rows carry the registered scope', async () => {
-    await expect(
-      trackerSourceFor(project('workspace', 'workspace-mcp'))!.fetch({
-        listTools: noScopeSchema('list-tasks-tool'),
-        callTool: async () => ({ tasks: [{ short_id: 'WOR-1', status: 'todo' }] }),
-      }),
-    ).rejects.toThrow('returned rows carry no team scope')
-    await expect(
-      trackerSourceFor(project('stopal', 'cursor-mcp'))!.fetch({
-        listTools: noScopeSchema('task.list'),
-        callTool: async () => ({ data: { items: [] } }),
-      }),
-    ).rejects.toThrow('returned rows carry no projectId scope')
-  })
+  for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
+    test(`${protocol} accepts empty and all-scoped pages but refuses a mixed page`, async () => {
+      const source = trackerSourceFor(
+        project(protocol === 'workspace-mcp' ? 'workspace' : 'stopal', protocol),
+      )!
+      const toolName = protocol === 'workspace-mcp' ? 'list-tasks-tool' : 'task.list'
+      const response = (rows: Record<string, unknown>[]) =>
+        protocol === 'workspace-mcp' ? { tasks: rows } : { data: { items: rows } }
+      const scoped =
+        protocol === 'workspace-mcp'
+          ? { short_id: 'WOR-1', status: 'todo', team: 'Platform' }
+          : {
+              humanKey: 'STO-1',
+              status: 'todo',
+              projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+            }
+      const outside =
+        protocol === 'workspace-mcp'
+          ? { short_id: 'OTH-1', status: 'todo', team: 'Other' }
+          : { humanKey: 'OTH-1', status: 'todo', projectId: 'other' }
+      const missing =
+        protocol === 'workspace-mcp'
+          ? { short_id: 'BAD-1', status: 'todo' }
+          : { humanKey: 'BAD-1', status: 'todo' }
+
+      expect(
+        (
+          await source.fetch({
+            listTools: noScopeSchema(toolName),
+            callTool: async () => response([]),
+          })
+        ).tasks,
+      ).toEqual([])
+      expect(
+        (
+          await source.fetch({
+            listTools: noScopeSchema(toolName),
+            callTool: async () => response([scoped, outside]),
+          })
+        ).tasks.map((task) => task.key),
+      ).toEqual([protocol === 'workspace-mcp' ? 'WOR-1' : 'STO-1'])
+      await expect(
+        source.fetch({
+          listTools: noScopeSchema(toolName),
+          callTool: async () => response([scoped, missing]),
+        }),
+      ).rejects.toThrow(protocol === 'workspace-mcp' ? 'no team scope' : 'no projectId scope')
+    })
+  }
 })
 
 describe('tracker comment ids', () => {
