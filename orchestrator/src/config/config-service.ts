@@ -355,7 +355,9 @@ async function rowPlaintext(
 ): Promise<Uint8Array> {
   const local = machine ?? (await localMachine())
   const key = await client.getDataKey(row.dekId, local.keyId)
-  const full = await client.getSecret(row.key, row.scope, row.environment)
+  const full = await client.getSecret(row.key, row.scope, row.environment, {
+    projectId: row.projectId ?? null,
+  })
   return openHostedSecret({
     client,
     row: full,
@@ -410,6 +412,7 @@ async function rotateDataKey(
       await client.putSecret(row.key, {
         scope: row.scope,
         environment: row.environment,
+        projectId: row.projectId ?? null,
         dekId: current.id,
         envelope: encoded(envelope),
         expectedRowVersion: row.rowVersion,

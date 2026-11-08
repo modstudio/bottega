@@ -13,7 +13,7 @@ import {
   CREDENTIAL_ENVIRONMENTS,
   completeCredentialFields,
 } from '../../../shared/credential.ts'
-import { stripTrailingNewline } from '../../../shared/sealed-value.ts'
+import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
 import {
   type CredentialEnvironment,
@@ -62,15 +62,32 @@ function missingCredentialRefusal(address: CredentialAddress): Error {
   )
 }
 
+function blankCredentialRefusal(address: CredentialAddress): Error {
+  const name = `${address.provider}/${address.type}`
+  const binding = address.projectName
+    ? `project ${address.projectName}`
+    : `space ${address.spaceName}`
+  const bindOption = address.projectName
+    ? ` --project ${address.projectName}`
+    : ` --space ${address.spaceName}`
+  const payerOption = address.payer === 'shared' ? ' --shared' : ''
+  const environmentOption = address.environment === 'default' ? '' : ` --env ${address.environment}`
+  return new Error(
+    `credential ${name} (${address.environment}) is blank for ${binding}; pipe a non-blank value to \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${environmentOption}\``,
+  )
+}
+
 export async function setCredential(
   address: CredentialAddress,
   value: string,
   client = configClient(),
 ) {
+  if (sealedValueIsEmpty(value)) throw blankCredentialRefusal(address)
+  const plaintext = stripTrailingNewline(value)
   try {
     return await setSecret(
       credentialVariableName(address.provider, address.type, address.environment),
-      stripTrailingNewline(value),
+      plaintext,
       credentialScopeFromPayer(address.payer),
       client,
       {
@@ -80,7 +97,7 @@ export async function setCredential(
           projectId: address.projectId,
           provider: address.provider,
           type: address.type,
-          hint: credentialHint(stripTrailingNewline(value)),
+          hint: credentialHint(plaintext),
         },
         createDataKey: false,
         missingDestinationAccessRefusal: () => missingProjectWrapRefusal(address),
