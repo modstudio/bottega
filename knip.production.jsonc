@@ -24,6 +24,8 @@
     // rehearse.sh's eval imports the export.
     "orchestrator/src/postgres/migration-failure.ts": ["exports"],
     "orchestrator/src/postgres/migration-notices.ts": ["exports"],
+    // Slice 1b fixes the default credential delivery name before its part 2 consumer lands.
+    "orchestrator/src/config/credential.ts": ["exports"],
     // Cloudflare loads this default export through wrangler.toml rather than an import.
     "hub/deploy/site/src/worker.ts": ["exports"]
   },

@@ -10,7 +10,7 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { isRepeatable } from '../shared/cli-repeat-guard.ts'
 import { takesVariadicArgument } from '../shared/commander-public-path.ts'
 import { type BinaryEntries, dispatchBinary } from './dispatch.ts'
-import { ROUTES, resolveRoute } from './routes.ts'
+import { HIDDEN_OWNER_COMMANDS, ROUTES, resolveRoute } from './routes.ts'
 
 function commandExists(program: Command, path: readonly string[]): boolean {
   let current = program
@@ -111,6 +111,27 @@ test('every route resolves to an existing owner command', () => {
         `${route.command.join(' ')} -> ${target.owner} ${target.argv.join(' ')}`,
       ).toBeTrue()
     }
+  }
+})
+
+test('every registered owner command is routed or explicitly hidden', () => {
+  const owners = { orch: orchProgram, hub: hubProgram } as const
+  for (const [owner, program] of Object.entries(owners) as [keyof typeof owners, Command][]) {
+    const routed = new Set<string>()
+    for (const route of ROUTES) {
+      const targets =
+        route.composite ??
+        (route.owner === 'orch' || route.owner === 'hub'
+          ? [{ owner: route.owner, argv: route.argv ?? [] }]
+          : [])
+      for (const target of targets)
+        if (target.owner === owner && target.argv[0]) routed.add(target.argv[0])
+    }
+    const hidden = new Set<string>(HIDDEN_OWNER_COMMANDS[owner])
+    const missing = program.commands
+      .map((command) => command.name())
+      .filter((name) => !routed.has(name) && !hidden.has(name))
+    expect(missing, `${owner} commands missing from cli/routes.ts`).toEqual([])
   }
 })
 
