@@ -48,7 +48,15 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
-import { responseMessage, responseRecord } from './record-api-client-response.ts'
+import {
+  RecordApiRequestError,
+  responseCode,
+  responseMessage,
+  responseRecord,
+} from './record-api-client-response.ts'
+
+export { RecordApiRequestError } from './record-api-client-response.ts'
+
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -452,21 +460,6 @@ function injectSlot(): InjectSlot {
 const injectedClient = (): RecordApiClient | null => injectSlot().current
 export const recordApiClientInjected = (): boolean => injectedClient() !== null
 
-export class RecordApiRequestError extends Error {
-  readonly kind: 'unreachable' | 'server' | 'refused'
-  readonly status: number | null
-
-  constructor(
-    message: string,
-    kind: 'unreachable' | 'server' | 'refused',
-    status: number | null = null,
-  ) {
-    super(message)
-    this.kind = kind
-    this.status = status
-  }
-}
-
 const recordApiStatus = (status: number) => `record API ${status}`
 
 function recordApiUnreachable(error: unknown): Error {
@@ -519,7 +512,13 @@ export function recordAuthRefusal(status: number, body: unknown, headers: Header
     )
   }
   const message = responseMessage(body, recordApiStatus(status))
-  if (status >= 400 && status < 500) return new RecordApiRequestError(message, 'refused')
+  if (status >= 400 && status < 500) {
+    const code = responseCode(body)
+    const existingAccount = code
+      ? code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' || code === 'USER_ALREADY_EXISTS'
+      : message.startsWith('User already exists')
+    return new RecordApiRequestError(message, 'refused', status, code, existingAccount)
+  }
   return recordApiServerError(message, status)
 }
 
@@ -535,10 +534,8 @@ async function recordEmailAuthRequest(
       body: JSON.stringify(body),
     })
   } catch (error) {
-    throw new RecordApiRequestError(
-      `record API is unreachable: ${error instanceof Error ? error.message : String(error)}`,
-      'unreachable',
-    )
+    const message = error instanceof Error ? error.message : String(error)
+    throw new RecordApiRequestError(`record API is unreachable: ${message}`, 'unreachable')
   }
   const payload = await response.json().catch(() => null)
   if (!response.ok) throw recordAuthRefusal(response.status, payload, response.headers)
@@ -548,10 +545,16 @@ async function recordEmailAuthRequest(
   return { token, user: user as Record<string, unknown> }
 }
 
-export const recordApiSignIn = (email: string, password: string) =>
+export type RecordSessionResult = { token: string; user: Record<string, unknown> }
+
+export const recordApiSignIn = (email: string, password: string): Promise<RecordSessionResult> =>
   recordEmailAuthRequest('/api/auth/sign-in/email', { email, password })
 
-export const recordApiSignUp = (email: string, name: string, password: string) =>
+export const recordApiSignUp = (
+  email: string,
+  name: string,
+  password: string,
+): Promise<RecordSessionResult> =>
   recordEmailAuthRequest('/api/auth/sign-up/email', { email, name, password })
 
 export function recordApiBaseUrl(

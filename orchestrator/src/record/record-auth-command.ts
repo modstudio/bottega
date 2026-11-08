@@ -1,13 +1,22 @@
 // concern: record-auth-command
 /** Owns record sign-in presentation and local bearer storage. Must not know run phases. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { writeRecordSessionToken } from '../../../shared/record-session.ts'
+import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
+import { probeRecordSessionStore, writeRecordSessionToken } from '../../../shared/record-session.ts'
+import { refusal } from '../../../shared/refusal.ts'
 import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { claimCurrentMachineKey } from '../config/config-service.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
+import { RefusalError } from '../refusal-error.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
-import { recordApiClient, recordApiSignIn, recordApiSignUp } from './record-api-client.ts'
+import {
+  RecordApiRequestError,
+  type RecordSessionResult,
+  recordApiClient,
+  recordApiSignIn,
+  recordApiSignUp,
+} from './record-api-client.ts'
 import { recordApiSendVerificationEmail } from './record-email-verification-client.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 import { recordMemberships } from './record-space.ts'
@@ -26,6 +35,18 @@ type RecordPasswordDecision =
   | { action: 'use-environment'; password: string }
   | { action: 'prompt' }
   | { action: 'refuse'; message: string }
+
+type RecordAuthCommandDependencies = {
+  probeSessionStore(): void
+  signIn(email: string, password: string): Promise<RecordSessionResult>
+  signUp(email: string, name: string, password: string): Promise<RecordSessionResult>
+}
+
+const recordAuthCommandDependencies: RecordAuthCommandDependencies = {
+  probeSessionStore: probeRecordSessionStore,
+  signIn: recordApiSignIn,
+  signUp: recordApiSignUp,
+}
 
 export function decideRecordPassword(
   passwordFromEnvironment: string | undefined,
@@ -49,13 +70,27 @@ export async function signUpCommand(
   name: string,
   readPassword: () => Promise<string>,
   presentation: Presentation,
+  dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
 ): Promise<void> {
-  const result = await recordApiSignUp(email, name, await recordPassword(readPassword))
+  const password = await recordPassword(readPassword)
+  dependencies.probeSessionStore()
+  let result: RecordSessionResult
+  try {
+    result = await dependencies.signUp(email, name, password)
+  } catch (error) {
+    existingAccountSignUpRefusal(error, email)
+  }
   await completeRecordSessionCommand(result, presentation, 'signed up')
 }
 
+function existingAccountSignUpRefusal(error: unknown, email: string): never {
+  const message = error instanceof Error ? error.message : String(error)
+  if (!(error instanceof RecordApiRequestError) || !error.existingAccount) throw error
+  throw new RefusalError(refusal(message, recordSignInRemedy(email)))
+}
+
 async function completeRecordSessionCommand(
-  result: { token: string; user: Record<string, unknown> },
+  result: RecordSessionResult,
   presentation: Presentation,
   completion: 'signed in' | 'signed up',
 ): Promise<void> {
@@ -92,13 +127,16 @@ export async function signInCommand(
   email: string,
   readPassword: () => Promise<string>,
   presentation: Presentation,
+  dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
 ): Promise<void> {
-  const result = await recordApiSignIn(email, await recordPassword(readPassword))
+  const password = await recordPassword(readPassword)
+  dependencies.probeSessionStore()
+  const result = await dependencies.signIn(email, password)
   await completeSignInCommand(result, presentation)
 }
 
 export async function completeSignInCommand(
-  result: { token: string; user: Record<string, unknown> },
+  result: RecordSessionResult,
   presentation: Presentation,
 ): Promise<void> {
   await completeRecordSessionCommand(result, presentation, 'signed in')

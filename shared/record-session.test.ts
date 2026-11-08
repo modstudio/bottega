@@ -5,12 +5,18 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
 import {
   clearRecordSessionToken,
+  probeRecordSessionStore,
   readRecordSessionToken,
   readRecordSessionTokenAsync,
   type SecurityRunner,
   writeRecordSessionToken,
 } from './record-session.ts'
-import { recordSessionPath, STATE_HOME_ENV } from './state-directory.ts'
+import {
+  recordSessionDirectory,
+  recordSessionPath,
+  recordSessionProbePath,
+  STATE_HOME_ENV,
+} from './state-directory.ts'
 
 const bytes = (value = '') => new TextEncoder().encode(value)
 const result = (exitCode: number, stdout = '', stderr = '') => ({
@@ -116,6 +122,42 @@ describe('record session keychain', () => {
     expect(existsSync(recordSessionPath(process.env))).toBe(false)
   })
 
+  test('probes a distinct key without changing the real session', () => {
+    const calls: string[][] = []
+    const stored = new Map([['record', 'real-token']])
+    const runner: SecurityRunner = (argv, stdin) => {
+      calls.push(argv)
+      if (argv[1] === '-i') {
+        const command = new TextDecoder().decode(stdin)
+        const match = command.match(/-a "([^"]+)" .* -w "([^"]+)"/)
+        if (match?.[1] && match[2]) stored.set(match[1], match[2])
+      }
+      if (argv[1] === 'find-generic-password') {
+        const account = argv[argv.indexOf('-a') + 1] ?? ''
+        return result(0, `${stored.get(account) ?? ''}\n`)
+      }
+      if (argv[1] === 'delete-generic-password') {
+        const account = argv[argv.indexOf('-a') + 1] ?? ''
+        stored.delete(account)
+      }
+      return result(0)
+    }
+
+    expect(readRecordSessionToken(runner)).toBe('real-token')
+    probeRecordSessionStore(runner)
+    expect(readRecordSessionToken(runner)).toBe('real-token')
+    expect(calls.some((argv) => argv.includes('record-probe'))).toBe(true)
+    expect(
+      calls.filter((argv) => argv.includes('record') && !argv.includes('record-probe')),
+    ).toHaveLength(2)
+  })
+
+  test('a failed probe keeps the store error and adds the file-store remedy', () => {
+    expect(() => probeRecordSessionStore(() => result(70, '', 'keychain unavailable'))).toThrow(
+      'security add-generic-password failed with exit code 70: keychain unavailable\ncleared by: set BOTTEGA_KEYSTORE=file to keep the record session and the machine key in owner-only files',
+    )
+  })
+
   test('adds the file opt-in remedy to Linux keychain failures', () => {
     platformHolder[PLATFORM_KEY] = 'linux'
     expect(() => readRecordSessionToken(() => result(70, '', 'keychain unavailable'))).toThrow(
@@ -155,6 +197,36 @@ describe('file-backed record session', () => {
 
     expect(readRecordSessionToken(unusedRunner)).toBe('second-token')
     expect(runnerCalls).toBe(0)
+  })
+
+  test('probes a distinct file without changing the real session', () => {
+    writeRecordSessionToken('real-token', unusedRunner)
+    probeRecordSessionStore(unusedRunner)
+
+    expect(readRecordSessionToken(unusedRunner)).toBe('real-token')
+    expect(existsSync(recordSessionProbePath(process.env))).toBe(false)
+    expect(runnerCalls).toBe(0)
+  })
+
+  test('an unwritable file store names its directory without suggesting file-store selection', () => {
+    const root = process.env[STATE_HOME_ENV]
+    if (!root) throw new Error('test state root is missing')
+    chmodSync(root, 0o500)
+    try {
+      let thrown: unknown
+      try {
+        probeRecordSessionStore(unusedRunner)
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toContain(
+        `cleared by: make ${recordSessionDirectory(process.env)} a directory you own and can write`,
+      )
+      expect((thrown as Error).message).not.toContain('BOTTEGA_KEYSTORE=file')
+    } finally {
+      chmodSync(root, 0o700)
+    }
   })
 
   test('clears the token and succeeds when it is already absent', () => {

@@ -1,5 +1,14 @@
 import { PLATFORM_SLUG } from './brand.ts'
-export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run \`${PLATFORM_SLUG} record sign-in --email <email>\``
+import type { RefusalRemedy } from './refusal.ts'
+
+export function recordSignInRemedy(email: string): Extract<RefusalRemedy, { kind: 'command' }> {
+  return {
+    kind: 'command',
+    argv: [PLATFORM_SLUG, 'record', 'sign-in', '--email', email],
+  }
+}
+
+export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run \`${recordSignInRemedy('<email>').argv.join(' ')}\``
 export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 

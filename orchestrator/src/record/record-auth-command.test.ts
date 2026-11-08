@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { RecordApiRequestError } from './record-api-client.ts'
 import {
   decideRecordPassword,
   RECORD_PASSWORD_ENV,
   recordPassword,
+  signInCommand,
+  signUpCommand,
   verificationEmailAction,
   verifyEmailCommand,
 } from './record-auth-command.ts'
@@ -42,6 +45,70 @@ test('an unset environment password with a TTY prompts', () => {
 
 test('record password accepts a provided password independent of process stdin', async () => {
   await expect(recordPassword(async () => 'provided')).resolves.toBe('provided')
+})
+
+const presentation = { log: () => {} }
+const sessionResult = {
+  token: 'fixture-token',
+  user: { email: 'person@example.test' },
+}
+
+test('sign-up refuses before the API when the session-store probe fails', async () => {
+  let apiCalls = 0
+  await expect(
+    signUpCommand('person@example.test', 'Person', async () => 'secret', presentation, {
+      probeSessionStore: () => {
+        throw new Error('session store unavailable')
+      },
+      signUp: async () => {
+        apiCalls += 1
+        return sessionResult
+      },
+      signIn: async () => sessionResult,
+    }),
+  ).rejects.toThrow('session store unavailable')
+  expect(apiCalls).toBe(0)
+})
+
+test('sign-in refuses before the API when the session-store probe fails', async () => {
+  let apiCalls = 0
+  await expect(
+    signInCommand('person@example.test', async () => 'secret', presentation, {
+      probeSessionStore: () => {
+        throw new Error('session store unavailable')
+      },
+      signUp: async () => sessionResult,
+      signIn: async () => {
+        apiCalls += 1
+        return sessionResult
+      },
+    }),
+  ).rejects.toThrow('session store unavailable')
+  expect(apiCalls).toBe(0)
+})
+
+async function expectExistingAccountSignInRemedy(apiError: Error): Promise<void> {
+  await expect(
+    signUpCommand('person@example.test', 'Person', async () => 'secret', presentation, {
+      probeSessionStore: () => {},
+      signUp: async () => {
+        throw apiError
+      },
+      signIn: async () => sessionResult,
+    }),
+  ).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} record sign-in --email person@example.test`)
+}
+
+test('sign-up directs an existing account fact to sign in', async () => {
+  await expectExistingAccountSignInRemedy(
+    new RecordApiRequestError(
+      'changed upstream message',
+      'refused',
+      422,
+      'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+      true,
+    ),
+  )
 })
 
 test('verification email decision distinguishes verified and unverified users', () => {

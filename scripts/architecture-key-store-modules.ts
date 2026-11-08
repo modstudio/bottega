@@ -38,6 +38,7 @@ export const keyStoreModules: KeyStoreModule[] = [
     './file-backed-secret-paths.ts',
     './key-store.ts',
     './keychain.ts',
+    './refusal.ts',
     './state-directory.ts',
   ]),
 ]
