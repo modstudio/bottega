@@ -152,6 +152,9 @@ function staleAutonomyLayer(layer: AutonomyLayerRow): AutonomyLayerRow {
 const cachedHostedNote = (reason: string, cached: CachedSessionContext, now: () => Date) =>
   `hosted autonomy settings unavailable: ${reason}; resolved from cached hosted autonomy settings, local and project scopes (cache age ${Math.max(0, now().getTime() - Date.parse(cached.resolvedAt))} ms)`
 
+const builtInHostedNote = (reason: string) =>
+  `hosted autonomy settings unavailable: ${reason}; resolved from local and project scopes, then built-in`
+
 export async function resolveProjectAutonomy(
   project: string,
   workflow: string | undefined,
@@ -214,7 +217,7 @@ export async function resolveProjectAutonomy(
     return {
       ...resolution,
       hosted: { status: hosted.status, reason: hosted.reason },
-      note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes`,
+      note: builtInHostedNote(hosted.reason),
       session,
     }
   if (cached) {
@@ -259,7 +262,7 @@ export async function resolveProjectAutonomy(
       unavailableReason: hosted.reason,
     },
     hosted: { status: hosted.status, reason: hosted.reason },
-    note: `hosted autonomy settings unavailable: ${hosted.reason}; resolved from local and project scopes, then built-in because no cache exists`,
+    note: builtInHostedNote(hosted.reason),
     session,
   }
 }

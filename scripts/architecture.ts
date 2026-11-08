@@ -414,6 +414,7 @@ export const modules: ArchitectureModule[] = [
     '../reclaim/reclaim-kind.ts',
     '../project/projects.ts',
     '../resources/resource-claims.ts',
+    '../resources/resource-step-recorder.ts',
     '../resources/resource-inventory.ts',
     '../run/run-alive.ts',
     '../run/run-status.ts',
@@ -460,6 +461,8 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('hub/src/hosted-report-gather.ts', [
     '../../shared/interval.ts',
+    '../../shared/record/schema-hub.ts',
+    './record-bigint.ts',
     './measures.ts',
     './report-delivery.ts',
     './report-renderer.ts',
@@ -498,6 +501,7 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../run/run-status.ts',
     './ref-guard-runtime.ts',
+    './resource-claims.ts',
     './worker-hooks.ts',
   ]),
   module('orchestrator/src/resources/ref-guard-runtime.ts', [

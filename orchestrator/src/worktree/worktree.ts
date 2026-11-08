@@ -60,6 +60,7 @@ export type CreateWorkerWorktreeOptions = {
   key?: string
   baseRef?: string
   record: RecordWorktree
+  recordPending?: RecordWorktree
   detached: boolean
   existingBranch?: string
   existingBranchTip?: string
@@ -119,6 +120,7 @@ export function createReadOnlyWorktreeForTool(input: {
   runId: string
   readOnlyBase: string
   record?: RecordWorktree
+  recordPending?: RecordWorktree
   provisionTimeoutMs?: number
 }): Worktree {
   const tool = input.tool
@@ -126,7 +128,14 @@ export function createReadOnlyWorktreeForTool(input: {
   // one decision, so the lifecycle a half-created tree is released by cannot
   // drift from the lifecycle that created it.
   return tool && readOnlyWorktreeSource(tool) === 'readonly_recipe'
-    ? createReadOnlyWithTool(tool, input.cwd, input.runId, input.readOnlyBase, input.record)
+    ? createReadOnlyWithTool(
+        tool,
+        input.cwd,
+        input.runId,
+        input.readOnlyBase,
+        input.record,
+        input.recordPending,
+      )
     : createReadOnlyWorktree(
         input.cwd,
         input.runId,
@@ -134,6 +143,7 @@ export function createReadOnlyWorktreeForTool(input: {
         input.record,
         input.tool?.readonly_provision,
         input.provisionTimeoutMs,
+        input.recordPending,
       )
 }
 
@@ -144,6 +154,7 @@ function createReadOnlyWorkerWorktree(options: CreateWorkerWorktreeOptions): Wor
     runId: options.runId,
     commit: options.sharedReviewCommit,
     record: options.record,
+    recordPending: options.recordPending,
     provision: options.tool?.readonly_provision,
     provisionTimeoutMs: options.provisionTimeoutMs,
   })

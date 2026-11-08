@@ -24,7 +24,7 @@ import {
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 import { missingWorkflowArguments, refuseUnknownWorkflowArgument } from './workflow-arguments.ts'
-import { cursorAutonomyOutput } from './workflow-autonomy-output.ts'
+import { autonomyNoticeOutput } from './workflow-autonomy-output.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
 import {
@@ -870,7 +870,7 @@ export function composeWorkflow(
     facts,
     needs,
     rulings: effectiveAutonomy.rulings,
-    ...cursorAutonomyOutput(autonomy),
+    ...autonomyNoticeOutput(autonomy),
   }
 }
 
@@ -980,7 +980,7 @@ export function getWorkflowStep(
     body: templates.body,
     ...keylessTrackerActionMetadata(keylessTrackerActionPaths),
     next,
-    ...cursorAutonomyOutput(autonomy),
+    ...autonomyNoticeOutput(autonomy),
   }
 }
 

@@ -35,6 +35,7 @@ type ArchitectSessionContext =
       stages: StageSlice[]
       shipTo: ShipToSlice
       warnings?: string[]
+      note?: string
       stale?: true
       resolvedAt?: string
       text: string
@@ -112,6 +113,7 @@ function renderSlice(
   stages: StageSlice[],
   shipTo: ShipToSlice,
   warnings: string[],
+  note?: string,
 ): string {
   return [
     `Autonomy for ${project}, resolved now from ${PLATFORM_NAME}; change it with ${AUTONOMY_SETTER}`,
@@ -119,6 +121,7 @@ function renderSlice(
     ...stages.map(stageLine),
     shipToLine(shipTo),
     ...warnings,
+    ...(note ? [note] : []),
   ].join('\n')
 }
 
@@ -169,7 +172,9 @@ export function staleSessionContext(
     shipTo,
     ...(warnings.length ? { warnings } : {}),
     ...(stale ? { stale: true, resolvedAt } : {}),
-    text: stale ? lines.join('\n') : renderSlice(slice.project, rulings, stages, shipTo, warnings),
+    text: stale
+      ? lines.join('\n')
+      : renderSlice(slice.project, rulings, stages, shipTo, warnings, slice.note),
   }
 }
 
@@ -237,7 +242,8 @@ async function architectSessionContext(
     stages,
     shipTo,
     ...(warnings.length ? { warnings } : {}),
-    text: renderSlice(project.name, rulings, stages, shipTo, warnings),
+    ...(resolution.note ? { note: resolution.note } : {}),
+    text: renderSlice(project.name, rulings, stages, shipTo, warnings, resolution.note),
   } satisfies ArchitectSessionContext
   if (resolution.hosted?.status === 'unavailable' && cached)
     return staleSessionContext(

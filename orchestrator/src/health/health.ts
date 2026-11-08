@@ -1,5 +1,11 @@
 import type { Database } from 'bun:sqlite'
 import {
+  type CollectLeaseHoldEntry,
+  type CollectLeaseRefusalEntry,
+  readCollectLeaseHoldsSince,
+  readCollectLeaseRefusalsSince,
+} from '../../../shared/collect-lease-log.ts'
+import {
   AttributionKindSchema,
   emptyAttribution,
   type HarnessHealth,
@@ -72,14 +78,31 @@ function contentionHealth(
   from: string,
   readStoreRefusals: (since: string) => StoreLockRefusalEntry[],
   readStoreHolds: (since: string) => StoreWriteHoldEntry[],
+  readLeaseRefusals: (since: string) => CollectLeaseRefusalEntry[],
+  readLeaseHolds: (since: string) => CollectLeaseHoldEntry[],
 ): HarnessHealth['contention'] {
   const contention = summarizeContention(database, from)
+  const leaseRefusals: StoreLockRefusalEntry[] = readLeaseRefusals(from).map((entry) => ({
+    at: entry.at,
+    store: 'collect lease',
+    holderCommand: entry.holder,
+    holderPid: null,
+    verb: entry.waiter,
+  }))
+  const leaseHolds: StoreWriteHoldEntry[] = readLeaseHolds(from).map((entry) => ({
+    at: entry.at,
+    store: 'collect lease',
+    spanMs: entry.heldMs,
+    longestMs: entry.heldMs,
+    transactions: 1,
+    caller: entry.legs,
+  }))
   return {
     ...contention,
     resources: [
       ...contention.resources,
-      summarizeStoreLockRefusals(readStoreRefusals(from)),
-      summarizeStoreWriteHolds(readStoreHolds(from)),
+      summarizeStoreLockRefusals([...readStoreRefusals(from), ...leaseRefusals]),
+      summarizeStoreWriteHolds([...readStoreHolds(from), ...leaseHolds]),
     ],
   }
 }
@@ -154,27 +177,35 @@ function falseVerdictRows(database: Database, runs: HealthRunRow[]): HealthVerdi
   })
 }
 
+function healthWindow(days: number, now: Date): { from: string; dayKeys: string[] } {
+  if (!Number.isInteger(days) || days < 1) throw new Error('--days must be a positive integer')
+  const firstDay = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1)),
+  )
+  return {
+    from: firstDay.toISOString(),
+    dayKeys: Array.from({ length: days }, (_, offset) =>
+      new Date(firstDay.getTime() + offset * 86_400_000).toISOString().slice(0, 10),
+    ),
+  }
+}
+
 export function harnessHealth(
   days = HEALTH_DEFAULT_DAYS,
   database: Database = db(),
   now = new Date(),
   readStoreRefusals: (since: string) => StoreLockRefusalEntry[] = readStoreLockRefusalsSince,
   readStoreHolds: (since: string) => StoreWriteHoldEntry[] = readStoreWriteHoldsSince,
+  readLeaseRefusals: (since: string) => CollectLeaseRefusalEntry[] = readCollectLeaseRefusalsSince,
+  readLeaseHolds: (since: string) => CollectLeaseHoldEntry[] = readCollectLeaseHoldsSince,
 ): HarnessHealth {
-  if (!Number.isInteger(days) || days < 1) throw new Error('--days must be a positive integer')
-  const firstDay = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1)),
-  )
-  const from = firstDay.toISOString()
+  const { from, dayKeys } = healthWindow(days, now)
   const runs = database
     .query(
       `SELECT record_id,number,started_at,latency_ms,failure_kind,status,error,work_preserved FROM run
       WHERE datetime(started_at) >= datetime(?) ORDER BY started_at,number`,
     )
     .all(from) as HealthRunRow[]
-  const dayKeys = Array.from({ length: days }, (_, offset) =>
-    new Date(firstDay.getTime() + offset * 86_400_000).toISOString().slice(0, 10),
-  )
   const classTotals = healthClassTotals(runs, HEALTH_CLASSES)
   const classes = classTotals.map(({ kind, count, totalTimeMs }): HealthClassRow => {
     const matching = runs.filter((row) => healthClassOf(row) === kind)
@@ -345,6 +376,13 @@ export function harnessHealth(
       .sort((a, b) => b.count - a.count || a.agent.localeCompare(b.agent)),
     provenance,
     flakes,
-    contention: contentionHealth(database, from, readStoreRefusals, readStoreHolds),
+    contention: contentionHealth(
+      database,
+      from,
+      readStoreRefusals,
+      readStoreHolds,
+      readLeaseRefusals,
+      readLeaseHolds,
+    ),
   })
 }

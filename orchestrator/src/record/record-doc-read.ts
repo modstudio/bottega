@@ -34,6 +34,39 @@ import {
 
 type Tenant = { url: string } & TenantPrincipal
 
+type UnreadableRecordDoc = { id: string; reason: string }
+export type RecordDocListEntry =
+  | { readable: RecordDoc }
+  | { unreadable: UnreadableRecordDoc; cursor: RecordCursor }
+
+export function recordDocListEntries(
+  rows: Record<string, unknown>[],
+  audience?: DocAudience,
+): RecordDocListEntry[] {
+  return rows.map((row) => {
+    try {
+      const doc = recordDocRow(row)
+      const body = audience ? docBodyForAudience(doc.body, audience) : doc.body
+      return {
+        readable: {
+          ...doc,
+          body,
+          ...effectiveDocSummary(doc.summarySource === 'written' ? doc.summary : null, body),
+          [recordCursorAt]: String(row.cursor_at),
+        },
+      }
+    } catch (error) {
+      return {
+        unreadable: {
+          id: String(row.id),
+          reason: error instanceof Error ? error.message : String(error),
+        },
+        cursor: { at: String(row.cursor_at), id: String(row.id) },
+      }
+    }
+  })
+}
+
 export type RecordDocListInput = {
   scope?: string
   subject?: string | null
@@ -108,22 +141,23 @@ async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<
   })
 }
 
-export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {
+export async function listRecordDocEntries(
+  input: Tenant & RecordDocListInput,
+): Promise<RecordDocListEntry[]> {
   return tenant(input, async (tx) => {
     const rows = await recordDocRows(tx, {
       ...input,
       spaceIds: input.spaceIds?.length ? input.spaceIds : [input.spaceId],
     })
-    return rows.map((row: Record<string, unknown>) => {
-      const doc = recordDocRow(row)
-      const body = input.audience ? docBodyForAudience(doc.body, input.audience) : doc.body
-      return {
-        ...doc,
-        body,
-        ...effectiveDocSummary(doc.summarySource === 'written' ? doc.summary : null, body),
-        [recordCursorAt]: String(row.cursor_at),
-      }
-    })
+    return recordDocListEntries(rows, input.audience)
+  })
+}
+
+export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {
+  const entries = await listRecordDocEntries(input)
+  return entries.map((entry) => {
+    if ('readable' in entry) return entry.readable
+    throw new Error(entry.unreadable.reason)
   })
 }
 

@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import { formatNoteLabel, type NoteLabel } from '../../../shared/note-label.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { requireOwner } from './record-outside-intake.ts'
 import { recordPool } from './record-pool.ts'
@@ -28,9 +29,9 @@ async function tenant<T>(input: Tenant, run: (tx: SQL) => Promise<T>): Promise<T
 function blockFromRow(row: Record<string, unknown>): OutsideBlock {
   return {
     userId: String(row.user_id),
-    blockedUntil: row.blocked_until ? new Date(String(row.blocked_until)).toISOString() : null,
+    blockedUntil: row.blocked_until ? recordDate(row.blocked_until).toISOString() : null,
     blockedByUserId: String(row.blocked_by_user_id),
-    createdAt: new Date(String(row.created_at)).toISOString(),
+    createdAt: recordDate(row.created_at).toISOString(),
   }
 }
 

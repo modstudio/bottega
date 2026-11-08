@@ -4,6 +4,7 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { nullableRecordIso } from '../../../shared/record-timestamp.ts'
 import {
   BOARD_MESSAGE_REVISION_LOCK_KEY,
   type HostedBoardReceipt,
@@ -13,8 +14,6 @@ import {
 } from './record-board-contract.ts'
 import { hostedBoardMessageView, loadHostedBoardMessage } from './record-board-messages.ts'
 import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
-
-const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
 /** The migration that adds the definer function a reader's acknowledgement needs. */
 const BOARD_RECEIPT_REVISION_MIGRATION = '20261026044618_dev_1766_board_ack_revision'
@@ -28,8 +27,8 @@ export function hostedBoardReceiptView(row: Record<string, unknown>): HostedBoar
     readerSession: String(row.reader_session),
     readerRunRecordId: row.reader_run_record_id == null ? null : String(row.reader_run_record_id),
     audienceAtPosting: Boolean(row.audience_at_posting),
-    deliveredAt: iso(row.delivered_at),
-    acknowledgedAt: iso(row.acknowledged_at),
+    deliveredAt: nullableRecordIso(row.delivered_at),
+    acknowledgedAt: nullableRecordIso(row.acknowledged_at),
   }
 }
 

@@ -8,12 +8,14 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
+import { autonomyNoticeOutput } from './workflow-autonomy-output.ts'
 import { composeWorkflowWithCursor, getWorkflowStepWithCursor } from './workflow-cursor.ts'
 import { combineCursorAutonomy, mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
 import { abandonCursor } from './workflow-cursor-test.fixture.ts'
+import { renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { composeWorkflow } from './workflows.ts'
+import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one', taskRecordId: 'task-DEV-822' }
@@ -131,6 +133,36 @@ describe('workflow cursor stored autonomy', () => {
       scope: 'live ship-to',
     })
     expect(combined.looserLiveDifferences).toEqual([])
+  })
+
+  test('carries a live fallback note through a pinned cursor composition', () => {
+    const pinned = pinnedAutonomy()
+    const live = liveAutonomy()
+    live.note = 'hosted autonomy settings unavailable: offline; resolved from built-in'
+
+    const combined = combineCursorAutonomy(pinned, live)
+    const notice = autonomyNoticeOutput(combined.resolution)
+    const step = getWorkflowStep(
+      'flow',
+      'fixture',
+      'lens',
+      args,
+      database(),
+      { mode: 'default' },
+      combined.resolution,
+    )
+
+    expect(notice.autonomyNote).toBe(live.note)
+    expect(step.autonomyNote).toBe(live.note)
+    expect(renderWorkflowStep(step)).toContain(live.note)
+
+    expect(combineCursorAutonomy({ ...pinned, note: live.note }, live).resolution.note).toBe(
+      live.note,
+    )
+    pinned.note = 'pinned fallback note'
+    expect(combineCursorAutonomy(pinned, live).resolution.note).toBe(
+      `pinned fallback note; ${live.note}`,
+    )
   })
 
   test('keeps stricter pins and reports looser live settings', () => {

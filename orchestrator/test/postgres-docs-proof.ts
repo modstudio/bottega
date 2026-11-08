@@ -455,6 +455,33 @@ async function proveWrongShapedSourceFileMutations(
     })
     expect(revisionCount(wrong.id)).toBe(before)
   }
+
+  const readable = await create('readable-source-files', 'Readable source files.\n')
+  const listed = await fetch(`${origin}/v1/docs?scope=project&subject=${projectName}&limit=100`, {
+    headers,
+  })
+  expect(listed.status).toBe(200)
+  expect(await listed.json()).toMatchObject({
+    items: [expect.objectContaining({ id: readable.id })],
+    unreadable: [
+      expect.objectContaining({
+        reason: expect.stringContaining('doc.source_files is not a JSON list'),
+      }),
+      expect.objectContaining({
+        reason: expect.stringContaining('doc.source_files is not a JSON list'),
+      }),
+    ],
+    nextCursor: null,
+  })
+
+  const token = headers.Authorization?.replace(/^Bearer /, '')
+  if (!token) throw new Error('source-file mutation proof requires a bearer token')
+  installRecordApiClient(liveCacheClient(origin, token))
+  try {
+    await expect(pullRecordCache(db())).resolves.toBeDefined()
+  } finally {
+    installRecordApiClient(createMemoryRecordApiClient())
+  }
 }
 
 async function proveRequestedProjectSpace(

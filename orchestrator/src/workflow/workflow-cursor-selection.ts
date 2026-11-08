@@ -26,6 +26,7 @@ export type WorkflowCursorSelector = {
 export type WorkflowCursorContext = {
   session?: string | null
   instance?: string
+  workflowKey?: string
   taskRecordId?: string | null
   adoptionTaskRecordId?: string | null
   taskStatusCategory?: string | null
@@ -40,6 +41,15 @@ export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
 })
 
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
+
+/** Chooses the task key whose hosted flow must be read before cursor selection continues. */
+function workflowCursorContextKey(
+  argvKey: string | undefined,
+  rowKey: string | undefined,
+): string | undefined {
+  if (argvKey) return argvKey
+  return rowKey || undefined
+}
 
 export function findWorkflowCursor(
   project: string,
@@ -66,15 +76,18 @@ export async function resolveWorkflowCursorContext(
   args: Record<string, string>,
   context: WorkflowCursorContext,
   reader?: HubTaskReader,
+  selectedRow?: Pick<SelectableCursorRow, 'workflow_key'>,
+  database: Database = db(),
 ): Promise<WorkflowCursorContext> {
-  const key = workflowKeyOf(args)
-  if (!key) return { ...context, taskRecordId: null }
+  const key = workflowCursorContextKey(workflowKeyOf(args) || undefined, selectedRow?.workflow_key)
+  if (!key) return { ...context, workflowKey: undefined, taskRecordId: null }
   const task = await resolveHubTaskReference(project, key, reader)
   const taskFlowRead = task?.record_id
-    ? await readThroughTaskFlow(db(), { taskKey: key, taskRecordId: task.record_id })
+    ? await readThroughTaskFlow(database, { taskKey: key, taskRecordId: task.record_id })
     : undefined
   return {
     ...context,
+    workflowKey: key,
     taskRecordId: task?.record_id ?? null,
     taskStatusCategory: task?.status_category ?? null,
     taskFlowRead,
@@ -85,7 +98,28 @@ export const resolveMcpCursorContext = (
   project: string,
   args: Record<string, string>,
   reader?: HubTaskReader,
-) => resolveWorkflowCursorContext(project, args, mcpWorkflowCursorContext(), reader)
+  selectedRow?: Pick<SelectableCursorRow, 'workflow_key'>,
+) => resolveWorkflowCursorContext(project, args, mcpWorkflowCursorContext(), reader, selectedRow)
+
+export async function resolveMcpSelectedCursorContext(
+  project: string | undefined,
+  workflow: string | undefined,
+  mode: string | undefined,
+  args: Record<string, string>,
+  cursor: number | undefined,
+  reader?: HubTaskReader,
+): Promise<{ context: WorkflowCursorContext; selectedRow?: SelectableCursorRow }> {
+  const selectedRow =
+    cursor === undefined
+      ? undefined
+      : selectWorkflowCursorByHandle({ project, workflow }, cursor, null, db())
+  const resolvedProject = selectedRow?.project ?? project
+  if (!resolvedProject) throw new Error('project is required without --cursor')
+  return {
+    context: await resolveMcpCursorContext(resolvedProject, args, reader, selectedRow),
+    selectedRow,
+  }
+}
 
 export function workflowCursorProjectScope(
   options: { all?: boolean; project?: string; session?: string },
@@ -169,13 +203,26 @@ function selectByHandle(
   const row = d
     .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE number=?`)
     .get(cursor) as SelectableCursorRow | null
-  if (!row) throw new Error(`workflow cursor ${cursor} does not exist`)
+  if (!row)
+    throw new Error(
+      `workflow cursor ${cursor} does not exist on this machine; cursor handles are per-machine labels, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read the hosted flow`,
+    )
   validateIdentity(row, identity)
   if (!includeTerminal && (row.state === 'done' || row.state === 'abandoned'))
     throw new Error(
       `cursor ${row.id} is ${row.state}; a new run is opened by fetching step 1 without a handle`,
     )
   return row
+}
+
+/** Selects a cursor handle using only the identity shared by CLI and MCP surfaces. */
+export function selectWorkflowCursorByHandle(
+  identity: Pick<WorkflowCursorSelector, 'project' | 'workflow'>,
+  cursor: number,
+  ownerSession: string | null | undefined,
+  database: Database,
+): SelectableCursorRow {
+  return selectWorkflowCursor(identity, cursor, ownerSession, database)!
 }
 
 /** Selects the cursor a close targets while leaving terminal-state refusal to the close service. */
@@ -306,15 +353,16 @@ export function resolveWorkflowCursorMode(
   caller: string,
   remedy: string,
   d: Database = db(),
-  cursor?: number,
+  selectedRow?: SelectableCursorRow,
 ): string {
   const key = workflowKeyOf(args)
-  if (cursor !== undefined)
-    return selectByHandle(
-      cursor,
-      { project, workflow: slug, ...(requested ? { mode: requested } : {}), key: key || undefined },
-      d,
-    ).mode_slug
+  const identity = {
+    project,
+    workflow: slug,
+    ...(requested ? { mode: requested } : {}),
+    key: key || undefined,
+  }
+  if (selectedRow) return validateIdentity(selectedRow, identity).mode_slug
   if (requested) return requested
   const rows = d
     .query(

@@ -58,13 +58,25 @@ describe('workflow rendering', () => {
   })
 
   test('renders the hosted fallback reason before a resolved step autonomy line', () => {
-    const step = getWorkflowStep('flow', 'fixture', 'rebase', args, database(), {
-      mode: 'default',
-    })
     const reason =
-      'hosted autonomy settings unavailable: offline; resolved from local and project scopes, then built-in because no cache exists'
+      'hosted autonomy settings unavailable: offline; resolved from local and project scopes, then built-in'
+    const step = getWorkflowStep(
+      'flow',
+      'fixture',
+      'rebase',
+      args,
+      database(),
+      { mode: 'default' },
+      {
+        steps: { rebase: { value: 'auto', scope: 'built-in' } },
+        layers: [],
+        rulings: { value: 'user', scope: 'built-in' },
+        shipTo: { value: 'trunk', scope: 'built-in' },
+        note: reason,
+      },
+    )
 
-    expect(renderWorkflowStep({ ...step, autonomyNote: reason })).toContain(
+    expect(renderWorkflowStep(step)).toContain(
       `${reason}\nfacts: ${JSON.stringify(step.facts)}\nAutonomy: auto (built-in)`,
     )
   })

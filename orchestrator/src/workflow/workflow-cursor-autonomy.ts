@@ -110,8 +110,18 @@ export function combineCursorAutonomy(
   const shipTo = pinned.shipTo
     ? stricterEntry('ship-to', pinned.shipTo, live.shipTo, SHIP_TO_VALUES, differences)
     : undefined
+  const notes = [...new Set([pinned.note, live.note])].filter((note): note is string =>
+    Boolean(note),
+  )
   return {
-    resolution: { ...pinned, steps, stages, rulings, shipTo },
+    resolution: {
+      ...pinned,
+      steps,
+      stages,
+      rulings,
+      shipTo,
+      ...(notes.length ? { note: notes.join('; ') } : {}),
+    },
     looserLiveDifferences: differences,
   }
 }

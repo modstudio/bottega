@@ -1,10 +1,12 @@
 // concern: record-subjects
 /** Owns tenant-bound hosted subject reads and writes. */
+
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
+import { recordIso } from '../../../shared/record-timestamp.ts'
 import {
   SubjectDefinitionSchema,
   type SubjectOutput,
@@ -42,13 +44,8 @@ async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T
   })
 }
 
-/** A timestamp column as ISO text; a Date keeps its milliseconds, which its string form drops. */
-function iso(value: unknown): string {
-  return (value instanceof Date ? value : new Date(String(value))).toISOString()
-}
-
 function mapped(row: Record<string, unknown>): RecordSubject {
-  const updatedAt = iso(row.updated_at)
+  const updatedAt = recordIso(row.updated_at)
   return {
     id: String(row.id),
     project: String(row.project),
@@ -56,9 +53,9 @@ function mapped(row: Record<string, unknown>): RecordSubject {
     definition: String(row.definition),
     position: Number(row.position),
     parentId: row.parent_id == null ? null : String(row.parent_id),
-    retiredAt: row.retired_at == null ? null : iso(row.retired_at),
-    state: subjectState(row.retired_at == null ? null : iso(row.retired_at)),
-    createdAt: iso(row.created_at),
+    retiredAt: row.retired_at == null ? null : recordIso(row.retired_at),
+    state: subjectState(row.retired_at == null ? null : recordIso(row.retired_at)),
+    createdAt: recordIso(row.created_at),
     updatedAt,
     [recordCursorAt]: row.cursor_at == null ? updatedAt : String(row.cursor_at),
   }

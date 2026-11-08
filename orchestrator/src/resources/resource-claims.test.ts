@@ -3,7 +3,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
-  claimCreationDecision,
   claimDatabaseName,
   claimIndex,
   claimKindForCreation,
@@ -24,6 +23,7 @@ import {
   settledStateForWorktreeResource,
   stringClaimDecision,
 } from './resource-claims.ts'
+import { claimCreationDecision } from './resource-step-recorder.ts'
 
 function resourceRun(projectRecordId: string | null = null, parent?: string): string {
   const recordId = addRun({
@@ -83,6 +83,20 @@ describe('resource claim decisions', () => {
     expect(claimKindForCreation('database')).toBe('database')
   })
 
+  test('a sandbox directory is recorded once per conversation root', () => {
+    expect(claimCreationDecision(null, '41')).toBe('record')
+    expect(claimCreationDecision('41', '41')).toBe('duplicate')
+  })
+
+  test('a port held by another conversation is a collision', () => {
+    expect(claimCreationDecision('41', '42')).toBe('collision')
+    expect(claimCreationDecision('42', '42')).toBe('duplicate')
+  })
+
+  test('a shared row is skipped by the collision check', () => {
+    expect(claimCreationDecision('41', '42', true)).toBe('record')
+  })
+
   test('worktree ownership includes only live claims for the canonical path', () => {
     const database = db()
     const releasedRun = resourceRun()
@@ -112,16 +126,6 @@ describe('resource claim decisions', () => {
       { record_id: claimedRun, job: 'implement', allocation_key: path },
     ])
     expect(runsClaimingWorktreePath(database, '/tmp/resource-claim-missing-tree')).toEqual([])
-  })
-
-  test('a sandbox directory is recorded once per conversation root', () => {
-    expect(claimCreationDecision(null, '41')).toBe('record')
-    expect(claimCreationDecision('41', '41')).toBe('duplicate')
-  })
-
-  test('a port held by another conversation is a collision', () => {
-    expect(claimCreationDecision('41', '42')).toBe('collision')
-    expect(claimCreationDecision('42', '42')).toBe('duplicate')
   })
 
   test('the lowest free port selects the band start when the band is empty', () => {

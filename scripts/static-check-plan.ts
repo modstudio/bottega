@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { parseNameStatus, untrackedChanges } from '../shared/change-view.ts'
 
 type WorkerOmissionBase = { run: false; reason: string; evidence: string }
@@ -18,6 +20,33 @@ export type StaticCheckDeclaration = {
 }
 
 const run = { run: true } as const
+
+/**
+ * What the ratchet's base-side mirror must carry for every lint plugin biome.jsonc loads, at the
+ * root or under an override: the plugin's directory, or the plugin file itself when it sits at
+ * the root. Without them biome refuses to start there and every finding reads as new.
+ */
+export function biomePluginSupport(config: unknown): string[] {
+  const root = config as { plugins?: unknown; overrides?: unknown } | null
+  const overrides = Array.isArray(root?.overrides) ? root.overrides : []
+  const sections = [root, ...overrides] as ({ plugins?: unknown } | null)[]
+  const support = sections.flatMap((section) =>
+    Array.isArray(section?.plugins) ? section.plugins.flatMap(pluginSupport) : [],
+  )
+  return [...new Set(support)].sort()
+}
+
+function pluginSupport(plugin: unknown): string[] {
+  const path = typeof plugin === 'string' ? plugin : (plugin as { path?: unknown } | null)?.path
+  if (typeof path !== 'string') return []
+  const name = path.replace(/^\.\//, '')
+  const directory = dirname(name)
+  return [directory === '.' ? name : directory]
+}
+
+const readBiomeConfig = (root: string): unknown =>
+  Bun.JSONC.parse(readFileSync(`${root}biome.jsonc`, 'utf8'))
+
 const omit = (reason: string, evidence: string, subjects: WorkerSubjects): WorkerDecision => ({
   run: false,
   reason,
@@ -216,8 +245,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
       qualityBase,
       '--support',
       'biome.jsonc',
-      '--support',
-      'hub/web/lint',
+      ...biomePluginSupport(readBiomeConfig(root)).flatMap((path) => ['--support', path]),
       '--',
       `${root}node_modules/.bin/biome`,
       'lint',

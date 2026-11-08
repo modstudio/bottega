@@ -1618,6 +1618,14 @@
       "tag": "0211_check_execution_unchecked_reason",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 212,
+      "version": "6",
+      "when": 1794067200000,
+      "tag": "0212_resource_claim_steps",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

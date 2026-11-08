@@ -36,7 +36,6 @@ import { projectAt, stackAt } from '../project/projects.ts'
 import {
   claimRecipePort,
   RECIPE_PORT_BAND,
-  recordCreatedWorktreeClaims,
   recordDatabaseClaim,
 } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -88,6 +87,7 @@ import { EXTERNAL_EXECUTOR, HARNESS_AGENT, HARNESS_EXECUTOR } from './run-execut
 import { installHarnessPushGuard } from './run-git-guard.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail } from './run-process.ts'
+import { readOnlyWorktreeStepRecorder, recordRunWorktree } from './run-resource-step-recording.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
@@ -263,6 +263,7 @@ function prepareClaimFiles(input: ClaimInput, recordId: string, claimedPrompt: s
   )
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: the claim coordinator preserves one ordered ownership transaction
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -632,6 +633,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         })
         const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
         const creationTool = resumeCreationTool(resumeCreation.useCreateTool, worktreeTool)
+        const worktreeSteps = readOnlyWorktreeStepRecorder(db(), {
+          rootRunId: sandboxRoot.record_id,
+          runId: claim.id,
+          projectId: runProjectId,
+          writesJob,
+          claimedAt: nowIso,
+        })
         const recordWorktree = (created: Worktree) => {
           const retryValidation = retryRootTreeValidation({
             kind: opts.resume?.kind ?? null,
@@ -649,38 +657,18 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               operation: 'creation',
             })
           }
-          writeTransaction(() => {
-            const result = db()
-              .query(
-                `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=?,
-                        resource_teardown=CASE WHEN ?='recipe' THEN 'pending' ELSE resource_teardown END
-                 WHERE record_id=?`,
-              )
-              .run(
-                created.path,
-                created.path,
-                recordedBranch(created.branch),
-                created.mintedBranch ?? null,
-                coverageBase ?? created.base,
-                created.source ?? null,
-                created.source ?? null,
-                claim.id,
-              )
-            if (result.changes !== 1)
-              throw new Error(`run ${claim.id} could not record its worktree`)
-            recordCreatedWorktreeClaims(db(), {
+          recordRunWorktree(
+            db(),
+            {
               rootRunId: sandboxRoot.record_id,
               runId: claim.id,
               projectId: runProjectId,
-              owned: true,
-              path: created.path,
-              head: created.base,
-              sharedReader: created.sharedReader === true,
-              mintedBranch: created.mintedBranch ?? null,
-              label: String(claim.id),
-              claimedAt: nowIso(),
-            })
-          })
+              coverageBase,
+              branch: recordedBranch(created.branch),
+              steps: worktreeSteps,
+            },
+            created,
+          )
         }
         const recordRecipeResource: NonNullable<
           Parameters<typeof createWorkerWorktree>[0]['recordRecipeResource']
@@ -738,6 +726,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                 ? writerTreeBaseRef(creationTool, callerCwd, repoRoot, Boolean(opts.carry))
                 : undefined),
             record: recordWorktree,
+            recordPending: worktreeSteps.recordPending,
             detached: Boolean(reviewTarget),
             existingBranch: resumeCreation.existingBranch ?? resolvedTaskBranch?.branch,
             existingBranchTip: resumeCreation.existingBranchTip ?? resolvedTaskBranch?.tip,
