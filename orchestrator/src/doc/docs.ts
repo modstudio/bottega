@@ -11,7 +11,6 @@ import {
   DOC_SCOPE_SUBJECT_KIND,
   DOC_SCOPES,
   type DocAudience,
-  type DocAudiences,
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
@@ -26,10 +25,7 @@ import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
-import {
-  applyRecordWriteAuthority,
-  currentRecordWriteDecision,
-} from '../record/record-write-authority.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { assertContextDropAllowed, assertContextSetAllowed } from './context-write-adapter.ts'
 import {
@@ -42,9 +38,13 @@ import {
   localRevisionArticleReferences,
   resolveLocalDocArticleFields,
 } from './doc-article-fields.ts'
-import { assertDocBodyCommands } from './doc-command-check.ts'
+import { assertDocBodyCommands, assertStoredDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
+import {
+  assertDocWriteRevisionForAuthority,
+  hostedDocWriteOperation,
+} from './doc-hosted-write-operation.ts'
 import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
@@ -91,13 +91,6 @@ import {
   executeLocalDocRestore,
   executeLocalDocSet,
 } from './local-doc-write.ts'
-
-function assertLocalRestoreCommands(revision: DocRevision, audiences: DocAudiences): void {
-  assertDocBodyCommands(
-    { body: revision.body },
-    { kind: revision.kind, form: revision.form, audiences },
-  )
-}
 
 export type { Doc, DocRevision, DocRevisionMetadata }
 export type ConsumedDoc = Doc & { already_consumed: boolean }
@@ -385,6 +378,11 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   if (refusal) throw new Error(refusal)
 }
 
+function localDocWriteState(input: DocWriteInput): { owner: string | null; prior: Doc | null } {
+  const owner = input.owner ?? null
+  return { owner, prior: getDoc(input.scope, input.subject, input.slug, owner) }
+}
+
 async function setDocWithOp(
   input: DocWriteInput,
   requestedOp?: 'import',
@@ -397,12 +395,8 @@ async function setDocWithOp(
   validate(input.scope, input.subject, input.slug)
   const secretScan = scanDocBody(input, defaultDocSecretScanner)
   const identity = resolvedDocWriteIdentity(input)
-  const owner = input.owner ?? null
-  const prior = getDoc(input.scope, input.subject, input.slug, owner)
-  const writesHosted = currentRecordWriteDecision().verdict === 'hosted'
-  if (!(writesHosted && prior === null && input.expectedRevision !== undefined)) {
-    assertLocalRevisionWrite(input, prior?.revision ?? null, prior === null)
-  }
+  const { owner, prior } = localDocWriteState(input)
+  assertDocWriteRevisionForAuthority(input, prior?.revision ?? null, prior === null)
   const delivery = forcedDocDelivery(input.scope) ?? input.delivery ?? prior?.delivery ?? 'inject'
   const kind = input.kind ?? prior?.kind ?? 'working'
   const projectName = docWriteProjectName(input.scope, input.subject)
@@ -455,9 +449,7 @@ async function setDocWithOp(
         projectName,
         ...hostedDocWriteIdentity(identity),
         forceInject: input.forceInject,
-        op:
-          requestedOp ??
-          (prior === null && input.expectedRevision === undefined ? 'create' : 'set'),
+        op: hostedDocWriteOperation(requestedOp, prior, input.expectedRevision),
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
       }
@@ -791,13 +783,6 @@ type UnreadableResume = {
 }
 export type OpenResumeList = { open: OpenResume[]; unreadable: UnreadableResume[] }
 
-function resumeTimestampMs(updatedAt: string, createdAt: string): number {
-  const updated = Date.parse(updatedAt)
-  if (!Number.isNaN(updated)) return updated
-  const fallback = Date.parse(createdAt)
-  return Number.isNaN(fallback) ? 0 : fallback
-}
-
 export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
   const project = projectAt(cwd)
   if (!project) return { open: [], unreadable: [] }
@@ -818,7 +803,7 @@ export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
       continue
     }
     if (fm.status !== 'open') continue
-    const at = resumeTimestampMs(doc.updated_at, doc.created_at)
+    const at = rw.resumeTimestampMs(doc.updated_at, doc.created_at)
     open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
   }
   open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
@@ -967,7 +952,7 @@ export async function restoreDoc(
     },
     current,
   )
-  assertLocalRestoreCommands(revision, tree.audiences)
+  assertStoredDocBodyCommands(revision, tree.audiences)
   return applyRecordWriteAuthority({
     // A removed local document has no live row retaining its document UUID. Restore mints a
     // new document UUID while its revision history remains continuous by address.

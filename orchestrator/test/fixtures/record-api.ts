@@ -1,10 +1,7 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { planCanonImport } from '../../src/canon/canon-import-policy.ts'
-import {
-  consumeDocBody,
-  refuseDocWrite,
-} from '../../src/doc/doc-write-allowed.ts'
+import { consumeDocBody, refuseDocWrite } from '../../src/doc/doc-write-allowed.ts'
 import type { RecordBoardDeps } from '../../src/record/record-api-board.ts'
 import {
   type RecordApiClient,
@@ -15,7 +12,6 @@ import {
 } from '../../src/record/record-api-client.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
-import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 import {
   type HostedBoardChange,
   type HostedBoardPresenceInput,
@@ -24,6 +20,7 @@ import {
 } from '../../src/record/record-board-contract.ts'
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
+import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
 
 export const identity: RecordIdentity = {
   user: { id: 'user-a', email: 'a@example.test' },

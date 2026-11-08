@@ -96,7 +96,7 @@ test('a hosted write declares requested, derived create, and derived set operati
     title: 'Hosted derived set expected',
     body: 'The hosted-only row has no local prior.',
     delivery: 'demand',
-    audiences: [],
+    audiences: ['technical'],
     position: 0,
     reason: 'create hosted-only fixture',
     author: 'tester',

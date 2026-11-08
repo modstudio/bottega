@@ -65,3 +65,13 @@ export function assertDocBodyCommands(
   assertDocSections(input.body, fields.audiences)
   assertDocCommands(input, fields)
 }
+
+export function assertStoredDocBodyCommands(
+  revision: Pick<CustomerGuideCommandInput, 'body' | 'kind' | 'form'>,
+  audiences: DocAudiences,
+): void {
+  assertDocBodyCommands(
+    { body: revision.body },
+    { kind: revision.kind, form: revision.form, audiences },
+  )
+}

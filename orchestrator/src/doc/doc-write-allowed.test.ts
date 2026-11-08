@@ -398,7 +398,7 @@ describe('decideDocRevisionWrite', () => {
     ).toEqual({ allow: true })
   })
 
-  test('create collisions name each scope family\'s own write verb', () => {
+  test("create collisions name each scope family's own write verb", () => {
     const cases = [
       {
         scope: 'project',

@@ -8,7 +8,7 @@ import {
   type DocScope,
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
-import { refusal, type Refusal } from '../../../shared/refusal.ts'
+import { type Refusal, refusal } from '../../../shared/refusal.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   type CanonFinding,
@@ -241,9 +241,7 @@ export function refuseSettingsAddress(
   )
 }
 
-export type DocRevisionDecision =
-  | { allow: true }
-  | { allow: false; refusal: Refusal }
+export type DocRevisionDecision = { allow: true } | { allow: false; refusal: Refusal }
 
 type RevisionAddress = { scope: string; subject: string | null; slug: string }
 
@@ -272,7 +270,11 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
     return {
       allow: false,
       refusal: refusal(
-        `refusing ${input.scope} write for ${address}: this row's latest revision is missing, so its revision cannot be checked\n${MISSING_HOSTED_REVISION_REMEDY}`,
+        `refusing ${input.scope} write for ${address}: this row's latest revision is missing, so its revision cannot be checked`,
+        {
+          kind: 'edit',
+          text: MISSING_HOSTED_REVISION_REMEDY.replace(/^cleared by: /, ''),
+        },
       ),
     }
   }
@@ -301,10 +303,10 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
   if (!input.isCreate && input.expected === undefined) {
     return {
       allow: false,
-      refusal: refusal(
-        `refusing ${input.scope} update at current revision ${current}`,
-        { kind: 'edit', text: remedy },
-      ),
+      refusal: refusal(`refusing ${input.scope} update at current revision ${current}`, {
+        kind: 'edit',
+        text: remedy,
+      }),
     }
   }
   if (input.expected !== input.current) {

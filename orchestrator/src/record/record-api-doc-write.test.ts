@@ -108,7 +108,7 @@ test('an explicit create against an existing document returns the typed 409 reme
     title: 'Existing',
     body: 'Original body.',
     delivery: 'demand',
-    audiences: [],
+    audiences: ['technical'],
     position: 0,
     reason: 'create route fixture',
     author: 'tester',

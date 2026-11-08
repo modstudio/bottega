@@ -19,12 +19,12 @@ import {
   type SettingsPermissionOperation,
 } from '../settings/settings-permission.ts'
 import {
+  assertRevisionWrite,
   listRecordDocRevisions,
   listRecordDocs,
   RecordDocError,
   upsertRecordDoc,
 } from './record-docs.ts'
-import { assertRevisionWrite } from './record-doc-errors.ts'
 
 export type RecordSettingsTenant = {
   url: string

@@ -19,11 +19,13 @@ export function assertWrite(refusal: string | null): void {
   if (refusal) throw new RecordDocError(refusal)
 }
 
-export function assertRevisionWrite(input: Omit<DocRevisionWriteInput, 'expected' | 'current' | 'op'> & {
-  expectedRevision?: string
-  current: unknown
-  op?: DocRevisionOp
-}): void {
+export function assertRevisionWrite(
+  input: Omit<DocRevisionWriteInput, 'expected' | 'current' | 'op'> & {
+    expectedRevision?: string
+    current: unknown
+    op?: DocRevisionOp
+  },
+): void {
   const decision = decideDocRevisionWrite({
     expected: input.expectedRevision,
     current: input.current == null ? null : String(input.current),

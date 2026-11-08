@@ -64,6 +64,10 @@ export const docModules: DocModule[] = [
     '../../../shared/record-id.ts',
   ]),
   module('orchestrator/src/doc/doc-command-mentions.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/doc/doc-hosted-write-operation.ts', [
+    '../record/record-write-authority.ts',
+    './doc-revision-store.ts',
+  ]),
   module('orchestrator/src/doc/doc-command-check.ts', [
     '../../../shared/command-spellings.ts',
     '../../../shared/brand.ts',

@@ -70,7 +70,7 @@ import { existingDocAtAddress, recordTreeWriteRefusal } from './record-doc-tree.
 import type { RecordDocWriteInput } from './record-doc-write-input.ts'
 import { recordPool } from './record-pool.ts'
 
-export { RecordDocError } from './record-doc-errors.ts'
+export { assertRevisionWrite, RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
 export {
   getRecordDoc,
@@ -186,6 +186,39 @@ function revisionArticleFields(fields: Awaited<ReturnType<typeof resolveHostedAr
   }
 }
 
+function storedRevisionAddress(row: Record<string, unknown>) {
+  return {
+    scope: String(row.scope),
+    subject: row.subject == null ? null : String(row.subject),
+    slug: String(row.slug),
+  }
+}
+
+function assertStoredRevisionWrite(
+  input: { expectedRevision?: string },
+  row: Record<string, unknown>,
+  op: 'delete' | 'consume' | 'restore',
+): void {
+  assertRevisionWrite({
+    expectedRevision: input.expectedRevision,
+    current: row.latest_revision_id,
+    isCreate: false,
+    op,
+    ...storedRevisionAddress(row),
+  })
+}
+
+function assertRecordDocUpsertRevision(
+  input: RecordDocWriteInput,
+  existing: Record<string, unknown> | undefined,
+): void {
+  assertRevisionWrite({
+    ...input,
+    current: existing?.latest_revision_id,
+    isCreate: existing === undefined,
+  })
+}
+
 export async function upsertRecordDoc(
   input: RecordDocWriteInput,
 ): Promise<{ id: string; revisionId: string } & HostedArticleResponse> {
@@ -202,11 +235,7 @@ export async function upsertRecordDoc(
       FOR UPDATE
     `
     assertHostedReferenceUpsertAllowed(existing[0], input)
-    assertRevisionWrite({
-      ...input,
-      current: existing[0]?.latest_revision_id,
-      isCreate: !existing[0],
-    })
+    assertRecordDocUpsertRevision(input, existing[0])
     const facts = await canonFacts(
       tx,
       input.spaceId,
@@ -343,15 +372,7 @@ export async function deleteRecordDoc(
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
     assertHostedReferenceUpsertAllowed(doc, input)
-    assertRevisionWrite({
-      expectedRevision: input.expectedRevision,
-      current: doc.latest_revision_id,
-      isCreate: false,
-      op: 'delete',
-      scope: String(doc.scope),
-      subject: doc.subject == null ? null : String(doc.subject),
-      slug: String(doc.slug),
-    })
+    assertStoredRevisionWrite(input, doc, 'delete')
     if (rows.length !== 1)
       throw new RecordDocError('refusing to delete more than one document', 409)
     assertWrite(
@@ -426,15 +447,7 @@ export async function consumeRecordDoc(
     if (!rows[0]) throw new RecordDocError('doc not found', 404)
     const doc = rows[0] as Record<string, unknown>
     assertHostedStoredReferenceWriteAllowed(doc)
-    assertRevisionWrite({
-      expectedRevision: input.expectedRevision,
-      current: doc.latest_revision_id,
-      isCreate: false,
-      op: 'consume',
-      scope: String(doc.scope),
-      subject: doc.subject == null ? null : String(doc.subject),
-      slug: String(doc.slug),
-    })
+    assertStoredRevisionWrite(input, doc, 'consume')
     const now = new Date().toISOString()
     const relatedSubjectIds = (
       await tx`SELECT subject_id FROM doc_related_subject WHERE space_id=${input.spaceId}::uuid AND doc_id=${input.id}::uuid`
@@ -495,15 +508,7 @@ export async function restoreRecordDoc(
       FOR UPDATE
     `
     const live = storedReferenceWriteRow(existing[0])
-    assertRevisionWrite({
-      expectedRevision: input.expectedRevision,
-      current: live.latest_revision_id,
-      isCreate: false,
-      op: 'restore',
-      scope: String(live.scope),
-      subject: live.subject == null ? null : String(live.subject),
-      slug: String(live.slug),
-    })
+    assertStoredRevisionWrite(input, live, 'restore')
     const revisionRows = await tx`
       SELECT * FROM doc_revision
       WHERE space_id=${input.spaceId}::uuid AND id=${input.revisionId}::uuid AND doc_id=${input.id}::uuid
@@ -751,9 +756,7 @@ export async function importRecordDoc(
       current: existing?.latest_revision_id,
       isCreate: !existing,
       op: 'import',
-      scope: importedDoc.scope,
-      subject: importedDoc.subject,
-      slug: importedDoc.slug,
+      ...importedDoc,
     })
     if (existing && importedDoc.deletedAt !== null && existing.deleted_at == null) {
       const subject = existing.subject == null ? '' : String(existing.subject)

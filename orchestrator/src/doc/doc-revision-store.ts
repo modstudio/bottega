@@ -86,11 +86,7 @@ export function assertLocalRevisionWrite(
   })
   if (!decision.allow) {
     const message = renderRefusal(decision.refusal)
-    throw new Error(
-      input.scope === 'context'
-        ? `context item ${input.slug}: ${message}`
-        : message,
-    )
+    throw new Error(input.scope === 'context' ? `context item ${input.slug}: ${message}` : message)
   }
 }
 
