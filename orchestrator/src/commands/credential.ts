@@ -2,7 +2,7 @@
 /** Owns the public credential grammar and adapts it to hosted sealed configuration. */
 
 import type { Command } from 'commander'
-import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
+import { configClient } from '../../../shared/config-client.ts'
 import {
   CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
@@ -25,7 +25,6 @@ import {
   type CredentialAddress,
   deleteCredential,
   listCredentials,
-  missingCredentialRefusal,
   setCredential,
 } from '../config/credential-service.ts'
 import { projectByName } from '../project/projects.ts'
@@ -166,13 +165,7 @@ export function registerCredentialCommands(program: Command): void {
         destinationSpaceId: target.destinationSpaceId,
       }
       if (options.clear) {
-        try {
-          await client.deleteCredentialPreference(input)
-        } catch (error) {
-          if (error instanceof ConfigClientError && error.status === 404)
-            throw missingCredentialRefusal(target)
-          throw error
-        }
+        await client.deleteCredentialPreference(input)
         return
       }
       const slot = parseCredentialSlot(options.use!)

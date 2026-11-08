@@ -47,7 +47,7 @@ function missingProjectWrapRefusal(address: CredentialAddress): Error {
   )
 }
 
-export function missingCredentialRefusal(address: CredentialAddress): Error {
+function missingCredentialRefusal(address: CredentialAddress): Error {
   const name = `${address.provider}/${address.type}`
   const binding = address.projectName
     ? `project ${address.projectName}`
