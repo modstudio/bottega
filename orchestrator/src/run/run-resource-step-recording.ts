@@ -90,7 +90,9 @@ export function recordRunWorktree(
     if (result.changes !== 1) throw new Error(`run ${input.runId} could not record its worktree`)
     const completed = input.steps.complete()
     if (input.steps.expectsStep && !completed) {
-      throw new Error(`run ${input.runId} created a read-only worktree without a pending resource step`)
+      throw new Error(
+        `run ${input.runId} created a read-only worktree without a pending resource step`,
+      )
     }
     if (!completed)
       recordCreatedWorktreeClaims(database, {

@@ -124,12 +124,7 @@ export function claimKindForCreation(creation: ResourceCreation): ResourceClaimK
   }
 }
 
-export function worktreeClaimRow(
-  path: string,
-  head: string,
-  sharedReader: boolean,
-  label: string,
-) {
+export function worktreeClaimRow(path: string, head: string, sharedReader: boolean, label: string) {
   return {
     kind: 'worktree' as const,
     allocationKey: path,
@@ -612,12 +607,7 @@ export function recordCreatedWorktreeClaims(
       kind === 'worktree'
         ? {
             ...input,
-            ...worktreeClaimRow(
-              input.path,
-              input.head,
-              input.sharedReader === true,
-              input.label,
-            ),
+            ...worktreeClaimRow(input.path, input.head, input.sharedReader === true, input.label),
             shared: input.sharedReader === true,
           }
         : {

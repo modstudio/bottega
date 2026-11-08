@@ -174,11 +174,7 @@ export function probeConnection(
           rootRunId: input.sandboxRootId,
           runId: input.runId,
           projectId: input.runProjectId,
-          ...trustEntryClaimRow(
-            input.cwd,
-            grokTrustStorePath(environment),
-            input.sandboxRootId,
-          ),
+          ...trustEntryClaimRow(input.cwd, grokTrustStorePath(environment), input.sandboxRootId),
           claimedAt: nowIso(),
         })
       : null
