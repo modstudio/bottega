@@ -4,6 +4,7 @@ export type TypedQuestionReportBlock = Omit<TypedQuestionMetrics, 'labeled' | 'p
   questionId: string
   questionVersion: number
   subjectKind: string
+  model: string | null
   threshold: number | null
   labeled: number | null
   pending: number | null
@@ -27,6 +28,9 @@ export function renderTypedQuestionBlock(
     ['pending', block.pending === null ? 'none' : String(block.pending)],
     ['baseRate', value(block.baseRate)],
     ['auc', value(block.auc)],
+    ['brier', value(block.brier)],
+    ['logLoss', value(block.logLoss)],
+    ['ece', value(block.ece)],
     ['precision', value(block.precision)],
     ['recall', value(block.recall)],
     ['warnedRate', value(block.warnedRate)],
@@ -35,6 +39,8 @@ export function renderTypedQuestionBlock(
     ['inputTokens', String(block.inputTokens)],
     ['costUsd', value(block.costUsd, 6)],
   ]
-  presentation.log(`\n${block.questionId} v${block.questionVersion} (${block.subjectKind})`)
+  presentation.log(
+    `\n${block.questionId} v${block.questionVersion} (${block.subjectKind}) ${block.model ?? 'model none'}`,
+  )
   for (const [name, shown] of lines) presentation.log(`  ${name.padEnd(16)}${shown}`)
 }

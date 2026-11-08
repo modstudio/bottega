@@ -15,7 +15,7 @@ A typed question is one fixed recognition judgment asked of TypeSafe and recorde
 
 **An answer only advises.** It may warn or suggest; it never blocks, refuses or decides. `askTypedQuestion` fails open: a missing `TYPESAFE_KEY` or any failure returns no answer, and a missing key records nothing.
 
-**A worker's escalation question is the one exception, and it is gated.** Jev pre-answers it through the shared client and shows its pick and probabilities beside the question. It rules only on the live channel with `jev.auto_rule` on, rulings autonomy `agent` and confidence at or above `jev.confidence_threshold` (`orchestrator/src/ask/jev-routing.ts:routeJevAnswer`); everything else escalates. Turn `jev.auto_rule` on only after `jev_agreed`, which only an architect answer sets, shows the threshold is reliable. A failed pre-answer stores `jev_error` and never blocks escalation.
+**A worker's escalation question is the one exception, and it is gated.** Jev pre-answers it through the shared client and shows its pick and probabilities beside the question. It rules only on the live channel with `jev.auto_rule` on, rulings autonomy `agent` and the pick's probability at or above `jev.confidence_threshold` (`orchestrator/src/ask/jev-routing.ts:routeJevAnswer`); everything else escalates. Turn `jev.auto_rule` on only after `jev_agreed`, reported by `bottega agent typed-question`, shows the threshold is reliable. A failed pre-answer stores `jev_error` and never blocks escalation.
 
 **A question needs a label before it may change behavior.** Its label is a recorded outcome that settles whether an answer was right, such as `specUnsettledLabel` or `findingDuplicateLabel`. A question with no label is measured by nothing, so it is not built.
 

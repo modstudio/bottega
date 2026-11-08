@@ -30,7 +30,6 @@ export function routeJevAnswer(input: {
   if (input.question.kind === 'text' || !input.answer)
     return { action: 'escalate', pick: null, probabilities: null, confidence: null }
   const answer = input.answer
-  const confidence = 'noul' in answer ? Math.max(answer.noul, 1 - answer.noul) : answer.confidence
   const pick =
     input.question.kind === 'yesno' && 'noul' in answer
       ? answer.noul >= 0.5
@@ -45,10 +44,17 @@ export function routeJevAnswer(input: {
           : null
   const probabilities =
     'probabilities' in answer ? answer.probabilities : { yes: answer.noul, no: 1 - answer.noul }
+  const confidence =
+    'noul' in answer
+      ? Math.max(answer.noul, 1 - answer.noul)
+      : pick === null
+        ? null
+        : (answer.probabilities[String(pick)] ?? null)
   if (
     !input.canResume ||
     !input.autoRule ||
     input.rulings !== 'agent' ||
+    confidence === null ||
     confidence < input.threshold
   )
     return { action: 'escalate', pick, probabilities, confidence }

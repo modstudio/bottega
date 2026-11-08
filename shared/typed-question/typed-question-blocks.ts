@@ -12,6 +12,7 @@ export type TypedQuestionAnswerRow = {
   input_tokens: number | null
   latency_ms: number
   error: string | null
+  model: string | null
 }
 
 /** What a concern knows about one question: how to label a subject, and its current threshold. */
@@ -27,7 +28,7 @@ export function typedQuestionBlocks(
 ): TypedQuestionReportBlock[] {
   const groups = Map.groupBy(
     rows,
-    (row) => `${row.question_id}\0${row.question_version}\0${row.subject_kind}`,
+    (row) => `${row.question_id}\0${row.question_version}\0${row.subject_kind}\0${row.model ?? ''}`,
   )
   return [...groups.values()].map((answers) => {
     const first = answers[0]!
@@ -44,6 +45,7 @@ export function typedQuestionBlocks(
       questionId: first.question_id,
       questionVersion: first.question_version,
       subjectKind: first.subject_kind,
+      model: first.model,
       threshold,
       ...metrics,
       labeled: label ? metrics.labeled : null,

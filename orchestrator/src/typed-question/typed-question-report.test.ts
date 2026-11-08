@@ -131,13 +131,14 @@ function answer(input: {
   subject: string
   noul: number
   subjectKind?: string
+  model?: string | null
 }): void {
   db()
     .query(
       `INSERT INTO typed_question_answer
        (record_id,question_id,question_version,subject_kind,subject_ref,state_sha,answer_json,
         model,input_tokens,latency_ms,error,created_at)
-       VALUES (?,?,?,?,?,'state',?,'jev',100,10,NULL,?)`,
+       VALUES (?,?,?,?,?,'state',?,?,100,10,NULL,?)`,
     )
     .run(
       newRecordId(),
@@ -146,6 +147,7 @@ function answer(input: {
       input.subjectKind ?? 'spec',
       input.subject,
       JSON.stringify({ noul: input.noul }),
+      input.model === undefined ? 'jev' : input.model,
       new Date().toISOString(),
     )
 }
@@ -230,6 +232,17 @@ test('groups answers separately by version and subject kind', () => {
   expect(groups).toContainEqual([1, 'spec:implement'])
   expect(groups).toContainEqual([2, 'spec:implement'])
   expect(groups).toContainEqual([2, 'spec:review-lens'])
+})
+
+test('groups answers separately by served model', () => {
+  const question = `model-groups-${newRecordId()}`
+  answer({ question, version: 1, subject: 'first', noul: 0.1, model: 'jev-1.13.0' })
+  answer({ question, version: 1, subject: 'second', noul: 0.2, model: 'jev-1.14.0' })
+  answer({ question, version: 1, subject: 'third', noul: 0.3, model: null })
+  const groups = typedQuestionReport({ question })
+  expect(groups).toHaveLength(3)
+  expect(groups.map((block) => block.model)).toEqual(['jev-1.13.0', 'jev-1.14.0', null])
+  expect(groups.every((block) => block.recorded === 1)).toBeTrue()
 })
 
 test('a job filter on implement keeps legacy spec answers and drops other jobs', () => {

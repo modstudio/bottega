@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { askTypedQuestionClient } from './client.ts'
+import { askTypedQuestionClient, JEV_MODEL } from './client.ts'
 import type { ChoiceQuestion, NoulQuestion, ScoreQuestion } from './registry.ts'
 
 const FIXTURE_QUESTION = {
@@ -38,7 +38,7 @@ test('sends the declared noul question and parses its probability', async () => 
   expect(new Headers(request!.init.headers).get('Authorization')).toBe('Bearer fixture-secret')
   expect(request!.init.signal).toBeInstanceOf(AbortSignal)
   expect(JSON.parse(String(request!.init.body))).toEqual({
-    model: 'jev-latest',
+    model: JEV_MODEL,
     state: 'choose one',
     questions: {
       spec_unsettled: {
@@ -82,7 +82,7 @@ test('sends criteria and parses a choice answer', async () => {
   )
 
   expect(sent).toEqual({
-    model: 'jev-latest',
+    model: JEV_MODEL,
     state: { text: 'portable evidence' },
     questions: {
       destination: {
@@ -103,18 +103,58 @@ test('sends criteria and parses a choice answer', async () => {
 })
 
 describe('backoff response', () => {
-  test('retries 429 once and then returns the failure class', async () => {
+  test('honours retry-after-ms before retrying', async () => {
+    let calls = 0
+    const delays: number[] = []
+    const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+      resolve,
+      fetch: async () => {
+        calls += 1
+        return calls === 1
+          ? new Response('', { status: 429, headers: { 'retry-after-ms': '1234' } })
+          : Response.json({
+              answers: { spec_unsettled: { noul: 0.7 } },
+              model: 'jev-served',
+              usage: { input_tokens: 1 },
+            })
+      },
+      sleep: async (ms) => {
+        delays.push(ms)
+      },
+      random: () => 0,
+    })
+
+    expect(calls).toBe(2)
+    expect(delays).toEqual([1234])
+    expect(result.kind).toBe('answer')
+  })
+
+  test('exhaustion returns the last retryable status', async () => {
+    const statuses = [408, 529, 503]
+    const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+      resolve,
+      fetch: async () => new Response('', { status: statuses.shift()! }),
+      sleep: async () => {},
+      random: () => 0.5,
+    })
+    expect(statuses).toHaveLength(0)
+    expect(result).toMatchObject({ kind: 'error', error: 'http_503' })
+  })
+
+  test('does not retry a non-retryable status', async () => {
     let calls = 0
     const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
       resolve,
       fetch: async () => {
         calls += 1
-        return new Response('', { status: 429 })
+        return new Response('', { status: 400 })
+      },
+      sleep: async () => {
+        throw new Error('should not sleep')
       },
     })
-
-    expect(calls).toBe(2)
-    expect(result).toMatchObject({ kind: 'error', error: 'http_429' })
+    expect(calls).toBe(1)
+    expect(result).toMatchObject({ kind: 'error', error: 'http_400' })
   })
 })
 
