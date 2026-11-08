@@ -9,5 +9,6 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const Git: Story = {}
-export const Tracker: Story = { args: { source: 'linear', protocol: 'linear' } }
+export const ExternalTracker: Story = {}
+export const Hub: Story = { args: { source: 'local' } }
+export const NoTrackerRecord: Story = { args: { source: null, protocol: null } }

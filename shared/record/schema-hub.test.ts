@@ -60,24 +60,32 @@ test('hosted tracker-only task migration deletes git status history and preserve
   await database.close()
 })
 
-test('hosted tracker-only task migration still refuses a git task comment', async () => {
-  const database = await hostedGitTaskMigrationFixture()
-  await database.exec(`
-    INSERT INTO hub_task VALUES ('01990000-0000-7000-8000-000000000001','git');
-    INSERT INTO hub_task_comment VALUES (
-      '01990000-0000-7000-8000-000000000101',
-      '01990000-0000-7000-8000-000000000001'
-    );
-  `)
+for (const dependent of [
+  { table: 'hub_task_comment', label: 'comment' },
+  { table: 'hub_task_document', label: 'document' },
+  { table: 'task_flow', label: 'task flow' },
+]) {
+  test(`hosted tracker-only task migration still refuses a git task ${dependent.label}`, async () => {
+    const database = await hostedGitTaskMigrationFixture()
+    await database.exec(`
+      INSERT INTO hub_task VALUES ('01990000-0000-7000-8000-000000000001','git');
+      INSERT INTO ${dependent.table} VALUES (
+        '01990000-0000-7000-8000-000000000101',
+        '01990000-0000-7000-8000-000000000001'
+      );
+    `)
 
-  await expect(database.exec(migration('20261108214621_dev_2213_drop_git_tasks'))).rejects.toThrow(
-    'git task rows have dependent data: hub_task_comment:01990000-0000-7000-8000-000000000101',
-  )
-  expect((await database.query(`SELECT id::text FROM hub_task WHERE source='git'`)).rows).toEqual([
-    { id: '01990000-0000-7000-8000-000000000001' },
-  ])
-  await database.close()
-})
+    await expect(
+      database.exec(migration('20261108214621_dev_2213_drop_git_tasks')),
+    ).rejects.toThrow(
+      `git task rows have dependent data: ${dependent.table}:01990000-0000-7000-8000-000000000101`,
+    )
+    expect((await database.query(`SELECT id::text FROM hub_task WHERE source='git'`)).rows).toEqual([
+      { id: '01990000-0000-7000-8000-000000000001' },
+    ])
+    await database.close()
+  })
+}
 
 test('hosted document migration numbers live rows in UUID order and advances tasks', async () => {
   const database = new PGlite()

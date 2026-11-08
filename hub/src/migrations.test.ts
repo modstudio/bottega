@@ -948,7 +948,7 @@ describe('hub migration journal', () => {
 
   test('tracker-only task migration deletes git status history and preserves tracker history', () => {
     const migrationIndex = migrationJournal().findIndex(
-      (entry) => entry.tag === '0046_drop_git_tasks',
+      (entry) => entry.tag === '0047_drop_git_tasks',
     )
     const d = migratedThrough(migrationIndex - 1)
     d.exec(`
@@ -961,7 +961,7 @@ describe('hub migration journal', () => {
     `)
 
     expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
-      '0046_drop_git_tasks',
+      '0047_drop_git_tasks',
     ])
     expect(d.query('SELECT record_id FROM task ORDER BY record_id').all()).toEqual([
       { record_id: 'mcp-task' },
@@ -972,26 +972,41 @@ describe('hub migration journal', () => {
     d.close()
   })
 
-  test('tracker-only task migration still refuses a git task comment', () => {
-    const migrationIndex = migrationJournal().findIndex(
-      (entry) => entry.tag === '0046_drop_git_tasks',
-    )
-    const d = migratedThrough(migrationIndex - 1)
-    d.exec(`
-      INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-      VALUES ('git-task','DEV-1','workshop','git','2026-01-01','2026-01-01');
-      INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
-      VALUES ('git-comment','DEV-1','git-task','keep me','2026-01-01');
-    `)
+  for (const dependent of [
+    {
+      kind: 'comment',
+      insert: `INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at)
+        VALUES ('git-comment','DEV-1','git-task','keep me','2026-01-01')`,
+      refusal: 'task_comment:git-comment',
+    },
+    {
+      kind: 'document',
+      insert: `INSERT INTO task_document
+        (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+        VALUES ('git-document','DEV-1','git-task',1,'keep me','body','v1','2026-01-01','2026-01-01')`,
+      refusal: 'task_document:git-document',
+    },
+  ]) {
+    test(`tracker-only task migration still refuses a git task ${dependent.kind}`, () => {
+      const migrationIndex = migrationJournal().findIndex(
+        (entry) => entry.tag === '0047_drop_git_tasks',
+      )
+      const d = migratedThrough(migrationIndex - 1)
+      d.exec(`
+        INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+        VALUES ('git-task','DEV-1','workshop','git','2026-01-01','2026-01-01');
+        ${dependent.insert};
+      `)
 
-    expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
-      'git task rows have cascade dependents: task_comment:git-comment',
-    )
-    expect(d.query("SELECT record_id FROM task WHERE source='git'").all()).toEqual([
-      { record_id: 'git-task' },
-    ])
-    d.close()
-  })
+      expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
+        `git task rows have cascade dependents: ${dependent.refusal}`,
+      )
+      expect(d.query("SELECT record_id FROM task WHERE source='git'").all()).toEqual([
+        { record_id: 'git-task' },
+      ])
+      d.close()
+    })
+  }
 
   test('reload mode reloads the query layer after user_version changes', () => {
     closeDatabaseForFixture()

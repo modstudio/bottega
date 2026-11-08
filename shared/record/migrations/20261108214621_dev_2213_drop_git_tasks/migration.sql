@@ -21,7 +21,7 @@ BEGIN
     FROM task_flow f JOIN hub_task t ON t.id=f.task_id WHERE t.source='git'
   ) child;
   IF dependents IS NOT NULL THEN
-    RAISE EXCEPTION 'git task rows have dependent data: %; preserve or reassign these rows before applying record migrations', dependents;
+    RAISE EXCEPTION 'git task rows have dependent data: %; preserve or reassign these rows before running bottega record migrate', dependents;
   END IF;
 END $$;
 --> statement-breakpoint

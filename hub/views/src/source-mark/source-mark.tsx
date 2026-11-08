@@ -13,7 +13,9 @@ export function SourceMark({
   const title =
     source === 'local'
       ? 'hub'
-      : `${project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`
+      : source === 'mcp'
+        ? `${project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`
+        : `${project ?? 'project'} · no tracker record`
   const Icon = source === 'local' ? Database : RadioTower
   return (
     <span className={sourceMarkStyles().root()} title={title}>

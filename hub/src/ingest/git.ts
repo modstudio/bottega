@@ -75,7 +75,6 @@ function readGitLog(path: string, args: string[]): string {
 function scanGit(since: string) {
   refreshKeyPrefixes()
   const days = new Map<string, DayActivity>()
-  const tasks = new Set<string>()
   const commits: { sha: string; repo: string; key: string; at: string }[] = []
   const get = (d: string) => {
     if (!days.has(d)) days.set(d, blank())
@@ -106,7 +105,6 @@ function scanGit(since: string) {
         for (const k of (subject ?? '').match(keyPattern()) ?? []) {
           const key = k.toUpperCase()
           row.tasks.add(`${repo}:${key}`)
-          tasks.add(`${repo}:${key}`)
           if (sha && at) commits.push({ sha, repo, key, at })
         }
         continue
@@ -121,7 +119,7 @@ function scanGit(since: string) {
       if (kind === 'product') row.files.add(`${repo}:${file}`)
     }
   }
-  return { days, tasks, commits }
+  return { days, commits }
 }
 
 /**
@@ -137,21 +135,18 @@ export async function ingestGit(
     throw new Error(
       `refusing to write daily totals without a machine identity; run ${PLATFORM_SLUG} machine migrate`,
     )
-  const { days, tasks, commits } = scanGit(since)
+  const { days, commits } = scanGit(since)
   const at = nowIso()
-  writeGitIngestBatches(
-    { days, tasks, commits },
-    machine,
-    at,
-    options.transaction,
-    options.batchSize,
-  )
-  return { days: days.size, tasks: tasks.size }
+  writeGitIngestBatches({ days, commits }, machine, at, options.transaction, options.batchSize)
+  return {
+    days: days.size,
+    tasks: new Set([...days.values()].flatMap((activity) => [...activity.tasks])).size,
+  }
 }
 
 type GitScan = ReturnType<typeof scanGit>
 export function writeGitIngestBatches(
-  scan: GitScan,
+  scan: Pick<GitScan, 'commits' | 'days'>,
   machine: string,
   at: string,
   transaction: IngestTransaction = writeTransaction,

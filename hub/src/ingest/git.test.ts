@@ -35,7 +35,7 @@ test('more than one git batch uses multiple transactions and stores the single-p
     files: new Set(['alpha:src/index.ts']),
     lines: { generated: 0, test: 0, docs: 0, config: 0, product: 12 },
   }
-  const scan = { days: new Map([['2026-10-30', activity]]), tasks: new Set<string>(), commits }
+  const scan = { days: new Map([['2026-10-30', activity]]), commits }
   let batchedTransactions = 0
   writeGitIngestBatches(scan, 'machine-one', '2026-10-30T13:00:00.000Z', (fn) => {
     batchedTransactions++
@@ -84,7 +84,7 @@ test('a commit with no tracker row records its key without creating a task', () 
     at: '2026-10-30T12:00:00.000Z',
   }
   writeGitIngestBatches(
-    { days: new Map(), tasks: new Set(['alpha:ALP-999']), commits: [commit] },
+    { days: new Map(), commits: [commit] },
     'machine-one',
     '2026-10-30T13:00:00.000Z',
   )

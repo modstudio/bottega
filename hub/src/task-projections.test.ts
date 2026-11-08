@@ -256,6 +256,35 @@ test('unresolved task keys aggregate as project unattributed work', () => {
   expect(tasks[0]).toMatchObject({ key: null, project: 'workshop', source: null, intervals: 2 })
 })
 
+test('space-qualified unresolved work stays separate for the same project', () => {
+  const unresolved = {
+    ...row,
+    task_key: 'DEV-900',
+    task_record_id: null,
+    task_project: null,
+    task_title: null,
+    task_status: null,
+    task_status_category: null,
+    task_source: null,
+    task_updated_at: null,
+    task_closed_at: null,
+  }
+  const tasks = projectTasksInWindow(
+    [
+      { ...unresolved, space_id: 'space-a', space_name: 'Personal' },
+      { ...unresolved, space_id: 'space-b', space_name: 'Workshop' },
+    ],
+    project,
+    now,
+  )
+
+  expect(tasks).toHaveLength(2)
+  expect(tasks.map(({ spaceId, project, key }) => ({ spaceId, project, key }))).toEqual([
+    { spaceId: 'space-a', project: 'workshop', key: null },
+    { spaceId: 'space-b', project: 'workshop', key: null },
+  ])
+})
+
 function boardRow(
   overrides: Partial<BoardSourceRow> & Pick<BoardSourceRow, 'key'>,
 ): BoardSourceRow {

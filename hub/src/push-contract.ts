@@ -1,3 +1,5 @@
+import type { TaskSource } from '../../shared/record/schema-hub.ts'
+
 export const HOSTED_TASK_TABLE = 'hub_task'
 export const HOSTED_STATUS_EVENT_TABLE = 'hub_task_status_event'
 export const HOSTED_COMMENT_TABLE = 'hub_task_comment'
@@ -131,7 +133,7 @@ export type PushedTask = {
   assignee: string | null
   opened_at: string | null
   closed_at: string | null
-  source: 'mcp' | 'local'
+  source: TaskSource
   first_seen: string
   last_seen: string
   created_at: string

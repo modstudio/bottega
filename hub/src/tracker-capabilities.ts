@@ -1,3 +1,4 @@
+import type { TaskSource } from '../../shared/record/schema-hub.ts'
 import {
   cursorScopeRefusal,
   TASK_STATUSES,
@@ -6,7 +7,7 @@ import {
   workspaceScopeRefusal,
 } from '../../shared/trackers.ts'
 
-export type TrackerRowSource = 'local' | 'mcp'
+export type TrackerRowSource = TaskSource
 type Capability = { allowed: true } | { allowed: false; reason: string }
 export type Capabilities = {
   create: Capability

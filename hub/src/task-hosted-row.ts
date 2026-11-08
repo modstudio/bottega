@@ -1,3 +1,4 @@
+import type { TaskSource } from '../../shared/record/schema-hub.ts'
 import type { PushedTask } from './push-contract.ts'
 import type { TaskRow } from './task.ts'
 
@@ -37,7 +38,7 @@ export function hostedTaskFromTaskRow(row: PushableTaskRow, id: string): PushedT
 }
 
 export function collectorTaskShouldQueue(
-  source: 'mcp',
+  source: TaskSource,
   row: { source: string } | null,
   changed: boolean,
 ): boolean {

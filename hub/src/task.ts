@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import type { TaskSource } from '../../shared/record/schema-hub.ts'
 import { TASK_STATUSES } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
@@ -59,7 +60,7 @@ export type TaskRow = {
   opened_at: string | null
   closed_at: string | null
   updated_at: string | null
-  source: 'mcp' | 'local'
+  source: TaskSource
   first_seen: string
   last_seen: string
   next_document_number: number

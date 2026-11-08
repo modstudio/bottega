@@ -286,11 +286,10 @@ function foldVendors(rows: IntervalRow[]): AgentSpend[] {
   return [...by.values()].sort((a, b) => b.tokens - a.tokens)
 }
 
-/** The one identity formula shared by hosted, local, and unattributed task evidence. */
+/** Tracker rows use their record ID. Unresolved rows are identified by project and by space when present. */
 export function taskIdentity(row: {
   spaceId?: string
   recordId?: string | null
-  key: string | null
   project?: string | null
 }) {
   if (row.recordId) return row.recordId
@@ -308,7 +307,6 @@ export function projectTasksInWindow(
     const id = taskIdentity({
       spaceId: row.space_id,
       recordId: row.task_record_id,
-      key: row.task_key,
       project: row.project,
     })
     groups.set(id, [...(groups.get(id) ?? []), row])
@@ -431,7 +429,6 @@ export function projectFlightDone(input: {
       taskIdentity({
         spaceId: row.space_id,
         recordId: row.task_record_id,
-        key: row.key,
         project: row.project,
       }),
     ),
@@ -479,7 +476,6 @@ export function projectFlightDone(input: {
               taskIdentity({
                 spaceId: item.space_id,
                 recordId: item.task_record_id,
-                key: item.task_key,
                 project: item.project,
               }) === taskIdentity(row),
           ),
@@ -547,7 +543,6 @@ export function projectBoardCards(
     const identity = taskIdentity({
       spaceId: row.space_id,
       recordId: row.record_id,
-      key: row.key,
       project: row.project,
     })
     return {
@@ -593,7 +588,6 @@ export function projectBoard(input: {
         taskIdentity({
           spaceId: row.space_id,
           recordId: row.record_id,
-          key: row.key,
           project: row.project,
         }),
       ) ||
