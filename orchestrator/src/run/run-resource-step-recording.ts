@@ -7,7 +7,10 @@ import type { Agent } from '../agent/agents.ts'
 import { writeTransaction } from '../database/db.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import type { Project } from '../project/projects.ts'
-import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
+import {
+  recordCreatedWorktreeClaims,
+  recordSandboxDirectoryClaim,
+} from '../resources/resource-claims.ts'
 import {
   beginResourceStep,
   completeResourceStep,
@@ -16,7 +19,7 @@ import {
 } from '../resources/resource-step-recorder.ts'
 import type { RunSandbox } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
-import type { WorkerMcpLaunch } from './run-mcp-launch-scope.ts'
+import type { workerMcpLaunchScope } from './run-mcp-launch-scope.ts'
 import { prepareWorkerHomeLaunch } from './run-worker-home.ts'
 
 type RunClaimIdentity = {
@@ -97,7 +100,7 @@ export function recordRunWorktree(
   }, database)
 }
 
-export function prepareSandboxHomeStep<T>(
+function prepareSandboxHomeStep<T>(
   database: Database,
   input: RunClaimIdentity & {
     repoJob: boolean
@@ -141,10 +144,9 @@ export function prepareRecordedWorkerHome(
     grokEnvironment: Record<string, string>
     repoJob: boolean
     writesJob: boolean
-    mcpLaunch: WorkerMcpLaunch
+    mcpLaunch: ReturnType<typeof workerMcpLaunchScope>
     mcpMode: McpMode | null
     project: Project | null
-    claimedAt: string
   },
 ) {
   const effect = () =>
@@ -164,6 +166,30 @@ export function prepareRecordedWorkerHome(
     })
   return prepareSandboxHomeStep(database, {
     ...input,
+    claimedAt: new Date().toISOString(),
     effect,
+  })
+}
+
+export function recordLegacySandboxHome(
+  database: Database,
+  runId: string,
+  path: string,
+  enabled: boolean,
+): void {
+  if (!enabled) return
+  const run = database
+    .query<{ root_id: string; project_record_id: string | null }, [string]>(
+      `SELECT COALESCE(parent_run_record_id,record_id) root_id,project_record_id
+       FROM run WHERE record_id=?`,
+    )
+    .get(runId)
+  if (!run) throw new Error(`run ${runId} could not record its sandbox home`)
+  recordSandboxDirectoryClaim(database, {
+    rootRunId: run.root_id,
+    runId,
+    projectId: run.project_record_id,
+    path,
+    claimedAt: new Date().toISOString(),
   })
 }

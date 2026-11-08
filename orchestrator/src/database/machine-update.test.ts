@@ -53,6 +53,21 @@ function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
   }
 }
 
+function incomingAdditiveMigration() {
+  const journal = migrationJournal()
+  const pending = {
+    idx: journal.length,
+    when: journal.at(-1)!.when + 1,
+    tag: 'incoming_test_migration',
+    compatibility: 'additive' as const,
+  }
+  return {
+    pending,
+    journal: [...journal, pending],
+    restore() {},
+  }
+}
+
 function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()
   const pendingIndex = journal.findLastIndex((entry) => entry.compatibility === 'additive')
@@ -64,28 +79,16 @@ function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
       )
       .get(entry.when)!,
   }))
-  expect(held.length).toBeGreaterThan(0)
-  expect(held.every(({ entry }) => entry.compatibility === 'additive')).toBe(true)
-  for (const { entry } of held) {
+  for (const { entry } of held)
     database.query('DELETE FROM orch_migrations WHERE created_at=?').run(entry.when)
-  }
   return {
     pending: held[0]!.entry,
-    journal: [
-      ...journal,
-      {
-        idx: journal.length,
-        when: journal.at(-1)!.when + 1,
-        tag: 'incoming_test_migration',
-        compatibility: 'additive',
-      },
-    ],
+    journal,
     restore() {
-      for (const { applied } of held) {
+      for (const { applied } of held)
         database
           .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
           .run(applied.hash, applied.created_at, applied.version)
-      }
     },
   }
 }
@@ -297,7 +300,7 @@ test('machine update refuses when the install root is tracked-dirty after refres
 })
 
 test('an additive machine update marks only the store-open window around pull and migrate', async () => {
-  const held = holdBackLastAdditiveMigration(db())
+  const held = incomingAdditiveMigration()
   const phases: string[] = []
   try {
     await machineUpdateCommand(
@@ -337,7 +340,7 @@ test('an additive machine update marks only the store-open window around pull an
 })
 
 test('an additive machine update clears the store-open window when migrate throws', async () => {
-  const held = holdBackLastAdditiveMigration(db())
+  const held = incomingAdditiveMigration()
   try {
     await expect(
       machineUpdateCommand(

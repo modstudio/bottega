@@ -21,7 +21,7 @@ import {
   type WorkerReply,
   workerPreamble,
 } from '../contract/contract.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,
@@ -43,7 +43,6 @@ import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
-import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
@@ -119,7 +118,10 @@ import {
 import { completeRunStartup } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
-import { prepareRecordedWorkerHome } from './run-resource-step-recording.ts'
+import {
+  prepareRecordedWorkerHome,
+  recordLegacySandboxHome,
+} from './run-resource-step-recording.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
@@ -642,7 +644,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         mcpLaunch,
         mcpMode,
         project: runProject,
-        claimedAt: nowIso(),
       })
       ;({
         codexMcpCatalogues,
@@ -678,16 +679,12 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       db()
         .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
         .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
-      if (hasRunScopedHome && (!repoJob || writesJob)) {
-        const rootRunId = rootRunRecordId(claim.id)
-        recordSandboxDirectoryClaim(db(), {
-          rootRunId,
-          runId: claim.id,
-          projectId: runProjectId,
-          path: runtimeDir,
-          claimedAt: nowIso(),
-        })
-      }
+      recordLegacySandboxHome(
+        db(),
+        claim.id,
+        runtimeDir,
+        hasRunScopedHome && (!repoJob || writesJob),
+      )
     })
     if (sandboxSelection.reason) {
       const header = `${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`

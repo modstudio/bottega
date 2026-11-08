@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
 
-export type ResourceStepKind =
+type ResourceStepKind =
   | 'worktree'
   | 'branch'
   | 'retained_ref'
