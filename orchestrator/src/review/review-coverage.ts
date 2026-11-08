@@ -1,5 +1,6 @@
 // concern: review-coverage
 import type { Database } from 'bun:sqlite'
+import { startBoundedSyncBytes } from '../../../shared/bounded-process.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db } from '../database/db.ts'
 import { changeIdentity } from './change-identity.ts'
@@ -15,18 +16,17 @@ import type {
 
 function coverageGit(repoRoot: string): CoverageGitRunner {
   return (args, stdin) => {
-    const p = Bun.spawnSync(['git', ...args], {
+    const p = startBoundedSyncBytes(['git', ...args], {
+      budget: 'git-plumbing',
       cwd: repoRoot,
       env: targetGitEnvironment(repoRoot),
       stdin,
-      stdout: 'pipe',
-      stderr: 'pipe',
     })
     return {
       ok: p.exitCode === 0,
-      out: p.stdout.toString().trim(),
+      out: new TextDecoder().decode(p.stdout).trim(),
       stdout: p.stdout,
-      err: p.stderr.toString().trim() || `exit ${p.exitCode}`,
+      err: p.stderr.trim() || `exit ${p.exitCode}`,
     }
   }
 }

@@ -6,10 +6,12 @@ import {
   BOARD_CHANGES_PAGE_LIMIT,
   type HostedBoardChange,
   type HostedBoardChanges,
+  type HostedBoardPresenceInput,
   RecordBoardError,
 } from './record-board-contract.ts'
 import { hostedBoardTags } from './record-board-message-tags.ts'
 import { hostedBoardMessageView } from './record-board-messages.ts'
+import { upsertHostedBoardPresence } from './record-board-presence.ts'
 import { hostedBoardReceiptView } from './record-board-receipts.ts'
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
 
@@ -23,7 +25,12 @@ export async function readHostedBoardHead(input: BoardTenant): Promise<string> {
 }
 
 export async function listHostedBoardChanges(
-  input: BoardTenant & { after: string; limit?: number },
+  input: BoardTenant & {
+    after: string
+    limit?: number
+    machineId?: string | null
+    presence?: HostedBoardPresenceInput[]
+  },
 ): Promise<HostedBoardChanges> {
   if (!/^\d+$/.test(input.after)) {
     throw new RecordBoardError('board changes after must be a non-negative integer revision', 400)
@@ -37,6 +44,7 @@ export async function listHostedBoardChanges(
   }
   const clock = Date.now()
   return withBoardTenant(input, false, async (tx) => {
+    await upsertHostedBoardPresence(tx, input)
     const messages = (await tx`
       SELECT board_message.*, project.name AS author_project_name FROM board_message
       LEFT JOIN project ON project.id=board_message.author_project_id
@@ -53,7 +61,7 @@ export async function listHostedBoardChanges(
     `) as Record<string, unknown>[]
     const receiptRows = (await tx`
       SELECT message_id, reader_user_id, reader_session, reader_run_record_id, audience_at_posting,
-        delivered_at, acknowledged_at
+        delivered_at, acknowledged_at, successor
       FROM board_receipt
       WHERE reader_user_id=${input.userId}::uuid
         AND message_id = ANY(COALESCE(${boardUuidArray(tx, ids)}, ARRAY[]::uuid[]))

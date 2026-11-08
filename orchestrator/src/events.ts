@@ -1,6 +1,7 @@
 /** Live vendor event log: append-only JSONL plus last_event_at, and bottega run peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { gitAt } from '../../shared/git.ts'
 import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
@@ -838,13 +839,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return p.exitCode === 0 ? p.stdout.toString().trim() : null
+  const p = gitAt(cwd, args, { env: targetGitEnvironment(cwd) })
+  return p.code === 0 ? p.stdout.trim() : null
 }
 
 function worktreeFiles(worktree: string | null, locations: string[]): string[] {

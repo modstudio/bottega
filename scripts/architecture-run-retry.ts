@@ -14,6 +14,7 @@ export const runRetryModuleSpecs = [
       '../../../shared/brand.ts',
       'node:fs',
       '../../../shared/process-identity.ts',
+      '../../../shared/session-liveness.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',

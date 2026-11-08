@@ -59,6 +59,7 @@ export const mcpModules: McpModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     '../run/run-identifier.ts',
+    '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/mcp/mcp-operator-tools.ts', [
     '@modelcontextprotocol/sdk/server/mcp.js',
@@ -135,7 +136,10 @@ export const mcpModules: McpModule[] = [
     './mcp-reader-scope.ts',
     './sandbox.ts',
   ]),
-  module('orchestrator/src/sandbox/grok-reader-mcp-inspect.ts', ['./mcp-reader-scope.ts']),
+  module('orchestrator/src/sandbox/grok-reader-mcp-inspect.ts', [
+    './mcp-reader-scope.ts',
+    '../../../shared/bounded-process.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-compatibility.ts', []),
   module('orchestrator/src/mcp/mcp-native-attachment.ts', ['./mcp-compatibility.ts']),
   module('orchestrator/src/mcp/mcp-doc-write.ts', ['../worker-store-write.ts']),

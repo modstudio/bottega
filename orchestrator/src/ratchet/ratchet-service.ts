@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { type ChangeViewMode, openChangeView } from '../../../shared/change-view.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { type Finding, findingLine, ratchetDecision } from '../../../shared/ratchet.ts'
 import { WORKER_GATE_BASE_ENV } from '../gate/gate-decision.ts'
 import { projectAt } from '../project/projects.ts'
@@ -38,17 +38,14 @@ type RatchetOptions = {
 const LINTER_TIMEOUT_MS = 120_000
 
 function git(root: string, args: string[]): string {
-  const result = Bun.spawnSync(['git', '-C', root, '--no-optional-locks', ...args], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} failed: ${result.stderr.toString().trim() || 'no error output'}`,
-    )
+  const result = gitAt(root, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
   }
-  return result.stdout.toString().trim()
+  if (result.code !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.stderr.trim() || 'no error output'}`)
+  }
+  return result.stdout.trim()
 }
 
 function checkoutRoot(cwd: string) {

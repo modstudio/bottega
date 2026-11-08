@@ -283,14 +283,15 @@ export function registerBoardApiProofs(input: {
     origin: () => origin,
     authorToken: () => tokenA,
     readerToken: () => tokenB,
+    otherSpaceToken: () => tokenC,
     project: PROJECT,
     projectId: IDS.project,
+    spaceId: () => spaceA,
     cacheStore,
     cacheClient,
     caseSession,
     succeeds: input.succeeds,
   })
-
   registerBoardSharedSpaceApiProof(
     () => origin,
     () => tokenD,

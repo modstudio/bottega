@@ -29,6 +29,7 @@ export const runModuleSpecs = [
       '../spare/spare-decisions.ts',
       '../setup/launchd-owners.ts',
       '../setup/setup-schedules.ts',
+      '../../../shared/bounded-process.ts',
     ],
   },
   {

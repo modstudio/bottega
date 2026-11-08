@@ -1,10 +1,11 @@
 // concern: run-retry-workspace
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Resolves and validates the retained or reprovisioned tree used by a fresh retry. */
 
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { db, SESSION_LIVE_MS } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import { branchOf, gitContext, gitOk } from '../git/git-environment.ts'
 import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'

@@ -23,6 +23,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     'node:fs',
     '../../../shared/brand.ts',
     '../../../shared/process-identity.ts',
+    '../../../shared/session-liveness.ts',
     '../database/db.ts',
     '../run/run-alive.ts',
     '../run/run-lease.ts',

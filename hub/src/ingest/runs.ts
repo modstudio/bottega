@@ -490,10 +490,18 @@ function writeRunIngestBatches(
 
 export async function ingestRuns(
   since: string,
-  options: { transaction?: IngestTransaction; batchSize?: number } = {},
+  options: {
+    transaction?: IngestTransaction
+    batchSize?: number
+    runReader?: typeof readRuns
+    rulingReader?: typeof readWorkflowRulings
+  } = {},
 ): Promise<{ rows: number; skipped: number; skippedUnlinked?: number }> {
   const snapshot = nowIso()
-  const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
+  const [runs, workflowQuestions] = await Promise.all([
+    (options.runReader ?? readRuns)(since),
+    (options.rulingReader ?? readWorkflowRulings)(since),
+  ])
   return ingestRunSourceRows(runs, workflowQuestions, snapshot, options)
 }
 
@@ -553,7 +561,14 @@ function stampChangeCursor(cursor: number): void {
 /** Read exactly the source changes after the last successful fast pass. */
 export async function ingestRunChanges(
   fallbackSince: string,
-  options: { transaction?: IngestTransaction; batchSize?: number } = {},
+  options: {
+    transaction?: IngestTransaction
+    batchSize?: number
+    runChangeReader?: typeof readRunChanges
+    runReader?: typeof readRuns
+    rulingChangeReader?: typeof readWorkflowRulingChanges
+    rulingReader?: typeof readWorkflowRulings
+  } = {},
 ): Promise<{ examined: number; rows: number; skipped: number; skippedUnlinked?: number }> {
   const snapshotAt = nowIso()
   const previous = storedChangeCursor()
@@ -561,16 +576,16 @@ export async function ingestRunChanges(
   let workflowQuestions: RulingListRow[]
   let cursor: number
   if (previous === null) {
-    const snapshot = await readRunChanges(COLLECT_CHANGE_CURSOR_PROBE)
+    const snapshot = await (options.runChangeReader ?? readRunChanges)(COLLECT_CHANGE_CURSOR_PROBE)
     ;[runs, workflowQuestions] = await Promise.all([
-      readRuns(fallbackSince),
-      readWorkflowRulings(fallbackSince),
+      (options.runReader ?? readRuns)(fallbackSince),
+      (options.rulingReader ?? readWorkflowRulings)(fallbackSince),
     ])
     cursor = snapshot.cursor
   } else {
     const [runChanges, rulingChanges] = await Promise.all([
-      readRunChanges(previous),
-      readWorkflowRulingChanges(previous),
+      (options.runChangeReader ?? readRunChanges)(previous),
+      (options.rulingChangeReader ?? readWorkflowRulingChanges)(previous),
     ])
     runs = runChanges.rows
     workflowQuestions = rulingChanges.rows

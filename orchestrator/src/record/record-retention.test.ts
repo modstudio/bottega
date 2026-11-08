@@ -15,10 +15,15 @@ test('record retention reports both prune outcomes under an acquired lock', asyn
       tryLock: async () => true,
       pruneRecordChanges: async () => 2,
       pruneContention: async () => 3,
+      pruneBoardPresence: async () => 4,
     }),
   ).toEqual({
     acquired: true,
-    outcomes: { recordChange: { deleted: 2 }, contention: { deleted: 3 } },
+    outcomes: {
+      recordChange: { deleted: 2 },
+      contention: { deleted: 3 },
+      boardPresence: { deleted: 4 },
+    },
   })
 })
 
@@ -29,14 +34,18 @@ test('record retention pass reports both deleted counts and one duration', async
   await runRecordRetentionPass({
     prune: async () => ({
       acquired: true,
-      outcomes: { recordChange: { deleted: 12 }, contention: { deleted: 7 } },
+      outcomes: {
+        recordChange: { deleted: 12 },
+        contention: { deleted: 7 },
+        boardPresence: { deleted: 2 },
+      },
     }),
     now: () => times.shift()!,
     log: (line) => lines.push(line),
   })
 
   expect(lines).toEqual([
-    'record retention: record_change 12 deleted, contention 7 deleted in 27ms',
+    'record retention: record_change 12 deleted, contention 7 deleted, board_presence 2 deleted in 27ms',
   ])
 })
 
@@ -56,14 +65,18 @@ test('record retention still prunes contention when record change pruning fails'
           calls.push('contention')
           return 7
         },
+        pruneBoardPresence: async () => {
+          calls.push('board_presence')
+          return 2
+        },
       }),
     now: () => 1_000,
     log: (line) => lines.push(line),
   })
 
-  expect(calls).toEqual(['record_change', 'contention'])
+  expect(calls).toEqual(['record_change', 'contention', 'board_presence'])
   expect(lines).toEqual([
-    'record retention: record_change failed (record change unavailable), contention 7 deleted in 0ms',
+    'record retention: record_change failed (record change unavailable), contention 7 deleted, board_presence 2 deleted in 0ms',
   ])
 })
 
@@ -82,6 +95,10 @@ test('record change prune pass skips without pruning when the transaction lock i
         pruneContention: async () => {
           pruneCalls += 1
           return 5
+        },
+        pruneBoardPresence: async () => {
+          pruneCalls += 1
+          return 6
         },
       }),
     now: () => 1_000,
@@ -145,7 +162,11 @@ test('stopping record retention clears its start timeout and interval', () => {
   const waitingJob = startRecordRetention({
     prune: async () => ({
       acquired: true,
-      outcomes: { recordChange: { deleted: 0 }, contention: { deleted: 0 } },
+      outcomes: {
+        recordChange: { deleted: 0 },
+        contention: { deleted: 0 },
+        boardPresence: { deleted: 0 },
+      },
     }),
     setTimeout: () => timeout,
     clearTimeout: (value) => clearedTimeouts.push(value),
@@ -156,7 +177,11 @@ test('stopping record retention clears its start timeout and interval', () => {
   const runningJob = startRecordRetention({
     prune: async () => ({
       acquired: true,
-      outcomes: { recordChange: { deleted: 0 }, contention: { deleted: 0 } },
+      outcomes: {
+        recordChange: { deleted: 0 },
+        contention: { deleted: 0 },
+        boardPresence: { deleted: 0 },
+      },
     }),
     setTimeout: (callback) => {
       start = callback

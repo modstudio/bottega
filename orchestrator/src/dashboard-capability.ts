@@ -79,7 +79,7 @@ export function dashboardCapabilityAuthorized(): boolean {
       DASHBOARD_CAPABILITY_PS_TIMEOUT_MS,
     )
     if (observed.exitCode !== 0) return false
-    return dashboardServeCommand(new TextDecoder().decode(observed.stdout ?? new Uint8Array()))
+    return dashboardServeCommand(String(observed.stdout ?? ''))
   } catch {
     return false
   }

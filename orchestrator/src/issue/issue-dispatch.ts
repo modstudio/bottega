@@ -1,3 +1,4 @@
+import { startBounded } from '../../../shared/bounded-process.ts'
 // concern: filed-issue dispatch
 /** Claims and bounds filed-issue coordinator passes. Does not diagnose or fix issues. */
 
@@ -68,18 +69,13 @@ function acquireIssueLease(key: string): KernelLease | null {
 }
 
 async function hub(args: string[]): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
+  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
+    budget: 'self-cli',
     env: { ...process.env },
   })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (code !== 0)
-    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
+  const { stdout, stderr, exitCode } = child
+  if (exitCode !== 0)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
   return stdout.trim()
 }
 

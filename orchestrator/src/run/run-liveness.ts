@@ -1,11 +1,12 @@
 // concern: run-liveness
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /**
  * Knows process and chain liveness, stale transition, audit, root roll-up, and the paired run-record enqueue. Must not know routing, transports, reviews, or CLI adapters.
  */
 
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { SESSION_LIVE_MS, storeWritesRefused, writeTransaction } from '../database/db.ts'
+import { storeWritesRefused, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   liveWorktreeSharers,

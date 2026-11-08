@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import type { ReviewTierFile } from './review-tier-classifier.ts'
 
@@ -57,14 +58,9 @@ export function resolveTierRange(
 }
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {
-  const result = Bun.spawnSync(
+  const result = startBoundedSync(
     ['git', 'diff', '--no-renames', '--numstat', '-z', `${from}..${to}`],
-    {
-      cwd: repo,
-      env: targetGitEnvironment(repo),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
+    { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) },
   )
   if (result.exitCode !== 0)
     throw new Error(result.stderr.toString().trim() || `git diff exited ${result.exitCode}`)

@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
+import { gitAt } from '../../../shared/git.ts'
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
 
 export type GitLock = {
   path: string
@@ -21,13 +21,8 @@ export function shellQuote(value: string): string {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return p.exitCode === 0 ? p.stdout.toString().trim() : null
+  const p = gitAt(cwd, args)
+  return p.code === 0 ? p.stdout.trim() : null
 }
 
 function lockFiles(root: string): string[] {

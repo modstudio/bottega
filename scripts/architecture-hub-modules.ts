@@ -1,4 +1,5 @@
 export const hubModuleSpecs = [
+  { file: 'hub/src/note-git.ts', allowed: ['../../shared/git.ts'] },
   {
     file: 'hub/src/record-bigint.ts',
     allowed: ['drizzle-orm', 'drizzle-orm/pg-core', 'zod'],
@@ -371,6 +372,8 @@ export const hubModuleSpecs = [
       './db.ts',
       './projects.ts',
       './task.ts',
+      '../../shared/git.ts',
+      '../../shared/bounded-process.ts',
     ],
   },
   {
@@ -412,7 +415,13 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/service-revision.ts',
-    allowed: ['../../shared/install-root.ts', '../../shared/process-identity.ts', './db.ts'],
+    allowed: [
+      '../../shared/install-root.ts',
+      '../../shared/process-identity.ts',
+      './db.ts',
+      '../../shared/git.ts',
+      '../../shared/bounded-process.ts',
+    ],
   },
   {
     file: 'hub/src/serve-lifecycle.ts',

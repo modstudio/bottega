@@ -1,7 +1,9 @@
 // concern: cleanup sweep filesystem orphan candidate
+
 import { basename } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { db, SESSION_LIVE_MS } from '../database/db.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'

@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { engagedMs } from '../../../shared/interval.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -479,8 +480,12 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
   }
 }
 
-export async function epicChildren(project: string, epicKey: string): Promise<EpicChild[]> {
-  const child = Bun.spawn(
+export async function epicChildren(
+  project: string,
+  epicKey: string,
+  starter: typeof startBounded = startBounded,
+): Promise<EpicChild[]> {
+  const child = await starter(
     [
       ...bottegaEntryArgv(PLATFORM_SLUG),
       'task',
@@ -491,19 +496,11 @@ export async function epicChildren(project: string, epicKey: string): Promise<Ep
       epicKey,
       '--json',
     ],
-    {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: { ...process.env },
-    },
+    { budget: 'self-cli', env: { ...process.env } },
   )
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (code !== 0)
-    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
+  const { stdout, stderr, exitCode } = child
+  if (exitCode !== 0)
+    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
   const parsed = JSON.parse(stdout) as unknown
   if (
     !Array.isArray(parsed) ||

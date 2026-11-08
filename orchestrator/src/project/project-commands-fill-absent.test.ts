@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, expect, mock, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,16 +23,6 @@ const settingsCarrying = (path: unknown) =>
   }) as unknown as ProjectSettings
 
 afterEach(() => mock.restore())
-
-function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync> {
-  return {
-    exitCode,
-    stdout: Buffer.from(stdout),
-    stderr: Buffer.from(''),
-    success: exitCode === 0,
-    exitedDueToTimeout: false,
-  } as ReturnType<typeof Bun.spawnSync>
-}
 
 test('fills recipePath while preserving existing worktree settings', async () => {
   const path = mkdtempSync(join(tmpdir(), 'orch-setup-worktree-fill-'))
@@ -99,7 +89,7 @@ test('recomputes the branch check when the candidate changes before the write', 
     settings: {},
   })
   let checks = 0
-  spyOn(Bun, 'spawnSync').mockImplementation((() => {
+  const branchChecker = () => {
     checks += 1
     if (checks === 1) {
       upsertProject({
@@ -109,13 +99,16 @@ test('recomputes the branch check when the candidate changes before the write', 
         settings: {},
       })
     }
-    return spawnResult('main\n')
-  }) as typeof Bun.spawnSync)
+    return { head: 'main', landing: 'main', canonIntegration: null, problems: [] }
+  }
 
-  await fillAbsentProjectSettings({
-    name: 'setup-fill-race',
-    fill: { settings: { trunk: 'main' } },
-  })
+  await fillAbsentProjectSettings(
+    {
+      name: 'setup-fill-race',
+      fill: { settings: { trunk: 'main' } },
+    },
+    { branchChecker },
+  )
 
   expect(checks).toBe(2)
   expect(projectByName('setup-fill-race')).toMatchObject({

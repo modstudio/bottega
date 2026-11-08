@@ -99,7 +99,10 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('shared/question-vocabulary.ts', []),
   module('shared/operator-inbox.ts', []),
   module('shared/operator-notification-contract.ts', []),
-  module('shared/operator-notification.ts', ['./operator-notification-contract.ts']),
+  module('shared/operator-notification.ts', [
+    './operator-notification-contract.ts',
+    './bounded-process.ts',
+  ]),
   module('shared/record/hosted-task-id.ts', ['bun']),
   module('hub/src/operator-waiting-email.ts', [
     '../../shared/machine-config.ts',

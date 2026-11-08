@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { db, SESSION_LIVE_MS } from '../database/db.ts'
+import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { HostedBoardChange, HostedBoardMessage } from '../record/record-board-contract.ts'
@@ -717,6 +717,7 @@ test('receipt flushing keeps server failures pending, then records a refusal', a
           audienceAtPosting: input.audienceAtPosting,
           deliveredAt: '2026-10-05T12:05:00.000Z',
           acknowledgedAt: '2026-10-05T12:05:00.000Z',
+          successor: false,
         }
       },
     },
@@ -765,6 +766,7 @@ test('a delivered-only receipt refresh preserves and flushes a queued acknowledg
                 audienceAtPosting: true,
                 deliveredAt: '2026-10-05T12:04:00.000Z',
                 acknowledgedAt: null,
+                successor: false,
               },
             ],
           },
@@ -780,6 +782,7 @@ test('a delivered-only receipt refresh preserves and flushes a queued acknowledg
           audienceAtPosting: input.audienceAtPosting,
           deliveredAt: '2026-10-05T12:05:00.000Z',
           acknowledgedAt: '2026-10-05T12:05:00.000Z',
+          successor: false,
         }
       },
     },
@@ -859,6 +862,7 @@ test('an older snapshot applied after a newer one leaves payload, tags, receipts
                     audienceAtPosting: true,
                     deliveredAt: '2026-10-05T12:02:00.000Z',
                     acknowledgedAt: null,
+                    successor: false,
                   },
                 ],
               },
@@ -879,6 +883,7 @@ test('an older snapshot applied after a newer one leaves payload, tags, receipts
                     audienceAtPosting: false,
                     deliveredAt: '2026-10-05T12:01:00.000Z',
                     acknowledgedAt: null,
+                    successor: false,
                   },
                 ],
               },
@@ -927,7 +932,7 @@ test('audienceAtPosting uses session first_seen in both directions', () => {
   expect(cachedAudienceAtPosting(cached.id, 'late-session')).toBe(false)
 })
 
-test('hosted push selection withholds every older message and keeps newer messages', () => {
+test('hosted push selection withholds every older message and keeps newer messages', async () => {
   const database = db()
   const beganAt = '2026-10-05T12:00:00.000Z'
   insertArchitect('cache-reader', beganAt)
@@ -957,7 +962,7 @@ test('hosted push selection withholds every older message and keeps newer messag
   for (const row of rows) put.run(row.id, row.kind, null, row.revision, JSON.stringify(row))
 
   expect(
-    claimCachedHostedForPush(
+    await claimCachedHostedForPush(
       'cache-reader',
       false,
       Date.parse('2026-10-05T12:01:00.000Z'),
@@ -967,47 +972,4 @@ test('hosted push selection withholds every older message and keeps newer messag
     notices: [{ id: rows[2]!.id }, { id: rows[3]!.id }],
     withheldOlderCount: 2,
   })
-})
-
-test('a hosted report reply reaches the first later architect session of the posting project', () => {
-  const clock = Date.parse('2026-10-16T12:00:00.000Z')
-  const postedAt = clock - SESSION_LIVE_MS - 60_000
-  const replyAt = postedAt + 30_000
-  const iso = (ms: number) => new Date(ms).toISOString()
-  db()
-    .query('INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?)')
-    .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
-  insertArchitect('hosted-author', iso(postedAt - 1_000), iso(postedAt))
-  insertArchitect('hosted-later-first', iso(replyAt + 1_000), iso(clock))
-  insertArchitect('hosted-later-second', iso(replyAt + 2_000), iso(clock))
-  const root = message({
-    audience: 'session:hosted-author',
-    authorSession: 'hosted-author',
-    purpose: 'request',
-    createdAt: iso(postedAt),
-  })
-  const reply = message({
-    kind: 'reply',
-    threadRootId: root.id,
-    audience: null,
-    createdAt: iso(replyAt),
-  })
-  const put = db().query(
-    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
-  )
-  put.run(root.id, root.kind, null, root.revision, JSON.stringify(root))
-  put.run(reply.id, reply.kind, root.id, reply.revision, JSON.stringify(reply))
-  expect(
-    claimCachedHostedForPush('hosted-later-first', false, clock).notices.map((n) => n.id),
-  ).toEqual([reply.id])
-  expect(
-    claimCachedHostedForPush('hosted-later-second', false, clock).notices.map((n) => n.id),
-  ).toEqual([])
-  expect(
-    db()
-      .query(
-        'SELECT reader_session,successor,delivered_at FROM hosted_board_receipt_cache WHERE message_id=? AND successor=1',
-      )
-      .all(reply.id),
-  ).toEqual([{ reader_session: 'hosted-later-first', successor: 1, delivered_at: null }])
 })

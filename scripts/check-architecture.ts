@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import type { ICruiseResult } from 'dependency-cruiser'
 import { CONCERNS } from '../shared/brand.ts'
-import { inspectionGitEnv } from '../shared/git'
+import { gitAt } from '../shared/git'
 import { dependencyCruiserConfig, modules } from './architecture.ts'
 import {
   hubBrowserNoNodeBuiltinConfig,
@@ -74,19 +74,15 @@ function baseArgumentOrExit(argv: readonly string[]): string | null {
  */
 function baseBaselineOrExit(commit: string | null): string[] | null {
   if (!commit) return null
-  const result = Bun.spawnSync(['git', 'show', `${commit}:${BASELINE_FILE}`], {
-    cwd: ROOT,
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode === 0) return parseUndeclaredModulesBaseline(result.stdout.toString())
-  const error = result.stderr.toString()
+  const result = gitAt(ROOT, ['show', `${commit}:${BASELINE_FILE}`])
+  if (result.code === 0) return parseUndeclaredModulesBaseline(result.stdout)
+  const error = result.stderr
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))
     return null
-  console.error(
-    `could not read the base undeclared-modules baseline at ${commit}: ${error.trim() || `git show exited ${result.exitCode ?? 'unknown'}`}`,
-  )
+  const detail = result.timedOut
+    ? `git show ${commit}:${BASELINE_FILE} exceeded its bounded-call deadline`
+    : error.trim() || `git show exited ${result.code}`
+  console.error(`could not read the base undeclared-modules baseline at ${commit}: ${detail}`)
   process.exit(1)
 }
 

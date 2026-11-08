@@ -107,6 +107,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'applySettingsAutoMode',
       'applySettingsPermission',
       'createOrganization',
+      'deleteTrialSpace',
       'ensureSpaceBuiltIns',
       'inviteMember',
       'grantConfigAccess',
@@ -126,6 +127,12 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'recordApiClient',
     ['project'],
     ['upsertProject', 'retireProject'],
+  ),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
+    ['hosted_board_message_cache', 'hosted_board_receipt_cache'],
+    ['takeBoardSuccessor'],
   ),
   ...writeEntries(
     'orchestrator',

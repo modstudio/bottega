@@ -20,6 +20,10 @@ type BoundedProcessOptions = {
 
 type BoundedSyncOptions = Omit<BoundedProcessOptions, 'signal'>
 
+export function isDeadlineAbort(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'TimeoutError'
+}
+
 function commandText(argv: readonly string[]): string {
   return argv.join(' ')
 }
@@ -43,6 +47,7 @@ export async function startBounded(
   const result = await execa(file, args, {
     cwd: options.cwd,
     env: options.env,
+    ...(options.env === undefined ? {} : { extendEnv: false }),
     ...(options.stdin === undefined ? { stdin: 'ignore' as const } : { input: options.stdin }),
     cancelSignal: options.signal,
     timeout: budget.deadlineMs,

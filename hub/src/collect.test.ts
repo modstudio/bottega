@@ -8,7 +8,7 @@ import {
 import { collectFast, deliverOperatorNotifications, runsSince } from './collect.ts'
 import * as dbMod from './db.ts'
 import { db, writeTransaction } from './db.ts'
-import { ingestRuns, RUN_CHANGE_CURSOR_SETTING } from './ingest/runs.ts'
+import { ingestRunChanges, ingestRuns, RUN_CHANGE_CURSOR_SETTING } from './ingest/runs.ts'
 import type { claimWaitingNotifications } from './orch.ts'
 import { listOpenRulings } from './rulings.ts'
 import { clearOrchCache } from './serve.ts'
@@ -124,21 +124,14 @@ describe('run ingest', () => {
         .run(RUN_CHANGE_CURSOR_SETTING, '5'),
     )
     const changedRun = runFixture({ id: 9911 })
-    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
-      const ruling = args.includes('ruling')
-      const after = Number(args[args.indexOf('--changed-after') + 1])
-      const stdout = ruling
-        ? '{"cursor":7,"rows":[]}'
-        : [
-            ...(after < 7
-              ? [JSON.stringify({ schema_version: 2, kind: 'run', data: changedRun })]
-              : []),
-            '{"schema_version":2,"kind":"cursor","data":{"cursor":7}}',
-          ].join('\n')
-      return { stdout: new Blob([stdout]), stderr: new Blob(['']), exited: Promise.resolve(0) }
-    }) as unknown as typeof Bun.spawn)
+    const runs = () =>
+      ingestRunChanges(runsSince(), {
+        runChangeReader: async (after) => ({ rows: after < 7 ? [changedRun] : [], cursor: 7 }),
+        rulingChangeReader: async () => ({ rows: [], cursor: 7 }),
+      })
     try {
       const first = await collectFast({
+        runs,
         transcripts: async () => ({ examined: 0, rows: 0, skipped: 0 }),
       })
       expect(first[0]).toMatchObject({
@@ -153,6 +146,7 @@ describe('run ingest', () => {
       ).toBe('7')
 
       const second = await collectFast({
+        runs,
         transcripts: async () => ({ examined: 0, rows: 0, skipped: 0 }),
       })
       expect(second[0]).toMatchObject({
@@ -166,7 +160,7 @@ describe('run ingest', () => {
           .get()?.count,
       ).toBe(1)
     } finally {
-      spawn.mockRestore()
+      resetFixtureStore()
     }
   })
   test('a failing transcripts leg does not stop the runs watermark advancing', async () => {
@@ -263,23 +257,16 @@ describe('run ingest', () => {
       session_id: 'sess-snap',
       questions: [{ id: 1001, run_id: 10001, asked_at: snapshot, answered_at: null }],
     })
-    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
-      now = completion
-      return {
-        stdout: new Blob([args.includes('ruling') ? '[]' : JSON.stringify(unanswered)]),
-        stderr: new Blob(['']),
-        exited: Promise.resolve(0),
-      }
-    }) as unknown as typeof Bun.spawn)
     try {
-      await ingestRuns('2026-09-01T00:00:00.000Z')
+      await ingestRuns('2026-09-01T00:00:00.000Z', {
+        runReader: async () => {
+          now = completion
+          return [unanswered]
+        },
+        rulingReader: async () => [],
+      })
       expect(collectRunsAt()).toBe(JSON.stringify(snapshot))
       expect(runsSince(Date.parse('2026-09-04T12:00:10.000Z'))).toBe(snapshot)
-    } finally {
-      spawn.mockRestore()
-    }
-
-    try {
       await ingestRunFixtures(
         runFixture({
           id: 10001,

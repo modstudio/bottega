@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: branch disposal
 /** Archives unique commits, deletes one ruled branch, and records the reversible ruling. */
 
@@ -110,12 +111,11 @@ export function pruneExpiredBranchDisposalArchives(input: {
 }
 
 function git(cwd: string, args: string[], input?: string): string {
-  const result = Bun.spawnSync(['git', ...args], {
+  const result = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
     stdin: input === undefined ? undefined : Buffer.from(input),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (result.exitCode !== 0)
     throw new Error(

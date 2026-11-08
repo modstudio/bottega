@@ -27,6 +27,7 @@ export const runLivenessModuleSpecs = [
     allowed: [
       'bun:sqlite',
       '../../../shared/process-identity.ts',
+      '../../../shared/session-liveness.ts',
       '../database/db.ts',
       './session-liveness.ts',
     ],
@@ -54,6 +55,7 @@ export const runLivenessBoundarySpecs = [
     allowed: [
       'bun:sqlite',
       '../../../shared/process-identity.ts',
+      '../../../shared/session-liveness.ts',
       '../database/db.ts',
       './session-liveness.ts',
     ],

@@ -1,11 +1,11 @@
 // concern: reader-tree monitor conditions
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Detects escaped shared readers and duplicate confined clones from recorded run paths. */
 
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { SESSION_LIVE_MS } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { isReadOnlyRepositoryJob, JOBS } from '../jobs/jobs.ts'
 import { withWorktreeLease } from '../project/project-lock.ts'

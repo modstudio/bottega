@@ -13,6 +13,8 @@ import {
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { hostedApiFetch } from '../shared/bounded-fetch.ts'
+import { startBounded } from '../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { HARNESS_ENV_FILE_ENV } from '../shared/config-directory.ts'
 import { newRecordId } from '../shared/record-id.ts'
@@ -66,17 +68,12 @@ async function smoke(
   cwd?: string,
 ): Promise<string> {
   const rendered = [executable, ...args].join(' ')
-  const child = Bun.spawn([executable, ...args], {
+  const child = await startBounded([executable, ...args], {
+    budget: 'self-cli',
     cwd,
     env: smokeEnvironment(stateHome),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  const { stdout, stderr, exitCode } = child
   console.log(`$ ${rendered}`)
   if (stdout.trim()) console.log(stdout.trim())
   if (stderr.trim()) console.error(stderr.trim())
@@ -122,7 +119,7 @@ async function smokeDashboard(executable: string, stateHome: string): Promise<vo
     let failure: unknown
     for (let attempt = 0; attempt < 100; attempt++) {
       try {
-        response = await fetch(`http://127.0.0.1:${port}/`)
+        response = await hostedApiFetch(`http://127.0.0.1:${port}/`)
         break
       } catch (error) {
         failure = error
@@ -136,7 +133,7 @@ async function smokeDashboard(executable: string, stateHome: string): Promise<vo
     }
     const assetPath = html.match(/<script[^>]+src=["']([^"']+-[^"'/]+\.js)["']/)?.[1]
     if (!assetPath) throw new Error(`${rendered} index did not name a hashed JavaScript asset`)
-    const asset = await fetch(new URL(assetPath, `http://127.0.0.1:${port}/`))
+    const asset = await hostedApiFetch(new URL(assetPath, `http://127.0.0.1:${port}/`))
     const contentType = asset.headers.get('content-type') ?? ''
     if (asset.status !== 200 || !contentType.includes('javascript')) {
       throw new Error(

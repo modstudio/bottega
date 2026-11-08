@@ -1,254 +1,263 @@
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { DB_PATH, db, SESSION_LIVE_MS } from '../database/db.ts'
-import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import type { HostedBoardChange, HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
-  BOARD_CACHE_OWNER_KEY,
+  claimCachedHosted,
   claimCachedHostedForPush,
-  markCachedHostedDelivered,
+  refreshHostedBoard,
 } from './board-hosted-cache.ts'
+import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 
-const userId = '01990000-0000-7000-8000-000000000001'
+const projectName = PLATFORM_SLUG
 
-const message = (overrides: Partial<HostedBoardMessage> = {}): HostedBoardMessage => ({
-  id: newRecordId(),
-  kind: 'notice',
-  threadRootId: null,
-  title: 'Hosted cache',
-  body: 'cached body',
-  audience: 'session:cache-reader',
-  origin: {
-    kind: 'architect',
-    session: 'author',
-    harness: 'claude',
-    project: 'cache-project',
-    projectStored: true,
-    runId: null,
-  },
-  senderTags: [],
-  createdAt: '2026-10-05T12:00:00.000Z',
-  expiresAt: '2027-10-05T12:00:00.000Z',
-  withdrawnAt: null,
-  state: 'open',
-  acceptedReplyId: null,
-  acceptedBy: null,
-  acceptedAt: null,
-  noteId: null,
-  notePendingError: null,
-  revision: '1',
-  scopeProjectIds: [],
-  recipientUserIds: [],
-  claimId: null,
-  authorUserId: userId,
-  authorSession: 'author',
-  ackRequired: false,
-  ackDeadline: null,
-  ...overrides,
+function hostedMessage(overrides: Partial<HostedBoardMessage>): HostedBoardMessage {
+  return {
+    id: newRecordId(),
+    kind: 'notice',
+    threadRootId: null,
+    title: 'Report',
+    body: 'body',
+    audience: null,
+    origin: {
+      kind: 'architect',
+      session: 'author',
+      harness: 'claude',
+      project: projectName,
+      projectStored: true,
+      runId: null,
+    },
+    senderTags: [],
+    createdAt: new Date(Date.now() - SESSION_LIVE_MS - 60_000).toISOString(),
+    expiresAt: new Date(Date.now() + SESSION_LIVE_MS).toISOString(),
+    withdrawnAt: null,
+    state: 'open',
+    acceptedReplyId: null,
+    acceptedBy: null,
+    acceptedAt: null,
+    noteId: null,
+    notePendingError: null,
+    revision: '1',
+    scopeProjectIds: [],
+    recipientUserIds: [],
+    claimId: null,
+    authorUserId: 'user-a',
+    authorSession: 'author',
+    ackRequired: false,
+    ackDeadline: null,
+    ...overrides,
+  }
+}
+
+function fixture(holder?: { session: string; delivered?: boolean }) {
+  const projectId = newRecordId()
+  const root = hostedMessage({ revision: '1' })
+  const reply = hostedMessage({
+    kind: 'reply',
+    threadRootId: root.id,
+    authorSession: 'replier',
+    createdAt: new Date(Date.now() - 30_000).toISOString(),
+    revision: '2',
+  })
+  const changes: HostedBoardChange[] = [
+    { message: root, tags: [], receipts: [] },
+    {
+      message: reply,
+      tags: [],
+      receipts: holder
+        ? [
+            {
+              messageId: reply.id,
+              readerUserId: 'user-a',
+              readerSession: holder.session,
+              audienceAtPosting: false,
+              deliveredAt: holder.delivered ? new Date().toISOString() : null,
+              acknowledgedAt: null,
+              successor: true,
+            },
+          ]
+        : [],
+    },
+  ]
+  return {
+    projectId,
+    reply,
+    client: createMemoryRecordApiClient({
+      boardChanges: changes,
+      boardProjectIds: { [projectName]: projectId },
+    }),
+  }
+}
+
+function machine(projectId: string, session: string, lastSeen = Date.now()): Database {
+  const database = migratedTestDatabase()
+  database
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(projectId, projectName, `/tmp/${projectId}`, '{}')
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  database
+    .query(
+      `INSERT INTO presence
+     (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+     VALUES (?,'codex','architect','machine',?,?,'/tmp',?,?)`,
+    )
+    .run(
+      session,
+      projectName,
+      projectId,
+      new Date(lastSeen - 60_000).toISOString(),
+      new Date(lastSeen).toISOString(),
+    )
+  return database
+}
+
+function addPresence(
+  database: Database,
+  projectId: string,
+  session: string,
+  firstSeen: number,
+  lastSeen: number,
+): void {
+  database
+    .query(
+      `INSERT INTO presence
+       (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+       VALUES (?,'codex','architect','machine',?,?,'/tmp',?,?)`,
+    )
+    .run(
+      session,
+      projectName,
+      projectId,
+      new Date(firstSeen).toISOString(),
+      new Date(lastSeen).toISOString(),
+    )
+}
+
+async function refresh(database: Database, client: ReturnType<typeof createMemoryRecordApiClient>) {
+  await refreshHostedBoard({
+    budgetMs: 1_000,
+    env: { BOTTEGA_RECORD_API_URL: 'memory' },
+    database,
+    client,
+  })
+}
+
+test('a live root author prevents a hosted successor election request', async () => {
+  const { client, projectId } = fixture()
+  const database = machine(projectId, 'candidate')
+  addPresence(database, projectId, 'author', Date.now() - 60_000, Date.now())
+  await refresh(database, client)
+  let calls = 0
+  const countingClient = {
+    ...client,
+    takeBoardSuccessor: async () => {
+      calls += 1
+      return { elected: true, holder: 'candidate' }
+    },
+  }
+
+  expect(
+    (
+      await claimCachedHostedForPush(
+        'candidate',
+        false,
+        Date.now(),
+        database,
+        true,
+        null,
+        countingClient,
+      )
+    ).notices,
+  ).toEqual([])
+  expect(calls).toBe(0)
 })
 
-test('two database connections cannot both claim the hosted report reply successor', async () => {
-  const clock = Date.parse('2026-10-16T12:00:00.000Z')
-  const postedAt = clock - SESSION_LIVE_MS - 60_000
-  const replyAt = postedAt + 30_000
-  const iso = (ms: number) => new Date(ms).toISOString()
-  const database = db()
-  database
-    .query('INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?)')
-    .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
-  const putPresence = database.query(
-    `INSERT INTO presence
-     (session_id,harness,role,machine,project,cwd,first_seen,last_seen)
-     VALUES (?,'claude','architect','machine','cache-project','/tmp',?,?)`,
-  )
-  putPresence.run('hosted-author', iso(postedAt - 1_000), iso(postedAt))
-  putPresence.run('hosted-contender-one', iso(replyAt + 1_000), iso(clock))
-  putPresence.run('hosted-contender-two', iso(replyAt + 2_000), iso(clock))
-  const root = message({
-    audience: 'session:hosted-author',
-    authorSession: 'hosted-author',
-    purpose: 'request',
-    createdAt: iso(postedAt),
-  })
-  const reply = message({
-    kind: 'reply',
-    threadRootId: root.id,
-    audience: null,
-    createdAt: iso(replyAt),
-  })
-  const putMessage = database.query(
-    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
-  )
-  putMessage.run(root.id, root.kind, null, root.revision, JSON.stringify(root))
-  putMessage.run(reply.id, reply.kind, root.id, reply.revision, JSON.stringify(reply))
-
-  const childCode = `
-    import { Database } from 'bun:sqlite'
-    import { existsSync, writeFileSync } from 'node:fs'
-    import { claimCachedHostedForPush } from './src/board/board-hosted-cache.ts'
-    const database = new Database(process.env.BOTTEGA_ORCHESTRATOR_DB, { readwrite: true })
-    database.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON')
-    let snapshotRead = false
-    const instrumented = new Proxy(database, {
-      get(target, property) {
-        if (property === 'query') return (sql) => {
-          const statement = target.query(sql)
-          if (snapshotRead || !sql.includes('successor_receipt.successor=1')) return statement
-          return new Proxy(statement, {
-            get(statementTarget, statementProperty) {
-              if (statementProperty !== 'all') {
-                const value = Reflect.get(statementTarget, statementProperty)
-                return typeof value === 'function' ? value.bind(statementTarget) : value
-              }
-              return (...args) => {
-                const result = statementTarget.all(...args)
-                snapshotRead = true
-                writeFileSync(process.env.CLAIM_READY, '')
-                while (!existsSync(process.env.CLAIM_RELEASE))
-                  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
-                return result
-              }
-            },
-          })
-        }
-        const value = Reflect.get(target, property)
-        return typeof value === 'function' ? value.bind(target) : value
-      },
-    })
-    const result = claimCachedHostedForPush(
-      process.env.CLAIM_READER,
-      false,
-      Number(process.env.CLAIM_CLOCK),
-      instrumented,
-    )
-    console.log(JSON.stringify(result.notices.map((notice) => notice.id)))
-  `
-  const readyPaths = [`${DB_PATH}.successor-one.ready`, `${DB_PATH}.successor-two.ready`]
-  const releasePaths = [`${DB_PATH}.successor-one.release`, `${DB_PATH}.successor-two.release`]
-  const readers = ['hosted-contender-one', 'hosted-contender-two']
-  const children: ReturnType<typeof Bun.spawn>[] = []
-  for (let index = 0; index < readers.length; index++) {
-    rmSync(readyPaths[index]!, { force: true })
-    rmSync(releasePaths[index]!, { force: true })
-    children.push(
-      Bun.spawn(['bun', '--eval', childCode], {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          CLAIM_CLOCK: String(clock),
-          CLAIM_READY: readyPaths[index]!,
-          CLAIM_READER: readers[index]!,
-          CLAIM_RELEASE: releasePaths[index]!,
-        },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      }),
-    )
-  }
-  const deadline = Date.now() + 5_000
-  while (!readyPaths.every(existsSync) && Date.now() < deadline) await Bun.sleep(10)
-  if (!readyPaths.every(existsSync)) {
-    for (const path of releasePaths) writeFileSync(path, '')
-    const errors = await Promise.all(
-      children.map((child) => new Response(child.stderr as ReadableStream<Uint8Array>).text()),
-    )
-    for (const path of [...readyPaths, ...releasePaths]) rmSync(path, { force: true })
-    throw new Error(`contenders did not read their snapshots: ${errors.join('\n')}`)
-  }
-  for (const path of releasePaths) writeFileSync(path, '')
-
-  const results = await Promise.all(
-    children.map(async (child) => ({
-      exitCode: await child.exited,
-      stdout: await new Response(child.stdout as ReadableStream<Uint8Array>).text(),
-      stderr: await new Response(child.stderr as ReadableStream<Uint8Array>).text(),
-    })),
-  )
-  for (const path of [...readyPaths, ...releasePaths]) rmSync(path, { force: true })
-  expect(
-    results.map((result) => result.exitCode),
-    results.map((result) => result.stderr).join('\n'),
-  ).toEqual([0, 0])
-  expect(results.flatMap((result) => JSON.parse(result.stdout) as string[])).toEqual([reply.id])
-  expect(
-    database
-      .query(
-        'SELECT reader_session FROM hosted_board_receipt_cache WHERE message_id=? AND successor=1',
-      )
-      .all(reply.id),
-  ).toHaveLength(1)
-}, 15_000)
-
-test('an unacknowledged hosted successor claim is re-offered until delivery is marked', async () => {
-  const clock = Date.parse('2026-10-16T12:00:00.000Z')
-  const postedAt = clock - SESSION_LIVE_MS - 60_000
-  const replyAt = postedAt + 30_000
-  const iso = (ms: number) => new Date(ms).toISOString()
-  db()
-    .query(
-      'INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-    )
-    .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
-  const putPresence = db().query(
-    `INSERT INTO presence
-      (session_id,harness,role,machine,project,cwd,first_seen,last_seen)
-      VALUES (?,'claude','architect','machine','cache-project','/tmp',?,?)`,
-  )
-  putPresence.run('hosted-reoffer-author', iso(postedAt - 1_000), iso(postedAt))
-  putPresence.run('hosted-reoffer-later', iso(replyAt + 1_000), iso(clock))
-  const root = message({
-    audience: 'session:hosted-reoffer-author',
-    authorSession: 'hosted-reoffer-author',
-    purpose: 'request',
-    createdAt: iso(postedAt),
-  })
-  const reply = message({
-    kind: 'reply',
-    threadRootId: root.id,
-    audience: null,
-    createdAt: iso(replyAt),
-  })
-  const putMessage = db().query(
-    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
-  )
-  putMessage.run(root.id, root.kind, null, root.revision, JSON.stringify(root))
-  putMessage.run(reply.id, reply.kind, root.id, reply.revision, JSON.stringify(reply))
-  const reader = 'hosted-reoffer-later'
-  const receipt = () =>
-    db()
-      .query(
-        'SELECT successor,delivered_at FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
-      )
-      .get(reply.id, reader) as { successor: number; delivered_at: string | null }
-
-  expect(claimCachedHostedForPush(reader, false, clock).notices.map((n) => n.id)).toEqual([
-    reply.id,
-  ])
-  expect(receipt()).toEqual({ successor: 1, delivered_at: null })
-
-  expect(claimCachedHostedForPush(reader, false, clock + 1).notices.map((n) => n.id)).toEqual([
-    reply.id,
-  ])
-  expect(receipt()).toEqual({ successor: 1, delivered_at: null })
-
-  await markCachedHostedDelivered(reader, [reply.id], {
-    client: {
-      ...createMemoryRecordApiClient(),
-      putBoardReceipt: async (input) => ({
-        messageId: input.messageId,
-        readerUserId: userId,
-        readerSession: input.readerSession,
-        audienceAtPosting: input.audienceAtPosting,
-        deliveredAt: new Date(clock + 2).toISOString(),
-        acknowledgedAt: null,
-      }),
+test('a lost hosted election suppresses another request on the next poll', async () => {
+  const { client, projectId } = fixture()
+  const database = machine(projectId, 'candidate')
+  const authorLastSeen = Date.now() - SESSION_LIVE_MS - 60_000
+  addPresence(database, projectId, 'author', authorLastSeen - 60_000, authorLastSeen)
+  await refresh(database, client)
+  let calls = 0
+  const losingClient = {
+    ...client,
+    takeBoardSuccessor: async () => {
+      calls += 1
+      return { elected: false, holder: 'other-holder' }
     },
-    database: db(),
-    clock: clock + 2,
-  })
-  expect(receipt().delivered_at).not.toBeNull()
-  expect(receipt().successor).toBe(1)
+  }
 
-  expect(claimCachedHostedForPush(reader, false, clock + 3).notices).toEqual([])
+  await claimCachedHostedForPush('candidate', false, Date.now(), database, true, null, losingClient)
+  await claimCachedHostedForPush('candidate', false, Date.now(), database, true, null, losingClient)
+
+  expect(calls).toBe(1)
+})
+
+test('the read path offers a reply only to the hosted successor receipt holder', async () => {
+  const without = fixture()
+  const reader = machine(without.projectId, 'reader')
+  await refresh(reader, without.client)
+  expect(claimCachedHosted('reader', false, Date.now(), reader)).toEqual([])
+
+  const withReceipt = fixture({ session: 'reader' })
+  const holder = machine(withReceipt.projectId, 'reader')
+  await refresh(holder, withReceipt.client)
+  expect(claimCachedHosted('reader', false, Date.now(), holder)).toEqual([
+    expect.objectContaining({ id: withReceipt.reply.id, reportReplySuccessor: true }),
+  ])
+})
+
+test('a hosted successor receipt holder receives the reply without another election request', async () => {
+  const { client, projectId, reply } = fixture({ session: 'reader' })
+  const database = machine(projectId, 'reader')
+  await refresh(database, client)
+  let calls = 0
+  const countingClient = {
+    ...client,
+    takeBoardSuccessor: async () => {
+      calls += 1
+      return { elected: false, holder: 'reader' }
+    },
+  }
+
+  expect(
+    (
+      await claimCachedHostedForPush(
+        'reader',
+        false,
+        Date.now(),
+        database,
+        true,
+        null,
+        countingClient,
+      )
+    ).notices,
+  ).toEqual([expect.objectContaining({ id: reply.id, reportReplySuccessor: true })])
+  expect(calls).toBe(0)
+})
+
+test('a demoted former holder clears its local successor bit and cannot offer the reply', async () => {
+  const { client, projectId, reply } = fixture({ session: 'old-holder' })
+  const old = machine(projectId, 'old-holder', Date.now() - SESSION_LIVE_MS - 1)
+  const next = machine(projectId, 'new-holder')
+  await refresh(old, client)
+  await refresh(next, client)
+  expect(
+    await client.takeBoardSuccessor({ messageId: reply.id, candidateSession: 'new-holder' }),
+  ).toEqual(expect.objectContaining({ holder: 'new-holder' }))
+  await refresh(old, client)
+  expect(
+    old
+      .query(
+        'SELECT successor FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
+      )
+      .get(reply.id, 'old-holder'),
+  ).toEqual({ successor: 0 })
+  expect(claimCachedHosted('old-holder', false, Date.now(), old)).toEqual([])
 })

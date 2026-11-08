@@ -101,7 +101,23 @@ export type HostedBoardReceipt = {
   audienceAtPosting: boolean
   deliveredAt: string | null
   acknowledgedAt: string | null
+  successor: boolean
 }
+
+export type HostedBoardPresenceInput = {
+  session: string
+  projectId: string
+  role: 'architect'
+  firstSeen: string
+  lastSeen: string
+}
+
+export type HostedBoardSuccessorInput = {
+  messageId: string
+  candidateSession: string
+}
+
+export type HostedBoardSuccessorResult = { elected: boolean; holder: string | null }
 
 export type HostedBoardChange = {
   message: HostedBoardMessage

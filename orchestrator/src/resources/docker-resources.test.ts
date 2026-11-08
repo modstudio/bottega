@@ -323,7 +323,7 @@ test('the default Docker inventory timeout retries once with the longer load bou
   }) as typeof Bun.spawnSync)
   try {
     expect(dockerRunResources()).toEqual({ ascertainable: true, resources: [] })
-    expect(timeouts).toEqual([1_000, 10_000, 1_000, 1_000])
+    expect(timeouts).toEqual([1_000, 10_000, 1_000, 120_000])
   } finally {
     if (prior === undefined) delete process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS
     else process.env.BOTTEGA_DOCKER_INVENTORY_TIMEOUT_MS = prior

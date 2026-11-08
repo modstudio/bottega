@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: release-entry-closure
 /** Computes the runtime module closure of release image entry points. */
 
@@ -117,11 +118,10 @@ export function workspaceExternals(root: string): {
 }
 
 function spawnOrThrow(command: string[], cwd: string, detail: string): void {
-  const result = Bun.spawnSync(command, {
+  const result = startBoundedSync(command, {
+    budget: 'self-cli',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString().trim()

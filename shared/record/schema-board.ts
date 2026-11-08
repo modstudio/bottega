@@ -70,11 +70,20 @@ function ownsAnyScopedProject(scopeProjectIds: AnyPgColumn) {
     )`
 }
 
+function ownsAuthorRun(authorRunId: AnyPgColumn) {
+  return sql`${authorRunId} IS NOT NULL AND EXISTS (
+    SELECT 1 FROM ${run} r
+    JOIN ${membership} m ON m.space_id = r.space_id
+    WHERE r.id = ${authorRunId} AND m.user_id = ${currentUser} AND m.role = 'owner'
+  )`
+}
+
 function hiddenBoardRowRules(table: {
   hiddenAt: AnyPgColumn
   hiddenByUserId: AnyPgColumn
   hiddenReason: AnyPgColumn
   authorUserId: AnyPgColumn
+  authorRunId: AnyPgColumn
   scopeProjectIds: AnyPgColumn
 }) {
   return [
@@ -91,12 +100,65 @@ function hiddenBoardRowRules(table: {
       as: 'restrictive',
       for: 'select',
       to: RECORD_ACTOR_ROLE,
-      using: sql`${table.hiddenAt} IS NULL OR ${table.authorUserId} = ${currentUser} OR ${ownsAnyScopedProject(table.scopeProjectIds)}`,
+      using: sql`${table.hiddenAt} IS NULL OR ${table.authorUserId} = ${currentUser} OR ${ownsAnyScopedProject(table.scopeProjectIds)} OR ${ownsAuthorRun(table.authorRunId)}`,
     }),
   ]
 }
 
 export const boardMessageRevision = pgSequence('board_message_revision')
+
+export const boardPresence = pgTable.withRLS(
+  'board_presence',
+  {
+    id: uuid().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => space.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    session: text().notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => project.id),
+    role: text().notNull(),
+    machineId: uuid('machine_id').references(() => machine.id),
+    firstSeen: timestamp('first_seen', { withTimezone: true }).notNull(),
+    lastSeen: timestamp('last_seen', { withTimezone: true }).notNull(),
+  },
+  (table) => {
+    const currentSpace = sql`nullif(current_setting('app.space_id', true), '')::uuid`
+    const ownsPresence = sql`${table.spaceId} = ${currentSpace} AND ${table.userId} = ${currentUser}`
+    const hasMembership = sql`EXISTS (
+      SELECT 1 FROM ${membership} m
+      WHERE m.space_id = ${table.spaceId} AND m.user_id = ${currentUser}
+    )`
+    const writesPresence = sql`(${ownsPresence}) AND (${hasMembership})`
+    return [
+      unique('board_presence_space_session_unique').on(table.spaceId, table.session),
+      index('board_presence_last_seen_idx').on(table.lastSeen),
+      check('board_presence_role_check', sql`${table.role} = 'architect'`),
+      pgPolicy('board_presence_space_select', {
+        for: 'select',
+        using: sql`${table.spaceId} = ${currentSpace} OR ${table.spaceId} = ANY(
+          string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]
+        )`,
+      }),
+      pgPolicy('board_presence_space_insert', { for: 'insert', withCheck: writesPresence }),
+      pgPolicy('board_presence_space_update', {
+        for: 'update',
+        using: writesPresence,
+        withCheck: writesPresence,
+      }),
+      pgPolicy('board_presence_owner_all', {
+        for: 'all',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+        withCheck: sql`true`,
+      }),
+    ]
+  },
+)
 
 export const boardClaim = pgTable.withRLS(
   'board_claim',
@@ -177,6 +239,15 @@ export const boardClaim = pgTable.withRLS(
         to: RECORD_ACTOR_ROLE,
         using: projectWriteMembership,
         withCheck: projectWriteMembership,
+      }),
+      pgPolicy('board_claim_owner_delete', {
+        for: 'delete',
+        to: RECORD_ACTOR_ROLE,
+        using: sql`EXISTS (
+          SELECT 1 FROM ${project} p
+          JOIN ${membership} m ON m.space_id = p.space_id
+          WHERE p.id = ${table.projectId} AND m.user_id = ${currentUser} AND m.role = 'owner'
+        )`,
       }),
     ]
   },
@@ -296,6 +367,11 @@ export const boardMessage = pgTable.withRLS(
         to: RECORD_ACTOR_ROLE,
         using: visible,
       }),
+      pgPolicy('board_message_run_owner_select', {
+        for: 'select',
+        to: RECORD_ACTOR_ROLE,
+        using: ownsAuthorRun(table.authorRunId),
+      }),
       pgPolicy('board_message_actor_insert', {
         for: 'insert',
         to: RECORD_ACTOR_ROLE,
@@ -311,6 +387,11 @@ export const boardMessage = pgTable.withRLS(
         for: 'delete',
         to: RECORD_ACTOR_ROLE,
         using: sql`${table.authorUserId} = ${currentUser}`,
+      }),
+      pgPolicy('board_message_run_owner_delete', {
+        for: 'delete',
+        to: RECORD_ACTOR_ROLE,
+        using: ownsAuthorRun(table.authorRunId),
       }),
       // A first acknowledgement advances this message's revision for the change feed. No actor
       // policy can allow it: a reader may only write their own receipt, and the message belongs
@@ -550,6 +631,7 @@ export const boardReceipt = pgTable.withRLS(
     audienceAtPosting: boolean('audience_at_posting').notNull(),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+    successor: boolean().notNull().default(false),
   },
   (table) => {
     const ownReceipt = sql`${table.readerUserId} = ${currentUser}`
@@ -568,6 +650,9 @@ export const boardReceipt = pgTable.withRLS(
         table.readerUserId,
         table.readerSession,
       ),
+      uniqueIndex('board_receipt_message_successor_unique')
+        .on(table.messageId)
+        .where(sql`${table.successor}`),
       pgPolicy('board_receipt_actor_select', {
         for: 'select',
         to: RECORD_ACTOR_ROLE,
@@ -584,12 +669,22 @@ export const boardReceipt = pgTable.withRLS(
         using: writesReceipt,
         withCheck: writesReceipt,
       }),
-      // The definer function reads the caller's own receipt to confirm the acknowledgement it
-      // is about to publish, and reads it as the table owner under FORCE ROW LEVEL SECURITY.
+      // Definer functions publish receipt revisions and elect successors across all users.
       pgPolicy('board_receipt_owner_select', {
         for: 'select',
         to: RECORD_OWNER_ROLE,
         using: sql`true`,
+      }),
+      pgPolicy('board_receipt_owner_insert', {
+        for: 'insert',
+        to: RECORD_OWNER_ROLE,
+        withCheck: sql`true`,
+      }),
+      pgPolicy('board_receipt_owner_update', {
+        for: 'update',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+        withCheck: sql`true`,
       }),
     ]
   },

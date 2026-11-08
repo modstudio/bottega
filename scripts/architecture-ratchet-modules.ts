@@ -26,6 +26,7 @@ export const ratchetModules = [
       './php-report-adapters.ts',
       './ratchet-plan.ts',
       './ratchet-visibility.ts',
+      '../../../shared/bounded-process.ts',
     ],
   },
   {

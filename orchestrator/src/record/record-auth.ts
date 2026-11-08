@@ -1,13 +1,20 @@
 // concern: record-auth
 /** Owns record identity, bearer sessions, and personal-space repair. Must not know run phases. */
 
+import { isDeepStrictEqual } from 'node:util'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter/relations-v2'
 import { APIError, betterAuth } from 'better-auth'
 import { bearer, organization } from 'better-auth/plugins'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { membership, newRecordId, space, user } from '../../../shared/record/schema.ts'
+import {
+  membership,
+  newRecordId,
+  recordJsonbValue,
+  space,
+  user,
+} from '../../../shared/record/schema.ts'
 import {
   account,
   invitation,
@@ -24,6 +31,7 @@ import { ensureMemberConfigRemovalSafe } from './record-config-access-removal.ts
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
 import { keepOwnerWrite } from './record-member-permission.ts'
 import { RECORD_POOL_IDLE_TIMEOUT_SECONDS, recordPool } from './record-pool.ts'
+import { isTrialSpaceMetadata } from './record-trial-space.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 
@@ -257,6 +265,18 @@ function recordAuthPresentation(environment: RecordAuthEnvironment) {
 
 function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBuiltInsPort) {
   return {
+    beforeUpdateOrganization: async ({
+      organization,
+      member,
+    }: {
+      organization: { metadata?: Record<string, unknown> }
+      member: { organizationId: string }
+    }) => {
+      if (!Object.hasOwn(organization, 'metadata')) return
+      const rows =
+        await authClient`SELECT metadata FROM space WHERE id=${member.organizationId}::uuid`
+      refuseTrialMarkerUpdate(rows[0]?.metadata, organization.metadata)
+    },
     beforeRemoveMember: async ({
       member,
       organization,
@@ -284,6 +304,18 @@ function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBu
         spaceIds: [created.id],
       })
     },
+  }
+}
+
+export function refuseTrialMarkerUpdate(current: unknown, replacement: unknown): void {
+  const trial = (value: unknown) =>
+    isTrialSpaceMetadata(recordJsonbValue(value))
+      ? (recordJsonbValue(value) as { trial: Record<string, unknown> }).trial
+      : undefined
+  if (!isDeepStrictEqual(trial(current), trial(replacement))) {
+    throw new APIError('BAD_REQUEST', {
+      message: 'metadata.trial is immutable; create a new trial space instead',
+    })
   }
 }
 

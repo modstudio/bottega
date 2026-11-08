@@ -12,7 +12,11 @@ export const typedQuestionModules = [
   module('orchestrator/src/run/prompt-sha.ts', ['node:crypto']),
   module('shared/typed-question/registry.ts', []),
   module('orchestrator/src/ask/worker-question.ts', ['zod', '../../../shared/orch-contract.ts']),
-  module('shared/typed-question/client.ts', ['../env-source.ts', './registry.ts']),
+  module('shared/typed-question/client.ts', [
+    '../env-source.ts',
+    './registry.ts',
+    '../bounded-fetch.ts',
+  ]),
   module('shared/typed-question/typed-question-metrics.ts', []),
   module('shared/typed-question/state-identity.ts', ['node:crypto']),
   module('shared/typed-question/typed-question-render.ts', ['./typed-question-metrics.ts']),

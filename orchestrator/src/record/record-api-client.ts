@@ -77,6 +77,8 @@ import {
   type HostedBoardReplyInput,
   type HostedBoardSessionInput,
   type HostedBoardStatus,
+  type HostedBoardSuccessorInput,
+  type HostedBoardSuccessorResult,
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
   hostedBoardReplyBody,
@@ -94,6 +96,7 @@ import type {
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
+import { trialSpaceDeleteTransport } from './record-trial-space-contract.ts'
 import { currentRecordWriteDecision } from './record-write-authority.ts'
 
 export type RecordDocUpsertInput = {
@@ -130,6 +133,7 @@ export type RecordDocUpsertInput = {
   expectedRevision?: string
   generator?: DocGenerator
 }
+type CreateOrganizationInput = { name: string; slug: string; metadata?: Record<string, unknown> }
 type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
 type RecordDocWriteContext = Pick<
   RecordDocUpsertInput,
@@ -230,7 +234,8 @@ export type RecordApiClient = ProjectIdentityClient &
   ReturnType<typeof recordConfigAccessClient> & {
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
-    createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
+    createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
+    deleteTrialSpace(slug: string): Promise<ReturnType<typeof trialSpaceDeleteTransport.response>>
     setActiveOrganization(input: {
       organizationId?: string
       organizationSlug?: string
@@ -404,8 +409,11 @@ export type RecordApiClient = ProjectIdentityClient &
     listBoardChanges(query: {
       after?: string
       limit?: number
+      machineId?: string | null
+      presence?: import('./record-board-contract.ts').HostedBoardPresenceInput[]
       signal?: AbortSignal
     }): Promise<HostedBoardChanges>
+    takeBoardSuccessor(input: HostedBoardSuccessorInput): Promise<HostedBoardSuccessorResult>
     takeBoardClaim(
       input: HostedBoardTakeClaimInput,
     ): Promise<HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }>
@@ -706,7 +714,6 @@ const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) 
     body: JSON.stringify(input),
     ...destination,
   })
-
 export function authenticatedRecordApiClient(
   authentication: RecordApiAuthentication,
 ): RecordApiClient {
@@ -928,7 +935,8 @@ const recordBoardClient = (request = defaultRequest): Pick<RecordApiClient, Reco
   getBoardStatus: (id) => request(`/v1/board/messages/${id}/status`),
   putBoardReceipt: (input, signal) =>
     request('/v1/board/receipts', { method: 'PUT', body: JSON.stringify(input), signal }),
-  listBoardChanges: listBoardChangesRequest,
+  takeBoardSuccessor: (input) =>
+    request('/v1/board/successor', { method: 'PUT', body: JSON.stringify(input) }),
   takeBoardClaim: (input) =>
     request('/v1/board/claims', { method: 'PUT', body: JSON.stringify(input) }),
   renewBoardClaim: (id, input) =>
@@ -975,22 +983,9 @@ function recordIdentityAndSpaceClient(
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    deleteTrialSpace: (slug) =>
+      request('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),
   }
-}
-
-function listBoardChangesRequest(query: {
-  after?: string
-  limit?: number
-  signal?: AbortSignal
-}): Promise<HostedBoardChanges> {
-  const search = new URLSearchParams()
-  if (query.after) search.set('after', query.after)
-  if (query.limit) search.set('limit', String(query.limit))
-  const suffix = search.toString()
-  return defaultRequest(
-    `/v1/board/changes${suffix ? `?${suffix}` : ''}`,
-    query.signal ? { signal: query.signal } : {},
-  )
 }
 
 function recordApiBoardWatchClient(): Pick<RecordApiClient, RecordBoardWatchMethod> {

@@ -27,9 +27,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  gitAt,
   gitToplevel,
   inspectCheckout,
-  inspectionGitEnv,
   resolvedPathsEqual,
   type SequenceKind,
   type SequenceState,
@@ -732,25 +732,12 @@ export function registerBranchCheck(
     typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
       ? project.settings.trunk.trim()
       : null
-  const headResult = Bun.spawnSync(
-    ['git', '-C', project.path, 'symbolic-ref', '--quiet', '--short', 'HEAD'],
-    {
-      env: inspectionGitEnv(),
-      stdout: 'pipe',
-      stderr: 'ignore',
-    },
-  )
-  const head = headResult.exitCode === 0 ? headResult.stdout.toString().trim() || null : null
+  const headResult = gitAt(project.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  const head = headResult.code === 0 ? headResult.stdout.trim() || null : null
   const tagResult =
-    headResult.exitCode === 1
-      ? Bun.spawnSync(['git', '-C', project.path, 'tag', '--points-at', 'HEAD'], {
-          env: inspectionGitEnv(),
-          stdout: 'pipe',
-          stderr: 'ignore',
-        })
-      : null
+    headResult.code === 1 ? gitAt(project.path, ['tag', '--points-at', 'HEAD']) : null
   const tagsAtHead =
-    tagResult?.exitCode === 0 ? tagResult.stdout.toString().trim().split('\n').filter(Boolean) : []
+    tagResult?.code === 0 ? tagResult.stdout.trim().split('\n').filter(Boolean) : []
   const detachedDecision = detachedCheckoutDecision(
     landing,
     head === null,
@@ -824,12 +811,8 @@ export function assertRegisterVisibility(
 
 /** Current canonical GitHub owner/name read only from the registered checkout's origin. */
 export function currentProjectRepository(project: Pick<Project, 'path'>): string | null {
-  const origin = Bun.spawnSync(['git', '-C', project.path, 'remote', 'get-url', 'origin'], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return origin.exitCode === 0 ? githubRepository(origin.stdout.toString()) : null
+  const origin = gitAt(project.path, ['remote', 'get-url', 'origin'])
+  return origin.code === 0 ? githubRepository(origin.stdout) : null
 }
 
 const MAIN_CHECKOUT_INVARIANT = 'A registered main checkout stays clean; work happens in a worktree'
@@ -954,16 +937,9 @@ export function assertMainCheckoutClean(
 
 function configuredHooksPath(projectPath: string): string | null {
   if (existsSync(join(projectPath, '.githooks'))) return join(projectPath, '.githooks')
-  const configured = Bun.spawnSync(
-    ['git', '-C', projectPath, 'config', '--path', 'core.hooksPath'],
-    {
-      env: inspectionGitEnv(),
-      stdout: 'pipe',
-      stderr: 'ignore',
-    },
-  )
-  if (configured.exitCode === 0) {
-    const value = configured.stdout.toString().trim()
+  const configured = gitAt(projectPath, ['config', '--path', 'core.hooksPath'])
+  if (configured.code === 0) {
+    const value = configured.stdout.trim()
     if (value) return value.startsWith('/') ? value : resolve(projectPath, value)
   }
   const gitHooks = join(projectPath, '.git', 'hooks')

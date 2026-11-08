@@ -1,10 +1,10 @@
 // concern: host-pressure monitor conditions and reporting
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /** Adapts persisted pressure facts into notices and the human monitor summary. */
 
 import type { Database } from 'bun:sqlite'
 import { basename } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { SESSION_LIVE_MS } from '../database/db.ts'
 import {
   attributeProcessTrees,
   decideHostPressure,

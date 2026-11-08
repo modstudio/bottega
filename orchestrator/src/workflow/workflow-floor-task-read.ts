@@ -1,7 +1,7 @@
 // concern: workflows
 /** One tracker task read as the floor verifier consumes it. */
 
-import { spawnSync } from 'node:child_process'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -76,12 +76,12 @@ export function hubTaskReadRefusal(
 
 export function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
   const [hub, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
-  const result = spawnSync(hub!, [...prefix, 'task', 'show', key, '--json', '--fresh'], {
+  const result = startBoundedSync([hub!, ...prefix, 'task', 'show', key, '--json', '--fresh'], {
+    budget: 'self-cli',
     cwd,
-    encoding: 'utf8',
     env: process.env,
   })
-  if (result.status !== 0)
-    throw new Error(hubTaskReadRefusal(key, result.status, result.stderr, result.stdout))
+  if (result.exitCode !== 0)
+    throw new Error(hubTaskReadRefusal(key, result.exitCode, result.stderr, result.stdout))
   return hubTaskReadFromJson(key, JSON.parse(result.stdout))
 }

@@ -4,7 +4,9 @@
 import { existsSync, lstatSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_COMMAND_WORDS } from '../shared/command-spellings.ts'
+import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { LEGACY_ORCHESTRATOR_DATABASE } from '../shared/state-directory.ts'
 
@@ -211,13 +213,9 @@ function textForLegacyScan(path: string, text: string): string {
 }
 
 function scannedFiles(): string[] {
-  const result = Bun.spawnSync(
+  const result = startBoundedSync(
     ['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])],
-    {
-      cwd: ROOT,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
+    { budget: 'git-plumbing', cwd: ROOT, env: inspectionGitEnv() },
   )
   if (result.exitCode !== 0) {
     throw new Error(

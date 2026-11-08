@@ -402,7 +402,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
   const beganAt = boardReaderBeganAt(input.session, database)
   const claimReplySuccessors = input.claimReplySuccessors ?? true
   const localPush = claimPushNotices(false, env, clock, database, claimReplySuccessors)
-  const hostedPush = claimCachedHostedForPush(
+  const hostedPush = await claimCachedHostedForPush(
     input.session,
     false,
     clock,

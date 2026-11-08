@@ -1,8 +1,11 @@
 // concern: hosted-board-read-cache
 /** Refreshes the hosted read cache and narrows visible rows to this machine's readers. */
+
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { db, writableDb, writeTransaction } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,
   RecordApiRequestError,
@@ -13,7 +16,9 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
+import { cacheHostedBoardReceipt } from './board-hosted-receipt-cache.ts'
 import { BUDGET_SPENT, withinHostedBoardRefreshBudget } from './board-hosted-refresh-budget.ts'
+import { takeHostedReportReplySuccessor } from './board-hosted-successor.ts'
 import { hostedBoardVerificationNoticeDecision } from './board-hosted-verification-policy.ts'
 import { boardMode } from './board-mode.ts'
 import {
@@ -60,6 +65,7 @@ export type HostedCacheNotice = {
   expiresAt: string | null
   purpose: import('../../../shared/board-purpose.ts').BoardPurpose
   reportReplySuccessor?: boolean
+  successorHeld?: boolean
   threadTitle?: string
 }
 
@@ -109,39 +115,6 @@ function cachedRevision(database: Database, id: string): string | null {
 
 function incomingIsStale(cached: string | null, incoming: string): boolean {
   return cached !== null && BigInt(incoming) < BigInt(cached)
-}
-
-export function cacheHostedBoardReceipt(
-  receipt: import('../record/record-board-contract.ts').HostedBoardReceipt,
-  database: Database = writableDb(),
-): void {
-  database
-    .query(
-      `INSERT INTO hosted_board_receipt_cache
-       (record_id,message_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       SELECT ?,?,?,?,?,?,?,0 WHERE EXISTS (
-         SELECT 1 FROM hosted_board_message_cache WHERE id=?
-       ) ON CONFLICT(message_id,reader_session) DO UPDATE SET
-       reader_run_record_id=COALESCE(hosted_board_receipt_cache.reader_run_record_id,excluded.reader_run_record_id),
-       audience_at_posting=excluded.audience_at_posting,
-       delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
-       acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
-       pending_sync=CASE WHEN hosted_board_receipt_cache.pending_sync=1 AND (
-         (hosted_board_receipt_cache.delivered_at IS NOT NULL AND excluded.delivered_at IS NULL) OR
-         (hosted_board_receipt_cache.acknowledged_at IS NOT NULL AND excluded.acknowledged_at IS NULL)
-       ) THEN 1 ELSE 0 END,
-       sync_error=NULL`,
-    )
-    .run(
-      newRecordId(),
-      receipt.messageId,
-      receipt.readerSession,
-      receipt.readerRunRecordId ?? null,
-      receipt.audienceAtPosting ? 1 : 0,
-      receipt.deliveredAt,
-      receipt.acknowledgedAt,
-      receipt.messageId,
-    )
 }
 
 export function queueHostedBoardAcknowledgement(
@@ -333,10 +306,19 @@ async function fetchHostedPages(
   deadline: number,
   now: () => number,
   tally: { applied: number },
+  presenceAt: number,
 ): Promise<boolean> {
   let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
+  const liveSince = new Date(presenceAt - SESSION_LIVE_MS).toISOString()
+  const presence = database
+    .query(
+      `SELECT session_id AS session,project_record_id AS projectId,role,
+              COALESCE(first_seen,last_seen) AS firstSeen,last_seen AS lastSeen
+       FROM presence WHERE last_seen>=? AND project_record_id IS NOT NULL`,
+    )
+    .all(liveSince) as import('../record/record-board-contract.ts').HostedBoardPresenceInput[]
   while (now() < deadline) {
-    const query = { after, limit: BOARD_CHANGES_PAGE_LIMIT }
+    const query = { after, limit: BOARD_CHANGES_PAGE_LIMIT, machineId: machineId(), presence }
     const page = await withinHostedBoardRefreshBudget(
       (signal) => client.listBoardChanges({ ...query, signal }),
       deadline - now(),
@@ -359,7 +341,8 @@ export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoa
   const database = input.database ?? writableDb()
   const env = input.env ?? process.env
   const now = input.now ?? Date.now
-  const deadline = now() + input.budgetMs
+  const startedAt = now()
+  const deadline = startedAt + input.budgetMs
   try {
     if (boardMode('shared', env, database) === 'local') return { status: 'local', applied: 0 }
   } catch (error) {
@@ -373,6 +356,7 @@ export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoa
       deadline,
       now,
       tally,
+      startedAt,
     )
     recordRefresh(database, now(), 'success')
     return { status: caughtUp ? 'success' : 'incomplete', applied: tally.applied }
@@ -381,12 +365,9 @@ export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoa
   }
 }
 
-type CachedRow = { message: HostedBoardMessage; tags: BoardTag[] }
+type CachedRow = { message: HostedBoardMessage; tags: BoardTag[]; successor?: number }
 
-type HostedClaimFacts = {
-  rootAuthorReceivedReply: boolean
-  successorClaimed: boolean
-}
+type HostedClaimFacts = { rootAuthorReceivedReply: boolean; successorClaimed: boolean }
 
 function attachCachedTags<T extends { id: string; payload: string }>(
   database: Database,
@@ -483,18 +464,10 @@ function claimContext(
   }
 }
 
-// The one definition of "a different reader holds a successor claim for this reply".
-// loadClaimContext's per-message successor_claimed fact and the transaction-time
-// recheck in takeHostedReportReplySuccessor both interpolate this fragment, so the
-// meaning of "claimed" cannot drift between the two sites. It correlates on the
-// given message-id expression and binds the reader session as one ? parameter.
 const successorClaimedByOther = (messageId: string) =>
-  `EXISTS (
-      SELECT 1 FROM hosted_board_receipt_cache successor_receipt
-      WHERE successor_receipt.message_id=${messageId}
-        AND successor_receipt.successor=1
-        AND successor_receipt.reader_session<>?
-    )`
+  `EXISTS (SELECT 1 FROM hosted_board_receipt_cache successor_receipt
+    WHERE successor_receipt.message_id=${messageId} AND successor_receipt.successor=1
+      AND successor_receipt.reader_session<>?)`
 
 function loadClaimContext(
   database: Database,
@@ -515,6 +488,7 @@ function loadClaimContext(
     database
       .query(
         `SELECT message.id,message.payload,receipt.delivered_at,receipt.acknowledged_at,
+                COALESCE(receipt.successor,0) AS successor,
                 ${successorClaimedByOther('message.id')} AS successor_claimed,
                 EXISTS (
                   SELECT 1
@@ -535,6 +509,7 @@ function loadClaimContext(
       payload: string
       delivered_at: string | null
       acknowledged_at: string | null
+      successor: number
       successor_claimed: number
       root_author_received_reply: number
     }>,
@@ -673,41 +648,12 @@ function hostedReplySuccessorPush(
   })
 }
 
-function takeHostedReportReplySuccessor(
-  message: HostedBoardMessage,
-  context: HostedClaimContext,
-): boolean {
-  return writeTransaction(() => {
-    // Transaction-time recheck through the same fragment loadClaimContext reads:
-    // another reader may have claimed this reply since the claim context loaded.
-    const recheck = context.database
-      .query(`SELECT ${successorClaimedByOther('?')} AS successor_claimed`)
-      .get(message.id, context.reader) as { successor_claimed: number }
-    const successorClaimed = recheck.successor_claimed === 1
-    if (successorClaimed) return false
-    if (!hostedReplySuccessorPush(message, context)) return false
-    context.database
-      .query(
-        `INSERT INTO hosted_board_receipt_cache
-         (record_id,message_id,reader_session,reader_run_record_id,audience_at_posting,successor,delivered_at,acknowledged_at,pending_sync)
-         VALUES (?,?,?,?,0,1,NULL,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
-         reader_run_record_id=COALESCE(hosted_board_receipt_cache.reader_run_record_id,excluded.reader_run_record_id),
-         delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
-         successor=1,
-         pending_sync=1`,
-      )
-      .run(newRecordId(), message.id, context.reader, context.readerRunRecordId)
-    return true
-  }, context.database)
-}
-
 function messageAddressesReader(
   row: { message: HostedBoardMessage; tags: BoardTag[] },
   context: HostedClaimContext,
 ): boolean {
   const { message, tags } = row
-  if (message.kind === 'reply')
-    return replyAddressesReader(message, context) || hostedReplySuccessorPush(message, context)
+  if (message.kind === 'reply') return replyAddressesReader(message, context)
   if (!message.audience) return false
   const audience = parseAudience(message.audience)
   if (
@@ -846,13 +792,24 @@ export function claimCachedHosted(
   clock = Date.now(),
   database: Database = db(),
 ): HostedCacheNotice[] {
-  return claimCachedHostedFromContext(loadClaimContext(database, reader, all, clock))
+  return claimCachedHostedFromContext(loadClaimContext(database, reader, all, clock), false)
 }
 
-function claimCachedHostedFromContext(context: HostedClaimContext): HostedCacheNotice[] {
+function claimCachedHostedFromContext(
+  context: HostedClaimContext,
+  offerSuccessorCandidates: boolean,
+): HostedCacheNotice[] {
   return context.rows
-    .filter((row) => !readerMatchesAuthor(row.message, context) && messageAddressed(row, context))
-    .map(({ message, tags }) => {
+    .filter((row) => {
+      if (readerMatchesAuthor(row.message, context)) return false
+      if (messageAddressed(row, context)) return true
+      return (
+        row.message.kind === 'reply' &&
+        (row.successor === 1 ||
+          (offerSuccessorCandidates && hostedReplySuccessorPush(row.message, context)))
+      )
+    })
+    .map(({ message, tags, successor }) => {
       const notice = {
         id: message.id,
         text: renderCached(message, tags, context.messages, context.readerRunRecordId !== null),
@@ -881,45 +838,76 @@ function claimCachedHostedFromContext(context: HostedClaimContext): HostedCacheN
             }
           : {}),
       }
-      return message.kind === 'reply' && hostedReplySuccessorPush(message, context)
-        ? { ...notice, reportReplySuccessor: true }
+      return message.kind === 'reply' &&
+        (successor === 1 ||
+          (offerSuccessorCandidates && hostedReplySuccessorPush(message, context)))
+        ? {
+            ...notice,
+            reportReplySuccessor: true,
+            ...(successor === 1 ? { successorHeld: true } : {}),
+          }
         : notice
     })
 }
 
-export function claimCachedHostedForPush(
+export async function claimCachedHostedForPush(
   reader: string,
   all = false,
   clock = Date.now(),
   database: Database = writableDb(),
   claimReplySuccessors = true,
   readerRunRecordId: string | null = null,
-): {
+  client: RecordApiClient = recordApiClient(),
+): Promise<{
   notices: HostedCacheNotice[]
   withheldOlderCount: number
   deferredReplySuccessors: DeferredReplySuccessor[]
   warning: string | null
-} {
+}> {
   const context = loadClaimContext(database, reader, all, clock, undefined, readerRunRecordId)
   const beganAt = reader === OPERATOR_READER ? ('unbounded' as const) : context.readerBeganAt
   const selected = selectPushNotices(
     beganAt,
-    claimCachedHostedFromContext(context),
+    claimCachedHostedFromContext(context, true),
     clock,
     claimReplySuccessors,
   )
-  const notices = selected.notices.filter((notice) => {
-    if (!notice.reportReplySuccessor) return true
+  const notices: HostedCacheNotice[] = []
+  const deferred: DeferredReplySuccessor[] = selected.deferredReplySuccessors.map((notice) => ({
+    replyRecordId: notice.id,
+    threadTitle: notice.threadTitle!,
+  }))
+  for (const notice of selected.notices) {
+    if (!notice.reportReplySuccessor || notice.successorHeld) {
+      notices.push(notice)
+      continue
+    }
     const message = context.messagesById.get(notice.id)
-    return message !== undefined && takeHostedReportReplySuccessor(message, context)
-  })
+    if (!message) continue
+    if (!context.signedIn) {
+      deferred.push({ replyRecordId: notice.id, threadTitle: notice.threadTitle! })
+      continue
+    }
+    try {
+      if (
+        await takeHostedReportReplySuccessor({
+          message,
+          database: context.database,
+          reader: context.reader,
+          readerUserId: context.signedIn,
+          readerRunRecordId: context.readerRunRecordId,
+          client,
+        })
+      )
+        notices.push(notice)
+    } catch {
+      deferred.push({ replyRecordId: notice.id, threadTitle: notice.threadTitle! })
+    }
+  }
   return {
     notices,
     withheldOlderCount: selected.withheldOlderCount,
-    deferredReplySuccessors: selected.deferredReplySuccessors.map((notice) => ({
-      replyRecordId: notice.id,
-      threadTitle: notice.threadTitle!,
-    })),
+    deferredReplySuccessors: deferred,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

@@ -1,4 +1,5 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { planCanonImport } from '../../src/canon/canon-import-policy.ts'
 import {
   consumeDocBody,
@@ -15,7 +16,13 @@ import {
 } from '../../src/record/record-api-client.ts'
 import type { RecordSubjectRouteDeps } from '../../src/record/record-api-subjects.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
-import { RecordBoardError } from '../../src/record/record-board-contract.ts'
+import {
+  type HostedBoardChange,
+  type HostedBoardPresenceInput,
+  type HostedBoardReceipt,
+  RecordBoardError,
+} from '../../src/record/record-board-contract.ts'
+import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
 
 export const identity: RecordIdentity = {
@@ -105,6 +112,7 @@ function idleBoardDeps(): RecordBoardDeps {
     boardStatus: unused,
     putBoardReceipt: unused,
     listBoardChanges: unused,
+    takeBoardSuccessor: unused,
     takeBoardClaim: unused,
     renewBoardClaim: unused,
     releaseBoardClaim: unused,
@@ -209,6 +217,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
   | 'storage'
   | 'whoami'
   | 'createOrganization'
+  | 'deleteTrialSpace'
   | 'setActiveOrganization'
   | 'listInvitations'
   | 'acceptInvitation'
@@ -231,6 +240,7 @@ export function unusedIdentityAndSpaceClientMethods(): Pick<
     storage: unusedIdentityAndSpace,
     whoami: unusedIdentityAndSpace,
     createOrganization: unusedIdentityAndSpace,
+    deleteTrialSpace: unusedIdentityAndSpace,
     setActiveOrganization: unusedIdentityAndSpace,
     listInvitations: unusedIdentityAndSpace,
     acceptInvitation: unusedIdentityAndSpace,
@@ -270,6 +280,7 @@ export function unusedBoardClientMethods(): Pick<
   | 'getBoardStatus'
   | 'putBoardReceipt'
   | 'listBoardChanges'
+  | 'takeBoardSuccessor'
   | 'takeBoardClaim'
   | 'renewBoardClaim'
   | 'releaseBoardClaim'
@@ -311,6 +322,7 @@ export function unusedBoardClientMethods(): Pick<
     getBoardStatus: unusedBoard,
     putBoardReceipt: unusedBoard,
     listBoardChanges: unusedBoard,
+    takeBoardSuccessor: unusedBoard,
     takeBoardClaim: unusedBoard,
     renewBoardClaim: unusedBoard,
     releaseBoardClaim: unusedBoard,
@@ -348,11 +360,26 @@ export function installRecordApiClient(client: RecordApiClient | null): void {
   holder[INJECT_KEY] = { current: client }
 }
 
-export function createMemoryRecordApiClient(): RecordApiClient {
+export function createMemoryRecordApiClient(
+  input: { boardChanges?: HostedBoardChange[]; boardProjectIds?: Record<string, string> } = {},
+): RecordApiClient {
   const docs = new Map<string, StoredDoc>()
   const revisions = new Map<string, StoredRevision[]>()
   const scores = new Map<string, Record<string, unknown>>()
   const voids = new Map<string, string>()
+  const boardChanges = input.boardChanges ?? []
+  const boardPresence = new Map<string, HostedBoardPresenceInput>()
+  const boardReceipts = new Map<string, HostedBoardReceipt>()
+  let boardRevision = BigInt(
+    boardChanges.reduce(
+      (highest, change) =>
+        BigInt(change.message.revision) > highest ? BigInt(change.message.revision) : highest,
+      0n,
+    ),
+  )
+  for (const change of boardChanges)
+    for (const receipt of change.receipts)
+      boardReceipts.set(`${receipt.messageId}:${receipt.readerSession}`, receipt)
 
   const live = (scope: string, subject: string | null, slug: string) =>
     [...docs.values()].find(
@@ -371,6 +398,93 @@ export function createMemoryRecordApiClient(): RecordApiClient {
     },
     async listRoutingEvidence() {
       return { items: [], nextCursor: null }
+    },
+    async listBoardChanges(query) {
+      if (input.boardChanges === undefined) return unusedBoard()
+      for (const row of query.presence ?? []) {
+        const prior = boardPresence.get(row.session)
+        if (
+          !prior ||
+          Date.parse(prior.lastSeen) < Date.parse(row.lastSeen) - BOARD_PRESENCE_WRITE_INTERVAL_MS
+        )
+          boardPresence.set(row.session, row)
+      }
+      const after = BigInt(query.after ?? '0')
+      const items = boardChanges
+        .filter((change) => BigInt(change.message.revision) > after)
+        .map((change) => ({
+          ...change,
+          receipts: [...boardReceipts.values()].filter(
+            (receipt) => receipt.messageId === change.message.id,
+          ),
+        }))
+      return {
+        userId: identity.user.id,
+        items,
+        highestRevision: items.at(-1)?.message.revision ?? null,
+      }
+    },
+    async takeBoardSuccessor({ messageId, candidateSession }) {
+      if (input.boardChanges === undefined) return unusedBoard()
+      const reply = boardChanges.find((change) => change.message.id === messageId)?.message
+      const root = boardChanges.find((change) => change.message.id === reply?.threadRootId)?.message
+      if (!reply || !root) throw new RecordBoardError(`board reply ${messageId} not found`, 404)
+      const current = [...boardReceipts.values()].find(
+        (receipt) => receipt.messageId === messageId && receipt.successor,
+      )
+      const cutoff = Date.now() - SESSION_LIVE_MS
+      if (
+        current &&
+        (current.deliveredAt ||
+          current.acknowledgedAt ||
+          Date.parse(boardPresence.get(current.readerSession)?.lastSeen ?? '') >= cutoff)
+      )
+        return { elected: false, holder: current.readerSession }
+      const candidate = boardPresence.get(candidateSession)
+      const participant = boardChanges.some(
+        (change) =>
+          (change.message.id === root.id || change.message.threadRootId === root.id) &&
+          change.message.authorSession === candidateSession,
+      )
+      if (
+        candidate?.role !== 'architect' ||
+        candidate.projectId !== input.boardProjectIds?.[root.origin.project ?? ''] ||
+        Date.parse(candidate.lastSeen) < cutoff ||
+        participant
+      )
+        return { elected: false, holder: current?.readerSession ?? null }
+      if (current)
+        boardReceipts.set(`${messageId}:${current.readerSession}`, { ...current, successor: false })
+      boardReceipts.set(`${messageId}:${candidateSession}`, {
+        messageId,
+        readerUserId: identity.user.id,
+        readerSession: candidateSession,
+        audienceAtPosting: false,
+        deliveredAt: null,
+        acknowledgedAt: null,
+        successor: true,
+      })
+      boardRevision++
+      reply.revision = String(boardRevision)
+      return { elected: true, holder: candidateSession }
+    },
+    async putBoardReceipt(receipt) {
+      if (input.boardChanges === undefined) return unusedBoard()
+      const key = `${receipt.messageId}:${receipt.readerSession}`
+      const prior = boardReceipts.get(key)
+      const stored: HostedBoardReceipt = {
+        messageId: receipt.messageId,
+        readerUserId: identity.user.id,
+        readerSession: receipt.readerSession,
+        readerRunRecordId: receipt.readerRunRecordId,
+        audienceAtPosting: receipt.audienceAtPosting,
+        deliveredAt: prior?.deliveredAt ?? (receipt.delivered ? new Date().toISOString() : null),
+        acknowledgedAt:
+          prior?.acknowledgedAt ?? (receipt.acknowledged ? new Date().toISOString() : null),
+        successor: prior?.successor ?? false,
+      }
+      boardReceipts.set(key, stored)
+      return stored
     },
     async listLensCatalogue() {
       return { items: [], nextCursor: null }

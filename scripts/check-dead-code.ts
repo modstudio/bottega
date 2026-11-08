@@ -16,7 +16,7 @@ import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../shared/brand'
 import { openChangeView } from '../shared/change-view'
-import { inspectionGitEnv } from '../shared/git'
+import { gitAt } from '../shared/git'
 import { ratchetDecision } from '../shared/ratchet'
 import { concernStateDirectory } from '../shared/state-directory'
 import {
@@ -209,16 +209,14 @@ function collectFindings(root: string, verifyProductionEntries = false) {
 }
 
 function git(args: string[], step: string) {
-  const result = Bun.spawnSync(['git', '-C', ROOT, '--no-optional-locks', ...args], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim() || 'no error output'
-    throw new Error(`check-dead-code: ${step} failed: ${detail}`)
+  const result = gitAt(ROOT, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
   }
-  return result.stdout.toString()
+  if (result.code !== 0) {
+    throw new Error(`check-dead-code: ${step} failed: ${result.stderr.trim() || 'no error output'}`)
+  }
+  return result.stdout
 }
 
 function resolvedCommit(base: string) {

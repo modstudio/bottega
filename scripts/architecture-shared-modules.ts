@@ -10,6 +10,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 
 export const sharedModules: ArchitectureModule[] = [
   module('shared/record-timestamp.ts', []),
+  module('shared/session-liveness.ts', []),
   module('shared/run-process-marker.ts', []),
   module('shared/migration-source.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
@@ -59,7 +60,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/autonomy.ts', ['./ship-to.ts']),
   module('shared/user-canon-home.ts', []),
   module('shared/caller-classification.ts', []),
-  module('shared/keychain.ts', []),
+  module('shared/keychain.ts', ['./bounded-process.ts']),
   ...keyStoreModules,
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', ['./brand.ts']),

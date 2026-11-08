@@ -29,6 +29,7 @@ export function hostedBoardReceiptView(row: Record<string, unknown>): HostedBoar
     audienceAtPosting: Boolean(row.audience_at_posting),
     deliveredAt: nullableRecordIso(row.delivered_at),
     acknowledgedAt: nullableRecordIso(row.acknowledged_at),
+    successor: Boolean(row.successor),
   }
 }
 
@@ -40,7 +41,7 @@ export async function hostedBoardStatus(
     if (!message) throw new RecordBoardError(`board message ${input.id} not found`, 404)
     const rows = (await tx`
       SELECT message_id, reader_user_id, reader_session, reader_run_record_id, audience_at_posting,
-        delivered_at, acknowledged_at
+        delivered_at, acknowledged_at, successor
       FROM board_receipt
       WHERE message_id=${input.id}::uuid
       ORDER BY reader_user_id, reader_session
@@ -85,7 +86,7 @@ export async function putHostedBoardReceipt(
         reader_run_record_id = COALESCE(board_receipt.reader_run_record_id, EXCLUDED.reader_run_record_id),
         acknowledged_at = COALESCE(board_receipt.acknowledged_at, EXCLUDED.acknowledged_at)
       RETURNING message_id, reader_user_id, reader_session, reader_run_record_id, audience_at_posting,
-        delivered_at, acknowledged_at
+        delivered_at, acknowledged_at, successor
     `
     if (!rows[0])
       throw new RecordBoardError(`board receipt for ${input.messageId} was not stored`, 409)

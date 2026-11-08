@@ -17,6 +17,7 @@ export type ProjectSpaceOwnership =
  */
 export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   { table: 'branch_disposal', kind: 'project', ownerColumns: ['project_id'] },
+  { table: 'board_presence', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'config_entry', kind: 'space', reason: 'space configuration' },
   {
     table: 'config_secret',

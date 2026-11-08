@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { inspectionGitEnv } from './git'
+import { gitAt } from './git'
 import { nulPathListArgs, splitNulNameStatus, splitNulPaths } from './git-path-list.ts'
 import type { ChangeFacts, LineRange } from './ratchet'
 
@@ -140,18 +140,16 @@ export function changeFacts(
 }
 
 function git(cwd: string, args: string[]) {
-  const result = Bun.spawnSync(['git', '-C', cwd, '--no-optional-locks', ...args], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim() || 'no error output'
+  const result = gitAt(cwd, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
+  }
+  if (result.code !== 0) {
     throw new Error(
-      `could not inspect change with git ${args.join(' ')}: ${detail}. Verify that the commit and its objects exist, then retry.`,
+      `could not inspect change with git ${args.join(' ')}: ${result.stderr.trim() || 'no error output'}. Verify that the commit and its objects exist, then retry.`,
     )
   }
-  return result.stdout.toString()
+  return result.stdout
 }
 
 /**

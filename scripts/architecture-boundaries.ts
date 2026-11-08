@@ -3,6 +3,7 @@ import { dirname, normalize } from 'node:path'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
+import { confinementRulingBoundary } from './architecture-confinement-modules.ts'
 import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
@@ -233,6 +234,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../git/git-environment.ts',
       '../idle-kill.ts',
       '../../../shared/process-identity.ts',
+      '../../../shared/session-liveness.ts',
       '../project/project-lock.ts',
       '../project/projects.ts',
       '../reclaim/reclaim.ts',
@@ -251,22 +253,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep close-out independent of routing, contracts, transports, reviews, and the CLI.',
   ),
-  boundary(
-    'confinement-ruling-boundary',
-    'orchestrator/src/confinement/confinement-ruling.ts',
-    [
-      'node:fs',
-      './confinement.ts',
-      '../database/db.ts',
-      '../git/git-environment.ts',
-      '../project/projects.ts',
-      '../record/machine-identity.ts',
-      '../run/run-authority.ts',
-      '../run/run-liveness.ts',
-      '../run/run-outbox.ts',
-    ],
-    'Keep confinement rulings independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
-  ),
+  confinementRulingBoundary,
   ...boundaries(contractBoundarySpecs),
   ...databaseBoundarySpecs,
   boundary(
@@ -890,30 +877,6 @@ export const importBoundaries: ImportBoundary[] = [
     ['../../../shared/record-timestamp.ts'],
     'Keep hosted review value mapping independent of record delivery.',
   ),
-  boundary(
-    'resource-ownership-boundary',
-    'orchestrator/src/resources/resource-ownership.ts',
-    [
-      'node:fs',
-      'node:path',
-      '../git/checkout-identity.ts',
-      '../database/database-location.ts',
-      '../database/db.ts',
-      './docker-resources.ts',
-      './main-stack-decision.ts',
-      '../evidence/evidence-query.ts',
-      '../git/git-environment.ts',
-      '../../../shared/process-identity.ts',
-      '../project/project-lock.ts',
-      '../run/run-alive.ts',
-      '../run/run-owner-session-liveness.ts',
-      '../events.ts',
-      '../run/run-lease.ts',
-      '../run/run-status.ts',
-      'bun:sqlite',
-    ],
-    'Enforce the resource-ownership concern boundary.',
-  ),
   ...boundaries(reviewBoundarySpecs),
   boundary(
     'routing-commands-boundary',
@@ -980,6 +943,7 @@ export const importBoundaries: ImportBoundary[] = [
       './branch-trunk-tip.ts',
       '../run/run-status.ts',
       '../worktree/worktree-types.ts',
+      '../../../shared/bounded-process.ts',
     ],
     'Keep task branch identity independent of transports, contracts, and routing.',
     ['../run/run-types.ts'],

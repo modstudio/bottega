@@ -6,6 +6,7 @@ import {
   SIGN_UP_CLI_OUTPUT,
   testRecordAuth,
 } from './fixtures/record-auth-postgres.ts'
+import { registerTrialSpaceTeardownProof } from './postgres-trial-space-teardown-proof.ts'
 
 export function registerConfigAccessSpaceCreationProof(input: {
   actorUrl: () => string
@@ -16,9 +17,25 @@ export function registerConfigAccessSpaceCreationProof(input: {
   otherUserId: () => string
   cliOutput: () => string[]
   succeeds: (source: string) => string
-  psql: (source: string) => { code: number; stderr: string }
+  psql: (
+    source: string,
+    user?: string,
+    password?: string,
+  ) => {
+    code: number
+    stdout: string
+    stderr: string
+  }
   apiUrl: () => string
 }): void {
+  registerTrialSpaceTeardownProof({
+    actorUrl: input.actorUrl,
+    authUrl: input.authUrl,
+    token: input.token,
+    userId: input.userId,
+    admin: input.succeeds,
+    psql: (user, password, source) => input.psql(source, user, password),
+  })
   test('CLI sign-up creates owner memberships with config access and distinct identities', async () => {
     expect(input.cliOutput()).toEqual(SIGN_UP_CLI_OUTPUT)
     expect(

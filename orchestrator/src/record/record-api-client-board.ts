@@ -3,14 +3,23 @@
 
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import type {
+  HostedBoardChanges,
   HostedBoardMessage,
   HostedBoardOverview,
   HostedBoardOverviewFilters,
   HostedBoardPostInput,
+  HostedBoardPresenceInput,
   HostedBoardSessionInput,
 } from './record-board-contract.ts'
 
 type BoardRootClient = {
+  listBoardChanges(query: {
+    after?: string
+    limit?: number
+    machineId?: string | null
+    presence?: HostedBoardPresenceInput[]
+    signal?: AbortSignal
+  }): Promise<HostedBoardChanges>
   listBoardMessages(
     query?: HostedBoardOverviewFilters,
     signal?: AbortSignal,
@@ -25,6 +34,17 @@ type BoardRootClient = {
 
 export function recordBoardRootClient(request: RecordClientRequest): BoardRootClient {
   return {
+    listBoardChanges: (query) => {
+      const search = new URLSearchParams()
+      if (query.after) search.set('after', query.after)
+      if (query.limit) search.set('limit', String(query.limit))
+      if (query.machineId) search.set('machineId', query.machineId)
+      if (query.presence?.length) search.set('presence', JSON.stringify(query.presence))
+      const suffix = search.toString()
+      return request(`/v1/board/changes${suffix ? `?${suffix}` : ''}`, {
+        signal: query.signal,
+      })
+    },
     listBoardMessages: (query = {}, signal) => {
       const search = new URLSearchParams()
       if (query.kind) search.set('kind', query.kind)

@@ -1,3 +1,4 @@
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: setup-schedules
 /** Renders and installs the worker-capable distribution's scheduled maintenance agents. */
 
@@ -92,10 +93,8 @@ function launchctlPath(): string | null {
 
 function launchctlLoaded(launchctl: string, uid: number, label: string): boolean {
   return (
-    Bun.spawnSync([launchctl, 'print', `gui/${uid}/${label}`], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-    }).exitCode === 0
+    startBoundedSync([launchctl, 'print', `gui/${uid}/${label}`], { budget: 'process-table' })
+      .exitCode === 0
   )
 }
 
@@ -126,9 +125,8 @@ async function waitUntilUnloaded(launchctl: string, uid: number, label: string):
 
 async function bootstrapWithRetry(launchctl: string, uid: number, target: string): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const result = Bun.spawnSync([launchctl, 'bootstrap', `gui/${uid}`, target], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const result = startBoundedSync([launchctl, 'bootstrap', `gui/${uid}`, target], {
+      budget: 'process-table',
     })
     if (result.exitCode === 0) return
     if (attempt === 19) {
@@ -179,10 +177,7 @@ async function applyMaintenanceSchedule(
   const loaded = launchctlLoaded(launchctl, uid, label)
   if (current === rendered && loaded) return { label, status: 'unchanged' }
   if (loaded) {
-    Bun.spawnSync([launchctl, 'bootout', `gui/${uid}/${label}`], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-    })
+    startBoundedSync([launchctl, 'bootout', `gui/${uid}/${label}`], { budget: 'process-table' })
     await waitUntilUnloaded(launchctl, uid, label)
   }
   await rm(target, { force: true })

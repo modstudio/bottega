@@ -3,6 +3,7 @@
  * Knows detached dispatch, run rows, resume claims, and prompt artifacts. Must
  * not know transports, worktrees, routing policy, reviews, or the CLI.
  */
+
 import { type ChildProcess, spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -25,7 +26,8 @@ import { type MachineLevel, readMachineValue } from '../../../shared/machine-con
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { db, nowIso, SESSION_LIVE_MS, sessionId, writableDb } from '../database/db.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
+import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
 import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,

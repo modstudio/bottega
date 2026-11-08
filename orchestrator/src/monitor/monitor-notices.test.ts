@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -12,7 +13,7 @@ import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { claimPushNotices, postNotice } from '../board/board-service.ts'
 import { renderBoardReplyDelivery } from '../board/board-thread-render.ts'
 import { askQuestion, replyToThread } from '../board/board-thread-service.ts'
-import { DB_PATH, db, SESSION_LIVE_MS } from '../database/db.ts'
+import { DB_PATH, db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { HOSTED_METRICS_INTERVAL_MS } from './monitor-hosted-pressure.ts'

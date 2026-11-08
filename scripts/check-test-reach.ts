@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { gitAt } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES } from './check-plan.ts'
 
@@ -173,32 +174,25 @@ export function testReach(input: {
 }
 
 export function trackedFiles(): string[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files'])], {
-    cwd: ROOT,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) {
+  const result = gitAt(ROOT, nulPathListArgs(['ls-files']))
+  if (result.code !== 0) {
     throw new Error(
-      `git ls-files failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,
+      `git ls-files failed with exit ${result.code}: ${result.stderr.trim() || 'no error output'}`,
     )
   }
-  return splitNulPaths(result.stdout.toString())
+  return splitNulPaths(result.stdout)
 }
 
 function baseExemptions(commit: string): TestReachExemption[] | null {
-  const result = Bun.spawnSync(['git', 'show', `${commit}:${EXEMPTIONS_FILE}`], {
-    cwd: ROOT,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode === 0) return parseTestReachExemptions(result.stdout.toString())
-  const error = result.stderr.toString()
+  const result = gitAt(ROOT, ['show', `${commit}:${EXEMPTIONS_FILE}`])
+  if (result.code === 0) return parseTestReachExemptions(result.stdout)
+  const error = result.stderr
   if (error.includes('does not exist in') || error.includes('exists on disk, but not in'))
     return null
-  throw new Error(
-    `could not read the base test-reach exemptions at ${commit}: ${error.trim() || `git show exited ${result.exitCode ?? 'unknown'}`}`,
-  )
+  const detail = result.timedOut
+    ? `git show ${commit}:${EXEMPTIONS_FILE} exceeded its bounded-call deadline`
+    : error.trim() || `git show exited ${result.code}`
+  throw new Error(`could not read the base test-reach exemptions at ${commit}: ${detail}`)
 }
 
 function run(): number {

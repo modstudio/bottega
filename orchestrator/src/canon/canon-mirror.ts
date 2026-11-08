@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -110,12 +111,11 @@ export function screenCanonMirrorError(
   const text = value instanceof Error ? value.message : String(value)
   return redactSecretShaped(text, { knownCommits }).text
 }
-function spawn(cwd: string, args: string[]): ReturnType<typeof Bun.spawnSync> {
-  return Bun.spawnSync(args, {
+function spawn(cwd: string, args: string[]): ReturnType<typeof startBoundedSync> {
+  return startBoundedSync(args, {
+    budget: 'git-plumbing',
     cwd,
     env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
 }
 function command(cwd: string, args: string[]): string {

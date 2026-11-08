@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { scrubbedGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
@@ -36,16 +36,17 @@ export function slugLinkedBody(body: string, indexName: string): string {
 }
 
 function trackedReferenceFiles(root: string): string[] {
-  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', 'docs/reference/*.md'])], {
-    cwd: root,
-    env: scrubbedGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) {
-    throw new Error(`could not read tracked reference pages: ${result.stderr.toString().trim()}`)
+  const args = nulPathListArgs(['ls-files', 'docs/reference/*.md'])
+  const result = gitAt(root, args)
+  if (result.timedOut) {
+    throw new Error(`git ${args.join(' ')} exceeded its bounded-call deadline`)
   }
-  return splitNulPaths(result.stdout.toString())
+  if (result.code !== 0) {
+    throw new Error(
+      `could not read tracked reference pages: ${result.stderr.trim() || 'no error output'}`,
+    )
+  }
+  return splitNulPaths(result.stdout)
 }
 
 function orderedReferenceFiles(files: string[], indexFile: string, indexBody: string): string[] {

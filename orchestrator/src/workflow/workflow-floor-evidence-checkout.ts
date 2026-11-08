@@ -2,19 +2,27 @@
 /** Resolves checkout provenance through git and recorded landing facts. */
 
 import type { Database } from 'bun:sqlite'
-import { spawnSync } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
+import { gitAt } from '../../../shared/git.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { checkoutLanding } from './workflow-checkout-landing.ts'
 import { type CheckoutResolution, decideCheckoutAnswer } from './workflow-checkout-refusal.ts'
 
 export function gitText(cwd: string, args: string[]): string | null {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
-  return result.status === 0 ? result.stdout.trim() : null
+  try {
+    const result = gitAt(cwd, args)
+    return result.code === 0 ? result.stdout.trim() : null
+  } catch {
+    return null
+  }
 }
 
 function gitOk(cwd: string, args: string[]): boolean {
-  return spawnSync('git', args, { cwd, encoding: 'utf8' }).status === 0
+  try {
+    return gitAt(cwd, args).code === 0
+  } catch {
+    return false
+  }
 }
 
 function cwdProject(

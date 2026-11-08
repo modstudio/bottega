@@ -36,6 +36,7 @@ import {
 import { listHostedBoardOverview } from './record-board-overview.ts'
 import { hostedBoardStatus, putHostedBoardReceipt } from './record-board-receipts.ts'
 import { createBoardStreamRegistry } from './record-board-stream.ts'
+import { takeHostedBoardSuccessor } from './record-board-successor.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
 import { importRecordCanon } from './record-canon-import.ts'
 import {
@@ -132,6 +133,7 @@ import {
 } from './record-subjects.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 import { readRecordTaskFlow } from './record-task-flow.ts'
+import { deleteTrialRecordSpace } from './record-trial-space-delete.ts'
 import {
   countRecordScores,
   listRecordScores,
@@ -359,6 +361,30 @@ function recordProjectDependencies() {
   }
 }
 
+function recordBoardDependencies() {
+  return {
+    listBoardMessages: listHostedBoardOverview,
+    postBoardMessage: postHostedBoardMessage,
+    replyBoardMessage: replyHostedBoardMessage,
+    withdrawBoardMessage: withdrawHostedBoardMessage,
+    acceptBoardAnswer: acceptHostedBoardAnswer,
+    takeBoardFilingLease: takeHostedBoardFilingLease,
+    completeBoardFilingLease: completeHostedBoardFilingLease,
+    failBoardFilingLease: failHostedBoardFilingLease,
+    readBoardThread: readHostedBoardThread,
+    putBoardReceipt: putHostedBoardReceipt,
+    boardStatus: hostedBoardStatus,
+    readBoardHead: readHostedBoardHead,
+    listBoardChanges: listHostedBoardChanges,
+    takeBoardSuccessor: takeHostedBoardSuccessor,
+    takeBoardClaim: takeHostedBoardClaim,
+    renewBoardClaim: renewHostedBoardClaim,
+    releaseBoardClaim: releaseHostedBoardClaim,
+    listBoardClaims: listHostedBoardClaims,
+    releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
+  }
+}
+
 async function serveRecordApiWithAuth(
   config: ReturnType<typeof recordApiServerConfig>,
   auth: ReturnType<typeof recordAuth>,
@@ -414,26 +440,10 @@ async function serveRecordApiWithAuth(
     claimMachineKey,
     revokeMachineKey,
     ...recordSpaceAccessDependencies(),
-    listBoardMessages: listHostedBoardOverview,
-    postBoardMessage: postHostedBoardMessage,
-    replyBoardMessage: replyHostedBoardMessage,
-    withdrawBoardMessage: withdrawHostedBoardMessage,
-    acceptBoardAnswer: acceptHostedBoardAnswer,
-    takeBoardFilingLease: takeHostedBoardFilingLease,
-    completeBoardFilingLease: completeHostedBoardFilingLease,
-    failBoardFilingLease: failHostedBoardFilingLease,
-    readBoardThread: readHostedBoardThread,
-    putBoardReceipt: putHostedBoardReceipt,
-    boardStatus: hostedBoardStatus,
+    ...recordBoardDependencies(),
     boardWakeSource,
     boardStreamRegistry,
-    readBoardHead: readHostedBoardHead,
-    listBoardChanges: listHostedBoardChanges,
-    takeBoardClaim: takeHostedBoardClaim,
-    renewBoardClaim: renewHostedBoardClaim,
-    releaseBoardClaim: releaseHostedBoardClaim,
-    listBoardClaims: listHostedBoardClaims,
-    releaseBoardTaskClaims: releaseHostedBoardTaskClaims,
+    deleteTrialSpace: deleteTrialRecordSpace,
   })
   registerStorageRoute(app, config, environment)
   return serveRecordApi(
