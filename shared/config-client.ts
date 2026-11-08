@@ -1,3 +1,9 @@
+import type {
+  CredentialEnvironment,
+  CredentialMetadataFields,
+  CredentialMode,
+  CredentialPreference,
+} from './credential.ts'
 import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
@@ -33,6 +39,7 @@ export class ConfigClientError extends Error {
 }
 
 export type ConfigScope = 'user' | 'space'
+export type ConfigDestination = { destinationSpaceId?: string; projectId?: string | null }
 export type ConfigEntry = {
   key: string
   environment: string
@@ -42,9 +49,16 @@ export type ConfigEntry = {
   updatedAt: string
 }
 export type ConfigSecret = {
+  id?: string
   key: string
   environment: string
   scope: ConfigScope
+  projectId?: string | null
+  provider?: CredentialMetadataFields['provider'] | null
+  name?: CredentialMetadataFields['name']
+  type?: CredentialMetadataFields['type'] | null
+  hint?: CredentialMetadataFields['hint'] | null
+  mode?: CredentialMode | null
   dekId: string
   rowVersion: number
   updatedAt: string
@@ -71,14 +85,20 @@ type MachineKey = {
   revokedAt: string | null
   userId: string | null
 }
-type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
+type ConfigIdentity = {
+  user: { id: string }
+  activeSpaceId: string | null
+  personalSpaceId: string | null
+  memberships: Array<{ space_id: string; slug: string; permission: string }>
+}
 
 export type ConfigClient = ReturnType<typeof createConfigClient>
 type Transport = (
   input: Parameters<typeof fetch>[0],
   init?: Parameters<typeof fetch>[1],
 ) => ReturnType<typeof fetch>
-type Request = <T>(route: string, init?: RequestInit) => Promise<T>
+type ConfigRequestInit = RequestInit & ConfigDestination
+type Request = <T>(route: string, init?: ConfigRequestInit) => Promise<T>
 export type ConfigCallObservation = {
   route: string
   observedAt: string
@@ -111,13 +131,20 @@ type Query = (values: Record<string, string>) => string
 
 function configValueClient(request: Request, query: Query) {
   return {
-    listEntries: (environment = 'default') =>
-      request<{ items: ConfigEntry[] }>(`/v1/config/entries${query({ environment })}`).then(
-        (x) => x.items,
-      ),
-    getEntry: (key: string, scope: ConfigScope, environment = 'default') =>
+    listEntries: (environment = 'default', destination: ConfigDestination = {}) =>
+      request<{ items: ConfigEntry[] }>(
+        `/v1/config/entries${query({ environment })}`,
+        destination,
+      ).then((x) => x.items),
+    getEntry: (
+      key: string,
+      scope: ConfigScope,
+      environment = 'default',
+      destination: ConfigDestination = {},
+    ) =>
       request<ConfigEntry>(
         `/v1/config/entries/${encodeURIComponent(key)}${query({ scope, environment })}`,
+        destination,
       ),
     putEntry: (
       key: string,
@@ -140,34 +167,93 @@ function configValueClient(request: Request, query: Query) {
         method: 'DELETE',
         body: JSON.stringify(input),
       }),
-    listSecrets: (environment = 'default') =>
-      request<{ items: ConfigSecret[] }>(`/v1/config/secrets${query({ environment })}`).then(
-        (x) => x.items,
-      ),
-    getSecret: (key: string, scope: ConfigScope, environment = 'default') =>
+    listSecrets: (environment: string | null = 'default', destination: ConfigDestination = {}) =>
+      request<{ items: ConfigSecret[] }>(
+        environment === null ? '/v1/config/secrets' : `/v1/config/secrets${query({ environment })}`,
+        destination,
+      ).then((x) => x.items),
+    getSecret: (
+      key: string,
+      scope: ConfigScope,
+      environment = 'default',
+      destination: ConfigDestination = {},
+    ) =>
       request<ConfigSecret & { envelope: string }>(
-        `/v1/config/secrets/${encodeURIComponent(key)}${query({ scope, environment })}`,
+        `/v1/config/secrets/${encodeURIComponent(key)}${query({ scope, environment, ...(destination.projectId ? { projectId: destination.projectId } : {}) })}`,
+        destination,
       ),
     putSecret: (
       key: string,
       input: {
         scope: ConfigScope
-        environment: string
+        environment: CredentialEnvironment | string
+        mode?: CredentialMode | null
         dekId: string
         envelope: string
         expectedRowVersion: number | null
-      },
+        projectId?: string | null
+        provider?: CredentialMetadataFields['provider'] | null
+        name?: CredentialMetadataFields['name']
+        type?: CredentialMetadataFields['type'] | null
+        hint?: CredentialMetadataFields['hint'] | null
+      } & ConfigDestination,
     ) =>
       request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
         method: 'PUT',
+        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
+  }
+}
+
+function configSecretDeleteClient(request: Request) {
+  return {
     deleteSecret: (
       key: string,
-      input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+      input: {
+        scope: ConfigScope
+        environment: string
+        expectedRowVersion: number
+      } & ConfigDestination,
     ) =>
-      request<{ deleted: true }>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
+      request<{ deleted: true }>(
+        `/v1/config/secrets/${encodeURIComponent(key)}${input.projectId ? `?projectId=${encodeURIComponent(input.projectId)}` : ''}`,
+        {
+          method: 'DELETE',
+          destinationSpaceId: input.destinationSpaceId,
+          body: JSON.stringify({
+            scope: input.scope,
+            environment: input.environment,
+            expectedRowVersion: input.expectedRowVersion,
+          }),
+        },
+      ),
+  }
+}
+
+function credentialPreferenceClient(request: Request) {
+  return {
+    listCredentialPreferences: (destination: ConfigDestination = {}) =>
+      request<{ items: CredentialPreference[] }>(
+        '/v1/config/credential-preferences',
+        destination,
+      ).then((x) => x.items),
+    putCredentialPreference: (input: Omit<CredentialPreference, 'updatedAt'> & ConfigDestination) =>
+      request<CredentialPreference>('/v1/config/credential-preferences', {
+        method: 'PUT',
+        destinationSpaceId: input.destinationSpaceId,
+        body: JSON.stringify(input),
+      }),
+    deleteCredentialPreference: (
+      input: Pick<
+        CredentialPreference,
+        'projectId' | 'provider' | 'name' | 'type' | 'mode' | 'environment'
+      > &
+        ConfigDestination,
+    ) =>
+      request<{ deleted: true }>('/v1/config/credential-preferences', {
         method: 'DELETE',
+        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
   }
@@ -175,12 +261,14 @@ function configValueClient(request: Request, query: Query) {
 
 function configKeyClient(request: Request, query: Query) {
   return {
-    currentDataKey: (recipientKeyId: string) =>
-      request<DataKey>(`/v1/config/data-keys/current${query({ recipientKeyId })}`),
-    listDataKeys: () => request<{ items: DataKey[] }>('/v1/config/data-keys').then((x) => x.items),
-    getDataKey: (dekId: string, recipientKeyId: string) =>
+    currentDataKey: (recipientKeyId: string, destination: ConfigDestination = {}) =>
+      request<DataKey>(`/v1/config/data-keys/current${query({ recipientKeyId })}`, destination),
+    listDataKeys: (destination: ConfigDestination = {}) =>
+      request<{ items: DataKey[] }>('/v1/config/data-keys', destination).then((x) => x.items),
+    getDataKey: (dekId: string, recipientKeyId: string, destination: ConfigDestination = {}) =>
       request<DataKey>(
         `/v1/config/data-keys/${encodeURIComponent(dekId)}${query({ recipientKeyId })}`,
+        destination,
       ),
     createDataKey: (input: { dekId: string; version: number; wraps: DataKeyWrap[] }) =>
       request<{ id: string; version: number }>('/v1/config/data-keys', {
@@ -213,9 +301,10 @@ function createConfigClient(
   signal?: AbortSignal,
   recorder?: ConfigCallOutcomeRecorder,
 ) {
-  const request = async <T>(route: string, init: RequestInit = {}): Promise<T> => {
+  const request = async <T>(route: string, init: ConfigRequestInit = {}): Promise<T> => {
     const headers = new Headers(init.headers)
     headers.set('authorization', `Bearer ${token}`)
+    if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
     if (init.body) headers.set('content-type', 'application/json')
     let response: Response
     const startedAt = performance.now()
@@ -256,6 +345,8 @@ function createConfigClient(
   return {
     ...configAuthorizationClient(request),
     ...configValueClient(request, query),
+    ...configSecretDeleteClient(request),
+    ...credentialPreferenceClient(request),
     ...configKeyClient(request, query),
     whoami: () => request<ConfigIdentity>('/v1/whoami'),
   }

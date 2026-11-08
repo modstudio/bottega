@@ -34,15 +34,15 @@ export type ConfigEntry = {
   rowVersion: number
   updatedAt: string
 }
-export type ConfigSecretMetadata = {
-  key: string
-  environment: string
-  scope: ConfigScope
-  dekId: string
-  rowVersion: number
-  updatedAt: string
-}
-export type ConfigSecret = ConfigSecretMetadata & { envelope: Uint8Array }
+
+import {
+  type ConfigSecret,
+  type ConfigSecretMetadata,
+  secretMetadata,
+} from './record-credential-secret.ts'
+
+export type { ConfigSecret, ConfigSecretMetadata } from './record-credential-secret.ts'
+
 type DataKeyWrap = ConfigWrapInput
 export type DataKey = {
   id: string
@@ -87,7 +87,10 @@ function configTenant(input: ConfigTenant, scope: ConfigScope): ConfigTenant {
   return { ...input, spaceId, spaceIds: [spaceId] }
 }
 
-async function tenant<T>(input: ConfigTenant, operation: (tx: SQL) => Promise<T>): Promise<T> {
+export async function tenant<T>(
+  input: ConfigTenant,
+  operation: (tx: SQL) => Promise<T>,
+): Promise<T> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
     return operation(tx)
@@ -100,17 +103,6 @@ function entryRow(row: Record<string, unknown>): ConfigEntry {
     environment: String(row.environment),
     scope: rowScope(row),
     value: String(row.value),
-    rowVersion: Number(row.row_version),
-    updatedAt: recordIso(row.updated_at),
-  }
-}
-
-function secretMetadata(row: Record<string, unknown>): ConfigSecretMetadata {
-  return {
-    key: String(row.key),
-    environment: String(row.environment),
-    scope: rowScope(row),
-    dekId: String(row.dek_id),
     rowVersion: Number(row.row_version),
     updatedAt: recordIso(row.updated_at),
   }
@@ -133,7 +125,7 @@ function revokedMachineRefusal(condition: string): ConfigServiceError {
   return new ConfigServiceError(`${condition}; ${withdrawnConfigAccessRemedy}`, 422)
 }
 
-async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> {
+export async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise<void> {
   const rows = await tx`
     SELECT config_access FROM membership
     WHERE space_id=${input.spaceId}::uuid AND user_id=${input.userId}::uuid
@@ -226,13 +218,16 @@ async function scopedRow(
   environment: string,
   scope: ConfigScope,
   lock = false,
+  projectId?: string | null,
 ): Promise<Record<string, unknown> | undefined> {
   const userId = scopedUser(input, scope)
   const rows = await tx.unsafe(
     `SELECT * FROM ${table}
      WHERE space_id=$1::uuid AND key=$2 AND environment=$3
-       AND user_id IS NOT DISTINCT FROM $4::uuid${lock ? '\n     FOR UPDATE' : ''}`,
-    [input.spaceId, key, environment, userId],
+       AND user_id IS NOT DISTINCT FROM $4::uuid${table === 'config_secret' ? '\n       AND project_id IS NOT DISTINCT FROM $5::uuid' : ''}${lock ? '\n     FOR UPDATE' : ''}`,
+    table === 'config_secret'
+      ? [input.spaceId, key, environment, userId, projectId ?? null]
+      : [input.spaceId, key, environment, userId],
   )
   return rows[0] as Record<string, unknown> | undefined
 }
@@ -371,7 +366,8 @@ export async function listConfigSecrets(
   return tenant(input, async (tx) => {
     // Deliberately enumerate metadata columns: an envelope must never reach this surface.
     const rows = await tx`
-      SELECT key, environment, user_id, dek_id, row_version, updated_at
+      SELECT id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+        dek_id, row_version, updated_at
       FROM config_secret
       WHERE space_id=${input.spaceId}::uuid
         AND (${input.environment ?? null}::text IS NULL OR environment=${input.environment ?? null})
@@ -386,6 +382,7 @@ export async function getConfigSecret(
     key: string
     environment: string
     scope: ConfigScope
+    projectId?: string | null
   },
 ): Promise<ConfigSecret | null> {
   return tenant(input, async (tx) => {
@@ -396,6 +393,8 @@ export async function getConfigSecret(
       input.key,
       input.environment,
       input.scope,
+      false,
+      input.projectId,
     )
     return row ? { ...secretMetadata(row), envelope: bytes(row.envelope) } : null
   })
@@ -413,6 +412,12 @@ export async function putConfigSecret(
     dekId: string
     envelope: Uint8Array
     expectedRowVersion: number | null
+    projectId?: string | null
+    provider?: string | null
+    name?: string | null
+    type?: string | null
+    hint?: string | null
+    mode?: string | null
   },
 ): Promise<ConfigSecretMetadata> {
   try {
@@ -427,6 +432,12 @@ export async function putConfigSecret(
           422,
         )
       }
+      if (input.projectId) {
+        const projects =
+          await tx`SELECT 1 FROM project WHERE id=${input.projectId}::uuid AND space_id=${input.spaceId}::uuid`
+        if (!projects[0])
+          throw new ConfigServiceError('credential project is not in the destination space', 422)
+      }
       const existing = await scopedRow(
         tx,
         'config_secret',
@@ -435,6 +446,7 @@ export async function putConfigSecret(
         input.environment,
         input.scope,
         true,
+        input.projectId,
       )
       const occupancy = configOccupancy({
         existing,
@@ -445,11 +457,15 @@ export async function putConfigSecret(
         try {
           const rows = await tx`
           INSERT INTO config_secret
-            (id, space_id, user_id, key, environment, dek_id, row_version, envelope, updated_at)
+            (id, space_id, user_id, project_id, key, provider, name, type, mode, environment, hint,
+             dek_id, row_version, envelope, updated_at)
           VALUES
             (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${scopedUser(input, input.scope)}::uuid,
-             ${input.key}, ${input.environment}, ${input.dekId}::uuid, 1, ${input.envelope}, now())
-          RETURNING key, environment, user_id, dek_id, row_version, updated_at
+             ${input.projectId ?? null}::uuid, ${input.key}, ${input.provider ?? null},
+             ${input.name ?? null}, ${input.type ?? null}, ${input.mode ?? null}, ${input.environment}, ${input.hint ?? null},
+             ${input.dekId}::uuid, 1, ${input.envelope}, now())
+          RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+            dek_id, row_version, updated_at
         `
           return secretMetadata(rows[0] as Record<string, unknown>)
         } catch (error) {
@@ -463,9 +479,12 @@ export async function putConfigSecret(
       const rows = await tx`
       UPDATE config_secret
       SET dek_id=${input.dekId}::uuid, envelope=${input.envelope},
+          project_id=${input.projectId ?? null}::uuid, provider=${input.provider ?? null},
+          name=${input.name ?? null}, type=${input.type ?? null}, hint=${input.hint ?? null}, mode=${input.mode ?? null},
           row_version=row_version + 1, updated_at=now()
       WHERE id=${String(occupancy.existing.id)}::uuid
-      RETURNING key, environment, user_id, dek_id, row_version, updated_at
+      RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+        dek_id, row_version, updated_at
     `
       return secretMetadata(rows[0] as Record<string, unknown>)
     })
@@ -482,6 +501,7 @@ export async function deleteConfigSecret(
     environment: string
     scope: ConfigScope
     expectedRowVersion: number
+    projectId?: string | null
   },
 ): Promise<void> {
   return tenant(input, async (tx) => {
@@ -493,6 +513,7 @@ export async function deleteConfigSecret(
       input.environment,
       input.scope,
       true,
+      input.projectId,
     )
     const occupancy = configOccupancy({
       existing,

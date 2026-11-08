@@ -455,6 +455,7 @@ export const CLI_COMMANDS = new Set([
   'continue',
   'context',
   'contract',
+  'credential',
   'diff',
   'discard',
   'do',

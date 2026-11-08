@@ -59,7 +59,11 @@ afterEach(() => {
   else process.env.BOTTEGA_KEYSTORE = previousKeystore
 })
 
-async function rotationFixture(revokedAt: string | null, resumeRow = false) {
+async function rotationFixture(
+  revokedAt: string | null,
+  resumeRow = false,
+  sameKeyBindings = false,
+) {
   const root = mkdtempSync(join(tmpdir(), 'config-rotation-'))
   roots.push(root)
   process.env.BOTTEGA_CONFIG_HOME = root
@@ -139,15 +143,18 @@ async function rotationFixture(revokedAt: string | null, resumeRow = false) {
       rowVersion: 1,
     },
   })
-  let secret = {
+  const baseSecret = {
     key: 'TOKEN',
     environment: 'default',
     scope: 'space' as const,
+    projectId: null as string | null,
     dekId: oldId,
     rowVersion: 1,
     updatedAt: '2026-01-01T00:00:00.000Z',
     envelope: encode(oldEnvelope),
   }
+  const projectId = '01990000-0000-7000-8000-000000000005'
+  let secrets = sameKeyBindings ? [baseSecret, { ...baseSecret, projectId }] : [baseSecret]
   const machines = [
     { keyId, publicKey: encode(pair.publicKey), label: 'current', createdAt: '', revokedAt: null },
     {
@@ -187,24 +194,35 @@ async function rotationFixture(revokedAt: string | null, resumeRow = false) {
       }
     },
     getDataKey: async (id: string) => (id === oldId ? oldKey : current),
-    listSecrets: async () => (resumeRow ? [secret] : []),
+    listSecrets: async () => (resumeRow ? secrets : []),
     listDataKeys: async () => [{ ...oldKey, retiredAt: oldRetiredAt }, current],
     retireDataKey: async (id: string) => {
       retired.push(id)
       if (id === oldId) oldRetiredAt = '2027-01-01T00:00:00.000Z'
     },
-    getSecret: async () => {
+    getSecret: async (
+      _key: string,
+      _scope: string,
+      _environment: string,
+      destination: { projectId?: string | null } = {},
+    ) => {
       if (!resumeRow) throw new ConfigClientError('response', '/v1/config/secrets', 404)
-      return secret
+      return secrets.find((row) => row.projectId === (destination.projectId ?? null))!
     },
-    putSecret: async (_key: string, input: { dekId: string; envelope: string }) => {
-      secret = {
+    putSecret: async (
+      _key: string,
+      input: { dekId: string; envelope: string; projectId?: string | null },
+    ) => {
+      const index = secrets.findIndex((row) => row.projectId === (input.projectId ?? null))
+      const secret = secrets[index]!
+      const updated = {
         ...secret,
         dekId: input.dekId,
         rowVersion: secret.rowVersion + 1,
         envelope: input.envelope,
       }
-      return secret
+      secrets = secrets.with(index, updated)
+      return updated
     },
     addWraps: async (dekId: string, wraps: typeof current.wraps) => {
       if (dekId !== current.id) throw new Error('unknown data key')
@@ -232,6 +250,7 @@ async function rotationFixture(revokedAt: string | null, resumeRow = false) {
     recipientKeyId,
     recipientPublicKey: encode(recipient.publicKey),
     current: () => current,
+    secrets: () => secrets,
   }
 }
 
@@ -551,6 +570,20 @@ test('machine revoke resumes re-sealing older rows without creating another data
   ])
   expect(fixture.created).toEqual([])
   expect(fixture.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
+})
+
+test('rotation reads and writes space and project-bound rows in their own slots', async () => {
+  const fixture = await rotationFixture('2025-06-01T00:00:00.000Z', true, true)
+  await machineRevoke(fixture.otherKeyId, fixture.client)
+
+  expect(fixture.secrets()).toEqual([
+    expect.objectContaining({ projectId: null, dekId: fixture.current().id, rowVersion: 2 }),
+    expect.objectContaining({
+      projectId: '01990000-0000-7000-8000-000000000005',
+      dekId: fixture.current().id,
+      rowVersion: 2,
+    }),
+  ])
 })
 
 test('machine trust after a newer revocation rotates once and does not duplicate its wrap', async () => {

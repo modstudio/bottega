@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { machineKeyId } from '../../shared/machine-key-id.ts'
 import {
   newRecordId,
@@ -27,11 +27,15 @@ import {
   revokeMachineKey,
 } from '../src/record/record-config.ts'
 import { setSpaceMemberPermission } from '../src/record/record-member-permission.ts'
+import { proveCredentialPreferencePersistence } from './fixtures/credential-preference-proof.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
+import { proveCredentialSecretProjectAddressing } from './support/credential-secret-proof.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'
 const DEK_B = '01990000-0000-7000-8000-0000000000db'
+const PROJECT_A = '01990000-0000-7000-8000-0000000000ca'
+const PROJECT_B = '01990000-0000-7000-8000-0000000000cb'
 
 export function registerHostedConfigProofs(
   actorUrl: string,
@@ -517,6 +521,47 @@ export function registerHostedConfigProofs(
         expectedRowVersion: 9,
       }),
     ).rejects.toMatchObject({ status: 409 })
+  })
+
+  describe('credential project bindings', () => {
+    beforeAll(() => {
+      succeeds(
+        'postgres',
+        'postgres',
+        `INSERT INTO project (id, space_id, name, key_prefixes, created_at) VALUES
+           ('${PROJECT_A}', '${spaceA}', 'config-proof-a', ARRAY['CPA'], now()),
+           ('${PROJECT_B}', '${spaceB}', 'config-proof-b', ARRAY['CPB'], now());`,
+      )
+    })
+
+    afterAll(() => {
+      succeeds(
+        'postgres',
+        'postgres',
+        `DELETE FROM credential_payer_preference WHERE project_id IN ('${PROJECT_A}', '${PROJECT_B}');
+         DELETE FROM config_secret WHERE project_id IN ('${PROJECT_A}', '${PROJECT_B}');
+         DELETE FROM project WHERE id IN ('${PROJECT_A}', '${PROJECT_B}');`,
+      )
+    })
+
+    test('config secret service addresses space and project bindings independently', async () => {
+      await proveCredentialSecretProjectAddressing({
+        tenant: serviceTenant,
+        dekId: DEK_A,
+        projectId: PROJECT_A,
+        foreignProjectId: PROJECT_B,
+      })
+    })
+
+    test('credential payer preferences update, list, and delete only the addressed user slot', async () => {
+      await proveCredentialPreferencePersistence({
+        tenant: serviceTenant,
+        spaceId: spaceA,
+        userId: userA,
+        otherUserId: USER_B,
+        projectId: PROJECT_A,
+      })
+    })
   })
 
   test('config service refuses foreign and retired data keys for secret writes', async () => {

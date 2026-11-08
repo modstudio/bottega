@@ -3,7 +3,6 @@
 
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import type { ProjectSettings, StoredProjectSettings } from '../project/project-settings.ts'
-import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   declaredRecordSpace,
@@ -30,7 +29,7 @@ export function projectDestinationFromIdentity(
 export async function requireProjectRecordDestination(
   project: string,
   settings: ProjectSettings | StoredProjectSettings | undefined,
-  client: RecordApiClient,
+  client: { whoami(): Promise<RecordIdentity> },
 ): Promise<string> {
   const decision = projectDestinationFromIdentity(project, settings, await client.whoami())
   if ('refused' in decision) throw new Error(recordSpaceMembershipRefusal(decision.declaredSpace))

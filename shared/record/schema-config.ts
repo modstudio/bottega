@@ -16,6 +16,14 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import {
+  CREDENTIAL_BINDINGS,
+  CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_MODES,
+  CREDENTIAL_PAYERS,
+  CREDENTIAL_SLUG_SOURCE,
+} from '../credential.ts'
+import {
+  project,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
@@ -129,8 +137,14 @@ export const configSecret = pgTable.withRLS(
     id: identity(),
     spaceId: spaceIdentity(),
     userId: uuid('user_id').references(() => user.id),
+    projectId: uuid('project_id').references(() => project.id),
     key: text().notNull(),
+    provider: text(),
+    name: text(),
+    type: text(),
+    mode: text(),
     environment: text().notNull().default('default'),
+    hint: text(),
     dekId: uuid('dek_id').notNull(),
     rowVersion: integer('row_version').notNull(),
     envelope: bytea().notNull(),
@@ -138,8 +152,13 @@ export const configSecret = pgTable.withRLS(
   },
   (table) => [
     unique('config_secret_scope_unique')
-      .on(table.spaceId, table.userId, table.key, table.environment)
+      .on(table.spaceId, table.userId, table.projectId, table.key, table.environment)
       .nullsNotDistinct(),
+    check(
+      'config_secret_credential_fields_check',
+      sql`(${table.provider} IS NULL AND ${table.name} IS NULL AND ${table.type} IS NULL AND ${table.hint} IS NULL AND ${table.projectId} IS NULL AND ${table.mode} IS NULL) OR
+          (${table.provider} IS NOT NULL AND (${table.name} IS NULL OR ${table.name} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}) AND ${table.type} IS NOT NULL AND ${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND ${table.hint} IS NOT NULL AND ${table.mode} IN ${sql.raw(`(${CREDENTIAL_MODES.map((value) => `'${value}'`).join(',')})`)} AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)})`,
+    ),
     foreignKey({
       columns: [table.spaceId, table.dekId],
       foreignColumns: [secretDek.spaceId, secretDek.id],
@@ -147,6 +166,54 @@ export const configSecret = pgTable.withRLS(
     }),
     ...actorPolicies('config_secret', table.spaceId, table.userId),
     pgPolicy('config_secret_owner_select', {
+      for: 'select',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+    }),
+  ],
+)
+
+export const credentialPayerPreference = pgTable.withRLS(
+  'credential_payer_preference',
+  {
+    id: identity(),
+    spaceId: spaceIdentity(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id),
+    projectId: uuid('project_id').references(() => project.id),
+    provider: text().notNull(),
+    name: text(),
+    type: text().notNull(),
+    mode: text().notNull().default('default'),
+    environment: text().notNull().default('local'),
+    preferredPayer: text('preferred_payer').notNull(),
+    preferredBinding: text('preferred_binding').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    unique('credential_payer_preference_identity_unique')
+      .on(
+        table.spaceId,
+        table.userId,
+        table.projectId,
+        table.provider,
+        table.name,
+        table.type,
+        table.mode,
+        table.environment,
+      )
+      .nullsNotDistinct(),
+    check(
+      'credential_payer_preference_slug_check',
+      sql`${table.provider} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)} AND (${table.name} IS NULL OR ${table.name} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}) AND ${table.type} ~ ${sql.raw(`'${CREDENTIAL_SLUG_SOURCE}'`)}`,
+    ),
+    check(
+      'credential_payer_preference_values_check',
+      sql`${table.mode} IN ${sql.raw(`(${CREDENTIAL_MODES.map((value) => `'${value}'`).join(',')})`)} AND ${table.environment} IN ${sql.raw(`(${CREDENTIAL_ENVIRONMENTS.map((value) => `'${value}'`).join(',')})`)} AND ${table.preferredPayer} IN ${sql.raw(`(${CREDENTIAL_PAYERS.map((value) => `'${value}'`).join(',')})`)} AND ${table.preferredBinding} IN ${sql.raw(`(${CREDENTIAL_BINDINGS.map((value) => `'${value}'`).join(',')})`)}`,
+    ),
+    ...actorPolicies('credential_payer_preference', table.spaceId, table.userId),
+    pgPolicy('credential_payer_preference_owner_select', {
       for: 'select',
       to: RECORD_OWNER_ROLE,
       using: sql`true`,

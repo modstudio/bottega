@@ -72,6 +72,11 @@ import {
   withdrawSpaceConfigAccess,
 } from './record-config.ts'
 import {
+  deleteCredentialPreference,
+  listCredentialPreferences,
+  putCredentialPreference,
+} from './record-credential.ts'
+import {
   consumeRecordDoc,
   countRecordDocs,
   deleteRecordDoc,
@@ -440,6 +445,9 @@ async function serveRecordApiWithAuth(
     getConfigSecret,
     putConfigSecret,
     deleteConfigSecret,
+    listCredentialPreferences,
+    putCredentialPreference,
+    deleteCredentialPreference,
     currentDataKey,
     listDataKeys,
     getDataKey,

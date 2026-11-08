@@ -84,6 +84,21 @@ test('response diagnostics remove URL credentials, queries, and fragments', asyn
     expect(errors.join('\n')).not.toContain(secret)
 })
 
+test('config secret and data-key reads route to a requested project space', async () => {
+  const headers: string[] = []
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async (_input, init) => {
+      headers.push(new Headers(init?.headers).get('x-record-space') ?? '')
+      return Response.json({ items: [] })
+    },
+    'test',
+  )
+  await client.listSecrets('default', { destinationSpaceId: 'space-project' })
+  await client.listDataKeys({ destinationSpaceId: 'space-project' })
+  expect(headers).toEqual(['space-project', 'space-project'])
+})
+
 test('a throwing outcome recorder does not fail the hosted config call', async () => {
   let observation: ConfigCallObservation | undefined
   let recorderInvoked!: () => void
@@ -92,7 +107,13 @@ test('a throwing outcome recorder does not fail the hosted config call', async (
   })
   const client = configClient(
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },
-    async () => Response.json({ user: { id: 'user' }, activeSpaceId: null }),
+    async () =>
+      Response.json({
+        user: { id: 'user' },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [],
+      }),
     'test',
     undefined,
     (received) => {
@@ -101,7 +122,12 @@ test('a throwing outcome recorder does not fail the hosted config call', async (
       throw new Error('fixture recording failure')
     },
   )
-  await expect(client.whoami()).resolves.toEqual({ user: { id: 'user' }, activeSpaceId: null })
+  await expect(client.whoami()).resolves.toEqual({
+    user: { id: 'user' },
+    activeSpaceId: null,
+    personalSpaceId: null,
+    memberships: [],
+  })
   await invoked
   expect(observation).toMatchObject({ route: '/v1/whoami', status: 200, error: null })
 })

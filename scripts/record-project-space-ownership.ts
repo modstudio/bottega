@@ -20,11 +20,6 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   { table: 'board_presence', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'config_entry', kind: 'space', reason: 'space configuration' },
   {
-    table: 'config_secret',
-    kind: 'space',
-    reason: 'space configuration secret',
-  },
-  {
     table: 'contention',
     kind: 'parent',
     parents: [
@@ -220,6 +215,12 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
     kind: 'parent',
     parents: [{ table: 'run', column: 'run_id' }],
   },
+  {
+    table: 'config_secret',
+    kind: 'space',
+    reason: 'credentials stay sealed under their space data key',
+  },
+  { table: 'credential_payer_preference', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'secret_dek', kind: 'space', reason: 'space encryption key' },
   { table: 'space_outside_intake', kind: 'project', ownerColumns: ['project_id'] },
   {
@@ -270,6 +271,7 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
 export const NON_OWNING_PROJECT_REFERENCES = [
   { table: 'board_claim', column: 'project_id' },
   { table: 'board_message', column: 'author_project_id' },
+  { table: 'config_secret', column: 'project_id' },
   { table: 'hub_report_subscription_project', column: 'project_id' },
   { table: 'port_pair', column: 'source_project_id' },
   { table: 'port_ref_source', column: 'source_project_id' },

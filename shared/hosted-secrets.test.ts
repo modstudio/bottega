@@ -170,6 +170,8 @@ test('refuses when the signed-in active space differs from the initialized space
   deps.client.whoami = async () => ({
     user: { id: userId },
     activeSpaceId: '01990000-0000-7000-8000-000000000099',
+    personalSpaceId: null,
+    memberships: [],
   })
   await expect(readHostedSecrets(['TOKEN'], deps)).rejects.toMatchObject({
     secretName: 'TOKEN',
@@ -183,6 +185,8 @@ test('refuses when the signed-in user differs from the initialized user', async 
   deps.client.whoami = async () => ({
     user: { id: '01990000-0000-7000-8000-000000000099' },
     activeSpaceId: spaceId,
+    personalSpaceId: null,
+    memberships: [],
   })
   await expect(readHostedSecrets(['TOKEN'], deps)).rejects.toMatchObject({
     secretName: 'TOKEN',
