@@ -2,7 +2,18 @@ import { expect, test } from 'bun:test'
 import {
   architectureCruiseCoverageViolations,
   dependencyCruiserNodeVersionRefusal,
+  NON_TYPESCRIPT_TEST_DEPENDENCIES,
 } from './architecture-cruise.ts'
+
+test('non-TypeScript test dependencies name project-relative test files', () => {
+  expect(Object.keys(NON_TYPESCRIPT_TEST_DEPENDENCIES)).toEqual(['shared/record/migrations/'])
+  expect(NON_TYPESCRIPT_TEST_DEPENDENCIES['shared/record/migrations/']).toHaveLength(8)
+  expect(
+    NON_TYPESCRIPT_TEST_DEPENDENCIES['shared/record/migrations/']?.every((path) =>
+      path.endsWith('.test.ts'),
+    ),
+  ).toBeTrue()
+})
 
 test('dependency-cruiser Node version guard accepts the minimum and refuses older Node', () => {
   expect(dependencyCruiserNodeVersionRefusal('v24.0.0\n')).toBeUndefined()

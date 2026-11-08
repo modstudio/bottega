@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   affectedSeedPattern,
   escapedSeedPath,
+  nonTypeScriptSelections,
   seedPaths,
   selectedTestSources,
 } from './affected-tests.ts'
@@ -53,6 +54,39 @@ test('only changed and untracked TypeScript sources become seeds', () => {
     'scripts/affected-tests.test.ts',
     'scripts/test-focused.ts',
   ])
+})
+
+test('a record migration selects every test that reads the migrations directory', () => {
+  expect(
+    nonTypeScriptSelections([
+      'shared/record/migrations/20261109120000_dev_2172_example/migration.sql',
+    ]),
+  ).toEqual({
+    tests: [
+      'scripts/check-record-jsonb-string-checks.test.ts',
+      'shared/record/drizzle.config.test.ts',
+      'shared/record/schema-board-receipt-revision.test.ts',
+      'shared/record/schema-board-thread-expiry.test.ts',
+      'shared/record/schema-hub.test.ts',
+      'shared/record/schema-record-change.test.ts',
+      'shared/record/schema-remaining-uuid-keys.test.ts',
+      'shared/record/schema-run.test.ts',
+    ],
+    unselected: [],
+  })
+})
+
+test('unmapped non-TypeScript files report no selected test', () => {
+  expect(nonTypeScriptSelections(['notes/example.md', 'data/example.sql'])).toEqual({
+    tests: [],
+    unselected: ['data/example.sql', 'notes/example.md'],
+  })
+})
+
+test('non-TypeScript selection leaves an existing TypeScript-only case unchanged', () => {
+  const changed = ['orchestrator/src/close/close-out.ts']
+  expect(seedPaths(changed)).toEqual(changed)
+  expect(nonTypeScriptSelections(changed)).toEqual({ tests: [], unselected: [] })
 })
 
 test('the cruise entries narrow to TypeScript sources and drop shell-only entries', () => {

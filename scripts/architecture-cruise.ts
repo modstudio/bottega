@@ -32,6 +32,19 @@ export const ARCHITECTURE_CRUISE_ENTRIES = [
   'scripts/**/*.{ts,tsx,js,jsx,mjs,cjs}',
 ] as const
 
+export const NON_TYPESCRIPT_TEST_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
+  'shared/record/migrations/': [
+    'shared/record/schema-record-change.test.ts',
+    'shared/record/schema-remaining-uuid-keys.test.ts',
+    'shared/record/schema-board-receipt-revision.test.ts',
+    'shared/record/schema-board-thread-expiry.test.ts',
+    'shared/record/schema-run.test.ts',
+    'shared/record/schema-hub.test.ts',
+    'shared/record/drizzle.config.test.ts',
+    'scripts/check-record-jsonb-string-checks.test.ts',
+  ],
+}
+
 /** The architecture cruise entries narrowed to their TypeScript sources. */
 export function typescriptCruiseEntries(entries: readonly string[]): string[] {
   const selected: string[] = []

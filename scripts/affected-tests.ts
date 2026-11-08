@@ -2,7 +2,11 @@
 import { gitAt } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
-import { ARCHITECTURE_CRUISE_ENTRIES, typescriptCruiseEntries } from './architecture-cruise.ts'
+import {
+  ARCHITECTURE_CRUISE_ENTRIES,
+  NON_TYPESCRIPT_TEST_DEPENDENCIES,
+  typescriptCruiseEntries,
+} from './architecture-cruise.ts'
 
 /**
  * Prints the tests of every module that reaches what changed since a base commit.
@@ -35,6 +39,23 @@ export function seedPaths(changed: readonly string[]): string[] {
   return [...new Set(changed.filter((path) => TYPESCRIPT_SOURCE.test(path)))].sort()
 }
 
+export function nonTypeScriptSelections(
+  changed: readonly string[],
+  dependencies: Readonly<Record<string, readonly string[]>> = NON_TYPESCRIPT_TEST_DEPENDENCIES,
+): { tests: string[]; unselected: string[] } {
+  const tests = new Set<string>()
+  const unselected = new Set<string>()
+  for (const path of changed) {
+    if (!path || TYPESCRIPT_SOURCE.test(path)) continue
+    const matchingTests = Object.entries(dependencies)
+      .filter(([prefix]) => path.startsWith(prefix))
+      .flatMap(([, selected]) => selected)
+    if (!matchingTests.length) unselected.add(path)
+    for (const test of matchingTests) tests.add(test)
+  }
+  return { tests: [...tests].sort(), unselected: [...unselected].sort() }
+}
+
 /** The test modules a cruise selected, each named once. */
 export function selectedTestSources(modules: readonly { source: string }[]): string[] {
   return [
@@ -56,12 +77,16 @@ function gitLines(args: readonly string[]): string[] {
 }
 
 /** The tests that reach what changed since `baseCommit`, in this worktree. */
-async function selectAffectedTests(baseCommit: string): Promise<string[]> {
-  const seeds = seedPaths([
+async function selectAffectedTests(
+  baseCommit: string,
+): Promise<{ tests: string[]; unselected: string[] }> {
+  const changed = [
     ...gitLines(nulPathListArgs(['diff', '--name-only', baseCommit])),
     ...gitLines(nulPathListArgs(['ls-files', '--others', '--exclude-standard'])),
-  ])
-  if (!seeds.length) return []
+  ]
+  const seeds = seedPaths(changed)
+  const nonTypeScript = nonTypeScriptSelections(changed)
+  if (!seeds.length) return nonTypeScript
   const { cruise } = await import('dependency-cruiser')
   const { output } = await cruise(typescriptCruiseEntries(ARCHITECTURE_CRUISE_ENTRIES), {
     ...dependencyCruiserConfig().options,
@@ -73,7 +98,15 @@ async function selectAffectedTests(baseCommit: string): Promise<string[]> {
   if (!Array.isArray(result.modules)) {
     throw new Error('dependency-cruiser returned no modules array')
   }
-  return selectedTestSources(result.modules as { source: string }[])
+  return {
+    tests: [
+      ...new Set([
+        ...selectedTestSources(result.modules as { source: string }[]),
+        ...nonTypeScript.tests,
+      ]),
+    ].sort(),
+    unselected: nonTypeScript.unselected,
+  }
 }
 
 if (import.meta.main) {
@@ -83,8 +116,9 @@ if (import.meta.main) {
     process.exit(1)
   }
   try {
-    const paths = await selectAffectedTests(baseCommit)
-    if (paths.length) process.stdout.write(`${paths.join('\n')}\n`)
+    const { tests, unselected } = await selectAffectedTests(baseCommit)
+    if (tests.length) process.stdout.write(`${tests.join('\n')}\n`)
+    for (const path of unselected) console.error(`no test selected for ${path}`)
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
