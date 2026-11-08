@@ -24,6 +24,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       `${source}migration-backfill-compatibility.ts`,
       `${source}migration-compatibility.ts`,
       `${source}monitor-release-claim-uuid-migration-preflight.ts`,
+      `${source}store-ahead-remedy.ts`,
       `${source}task-flow-migration-preflight.ts`,
       `${source}workflow-uuid-migration-preflight.ts`,
       `${source}write-probe.ts`,

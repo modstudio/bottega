@@ -36,13 +36,13 @@ import {
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
 import { monitorReleaseClaimOrphanCounts } from './monitor-release-claim-uuid-migration-preflight.ts'
+import { storeAheadRemedy } from './store-ahead-remedy.ts'
 import { reportTaskFlowBackfill, TASK_FLOW_MIGRATION } from './task-flow-migration-preflight.ts'
 import {
   prepareWorkflowUuidMigration,
   workflowUuidReferenceOrphanCounts,
 } from './workflow-uuid-migration-preflight.ts'
 import { isWriteProbeTable } from './write-probe.ts'
-import { storeAheadRemedy } from './store-ahead-remedy.ts'
 export const MIGRATIONS_FOLDER = assetPath('orchestrator', 'migrations')
 export const SCHEMA_LOCK_TABLE = 'orch_schema_lock'
 const SCHEMA_INVARIANT = "Only the main checkout's binary migrates the store."
