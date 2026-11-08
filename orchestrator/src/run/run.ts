@@ -21,7 +21,7 @@ import {
   type WorkerReply,
   workerPreamble,
 } from '../contract/contract.ts'
-import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,
@@ -43,7 +43,6 @@ import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
-import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
@@ -92,7 +91,7 @@ import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
-import { type acquireRunLease, requiredRunLease, withRunCloseOutLease } from './run-lease.ts'
+import { type acquireRunLease, withRunCloseOutLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
 import * as mcpAttachment from './run-mcp-attachment.ts'
 import { finalWorkerMcpRuling } from './run-mcp-attachment-record.ts'
@@ -119,6 +118,11 @@ import {
 import { completeRunStartup } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
+import {
+  prepareRecordedWorkerHome,
+  recordLegacySandboxHome,
+  requiredRecordedRunLease,
+} from './run-resource-step-recording.ts'
 import { resumeFacts } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
@@ -568,6 +572,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
+  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
   const localMachineId = machineId()
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
@@ -601,8 +606,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   let sandboxEnvironment: Record<string, string>
   let mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
-  let hasRunScopedHome: boolean,
-    startupComplete = false
+  let startupComplete = false
   try {
     try {
       const writingAcpAsk = acpWriter.prepareWritingAcpAsk(writingAcp, claim.id, runToken)
@@ -624,29 +628,23 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         sharedReader: worktree?.sharedReader === true,
         ...writingAcpAsk.sandbox,
       })
-      const home = await workerHome.prepareWorkerHomeLaunch({
+      const home = await prepareRecordedWorkerHome(db(), {
+        ...owner,
         agent: a,
+        harness: workerHarnessName(a),
         sandbox: sandboxSelection.sandbox,
-        runDir: runtimeDir,
+        path: runtimeDir,
         runNumber: claim.number,
-        runRecordId: claim.recordId,
         runToken,
-        environment: {
-          ...(gitConfigEnvironment ?? {}),
-          ...(await endpoint.resolve()),
-        },
+        environment: { ...(gitConfigEnvironment ?? {}), ...(await endpoint.resolve()) },
         grokEnvironment: grokMcpEnvironment,
-        includeStore: repoJob,
+        repoJob,
+        writesJob,
         mcpLaunch,
         mcpMode,
         project: runProject,
       })
-      ;({
-        codexMcpCatalogues,
-        environment: mcpEnvironment,
-        hasRunScopedHome,
-        sandboxEnvironment,
-      } = home)
+      ;({ codexMcpCatalogues, environment: mcpEnvironment, sandboxEnvironment } = home)
     } catch (e) {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)
@@ -675,16 +673,14 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       db()
         .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
         .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
-      if (hasRunScopedHome) {
-        const rootRunId = rootRunRecordId(claim.id)
-        recordSandboxDirectoryClaim(db(), {
-          rootRunId,
-          runId: claim.id,
-          projectId: runProjectId,
-          path: runtimeDir,
-          claimedAt: nowIso(),
-        })
-      }
+      recordLegacySandboxHome(db(), {
+        ...owner,
+        path: runtimeDir,
+        repoJob,
+        writesJob,
+        harness: workerHarnessName(a),
+        sandbox: sandboxSelection.sandbox,
+      })
     })
     if (sandboxSelection.reason) {
       const header = `${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
@@ -845,7 +841,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   let vendorTerminatedStream: string | null = null
   const confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
-  let frozenBefore: import('../confinement/confinement.ts').FrozenCheckout[] = []
   let runLease: ReturnType<typeof acquireRunLease> | null = null
   const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
     srtProfile: sandboxSelection.profile,
@@ -868,7 +863,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       ? `${mcpSetupHeader}\n${skipLines.join('\n')}`
       : skipLines.join('\n')
   }
-  frozenBefore = beforeFreeze.snapshots
+  const frozenBefore = beforeFreeze.snapshots
   const watchedCheckouts = frozenBefore
   // The close-out lease covers both terminal recording and closeRun, even when either rejects.
   return await withRunCloseOutLease(
@@ -880,9 +875,14 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one close-out lease encloses the lifecycle's terminal ownership boundary
     async () => {
       try {
-        runLease = requiredRunLease(claim.id, (cause) => {
-          error = String((cause as Error).message ?? cause)
-          failureKind = 'harness'
+        runLease = requiredRecordedRunLease(db(), {
+          ...owner,
+          repoJob,
+          writesJob,
+          failed: (cause) => {
+            error = String((cause as Error).message ?? cause)
+            failureKind = 'harness'
+          },
         })
         ;({
           proc,

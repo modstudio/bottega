@@ -157,6 +157,8 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'release_ledger.exit_code',
     'release_ledger.number',
     'resource_claim.number',
+    'resource_claim.step_no',
+    'resource_claim.shared',
     'review.tier',
     'review.tier_risk',
     'review.tier_size',
