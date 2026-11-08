@@ -5,18 +5,21 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
 
-export type ResourceClaimKind =
-  | 'worktree'
-  | 'branch'
-  | 'retained_ref'
-  | 'sandbox_dir'
-  | 'trust_entry'
-  | 'ref_guard'
-  | 'run_lease'
-  | 'port'
-  | 'database'
-  | 'index'
-  | 'string'
+export const RESOURCE_CLAIM_KINDS = [
+  'worktree',
+  'branch',
+  'retained_ref',
+  'sandbox_dir',
+  'trust_entry',
+  'ref_guard',
+  'run_lease',
+  'port',
+  'database',
+  'index',
+  'string',
+] as const
+
+export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
 
 export type ClaimIdentity = {
   rootRunId: string

@@ -360,8 +360,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../project/project-lock.ts',
     '../jobs/jobs.ts',
+    '../resources/resource-claims.ts',
     '../resources/resource-step-recorder.ts',
     './run-alive.ts',
+    './run-root-record.ts',
   ]),
   module('orchestrator/src/run/run-resource-step-recording.ts', [
     'bun:sqlite',

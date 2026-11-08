@@ -16,7 +16,6 @@ import {
   completeResourceStep,
   insertClaim,
   type ResourceStep,
-  recordResourceStep,
   recordResourceStepAsync,
 } from '../resources/resource-step-recorder.ts'
 import type { RunSandbox } from '../sandbox/sandbox.ts'
@@ -125,35 +124,6 @@ export async function prepareSandboxHomeStep<T>(
   }
   if (!existsSync(input.path)) return recordResourceStepAsync(database, claim, input.effect)
   const result = await input.effect()
-  const decision = insertClaim(database, claim)
-  if (decision === 'collision')
-    throw new Error(`sandbox_dir resource ${input.path} is already claimed by another run`)
-  return result
-}
-
-export function prepareSandboxHomeStepSync<T>(
-  database: Database,
-  input: RunClaimIdentity & {
-    repoJob: boolean
-    writesJob: boolean
-    harness: string
-    sandbox: RunSandbox
-    path: string
-    claimedAt: string
-    effect: () => T
-  },
-): T {
-  const records = input.repoJob && !input.writesJob && runScopedHome(input.harness, input.sandbox)
-  if (!records) return input.effect()
-  const claim = {
-    ...input,
-    kind: 'sandbox_dir' as const,
-    allocationKey: input.path,
-    identity: input.path,
-    label: input.rootRunId,
-  }
-  if (!existsSync(input.path)) return recordResourceStep(database, claim, input.effect)
-  const result = input.effect()
   const decision = insertClaim(database, claim)
   if (decision === 'collision')
     throw new Error(`sandbox_dir resource ${input.path} is already claimed by another run`)

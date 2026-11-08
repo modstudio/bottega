@@ -3,7 +3,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import {
-  claimCreationDecision,
   claimDatabaseName,
   claimIndex,
   claimKindForCreation,
@@ -24,6 +23,7 @@ import {
   settledStateForWorktreeResource,
   stringClaimDecision,
 } from './resource-claims.ts'
+import { claimCreationDecision } from './resource-step-recorder.ts'
 
 function resourceRun(projectRecordId: string | null = null, parent?: string): string {
   const recordId = addRun({

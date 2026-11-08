@@ -10,13 +10,12 @@ import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
 import {
-  claimCreationDecision,
   type ClaimIdentity,
   insertClaim,
+  RESOURCE_CLAIM_KINDS,
   type ResourceClaimKind,
 } from './resource-step-recorder.ts'
 
-export { claimCreationDecision }
 export type { ResourceClaimKind }
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'

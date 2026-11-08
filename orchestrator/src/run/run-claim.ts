@@ -263,6 +263,7 @@ function prepareClaimFiles(input: ClaimInput, recordId: string, claimedPrompt: s
   )
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: the claim coordinator preserves one ordered ownership transaction
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,

@@ -604,8 +604,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   let sandboxEnvironment: Record<string, string>
   let mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
-  let hasRunScopedHome: boolean,
-    startupComplete = false
+  let startupComplete = false
   try {
     try {
       const writingAcpAsk = acpWriter.prepareWritingAcpAsk(writingAcp, claim.id, runToken)
@@ -645,12 +644,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         mcpMode,
         project: runProject,
       })
-      ;({
-        codexMcpCatalogues,
-        environment: mcpEnvironment,
-        hasRunScopedHome,
-        sandboxEnvironment,
-      } = home)
+      ;({ codexMcpCatalogues, environment: mcpEnvironment, sandboxEnvironment } = home)
     } catch (e) {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)

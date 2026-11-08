@@ -8,8 +8,8 @@ import { db, nowIso } from '../database/db.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { acquireKernelLease, type KernelLease, tryKernelLease } from '../project/project-lock.ts'
-import { recordResourceStep } from '../resources/resource-step-recorder.ts'
 import { settleClaims } from '../resources/resource-claims.ts'
+import { recordResourceStep } from '../resources/resource-step-recorder.ts'
 import type { RunLeaseState } from './run-alive.ts'
 import { runRootRecord } from './run-root-record.ts'
 
@@ -123,7 +123,9 @@ function acquireLease(runId: string, purpose: string, fileName: LeaseFileName): 
 
 function acquireRunCoordinatorLease(runId: string): KernelLease {
   const database = db()
-  const job = database.query<{ job: string }, [string]>('SELECT job FROM run WHERE record_id=?').get(runId)
+  const job = database
+    .query<{ job: string }, [string]>('SELECT job FROM run WHERE record_id=?')
+    .get(runId)
   if (!job || !isReadOnlyRepositoryJob(job.job)) return acquireLease(runId, 'run', runLeaseFileName)
   const run = runRootRecord(runId, database)!
   const path = runLeasePath(runId, 'run', runLeaseFileName)

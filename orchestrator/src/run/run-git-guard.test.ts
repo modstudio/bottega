@@ -12,8 +12,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun } from '../../test/fixtures/store.ts'
-import { git, gitOk, worktreeGitDir } from '../git/git-environment.ts'
 import { db } from '../database/db.ts'
+import { git, gitOk, worktreeGitDir } from '../git/git-environment.ts'
 import { removeSharedRefGuard } from '../resources/ref-guard.ts'
 import {
   HARNESS_RUN_MARKER,

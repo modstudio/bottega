@@ -4,10 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import {
-  prepareSandboxHomeStep,
-  recordRunWorktree,
-} from './run-resource-step-recording.ts'
+import { prepareSandboxHomeStep, recordRunWorktree } from './run-resource-step-recording.ts'
 
 test('recordRunWorktree keeps a writing run on the legacy claim columns', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })

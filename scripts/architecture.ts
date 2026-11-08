@@ -498,6 +498,7 @@ export const modules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../run/run-status.ts',
     './ref-guard-runtime.ts',
+    './resource-claims.ts',
     './worker-hooks.ts',
   ]),
   module('orchestrator/src/resources/ref-guard-runtime.ts', [

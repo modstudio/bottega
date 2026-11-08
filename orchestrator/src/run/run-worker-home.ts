@@ -246,18 +246,16 @@ function applyGrokReaderMcpScope(
   }
 }
 
-export function prepareClaimedGrokMcpScope(
-  input: {
-    agent: Agent
-    runDir: string
-    runDirExisted: boolean
-    cwd: string
-    project: Project
-    config: ReturnType<typeof prepareWorkerMcpConfig> | null
-    treeConfig: Record<string, McpServerConfig>
-    readerServers: Record<string, ReaderProxyServer> | null
-  },
-) {
+export function prepareClaimedGrokMcpScope(input: {
+  agent: Agent
+  runDir: string
+  runDirExisted: boolean
+  cwd: string
+  project: Project
+  config: ReturnType<typeof prepareWorkerMcpConfig> | null
+  treeConfig: Record<string, McpServerConfig>
+  readerServers: Record<string, ReaderProxyServer> | null
+}) {
   try {
     const harness = workerHarnessName(input.agent)
     const config = input.config

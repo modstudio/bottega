@@ -83,15 +83,10 @@ test('probeConnection leaves every unexpectedly added trust heading on a stuck r
   mkdirSync(grokHome)
   try {
     expect(() =>
-      probeConnection(
-        probeInput(runId, cwd, root),
-        'fixture',
-        { GROK_HOME: grokHome },
-        () => {
-          writeFileSync(join(grokHome, 'trusted_folders.toml'), `${headings.join('\n')}\n`)
-          return { server: 'fixture', connected: true, error: null }
-        },
-      ),
+      probeConnection(probeInput(runId, cwd, root), 'fixture', { GROK_HOME: grokHome }, () => {
+        writeFileSync(join(grokHome, 'trusted_folders.toml'), `${headings.join('\n')}\n`)
+        return { server: 'fixture', connected: true, error: null }
+      }),
     ).toThrow('created 2 entries; expected one')
     const row = db()
       .query(
