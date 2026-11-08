@@ -31,6 +31,7 @@ import {
 import {
   type DeferredReplySuccessor,
   missingReaderStartWarning,
+  replySuccessorAddressing,
   selectPushNotices,
 } from './board-push-policy.ts'
 import { renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
@@ -365,6 +366,8 @@ export async function refreshHostedBoard(input: RefreshInput): Promise<HostedBoa
 
 type CachedRow = { message: HostedBoardMessage; tags: BoardTag[]; successor?: number }
 
+type HostedClaimFacts = { rootAuthorReceivedReply: boolean; successorClaimed: boolean }
+
 function attachCachedTags<T extends { id: string; payload: string }>(
   database: Database,
   messages: T[],
@@ -423,6 +426,7 @@ type HostedClaimContext = {
   readerBeganAt: string | null
   readerRunRecordId: string | null
   signedIn: string | null
+  claimFacts: Map<string, HostedClaimFacts>
 }
 
 function claimContext(
@@ -432,6 +436,7 @@ function claimContext(
   rows: CachedRow[],
   signedIn: string | null,
   allRows: CachedRow[],
+  claimFacts: Map<string, HostedClaimFacts>,
   readerRunRecordId: string | null = null,
 ): HostedClaimContext {
   const messages = allRows.map((row) => row.message)
@@ -454,8 +459,14 @@ function claimContext(
     readerBeganAt: boardReaderBeganAt(reader, database, readerRunRecordId),
     readerRunRecordId,
     signedIn,
+    claimFacts,
   }
 }
+
+const successorClaimedByOther = (messageId: string) =>
+  `EXISTS (SELECT 1 FROM hosted_board_receipt_cache successor_receipt
+    WHERE successor_receipt.message_id=${messageId} AND successor_receipt.successor=1
+      AND successor_receipt.reader_session<>?)`
 
 function loadClaimContext(
   database: Database,
@@ -469,29 +480,56 @@ function loadClaimContext(
   const signedIn = meta(database, BOARD_REFRESH_USER_KEY)
   if (!owner || owner !== signedIn) {
     const rows = extraRow ? [extraRow] : []
-    return claimContext(database, reader, clock, rows, signedIn, rows, readerRunRecordId)
+    return claimContext(database, reader, clock, rows, signedIn, rows, new Map(), readerRunRecordId)
   }
   const rows = attachCachedTags(
     database,
     database
       .query(
         `SELECT message.id,message.payload,receipt.delivered_at,receipt.acknowledged_at,
-                COALESCE(receipt.successor,0) AS successor
+                COALESCE(receipt.successor,0) AS successor,
+                ${successorClaimedByOther('message.id')} AS successor_claimed,
+                EXISTS (
+                  SELECT 1
+                  FROM hosted_board_receipt_cache author_receipt
+                  JOIN hosted_board_message_cache root
+                    ON root.id=message.thread_root_id
+                  WHERE author_receipt.message_id=message.id
+                    AND author_receipt.reader_session=json_extract(root.payload,'$.authorSession')
+                    AND author_receipt.delivered_at IS NOT NULL
+                ) AS root_author_received_reply
        FROM hosted_board_message_cache message
        LEFT JOIN hosted_board_receipt_cache receipt
          ON receipt.message_id=message.id AND receipt.reader_session=?
        ORDER BY message.rowid`,
       )
-      .all(reader) as Array<{
+      .all(reader, reader) as Array<{
       id: string
       payload: string
       delivered_at: string | null
       acknowledged_at: string | null
       successor: number
+      successor_claimed: number
+      root_author_received_reply: number
     }>,
   )
+  const claimFacts = new Map(
+    rows.map((row) => [
+      row.message.id,
+      {
+        rootAuthorReceivedReply: Boolean(row.root_author_received_reply),
+        successorClaimed: Boolean(row.successor_claimed),
+      },
+    ]),
+  )
   const cached = rows.map(
-    ({ delivered_at: _delivered, acknowledged_at: _acknowledged, ...row }) => row,
+    ({
+      delivered_at: _delivered,
+      acknowledged_at: _acknowledged,
+      successor_claimed: _successor,
+      root_author_received_reply: _author,
+      ...row
+    }) => row,
   )
   const allRows =
     extraRow && !cached.some((row) => row.message.id === extraRow.message.id)
@@ -499,7 +537,15 @@ function loadClaimContext(
       : cached
   const selected = rows
     .filter((row) => all || (!row.delivered_at && !row.acknowledged_at))
-    .map(({ delivered_at: _delivered, acknowledged_at: _acknowledged, ...row }) => row)
+    .map(
+      ({
+        delivered_at: _delivered,
+        acknowledged_at: _acknowledged,
+        successor_claimed: _successor,
+        root_author_received_reply: _author,
+        ...row
+      }) => row,
+    )
   return claimContext(
     database,
     reader,
@@ -509,6 +555,7 @@ function loadClaimContext(
       : selected,
     signedIn,
     allRows,
+    claimFacts,
     readerRunRecordId,
   )
 }
@@ -584,7 +631,20 @@ function hostedReplySuccessorPush(
   if (message.kind !== 'reply' || !rootId) return false
   const root = context.messagesById.get(rootId)
   if (!root?.authorSession || !root.origin.project) return false
-  return !replyAddressesReader(message, context)
+  const facts = context.claimFacts.get(message.id)
+  return replySuccessorAddressing({
+    presence: context.presence,
+    reader: context.reader,
+    rootAuthorSession: root.authorSession,
+    rootAuthorReceivedReply: facts?.rootAuthorReceivedReply ?? false,
+    rootProject: root.origin.project,
+    readerIsParticipant: replyAddressesReader(message, context),
+    successorClaimed: facts?.successorClaimed ?? false,
+    readerBeganAt: context.readerBeganAt,
+    replyPostedAt: message.createdAt,
+    now: context.clock,
+    liveWindowMs: SESSION_LIVE_MS,
+  })
 }
 
 function messageAddressesReader(
