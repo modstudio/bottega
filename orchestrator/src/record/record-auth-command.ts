@@ -9,8 +9,8 @@ import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import {
-  recordApiClient,
   RecordApiRequestError,
+  recordApiClient,
   recordApiSignIn,
   recordApiSignUp,
 } from './record-api-client.ts'

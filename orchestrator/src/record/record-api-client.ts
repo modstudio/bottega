@@ -48,7 +48,7 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
-import { responseMessage, responseRecord } from './record-api-client-response.ts'
+import { responseCode, responseMessage, responseRecord } from './record-api-client-response.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -522,14 +522,8 @@ export function recordAuthRefusal(status: number, body: unknown, headers: Header
     )
   }
   const message = responseMessage(body, recordApiStatus(status))
-  const record = responseRecord(body)
-  const nested = responseRecord(record.error)
-  const code =
-    (typeof record.code === 'string' && record.code) ||
-    (typeof nested.code === 'string' && nested.code) ||
-    null
   if (status >= 400 && status < 500)
-    return new RecordApiRequestError(message, 'refused', status, code)
+    return new RecordApiRequestError(message, 'refused', status, responseCode(body))
   return recordApiServerError(message, status)
 }
 

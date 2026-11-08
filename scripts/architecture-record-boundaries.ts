@@ -40,6 +40,7 @@ export const recordAuthCommandBoundaries: ImportBoundary[] = [
     [
       '../../../shared/brand.ts',
       '../../../shared/record-session.ts',
+      '../../../shared/refusal.ts',
       '../board/board-auto-adoption.ts',
       '../config/config-service.ts',
       '../project/project-relink.ts',

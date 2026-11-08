@@ -14,3 +14,13 @@ export function responseMessage(body: unknown, fallback: string): string {
     fallback
   )
 }
+
+export function responseCode(body: unknown): string | null {
+  const record = responseRecord(body)
+  const nested = responseRecord(record.error)
+  return (
+    (typeof record.code === 'string' && record.code) ||
+    (typeof nested.code === 'string' && nested.code) ||
+    null
+  )
+}

@@ -111,6 +111,9 @@
     "orchestrator/src/run/run-agent-capacity.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/record/record-auth-command.ts#existingAccountSignUpRefusal": {
+      "test": "orchestrator/src/record/record-auth-command.test.ts: sign-up directs an existing account to sign in"
+    },
     "orchestrator/src/database/database-commands.ts#assertInFlightMigrationAllowed": {
       "exemption": "machine update drains live processes and applies migrations, so its effect is not a pure decision"
     },

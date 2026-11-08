@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { RecordApiRequestError } from './record-api-client.ts'
 import {
   decideRecordPassword,
   RECORD_PASSWORD_ENV,
@@ -9,7 +10,6 @@ import {
   verificationEmailAction,
   verifyEmailCommand,
 } from './record-auth-command.ts'
-import { RecordApiRequestError } from './record-api-client.ts'
 
 const originalRecordPassword = process.env[RECORD_PASSWORD_ENV]
 
@@ -87,15 +87,7 @@ test('sign-in refuses before the API when the session-store probe fails', async 
   expect(apiCalls).toBe(0)
 })
 
-test.each([
-  new RecordApiRequestError(
-    'changed upstream message',
-    'refused',
-    422,
-    'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
-  ),
-  new RecordApiRequestError('User already exists. Use another email.', 'refused', 422),
-])('sign-up directs an existing account to sign in (%p)', async (apiError) => {
+async function expectExistingAccountSignInRemedy(apiError: Error): Promise<void> {
   await expect(
     signUpCommand('person@example.test', 'Person', async () => 'secret', presentation, {
       probeSessionStore: () => {},
@@ -105,6 +97,23 @@ test.each([
       signIn: async () => sessionResult,
     }),
   ).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} record sign-in --email person@example.test`)
+}
+
+test('sign-up directs an existing account to sign in', async () => {
+  await expectExistingAccountSignInRemedy(
+    new RecordApiRequestError(
+      'changed upstream message',
+      'refused',
+      422,
+      'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+    ),
+  )
+})
+
+test('sign-up falls back to the existing-account text when the API returns no code', async () => {
+  await expectExistingAccountSignInRemedy(
+    new RecordApiRequestError('User already exists. Use another email.', 'refused', 422),
+  )
 })
 
 test('verification email decision distinguishes verified and unverified users', () => {
