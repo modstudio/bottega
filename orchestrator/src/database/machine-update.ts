@@ -11,7 +11,6 @@ import {
   resolveInstallationPaths,
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
-import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import {
   machineUpdateLockHeldEnvironment,
   withMachineUpdateLock,
@@ -32,6 +31,7 @@ import {
   clearMachineUpdateIntent,
   localStoreJournalPositions,
   readMachineUpdateIntent,
+  requiredLocalStoreJournalPositions,
   writeMachineUpdateIntent,
 } from './machine-update-intent.ts'
 import {
@@ -437,19 +437,6 @@ function recoverAbandonedMachineUpdate(
   }
   clearMachineUpdateIntent()
   presentation.log(`recovered interrupted machine update: ${decision.message}`)
-}
-
-function requiredLocalStoreJournalPositions() {
-  const positions = localStoreJournalPositions()
-  if (!positions) {
-    const orchestrator = resolveOrchestratorDatabase(process.env)
-    const hub = resolveHubDatabase(process.env)
-    throw new Error(
-      `store journal positions could not be read before update from ${orchestrator} and ${hub}; ` +
-        `repair or remove the unreadable store, then rerun ${PLATFORM_SLUG} machine update`,
-    )
-  }
-  return positions
 }
 
 function verifiedLandingBranch(

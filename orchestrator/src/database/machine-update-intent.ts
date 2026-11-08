@@ -89,6 +89,20 @@ export function localStoreJournalPositions(
   }
 }
 
+export function requiredLocalStoreJournalPositions(
+  positions: StoreJournalPositions | null = localStoreJournalPositions(),
+): StoreJournalPositions {
+  if (!positions) {
+    const orchestrator = resolveOrchestratorDatabase(process.env)
+    const hub = resolveHubDatabase(process.env)
+    throw new Error(
+      `store journal positions could not be read before update from ${orchestrator} and ${hub}; ` +
+        `repair or remove the unreadable store, then rerun ${PLATFORM_SLUG} machine update`,
+    )
+  }
+  return positions
+}
+
 export function readMachineUpdateIntent(
   env: Record<string, string | undefined> = process.env,
 ): MachineUpdateIntent | null {
