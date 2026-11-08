@@ -166,4 +166,50 @@ describe('tracker-new MCP creation', () => {
       },
     ])
   })
+
+  test('workspace open creation uses writeStates and refuses when it is absent', async () => {
+    const workspace: TrackerProject = {
+      name: 'workspace',
+      settings: {
+        tracker: {
+          protocol: 'workspace-mcp',
+          team: 'TEAM',
+          states: { unstarted: 'open', Open: 'open' },
+          writeStates: { open: 'Open' },
+        },
+      },
+    }
+    const task = trackerTaskInput(workspace, { title: 'Use display status', status: 'open' })
+    const calls: { name: string; args: Record<string, unknown> }[] = []
+    await createAdvertisedTrackerTask(
+      {
+        async listTools() {
+          return [
+            {
+              name: 'create-task-tool',
+              inputSchema: {
+                type: 'object',
+                properties: { summary: {}, description: {}, team: {}, status: {} },
+              },
+            },
+          ]
+        },
+        async callTool(name, args) {
+          calls.push({ name, args })
+          return { short_id: 'WOR-1' }
+        },
+      },
+      workspace,
+      task,
+    )
+    expect(calls[0]).toEqual({
+      name: 'create-task-tool',
+      args: { summary: 'Use display status', description: '', team: 'TEAM', status: 'Open' },
+    })
+
+    delete workspace.settings.tracker!.writeStates
+    expect(() => trackerTaskInput(workspace, { title: 'Refuse raw', status: 'open' })).toThrow(
+      'project workspace tracker has no writeStates.open selection; set it with:',
+    )
+  })
 })

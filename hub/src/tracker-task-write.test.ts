@@ -295,7 +295,7 @@ describe('array-mcp task writes', () => {
     ).rejects.toThrow('external tracker can only set status; set body in a separate call')
   })
 
-  test('an unsupported tracker protocol refuses before interpreting its vocabulary', async () => {
+  test('a workspace status without a write-state selection refuses with its remedy', async () => {
     const unsupported = {
       ...project,
       settings: {
@@ -307,12 +307,14 @@ describe('array-mcp task writes', () => {
       setTaskThroughTracker(
         'ADN-1659',
         {},
-        { status: 'not-in-vocabulary' },
+        { status: 'active' },
         UNATTRIBUTED,
         { confirm: 'production' },
         { registeredProjects: () => [unsupported] },
       ),
-    ).rejects.toThrow('tracker protocol workspace-mcp has no status writer')
+    ).rejects.toThrow(
+      `${PLATFORM_SLUG} project set adanim --settings '{"tracker":{"writeStates":{"active":"<active-state>"}}}'`,
+    )
   })
 
   test('an external done transition names a remedy that does not suggest unsupported abandon', async () => {

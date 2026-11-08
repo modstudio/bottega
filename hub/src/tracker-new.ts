@@ -2,6 +2,8 @@ import {
   type CreateTrackerTask,
   createTrackerTask,
   resolveTrackerWriteState,
+  type StatusCategory,
+  TASK_STATUSES,
   type ToolCaller,
   type TrackerProject,
   type TrackerProtocol,
@@ -34,16 +36,17 @@ export function trackerTaskInput(
     )
   const mapped = Object.entries(tracker.states ?? {})
   const requested = input.status
-  const status = requested
-    ? requested === 'active' || requested === 'done'
-      ? resolveTrackerWriteState(
-          project.name,
-          tracker,
-          tracker.protocol as TrackerProtocol,
-          requested,
-        )
-      : mapped.find(([, category]) => category === requested)?.[0]
-    : tracker.openStatuses?.[0]
+  const requestedMapping = requested ? tracker.states?.[requested] : undefined
+  const category: StatusCategory | undefined = requested
+    ? TASK_STATUSES.includes(requested as (typeof TASK_STATUSES)[number])
+      ? (requested as StatusCategory)
+      : requestedMapping === 'backlog'
+        ? 'open'
+        : requestedMapping
+    : 'open'
+  const status = category
+    ? resolveTrackerWriteState(project.name, tracker, tracker.protocol as TrackerProtocol, category)
+    : undefined
   if (!status) {
     const choices = mapped.map(([name, category]) => `${category} -> ${name}`).join(', ')
     throw new Error(

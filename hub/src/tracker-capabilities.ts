@@ -2,6 +2,7 @@ import {
   cursorProjectRefusal,
   TASK_STATUSES,
   type TrackerProject,
+  trackerSourceFor,
   workspaceTeamRefusal,
 } from '../../shared/trackers.ts'
 
@@ -39,6 +40,14 @@ const keyFormat = (project: TrackerProject | null): string | null => {
   return Array.isArray(prefixes) && prefixes.length
     ? prefixes.map((prefix) => `${prefix}-*`).join(' | ')
     : null
+}
+
+const hasStatusWriter = (project: TrackerProject): boolean => {
+  try {
+    return trackerSourceFor(project)?.writeStatus !== undefined
+  } catch {
+    return false
+  }
 }
 
 /** Dashboard mutation facts for one served row. Unknown provenance stays readable and read-only. */
@@ -109,7 +118,7 @@ export function trackerCapabilities({
               ? workspaceTeamRefusal(project)
               : cursorProjectRefusal(project),
           ),
-    setStatus: protocol === 'array-mcp' ? allow : refuse(TRACKER_STATUS_WRITE_REFUSAL),
+    setStatus: hasStatusWriter(project) ? allow : refuse(TRACKER_STATUS_WRITE_REFUSAL),
     setTitle: refuse(TRACKER_TITLE_WRITE_REFUSAL),
     setBody: refuse(TRACKER_BODY_WRITE_REFUSAL),
     comment: refuse(TRACKER_COMMENT_WRITE_REFUSAL),
