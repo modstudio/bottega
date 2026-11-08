@@ -9,10 +9,8 @@ const manifest = (store: ManifestColumn['store'], columns: readonly string[]): M
 
 export const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
   ...manifest('orchestrator', [
-    'contention.resource_key',
     'operator_notification.item_id',
     'run.launch_key',
     'workflow_cursor.instance_id',
   ]),
-  ...manifest('hosted', ['contention.resource_key']),
 ]
