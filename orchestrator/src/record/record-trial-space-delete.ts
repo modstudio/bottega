@@ -2,7 +2,10 @@
 /** Guards and atomically tears down marked trial spaces. Never deletes users or personal spaces. */
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { SPACE_TEARDOWN_ORDER } from '../../../shared/record/space-teardown.ts'
+import {
+  SPACE_TEARDOWN_PLAN,
+  type SpaceTeardownReach,
+} from '../../../shared/record/space-teardown.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
 import {
@@ -63,6 +66,22 @@ const marked = (metadata: unknown) =>
   metadata !== null &&
   typeof (metadata as { trial?: unknown }).trial === 'object' &&
   (metadata as { trial?: unknown }).trial !== null
+
+const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`
+const tuple = (columns: readonly string[]) =>
+  columns.length === 1 ? identifier(columns[0]!) : `(${columns.map(identifier).join(',')})`
+const teardownByTable = new Map(SPACE_TEARDOWN_PLAN.map((step) => [step.table, step]))
+function reachPredicate(reach: SpaceTeardownReach): string {
+  if (reach.parent === 'space') return `${tuple(reach.columns)}=$1`
+  const parent = teardownByTable.get(reach.parent)
+  if (!parent) throw new Error(`space teardown parent is not planned: ${reach.parent}`)
+  return `${tuple(reach.columns)} IN (SELECT ${tuple(reach.parentColumns)} FROM ${identifier(reach.parent)} WHERE ${teardownPredicate(parent.table)})`
+}
+function teardownPredicate(table: string): string {
+  const step = teardownByTable.get(table)
+  if (!step) throw new Error(`space teardown table is not planned: ${table}`)
+  return `(${step.reachedBy.map(reachPredicate).join(' OR ')})`
+}
 
 async function facts(tx: SQL, slug: string, userId: string) {
   const spaces = await tx`SELECT id,metadata FROM space WHERE slug=${slug} FOR UPDATE`
@@ -130,11 +149,12 @@ export async function deleteTrialRecordSpace(input: {
     }
     const tables: Record<string, number> = {}
     // These rows precede every membership so membership_revoke_config_machines cannot strand a DEK.
-    for (const table of SPACE_TEARDOWN_ORDER.filter((name) => name !== 'membership')) {
-      const deleted = await tx.unsafe(`DELETE FROM "${table}" WHERE space_id=$1 RETURNING 1`, [
-        read.spaceId,
-      ])
-      tables[table] = deleted.length
+    for (const step of SPACE_TEARDOWN_PLAN.filter((item) => item.table !== 'membership')) {
+      const deleted = await tx.unsafe(
+        `DELETE FROM ${identifier(step.table)} WHERE ${teardownPredicate(step.table)} RETURNING 1`,
+        [read.spaceId],
+      )
+      tables[step.table] = deleted.length
     }
     const memberships =
       await tx`DELETE FROM membership WHERE space_id=${read.spaceId}::uuid RETURNING id`

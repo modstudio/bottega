@@ -178,6 +178,15 @@ export const boardClaim = pgTable.withRLS(
         using: projectWriteMembership,
         withCheck: projectWriteMembership,
       }),
+      pgPolicy('board_claim_owner_delete', {
+        for: 'delete',
+        to: RECORD_ACTOR_ROLE,
+        using: sql`EXISTS (
+          SELECT 1 FROM ${project} p
+          JOIN ${membership} m ON m.space_id = p.space_id
+          WHERE p.id = ${table.projectId} AND m.user_id = ${currentUser} AND m.role = 'owner'
+        )`,
+      }),
     ]
   },
 )
@@ -311,6 +320,15 @@ export const boardMessage = pgTable.withRLS(
         for: 'delete',
         to: RECORD_ACTOR_ROLE,
         using: sql`${table.authorUserId} = ${currentUser}`,
+      }),
+      pgPolicy('board_message_run_owner_delete', {
+        for: 'delete',
+        to: RECORD_ACTOR_ROLE,
+        using: sql`${table.authorRunId} IS NOT NULL AND EXISTS (
+          SELECT 1 FROM ${run} r
+          JOIN ${membership} m ON m.space_id = r.space_id
+          WHERE r.id = ${table.authorRunId} AND m.user_id = ${currentUser} AND m.role = 'owner'
+        )`,
       }),
       // A first acknowledgement advances this message's revision for the change feed. No actor
       // policy can allow it: a reader may only write their own receipt, and the message belongs

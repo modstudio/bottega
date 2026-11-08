@@ -1,5 +1,5 @@
 // concern: hosted-space-teardown-shape
-/** Derives the child-before-parent delete order from the hosted Drizzle schema. */
+/** Derives the child-before-parent delete plan from the hosted Drizzle schema. */
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core'
 import * as root from './schema.ts'
 import * as a from './schema-auth.ts'
@@ -31,68 +31,133 @@ const table = (value: unknown): value is PgTable => {
 const hostedRecordTables = [
   ...new Set(modules.flatMap((module) => Object.values(module)).filter(table)),
 ]
-export type SpaceForeignKeyFact = { table: string; columns: string[]; onDelete?: string }
+type ForeignKeyFact = {
+  table: string
+  columns: string[]
+  parent: string
+  parentColumns: string[]
+  onDelete?: string
+}
+export type SpaceTeardownReach = {
+  columns: string[]
+  parent: string
+  parentColumns: string[]
+}
+export type SpaceTeardownStep = { table: string; reachedBy: SpaceTeardownReach[] }
 export const SPACE_TEARDOWN_EXCLUSIONS = {
   record_change: 'ON DELETE CASCADE removes change-feed rows with the space',
   session: 'session.active_space_id is ON DELETE SET NULL',
   user: 'personal_space_id and last_active_space_id are ON DELETE SET NULL',
 } as const
 
-export function spaceForeignKeyFacts(
-  tables: readonly PgTable[] = hostedRecordTables,
-): SpaceForeignKeyFact[] {
+function foreignKeyFacts(tables: readonly PgTable[] = hostedRecordTables): ForeignKeyFact[] {
   return tables.flatMap((item) =>
-    getTableConfig(item).foreignKeys.flatMap((key) => {
+    getTableConfig(item).foreignKeys.map((key) => {
       const reference = key.reference()
-      return getTableConfig(reference.foreignTable).name === 'space'
-        ? [
-            {
-              table: getTableConfig(item).name,
-              columns: reference.columns.map((column) => column.name),
-              onDelete: key.onDelete,
-            },
-          ]
-        : []
+      return {
+        table: getTableConfig(item).name,
+        columns: reference.columns.map((column) => column.name),
+        parent: getTableConfig(reference.foreignTable).name,
+        parentColumns: reference.foreignColumns.map((column) => column.name),
+        onDelete: key.onDelete,
+      }
     }),
   )
 }
 
-function deriveSpaceTeardownOrder(tables: readonly PgTable[] = hostedRecordTables): string[] {
-  const byName = new Map(tables.map((item) => [getTableConfig(item).name, item]))
-  const remaining = new Set(
-    spaceForeignKeyFacts(tables)
-      .map((fact) => fact.table)
-      .filter((name) => !(name in SPACE_TEARDOWN_EXCLUSIONS)),
-  )
-  const parents = new Map([...remaining].map((name) => [name, new Set<string>()]))
-  for (const child of remaining)
-    for (const key of getTableConfig(byName.get(child)!).foreignKeys) {
-      const parent = getTableConfig(key.reference().foreignTable).name
-      if (remaining.has(parent) && key.onDelete !== 'cascade') parents.get(child)?.add(parent)
+const blocksParentDelete = (fact: ForeignKeyFact) =>
+  fact.onDelete !== 'cascade' && fact.onDelete !== 'set null'
+
+function discoverReachedTables(
+  facts: readonly ForeignKeyFact[],
+  tableNames: readonly string[],
+  exclusions: Readonly<Record<string, string>>,
+): Map<string, SpaceTeardownReach[]> {
+  const reachedBy = new Map<string, SpaceTeardownReach[]>()
+  const remaining = new Set(tableNames)
+  let parents = new Set(['space'])
+  while (parents.size) {
+    const added = new Set<string>()
+    for (const name of remaining) {
+      if (exclusions[name]) continue
+      const reaches = facts.filter(
+        (fact) => fact.table === name && parents.has(fact.parent) && blocksParentDelete(fact),
+      )
+      if (!reaches.length) continue
+      reachedBy.set(
+        name,
+        reaches.map(({ columns, parent, parentColumns }) => ({ columns, parent, parentColumns })),
+      )
+      added.add(name)
     }
-  const order: string[] = []
-  while (remaining.size) {
-    const ready = [...remaining]
+    for (const name of added) remaining.delete(name)
+    parents = added
+  }
+  return reachedBy
+}
+
+function orderReachedTables(
+  facts: readonly ForeignKeyFact[],
+  reachedBy: ReadonlyMap<string, SpaceTeardownReach[]>,
+): SpaceTeardownStep[] {
+  const pending = new Set(reachedBy.keys())
+  const dependencies = new Map([...pending].map((name) => [name, new Set<string>()]))
+  for (const fact of facts)
+    if (
+      fact.table !== fact.parent &&
+      pending.has(fact.table) &&
+      pending.has(fact.parent) &&
+      blocksParentDelete(fact)
+    )
+      dependencies.get(fact.table)?.add(fact.parent)
+
+  const plan: SpaceTeardownStep[] = []
+  while (pending.size) {
+    const ready = [...pending]
       .filter(
-        (name) => ![...remaining].some((child) => child !== name && parents.get(child)?.has(name)),
+        (name) =>
+          ![...pending].some((child) => child !== name && dependencies.get(child)?.has(name)),
       )
       .sort()
     if (!ready.length)
-      throw new Error(`space teardown dependency cycle: ${[...remaining].sort().join(', ')}`)
+      throw new Error(`space teardown dependency cycle: ${[...pending].sort().join(', ')}`)
     for (const name of ready) {
-      order.push(name)
-      remaining.delete(name)
+      plan.push({ table: name, reachedBy: reachedBy.get(name)! })
+      pending.delete(name)
     }
   }
-  return order
+  return plan
 }
-export const SPACE_TEARDOWN_ORDER = deriveSpaceTeardownOrder()
+
+function deriveSpaceTeardownPlan(
+  tables: readonly PgTable[] = hostedRecordTables,
+  exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
+): SpaceTeardownStep[] {
+  const facts = foreignKeyFacts(tables)
+  const names = tables.map((item) => getTableConfig(item).name)
+  return orderReachedTables(facts, discoverReachedTables(facts, names, exclusions))
+}
+
+export const SPACE_TEARDOWN_PLAN = deriveSpaceTeardownPlan()
+export const SPACE_TEARDOWN_ORDER = SPACE_TEARDOWN_PLAN.map((step) => step.table)
+
 export function unclassifiedSpaceTables(
-  facts: readonly SpaceForeignKeyFact[],
+  tables: readonly PgTable[] = hostedRecordTables,
   order: readonly string[] = SPACE_TEARDOWN_ORDER,
   exclusions: Readonly<Record<string, string>> = SPACE_TEARDOWN_EXCLUSIONS,
 ): string[] {
-  return [...new Set(facts.map((fact) => fact.table))]
-    .filter((name) => !order.includes(name) && !exclusions[name])
-    .sort()
+  const classified = new Set(order)
+  return [
+    ...new Set(
+      foreignKeyFacts(tables)
+        .filter(
+          (fact) =>
+            blocksParentDelete(fact) &&
+            (fact.parent === 'space' || classified.has(fact.parent)) &&
+            !classified.has(fact.table) &&
+            !exclusions[fact.table],
+        )
+        .map((fact) => fact.table),
+    ),
+  ].sort()
 }

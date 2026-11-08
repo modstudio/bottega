@@ -1,16 +1,39 @@
 import { expect, test } from 'bun:test'
 import { pgTable, uuid } from 'drizzle-orm/pg-core'
-import { space } from './schema.ts'
-import { spaceForeignKeyFacts, unclassifiedSpaceTables } from './space-teardown.ts'
+import { project, space } from './schema.ts'
+import { SPACE_TEARDOWN_PLAN, unclassifiedSpaceTables } from './space-teardown.ts'
 
 test('an unclassified space foreign key is refused', () => {
   const fixture = pgTable('fixture_space_child', {
     id: uuid().primaryKey(),
     spaceId: uuid('space_id').references(() => space.id),
   })
-  expect(unclassifiedSpaceTables(spaceForeignKeyFacts([space, fixture]), [], {})).toEqual([
-    'fixture_space_child',
+  expect(unclassifiedSpaceTables([space, fixture], [], {})).toEqual(['fixture_space_child'])
+})
+test('a table without a space key that references an ordered table is refused', () => {
+  const fixture = pgTable('fixture_project_child', {
+    id: uuid().primaryKey(),
+    projectId: uuid('project_id').references(() => project.id),
+  })
+  expect(unclassifiedSpaceTables([space, project, fixture], ['project'], {})).toEqual([
+    'fixture_project_child',
   ])
 })
 test('the current hosted schema is completely classified', () =>
-  expect(unclassifiedSpaceTables(spaceForeignKeyFacts())).toEqual([]))
+  expect(unclassifiedSpaceTables()).toEqual([]))
+test('the current reached tables retain their space ownership paths', () =>
+  expect(
+    SPACE_TEARDOWN_PLAN.filter((step) => step.reachedBy.every((reach) => reach.parent !== 'space')),
+  ).toEqual([
+    {
+      table: 'board_message',
+      reachedBy: [{ columns: ['author_run_id'], parent: 'run', parentColumns: ['id'] }],
+    },
+    {
+      table: 'board_claim',
+      reachedBy: [
+        { columns: ['project_id'], parent: 'project', parentColumns: ['id'] },
+        { columns: ['run_id'], parent: 'run', parentColumns: ['id'] },
+      ],
+    },
+  ]))
