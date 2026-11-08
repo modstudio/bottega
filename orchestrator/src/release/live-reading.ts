@@ -221,6 +221,15 @@ export function readLiveVersion(
       failure: `candidate version is missing or not a string at ${settings.file}:${settings.key}`,
     }
   }
+  if (liveVersionMatchesCandidate(version, candidateVersion)) {
+    return {
+      ok: true,
+      commit: candidate,
+      version,
+      candidateVersion,
+      matchesCandidate: true,
+    }
+  }
   const commit = mappedVersionCommit(cwd, branch, settings, version)
   if (commit === null) return unmappedVersionFailure(version, settings.file, branch)
   return {

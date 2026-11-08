@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { gitAt } from '../../../shared/git.ts'
 import {
-  type LiveReadingCapture,
   jsonStringAtPath,
+  type LiveReadingCapture,
   liveVersionMatchesCandidate,
   newestVersionIntroduction,
   RELEASE_LIVE_READING_TIMEOUT_MS,
   readLiveCommit,
+  readLiveVersion,
   unmappedVersionFailure,
   versionIntroducedAtCommit,
 } from './live-reading.ts'
@@ -116,5 +118,29 @@ describe('release live version decisions', () => {
   test('already-live version proof holds only for equal values', () => {
     expect(liveVersionMatchesCandidate('0.48.0', '0.48.0')).toBe(true)
     expect(liveVersionMatchesCandidate('0.48.0', '0.49.0')).toBe(false)
+  })
+
+  test('returns the candidate when its served version has no introducing commit', () => {
+    const candidate = gitAt(process.cwd(), ['rev-parse', 'HEAD']).stdout.trim()
+    const candidateVersion = jsonStringAtPath(
+      gitAt(process.cwd(), ['show', `${candidate}:package.json`]).stdout,
+      'version',
+    )!
+
+    expect(
+      readLiveVersion(
+        { command: 'read-live-version', file: 'package.json', key: 'version' },
+        process.cwd(),
+        candidate,
+        'branch-with-no-version-introduction',
+        () => ({ exitCode: 0, output: `${candidateVersion}\n`, timedOut: false }),
+      ),
+    ).toEqual({
+      ok: true,
+      commit: candidate,
+      version: candidateVersion,
+      candidateVersion,
+      matchesCandidate: true,
+    })
   })
 })
