@@ -34,6 +34,7 @@ import {
   type AdmissionOverride,
   decideAdmission,
 } from './admission-decision.ts'
+import { decideMergeability } from './mergeability-decision.ts'
 import {
   ceilingRulingGuidance,
   decideTriageOverride,
@@ -41,7 +42,6 @@ import {
   type TriageOverrideAttribution,
 } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
-import { decideMergeability } from './mergeability-decision.ts'
 import {
   ceilingTriageFacts,
   decideTriage,
@@ -582,7 +582,11 @@ function readPullRequestForBranch(cwd: string, branch: string): BranchPullReques
   }
 }
 
-function pullRequestForBranch(cwd: string, branch: string): BranchPullRequest | null {
+function pullRequestForBranch(
+  cwd: string,
+  branch: string,
+  landingBranch: string,
+): BranchPullRequest | null {
   const deadline = Date.now() + CALL_BUDGETS.gh.deadlineMs
   let lastRead: BranchPullRequest | null = null
   while (true) {
@@ -599,7 +603,7 @@ function pullRequestForBranch(cwd: string, branch: string): BranchPullRequest | 
     const now = Date.now()
     const decision = decideMergeability({
       ...lastRead,
-      landingBranch: '',
+      landingBranch,
       boundReached: now >= deadline,
     })
     if (decision.kind !== 'poll') {
@@ -640,7 +644,8 @@ export function createPullRequest(
 ): { output: string; overrideId: string | null } {
   guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
   const change = resolvePullRequestChange(cwd)
-  const existing = pullRequestForBranch(cwd, change.branch)
+  const trunk = change.project.settings.trunk!.trim()
+  const existing = pullRequestForBranch(cwd, change.branch, trunk)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
   const database = writableDb()
   const checked = writeTransaction(() => {
@@ -680,7 +685,6 @@ export function createPullRequest(
     return decision
   }, database)
 
-  const trunk = change.project.settings.trunk!.trim()
   let output = ''
   let failure: string | null = null
   try {
@@ -696,7 +700,7 @@ export function createPullRequest(
   }
   let created: BranchPullRequest | null = null
   try {
-    created = pullRequestForBranch(cwd, change.branch)
+    created = pullRequestForBranch(cwd, change.branch, trunk)
   } catch {
     if (failure !== null) throw new Error(`gh pr create failed: ${failure}`)
     return { output, overrideId: checked.overrideId }

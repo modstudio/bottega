@@ -26,7 +26,6 @@ import {
   type PullRequestCheck,
 } from './merge-decision.ts'
 import type { FailedMergeGroupRun } from './merge-group-run.ts'
-import { decideMergeability } from './mergeability-decision.ts'
 import { decideMergePolicyRefusal } from './merge-policy-decision.ts'
 import {
   interpretMergeQueue,
@@ -42,6 +41,7 @@ import {
   githubMergeQueueState,
   requeuePullRequest,
 } from './merge-queue-forge.ts'
+import { decideMergeability } from './mergeability-decision.ts'
 import {
   admissionDecision,
   type PullRequestChange,
@@ -678,7 +678,8 @@ function admitViewedPullRequest(
   },
 ): PullRequestChange {
   const mergeability = decideMergeability({
-    ...pullRequest,
+    mergeStateStatus: pullRequest.mergeStateStatus ?? '',
+    url: pullRequest.url ?? `pull request #${pullRequest.number}`,
     landingBranch: input.landingBranch,
     boundReached: true,
   })

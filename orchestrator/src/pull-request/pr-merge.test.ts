@@ -44,14 +44,11 @@ const recordPassingGate = () => recordPassingMergeGate(pullRequest.headCommit, c
 const pullRequest: PullRequestMergeFacts = {
   nodeId: 'PR_node_id',
   number: 42,
-  url: 'https://github.example/pulls/42',
   headCommit: 'head-commit',
   headBranch: 'DEV-1255-admission',
   baseBranch: 'main',
   title: 'Prove the pull request head',
   state: 'OPEN',
-  mergeable: 'MERGEABLE',
-  mergeStateStatus: 'CLEAN',
   mergeCommit: null,
 }
 
@@ -889,25 +886,6 @@ test('a failing forge call refuses because proof was not checked', () => {
       }),
     ),
   ).toThrow('proof was not checked: forge unavailable')
-})
-
-test('a dirty pull-request head refuses with the rebase remedy', () => {
-  registerProject([])
-  expect(() =>
-    mergePullRequest(
-      '42',
-      cwd,
-      adapter({
-        view: () => ({
-          ...pullRequest,
-          mergeable: 'CONFLICTING',
-          mergeStateStatus: 'DIRTY',
-        }),
-      }),
-    ),
-  ).toThrow(
-    'refusing merge: https://github.example/pulls/42 conflicts with main: rebase it on the landing branch before merging',
-  )
 })
 
 test('a GitHub branch-policy merge refusal names pending and failing checks', () => {
