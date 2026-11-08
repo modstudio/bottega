@@ -1,4 +1,5 @@
 export const hubModuleSpecs = [
+  { file: 'hub/src/note-git.ts', allowed: ['../../shared/git.ts'] },
   {
     file: 'hub/src/trpc/routers/record-router-client.ts',
     allowed: ['../../record-client.ts', '../context.ts'],
