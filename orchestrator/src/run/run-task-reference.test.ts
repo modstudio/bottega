@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { parseHubTaskResponse } from '../workflow/workflow-task-reference.ts'
 import { admitNewRunReference, RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 describe('run task reference', () => {
@@ -23,29 +22,20 @@ describe('run task reference', () => {
     ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })
   })
 
-  test('resolves a project-less launch key through the injected task reader', async () => {
-    expect(
-      await admitNewRunReference({
+  test('does not resolve a project-less launch key through the unscoped task reader', async () => {
+    await expect(
+      admitNewRunReference({
         projectName: null,
         projectRecordId: null,
         key: 'SHARED-42',
         cwd: null,
         launchCwd: null,
         probe: false,
-        hubTaskByKeyReader: async (key) =>
-          key === 'SHARED-42'
-            ? parseHubTaskResponse({
-                task: {
-                  record_id: '01990000-0000-7000-8000-000000000895',
-                  key: 'SHARED-42',
-                  project: 'beta',
-                },
-                comments: [],
-                documents: [],
-              })
-            : null,
+        hubTaskByKeyReader: async () => {
+          throw new Error('unscoped reader must not be called')
+        },
       }),
-    ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })
+    ).rejects.toThrow(RUN_REFERENCE_REFUSAL)
   })
 
   test('refuses with the remedy when hub is unavailable and no project can be derived', async () => {

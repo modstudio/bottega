@@ -5,7 +5,10 @@ import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
-import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
+import {
+  type HubTaskReference,
+  resolveHubTaskReference,
+} from '../workflow/workflow-task-reference.ts'
 import { deriveRunLinks, linkRunTasks, type RunLinkFacts } from './run-task-linking.ts'
 
 const project = (name: string, path: string, recordId = `${name}-id`) =>
@@ -32,7 +35,8 @@ const facts = (overrides: Partial<RunLinkFacts> = {}): RunLinkFacts => ({
   ...overrides,
 })
 
-const taskMap = (...rows: HubTaskReference[]) => new Map(rows.map((row) => [row.key, row]))
+const taskMap = (...rows: HubTaskReference[]) =>
+  new Map(rows.map((row) => [`${row.project}\0${row.key}`, row]))
 
 describe('run link derivation', () => {
   test('uses an exact launch key before review and branch tokens', () => {
@@ -127,6 +131,106 @@ describe('run link derivation', () => {
 })
 
 describe('run task linking service', () => {
+  test('scopes every task-key link to the run or workflow project', async () => {
+    const alphaId = addProject('scoped-alpha', '/work/scoped-alpha')
+    const betaId = addProject('scoped-beta', '/work/scoped-beta')
+    const gammaId = addProject('scoped-gamma', '/work/scoped-gamma')
+    const registered = [
+      project('scoped-alpha', '/work/scoped-alpha', alphaId),
+      project('scoped-beta', '/work/scoped-beta', betaId),
+      project('scoped-gamma', '/work/scoped-gamma', gammaId),
+    ]
+    const reader = async (projectName: string) =>
+      projectName === 'scoped-gamma'
+        ? []
+        : [{ key: 'SAME-1', record_id: `task-${projectName}`, project: projectName }]
+
+    const runIds = new Map<string, string>()
+    for (const [projectName, projectId] of [
+      ['scoped-alpha', alphaId],
+      ['scoped-beta', betaId],
+    ] as const) {
+      for (const source of ['launch_key', 'review_ref', 'branch'] as const) {
+        const runId = addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
+        const value = source === 'launch_key' ? 'SAME-1' : `topic/SAME-1-work`
+        db().query(`UPDATE run SET ${source}=? WHERE record_id=?`).run(value, runId)
+        runIds.set(`${projectName}:${source}`, runId)
+      }
+    }
+    const missingRunId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      projectRecordId: gammaId,
+    })
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('SAME-1', missingRunId)
+    const migrationSql = readFileSync(
+      new URL('../../migrations/0167_run_task_or_project.sql', import.meta.url),
+      'utf8',
+    )
+    const insertTriggerSql = migrationSql.split('--> statement-breakpoint')[0]!
+    db().exec('DROP TRIGGER run_require_task_or_project_insert')
+    let ambiguousRunId: string
+    try {
+      ambiguousRunId = addRun({ agent: 'codex', job: 'implement', projectRecordId: null })
+    } finally {
+      db().exec(insertTriggerSql)
+    }
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('SAME-1', ambiguousRunId)
+
+    const insertRef = db().query(
+      `INSERT INTO port_ref (record_id,task_key,target_project_record_id,note,created_at)
+       VALUES (?,?,?,?, 't')`,
+    )
+    insertRef.run('scoped-ref-alpha', 'SAME-1', alphaId, 'alpha')
+    insertRef.run('scoped-ref-beta', 'SAME-1', betaId, 'beta')
+
+    const report = await linkRunTasks(
+      { dryRun: false },
+      { registeredProjects: registered, hubReader: reader },
+    )
+
+    for (const projectName of ['scoped-alpha', 'scoped-beta']) {
+      for (const source of ['launch_key', 'review_ref', 'branch']) {
+        expect(
+          db()
+            .query<{ task_record_id: string | null }, [string]>(
+              'SELECT task_record_id FROM run WHERE record_id=?',
+            )
+            .get(runIds.get(`${projectName}:${source}`)!)?.task_record_id,
+        ).toBe(`task-${projectName}`)
+      }
+      expect(await resolveHubTaskReference(projectName, 'SAME-1', reader)).toMatchObject({
+        record_id: `task-${projectName}`,
+      })
+    }
+    expect(
+      db()
+        .query<{ task_record_id: string | null }, [string]>(
+          'SELECT task_record_id FROM run WHERE record_id=?',
+        )
+        .get(missingRunId)?.task_record_id,
+    ).toBeNull()
+    expect(
+      db()
+        .query<{ task_record_id: string | null }, [string]>(
+          'SELECT task_record_id FROM run WHERE record_id=?',
+        )
+        .get(ambiguousRunId)?.task_record_id,
+    ).toBeNull()
+    expect(await resolveHubTaskReference(null, 'SAME-1', reader)).toBeNull()
+    expect(report.task_links_by_source).toMatchObject({ launch_key: 2, review_ref: 2, branch: 2 })
+    expect(report.keys_without_task['SAME-1']).toBe(2)
+    expect(report.local_task_links.port_ref).toEqual({ linked: 2, unmatched_keys: {} })
+    expect(
+      db()
+        .query<{ task_record_id: string }, []>(
+          `SELECT task_record_id FROM port_ref WHERE record_id LIKE 'scoped-ref-%'
+           ORDER BY record_id`,
+        )
+        .all(),
+    ).toEqual([{ task_record_id: 'task-scoped-alpha' }, { task_record_id: 'task-scoped-beta' }])
+  })
+
   test('enqueues a newly linked terminal run but not a running or already-linked run', async () => {
     const projectId = addProject('link-outbox', '/work/link-outbox')
     const terminalId = addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
@@ -368,7 +472,7 @@ describe('run task linking service', () => {
     expect(second.local_task_links.port_ref.unmatched_keys).toEqual({ 'MISSING-1': 1 })
   })
 
-  test('leaves a task key shared by projects unlinked and reports it as unmatched', async () => {
+  test('links related task keys shared by projects within each project', async () => {
     const alpha = addProject('ambiguous-alpha', '/work/ambiguous-alpha')
     const beta = addProject('ambiguous-beta', '/work/ambiguous-beta')
     const insert = db().query(
@@ -388,15 +492,15 @@ describe('run task linking service', () => {
       },
     )
 
-    expect(report.local_task_links.port_ref).toEqual({
-      linked: 0,
-      unmatched_keys: { 'SHARED-1': 2 },
-    })
+    expect(report.local_task_links.port_ref).toEqual({ linked: 2, unmatched_keys: {} })
     expect(
       db()
         .query('SELECT task_record_id FROM port_ref WHERE task_key=? ORDER BY record_id')
         .all('SHARED-1'),
-    ).toEqual([{ task_record_id: null }, { task_record_id: null }])
+    ).toEqual([
+      { task_record_id: 'task-ambiguous-alpha' },
+      { task_record_id: 'task-ambiguous-beta' },
+    ])
   })
 
   test('refuses with a project-scoped remedy when the hub reader fails', async () => {

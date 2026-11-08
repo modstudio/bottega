@@ -16,13 +16,9 @@ export type HubTaskReference = {
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskByKeyReader = (key: string) => Promise<HubTaskReference | null>
 
-export function taskReadRefusal(project: string | null, key: string, detail: string): Error {
-  const scope = project ? `project ${project}` : `key ${key}`
-  const command = project
-    ? `${PLATFORM_SLUG} task list --project ${project} --json`
-    : `${PLATFORM_SLUG} task show ${key} --json`
+export function taskReadRefusal(project: string, _key: string, detail: string): Error {
   return new Error(
-    `could not read task data for ${scope}: ${withholdSecretShapedDetail(detail)}; retry: ${command}`,
+    `could not read task data for project ${project}: ${withholdSecretShapedDetail(detail)}; retry: ${PLATFORM_SLUG} task list --project ${project} --json`,
   )
 }
 
@@ -63,26 +59,15 @@ export async function readHubTasks(project: string): Promise<HubTaskReference[]>
   return response.map(taskReference)
 }
 
-export function parseHubTaskResponse(response: unknown): HubTaskReference {
-  if (!response || typeof response !== 'object' || !('task' in response)) {
-    throw new Error('response did not contain a task')
-  }
-  return taskReference((response as { task: unknown }).task)
-}
-
-async function readHubTask(key: string): Promise<HubTaskReference | null> {
-  return parseHubTaskResponse(JSON.parse(await taskCommand(['task', 'show', key, '--json'])))
-}
-
 /** A reader failure is a refusal; callers with best-effort policy catch it explicitly. */
 export async function resolveHubTaskReference(
   project: string | null,
   key: string,
   reader: HubTaskReader = readHubTasks,
-  keyReader: HubTaskByKeyReader = readHubTask,
+  _keyReader?: HubTaskByKeyReader,
 ): Promise<HubTaskReference | null> {
+  if (!project) return null
   try {
-    if (!project) return await keyReader(key)
     const rows = await reader(project)
     const matches = rows.filter((task) => task.key === key && task.project === project)
     return matches.length === 1 ? matches[0]! : null
