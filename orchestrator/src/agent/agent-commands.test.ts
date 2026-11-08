@@ -134,7 +134,9 @@ test('agent set refuses capacity loss and records an allowed override', async ()
       log: () => {},
       setExitCode: () => {},
     }),
-  ).rejects.toThrow(`it would leave these jobs with no eligible agent: ${eligibleJobs.join(', ')}`)
+  ).rejects.toThrow(
+    `it would leave these jobs with no agent eligible for automatic routing: ${eligibleJobs.join(', ')}`,
+  )
   expect(db().query("SELECT model FROM agent WHERE name='codex'").get()).toEqual(current)
 
   const output: string[] = []

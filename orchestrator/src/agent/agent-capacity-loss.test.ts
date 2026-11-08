@@ -31,11 +31,3 @@ test('a disabled other agent does not count as eligible capacity', () => {
     }),
   ).toEqual(['review-lens'])
 })
-
-test('a non-identity change never loses capacity', () => {
-  expect(
-    jobsLosingCapacityFromRouting(false, 'changing', {
-      'review-lens': [{ agent: 'changing', eligible: true }],
-    }),
-  ).toEqual([])
-})

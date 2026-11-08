@@ -12,6 +12,7 @@ import {
   type AgentRow,
   agentIdentityChanged,
   agentRows,
+  type CapacityLossAudit,
   setAgent,
 } from './agent-registry.ts'
 
@@ -32,10 +33,11 @@ export function setAgentWithCapacityGuard(
   if (capacityLossJobs.length && !allowCapacityLoss) {
     throw new RefusalError(
       refusal(
-        `refusing identity change for agent "${name}": it would leave these jobs with no eligible agent: ${capacityLossJobs.join(', ')}`,
+        `refusing identity change for agent "${name}": it would leave these jobs with no agent eligible for automatic routing: ${capacityLossJobs.join(', ')}`,
         {
           kind: 'edit',
           text:
+            'this check is conservative; explicit run-start requirements may reach additional agents\n' +
             `register the new identity as a separate agent row with ${PLATFORM_SLUG} agent add, ` +
             `probe it with ${PLATFORM_SLUG} agent probe, then disable or change the old row\n` +
             'override: pass --allow-capacity-loss',
@@ -43,8 +45,8 @@ export function setAgentWithCapacityGuard(
       ),
     )
   }
-  if (capacityLossJobs.length) {
-    input.capacityLossAllowed = { jobs: capacityLossJobs, at: new Date().toISOString() }
-  }
-  return { row: setAgent(name, input), capacityLossJobs }
+  const audit: CapacityLossAudit | undefined = capacityLossJobs.length
+    ? { jobs: capacityLossJobs, at: new Date().toISOString() }
+    : undefined
+  return { row: setAgent(name, input, audit), capacityLossJobs }
 }

@@ -321,8 +321,9 @@ export type AgentMutation = {
   maxConcurrent?: number | null
   routeMetered?: boolean
   trainsOnInputs?: boolean
-  capacityLossAllowed?: { jobs: string[]; at: string }
 }
+
+export type CapacityLossAudit = { jobs: string[]; at: string }
 
 function assertApiKeySecret(value: string | null | undefined): void {
   if (value !== undefined && value !== null && !value.trim())
@@ -452,11 +453,15 @@ function storedTrainsOnInputs(current: AgentRow, input: AgentMutation): number {
   return input.trainsOnInputs ? 1 : 0
 }
 
-function capacityLossAudit(input: AgentMutation): object {
-  return input.capacityLossAllowed ? { capacityLossAllowed: input.capacityLossAllowed } : {}
+function capacityLossAudit(audit: CapacityLossAudit | undefined): object {
+  return audit ? { capacityLossAllowed: audit } : {}
 }
 
-export function setAgent(name: string, input: AgentMutation): AgentRow {
+export function setAgent(
+  name: string,
+  input: AgentMutation,
+  capacityLossAllowed?: CapacityLossAudit,
+): AgentRow {
   assertAgentMutation(input, false)
   const current = agentRows().find((row) => row.name === name)
   if (!current) throw new Error(`unknown agent "${name}"`)
@@ -493,7 +498,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
         baseUrl: input.baseUrl === undefined ? current.base_url : input.baseUrl,
         apiKeySecret: storedApiKeySecret(current, input),
       },
-      ...capacityLossAudit(input),
+      ...capacityLossAudit(capacityLossAllowed),
       attempts,
     })
   } else if (input.contextTokens !== undefined) {
@@ -591,6 +596,14 @@ export type RegistrationProbeResult = {
   billingHold?: boolean
   refusal?: string
   attempts?: { harness: string; result: unknown }[]
+  pendingIdentity?: {
+    harness: string
+    backend: string
+    model: string
+    baseUrl: string | null
+    apiKeySecret: string | null
+  }
+  capacityLossAllowed?: CapacityLossAudit
 }
 
 /** Whether the optional compaction step established a reusable boolean capability. */
