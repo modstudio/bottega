@@ -184,12 +184,7 @@ export function acquireRunLease(runId: string): KernelLease {
 
 /** Acquire a required coordinator lease while reporting launch failure to its caller. */
 export function requiredRunLease(runId: string, failed: (cause: unknown) => void): KernelLease {
-  try {
-    return acquireLease(runId, 'run', runLeaseFileName)
-  } catch (cause) {
-    failed(cause)
-    throw cause
-  }
+  return requiredLease(runId, 'run', runLeaseFileName, failed)
 }
 
 /** Acquire a required close-out lease while reporting launch failure to its caller. */

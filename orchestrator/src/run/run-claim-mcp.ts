@@ -15,7 +15,7 @@ import {
 import { wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { ensureProjectMainStack } from '../resources/main-stack.ts'
-import { recordTrustEntryClaims } from '../resources/resource-claims.ts'
+import { recordTrustEntryClaims, trustEntryClaimRow } from '../resources/resource-claims.ts'
 import {
   beginResourceStep,
   completeResourceStep,
@@ -29,7 +29,7 @@ import {
 } from '../sandbox/grok-trust.ts'
 import type { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import { noRepoIsolatePath } from './run-artifacts.ts'
-import { claimSandboxHomeStep } from './run-resource-step-recording.ts'
+import { claimSandboxHomeStep, recordsResourceSteps } from './run-resource-step-recording.ts'
 import {
   claimedGrokReaderConfig,
   prepareClaimedGrokMcpScope,
@@ -93,7 +93,8 @@ function prepareScope(input: PlanInput, project: Project) {
     repoJob: input.repoJob,
     writesJob: input.writesJob,
     harness: workerHarnessName(input.agent),
-    sandbox: 'host',
+    // The sandbox is selected after claimRun, so this path decides from the harness alone.
+    sandbox: null,
     path: input.runtimeDir,
     claimedAt: nowIso(),
     effect: prepare,
@@ -120,9 +121,14 @@ function writeTrustOutcome(
       .query('UPDATE run SET mcp_trust_path=? WHERE record_id=?')
       .run(added.length ? JSON.stringify(added) : null, input.runId)
     if (pending) {
+      const claim = trustEntryClaimRow(
+        added[0]!,
+        grokTrustStorePath(environment),
+        input.sandboxRootId,
+      )
       completeResourceStep(db(), pending, {
-        allocationKey: added[0],
-        identity: grokTrustStorePath(environment),
+        allocationKey: claim.allocationKey,
+        identity: claim.identity,
       })
     } else {
       recordTrustEntryClaims(db(), {
@@ -162,16 +168,17 @@ export function probeConnection(
   const beforeTrust = trustGranted ? grokTrustHeadings(environment) : []
   const pendingTrust =
     trustGranted &&
-    !input.writesJob &&
+    recordsResourceSteps(input) &&
     !beforeTrust.some((heading) => grokTrustPathFromHeading(heading) === input.cwd)
       ? beginResourceStep(db(), {
           rootRunId: input.sandboxRootId,
           runId: input.runId,
           projectId: input.runProjectId,
-          kind: 'trust_entry',
-          allocationKey: input.cwd,
-          identity: grokTrustStorePath(environment),
-          label: input.sandboxRootId,
+          ...trustEntryClaimRow(
+            input.cwd,
+            grokTrustStorePath(environment),
+            input.sandboxRootId,
+          ),
           claimedAt: nowIso(),
         })
       : null
@@ -211,6 +218,11 @@ export function probeConnection(
         )
       })
       throw new Error(`Grok trust for ${input.cwd} created ${added.length} entries; expected one`)
+    } else if (pendingTrust) {
+      writeTransaction(() => {
+        db().query('UPDATE run SET mcp_trust_path=NULL WHERE record_id=?').run(input.runId)
+        markResourceStepStuck(db(), pendingTrust, 'no trust heading observed', nowIso())
+      })
     } else if (!pendingTrust) recordTrust(input, environment, beforeTrust)
   }
   if (effectError) throw effectError

@@ -9,7 +9,9 @@ import type { Project } from '../project/projects.ts'
 import {
   recordCreatedWorktreeClaims,
   recordSandboxDirectoryClaim,
+  sandboxDirectoryClaimRow,
   settleClaims,
+  worktreeClaimRow,
 } from '../resources/resource-claims.ts'
 import {
   beginResourceStep,
@@ -28,22 +30,25 @@ import { prepareWorkerHomeLaunch, runScopedHome } from './run-worker-home.ts'
 export function readOnlyWorktreeStepRecorder(
   database: Database,
   input: ClaimOwner & { writesJob: boolean; claimedAt: () => string },
-): { recordPending: ((planned: Worktree) => void) | undefined; complete: () => boolean } {
+): {
+  expectsStep: boolean
+  recordPending: ((planned: Worktree) => void) | undefined
+  complete: () => boolean
+} {
   let pending: ResourceStep | null = null
   return {
+    expectsStep: !input.writesJob,
     recordPending: input.writesJob
       ? undefined
       : (planned) => {
           pending = beginResourceStep(database, {
             ...input,
-            kind: 'worktree',
-            allocationKey: planned.path,
-            identity: JSON.stringify({
-              path: planned.path,
-              head: planned.base,
-              ...(planned.sharedReader ? { sharedReader: true } : {}),
-            }),
-            label: input.runId,
+            ...worktreeClaimRow(
+              planned.path,
+              planned.base,
+              planned.sharedReader === true,
+              input.runId,
+            ),
             claimedAt: input.claimedAt(),
             shared: planned.sharedReader === true,
           })
@@ -61,7 +66,7 @@ export function recordRunWorktree(
   input: ClaimOwner & {
     coverageBase: string | null
     branch: string | null
-    steps: { complete: () => boolean }
+    steps: { expectsStep: boolean; complete: () => boolean }
   },
   created: Worktree,
 ): void {
@@ -83,7 +88,11 @@ export function recordRunWorktree(
         input.runId,
       )
     if (result.changes !== 1) throw new Error(`run ${input.runId} could not record its worktree`)
-    if (!input.steps.complete())
+    const completed = input.steps.complete()
+    if (input.steps.expectsStep && !completed) {
+      throw new Error(`run ${input.runId} created a read-only worktree without a pending resource step`)
+    }
+    if (!completed)
       recordCreatedWorktreeClaims(database, {
         ...input,
         owned: true,
@@ -106,7 +115,7 @@ export function recordRunLeaseStep<T extends { release(): void }>(
     effect: () => T
   },
 ): T {
-  if (!input.repoJob || input.writesJob) return input.effect()
+  if (!recordsResourceSteps(input)) return input.effect()
   const lease = recordResourceStep(
     database,
     {
@@ -153,21 +162,25 @@ export function requiredRecordedRunLease(
   })
 }
 
+export function recordsResourceSteps(input: { repoJob: boolean; writesJob: boolean }): boolean {
+  return input.repoJob && !input.writesJob
+}
+
 function sandboxHomeClaimMode(input: {
   repoJob: boolean
   writesJob: boolean
   harness: string
-  sandbox: RunSandbox
+  sandbox: RunSandbox | null
 }): 'step' | 'legacy' | 'none' {
-  if (!runScopedHome(input.harness, input.sandbox)) return 'none'
-  return input.repoJob && !input.writesJob ? 'step' : 'legacy'
+  if (!runScopedHome(input.harness, input.sandbox ?? 'host')) return 'none'
+  return recordsResourceSteps(input) ? 'step' : 'legacy'
 }
 
 type SandboxHomeStepInput<T> = ClaimOwner & {
   repoJob: boolean
   writesJob: boolean
   harness: string
-  sandbox: RunSandbox
+  sandbox: RunSandbox | null
   path: string
   claimedAt: string
   effect: () => T
@@ -177,10 +190,7 @@ export function claimSandboxHomeStep<T>(database: Database, input: SandboxHomeSt
   if (sandboxHomeClaimMode(input) !== 'step') return input.effect()
   const claim = {
     ...input,
-    kind: 'sandbox_dir' as const,
-    allocationKey: input.path,
-    identity: input.path,
-    label: input.rootRunId,
+    ...sandboxDirectoryClaimRow(input.path, input.rootRunId),
   }
   const step = beginResourceStep(database, claim)
   const result = input.effect()

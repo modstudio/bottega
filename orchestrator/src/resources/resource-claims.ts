@@ -124,6 +124,38 @@ export function claimKindForCreation(creation: ResourceCreation): ResourceClaimK
   }
 }
 
+export function worktreeClaimRow(
+  path: string,
+  head: string,
+  sharedReader: boolean,
+  label: string,
+) {
+  return {
+    kind: 'worktree' as const,
+    allocationKey: path,
+    identity: JSON.stringify({ path, head, ...(sharedReader ? { sharedReader: true } : {}) }),
+    label,
+  }
+}
+
+export function sandboxDirectoryClaimRow(path: string, rootRunId: string) {
+  return {
+    kind: claimKindForCreation('sandbox_directory'),
+    allocationKey: path,
+    identity: path,
+    label: rootRunId,
+  }
+}
+
+export function trustEntryClaimRow(heading: string, storePath: string, rootRunId: string) {
+  return {
+    kind: claimKindForCreation('trust_heading'),
+    allocationKey: heading,
+    identity: storePath,
+    label: rootRunId,
+  }
+}
+
 export function lowestFreePort(band: PortBand, claimedPorts: readonly number[]): number | null {
   const claimed = new Set(claimedPorts)
   for (let port = band.start; port < band.end; port++) {
@@ -232,10 +264,7 @@ export function recordSandboxDirectoryClaim(
 ): void {
   insertClaim(database, {
     ...input,
-    kind: claimKindForCreation('sandbox_directory'),
-    allocationKey: input.path,
-    identity: input.path,
-    label: String(input.rootRunId),
+    ...sandboxDirectoryClaimRow(input.path, input.rootRunId),
   })
 }
 
@@ -246,10 +275,7 @@ export function recordTrustEntryClaims(
   for (const heading of input.headings) {
     insertClaim(database, {
       ...input,
-      kind: claimKindForCreation('trust_heading'),
-      allocationKey: heading,
-      identity: input.storePath,
-      label: String(input.rootRunId),
+      ...trustEntryClaimRow(heading, input.storePath, input.rootRunId),
     })
   }
 }
@@ -581,19 +607,26 @@ export function recordCreatedWorktreeClaims(
     mintedBranch: input.mintedBranch,
   })) {
     const branch = input.mintedBranch
-    insertClaim(database, {
-      ...input,
-      kind,
-      allocationKey: kind === 'worktree' ? input.path : `refs/heads/${branch}`,
-      identity:
-        kind === 'worktree'
-          ? JSON.stringify({
-              path: input.path,
-              head: input.head,
-              ...(input.sharedReader ? { sharedReader: true } : {}),
-            })
-          : input.head,
-    })
+    insertClaim(
+      database,
+      kind === 'worktree'
+        ? {
+            ...input,
+            ...worktreeClaimRow(
+              input.path,
+              input.head,
+              input.sharedReader === true,
+              input.label,
+            ),
+            shared: input.sharedReader === true,
+          }
+        : {
+            ...input,
+            kind,
+            allocationKey: `refs/heads/${branch}`,
+            identity: input.head,
+          },
+    )
   }
 }
 

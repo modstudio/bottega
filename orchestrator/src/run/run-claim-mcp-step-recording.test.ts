@@ -100,3 +100,29 @@ test('probeConnection leaves every unexpectedly added trust heading on a stuck r
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('probeConnection marks pending trust stuck when no heading is observed', () => {
+  const runId = addRun({ agent: 'grok', job: 'understand', status: 'running' })
+  const root = mkdtempSync(join(tmpdir(), 'orch-trust-missing-'))
+  const cwd = join(root, 'tree')
+  const grokHome = join(root, 'grok')
+  mkdirSync(cwd)
+  mkdirSync(grokHome)
+  try {
+    probeConnection(probeInput(runId, cwd, root), 'fixture', { GROK_HOME: grokHome }, () => ({
+      server: 'fixture',
+      connected: true,
+      error: null,
+    }))
+    expect(
+      db()
+        .query(
+          `SELECT state,settled_detail FROM resource_claim
+           WHERE root_run_record_id=? AND kind='trust_entry'`,
+        )
+        .get(runId),
+    ).toEqual({ state: 'stuck', settled_detail: 'no trust heading observed' })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

@@ -72,7 +72,7 @@ test('recordRunWorktree keeps a writing run on the legacy claim columns', () => 
       projectId: null,
       coverageBase: null,
       branch: 'DEV-2179-writing-fixture',
-      steps: { complete: () => false },
+      steps: { expectsStep: false, complete: () => false },
     },
     {
       path: '/tmp/DEV-2179-writing-fixture',
@@ -91,6 +91,30 @@ test('recordRunWorktree keeps a writing run on the legacy claim columns', () => 
       )
       .get(runId),
   ).toEqual({ kind: 'worktree', state: 'claimed', step_no: null, lifetime: 'runtime', shared: 0 })
+})
+
+test('recordRunWorktree refuses a read-only worktree without its pending step', () => {
+  const runId = addRun({ agent: 'codex', job: 'understand', status: 'running' })
+  expect(() =>
+    recordRunWorktree(
+      db(),
+      {
+        rootRunId: runId,
+        runId,
+        projectId: null,
+        coverageBase: null,
+        branch: null,
+        steps: { expectsStep: true, complete: () => false },
+      },
+      {
+        path: '/tmp/DEV-2179-missing-pending-step',
+        branch: '',
+        base: 'fixture-base',
+        repoRoot: '/tmp/fixture-repo',
+        source: 'clone',
+      },
+    ),
+  ).toThrow(`run ${runId} created a read-only worktree without a pending resource step`)
 })
 
 test('a read-only sandbox home is pending during preparation and claimed afterwards', async () => {
