@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { DOC_SCOPES } from '../../../shared/docs.ts'
 import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import {
@@ -253,7 +254,56 @@ describe('globalCanonWriteTargets', () => {
   })
 })
 
+const revisionOperations = ['create', 'set', undefined] as const
+const revisionRows = ['present', 'absent'] as const
+const revisionExpectations = ['none', 'matching', 'stale'] as const
+const guardedRevisionScopes = new Set(['canon', 'settings', 'context'])
+
+function matrixExpectedRevision(
+  row: (typeof revisionRows)[number],
+  expectation: (typeof revisionExpectations)[number],
+): string | undefined {
+  if (expectation === 'none' || (expectation === 'matching' && row === 'absent')) return undefined
+  return expectation === 'matching' ? 'revision-2' : 'revision-1'
+}
+
+function matrixExpectedAllow(
+  scope: string,
+  op: (typeof revisionOperations)[number],
+  row: (typeof revisionRows)[number],
+  expectation: (typeof revisionExpectations)[number],
+): boolean {
+  if (op === 'create' && row === 'present') return false
+  if (expectation === 'stale') return false
+  return !(row === 'present' && expectation === 'none' && guardedRevisionScopes.has(scope))
+}
+
+const revisionMatrix = DOC_SCOPES.flatMap((scope) =>
+  revisionOperations.flatMap((op) =>
+    revisionRows.flatMap((row) =>
+      revisionExpectations.map((expectation) => ({ scope, op, row, expectation })),
+    ),
+  ),
+)
+
 describe('decideDocRevisionWrite', () => {
+  test('pins every scope, requested op, row state, and expected revision state', () => {
+    for (const { scope, op, row, expectation } of revisionMatrix) {
+      const decision = decideDocRevisionWrite({
+        current: row === 'present' ? 'revision-2' : null,
+        expected: matrixExpectedRevision(row, expectation),
+        isCreate: row === 'absent',
+        op,
+        scope,
+        subject: 'subject',
+        slug: 'slug',
+      })
+      expect(decision.allow, `${scope}/${op ?? 'implicit'}/${row}/${expectation}`).toBe(
+        matrixExpectedAllow(scope, op, row, expectation),
+      )
+    }
+  })
+
   test('requires the current revision for an existing canon doc', () => {
     expect(
       decideDocRevisionWrite({ current: 'revision-2', isCreate: false, scope: 'canon' }),

@@ -449,7 +449,7 @@ async function setDocWithOp(
         projectName,
         ...hostedDocWriteIdentity(identity),
         forceInject: input.forceInject,
-        op: requestedOp ?? (prior ? 'set' : 'create'),
+        op: requestedOp,
         id: prior?.record_id ?? undefined,
         expectedRevision: input.expectedRevision,
       }

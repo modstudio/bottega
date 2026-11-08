@@ -18,13 +18,19 @@ export function assertRevisionWrite(input: {
   expectedRevision?: string
   current: unknown
   isCreate: boolean
+  op?: Parameters<typeof decideDocRevisionWrite>[0]['op']
   scope: string
+  subject?: string | null
+  slug?: string
 }): void {
   const decision = decideDocRevisionWrite({
     expected: input.expectedRevision,
     current: input.current == null ? null : String(input.current),
     isCreate: input.isCreate,
+    op: input.op,
     scope: input.scope,
+    subject: input.subject,
+    slug: input.slug,
   })
   if (!decision.allow) throw new RecordDocError(decision.reason, 409)
 }

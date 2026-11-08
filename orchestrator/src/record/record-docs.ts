@@ -203,10 +203,9 @@ export async function upsertRecordDoc(
     `
     assertHostedReferenceUpsertAllowed(existing[0], input)
     assertRevisionWrite({
-      expectedRevision: input.expectedRevision,
+      ...input,
       current: existing[0]?.latest_revision_id,
       isCreate: !existing[0],
-      scope: input.scope,
     })
     const facts = await canonFacts(
       tx,

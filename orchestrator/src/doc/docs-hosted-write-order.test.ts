@@ -68,6 +68,7 @@ test('a hosted document upsert carries the writing session', async () => {
       reason: 'prove hosted session attribution',
     })
     expect(requests[0]?.sessionId).toBe('hosted-doc-author')
+    expect(requests[0]?.op).toBeUndefined()
   } finally {
     delete process.env.BOTTEGA_RECORD_API_URL
     if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
