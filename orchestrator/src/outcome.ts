@@ -53,12 +53,16 @@ function normalizeQuestionField(value: string | null | undefined): string {
   return (value ?? '').replace(/\p{Cf}/gu, '').trim()
 }
 
+function normalizedQuestionText(value: string | null | undefined): string {
+  return normalizeQuestionField(value)
+    .replace(/^\p{P}+|\p{P}+$/gu, '')
+    .trim()
+}
+
 /** Whether one schema-valid question contains both a decision and its consequence. */
 function isRealQuestion(item: WorkerQuestion): boolean {
   const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
-  const question = normalizeQuestionField(item.question)
-    .replace(/^\p{P}+|\p{P}+$/gu, '')
-    .trim()
+  const question = normalizedQuestionText(item.question)
   const why = normalizeQuestionField(item.why)
   return question.length > 0 && !generic.has(question.toLowerCase()) && why.length > 0
 }
@@ -75,7 +79,7 @@ export function realQuestions(r: FinalizationReply | null | undefined): WorkerQu
 function droppedQuestionReason(question: WorkerQuestionInput): string {
   const parsed = WorkerQuestionSchema.safeParse(question)
   if (!parsed.success) return parsed.error.issues.map((issue) => issue.message).join('; ')
-  const normalized = normalizeQuestionField(parsed.data.question)
+  const normalized = normalizedQuestionText(parsed.data.question)
   if (!normalized) return 'question is empty'
   if (!normalizeQuestionField(parsed.data.why)) return 'why is empty'
   return 'question is generic'

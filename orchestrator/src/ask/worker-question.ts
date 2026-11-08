@@ -42,6 +42,12 @@ const choice = z
         const names = new Set<string>()
         options.forEach((option, index) => {
           const normalizedName = normalizeWorkerQuestionChoice(option.name)
+          if (!normalizedName)
+            context.addIssue({
+              code: 'custom',
+              path: [index, 'name'],
+              message: `option ${index + 1} name is empty`,
+            })
           if (names.has(normalizedName))
             context.addIssue({
               code: 'custom',
@@ -76,7 +82,20 @@ const score = z.object({
   kind: z.literal('score'),
   question: requiredQuestion,
   why: nullableAbsent(z.string().trim()).default(''),
-  levels: z.array(z.string().trim()).min(2).max(10),
+  levels: z
+    .array(z.string().trim())
+    .min(2)
+    .max(10)
+    .superRefine((levels, context) => {
+      levels.forEach((level, index) => {
+        if (!normalizeWorkerQuestionChoice(level))
+          context.addIssue({
+            code: 'custom',
+            path: [index],
+            message: `level ${index + 1} name is empty`,
+          })
+      })
+    }),
 })
 const text = z.object({
   kind: z.literal('text'),

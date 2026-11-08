@@ -47,6 +47,8 @@ describe('worker question answerability', () => {
       'duplicate normalized option names',
       { ...choice('Alpha Choice'), options: ['Alpha Choice', ' alpha  choice '] },
     ],
+    ['empty option name', { ...choice(), options: ['', 'x'] }],
+    ['format-only option name', { ...choice(), options: ['\u200B', 'x'] }],
     [
       'score with one level',
       {
@@ -63,6 +65,15 @@ describe('worker question answerability', () => {
         question: 'How much?',
         why: 'The threshold depends on the score.',
         levels: Array.from({ length: 11 }, (_, index) => String(index)),
+      },
+    ],
+    [
+      'score with an empty level name',
+      {
+        kind: 'score',
+        question: 'How much?',
+        why: 'The threshold depends on the score.',
+        levels: ['', 'x'],
       },
     ],
   ]

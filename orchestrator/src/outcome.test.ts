@@ -40,6 +40,13 @@ describe('worker question finalization regression', () => {
     expect(result).toMatchObject({ status: 'failed', failureKind: 'contract' })
     expect(result.error).toContain('"placeholder" (question is generic)')
   })
+
+  test('a punctuation-only question names the empty drop reason', () => {
+    const result = finalize({ question: '...', why: 'A reason was claimed.' })
+
+    expect(result).toMatchObject({ status: 'failed', failureKind: 'contract' })
+    expect(result.error).toContain('"..." (question is empty)')
+  })
 })
 
 const base: OutcomeInputs = {
