@@ -14,6 +14,28 @@ export type HubTaskReference = {
   status_category?: string | null
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
+export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
+
+const projectTaskKey = (project: string, key: string) => `${project}\0${key}`
+
+export function taskKeyMap(tasks: readonly HubTaskReference[]): HubTaskKeyMap {
+  const result = new Map<string, HubTaskReference[]>()
+  for (const task of tasks) {
+    const scopedKey = projectTaskKey(task.project, task.key)
+    result.set(scopedKey, [...(result.get(scopedKey) ?? []), task])
+  }
+  return result
+}
+
+/** A task key resolves only when exactly one task in the named project has it. */
+export function taskReferenceForProjectKey(
+  tasks: HubTaskKeyMap,
+  project: string,
+  key: string,
+): HubTaskReference | null {
+  const matches = tasks.get(projectTaskKey(project, key)) ?? []
+  return matches.length === 1 ? matches[0]! : null
+}
 
 export function taskReadRefusal(project: string, detail: string): Error {
   return new Error(
@@ -67,8 +89,7 @@ export async function resolveHubTaskReference(
   if (!project) return null
   try {
     const rows = await reader(project)
-    const matches = rows.filter((task) => task.key === key && task.project === project)
-    return matches.length === 1 ? matches[0]! : null
+    return taskReferenceForProjectKey(taskKeyMap(rows), project, key)
   } catch (error) {
     throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
   }

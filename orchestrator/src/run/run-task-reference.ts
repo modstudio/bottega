@@ -1,11 +1,12 @@
 // concern: run task reference
 /** Resolves an optional durable bottega task identity without making hub availability a dispatch prerequisite. */
 
-import { projects } from '../project/projects.ts'
+import { projectForTaskKey, projects } from '../project/projects.ts'
 import {
   type HubTaskReader,
   type HubTaskReference,
   resolveHubTaskReference,
+  taskKeyMap,
 } from '../workflow/workflow-task-reference.ts'
 import { deriveNewRunLinks } from './run-task-linking.ts'
 
@@ -47,23 +48,27 @@ export async function admitNewRunReference(input: {
   probe: boolean
   hubTaskReader?: HubTaskReader
 }): Promise<{ taskRecordId: string | null; projectRecordId: string | null }> {
+  const registered = projects()
+  const projectName =
+    input.projectName ??
+    (input.key ? (projectForTaskKey(input.key, registered)?.name ?? null) : null)
   const task = input.key
-    ? await bestEffortTaskReference(input.projectName, input.key, input.hubTaskReader)
+    ? await bestEffortTaskReference(projectName, input.key, input.hubTaskReader)
     : null
-  const taskMap = new Map<string, HubTaskReference>()
-  if (task) taskMap.set(task.key, task)
+  const tasks = taskKeyMap(task ? [task] : [])
   const links = deriveNewRunLinks(
     {
       key: input.key,
       inheritedTaskRecordId: input.inheritedTaskRecordId,
       inheritedProjectRecordId: input.inheritedProjectRecordId,
+      resolvedTaskRecordId: task?.record_id,
       projectRecordId: input.projectRecordId,
       cwd: input.cwd,
       launchCwd: input.launchCwd,
       probe: input.probe,
     },
-    taskMap,
-    projects(),
+    tasks,
+    registered,
   )
   assertRunHasTaskOrProject({
     probe: input.probe,
