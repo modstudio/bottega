@@ -54,3 +54,17 @@ export function declaredExpectFailProbeLines(
         `declared expect-fail probe: ${observation.paths.join(', ')} → ${observation.passed ? 'passed' : 'failed'}`,
     )
 }
+
+/** Format omissions from the newest finished worker check for run-result readers. */
+export function lastWorkerCheckNotRunBlock(
+  uncheckedChecks: readonly { check: string; reason: string }[],
+): string | null {
+  if (uncheckedChecks.length === 0) return null
+  return [
+    'Last worker check:',
+    'not run:',
+    ...uncheckedChecks
+      .toSorted((left, right) => left.check.localeCompare(right.check))
+      .map((omission) => `- ${omission.check} (${omission.reason})`),
+  ].join('\n')
+}

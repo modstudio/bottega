@@ -9,6 +9,7 @@ import {
   type RecordedGateCandidate,
   recordedGateResult,
   selectRecordedGateResult,
+  uncheckedChecksForGateExecution,
 } from './gate-result.ts'
 
 const readerPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
@@ -227,4 +228,28 @@ test('recorded gate result lists persisted unchecked checks with reasons', () =>
   expect(formatRecordedGateResult(recorded)).toContain(
     'unchecked checks:\n- dependency audit (audit host unavailable)',
   )
+})
+
+test('unchecked-check reader returns only omissions ordered by check name', () => {
+  const projectId = insertProject('worker-check-reader', readerPath)
+  const run = insertRun(projectId, 'implement', 'worker-check-commit')
+  const gate = insertGate({
+    runId: run,
+    finishedAt: '2026-10-01T11:00:00.000Z',
+    exitCode: 0,
+    headCommit: 'worker-check-commit',
+  })
+  const insert = db().query(
+    `INSERT INTO check_execution
+      (record_id,gate_execution_record_id,check_name,wall_ms,exit_code,unchecked_reason)
+     VALUES (?,?,?,?,?,?)`,
+  )
+  insert.run(newRecordId(), gate, 'typecheck', 0, 0, 'no matching files')
+  insert.run(newRecordId(), gate, 'biome', 0, 0, 'no files to check')
+  insert.run(newRecordId(), gate, 'tests', 20, 0, null)
+
+  expect(uncheckedChecksForGateExecution(gate)).toEqual([
+    { check: 'biome', reason: 'no files to check' },
+    { check: 'typecheck', reason: 'no matching files' },
+  ])
 })

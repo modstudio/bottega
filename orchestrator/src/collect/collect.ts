@@ -22,6 +22,7 @@ import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
   declaredExpectFailProbeLines,
+  lastWorkerCheckNotRunBlock,
   observedTestsLine,
   TRUNCATED_TRANSCRIPT_BYTES,
   visibleTranscriptText,
@@ -127,6 +128,35 @@ function presentObservedTests(
   for (const probeLine of declaredExpectFailProbeLines(declaredProbes(row.record_id))) {
     presentation.error(probeLine)
   }
+}
+
+function lastWorkerCheckUncheckedChecks(
+  database: Database,
+  runRecordId: string,
+): readonly { check: string; reason: string }[] {
+  return database
+    .query<{ check: string; reason: string }, [string]>(
+      `SELECT c.check_name AS "check",c.unchecked_reason AS reason
+       FROM check_execution c
+       WHERE c.gate_execution_record_id=(
+         SELECT g.record_id FROM gate_execution g
+         WHERE g.run_record_id=? AND g.purpose='worker-check' AND g.finished_at IS NOT NULL
+         ORDER BY g.finished_at DESC,g.record_id DESC LIMIT 1
+       ) AND c.unchecked_reason IS NOT NULL
+       ORDER BY c.check_name,c.record_id`,
+    )
+    .all(runRecordId)
+}
+
+function presentLastWorkerCheckOmissions(
+  database: Database,
+  runRecordId: string,
+  presentation: CollectResultPresentation,
+): void {
+  const block = lastWorkerCheckNotRunBlock(
+    lastWorkerCheckUncheckedChecks(database, runRecordId),
+  )
+  if (block) presentation.error(block)
 }
 
 /** Resolve what an `asking` status means across the whole conversation. */
@@ -742,6 +772,7 @@ export function collectResult(
     }
   }
   presentCollectedOutput(row, output, outcome.ok, presentation)
+  presentLastWorkerCheckOmissions(database, row.record_id, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

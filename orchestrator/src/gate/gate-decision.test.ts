@@ -15,6 +15,7 @@ import {
   decideWorkerCheckEligibility,
   decideWorkerGateInput,
   formatGateRequestDecision,
+  formatGateResult,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
   GATE_OUTPUT_TAIL_BYTES,
@@ -357,4 +358,67 @@ test('gate result bounds the combined output tail and preserves timeout evidence
   expect(result.outputTail).toBe(boundedGateOutputTail(output))
   expect(result.outputTail.endsWith('tail')).toBe(true)
   expect(result.timedOut).toBe(true)
+})
+
+test('passing worker check names and lists every omitted check', () => {
+  const formatted = formatGateResult(
+    shapeGateResult({
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 25,
+      output: 'all selected checks passed',
+      purpose: 'worker-check',
+      uncheckedChecks: [
+        { check: 'typecheck', reason: 'no matching files' },
+        { check: 'biome', reason: 'no files to check' },
+      ],
+    }),
+  )
+
+  expect(formatted.split('\n')[0]).toBe('Worker check passed, 2 checks not run')
+  expect(formatted).toContain(
+    'not run:\n- biome (no files to check)\n- typecheck (no matching files)',
+  )
+})
+
+test('passing worker check with omissions never formats without the not-run block', () => {
+  const formatted = formatGateResult(
+    shapeGateResult({
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 25,
+      output: 'passed',
+      purpose: 'worker-check',
+      uncheckedChecks: [{ check: 'biome', reason: 'no files to check' }],
+    }),
+  )
+
+  expect(formatted).toStartWith('Worker check passed, 1 check not run\n')
+  expect(formatted).toContain('not run:\n- biome (no files to check)')
+})
+
+test('worker check without omissions and landing gate with omissions retain plain gate output', () => {
+  const plain = formatGateResult(
+    shapeGateResult({
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 25,
+      output: 'passed',
+      purpose: 'worker-check',
+    }),
+  )
+  const landing = formatGateResult(
+    shapeGateResult({
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 25,
+      output: 'passed',
+      purpose: 'gate',
+      uncheckedChecks: [{ check: 'biome', reason: 'no files to check' }],
+    }),
+  )
+
+  expect(plain).toBe(landing)
+  expect(plain).toStartWith('Gate exit code: 0\n')
+  expect(plain).not.toContain('not run:')
 })

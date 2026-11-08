@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { declaredExpectFailProbeLines, observedTestsLine } from './result-output.ts'
+import {
+  declaredExpectFailProbeLines,
+  lastWorkerCheckNotRunBlock,
+  observedTestsLine,
+} from './result-output.ts'
 
 test('shows observed tests and their disagreement independently of a reply', () => {
   expect(observedTestsLine({ ran: 0, passed: null, claimDisagrees: 1 })).toBe(
@@ -34,4 +38,24 @@ test('shows each declared expect-fail probe and its observed result', () => {
     'declared expect-fail probe: mutation.test.ts → failed',
     'declared expect-fail probe: one.test.ts, two.test.ts → passed',
   ])
+})
+
+test('shows omissions from the last worker check in check-name order', () => {
+  expect(
+    lastWorkerCheckNotRunBlock([
+      { check: 'typecheck', reason: 'no matching files' },
+      { check: 'biome', reason: 'no files to check' },
+    ]),
+  ).toBe(
+    [
+      'Last worker check:',
+      'not run:',
+      '- biome (no files to check)',
+      '- typecheck (no matching files)',
+    ].join('\n'),
+  )
+})
+
+test('shows nothing when the run has no worker-check omissions', () => {
+  expect(lastWorkerCheckNotRunBlock([])).toBeNull()
 })

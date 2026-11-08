@@ -60,7 +60,11 @@ import {
   RUN_GATE_WAIT_MS,
   shapeGateResult,
 } from '../gate/gate-decision.ts'
-import { formatRecordedGateResult, recordedGateResult } from '../gate/gate-result.ts'
+import {
+  formatRecordedGateResult,
+  recordedGateResult,
+  uncheckedChecksForGateExecution,
+} from '../gate/gate-result.ts'
 import { requestGateExecution } from '../gate/gate-run.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
@@ -270,6 +274,10 @@ type GateExecutionSelection = {
   finished_at: string | null
 }
 
+function gateResultUncheckedChecks(purpose: 'gate' | 'worker-check', recordId: string) {
+  return purpose === 'worker-check' ? uncheckedChecksForGateExecution(recordId) : []
+}
+
 function latestGateExecution(runId: string): GateExecutionSelection | null {
   return db()
     .query(
@@ -382,7 +390,7 @@ async function waitForGateExecution(
     if (signal.aborted) return 'The check wait stopped because the run_check call was cancelled.'
     const row = db()
       .query(
-        `SELECT g.exit_code,g.timed_out,g.elapsed_ms,g.output_tail,g.output_artifact,
+        `SELECT g.exit_code,g.timed_out,g.elapsed_ms,g.output_tail,g.output_artifact,g.purpose,
                 g.cancelled_reason,r.status,r.gate_requests_closed
          FROM gate_execution g JOIN run r ON r.record_id=g.run_record_id WHERE g.record_id=?`,
       )
@@ -392,6 +400,7 @@ async function waitForGateExecution(
       elapsed_ms: number | null
       output_tail: string | null
       output_artifact: string | null
+      purpose: 'gate' | 'worker-check'
       cancelled_reason: string | null
       status: string
       gate_requests_closed: number
@@ -420,6 +429,8 @@ async function waitForGateExecution(
           timedOut: row.timed_out === 1,
           elapsedMs: row.elapsed_ms!,
           output: row.output_tail ?? '',
+          purpose: row.purpose,
+          uncheckedChecks: gateResultUncheckedChecks(row.purpose, recordId),
           ...gateResultLogPaths(runId, requested.number, row.output_artifact),
         }),
       )

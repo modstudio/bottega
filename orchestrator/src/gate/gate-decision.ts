@@ -353,6 +353,8 @@ export type GateResult = {
   outputTail: string
   outputPath?: string
   artifactPath?: string
+  purpose?: 'gate' | 'worker-check'
+  uncheckedChecks: readonly { check: string; reason: string }[]
 }
 
 export function shapeGateResult(input: {
@@ -362,6 +364,8 @@ export function shapeGateResult(input: {
   output: string
   outputPath?: string
   artifactPath?: string
+  purpose?: 'gate' | 'worker-check'
+  uncheckedChecks?: readonly { check: string; reason: string }[]
 }): GateResult {
   return {
     exitCode: input.exitCode,
@@ -370,11 +374,29 @@ export function shapeGateResult(input: {
     outputTail: boundedGateOutputTail(input.output),
     outputPath: input.outputPath,
     artifactPath: input.artifactPath,
+    purpose: input.purpose,
+    uncheckedChecks: input.uncheckedChecks ?? [],
   }
 }
 
 export function formatGateResult(result: GateResult): string {
+  const workerOmissions = result.purpose === 'worker-check' ? result.uncheckedChecks : []
+  const passingWorkerSummary =
+    result.exitCode === 0 && !result.timedOut && workerOmissions.length > 0
+      ? [
+          `Worker check passed, ${workerOmissions.length} ${workerOmissions.length === 1 ? 'check' : 'checks'} not run`,
+        ]
+      : []
+  const notRun = workerOmissions.length
+    ? [
+        'not run:',
+        ...workerOmissions
+          .toSorted((left, right) => left.check.localeCompare(right.check))
+          .map((omission) => `- ${omission.check} (${omission.reason})`),
+      ]
+    : []
   return [
+    ...passingWorkerSummary,
     `Gate exit code: ${result.exitCode}`,
     `Timed out: ${result.timedOut}`,
     `Elapsed: ${result.elapsedMs}ms`,
@@ -386,5 +408,6 @@ export function formatGateResult(result: GateResult): string {
       : ['No gate log was created.']),
     'Combined output tail:',
     result.outputTail || '(no output)',
+    ...notRun,
   ].join('\n')
 }

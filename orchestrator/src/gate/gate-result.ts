@@ -107,15 +107,24 @@ export function recordedGateResult(runId: string): {
     { projectId: run.project_record_id, headCommit: run.head_commit },
   )
   if (!result) return { headCommit: run.head_commit, result: null }
-  const uncheckedChecks = db()
+  return {
+    headCommit: run.head_commit,
+    result: { ...result, uncheckedChecks: uncheckedChecksForGateExecution(result.recordId) },
+  }
+}
+
+/** Read every persisted omission for one gate execution in presentation order. */
+export function uncheckedChecksForGateExecution(
+  executionRecordId: string,
+): readonly { check: string; reason: string }[] {
+  return db()
     .query<{ check: string; reason: string }, [string]>(
       `SELECT check_name AS "check",unchecked_reason AS reason
        FROM check_execution
        WHERE gate_execution_record_id=? AND unchecked_reason IS NOT NULL
        ORDER BY check_name,record_id`,
     )
-    .all(result.recordId)
-  return { headCommit: run.head_commit, result: { ...result, uncheckedChecks } }
+    .all(executionRecordId)
 }
 
 export function formatRecordedGateResult(input: ReturnType<typeof recordedGateResult>): string {
