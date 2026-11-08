@@ -1,5 +1,7 @@
 import { expect } from 'bun:test'
+import type { CredentialPreference } from '../../../shared/credential.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import type { ConfigTenant } from '../../src/record/record-config.ts'
 import {
   deleteCredentialPreference,
   listCredentialPreferences,
@@ -8,7 +10,7 @@ import {
 import { succeeds } from './postgres-rls.ts'
 
 export async function proveCredentialPreferencePersistence(input: {
-  tenant: Parameters<typeof listCredentialPreferences>[0]
+  tenant: ConfigTenant
   spaceId: string
   userId: string
   otherUserId: string
@@ -43,7 +45,8 @@ export async function proveCredentialPreferencePersistence(input: {
   ).toBe('1')
   expect(
     (await listCredentialPreferences(input.tenant)).find(
-      (row) => row.provider === identity.provider && row.projectId === input.projectId,
+      (row: CredentialPreference) =>
+        row.provider === identity.provider && row.projectId === input.projectId,
     ),
   ).toMatchObject({ payer: 'shared', binding: 'space', environment: 'test' })
 

@@ -1,6 +1,7 @@
 import { expect } from 'bun:test'
+import type { recordApi } from '../../src/record/record-api.ts'
 
-type TestApp = { request(path: string, init?: RequestInit): Promise<Response> }
+type TestApp = Pick<ReturnType<typeof recordApi>, 'request'>
 
 export async function proveCredentialRouteProjectAddressing(
   appWith: (overrides: Record<string, unknown>) => TestApp,

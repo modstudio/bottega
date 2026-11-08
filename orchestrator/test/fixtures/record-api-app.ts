@@ -1,8 +1,9 @@
 import { recordApi } from '../../src/record/record-api.ts'
-import { type identity, idleRecordApiDeps, idleSubjectDeps } from './record-api.ts'
+import type { RecordIdentity } from '../../src/record/record-auth.ts'
 
 export const recordApiTestApp = (
-  session: typeof identity | null,
+  session: RecordIdentity | null,
+  fixtureDeps: Record<string, unknown>,
   overrides: Record<string, unknown> = {},
 ) => {
   const unused = () => Promise.reject(new Error('not implemented'))
@@ -43,7 +44,7 @@ export const recordApiTestApp = (
     readDoc: async () => null,
     listDocRevisions: async () => [],
     upsertDoc: async () => ({ id, revisionId: id }),
-    reorderDocs: async ({ orderedIds }) => ({ orderedIds }),
+    reorderDocs: async ({ orderedIds }: { orderedIds: string[] }) => ({ orderedIds }),
     importDoc: async () => ({ id, revisionIds: [id] }),
     importCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
     deleteDoc: async () => ({ id, revisionId: id }),
@@ -84,8 +85,7 @@ export const recordApiTestApp = (
     listMachineKeys: async () => [],
     registerMachineKey: unused,
     revokeMachineKey: async () => undefined,
-    ...idleSubjectDeps(),
-    ...idleRecordApiDeps(),
+    ...fixtureDeps,
     ...overrides,
-  })
+  } as unknown as Parameters<typeof recordApi>[0])
 }

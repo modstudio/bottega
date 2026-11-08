@@ -28,8 +28,8 @@ import {
 } from '../src/record/record-config.ts'
 import { setSpaceMemberPermission } from '../src/record/record-member-permission.ts'
 import { proveCredentialPreferencePersistence } from './fixtures/credential-preference-proof.ts'
-import { proveCredentialSecretProjectAddressing } from './fixtures/credential-secret-proof.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
+import { proveCredentialSecretProjectAddressing } from './support/credential-secret-proof.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
 const DEK_A = '01990000-0000-7000-8000-0000000000da'

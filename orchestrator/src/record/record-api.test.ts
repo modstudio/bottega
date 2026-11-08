@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { proveCredentialRouteProjectAddressing } from '../../test/fixtures/credential-route-proof.ts'
-import { identity } from '../../test/fixtures/record-api.ts'
+import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
@@ -16,7 +16,8 @@ import {
 
 const notImplemented = () => Promise.reject(new Error('not implemented'))
 
-const appWith = recordApiTestApp
+const appWith = (session: RecordIdentity | null, overrides: Record<string, unknown> = {}) =>
+  recordApiTestApp(session, { ...idleSubjectDeps(), ...idleRecordApiDeps() }, overrides)
 
 const id = '01990000-0000-7000-8000-000000000001'
 describe('record API', () => {

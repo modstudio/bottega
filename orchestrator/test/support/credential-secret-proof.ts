@@ -1,12 +1,14 @@
 import { expect } from 'bun:test'
+import type { ConfigTenant } from '../../src/record/record-config.ts'
 import {
   deleteConfigSecret,
   getConfigSecret,
   putConfigSecret,
 } from '../../src/record/record-config.ts'
+import { succeeds } from '../fixtures/postgres-rls.ts'
 
 export async function proveCredentialSecretProjectAddressing(input: {
-  tenant: Parameters<typeof getConfigSecret>[0]
+  tenant: ConfigTenant
   dekId: string
   projectId: string
   foreignProjectId: string
@@ -33,6 +35,15 @@ export async function proveCredentialSecretProjectAddressing(input: {
     envelope: Uint8Array.of(32),
     expectedRowVersion: null,
   })
+  expect(
+    succeeds(
+      'postgres',
+      'postgres',
+      `SELECT count(*) FROM config_secret
+       WHERE space_id='${input.tenant.spaceId}' AND key='ROUTED_API_KEY'
+         AND environment='test' AND user_id='${input.tenant.userId}';`,
+    ),
+  ).toBe('2')
   expect((await getConfigSecret({ ...identity, projectId: null }))?.envelope).toEqual(
     Uint8Array.of(31),
   )
