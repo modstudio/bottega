@@ -18,6 +18,7 @@ import { runProbeTurn } from './agent-probe-turn.ts'
 import {
   type AgentRow,
   agentRows,
+  compactionAnswered,
   HARNESSES,
   type Harness,
   type RegistrationProbeResult,
@@ -130,7 +131,7 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
     ...(result.schema.ok !== null ? { schema: result.schema.ok } : {}),
     ...(result.mcp?.verifiable != null ? { mcp: result.mcp.verifiable } : {}),
     ...(result.file?.ok != null ? { replyFile: result.file.ok } : {}),
-    ...(row.harness === 'goose' && typeof result.compaction?.ok === 'boolean'
+    ...(compactionProbeApplies(row) && compactionAnswered(result)
       ? { compacts: result.compaction.ok }
       : {}),
     ...(writing.writesRepo !== null ? { writesRepo: writing.writesRepo } : {}),
@@ -234,8 +235,12 @@ export function registrationProbeCacheReusable(
       writingCapabilityPolicy(transport, previous.writing?.ok).jobSuccess &&
       (!resumableRequired || resumeCapabilityPolicy(transport, previous.resuming?.ok).jobSuccess) &&
       (!mcpRequired || previous.mcp?.verifiable === true) &&
-      (!compactionRequired || previous.compaction !== undefined),
+      (!compactionRequired || compactionAnswered(previous)),
   )
+}
+
+function compactionProbeApplies(row: Pick<AgentRow, 'harness'>): boolean {
+  return row.harness === 'goose'
 }
 
 function registrationProbeShouldUseCache(
@@ -244,6 +249,7 @@ function registrationProbeShouldUseCache(
   previous: RegistrationProbeResult | null,
   resumableRequired: boolean,
   mcpRequired: boolean,
+  compactionRequired: boolean,
 ): boolean {
   if (fresh) return false
   const priorCaps = JSON.parse(row.caps) as Caps
@@ -253,7 +259,7 @@ function registrationProbeShouldUseCache(
     priorCaps.replyFile,
     resumableRequired,
     mcpRequired,
-    row.harness === 'goose',
+    compactionRequired,
   )
 }
 
@@ -344,8 +350,8 @@ function registrationProbeRunner(input: {
     runProbeTurn({ ...input, id, prompt, schema, mcp, writing, session, environment })
 }
 
-async function registrationCompactionProbe(harness: string, runOne: RegistrationProbeRunner) {
-  if (harness !== 'goose') return undefined
+async function registrationCompactionProbe(applies: boolean, runOne: RegistrationProbeRunner) {
+  if (!applies) return undefined
   return probeAgentCompacts(({ prompt, session, environment }) =>
     runOne('compaction', prompt, undefined, false, undefined, session, environment),
   )
@@ -369,6 +375,7 @@ async function registrationMcpProbeTurn(
       events: [],
       sessionId: null,
       loadSessionAdvertised: false,
+      compactions: null,
     }
   }
   return runOne('mcp', 'Call the ping MCP tool and reply with exactly its result.', undefined, true)
@@ -392,8 +399,16 @@ export async function probeAgent(
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const needs = registrationProbeRequirements(declared)
   const mcpProbeRequired = registrationProbeNeedsMcp(needs.mcp, declared !== null, row.harness)
+  const compactionApplies = compactionProbeApplies(row)
   if (
-    registrationProbeShouldUseCache(inputs.fresh, row, previous, needs.resumable, mcpProbeRequired)
+    registrationProbeShouldUseCache(
+      inputs.fresh,
+      row,
+      previous,
+      needs.resumable,
+      mcpProbeRequired,
+      compactionApplies,
+    )
   )
     return recordBudgetProbe(name, row, previous as RegistrationProbeResult)
   if (!HARNESSES.includes(row.harness as Harness))
@@ -440,7 +455,7 @@ export async function probeAgent(
     needs.schema ? schemaPath : undefined,
   )
   const mcpRun = await registrationMcpProbeTurn(runOne, mcpProbeRequired)
-  const compaction = await registrationCompactionProbe(row.harness, runOne)
+  const compaction = await registrationCompactionProbe(compactionApplies, runOne)
   const { writing, resuming } = await registrationWriterCapabilities({
     transport: row.transport,
     scratch,

@@ -586,3 +586,10 @@ export type RegistrationProbeResult = {
   refusal?: string
   attempts?: { harness: string; result: unknown }[]
 }
+
+/** Whether the optional compaction step established a reusable boolean capability. */
+export function compactionAnswered(
+  result: RegistrationProbeResult,
+): result is RegistrationProbeResult & { compaction: { ok: boolean; output: string } } {
+  return typeof result.compaction?.ok === 'boolean'
+}

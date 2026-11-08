@@ -4,7 +4,12 @@ import { join } from 'node:path'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
-import type { AgentTransport, TransportHandle, TransportResult } from '../transport/transport.ts'
+import type {
+  AgentTransport,
+  TransportHandle,
+  TransportResult,
+  TransportStartOpts,
+} from '../transport/transport.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
 import { probeEnvironment, runProbeTurn } from './agent-probe-turn.ts'
 import { BUILTIN_AGENTS } from './agents.ts'
@@ -132,6 +137,30 @@ function probeTransport(status: 'ok' | 'failed' = 'ok'): AgentTransport {
     resume: async () => handle,
   }
 }
+
+test("a probe turn's environment reaches transport start and overrides the agent value", async () => {
+  const base = probeTransport('ok')
+  let started: TransportStartOpts | null = null
+  const capturing: AgentTransport = {
+    ...base,
+    start: async (opts) => {
+      started = opts
+      return base.start(opts)
+    },
+  }
+
+  await runProbeTurn({
+    name: 'grok',
+    scratch: dir,
+    agent: { ...BUILTIN_AGENTS.grok!, env: () => ({ PROBE_OVERRIDE: 'agent' }) },
+    transport: capturing,
+    id: 'environment-override',
+    prompt: 'probe',
+    environment: { PROBE_OVERRIDE: 'turn' },
+  })
+
+  expect(started?.env.PROBE_OVERRIDE).toBe('turn')
+})
 
 test.each(['ok', 'failed'] as const)(
   'a collected %s probe turn persists its quota reading',

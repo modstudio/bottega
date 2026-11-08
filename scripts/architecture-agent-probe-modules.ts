@@ -80,6 +80,7 @@ export const agentProbeModules = [
     '../sandbox/sandbox.ts',
     '../transport/codex-quota.ts',
     '../transport/quota-readings.ts',
+    '../transport/transport-goose-context-profile.ts',
     '../transport/transport.ts',
     './agents.ts',
     './endpoint-api-key.ts',

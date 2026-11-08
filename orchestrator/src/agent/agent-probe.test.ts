@@ -98,14 +98,14 @@ test('a pre-capability Goose probe is not reused until compaction has been obser
   ).toBe(false)
 })
 
-test('an unestablished Goose compaction observation is cacheable but is not stored in caps', () => {
+test('an unestablished Goose compaction observation is not cacheable and is not stored in caps', () => {
   registered('unestablished-compaction-capability-fixture')
   const probe = result(true, true, null)
   recordAgentProbe('unestablished-compaction-capability-fixture', probe)
   expect(
     JSON.parse(registeredCaps('unestablished-compaction-capability-fixture')),
   ).not.toHaveProperty('compacts')
-  expect(registrationProbeCacheReusable('acp', probe, true, false, true, true)).toBe(true)
+  expect(registrationProbeCacheReusable('acp', probe, true, false, true, true)).toBe(false)
 })
 
 test('an observed ACP resume result sets or clears resumable', () => {

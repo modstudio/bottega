@@ -1,5 +1,13 @@
+import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { chooseProfileRequest, foldGooseContextProfile } from './transport-goose-context-profile.ts'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { dir } from '../../test/preload.ts'
+import {
+  chooseProfileRequest,
+  foldGooseContextProfile,
+  gooseSessionContextProfile,
+} from './transport-goose-context-profile.ts'
 
 test('folds system, tool, compaction, and cache context from plain Goose values', () => {
   const tools = [{ name: 'read', input_schema: { type: 'object' } }, { name: 'write' }]
@@ -41,4 +49,20 @@ test('profiles the newest request that carries tools, not a newer tool-less help
   expect(chooseProfileRequest([helper, agent, older])).toBe(agent)
   expect(chooseProfileRequest([helper])).toBe(helper)
   expect(chooseProfileRequest([])).toBeNull()
+})
+
+test('profiles compactions for only the requested Goose session', () => {
+  const gooseDir = join(dir, 'goose-session-context-profile')
+  mkdirSync(join(gooseDir, 'sessions'), { recursive: true })
+  const database = new Database(join(gooseDir, 'sessions', 'sessions.db'))
+  database.run(
+    'CREATE TABLE usage_ledger (session_id TEXT, is_compaction INTEGER, cache_read_tokens INTEGER)',
+  )
+  database.run("INSERT INTO usage_ledger VALUES ('target', 1, 12), ('other', 1, 30)")
+  database.close()
+
+  expect(gooseSessionContextProfile(gooseDir, 'target')).toMatchObject({
+    compactions: 1,
+    cacheReadTokens: 12,
+  })
 })

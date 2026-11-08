@@ -6,7 +6,7 @@ const COMPACTION_PROBE_SENTINEL = 'GOOSE_COMPACTION_PROBE_OK'
 const SECOND_TURN_FILLER = `${'x '.repeat(8_000)}\n`
 const COMPACTION_ERROR_MARKER = 'Ran into this error trying to compact'
 
-export type CompactionProbeResult = { ok: boolean | null; output: string }
+type CompactionProbeResult = { ok: boolean | null; output: string }
 
 type CompactionProbeTurn = (input: {
   prompt: string
@@ -16,6 +16,7 @@ type CompactionProbeTurn = (input: {
   status: 'ok' | 'failed' | 'asking'
   output: string
   sessionId: string | null
+  compactions: number | null
 }>
 
 /**
@@ -61,7 +62,12 @@ export async function probeAgentCompacts(
     compacted.sessionId === first.sessionId &&
     compacted.output.includes(COMPACTION_PROBE_SENTINEL)
   ) {
-    return { ok: true, output: compacted.output }
+    return compacted.compactions !== null && compacted.compactions > 0
+      ? { ok: true, output: compacted.output }
+      : {
+          ok: null,
+          output: 'Compaction capability unestablished: no compaction observed',
+        }
   }
   const reason =
     compacted.status !== 'ok'

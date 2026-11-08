@@ -12,6 +12,7 @@ import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
 import { prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
+import { gooseSessionContextProfile } from '../transport/transport-goose-context-profile.ts'
 import type {
   AgentTransport,
   NormalizedEvent,
@@ -44,6 +45,7 @@ type ProbeTurnResult = {
   events: NormalizedEvent[]
   sessionId: string | null
   loadSessionAdvertised: boolean
+  compactions: number | null
 }
 
 const probeCwd = (input: ProbeTurnInput): string =>
@@ -202,6 +204,11 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
         ...outcome,
         sessionId: outcome.sessionId,
         loadSessionAdvertised: handle.loadSessionAdvertised === true,
+        compactions:
+          input.agent.harness === 'goose' && outcome.sessionId
+            ? gooseSessionContextProfile(join(scratchDir, 'goose'), outcome.sessionId)?.compactions ??
+              null
+            : null,
       }
     } finally {
       try {
@@ -223,6 +230,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
       events: [] as NormalizedEvent[],
       sessionId: null,
       loadSessionAdvertised: false,
+      compactions: null,
     }
   }
 }
