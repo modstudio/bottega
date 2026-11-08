@@ -152,15 +152,22 @@ test('a --same-as filing labels only the named pair as a repeat', () => {
   expect(noteDuplicateLabel(db(), `${sibling}:${hash}`)).toBeNull()
 })
 
-test('a merge labels its pair only when that pair was asked', async () => {
+test('a merge asks an unasked pair and records only when an answer is available', async () => {
   const text = `merged observation ${newRecordId()}`
-  const asked = newRecordId()
-  const hash = seedPairs(text, [[asked, 'project-merge']])
   const unasked = newRecordId()
-  await recordNoteDuplicateMerge(asked, text)
-  await recordNoteDuplicateMerge(unasked, text)
-  expect(noteDuplicateLabel(db(), `${asked}:${hash}`)).toBeTrue()
+  const hash = createHash('sha256').update(text.trim()).digest('hex').slice(0, 16)
+  writeTransaction((database) => {
+    database
+      .query(
+        `INSERT INTO note (record_id,number,project,text,anchors,created_at,last_seen_at)
+         VALUES (?,1,'project-merge','existing','[]','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`,
+      )
+      .run(unasked)
+  })
+  expect(await recordNoteDuplicateMerge(unasked, text, async () => null)).toBeFalse()
   expect(noteDuplicateLabel(db(), `${unasked}:${hash}`)).toBeNull()
+  expect(await recordNoteDuplicateMerge(unasked, text, async () => ({ noul: 0.9 }))).toBeTrue()
+  expect(noteDuplicateLabel(db(), `${unasked}:${hash}`)).toBeTrue()
 })
 
 test('a filing with no refusal labels its asked pairs as not repeats until a merge says otherwise', async () => {
@@ -192,5 +199,24 @@ test('distinct uses the older note as existing and outranks later inference', as
   })
   await recordNoteDuplicateDistinct(newer, older)
   outcome(`${older}:${hash}`, true, 'same-as', '2026-02-01T00:00:00Z')
+  expect(noteDuplicateLabel(db(), `${older}:${hash}`)).toBeFalse()
+})
+
+test('distinct asks an unasked pair and records only when an answer is available', async () => {
+  const older = newRecordId()
+  const newer = newRecordId()
+  const text = `unasked distinct ${newRecordId()}`
+  const hash = createHash('sha256').update(text.trim()).digest('hex').slice(0, 16)
+  writeTransaction((database) => {
+    const insert = database.query(
+      `INSERT INTO note (record_id,number,project,text,anchors,created_at,last_seen_at)
+       VALUES (?,?,'project-distinct-unasked',?,'[]',?,?)`,
+    )
+    insert.run(older, 1, 'existing', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+    insert.run(newer, 2, text, '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z')
+  })
+  expect(await recordNoteDuplicateDistinct(newer, older, async () => null)).toBeFalse()
+  expect(noteDuplicateLabel(db(), `${older}:${hash}`)).toBeNull()
+  expect(await recordNoteDuplicateDistinct(newer, older, async () => ({ noul: 0.9 }))).toBeTrue()
   expect(noteDuplicateLabel(db(), `${older}:${hash}`)).toBeFalse()
 })

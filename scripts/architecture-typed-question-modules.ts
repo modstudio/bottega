@@ -110,14 +110,17 @@ export const typedQuestionModules = [
     '../../shared/typed-question/state-identity.ts',
     './db.ts',
     './note-duplicate-question.ts',
+    './typed-question-declarations.ts',
     './typed-question-service.ts',
   ]),
+  module('hub/src/typed-question-declarations.ts', ['./note-duplicate-question.ts']),
   module('hub/src/typed-question-report.ts', [
     'bun:sqlite',
     '../../shared/typed-question/typed-question-blocks.ts',
     '../../shared/typed-question/typed-question-render.ts',
     './db.ts',
     './note-duplicate-question.ts',
+    './typed-question-declarations.ts',
   ]),
   module('hub/src/typed-question-cli.ts', [
     '../../shared/brand.ts',

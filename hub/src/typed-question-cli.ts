@@ -36,7 +36,9 @@ export async function hubTypedQuestionBacktestCommand(
     throw new Error('--version must be a positive integer')
   const report = await noteDuplicateBacktest(version)
   if (options.json) return presentation.log(JSON.stringify(report, null, 2))
-  presentation.log(`readable ${report.readable}; unreadable ${report.unreadable}`)
+  presentation.log(
+    `readable ${report.readable}; unreadable ${report.unreadable}; unanswered ${report.unanswered}`,
+  )
   presentation.log(`label sources ${JSON.stringify(report.labelSources)}`)
   presentation.log('tuning threshold sweep')
   for (const row of report.sweep)
@@ -44,6 +46,6 @@ export async function hubTypedQuestionBacktestCommand(
       `  ${row.threshold.toFixed(2)} precision ${row.precision?.toFixed(2) ?? 'none'} recall ${row.recall?.toFixed(2) ?? 'none'} warnedRate ${row.warnedRate?.toFixed(2) ?? 'none'}`,
     )
   presentation.log(
-    `held out threshold ${report.heldOut.precision === null ? 'none' : report.heldOut.precision.toFixed(2)} precision; recall ${report.heldOut.recall?.toFixed(2) ?? 'none'}; warnedRate ${report.heldOut.warnedRate?.toFixed(2) ?? 'none'}`,
+    `held out at threshold ${report.threshold.toFixed(2)}: precision ${report.heldOut.precision?.toFixed(2) ?? 'none'}; recall ${report.heldOut.recall?.toFixed(2) ?? 'none'}; warnedRate ${report.heldOut.warnedRate?.toFixed(2) ?? 'none'}`,
   )
 }

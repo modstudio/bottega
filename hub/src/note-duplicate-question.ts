@@ -19,6 +19,7 @@ export const NOTE_DUPLICATE_QUESTION: NoulQuestion = {
 }
 
 export const NOTE_DUPLICATE_CANDIDATES = 20
+export const NOTE_PAIR_SUBJECT_KIND = 'note-pair'
 /** Hex characters of the new text's hash at the end of a note-pair subject ref. */
 const SUBJECT_REF_HASH_HEX = 16
 const NOTE_DUPLICATE_CONCURRENCY = 8
@@ -51,8 +52,18 @@ export function noteTextHash(text: string): string {
   return createHash('sha256').update(text.trim()).digest('hex').slice(0, SUBJECT_REF_HASH_HEX)
 }
 
-function notePairSubjectRef(existingRecordId: string, text: string): string {
+export function notePairSubjectRef(existingRecordId: string, text: string): string {
   return `${existingRecordId}:${noteTextHash(text)}`
+}
+
+export function parseNotePairSubjectRef(
+  subjectRef: string,
+): { existingId: string; hash: string } | null {
+  const separator = subjectRef.lastIndexOf(':')
+  if (separator < 1) return null
+  const existingId = subjectRef.slice(0, separator)
+  const hash = subjectRef.slice(separator + 1)
+  return /^[0-9a-f]{16}$/.test(hash) ? { existingId, hash } : null
 }
 
 type AskedNote<T> = { note: T; probability: number }
@@ -87,7 +98,7 @@ export async function askNoteDuplicateQuestions<T extends DuplicateQuestionNote>
       const note = candidates[index]!
       const answer = await ask({
         question: NOTE_DUPLICATE_QUESTION,
-        subjectKind: 'note-pair',
+        subjectKind: NOTE_PAIR_SUBJECT_KIND,
         subjectRef: notePairSubjectRef(note.record_id, text),
         state: { existing: note.text, new: text },
       })
@@ -188,7 +199,7 @@ async function ensurePairWasAsked(
   return Boolean(
     await ask({
       question: NOTE_DUPLICATE_QUESTION,
-      subjectKind: 'note-pair',
+      subjectKind: NOTE_PAIR_SUBJECT_KIND,
       subjectRef,
       state: { existing: existing.text, new: newText },
     }),
@@ -198,21 +209,26 @@ async function ensurePairWasAsked(
 export async function recordNoteDuplicateMerge(
   targetRecordId: string,
   sourceText: string,
-): Promise<void> {
+  ask = askHubTypedQuestion,
+): Promise<boolean> {
   const subjectRef = notePairSubjectRef(targetRecordId, sourceText)
   const target = db()
     .query<{ record_id: string; text: string }, [string]>(
       'SELECT record_id,text FROM note WHERE record_id=?',
     )
     .get(targetRecordId)
-  if (target && (await ensurePairWasAsked(target, sourceText)))
+  if (target && (await ensurePairWasAsked(target, sourceText, ask))) {
     insertOutcomes([subjectRef], true, 'merge')
+    return true
+  }
+  return false
 }
 
 export async function recordNoteDuplicateDistinct(
   firstRecordId: string,
   secondRecordId: string,
-): Promise<void> {
+  ask = askHubTypedQuestion,
+): Promise<boolean> {
   if (firstRecordId === secondRecordId) throw new Error('a note cannot be distinct from itself')
   const notes = db()
     .query<
@@ -229,17 +245,27 @@ export async function recordNoteDuplicateDistinct(
       left.record_id.localeCompare(right.record_id),
   )
   const [existing, newer] = notes as [(typeof notes)[number], (typeof notes)[number]]
-  if (await ensurePairWasAsked(existing, newer.text))
+  if (await ensurePairWasAsked(existing, newer.text, ask)) {
     insertOutcomes([notePairSubjectRef(existing.record_id, newer.text)], false, 'distinct')
+    return true
+  }
+  return false
 }
 
-export function noteDuplicateLabel(database: Database, subjectRef: string): boolean | null {
+export function noteDuplicateGoverningOutcome(
+  database: Database,
+  subjectRef: string,
+): { label: boolean; source: NoteDuplicateOutcomeSource } | null {
   const row = database
-    .query<{ label: number }, [string, number, string]>(
-      `SELECT label FROM typed_question_outcome
+    .query<{ label: number; source: NoteDuplicateOutcomeSource }, [string, number, string]>(
+      `SELECT label,source FROM typed_question_outcome
        WHERE question_id=? AND question_version=? AND subject_ref=?
        ORDER BY (source IN ('merge','distinct')) DESC, created_at DESC, record_id DESC LIMIT 1`,
     )
     .get(NOTE_DUPLICATE_QUESTION.id, NOTE_DUPLICATE_QUESTION.version, subjectRef)
-  return row ? Boolean(row.label) : null
+  return row ? { label: Boolean(row.label), source: row.source } : null
+}
+
+export function noteDuplicateLabel(database: Database, subjectRef: string): boolean | null {
+  return noteDuplicateGoverningOutcome(database, subjectRef)?.label ?? null
 }

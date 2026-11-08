@@ -195,11 +195,17 @@ function registerNoteReferenceCommands(note: Command): void {
     .option('--project <name>', 'resolve both notes in this project')
     .action(async (a, b, options: NoteOptions) => {
       open()
-      await recordNoteDuplicateDistinct(
+      const recorded = await recordNoteDuplicateDistinct(
         reference(a, options.project),
         reference(b, options.project),
       )
-      console.log('notes recorded as distinct')
+      if (recorded) console.log('notes recorded as distinct')
+      else {
+        console.error(
+          'no note-duplicate answer is available, so the distinct ruling was not recorded; check TYPESAFE_KEY and retry',
+        )
+        process.exitCode = 1
+      }
     })
   note
     .command('same <target> <source>')
