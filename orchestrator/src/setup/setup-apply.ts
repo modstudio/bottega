@@ -43,6 +43,7 @@ type SetupAppliedActionStatus = Extract<SetupActionStatus, 'applied' | 'unchange
 export type SetupActionResult = SetupAction & {
   status: SetupActionStatus
   message: string | null
+  condition?: 'waiting-for-sign-in'
 }
 
 export type SetupProjectService = {
@@ -62,13 +63,18 @@ export type SetupEnvironmentService = {
   migrateEnvironment(prepared?: PreparedStateFileMigration | null): Promise<{
     status: SetupAppliedActionStatus
     message: string | null
+    condition?: 'waiting-for-sign-in'
   }>
   setMachineLevel?(level: MachineLevel): void
   setGlobalUse?(value: 'on' | 'off'): void
 }
 
 export function setupResultsRequireAttention(results: readonly SetupActionResult[]): boolean {
-  return results.some((result) => result.status === 'refused' || result.status === 'follow-up')
+  return results.some(
+    (result) =>
+      result.status === 'refused' ||
+      (result.status === 'follow-up' && result.condition !== 'waiting-for-sign-in'),
+  )
 }
 
 type CreatedRecipe = { path: string; device: number; inode: number; contentHash: string }
@@ -317,6 +323,7 @@ async function applySetupAction(
 ): Promise<{
   status: SetupAppliedActionStatus
   message: string | null
+  condition?: 'waiting-for-sign-in'
 }> {
   if (action.kind === 'migrate-environment') {
     return environment.migrateEnvironment(preparedStateFileMigration)
