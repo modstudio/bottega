@@ -1,8 +1,9 @@
 // concern: routing-evidence-query
 /** Reads only the current-model evidence window consumed by routing. */
+import { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE, NOT_EVIDENCE_SQL } from '../failure/failure.ts'
-import { evidenceModel, evidenceModelSql, isOpenRouterBaseUrl } from './evidence-model.ts'
+import { evidenceModel, evidenceModelSql } from './evidence-model.ts'
 import { promptBucketSql } from './prompt-size-bucket.ts'
 import { weightCase } from './route-selection.ts'
 import { POOL_ROUTING_EVIDENCE_ROWS_SQL, poolScopeParams } from './routing-pool-evidence.ts'

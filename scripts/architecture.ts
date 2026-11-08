@@ -552,6 +552,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [
+    '../agent/openrouter.ts',
     '../database/db.ts',
     '../route/evidence-model.ts',
     './review-vocabulary.ts',

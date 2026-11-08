@@ -6,8 +6,6 @@ import { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
 const ROUTING_VARIANTS = ['floor', 'nitro', 'exacto'] as const
 const ROUTING_VARIANT_SET = new Set<string>(ROUTING_VARIANTS)
 
-export { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
-
 /** OpenRouter routing variants select providers, while every other suffix remains model identity. */
 export function evidenceModel(model: string, baseUrl: string | null | undefined): string {
   if (!isOpenRouterBaseUrl(baseUrl)) return model

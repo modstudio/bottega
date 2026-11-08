@@ -217,6 +217,7 @@ export const runModuleSpecs = [
   {
     file: 'orchestrator/src/route/routing-evidence-query.ts',
     allowed: [
+      '../agent/openrouter.ts',
       '../database/db.ts',
       '../failure/failure.ts',
       './evidence-model.ts',

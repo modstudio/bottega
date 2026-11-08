@@ -1,7 +1,8 @@
 // concern: review-calibration
 import type { Database } from 'bun:sqlite'
+import { isOpenRouterBaseUrl } from '../agent/openrouter.ts'
 import { db } from '../database/db.ts'
-import { evidenceModel, evidenceModelSql, isOpenRouterBaseUrl } from '../route/evidence-model.ts'
+import { evidenceModel, evidenceModelSql } from '../route/evidence-model.ts'
 import { median } from '../state/statistics.ts'
 import { completedReviewEvidenceSql, REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { MIN_REVIEW_TRIAGED } from './review-triage.ts'
