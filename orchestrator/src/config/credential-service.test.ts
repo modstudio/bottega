@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
-import { generateMachineKeyPair } from '../../../shared/secret-envelope.ts'
 import { writeMachineKey } from '../../../shared/machine-key-store.ts'
-import { deleteCredential, setCredential, type CredentialAddress } from './credential-service.ts'
+import { generateMachineKeyPair } from '../../../shared/secret-envelope.ts'
+import { type CredentialAddress, deleteCredential, setCredential } from './credential-service.ts'
 
 let root: string
 let previousConfigHome: string | undefined

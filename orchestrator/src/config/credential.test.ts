@@ -3,8 +3,8 @@ import {
   type CredentialCandidate,
   credentialDisplayName,
   credentialHint,
-  parseCredentialSlot,
   credentialVariableName,
+  parseCredentialSlot,
   resolveCredential,
 } from './credential.ts'
 

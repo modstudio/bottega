@@ -2,14 +2,14 @@
 /** Pure credential identity, presentation, hint, and payer-resolution rules. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { CREDENTIAL_BINDINGS, CREDENTIAL_PAYERS } from '../../../shared/credential.ts'
 import type {
-  CredentialEnvironment,
   CredentialBinding,
+  CredentialEnvironment,
   CredentialIdentity,
   CredentialPayer,
   CredentialPreferencePayload,
 } from '../../../shared/credential.ts'
+import { CREDENTIAL_BINDINGS, CREDENTIAL_PAYERS } from '../../../shared/credential.ts'
 
 const CREDENTIAL_HINT_MIN_LENGTH = 20
 

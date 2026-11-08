@@ -14,7 +14,6 @@ import {
   createMachineKeyClaimChallenge,
   deleteConfigEntry,
   deleteConfigSecret,
-  getConfigSecret,
   getDataKey,
   grantSpaceConfigAccess,
   listConfigEntries,
@@ -27,12 +26,9 @@ import {
   retireDataKey,
   revokeMachineKey,
 } from '../src/record/record-config.ts'
-import {
-  deleteCredentialPreference,
-  listCredentialPreferences,
-  putCredentialPreference,
-} from '../src/record/record-credential.ts'
 import { setSpaceMemberPermission } from '../src/record/record-member-permission.ts'
+import { proveCredentialPreferencePersistence } from './fixtures/credential-preference-proof.ts'
+import { proveCredentialSecretProjectAddressing } from './fixtures/credential-secret-proof.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 
 const USER_B = '01990000-0000-7000-8000-000000000020'
@@ -531,130 +527,22 @@ export function registerHostedConfigProofs(
   })
 
   test('config secret service addresses space and project bindings independently', async () => {
-    const identity = {
-      ...serviceTenant,
-      key: 'ROUTED_API_KEY',
-      environment: 'test',
-      scope: 'user' as const,
+    await proveCredentialSecretProjectAddressing({
+      tenant: serviceTenant,
       dekId: DEK_A,
-      provider: 'routed',
-      type: 'api-key',
-      hint: 'rout…hint',
-    }
-    const spaceRow = await putConfigSecret({
-      ...identity,
-      projectId: null,
-      envelope: Uint8Array.of(31),
-      expectedRowVersion: null,
-    })
-    const projectRow = await putConfigSecret({
-      ...identity,
       projectId: PROJECT_A,
-      envelope: Uint8Array.of(32),
-      expectedRowVersion: null,
+      foreignProjectId: PROJECT_B,
     })
-    expect((await getConfigSecret({ ...identity, projectId: null }))?.envelope).toEqual(
-      Uint8Array.of(31),
-    )
-    expect((await getConfigSecret({ ...identity, projectId: PROJECT_A }))?.envelope).toEqual(
-      Uint8Array.of(32),
-    )
-
-    await putConfigSecret({
-      ...identity,
-      projectId: PROJECT_A,
-      envelope: Uint8Array.of(33),
-      expectedRowVersion: projectRow.rowVersion,
-    })
-    expect((await getConfigSecret({ ...identity, projectId: null }))?.rowVersion).toBe(
-      spaceRow.rowVersion,
-    )
-    await putConfigSecret({
-      ...identity,
-      projectId: null,
-      envelope: Uint8Array.of(34),
-      expectedRowVersion: spaceRow.rowVersion,
-    })
-    expect((await getConfigSecret({ ...identity, projectId: PROJECT_A }))?.rowVersion).toBe(2)
-
-    await deleteConfigSecret({
-      ...identity,
-      projectId: PROJECT_A,
-      expectedRowVersion: 2,
-    })
-    expect(await getConfigSecret({ ...identity, projectId: PROJECT_A })).toBeNull()
-    expect(await getConfigSecret({ ...identity, projectId: null })).not.toBeNull()
-    await deleteConfigSecret({ ...identity, projectId: null, expectedRowVersion: 2 })
-    expect(await getConfigSecret({ ...identity, projectId: null })).toBeNull()
-
-    await expect(
-      putConfigSecret({
-        ...identity,
-        projectId: PROJECT_B,
-        envelope: Uint8Array.of(35),
-        expectedRowVersion: null,
-      }),
-    ).rejects.toMatchObject({ status: 422 })
   })
 
   test('credential payer preferences update, list, and delete only the addressed user slot', async () => {
-    const identity = {
-      ...serviceTenant,
-      provider: 'preference-proof',
-      type: 'api-key',
-      environment: 'test' as const,
-    }
-    await putCredentialPreference({
-      ...identity,
+    await proveCredentialPreferencePersistence({
+      tenant: serviceTenant,
+      spaceId: spaceA,
+      userId: userA,
+      otherUserId: USER_B,
       projectId: PROJECT_A,
-      payer: 'personal',
-      binding: 'project',
     })
-    await putCredentialPreference({
-      ...identity,
-      projectId: PROJECT_A,
-      payer: 'shared',
-      binding: 'space',
-    })
-    expect(
-      succeeds(
-        'postgres',
-        'postgres',
-        `SELECT count(*) FROM credential_payer_preference
-         WHERE space_id='${spaceA}' AND user_id='${userA}' AND project_id='${PROJECT_A}'
-           AND provider='preference-proof' AND type='api-key' AND environment='test';`,
-      ),
-    ).toBe('1')
-    expect(
-      (await listCredentialPreferences(serviceTenant)).find(
-        (row) => row.provider === identity.provider && row.projectId === PROJECT_A,
-      ),
-    ).toMatchObject({ payer: 'shared', binding: 'space', environment: 'test' })
-
-    await putCredentialPreference({
-      ...identity,
-      projectId: null,
-      payer: 'personal',
-      binding: 'space',
-    })
-    succeeds(
-      'postgres',
-      'postgres',
-      `INSERT INTO credential_payer_preference
-       (id,space_id,user_id,project_id,provider,type,environment,preferred_payer,preferred_binding,updated_at)
-       VALUES ('${newRecordId()}','${spaceA}','${USER_B}',NULL,'preference-proof','api-key','test','shared','space',now());`,
-    )
-    await deleteCredentialPreference({ ...identity, projectId: PROJECT_A })
-    await deleteCredentialPreference({ ...identity, projectId: null })
-    expect(
-      succeeds(
-        'postgres',
-        'postgres',
-        `SELECT user_id FROM credential_payer_preference
-         WHERE space_id='${spaceA}' AND provider='preference-proof'
-         ORDER BY user_id;`,
-      ),
-    ).toBe(USER_B)
   })
 
   test('config service refuses foreign and retired data keys for secret writes', async () => {

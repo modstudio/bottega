@@ -1,0 +1,74 @@
+import { expect } from 'bun:test'
+import {
+  deleteConfigSecret,
+  getConfigSecret,
+  putConfigSecret,
+} from '../../src/record/record-config.ts'
+
+export async function proveCredentialSecretProjectAddressing(input: {
+  tenant: Parameters<typeof getConfigSecret>[0]
+  dekId: string
+  projectId: string
+  foreignProjectId: string
+}): Promise<void> {
+  const identity = {
+    ...input.tenant,
+    key: 'ROUTED_API_KEY',
+    environment: 'test',
+    scope: 'user' as const,
+    dekId: input.dekId,
+    provider: 'routed',
+    type: 'api-key',
+    hint: 'rout…hint',
+  }
+  const spaceRow = await putConfigSecret({
+    ...identity,
+    projectId: null,
+    envelope: Uint8Array.of(31),
+    expectedRowVersion: null,
+  })
+  const projectRow = await putConfigSecret({
+    ...identity,
+    projectId: input.projectId,
+    envelope: Uint8Array.of(32),
+    expectedRowVersion: null,
+  })
+  expect((await getConfigSecret({ ...identity, projectId: null }))?.envelope).toEqual(
+    Uint8Array.of(31),
+  )
+  expect((await getConfigSecret({ ...identity, projectId: input.projectId }))?.envelope).toEqual(
+    Uint8Array.of(32),
+  )
+
+  await putConfigSecret({
+    ...identity,
+    projectId: input.projectId,
+    envelope: Uint8Array.of(33),
+    expectedRowVersion: projectRow.rowVersion,
+  })
+  expect((await getConfigSecret({ ...identity, projectId: null }))?.rowVersion).toBe(
+    spaceRow.rowVersion,
+  )
+  await putConfigSecret({
+    ...identity,
+    projectId: null,
+    envelope: Uint8Array.of(34),
+    expectedRowVersion: spaceRow.rowVersion,
+  })
+  expect((await getConfigSecret({ ...identity, projectId: input.projectId }))?.rowVersion).toBe(2)
+
+  await deleteConfigSecret({ ...identity, projectId: input.projectId, expectedRowVersion: 2 })
+  expect(await getConfigSecret({ ...identity, projectId: input.projectId })).toBeNull()
+  expect(await getConfigSecret({ ...identity, projectId: null })).not.toBeNull()
+  await deleteConfigSecret({ ...identity, projectId: null, expectedRowVersion: 2 })
+  expect(await getConfigSecret({ ...identity, projectId: null })).toBeNull()
+
+  await expect(
+    putConfigSecret({
+      ...identity,
+      projectId: input.foreignProjectId,
+      envelope: Uint8Array.of(35),
+      expectedRowVersion: null,
+    }),
+  ).rejects.toMatchObject({ status: 422 })
+}

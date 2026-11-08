@@ -17,8 +17,8 @@ import {
 import {
   credentialDisplayName,
   credentialPayerFromScope,
-  parseCredentialSlot,
   credentialSlot,
+  parseCredentialSlot,
   resolveCredential,
 } from '../config/credential.ts'
 import {

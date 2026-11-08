@@ -225,6 +225,9 @@ const configBody = z.object({
   scope: configScopeSchema,
   expectedRowVersion: expectedVersionSchema.nullable(),
 })
+const configSecretDeleteBody = configBody
+  .omit({ expectedRowVersion: true })
+  .extend({ expectedRowVersion: expectedVersionSchema })
 const wrapSchema = z.object({
   recipientKeyId: keyIdSchema,
   senderKeyId: keyIdSchema,
@@ -451,10 +454,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.delete('/v1/config/entries/:key', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)
-    const body = configBody
-      .omit({ expectedRowVersion: true })
-      .extend({ expectedRowVersion: expectedVersionSchema })
-      .safeParse(await context.req.json().catch(() => null))
+    const body = configSecretDeleteBody.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config entry delete body' }, 422)
     try {
       await deps.deleteConfigEntry({
@@ -490,10 +490,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       ? context.json({ ...item, envelope: encoded(item.envelope) })
       : context.json({ error: 'config secret not found' }, 404)
   })
-  /**
-   * The envelope must be sealed for the NEW row version: expectedRowVersion + 1 on update,
-   * or version 1 on create. The authenticated data binds that authoritative row_version.
-   */
   app.put('/v1/config/secrets/:key', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)

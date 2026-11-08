@@ -1,9 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import { proveCredentialRouteProjectAddressing } from '../../test/fixtures/credential-route-proof.ts'
+import { identity } from '../../test/fixtures/record-api.ts'
+import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import type { OwnedSettings } from '../settings/settings.ts'
 import { editSettingsPermission } from '../settings/settings-permission.ts'
-import { recordApi, SNAPSHOT_MAX_BYTES } from './record-api.ts'
+import { SNAPSHOT_MAX_BYTES } from './record-api.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { RecordDocError } from './record-docs.ts'
@@ -14,88 +16,7 @@ import {
 
 const notImplemented = () => Promise.reject(new Error('not implemented'))
 
-const appWith = (session: typeof identity | null, overrides: Record<string, unknown> = {}) =>
-  recordApi({
-    recordUrl: 'postgres://record.test/record',
-    auth: { handler: () => Response.json({ handled: true }) },
-    readSession: async () => session,
-    setActiveSpace: async () => undefined,
-    readHealth: async () => ({ ok: true, migrations: 14 }),
-    readCommit: () => undefined,
-    readRuns: async () => [],
-    readRunsWindow: async (input: { offset: number; limit: 25 | 50 | 100 }) => ({
-      items: [],
-      matched: 0,
-      offset: input.offset,
-      limit: input.limit,
-      facets: { agents: [], projects: [] },
-      totals: { runs: 0, scored: 0, voided: 0, failed: 0 },
-      vendors: [],
-      unscored: 0,
-      live: [],
-    }),
-    readRun: async () => null,
-    listRoutingEvidence: async () => [],
-    readReviews: async () => [],
-    readReview: async () => null,
-    readReleases: async () => [],
-    readLatestReleases: async () => [],
-    readProjects: async () => [],
-    upsertProject: async () => ({ id, name: 'one' }),
-    retireProject: async () => ({ name: 'one' }),
-    listDocs: async () => [],
-    listPublicDocs: async () => [],
-    readPublicDoc: async () => null,
-    searchPublicDocs: async () => [],
-    searchDocs: async () => [],
-    readDoc: async () => null,
-    listDocRevisions: async () => [],
-    upsertDoc: async () => ({ id, revisionId: id }),
-    reorderDocs: async ({ orderedIds }) => ({ orderedIds }),
-    importDoc: async () => ({ id, revisionIds: [id] }),
-    importCanon: async () => ({ rows: [], deletions: [], findings: [], bootstrap: false }),
-    deleteDoc: async () => ({ id, revisionId: id }),
-    consumeDoc: async () => ({ id, revisionId: id, alreadyConsumed: false }),
-    restoreDoc: async () => ({ id, revisionId: id }),
-    renameDocSubject: async () => ({ docs: 0, revisions: 0 }),
-    countDocs: async () => ({ docs: 0, revisions: 0 }),
-    applySettingsPermission: async () => ({
-      revision: id,
-      permissions: { allow: [], ask: [], deny: [] },
-    }),
-    applySettingsAutoMode: async () => ({
-      revision: id,
-      autoMode: { allow: [], soft_deny: [], hard_deny: [], environment: [] },
-    }),
-    upsertScore: async () => undefined,
-    voidRun: async () => undefined,
-    unvoidRun: async () => undefined,
-    listScores: async () => [],
-    countScores: async () => ({ scores: 0, voids: 0 }),
-    upsertSnapshot: async () => ({ takenAt: '2026-09-17T12:00:00.000Z' }),
-    listSnapshots: async () => [],
-    listConfigEntries: async () => [],
-    getConfigEntry: async () => null,
-    putConfigEntry: notImplemented,
-    deleteConfigEntry: async () => undefined,
-    listConfigSecrets: async () => [],
-    getConfigSecret: async () => null,
-    putConfigSecret: notImplemented,
-    deleteConfigSecret: async () => undefined,
-    currentDataKey: async () => null,
-    listDataKeys: async () => [],
-    getDataKey: async () => null,
-    createDataKey: async () => ({ id, version: 1 }),
-    addDataKeyWraps: async () => undefined,
-    retireDataKey: async () => undefined,
-    deleteDataKeyWraps: async () => undefined,
-    listMachineKeys: async () => [],
-    registerMachineKey: notImplemented,
-    revokeMachineKey: async () => undefined,
-    ...idleSubjectDeps(),
-    ...idleRecordApiDeps(),
-    ...overrides,
-  })
+const appWith = recordApiTestApp
 
 const id = '01990000-0000-7000-8000-000000000001'
 describe('record API', () => {
@@ -749,62 +670,7 @@ describe('record API', () => {
 
 describe('record config API', () => {
   test('secret GET and DELETE address project-bound rows by projectId', async () => {
-    const base = {
-      id: '01990000-0000-7000-8000-000000000010',
-      key: 'OPENROUTER_API_KEY',
-      environment: 'default',
-      scope: 'user' as const,
-      provider: 'openrouter',
-      type: 'api-key',
-      hint: 'open…test',
-      dekId: '01990000-0000-7000-8000-000000000011',
-      rowVersion: 1,
-      updatedAt: '2026-11-08T12:00:00.000Z',
-    }
-    let spacePresent = true
-    let projectPresent = true
-    const getConfigSecret = async (input: { projectId?: string }) => {
-      const isProject = input.projectId === id
-      if ((isProject && !projectPresent) || (!isProject && !spacePresent)) return null
-      return {
-        ...base,
-        id: isProject ? base.id : '01990000-0000-7000-8000-000000000012',
-        projectId: isProject ? id : null,
-        envelope: Uint8Array.of(isProject ? 2 : 1),
-      }
-    }
-    const deleteConfigSecret = async (input: { projectId?: string }) => {
-      if (input.projectId === id) projectPresent = false
-      else spacePresent = false
-    }
-    const app = appWith(identity, { getConfigSecret, deleteConfigSecret })
-    const query = `environment=default&scope=user&projectId=${id}`
-    const projectRead = await app.request(`/v1/config/secrets/${base.key}?${query}`)
-    expect(projectRead.status).toBe(200)
-    expect(await projectRead.json()).toMatchObject({ projectId: id, envelope: 'Ag' })
-
-    const body = JSON.stringify({ environment: 'default', scope: 'user', expectedRowVersion: 1 })
-    expect(
-      (
-        await app.request(`/v1/config/secrets/${base.key}`, {
-          method: 'DELETE',
-          headers: { 'content-type': 'application/json' },
-          body,
-        })
-      ).status,
-    ).toBe(200)
-    expect({ spacePresent, projectPresent }).toEqual({ spacePresent: false, projectPresent: true })
-
-    expect(
-      (
-        await app.request(`/v1/config/secrets/${base.key}?projectId=${id}`, {
-          method: 'DELETE',
-          headers: { 'content-type': 'application/json' },
-          body,
-        })
-      ).status,
-    ).toBe(200)
-    expect(projectPresent).toBe(false)
+    await proveCredentialRouteProjectAddressing((overrides) => appWith(identity, overrides), id)
   })
 
   test('secret listing is metadata-only and secret reads encode opaque envelopes', async () => {

@@ -9,9 +9,9 @@ import {
   configClient,
 } from '../../../shared/config-client.ts'
 import {
+  type CompleteCredentialFields,
   CREDENTIAL_ENVIRONMENTS,
   completeCredentialFields,
-  type CompleteCredentialFields,
 } from '../../../shared/credential.ts'
 import { stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
