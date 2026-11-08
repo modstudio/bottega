@@ -5,6 +5,8 @@ import {
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
   hostedAccessLogLine,
 } from '../../../shared/hosted-server.ts'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { renameHostedMachine, retireHostedMachine } from './machine-name-record.ts'
 import { recordApi } from './record-api.ts'
@@ -106,6 +108,10 @@ import {
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
 import { closeRecordPools } from './record-pool.ts'
 import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
+import {
+  classifyProjectWriteRefusal,
+  isProjectRowLevelSecurityViolation,
+} from './record-project-space-refusal.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import {
   getPublicRecordDoc,
@@ -356,7 +362,31 @@ function recordProjectDependencies() {
   return {
     readProjects: listRecordProjects,
     readTaskFlow: readRecordTaskFlow,
-    upsertProject: upsertRecordProject,
+    upsertProject: async (input: Parameters<typeof upsertRecordProject>[0]) => {
+      try {
+        return await upsertRecordProject(input)
+      } catch (error) {
+        if (!isProjectRowLevelSecurityViolation(error)) throw error
+        let identity: Awaited<ReturnType<typeof recordIdentity>>
+        try {
+          identity = await recordIdentity(input.url, { id: input.userId }, input.spaceId)
+        } catch {
+          throw error
+        }
+        const hasWriteMembership = recordSpaceAccessDecision(
+          'write',
+          input.spaceId,
+          parseRecordSpaceMemberships(identity.memberships),
+        ).allowed
+        const refusal = classifyProjectWriteRefusal(error, hasWriteMembership, {
+          projectId: input.id,
+          projectName: input.name,
+          spaceId: input.spaceId,
+        })
+        if (refusal) throw refusal
+        throw error
+      }
+    },
     retireProject: retireRecordProject,
   }
 }

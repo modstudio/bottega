@@ -54,6 +54,7 @@ import {
   responseMessage,
   responseRecord,
 } from './record-api-client-response.ts'
+import { parseProjectSpaceConflictResponse } from './record-project-space-refusal.ts'
 
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
@@ -481,6 +482,8 @@ function recordApiServerError(message: string, status: number): RecordApiRequest
 
 function recordApiError(body: unknown, status: number, headers: Headers = new Headers()): Error {
   if (status === 401) return recordAuthRefusal(status, body, headers)
+  const projectSpaceConflict = parseProjectSpaceConflictResponse(body, status)
+  if (projectSpaceConflict) return projectSpaceConflict
   const message = responseMessage(body, recordApiStatus(status))
   if (status === 429) return new RecordApiRequestError(message, 'refused', status)
   if (message === RECORD_ACTIVE_SPACE_REMEDY)

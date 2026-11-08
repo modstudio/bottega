@@ -56,6 +56,10 @@ export const projectModules: ProjectModule[] = [
     '../record/record-write-authority.ts',
     './project-settings.ts',
   ]),
+  module('orchestrator/src/project/project-push-refusal.ts', [
+    '../../../shared/record-space-membership.ts',
+    '../record/record-project-space-refusal.ts',
+  ]),
   module('orchestrator/src/project/project-record-identity.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
