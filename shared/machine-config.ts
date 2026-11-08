@@ -128,6 +128,16 @@ export const MACHINE_CONFIG = {
         : 'value must be a number from 0 to 1'
     },
   },
+  'jev.fit_threshold': {
+    type: 'string',
+    default: '0.7',
+    validator: (value) => {
+      const threshold = Number(value)
+      return Number.isFinite(threshold) && threshold >= 0 && threshold <= 1
+        ? null
+        : 'value must be a number from 0 to 1'
+    },
+  },
   'jev.auto_rule': { type: 'string', default: 'off', values: ['on', 'off'] },
   'prose.check': { type: 'string', default: 'on', values: ['on', 'off'] },
   // The spare-hands lane: best-effort nightly jobs for free-tier agents only.

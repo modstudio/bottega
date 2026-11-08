@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'bun:test'
-import { routeJevAnswer } from './jev-routing.ts'
+import { routeJevAnswer as route } from './jev-routing.ts'
+
+const routeJevAnswer = (
+  input: Omit<
+    Parameters<typeof route>[0],
+    'fits' | 'orderFlipped' | 'bothOrdersAnswered' | 'fitThreshold'
+  > &
+    Partial<
+      Pick<
+        Parameters<typeof route>[0],
+        'fits' | 'orderFlipped' | 'bothOrdersAnswered' | 'fitThreshold'
+      >
+    >,
+) => route({ fits: 1, orderFlipped: false, bothOrdersAnswered: true, fitThreshold: 0.7, ...input })
 
 const choice = {
   kind: 'choice' as const,
@@ -156,5 +169,41 @@ describe('Jev worker-question routing', () => {
       probabilities: { a: 1, b: 0 },
       confidence: 1,
     })
+  })
+
+  test.each([
+    { fits: 1, orderFlipped: true, bothOrdersAnswered: true, label: 'an order flip' },
+    { fits: 0.69, orderFlipped: false, bothOrdersAnswered: true, label: 'fit below threshold' },
+    { fits: null, orderFlipped: false, bothOrdersAnswered: true, label: 'missing fit' },
+  ])('escalates for $label', ({ fits, orderFlipped, bothOrdersAnswered }) => {
+    expect(
+      routeJevAnswer({
+        question: choice,
+        answer: { choice: 'a', confidence: 1, probabilities: { a: 1, b: 0 } },
+        threshold: 0.9,
+        rulings: 'agent',
+        autoRule: true,
+        canResume: true,
+        fits,
+        orderFlipped,
+        bothOrdersAnswered,
+      }).action,
+    ).toBe('escalate')
+  })
+
+  test('applies agreeing orders with fit at the threshold', () => {
+    expect(
+      routeJevAnswer({
+        question: choice,
+        answer: { choice: 'a', confidence: 1, probabilities: { a: 1, b: 0 } },
+        threshold: 0.9,
+        rulings: 'agent',
+        autoRule: true,
+        canResume: true,
+        fits: 0.7,
+        orderFlipped: false,
+        bothOrdersAnswered: true,
+      }).action,
+    ).toBe('apply')
   })
 })

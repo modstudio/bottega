@@ -9,6 +9,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const agentProbeModules = [
+  module('orchestrator/src/agent/openrouter.ts', []),
   module('orchestrator/src/agent/agent-capacity-loss.ts', []),
   module('orchestrator/src/agent/agent-set-capacity.ts', [
     '../../../shared/brand.ts',
@@ -30,6 +31,7 @@ export const agentProbeModules = [
   module('orchestrator/src/agent/openrouter-key-budget.ts', [
     '../../../shared/bounded-fetch.ts',
     './endpoint-api-key.ts',
+    './openrouter.ts',
   ]),
   module('orchestrator/src/agent/openrouter-auth-failure.ts', [
     '../failure/failure.ts',

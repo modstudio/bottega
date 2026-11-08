@@ -1,6 +1,7 @@
 // concern: worker-question-routing
 /** Pure decision for whether Jev advice may become a worker ruling. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { TypedQuestionAnswer } from '../../../shared/typed-question/client.ts'
 import type { WorkerQuestion } from './worker-question.ts'
 
@@ -42,8 +43,29 @@ export function pickProbability(
     : null
 }
 
-export function isJevConfidenceThreshold(value: number): boolean {
+function isJevConfidenceThreshold(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 1
+}
+
+function invalidJevThresholdRemedy(key: string, raw: string | number): string {
+  return `invalid ${key} ${JSON.stringify(raw)}; run ${PLATFORM_SLUG} machine config set ${key} <0-1>`
+}
+
+export function jevThresholds(
+  read: (key: 'jev.confidence_threshold' | 'jev.fit_threshold') => string | number,
+): { ok: true; threshold: number; fitThreshold: number } | { ok: false; error: string } {
+  const rawThreshold = read('jev.confidence_threshold')
+  const threshold = Number(rawThreshold)
+  if (!isJevConfidenceThreshold(threshold))
+    return {
+      ok: false,
+      error: invalidJevThresholdRemedy('jev.confidence_threshold', rawThreshold),
+    }
+  const rawFitThreshold = read('jev.fit_threshold')
+  const fitThreshold = Number(rawFitThreshold)
+  if (!isJevConfidenceThreshold(fitThreshold))
+    return { ok: false, error: invalidJevThresholdRemedy('jev.fit_threshold', rawFitThreshold) }
+  return { ok: true, threshold, fitThreshold }
 }
 
 function answerPick(
@@ -67,6 +89,10 @@ export function routeJevAnswer(input: {
   rulings: 'agent' | 'user'
   autoRule: boolean
   canResume: boolean
+  fits: number | null
+  orderFlipped: boolean | null
+  bothOrdersAnswered: boolean
+  fitThreshold: number
 }): JevRoutingDecision {
   if (input.question.kind === 'text' || !input.answer)
     return { action: 'escalate', pick: null, probabilities: null, confidence: null }
@@ -82,6 +108,14 @@ export function routeJevAnswer(input: {
     input.rulings !== 'agent' ||
     confidence === null ||
     confidence < input.threshold
+  )
+    return { action: 'escalate', pick, probabilities, confidence }
+  if (
+    input.question.kind === 'choice' &&
+    (!input.bothOrdersAnswered ||
+      input.orderFlipped !== false ||
+      input.fits === null ||
+      input.fits < input.fitThreshold)
   )
     return { action: 'escalate', pick, probabilities, confidence }
   if (pick !== null) return { action: 'apply', value: pick, pick, probabilities, confidence }

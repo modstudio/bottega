@@ -3,14 +3,17 @@
 
 import type { Database } from 'bun:sqlite'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
-import { type Project, projects } from '../project/projects.ts'
+import { type Project, projectForTaskKey, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
+  type HubTaskKeyMap,
   type HubTaskReader,
   type HubTaskReference,
   readHubTasks,
+  taskKeyMap,
   taskReadRefusal,
+  taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
 import { linkWorkflowQuestionsTaskReference } from './question-mutation.ts'
 import { enqueueRunRecord, isRunRecordEligible, runRecordFinishedAt } from './run-outbox.ts'
@@ -38,6 +41,7 @@ export type DerivedRunLinks = {
   project_record_id?: string
   task_source?: TaskLinkSource
   project_source?: ProjectLinkSource
+  resolved_project?: Project
 }
 
 export type NewRunLinkFacts = {
@@ -47,6 +51,7 @@ export type NewRunLinkFacts = {
   probe: boolean
   inheritedTaskRecordId?: string | null
   inheritedProjectRecordId?: string | null
+  resolvedTaskRecordId?: string | null
   projectRecordId: string | null
 }
 
@@ -55,7 +60,8 @@ export type RunTaskLinkReport = {
   task_links_by_source: Record<TaskLinkSource, number>
   project_links_by_source: Record<ProjectLinkSource, number>
   without_task_by_job: Record<string, number>
-  keys_without_task: Record<string, number>
+  keys_naming_no_task: Record<string, number>
+  keys_naming_task_in_other_project: Record<string, number>
   without_task_or_project_by_job: Record<string, number>
   local_task_links: Record<LocalTaskLinkTable, LocalTaskLinkResult>
 }
@@ -143,13 +149,27 @@ const localTaskLinkTables = () => Object.keys(LOCAL_TASK_LINKS) as LocalTaskLink
 
 const TASK_TOKEN = /(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-[0-9]+)(?![0-9])/g
 
-function firstKnownTask(
+const projectTaskRecordKey = (project: string, recordId: string) => `${project}\0${recordId}`
+
+function taskForKey(
+  key: string,
+  project: string | null,
+  tasks: HubTaskKeyMap,
+  registered: readonly Project[],
+): HubTaskReference | null {
+  const resolvedProject = project ?? projectForTaskKey(key, registered)?.name ?? null
+  return resolvedProject ? taskReferenceForProjectKey(tasks, resolvedProject, key) : null
+}
+
+function taskFromText(
   text: string | null,
-  tasks: ReadonlyMap<string, HubTaskReference>,
+  project: string | null,
+  tasks: HubTaskKeyMap,
+  registered: readonly Project[],
 ): HubTaskReference | null {
   if (!text) return null
   for (const match of text.matchAll(TASK_TOKEN)) {
-    const task = tasks.get(match[1]!)
+    const task = taskForKey(match[1]!, project, tasks, registered)
     if (task) return task
   }
   return null
@@ -200,16 +220,43 @@ function longestScratchpadProject(
   return best
 }
 
+type ResolvedRunProject = {
+  project: Project | null
+  source?: Extract<ProjectLinkSource, 'cwd' | 'scratchpad-cwd'>
+}
+
+function resolveRunProject(
+  run: RunLinkFacts,
+  registered: readonly Project[],
+  registeredById: ReadonlyMap<string, Project>,
+): ResolvedRunProject {
+  if (run.project_record_id) {
+    return { project: registeredById.get(run.project_record_id) ?? null }
+  }
+  const direct =
+    longestPathProject(run.cwd, registered) ?? longestPathProject(run.launch_cwd, registered)
+  if (direct) return { project: direct, source: 'cwd' }
+  const scratch =
+    longestScratchpadProject(run.cwd, registered) ??
+    longestScratchpadProject(run.launch_cwd, registered)
+  return scratch ? { project: scratch, source: 'scratchpad-cwd' } : { project: null }
+}
+
 function deriveTaskLink(
   run: RunLinkFacts,
-  tasks: ReadonlyMap<string, HubTaskReference>,
+  project: string | null,
+  tasks: HubTaskKeyMap,
+  registered: readonly Project[],
   resolvedTasks: ReadonlyMap<string, string | null>,
 ): Pick<DerivedRunLinks, 'task_record_id' | 'task_source'> {
   if (run.task_record_id !== null || run.probe === 1) return {}
   const sources = [
-    ['launch_key', run.launch_key ? tasks.get(run.launch_key) : undefined],
-    ['review_ref', firstKnownTask(run.review_ref, tasks)],
-    ['branch', firstKnownTask(run.branch, tasks)],
+    [
+      'launch_key',
+      run.launch_key ? taskForKey(run.launch_key, project, tasks, registered) : undefined,
+    ],
+    ['review_ref', taskFromText(run.review_ref, project, tasks, registered)],
+    ['branch', taskFromText(run.branch, project, tasks, registered)],
   ] as const
   for (const [source, found] of sources) {
     if (found) return { task_record_id: found.record_id, task_source: source }
@@ -220,10 +267,10 @@ function deriveTaskLink(
 
 function deriveProjectLink(
   run: RunLinkFacts,
-  taskRecordId: string | undefined,
+  taskRecordId: string | null | undefined,
   tasksById: ReadonlyMap<string, HubTaskReference>,
-  registered: readonly Project[],
   registeredByName: ReadonlyMap<string, Project>,
+  resolvedRunProject: ResolvedRunProject,
 ): Pick<DerivedRunLinks, 'project_record_id' | 'project_source'> {
   if (run.project_record_id !== null || run.probe === 1) return {}
   const linkedTask = taskRecordId ? tasksById.get(taskRecordId) : undefined
@@ -231,19 +278,18 @@ function deriveProjectLink(
   if (taskProject) {
     return { project_record_id: taskProject.recordId, project_source: 'task-project' }
   }
-  const direct =
-    longestPathProject(run.cwd, registered) ?? longestPathProject(run.launch_cwd, registered)
-  if (direct) return { project_record_id: direct.recordId, project_source: 'cwd' }
-  const scratch =
-    longestScratchpadProject(run.cwd, registered) ??
-    longestScratchpadProject(run.launch_cwd, registered)
-  return scratch ? { project_record_id: scratch.recordId, project_source: 'scratchpad-cwd' } : {}
+  return resolvedRunProject.project && resolvedRunProject.source
+    ? {
+        project_record_id: resolvedRunProject.project.recordId,
+        project_source: resolvedRunProject.source,
+      }
+    : {}
 }
 
 /** Roots precede turns so a turn can inherit a root link derived in this pass. */
 export function deriveRunLinks(
   runs: readonly RunLinkFacts[],
-  tasks: ReadonlyMap<string, HubTaskReference>,
+  tasks: HubTaskKeyMap,
   registered: readonly Project[],
 ): DerivedRunLinks[] {
   const ordered = [...runs].sort(
@@ -251,14 +297,37 @@ export function deriveRunLinks(
   )
   const resolvedTasks = new Map(runs.map((run) => [run.record_id, run.task_record_id]))
   const registeredByName = new Map(registered.map((project) => [project.name, project]))
-  const tasksById = new Map([...tasks.values()].map((task) => [task.record_id, task]))
+  const registeredById = new Map(registered.map((project) => [project.recordId, project]))
+  const taskRows = [...tasks.values()].flat()
+  const tasksById = new Map(taskRows.map((task) => [task.record_id, task]))
   return ordered.map((run) => {
-    const taskLink = deriveTaskLink(run, tasks, resolvedTasks)
+    const runProject = resolveRunProject(run, registered, registeredById)
+    const taskLink = deriveTaskLink(
+      run,
+      runProject.project?.name ?? null,
+      tasks,
+      registered,
+      resolvedTasks,
+    )
+    const taskRecordId = taskLink.task_record_id ?? run.task_record_id
+    const taskProject = taskRecordId
+      ? registeredByName.get(tasksById.get(taskRecordId)?.project ?? '')
+      : undefined
+    const projectLink = deriveProjectLink(
+      run,
+      taskRecordId,
+      tasksById,
+      registeredByName,
+      runProject,
+    )
     resolvedTasks.set(run.record_id, taskLink.task_record_id ?? run.task_record_id)
     return {
       record_id: run.record_id,
       ...taskLink,
-      ...deriveProjectLink(run, taskLink.task_record_id, tasksById, registered, registeredByName),
+      ...projectLink,
+      ...(runProject.project || taskProject
+        ? { resolved_project: runProject.project ?? taskProject }
+        : {}),
     }
   })
 }
@@ -266,7 +335,7 @@ export function deriveRunLinks(
 /** Applies the recorded-row policy to the facts known before a new run is inserted. */
 export function deriveNewRunLinks(
   input: NewRunLinkFacts,
-  tasks: ReadonlyMap<string, HubTaskReference>,
+  tasks: HubTaskKeyMap,
   registered: readonly Project[],
 ): { taskRecordId: string | null; projectRecordId: string | null } {
   const inheritedProjectRecordId = input.inheritedProjectRecordId ?? null
@@ -280,7 +349,7 @@ export function deriveNewRunLinks(
     launch_cwd: input.launchCwd,
     probe: input.probe ? 1 : 0,
     parent_run_record_id: null,
-    task_record_id: input.inheritedTaskRecordId ?? null,
+    task_record_id: input.inheritedTaskRecordId ?? input.resolvedTaskRecordId ?? null,
     project_record_id: inheritedProjectRecordId ?? input.projectRecordId,
   }
   const derived = deriveRunLinks([facts], tasks, registered)[0]!
@@ -294,42 +363,26 @@ async function hubTaskMap(
   registered: readonly Project[],
   reader: HubTaskReader = readHubTasks,
 ): Promise<{
-  byKey: Map<string, HubTaskReference>
-  byProjectKey: Map<string, HubTaskReference>
+  byProjectKey: HubTaskKeyMap
   byProjectId: Map<string, HubTaskReference>
-  ambiguousKeys: Set<string>
 }> {
-  const byKey = new Map<string, HubTaskReference>()
-  const byProjectKey = new Map<string, HubTaskReference>()
+  const allTasks: HubTaskReference[] = []
   const byProjectId = new Map<string, HubTaskReference>()
-  const projectsByKey = new Map<string, Set<string>>()
   for (const project of registered) {
-    let rows: HubTaskReference[]
+    let projectTasks: HubTaskReference[]
     try {
-      rows = await reader(project.name)
+      projectTasks = await reader(project.name)
     } catch (error) {
-      throw taskReadRefusal(
-        project.name,
-        '',
-        error instanceof Error ? error.message : String(error),
-      )
+      throw taskReadRefusal(project.name, error instanceof Error ? error.message : String(error))
     }
-    for (const task of rows) {
-      byKey.set(task.key, task)
-      byProjectKey.set(`${task.project}\0${task.key}`, task)
-      byProjectId.set(`${task.project}\0${task.record_id}`, task)
-      const owners = projectsByKey.get(task.key) ?? new Set<string>()
-      owners.add(task.project)
-      projectsByKey.set(task.key, owners)
+    for (const task of projectTasks) {
+      byProjectId.set(projectTaskRecordKey(task.project, task.record_id), task)
     }
+    allTasks.push(...projectTasks)
   }
   return {
-    byKey,
-    byProjectKey,
+    byProjectKey: taskKeyMap(allTasks),
     byProjectId,
-    ambiguousKeys: new Set(
-      [...projectsByKey].filter(([, owners]) => owners.size > 1).map(([key]) => key),
-    ),
   }
 }
 
@@ -339,7 +392,8 @@ function emptyReport(dryRun: boolean): RunTaskLinkReport {
     task_links_by_source: { launch_key: 0, review_ref: 0, branch: 0, turn: 0 },
     project_links_by_source: { 'task-project': 0, cwd: 0, 'scratchpad-cwd': 0 },
     without_task_by_job: {},
-    keys_without_task: {},
+    keys_naming_no_task: {},
+    keys_naming_task_in_other_project: {},
     without_task_or_project_by_job: {},
     local_task_links: Object.fromEntries(
       localTaskLinkTables().map((table) => [table, { linked: 0, unmatched_keys: {} }]),
@@ -349,6 +403,18 @@ function emptyReport(dryRun: boolean): RunTaskLinkReport {
 
 function increment(group: Record<string, number>, key: string): void {
   group[key] = (group[key] ?? 0) + 1
+}
+
+function recordUnlinkedLaunchKey(
+  report: RunTaskLinkReport,
+  key: string,
+  tasks: HubTaskKeyMap,
+): void {
+  const namesAnyTask = [...tasks.values()].flat().some((task) => task.key === key)
+  increment(
+    namesAnyTask ? report.keys_naming_task_in_other_project : report.keys_naming_no_task,
+    key,
+  )
 }
 
 export async function linkRunTasks(
@@ -362,7 +428,7 @@ export async function linkRunTasks(
   const database = dependencies.database ?? (options.dryRun ? db() : writableDb())
   const registered = dependencies.registeredProjects ?? projects(undefined, database)
   const taskIndex = await hubTaskMap(registered, dependencies.hubReader)
-  const tasks = taskIndex.byKey
+  const tasks = taskIndex.byProjectKey
   const runs = database
     .query<RunLinkFacts, []>(
       `SELECT record_id,job,launch_key,review_ref,branch,cwd,launch_cwd,probe,
@@ -380,8 +446,8 @@ export async function linkRunTasks(
     const taskId = link.task_record_id ?? run.task_record_id
     const projectId = link.project_record_id ?? run.project_record_id
     if (taskId === null) increment(report.without_task_by_job, run.job)
-    if (taskId === null && run.launch_key && !tasks.has(run.launch_key)) {
-      increment(report.keys_without_task, run.launch_key)
+    if (taskId === null && run.launch_key) {
+      recordUnlinkedLaunchKey(report, run.launch_key, tasks)
     }
     if (run.probe !== 1 && taskId === null && projectId === null) {
       increment(report.without_task_or_project_by_job, run.job)
@@ -439,9 +505,7 @@ function deriveLocalTaskLinks(
   const pending: PendingLocalTaskLink[] = []
   for (const table of localTaskLinkTables()) {
     for (const row of localTaskLinkRows(database, table)) {
-      const task = tasks.ambiguousKeys.has(row.task_key)
-        ? undefined
-        : tasks.byProjectKey.get(`${row.project}\0${row.task_key}`)
+      const task = taskReferenceForProjectKey(tasks.byProjectKey, row.project, row.task_key)
       if (!task) {
         increment(report.local_task_links[table].unmatched_keys, row.task_key)
         continue
@@ -467,11 +531,8 @@ function writeLocalTaskLink(database: Database, update: PendingLocalTaskLink): v
   LOCAL_TASK_LINKS[update.table].write(database, update)
 }
 
-function invalidRunTaskReferenceCount(
-  database: Database,
-  tasks: ReadonlyMap<string, HubTaskReference>,
-): number {
-  const ids = new Set([...tasks.values()].map((task) => task.record_id))
+function invalidRunTaskReferenceCount(database: Database, tasks: HubTaskKeyMap): number {
+  const ids = new Set([...tasks.values()].flat().map((task) => task.record_id))
   const rows = database
     .query<{ task_record_id: string }, []>(
       'SELECT task_record_id FROM run WHERE task_record_id IS NOT NULL',
@@ -494,7 +555,8 @@ export function formatRunTaskLinkReport(report: RunTaskLinkReport): string[] {
     `task links: ${format(report.task_links_by_source)}`,
     `project links: ${format(report.project_links_by_source)}`,
     `without task by job: ${format(report.without_task_by_job)}`,
-    `keys naming no task: ${format(report.keys_without_task)}`,
+    `keys naming no task in any project: ${format(report.keys_naming_no_task)}`,
+    `keys naming a task only outside the run project: ${format(report.keys_naming_task_in_other_project)}`,
     `without task or project by job: ${format(report.without_task_or_project_by_job)}`,
     ...local,
   ]
@@ -546,12 +608,12 @@ export async function runTaskReferenceDoctorLine(): Promise<string> {
         .all()
       const invalid = rows.filter(
         (row) =>
-          tasks.byProjectId.get(`${row.project}\0${row.task_record_id}`)?.record_id !==
-          row.task_record_id,
+          tasks.byProjectId.get(projectTaskRecordKey(row.project, row.task_record_id))
+            ?.record_id !== row.task_record_id,
       ).length
       return `${table} ${invalid}`
     })
-    return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks.byKey)} run; ${related.join(', ')} name no task in hub`
+    return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks.byProjectKey)} run; ${related.join(', ')} name no task in hub`
   } catch (error) {
     return `run task refs  unavailable — ${error instanceof Error ? error.message : String(error)}`
   }

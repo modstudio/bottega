@@ -4,6 +4,7 @@
  * eligible history. Callers own evidence windowing.
  */
 
+import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
@@ -179,7 +180,13 @@ export function routeCostsForCandidates<
   context?: SubscriptionCostContext,
 ): Array<{ candidate: T; costPerAccepted: CostPerAcceptedResult }> {
   const windows = candidates.map((candidate) =>
-    routingEvidenceWindow(evidenceRows, candidate.agent, candidate.evidenceModel!, evidenceWindow),
+    routingEvidenceWindow(
+      evidenceRows,
+      candidate.agent,
+      candidate.evidenceModel!,
+      AGENTS[candidate.agent]?.baseUrl,
+      evidenceWindow,
+    ),
   )
   const rootRecordIds = [
     ...new Set(

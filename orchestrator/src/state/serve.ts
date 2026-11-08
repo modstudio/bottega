@@ -24,6 +24,7 @@ import { messagesForRun, receiptMessagesForArchitect } from '../mailbox/mailbox.
 import { summary as metricSummary } from '../metric/metric.ts'
 import { projectAt } from '../project/projects.ts'
 import { reviewCalibration } from '../review/review-calibration.ts'
+import { evidenceModel } from '../route/evidence-model.ts'
 import { candidates, scoreboard } from '../route/route.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
@@ -40,6 +41,22 @@ registerStandardRuntime()
 
 const jsonArray = (value: unknown) =>
   typeof value === 'string' ? (JSON.parse(value) as unknown[]) : []
+
+const calibrateStateReview =
+  (d: ReturnType<typeof db>) =>
+  ({ lens, agent, model }: { lens: string; agent: string; model: string }) =>
+    reviewCalibration(lens, agent, model, AGENTS[agent]?.baseUrl, d)
+
+function normalizedStateReviewModels(
+  rows: { lens: string; agent: string; model: string }[],
+): { lens: string; agent: string; model: string }[] {
+  const identities = new Map<string, { lens: string; agent: string; model: string }>()
+  for (const row of rows) {
+    const model = evidenceModel(row.model, AGENTS[row.agent]?.baseUrl)
+    identities.set(`${row.lens}\0${row.agent}\0${model}`, { ...row, model })
+  }
+  return [...identities.values()]
+}
 
 function reviewsForRun(runId: string): RunDetailReviewLens[] {
   const lenses = db()
@@ -386,14 +403,13 @@ export function state(sinceDays: number | null = null) {
     .query(`SELECT decision, why, COUNT(*) n FROM spawn GROUP BY decision, why ORDER BY n DESC`)
     .all()
 
-  const reviewCells = (
-    d
-      .query(
-        `SELECT DISTINCT lens, agent, model FROM review_lens
+  const reviewModels = d
+    .query(
+      `SELECT DISTINCT lens, agent, model FROM review_lens
       WHERE model IS NOT NULL ORDER BY lens, agent, model`,
-      )
-      .all() as { lens: string; agent: string; model: string }[]
-  ).map(({ lens, agent, model }) => reviewCalibration(lens, agent, model, d))
+    )
+    .all() as { lens: string; agent: string; model: string }[]
+  const reviewCells = normalizedStateReviewModels(reviewModels).map(calibrateStateReview(d))
 
   return {
     live,

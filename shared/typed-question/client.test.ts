@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { askTypedQuestionClient } from './client.ts'
+import { askTypedQuestionClient, askTypedQuestionsClient } from './client.ts'
 import type { ChoiceQuestion, NoulQuestion, ScoreQuestion } from './registry.ts'
 
 const FIXTURE_QUESTION = {
@@ -188,4 +188,39 @@ test('sends score levels and parses a score answer', async () => {
   })
   expect(sent?.questions.level.criteria).toEqual(['low', 'medium', 'high'])
   expect(result).toMatchObject({ kind: 'answer', answer: { score: 1.43, confidence: 0.9 } })
+})
+
+test('batches every id, retries once, and drops only an unparsable answer', async () => {
+  const other = { ...FIXTURE_QUESTION, id: 'other' }
+  let calls = 0
+  let sent: unknown
+  const result = await askTypedQuestionsClient(
+    [FIXTURE_QUESTION, other],
+    { shared: true },
+    {
+      resolve,
+      fetch: async (_url, init) => {
+        calls += 1
+        sent = JSON.parse(String(init.body))
+        if (calls === 1) return new Response('', { status: 503 })
+        return Response.json({
+          answers: { spec_unsettled: { noul: 0.8 }, other: { noul: 'bad' } },
+          model: 'jev-batch',
+          usage: { input_tokens: 9 },
+        })
+      },
+      sleep: async () => {},
+    },
+  )
+  expect(calls).toBe(2)
+  expect(Object.keys((sent as { questions: object }).questions)).toEqual([
+    'spec_unsettled',
+    'other',
+  ])
+  expect(result).toMatchObject({
+    kind: 'answer',
+    answers: { spec_unsettled: { noul: 0.8 } },
+    inputTokens: 9,
+  })
+  if (result.kind === 'answer') expect(result.answers.other).toBeUndefined()
 })
