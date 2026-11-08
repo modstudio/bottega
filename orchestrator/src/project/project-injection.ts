@@ -15,6 +15,7 @@ import {
   refuseNonCursorProjectId,
   refuseUnsupportedUpdatedSince,
   resolveTrackerAgentActions,
+  resolveTrackerWriteState,
   TRACKER_PROTOCOLS,
   type TrackerAction,
   type TrackerProtocol,
@@ -503,24 +504,6 @@ function resolvedReviewStages(
   return { waitingReview: stage(waiting), inReview }
 }
 
-function resolvedWriteState(
-  projectName: string,
-  tracker: TrackerSettings,
-  protocol: TrackerProtocol,
-  category: 'active' | 'done',
-): string | undefined {
-  const rawStates = Object.entries(tracker.states ?? {}).flatMap(([raw, mapped]) =>
-    mapped === category ? [raw] : [],
-  )
-  const selected = tracker.writeStates?.[category]
-  if (!selected && rawStates.length > 1) {
-    throw new Error(
-      `project ${projectName} tracker has several ${category} states (${rawStates.join(', ')}) but no writeStates.${category} selection; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '${JSON.stringify({ tracker: { writeStates: { [category]: `<${category}-state>` } } })}'`,
-    )
-  }
-  return selected ?? rawStates[0] ?? (protocol === 'hub' ? category : undefined)
-}
-
 function resolvedTracker(
   project: InjectableProject,
   tracker: TrackerSettings,
@@ -536,7 +519,7 @@ function resolvedTracker(
   ) as Partial<Record<TrackerAction, string>>
   const states = Object.fromEntries(
     (['active', 'done'] as const).flatMap((category) => {
-      const raw = resolvedWriteState(project.name, tracker, protocol, category)
+      const raw = resolveTrackerWriteState(project.name, tracker, protocol, category)
       return raw ? [[category, raw]] : []
     }),
   ) as ResolvedTracker['states']

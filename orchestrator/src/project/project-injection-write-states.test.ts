@@ -21,6 +21,7 @@ test('refuses a write state absent from the state map (mutation: skip absent wri
     ),
   ])
   expect(problems[0]).toContain(`${PLATFORM_SLUG} project set <name> --settings`)
+  expect(problems[0]).toContain('"states":{"missing":"done"}')
   expect(problems[0]).toContain('"writeStates"')
 })
 

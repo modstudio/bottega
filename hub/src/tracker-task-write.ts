@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
+  resolveTrackerWriteState,
   type StatusCategory,
   TASK_STATUSES,
   type TrackerTask,
@@ -78,6 +79,15 @@ function resolveArrayStatus(
   }
   if (!TASK_STATUSES.includes(requested as (typeof TASK_STATUSES)[number])) {
     throw validStateRefusal(project, requested)
+  }
+  if (requested === 'active' || requested === 'done') {
+    const status = resolveTrackerWriteState(
+      project.name,
+      project.settings.tracker ?? {},
+      'array-mcp',
+      requested,
+    )
+    if (status) return { status, category: requested }
   }
   const matches = Object.entries(states).filter(([, category]) => category === requested)
   if (matches.length !== 1) throw validStateRefusal(project, requested)
