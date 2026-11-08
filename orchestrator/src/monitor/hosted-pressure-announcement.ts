@@ -13,15 +13,16 @@ import {
 } from './hosted-pressure-decision.ts'
 
 export const HOSTED_PRESSURE_NOTICE_PREFIX = 'Hosted pressure:'
+export const HOSTED_CLIENT_HEALTH_NOTICE_PREFIX = `${HOSTED_PRESSURE_NOTICE_PREFIX} client-observed`
 export const HOSTED_PRESSURE_CLEARED_TITLE = `${HOSTED_PRESSURE_NOTICE_PREFIX} cleared`
 export const HOSTED_PRESSURE_NOTICE_TTL_MS = 24 * 60 * 60_000
 export const HOSTED_PRESSURE_CLEARED_TTL_MS = 60 * 60_000
 
 type OpenNotice = Pick<HostedBoardOverviewEntry, 'id' | 'title'>
-type Notice = { title: string; body: string; expiresMs: number }
+type HostedPressureNotice = { title: string; body: string; expiresMs: number }
 export type HostedPressureAnnouncementAction =
   | { kind: 'withdraw'; id: string }
-  | { kind: 'post'; notice: Notice }
+  | { kind: 'post'; notice: HostedPressureNotice }
 
 const HOSTED_MEASURE_TEXT: Record<
   HostedMeasure,
@@ -41,7 +42,10 @@ const HOSTED_MEASURE_TEXT: Record<
   },
 }
 
-function onsetNotice(state: HostedPressureState, sample: HostedPressureSample): Notice {
+function onsetNotice(
+  state: HostedPressureState,
+  sample: HostedPressureSample,
+): HostedPressureNotice {
   const measures = state.breachedMeasures.map(
     (measure) => `${measure}=${HOSTED_MEASURE_TEXT[measure].value(sample)}`,
   )
@@ -57,7 +61,7 @@ function onsetNotice(state: HostedPressureState, sample: HostedPressureSample): 
   }
 }
 
-function clearedNotice(previous: HostedPressureState, clearedAt: string): Notice {
+function clearedNotice(previous: HostedPressureState, clearedAt: string): HostedPressureNotice {
   return {
     title: HOSTED_PRESSURE_CLEARED_TITLE,
     body: `Hosted pressure that began at ${previous.onsetAt} cleared at ${clearedAt}.`,
@@ -76,6 +80,7 @@ export function decideHostedPressureAnnouncement(
   const onsetNotices = openNotices.filter(
     (notice) =>
       notice.title?.startsWith(`${HOSTED_PRESSURE_NOTICE_PREFIX} `) &&
+      !notice.title.startsWith(HOSTED_CLIENT_HEALTH_NOTICE_PREFIX) &&
       notice.title !== HOSTED_PRESSURE_CLEARED_TITLE,
   )
   if (previous.status === 'clear' && state.status === 'pressure') {

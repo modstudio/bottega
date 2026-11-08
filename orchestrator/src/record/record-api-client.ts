@@ -67,8 +67,8 @@ import {
   type RecordSessionClient,
   recordSessionClient,
 } from './record-api-client-session.ts'
-
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
+import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY } from './record-auth.ts'
 import {
@@ -531,7 +531,7 @@ async function recordEmailAuthRequest(
 ) {
   let response: Response
   try {
-    response = await hostedApiFetch(`${recordApiBaseUrl()}${path}`, {
+    response = await recordTransport(recordApiBaseUrl(), path, {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify(body),
@@ -598,7 +598,7 @@ export async function recordApiRequest<T>(
   if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
   let response: Response
   try {
-    response = await transport(`${recordApiBaseUrl()}${path}`, { ...init, headers })
+    response = await recordTransport(recordApiBaseUrl(), path, { ...init, headers }, transport)
   } catch (error) {
     throw recordApiUnreachable(error)
   }
@@ -617,12 +617,10 @@ function throwIfRecordApiRequestRefused(): void {
   }
 }
 
-const defaultRequest = recordApiRequest
-
 async function publicRequest<T>(path: string): Promise<T> {
   let response: Response
   try {
-    response = await hostedApiFetch(`${recordApiBaseUrl()}${path}`, {
+    response = await recordTransport(recordApiBaseUrl(), path, {
       method: 'GET',
       credentials: 'omit',
       headers: new Headers(),
@@ -707,7 +705,7 @@ async function listDocRevisionsRequest(
   id: string,
   destination?: RecordRequestDestination,
 ): Promise<Record<string, unknown>[]> {
-  const body = await defaultRequest<{ items?: Record<string, unknown>[] }>(
+  const body = await recordApiRequest<{ items?: Record<string, unknown>[] }>(
     `/v1/docs/${id}/revisions`,
     destination,
   )
@@ -715,7 +713,7 @@ async function listDocRevisionsRequest(
 }
 
 const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) =>
-  defaultRequest('/v1/docs/order', {
+  recordApiRequest('/v1/docs/order', {
     method: 'PUT',
     body: JSON.stringify(input),
     ...destination,
@@ -726,7 +724,7 @@ export function authenticatedRecordApiClient(
   return recordApiClient((path, init) => recordApiRequest(path, init, authentication))
 }
 
-export function recordApiClient(request = defaultRequest): RecordApiClient {
+export function recordApiClient(request = recordApiRequest): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
@@ -756,7 +754,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
 }
 
 const recordSnapshotAndPublicDocClient = (
-  request = defaultRequest,
+  request = recordApiRequest,
 ): Pick<RecordApiClient, RecordSnapshotAndPublicDocMethod> => ({
   putSnapshot: (kind, input) =>
     request(`/v1/snapshots/${kind}`, { method: 'PUT', body: JSON.stringify(input) }),
@@ -768,7 +766,7 @@ const recordSnapshotAndPublicDocClient = (
 })
 
 const recordDocReadClient = (
-  request = defaultRequest,
+  request = recordApiRequest,
 ): Pick<RecordApiClient, RecordDocReadMethod> => ({
   searchDocs: (query) => request(`/v1/docs/search?${docSearchParams(query)}`),
   listDocs: (query, destination) => {
@@ -791,7 +789,7 @@ const recordDocReadClient = (
 })
 
 const recordDocWriteClient = (
-  request = defaultRequest,
+  request = recordApiRequest,
 ): Pick<RecordApiClient, RecordDocWriteMethod> => ({
   upsertDoc: (input, destination) =>
     request('/v1/docs', { method: 'PUT', body: JSON.stringify(input), ...destination }).then(ids),
@@ -852,7 +850,7 @@ const recordDocWriteClient = (
 })
 
 const recordProjectSubjectClient = (
-  request = defaultRequest,
+  request = recordApiRequest,
 ): Pick<RecordApiClient, RecordProjectSubjectMethod> => ({
   listProjectSubjects: (query, destination) => {
     const search = new URLSearchParams()
@@ -892,7 +890,7 @@ const recordProjectSubjectClient = (
     }),
 })
 
-const recordRunClient = (request = defaultRequest): Pick<RecordApiClient, RecordRunMethod> => ({
+const recordRunClient = (request = recordApiRequest): Pick<RecordApiClient, RecordRunMethod> => ({
   putScore: async (runId, input) =>
     void (await request(`/v1/runs/${runId}/score`, { method: 'PUT', body: JSON.stringify(input) })),
   voidRun: async (runId, input) =>
@@ -913,7 +911,9 @@ const recordRunClient = (request = defaultRequest): Pick<RecordApiClient, Record
   counts: (destination) => request('/v1/docs/counts', destination),
 })
 
-const recordBoardClient = (request = defaultRequest): Pick<RecordApiClient, RecordBoardMethod> => ({
+const recordBoardClient = (
+  request = recordApiRequest,
+): Pick<RecordApiClient, RecordBoardMethod> => ({
   ...recordBoardRootClient(request),
   replyBoardMessage: (rootId, input) =>
     request(`/v1/board/messages/${rootId}/replies`, {
@@ -959,7 +959,7 @@ const recordBoardClient = (request = defaultRequest): Pick<RecordApiClient, Reco
 })
 
 function recordIdentityAndSpaceClient(
-  request = defaultRequest,
+  request = recordApiRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   return {
     createOrganization: (input) =>
@@ -997,7 +997,7 @@ function recordIdentityAndSpaceClient(
 function recordApiBoardWatchClient(): Pick<RecordApiClient, RecordBoardWatchMethod> {
   return {
     releaseBoardTaskClaims: (input) =>
-      defaultRequest('/v1/board/claims/release-task', {
+      recordApiRequest('/v1/board/claims/release-task', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
@@ -1020,11 +1020,16 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
   try {
     throwIfRecordApiRequestRefused()
     // The stream is unbounded until a streaming budget exists.
-    const response = await fetch(`${recordApiBaseUrl()}/v1/board/stream`, {
-      method: 'GET',
-      headers: boardStreamHeaders(token),
-      signal: connection.signal,
-    })
+    const response = await recordTransport(
+      recordApiBaseUrl(),
+      '/v1/board/stream',
+      {
+        method: 'GET',
+        headers: boardStreamHeaders(token),
+        signal: connection.signal,
+      },
+      ((url, init) => fetch(url, init)) as typeof fetch,
+    )
     const opened = classifyBoardStreamResponse(response.status, response.body, close)
     if (opened.kind !== 'stream') {
       releaseUnopenedStream(response, connection)
@@ -1037,11 +1042,4 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
     if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
     return { kind: 'error', reason: error instanceof Error ? error.message : String(error) }
   }
-}
-
-function boardStreamHeaders(token: string): Headers {
-  const headers = new Headers()
-  for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
-  headers.set('accept', 'text/event-stream')
-  return headers
 }

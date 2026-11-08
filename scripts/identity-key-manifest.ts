@@ -171,6 +171,8 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.prompt_bytes',
     'run.number',
     'run.latency_ms',
+    'hosted_call_outcome.http_status',
+    'hosted_call_outcome.latency_ms',
     'run.harness_wall_bound_ms',
     'run.exit_code',
     'run.output_bytes',
@@ -482,6 +484,16 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ...TELEMETRY_IDENTITY.externalIdentifiers,
   ...BOARD_READER_EXTERNAL_IDENTIFIERS,
   ...TYPED_QUESTION_IDENTITY.externalIdentifiers,
+  ...manifest(
+    'orchestrator',
+    'name of the contended resource (a lock, checkout path, capacity pool or vendor; a project lock records the project name), a label nothing resolves to a row',
+    ['contention.resource_key'],
+  ),
+  ...manifest(
+    'hosted',
+    'name of the contended resource (a lock, checkout path, capacity pool or vendor; a project lock records the project name), a label nothing resolves to a row',
+    ['contention.resource_key'],
+  ),
   ...manifest('hosted', 'fingerprint derived from a machine public key', [
     'machine_public_key.key_id',
   ]),
@@ -682,6 +694,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'duel.winner_run_record_id',
     'gate_execution.record_id',
     'host_pressure_sample.record_id',
+    'hosted_call_outcome.record_id',
     'gate_execution.run_record_id',
     'hosted_board_message_cache.id',
     'hosted_board_receipt_cache.record_id',

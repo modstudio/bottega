@@ -62,8 +62,13 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/machine-config.ts',
     '../../../shared/ship-to.ts',
     '../../../shared/trust-list.ts',
+    './hosted-config-call-outcome.ts',
     '../record/machine-name-command.ts',
     '../record/machine-name.ts',
+  ]),
+  module('orchestrator/src/config/hosted-config-call-outcome.ts', [
+    '../../../shared/config-client.ts',
+    '../hosted-call-outcome.ts',
   ]),
   module('orchestrator/src/commands/config.ts', [
     '../../../shared/brand.ts',

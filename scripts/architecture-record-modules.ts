@@ -147,6 +147,17 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-client-board-stream.ts', [
     './record-api-client-paths.ts',
   ]),
+  module('orchestrator/src/hosted-call-outcome.ts', [
+    'bun:sqlite',
+    '../../shared/record-id.ts',
+    './database/db.ts',
+  ]),
+  module('orchestrator/src/record/record-api-client-transport.ts', [
+    '../../../shared/bounded-fetch.ts',
+    '../../../shared/hosted-call-observation.ts',
+    '../hosted-call-outcome.ts',
+    './record-auth.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-board.ts', [
     './record-api-client-board-stream.ts',
     './record-api-client-paths.ts',

@@ -9,6 +9,16 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const agentProbeModules = [
+  module('orchestrator/src/agent/agent-capacity-loss.ts', []),
+  module('orchestrator/src/agent/agent-set-capacity.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    '../jobs/jobs.ts',
+    '../refusal-error.ts',
+    '../route/route.ts',
+    './agent-capacity-loss.ts',
+    './agent-registry.ts',
+  ]),
   module('orchestrator/src/agent/endpoint-api-key.ts', [
     '../../../shared/brand.ts',
     '../../../shared/env-source.ts',

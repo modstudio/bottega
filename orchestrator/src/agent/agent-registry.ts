@@ -323,6 +323,8 @@ export type AgentMutation = {
   trainsOnInputs?: boolean
 }
 
+export type CapacityLossAudit = { jobs: string[]; at: string }
+
 function assertApiKeySecret(value: string | null | undefined): void {
   if (value !== undefined && value !== null && !value.trim())
     throw new Error('--api-key-secret must name a non-empty configuration key')
@@ -424,7 +426,7 @@ function storedApiKeySecret(current: AgentRow, input: AgentMutation): string | n
   return input.apiKeySecret === undefined ? current.api_key_secret : input.apiKeySecret
 }
 
-function agentIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
+export function agentIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
   return (
     (input.harness !== undefined && input.harness !== current.harness) ||
     (input.backend !== undefined && input.backend !== current.backend) ||
@@ -451,7 +453,31 @@ function storedTrainsOnInputs(current: AgentRow, input: AgentMutation): number {
   return input.trainsOnInputs ? 1 : 0
 }
 
-export function setAgent(name: string, input: AgentMutation): AgentRow {
+function capacityLossAudit(audit: CapacityLossAudit | undefined): object {
+  return audit ? { capacityLossAllowed: audit } : {}
+}
+
+export function identityChangeProbeAttempts(
+  previous: Record<string, unknown> | null,
+  currentHarness: string,
+): { harness: string; result: Record<string, unknown> }[] {
+  const attempts = Array.isArray(previous?.attempts) ? [...previous.attempts] : []
+  if (!previous || previous.pendingIdentity) return attempts
+  const { attempts: _attempts, ...result } = previous
+  return [
+    ...attempts,
+    {
+      harness: typeof previous.harness === 'string' ? previous.harness : currentHarness,
+      result,
+    },
+  ]
+}
+
+export function setAgent(
+  name: string,
+  input: AgentMutation,
+  capacityLossAllowed?: CapacityLossAudit,
+): AgentRow {
   assertAgentMutation(input, false)
   const current = agentRows().find((row) => row.name === name)
   if (!current) throw new Error(`unknown agent "${name}"`)
@@ -462,10 +488,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
   let probeResult = current.probe_result
   if (identityChanged) {
     const previous = current.probe_result ? JSON.parse(current.probe_result) : null
-    const attempts = Array.isArray(previous?.attempts) ? previous.attempts : []
-    if (previous && !previous.pendingIdentity) {
-      attempts.push({ harness: previous.harness ?? current.harness, result: previous })
-    }
+    const attempts = identityChangeProbeAttempts(previous, current.harness)
     const declaredContext =
       input.contextTokens ??
       (previous?.contextSource === 'declared' ? Number(caps.contextTokens) : undefined)
@@ -488,6 +511,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
         baseUrl: input.baseUrl === undefined ? current.base_url : input.baseUrl,
         apiKeySecret: storedApiKeySecret(current, input),
       },
+      ...capacityLossAudit(capacityLossAllowed),
       attempts,
     })
   } else if (input.contextTokens !== undefined) {
@@ -585,6 +609,14 @@ export type RegistrationProbeResult = {
   billingHold?: boolean
   refusal?: string
   attempts?: { harness: string; result: unknown }[]
+  pendingIdentity?: {
+    harness: string
+    backend: string
+    model: string
+    baseUrl: string | null
+    apiKeySecret: string | null
+  }
+  capacityLossAllowed?: CapacityLossAudit
 }
 
 /** Whether the optional compaction step established a reusable boolean capability. */
