@@ -34,6 +34,7 @@ import {
   type AdmissionOverride,
   decideAdmission,
 } from './admission-decision.ts'
+import { decideCreateOutcome, type PullRequestCreateResult } from './create-outcome-decision.ts'
 import {
   decideMergeability,
   type MergeabilityDecision,
@@ -636,13 +637,6 @@ function pullRequestAtBound(
   return { ...pullRequest, mergeability: decideMergeability(facts) }
 }
 
-function pullRequestOutput(output: string, pullRequest: BranchPullRequest): string {
-  const primary = output || pullRequest.url
-  return pullRequest.mergeability.kind === 'report'
-    ? `${primary}\n${pullRequest.mergeability.message}`
-    : primary
-}
-
 function pendingIntent(database: Database, project: string, branch: string): boolean {
   return Boolean(
     database
@@ -701,36 +695,44 @@ export function createPullRequest(
     return decision
   }, database)
 
-  let output = ''
-  let failure: string | null = null
-  try {
-    const process = startBoundedSync(['gh', 'pr', 'create', ...args, '--base', trunk], {
-      budget: 'gh',
-      cwd,
-      env: targetGitEnvironment(cwd),
-    })
-    output = process.stdout.trim()
-    if (process.exitCode !== 0) failure = process.stderr.trim() || `exit ${process.exitCode}`
-  } catch (cause) {
-    failure = String((cause as Error)?.message ?? cause)
+  let createResult: PullRequestCreateResult | null = null
+  if (!existing) {
+    let stdout = ''
+    let failure: string | null = null
+    try {
+      const process = startBoundedSync(['gh', 'pr', 'create', ...args, '--base', trunk], {
+        budget: 'gh',
+        cwd,
+        env: targetGitEnvironment(cwd),
+      })
+      stdout = process.stdout.trim()
+      if (process.exitCode !== 0) failure = process.stderr.trim() || `exit ${process.exitCode}`
+    } catch (cause) {
+      failure = String((cause as Error)?.message ?? cause)
+    }
+    createResult = { stdout, failure }
   }
-  if (failure !== null) throw new Error(`gh pr create failed: ${failure}`)
   let created: BranchPullRequest | null = null
-  try {
-    created = pullRequestForBranch(cwd, change.branch, trunk)
-  } catch {
-    created = null
-  }
-  if (!created) {
-    const unresolved = `gh pr view ${change.branch} could not resolve the created pull request; mergeability was not checked and the triage intent remains pending; rerun ${PLATFORM_SLUG} pr create to record it`
-    return {
-      output: output ? `${output}\n${unresolved}` : unresolved,
-      overrideId: checked.overrideId,
+  if (createResult?.failure === null) {
+    try {
+      created = pullRequestForBranch(cwd, change.branch, trunk)
+    } catch {
+      created = null
     }
   }
-  finalizeTriageIntent(change.project.name, change.branch, created.number)
+  const outcome = decideCreateOutcome({
+    existing,
+    createResult,
+    created,
+    branch: change.branch,
+    platformSlug: PLATFORM_SLUG,
+  })
+  if (outcome.throwMessage) throw new Error(outcome.throwMessage)
+  if (outcome.finalizePullRequestNumber !== null) {
+    finalizeTriageIntent(change.project.name, change.branch, outcome.finalizePullRequestNumber)
+  }
   return {
-    output: pullRequestOutput(output, created),
+    output: outcome.output,
     overrideId: checked.overrideId,
   }
 }
