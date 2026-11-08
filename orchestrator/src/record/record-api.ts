@@ -16,6 +16,10 @@ import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
 import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
+import {
+  type RecordCredentialRouteDeps,
+  registerRecordCredentialRoutes,
+} from './record-api-credential-routes.ts'
 import { recordDocListPage } from './record-api-doc-list.ts'
 import { hostedDocUpsert } from './record-api-doc-prose.ts'
 import {
@@ -62,7 +66,6 @@ import type {
   ConfigSecretMetadata,
   ConfigTenant,
   ConfigWrapInput,
-  CredentialPreference,
   DataKey,
   MachineKey,
 } from './record-config.ts'
@@ -108,6 +111,7 @@ type Deps = RecordSubjectRouteDeps &
   RecordPortRouteDeps &
   RecordWorkflowRouteDeps &
   RecordChangeRouteDeps &
+  RecordCredentialRouteDeps &
   Parameters<typeof registerRecordWriteRoutes>[1] &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
@@ -267,13 +271,6 @@ type RecordApiDeps = RecordSessionRouteDeps &
         scope: ConfigScope
         expectedRowVersion: number
       },
-    ): Promise<void>
-    listCredentialPreferences(input: Tenant): Promise<CredentialPreference[]>
-    putCredentialPreference(
-      input: Tenant & Omit<CredentialPreference, 'updatedAt'>,
-    ): Promise<CredentialPreference>
-    deleteCredentialPreference(
-      input: Tenant & Pick<CredentialPreference, 'projectId' | 'provider' | 'type' | 'environment'>,
     ): Promise<void>
     currentDataKey(input: Tenant & { recipientKeyId: string }): Promise<DataKey | null>
     listDataKeys(input: Tenant): Promise<DataKey[]>
@@ -627,34 +624,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       return writeError(context, error)
     }
   })
-  const credentialPreference = z.object({
-    projectId: idSchema.nullable(),
-    provider: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-    type: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-    environment: z.enum(['live', 'test', 'default']),
-  })
-  app.get('/v1/config/credential-preferences', async (context) => {
-    const active = scope(context)
-    if (!active) return noSpace(context)
-    return context.json({ items: await deps.listCredentialPreferences(active) })
-  })
-  app.put('/v1/config/credential-preferences', async (context) => {
-    const active = scope(context)
-    if (!active) return noSpace(context)
-    const body = credentialPreference
-      .extend({ payer: z.enum(['personal', 'shared']), binding: z.enum(['project', 'space']) })
-      .safeParse(await context.req.json().catch(() => null))
-    if (!body.success) return context.json({ error: 'invalid credential preference body' }, 422)
-    return context.json(await deps.putCredentialPreference({ ...active, ...body.data }))
-  })
-  app.delete('/v1/config/credential-preferences', async (context) => {
-    const active = scope(context)
-    if (!active) return noSpace(context)
-    const body = credentialPreference.safeParse(await context.req.json().catch(() => null))
-    if (!body.success) return context.json({ error: 'invalid credential preference body' }, 422)
-    await deps.deleteCredentialPreference({ ...active, ...body.data })
-    return context.json({ deleted: true })
-  })
+  registerRecordCredentialRoutes(app, deps, { scope, noSpace })
   // The client identifies its machine key with the recipientKeyId query parameter.
   app.get('/v1/config/data-keys/current', async (context) => {
     const active = scope(context)

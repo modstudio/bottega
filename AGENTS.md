@@ -48,12 +48,11 @@ landing branch, never an optional production branch.
 
 A secret lives with its owner: Bottega's sealed configuration (ciphertext
 only), the login keychain, `~/.claude/.env`, or the deployed app's own secret
-store. Elsewhere a concern stores a reference to the secret, never its value. Read a
-credential from its owner at use time, never at import, and never write it to a
-log or to a database the dashboard serves. Only whether a reference resolves
-may be reported, except that a credential may expose its stored masked hint:
-the first and last four characters when the value meets
-`CREDENTIAL_HINT_MIN_LENGTH`, otherwise only its length. Gitleaks gates the repository, and its allowlist is limited to
+store. Elsewhere store a reference, never its value. Read a credential from its
+owner at use time, never at import, and never write it to a log or dashboard
+database. Report only resolution, except a credential may expose its masked
+hint: first and last four characters at `CREDENTIAL_HINT_MIN_LENGTH`, otherwise
+only its length. Gitleaks gates the repository, and its allowlist is limited to
 named fake fixture credentials in `.gitleaks.toml`.
 
 Summaries go through `bottega`; do not add a metered provider key for them.

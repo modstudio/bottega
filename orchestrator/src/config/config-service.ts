@@ -5,7 +5,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
   ConfigClientError,
-  type ConfigDestination,
   type ConfigScope,
   type ConfigSecret,
   configClient,
@@ -72,12 +71,6 @@ import {
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
-import {
-  type CredentialEnvironment,
-  type CredentialPayer,
-  credentialHint,
-  credentialVariableName,
-} from './credential.ts'
 
 const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
 const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
@@ -134,7 +127,6 @@ async function unwrap(
   key: DataKey,
   machine?: Awaited<ReturnType<typeof localMachine>>,
   trust?: TrustList,
-  spaceId?: string,
 ) {
   const local = machine ?? (await localMachine())
   const trusted = trust ?? (await readTrustList())
@@ -142,7 +134,7 @@ async function unwrap(
   if (!wrap) throw new Error(`data key ${key.id} has no wrap addressed to this machine`)
   const sender = trusted[wrap.senderKeyId]
   if (!sender) throw new Error(`data key ${key.id} sender ${wrap.senderKeyId} is not trusted`)
-  const who = spaceId ? { spaceId } : await identity(client)
+  const who = await identity(client)
   return unwrapDataKey({
     enc: bytes(wrap.enc),
     ciphertext: bytes(wrap.ciphertext),
@@ -150,117 +142,6 @@ async function unwrap(
     recipientPrivateKey: local.privateKey,
     senderPublicKey: bytes(sender.public_key),
     trustedSenderKeyIds: new Set(Object.keys(trusted)),
-  })
-}
-
-export type CredentialAddress = {
-  provider: string
-  type: string
-  environment: CredentialEnvironment
-  payer: CredentialPayer
-  projectId: string | null
-  projectName?: string
-  spaceName: string
-  destinationSpaceId: string
-}
-
-const credentialDestination = (address: CredentialAddress): ConfigDestination => ({
-  destinationSpaceId: address.destinationSpaceId,
-  projectId: address.projectId,
-})
-
-const credentialScope = (payer: CredentialPayer): ConfigScope =>
-  payer === 'personal' ? 'user' : 'space'
-
-function missingProjectWrapRefusal(address: CredentialAddress): Error {
-  const binding = address.projectName
-    ? `project ${address.projectName} in space ${address.spaceName}`
-    : `space ${address.spaceName}`
-  return new Error(
-    `cannot access credentials for ${binding}: this machine has no data-key wrap in that space; ` +
-      `run \`${PLATFORM_SLUG} record space switch ${address.spaceName}\`, then ` +
-      `\`${PLATFORM_SLUG} record space access grant\``,
-  )
-}
-
-export async function setCredential(
-  address: CredentialAddress,
-  value: string,
-  client = configClient(),
-) {
-  if (sealedValueIsEmpty(value)) throw new Error('refusing to seal an empty credential')
-  const machine = await localMachine()
-  const destination = credentialDestination(address)
-  let dataKey: DataKey
-  try {
-    dataKey = await client.currentDataKey(machine.keyId, destination)
-  } catch (error) {
-    if (isNotFound(error)) throw missingProjectWrapRefusal(address)
-    throw error
-  }
-  const dek = await unwrap(client, dataKey, machine, undefined, address.destinationSpaceId)
-  const key = credentialVariableName(address.provider, address.type, address.environment)
-  const scope = credentialScope(address.payer)
-  let existing: ConfigSecret | null = null
-  try {
-    existing = await client.getSecret(key, scope, address.environment, destination)
-  } catch (error) {
-    if (!isNotFound(error)) throw error
-  }
-  const current = await client.whoami()
-  const rowVersion = (existing?.rowVersion ?? 0) + 1
-  const envelope = sealValue({
-    dek,
-    plaintext: new TextEncoder().encode(stripTrailingNewline(value)),
-    valueContext: {
-      spaceId: address.destinationSpaceId,
-      userId: scope === 'user' ? current.user.id : null,
-      keyName: key,
-      environment: address.environment,
-      dekId: dataKey.id,
-      rowVersion,
-    },
-  })
-  return client.putSecret(key, {
-    ...destination,
-    scope,
-    environment: address.environment,
-    dekId: dataKey.id,
-    envelope: encoded(envelope),
-    expectedRowVersion: existing?.rowVersion ?? null,
-    projectId: address.projectId,
-    provider: address.provider,
-    type: address.type,
-    hint: credentialHint(stripTrailingNewline(value)),
-  })
-}
-
-export async function listCredentials(
-  destinationSpaceId: string,
-  client = configClient(),
-): Promise<ConfigSecret[]> {
-  const destination = { destinationSpaceId }
-  const rows = await Promise.all(
-    (['default', 'live', 'test'] as const).map((environment) =>
-      client.listSecrets(environment, destination),
-    ),
-  )
-  return rows.flat().filter((row) => row.provider && row.type)
-}
-
-export async function deleteCredential(address: CredentialAddress, client = configClient()) {
-  const key = credentialVariableName(address.provider, address.type, address.environment)
-  const scope = credentialScope(address.payer)
-  const destination = credentialDestination(address)
-  const row = await client.getSecret(key, scope, address.environment, destination)
-  if ((row.projectId ?? null) !== address.projectId)
-    throw new Error('credential binding does not match the requested project or space')
-  return client.deleteSecret(key, {
-    ...destination,
-    scope,
-    environment: address.environment,
-    expectedRowVersion: row.rowVersion,
-    projectId: address.projectId,
   })
 }
 

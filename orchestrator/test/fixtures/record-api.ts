@@ -92,6 +92,17 @@ function idlePortDeps() {
   return { listPortCatalogue: async () => [], writePort: unused }
 }
 
+function idleCredentialDeps() {
+  const unused = async () => {
+    throw new Error('hosted credential preferences are unused in this fixture')
+  }
+  return {
+    listCredentialPreferences: async () => [],
+    putCredentialPreference: unused,
+    deleteCredentialPreference: async () => undefined,
+  }
+}
+
 function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
@@ -141,6 +152,7 @@ export function idleRecordApiDeps() {
     ...idleLensDeps(),
     ...idleWorkflowDeps(),
     ...idlePortDeps(),
+    ...idleCredentialDeps(),
   }
 }
 

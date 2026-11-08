@@ -696,6 +696,13 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-config.ts',
   ]),
+  module('orchestrator/src/record/record-api-credential-routes.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-config.ts',
+    './record-credential.ts',
+  ]),
   module('orchestrator/src/record/record-api-outside-intake-routes.ts', [
     'hono',
     'zod',

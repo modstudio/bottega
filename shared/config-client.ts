@@ -186,10 +186,15 @@ function configValueClient(request: Request, query: Query) {
         dekId: string
         envelope: string
         expectedRowVersion: number | null
+        projectId?: string | null
+        provider?: string | null
+        type?: string | null
+        hint?: string | null
       } & ConfigDestination,
     ) =>
       request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
         method: 'PUT',
+        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
     deleteSecret: (
@@ -202,8 +207,14 @@ function configValueClient(request: Request, query: Query) {
     ) =>
       request<{ deleted: true }>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
         method: 'DELETE',
+        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
+  }
+}
+
+function credentialPreferenceClient(request: Request) {
+  return {
     listCredentialPreferences: (destination: ConfigDestination = {}) =>
       request<{ items: CredentialPreference[] }>(
         '/v1/config/credential-preferences',
@@ -297,6 +308,7 @@ function createConfigClient(
   return {
     ...configAuthorizationClient(request),
     ...configValueClient(request, query),
+    ...credentialPreferenceClient(request),
     ...configKeyClient(request, query),
     whoami: () => request<ConfigIdentity>('/v1/whoami'),
   }

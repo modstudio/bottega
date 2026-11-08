@@ -87,11 +87,6 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
       throw new Error('not implemented')
     },
     deleteConfigSecret: async () => undefined,
-    listCredentialPreferences: async () => [],
-    putCredentialPreference: async () => {
-      throw new Error('not implemented')
-    },
-    deleteCredentialPreference: async () => undefined,
     currentDataKey: async () => null,
     listDataKeys: async () => [],
     getDataKey: async () => null,

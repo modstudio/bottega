@@ -4,17 +4,17 @@
 import type { Command } from 'commander'
 import { type ConfigSecret, configClient } from '../../../shared/config-client.ts'
 import {
-  type CredentialAddress,
-  deleteCredential,
-  listCredentials,
-  setCredential,
-} from '../config/config-service.ts'
-import {
   CREDENTIAL_ENVIRONMENTS,
   type CredentialEnvironment,
   credentialDisplayName,
   resolveCredential,
 } from '../config/credential.ts'
+import {
+  type CredentialAddress,
+  deleteCredential,
+  listCredentials,
+  setCredential,
+} from '../config/credential-service.ts'
 import { projectByName } from '../project/projects.ts'
 import { declaredRecordSpace } from '../record/record-project-destination.ts'
 import { log } from './support.ts'

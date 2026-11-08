@@ -54,7 +54,6 @@ import {
   currentDataKey,
   deleteConfigEntry,
   deleteConfigSecret,
-  deleteCredentialPreference,
   deleteDataKeyWraps,
   getConfigEntry,
   getConfigSecret,
@@ -62,18 +61,21 @@ import {
   grantSpaceConfigAccess,
   listConfigEntries,
   listConfigSecrets,
-  listCredentialPreferences,
   listDataKeys,
   listMachineKeys,
   listSpaceConfigAccess,
   putConfigEntry,
   putConfigSecret,
-  putCredentialPreference,
   registerMachineKey,
   retireDataKey,
   revokeMachineKey,
   withdrawSpaceConfigAccess,
 } from './record-config.ts'
+import {
+  deleteCredentialPreference,
+  listCredentialPreferences,
+  putCredentialPreference,
+} from './record-credential.ts'
 import {
   consumeRecordDoc,
   countRecordDocs,

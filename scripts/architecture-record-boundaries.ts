@@ -142,6 +142,8 @@ export const recordApiBoundaries: ImportBoundary[] = [
       '../verdict/verdict-rules.ts',
       'hono/http-exception',
       './record-config.ts',
+      './record-credential.ts',
+      './record-api-credential-routes.ts',
       './record-api-errors.ts',
       './record-api-wire.ts',
       './record-cursor.ts',
@@ -331,6 +333,16 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       './record-pool.ts',
     ],
     'Enforce the hosted config service concern boundary.',
+  ),
+  boundary(
+    'record-credential-boundary',
+    'orchestrator/src/record/record-credential.ts',
+    [
+      '../../../shared/record/schema.ts',
+      '../../../shared/record-timestamp.ts',
+      './record-config.ts',
+    ],
+    'Keep credential preferences in the hosted config schema.',
   ),
   boundary(
     'record-member-permission-boundary',

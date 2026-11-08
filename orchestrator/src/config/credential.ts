@@ -3,11 +3,11 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-export const CREDENTIAL_HINT_MIN_LENGTH = 20
+const CREDENTIAL_HINT_MIN_LENGTH = 20
 export const CREDENTIAL_ENVIRONMENTS = ['live', 'test', 'default'] as const
 export type CredentialEnvironment = (typeof CREDENTIAL_ENVIRONMENTS)[number]
 export type CredentialPayer = 'personal' | 'shared'
-export type CredentialBinding = 'project' | 'space'
+type CredentialBinding = 'project' | 'space'
 
 export type CredentialCandidate = {
   spaceId: string
