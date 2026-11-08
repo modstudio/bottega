@@ -45,11 +45,14 @@ const project = {
 const pullRequest: PullRequestMergeFacts = {
   nodeId: 'PR_node',
   number: 42,
+  url: 'https://github.example/pulls/42',
   headCommit: 'head-commit',
   headBranch: 'DEV-2004-post-landing',
   baseBranch: 'main',
   title: 'Hand off post-landing work',
   state: 'OPEN',
+  mergeable: 'MERGEABLE',
+  mergeStateStatus: 'CLEAN',
   mergeCommit: null,
 }
 

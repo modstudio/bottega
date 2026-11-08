@@ -22,11 +22,14 @@ const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '
 const pullRequest: PullRequestMergeFacts = {
   nodeId: 'PR_node_id',
   number: 42,
+  url: 'https://github.example/pulls/42',
   headCommit: 'head-commit',
   headBranch: 'DEV-1358-queue',
   baseBranch: 'main',
   title: 'Queue this pull request',
   state: 'OPEN',
+  mergeable: 'MERGEABLE',
+  mergeStateStatus: 'CLEAN',
   mergeCommit: null,
 }
 

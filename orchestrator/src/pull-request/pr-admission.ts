@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
+import { BoundExceededError, budgetForArgv, CALL_BUDGETS } from '../../../shared/call-budgets.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
@@ -41,6 +41,7 @@ import {
   type TriageOverrideAttribution,
 } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
+import { decideMergeability } from './mergeability-decision.ts'
 import {
   ceilingTriageFacts,
   decideTriage,
@@ -546,30 +547,80 @@ export function recordMergeAdmission(
   }, database)
 }
 
-function pullRequestForBranch(cwd: string, branch: string): { number: number; url: string } | null {
-  let process: ReturnType<typeof startBoundedSync>
-  try {
-    process = startBoundedSync(['gh', 'pr', 'view', branch, '--json', 'number,url'], {
-      budget: 'gh',
-      cwd,
-      env: targetGitEnvironment(cwd),
-    })
-  } catch (error) {
-    if (error instanceof BoundExceededError) throw error
-    return null
-  }
+type BranchPullRequest = {
+  number: number
+  url: string
+  mergeable: string
+  mergeStateStatus: string
+  mergeabilityBoundReached: boolean
+}
+
+const PULL_REQUEST_MERGEABILITY_POLL_MS = 1_000
+
+function readPullRequestForBranch(cwd: string, branch: string): BranchPullRequest | null {
+  const process = startBoundedSync(
+    ['gh', 'pr', 'view', branch, '--json', 'number,url,mergeable,mergeStateStatus'],
+    { budget: 'gh', cwd, env: targetGitEnvironment(cwd) },
+  )
   if (process.exitCode !== 0) return null
   try {
-    const value = JSON.parse(process.stdout) as {
-      number?: unknown
-      url?: unknown
-    }
-    return Number.isSafeInteger(value.number) && typeof value.url === 'string'
-      ? { number: Number(value.number), url: value.url }
+    const value = JSON.parse(process.stdout) as Record<string, unknown>
+    return Number.isSafeInteger(value.number) &&
+      typeof value.url === 'string' &&
+      typeof value.mergeable === 'string' &&
+      typeof value.mergeStateStatus === 'string'
+      ? {
+          number: Number(value.number),
+          url: value.url,
+          mergeable: value.mergeable,
+          mergeStateStatus: value.mergeStateStatus,
+          mergeabilityBoundReached: false,
+        }
       : null
   } catch {
     return null
   }
+}
+
+function pullRequestForBranch(cwd: string, branch: string): BranchPullRequest | null {
+  const deadline = Date.now() + CALL_BUDGETS.gh.deadlineMs
+  let lastRead: BranchPullRequest | null = null
+  while (true) {
+    try {
+      lastRead = readPullRequestForBranch(cwd, branch)
+    } catch (error) {
+      if (error instanceof BoundExceededError && lastRead) {
+        return { ...lastRead, mergeabilityBoundReached: true }
+      }
+      if (error instanceof BoundExceededError) throw error
+      return null
+    }
+    if (!lastRead) return null
+    const now = Date.now()
+    const decision = decideMergeability({
+      ...lastRead,
+      landingBranch: '',
+      boundReached: now >= deadline,
+    })
+    if (decision.kind !== 'poll') {
+      return { ...lastRead, mergeabilityBoundReached: now >= deadline }
+    }
+    Bun.sleepSync(Math.min(PULL_REQUEST_MERGEABILITY_POLL_MS, deadline - now))
+  }
+}
+
+function pullRequestOutput(
+  output: string,
+  pullRequest: BranchPullRequest,
+  landingBranch: string,
+): string {
+  const decision = decideMergeability({
+    ...pullRequest,
+    landingBranch,
+    boundReached: pullRequest.mergeabilityBoundReached,
+  })
+  const primary = output || pullRequest.url
+  return decision.kind === 'report' ? `${primary}\n${decision.message}` : primary
 }
 
 function pendingIntent(database: Database, project: string, branch: string): boolean {
@@ -643,16 +694,18 @@ export function createPullRequest(
   } catch (cause) {
     failure = String((cause as Error)?.message ?? cause)
   }
-  const created = pullRequestForBranch(cwd, change.branch)
-  if (created) finalizeTriageIntent(change.project.name, change.branch, created.number)
-  if (failure !== null) throw new Error(`gh pr create failed: ${failure}`)
-  if (!created) {
-    throw new Error(
-      `gh pr create succeeded but gh pr view ${change.branch} could not resolve its number; the triage intent remains pending`,
-    )
+  let created: BranchPullRequest | null = null
+  try {
+    created = pullRequestForBranch(cwd, change.branch)
+  } catch {
+    if (failure !== null) throw new Error(`gh pr create failed: ${failure}`)
+    return { output, overrideId: checked.overrideId }
   }
+  const pullRequest = created ?? existing
+  if (pullRequest) finalizeTriageIntent(change.project.name, change.branch, pullRequest.number)
+  if (!pullRequest && failure !== null) throw new Error(`gh pr create failed: ${failure}`)
   return {
-    output: output || created.url,
+    output: pullRequest ? pullRequestOutput(output, pullRequest, trunk) : output,
     overrideId: checked.overrideId,
   }
 }
