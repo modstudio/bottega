@@ -2,8 +2,18 @@ import { expect, test } from 'bun:test'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   environmentRecordSessionDecision,
+  environmentRecordStepsDecision,
   environmentSettingsApplyDecision,
 } from './setup-environment-runtime.ts'
+
+test('gates record-session-required environment steps while waiting for sign-in', () => {
+  expect(environmentRecordStepsDecision({ action: 'wait-for-sign-in' })).toEqual({
+    runSessionRequiredSteps: false,
+  })
+  expect(environmentRecordStepsDecision({ action: 'hosted' })).toEqual({
+    runSessionRequiredSteps: true,
+  })
+})
 
 test('decides record-backed environment rendering from authority and render results', () => {
   expect(
@@ -39,6 +49,12 @@ test('decides record-backed environment rendering from authority and render resu
       errorKind: 'refused',
       status: null,
       message: `record credentials were refused; ${RECORD_SIGN_IN_REMEDY}`,
+    }),
+  ).toEqual({ action: 'wait-for-sign-in' })
+  expect(
+    environmentRecordSessionDecision({ verdict: 'hosted' }, true, {
+      kind: 'error',
+      message: RECORD_SIGN_IN_REMEDY,
     }),
   ).toEqual({ action: 'wait-for-sign-in' })
   expect(

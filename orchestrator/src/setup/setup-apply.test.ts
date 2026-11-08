@@ -434,6 +434,23 @@ test('reports an applied environment migration requiring operator follow-up dist
 
   expect(results.map(({ status }) => status)).toEqual(['follow-up', 'applied'])
   expect(results[0]?.message).toBe('applied, follow-up required: reload the service')
+  expect(setupResultsRequireAttention(results)).toBe(true)
+})
+
+test('does not require attention when environment migration waits for sign-in', async () => {
+  const results = await applySetupActions(
+    [{ kind: 'migrate-environment' }],
+    { add: async () => {}, fillAbsent: async () => {} },
+    undefined,
+    {
+      migrateEnvironment: async () => ({
+        status: 'follow-up',
+        message: 'not signed in: record secrets and user settings wait for sign-in',
+        condition: 'waiting-for-sign-in',
+      }),
+    },
+  )
+
   expect(setupResultsRequireAttention(results)).toBe(false)
 })
 
