@@ -157,7 +157,12 @@ test('recommends the install level from signed-in harness facts unless a setting
 })
 
 test('plans release schedules only for a full Darwin distribution with a missing or changed agent', () => {
-  const schedule = { label: 'com.user.orch-sweep' as const, loaded: true, plistMatches: true }
+  const schedule = {
+    label: 'com.user.orch-sweep' as const,
+    installed: true,
+    loaded: true,
+    plistMatches: true,
+  }
   const actionsFor = (overrides: Partial<SetupFacts>) => {
     const plan = proposeSetup(
       {

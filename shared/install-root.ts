@@ -35,6 +35,11 @@ export type InstallationIdentity =
 
 export type InstallationKind = InstallationIdentity['kind']
 
+/** Choose the executable layout owned by an identified installation. */
+export function installationExecutable(root: string, kind: InstallationKind): string {
+  return kind === 'distribution' ? join(root, PLATFORM_SLUG) : join(root, 'bin', PLATFORM_SLUG)
+}
+
 class InstallRootNotFoundError extends Error {}
 
 function isDistributionRoot(directory: string): boolean {
@@ -111,9 +116,10 @@ export function resolveInstallationPaths(
   env: InstallEnvironment,
 ): InstallationPaths {
   const root = resolveInstallRoot(fromDirectory, env)
+  const kind: InstallationKind = readDistributionManifest(root) ? 'distribution' : 'checkout'
   return {
     root,
-    executable: join(root, 'bin', PLATFORM_SLUG),
+    executable: installationExecutable(root, kind),
     ops: join(root, 'ops'),
     hubAssets: join(root, 'hub'),
   }

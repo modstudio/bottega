@@ -26,6 +26,7 @@ test('checkout refreshes each drifted owner once in template-owner order', () =>
       'com.user.orch-record-sync': compared(true),
       'ops-label': compared(false),
     },
+    requiredMaintenanceLabels: new Set(),
   })
   expect(plan.checkoutCommands).toEqual(['hub/bin/install-launchd.sh', 'ops/install.sh'])
   expect(plan.labels.map(({ label }) => label)).toEqual(['hub-label', 'ops-label'])
@@ -40,6 +41,7 @@ test('distribution refreshes maintenance drift and leaves checkout-owned drift a
       'com.user.orch-record-sync': compared(false),
       'ops-label': compared(false),
     },
+    requiredMaintenanceLabels: new Set(),
   })
   expect(plan.applyMaintenance).toBeTrue()
   expect(plan.labels).toEqual([
@@ -49,6 +51,17 @@ test('distribution refreshes maintenance drift and leaves checkout-owned drift a
     },
   ])
   expect(plan.notReleaseInstalled).toEqual(['ops-label'])
+})
+
+test('distribution installs required maintenance labels with no definition', () => {
+  const plan = decideLaunchAgentRefresh({
+    installationKind: 'distribution',
+    owners,
+    observations: { 'hub-label': compared(true), 'ops-label': compared(true) },
+    requiredMaintenanceLabels: new Set(['com.user.orch-record-sync']),
+  })
+  expect(plan.applyMaintenance).toBeTrue()
+  expect(plan.labels.map(({ label }) => label)).toEqual(['com.user.orch-record-sync'])
 })
 
 test('an unavailable comparison is unverified instead of drifted', () => {
@@ -62,6 +75,7 @@ test('an unavailable comparison is unverified instead of drifted', () => {
         comparison: { kind: 'unavailable', detail: 'flyctl is not installed', command: null },
       },
     },
+    requiredMaintenanceLabels: new Set(),
   })
   expect(plan.unverified).toEqual([{ label: 'hub-label', detail: 'flyctl is not installed' }])
   expect(plan.labels).toEqual([])
@@ -73,6 +87,7 @@ test('matching definitions produce an empty refresh plan', () => {
     installationKind: 'checkout',
     owners,
     observations: Object.fromEntries(owners.map(({ label }) => [label, compared(true)])),
+    requiredMaintenanceLabels: new Set(),
   })
   expect(plan).toEqual({
     labels: [],
@@ -139,6 +154,76 @@ const distributionIdentity: InstallationIdentity = {
   },
 }
 
+test('distribution refresh installs a required missing maintenance definition', async () => {
+  let applied = false
+  let applies = 0
+  await refreshLaunchAgents(
+    'darwin',
+    { log: () => {} },
+    {
+      identity: distributionIdentity,
+      readOwners: async () => [owners[1]!],
+      observe: (observedOwners) => {
+        expect(observedOwners).toEqual([])
+        return {}
+      },
+      readScheduleFacts: () => [
+        {
+          label: 'com.user.orch-record-sync',
+          installed: applied,
+          loaded: applied,
+          plistMatches: applied,
+        },
+      ],
+      runCheckoutInstaller: () => {
+        throw new Error('checkout installer must not run')
+      },
+      applyMaintenance: async () => {
+        applies += 1
+        applied = true
+        return [{ label: 'com.user.orch-record-sync', status: 'applied' }]
+      },
+      requiredMaintenanceLabels: () => ['com.user.orch-record-sync'],
+    },
+  )
+  expect(applies).toBe(1)
+})
+
+test('distribution refresh rejects when a required definition stays missing after apply', async () => {
+  let applies = 0
+  await expect(
+    refreshLaunchAgents(
+      'darwin',
+      { log: () => {} },
+      {
+        identity: distributionIdentity,
+        readOwners: async () => [owners[1]!],
+        observe: (observedOwners) => {
+          expect(observedOwners).toEqual([])
+          return {}
+        },
+        readScheduleFacts: () => [
+          {
+            label: 'com.user.orch-record-sync',
+            installed: false,
+            loaded: false,
+            plistMatches: false,
+          },
+        ],
+        runCheckoutInstaller: () => {
+          throw new Error('checkout installer must not run')
+        },
+        applyMaintenance: async () => {
+          applies += 1
+          return [{ label: 'com.user.orch-record-sync', status: 'applied' }]
+        },
+        requiredMaintenanceLabels: () => ['com.user.orch-record-sync'],
+      },
+    ),
+  ).rejects.toThrow('com.user.orch-record-sync definition still drifted')
+  expect(applies).toBe(1)
+})
+
 test('distribution refresh verifies maintenance drift with setup facts after apply', async () => {
   let factsRead = 0
   let applies = 0
@@ -156,6 +241,7 @@ test('distribution refresh verifies maintenance drift with setup facts after app
       readScheduleFacts: () => [
         {
           label: 'com.user.orch-record-sync',
+          installed: true,
           loaded: true,
           plistMatches: ++factsRead > 1,
         },
@@ -184,7 +270,12 @@ test('distribution refresh logs a skipped maintenance label without reporting dr
         return {}
       },
       readScheduleFacts: () => [
-        { label: 'com.user.orch-record-sync', loaded: true, plistMatches: false },
+        {
+          label: 'com.user.orch-record-sync',
+          installed: true,
+          loaded: true,
+          plistMatches: false,
+        },
       ],
       applyMaintenance: async () => [
         {

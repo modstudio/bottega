@@ -2,7 +2,10 @@
 /** Adapts the hidden launch-agent refresh verb to its service. */
 
 import type { Command } from 'commander'
+import { gatherLaunchAgentSkipFacts } from '../../../shared/launch-agent-skip.ts'
+import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
 import { refreshLaunchAgents } from '../health/launch-agent-refresh.ts'
+import { requiredMaintenanceLabels } from '../setup/setup-schedules.ts'
 
 export function registerLaunchAgentRefreshCommand(
   program: Command,
@@ -12,5 +15,13 @@ export function registerLaunchAgentRefreshCommand(
     .command('launch-agents', { hidden: true })
     .command('refresh')
     .allowExcessArguments(false)
-    .action(() => refreshLaunchAgents(process.platform, presentation))
+    .action(() =>
+      refreshLaunchAgents(process.platform, presentation, {
+        requiredMaintenanceLabels: () =>
+          requiredMaintenanceLabels(
+            gatherLaunchAgentSkipFacts(),
+            readMachineValue('machine.level') as MachineLevel,
+          ),
+      }),
+    )
 }
