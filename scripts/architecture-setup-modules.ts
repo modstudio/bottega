@@ -187,6 +187,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/install-root.ts',
       '../../../shared/launch-agent-render.ts',
       '../../../shared/launch-agent-skip.ts',
+      '../../../shared/machine-config.ts',
       '../../../shared/state-directory.ts',
       './launchd-owners.ts',
       '../../../shared/bounded-process.ts',

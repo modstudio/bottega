@@ -12,6 +12,7 @@ import {
   gitCommonDir,
   INSTALL_HOME_ENV,
   installationBuildId,
+  installationExecutable,
   installationVersionText,
   installRoot,
   isAuthorizedPlatformInstallation,
@@ -36,6 +37,13 @@ function scratch(): string {
   scratchRoots.push(root)
   return root
 }
+
+test('installation executable layout follows the installation kind', () => {
+  expect(installationExecutable('/install', 'distribution')).toBe(join('/install', PLATFORM_SLUG))
+  expect(installationExecutable('/checkout', 'checkout')).toBe(
+    join('/checkout', 'bin', PLATFORM_SLUG),
+  )
+})
 
 describe('install root resolution', () => {
   test('the running root ignores an install-home override while the designated root honors it', () => {
@@ -115,23 +123,34 @@ describe('install root resolution', () => {
     expect(isInstallationRoot(scratch())).toBeFalse()
   })
 
-  test('service paths use the resolved checkout or distribution root', () => {
-    const root = scratch()
-    writeFileSync(join(root, DIST_MANIFEST), '{}')
-    expect(resolveInstallationPaths(join(root, 'ops'), {})).toEqual({
-      root,
-      executable: join(root, 'bin', PLATFORM_SLUG),
-      ops: join(root, 'ops'),
-      hubAssets: join(root, 'hub'),
+  test('service paths use the executable layout for each installation kind', () => {
+    const distribution = scratch()
+    writeFileSync(
+      join(distribution, DIST_MANIFEST),
+      JSON.stringify({
+        name: PLATFORM_NAME,
+        version: '1.2.3',
+        built: '2026-11-08T12:00:00.000Z',
+        commit: 'abcdef0',
+      }),
+    )
+    expect(resolveInstallationPaths(join(distribution, 'ops'), {})).toEqual({
+      root: distribution,
+      executable: join(distribution, PLATFORM_SLUG),
+      ops: join(distribution, 'ops'),
+      hubAssets: join(distribution, 'hub'),
     })
 
-    expect(
-      resolveInstallationPaths('/ignored', { [INSTALL_HOME_ENV]: '/installed/current' }),
-    ).toEqual({
-      root: '/installed/current',
-      executable: join('/installed/current', 'bin', PLATFORM_SLUG),
-      ops: '/installed/current/ops',
-      hubAssets: '/installed/current/hub',
+    const checkout = scratch()
+    writeFileSync(
+      join(checkout, 'package.json'),
+      JSON.stringify({ name: PLATFORM_SLUG, version: '1.2.3' }),
+    )
+    expect(resolveInstallationPaths(join(checkout, 'shared'), {})).toEqual({
+      root: checkout,
+      executable: join(checkout, 'bin', PLATFORM_SLUG),
+      ops: join(checkout, 'ops'),
+      hubAssets: join(checkout, 'hub'),
     })
   })
 

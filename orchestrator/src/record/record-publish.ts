@@ -28,12 +28,34 @@ type PublishDeps = {
   client?: RecordApiClient
   identity?: string
   build?: (kind: SnapshotKind) => Promise<unknown>
+  availability: { hostedConfigured: boolean; signedIn: boolean }
+}
+
+export type RecordPublishDecision = { publish: true } | { publish: false; reason: string }
+
+/** Decide whether a scheduled snapshot publish has a hosted destination and an identity. */
+export function decideRecordPublish(input: {
+  hostedConfigured: boolean
+  signedIn: boolean
+}): RecordPublishDecision {
+  if (!input.hostedConfigured) {
+    return { publish: false, reason: 'no hosted record is configured for this install' }
+  }
+  if (!input.signedIn) {
+    return { publish: false, reason: 'no one is signed in to the hosted record' }
+  }
+  return { publish: true }
 }
 
 export async function publishSnapshotsCommand(
   presentation: Presentation,
-  deps: PublishDeps = {},
+  deps: PublishDeps,
 ): Promise<void> {
+  const decision = decideRecordPublish(deps.availability)
+  if (!decision.publish) {
+    presentation.log(`nothing published — ${decision.reason}`)
+    return
+  }
   const client = deps.client ?? recordApiClient()
   const identity = deps.identity ?? machineId()
   const build = deps.build ?? buildSnapshotPayload

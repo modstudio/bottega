@@ -11,8 +11,10 @@ import { installationIdentity } from '../../../shared/install-root.ts'
 import { renderLaunchAgentTemplate } from '../../../shared/launch-agent-render.ts'
 import {
   gatherLaunchAgentSkipFacts,
+  type LaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
+import type { MachineLevel } from '../../../shared/machine-config.ts'
 import {
   RECORD_SYNC_PENDING_MARKER,
   recordSyncQueueDirectory,
@@ -26,7 +28,7 @@ export const MAINTENANCE_SCHEDULE_LABELS = [
   'com.user.orch-record-sync',
 ] as const
 
-type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
+export type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
 
 const maintenanceScheduleLabels = new Set<string>(MAINTENANCE_SCHEDULE_LABELS)
 
@@ -36,6 +38,7 @@ export function isMaintenanceScheduleLabel(label: string): label is MaintenanceS
 
 export type ScheduleSetupFact = {
   label: MaintenanceScheduleLabel
+  installed: boolean
   loaded: boolean
   plistMatches: boolean
 }
@@ -51,6 +54,32 @@ export type ScheduleApplyResult = {
   label: MaintenanceScheduleLabel
   status: 'applied' | 'unchanged' | 'skipped'
   reason?: string
+}
+
+export type MaintenanceSchedulePlanItem = {
+  label: MaintenanceScheduleLabel
+  skipReason: string | null
+}
+
+/** Apply the shared skip ruling to the canonical setup label set. */
+export function maintenanceSchedulePlan(
+  skipFacts: LaunchAgentSkipFacts,
+): MaintenanceSchedulePlanItem[] {
+  return MAINTENANCE_SCHEDULE_LABELS.map((label) => ({
+    label,
+    skipReason: launchAgentSkipReason(label, skipFacts),
+  }))
+}
+
+/** Return the release-owned schedules required at this machine's setup level. */
+export function requiredMaintenanceLabels(
+  skipFacts: LaunchAgentSkipFacts,
+  level: MachineLevel,
+): MaintenanceScheduleLabel[] {
+  if (level !== 'full') return []
+  return maintenanceSchedulePlan(skipFacts).flatMap(({ label, skipReason }) =>
+    skipReason ? [] : [label],
+  )
 }
 
 const templatePath = (label: MaintenanceScheduleLabel): string =>
@@ -107,10 +136,12 @@ export function gatherScheduleSetupFacts(): ScheduleSetupFact[] {
   return MAINTENANCE_SCHEDULE_LABELS.map((label) => {
     const target = join(values.home, 'Library', 'LaunchAgents', `${label}.plist`)
     const expected = renderedSchedule(label)
+    const installed = existsSync(target)
     return {
       label,
+      installed,
       loaded: launchctl !== null && uid !== undefined && launchctlLoaded(launchctl, uid, label),
-      plistMatches: existsSync(target) && readFileSync(target, 'utf8') === expected,
+      plistMatches: installed && readFileSync(target, 'utf8') === expected,
     }
   })
 }
@@ -148,8 +179,12 @@ export async function applyMaintenanceSchedules(): Promise<ScheduleApplyResult[]
   await mkdir(recordSyncQueueDirectory(process.env), { recursive: true })
   const skipFacts = gatherLaunchAgentSkipFacts()
   const results: ScheduleApplyResult[] = []
-  for (const label of MAINTENANCE_SCHEDULE_LABELS) {
-    results.push(await applyMaintenanceSchedule(label, launchctl, uid, agents, skipFacts))
+  for (const item of maintenanceSchedulePlan(skipFacts)) {
+    if (item.skipReason) {
+      results.push({ label: item.label, status: 'skipped', reason: item.skipReason })
+      continue
+    }
+    results.push(await applyMaintenanceSchedule(item.label, launchctl, uid, agents))
   }
   return results
 }
@@ -159,10 +194,7 @@ async function applyMaintenanceSchedule(
   launchctl: string,
   uid: number,
   agents: string,
-  skipFacts: ReturnType<typeof gatherLaunchAgentSkipFacts>,
 ): Promise<ScheduleApplyResult> {
-  const reason = launchAgentSkipReason(label, skipFacts)
-  if (reason) return { label, status: 'skipped', reason }
   const rendered = renderedSchedule(label)
   const target = join(agents, `${label}.plist`)
   const logPath = plistStandardOutPath(rendered)

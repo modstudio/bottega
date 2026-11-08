@@ -63,7 +63,7 @@ import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
 import { useHostedRecord } from '../record/record-use.ts'
-import { requireHostedRecord } from '../record/record-write-authority.ts'
+import { recordPublishAvailability, requireHostedRecord } from '../record/record-write-authority.ts'
 import { requestedMachineNames } from './machine-name-options.ts'
 import { log } from './support.ts'
 
@@ -563,13 +563,14 @@ export function register(program: Command): void {
     .command('publish')
     .description('publish hosted record snapshots')
     .action(() =>
-      hostedCommand(`${PLATFORM_SLUG} record publish`, () =>
-        publishSnapshotsCommand({
+      publishSnapshotsCommand(
+        {
           log,
           setExitCode: (code) => {
             process.exitCode = code
           },
-        }),
+        },
+        { availability: recordPublishAvailability() },
       ),
     )
   record

@@ -125,7 +125,10 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/commands/launch-agent-refresh.ts', [
     'commander',
+    '../../../shared/launch-agent-skip.ts',
+    '../../../shared/machine-config.ts',
     '../health/launch-agent-refresh.ts',
+    '../setup/setup-schedules.ts',
   ]),
   module('orchestrator/src/health/launch-agent-refresh.ts', [
     'node:path',

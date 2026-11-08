@@ -6,10 +6,28 @@ import { agentsCommand } from '../agent/agent-commands.ts'
 import { blockersCommand, healthCommand } from '../health/health-commands.ts'
 import { jobsCommand } from '../jobs/job-commands.ts'
 import { stateCommand } from './record-commands.ts'
-import { buildSnapshotPayload, publishSnapshotsCommand } from './record-publish.ts'
+import {
+  buildSnapshotPayload,
+  decideRecordPublish,
+  publishSnapshotsCommand,
+} from './record-publish.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 
 const flags = { has: (name: string) => name === 'json', flag: () => undefined }
+
+test('snapshot publish treats local-only and signed-out installs as successful no-ops', () => {
+  expect(decideRecordPublish({ hostedConfigured: false, signedIn: false })).toEqual({
+    publish: false,
+    reason: 'no hosted record is configured for this install',
+  })
+  expect(decideRecordPublish({ hostedConfigured: true, signedIn: false })).toEqual({
+    publish: false,
+    reason: 'no one is signed in to the hosted record',
+  })
+  expect(decideRecordPublish({ hostedConfigured: true, signedIn: true })).toEqual({
+    publish: true,
+  })
+})
 
 describe('record snapshot payloads', () => {
   test('builders match the JSON command functions', async () => {
@@ -62,6 +80,7 @@ describe('record snapshot payloads', () => {
         client,
         identity: '01990000-0000-7000-8000-000000000001',
         build: async (kind) => ({ kind }),
+        availability: { hostedConfigured: true, signedIn: true },
       },
     )
     expect(attempted).toEqual(['state', 'blockers', 'health', 'jobs', 'agents'])

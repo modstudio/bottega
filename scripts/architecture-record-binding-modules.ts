@@ -81,6 +81,7 @@ export const recordBindingModules: RecordModule[] = [
     '../database/db.ts',
     './install-binding.ts',
     './install-binding-write.ts',
+    './record-session.ts',
     './record-write-decision.ts',
   ]),
 ]
