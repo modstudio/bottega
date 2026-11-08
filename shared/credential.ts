@@ -8,7 +8,7 @@ export const CREDENTIAL_BINDINGS = ['project', 'space'] as const
 
 export type CredentialEnvironment = (typeof CREDENTIAL_ENVIRONMENTS)[number]
 export type CredentialPayer = (typeof CREDENTIAL_PAYERS)[number]
-type CredentialBinding = (typeof CREDENTIAL_BINDINGS)[number]
+export type CredentialBinding = (typeof CREDENTIAL_BINDINGS)[number]
 
 export type CredentialMetadataFields = {
   provider: string
@@ -27,3 +27,28 @@ export type CredentialPreferencePayload = CredentialIdentity & {
 }
 
 export type CredentialPreference = CredentialPreferencePayload & { updatedAt: string }
+
+export type CompleteCredentialFields = CredentialMetadataFields & {
+  environment: CredentialEnvironment
+}
+
+export function completeCredentialFields(row: {
+  provider?: string | null
+  type?: string | null
+  hint?: string | null
+  environment: string
+}): CompleteCredentialFields | null {
+  if (
+    row.provider == null ||
+    row.type == null ||
+    row.hint == null ||
+    !CREDENTIAL_ENVIRONMENTS.includes(row.environment as CredentialEnvironment)
+  )
+    return null
+  return {
+    provider: row.provider,
+    type: row.type,
+    hint: row.hint,
+    environment: row.environment as CredentialEnvironment,
+  }
+}

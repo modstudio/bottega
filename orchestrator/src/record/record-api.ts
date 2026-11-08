@@ -515,18 +515,18 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.delete('/v1/config/secrets/:key', async (context) => {
     const active = scope(context)
     if (!active) return noSpace(context)
+    const query = z.object({ projectId: idSchema.optional() }).safeParse(context.req.query())
+    if (!query.success) return context.json({ error: 'invalid config secret address' }, 422)
     const body = configBody
       .omit({ expectedRowVersion: true })
-      .extend({
-        expectedRowVersion: expectedVersionSchema,
-        projectId: idSchema.nullable().optional(),
-      })
+      .extend({ expectedRowVersion: expectedVersionSchema })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config secret delete body' }, 422)
     try {
       await deps.deleteConfigSecret({
         ...active,
         key: context.req.param('key'),
+        ...query.data,
         ...body.data,
       })
       return context.json({ deleted: true })

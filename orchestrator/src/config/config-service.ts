@@ -78,6 +78,8 @@ const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
 const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
 const isNotFound = (error: unknown) => error instanceof ConfigClientError && error.status === 404
 
+class DataKeyWrapAccessError extends Error {}
+
 export type RotationPlan = { reseal: ConfigSecret[]; retireDekIds: string[] }
 
 export function shouldRotateAfterRevocation(
@@ -134,9 +136,11 @@ async function unwrap(
   const local = machine ?? (await localMachine())
   const trusted = trust ?? (await readTrustList())
   const wrap = key.wraps.find((item) => trusted[item.senderKeyId]) ?? key.wraps[0]
-  if (!wrap) throw new Error(`data key ${key.id} has no wrap addressed to this machine`)
+  if (!wrap)
+    throw new DataKeyWrapAccessError(`data key ${key.id} has no wrap addressed to this machine`)
   const sender = trusted[wrap.senderKeyId]
-  if (!sender) throw new Error(`data key ${key.id} sender ${wrap.senderKeyId} is not trusted`)
+  if (!sender)
+    throw new DataKeyWrapAccessError(`data key ${key.id} sender ${wrap.senderKeyId} is not trusted`)
   const spaceId = destinationSpaceId ?? (await identity(client)).spaceId
   return unwrapDataKey({
     enc: bytes(wrap.enc),
@@ -182,15 +186,23 @@ async function currentOrCreate(
   client: ConfigClient,
   destination: ConfigDestination = {},
   createDataKey = true,
+  missingDestinationAccessRefusal?: () => Error,
 ) {
   const machine = await localMachine()
   try {
     const key = await client.currentDataKey(machine.keyId, destination)
-    if (destination.destinationSpaceId)
-      return {
-        key,
-        dek: await unwrap(client, key, machine, undefined, destination.destinationSpaceId),
+    if (destination.destinationSpaceId) {
+      try {
+        return {
+          key,
+          dek: await unwrap(client, key, machine, undefined, destination.destinationSpaceId),
+        }
+      } catch (error) {
+        if (error instanceof DataKeyWrapAccessError && missingDestinationAccessRefusal)
+          throw missingDestinationAccessRefusal()
+        throw error
       }
+    }
     const remote = await unpinServerRevoked(client)
     const rotated = await rotateAfterLatestRevocation(client, machine, key, remote)
     return { key: rotated.key, dek: rotated.dek }
@@ -540,6 +552,7 @@ export async function setSecret(
     environment?: string
     metadata?: CredentialMetadataFields & { projectId: string | null }
     createDataKey?: boolean
+    missingDestinationAccessRefusal?: () => Error
   } = {},
 ) {
   if (sealedValueIsEmpty(value)) throw new Error(sealedEmptyRefusal(key, scope))
@@ -549,6 +562,7 @@ export async function setSecret(
     client,
     destination,
     options.createDataKey ?? true,
+    options.missingDestinationAccessRefusal,
   )
   let existing: ConfigSecret | null = null
   try {

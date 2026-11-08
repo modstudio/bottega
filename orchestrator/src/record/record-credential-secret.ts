@@ -1,7 +1,7 @@
 // concern: record-credential-secret
 /** Maps hosted secret rows without exposing ciphertext on metadata surfaces. */
 
-import type { CredentialEnvironment, CredentialMetadataFields } from '../../../shared/credential.ts'
+import type { CompleteCredentialFields } from '../../../shared/credential.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
 
 type ConfigSecretBase = {
@@ -21,8 +21,7 @@ type LegacyConfigSecretMetadata = ConfigSecretBase & {
   hint: null
 }
 type CredentialSecretMetadata = ConfigSecretBase &
-  CredentialMetadataFields & {
-    environment: CredentialEnvironment
+  CompleteCredentialFields & {
     projectId: string | null
   }
 export type ConfigSecretMetadata = LegacyConfigSecretMetadata | CredentialSecretMetadata

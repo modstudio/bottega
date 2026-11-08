@@ -10,7 +10,8 @@ import {
 } from '../../../shared/config-client.ts'
 import {
   CREDENTIAL_ENVIRONMENTS,
-  type CredentialMetadataFields,
+  completeCredentialFields,
+  type CompleteCredentialFields,
 } from '../../../shared/credential.ts'
 import { stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
@@ -46,6 +47,21 @@ function missingProjectWrapRefusal(address: CredentialAddress): Error {
   )
 }
 
+export function missingCredentialRefusal(address: CredentialAddress): Error {
+  const name = `${address.provider}/${address.type}`
+  const binding = address.projectName
+    ? `project ${address.projectName}`
+    : `space ${address.spaceName}`
+  const bindOption = address.projectName
+    ? ` --project ${address.projectName}`
+    : ` --space ${address.spaceName}`
+  const payerOption = address.payer === 'shared' ? ' --shared' : ''
+  const environmentOption = address.environment === 'default' ? '' : ` --env ${address.environment}`
+  return new Error(
+    `credential ${name} (${address.environment}) is missing for ${binding}; pipe its value to \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${environmentOption}\``,
+  )
+}
+
 export async function setCredential(
   address: CredentialAddress,
   value: string,
@@ -67,6 +83,7 @@ export async function setCredential(
           hint: credentialHint(stripTrailingNewline(value)),
         },
         createDataKey: false,
+        missingDestinationAccessRefusal: () => missingProjectWrapRefusal(address),
       },
     )
   } catch (error) {
@@ -76,20 +93,7 @@ export async function setCredential(
   }
 }
 
-type CredentialRow = ConfigSecret &
-  CredentialMetadataFields & { environment: CredentialEnvironment }
-
-function isCredentialRow(row: ConfigSecret): row is CredentialRow {
-  return (
-    row.provider !== null &&
-    row.provider !== undefined &&
-    row.type !== null &&
-    row.type !== undefined &&
-    row.hint !== null &&
-    row.hint !== undefined &&
-    CREDENTIAL_ENVIRONMENTS.includes(row.environment as CredentialEnvironment)
-  )
-}
+type CredentialRow = ConfigSecret & CompleteCredentialFields
 
 export async function listCredentials(
   spaceId: string,
@@ -101,14 +105,23 @@ export async function listCredentials(
   const rows = await Promise.all(environments.map((env) => client.listSecrets(env, target)))
   return rows
     .flat()
-    .filter(isCredentialRow)
+    .flatMap((row) => {
+      const fields = completeCredentialFields(row)
+      return fields ? [{ ...row, ...fields }] : []
+    })
     .filter((row) => filters.projectId === undefined || row.projectId === filters.projectId)
 }
 
 export async function deleteCredential(address: CredentialAddress, client = configClient()) {
   const key = credentialVariableName(address.provider, address.type, address.environment)
-  return deleteSecret(key, credentialScopeFromPayer(address.payer), client, {
-    destination: destination(address),
-    environment: address.environment,
-  })
+  try {
+    return await deleteSecret(key, credentialScopeFromPayer(address.payer), client, {
+      destination: destination(address),
+      environment: address.environment,
+    })
+  } catch (error) {
+    if (error instanceof ConfigClientError && error.status === 404)
+      throw missingCredentialRefusal(address)
+    throw error
+  }
 }

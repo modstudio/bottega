@@ -27,6 +27,11 @@ import {
   retireDataKey,
   revokeMachineKey,
 } from '../src/record/record-config.ts'
+import {
+  deleteCredentialPreference,
+  listCredentialPreferences,
+  putCredentialPreference,
+} from '../src/record/record-credential.ts'
 import { setSpaceMemberPermission } from '../src/record/record-member-permission.ts'
 import { asSpace, asSpaces, succeeds } from './fixtures/postgres-rls.ts'
 
@@ -590,6 +595,66 @@ export function registerHostedConfigProofs(
         expectedRowVersion: null,
       }),
     ).rejects.toMatchObject({ status: 422 })
+  })
+
+  test('credential payer preferences update, list, and delete only the addressed user slot', async () => {
+    const identity = {
+      ...serviceTenant,
+      provider: 'preference-proof',
+      type: 'api-key',
+      environment: 'test' as const,
+    }
+    await putCredentialPreference({
+      ...identity,
+      projectId: PROJECT_A,
+      payer: 'personal',
+      binding: 'project',
+    })
+    await putCredentialPreference({
+      ...identity,
+      projectId: PROJECT_A,
+      payer: 'shared',
+      binding: 'space',
+    })
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT count(*) FROM credential_payer_preference
+         WHERE space_id='${spaceA}' AND user_id='${userA}' AND project_id='${PROJECT_A}'
+           AND provider='preference-proof' AND type='api-key' AND environment='test';`,
+      ),
+    ).toBe('1')
+    expect(
+      (await listCredentialPreferences(serviceTenant)).find(
+        (row) => row.provider === identity.provider && row.projectId === PROJECT_A,
+      ),
+    ).toMatchObject({ payer: 'shared', binding: 'space', environment: 'test' })
+
+    await putCredentialPreference({
+      ...identity,
+      projectId: null,
+      payer: 'personal',
+      binding: 'space',
+    })
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO credential_payer_preference
+       (id,space_id,user_id,project_id,provider,type,environment,preferred_payer,preferred_binding,updated_at)
+       VALUES ('${newRecordId()}','${spaceA}','${USER_B}',NULL,'preference-proof','api-key','test','shared','space',now());`,
+    )
+    await deleteCredentialPreference({ ...identity, projectId: PROJECT_A })
+    await deleteCredentialPreference({ ...identity, projectId: null })
+    expect(
+      succeeds(
+        'postgres',
+        'postgres',
+        `SELECT user_id FROM credential_payer_preference
+         WHERE space_id='${spaceA}' AND provider='preference-proof'
+         ORDER BY user_id;`,
+      ),
+    ).toBe(USER_B)
   })
 
   test('config service refuses foreign and retired data keys for secret writes', async () => {

@@ -141,11 +141,7 @@ function configValueClient(request: Request, query: Query) {
         environment: CredentialEnvironment | string
         value: string
         expectedRowVersion: number | null
-        projectId?: string | null
-        provider?: CredentialMetadataFields['provider'] | null
-        type?: CredentialMetadataFields['type'] | null
-        hint?: CredentialMetadataFields['hint'] | null
-      } & ConfigDestination,
+      },
     ) =>
       request<ConfigEntry>(`/v1/config/entries/${encodeURIComponent(key)}`, {
         method: 'PUT',
@@ -206,11 +202,18 @@ function configSecretDeleteClient(request: Request) {
         expectedRowVersion: number
       } & ConfigDestination,
     ) =>
-      request<{ deleted: true }>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-        destinationSpaceId: input.destinationSpaceId,
-        body: JSON.stringify(input),
-      }),
+      request<{ deleted: true }>(
+        `/v1/config/secrets/${encodeURIComponent(key)}${input.projectId ? `?projectId=${encodeURIComponent(input.projectId)}` : ''}`,
+        {
+          method: 'DELETE',
+          destinationSpaceId: input.destinationSpaceId,
+          body: JSON.stringify({
+            scope: input.scope,
+            environment: input.environment,
+            expectedRowVersion: input.expectedRowVersion,
+          }),
+        },
+      ),
   }
 }
 
@@ -224,7 +227,7 @@ function credentialPreferenceClient(request: Request) {
     putCredentialPreference: (input: Omit<CredentialPreference, 'updatedAt'> & ConfigDestination) =>
       request<CredentialPreference>('/v1/config/credential-preferences', {
         method: 'PUT',
-        ...input,
+        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
     deleteCredentialPreference: (
@@ -233,7 +236,7 @@ function credentialPreferenceClient(request: Request) {
     ) =>
       request<{ deleted: true }>('/v1/config/credential-preferences', {
         method: 'DELETE',
-        ...input,
+        destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
   }

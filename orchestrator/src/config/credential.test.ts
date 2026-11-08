@@ -3,6 +3,7 @@ import {
   type CredentialCandidate,
   credentialDisplayName,
   credentialHint,
+  parseCredentialSlot,
   credentialVariableName,
   resolveCredential,
 } from './credential.ts'
@@ -92,6 +93,26 @@ test('a space preference wins over the default order', () => {
       preferences: [{ ...base, projectId: null, payer: 'shared', binding: 'space' }],
     }),
   ).toMatchObject({ kind: 'resolved', credential: rows[1], reason: 'space-preference' })
+})
+
+test('a project slot preference beats the default payer order', () => {
+  const rows = [
+    candidate('shared', base.projectId),
+    candidate('personal', base.projectId),
+    candidate('shared', null),
+  ]
+  expect(
+    resolveCredential({
+      ...base,
+      candidates: rows,
+      preferences: [{ ...base, projectId: base.projectId, payer: 'shared', binding: 'project' }],
+    }),
+  ).toMatchObject({ kind: 'resolved', credential: rows[0], reason: 'project-preference' })
+})
+
+test('credential slots use the shared payer and binding grammar', () => {
+  expect(parseCredentialSlot('shared@project')).toEqual({ payer: 'shared', binding: 'project' })
+  expect(parseCredentialSlot('shared@other')).toBeNull()
 })
 
 test("another space's credential is never selected", () => {

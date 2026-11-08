@@ -2,9 +2,11 @@
 /** Owns the public credential grammar and adapts it to hosted sealed configuration. */
 
 import type { Command } from 'commander'
-import { configClient } from '../../../shared/config-client.ts'
+import { ConfigClientError, configClient } from '../../../shared/config-client.ts'
 import {
+  CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_PAYERS,
   CREDENTIAL_SLUG_PATTERN,
   type CredentialEnvironment,
 } from '../../../shared/credential.ts'
@@ -15,6 +17,7 @@ import {
 import {
   credentialDisplayName,
   credentialPayerFromScope,
+  parseCredentialSlot,
   credentialSlot,
   resolveCredential,
 } from '../config/credential.ts'
@@ -22,6 +25,7 @@ import {
   type CredentialAddress,
   deleteCredential,
   listCredentials,
+  missingCredentialRefusal,
   setCredential,
 } from '../config/credential-service.ts'
 import { projectByName } from '../project/projects.ts'
@@ -33,6 +37,9 @@ import { requireProjectRecordDestination } from '../record/record-project-destin
 import { log } from './support.ts'
 
 type BindingOptions = { project?: string; space?: string; shared?: boolean; env?: string }
+const credentialSlots = CREDENTIAL_PAYERS.flatMap((payer) =>
+  CREDENTIAL_BINDINGS.map((binding) => `${payer}@${binding}`),
+)
 
 function identityName(value: string): { provider: string; type: string } {
   const [provider, type, extra] = value.split('/')
@@ -142,7 +149,7 @@ export function registerCredentialCommands(program: Command): void {
     })
   addBindingOptions(credential.command('prefer <provider/type>'), false)
     .description('set or clear a payer preference')
-    .option('--use <slot>', 'personal|shared@project|space')
+    .option('--use <slot>', credentialSlots.join(' or '))
     .option('--clear', 'clear the preference')
     .action(async (name, options: BindingOptions & { use?: string; clear?: boolean }) => {
       if (Boolean(options.project) === Boolean(options.space))
@@ -159,18 +166,20 @@ export function registerCredentialCommands(program: Command): void {
         destinationSpaceId: target.destinationSpaceId,
       }
       if (options.clear) {
-        await client.deleteCredentialPreference(input)
+        try {
+          await client.deleteCredentialPreference(input)
+        } catch (error) {
+          if (error instanceof ConfigClientError && error.status === 404)
+            throw missingCredentialRefusal(target)
+          throw error
+        }
         return
       }
-      const match = /^(personal|shared)@(project|space)$/.exec(options.use!)
-      if (!match)
-        throw new Error(
-          '--use must be personal@project, personal@space, shared@project, or shared@space',
-        )
+      const slot = parseCredentialSlot(options.use!)
+      if (!slot) throw new Error(`--use must be ${credentialSlots.join(', ')}`)
       await client.putCredentialPreference({
         ...input,
-        payer: match[1] as 'personal' | 'shared',
-        binding: match[2] as 'project' | 'space',
+        ...slot,
       })
     })
   credential

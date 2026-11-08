@@ -2,8 +2,10 @@
 /** Pure credential identity, presentation, hint, and payer-resolution rules. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { CREDENTIAL_BINDINGS, CREDENTIAL_PAYERS } from '../../../shared/credential.ts'
 import type {
   CredentialEnvironment,
+  CredentialBinding,
   CredentialIdentity,
   CredentialPayer,
   CredentialPreferencePayload,
@@ -17,8 +19,6 @@ export type CredentialCandidate = CredentialIdentity & {
   spaceId: string
   payer: CredentialPayer
 }
-
-export type CredentialPreference = CredentialPreferencePayload
 
 export type CredentialResolution =
   | {
@@ -55,7 +55,7 @@ export function credentialDisplayName(
 
 function matchesSlot(
   credential: CredentialCandidate,
-  preference: CredentialPreference,
+  preference: CredentialPreferencePayload,
   projectId: string,
 ): boolean {
   return (
@@ -68,6 +68,15 @@ function matchesSlot(
 
 export function credentialSlot(payer: CredentialPayer, projectId: string | null): string {
   return `${payer}@${projectId ? 'project' : 'space'}`
+}
+
+export function parseCredentialSlot(
+  value: string,
+): { payer: CredentialPayer; binding: CredentialBinding } | null {
+  for (const payer of CREDENTIAL_PAYERS)
+    for (const binding of CREDENTIAL_BINDINGS)
+      if (value === `${payer}@${binding}`) return { payer, binding }
+  return null
 }
 
 export function credentialPayerFromScope(scope: 'user' | 'space'): CredentialPayer {
@@ -86,7 +95,7 @@ export function resolveCredential(input: {
   type: string
   environment: CredentialEnvironment
   candidates: readonly CredentialCandidate[]
-  preferences: readonly CredentialPreference[]
+  preferences: readonly CredentialPreferencePayload[]
 }): CredentialResolution {
   const candidates = input.candidates.filter(
     (row) =>
