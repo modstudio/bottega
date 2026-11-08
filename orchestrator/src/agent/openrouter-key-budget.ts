@@ -3,6 +3,7 @@
 
 import { boundedFetch } from '../../../shared/bounded-fetch.ts'
 import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
+import { isOpenRouterBaseUrl } from './openrouter.ts'
 
 type OpenRouterKeyRow = {
   baseUrl?: string | null
@@ -84,12 +85,11 @@ export function openRouterKeyBudgetRefusal(
 
 /** Only a metered, explicitly keyed OpenRouter endpoint spends through this budget. */
 function isOpenRouterKeyBudgetAgent(row: OpenRouterKeyRow): boolean {
-  if (row.billing !== 'metered' || !row.apiKeySecret?.trim() || !row.baseUrl) return false
-  try {
-    return new URL(row.baseUrl).hostname === 'openrouter.ai'
-  } catch {
-    return false
-  }
+  return (
+    row.billing === 'metered' &&
+    Boolean(row.apiKeySecret?.trim()) &&
+    isOpenRouterBaseUrl(row.baseUrl)
+  )
 }
 
 type BudgetDependencies = {

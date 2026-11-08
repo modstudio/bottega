@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
+import { addAgent } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { state } from '../state/serve.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -73,7 +74,7 @@ describe('review discipline', () => {
       )
       .run(legacy, '2026-02-06T00:00:00.000Z')
 
-    expect(reviewCalibrationFleet()).toEqual([
+    expect(reviewCalibrationFleet(() => undefined)).toEqual([
       {
         lens: 'fleet-a',
         agent: 'codex',
@@ -223,9 +224,68 @@ describe('review discipline', () => {
     }
     make(false)
     make(true)
-    expect(reviewCalibration('void-cal', 'codex', 'void-cal')).toMatchObject({
+    expect(reviewCalibration('void-cal', 'codex', 'void-cal', undefined)).toMatchObject({
       hits: 1,
       triaged: 1,
+    })
+  })
+  test('OpenRouter routing variants share one model-specific calibration cell', () => {
+    const baseUrl = 'https://openrouter.ai/api/v1'
+    addAgent('openrouter-cal', {
+      harness: 'codex',
+      backend: 'vendor',
+      model: 'x/y:floor',
+      baseUrl,
+    })
+    const models = ['x/y', 'x/y:floor']
+    for (const [index, model] of models.entries()) {
+      const runId = addRun({ agent: 'openrouter-cal', job: 'review-lens', model, lens: 'variant' })
+      const reviewId = recordReview(runId, reviewReply(MIN_REVIEW_TRIAGED / 2), db())
+      gradeReviewLens(runId, null, {
+        reproduced: 'all',
+        coverage: 'adequate',
+        limits: 'named',
+        overlap: 'alone',
+      })
+      for (let i = 1; i <= MIN_REVIEW_TRIAGED / 2; i++) triageFinding(reviewId, i, 'accepted')
+      completeReview(reviewId)
+      db()
+        .query(
+          `INSERT INTO score (record_id, run_record_id,delivery,quality,scored_at) VALUES (?,?,'full','right',?)`,
+        )
+        .run(newRecordId(), runId, `2026-11-0${index + 1}T00:00:00.000Z`)
+    }
+
+    expect(reviewCalibration('variant', 'openrouter-cal', 'x/y:floor', baseUrl)).toMatchObject({
+      model: 'x/y',
+      hits: MIN_REVIEW_TRIAGED,
+      triaged: MIN_REVIEW_TRIAGED,
+      precision: 1,
+      basis: 'model',
+    })
+    expect(
+      reviewCalibrationFleet((agent) => (agent === 'openrouter-cal' ? baseUrl : undefined)).filter(
+        (cell) => cell.lens === 'variant' && cell.agent === 'openrouter-cal',
+      ),
+    ).toEqual([
+      {
+        lens: 'variant',
+        agent: 'openrouter-cal',
+        model: 'x/y',
+        n: MIN_REVIEW_TRIAGED,
+        precision: 1,
+        basis: 'model',
+        last_graded_at: '2026-11-02T00:00:00.000Z',
+      },
+    ])
+    const stateCells = state().reviewCalibration.filter(
+      (cell) => cell.lens === 'variant' && cell.agent === 'openrouter-cal',
+    )
+    expect(stateCells).toHaveLength(1)
+    expect(stateCells[0]).toMatchObject({
+      model: 'x/y',
+      triaged: MIN_REVIEW_TRIAGED,
+      basis: 'model',
     })
   })
   test('precision counts accepted and modified as hits, rejects as misses, and skips nothing', () => {
@@ -249,7 +309,7 @@ describe('review discipline', () => {
     make('old', 'modified', 3)
     make('old', 'rejected', 3)
     make('old', 'skipped', 8)
-    let c = reviewCalibration('correctness', 'codex', 'current')
+    let c = reviewCalibration('correctness', 'codex', 'current', undefined)
     expect(c).toMatchObject({ precision: 0.7, hits: 7, triaged: 10, basis: 'agent' })
     expect(c.rejection_categories).toEqual([{ category: 'not-a-defect', count: 3 }])
     expect(c.tiers.unclassified).toEqual({
@@ -261,19 +321,19 @@ describe('review discipline', () => {
     })
 
     make('current', 'accepted', MIN_REVIEW_TRIAGED - 1)
-    c = reviewCalibration('correctness', 'codex', 'current')
+    c = reviewCalibration('correctness', 'codex', 'current', undefined)
     expect(c.basis).toBe('agent')
     make('current', 'rejected', 1)
-    c = reviewCalibration('correctness', 'codex', 'current')
+    c = reviewCalibration('correctness', 'codex', 'current', undefined)
     expect(c).toMatchObject({ precision: 0.9, hits: 9, triaged: 10, basis: 'model' })
   })
   test('below-floor and untriaged evidence report null, never zero', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'efficiency' })
     const reviewId = recordReview(runId, reviewReply(1), db())
     triageFinding(reviewId, 1, 'rejected', 'false-positive')
-    expect(reviewCalibration('efficiency', 'codex', 'm').precision).toBeNull()
+    expect(reviewCalibration('efficiency', 'codex', 'm', undefined).precision).toBeNull()
     completeReview(reviewId)
-    const c = reviewCalibration('efficiency', 'codex', 'm')
+    const c = reviewCalibration('efficiency', 'codex', 'm', undefined)
     expect(c.precision).toBeNull()
     expect(calibrationLine(c)).toContain('no reliable precision yet')
   })
@@ -287,7 +347,7 @@ describe('review discipline', () => {
       .run(runId)
     const reviewId = recordReview(runId, reviewReply(0), db())
     completeReview(reviewId)
-    const calibration = reviewCalibration('mirror-mode', 'codex', 'm')
+    const calibration = reviewCalibration('mirror-mode', 'codex', 'm', undefined)
     expect(calibration.mirror_lenses).toBe(1)
     expect(calibrationLine(calibration)).toContain('MIRROR lenses: 1')
 
@@ -330,7 +390,7 @@ describe('review discipline', () => {
         completeReview(reviewId)
       }
     }
-    const tiers = reviewCalibration('rounds', 'codex', 'm').tiers
+    const tiers = reviewCalibration('rounds', 'codex', 'm', undefined).tiers
     expect(tiers['2'].rounds).toEqual({ min: 1, median: 2, max: 3 })
     expect(tiers['0'].rounds).toEqual({ min: null, median: null, max: null })
   })
@@ -351,7 +411,7 @@ describe('review discipline', () => {
     triageFinding(historicalReview, 1, 'accepted')
     completeReview(historicalReview)
 
-    const c = reviewCalibration('graded', 'codex', 'm')
+    const c = reviewCalibration('graded', 'codex', 'm', undefined)
     expect(c.reproduced).toEqual({
       counts: { none: 0, some: 0, all: 1 },
       shares: { none: 0, some: 0, all: 1 },
@@ -382,7 +442,7 @@ describe('review discipline', () => {
       overlap: 'none',
     })
     completeReview(reviewId)
-    const c = reviewCalibration('clean-grade', 'codex', 'm')
+    const c = reviewCalibration('clean-grade', 'codex', 'm', undefined)
     expect(c.precision).toBeNull()
     expect(c.coverage).toEqual({
       counts: { empty: 0, partial: 0, adequate: 1 },
@@ -400,7 +460,7 @@ describe('review discipline', () => {
     triageFinding(reviewId, 2, 'accepted', undefined, 'critical')
     triageFinding(reviewId, 3, 'accepted', undefined, 'low')
     completeReview(reviewId)
-    expect(reviewCalibration('severity-cell', 'codex', 'm').severity).toEqual({
+    expect(reviewCalibration('severity-cell', 'codex', 'm', undefined).severity).toEqual({
       counts: { agreed: 1, changed: 1, not_comparable: 1, not_assessed: 0 },
       shares: { agreed: 1 / 3, changed: 1 / 3, not_comparable: 1 / 3, not_assessed: 0 },
     })
@@ -419,7 +479,7 @@ describe('review discipline', () => {
     }
     add('accepted')
     for (let i = 0; i < 50; i++) add('rejected')
-    expect(reviewCalibration('window', 'codex', 'm')).toMatchObject({
+    expect(reviewCalibration('window', 'codex', 'm', undefined)).toMatchObject({
       precision: 0,
       hits: 0,
       triaged: 50,

@@ -2,6 +2,7 @@
 /** SQL fragments that project hosted routing evidence into local routing reads. */
 
 import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
+import { evidenceModelSql } from './evidence-model.ts'
 import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
 import { weightCase } from './route-selection.ts'
 
@@ -54,7 +55,7 @@ export const POOL_ROUTING_EVIDENCE_ROWS_SQL = `SELECT p.record_id, p.agent, p.mo
             p.delivery, p.quality, p.fidelity, ${weightCase('p')} AS pts, 1 AS pooled
        FROM current_agent ca
        JOIN routing_pool_run p
-         ON p.agent = ca.agent AND (p.model = ca.model OR p.model IS NULL)
+         ON p.agent = ca.agent AND (${evidenceModelSql('p.model', 'ca.openrouter')} = ca.model OR p.model IS NULL)
       WHERE p.job = ? AND p.status IN ('ok','failed','stale')
         AND (p.delivery IS NOT NULL OR p.status IN ('failed','stale'))
         AND ${POOL_SCOPE_SQL}`

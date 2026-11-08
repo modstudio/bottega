@@ -201,6 +201,7 @@ export function routingBacktestCellsFor(
           sameBucket.filter((e) => !stack || e.stack === stack),
           agent,
           currentModel,
+          AGENTS[agent]!.baseUrl,
           EVIDENCE_WINDOW,
         )
         const evidence = window.rows
