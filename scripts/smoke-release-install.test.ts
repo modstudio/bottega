@@ -1,9 +1,5 @@
 import { expect, test } from 'bun:test'
-import {
-  attributedFailureLines,
-  launchctlStub,
-  releaseInstallEnvironment,
-} from './smoke-release-install.ts'
+import { releaseInstallEnvironment } from './smoke-release-install.ts'
 
 test('release install environment drops inherited product and harness overrides', () => {
   const env = releaseInstallEnvironment(
@@ -26,13 +22,9 @@ test('release install environment drops inherited product and harness overrides'
   expect(env).not.toHaveProperty('BOTTEGA_HOME')
   expect(env).not.toHaveProperty('CLAUDE_CODE_SESSION_ID')
   expect(env.UNRELATED).toBe('preserved')
-  expect(launchctlStub('/proof/launchctl-state', '/proof/launchctl.log')).toContain(
-    "state='/proof/launchctl-state'",
-  )
-})
-
-test('failure attribution keeps drift and drops passing output', () => {
-  expect(
-    attributedFailureLines('machine setup passed\ncom.user.orch-sweep DEFINITION DRIFTED\n'),
-  ).toEqual(['com.user.orch-sweep DEFINITION DRIFTED'])
+  expect(env.HOME).toBe('/proof/home')
+  expect(env.BOTTEGA_STATE_HOME).toBe('/proof/state')
+  expect(env.BOTTEGA_INSTALL_DIR).toBe('/proof/bin')
+  expect(env.BOTTEGA_DOWNLOAD_BASE_URL).toBe('file:///proof/mirror')
+  expect(env.PATH).toBe('/proof/stub:/proof/bin:/usr/bin:/bin:/usr/sbin:/sbin')
 })

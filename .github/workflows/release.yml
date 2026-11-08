@@ -27,7 +27,7 @@ jobs:
         run: bun run orch -- release check "${GITHUB_REF_NAME}"
 
       - name: Prove the release installs
-        run: bun run release:install-proof
+        run: bun run release:install-proof -- "${GITHUB_REF_NAME}"
 
       - name: Build installer artifacts
         run: bun run release:artifacts -- "${GITHUB_REF_NAME}" "${{ runner.temp }}/release-artifacts"

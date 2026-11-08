@@ -5,8 +5,7 @@ import { startBounded } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { parseBinaryTarget } from './build-binary.ts'
 import { buildReleaseArtifact, writeChecksumSet } from './build-release-artifacts.ts'
-
-const version = '0.1.0'
+import { releaseVersion, stripInheritedOverrides } from './release-support.ts'
 
 type InstallProofPaths = {
   home: string
@@ -27,11 +26,7 @@ export function releaseInstallEnvironment(
   paths: InstallProofPaths,
 ): Record<string, string | undefined> {
   const env = { ...inherited }
-  for (const key of Object.keys(env)) {
-    if (key.startsWith('BOTTEGA_') || key.startsWith('CLAUDE_') || key.startsWith('ANTHROPIC_')) {
-      delete env[key]
-    }
-  }
+  stripInheritedOverrides(env)
   env.HOME = paths.home
   env.BOTTEGA_STATE_HOME = paths.state
   env.BOTTEGA_INSTALL_DIR = paths.bin
@@ -45,7 +40,7 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`
 }
 
-export function launchctlStub(stateFile: string, logFile: string): string {
+function launchctlStub(stateFile: string, logFile: string): string {
   const state = shellQuote(stateFile)
   const log = shellQuote(logFile)
   return `#!/bin/sh
@@ -90,10 +85,6 @@ exit 0
 `
 }
 
-export function attributedFailureLines(output: string): string[] {
-  return output.split(/\r?\n/).filter((line) => /refus|DRIFT|skipped|FAIL|error/i.test(line))
-}
-
 async function runStep(
   name: string,
   argv: string[],
@@ -108,7 +99,7 @@ async function runStep(
   }
 }
 
-async function proveReleaseInstall(keep: boolean): Promise<number> {
+async function proveReleaseInstall(version: string, keep: boolean): Promise<number> {
   if (process.platform !== 'darwin') {
     console.error('release install proof requires darwin')
     return 1
@@ -143,7 +134,7 @@ async function proveReleaseInstall(keep: boolean): Promise<number> {
     const repositoryRoot = resolve(import.meta.dir, '..')
     const executable = join(paths.bin, PLATFORM_SLUG)
     const steps = [
-      ['install', ['sh', 'install.sh', `v${version}`]],
+      ['install', ['sh', join(repositoryRoot, 'install.sh'), `v${version}`]],
       ['setup apply', [executable, 'machine', 'setup', 'apply', '--yes', '--level', 'full']],
       ['doctor', [executable, 'machine', 'doctor']],
       [
@@ -154,13 +145,11 @@ async function proveReleaseInstall(keep: boolean): Promise<number> {
     ] as const
     const results: StepResult[] = []
     for (const [name, argv] of steps) {
-      results.push(await runStep(name, [...argv], repositoryRoot, env))
+      results.push(await runStep(name, [...argv], paths.home, env))
     }
     for (const result of results) {
       console.log(`${result.name} exit ${result.exitCode}`)
-      if (result.exitCode !== 0) {
-        for (const line of attributedFailureLines(result.output)) console.log(line)
-      }
+      if (result.exitCode !== 0 && result.output) console.log(result.output)
     }
     return results.some((result) => result.exitCode !== 0) ? 1 : 0
   } finally {
@@ -171,11 +160,12 @@ async function proveReleaseInstall(keep: boolean): Promise<number> {
 
 if (import.meta.main) {
   const args = process.argv.slice(2)
-  if (
-    args.some((argument) => argument !== '--keep') ||
-    args.filter((arg) => arg === '--keep').length > 1
-  ) {
-    throw new Error('working form: bun scripts/smoke-release-install.ts [--keep]')
+  const usage = 'usage: bun scripts/smoke-release-install.ts <version> [--keep]'
+  if (args.length < 1 || args.length > 2 || (args.length === 2 && args[1] !== '--keep')) {
+    console.error(usage)
+    process.exitCode = 1
+  } else {
+    const version = releaseVersion(args[0]!)
+    process.exitCode = await proveReleaseInstall(version, args.includes('--keep'))
   }
-  process.exitCode = await proveReleaseInstall(args.includes('--keep'))
 }
