@@ -2,6 +2,7 @@ import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { human } from '../../shared/interval.ts'
 import { readMachineValue } from '../../shared/machine-config.ts'
+import { withMachineUpdateLockUnlessHeld } from '../../shared/update-lock.ts'
 import {
   ANSWERER_KIND_VALUES,
   ASKED_VIA_VALUES,
@@ -217,6 +218,22 @@ function printCollectLease(json: boolean): void {
     )
 }
 
+export async function migrateHubDatabase(): Promise<void> {
+  return withMachineUpdateLockUnlessHeld(async () => {
+    const migrated = await migrateDatabaseWithQuestionIdentityMap(
+      readQuestionIdentityMap,
+      readWorkflowCursorIdentityMap,
+    )
+    if (!migrated.versions.length) console.log(`schema already current: ${migrated.path}`)
+    else {
+      console.log(`migrated ${migrated.path}`)
+      for (const version of migrated.versions) console.log(`  applied ${version}`)
+    }
+    const repairs = formatMigrationRepairSummary(migrated.repairs)
+    if (repairs) console.log(repairs)
+  })
+}
+
 function registerCollectionCommands(program: Command): void {
   program
     .command('lease')
@@ -228,19 +245,7 @@ function registerCollectionCommands(program: Command): void {
   program
     .command('migrate')
     .description('apply pending checksummed schema migrations')
-    .action(async () => {
-      const migrated = await migrateDatabaseWithQuestionIdentityMap(
-        readQuestionIdentityMap,
-        readWorkflowCursorIdentityMap,
-      )
-      if (!migrated.versions.length) console.log(`schema already current: ${migrated.path}`)
-      else {
-        console.log(`migrated ${migrated.path}`)
-        for (const version of migrated.versions) console.log(`  applied ${version}`)
-      }
-      const repairs = formatMigrationRepairSummary(migrated.repairs)
-      if (repairs) console.log(repairs)
-    })
+    .action(() => migrateHubDatabase())
   program
     .command('doctor')
     .description('report the live structural schema hash and user_version')

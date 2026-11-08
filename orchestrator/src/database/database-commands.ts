@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, statfsSync, statSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal } from '../../../shared/refusal.ts'
+import { withMachineUpdateLockUnlessHeld } from '../../../shared/update-lock.ts'
 import { fillProjectRecordIds } from '../project/project-record-identity.ts'
 import { drainDeliveredOutboxPayloads, drainSupersededOutboxRows } from '../record/outbox-prune.ts'
 import { RefusalError } from '../refusal-error.ts'
@@ -358,7 +359,7 @@ async function performMigration(
   await finishMigration(presentation, actions)
 }
 
-export async function migrateCommand(
+async function migrateCommandUnderLock(
   presentation: DatabaseCommandPresentation,
   actions?: MigrateCommandActions,
   options: MigrateCommandOptions = {},
@@ -380,6 +381,16 @@ export async function migrateCommand(
     return
   }
   await performMigration(presentation, actions, decision, overrideReason)
+}
+
+export async function migrateCommand(
+  presentation: DatabaseCommandPresentation,
+  actions?: MigrateCommandActions,
+  options: MigrateCommandOptions = {},
+): Promise<void> {
+  return withMachineUpdateLockUnlessHeld(() =>
+    migrateCommandUnderLock(presentation, actions, options),
+  )
 }
 
 async function finishMigration(

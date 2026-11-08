@@ -2,7 +2,6 @@
 /** Registers machine database verbs without owning their decisions. */
 
 import type { Command } from 'commander'
-import { MACHINE_UPDATE_LOCK_HELD_ENV, withMachineUpdateLock } from '../../../shared/update-lock.ts'
 import { migrateCommand, reconcileCommand } from '../database/database-commands.ts'
 import { db } from '../database/db.ts'
 import { machineUpdateCommand } from '../database/machine-update.ts'
@@ -31,16 +30,12 @@ export function registerDatabaseCommands(
     .option('--force-in-flight <reason>', 'apply a non-additive migration for this operator reason')
     .option('--from-operator', 'confirm the override came directly from the operator')
     .allowExcessArguments(false)
-    .action((options) => {
-      const migrate = () =>
-        migrateCommand(presentation, undefined, {
-          forceInFlight: options.forceInFlight,
-          fromOperator: Boolean(options.fromOperator),
-        })
-      return process.env[MACHINE_UPDATE_LOCK_HELD_ENV] === '1'
-        ? migrate()
-        : withMachineUpdateLock(migrate)
-    })
+    .action((options) =>
+      migrateCommand(presentation, undefined, {
+        forceInFlight: options.forceInFlight,
+        fromOperator: Boolean(options.fromOperator),
+      }),
+    )
   program
     .command('reconcile <id>')
     .description('reconcile a completed run with its saved artifacts')

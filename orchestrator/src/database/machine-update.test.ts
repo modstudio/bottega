@@ -1,10 +1,21 @@
+import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DIST_MANIFEST, INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
+import { machineUpdateIntentPath } from '../../../shared/update-lock.ts'
+import { resolveHubDatabase } from '../../../shared/state-directory.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
@@ -26,13 +37,20 @@ import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
 const fixturePackage = join(dir, 'package.json')
+const fixtureHubDatabase = resolveHubDatabase(process.env)
+const fixtureHubDatabaseExisted = existsSync(fixtureHubDatabase)
 
 beforeAll(() => {
   writeFileSync(fixturePackage, JSON.stringify({ name: PLATFORM_SLUG }))
+  if (!fixtureHubDatabaseExisted) {
+    mkdirSync(dirname(fixtureHubDatabase), { recursive: true })
+    new Database(fixtureHubDatabase).close()
+  }
 })
 
 afterAll(() => {
   rmSync(fixturePackage, { force: true })
+  if (!fixtureHubDatabaseExisted) rmSync(fixtureHubDatabase, { force: true })
 })
 
 function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
@@ -130,6 +148,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
   )
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
+  expect(existsSync(machineUpdateIntentPath(process.env))).toBeFalse()
   expect(gitCalls.map((args) => args[0])).toEqual([
     'branch',
     'fetch',
@@ -143,7 +162,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
 
 test("machine update recovers a dead holder's intent before the new update", async () => {
   writeMachineUpdateIntent({
-    before: localStoreJournalPositions(),
+    before: localStoreJournalPositions()!,
     swapped: { kind: 'checkout', target: dir, priorCommit: 'abandoned-before' },
   })
   const gitCalls: string[][] = []
@@ -267,7 +286,7 @@ test('machine update leaves main pulled when migrate partly commits before faili
         },
       ),
     ).rejects.toThrow(
-      `migration failed: injected migration failure after commit; main was left at the pulled commit because the store's migration position moved from ${held.pending.idx} to ${migrationJournal().length} in the incoming journal; rerun ${PLATFORM_SLUG} machine update`,
+      `migration failed: injected migration failure after commit; main was left at the pulled commit; the new state was kept because a store journal position moved; rerun ${PLATFORM_SLUG} machine update; the orchestrator journal position moved from ${held.pending.idx} to ${migrationJournal().length} in the incoming journal`,
     )
     expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
   } finally {
@@ -306,7 +325,7 @@ test('machine update leaves main pulled when the store position cannot be read a
         },
       ),
     ).rejects.toThrow(
-      `migration failed: injected migration failure; main was left at the pulled commit because the store's migration position could not be read:`,
+      `migration failed: injected migration failure; main was left at the pulled commit; the store journal positions could not be read; leave the new state in place and rerun ${PLATFORM_SLUG} machine update`,
     )
     expect(gitCalls.some((args) => args[0] === 'reset')).toBeFalse()
   } finally {

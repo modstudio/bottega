@@ -1,3 +1,5 @@
+import { MACHINE_UPDATE_LOCK_WAIT_MS } from './update-lock.ts'
+
 export type CallBudgetName =
   | 'git-plumbing'
   | 'git-probe'
@@ -30,8 +32,12 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   'git-network': { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'process-table': { deadlineMs: 10_000, outputBytes: 4 * MIB, graceMs: 1_000 },
   'self-cli': { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
-  /** Must cover MIGRATION_DRAIN_TIMEOUT_MS, MIGRATION_WINDOW_WAIT_MS, and the release-download total, which the child may spend in sequence. */
-  'machine-update': { deadlineMs: 1_200_000, outputBytes: 16 * MIB, graceMs: 5_000 },
+  /** Must cover MIGRATION_DRAIN_TIMEOUT_MS, MIGRATION_WINDOW_WAIT_MS, MACHINE_UPDATE_LOCK_WAIT_MS, and the release-download total, which the child may spend in sequence. */
+  'machine-update': {
+    deadlineMs: 1_200_000 + MACHINE_UPDATE_LOCK_WAIT_MS,
+    outputBytes: 16 * MIB,
+    graceMs: 5_000,
+  },
   'hosted-api': {
     deadlineMs: 30_000,
     totalMs: 60_000,

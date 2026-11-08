@@ -338,7 +338,6 @@ function restoreMainAfterMigrationFailure(input: {
       restoreCause instanceof Error ? restoreCause.message : String(restoreCause)
     const decision = decideMachineUpdateRecovery({
       before: input.beforePositions,
-      after: input.beforePositions,
       swapped: { kind: 'checkout', target: input.target, priorCommit: input.before },
       restoreFailure,
     })
@@ -371,28 +370,26 @@ function handleMigrationFailureAfterPull(input: {
   cause: unknown
 }): never {
   const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
-  let storeVersion: number
+  let storeVersion: number | null = null
   try {
     storeVersion = withSynchronousDatabaseForMigrationStep((database) =>
       storePositionInIncomingJournal(database, input.journal),
     )
-  } catch (storeCause) {
-    const storeFailure = storeCause instanceof Error ? storeCause.message : String(storeCause)
-    throw new Error(
-      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store's migration position could not be read: ${storeFailure}; ` +
-        `rerun ${PLATFORM_SLUG} machine update`,
-    )
-  }
+  } catch {}
   const afterPositions = localStoreJournalPositions()
   const decision = decideMachineUpdateRecovery({
     before: input.beforePositions,
     after: afterPositions,
     swapped: { kind: 'checkout', target: input.target, priorCommit: input.before },
   })
-  if (decision.action !== 'restore' || storeVersion !== input.initialStoreVersion) {
+  if (decision.action === 'keep' || decision.action === 'manual') {
+    const incomingJournalDetail =
+      storeVersion === null || storeVersion === input.initialStoreVersion
+        ? ''
+        : `; the orchestrator journal position moved from ${input.initialStoreVersion} to ${storeVersion} in the incoming journal`
     throw new Error(
-      `migration failed: ${migrationFailure}; main was left at the pulled commit because the store's migration position moved from ${input.initialStoreVersion} to ${storeVersion} in the incoming journal; ` +
-        `rerun ${PLATFORM_SLUG} machine update`,
+      `migration failed: ${migrationFailure}; main was left at the pulled commit; ` +
+        `${decision.message}${incomingJournalDetail}`,
     )
   }
   restoreMainAfterMigrationFailure(input)
@@ -513,6 +510,9 @@ export async function machineUpdateCommandUnderLock(
       apply: () => {
         const before = runGit(target, ['rev-parse', 'HEAD'])
         const beforePositions = localStoreJournalPositions()
+        if (!beforePositions) {
+          throw new Error('store journal positions could not be read before machine update')
+        }
         writeMachineUpdateIntent({
           before: beforePositions,
           swapped: { kind: 'checkout', target, priorCommit: before },

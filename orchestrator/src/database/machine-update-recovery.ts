@@ -21,7 +21,7 @@ function stateName(swapped: SwappedUpdateState): string {
 
 export function decideMachineUpdateRecovery(input: {
   before: StoreJournalPositions
-  after: StoreJournalPositions | null
+  after?: StoreJournalPositions | null
   swapped: SwappedUpdateState
   restoreFailure?: string
 }): MachineUpdateRecoveryDecision {
