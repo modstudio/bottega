@@ -1,9 +1,9 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { storedMachineNames, type StoredMachineNames } from '../../../shared/machine-config.ts'
+import { type StoredMachineNames, storedMachineNames } from '../../../shared/machine-config.ts'
 import {
   isUnnamedMachinePrefix,
-  type MachineNamePair as SharedMachineNamePair,
   resolveMachineDisplayName,
+  type MachineNamePair as SharedMachineNamePair,
 } from '../../../shared/machine-label.ts'
 
 const SHORT_NAME_RULE = '2-20 characters of [a-z0-9-], starting with a letter'
