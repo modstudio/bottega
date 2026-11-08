@@ -1629,7 +1629,9 @@ try {
       FOR EACH ROW EXECUTE FUNCTION fail_hub_task_insert()`
     let promotionFailed = false
     try {
-      await promoteHostedNote(actorUrl, identity, allocatedNote.id)
+      await promoteHostedNote(actorUrl, identity, allocatedNote.id, {
+        title: 'Allocated note promotion',
+      })
     } catch {
       promotionFailed = true
     }
@@ -1638,7 +1640,9 @@ try {
     if (!promotionFailed) throw new Error('forced promotion task insert did not fail')
     if ((await getHostedNote(actorUrl, identity, allocatedNote.id))?.promoted_task)
       throw new Error('failed promotion marked its note')
-    const promoted = await promoteHostedNote(actorUrl, identity, allocatedNote.id)
+    const promoted = await promoteHostedNote(actorUrl, identity, allocatedNote.id, {
+      title: 'Allocated note promotion',
+    })
     if (!promoted) throw new Error('allocated note was missing during promotion')
     if (!promoted.task) throw new Error('promotion did not return its created task')
     if (promoted.note.promoted_task !== promoted.task.key)

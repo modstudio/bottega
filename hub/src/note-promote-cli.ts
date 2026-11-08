@@ -1,12 +1,7 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { credentials, Mcp } from './mcp.ts'
-import {
-  getNote,
-  promoteNote,
-  promotionTaskInput,
-  promotionTitleRefusal,
-  requiredPromotionTitle,
-} from './note.ts'
+import { getNote, promoteNote, promotionTaskInput } from './note.ts'
+import { promotionTitleRefusal, requiredPromotionTitle } from './note-promotion-body.ts'
 import { projects } from './projects.ts'
 import {
   createAdvertisedTrackerTaskKey,
@@ -40,7 +35,10 @@ export function promotionFlags(input: PromotionFlags): PromotionTarget {
   const taskKey = promotionTaskKey(input.task, input.taskFlagPresent)
   if (taskKey === undefined) {
     if (!input.titleFlagPresent) throw new Error(promotionTitleRefusal('<LABEL>'))
-    return { taskKey: undefined, title: requiredPromotionTitle('<LABEL>', input.title) }
+    return {
+      taskKey: undefined,
+      title: requiredPromotionTitle(input.title, promotionTitleRefusal('<LABEL>')),
+    }
   }
   if (input.titleFlagPresent)
     throw new Error(
