@@ -294,8 +294,8 @@ export function taskIdentity(row: {
   project?: string | null
 }) {
   if (row.recordId) return row.recordId
-  if (row.spaceId) return `${row.spaceId}\0${row.key ?? ''}`
-  return `unattributed:${row.project ?? 'unknown'}:${row.key ?? ''}`
+  if (row.spaceId) return `${row.spaceId}\0unattributed:${row.project ?? 'unknown'}`
+  return `unattributed:${row.project ?? 'unknown'}`
 }
 
 export function projectTasksInWindow(
@@ -318,13 +318,13 @@ export function projectTasksInWindow(
   const output: ProjectedTask[] = []
   for (const list of groups.values()) {
     const first = list[0]!
-    const key = first.task_key
+    const key = first.task_record_id ? first.task_key : null
     const spans: Span[] = list.map((row) => ({
       start: new Date(row.start_at).getTime(),
       end: intervalEndMs(row, now),
     }))
     const projectName = first.task_project ?? first.project
-    const source = first.task_source ?? (key ? 'git' : null)
+    const source = first.task_source
     output.push({
       spaceId: first.space_id,
       spaceName: first.space_name,
@@ -339,12 +339,13 @@ export function projectTasksInWindow(
         source === 'mcp'
           ? (project(first.space_id, projectName)?.settings.tracker?.protocol ?? null)
           : null,
-      capabilities: key
-        ? trackerCapabilities({
-            source: source as TrackerRowSource,
-            project: project(first.space_id, projectName),
-          })
-        : null,
+      capabilities:
+        key && source
+          ? trackerCapabilities({
+              source: source as TrackerRowSource,
+              project: project(first.space_id, projectName),
+            })
+          : null,
       engagedMs: engagedMs(spans),
       claudeTokens: list.reduce((sum, row) => sum + row.claude_tokens, 0),
       vendors: foldVendors(list),

@@ -39,7 +39,7 @@ type DocumentTask = {
   record_id: string
   key: string
   project: string
-  source: 'mcp' | 'git' | 'local'
+  source: 'mcp' | 'local'
   next_document_number: number
 }
 

@@ -1,4 +1,4 @@
-import { HOSTED_TASK_UPDATE_COLUMNS, type PushedTask } from './push-contract.ts'
+import type { PushedTask } from './push-contract.ts'
 import type { TaskRow } from './task.ts'
 
 export type PushableTaskRow = Omit<TaskRow, 'record_id'> & { record_id: string | null }
@@ -37,20 +37,9 @@ export function hostedTaskFromTaskRow(row: PushableTaskRow, id: string): PushedT
 }
 
 export function collectorTaskShouldQueue(
-  source: 'mcp' | 'git',
+  source: 'mcp',
   row: { source: string } | null,
   changed: boolean,
 ): boolean {
   return row?.source === source && changed
-}
-
-export function gitTaskChanged(before: TaskRow | null, after: TaskRow): boolean {
-  if (before === null) return true
-  const beforeHosted = hostedTaskFromTaskRow(before, before.record_id)
-  const afterHosted = hostedTaskFromTaskRow(after, after.record_id)
-  return (
-    beforeHosted.opened_at !== afterHosted.opened_at ||
-    beforeHosted.updated_at !== afterHosted.updated_at ||
-    HOSTED_TASK_UPDATE_COLUMNS.some((column) => beforeHosted[column] !== afterHosted[column])
-  )
 }

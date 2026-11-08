@@ -662,7 +662,7 @@ async function backfillTrackerTasks(
       filled++
       if (changed) activity = true
     } catch {
-      /* not findable; it stays git-derived and says so */
+      /* not findable; its work remains project-level unattributed */
     }
   }
   return { filled, activity }
@@ -674,7 +674,7 @@ function recentIntervalsNeedingTracker(conn: Database) {
       `SELECT DISTINCT i.task_key, i.project
        FROM interval i LEFT JOIN task t ON t.record_id=i.task_record_id
       WHERE i.task_key IS NOT NULL
-        AND (t.key IS NULL OR t.source <> 'mcp')
+        AND t.key IS NULL
         AND i.start_at >= datetime('now', '-30 days')`,
     )
     .all()
@@ -728,8 +728,6 @@ export async function ingestTrackers(
 
   const missing = recentIntervalsNeedingTracker(d)
 
-  // A tracker row always wins over a git-derived one: git knows a key, never a
-  // title or a status.
   const results = await Promise.all(
     trackers.map(
       async (

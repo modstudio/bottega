@@ -131,7 +131,7 @@ export type PushedTask = {
   assignee: string | null
   opened_at: string | null
   closed_at: string | null
-  source: 'mcp' | 'git' | 'local'
+  source: 'mcp' | 'local'
   first_seen: string
   last_seen: string
   created_at: string
@@ -337,8 +337,8 @@ function parseTaskRow(value: unknown, id: string): PushedTask | string {
   if (referenceError) return referenceError
   const timestampError = taskTimestampError(row)
   if (timestampError) return timestampError
-  if (!['mcp', 'git', 'local'].includes(String(row.source)))
-    return `${HOSTED_TASK_TABLE} row.source must be mcp, git, or local`
+  if (!['mcp', 'local'].includes(String(row.source)))
+    return `${HOSTED_TASK_TABLE} row.source must be mcp or local`
   if (!Number.isSafeInteger(row.next_document_number) || Number(row.next_document_number) < 1)
     return `${HOSTED_TASK_TABLE} row.next_document_number must be a positive safe integer`
   return row as PushedTask

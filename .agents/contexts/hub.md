@@ -163,9 +163,10 @@ is the canonical SQLite DDL; later migrations are explicit SQL.
 # Collection
 
 A collect never overwrites a good token reading with a worse one, because transcript data
-may be irrecoverable. Git-derived columns may refresh from history. Git ingestion may
-seed missing task rows and update their timestamps, but it never downgrades a tracker row
-that knows its title and status. Transcript spans are keyed by file rather than session,
+may be irrecoverable. Git-derived columns may refresh from history. Task rows come only from
+the project's tracker, the hub tracker or its MCP tracker. Git ingestion records commit-to-key
+links and day totals and never creates a task row; work whose key names no tracker task stays
+visible as its project's unattributed work. Transcript spans are keyed by file rather than session,
 because sidechains can share a session identifier.
 
 Collection uses separate configured cadences for local and remote work. The server and

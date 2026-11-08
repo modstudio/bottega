@@ -4,7 +4,7 @@ import { SourceMark } from './source-mark'
 const meta = {
   title: 'Views/SourceMark',
   component: SourceMark,
-  args: { source: 'git', project: 'workshop' },
+  args: { source: 'mcp', project: 'workshop', protocol: 'array-mcp' },
 } satisfies Meta<typeof SourceMark>
 export default meta
 type Story = StoryObj<typeof meta>

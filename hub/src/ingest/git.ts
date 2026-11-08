@@ -12,10 +12,9 @@ import { gitAt } from '../../../shared/git.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes, writeCommitKey } from '../attribute.ts'
-import { nowIso, type Project, writeTransaction } from '../db.ts'
+import { nowIso, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
 import { chunks, type IngestTransaction } from './batches.ts'
-import { upsertGitTasks } from './git-task-cache.ts'
 
 export type { FileKind } from '../../../shared/file-kind.ts'
 
@@ -42,15 +41,6 @@ type DayActivity = {
   commits: number
   files: Set<string>
   lines: Record<FileKind, number>
-}
-
-/** Commits seen per task key, for tasks no tracker could tell us about. */
-type GitTask = {
-  key: string
-  project: Project
-  first: string
-  last: string
-  commits: number
 }
 
 function blank(): DayActivity {
@@ -85,7 +75,7 @@ function readGitLog(path: string, args: string[]): string {
 function scanGit(since: string) {
   refreshKeyPrefixes()
   const days = new Map<string, DayActivity>()
-  const tasks = new Map<string, GitTask>()
+  const tasks = new Set<string>()
   const commits: { sha: string; repo: string; key: string; at: string }[] = []
   const get = (d: string) => {
     if (!days.has(d)) days.set(d, blank())
@@ -116,20 +106,7 @@ function scanGit(since: string) {
         for (const k of (subject ?? '').match(keyPattern()) ?? []) {
           const key = k.toUpperCase()
           row.tasks.add(`${repo}:${key}`)
-          const t = tasks.get(key)
-          if (t) {
-            t.commits++
-            if (d < t.first) t.first = d
-            if (d > t.last) t.last = d
-          } else {
-            tasks.set(key, {
-              key,
-              project: repo,
-              first: d,
-              last: d,
-              commits: 1,
-            })
-          }
+          tasks.add(`${repo}:${key}`)
           if (sha && at) commits.push({ sha, repo, key, at })
         }
         continue
@@ -148,12 +125,8 @@ function scanGit(since: string) {
 }
 
 /**
- * Write the day grain, and seed tasks that only git knows about.
- *
- * Git-derived task rows carry no title and no status, and say so via
- * `source='git'`. They exist because a tracker that is unreachable — or a
- * project that has no local credentials at all — should not make its work
- * vanish from the view entirely.
+ * Write commit-to-key links and the day grain. A key that has no tracker row
+ * remains project-level unattributed work.
  */
 export async function ingestGit(
   since: string,
@@ -206,10 +179,6 @@ export function writeGitIngestBatches(
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
       )
 
-      // Seed Git-only tasks before resolving the commit's task UUID. Never downgrade a
-      // tracker's row to a git-derived one. The cache adapter also queues only inserts
-      // and meaningful changes in this transaction.
-      if (index === 0) upsertGitTasks(conn, scan.tasks.values(), at)
       for (const operation of batch) {
         if (operation.kind === 'commit') {
           writeCommitKey(conn, operation.commit)

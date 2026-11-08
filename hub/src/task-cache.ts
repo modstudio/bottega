@@ -88,18 +88,6 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
     return
   }
   const parentRecordId = parentTaskRecordId(conn, row)
-  const current = conn
-    .query<{ source: string; opened_at: string | null; updated_at: string }, [string]>(
-      'SELECT source,opened_at,updated_at FROM task WHERE record_id=?',
-    )
-    .get(row.id)
-  const preserveGitDate = (incoming: string | null, stored: string | null) =>
-    current?.source === 'git' &&
-    incoming !== null &&
-    stored !== null &&
-    new Date(incoming).getTime() === new Date(stored).getTime()
-      ? stored
-      : incoming
   conn
     .query(
       `INSERT INTO task
@@ -127,9 +115,9 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
       parentRecordId,
       row.body,
       row.assignee,
-      preserveGitDate(row.opened_at, current?.opened_at ?? null),
+      row.opened_at,
       row.closed_at,
-      preserveGitDate(row.updated_at, current?.updated_at ?? null),
+      row.updated_at,
       row.source,
       row.first_seen,
       row.last_seen,

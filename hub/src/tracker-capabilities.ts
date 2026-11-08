@@ -6,7 +6,7 @@ import {
   workspaceScopeRefusal,
 } from '../../shared/trackers.ts'
 
-export type TrackerRowSource = 'local' | 'mcp' | 'git'
+export type TrackerRowSource = 'local' | 'mcp'
 type Capability = { allowed: true } | { allowed: false; reason: string }
 export type Capabilities = {
   create: Capability
@@ -27,7 +27,6 @@ export const TRACKER_BODY_WRITE_REFUSAL =
   'No adapter has proven a task description write to this tracker; hub refuses to guess a payload.'
 export const TRACKER_COMMENT_WRITE_REFUSAL =
   'No adapter has proven a comment write to this tracker; hub refuses to guess a payload.'
-export const GIT_WRITE_REFUSAL = 'Derived from git history; there is no tracker to write to.'
 export const UNKNOWN_TRACKER_REFUSAL =
   "This record's project is not registered on this machine (or declares no tracker protocol), so hub cannot establish what its tracker accepts."
 
@@ -81,18 +80,6 @@ export function trackerCapabilities({
       documents: refuse(UNKNOWN_TRACKER_REFUSAL),
       statusVocabulary: null,
       keyFormat: null,
-    }
-  }
-  if (source === 'git') {
-    return {
-      create: refuse(GIT_WRITE_REFUSAL),
-      setStatus: refuse(GIT_WRITE_REFUSAL),
-      setTitle: refuse(GIT_WRITE_REFUSAL),
-      setBody: refuse(GIT_WRITE_REFUSAL),
-      comment: refuse(GIT_WRITE_REFUSAL),
-      documents: refuse(GIT_WRITE_REFUSAL),
-      statusVocabulary: null,
-      keyFormat: keyFormat(project),
     }
   }
   if (!['workspace-mcp', 'cursor-mcp', 'array-mcp'].includes(protocol)) {

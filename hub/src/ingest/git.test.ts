@@ -35,7 +35,7 @@ test('more than one git batch uses multiple transactions and stores the single-p
     files: new Set(['alpha:src/index.ts']),
     lines: { generated: 0, test: 0, docs: 0, config: 0, product: 12 },
   }
-  const scan = { days: new Map([['2026-10-30', activity]]), tasks: new Map(), commits }
+  const scan = { days: new Map([['2026-10-30', activity]]), tasks: new Set<string>(), commits }
   let batchedTransactions = 0
   writeGitIngestBatches(scan, 'machine-one', '2026-10-30T13:00:00.000Z', (fn) => {
     batchedTransactions++
@@ -74,4 +74,27 @@ test('more than one git batch uses multiple transactions and stores the single-p
   expect(stored).toEqual(singleStored)
   expect(batchedTransactions).toBe(2)
   expect(singleTransactions).toBe(1)
+})
+
+test('a commit with no tracker row records its key without creating a task', () => {
+  const commit = {
+    sha: 'untracked-task-commit',
+    repo: 'alpha',
+    key: 'ALP-999',
+    at: '2026-10-30T12:00:00.000Z',
+  }
+  writeGitIngestBatches(
+    { days: new Map(), tasks: new Set(['alpha:ALP-999']), commits: [commit] },
+    'machine-one',
+    '2026-10-30T13:00:00.000Z',
+  )
+
+  expect(db().query('SELECT count(*) count FROM task').get()).toEqual({ count: 0 })
+  expect(db().query('SELECT sha,repo,task_key,task_record_id,at FROM commit_key').get()).toEqual({
+    sha: commit.sha,
+    repo: commit.repo,
+    task_key: commit.key,
+    task_record_id: null,
+    at: commit.at,
+  })
 })

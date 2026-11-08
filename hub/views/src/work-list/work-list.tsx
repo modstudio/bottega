@@ -241,11 +241,7 @@ function TaskTitle({ row }: { row: TaskRow }) {
       </span>
     )
   }
-  return (
-    <span className={workListStyles().muted()}>
-      {row.source === 'git' ? 'title not known, derived from commits' : 'no tracker record yet'}
-    </span>
-  )
+  return <span className={workListStyles().muted()}>no tracker record yet</span>
 }
 
 function TaskUpdated({ row }: { row: TaskRow }) {
@@ -923,8 +919,8 @@ export function BoardView({
           </div>
         )}
         <p className={workListStyles().boardNote()}>
-          Source glyphs distinguish hub, external trackers, and git-derived records without using
-          state color{response.data.scoped ? ' - counts are for this project' : ''}.{' '}
+          Source glyphs distinguish hub and external trackers without using state color
+          {response.data.scoped ? ' - counts are for this project' : ''}.{' '}
           <TextButton onClick={() => onWhyChange(!why)}>why these cards?</TextButton>
         </p>
         {why ? (
