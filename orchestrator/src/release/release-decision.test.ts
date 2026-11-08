@@ -6,7 +6,6 @@ import {
   ciDeployWaitDecision,
   ciDeployWaitOutcome,
   forwardReleaseDecision,
-  postDeployLiveDecision,
   RELEASE_CHECKOUT_DIRTY_REFUSAL,
   releaseAncestryFromExitCode,
   releaseCapturedText,
@@ -17,6 +16,7 @@ import {
   releaseProcessEnvironment,
   releaseReasonDecision,
   releaseRowProvesCandidate,
+  releaseRungProofRefusal,
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
@@ -94,7 +94,14 @@ test('an unprovable rung names the complete register remedy', () => {
       { name: 'production', branch: 'master' },
     ]),
   ).toBe(
-    `release rung production declares neither a deploy command nor a live probe and cannot be proved; declare a live probe with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"staging","branch":"develop","deploy":"deploy staging"},{"name":"production","branch":"master","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
+    `release rung production declares neither a deploy command nor a live probe and cannot be proved; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"staging","branch":"develop","deploy":"deploy staging"},{"name":"production","branch":"master","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
+  )
+})
+
+test('a deploy-only rung names the complete live-probe remedy', () => {
+  const rungs = [{ name: 'production', branch: 'master', deploy: 'dispatch production' }]
+  expect(releaseRungProofRefusal(PLATFORM_SLUG, 'fixture', 'production', 'master', rungs)).toBe(
+    `release rung production declares a deploy command but no live probe and cannot be proved; declare a live probe that prints the commit the running deployment was built from, not a reachability check, with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"production","branch":"master","deploy":"dispatch production","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
   )
 })
 
@@ -115,21 +122,17 @@ describe('release ledger row proof', () => {
     candidate_commit: 'deployed',
   }
 
-  test('a no-live rung is proved by a successful row for the deployed commit', () => {
-    expect(releaseRowProvesCandidate(noLiveMatch, false, 'deployed')).toBe(true)
+  test('a row without a live match does not prove the deployed commit', () => {
+    expect(releaseRowProvesCandidate(noLiveMatch, 'deployed')).toBe(false)
   })
 
   test('a successful row for another commit does not prove the deployed commit', () => {
-    expect(releaseRowProvesCandidate(noLiveMatch, false, 'different')).toBe(false)
-  })
-
-  test('a live rung is not proved by a null live match', () => {
-    expect(releaseRowProvesCandidate(noLiveMatch, true, 'deployed')).toBe(false)
+    expect(releaseRowProvesCandidate(noLiveMatch, 'different')).toBe(false)
   })
 
   test('a live rung is proved by a matching row at the deployed commit', () => {
     expect(
-      releaseRowProvesCandidate({ ...noLiveMatch, live_matches_candidate: 1 }, true, 'deployed'),
+      releaseRowProvesCandidate({ ...noLiveMatch, live_matches_candidate: 1 }, 'deployed'),
     ).toBe(true)
   })
 })
@@ -485,37 +488,30 @@ describe('release checkout outcome', () => {
 
 describe('already-live release decision', () => {
   test.each([
-    ['newest equals head', 'head', undefined, undefined, true],
-    ['an older row equals head but newest differs', 'newer', undefined, undefined, false],
-    ['redeploy was requested', 'head', 'repair deploy', undefined, false],
-    ['rollback was requested', 'head', undefined, 'deliberate rollback', false],
-  ] as const)('%s', (_label, newestLive, redeployReason, rollbackReason, expected) => {
-    expect(
-      alreadyLiveReleaseDecision({
-        newestLive,
-        candidate: 'head',
-        redeployReason,
-        rollbackReason,
-      }),
-    ).toBe(expected)
-  })
+    ['candidate is observed live', true, 0, undefined, undefined, true, false],
+    ['landing branch is ahead', true, 2, undefined, undefined, true, true],
+    ['candidate is not observed live', false, 0, undefined, undefined, false, false],
+    ['redeploy was requested', true, 0, 'repair deploy', undefined, false, false],
+    ['rollback was requested', true, 0, undefined, 'deliberate rollback', false, false],
+  ] as const)(
+    '%s',
+    (_label, candidateIsLiveAncestor, commitsBehindTrunk, redeployReason, rollbackReason, alreadyLive, landingAhead) => {
+      expect(
+        alreadyLiveReleaseDecision({
+          candidateIsLiveAncestor,
+          commitsBehindTrunk,
+          redeployReason,
+          rollbackReason,
+        }),
+      ).toEqual({ alreadyLive, landingAhead })
+    },
+  )
 })
 
 test('release lock names its holder', () => {
   expect(releaseLockDecision({ session: 'session-1', since: '2026-10-01T12:00:00Z' })).toEqual({
     ok: false,
     message: expect.stringContaining('session session-1'),
-  })
-})
-
-test('post-deploy live check matches', () => {
-  expect(postDeployLiveDecision('abc', 'abc')).toEqual({ matches: true, warning: null })
-})
-
-test('post-deploy live check warns on mismatch', () => {
-  expect(postDeployLiveDecision('abc', 'def')).toEqual({
-    matches: false,
-    warning: expect.stringContaining('does not equal candidate'),
   })
 })
 

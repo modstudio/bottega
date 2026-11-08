@@ -83,6 +83,13 @@ const releaseSchema = (mode: SettingsObjectMode) =>
       .superRefine((rungs, context) => {
         const seen = new Set<string>()
         for (const [index, rung] of rungs.entries()) {
+          if (mode === 'strict' && rung.deploy !== undefined && rung.live === undefined) {
+            context.addIssue({
+              code: 'custom',
+              path: [index, 'deploy'],
+              message: `release rung "${rung.name}" declares a deploy command; add a live probe that prints the commit the running deployment was built from, or drop deploy`,
+            })
+          }
           if (rung.requiredWhenChanged !== undefined && rung.live === undefined) {
             context.addIssue({
               code: 'custom',
