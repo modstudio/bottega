@@ -10,6 +10,9 @@ export type JevWorkerQuestionRow = {
   jev_pick: string
   jev_probabilities: string | null
   jev_agreed: number | null
+  jev_question_version: number | null
+  jev_fits: number | null
+  jev_order_flipped: number | null
 }
 
 type JevAgreementBand = {
@@ -21,6 +24,7 @@ type JevAgreementBand = {
 export type JevWorkerQuestionMetrics = {
   kind: JevWorkerQuestionRow['kind'] | 'all'
   model: string | null
+  version: number | null
   advised: number
   ruledByArchitect: number
   agreed: number
@@ -31,6 +35,9 @@ export type JevWorkerQuestionMetrics = {
   coverage: number | null
   agreementAtThreshold: number | null
   brier: number | null
+  orderFlipped: number
+  fitAtOrAbove: { ruled: number; agreementRate: number | null }
+  fitBelow: { ruled: number; agreementRate: number | null }
 }
 
 const BAND_LIMITS = [0, 0.5, 0.7, 0.8, 0.9, 0.95, 1] as const
@@ -62,6 +69,8 @@ function measureGroup(
   threshold: number,
   kind: JevWorkerQuestionMetrics['kind'],
   model: string | null,
+  version: number | null,
+  fitThreshold: number,
 ): JevWorkerQuestionMetrics {
   const ruled = rows.filter((row) => row.jev_agreed !== null)
   const readable = ruled.filter(
@@ -69,6 +78,15 @@ function measureGroup(
   )
   const agreed = ruled.filter((row) => row.jev_agreed === 1).length
   const thresholdRows = readable.filter((row) => row.probability >= threshold)
+  const fitSplit = (atOrAbove: boolean) => {
+    const members = ruled.filter(
+      (row) =>
+        row.jev_fits !== null &&
+        (atOrAbove ? row.jev_fits >= fitThreshold : row.jev_fits < fitThreshold),
+    )
+    const agreed = members.filter((row) => row.jev_agreed === 1).length
+    return { ruled: members.length, agreementRate: members.length ? agreed / members.length : null }
+  }
   const bands = BAND_LIMITS.slice(0, -1).map((lower, index) => {
     const upper = BAND_LIMITS[index + 1]!
     const members = readable.filter((row) => bandIndex(row.probability) === index)
@@ -82,6 +100,7 @@ function measureGroup(
   return {
     kind,
     model,
+    version,
     advised: rows.length,
     ruledByArchitect: ruled.length,
     agreed,
@@ -96,6 +115,9 @@ function measureGroup(
     brier: typedQuestionCalibration(
       readable.map((row) => ({ probability: row.probability, label: row.jev_agreed === 1 })),
     ).brier,
+    orderFlipped: rows.filter((row) => row.jev_order_flipped === 1).length,
+    fitAtOrAbove: fitSplit(true),
+    fitBelow: fitSplit(false),
   }
 }
 
@@ -103,14 +125,24 @@ function measureGroup(
 export function jevWorkerQuestionMetrics(
   rows: readonly JevWorkerQuestionRow[],
   threshold: number,
+  fitThreshold = 0.7,
 ): JevWorkerQuestionMetrics[] {
   if (!rows.length) return []
   const measured = rows.map((row) => ({ ...row, probability: storedPickProbability(row) }))
-  const groups = Map.groupBy(measured, (row) => JSON.stringify([row.kind, row.jev_model]))
+  const groups = Map.groupBy(measured, (row) =>
+    JSON.stringify([row.kind, row.jev_model, row.jev_question_version ?? 1]),
+  )
   return [
-    measureGroup(measured, threshold, 'all', null),
+    measureGroup(measured, threshold, 'all', null, null, fitThreshold),
     ...[...groups.values()].map((group) =>
-      measureGroup(group, threshold, group[0]!.kind, group[0]!.jev_model),
+      measureGroup(
+        group,
+        threshold,
+        group[0]!.kind,
+        group[0]!.jev_model,
+        group[0]!.jev_question_version ?? 1,
+        fitThreshold,
+      ),
     ),
   ]
 }

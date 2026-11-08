@@ -67,6 +67,10 @@ export function routeJevAnswer(input: {
   rulings: 'agent' | 'user'
   autoRule: boolean
   canResume: boolean
+  fits: number | null
+  orderFlipped: boolean | null
+  bothOrdersAnswered: boolean
+  fitThreshold: number
 }): JevRoutingDecision {
   if (input.question.kind === 'text' || !input.answer)
     return { action: 'escalate', pick: null, probabilities: null, confidence: null }
@@ -82,6 +86,14 @@ export function routeJevAnswer(input: {
     input.rulings !== 'agent' ||
     confidence === null ||
     confidence < input.threshold
+  )
+    return { action: 'escalate', pick, probabilities, confidence }
+  if (
+    input.question.kind === 'choice' &&
+    (!input.bothOrdersAnswered ||
+      input.orderFlipped !== false ||
+      input.fits === null ||
+      input.fits < input.fitThreshold)
   )
     return { action: 'escalate', pick, probabilities, confidence }
   if (pick !== null) return { action: 'apply', value: pick, pick, probabilities, confidence }

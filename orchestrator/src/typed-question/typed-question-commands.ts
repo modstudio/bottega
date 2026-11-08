@@ -24,13 +24,19 @@ function renderJevWorkerQuestions(
     return
   }
   for (const block of report) {
-    const heading = block.kind === 'all' ? 'all' : `${block.kind} ${block.model ?? 'model none'}`
+    const heading =
+      block.kind === 'all'
+        ? 'all versions'
+        : `${block.kind} ${block.model ?? 'model none'} version ${block.version}`
     presentation.log(`  ${heading}`)
     presentation.log(
       `    advised ${block.advised}; ruledByArchitect ${block.ruledByArchitect}; agreed ${block.agreed}; agreementRate ${formatMetricValue(block.agreementRate)}; unreadable ${block.unreadable}`,
     )
     presentation.log(
       `    threshold ${block.threshold}; coverage ${formatMetricValue(block.coverage)}; agreementAtThreshold ${formatMetricValue(block.agreementAtThreshold)}; brier ${formatMetricValue(block.brier)}`,
+    )
+    presentation.log(
+      `    orderFlipped ${block.orderFlipped}; fitAtOrAbove ruled ${block.fitAtOrAbove.ruled} agreementRate ${formatMetricValue(block.fitAtOrAbove.agreementRate)}; fitBelow ruled ${block.fitBelow.ruled} agreementRate ${formatMetricValue(block.fitBelow.agreementRate)}`,
     )
     presentation.log(
       `    bands ${block.bands.map((band) => `${band.range} ${band.n}/${formatMetricValue(band.agreementRate)}`).join('; ')}`,

@@ -79,7 +79,7 @@ import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
 import { type AskLifecycle, askLifecycle, observeAskTransport } from './ask-lifecycle.ts'
-import { preAnswerWorkerQuestion } from './jev-worker-question.ts'
+import { preAnswerWorkerQuestion, preAnswerWorkerQuestions } from './jev-worker-question.ts'
 import { authenticatedWorkerRun } from './worker-auth.ts'
 import {
   validateWorkerNoteInput,
@@ -187,16 +187,14 @@ export async function preAnswerReplyQuestions(
   runId: string,
   recorded: Array<{ recordId: string; question: WorkerQuestion }>,
 ): Promise<void> {
-  await Promise.all(
-    recorded.map(({ recordId, question }) =>
-      preAnswerWorkerQuestion({
-        recordId,
-        runId,
-        question,
-        canResume: false,
-        answerChannel: 'cli',
-      }),
-    ),
+  await preAnswerWorkerQuestions(
+    recorded.map(({ recordId, question }) => ({
+      recordId,
+      runId,
+      question,
+      canResume: false,
+      answerChannel: 'cli',
+    })),
   )
 }
 

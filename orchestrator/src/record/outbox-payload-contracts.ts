@@ -66,7 +66,7 @@ const SCORE_RECORD_PAYLOAD_CONTRACT = contract(SCORE_RECORD_PAYLOAD_COLUMNS, {
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = columns(
   // workflowCursorId is accepted and ignored because queued payloads are frozen.
-  'id number spaceId runId workflowKey workflowTaskId workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia kind typedOptions criteria levels answer answerValue answerBasis answeredAt answeredBy answeredByName answeredByKind answererKind answerChannel jevPick jevConfidence jevProbabilities jevModel jevInputTokens jevError jevAgreed awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnedByName overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
+  'id number spaceId runId workflowKey workflowTaskId workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia kind typedOptions criteria levels answer answerValue answerBasis answeredAt answeredBy answeredByName answeredByKind answererKind answerChannel jevPick jevConfidence jevProbabilities jevModel jevInputTokens jevError jevAgreed jevQuestionVersion jevFits jevOrderFlipped awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnedByName overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
 )
 const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMNS, {
   number: null,
@@ -92,6 +92,9 @@ const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMN
   jevInputTokens: null,
   jevError: null,
   jevAgreed: null,
+  jevQuestionVersion: null,
+  jevFits: null,
+  jevOrderFlipped: null,
 })
 
 const TASK_FLOW_RECORD_PAYLOAD_CONTRACT = contract(

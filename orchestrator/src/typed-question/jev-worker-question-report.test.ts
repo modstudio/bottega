@@ -16,6 +16,9 @@ function row(input: Partial<JevWorkerQuestionRow> = {}): JevWorkerQuestionRow {
     jev_pick: '"a"',
     jev_probabilities: '{"a":0.9,"b":0.1}',
     jev_agreed: 1,
+    jev_question_version: null,
+    jev_fits: null,
+    jev_order_flipped: null,
     ...input,
   }
 }
@@ -166,4 +169,21 @@ test('puts certain advice in the closed top band', () => {
     0.9,
   )
   expect(all!.bands.at(-1)).toEqual({ range: '[0.95,1]', n: 1, agreementRate: 1 })
+})
+
+test('splits cohorts by version and reports choice fit bands', () => {
+  const metrics = jevWorkerQuestionMetrics(
+    [
+      row({ jev_question_version: null, jev_fits: 0.8, jev_agreed: 1, jev_order_flipped: 1 }),
+      row({ jev_question_version: 2, jev_fits: 0.6, jev_agreed: 0 }),
+    ],
+    0.9,
+    0.7,
+  )
+  expect(metrics.slice(1).map(({ version }) => version)).toEqual([1, 2])
+  expect(metrics[0]).toMatchObject({
+    orderFlipped: 1,
+    fitAtOrAbove: { ruled: 1, agreementRate: 1 },
+    fitBelow: { ruled: 1, agreementRate: 0 },
+  })
 })

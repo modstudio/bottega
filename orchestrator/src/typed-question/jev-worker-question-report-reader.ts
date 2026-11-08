@@ -15,11 +15,13 @@ import {
 export function jevWorkerQuestionReport(
   options: { days?: number },
   database: Database = db(),
-  readMachine: (key: 'jev.confidence_threshold') => string | number = readMachineValue,
+  readMachine: (
+    key: 'jev.confidence_threshold' | 'jev.fit_threshold',
+  ) => string | number = readMachineValue,
 ): JevWorkerQuestionMetrics[] {
   const rows = database
     .query(
-      `SELECT kind,jev_model,jev_pick,jev_probabilities,jev_agreed
+      `SELECT kind,jev_model,jev_pick,jev_probabilities,jev_agreed,jev_question_version,jev_fits,jev_order_flipped
          FROM question
         WHERE jev_pick IS NOT NULL
           AND kind IN ('choice','yesno','score')
@@ -33,5 +35,11 @@ export function jevWorkerQuestionReport(
     throw new Error(
       `invalid jev.confidence_threshold ${JSON.stringify(rawThreshold)}; run ${PLATFORM_SLUG} machine config set jev.confidence_threshold <0-1>`,
     )
-  return jevWorkerQuestionMetrics(rows, threshold)
+  const rawFitThreshold = readMachine('jev.fit_threshold')
+  const fitThreshold = Number(rawFitThreshold)
+  if (!isJevConfidenceThreshold(fitThreshold))
+    throw new Error(
+      `invalid jev.fit_threshold ${JSON.stringify(rawFitThreshold)}; run ${PLATFORM_SLUG} machine config set jev.fit_threshold <0-1>`,
+    )
+  return jevWorkerQuestionMetrics(rows, threshold, fitThreshold)
 }
