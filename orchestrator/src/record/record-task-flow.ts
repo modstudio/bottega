@@ -1,6 +1,8 @@
 // concern: hosted task-flow reads
 /** Reads one tenant-bound flow and its open stage without exposing record storage to callers. */
+
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
 import {
   type HostedTaskFlow,
@@ -39,7 +41,6 @@ export async function readRecordTaskFlow(
       LIMIT 1`
     const row = rows[0]
     if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
-    const iso = (value: unknown) => new Date(String(value)).toISOString()
     return {
       flow: {
         id: String(row.id),
@@ -51,8 +52,8 @@ export async function readRecordTaskFlow(
         openingMachineId: String(row.opening_machine_id),
         updatedMachineId: String(row.updated_machine_id),
         revision: Number(row.revision),
-        createdAt: iso(row.created_at),
-        updatedAt: iso(row.updated_at),
+        createdAt: recordIso(row.created_at),
+        updatedAt: recordIso(row.updated_at),
       },
       stage:
         row.stage_id == null
@@ -77,8 +78,8 @@ export async function readRecordTaskFlow(
                   : String(row.taken_over_from_machine_id),
               lastAdvancedMachineId: String(row.last_advanced_machine_id),
               revision: Number(row.stage_revision),
-              createdAt: iso(row.stage_created_at),
-              updatedAt: iso(row.stage_updated_at),
+              createdAt: recordIso(row.stage_created_at),
+              updatedAt: recordIso(row.stage_updated_at),
               holder: {
                 id: String(row.last_advanced_machine_id),
                 displayName: String(row.holder_display_name),

@@ -4,7 +4,16 @@
  * A separate file so the preloaded migrated store and the process-wide lease
  * handle are isolated from the larger behavioral fixture.
  */
-import { beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import {
+  readCollectLeaseHoldsSince,
+  readCollectLeaseRefusalsSince,
+} from '../../shared/collect-lease-log.ts'
+import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { trackerProjects } from './ingest/trackers.ts'
@@ -18,6 +27,7 @@ const {
   collectFastHostedOutbox,
   collectIncremental,
   explicitRequestMayAcquire,
+  formatCollectLeaseRefusal,
   releaseLease,
   leaseHolder,
   watch,
@@ -28,6 +38,82 @@ const {
 type WatcherAlive = import('./collect.ts').WatcherAlive
 
 beforeAll(resetFixtureStore)
+
+const refusalRemedy = `cleared by: retry the command; the collect lease is held only while one collection runs; see the holder with ${PLATFORM_SLUG} record lease`
+
+test('the three refusal sites share holder age and remedy formatting', () => {
+  const observation = { heldBy: 'collect:42', holderAgeMs: 12_500, waitedMs: 30_000 }
+  expect(formatCollectLeaseRefusal('fresh task read was not performed', observation)).toBe(
+    `fresh task read was not performed; holder: collect:42 for 12.5s\n${refusalRemedy}`,
+  )
+  expect(formatCollectLeaseRefusal('nothing collected', observation)).toBe(
+    `nothing collected; holder: collect:42 for 12.5s\n${refusalRemedy}`,
+  )
+  expect(
+    formatCollectLeaseRefusal(
+      'collection stopped after runs, a running leg was allowed to finish',
+      { heldBy: null, holderAgeMs: null, waitedMs: 0 },
+    ),
+  ).toBe(
+    `collection stopped after runs, a running leg was allowed to finish; holder: unknown\n${refusalRemedy}`,
+  )
+  expect(
+    formatCollectLeaseRefusal('nothing collected', {
+      heldBy: null,
+      holderAgeMs: null,
+      waitedMs: 30_000,
+      leaseUnreadable: true,
+    }),
+  ).toBe(`nothing collected; holder: the lease row could not be read\n${refusalRemedy}`)
+})
+
+describe('collect lease refusal log', () => {
+  const originalStateHome = process.env[STATE_HOME_ENV]
+  let stateHome = ''
+
+  beforeEach(() => {
+    stateHome = mkdtempSync(join(tmpdir(), 'collect-lease-refusals-'))
+    process.env[STATE_HOME_ENV] = stateHome
+  })
+
+  afterEach(() => {
+    rmSync(stateHome, { recursive: true, force: true })
+    if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
+    else process.env[STATE_HOME_ENV] = originalStateHome
+  })
+
+  test('a refused wait appends its observed holder once', async () => {
+    expect(acquireLease('watcher')).toBeTrue()
+    try {
+      const result = await withLease('one-shot', async () => {}, 0)
+      expect(result).toMatchObject({
+        ran: false,
+        heldBy: 'watcher',
+        waitedMs: expect.any(Number),
+        holderAgeMs: expect.any(Number),
+      })
+      expect(readCollectLeaseRefusalsSince('1970-01-01T00:00:00.000Z')).toEqual([
+        {
+          at: expect.any(String),
+          waiter: 'one-shot',
+          waitedMs: expect.any(Number),
+          holder: 'watcher',
+          holderAgeMs: expect.any(Number),
+        },
+      ])
+    } finally {
+      releaseLease('watcher')
+    }
+  })
+  test('a hold below the log floor is not recorded', async () => {
+    expect((await withLease('quick-hold', async () => {}, 0)).ran).toBeTrue()
+    expect(
+      readCollectLeaseHoldsSince('1970-01-01T00:00:00.000Z').filter(
+        (hold) => hold.holder === 'quick-hold',
+      ),
+    ).toEqual([])
+  })
+})
 
 const waitingOutboxReport = (): HostedOutboxReport => ({
   queued: 1,
@@ -458,9 +544,18 @@ describe('collect lease', () => {
         async () => {
           started()
           await canFinish
+          return [
+            {
+              source: 'runs',
+              ok: true as const,
+              durationMs: 2000,
+              metrics: { examined: 3, written: 1, unchanged: 2 },
+            },
+          ]
         },
         0,
         5,
+        (legs) => legs,
       )
       await didStart
       now += COLLECT_LEASE_MS + 1
@@ -468,6 +563,18 @@ describe('collect lease', () => {
       expect(acquireLease('competitor')).toBeFalse()
       finish()
       expect((await running).ran).toBeTrue()
+      expect(
+        readCollectLeaseHoldsSince('1970-01-01T00:00:00.000Z').filter(
+          (hold) => hold.holder === 'long-one-shot',
+        ),
+      ).toEqual([
+        {
+          at: expect.any(String),
+          holder: 'long-one-shot',
+          heldMs: COLLECT_LEASE_MS + 1,
+          legs: '"runs"=2000ms examined=3 written=1 unchanged=2',
+        },
+      ])
       expect(acquireLease('competitor')).toBeTrue()
       releaseLease('competitor')
     } finally {
@@ -522,8 +629,9 @@ describe('collect lease', () => {
     })
     try {
       const error = await reported
-      expect(error.message).toContain('takeover holds the collect lease')
-      expect(error.message).toContain('stopped after first')
+      expect(error.message).toContain('collection stopped after first')
+      expect(error.message).toContain('holder: takeover')
+      expect(error.message).toContain(refusalRemedy)
       expect(legs).toEqual(['first'])
     } finally {
       releaseLease('takeover')

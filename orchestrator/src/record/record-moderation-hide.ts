@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import type { ModerationHideReason } from '../../../shared/moderation-hide-reason.ts'
 import { formatNoteLabel } from '../../../shared/note-label.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { requireOwner } from './record-outside-intake.ts'
 import { recordPool } from './record-pool.ts'
@@ -38,7 +39,7 @@ async function tenant<T>(input: Tenant, run: (tx: SQL) => Promise<T>): Promise<T
 }
 
 function hiddenFromRow(row: Record<string, unknown>): HiddenRow {
-  const hiddenAt = row.hidden_at instanceof Date ? row.hidden_at : new Date(String(row.hidden_at))
+  const hiddenAt = row.hidden_at instanceof Date ? row.hidden_at : recordDate(row.hidden_at)
   const common = {
     id: String(row.id),
     authorUserId: row.author_user_id == null ? null : String(row.author_user_id),

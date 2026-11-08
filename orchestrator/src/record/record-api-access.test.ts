@@ -20,3 +20,26 @@ test('serves client addresses without authentication', async () => {
     hubHostedUrl: 'https://app.example.test',
   })
 })
+
+test('refuses a malformed invitation id before Better Auth receives it', async () => {
+  const app = new Hono()
+  let handled = false
+  registerRecordAccessRoutes(app, {
+    clientAddresses: {
+      recordApiUrl: 'https://api.example.test',
+      hubHostedUrl: 'https://app.example.test',
+    },
+    auth: {
+      handler: () => {
+        handled = true
+        throw new Error('invalid input syntax for type uuid')
+      },
+    },
+    readHealth: async () => ({ ok: true, migrations: 1 }),
+    readVersion: () => ({ status: 200, body: {} }),
+  })
+  const response = await app.request('/api/auth/organization/get-invitation?id=probe')
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({ error: 'invitation id must be a uuid' })
+  expect(handled).toBe(false)
+})

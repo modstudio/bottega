@@ -273,7 +273,7 @@ export function composeWorkflowWithCursor(
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   return writeTransaction(() => {
-    linkResolvedWorkflowTask(project, args, context, d)
+    linkResolvedWorkflowTask(project, context, d)
     const existing = keyOf(composition.arguments)
       ? findCursor(
           composition.project,
@@ -479,7 +479,7 @@ export function getWorkflowStepWithCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const autonomy = live.resolution
-  return withLinkedWorkflowTask(project, args, context, d, () =>
+  return withLinkedWorkflowTask(project, context, d, () =>
     getWorkflowStepWithCursorImpl(
       slug,
       project,
@@ -821,7 +821,7 @@ export function nextWorkflowStep(
   live?: LiveCursorAutonomy,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
-    withLinkedWorkflowTask(project, args, context, d, () => {
+    withLinkedWorkflowTask(project, context, d, () => {
       const row = reselectCursor(selected, args, context, d)
       adoptLinkedTask(row, args, context)
       return nextWorkflowStepImpl(
@@ -858,7 +858,7 @@ export function abandonSelectedWorkflowCursorForClose(
   args: Record<string, string>,
 ): string {
   refuseMissingAbandonReason(reason)
-  return withLinkedWorkflowTask(selected.project, args, context, d, () =>
+  return withLinkedWorkflowTask(selected.project, context, d, () =>
     abandonSelectedWorkflowCursor(reselectCursor(selected, args, context, d), reason, context, d),
   )
 }
@@ -929,7 +929,7 @@ export async function ruleWorkflow(
   function recordWorkflowRuling(): { summary: string; questionId: number } {
     if (!ruling?.trim()) throw new Error('--ruling is required')
     return writeTransaction(() => {
-      linkResolvedWorkflowTask(project, args, context, d)
+      linkResolvedWorkflowTask(project, context, d)
       const row = findCursor(project, slug, mode, args, context, d, cursor)
       if (!row)
         throw new Error(
@@ -1003,7 +1003,7 @@ export function awaitWorkflowRuling(
   notify: typeof notifyWaitingItem = notifyWaitingItem,
   cursor?: number,
 ): CursorSummary & { questionId: number } {
-  const result = withLinkedWorkflowTask(project, args, context, d, () =>
+  const result = withLinkedWorkflowTask(project, context, d, () =>
     awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
   )
   notify('workflow', result.cursorId, d)

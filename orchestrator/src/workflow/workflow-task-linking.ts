@@ -4,9 +4,9 @@
 import type { Database } from 'bun:sqlite'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
-import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import {
   resolveWorkflowCursorMode,
+  type SelectableCursorRow,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 
@@ -27,24 +27,22 @@ export function linkWorkflowTaskLabel(
 
 export function linkResolvedWorkflowTask(
   project: string,
-  args: Record<string, string>,
   context: WorkflowCursorContext,
   database: Database,
 ): void {
-  const workflowKey = workflowKeyOf(args)
+  const workflowKey = context.workflowKey
   if (!workflowKey || !context.taskRecordId) return
   linkWorkflowTaskLabel(database, { project, workflowKey, taskRecordId: context.taskRecordId })
 }
 
 export function withLinkedWorkflowTask<T>(
   project: string,
-  args: Record<string, string>,
   context: WorkflowCursorContext,
   database: Database,
   action: () => T,
 ): T {
   return writeTransaction(() => {
-    linkResolvedWorkflowTask(project, args, context, database)
+    linkResolvedWorkflowTask(project, context, database)
     return action()
   }, database)
 }
@@ -59,9 +57,9 @@ export function resolveLinkedWorkflowCursorMode(
   caller: string,
   remedy: string,
   database: Database = writableDb(),
-  cursor?: number,
+  selectedRow?: SelectableCursorRow,
 ): string {
-  return withLinkedWorkflowTask(project, args, context, database, () =>
+  return withLinkedWorkflowTask(project, context, database, () =>
     resolveWorkflowCursorMode(
       slug,
       project,
@@ -71,7 +69,7 @@ export function resolveLinkedWorkflowCursorMode(
       caller,
       remedy,
       database,
-      cursor,
+      selectedRow,
     ),
   )
 }

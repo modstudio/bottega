@@ -32,7 +32,8 @@ const task: TrackerTask = {
 const source = (lookup: TrackerSource['lookup']): TrackerSource => ({
   project: 'fixture',
   env: 'FIXTURE',
-  fetch: async () => [],
+  supportsUpdatedSince: false,
+  fetch: async () => ({ tasks: [], complete: true, deletedKeys: [] }),
   lookup,
 })
 
@@ -193,9 +194,7 @@ describe('fresh tracker task read', () => {
           lease: withLease,
           leaseWaitMs: 0,
         }),
-      ).rejects.toThrow(
-        'collect:fixture holds the collect lease; fresh task read was not performed',
-      )
+      ).rejects.toThrow('fresh task read was not performed; holder: collect:fixture for ')
       expect(lookedUp).toBeFalse()
     } finally {
       releaseLease('collect:fixture')
@@ -253,9 +252,7 @@ describe('fresh tracker task read', () => {
     releaseLease(freshHolder)
     expect(acquireLease('takeover')).toBeTrue()
     releaseLookup()
-    await expect(fresh).rejects.toThrow(
-      'takeover holds the collect lease; fresh task read was not performed',
-    )
+    await expect(fresh).rejects.toThrow('fresh task read was not performed; holder: takeover for ')
     expect(db().query(`SELECT 1 FROM task WHERE key='FIX-1'`).get()).toBeNull()
     releaseLease('takeover')
   })

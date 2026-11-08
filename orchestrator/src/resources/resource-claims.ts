@@ -9,24 +9,24 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
+import {
+  type ClaimOwner,
+  insertClaim,
+  RESOURCE_CLAIM_KINDS,
+  type ResourceClaimKind,
+} from './resource-step-recorder.ts'
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
 
-const RESOURCE_CLAIM_KINDS = [
-  'worktree',
-  'branch',
-  'retained_ref',
-  'sandbox_dir',
-  'trust_entry',
-  'port',
-  'database',
-  'index',
-  'string',
-] as const
-
-export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
-export type ResourceClaimState = 'claimed' | 'released' | 'retained' | 'forgotten' | 'absent'
+export type ResourceClaimState =
+  | 'pending'
+  | 'claimed'
+  | 'released'
+  | 'retained'
+  | 'forgotten'
+  | 'absent'
+  | 'stuck'
 export type PortBand = { start: number; end: number }
 export type CloseOutClaimOutcome = 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
 export type SandboxDirectoryReleaseInput = {
@@ -72,7 +72,7 @@ export function runsClaimingWorktreePath(database: Database, path: string): Clai
   const claimed = database
     .query(
       `SELECT run.record_id,run.job,resource_claim.allocation_key
-       FROM resource_claim INDEXED BY resource_claim_one_live_allocation
+       FROM resource_claim
        JOIN run ON run.record_id=resource_claim.root_run_record_id
        WHERE resource_claim.kind='worktree' AND resource_claim.state='claimed'
        ORDER BY run.number`,
@@ -124,12 +124,31 @@ export function claimKindForCreation(creation: ResourceCreation): ResourceClaimK
   }
 }
 
-export function claimCreationDecision(
-  existingRootRunId: string | null,
-  requestedRootRunId: string,
-): 'record' | 'duplicate' | 'collision' {
-  if (existingRootRunId === null) return 'record'
-  return existingRootRunId === requestedRootRunId ? 'duplicate' : 'collision'
+export function worktreeClaimRow(path: string, head: string, sharedReader: boolean, label: string) {
+  return {
+    kind: 'worktree' as const,
+    allocationKey: path,
+    identity: JSON.stringify({ path, head, ...(sharedReader ? { sharedReader: true } : {}) }),
+    label,
+  }
+}
+
+export function sandboxDirectoryClaimRow(path: string, rootRunId: string) {
+  return {
+    kind: claimKindForCreation('sandbox_directory'),
+    allocationKey: path,
+    identity: path,
+    label: rootRunId,
+  }
+}
+
+export function trustEntryClaimRow(heading: string, storePath: string, rootRunId: string) {
+  return {
+    kind: claimKindForCreation('trust_heading'),
+    allocationKey: heading,
+    identity: storePath,
+    label: rootRunId,
+  }
 }
 
 export function lowestFreePort(band: PortBand, claimedPorts: readonly number[]): number | null {
@@ -234,81 +253,31 @@ export function sandboxDirectoryRelease(
   return 'release'
 }
 
-type ClaimIdentity = {
-  rootRunId: string
-  runId: string
-  projectId: string | null
-}
-
-function insertClaim(
-  database: Database,
-  claim: ClaimIdentity & {
-    kind: ResourceClaimKind
-    allocationKey: string
-    identity: string | null
-    label: string | null
-    claimedAt: string
-  },
-): 'recorded' | 'duplicate' | 'collision' {
-  const existing = database
-    .query(
-      `SELECT root_run_record_id FROM resource_claim
-       WHERE kind=? AND allocation_key=? AND state='claimed'`,
-    )
-    .get(claim.kind, claim.allocationKey) as { root_run_record_id: string } | null
-  const decision = claimCreationDecision(existing?.root_run_record_id ?? null, claim.rootRunId)
-  if (decision !== 'record') return decision
-  database
-    .query(
-      `INSERT INTO resource_claim
-       (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
-       VALUES (?,?,?,?,?,?,?,?,'claimed',?)`,
-    )
-    .run(
-      newRecordId(),
-      claim.rootRunId,
-      claim.runId,
-      claim.projectId,
-      claim.kind,
-      claim.allocationKey,
-      claim.identity,
-      claim.label,
-      claim.claimedAt,
-    )
-  return 'recorded'
-}
-
 export function recordSandboxDirectoryClaim(
   database: Database,
-  input: ClaimIdentity & { path: string; claimedAt: string },
+  input: ClaimOwner & { path: string; claimedAt: string },
 ): void {
   insertClaim(database, {
     ...input,
-    kind: claimKindForCreation('sandbox_directory'),
-    allocationKey: input.path,
-    identity: input.path,
-    label: String(input.rootRunId),
+    ...sandboxDirectoryClaimRow(input.path, input.rootRunId),
   })
 }
 
 export function recordTrustEntryClaims(
   database: Database,
-  input: ClaimIdentity & { headings: string[]; storePath: string; claimedAt: string },
+  input: ClaimOwner & { headings: string[]; storePath: string; claimedAt: string },
 ): void {
   for (const heading of input.headings) {
     insertClaim(database, {
       ...input,
-      kind: claimKindForCreation('trust_heading'),
-      allocationKey: heading,
-      identity: input.storePath,
-      label: String(input.rootRunId),
+      ...trustEntryClaimRow(heading, input.storePath, input.rootRunId),
     })
   }
 }
 
 export function claimRecipePort(
   database: Database,
-  input: ClaimIdentity & { claimedAt: string; band: PortBand; name?: string },
+  input: ClaimOwner & { claimedAt: string; band: PortBand; name?: string },
 ): number {
   const nameFilter =
     input.name === undefined
@@ -384,7 +353,7 @@ export function claimRecipePort(
 
 export function claimIndex(
   database: Database,
-  input: ClaimIdentity & { projectId: string; claimedAt: string },
+  input: ClaimOwner & { projectId: string; claimedAt: string },
 ): number {
   const existing = database
     .query(
@@ -436,7 +405,7 @@ export function claimIndex(
 
 export function claimString(
   database: Database,
-  input: ClaimIdentity & { projectId: string; name: string; value: string; claimedAt: string },
+  input: ClaimOwner & { projectId: string; name: string; value: string; claimedAt: string },
 ): string {
   const existing = database
     .query(
@@ -502,7 +471,7 @@ export function claimString(
 
 export function claimDatabaseName(
   database: Database,
-  input: ClaimIdentity & {
+  input: ClaimOwner & {
     projectId: string
     name: string
     engine: string
@@ -601,7 +570,7 @@ export function recipePortClaimForRun(database: Database, runId: string): number
 
 export function recordDatabaseClaim(
   database: Database,
-  input: ClaimIdentity & {
+  input: ClaimOwner & {
     provider: RecipeDatabaseProvider
     name: string
     claimedAt: string
@@ -618,7 +587,7 @@ export function recordDatabaseClaim(
 
 export function recordCreatedWorktreeClaims(
   database: Database,
-  input: ClaimIdentity & {
+  input: ClaimOwner & {
     owned: boolean
     path: string
     head: string
@@ -633,25 +602,27 @@ export function recordCreatedWorktreeClaims(
     mintedBranch: input.mintedBranch,
   })) {
     const branch = input.mintedBranch
-    insertClaim(database, {
-      ...input,
-      kind,
-      allocationKey: kind === 'worktree' ? input.path : `refs/heads/${branch}`,
-      identity:
-        kind === 'worktree'
-          ? JSON.stringify({
-              path: input.path,
-              head: input.head,
-              ...(input.sharedReader ? { sharedReader: true } : {}),
-            })
-          : input.head,
-    })
+    insertClaim(
+      database,
+      kind === 'worktree'
+        ? {
+            ...input,
+            ...worktreeClaimRow(input.path, input.head, input.sharedReader === true, input.label),
+            shared: input.sharedReader === true,
+          }
+        : {
+            ...input,
+            kind,
+            allocationKey: `refs/heads/${branch}`,
+            identity: input.head,
+          },
+    )
   }
 }
 
 export function recordRetainedRefClaim(
   database: Database,
-  input: ClaimIdentity & {
+  input: ClaimOwner & {
     ref: string
     tip: string
     claimedAt: string

@@ -76,8 +76,8 @@ import {
   deleteRecordDoc,
   getRecordDoc,
   importRecordDoc,
+  listRecordDocEntries,
   listRecordDocRevisions,
-  listRecordDocs,
   renameRecordDocSubject,
   reorderRecordDocs,
   restoreRecordDoc,
@@ -234,7 +234,7 @@ function serveRecordApi(
 
 function recordDocDependencies() {
   return {
-    listDocs: listRecordDocs,
+    listDocs: listRecordDocEntries,
     listPublicDocs: listPublicRecordDocs,
     readPublicDoc: getPublicRecordDoc,
     searchPublicDocs: searchPublicRecordDocs,

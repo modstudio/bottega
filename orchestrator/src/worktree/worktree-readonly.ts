@@ -40,6 +40,7 @@ export function createReadOnlyWorktree(
   record?: RecordWorktree,
   provision: WorktreeProvision = [],
   provisionTimeoutMs?: number,
+  recordPending?: RecordWorktree,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -52,6 +53,8 @@ export function createReadOnlyWorktree(
     record,
     provision,
     provisionTimeoutMs,
+    false,
+    recordPending,
   )
 }
 
@@ -64,11 +67,13 @@ function createReadOnlyWorktreeAt(
   provision: WorktreeProvision = [],
   provisionTimeoutMs?: number,
   sharedReader = false,
+  recordPending?: RecordWorktree,
 ): Worktree {
   mkdirSync(dirname(path), { recursive: true })
   if (existsSync(path))
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const, sharedReader }
+  recordPending?.(worktree)
   try {
     const landingBranch = projectAt(repoRoot)?.settings.trunk?.trim() || null
     const remoteTrackingRefs = landingRemoteTrackingRefs(
@@ -115,6 +120,7 @@ export function resolveSharedReadOnlyWorktree(input: {
   runId: string
   commit: string
   record?: RecordWorktree
+  recordPending?: RecordWorktree
   provision?: WorktreeProvision
   provisionTimeoutMs?: number
 }): SharedReaderResolution {
@@ -132,6 +138,7 @@ export function resolveSharedReadOnlyWorktree(input: {
         input.provision,
         input.provisionTimeoutMs,
         true,
+        input.recordPending,
       ),
       fallbackReason: null,
     }
@@ -156,6 +163,7 @@ export function resolveSharedReadOnlyWorktree(input: {
           input.record,
           input.provision,
           input.provisionTimeoutMs,
+          input.recordPending,
         ),
         sharedReader: false,
       },
@@ -163,6 +171,7 @@ export function resolveSharedReadOnlyWorktree(input: {
     }
   }
   const attached = { ...candidate, sharedReader: true }
+  input.recordPending?.(attached)
   input.record?.(attached)
   return { worktree: attached, fallbackReason: null }
 }
@@ -230,6 +239,7 @@ export function createReadOnlyWithTool(
   runId: string,
   base: string,
   record?: RecordWorktree,
+  recordPending?: RecordWorktree,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -238,6 +248,14 @@ export function createReadOnlyWithTool(
   if (existsSync(path))
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   const vars = { path, base }
+  recordPending?.({
+    path,
+    branch: '',
+    base,
+    repoRoot,
+    source: 'readonly_recipe',
+    mintedBranch: null,
+  })
   assertCreateVarsAvailable(tool.readonly_create, vars)
   const branchesBefore = localBranchTips(repoRoot)
   const result = runCreateTool(tool.readonly_create, vars, repoRoot, targetGitEnvironment(cwd))

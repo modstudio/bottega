@@ -450,6 +450,33 @@ describe('hosted context router', () => {
     expect(result.settings.hooks[0]?.matcher).toBe('secret-shaped')
   })
 
+  test('project settings walks past an unreadable document page', async () => {
+    const cursors: Array<string | undefined> = []
+    const projectSettings = {
+      ...settingsDoc,
+      subject: 'alpha',
+      owner: null,
+      body: JSON.stringify({ permissions: {}, hooks: {}, envKeys: [] }),
+    }
+    const client = fakeClient({
+      docs: mock(async (input: { cursor?: string }) => {
+        cursors.push(input.cursor)
+        return input.cursor
+          ? { items: [projectSettings], nextCursor: null }
+          : {
+              items: [],
+              unreadable: [{ id: docId, reason: 'bad source_files' }],
+              nextCursor: 'after-unreadable',
+            }
+      }) as never,
+    })
+
+    const result = await caller(client).settings.get({ project: 'alpha' })
+
+    expect(result.target).toEqual({ kind: 'project', name: 'alpha' })
+    expect(cursors).toEqual([undefined, 'after-unreadable'])
+  })
+
   test.each([personalSpaceId, organizationSpaceId])(
     'user settings reads the personal space while %s is active',
     async (activeSpaceId) => {

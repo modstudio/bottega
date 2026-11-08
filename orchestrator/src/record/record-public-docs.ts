@@ -1,5 +1,6 @@
 // concern: record-public-docs
 /** Owns public-role document reads and hosted document search. Must not know HTTP or sessions. */
+
 import type { SQL } from 'bun'
 import { docBodyForAudience } from '../../../shared/doc-sections.ts'
 import {
@@ -17,6 +18,7 @@ import {
   effectiveDocSummary,
 } from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
 import { recordPool } from './record-pool.ts'
 
@@ -73,8 +75,6 @@ export function normalizeDocSearchQuery(value: string): string {
   return value.trim().replace(/\s+/g, ' ')
 }
 
-const iso = (value: unknown) => new Date(String(value)).toISOString()
-
 export function publicRecordDocRow(row: Record<string, unknown>): PublicRecordDoc {
   const storedBody = String(row.body)
   const body = docBodyForAudience(storedBody, 'customer')
@@ -85,7 +85,7 @@ export function publicRecordDocRow(row: Record<string, unknown>): PublicRecordDo
     body,
     parentId: row.parent_id == null ? null : String(row.parent_id),
     position: Number(row.position),
-    updatedAt: iso(row.updated_at),
+    updatedAt: recordIso(row.updated_at),
     scope: String(row.scope),
     subject: row.subject == null ? null : String(row.subject),
     audiences: recordDocAudiences(row.audiences),

@@ -27,6 +27,7 @@ const project = {
           name: 'hosted-api',
           branch: 'main',
           deploy: 'deploy hosted-api',
+          live: 'read hosted-api live commit',
           requiredWhenChanged: ['shared/record/migrations/**'],
         },
       ],
@@ -329,12 +330,14 @@ describe('requiredRungDecision', () => {
               name: 'explicit',
               branch: 'main',
               deploy: 'deploy explicit',
+              live: 'read explicit live commit',
               requiredWhenChanged: ['packages/**'],
             },
             {
               name: 'reach',
               branch: 'main',
               deploy: 'deploy reach',
+              live: 'read reach live commit',
               releasesWhenChanged: ['packages/**'],
             },
           ],
@@ -461,7 +464,7 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     required: true,
     requiredBy: 'explicit' as const,
     reason: null,
-    declaresLive: false,
+    declaresLive: true,
     declaresDeploy: true,
   }
 
@@ -521,7 +524,7 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     expect(output.match(/--release-required --depth staging/g)).toHaveLength(2)
   })
 
-  test('skips a no-live rung deployed at a commit containing the merge', () => {
+  test('skips a live-proved rung whose candidate contains the merge', () => {
     let deployed = false
     const report = releaseRequiredRungsAfterMainMove({
       project,
@@ -541,7 +544,7 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     expect(report.satisfied).toBe(true)
     expect(report.releases[0]).toMatchObject({
       deployed: false,
-      outputTail: 'deployed at newer',
+      outputTail: 'already live at newer',
     })
     expect(deployed).toBe(false)
   })
@@ -633,6 +636,50 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     expect(released).toBe(false)
   })
 
+  test('a deploy-only rung is refused before release with the complete register remedy', () => {
+    let released = false
+    const deployOnlyProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [{ name: 'production', branch: 'main', deploy: 'dispatch production' }],
+        },
+      },
+    } as Project
+    const report = releaseRequiredRungsAfterMainMove({
+      project: deployOnlyProject,
+      mergeCommit: 'merge',
+      rungs: [
+        {
+          rung: 'production',
+          branch: 'main',
+          required: true,
+          requiredBy: 'reach',
+          reason: null,
+          declaresLive: false,
+          declaresDeploy: true,
+        },
+      ],
+      runner: runner({
+        release: () => {
+          released = true
+          return successfulRelease()
+        },
+      }),
+    })
+
+    expect(report.satisfied).toBe(false)
+    expect(report.releases[0]?.outputTail).toContain(
+      `${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"production","branch":"main","deploy":"dispatch production","live":"<command that prints the deployed commit sha>"}]}}'`,
+    )
+    expect(report.releases[0]?.outputTail).toContain(
+      'prints the commit the running deployment was built from, not a reachability check',
+    )
+    expect(released).toBe(false)
+  })
+
   test('an unprovable rung does not suppress another failed rung remedy', () => {
     const mixedProject = {
       ...project,
@@ -642,7 +689,12 @@ describe('releaseRequiredRungsAfterMainMove', () => {
           ...project.settings.release!,
           rungs: [
             { name: 'unprovable', branch: 'main' },
-            { name: 'failed', branch: 'main', deploy: 'deploy failed' },
+            {
+              name: 'failed',
+              branch: 'main',
+              deploy: 'deploy failed',
+              live: 'read failed live commit',
+            },
           ],
         },
       },
@@ -744,21 +796,19 @@ describe('declared-rung report class guard', () => {
 })
 
 describe('release proof decision', () => {
-  test('proves a no-live rung from a successful descendant release', () => {
+  test('does not prove a no-live rung from a successful descendant release', () => {
     expect(
       releaseProofDecision({
-        declaresLive: false,
         exitCode: 0,
         liveMatchesCandidate: null,
         candidateContainsMerge: true,
       }),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   test('does not prove a live rung from a null match', () => {
     expect(
       releaseProofDecision({
-        declaresLive: true,
         exitCode: 0,
         liveMatchesCandidate: null,
         candidateContainsMerge: true,
@@ -769,7 +819,6 @@ describe('release proof decision', () => {
   test('proves a live rung from a matching descendant release', () => {
     expect(
       releaseProofDecision({
-        declaresLive: true,
         exitCode: 0,
         liveMatchesCandidate: true,
         candidateContainsMerge: true,

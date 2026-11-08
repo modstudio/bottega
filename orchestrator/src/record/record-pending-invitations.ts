@@ -1,5 +1,6 @@
 // concern: record-pending-invitations
 /** Owns signed-in users' pending hosted invitations. Must not know HTTP or CLI presentation. */
+import { recordDate } from '../../../shared/record-timestamp.ts'
 
 import { recordPool } from './record-pool.ts'
 
@@ -39,7 +40,7 @@ export async function listPendingRecordInvitations(input: {
         spaceSlug: String(spaces[0].slug),
         role: String(row.role),
         inviterEmail: String(row.inviter_email),
-        expiresAt: new Date(String(row.expires_at)).toISOString(),
+        expiresAt: recordDate(row.expires_at).toISOString(),
       })
     }
     return invitations

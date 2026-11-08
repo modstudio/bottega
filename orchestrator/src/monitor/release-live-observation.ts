@@ -13,6 +13,7 @@ export function observeProjectReleaseLive(project: Project) {
   for (const rung of project.settings.release?.rungs ?? []) {
     if (!rung.live) continue
     try {
+      // The baseline is the newest live-proved release, because only an observed release counts as released.
       const lastReleasedCommit = newestSuccessfulReleasedCommit(project.name, rung.name)
       // With no release to compare against, the rung is not read.
       if (lastReleasedCommit === null) continue

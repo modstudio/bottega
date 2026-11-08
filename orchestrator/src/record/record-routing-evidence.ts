@@ -3,6 +3,7 @@
 
 import type { SQL } from 'bun'
 import { bindTenant } from '../../../shared/record/tenant.ts'
+import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 
@@ -34,7 +35,6 @@ export const ROUTING_EVIDENCE_SCORE_FIELDS = [
   'fidelity',
 ] as const satisfies readonly (keyof RecordRoutingEvidence)[]
 
-const iso = (value: unknown) => new Date(String(value)).toISOString()
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 
@@ -53,7 +53,7 @@ export function mapRecordRoutingEvidenceRow(
     failureKind: nullableString(row.failure_kind),
     executor: String(row.executor) as 'external' | 'harness',
     evidenceExcluded: nullableString(row.evidence_excluded),
-    startedAt: iso(row.started_at),
+    startedAt: recordIso(row.started_at),
     latencyMs: nullableNumber(row.latency_ms),
     vendorTokens: nullableNumber(row.vendor_tokens),
     modelCalls: nullableNumber(row.model_calls),

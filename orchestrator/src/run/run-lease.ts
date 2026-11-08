@@ -112,6 +112,11 @@ function runLeasePath(runId: string, purpose: string, fileName: LeaseFileName): 
   return join(leaseDirectory(), fileName(runRecordId(runId, purpose)))
 }
 
+/** Filesystem allocation key for the run coordinator lease. */
+export function runLeaseAllocationPath(runId: string): string {
+  return runLeasePath(runId, 'run', runLeaseFileName)
+}
+
 function acquireLease(runId: string, purpose: string, fileName: LeaseFileName): KernelLease {
   mkdirSync(leaseDirectory(), { recursive: true })
   return acquireKernelLease(runLeasePath(runId, purpose, fileName))

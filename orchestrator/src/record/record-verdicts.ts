@@ -1,7 +1,9 @@
 // concern: record-verdicts
 /** Owns tenant-bound hosted run verdicts and evidence exclusion. Must not know local cache, CLI, or HTTP. */
+
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nullableRecordIso } from '../../../shared/record-timestamp.ts'
 import type { Delivery, Fidelity, Quality } from '../score/score.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import {
@@ -33,8 +35,6 @@ export type RecordScore = {
   evidenceExcluded: string | null
 }
 
-const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
-
 export function mapRecordScoreRow(row: Record<string, unknown>): RecordScore {
   return {
     runId: String(row.run_id),
@@ -42,9 +42,9 @@ export function mapRecordScoreRow(row: Record<string, unknown>): RecordScore {
     quality: row.quality == null ? null : (String(row.quality) as Quality),
     fidelity: row.fidelity == null ? null : (String(row.fidelity) as Fidelity),
     note: row.note == null ? null : String(row.note),
-    scoredAt: iso(row.scored_at),
+    scoredAt: nullableRecordIso(row.scored_at),
     scoredBy: row.scored_by == null ? null : String(row.scored_by),
-    updatedAt: iso(row.updated_at)!,
+    updatedAt: nullableRecordIso(row.updated_at)!,
     evidenceExcluded: row.evidence_excluded == null ? null : String(row.evidence_excluded),
   }
 }
@@ -55,7 +55,8 @@ export async function recordScoreRows(
     | { ids: readonly string[] }
     | { spaceId: string; updatedSince?: string; limit: number; cursor: RecordCursor | null },
 ): Promise<Record<string, unknown>[]> {
-  const from = `SELECT COALESCE(s.run_id,e.run_id) AS run_id,s.delivery,s.quality,s.fidelity,s.note,s.scored_at,s.scored_by,
+  const from = `SELECT COALESCE(s.run_id,e.run_id) AS run_id,COALESCE(s.space_id,e.space_id) AS space_id,
+      s.delivery,s.quality,s.fidelity,s.note,s.scored_at,s.scored_by,
       GREATEST(s.updated_at,e.excluded_at,e.superseded_at) AS updated_at,
       CASE WHEN e.superseded_at IS NOT NULL THEN NULL ELSE COALESCE(r.evidence_excluded,e.reason) END AS evidence_excluded
     FROM run_score s FULL OUTER JOIN run_exclusion e ON e.run_id=s.run_id AND e.space_id=s.space_id

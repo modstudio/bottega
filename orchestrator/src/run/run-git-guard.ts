@@ -2,15 +2,20 @@
 import { statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { db, nowIso } from '../database/db.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
   ensureWorkerBranchNamespaceDirs,
+  markedWorktreeRunId,
   prepareSharedRefGuard,
+  sharedRefGuardPath,
   workerSharedGitRoots,
 } from '../resources/ref-guard.ts'
 import { resolveRefGuardHook } from '../resources/ref-guard-runtime.ts'
+import { recordResourceStep } from '../resources/resource-step-recorder.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { runRootRecord } from './run-root-record.ts'
 
 /** Shared git roots for a writing worktree, creating the branch namespace dirs if missing. */
 export function provisionWriterSharedGitRoots(
@@ -35,12 +40,31 @@ export function workerGitConfigEnvironment(
   jobName: string | undefined,
 ): ReturnType<typeof prepareSharedRefGuard> | undefined {
   if (!worktree) return undefined
-  return writesJob
-    ? prepareSharedRefGuard(
-        worktree.path,
-        jobName !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
-      )
-    : prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot)
+  if (writesJob)
+    return prepareSharedRefGuard(
+      worktree.path,
+      jobName !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
+    )
+  const runId = markedWorktreeRunId(worktree.path)
+  if (!runId) return prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot)
+  const database = db()
+  const run = runRootRecord(runId, database)
+  if (!run) return prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot)
+  const path = sharedRefGuardPath(worktree.path, worktree.repoRoot)
+  return recordResourceStep(
+    database,
+    {
+      rootRunId: run.rootRunId,
+      runId,
+      projectId: run.projectId,
+      kind: 'ref_guard',
+      allocationKey: path,
+      identity: worktree.path,
+      label: runId,
+      claimedAt: nowIso(),
+    },
+    () => prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot),
+  )
 }
 
 /** Refuse a worker that could replace either the published hooks or their guard executable. */

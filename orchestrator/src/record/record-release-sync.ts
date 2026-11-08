@@ -1,13 +1,13 @@
 // concern: record-release-sync
 /** Knows how one release snapshot is upserted. Must not know local release execution. */
+
 import type { SQL } from 'bun'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { release as releaseRecord } from '../../../shared/record/schema-release.ts'
+import { nullableRecordDate, recordDate } from '../../../shared/record-timestamp.ts'
 import type { RecordPayload as Payload, RecordPrincipal } from './record-sync-contract.ts'
 
-const date = (value: unknown) => new Date(String(value))
-const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 
@@ -29,15 +29,15 @@ export function releaseValues(row: Payload, projectId: string | null) {
     rollbackReason: nullableString(row.rollbackReason),
     actor: String(row.actor),
     sessionId: nullableString(row.sessionId),
-    startedAt: date(row.startedAt),
-    finishedAt: nullableDate(row.finishedAt),
+    startedAt: recordDate(row.startedAt),
+    finishedAt: nullableRecordDate(row.finishedAt),
     exitCode: nullableNumber(row.exitCode),
     liveMatchesCandidate:
       row.liveMatchesCandidate == null ? null : Boolean(row.liveMatchesCandidate),
     warning: nullableString(row.warning),
     withheldFields: row.withheldFields,
-    createdAt: date(row.createdAt),
-    updatedAt: date(row.updatedAt),
+    createdAt: recordDate(row.createdAt),
+    updatedAt: recordDate(row.updatedAt),
   }
 }
 

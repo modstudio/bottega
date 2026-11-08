@@ -39,6 +39,17 @@ const task: PushedTask = {
   next_document_number: 1,
 }
 
+test('a stored driver Date keeps its milliseconds when the later time is chosen', () => {
+  const stored = { ...task, updated_at: new Date('2026-10-11T13:00:00.207Z') as unknown as string }
+  expect(
+    decideTaskUpsert(
+      stored,
+      { ...task, title: 'renamed', updated_at: '2026-10-11T13:00:00.100Z' },
+      ['title'],
+    ),
+  ).toMatchObject({ kind: 'patch', values: { updated_at: '2026-10-11T13:00:00.207Z' } })
+})
+
 test('task field decisions ignore incoming time for duplicates and never move time backwards', () => {
   expect(decideTaskUpsert(task, { ...task, updated_at: at, last_seen: at }, ['status'])).toEqual({
     kind: 'duplicate',

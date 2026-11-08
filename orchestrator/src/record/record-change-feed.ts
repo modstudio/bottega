@@ -49,9 +49,12 @@ type MaterializedRecordChange = {
   row?: unknown
 }
 export type RecordChangeFamilyKey = Omit<MaterializedRecordChange, 'row'> & { position: number }
+const recordChangeFamilyKey = (key: Pick<RecordChangeFamilyKey, 'table' | 'space' | 'id'>) =>
+  `${key.table}:${key.space}:${key.id}`
+
 export function familyKeys(changes: readonly RecordChangeEntry[]): RecordChangeFamilyKey[] {
   const keyed = new Map<string, RecordChangeFamilyKey>()
-  const keep = (key: RecordChangeFamilyKey) => keyed.set(`${key.table}:${key.id}`, key)
+  const keep = (key: RecordChangeFamilyKey) => keyed.set(recordChangeFamilyKey(key), key)
   for (const [position, change] of changes.entries()) {
     if (change.table === 'run') {
       keep({
@@ -111,7 +114,15 @@ async function rowsByFamily(
     map: (row: Record<string, unknown>) => unknown,
     idColumn = 'id',
   ) => {
-    for (const row of rows) result.set(`${table}:${String(row[idColumn])}`, map(row))
+    for (const row of rows)
+      result.set(
+        recordChangeFamilyKey({
+          table,
+          space: String(row.space_id),
+          id: String(row[idColumn]),
+        }),
+        map(row),
+      )
   }
   const docs = ids('doc')
   if (docs.length) add('doc', await recordDocRows(tx, { ids: docs }), recordDocRow)
@@ -163,7 +174,7 @@ export async function materializeRecordChangePage(
   const materialized = await rowsByFamily(tx, keys)
   const changes: MaterializedRecordChange[] = []
   for (const key of keys) {
-    const row = materialized.get(`${key.table}:${key.id}`)
+    const row = materialized.get(recordChangeFamilyKey(key))
     const base = {
       table: key.table,
       id: key.id,

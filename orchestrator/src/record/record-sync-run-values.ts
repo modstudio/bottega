@@ -1,11 +1,10 @@
 // concern: record-sync-run-values
 /** Maps one validated run payload onto its hosted record values. */
+import { nullableRecordDate, recordDate } from '../../../shared/record-timestamp.ts'
 import { runUsageRecordValues } from './record-run-usage.ts'
 import type { RecordPayload as Payload } from './record-sync-contract.ts'
 import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
 
-const date = (value: unknown) => new Date(String(value))
-const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const bigint = (value: unknown) => BigInt(String(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 
@@ -22,8 +21,8 @@ export function runRecordValues(
     projectId,
     machineId: String(row.machineId),
     startedByUserId,
-    startedAt: date(row.startedAt),
-    finishedAt: nullableDate(row.finishedAt),
+    startedAt: recordDate(row.startedAt),
+    finishedAt: nullableRecordDate(row.finishedAt),
     agent: String(row.agent),
     job: String(row.job),
     promptSha: String(row.promptSha),
@@ -91,7 +90,7 @@ export function runRecordValues(
     provisioningOutcome: nullableString(row.provisioningOutcome),
     provisioningEntryRoots: row.provisioningEntryRoots,
     withheldFields: row.withheldFields,
-    createdAt: date(row.createdAt),
-    updatedAt: date(row.updatedAt),
+    createdAt: recordDate(row.createdAt),
+    updatedAt: recordDate(row.updatedAt),
   }
 }

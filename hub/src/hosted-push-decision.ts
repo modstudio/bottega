@@ -1,3 +1,4 @@
+import { recordDate } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import type {
@@ -23,11 +24,11 @@ const instant = (value: unknown) =>
     ? value.toISOString()
     : value === null || value === undefined
       ? value
-      : new Date(String(value)).toISOString()
+      : recordDate(value).toISOString()
 const same = (left: unknown, right: unknown) =>
   left instanceof Date || right instanceof Date ? instant(left) === instant(right) : left === right
-const later = (left: string, right: string) =>
-  new Date(left).getTime() >= new Date(right).getTime()
+const later = (left: unknown, right: unknown) =>
+  recordDate(left).getTime() >= recordDate(right).getTime()
     ? (instant(left) as string)
     : (instant(right) as string)
 
@@ -52,7 +53,7 @@ export function decideNoteUpsert(
     anchors: JSON.stringify(merged.anchors),
     sightings: merged.sightings,
     last_seen_at: selected.has('last_seen_at')
-      ? later(String(stored.last_seen_at), incoming.last_seen_at)
+      ? later(stored.last_seen_at, incoming.last_seen_at)
       : (instant(stored.last_seen_at) as string),
     stale_at:
       merged.appended > 0 ? null : selected.has('stale_at') ? incoming.stale_at : stored.stale_at,
@@ -79,7 +80,7 @@ export function decideNoteAcknowledgementUpsert(
   incoming: PushedNoteAcknowledgement,
 ): Decision<PushedNoteAcknowledgement> {
   const acknowledgedAt = stored
-    ? later(String(stored.acknowledged_at), incoming.acknowledged_at)
+    ? later(stored.acknowledged_at, incoming.acknowledged_at)
     : (instant(incoming.acknowledged_at) as string)
   if (
     stored &&
@@ -94,7 +95,7 @@ export function decideNoteAcknowledgementUpsert(
     values: {
       acknowledged_at: acknowledgedAt,
       sightings: incoming.sightings,
-      updated_at: later(String(stored.updated_at), incoming.updated_at),
+      updated_at: later(stored.updated_at, incoming.updated_at),
       deleted_at: null,
     },
   }
@@ -140,8 +141,8 @@ export function decideTaskUpsert(
   const values: Partial<PushedTask> = {}
   for (const field of fields)
     Object.assign(values, { [field]: incoming[field as keyof PushedTask] })
-  values.updated_at = later(String(stored.updated_at), incoming.updated_at)
-  values.last_seen = later(String(stored.last_seen), incoming.updated_at)
+  values.updated_at = later(stored.updated_at, incoming.updated_at)
+  values.last_seen = later(stored.last_seen, incoming.updated_at)
   const changesStatus = fields.includes('status') || fields.includes('status_category')
   if (changesStatus)
     values.closed_at =

@@ -16,6 +16,7 @@ import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
 import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
+import { recordDocListPage } from './record-api-doc-list.ts'
 import { hostedDocUpsert } from './record-api-doc-prose.ts'
 import {
   docWriteContextSchema,
@@ -70,11 +71,11 @@ import {
   encodeRecordCursor,
   pageRecordItems,
   type RecordCursor,
-  recordCursorOf,
 } from './record-cursor.ts'
 import type {
   RecordDoc,
   RecordDocImportInput,
+  RecordDocListEntry,
   RecordDocListInput,
   RecordDocOrderInput,
   RecordDocRevision,
@@ -139,7 +140,7 @@ type RecordApiDeps = RecordSessionRouteDeps &
     readProjects(input: Tenant): Promise<RecordProject[]>
     upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
     retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
-    listDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]>
+    listDocs(input: Tenant & RecordDocListInput): Promise<RecordDocListEntry[]>
     listPublicDocs(input: { url: string }): Promise<PublicRecordDocTreeItem[]>
     readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>
     searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
@@ -764,7 +765,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     } catch {
       return context.json({ error: 'invalid cursor' }, 400)
     }
-    const items = await deps.listDocs({
+    const entries = await deps.listDocs({
       ...tenant,
       scope: query.data.scope,
       subject,
@@ -777,7 +778,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
       includeDeleted: Boolean(query.data.includeDeleted),
       acrossReadableSpaces: Boolean(query.data.acrossReadableSpaces),
     })
-    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
+    return context.json(recordDocListPage(entries, query.data.limit))
   })
   app.get('/v1/docs/:id', async (context) => {
     const id = idSchema.safeParse(context.req.param('id'))

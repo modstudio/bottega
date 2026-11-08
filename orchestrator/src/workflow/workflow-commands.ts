@@ -32,6 +32,7 @@ import {
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { cursorCommandTarget } from './workflow-cursor-command-target.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import {
@@ -41,8 +42,6 @@ import {
 import {
   cliWorkflowCursorContext,
   resolveWorkflowCursorContext,
-  selectWorkflowCursor,
-  type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
 import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
@@ -260,14 +259,19 @@ export async function attachCommand(
         })()
   if (!body.trim()) throw new Error('workflow text must not be empty; provide text to attach')
   let context = cliWorkflowCursorContext()
-  const { project, workflow: slug } = cursorCommandTarget(
-    argv,
-    cursor,
-    context,
-    `${PLATFORM_SLUG} workflow attach`,
-  )
+  const {
+    project,
+    workflow: slug,
+    selectedRow,
+  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow attach`)
   const args = workflowArgs(argv)
-  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
+  context = await resolveWorkflowCursorContext(
+    project,
+    args,
+    context,
+    options.hubTaskReader,
+    selectedRow,
+  )
   const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
@@ -277,7 +281,7 @@ export async function attachCommand(
     `${PLATFORM_SLUG} workflow attach`,
     'pass --mode <slug>',
     undefined,
-    cursor,
+    selectedRow,
   )
   const reference = await attachWorkflowText(
     { project, workflow: slug, mode, key: workflowKeyOf(args) || undefined },
@@ -440,13 +444,18 @@ export async function ruleCommand(
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
-  const { project, workflow: slug } = cursorCommandTarget(
-    argv,
-    cursor,
+  const {
+    project,
+    workflow: slug,
+    selectedRow,
+  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow rule`)
+  context = await resolveWorkflowCursorContext(
+    project,
+    args,
     context,
-    `${PLATFORM_SLUG} workflow rule`,
+    options.hubTaskReader,
+    selectedRow,
   )
-  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
@@ -456,7 +465,7 @@ export async function ruleCommand(
     `${PLATFORM_SLUG} workflow rule`,
     'pass --mode <slug>',
     undefined,
-    cursor,
+    selectedRow,
   )
   const result = await ruleWorkflow(
     slug,
@@ -481,13 +490,18 @@ export async function abandonCommand(
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
-  const { project, workflow: slug } = cursorCommandTarget(
-    argv,
-    cursor,
+  const {
+    project,
+    workflow: slug,
+    selectedRow,
+  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow abandon`)
+  context = await resolveWorkflowCursorContext(
+    project,
+    args,
     context,
-    `${PLATFORM_SLUG} workflow abandon`,
+    options.hubTaskReader,
+    selectedRow,
   )
-  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
@@ -497,7 +511,7 @@ export async function abandonCommand(
     `${PLATFORM_SLUG} workflow abandon`,
     'pass --mode <slug>',
     undefined,
-    cursor,
+    selectedRow,
   )
   const result = await closeCursorWithTextCopy(
     {
@@ -541,8 +555,14 @@ export async function stepCommand(
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const target = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow step`, true)
-  const { project, workflow: slug } = target
-  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
+  const { project, workflow: slug, selectedRow } = target
+  context = await resolveWorkflowCursorContext(
+    project,
+    args,
+    context,
+    options.hubTaskReader,
+    selectedRow,
+  )
   const mode = cursor
     ? resolveLinkedWorkflowCursorMode(
         slug,
@@ -553,7 +573,7 @@ export async function stepCommand(
         `${PLATFORM_SLUG} workflow step`,
         'pass --mode <slug>',
         undefined,
-        cursor,
+        selectedRow,
       )
     : requestedMode
   const selection = {
@@ -607,14 +627,19 @@ export async function nextCommand(
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
-  const { project, workflow: slug } = cursorCommandTarget(
-    argv,
-    cursor,
-    context,
-    `${PLATFORM_SLUG} workflow next`,
-  )
+  const {
+    project,
+    workflow: slug,
+    selectedRow,
+  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow next`)
   const evidence = evidenceFromArgv(argv)
-  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
+  context = await resolveWorkflowCursorContext(
+    project,
+    args,
+    context,
+    options.hubTaskReader,
+    selectedRow,
+  )
   const adoptedTask = evidence.task
     ? await resolveHubTaskReference(project, evidence.task, options.hubTaskReader)
     : null
@@ -628,7 +653,7 @@ export async function nextCommand(
     `${PLATFORM_SLUG} workflow next`,
     'pass --mode <slug>',
     undefined,
-    cursor,
+    selectedRow,
   )
   const live = await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor })
   const result = await closeCursorWithTextCopy(
@@ -699,13 +724,18 @@ export async function awaitCommand(
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
-  const { project, workflow: slug } = cursorCommandTarget(
-    argv,
-    cursor,
+  const {
+    project,
+    workflow: slug,
+    selectedRow,
+  } = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow await`)
+  context = await resolveWorkflowCursorContext(
+    project,
+    args,
     context,
-    `${PLATFORM_SLUG} workflow await`,
+    options.hubTaskReader,
+    selectedRow,
   )
-  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
@@ -715,7 +745,7 @@ export async function awaitCommand(
     `${PLATFORM_SLUG} workflow await`,
     'pass --mode <slug>',
     undefined,
-    cursor,
+    selectedRow,
   )
   const result = awaitWorkflowRuling(
     slug,
@@ -732,40 +762,6 @@ export async function awaitCommand(
     result,
     `workflow ${slug} is awaiting ruling question ${result.questionId} at step ${result.n} ${result.slug}`,
   )
-}
-
-function cursorCommandTarget(
-  argv: string[],
-  cursor: number | undefined,
-  context: WorkflowCursorContext,
-  caller: string,
-  hasStep = false,
-): { project: string; workflow: string; step?: string } {
-  const project = flagValue(argv, 'project')
-  const tail = argv.slice(2)
-  const flagIndex = tail.findIndex((value) => value.startsWith('--'))
-  const positionals = flagIndex < 0 ? tail : tail.slice(0, flagIndex)
-  const [suppliedWorkflow, suppliedStep] = hasStep
-    ? positionals.length > 1
-      ? positionals
-      : [undefined, positionals[0]]
-    : [positionals[0], undefined]
-  let step = suppliedStep
-  if (cursor !== undefined) {
-    const row = selectWorkflowCursor(
-      { project, workflow: suppliedWorkflow },
-      cursor,
-      context.session,
-      db(),
-    )!
-    if (hasStep && (!suppliedStep || (!suppliedWorkflow && suppliedStep === row.workflow_slug)))
-      step = row.step_slug
-    return { project: row.project, workflow: row.workflow_slug, step }
-  }
-  if (!project) throw new Error('--project is required without --cursor')
-  if (!suppliedWorkflow) throw new Error(`workflow slug is required without --cursor`)
-  if (hasStep && !step) throw new Error(`${caller} requires a step slug or position`)
-  return { project, workflow: suppliedWorkflow, step }
 }
 
 export function cursorsCommand(argv: string[], print: WorkflowPrint): void {

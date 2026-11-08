@@ -88,6 +88,7 @@ export const releaseModules = [
   {
     file: 'orchestrator/src/release/live-reading.ts',
     allowed: [
+      'shared/git.ts',
       'shared/secret-shaped.ts',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/release/release-decision.ts',

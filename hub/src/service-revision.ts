@@ -149,7 +149,7 @@ export function parseServiceIdentity(value: string): IdentityRead {
     ['currentRevisionError', nullableString(candidate.currentRevisionError)],
     [
       'startedAt',
-      nonemptyString(candidate.startedAt) && !Number.isNaN(Date.parse(String(candidate.startedAt))),
+      nonemptyString(candidate.startedAt) && !Number.isNaN(Date.parse(candidate.startedAt)),
     ],
   ]
   const invalid = fields.find(([, valid]) => !valid)

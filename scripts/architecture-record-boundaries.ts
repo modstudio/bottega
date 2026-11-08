@@ -166,6 +166,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-doc-tenant.ts',
       './record-api-tenant.ts',
       './record-api-doc-order.ts',
+      './record-api-doc-list.ts',
       './record-api-write-routes.ts',
       './record-api-settings.ts',
       './record-api-subjects.ts',
@@ -309,6 +310,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
     'record-config-boundary',
     'orchestrator/src/record/record-config.ts',
     [
+      '../../../shared/record-timestamp.ts',
       'bun',
       '../../../shared/brand.ts',
       '../../../shared/machine-key-id.ts',
@@ -386,7 +388,12 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
   boundary(
     'record-doc-mapping-boundary',
     'orchestrator/src/record/record-doc-mapping.ts',
-    ['../../../shared/docs.ts', './record-doc-audiences.ts', './record-doc-list-shape.ts'],
+    [
+      '../../../shared/docs.ts',
+      '../../../shared/record-timestamp.ts',
+      './record-doc-audiences.ts',
+      './record-doc-list-shape.ts',
+    ],
     'Keep hosted document row mapping independent of SQL and transports.',
     ['../doc/doc-write-allowed.ts'],
   ),
@@ -409,6 +416,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'record-verdicts-boundary',
     'orchestrator/src/record/record-verdicts.ts',
     [
+      '../../../shared/record-timestamp.ts',
       '../../../shared/brand.ts',
       'bun',
       '../score/score.ts',
@@ -423,6 +431,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'record-projects-boundary',
     'orchestrator/src/record/record-projects.ts',
     [
+      '../../../shared/record-timestamp.ts',
       'bun',
       '../../../shared/record/jsonb-sql.ts',
       '../../../shared/record/schema.ts',
@@ -462,6 +471,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'record-releases-boundary',
     'orchestrator/src/record/record-releases.ts',
     [
+      '../../../shared/record-timestamp.ts',
       'bun',
       '../../../shared/record/tenant.ts',
       './record-cursor.ts',
@@ -480,6 +490,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'record-runs-boundary',
     'orchestrator/src/record/record-runs.ts',
     [
+      '../../../shared/record-timestamp.ts',
       'bun',
       '../../../shared/machine-label.ts',
       '../../../shared/record/tenant.ts',
@@ -497,6 +508,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'record-snapshots-boundary',
     'orchestrator/src/record/record-snapshots.ts',
     [
+      '../../../shared/record-timestamp.ts',
       'bun',
       '../../../shared/machine-label.ts',
       '../../../shared/record/jsonb-sql.ts',
@@ -545,6 +557,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../../../shared/board-duration.ts',
       '../../../shared/board-purpose.ts',
       '../../../shared/board-reply-audience-options.ts',
+      '../../../shared/record-timestamp.ts',
       '../board/board-policy.ts',
       '../board/board-text-secret.ts',
       '../board/board-reply-audience.ts',
@@ -567,6 +580,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       'bun',
       '../../../shared/brand.ts',
       '../../../shared/record-id.ts',
+      '../../../shared/record-timestamp.ts',
       './record-board-contract.ts',
       './record-board-messages.ts',
       './record-board-tx.ts',
@@ -618,6 +632,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     [
       'bun',
       '../../../shared/brand.ts',
+      '../../../shared/record-timestamp.ts',
       '../../../shared/record/schema.ts',
       '../board/board-claim-policy.ts',
       '../board/board-policy.ts',

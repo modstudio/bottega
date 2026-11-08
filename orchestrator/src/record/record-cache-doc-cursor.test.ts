@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -123,4 +123,81 @@ test('resumes the document pull from its persisted cursor after a restart betwee
     { at: firstCursorAt, id: firstId },
   ])
   expect(db().query('SELECT record_id FROM doc').all()).toHaveLength(2)
+})
+
+test('an unreadable document is warned about without advancing the persisted cursor past it', async () => {
+  const readableId = newRecordId()
+  const unreadableId = newRecordId()
+  const warning = `hosted document project/example/bad (${unreadableId}) column doc.source_files is not a JSON list`
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    listDocs: async () => ({
+      items: [doc(readableId, 'readable-after-bad')],
+      unreadable: [{ id: unreadableId, reason: warning }],
+      nextCursor: null,
+      endCursor: null,
+    }),
+  })
+  const warnings: string[] = []
+  const warn = spyOn(console, 'warn').mockImplementation((message?: unknown) => {
+    warnings.push(String(message))
+  })
+  try {
+    expect(await pullRecordCache(db())).toMatchObject({ docs: 1 })
+  } finally {
+    warn.mockRestore()
+  }
+  expect(warnings).toEqual([`unreadable hosted document ${unreadableId}: ${warning}`])
+  expect(
+    db()
+      .query(
+        "SELECT value FROM schema_meta WHERE key='record_docs_cursor:01990000-0000-7000-8000-000000000002'",
+      )
+      .get(),
+  ).toBeNull()
+})
+
+test('an unreadable first page freezes the persisted cursor while the pull walks later pages', async () => {
+  const beforeUnreadableId = newRecordId()
+  const unreadableId = newRecordId()
+  const laterId = newRecordId()
+  const firstPageCursor = encodeRecordCursor({ at: firstCursorAt, id: unreadableId })
+  const seen: Array<RecordCursor | undefined> = []
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    listDocs: async (query) => {
+      const after = cursor(query.cursor)
+      seen.push(after)
+      if (!after)
+        return {
+          items: [doc(beforeUnreadableId, 'before-unreadable')],
+          unreadable: [{ id: unreadableId, reason: 'bad source_files' }],
+          nextCursor: firstPageCursor,
+          endCursor: encodeRecordCursor({ at: firstCursorAt, id: beforeUnreadableId }),
+        }
+      return {
+        items: [doc(laterId, 'later-readable')],
+        nextCursor: null,
+        endCursor: encodeRecordCursor({ at: secondCursorAt, id: laterId }),
+      }
+    },
+  })
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    expect(await pullRecordCache(db())).toMatchObject({ docs: 2 })
+  } finally {
+    warn.mockRestore()
+  }
+  expect(seen).toEqual([undefined, { at: firstCursorAt, id: unreadableId }])
+  expect(
+    JSON.parse(
+      db()
+        .query<{ value: string }, []>(
+          "SELECT value FROM schema_meta WHERE key='record_docs_cursor:01990000-0000-7000-8000-000000000002'",
+        )
+        .get()!.value,
+    ),
+  ).toEqual({ at: firstCursorAt, id: beforeUnreadableId })
 })

@@ -2,6 +2,7 @@
 /** Registers health and authentication routes. Must not know record data services. */
 import type { Env, Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { z } from 'zod'
 import {
   RECORD_CLIENT_ADDRESSES_PATH,
   type RecordClientAddresses,
@@ -42,6 +43,12 @@ export function registerRecordAccessRoutes<E extends Env>(
   })
   app.get(RECORD_CLIENT_ADDRESSES_PATH, (context) => context.json(deps.clientAddresses))
   app.all('/api/auth/*', async (context) => {
+    if (
+      context.req.method === 'GET' &&
+      context.req.path === '/api/auth/organization/get-invitation' &&
+      !z.string().uuid().safeParse(context.req.query('id')).success
+    )
+      return context.json({ error: 'invitation id must be a uuid' }, 400)
     const response = await deps.auth.handler(context.req.raw)
     // A reset request never reveals whether mail was sent or the client-IP limit was reached.
     if (context.req.path === '/api/auth/request-password-reset' && response.status === 429) {

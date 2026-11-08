@@ -867,13 +867,13 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'record-review-read-boundary',
     'orchestrator/src/record/record-review-read.ts',
-    [],
+    ['../../../shared/record-timestamp.ts'],
     'Keep hosted review-read value mapping independent of record delivery.',
   ),
   boundary(
     'record-review-values-boundary',
     'orchestrator/src/record/record-review-values.ts',
-    [],
+    ['../../../shared/record-timestamp.ts'],
     'Keep hosted review value mapping independent of record delivery.',
   ),
   boundary(

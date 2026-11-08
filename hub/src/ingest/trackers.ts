@@ -3,6 +3,8 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   type AssigneeRef,
   resolveAssigneeIds,
+  type ToolCaller,
+  type TrackerFetchResult,
   TrackerLookupUnverifiable,
   type TrackerSource,
   type TrackerTask,
@@ -16,6 +18,11 @@ import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
+import {
+  TRACKER_SINCE_OVERLAP_MS,
+  type TrackerReadMode,
+  trackerReadMode,
+} from './tracker-read-mode.ts'
 
 export type { TrackerTask } from '../../../shared/trackers.ts'
 
@@ -76,6 +83,8 @@ export type TrackerResult = {
   project: Project
   tasks: number
   changed: number
+  mode?: TrackerReadMode
+  deleted?: number
   /** Whether any tracker-owned row differed from the last successful read. */
   activity?: boolean
   skipped?: string
@@ -127,6 +136,57 @@ export const successfulTrackerRead = (result: TrackerResult) =>
   result.project !== BACKFILL_RESULT && !result.error && !result.skipped
 
 const trackerReadKey = (project: Project) => `collect.tracker.${project}.at`
+const trackerSinceKey = (project: Project) => `collect.tracker.${project}.since`
+const trackerFullReadKey = (project: Project) => `collect.tracker.${project}.full-at`
+const trackerForceFullKey = (project: Project) => `collect.tracker.${project}.force-full`
+
+function trackerSetting(key: string): string | null {
+  return (
+    db().query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?').get(key)
+      ?.value ?? null
+  )
+}
+
+export function storedTrackerReadMode(
+  source: TrackerSource,
+  now: string,
+): {
+  mode: TrackerReadMode
+  since: string | null
+} {
+  const since = trackerSetting(trackerSinceKey(source.project))
+  return {
+    mode: trackerReadMode({
+      declared: source.supportsUpdatedSince,
+      forceFull: trackerSetting(trackerForceFullKey(source.project)) !== null,
+      since,
+      lastFullRead: trackerSetting(trackerFullReadKey(source.project)),
+      now,
+    }),
+    since,
+  }
+}
+
+export function recordTrackerReadState(
+  project: Project,
+  mode: TrackerReadMode,
+  startedAt: string,
+  complete: boolean,
+): void {
+  writeTransaction((conn) => {
+    if (!complete) {
+      conn
+        .query(`INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)`)
+        .run(trackerForceFullKey(project), '1')
+      return
+    }
+    const since = new Date(Date.parse(startedAt) - TRACKER_SINCE_OVERLAP_MS).toISOString()
+    const write = conn.query(`INSERT OR REPLACE INTO setting(key,value) VALUES (?,?)`)
+    write.run(trackerSinceKey(project), since)
+    if (mode === 'full') write.run(trackerFullReadKey(project), startedAt)
+    conn.query('DELETE FROM setting WHERE key=?').run(trackerForceFullKey(project))
+  })
+}
 
 export function trackerProjectsReadSince(
   projectNames: readonly Project[],
@@ -204,6 +264,15 @@ export function trackerObservationTimes(
     }
   }
   const sourceTime = task.updatedAt ?? at
+  if (stored?.status_category === 'done' && task.category === 'done') {
+    return {
+      openedAt: stored.opened_at ?? sourceTime,
+      closedAt: stored.closed_at ?? at,
+      firstSeen: stored.first_seen,
+      lastSeen: at,
+      updatedAt: sourceTime,
+    }
+  }
   return {
     openedAt: sourceTime,
     closedAt: task.category === 'done' ? at : null,
@@ -458,9 +527,19 @@ export function observeTrackerTask(task: TrackerTask, at = nowIso()): TrackerTas
   })
 }
 
-async function fetchTrackerTasks(source: TrackerSource, client: Mcp): Promise<TrackerTask[]> {
-  const tasks = await source.fetch(client)
-  const seen = new Set(tasks.map((task) => task.key))
+export async function fetchTrackerTasks(
+  source: TrackerSource,
+  client: ToolCaller,
+  mode: TrackerReadMode,
+  since: string | null,
+): Promise<TrackerFetchResult> {
+  const fetched = await source.fetch(
+    client,
+    mode === 'incremental' ? (since ?? undefined) : undefined,
+  )
+  const tasks = fetched.tasks
+  if (mode === 'incremental') return fetched
+  const seen = new Set([...tasks.map((task) => task.key), ...fetched.deletedKeys])
   const vanished = db()
     .query<{ key: string }, [string]>(
       `SELECT key FROM task
@@ -477,12 +556,12 @@ async function fetchTrackerTasks(source: TrackerSource, client: Mcp): Promise<Tr
       /* unfindable: leave it as it was rather than guess */
     }
   }
-  return tasks
+  return { ...fetched, tasks }
 }
 
 async function lookupTrackerTask(
   source: TrackerSource,
-  client: Mcp,
+  client: ToolCaller,
   key: string,
 ): Promise<TrackerTask | null> {
   try {
@@ -509,6 +588,48 @@ export function writeTrackerCache(
     }
   })
   return observations
+}
+
+/** Reconcile tracker-reported deletions without deleting the local cache row. */
+export function dropDeletedTrackerTasks(
+  project: Project,
+  keys: Iterable<string>,
+  at: string,
+): { dropped: number; activity: boolean; changed: number } {
+  let dropped = 0
+  let changed = 0
+  writeTransaction((conn) => {
+    const read = conn.query<TrackerIdentityRow, [string, string]>(
+      `SELECT ${TRACKER_IDENTITY_COLUMNS} FROM task
+       WHERE project=? AND key=? AND source='mcp'`,
+    )
+    const restoreLifecycle = conn.query(
+      'UPDATE task SET opened_at=?, closed_at=? WHERE record_id=?',
+    )
+    for (const key of new Set(keys)) {
+      const row = read.get(project, key)
+      // A tombstone repeats while it stays inside the since overlap; one drop is the event.
+      if (!row || row.status_category === 'dropped') continue
+      const observation = observeTrackerTaskOn(
+        conn,
+        {
+          externalId: row.external_id,
+          key: row.key,
+          project: row.project,
+          title: row.title ?? '',
+          status: 'deleted',
+          category: 'dropped',
+          updatedAt: at,
+          assignee: row.assignee,
+        },
+        at,
+      )
+      restoreLifecycle.run(row.opened_at, row.closed_at ?? at, row.record_id)
+      dropped++
+      if (observation.event) changed++
+    }
+  })
+  return { dropped, activity: dropped > 0, changed }
 }
 
 async function backfillTrackerTasks(
@@ -657,7 +778,10 @@ export async function ingestTrackers(
           const m = new Mcp(creds.url, creds.token)
           try {
             await m.initialize()
-            const tasks = await fetchTrackerTasks(s, m)
+            const startedAt = nowIso()
+            const read = storedTrackerReadMode(s, startedAt)
+            const fetched = await fetchTrackerTasks(s, m, read.mode, read.since)
+            const tasks = fetched.tasks
 
             // One row per key. A key can arrive twice in a pass - once from the sync
             // and once from the vanished lookup - and writing both compares the second
@@ -665,20 +789,26 @@ export async function ingestTrackers(
             // transition that did not happen. Last wins: the lookup is the fresher read.
             const unique = new Map(tasks.map((t) => [t.key, t]))
             const observations = writeTrackerCache(unique.values(), at)
-            let activity = observations.some(({ observation }) => observation.changed)
-            const changed = observations.filter(({ observation }) => observation.event).length
+            const deletions = dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at)
+            let activity =
+              deletions.activity || observations.some(({ observation }) => observation.changed)
+            const changed =
+              deletions.changed + observations.filter(({ observation }) => observation.event).length
 
             // Use the connection which already proved reachable for the handful of
             // closed tasks recent work names. A failed full sync is not immediately
             // retried here: that doubled traffic precisely when a server was down.
             const backfill = await backfillTrackerTasks(s, m, missing, at)
             activity ||= backfill.activity
+            recordTrackerReadState(s.project, read.mode, startedAt, fetched.complete)
             return {
               result: {
                 project: s.project,
                 tasks: unique.size,
                 changed,
                 activity,
+                mode: read.mode,
+                deleted: deletions.dropped,
               },
               filled: backfill.filled,
             }

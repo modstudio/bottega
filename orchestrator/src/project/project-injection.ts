@@ -1,6 +1,7 @@
 // concern: project-injection
 /** Knows the project facts shared workflows may request, their stored grammar, and refusal remedies. */
-import { isAbsolute, normalize, posix, win32 } from 'node:path'
+import { basename, isAbsolute, normalize, posix, win32 } from 'node:path'
+import { parse } from 'shell-quote'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -11,6 +12,7 @@ import {
   refuseHubActionOverrides,
   refuseInvalidReviewStages,
   refuseNonCursorProjectId,
+  refuseUnsupportedUpdatedSince,
   resolveTrackerAgentActions,
   TRACKER_PROTOCOLS,
   type TrackerAction,
@@ -64,6 +66,78 @@ const releaseEntryPoint = z
     }
   })
 
+function gitWord(token: string): string | null {
+  const stripped = token.replace(/^(?:\$\(|`|\()+/, '')
+  return basename(stripped) === 'git' ? token : null
+}
+
+/** Find the first shell word that would let a live probe read Git state. */
+export function liveCommandRunsGit(command: string): string | null {
+  const inspect = (source: string): string | null => {
+    for (const entry of parse(source)) {
+      if (typeof entry !== 'string') continue
+      const found = gitWord(entry)
+      if (found) return found
+      if (!/\s/.test(entry)) continue
+      const nested = parse(entry)
+      if (nested.length === 1 && nested[0] === entry) continue
+      const nestedFound = inspect(entry)
+      if (nestedFound) return nestedFound
+    }
+    return null
+  }
+  return inspect(command)
+}
+
+type ReleaseRungLiveIssue = {
+  path: [number, 'liveVersion' | 'live' | 'requiredWhenChanged' | 'entryPoints']
+  message: string
+}
+
+function rungDeclaresLiveProbe(rung: { live?: string; liveVersion?: unknown }): boolean {
+  return rung.live !== undefined || rung.liveVersion !== undefined
+}
+
+function releaseRungLiveVersionIssues(
+  rung: {
+    name: string
+    live?: string
+    liveVersion?: unknown
+    requiredWhenChanged?: readonly string[]
+    entryPoints?: readonly string[]
+  },
+  index: number,
+  mode: SettingsObjectMode,
+): ReleaseRungLiveIssue[] {
+  const issues: ReleaseRungLiveIssue[] = []
+  const hasLiveProbe = rungDeclaresLiveProbe(rung)
+  if (rung.live !== undefined && rung.liveVersion !== undefined) {
+    issues.push({
+      path: [index, 'liveVersion'],
+      message: `rung ${rung.name} declares both live and liveVersion; keep one`,
+    })
+  }
+  if (mode === 'strict' && rung.live && liveCommandRunsGit(rung.live)) {
+    issues.push({
+      path: [index, 'live'],
+      message: `rung ${rung.name}: live runs git against the local checkout; declare liveVersion {command, file, key} or a probe that queries the deployed system`,
+    })
+  }
+  if (rung.requiredWhenChanged !== undefined && !hasLiveProbe) {
+    issues.push({
+      path: [index, 'requiredWhenChanged'],
+      message: `release rung "${rung.name}" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged`,
+    })
+  }
+  if (rung.entryPoints !== undefined && !hasLiveProbe) {
+    issues.push({
+      path: [index, 'entryPoints'],
+      message: `release rung "${rung.name}" declares entryPoints; add a live probe or drop entryPoints`,
+    })
+  }
+  return issues
+}
+
 const releaseSchema = (mode: SettingsObjectMode) =>
   objectIn(mode)({
     rungs: z
@@ -73,6 +147,15 @@ const releaseSchema = (mode: SettingsObjectMode) =>
           branch: z.string(),
           deploy: z.string().optional(),
           live: z.string().trim().min(1).optional(),
+          liveVersion: objectIn(mode)({
+            command: z.string().trim().min(1),
+            file: releaseEntryPoint,
+            key: z
+              .string()
+              .trim()
+              .min(1)
+              .refine((key) => key.split('.').every(Boolean), 'must be a dot-separated path'),
+          }).optional(),
           onDemand: z.boolean().optional(),
           requiredWhenChanged: z.array(z.string().trim().min(1)).optional(),
           entryPoints: z.array(releaseEntryPoint).min(1).optional(),
@@ -82,18 +165,15 @@ const releaseSchema = (mode: SettingsObjectMode) =>
       .superRefine((rungs, context) => {
         const seen = new Set<string>()
         for (const [index, rung] of rungs.entries()) {
-          if (rung.requiredWhenChanged !== undefined && rung.live === undefined) {
-            context.addIssue({
-              code: 'custom',
-              path: [index, 'requiredWhenChanged'],
-              message: `release rung "${rung.name}" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged`,
-            })
+          const hasLiveProbe = rungDeclaresLiveProbe(rung)
+          for (const issue of releaseRungLiveVersionIssues(rung, index, mode)) {
+            context.addIssue({ code: 'custom', ...issue })
           }
-          if (rung.entryPoints !== undefined && rung.live === undefined) {
+          if (mode === 'strict' && rung.deploy !== undefined && !hasLiveProbe) {
             context.addIssue({
               code: 'custom',
-              path: [index, 'entryPoints'],
-              message: `release rung "${rung.name}" declares entryPoints; add a live probe or drop entryPoints`,
+              path: [index, 'deploy'],
+              message: `release rung "${rung.name}" declares a deploy command; add a live probe that prints the commit the running deployment was built from, or drop deploy`,
             })
           }
           if (seen.has(rung.name)) {
@@ -309,6 +389,7 @@ const trackerSchema = (mode: SettingsObjectMode) =>
   }).superRefine((tracker, context) => {
     refuseHubActionOverrides(tracker, context)
     refuseNonCursorProjectId(tracker, context)
+    refuseUnsupportedUpdatedSince(tracker, context)
     refuseInvalidReviewStages(tracker, context)
   })
 
