@@ -107,7 +107,7 @@ export function newestVersionIntroduction(
 }
 
 /** Version probes prove liveness by value equality, independently of commit ancestry. */
-export function liveVersionMatchesCandidate(served: string, candidate: string): boolean {
+function liveVersionMatchesCandidate(served: string, candidate: string): boolean {
   return served === candidate
 }
 

@@ -3,13 +3,13 @@ import { gitAt } from '../../../shared/git.ts'
 import {
   jsonStringAtPath,
   type LiveReadingCapture,
-  type VersionCommitReader,
   mappedVersionCommit,
   newestVersionIntroduction,
   RELEASE_LIVE_READING_TIMEOUT_MS,
   readLiveCommit,
   readLiveVersion,
   unmappedVersionFailure,
+  type VersionCommitReader,
   versionIntroducedAtCommit,
 } from './live-reading.ts'
 
@@ -157,20 +157,11 @@ describe('release live version decisions', () => {
       return ['reintroduced', 'removal', 'original'].includes(commit)
     }
 
-    expect(mappedVersionCommit('/project', 'main', settings, '0.48.0', reader)).toBe(
-      'reintroduced',
-    )
+    expect(mappedVersionCommit('/project', 'main', settings, '0.48.0', reader)).toBe('reintroduced')
     expect(logCalls).toEqual([
       {
         cwd: '/project',
-        args: [
-          'log',
-          '--format=%H',
-          '-S"version": "0.48.0"',
-          'origin/main',
-          '--',
-          'package.json',
-        ],
+        args: ['log', '--format=%H', '-S"version": "0.48.0"', 'origin/main', '--', 'package.json'],
       },
     ])
     expect(ancestorCalls).toContainEqual({
