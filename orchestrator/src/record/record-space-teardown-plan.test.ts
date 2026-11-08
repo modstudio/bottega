@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { pgTable, uuid } from 'drizzle-orm/pg-core'
-import { project, space } from './schema.ts'
-import { SPACE_TEARDOWN_PLAN, unclassifiedSpaceTables } from './space-teardown.ts'
+import { project, space } from '../../../shared/record/schema.ts'
+import { SPACE_TEARDOWN_PLAN, unclassifiedSpaceTables } from './record-space-teardown-plan.ts'
 
 test('an unclassified space foreign key is refused', () => {
   const fixture = pgTable('fixture_space_child', {

@@ -298,7 +298,7 @@ export async function recordSpaceDeleteTrialCommand(
 ): Promise<void> {
   const result = await deleteTrialSpace(slug)
   if (result.nothingToRemove) {
-    presentation.log('nothing to remove')
+    presentation.log(`no space ${slug} among your spaces; nothing removed`)
     return
   }
   for (const account of result.neutralized)
@@ -307,6 +307,10 @@ export async function recordSpaceDeleteTrialCommand(
     )
   for (const [table, count] of Object.entries(result.tables).filter(([, count]) => count > 0))
     presentation.log(`removed\t${table}\t${count}`)
+  if (result.activeSpaceCleared)
+    presentation.log(
+      `active record space is now none; select one: ${PLATFORM_SLUG} record space switch <slug>`,
+    )
 }
 
 export async function recordSpaceSwitchCommand(

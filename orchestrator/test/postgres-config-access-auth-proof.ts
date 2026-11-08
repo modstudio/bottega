@@ -30,6 +30,8 @@ export function registerConfigAccessSpaceCreationProof(input: {
 }): void {
   registerTrialSpaceTeardownProof({
     actorUrl: input.actorUrl,
+    authUrl: input.authUrl,
+    token: input.token,
     admin: input.succeeds,
     psql: (user, password, source) => input.psql(source, user, password),
   })

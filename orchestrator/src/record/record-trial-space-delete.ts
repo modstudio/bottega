@@ -2,12 +2,16 @@
 /** Guards and atomically tears down marked trial spaces. Never deletes users or personal spaces. */
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { bindTenant } from '../../../shared/record/tenant.ts'
+import {
+  TRIAL_IDENTIFIER_PREFIX,
+  isTrialSpaceMetadata,
+} from '../../../shared/record/trial-space.ts'
+import { recordPool } from './record-pool.ts'
 import {
   SPACE_TEARDOWN_PLAN,
   type SpaceTeardownReach,
-} from '../../../shared/record/space-teardown.ts'
-import { bindTenant } from '../../../shared/record/tenant.ts'
-import { recordPool } from './record-pool.ts'
+} from './record-space-teardown-plan.ts'
 import {
   TrialSpaceDeleteError,
   type TrialSpaceDeleteResult,
@@ -27,7 +31,7 @@ export type TrialDeleteDecision =
 const retry = `choose a space created with \`${PLATFORM_SLUG} record space create --trial\``
 export function decideTrialSpaceDelete(facts: TrialDeleteFacts): TrialDeleteDecision {
   if (!facts.exists) return { allowed: true, nothing: true, neutralize: [] }
-  if (!facts.slug.startsWith('trial-'))
+  if (!facts.slug.startsWith(TRIAL_IDENTIFIER_PREFIX))
     return {
       allowed: false,
       refusal: `trial-slug guard failed: ${facts.slug} does not start with trial-; ${retry}`,
@@ -61,12 +65,6 @@ export function decideTrialSpaceDelete(facts: TrialDeleteFacts): TrialDeleteDeci
     neutralize: facts.members.filter((member) => member.userId !== facts.callerUserId),
   }
 }
-const marked = (metadata: unknown) =>
-  typeof metadata === 'object' &&
-  metadata !== null &&
-  typeof (metadata as { trial?: unknown }).trial === 'object' &&
-  (metadata as { trial?: unknown }).trial !== null
-
 const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`
 const tuple = (columns: readonly string[]) =>
   columns.length === 1 ? identifier(columns[0]!) : `(${columns.map(identifier).join(',')})`
@@ -84,7 +82,13 @@ function teardownPredicate(table: string): string {
 }
 
 async function facts(tx: SQL, slug: string, userId: string) {
-  const spaces = await tx`SELECT id,metadata FROM space WHERE slug=${slug} FOR UPDATE`
+  await tx`SELECT set_config('app.user_id', ${userId}, true)`
+  const spaces = await tx`
+    SELECT s.id,s.metadata FROM space s
+    JOIN membership m ON m.space_id=s.id
+    WHERE s.slug=${slug} AND m.user_id=${userId}::uuid
+    FOR UPDATE OF s
+  `
   if (!spaces[0])
     return {
       spaceId: null,
@@ -116,7 +120,7 @@ async function facts(tx: SQL, slug: string, userId: string) {
     value: {
       exists: true,
       slug,
-      marked: marked(spaces[0].metadata),
+      marked: isTrialSpaceMetadata(spaces[0].metadata),
       callerUserId: userId,
       members,
     } satisfies TrialDeleteFacts,
@@ -127,13 +131,15 @@ export async function deleteTrialRecordSpace(input: {
   url: string
   slug: string
   userId: string
+  activeSpaceId: string | null
 }): Promise<TrialSpaceDeleteResult> {
   return recordPool(input.url).begin(async (tx) => {
     const read = await facts(tx, input.slug, input.userId)
     const decision = decideTrialSpaceDelete(read.value)
     if (!decision.allowed) throw new TrialSpaceDeleteError(decision.refusal)
     if (decision.nothing || !read.spaceId)
-      return { nothingToRemove: true, tables: {}, neutralized: [] }
+      return { nothingToRemove: true, activeSpaceCleared: false, tables: {}, neutralized: [] }
+    const activeSpaceCleared = input.activeSpaceId === read.spaceId
     const neutralized: TrialSpaceDeleteResult['neutralized'] = []
     for (const member of decision.neutralize) {
       const sessions =
@@ -161,6 +167,6 @@ export async function deleteTrialRecordSpace(input: {
     tables.membership = memberships.length
     const spaces = await tx`DELETE FROM space WHERE id=${read.spaceId}::uuid RETURNING id`
     tables.space = spaces.length
-    return { nothingToRemove: false, tables, neutralized }
+    return { nothingToRemove: false, activeSpaceCleared, tables, neutralized }
   })
 }

@@ -14,6 +14,7 @@ export function registerRecordTrialSpaceRoutes(
       url: string
       slug: string
       userId: string
+      activeSpaceId: string | null
     }): Promise<TrialSpaceDeleteResult>
   },
 ): void {
@@ -28,6 +29,7 @@ export function registerRecordTrialSpaceRoutes(
         url: deps.recordUrl,
         slug: body.data.slug,
         userId: identity.user.id,
+        activeSpaceId: identity.activeSpaceId,
       }),
     )
   })

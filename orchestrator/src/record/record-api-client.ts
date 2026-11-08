@@ -233,6 +233,7 @@ export type RecordApiClient = ProjectIdentityClient &
     storage(): Promise<{ tables: TableStorageMeasurement[] }>
     listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: CreateOrganizationInput): Promise<{ id: string; slug: string }>
+    deleteTrialSpace(slug: string): Promise<TrialSpaceDeleteResult>
     setActiveOrganization(input: {
       organizationId?: string
       organizationSlug?: string
@@ -709,8 +710,17 @@ const reorderDocsRequest: RecordApiClient['reorderDocs'] = (input, destination) 
   })
 const postJson = (body: unknown) => ({ method: 'POST', body: JSON.stringify(body) })
 
-export function deleteTrialSpaceRequest(slug: string): Promise<TrialSpaceDeleteResult> {
-  return defaultRequest('/v1/spaces/delete-trial', postJson({ slug }))
+function trialSpaceDeleteResponse(body: unknown): TrialSpaceDeleteResult {
+  const value = responseRecord(body)
+  if (
+    typeof value.nothingToRemove !== 'boolean' ||
+    typeof value.activeSpaceCleared !== 'boolean' ||
+    typeof value.tables !== 'object' ||
+    value.tables === null ||
+    !Array.isArray(value.neutralized)
+  )
+    throw recordApiUnreachable(new Error('record API returned an invalid trial-space deletion'))
+  return value as TrialSpaceDeleteResult
 }
 
 export function authenticatedRecordApiClient(
@@ -980,6 +990,11 @@ function recordIdentityAndSpaceClient(
       request('/api/auth/organization/invite-member', {
         method: 'POST',
         body: JSON.stringify(input),
+      }),
+    deleteTrialSpace: (slug) =>
+      request('/v1/spaces/delete-trial', {
+        ...postJson({ slug }),
+        schema: trialSpaceDeleteResponse,
       }),
   }
 }

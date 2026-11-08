@@ -16,6 +16,7 @@ import {
   verification,
 } from '../../../shared/record/schema-auth.ts'
 import { recordServiceUrl } from '../../../shared/record/service-connection.ts'
+import { isTrialSpaceMetadata } from '../../../shared/record/trial-space.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendEmailVerificationEmail } from '../mail/email-verification-mailer.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
@@ -301,7 +302,7 @@ function recordOrganizationHooks(url: string, authClient: SQL, builtIns: SpaceBu
 
 export function refuseTrialMarkerUpdate(current: unknown, replacement: unknown): void {
   const trial = (value: unknown) =>
-    typeof value === 'object' && value !== null ? (value as { trial?: unknown }).trial : undefined
+    isTrialSpaceMetadata(value) ? (value as { trial: Record<string, unknown> }).trial : undefined
   if (JSON.stringify(trial(current)) !== JSON.stringify(trial(replacement))) {
     throw new APIError('BAD_REQUEST', {
       message: 'metadata.trial is immutable; create a new trial space instead',

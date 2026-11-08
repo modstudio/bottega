@@ -2,7 +2,7 @@ import {
   SPACE_TEARDOWN_EXCLUSIONS,
   SPACE_TEARDOWN_ORDER,
   unclassifiedSpaceTables,
-} from '../shared/record/space-teardown.ts'
+} from '../orchestrator/src/record/record-space-teardown-plan.ts'
 
 const started = performance.now()
 const missing = unclassifiedSpaceTables()

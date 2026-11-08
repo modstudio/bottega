@@ -5,6 +5,7 @@ export class TrialSpaceDeleteError extends Error {
 }
 export type TrialSpaceDeleteResult = {
   nothingToRemove: boolean
+  activeSpaceCleared: boolean
   tables: Record<string, number>
   neutralized: Array<{ userId: string; email: string; sessions: number; machineKeys: number }>
 }

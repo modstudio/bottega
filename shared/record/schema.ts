@@ -101,6 +101,11 @@ export const space = pgTable.withRLS(
         using: sql`true`,
         withCheck: sql`true`,
       }),
+      pgPolicy('space_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
     ]
   },
 )

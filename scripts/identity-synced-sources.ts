@@ -47,7 +47,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'orchestrator',
     'recordApiClientModule',
     [],
-    ['deleteTrialSpaceRequest', 'recordApiSignIn', 'recordApiSignUp'],
+    ['recordApiSignIn', 'recordApiSignUp'],
     'no local table; authentication inputs come from the user',
   ),
   ...writeEntries(

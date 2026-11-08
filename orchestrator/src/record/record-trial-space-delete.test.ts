@@ -37,7 +37,11 @@ describe('trial space delete guard', () => {
         members: [base.members[0]!, { ...base.members[1]!, hasRealSpace: true }],
       }),
     ).toMatchObject({ allowed: false, refusal: expect.stringContaining('trial-member-spaces') })
-    expect(decideTrialSpaceDelete(base)).toMatchObject({ allowed: true, nothing: false })
+    expect(decideTrialSpaceDelete(base)).toEqual({
+      allowed: true,
+      nothing: false,
+      neutralize: [base.members[1]],
+    })
     expect(decideTrialSpaceDelete({ ...base, exists: false, members: [] })).toEqual({
       allowed: true,
       nothing: true,

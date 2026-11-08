@@ -24265,6 +24265,19 @@
       "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": null,
+      "name": "space_owner_select",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "space"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
         "public"
       ],
       "using": "\"invitation\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"invitation\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
