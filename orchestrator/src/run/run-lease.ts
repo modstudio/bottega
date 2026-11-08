@@ -4,9 +4,11 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveRunsDirectory } from '../database/database-location.ts'
-import { db } from '../database/db.ts'
+import { db, nowIso } from '../database/db.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { acquireKernelLease, type KernelLease, tryKernelLease } from '../project/project-lock.ts'
+import { recordResourceStep } from '../resources/resource-step-recorder.ts'
+import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import type { RunLeaseState } from './run-alive.ts'
 
 const leaseDirectory = () => join(resolveRunsDirectory(process.env), 'leases')
@@ -117,6 +119,35 @@ function acquireLease(runId: string, purpose: string, fileName: LeaseFileName): 
   return acquireKernelLease(runLeasePath(runId, purpose, fileName))
 }
 
+function acquireRunCoordinatorLease(runId: string): KernelLease {
+  const database = db()
+  const run = database
+    .query<
+      { root_id: string; project_record_id: string | null; job: string },
+      [string]
+    >(
+      `SELECT COALESCE(parent_run_record_id,record_id) root_id,project_record_id,job
+       FROM run WHERE record_id=?`,
+    )
+    .get(runId)
+  if (!run || !isReadOnlyRepositoryJob(run.job)) return acquireLease(runId, 'run', runLeaseFileName)
+  const path = runLeasePath(runId, 'run', runLeaseFileName)
+  return recordResourceStep(
+    database,
+    {
+      rootRunId: run.root_id,
+      runId,
+      projectId: run.project_record_id,
+      kind: 'run_lease',
+      allocationKey: path,
+      identity: path,
+      label: runId,
+      claimedAt: nowIso(),
+    },
+    () => acquireLease(runId, 'run', runLeaseFileName),
+  )
+}
+
 function requiredLease(
   runId: string,
   purpose: string,
@@ -174,12 +205,17 @@ function heldLeaseIds(
 
 /** Hold this run's coordinator lease until the returned handle is released. */
 export function acquireRunLease(runId: string): KernelLease {
-  return acquireLease(runId, 'run', runLeaseFileName)
+  return acquireRunCoordinatorLease(runId)
 }
 
 /** Acquire a required coordinator lease while reporting launch failure to its caller. */
 export function requiredRunLease(runId: string, failed: (cause: unknown) => void): KernelLease {
-  return requiredLease(runId, 'run', runLeaseFileName, failed)
+  try {
+    return acquireRunCoordinatorLease(runId)
+  } catch (cause) {
+    failed(cause)
+    throw cause
+  }
 }
 
 /** Acquire a required close-out lease while reporting launch failure to its caller. */

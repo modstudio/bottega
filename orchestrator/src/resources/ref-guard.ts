@@ -350,6 +350,12 @@ function refGuardPaths(cwd: string, readonlyRepoRoot?: string): { commonDir: str
   )
 }
 
+/** The exact per-run guard directory selected before installation begins. */
+export function sharedRefGuardPath(cwd: string, readonlyRepoRoot?: string): string {
+  const paths = refGuardPaths(cwd, readonlyRepoRoot)
+  return join(paths.commonDir, 'orch-guards', refGuardOwner(cwd))
+}
+
 /** Install the ref-update boundary without changing the shared repository config. */
 export function prepareSharedRefGuard(
   cwd: string,
@@ -357,7 +363,7 @@ export function prepareSharedRefGuard(
   readonlyRepoRoot?: string,
 ): SharedRefGuardEnvironment {
   const paths = refGuardPaths(cwd, readonlyRepoRoot)
-  const hookDir = join(paths.commonDir, 'orch-guards', refGuardOwner(cwd))
+  const hookDir = sharedRefGuardPath(cwd, readonlyRepoRoot)
   if (pathEntryExists(hookDir) && realpathSync(hookDir) !== resolve(hookDir)) {
     throw new Error(`refusing shared ref guard hook directory symlink: ${hookDir}`)
   }

@@ -39,6 +39,11 @@ import {
   recordCreatedWorktreeClaims,
   recordDatabaseClaim,
 } from '../resources/resource-claims.ts'
+import {
+  beginResourceStep,
+  completeResourceStep,
+  type ResourceStep,
+} from '../resources/resource-step-recorder.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
@@ -632,6 +637,26 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         })
         const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
         const creationTool = resumeCreationTool(resumeCreation.useCreateTool, worktreeTool)
+        let pendingWorktreeStep: ResourceStep | null = null
+        const recordPendingWorktree = writesJob
+          ? undefined
+          : (planned: Worktree) => {
+              pendingWorktreeStep = beginResourceStep(db(), {
+                rootRunId: sandboxRoot.record_id,
+                runId: claim.id,
+                projectId: runProjectId,
+                kind: 'worktree',
+                allocationKey: planned.path,
+                identity: JSON.stringify({
+                  path: planned.path,
+                  head: planned.base,
+                  ...(planned.sharedReader ? { sharedReader: true } : {}),
+                }),
+                label: String(claim.id),
+                claimedAt: nowIso(),
+                shared: planned.sharedReader === true,
+              })
+            }
         const recordWorktree = (created: Worktree) => {
           const retryValidation = retryRootTreeValidation({
             kind: opts.resume?.kind ?? null,
@@ -668,18 +693,20 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               )
             if (result.changes !== 1)
               throw new Error(`run ${claim.id} could not record its worktree`)
-            recordCreatedWorktreeClaims(db(), {
-              rootRunId: sandboxRoot.record_id,
-              runId: claim.id,
-              projectId: runProjectId,
-              owned: true,
-              path: created.path,
-              head: created.base,
-              sharedReader: created.sharedReader === true,
-              mintedBranch: created.mintedBranch ?? null,
-              label: String(claim.id),
-              claimedAt: nowIso(),
-            })
+            if (pendingWorktreeStep) completeResourceStep(db(), pendingWorktreeStep)
+            else
+              recordCreatedWorktreeClaims(db(), {
+                rootRunId: sandboxRoot.record_id,
+                runId: claim.id,
+                projectId: runProjectId,
+                owned: true,
+                path: created.path,
+                head: created.base,
+                sharedReader: created.sharedReader === true,
+                mintedBranch: created.mintedBranch ?? null,
+                label: String(claim.id),
+                claimedAt: nowIso(),
+              })
           })
         }
         const recordRecipeResource: NonNullable<
@@ -738,6 +765,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                 ? writerTreeBaseRef(creationTool, callerCwd, repoRoot, Boolean(opts.carry))
                 : undefined),
             record: recordWorktree,
+            recordPending: recordPendingWorktree,
             detached: Boolean(reviewTarget),
             existingBranch: resumeCreation.existingBranch ?? resolvedTaskBranch?.branch,
             existingBranchTip: resumeCreation.existingBranchTip ?? resolvedTaskBranch?.tip,

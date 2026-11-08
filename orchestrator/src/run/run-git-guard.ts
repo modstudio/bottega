@@ -7,8 +7,12 @@ import {
   assertSharedRefGuardOutsideWritableRoots,
   ensureWorkerBranchNamespaceDirs,
   prepareSharedRefGuard,
+  markedWorktreeRunId,
+  sharedRefGuardPath,
   workerSharedGitRoots,
 } from '../resources/ref-guard.ts'
+import { db, nowIso } from '../database/db.ts'
+import { recordResourceStep } from '../resources/resource-step-recorder.ts'
 import { resolveRefGuardHook } from '../resources/ref-guard-runtime.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 
@@ -35,12 +39,36 @@ export function workerGitConfigEnvironment(
   jobName: string | undefined,
 ): ReturnType<typeof prepareSharedRefGuard> | undefined {
   if (!worktree) return undefined
-  return writesJob
-    ? prepareSharedRefGuard(
-        worktree.path,
-        jobName !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
-      )
-    : prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot)
+  if (writesJob)
+    return prepareSharedRefGuard(
+      worktree.path,
+      jobName !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
+    )
+  const runId = markedWorktreeRunId(worktree.path)
+  if (!runId) return prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot)
+  const database = db()
+  const run = database
+    .query<{ root_id: string; project_record_id: string | null }, [string]>(
+      `SELECT COALESCE(parent_run_record_id,record_id) root_id,project_record_id
+       FROM run WHERE record_id=?`,
+    )
+    .get(runId)
+  if (!run) return prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot)
+  const path = sharedRefGuardPath(worktree.path, worktree.repoRoot)
+  return recordResourceStep(
+    database,
+    {
+      rootRunId: run.root_id,
+      runId,
+      projectId: run.project_record_id,
+      kind: 'ref_guard',
+      allocationKey: path,
+      identity: worktree.path,
+      label: runId,
+      claimedAt: nowIso(),
+    },
+    () => prepareSharedRefGuard(worktree.path, undefined, worktree.repoRoot),
+  )
 }
 
 /** Refuse a worker that could replace either the published hooks or their guard executable. */

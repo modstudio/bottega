@@ -15,12 +15,14 @@ import { wrongProjectReason } from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { ensureProjectMainStack } from '../resources/main-stack.ts'
 import {
-  recordSandboxDirectoryClaim,
   recordTrustEntryClaims,
 } from '../resources/resource-claims.ts'
+import { recordResourceStep } from '../resources/resource-step-recorder.ts'
+import { beginResourceStep, completeResourceStep } from '../resources/resource-step-recorder.ts'
 import {
   addedGrokTrustHeadings,
   grokTrustHeadings,
+  grokTrustPathFromHeading,
   grokTrustStorePath,
 } from '../sandbox/grok-trust.ts'
 import type { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
@@ -66,8 +68,9 @@ function requiredProject(project: Project | null, step: string): Project {
 }
 
 function prepareScope(input: PlanInput, project: Project) {
-  return prepareClaimedGrokMcpScope(
-    {
+  const prepare = () =>
+    prepareClaimedGrokMcpScope(
+      {
       agent: input.agent,
       runDir: input.runtimeDir,
       runDirExisted: input.runtimeDirExisted,
@@ -80,17 +83,23 @@ function prepareScope(input: PlanInput, project: Project) {
         writesRepository: input.writesJob,
       }),
       ...claimedGrokReaderConfig(input.agent, input.writesJob, input.cwd, project, input.repoJob),
+      },
+      () => undefined,
+    )
+  if (input.writesJob || input.runtimeDirExisted) return prepare()
+  return recordResourceStep(
+    db(),
+    {
+      rootRunId: input.sandboxRootId,
+      runId: input.runId,
+      projectId: input.runProjectId,
+      kind: 'sandbox_dir',
+      allocationKey: input.runtimeDir,
+      identity: input.runtimeDir,
+      label: input.sandboxRootId,
+      claimedAt: nowIso(),
     },
-    () =>
-      writeTransaction(() => {
-        recordSandboxDirectoryClaim(db(), {
-          rootRunId: input.sandboxRootId,
-          runId: input.runId,
-          projectId: input.runProjectId,
-          path: input.runtimeDir,
-          claimedAt: nowIso(),
-        })
-      }),
+    prepare,
   )
 }
 
@@ -137,6 +146,21 @@ function probeConnection(
     )
   }
   const beforeTrust = trustGranted ? grokTrustHeadings(environment) : []
+  const pendingTrust =
+    trustGranted &&
+    !input.writesJob &&
+    !beforeTrust.some((heading) => grokTrustPathFromHeading(heading) === input.cwd)
+      ? beginResourceStep(db(), {
+          rootRunId: input.sandboxRootId,
+          runId: input.runId,
+          projectId: input.runProjectId,
+          kind: 'trust_entry',
+          allocationKey: input.cwd,
+          identity: grokTrustStorePath(environment),
+          label: input.sandboxRootId,
+          claimedAt: nowIso(),
+        })
+      : null
   if (trustGranted)
     db().query('UPDATE run SET mcp_trust_granted=1 WHERE record_id=?').run(input.runId)
   try {
@@ -152,7 +176,22 @@ function probeConnection(
       trustGranted,
     }
   } finally {
-    if (trustGranted) recordTrust(input, environment, beforeTrust)
+    if (trustGranted) {
+      const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings(environment))
+      if (pendingTrust && added.length === 1) {
+        writeTransaction(() => {
+          db()
+            .query('UPDATE run SET mcp_trust_path=? WHERE record_id=?')
+            .run(JSON.stringify(added), input.runId)
+          completeResourceStep(db(), pendingTrust, {
+            allocationKey: added[0],
+            identity: grokTrustStorePath(environment),
+          })
+        })
+      } else if (pendingTrust && added.length > 1) {
+        throw new Error(`Grok trust for ${input.cwd} created ${added.length} entries; expected one`)
+      } else if (!pendingTrust) recordTrust(input, environment, beforeTrust)
+    }
   }
 }
 

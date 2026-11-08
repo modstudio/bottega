@@ -5,10 +5,10 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
+import { insertClaim, type ClaimIdentity } from './resource-step-recorder.ts'
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
 export const RECIPE_PORT_BAND: PortBand = { start: 21000, end: 25000 }
@@ -19,6 +19,8 @@ const RESOURCE_CLAIM_KINDS = [
   'retained_ref',
   'sandbox_dir',
   'trust_entry',
+  'ref_guard',
+  'run_lease',
   'port',
   'database',
   'index',
@@ -26,7 +28,14 @@ const RESOURCE_CLAIM_KINDS = [
 ] as const
 
 export type ResourceClaimKind = (typeof RESOURCE_CLAIM_KINDS)[number]
-export type ResourceClaimState = 'claimed' | 'released' | 'retained' | 'forgotten' | 'absent'
+export type ResourceClaimState =
+  | 'pending'
+  | 'claimed'
+  | 'released'
+  | 'retained'
+  | 'forgotten'
+  | 'absent'
+  | 'stuck'
 export type PortBand = { start: number; end: number }
 export type CloseOutClaimOutcome = 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
 export type SandboxDirectoryReleaseInput = {
@@ -232,50 +241,6 @@ export function sandboxDirectoryRelease(
     return 'keep:worktree is still held'
   }
   return 'release'
-}
-
-type ClaimIdentity = {
-  rootRunId: string
-  runId: string
-  projectId: string | null
-}
-
-function insertClaim(
-  database: Database,
-  claim: ClaimIdentity & {
-    kind: ResourceClaimKind
-    allocationKey: string
-    identity: string | null
-    label: string | null
-    claimedAt: string
-  },
-): 'recorded' | 'duplicate' | 'collision' {
-  const existing = database
-    .query(
-      `SELECT root_run_record_id FROM resource_claim
-       WHERE kind=? AND allocation_key=? AND state='claimed'`,
-    )
-    .get(claim.kind, claim.allocationKey) as { root_run_record_id: string } | null
-  const decision = claimCreationDecision(existing?.root_run_record_id ?? null, claim.rootRunId)
-  if (decision !== 'record') return decision
-  database
-    .query(
-      `INSERT INTO resource_claim
-       (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,identity,label,state,claimed_at)
-       VALUES (?,?,?,?,?,?,?,?,'claimed',?)`,
-    )
-    .run(
-      newRecordId(),
-      claim.rootRunId,
-      claim.runId,
-      claim.projectId,
-      claim.kind,
-      claim.allocationKey,
-      claim.identity,
-      claim.label,
-      claim.claimedAt,
-    )
-  return 'recorded'
 }
 
 export function recordSandboxDirectoryClaim(

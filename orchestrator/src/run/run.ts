@@ -44,6 +44,7 @@ import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
+import { recordResourceStepAsync } from '../resources/resource-step-recorder.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES,
@@ -624,7 +625,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         sharedReader: worktree?.sharedReader === true,
         ...writingAcpAsk.sandbox,
       })
-      const home = await workerHome.prepareWorkerHomeLaunch({
+      const prepareHome = () => workerHome.prepareWorkerHomeLaunch({
         agent: a,
         sandbox: sandboxSelection.sandbox,
         runDir: runtimeDir,
@@ -641,6 +642,29 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         mcpMode,
         project: runProject,
       })
+      const createsReadOnlyHome =
+        repoJob &&
+        !writesJob &&
+        !existsSync(runtimeDir) &&
+        (workerHarnessName(a) === 'codex' ||
+          workerHarnessName(a) === 'grok' ||
+          sandboxSelection.sandbox === 'srt')
+      const home = createsReadOnlyHome
+        ? await recordResourceStepAsync(
+            db(),
+            {
+              rootRunId: rootRunRecordId(claim.id),
+              runId: claim.id,
+              projectId: runProjectId,
+              kind: 'sandbox_dir',
+              allocationKey: runtimeDir,
+              identity: runtimeDir,
+              label: rootRunRecordId(claim.id),
+              claimedAt: nowIso(),
+            },
+            prepareHome,
+          )
+        : await prepareHome()
       ;({
         codexMcpCatalogues,
         environment: mcpEnvironment,
@@ -675,7 +699,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       db()
         .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
         .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
-      if (hasRunScopedHome) {
+      if (hasRunScopedHome && !createsReadOnlyHome) {
         const rootRunId = rootRunRecordId(claim.id)
         recordSandboxDirectoryClaim(db(), {
           rootRunId,
