@@ -15,7 +15,7 @@ import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
 import {
   latestFinishedWorkerCheckExecutionRecordId,
   uncheckedChecksForGateExecution,
-} from '../gate/gate-result.ts'
+} from '../gate/worker-check-omissions.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'

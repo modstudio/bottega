@@ -60,12 +60,9 @@ import {
   RUN_GATE_WAIT_MS,
   shapeGateResult,
 } from '../gate/gate-decision.ts'
-import {
-  formatRecordedGateResult,
-  recordedGateResult,
-  uncheckedChecksForGateExecution,
-} from '../gate/gate-result.ts'
+import { formatRecordedGateResult, recordedGateResult } from '../gate/gate-result.ts'
 import { requestGateExecution } from '../gate/gate-run.ts'
+import { uncheckedChecksForGateExecution } from '../gate/worker-check-omissions.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
@@ -275,7 +272,7 @@ type GateExecutionSelection = {
 }
 
 function gateResultUncheckedChecks(purpose: 'gate' | 'worker-check', recordId: string) {
-  return purpose === 'worker-check' ? uncheckedChecksForGateExecution(recordId) : []
+  return purpose === 'worker-check' ? uncheckedChecksForGateExecution(recordId, db()) : []
 }
 
 function latestGateExecution(runId: string): GateExecutionSelection | null {

@@ -106,7 +106,9 @@ export const gateModules: GateModule[] = [
     '../../../shared/brand.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    './worker-check-omissions.ts',
   ]),
+  module('orchestrator/src/gate/worker-check-omissions.ts', ['bun:sqlite']),
 ]
 
 export const gateBoundarySpecs: GateBoundarySpec[] = [
