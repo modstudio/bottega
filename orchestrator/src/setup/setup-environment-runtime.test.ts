@@ -14,6 +14,17 @@ test('decides record-backed environment rendering from authority and render resu
       { verdict: 'hosted' },
       {
         kind: 'config-error',
+        reason: 'not-configured',
+        status: null,
+        message: `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`,
+      },
+    ),
+  ).toEqual({ action: 'wait-for-sign-in' })
+  expect(
+    environmentRecordSessionDecision(
+      { verdict: 'hosted' },
+      {
+        kind: 'config-error',
         reason: 'response',
         status: 401,
         message: 'hosted config route /v1/config/secrets returned HTTP 401',
