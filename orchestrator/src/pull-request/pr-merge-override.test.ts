@@ -22,11 +22,13 @@ const headBranch = 'DEV-2074-override'
 const pullRequest = (headCommit: string): PullRequestMergeFacts => ({
   nodeId: 'PR_node_id',
   number: 42,
+  url: 'https://github.example/pulls/42',
   headCommit,
   headBranch,
   baseBranch: 'main',
   title: 'Honor the recorded triage override',
   state: 'OPEN',
+  mergeStateStatus: 'CLEAN',
   mergeCommit: null,
 })
 

@@ -41,6 +41,7 @@ import {
   githubMergeQueueState,
   requeuePullRequest,
 } from './merge-queue-forge.ts'
+import { decideMergeability, type MergeabilityFacts } from './mergeability-decision.ts'
 import {
   admissionDecision,
   type PullRequestChange,
@@ -171,11 +172,13 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     const value = parsed<{
       id?: unknown
       number?: unknown
+      url?: unknown
       headRefOid?: unknown
       headRefName?: unknown
       baseRefName?: unknown
       title?: unknown
       state?: unknown
+      mergeStateStatus?: unknown
       mergeCommit?: { oid?: unknown } | null
     }>(
       successful(
@@ -186,7 +189,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
           'view',
           target,
           '--json',
-          'id,number,headRefOid,headRefName,baseRefName,title,state,mergeCommit',
+          'id,number,url,headRefOid,headRefName,baseRefName,title,state,mergeStateStatus,mergeCommit',
         ],
         'pull-request lookup',
       ),
@@ -195,22 +198,26 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
     if (
       typeof value.id !== 'string' ||
       !Number.isSafeInteger(value.number) ||
+      typeof value.url !== 'string' ||
       typeof value.headRefOid !== 'string' ||
       typeof value.headRefName !== 'string' ||
       typeof value.baseRefName !== 'string' ||
       typeof value.title !== 'string' ||
-      typeof value.state !== 'string'
+      typeof value.state !== 'string' ||
+      typeof value.mergeStateStatus !== 'string'
     ) {
       throw new Error('pull-request lookup returned an unexpected JSON shape')
     }
     return {
       nodeId: value.id,
       number: Number(value.number),
+      url: value.url,
       headCommit: value.headRefOid,
       headBranch: value.headRefName,
       baseBranch: value.baseRefName,
       title: value.title,
       state: value.state,
+      mergeStateStatus: value.mergeStateStatus,
       mergeCommit: typeof value.mergeCommit?.oid === 'string' ? value.mergeCommit.oid : null,
     }
   },
@@ -667,6 +674,16 @@ function admitViewedPullRequest(
     mergeQueue: boolean
   },
 ): PullRequestChange {
+  const mergeabilityFacts: MergeabilityFacts = {
+    mergeStateStatus: pullRequest.mergeStateStatus,
+    url: pullRequest.url,
+    landingBranch: input.landingBranch,
+    boundReached: true,
+  }
+  const mergeability = decideMergeability(mergeabilityFacts)
+  if (mergeability.kind === 'report' && mergeability.conflict) {
+    throw new Error(`refusing merge: ${mergeability.message}`)
+  }
   refuseUnlessAdmitted(
     decidePullRequestIdentity({
       number: pullRequest.number,

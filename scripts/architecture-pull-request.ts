@@ -63,6 +63,12 @@ export const pullRequestModuleSpecs = [
     typeOnlyAllowed: ['../review/review-group.ts', '../review/review-vocabulary.ts'],
   },
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
+  { file: 'orchestrator/src/pull-request/mergeability-decision.ts', allowed: [] },
+  {
+    file: 'orchestrator/src/pull-request/create-outcome-decision.ts',
+    allowed: ['./mergeability-decision.ts'],
+    typeOnlyAllowed: ['./mergeability-decision.ts'],
+  },
   {
     file: 'orchestrator/src/pull-request/merge-policy-decision.ts',
     allowed: ['../../../shared/brand.ts', './merge-decision.ts'],
@@ -97,6 +103,8 @@ export const pullRequestModuleSpecs = [
       '../review/review-round-lens-service.ts',
       '../review/review-target.ts',
       './admission-decision.ts',
+      './create-outcome-decision.ts',
+      './mergeability-decision.ts',
       './override-decision.ts',
       './pre-push-decision.ts',
       './triage-decision.ts',

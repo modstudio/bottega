@@ -9,11 +9,13 @@ import { pullRequestCiIncompleteMessage, pullRequestCiRetryCommand } from './pr-
 export type PullRequestMergeFacts = {
   nodeId: string
   number: number
+  url: string
   headCommit: string
   headBranch: string
   baseBranch: string
   title: string
   state: string
+  mergeStateStatus: string
   mergeCommit: string | null
 }
 

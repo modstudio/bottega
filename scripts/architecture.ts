@@ -540,6 +540,8 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../release/release-required.ts',
+    '../ship-cleanup/ship-cleanup.ts',
+    '../ship-cleanup/ship-cleanup-decision.ts',
   ]),
   ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [
