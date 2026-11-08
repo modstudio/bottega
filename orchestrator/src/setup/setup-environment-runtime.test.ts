@@ -1,10 +1,17 @@
 import { expect, test } from 'bun:test'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
+  environmentMigrationCondition,
   environmentRecordSessionDecision,
   environmentRecordStepsDecision,
   environmentSettingsApplyDecision,
 } from './setup-environment-runtime.ts'
+
+test('marks only a sign-in-only environment follow-up as waiting for sign-in', () => {
+  expect(environmentMigrationCondition(true, 0)).toEqual({ condition: 'waiting-for-sign-in' })
+  expect(environmentMigrationCondition(true, 1)).toEqual({})
+  expect(environmentMigrationCondition(false, 1)).toEqual({})
+})
 
 test('gates record-session-required environment steps while waiting for sign-in', () => {
   expect(environmentRecordStepsDecision({ action: 'wait-for-sign-in' })).toEqual({

@@ -110,6 +110,13 @@ type EnvironmentMigrationResult = {
   condition?: 'waiting-for-sign-in'
 }
 
+export function environmentMigrationCondition(
+  recordSessionUnavailable: boolean,
+  followUpCount: number,
+): Pick<EnvironmentMigrationResult, 'condition'> | Record<string, never> {
+  return recordSessionUnavailable && followUpCount === 0 ? { condition: 'waiting-for-sign-in' } : {}
+}
+
 export function environmentRecordSessionDecision(
   authority: RecordWriteDecision,
   sessionPresent: boolean,
@@ -346,7 +353,7 @@ export const setupEnvironmentService = {
               ? 'applied'
               : 'unchanged',
         message,
-        ...(recordSessionUnavailable ? { condition: 'waiting-for-sign-in' as const } : {}),
+        ...environmentMigrationCondition(recordSessionUnavailable, report.followUps.length),
       }
     }),
 }
