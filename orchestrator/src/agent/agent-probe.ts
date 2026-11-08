@@ -149,6 +149,15 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
   refreshAgents()
 }
 
+export function carryRegistrationProbeAudit(
+  previous: Pick<RegistrationProbeResult, 'capacityLossAllowed'> | null,
+  fresh: RegistrationProbeResult,
+): RegistrationProbeResult {
+  return previous?.capacityLossAllowed
+    ? { ...fresh, capacityLossAllowed: previous.capacityLossAllowed }
+    : fresh
+}
+
 /** Record the overall successful registration probe as operational availability evidence. */
 export function recordSuccessfulRegistrationProbe(name: string): void {
   const row = agentRows().find((candidate) => candidate.name === name)
@@ -516,7 +525,7 @@ export async function probeAgent(
       ]
     }),
   )
-  const result: RegistrationProbeResult = {
+  const result: RegistrationProbeResult = carryRegistrationProbeAudit(previousProbe, {
     harness: row.harness,
     ok: false,
     reply: { ok: replyOk, output: reply.output },
@@ -541,7 +550,7 @@ export async function probeAgent(
     contextTokens,
     contextSource,
     ...(attempts.length ? { attempts } : {}),
-  }
+  })
   // Cloud agents declare no ceiling deliberately (canon: not the binding
   // constraint here); only a local endpoint must report its window.
   result.ok =

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import { candidates, pick } from '../route/route.ts'
 import { agentCommand, agentReadinessPresentation, agentsCommand } from './agent-commands.ts'
 import { refreshAgents, removeAgent } from './agent-registry.ts'
@@ -113,6 +114,46 @@ test('every named agent verb refuses a missing name with its usage', async () =>
       `an agent name is required\nusage: ${PLATFORM_SLUG} agent ${verb} <name> [options]`,
     )
   }
+})
+
+test('agent set refuses capacity loss and records an allowed override', async () => {
+  db()
+    .query("UPDATE agent SET enabled=0,disabled_reason='capacity loss fixture' WHERE name<>'codex'")
+    .run()
+  refreshAgents()
+  const current = db().query("SELECT model FROM agent WHERE name='codex'").get() as {
+    model: string
+  }
+  const eligibleJobs = Object.keys(JOBS).filter((job) =>
+    candidates(job).some((candidate) => candidate.agent === 'codex' && candidate.eligible),
+  )
+  expect(eligibleJobs.length).toBeGreaterThan(0)
+
+  await expect(
+    agentCommand(['agent', 'set', 'codex', '--model', 'replacement-model'], {
+      log: () => {},
+      setExitCode: () => {},
+    }),
+  ).rejects.toThrow(
+    `it would leave these jobs with no agent eligible for automatic routing: ${eligibleJobs.join(', ')}`,
+  )
+  expect(db().query("SELECT model FROM agent WHERE name='codex'").get()).toEqual(current)
+
+  const output: string[] = []
+  await agentCommand(
+    ['agent', 'set', 'codex', '--model', 'replacement-model', '--allow-capacity-loss'],
+    { log: (value) => output.push(value), setExitCode: () => {} },
+  )
+  const changed = db().query("SELECT model,probe_result FROM agent WHERE name='codex'").get() as {
+    model: string
+    probe_result: string
+  }
+  expect(changed.model).toBe('replacement-model')
+  expect(JSON.parse(changed.probe_result).capacityLossAllowed).toMatchObject({
+    jobs: eligibleJobs,
+    at: expect.any(String),
+  })
+  expect(output.at(-1)).toBe(`capacity loss allowed for jobs: ${eligibleJobs.join(', ')}`)
 })
 
 test('a successful registration probe clears a quota cooldown', async () => {
