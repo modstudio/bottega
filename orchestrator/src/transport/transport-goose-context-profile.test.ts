@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../../test/preload.ts'
 import {
@@ -53,16 +53,20 @@ test('profiles the newest request that carries tools, not a newer tool-less help
 
 test('profiles compactions for only the requested Goose session', () => {
   const gooseDir = join(dir, 'goose-session-context-profile')
-  mkdirSync(join(gooseDir, 'sessions'), { recursive: true })
-  const database = new Database(join(gooseDir, 'sessions', 'sessions.db'))
-  database.run(
-    'CREATE TABLE usage_ledger (session_id TEXT, is_compaction INTEGER, cache_read_tokens INTEGER)',
-  )
-  database.run("INSERT INTO usage_ledger VALUES ('target', 1, 12), ('other', 1, 30)")
-  database.close()
+  try {
+    mkdirSync(join(gooseDir, 'sessions'), { recursive: true })
+    const database = new Database(join(gooseDir, 'sessions', 'sessions.db'))
+    database.run(
+      'CREATE TABLE usage_ledger (session_id TEXT, is_compaction INTEGER, cache_read_tokens INTEGER)',
+    )
+    database.run("INSERT INTO usage_ledger VALUES ('target', 1, 12), ('other', 1, 30)")
+    database.close()
 
-  expect(gooseSessionContextProfile(gooseDir, 'target')).toMatchObject({
-    compactions: 1,
-    cacheReadTokens: 12,
-  })
+    expect(gooseSessionContextProfile(gooseDir, 'target')).toMatchObject({
+      compactions: 1,
+      cacheReadTokens: 12,
+    })
+  } finally {
+    rmSync(gooseDir, { recursive: true, force: true })
+  }
 })
