@@ -703,6 +703,15 @@ export const recordModules: RecordModule[] = [
     './record-config.ts',
     './record-credential.ts',
   ]),
+  module('orchestrator/src/record/record-api-config-contract.ts', ['./record-config.ts']),
+  module('orchestrator/src/record/record-credential.ts', [
+    '../../../shared/record/schema.ts',
+    '../../../shared/record-timestamp.ts',
+    './record-config.ts',
+  ]),
+  module('orchestrator/src/record/record-credential-secret.ts', [
+    '../../../shared/record-timestamp.ts',
+  ]),
   module('orchestrator/src/record/record-api-outside-intake-routes.ts', [
     'hono',
     'zod',

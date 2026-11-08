@@ -16,6 +16,7 @@ import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { registerRecordAccessRoutes, registerRecordCors } from './record-api-access.ts'
 import type { RecordBoardDeps } from './record-api-board.ts'
 import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
+import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
 import {
   type RecordCredentialRouteDeps,
   registerRecordCredentialRoutes,
@@ -59,16 +60,7 @@ import {
 import { registerRecordWriteRoutes } from './record-api-write-routes.ts'
 import { RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
-import type {
-  ConfigEntry,
-  ConfigScope,
-  ConfigSecret,
-  ConfigSecretMetadata,
-  ConfigTenant,
-  ConfigWrapInput,
-  DataKey,
-  MachineKey,
-} from './record-config.ts'
+import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
 import {
   decodeRecordCursor,
@@ -112,6 +104,7 @@ type Deps = RecordSubjectRouteDeps &
   RecordWorkflowRouteDeps &
   RecordChangeRouteDeps &
   RecordCredentialRouteDeps &
+  RecordConfigRouteDeps &
   Parameters<typeof registerRecordWriteRoutes>[1] &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
@@ -219,73 +212,6 @@ type RecordApiDeps = RecordSessionRouteDeps &
       input: Tenant & { kind: SnapshotKind; machineId: string; payload: unknown },
     ): Promise<{ takenAt: string }>
     listSnapshots(input: Tenant): Promise<RecordSnapshot[]>
-    listConfigEntries(input: Tenant & { environment?: string }): Promise<ConfigEntry[]>
-    getConfigEntry(
-      input: Tenant & {
-        key: string
-        environment: string
-        scope: ConfigScope
-        projectId?: string | null
-      },
-    ): Promise<ConfigEntry | null>
-    putConfigEntry(
-      input: Tenant & {
-        key: string
-        environment: string
-        scope: ConfigScope
-        value: string
-        expectedRowVersion: number | null
-      },
-    ): Promise<ConfigEntry>
-    deleteConfigEntry(
-      input: Tenant & {
-        key: string
-        environment: string
-        scope: ConfigScope
-        expectedRowVersion: number
-        projectId?: string | null
-      },
-    ): Promise<void>
-    listConfigSecrets(input: Tenant & { environment?: string }): Promise<ConfigSecretMetadata[]>
-    getConfigSecret(
-      input: Tenant & { key: string; environment: string; scope: ConfigScope },
-    ): Promise<ConfigSecret | null>
-    putConfigSecret(
-      input: Tenant & {
-        key: string
-        environment: string
-        scope: ConfigScope
-        dekId: string
-        envelope: Uint8Array
-        expectedRowVersion: number | null
-        projectId?: string | null
-        provider?: string | null
-        type?: string | null
-        hint?: string | null
-      },
-    ): Promise<ConfigSecretMetadata>
-    deleteConfigSecret(
-      input: Tenant & {
-        key: string
-        environment: string
-        scope: ConfigScope
-        expectedRowVersion: number
-      },
-    ): Promise<void>
-    currentDataKey(input: Tenant & { recipientKeyId: string }): Promise<DataKey | null>
-    listDataKeys(input: Tenant): Promise<DataKey[]>
-    getDataKey(input: Tenant & { dekId: string; recipientKeyId: string }): Promise<DataKey | null>
-    createDataKey(
-      input: Tenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
-    ): Promise<{ id: string; version: number }>
-    addDataKeyWraps(input: Tenant & { dekId: string; wraps: ConfigWrapInput[] }): Promise<void>
-    retireDataKey(input: Tenant & { dekId: string }): Promise<void>
-    deleteDataKeyWraps(input: Tenant & { recipientKeyId: string }): Promise<void>
-    listMachineKeys(input: Tenant): Promise<MachineKey[]>
-    registerMachineKey(
-      input: Tenant & { keyId: string; publicKey: Uint8Array; label: string },
-    ): Promise<MachineKey>
-    revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
   } & RecordBoardDeps
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
@@ -293,6 +219,25 @@ const filterSchema = z.string().min(1).optional()
 const snapshotKindSchema = z.enum(SNAPSHOT_KINDS)
 const configScopeSchema = z.enum(CONFIG_SCOPES)
 const expectedVersionSchema = z.number().int().positive()
+const configBody = z.object({
+  environment: z.string().min(1),
+  scope: configScopeSchema,
+  expectedRowVersion: expectedVersionSchema.nullable(),
+})
+const credentialFields = z.object({
+  projectId: idSchema.nullable().optional(),
+  provider: z
+    .string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .nullable()
+    .optional(),
+  type: z
+    .string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .nullable()
+    .optional(),
+  hint: z.string().min(1).nullable().optional(),
+})
 const wrapSchema = z.object({
   recipientKeyId: keyIdSchema,
   senderKeyId: keyIdSchema,
@@ -475,25 +420,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   }
   registerRecordWriteRoutes(app, deps, { scope, docScope, noSpace, writeError })
   for (const register of catalogueRoutes) register(app, deps, { scope, noSpace })
-  const configBody = z.object({
-    environment: z.string().min(1),
-    scope: configScopeSchema,
-    expectedRowVersion: expectedVersionSchema.nullable(),
-  })
-  const credentialFields = z.object({
-    projectId: idSchema.nullable().optional(),
-    provider: z
-      .string()
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-      .nullable()
-      .optional(),
-    type: z
-      .string()
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-      .nullable()
-      .optional(),
-    hint: z.string().min(1).nullable().optional(),
-  })
 
   app.get('/v1/config/entries', async (context) => {
     const active = scope(context)
@@ -540,10 +466,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!active) return noSpace(context)
     const body = configBody
       .omit({ expectedRowVersion: true })
-      .extend({
-        expectedRowVersion: expectedVersionSchema,
-        projectId: idSchema.nullable().optional(),
-      })
+      .extend({ expectedRowVersion: expectedVersionSchema })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config entry delete body' }, 422)
     try {
@@ -610,7 +533,10 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     if (!active) return noSpace(context)
     const body = configBody
       .omit({ expectedRowVersion: true })
-      .extend({ expectedRowVersion: expectedVersionSchema })
+      .extend({
+        expectedRowVersion: expectedVersionSchema,
+        projectId: idSchema.nullable().optional(),
+      })
       .safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid config secret delete body' }, 422)
     try {

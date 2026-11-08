@@ -34,20 +34,15 @@ export type ConfigEntry = {
   rowVersion: number
   updatedAt: string
 }
-export type ConfigSecretMetadata = {
-  id: string
-  key: string
-  environment: string
-  scope: ConfigScope
-  projectId: string | null
-  provider: string | null
-  type: string | null
-  hint: string | null
-  dekId: string
-  rowVersion: number
-  updatedAt: string
-}
-export type ConfigSecret = ConfigSecretMetadata & { envelope: Uint8Array }
+
+import {
+  type ConfigSecret,
+  type ConfigSecretMetadata,
+  secretMetadata,
+} from './record-credential-secret.ts'
+
+export type { ConfigSecret, ConfigSecretMetadata } from './record-credential-secret.ts'
+
 type DataKeyWrap = ConfigWrapInput
 export type DataKey = {
   id: string
@@ -104,26 +99,10 @@ export async function tenant<T>(
 
 function entryRow(row: Record<string, unknown>): ConfigEntry {
   return {
-    id: String(row.id),
     key: String(row.key),
     environment: String(row.environment),
     scope: rowScope(row),
-    projectId: row.project_id == null ? null : String(row.project_id),
-    provider: row.provider == null ? null : String(row.provider),
-    type: row.type == null ? null : String(row.type),
-    hint: row.hint == null ? null : String(row.hint),
     value: String(row.value),
-    rowVersion: Number(row.row_version),
-    updatedAt: recordIso(row.updated_at),
-  }
-}
-
-function secretMetadata(row: Record<string, unknown>): ConfigSecretMetadata {
-  return {
-    key: String(row.key),
-    environment: String(row.environment),
-    scope: rowScope(row),
-    dekId: String(row.dek_id),
     rowVersion: Number(row.row_version),
     updatedAt: recordIso(row.updated_at),
   }

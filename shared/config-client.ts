@@ -197,6 +197,11 @@ function configValueClient(request: Request, query: Query) {
         destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
+  }
+}
+
+function configSecretDeleteClient(request: Request) {
+  return {
     deleteSecret: (
       key: string,
       input: {
@@ -308,6 +313,7 @@ function createConfigClient(
   return {
     ...configAuthorizationClient(request),
     ...configValueClient(request, query),
+    ...configSecretDeleteClient(request),
     ...credentialPreferenceClient(request),
     ...configKeyClient(request, query),
     whoami: () => request<ConfigIdentity>('/v1/whoami'),
