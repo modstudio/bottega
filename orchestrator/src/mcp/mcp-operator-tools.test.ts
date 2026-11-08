@@ -173,6 +173,52 @@ describe('operator MCP tools', () => {
     })
   })
 
+  test('answer_questions accepts none when no choice fits', async () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'running',
+      session: SESSION,
+    })
+    db().query('UPDATE run SET pid=? WHERE record_id=?').run(process.pid, runId)
+    const questionId = addQuestion(runId, 'Which shape?')
+    db()
+      .query(`UPDATE question SET kind='choice',typed_options=?,jev_pick=? WHERE number=?`)
+      .run(
+        JSON.stringify([{ name: 'existing' }, { name: 'new' }]),
+        JSON.stringify('existing'),
+        questionId,
+      )
+    const questionRecordId = (
+      db().query('SELECT record_id FROM question WHERE number=?').get(questionId) as {
+        record_id: string
+      }
+    ).record_id
+
+    const result = await withClient((client) =>
+      client.callTool({
+        name: 'answer_questions',
+        arguments: {
+          run_record_id: runId,
+          rulings: [
+            {
+              question_id: questionRecordId,
+              value: 'none',
+              note: 'Neither shape applies.',
+            },
+          ],
+        },
+      }),
+    )
+
+    expect(result.isError).not.toBe(true)
+    expect(
+      db()
+        .query('SELECT answer,answer_value,jev_agreed FROM question WHERE number=?')
+        .get(questionId),
+    ).toEqual({ answer: 'Neither shape applies.', answer_value: null, jev_agreed: 0 })
+  })
+
   test('answer_questions stores flag-shaped rulings verbatim and attributes only explicit operators', async () => {
     const literals = [
       '--file=/home/operator',
