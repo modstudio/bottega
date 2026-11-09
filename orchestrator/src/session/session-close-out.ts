@@ -18,6 +18,7 @@ import { projectAt, projectByName, resolvedWorktreeTool } from '../project/proje
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { refGuardDirectory } from '../resources/ref-guard.ts'
 import { parseRetainedRef } from '../resources/resource-inventory.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
@@ -212,7 +213,7 @@ function openCursors(database: Database, session: string): OpenCursor[] {
       `SELECT record_id,number,workflow_slug,state,
         (SELECT q.record_id FROM question q
           WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
-            AND q.answered_at IS NULL AND q.closed_at IS NULL LIMIT 1) open_question_record_id
+            AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
        FROM workflow_cursor
         WHERE session_id=? AND state NOT IN ('done','abandoned') ORDER BY number`,
     )
@@ -705,7 +706,6 @@ function appendCursorProcessItems(report: SessionCloseOutReport, cursors: readon
       state: cursor.state,
       hasOpenQuestion: cursor.open_question_record_id !== null,
     })
-    if (disposition === 'closed') continue
     if (disposition === 'parked') {
       report.parked.push(
         `workflow cursor ${cursor.number}: awaiting recorded question ${cursor.open_question_record_id}`,
@@ -718,7 +718,7 @@ function appendCursorProcessItems(report: SessionCloseOutReport, cursors: readon
       item: `workflow cursor ${cursor.number}`,
       reason: `cursor is ${cursor.state}`,
       evidence: cursor.record_id,
-      remedy: cursor.state === 'running' ? `${next}, or ${abandon}` : abandon,
+      remedy: `${next}, or ${abandon}`,
     })
   }
 }
@@ -868,7 +868,6 @@ export async function closeOutSession(
   report.recommendation = sessionCloseOutRecommendation({
     residue: report.verdict.residue,
     parkedCursors: report.parked.length,
-    keptContextItems: report.kept.length,
   })
   return report
 }

@@ -114,8 +114,10 @@ test('close-out parks only an awaiting cursor with a recorded open question', as
   const session = newRecordId()
   const parked = addCursor(session, 'awaiting-ruling')
   const missingQuestion = addCursor(session, 'awaiting-ruling')
+  const answeredQuestion = addCursor(session, 'awaiting-ruling')
   const running = addCursor(session, 'running')
   const questionId = newRecordId()
+  const answeredQuestionId = newRecordId()
   db()
     .query(
       `INSERT INTO question
@@ -123,6 +125,14 @@ test('close-out parks only an awaiting cursor with a recorded open question', as
        VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'2026-11-09','Which path?','workflow')`,
     )
     .run(questionId, parked.recordId)
+  db()
+    .query(
+      `INSERT INTO question
+        (record_id,number,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'2026-11-09','Which path?',
+               'workflow','2026-11-09','The other path')`,
+    )
+    .run(answeredQuestionId, answeredQuestion.recordId)
 
   const report = await closeOutSession({ session, dryRun: true })
 
@@ -132,8 +142,21 @@ test('close-out parks only an awaiting cursor with a recorded open question', as
   expect(report.process).toContainEqual(
     expect.objectContaining({
       item: `workflow cursor ${missingQuestion.number}`,
-      remedy: `${PLATFORM_SLUG} workflow abandon flow --cursor ${missingQuestion.number} --reason "<why>"`,
+      remedy:
+        `${PLATFORM_SLUG} workflow next flow --cursor ${missingQuestion.number}, or ` +
+        `${PLATFORM_SLUG} workflow abandon flow --cursor ${missingQuestion.number} --reason "<why>"`,
     }),
+  )
+  expect(report.process).toContainEqual(
+    expect.objectContaining({
+      item: `workflow cursor ${answeredQuestion.number}`,
+      remedy:
+        `${PLATFORM_SLUG} workflow next flow --cursor ${answeredQuestion.number}, or ` +
+        `${PLATFORM_SLUG} workflow abandon flow --cursor ${answeredQuestion.number} --reason "<why>"`,
+    }),
+  )
+  expect(report.parked).not.toContain(
+    `workflow cursor ${answeredQuestion.number}: awaiting recorded question ${answeredQuestionId}`,
   )
   expect(report.process).toContainEqual(
     expect.objectContaining({

@@ -60,9 +60,7 @@ describe('session close-out decisions', () => {
       expect(classifySessionContextItem(kind, true)).toBe('keep')
   })
 
-  test('cursor ends distinguish closed, parked, and open work', () => {
-    expect(classifySessionCursor({ state: 'done', hasOpenQuestion: false })).toBe('closed')
-    expect(classifySessionCursor({ state: 'abandoned', hasOpenQuestion: false })).toBe('closed')
+  test('open cursor ends distinguish parked from process work', () => {
     expect(classifySessionCursor({ state: 'awaiting-ruling', hasOpenQuestion: true })).toBe(
       'parked',
     )
@@ -71,11 +69,9 @@ describe('session close-out decisions', () => {
   })
 
   test('recommendation writes a brief for each kind of successor work', () => {
-    const none = { residue: 0, parkedCursors: 0, keptContextItems: 0 }
-    expect(sessionCloseOutRecommendation(none)).toBe('clear')
-    expect(sessionCloseOutRecommendation({ ...none, residue: 1 })).toBe('brief')
-    expect(sessionCloseOutRecommendation({ ...none, parkedCursors: 1 })).toBe('brief')
-    expect(sessionCloseOutRecommendation({ ...none, keptContextItems: 1 })).toBe('brief')
+    expect(sessionCloseOutRecommendation({ residue: 0, parkedCursors: 0 })).toBe('clear')
+    expect(sessionCloseOutRecommendation({ residue: 1, parkedCursors: 0 })).toBe('brief')
+    expect(sessionCloseOutRecommendation({ residue: 0, parkedCursors: 1 })).toBe('brief')
   })
 
   test('resume handoff moves exactly roots the author still owes', () => {

@@ -212,6 +212,7 @@ export const cleanupBoundarySpecs = [
       '../resources/process-inventory.ts',
       '../resources/ref-guard.ts',
       '../resources/resource-inventory.ts',
+      '../run/question-open.ts',
       '../run/synthetic-lifecycle-job.ts',
       '../sandbox/grok-trust.ts',
       '../ship-cleanup/ship-cleanup.ts',

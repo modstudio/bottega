@@ -80,14 +80,13 @@ export type SessionProcessItem =
 
 export type SessionContextAction = 'drop' | 'refuse' | 'keep'
 
-export type SessionCursorDisposition = 'closed' | 'parked' | 'open'
+export type SessionCursorDisposition = 'parked' | 'open'
 
 /** Classify whether a workflow cursor leaves work for close-out or a successor. */
 export function classifySessionCursor(input: {
   state: string
   hasOpenQuestion: boolean
 }): SessionCursorDisposition {
-  if (input.state === 'done' || input.state === 'abandoned') return 'closed'
   if (input.state === 'awaiting-ruling' && input.hasOpenQuestion) return 'parked'
   return 'open'
 }
@@ -104,11 +103,8 @@ export function classifySessionContextItem(
 export function sessionCloseOutRecommendation(input: {
   residue: number
   parkedCursors: number
-  keptContextItems: number
 }): 'clear' | 'brief' {
-  return input.residue === 0 && input.parkedCursors === 0 && input.keptContextItems === 0
-    ? 'clear'
-    : 'brief'
+  return input.residue === 0 && input.parkedCursors === 0 ? 'clear' : 'brief'
 }
 
 export function sessionOwnership(facts: SessionOwnershipFacts): SessionOwnershipFacts {
