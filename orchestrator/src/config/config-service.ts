@@ -495,8 +495,13 @@ export async function setSecret(
   options: {
     destination?: ConfigDestination
     environment?: string
-    metadata?: CredentialMetadataFields & { projectId: string | null; mode: CredentialMode }
+    metadata?: CredentialMetadataFields & {
+      projectId: string | null
+      mode: CredentialMode
+      reachSpaceIds?: string[] | null
+    }
     createDataKey?: boolean
+    expectedRowVersion?: number
     missingDestinationAccessRefusal?: () => Error
   } = {},
 ) {
@@ -515,6 +520,13 @@ export async function setSecret(
   } catch (error) {
     if (!isNotFound(error)) throw error
   }
+  if (
+    options.expectedRowVersion !== undefined &&
+    existing?.rowVersion !== options.expectedRowVersion
+  )
+    throw new Error(
+      `config secret row version conflict: expected ${options.expectedRowVersion}, current ${existing?.rowVersion ?? 'missing'}; read it again and retry`,
+    )
   const who = await identity(client)
   const spaceId = destination.destinationSpaceId ?? who.spaceId
   const rowVersion = (existing?.rowVersion ?? 0) + 1

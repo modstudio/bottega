@@ -523,6 +523,58 @@ export function registerHostedConfigProofs(
     ).rejects.toMatchObject({ status: 409 })
   })
 
+  test('config secret updates preserve absent reach and clear explicit null reach', async () => {
+    const accountTenant = { ...serviceTenant, spaceId: spaceB }
+    const reach = [spaceA]
+    const created = await putConfigSecret({
+      ...accountTenant,
+      key: 'reach-preservation/api-key#default@local',
+      environment: 'local',
+      scope: 'user',
+      dekId: DEK_B,
+      envelope: Uint8Array.of(20),
+      expectedRowVersion: null,
+      provider: 'reach-preservation',
+      name: null,
+      type: 'api-key',
+      hint: '20 characters',
+      mode: 'default',
+      reachSpaceIds: reach,
+    })
+    const preserved = await putConfigSecret({
+      ...accountTenant,
+      key: created.key,
+      environment: created.environment,
+      scope: created.scope,
+      dekId: DEK_B,
+      envelope: Uint8Array.of(21),
+      expectedRowVersion: created.rowVersion,
+      provider: 'reach-preservation',
+      name: null,
+      type: 'api-key',
+      hint: '20 characters',
+      mode: 'default',
+    })
+    expect(preserved.reachSpaceIds).toEqual(reach)
+
+    const cleared = await putConfigSecret({
+      ...accountTenant,
+      key: preserved.key,
+      environment: preserved.environment,
+      scope: preserved.scope,
+      dekId: DEK_B,
+      envelope: Uint8Array.of(22),
+      expectedRowVersion: preserved.rowVersion,
+      provider: 'reach-preservation',
+      name: null,
+      type: 'api-key',
+      hint: '20 characters',
+      mode: 'default',
+      reachSpaceIds: null,
+    })
+    expect(cleared.reachSpaceIds).toBeNull()
+  })
+
   describe('credential project bindings', () => {
     beforeAll(() => {
       succeeds(

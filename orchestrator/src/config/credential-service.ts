@@ -20,7 +20,9 @@ import {
 } from '../../../shared/credential-resolution.ts'
 import {
   type CredentialResolutionAddress,
+  isAccountCredentialRow,
   listCredentials as listHostedCredentials,
+  openHostedCredentialRowValue,
   resolveHostedCredential,
   resolveHostedCredentialValue,
 } from '../../../shared/credential-value.ts'
@@ -41,7 +43,11 @@ import { requireProjectRecordDestination } from '../record/record-project-destin
 import { deleteSecret, setSecret } from './config-service.ts'
 import { credentialHint } from './credential-presentation.ts'
 
-export type CredentialAddress = CredentialResolutionAddress & { payer: CredentialPayer }
+export type CredentialAddress = CredentialResolutionAddress & {
+  payer: CredentialPayer
+  account?: boolean
+  reachSpaceIds?: string[] | null
+}
 export type ProjectCredentialTarget = Pick<Project, 'name' | 'settings'> & {
   recordId: string | null
 }
@@ -92,6 +98,24 @@ export async function projectCredentialBinding(
   }
 }
 
+export async function accountCredentialBinding(
+  client = configClient(),
+): Promise<ProjectCredentialBinding> {
+  const who = await client.whoami()
+  if (!who.personalSpaceId) throw new Error('personal space is not provisioned')
+  const membership = recordSpaceMembership(
+    who.personalSpaceId,
+    parseRecordSpaceMemberships(who.memberships),
+  )
+  if (!membership) throw new Error(recordSpaceMembershipRefusal(who.personalSpaceId))
+  return {
+    projectId: null,
+    projectName: undefined,
+    spaceName: membership.slug,
+    destinationSpaceId: who.personalSpaceId,
+  }
+}
+
 /** Build the one canonical credential address used by project-bound consumers. */
 export async function projectCredentialAddress(
   project: ProjectCredentialTarget,
@@ -130,6 +154,15 @@ function missingProjectWrapRefusal(address: CredentialAddress): Error {
   )
 }
 
+function missingAccountWrapRefusal(address: CredentialAddress): Error {
+  return new Error(
+    `cannot access account credentials: run \`${PLATFORM_SLUG} machine config machine register --space ${address.spaceName}\``,
+  )
+}
+
+const missingWrapRefusal = (address: CredentialAddress) =>
+  address.account ? missingAccountWrapRefusal(address) : missingProjectWrapRefusal(address)
+
 function missingCredentialRefusal(address: CredentialAddress): Error {
   return new Error(credentialSetRefusalText(address, 'missing', 'pipe its value to'))
 }
@@ -142,6 +175,7 @@ export async function setCredential(
   address: CredentialAddress,
   value: string,
   client = configClient(),
+  expectedRowVersion?: number,
 ) {
   if (sealedValueIsEmpty(value)) throw blankCredentialRefusal(address)
   const plaintext = stripTrailingNewline(value)
@@ -161,16 +195,35 @@ export async function setCredential(
           type: address.type,
           hint: credentialHint(plaintext),
           mode: address.mode,
+          ...(address.account && address.reachSpaceIds !== undefined
+            ? { reachSpaceIds: address.reachSpaceIds }
+            : {}),
         },
         createDataKey: false,
-        missingDestinationAccessRefusal: () => missingProjectWrapRefusal(address),
+        expectedRowVersion,
+        missingDestinationAccessRefusal: () => missingWrapRefusal(address),
       },
     )
   } catch (error) {
     if (error instanceof ConfigClientError && error.status === 404)
-      throw missingProjectWrapRefusal(address)
+      throw missingWrapRefusal(address)
     throw error
   }
+}
+
+export async function reachCredential(
+  address: CredentialAddress,
+  reachSpaceIds: string[] | null,
+  client = configClient(),
+) {
+  if (!address.account) throw new Error('credential reach requires --account')
+  const key = credentialIdentityKey(address)
+  const row = (
+    await listHostedCredentials(address.destinationSpaceId, client, [address.environment])
+  ).find((candidate) => candidate.key === key && isAccountCredentialRow(candidate))
+  if (!row) throw missingCredentialRefusal(address)
+  const value = await openHostedCredentialRowValue(row, address.destinationSpaceId, client)
+  return setCredential({ ...address, reachSpaceIds }, value, client, row.rowVersion)
 }
 
 export async function listCredentials(
@@ -179,6 +232,7 @@ export async function listCredentials(
     mode?: CredentialMode
     environment?: CredentialEnvironment
     projectId?: string
+    account?: boolean
   } = {},
   client = configClient(),
 ) {
@@ -186,7 +240,8 @@ export async function listCredentials(
   return (await listHostedCredentials(spaceId, client, environments)).filter(
     (row) =>
       (filters.mode === undefined || row.mode === filters.mode) &&
-      (filters.projectId === undefined || row.projectId === filters.projectId),
+      (filters.projectId === undefined || row.projectId === filters.projectId) &&
+      (!filters.account || isAccountCredentialRow(row)),
   )
 }
 

@@ -7,3 +7,14 @@ export class ConfigServiceError extends Error {
     this.status = status
   }
 }
+
+export function isUniqueViolation(error: unknown, constraint: string): boolean {
+  if (!error || typeof error !== 'object') return false
+  const postgres = error as { code?: unknown; constraint?: unknown; constraint_name?: unknown }
+  const message = error instanceof Error ? error.message : ''
+  const named =
+    postgres.constraint === constraint ||
+    postgres.constraint_name === constraint ||
+    message.includes(`"${constraint}"`)
+  return named && (postgres.code === '23505' || message.includes('duplicate key value'))
+}

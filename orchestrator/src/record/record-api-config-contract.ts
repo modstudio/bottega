@@ -57,6 +57,7 @@ export type RecordConfigRouteDeps = {
       type?: string | null
       hint?: string | null
       mode?: string | null
+      reachSpaceIds?: string[] | null
     },
   ): Promise<ConfigSecretMetadata>
   deleteConfigSecret(

@@ -15,7 +15,7 @@ import {
   sealClaimChallenge,
 } from '../../../shared/secret-envelope.ts'
 import { assertConfigAccessRemovalSafe } from './record-config-access-removal.ts'
-import { ConfigServiceError } from './record-config-error.ts'
+import { ConfigServiceError, isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 
 export const CONFIG_SCOPES = ['user', 'space'] as const
@@ -196,17 +196,6 @@ function applyOccupancy(kind: 'entry' | 'secret', occupancy: Occupancy): void {
   if (occupancy.action === 'conflict') conflict(kind, occupancy.currentRowVersion)
 }
 
-function isUniqueViolation(error: unknown, constraint: string): boolean {
-  if (!error || typeof error !== 'object') return false
-  const postgres = error as { code?: unknown; constraint?: unknown; constraint_name?: unknown }
-  const message = error instanceof Error ? error.message : ''
-  const named =
-    postgres.constraint === constraint ||
-    postgres.constraint_name === constraint ||
-    message.includes(`"${constraint}"`)
-  return named && (postgres.code === '23505' || message.includes('duplicate key value'))
-}
-
 class ConcurrentConfigCreate extends Error {}
 class ConcurrentDataKeyCreate extends Error {}
 
@@ -366,7 +355,7 @@ export async function listConfigSecrets(
   return tenant(input, async (tx) => {
     // Deliberately enumerate metadata columns: an envelope must never reach this surface.
     const rows = await tx`
-      SELECT id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+      SELECT id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,
         dek_id, row_version, updated_at
       FROM config_secret
       WHERE space_id=${input.spaceId}::uuid
@@ -418,8 +407,17 @@ export async function putConfigSecret(
     type?: string | null
     hint?: string | null
     mode?: string | null
+    reachSpaceIds?: string[] | null
   },
 ): Promise<ConfigSecretMetadata> {
+  const invalidReach =
+    input.reachSpaceIds != null &&
+    (input.scope !== 'user' || input.projectId != null || input.spaceId !== input.personalSpaceId)
+  if (invalidReach)
+    throw new ConfigServiceError(
+      `credential reach is only valid for a user credential in the personal space; use \`${PLATFORM_SLUG} credential set ${input.key.split('#')[0]} --account --reach all\``,
+      422,
+    )
   try {
     return await tenant(input, async (tx) => {
       const deks = await tx`
@@ -457,14 +455,14 @@ export async function putConfigSecret(
         try {
           const rows = await tx`
           INSERT INTO config_secret
-            (id, space_id, user_id, project_id, key, provider, name, type, mode, environment, hint,
+            (id, space_id, user_id, project_id, key, provider, name, type, mode, environment, hint, reach_space_ids,
              dek_id, row_version, envelope, updated_at)
           VALUES
             (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${scopedUser(input, input.scope)}::uuid,
              ${input.projectId ?? null}::uuid, ${input.key}, ${input.provider ?? null},
-             ${input.name ?? null}, ${input.type ?? null}, ${input.mode ?? null}, ${input.environment}, ${input.hint ?? null},
+             ${input.name ?? null}, ${input.type ?? null}, ${input.mode ?? null}, ${input.environment}, ${input.hint ?? null}, ${input.reachSpaceIds === null || input.reachSpaceIds === undefined ? null : tx.array(input.reachSpaceIds, 'uuid')},
              ${input.dekId}::uuid, 1, ${input.envelope}, now())
-          RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+          RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,
             dek_id, row_version, updated_at
         `
           return secretMetadata(rows[0] as Record<string, unknown>)
@@ -481,9 +479,13 @@ export async function putConfigSecret(
       SET dek_id=${input.dekId}::uuid, envelope=${input.envelope},
           project_id=${input.projectId ?? null}::uuid, provider=${input.provider ?? null},
           name=${input.name ?? null}, type=${input.type ?? null}, hint=${input.hint ?? null}, mode=${input.mode ?? null},
+          reach_space_ids=CASE
+            WHEN ${input.reachSpaceIds === undefined} THEN reach_space_ids
+            ELSE ${input.reachSpaceIds == null ? null : tx.array(input.reachSpaceIds, 'uuid')}
+          END,
           row_version=row_version + 1, updated_at=now()
       WHERE id=${String(occupancy.existing.id)}::uuid
-      RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+      RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,
         dek_id, row_version, updated_at
     `
       return secretMetadata(rows[0] as Record<string, unknown>)

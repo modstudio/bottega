@@ -52,4 +52,22 @@ test('config secret writes require complete credential metadata', () => {
       mode: 'default',
     }).success,
   ).toBe(false)
+  expect(
+    configSecretPutBody.safeParse({
+      ...base,
+      environment: 'local',
+      provider: 'openrouter',
+      type: 'api-key',
+      hint: 'open…hint',
+      mode: 'default',
+      reachSpaceIds: [id],
+    }).success,
+  ).toBe(true)
+})
+
+test('config secret writes preserve absent reach separately from explicit all reach', () => {
+  const absent = configSecretPutBody.parse(base)
+  const all = configSecretPutBody.parse({ ...base, reachSpaceIds: null })
+  expect(Object.hasOwn(absent, 'reachSpaceIds')).toBe(false)
+  expect(all.reachSpaceIds).toBeNull()
 })

@@ -13,6 +13,7 @@ type ConfigSecretBase = {
   dekId: string
   rowVersion: number
   updatedAt: string
+  reachSpaceIds: string[] | null
 }
 type LegacyConfigSecretMetadata = ConfigSecretBase & {
   projectId: null
@@ -41,6 +42,7 @@ export function secretMetadata(row: Record<string, unknown>): ConfigSecretMetada
     type: row.type == null ? null : String(row.type),
     hint: row.hint == null ? null : String(row.hint),
     mode: row.mode == null ? null : String(row.mode),
+    reachSpaceIds: row.reach_space_ids == null ? null : (row.reach_space_ids as string[]),
     dekId: String(row.dek_id),
     rowVersion: Number(row.row_version),
     updatedAt: recordIso(row.updated_at),

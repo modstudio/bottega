@@ -23,6 +23,7 @@ export const configSecretPutBody = z
     type: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable().optional(),
     hint: z.string().min(1).nullable().optional(),
     mode: z.enum(CREDENTIAL_MODES).nullable().optional(),
+    reachSpaceIds: z.array(idSchema).nullable().optional(),
   })
   .refine(
     ({ projectId, provider, name, type, hint, mode, environment }) => {
