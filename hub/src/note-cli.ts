@@ -1,7 +1,7 @@
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { TYPESAFE_CREDENTIAL_SET_COMMAND } from '../../shared/typed-question/client.ts'
 import { repeatable } from '../../shared/cli-repeat-guard.ts'
+import { TYPESAFE_CREDENTIAL_SET_COMMAND } from '../../shared/typed-question/client.ts'
 import { projectOf } from './attribute.ts'
 import { requireDatabase } from './db.ts'
 import {
