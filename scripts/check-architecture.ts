@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import type { ICruiseResult } from 'dependency-cruiser'
@@ -18,6 +18,7 @@ import {
   architectureCruiseCoverageViolations,
   runArchitectureCruise,
 } from './architecture-cruise.ts'
+import { privateDocImports } from './architecture-doc-modules.ts'
 import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
@@ -123,6 +124,19 @@ for (const root of [...CONCERNS, 'shared']) {
     const imports = importSpecifiers(readFileSync(join(ROOT, file), 'utf8'))
     for (const expression of imports.unresolvedRelative) {
       violations.push(`${file}: unresolved relative import at ${expression}`)
+    }
+    for (const imported of imports.namedImports) {
+      const source = imported.specifier.startsWith('.')
+        ? normalize(join(dirname(file), imported.specifier))
+        : imported.specifier
+      const declaration = privateDocImports.find(
+        (entry) => entry.source === source && entry.name === imported.name,
+      )
+      if (declaration && declaration.importer !== file) {
+        violations.push(
+          `${file}: ${imported.name} from ${source} is private to ${declaration.importer}`,
+        )
+      }
     }
   }
 }

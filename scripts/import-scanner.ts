@@ -3,6 +3,7 @@ import ts from 'typescript'
 export type ImportScan = {
   specifiers: string[]
   typeOnlySpecifiers: string[]
+  namedImports: { specifier: string; name: string }[]
   unresolvedRelative: string[]
 }
 
@@ -80,6 +81,7 @@ export function importSpecifiers(source: string): ImportScan {
   )
   const specifiers: string[] = []
   const typeOnlySpecifiers: string[] = []
+  const namedImports: { specifier: string; name: string }[] = []
   const unresolvedRelative: string[] = []
   const createRequireNames = new Set(['createRequire'])
   const requireNames = new Set(['require'])
@@ -137,6 +139,15 @@ export function importSpecifiers(source: string): ImportScan {
       ? node.importClause?.isTypeOnly === true
       : node.isTypeOnly
     ;(typeOnly ? typeOnlySpecifiers : specifiers).push(node.moduleSpecifier.text)
+    if (ts.isImportDeclaration(node)) {
+      const bindings = node.importClause?.namedBindings
+      for (const element of bindings && ts.isNamedImports(bindings) ? bindings.elements : []) {
+        namedImports.push({
+          specifier: node.moduleSpecifier.text,
+          name: (element.propertyName ?? element.name).text,
+        })
+      }
+    }
   }
 
   function visit(node: ts.Node): void {
@@ -158,5 +169,5 @@ export function importSpecifiers(source: string): ImportScan {
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
-  return { specifiers, typeOnlySpecifiers, unresolvedRelative }
+  return { specifiers, typeOnlySpecifiers, namedImports, unresolvedRelative }
 }

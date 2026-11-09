@@ -28,6 +28,7 @@ describe('import scanner', () => {
       expect(importSpecifiers(source)).toEqual({
         specifiers: [expected],
         typeOnlySpecifiers: [],
+        namedImports: [],
         unresolvedRelative: [],
       })
     })
@@ -37,5 +38,11 @@ describe('import scanner', () => {
     const scan = importSpecifiers('import(`./${moduleName}.ts`)')
     expect(scan.specifiers).toEqual([])
     expect(scan.unresolvedRelative).toHaveLength(1)
+  })
+
+  test('reports the exported names used by a named import', () => {
+    expect(importSpecifiers("import { original as alias } from './named.ts'").namedImports).toEqual(
+      [{ specifier: './named.ts', name: 'original' }],
+    )
   })
 })

@@ -11,10 +11,18 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 /** Named removal entries stay private even though their module serves two document owners. */
-export const docRemoveImportOwners = {
-  removeStoredDoc: 'orchestrator/src/doc/docs.ts',
-  removeContextItemForLifecycle: 'orchestrator/src/doc/context-service.ts',
-} as const
+export const privateDocImports = [
+  {
+    source: 'orchestrator/src/doc/doc-remove.ts',
+    name: 'removeStoredDoc',
+    importer: 'orchestrator/src/doc/docs.ts',
+  },
+  {
+    source: 'orchestrator/src/doc/doc-remove.ts',
+    name: 'removeContextItemForLifecycle',
+    importer: 'orchestrator/src/doc/context-service.ts',
+  },
+] as const
 
 export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-context-write.ts', []),
