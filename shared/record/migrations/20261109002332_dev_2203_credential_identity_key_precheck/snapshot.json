@@ -1,7 +1,7 @@
 {
-  "id": "c8f749c5-9fec-4028-a00c-db3c529cb6e5",
+  "id": "ff665d88-0ffd-49f4-af07-e4a54c6a5408",
   "prevIds": [
-    "a44599a7-54c2-4496-8cfa-3b17a86cf5a5"
+    "29bfc77f-517d-4706-a4cf-4dd2cf4c0404"
   ],
   "version": "8",
   "dialect": "postgres",
@@ -24223,7 +24223,7 @@
       "table": "hub_task"
     },
     {
-      "value": "\"source\" IN ('mcp','git','local')",
+      "value": "\"source\" IN ('mcp','local')",
       "name": "hub_task_source_check",
       "entityType": "checks",
       "schema": "public",
