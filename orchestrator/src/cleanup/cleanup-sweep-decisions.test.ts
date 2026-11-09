@@ -23,7 +23,6 @@ import {
   type RecordedRunPointerFacts,
   type RecordedRunPostInventoryFacts,
   type RecordedRunPreInventoryFacts,
-  shouldDropSweptSessionContext,
   shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
@@ -267,7 +266,7 @@ describe('unjudged owner expiry', () => {
     ).toBe(true)
   })
 
-  test('session context drops only after its owner is gone past the window', () => {
+  test('owner gone applies the shared window to session context facts', () => {
     const facts = {
       ownerSessionId: 'owner',
       ownerLastSeenAt: now - windowMs - 1,
@@ -275,10 +274,8 @@ describe('unjudged owner expiry', () => {
       now,
       windowMs,
     }
-    expect(shouldDropSweptSessionContext(facts)).toBe(true)
-    expect(shouldDropSweptSessionContext({ ...facts, ownerLastSeenAt: now - windowMs + 1 })).toBe(
-      false,
-    )
+    expect(ownerIsGone(facts)).toBe(true)
+    expect(ownerIsGone({ ...facts, ownerLastSeenAt: now - windowMs + 1 })).toBe(false)
   })
 
   test('keeps recent run activity when the owner has no session-seen row', () => {

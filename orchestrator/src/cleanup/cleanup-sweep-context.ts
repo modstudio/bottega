@@ -4,26 +4,25 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb } from '../database/db.ts'
 import {
-  dropSessionContextItemForLifecycle,
+  dropSessionContextItemsForLifecycle,
   sessionContextHolders,
 } from '../doc/context-service.ts'
+import { parseResumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
+import { listDocsStore } from '../doc/doc-read-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import {
-  shouldDropSweptSessionContext,
-  UNJUDGED_OWNER_WINDOW_MS,
-} from './cleanup-sweep-decisions.ts'
+import { ownerIsGone, UNJUDGED_OWNER_WINDOW_MS } from './cleanup-sweep-decisions.ts'
+import { gatherOwnerActivity } from './owner-activity.ts'
 
-function sessionActivity(database: Database, session: string, fallback: string) {
-  const seen = database
-    .query('SELECT last_seen FROM session_seen WHERE session_id=?')
-    .get(session) as { last_seen: string } | null
-  const run = database
-    .query('SELECT MAX(COALESCE(last_event_at,started_at)) AS at FROM run WHERE session_id=?')
-    .get(session) as { at: string | null }
-  return {
-    ownerLastSeenAt: seen ? Date.parse(seen.last_seen) : null,
-    runLastActivityAt: Date.parse(run.at ?? fallback),
-  }
+function hasUnconsumedResumeBrief(database: Database, session: string): boolean {
+  return listDocsStore({ scope: 'resume' }, database).some((doc) => {
+    if (parseResumeFrontmatter(doc.body)?.status !== 'open') return false
+    const latest = database
+      .query(
+        'SELECT session_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
+      )
+      .get(doc.record_id) as { session_id: string | null } | null
+    return latest?.session_id === session
+  })
 }
 
 export async function sweepSessionContext(input: {
@@ -36,9 +35,14 @@ export async function sweepSessionContext(input: {
   const database = input.database ?? (input.dryRun ? db() : writableDb())
   let failed = false
   for (const holder of sessionContextHolders(database)) {
-    const gone = shouldDropSweptSessionContext({
+    if (hasUnconsumedResumeBrief(database, holder.session)) continue
+    const activity = gatherOwnerActivity(database, {
       ownerSessionId: holder.session,
-      ...sessionActivity(database, holder.session, holder.updatedAt),
+      fallbackActivityAt: holder.updatedAt,
+    })
+    const gone = ownerIsGone({
+      ...activity,
+      runLastActivityAt: Math.max(activity.runLastActivityAt, Date.parse(holder.updatedAt)),
       now: Date.now(),
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
     })
@@ -52,23 +56,19 @@ async function dropSweptHolder(
   holder: ReturnType<typeof sessionContextHolders>[number],
 ): Promise<boolean> {
   let failed = false
-  for (const item of holder.items) {
-    if (input.dryRun) input.presentation.log(`would drop context ${holder.holder}/${item.id}`)
-    else
-      try {
-        await dropSessionContextItemForLifecycle({
-          session: holder.session,
-          id: item.id,
-          expectedRevision: item.revision ?? undefined,
-          reason: `machine sweep owner gone past ${UNJUDGED_OWNER_WINDOW_MS}ms`,
-        })
-        input.presentation.log(`dropped context ${holder.holder}/${item.id}`)
-      } catch (error) {
-        failed = true
-        input.presentation.error(
-          `context drop failed ${holder.holder}/${item.id}: ${error instanceof Error ? error.message : String(error)}`,
-        )
-      }
+  for (const drop of await dropSessionContextItemsForLifecycle({
+    session: holder.session,
+    items: holder.items,
+    reason: `machine sweep owner gone past ${UNJUDGED_OWNER_WINDOW_MS}ms`,
+    dryRun: input.dryRun,
+  })) {
+    const label = `${holder.holder}/${drop.item.id} (${drop.item.kind})`
+    if (input.dryRun && drop.error === null) input.presentation.log(`would drop context ${label}`)
+    else if (drop.removed) input.presentation.log(`dropped context ${label}`)
+    else if (drop.error) {
+      failed = true
+      input.presentation.error(`context drop failed ${label}: ${drop.error}`)
+    }
   }
   return failed
 }

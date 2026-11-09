@@ -75,7 +75,6 @@ export type DocMetadata = Pick<
 export type DocListFilters = {
   scope?: string
   subject?: string | null
-  subjectPrefix?: string
   scopes?: string[]
   match?: string
   bodyMatch?: string
@@ -287,10 +286,8 @@ function addressFilters(filters: {
     if (filters.subject !== null) values.push(filters.subject)
   }
   if (filters.subjectPrefix !== undefined) {
-    where.push("d.subject LIKE ? ESCAPE '\\'")
-    values.push(
-      `${filters.subjectPrefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`,
-    )
+    where.push('substr(d.subject, 1, length(?)) = ?')
+    values.push(filters.subjectPrefix, filters.subjectPrefix)
   }
   if (filters.owner !== undefined) {
     where.push(filters.owner === null ? 'd.owner IS NULL' : 'd.owner = ?')
@@ -357,6 +354,22 @@ export function listDocsStore(
     scope?: string
     scopes?: string[]
     subject?: string | null
+    owner?: string | null
+    audience?: string
+    status?: string
+    kind?: string
+    articleSubject?: string
+  } = {},
+  database: Database = db(),
+): Doc[] {
+  return listDocsStoreWithPrefix(filters, database)
+}
+
+function listDocsStoreWithPrefix(
+  filters: {
+    scope?: string
+    scopes?: string[]
+    subject?: string | null
     subjectPrefix?: string
     owner?: string | null
     audience?: string
@@ -406,13 +419,13 @@ export function listDocsStore(
     )
 }
 
-/** Read one scope by subject prefix without exposing a wildcard-shaped public filter. */
+/** Read one scope by an exact-case subject prefix; this cannot be combined with subject. */
 export function listDocsBySubjectPrefixStore(
   scope: string,
   subjectPrefix: string,
   database: Database = db(),
 ): Doc[] {
-  return listDocsStore({ scope, subjectPrefix }, database)
+  return listDocsStoreWithPrefix({ scope, subjectPrefix }, database)
 }
 
 function articleSubjectQuery(

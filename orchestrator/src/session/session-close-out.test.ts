@@ -65,20 +65,46 @@ test('dry run reports context drops and refusals while resume keeps every item',
   else process.env.CLAUDE_CODE_SESSION_ID = previousSession
 
   const dry = await closeOutSession({ session, dryRun: true })
-  expect(dry.mechanical).toContain(`would drop context session:${session}/fact`)
+  expect(dry.mechanical).toContain(`would drop context session:${session}/fact (fact)`)
   expect(dry.process).toContainEqual(
     expect.objectContaining({
-      item: `context session:${session}/ruling`,
+      item: `context session:${session}/ruling (ruling)`,
       reason: expect.stringContaining('would refuse'),
     }),
   )
 
   const resume = await closeOutSession({ session, dryRun: true, resume: true })
   expect(resume.kept).toEqual([
-    `context session:${session}/fact`,
-    `context session:${session}/ruling`,
+    `context session:${session}/fact (fact)`,
+    `context session:${session}/ruling (ruling)`,
   ])
   expect(resume.recommendation).toBe('brief')
+})
+
+test('close-out refuses to drop a context item whose revision is unavailable', async () => {
+  const session = newRecordId()
+  const prior = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  const item = await setDoc({
+    scope: 'context',
+    subject: `session:${session}`,
+    slug: 'revisionless',
+    title: 'revisionless',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'must survive' }),
+  })
+  if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = prior
+  db().query('DELETE FROM doc_revision WHERE doc_record_id=?').run(item.record_id)
+
+  const report = await closeOutSession({ session })
+
+  expect(report.errors).toContainEqual(
+    expect.objectContaining({
+      item: `context session:${session}/revisionless (fact)`,
+      detail: 'context item revision is unavailable',
+    }),
+  )
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(item.record_id)).not.toBeNull()
 })
 
 test("a turn's guard or retained ref makes its terminal root planned", async () => {

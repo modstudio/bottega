@@ -50,11 +50,82 @@ test('session context sweep logs and drops each item for a gone owner', async ()
   ).toBe(false)
 
   expect(lines).toEqual([
-    `dropped context session:${session}/one`,
-    `dropped context session:${session}/two`,
+    `dropped context session:${session}/one (fact)`,
+    `dropped context session:${session}/two (fact)`,
   ])
   expect(getDoc('context', `session:${session}`, 'one')).toBeNull()
   expect(getDoc('context', `session:${session}`, 'two')).toBeNull()
+})
+
+test.each(['session_seen', 'holder write'])(
+  'session context sweep keeps items for a live owner by %s',
+  async (activity) => {
+    const session = newRecordId()
+    const prior = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = session
+    await setDoc({
+      scope: 'context',
+      subject: `session:${session}`,
+      slug: 'live',
+      title: 'live',
+      body: encodeContextItem({ kind: 'fact', source: 'test', body: 'still live' }),
+    })
+    if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = prior
+    if (activity === 'session_seen') {
+      db()
+        .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=?')
+        .run('2020-01-01T00:00:00.000Z', 'context', `session:${session}`)
+      db()
+        .query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)')
+        .run(session, new Date().toISOString())
+    }
+
+    await sweepSessionContext({
+      enabled: true,
+      dryRun: false,
+      database: db(),
+      presentation: presentation([], () => {}),
+    })
+
+    expect(getDoc('context', `session:${session}`, 'live')).not.toBeNull()
+  },
+)
+
+test('session context sweep keeps items while the author has an unconsumed resume brief', async () => {
+  const session = newRecordId()
+  const project = `sweep-resume-${newRecordId()}`
+  upsertProject({ recordId: newRecordId(), name: project, path: `/w/${project}`, settings: {} })
+  const prior = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  await setDoc({
+    scope: 'context',
+    subject: `session:${session}`,
+    slug: 'kept-for-resume',
+    title: 'kept-for-resume',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'successor needs this' }),
+  })
+  await setDoc({
+    scope: 'resume',
+    subject: project,
+    slug: 'handoff',
+    title: 'Handoff',
+    body: `---\nstatus: open\nepic: DEV-2226\nproject: ${project}\nwritten: 2020-01-01T00:00:00.000Z\n---\n\nNEXT ACTION: consume\n`,
+  })
+  if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = prior
+  db()
+    .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=?')
+    .run('2020-01-01T00:00:00.000Z', 'context', `session:${session}`)
+
+  await sweepSessionContext({
+    enabled: true,
+    dryRun: false,
+    database: db(),
+    presentation: presentation([], () => {}),
+  })
+
+  expect(getDoc('context', `session:${session}`, 'kept-for-resume')).not.toBeNull()
 })
 
 test('an owned terminal sweep candidate reaches close-out by UUID', async () => {

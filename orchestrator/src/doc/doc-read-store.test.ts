@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
+import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { encodeContextItem } from './context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
@@ -26,11 +27,31 @@ describe('document read store', () => {
       title: 'First',
       body: encodeContextItem({ kind: 'fact', source: 'test', body: 'body' }),
     })
+    for (const [index, [owner, subject]] of [
+      [newRecordId(), 'session:unrelated'],
+      [newRecordId(), `session:${session}%_\\suffix`],
+      [newRecordId(), `session:${session}-neighbor`],
+      [newRecordId(), `Session:${session}`],
+    ].entries()) {
+      process.env.CLAUDE_CODE_SESSION_ID = owner
+      const stored = await setDoc({
+        scope: 'context',
+        subject: `session:${owner}`,
+        slug: `item-${index}`,
+        title: `Item ${subject}`,
+        body: encodeContextItem({ kind: 'fact', source: 'test', body: subject }),
+      })
+      db().query('UPDATE doc SET subject=? WHERE record_id=?').run(subject, stored.record_id)
+    }
     if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = previousSession
     expect(
       listDocsBySubjectPrefixStore('context', `session:${session}`).map((doc) => doc.slug),
-    ).toEqual(['first'])
+    ).toEqual(['first', 'item-1', 'item-2'])
+    expect(
+      listDocsBySubjectPrefixStore('context', `session:${session}%_\\`).map((doc) => doc.slug),
+    ).toEqual(['item-1'])
+    expect(listDocsBySubjectPrefixStore('context', 'session:no-match')).toEqual([])
   })
 
   test('omitted subjects resolve only a unique slug in the scope', async () => {

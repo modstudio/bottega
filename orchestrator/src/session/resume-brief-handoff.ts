@@ -111,30 +111,14 @@ async function handoffFromAuthor(
         `resume handoff skipped: latest non-consume hosted revision has no author session; when the author session is known, run ${PLATFORM_SLUG} session adopt <session> --reason <why>`,
       ],
     }
-  const context = await consumeSessionContext({
-    session: author,
-    reason: `resume brief ${doc.subject}/${doc.slug} consumed`,
-    database,
-  })
-  if (context.error)
-    return {
-      authorSession: author,
-      status: 'refused',
-      report: null,
-      lines: [...context.lines, context.error],
-    }
-  const withContext = (handoff: ResumeBriefHandoff): ResumeBriefHandoff => ({
-    ...handoff,
-    lines: [...context.lines, ...handoff.lines],
-  })
   const actor = sessionId(database)
   if (author === actor)
-    return withContext({
+    return {
       authorSession: author,
       status: 'skipped',
       report: null,
       lines: ['resume handoff skipped: brief author is the current session'],
-    })
+    }
   const command = `${PLATFORM_SLUG} session adopt ${author} --reason "resume brief ${doc.subject}/${doc.slug} consumed by ${actor ?? 'successor'}"`
   try {
     const report = adoptSessionRuns(
@@ -149,15 +133,22 @@ async function handoffFromAuthor(
         resumeHandoffRootIds: resumeHandoffOwedRootIds(database, author),
       },
     )
-    return withContext(adoptionHandoff(author, report, command, options.machine ?? 'unknown'))
+    const handoff = adoptionHandoff(author, report, command, options.machine ?? 'unknown')
+    if (handoff.status !== 'moved') return handoff
+    const context = await consumeSessionContext({
+      session: author,
+      reason: `resume brief ${doc.subject}/${doc.slug} consumed`,
+      database,
+    })
+    return { ...handoff, lines: [...context.lines, ...handoff.lines] }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return withContext({
+    return {
       authorSession: author,
       status: 'refused',
       report: null,
       lines: [`resume handoff did not move runs: ${message}; run ${command}`],
-    })
+    }
   }
 }
 

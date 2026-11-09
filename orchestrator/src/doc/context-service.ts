@@ -1,12 +1,21 @@
 // concern: context-service
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
-import { sessionId } from '../database/db.ts'
+import { sessionId, writableDb } from '../database/db.ts'
+import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { decodeContextItem, encodeContextItem } from './context-item-codec.ts'
 import { contextProfileForHolder } from './context-write-adapter.ts'
 import { type ContextItemKind, missingContextKinds } from './doc-context-write.ts'
-import { listDocsBySubjectPrefixStore } from './doc-read-store.ts'
-import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
+import { listDocsBySubjectPrefixStore, listDocsStore, type Doc } from './doc-read-store.ts'
+import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
+import { assertLocalRevisionWrite } from './doc-revision-store.ts'
+import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
+import { docWriteProjectName } from './doc-write-allowed.ts'
+import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
+import { hostedDocClient } from './doc-hosted-client.ts'
+import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
+import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
+import { getDoc, removeDoc, setDoc } from './docs.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
 
@@ -21,25 +30,21 @@ function contextHolder(selection: ContextHolderSelection): string {
 export async function getContext(selection: ContextHolderSelection) {
   const holder = contextHolder(selection)
   const profile = await contextProfileForHolder(holder)
-  const items = listDocs({ scope: 'context', subject: holder }).map((doc) => ({
-    ...decodeContextItem(holder, doc.slug, doc.body),
-    revision: doc.revision,
-  }))
+  const items = holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }))
   return { holder, profile, items, missingRequired: missingContextKinds(items, profile) }
 }
 
-export function sessionContextItems(session: string, database?: Database) {
-  const holder = `session:${session}`
-  const docs = database
-    ? listDocsBySubjectPrefixStore('context', holder, database).filter(
-        (doc) => doc.subject === holder,
-      )
-    : listDocs({ scope: 'context', subject: holder })
+export function holderContextItems(holder: string, docs: readonly Doc[]) {
   return docs.map((doc) => ({
     ...decodeContextItem(holder, doc.slug, doc.body),
     revision: doc.revision,
     updatedAt: doc.updated_at,
   }))
+}
+
+export function sessionContextItems(session: string, database: Database) {
+  const holder = `session:${session}`
+  return holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }, database))
 }
 
 export function sessionContextHolders(database: Database) {
@@ -51,27 +56,129 @@ export function sessionContextHolders(database: Database) {
       (latest, row) => (row.updated_at > latest ? row.updated_at : latest),
       rows[0]!.updated_at,
     ),
-    items: rows.map((doc) => ({
-      ...decodeContextItem(holder, doc.slug, doc.body),
-      revision: doc.revision,
-      updatedAt: doc.updated_at,
-    })),
+    items: holderContextItems(holder, rows),
   }))
 }
 
 export async function dropSessionContextItemForLifecycle(input: {
   session: string
   id: string
-  expectedRevision?: string
+  expectedRevision: string
   reason: string
 }) {
   const holder = `session:${input.session}`
-  const removed = await removeDoc('context', holder, input.id, {
-    reason: input.reason,
-    expectedRevision: input.expectedRevision,
-    contextLifecycleHolder: holder,
+  assertWorkerDocStoreWriteAllowed('dropSessionContextItemForLifecycle')
+  writableDb()
+  const context = { reason: input.reason, expectedRevision: input.expectedRevision }
+  const identity = resolvedDocWriteIdentity(context)
+  const doc = getDoc('context', holder, input.id)
+  if (!doc) return { holder, id: input.id, removed: false }
+  assertLocalStoredReferenceWrite(doc)
+  assertLocalRevisionWrite(
+    { scope: 'context', subject: holder, slug: input.id, expectedRevision: input.expectedRevision },
+    doc.revision,
+    false,
+  )
+  assertLocalDocRemovalAllowed(doc)
+  const hostedIdentity = {
+    author: identity.author,
+    reason: identity.reason,
+    sessionId: identity.session,
+  }
+  const removed = await applyRecordWriteAuthority({
+    local: () =>
+      executeLocalDocRemove({
+        scope: 'context',
+        subject: holder,
+        owner: null,
+        slug: input.id,
+        doc,
+        identity,
+        ...context,
+      }),
+    hosted: async () => {
+      const client = await hostedDocClient(doc.scope, doc.subject)
+      let recordId = doc.record_id
+      let hostedExpected = input.expectedRevision
+      if (!recordId) {
+        const created = await client.upsertDoc({
+          scope: doc.scope,
+          subject: doc.subject,
+          owner: doc.owner,
+          slug: doc.slug,
+          title: doc.title,
+          body: doc.body,
+          delivery: doc.delivery,
+          audiences: doc.audiences,
+          parentRecordId: localParentRecordId(doc),
+          position: doc.position,
+          featured: doc.featured,
+          projectName: docWriteProjectName(doc.scope, doc.subject),
+          ...hostedIdentity,
+          id: undefined,
+          expectedRevision: input.expectedRevision,
+        })
+        recordId = created.id
+        hostedExpected = created.revisionId
+      }
+      const hosted = await client.deleteDoc(recordId, {
+        ...hostedIdentity,
+        expectedRevision: hostedExpected,
+      })
+      return commitDocRemove({
+        scope: 'context',
+        subject: holder,
+        owner: null,
+        slug: input.id,
+        identity,
+        ...context,
+        revisionId: hosted.revisionId,
+      })
+    },
   })
   return { holder, id: input.id, removed }
+}
+
+export type SessionContextDropResult = {
+  item: ReturnType<typeof sessionContextItems>[number]
+  removed: boolean
+  error: string | null
+}
+
+/** The single lifecycle loop for dropping selected items from one session holder. */
+export async function dropSessionContextItemsForLifecycle(input: {
+  session: string
+  items: ReturnType<typeof sessionContextItems>
+  reason: string
+  dryRun?: boolean
+}): Promise<SessionContextDropResult[]> {
+  const results: SessionContextDropResult[] = []
+  for (const item of input.items) {
+    if (item.revision === null) {
+      results.push({ item, removed: false, error: 'context item revision is unavailable' })
+      continue
+    }
+    if (input.dryRun) {
+      results.push({ item, removed: false, error: null })
+      continue
+    }
+    try {
+      const result = await dropSessionContextItemForLifecycle({
+        session: input.session,
+        id: item.id,
+        expectedRevision: item.revision,
+        reason: input.reason,
+      })
+      results.push({ item, removed: result.removed, error: null })
+    } catch (error) {
+      results.push({
+        item,
+        removed: false,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+  return results
 }
 
 export async function setContextItem(

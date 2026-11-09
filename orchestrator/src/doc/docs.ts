@@ -597,7 +597,7 @@ export async function removeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
-  await assertContextDropAllowed(doc, db(), undefined, context.contextLifecycleHolder)
+  await assertContextDropAllowed(doc)
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },

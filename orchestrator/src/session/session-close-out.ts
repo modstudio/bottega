@@ -65,6 +65,9 @@ type UnprovedBranchEvidence = {
   remedy: string
 }
 
+export type SessionProcessItem = { item: string; reason: string; evidence: string; remedy: string }
+export type SessionErrorItem = { item: string; detail: string; retry: string }
+
 export type SessionCloseOutReport = {
   session: string
   dryRun: boolean
@@ -80,8 +83,8 @@ export type SessionCloseOutReport = {
   }
   mechanical: string[]
   kept: string[]
-  process: { item: string; reason: string; evidence: string; remedy: string }[]
-  errors: { item: string; detail: string; retry: string }[]
+  process: SessionProcessItem[]
+  errors: SessionErrorItem[]
   heldTrees: HeldTreeJson[]
   verdict: { clean: boolean; residue: number }
   recommendation: 'clear' | 'brief'
