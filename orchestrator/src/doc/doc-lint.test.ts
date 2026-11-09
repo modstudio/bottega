@@ -3,6 +3,7 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
 import {
   type DocReferenceProject,
+  STALE_REFERENCE_RULES,
   docLintProfile,
   introducedDocFindings,
   lintDoc,
@@ -215,6 +216,9 @@ describe('stored document lint', () => {
   test('finished documents are exempt from stale path findings', () => {
     const stale = doc('See `src/other.ts`.', { referenceProjects })
     expect(lintDoc(stale)).toEqual([expect.objectContaining({ rule: 'doc/reference-path' })])
+    expect(lintDoc({ ...stale, status: 'draft' })).toEqual([
+      expect.objectContaining({ rule: 'doc/reference-path' }),
+    ])
     expect(lintDoc({ ...stale, status: 'archived' })).toEqual([])
     expect(lintDoc({ ...stale, status: 'superseded' })).toEqual([])
   })
@@ -232,6 +236,16 @@ describe('stored document lint', () => {
   })
 
   test('summarizes documents, errors, and stale reference errors by kind and status', () => {
+    expect(STALE_REFERENCE_RULES).toEqual(
+      new Set([
+        'doc/reference-path',
+        'doc/reference-symbol',
+        'doc/reference-heading',
+        'doc/reference-code',
+        'doc/reference-script',
+        'doc/line-anchor',
+      ]),
+    )
     const summary = summarizeDocLint([
       {
         kind: 'working',
@@ -242,6 +256,13 @@ describe('stored document lint', () => {
             level: 'error',
             line: 1,
             message: 'stale path',
+            remedy: 'fix it',
+          },
+          {
+            rule: 'doc/line-anchor',
+            level: 'error',
+            line: 1,
+            message: 'line anchor',
             remedy: 'fix it',
           },
           {
@@ -269,14 +290,28 @@ describe('stored document lint', () => {
       { kind: 'working', status: 'archived', findings: [] },
       { kind: 'working', status: 'archived', findings: [] },
       { kind: 'article', status: 'superseded', findings: [] },
+      {
+        kind: 'article',
+        status: 'draft',
+        findings: [
+          {
+            rule: 'doc/reference-unverifiable',
+            level: 'error',
+            line: 1,
+            message: 'checkout unavailable',
+            remedy: 'fix it',
+          },
+        ],
+      },
     ])
 
     expect(summary).toContainEqual({
       kind: 'working',
       status: 'current',
       documents: 1,
-      errors: 1,
-      staleReferenceErrors: 1,
+      errors: 2,
+      staleReferenceErrors: 2,
+      unverifiableReferenceErrors: 0,
     })
     expect(summary).toContainEqual({
       kind: 'article',
@@ -284,6 +319,7 @@ describe('stored document lint', () => {
       documents: 1,
       errors: 1,
       staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 0,
     })
     expect(summary).toContainEqual({
       kind: 'working',
@@ -291,6 +327,7 @@ describe('stored document lint', () => {
       documents: 2,
       errors: 0,
       staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 0,
     })
     expect(summary).toContainEqual({
       kind: 'article',
@@ -298,8 +335,24 @@ describe('stored document lint', () => {
       documents: 1,
       errors: 0,
       staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 0,
     })
-    expect(summary).toHaveLength(8)
+    expect(summary).toContainEqual({
+      kind: 'article',
+      status: 'draft',
+      documents: 1,
+      errors: 1,
+      staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 1,
+    })
+    expect(summary).toContainEqual({
+      kind: 'working',
+      status: 'draft',
+      documents: 0,
+      errors: 0,
+      staleReferenceErrors: 0,
+      unverifiableReferenceErrors: 0,
+    })
   })
 
   test('a context item id beginning design does not invoke the design document shape', () => {

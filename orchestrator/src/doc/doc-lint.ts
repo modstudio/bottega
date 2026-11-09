@@ -36,6 +36,7 @@ export type DocLintSummary = {
   documents: number
   errors: number
   staleReferenceErrors: number
+  unverifiableReferenceErrors: number
 }
 
 export type SummarizedLintDoc = Pick<LintableDoc, 'kind' | 'status'> & {
@@ -82,6 +83,15 @@ const DESIGN_HEADINGS = [
   '## How it is measured',
 ] as const
 const PROVISIONAL_HEADING = '## Provisional'
+
+export const STALE_REFERENCE_RULES: ReadonlySet<string> = new Set([
+  'doc/reference-path',
+  'doc/reference-symbol',
+  'doc/reference-heading',
+  'doc/reference-code',
+  'doc/reference-script',
+  'doc/line-anchor',
+])
 
 function referenceRemedy(rule: string): string {
   if (rule === 'doc/reference-unverifiable')
@@ -265,7 +275,10 @@ export function summarizeDocLint(docs: SummarizedLintDoc[]): DocLintSummary[] {
         status,
         documents: matching.length,
         errors: errors.length,
-        staleReferenceErrors: errors.filter(({ rule }) => rule.startsWith('doc/reference-')).length,
+        staleReferenceErrors: errors.filter(({ rule }) => STALE_REFERENCE_RULES.has(rule)).length,
+        unverifiableReferenceErrors: errors.filter(
+          ({ rule }) => rule === 'doc/reference-unverifiable',
+        ).length,
       }
     }),
   )
@@ -293,7 +306,7 @@ export function introducedDocFindings(
 }
 
 export function docLintRefusal(
-  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'kind' | 'status'>,
+  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'kind'>,
   findings: DocLintFinding[],
 ): string | null {
   const errors = findings.filter(({ level }) => level === 'error')

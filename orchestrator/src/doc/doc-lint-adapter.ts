@@ -12,7 +12,6 @@ import {
   docLintRefusal,
   introducedDocFindings,
   lintDoc,
-  summarizeDocLint,
 } from './doc-lint.ts'
 import type { CanonWriteTree } from './doc-write-allowed.ts'
 
@@ -103,8 +102,6 @@ export function storedDocWarnings(
   const findings = lintStoredDoc(doc, referenceProjects).filter(({ level }) => level === 'warning')
   return findings
 }
-
-export const summarizeStoredDocLint = summarizeDocLint
 
 export function storedDocLintRefusal(
   next: Omit<StoredDoc, 'kind' | 'status'> & {

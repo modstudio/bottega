@@ -595,6 +595,7 @@ describe('scoped operator docs', () => {
           documents: 1,
           errors: 1,
           staleReferenceErrors: 0,
+          unverifiableReferenceErrors: 0,
         },
       ]),
     })
@@ -617,7 +618,9 @@ describe('scoped operator docs', () => {
     expect(result.out.indexOf('summary:')).toBeGreaterThan(
       result.out.indexOf('doc/history warning'),
     )
-    expect(result.out).toContain('working/current documents=1 errors=0 stale-reference-errors=0')
+    expect(result.out).toContain(
+      'working/current documents=1 errors=0 stale-reference-errors=0 unverifiable-reference-errors=0',
+    )
   })
 
   test(`${PLATFORM_SLUG} doc warnings lists standing warnings and says so when none`, async () => {

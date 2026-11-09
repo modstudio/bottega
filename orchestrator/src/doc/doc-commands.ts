@@ -48,7 +48,7 @@ import {
   setDocStatus,
   signedInDocOwner,
   storedDocWarnings,
-  summarizeStoredDocLint,
+  summarizeDocLint,
   validateDocAddressFilter,
 } from './docs.ts'
 
@@ -106,15 +106,8 @@ export function userAddressScope(user: boolean, explicitScope: string | undefine
 
 function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
   const linted = listedLintedDocs(flags, lintStoredDoc)
-  const findings = linted.flatMap(({ doc, findings: docFindings }) =>
-    docFindings.map((finding) => ({
-      scope: doc.scope,
-      subject: doc.subject,
-      slug: doc.slug,
-      ...finding,
-    })),
-  )
-  const summary = summarizeStoredDocLint(
+  const findings = linted.flatMap(projectListedDocFindings)
+  const summary = summarizeDocLint(
     linted.map(({ doc, findings: docFindings }) => ({
       kind: doc.kind,
       status: doc.status,
@@ -132,7 +125,7 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
     presentation.log('summary:')
     for (const row of summary) {
       presentation.log(
-        `${row.kind}/${row.status} documents=${row.documents} errors=${row.errors} stale-reference-errors=${row.staleReferenceErrors}`,
+        `${row.kind}/${row.status} documents=${row.documents} errors=${row.errors} stale-reference-errors=${row.staleReferenceErrors} unverifiable-reference-errors=${row.unverifiableReferenceErrors}`,
       )
     }
   }
@@ -155,14 +148,19 @@ function listedDocFindings(
   flags: DocFlags,
   lint: (doc: ReturnType<typeof listDocs>[number]) => ReturnType<typeof lintStoredDoc>,
 ) {
-  return listedLintedDocs(flags, lint).flatMap(({ doc, findings }) =>
-    findings.map((finding) => ({
-      scope: doc.scope,
-      subject: doc.subject,
-      slug: doc.slug,
-      ...finding,
-    })),
-  )
+  return listedLintedDocs(flags, lint).flatMap(projectListedDocFindings)
+}
+
+function projectListedDocFindings({
+  doc,
+  findings,
+}: ReturnType<typeof listedLintedDocs>[number]) {
+  return findings.map((finding) => ({
+    scope: doc.scope,
+    subject: doc.subject,
+    slug: doc.slug,
+    ...finding,
+  }))
 }
 
 function docWarningAddress(doc: { scope: string; subject: string | null; slug: string }) {
