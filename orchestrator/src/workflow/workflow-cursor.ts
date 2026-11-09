@@ -25,7 +25,7 @@ import {
   readCommitsPastLanding,
   workflowComposeBranchRefusal,
 } from './workflow-compose-branch.ts'
-import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
+import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy, storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
 import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
@@ -186,24 +186,6 @@ function insertCursor(
       key,
       taskRecordId: context.taskRecordId,
     })
-  const existing = key
-    ? findCursor(
-        composition.project,
-        composition.workflow.slug,
-        composition.mode!.slug,
-        composition.arguments,
-        context,
-        d,
-      )
-    : null
-  if (decideCursorStart(existing?.state ?? null) === 'retire')
-    vacateRetiredWorkflowKeySlot(
-      composition.project,
-      composition.workflow.slug,
-      composition.mode!.slug,
-      key,
-      d,
-    )
   const storedRecordId = insertWorkflowCursorRow(
     d,
     {

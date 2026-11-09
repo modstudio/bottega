@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
@@ -134,6 +135,101 @@ test('hosted newer than local refreshes the cached stage', async () => {
     expect(
       ids.database.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(stageId),
     ).toEqual({ revision: 4 })
+  } finally {
+    ids.database.close()
+  }
+})
+
+test('hosted stage vacates a retired local cursor holding its keyed slot', () => {
+  const ids = fixture()
+  try {
+    const taskId = newRecordId()
+    const flowId = newRecordId()
+    const retiredStageId = newRecordId()
+    const hostedStageId = newRecordId()
+    cacheHostedTaskFlow(
+      ids.database,
+      'DEV-2098',
+      hosted(ids, { taskId, flowId, stageId: retiredStageId }),
+    )
+    ids.database
+      .query("UPDATE workflow_cursor SET state='abandoned' WHERE record_id=?")
+      .run(retiredStageId)
+    const retired = ids.database
+      .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
+      .get(retiredStageId)!
+
+    cacheHostedTaskFlow(
+      ids.database,
+      'DEV-2098',
+      hosted(ids, { taskId, flowId, stageId: hostedStageId, stageRevision: 5 }),
+    )
+
+    expect(
+      ids.database
+        .query('SELECT record_id,instance_id FROM workflow_cursor WHERE record_id IN (?,?)')
+        .all(retiredStageId, hostedStageId),
+    ).toEqual([
+      { record_id: retiredStageId, instance_id: `#${retired.number}` },
+      { record_id: hostedStageId, instance_id: '' },
+    ])
+    expect(
+      ids.database
+        .query('SELECT open_stage_cursor_record_id FROM task_flow WHERE record_id=?')
+        .get(flowId),
+    ).toEqual({ open_stage_cursor_record_id: hostedStageId })
+  } finally {
+    ids.database.close()
+  }
+})
+
+test('hosted stage refuses an open local cursor holding its keyed slot and rolls back', () => {
+  const ids = fixture()
+  try {
+    const taskId = newRecordId()
+    const flowId = newRecordId()
+    const localStageId = newRecordId()
+    const hostedStageId = newRecordId()
+    cacheHostedTaskFlow(
+      ids.database,
+      'DEV-2098',
+      hosted(ids, { taskId, flowId, stageId: localStageId }),
+    )
+    const local = ids.database
+      .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
+      .get(localStageId)!
+    const flowBefore = ids.database
+      .query(
+        'SELECT open_stage_cursor_record_id,revision,updated_at FROM task_flow WHERE record_id=?',
+      )
+      .get(flowId)
+    const cursorBefore = ids.database
+      .query('SELECT * FROM workflow_cursor WHERE record_id=?')
+      .get(localStageId)
+    const incoming = hosted(ids, { taskId, flowId, stageId: hostedStageId, stageRevision: 5 })
+    incoming.flow.revision = 8
+    incoming.flow.updatedAt = '2026-11-03T12:00:00.000Z'
+
+    expect(() => cacheHostedTaskFlow(ids.database, 'DEV-2098', incoming)).toThrow(
+      new RegExp(
+        `local cursor ${local.number} \\(${localStageId}\\) conflicts with hosted stage ${hostedStageId}.*${PLATFORM_SLUG} workflow abandon --cursor ${local.number}`,
+      ),
+    )
+    expect(
+      ids.database
+        .query(
+          'SELECT open_stage_cursor_record_id,revision,updated_at FROM task_flow WHERE record_id=?',
+        )
+        .get(flowId),
+    ).toEqual(flowBefore)
+    expect(
+      ids.database.query('SELECT * FROM workflow_cursor WHERE record_id=?').get(localStageId),
+    ).toEqual(cursorBefore)
+    expect(
+      ids.database
+        .query('SELECT record_id FROM workflow_cursor WHERE record_id=?')
+        .get(hostedStageId),
+    ).toBeNull()
   } finally {
     ids.database.close()
   }
