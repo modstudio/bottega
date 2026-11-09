@@ -10,7 +10,7 @@ const hosted = (
 ): TableStateClassDeclaration => ({
   store: 'orchestrator',
   table,
-  class: 'hosted-first',
+  class: 'hosted',
   reason: 'test state',
   counterpart: 'hosted_row',
   ...overrides,
@@ -21,9 +21,11 @@ const refusals = (
   options: {
     orchestrator?: readonly string[]
     hub?: readonly string[]
-    outboxSources?: readonly string[]
+    outboxTables?: readonly string[]
     pushableHubTables?: readonly { hosted: string; local: string }[]
     hostedTables?: readonly string[]
+    allowedHostedOutbox?: readonly string[]
+    allowedHostedCaches?: readonly string[]
   } = {},
 ) =>
   stateClassRefusals({
@@ -32,9 +34,11 @@ const refusals = (
       hub: options.hub ?? [],
     },
     declarations,
-    outboxSources: options.outboxSources ?? [],
+    outboxTables: options.outboxTables ?? [],
     pushableHubTables: options.pushableHubTables ?? [],
     hostedTables: options.hostedTables ?? ['hosted_row'],
+    allowedHostedOutbox: options.allowedHostedOutbox ?? [],
+    allowedHostedCaches: options.allowedHostedCaches ?? [],
   })
 
 describe('stateClassRefusals', () => {
@@ -69,17 +73,21 @@ describe('stateClassRefusals', () => {
     )
   })
 
-  test('refuses evidence that is not an outbox source', () => {
-    expect(
-      refusals([hosted('local_row', { class: 'evidence', counterpart: undefined })]),
-    ).toContain(
-      'orchestrator.local_row: evidence table is not an outbox source; remedy: edit scripts/identity-state-classes.ts with its ruled class',
+  test('refuses synced that is not an outbox source', () => {
+    expect(refusals([hosted('local_row', { class: 'synced', counterpart: undefined })])).toContain(
+      'orchestrator.local_row: synced table is not an outbox source and names no task for its hosted home; remedy: edit scripts/identity-state-classes.ts with its task',
     )
   })
 
-  test('refuses an outbox source that is not evidence', () => {
-    expect(refusals([hosted('local_row')], { outboxSources: ['local_row'] })).toContain(
-      'orchestrator.local_row: outbox source is declared hosted-first instead of evidence; remedy: edit scripts/identity-state-classes.ts with class evidence',
+  test('refuses a hosted table with a new outbox kind', () => {
+    expect(refusals([hosted('local_row')], { outboxTables: ['orchestrator.local_row'] })).toContain(
+      'orchestrator.local_row: hosted table has a new outbox write path; remedy: write it directly or remove the outbox kind',
+    )
+  })
+
+  test('refuses a new cache of a hosted table', () => {
+    expect(refusals([hosted('local_row', { cache: true })])).toContain(
+      'orchestrator.local_row: hosted table has a new local cache; remedy: read it from the hosted record instead',
     )
   })
 
@@ -96,13 +104,13 @@ describe('stateClassRefusals', () => {
         hostedTables: ['hub_task', 'other_hosted_row'],
       }),
     ).toContain(
-      'hub.task: pushable hub table hub_task must be hosted-first with that counterpart; remedy: edit scripts/identity-state-classes.ts',
+      'hub.task: pushable hub table hub_task must be hosted with that counterpart; remedy: edit scripts/identity-state-classes.ts',
     )
   })
 
-  test('refuses hosted-first without exactly one destination', () => {
+  test('refuses hosted without exactly one destination', () => {
     expect(refusals([hosted('local_row', { counterpart: undefined })])).toContain(
-      'orchestrator.local_row: hosted-first declaration must name exactly one counterpart or task; remedy: edit scripts/identity-state-classes.ts',
+      'orchestrator.local_row: hosted declaration must name exactly one counterpart or task; remedy: edit scripts/identity-state-classes.ts',
     )
   })
 
@@ -118,35 +126,35 @@ describe('stateClassRefusals', () => {
     )
   })
 
-  test('refuses machine-only state without a reason and ruling', () => {
+  test('refuses machine state without a reason and ruling', () => {
     expect(
       refusals([
         hosted('local_row', {
-          class: 'machine-only',
+          class: 'machine',
           counterpart: undefined,
           reason: '',
           ruling: '',
         }),
       ]),
     ).toContain(
-      'orchestrator.local_row: machine-only declaration needs a non-empty reason and ruling; remedy: edit scripts/identity-state-classes.ts',
+      'orchestrator.local_row: machine declaration needs a non-empty reason and ruling; remedy: edit scripts/identity-state-classes.ts',
     )
   })
 
-  test('refuses machine-only state files without their ruling', () => {
+  test('refuses machine state files without their ruling', () => {
     expect(
       refusals([
         hosted('local_row'),
         {
           store: 'state-directory',
           path: 'orchestrator/local-state.json',
-          class: 'machine-only',
+          class: 'machine',
           reason: 'Local state',
           ruling: '',
         },
       ]),
     ).toContain(
-      'state-directory.orchestrator/local-state.json: machine-only declaration needs a non-empty reason and ruling; remedy: edit scripts/identity-state-classes.ts',
+      'state-directory.orchestrator/local-state.json: machine declaration needs a non-empty reason and ruling; remedy: edit scripts/identity-state-classes.ts',
     )
   })
 })
