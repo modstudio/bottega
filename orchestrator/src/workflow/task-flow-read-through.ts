@@ -18,16 +18,50 @@ import {
 
 export type { TaskFlowReadStatus } from './task-flow-decision.ts'
 
-export function cacheHostedTaskFlow(
+type HostedStage = NonNullable<HostedTaskFlow['otherStages']>[number]
+
+function updateKnownHostedStage(database: Database, stage: HostedStage): void {
+  const result = database
+    .query(
+      `UPDATE workflow_cursor SET state=?,ordinal=?,step_slug=?,closed=?,total_steps=?,updated_at=?,
+       taken_over_from_machine_id=?,last_advanced_machine_id=?,revision=?
+       WHERE record_id=? AND revision<?`,
+    )
+    .run(
+      stage.state,
+      stage.activeOrdinal,
+      stage.activeSlug,
+      JSON.stringify(stage.closedStepNotes),
+      stage.totalSteps,
+      stage.updatedAt,
+      stage.takenOverFromMachineId,
+      stage.lastAdvancedMachineId,
+      stage.revision,
+      stage.id,
+      stage.revision,
+    )
+  if (result.changes > 0 && (stage.state === 'done' || stage.state === 'abandoned'))
+    database
+      .query(
+        'UPDATE task_flow SET open_stage_cursor_record_id=NULL WHERE open_stage_cursor_record_id=?',
+      )
+      .run(stage.id)
+}
+
+function applyHostedStages(database: Database, hosted: HostedTaskFlow): void {
+  for (const knownStage of hosted.otherStages ?? []) updateKnownHostedStage(database, knownStage)
+  if (hosted.stage) updateKnownHostedStage(database, hosted.stage)
+}
+
+function cacheHostedTaskFlowRows(
   database: Database,
   taskKey: string,
   hosted: HostedTaskFlow,
 ): void {
   const { flow, stage } = hosted
-  writeTransaction(() => {
-    database
-      .query(
-        `INSERT INTO task_flow
+  database
+    .query(
+      `INSERT INTO task_flow
        (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
         opening_machine_id,updated_machine_id,revision)
        VALUES (?,?,?,?,NULL,?,?,?,?,?)
@@ -36,22 +70,28 @@ export function cacheHostedTaskFlow(
          open_stage_cursor_record_id=NULL,updated_at=excluded.updated_at,
          opening_machine_id=excluded.opening_machine_id,updated_machine_id=excluded.updated_machine_id,
          revision=excluded.revision`,
+    )
+    .run(
+      flow.id,
+      flow.taskId,
+      flow.projectId,
+      flow.state,
+      flow.createdAt,
+      flow.updatedAt,
+      flow.openingMachineId,
+      flow.updatedMachineId,
+      flow.revision,
+    )
+  if (stage) {
+    const localStage = database
+      .query<{ revision: number }, [string]>(
+        'SELECT revision FROM workflow_cursor WHERE record_id=?',
       )
-      .run(
-        flow.id,
-        flow.taskId,
-        flow.projectId,
-        flow.state,
-        flow.createdAt,
-        flow.updatedAt,
-        flow.openingMachineId,
-        flow.updatedMachineId,
-        flow.revision,
-      )
-    if (stage) {
-      const project = database
-        .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
-        .get(flow.projectId)!
+      .get(stage.id)
+    const project = database
+      .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+      .get(flow.projectId)!
+    if (!localStage)
       insertWorkflowCursorRow(
         database,
         {
@@ -85,11 +125,14 @@ export function cacheHostedTaskFlow(
         },
         'hosted-record',
       )
+    else
       database
-        .query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?')
-        .run(stage.id, flow.id)
-    }
-  }, database)
+        .query('UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=?')
+        .run(flow.id, stage.id)
+    database
+      .query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?')
+      .run(stage.id, flow.id)
+  }
 }
 
 export async function readThroughTaskFlow(
@@ -100,17 +143,23 @@ export async function readThroughTaskFlow(
   try {
     const hosted = await recordApiClient().readTaskFlow!({ taskKey: input.taskKey })
     const local = database
-      .query<{ revision: number | null }, [string]>(
-        `SELECT cursor.revision FROM task_flow flow LEFT JOIN workflow_cursor cursor
+      .query<{ flow_revision: number; stage_revision: number | null }, [string]>(
+        `SELECT flow.revision flow_revision,cursor.revision stage_revision
+       FROM task_flow flow LEFT JOIN workflow_cursor cursor
        ON cursor.record_id=flow.open_stage_cursor_record_id WHERE flow.task_record_id=?`,
       )
       .get(input.taskRecordId)
     const decision = decideTaskFlowReadThrough({
-      localFlowExists: Boolean(local),
-      localStageRevision: local?.revision ?? null,
+      localFlowRevision: local?.flow_revision ?? null,
+      hostedFlowRevision: hosted.flow.revision,
+      hostedListsStages: hosted.otherStages !== undefined,
+      localStageRevision: local?.stage_revision ?? null,
       hostedStageRevision: hosted.stage?.revision ?? null,
     })
-    if (decision !== 'local') cacheHostedTaskFlow(database, input.taskKey, hosted)
+    writeTransaction(() => {
+      applyHostedStages(database, hosted)
+      if (decision !== 'local') cacheHostedTaskFlowRows(database, input.taskKey, hosted)
+    }, database)
     return { status: 'reachable', ...(hosted.stage ? { holder: hosted.stage.holder } : {}) }
   } catch (error) {
     if (!(error instanceof RecordApiRequestError)) throw error

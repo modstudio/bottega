@@ -14,7 +14,7 @@ paths:
 
 A typed question is one fixed recognition judgment asked of TypeSafe and recorded with its subject, so a later outcome can grade it. The how-to is the doc-store article `typed-questions`.
 
-**An answer only advises.** It may warn or suggest; it never blocks, refuses or decides. `askTypedQuestion` fails open: a missing `TYPESAFE_KEY` or any failure returns no answer, and a missing key records nothing.
+**An answer only advises.** It may warn or suggest; it never blocks, refuses or decides. `askTypedQuestion` fails open: a missing `typesafe/api-key` credential or any failure returns no answer, and a missing key records nothing.
 
 **A worker's escalation question is the one exception, and it is gated.** Jev pre-answers it through the shared client and shows its pick and probabilities beside the question. It rules only on the live channel with `jev.auto_rule` on, rulings autonomy `agent` and the pick's probability at or above `jev.confidence_threshold` (`orchestrator/src/ask/jev-routing.ts:routeJevAnswer`); a choice also needs both option orders to agree and the companion fit at or above `jev.fit_threshold`. Everything else escalates.
 

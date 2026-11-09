@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import {
   askTypedQuestionsClient,
+  TYPESAFE_CREDENTIAL_SET_COMMAND,
   type TypedQuestionAnswer,
 } from '../../../shared/typed-question/client.ts'
 import type { TypedQuestion } from '../../../shared/typed-question/registry.ts'
@@ -344,7 +345,7 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
     if (response.kind !== 'answer') {
       storeBatchError(
         response.kind === 'missing-key'
-          ? 'skipped: TYPESAFE_KEY is not configured'
+          ? `skipped: the TypeSafe credential is not configured; run ${TYPESAFE_CREDENTIAL_SET_COMMAND}`
           : response.error,
       )
       return results

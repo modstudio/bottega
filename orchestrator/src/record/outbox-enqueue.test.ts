@@ -28,13 +28,17 @@ function fixture(): Database {
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0,
-    last_error TEXT
+    last_error TEXT,
+    actor_session TEXT
   )`)
   return database
 }
 
-function stateEnvironment(root: string): Record<string, string> {
-  return { [STATE_HOME_ENV]: root }
+function stateEnvironment(
+  root: string,
+  session = 'outbox-enqueue-session',
+): Record<string, string> {
+  return { [STATE_HOME_ENV]: root, CLAUDE_CODE_SESSION_ID: session }
 }
 
 test('inserts the row and creates the pending marker under the state root', () => {
@@ -54,11 +58,14 @@ test('inserts the row and creates the pending marker under the state root', () =
     env,
   )
 
-  expect(database.query('SELECT kind,row_id,payload,created_at FROM outbox').get()).toEqual({
+  expect(
+    database.query('SELECT kind,row_id,payload,created_at,actor_session FROM outbox').get(),
+  ).toEqual({
     kind: 'run',
     row_id: 'run-record',
     payload: '{}',
     created_at: '2026-11-06T12:00:00.000Z',
+    actor_session: 'outbox-enqueue-session',
   })
   expect(existsSync(join(recordSyncQueueDirectory(env), RECORD_SYNC_PENDING_MARKER))).toBe(true)
   database.close()
@@ -154,6 +161,34 @@ test('a transaction creates the marker only after its pending-row refresh commit
     created_at: '2026-11-06T12:04:00.000Z',
     attempts: 0,
     last_error: null,
+  })
+  database.close()
+})
+
+test('a refreshed row is attributed to the session that last wrote it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'outbox-refresh-owner-'))
+  roots.push(root)
+  const database = fixture()
+  const id = insertOutboxRow(
+    database,
+    {
+      recordId: newRecordId(),
+      kind: 'run',
+      rowId: 'refreshed-owner',
+      payload: '{}',
+      createdAt: '2026-11-06T12:05:00.000Z',
+    },
+    stateEnvironment(root, 'first-session'),
+  )
+
+  refreshPendingOutboxRow(
+    database,
+    { id, payload: '{"updated":true}', createdAt: '2026-11-06T12:06:00.000Z' },
+    stateEnvironment(root, 'second-session'),
+  )
+
+  expect(database.query('SELECT actor_session FROM outbox WHERE id=?').get(id)).toEqual({
+    actor_session: 'second-session',
   })
   database.close()
 })

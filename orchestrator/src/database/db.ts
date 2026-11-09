@@ -15,17 +15,12 @@ import {
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { storedMachineId } from '../../../shared/machine-config.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { createReadOnlyDatabaseAccess } from '../../../shared/read-only-database-access.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { ORCHESTRATOR_DATABASE_WRITE_ENV } from '../../../shared/state-directory.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
-import {
-  type CallerIdentityResolution,
-  classifyCaller,
-  resolveCallerIdentity,
-} from '../caller-classification.ts'
+import { classifyCaller } from '../caller-classification.ts'
 import { appliedMigrationCompatibilities } from './applied-migration-compatibilities.ts'
 import {
   contentionTableExists,
@@ -66,6 +61,7 @@ import {
   storeMigrationState,
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
+import { callerIdentity, sessionId } from './session-identity.ts'
 import { instrumentDatabase } from './slow-statements.ts'
 import {
   cachedHandleWriteRefusal,
@@ -92,6 +88,7 @@ import {
 } from './write-probe.ts'
 
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
+export { callerIdentity, sessionId }
 
 let handle: Database | null = null
 /** The open mode the cached process handle was opened with; a read-only handle cannot be written. */
@@ -1042,22 +1039,6 @@ export function backfillSpecSha(): { updated: number; missing: number } {
 }
 
 export const nowIso = () => new Date().toISOString()
-
-/** Identity result of the architect or local operator making this call. */
-export const callerIdentity = (database?: Database): CallerIdentityResolution => {
-  const caller = classifyCaller(process.env)
-  if (caller.kind !== 'operator') return resolveCallerIdentity(caller, null)
-  // An absent store has no identity to read. A store that exists and refuses to open must say
-  // so: swallowing that refusal would let a command report emptiness for data it never saw.
-  if (!database && !existsSync(DB_PATH)) return resolveCallerIdentity(caller, null)
-  return resolveCallerIdentity(caller, storedMachineId())
-}
-
-/** Identity of the architect or local operator making this call. */
-export const sessionId = (database?: Database): string | null => {
-  const identity = callerIdentity(database)
-  return identity.kind === 'identity' ? identity.session : null
-}
 
 /** Stamp once at the CLI boundary; heartbeat failure must never break a read. */
 export function recordSessionSeen(

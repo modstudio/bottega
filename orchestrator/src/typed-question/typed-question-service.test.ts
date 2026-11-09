@@ -7,19 +7,20 @@ import type { TypedQuestionAnswerRow } from './typed-question-answer-store.ts'
 import { askTypedQuestion } from './typed-question-service.ts'
 
 function fixture(input: {
-  resolve?: () => Promise<Record<string, string | undefined>>
+  resolveCredential?: () => Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }>
   fetch?: (input: string, init: RequestInit) => Promise<Response>
 }) {
   const rows: TypedQuestionAnswerRow[] = []
-  const resolve = input.resolve ?? (async () => ({ TYPESAFE_KEY: 'fixture-secret' }))
+  const resolveCredential =
+    input.resolveCredential ??
+    (async () => ({ kind: 'resolved' as const, value: 'fixture-secret' }))
   const fetch = input.fetch ?? (async () => new Response('', { status: 500 }))
   return {
     rows,
     dependencies: {
       ask: (question: TypedQuestion, state: string | Record<string, unknown>) =>
         askTypedQuestionClient(question, state, {
-          resolveCredential: async () => ({ kind: 'missing' }),
-          resolve,
+          resolveCredential,
           fetch,
         }),
       record: (row: TypedQuestionAnswerRow) => {
@@ -37,7 +38,7 @@ const input = {
 } as const
 
 test('a missing key returns no answer and records nothing', async () => {
-  const f = fixture({ resolve: async () => ({ TYPESAFE_KEY: undefined }) })
+  const f = fixture({ resolveCredential: async () => ({ kind: 'missing' }) })
 
   expect(await askTypedQuestion(input, f.dependencies)).toBeNull()
   expect(f.rows).toEqual([])

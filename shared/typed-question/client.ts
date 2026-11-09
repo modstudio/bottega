@@ -2,14 +2,14 @@ import { hostedApiFetch } from '../bounded-fetch.ts'
 // concern: typed-question-client
 /** Calls the TypeSafe typed-question API without exposing its credential. */
 
+import { PLATFORM_SLUG } from '../brand.ts'
 import { ConfigClientError } from '../config-client.ts'
+import { credentialIdentityPath } from '../credential.ts'
 import { resolveActiveSpaceCredentialValue } from '../credential-value.ts'
-import { readEnvValuesWithHosted } from '../env-source.ts'
 import type { TypedQuestion } from './registry.ts'
 
 const TYPED_QUESTION_TIMEOUT_MS = 5_000
 const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
-const TYPESAFE_KEY = 'TYPESAFE_KEY'
 const TYPESAFE_CREDENTIAL = {
   provider: 'typesafe',
   name: null,
@@ -17,6 +17,12 @@ const TYPESAFE_CREDENTIAL = {
   mode: 'default',
   environment: 'local',
 } as const
+/** The command that configures the credential this client reads; every remedy names it. */
+export const TYPESAFE_CREDENTIAL_SET_COMMAND = `${PLATFORM_SLUG} credential set ${credentialIdentityPath(
+  TYPESAFE_CREDENTIAL.provider,
+  TYPESAFE_CREDENTIAL.name,
+  TYPESAFE_CREDENTIAL.type,
+)}`
 const JEV_MODEL = 'jev-1.14.0'
 
 type NoulAnswer = { noul: number }
@@ -68,7 +74,6 @@ export type TypedQuestionsClientResult =
 
 export type TypedQuestionClientDependencies = {
   resolveCredential(): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }>
-  resolve: typeof readEnvValuesWithHosted
   fetch(input: string, init: RequestInit): Promise<Response>
   sleep?(ms: number): Promise<void>
   random?(): number
@@ -76,7 +81,6 @@ export type TypedQuestionClientDependencies = {
 
 const clientDependencies: TypedQuestionClientDependencies = {
   resolveCredential: () => resolveTypesafeCredential(resolveActiveSpaceCredentialValue),
-  resolve: readEnvValuesWithHosted,
   fetch: (input, init) => hostedApiFetch(input, init),
   sleep: (ms) => Bun.sleep(ms),
   random: Math.random,
@@ -206,10 +210,7 @@ async function resolveKey(
   try {
     const credential = await dependencies.resolveCredential()
     if (credential.kind === 'resolved') return { kind: 'key', value: credential.value }
-    // Temporary: the legacy TYPESAFE_KEY answers only while no typed credential exists,
-    // and goes when the legacy key is migrated onto the credential.
-    const key = (await dependencies.resolve([TYPESAFE_KEY]))[TYPESAFE_KEY]
-    return key ? { kind: 'key', value: key } : { kind: 'missing-key' }
+    return { kind: 'missing-key' }
   } catch {
     return { kind: 'error' }
   }

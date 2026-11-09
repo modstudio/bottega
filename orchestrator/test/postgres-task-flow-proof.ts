@@ -13,9 +13,10 @@ import { recordApiClient } from '../src/record/record-api-client.ts'
 import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
-import { cacheHostedTaskFlow } from '../src/workflow/task-flow-read-through.ts'
+import { readThroughTaskFlow } from '../src/workflow/task-flow-read-through.ts'
 import { composeWorkflowWithCursor } from '../src/workflow/workflow-cursor.ts'
 import {
+  abandonCursor,
   selectAndNextWorkflowStep as nextWorkflowStep,
   testPorts,
 } from '../src/workflow/workflow-cursor-test.fixture.ts'
@@ -138,9 +139,10 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           takenOverFromMachineId: null,
           holder: { id: machineA, displayName: 'Machine A' },
         })
+        expect(hosted.otherStages?.map((stage) => stage.id)).not.toContain(localIds.stage_id)
       }
 
-      cacheHostedTaskFlow(databaseB, TASK_KEY, byTask)
+      await readThroughTaskFlow(databaseB, { taskKey: TASK_KEY, taskRecordId: taskId })
       setMachineValue('machine.id', machineB)
       // The built-in diagnose step has a recorded-artifact floor; this proof exercises takeover.
       databaseB
@@ -203,6 +205,43 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
           holder: { id: machineB, displayName: 'Machine B' },
         },
       })
+
+      abandonCursor(
+        WORKFLOW,
+        PROJECT,
+        'default',
+        { key: TASK_KEY },
+        'postgres proof closes the hosted stage',
+        {
+          session: 'machine-b',
+          taskRecordId: taskId,
+          taskStatusCategory: 'active',
+          taskFlowRead: { status: 'reachable' },
+        },
+        databaseB,
+      )
+      const closedRevision = databaseB
+        .query<{ revision: number }, [string]>(
+          'SELECT revision FROM workflow_cursor WHERE record_id=?',
+        )
+        .get(localIds.stage_id)!.revision
+      expect(
+        await syncRecord({
+          local: databaseB,
+          identity: { id: machineB, name: 'Machine B' },
+          projectSpaces: { [PROJECT]: input.spaceId() },
+        }),
+      ).toMatchObject({ pushed: 2, failed: 0, pending: 0 })
+      input.signIn()
+      const afterClose = await client.readTaskFlow!({ taskKey: TASK_KEY })
+      expect(afterClose.stage).toBeNull()
+      expect(afterClose.otherStages).toContainEqual(
+        expect.objectContaining({
+          id: localIds.stage_id,
+          revision: closedRevision,
+          state: 'abandoned',
+        }),
+      )
 
       const otherSpace = await auth.api.createOrganization({
         headers: bearerHeaders(input.token()),

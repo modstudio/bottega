@@ -79,37 +79,89 @@ test('takeover decision distinguishes same-machine, reachable, and offline advan
 test('read-through picks local, hosted, or refresh from stage revisions', () => {
   expect(
     decideTaskFlowReadThrough({
-      localFlowExists: false,
+      localFlowRevision: null,
+      hostedFlowRevision: 1,
+      hostedListsStages: true,
       localStageRevision: null,
       hostedStageRevision: null,
     }),
   ).toBe('hosted')
   expect(
     decideTaskFlowReadThrough({
-      localFlowExists: true,
+      localFlowRevision: 3,
+      hostedFlowRevision: 3,
+      hostedListsStages: true,
       localStageRevision: 4,
       hostedStageRevision: null,
     }),
   ).toBe('local')
   expect(
     decideTaskFlowReadThrough({
-      localFlowExists: true,
+      localFlowRevision: 3,
+      hostedFlowRevision: 3,
+      hostedListsStages: true,
       localStageRevision: null,
       hostedStageRevision: 1,
     }),
   ).toBe('hosted')
   expect(
     decideTaskFlowReadThrough({
-      localFlowExists: true,
+      localFlowRevision: 3,
+      hostedFlowRevision: 3,
+      hostedListsStages: true,
       localStageRevision: 4,
       hostedStageRevision: 5,
     }),
   ).toBe('refresh')
   expect(
     decideTaskFlowReadThrough({
-      localFlowExists: true,
+      localFlowRevision: 3,
+      hostedFlowRevision: 3,
+      hostedListsStages: true,
       localStageRevision: 5,
       hostedStageRevision: 5,
+    }),
+  ).toBe('local')
+})
+
+test.each([
+  ['without an open stage', null],
+  ['with an open stage', 4],
+] as const)('a newer hosted flow is refreshed %s', (_label, hostedStageRevision) => {
+  expect(
+    decideTaskFlowReadThrough({
+      localFlowRevision: 7,
+      hostedFlowRevision: 8,
+      hostedListsStages: true,
+      localStageRevision: 5,
+      hostedStageRevision,
+    }),
+  ).toBe('refresh')
+})
+
+test.each([7, 6])(
+  'a hosted flow at revision %s keeps stage-revision behavior',
+  (hostedFlowRevision) => {
+    expect(
+      decideTaskFlowReadThrough({
+        localFlowRevision: 7,
+        hostedFlowRevision,
+        hostedListsStages: true,
+        localStageRevision: 5,
+        hostedStageRevision: null,
+      }),
+    ).toBe('local')
+  },
+)
+
+test('a newer hosted flow without a stage list keeps stage-revision behavior', () => {
+  expect(
+    decideTaskFlowReadThrough({
+      localFlowRevision: 7,
+      hostedFlowRevision: 8,
+      hostedListsStages: false,
+      localStageRevision: 5,
+      hostedStageRevision: null,
     }),
   ).toBe('local')
 })
