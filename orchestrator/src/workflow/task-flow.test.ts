@@ -8,9 +8,9 @@ import {
   closeTaskFlowStage,
   recordTaskFlowCursorMutation,
   selectTaskFlowStage,
+  vacateRetiredWorkflowKeySlot,
 } from './task-flow.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor, ruleWorkflow } from './workflow-cursor.ts'
-import { vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import {
   abandonCursor,

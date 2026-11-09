@@ -1,3 +1,4 @@
+import { slowCollectionHealth } from './collect-slow-health.ts'
 import { DB_PATH, db } from './db.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { formatProjectWriteModes } from './hosted-write-mode.ts'
@@ -6,6 +7,7 @@ import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './m
 import { hostedOutboxDoctorLines } from './outbox.ts'
 import { projects } from './projects.ts'
 import { formatServiceRevisionDoctor } from './service-revision.ts'
+import { readSettingStamp } from './setting-stamp.ts'
 import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
 
 export const INTERVAL_UNLINKED_KEY_LIMIT = 10
@@ -70,12 +72,23 @@ function questionCommitTaskLinkDoctor(): string[] {
   ]
 }
 
+export function slowCollectionDoctorLine(now = Date.now()): string {
+  const health = slowCollectionHealth(now, readSettingStamp('collect.slow.at'))
+  if (health.ageMs === null)
+    return health.status === 'missing'
+      ? 'collect slow   FAIL — never completed'
+      : 'collect slow   FAIL — completion stamp is invalid'
+  const age = `${Math.floor(health.ageMs / 1_000)}s old`
+  return `collect slow   ${health.status === 'current' ? 'pass' : 'FAIL'} — ${age}`
+}
+
 export async function hubDoctorLines(): Promise<string[]> {
   const outbox = await hostedOutboxDoctorLines()
   return [
     `database       ${DB_PATH}`,
     `schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`,
     `schema version ${schemaVersionLabel(db())}`,
+    slowCollectionDoctorLine(),
     ...formatTaskIdentityDoctor(taskIdentityDoctor()),
     ...intervalTaskLinkDoctor(),
     ...questionCommitTaskLinkDoctor(),

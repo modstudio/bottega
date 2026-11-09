@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
-import { hubDoctorLines, INTERVAL_UNLINKED_KEY_LIMIT } from './doctor.ts'
+import { hubDoctorLines, INTERVAL_UNLINKED_KEY_LIMIT, slowCollectionDoctorLine } from './doctor.ts'
 
 beforeEach(resetFixtureStore)
 afterAll(resetFixtureStore)
@@ -26,6 +26,27 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
     expect(
       lines.some((line) => /\bworkshop\b/.test(line) && line.includes('local-authoritative')),
     ).toBe(true)
+  })
+
+  test('reports slow collection age and marks stale collection as failed', () => {
+    const now = Date.parse('2026-11-09T16:00:00.000Z')
+    expect(slowCollectionDoctorLine(now)).toBe('collect slow   FAIL — never completed')
+    writeTransaction((conn) =>
+      conn
+        .query(`INSERT INTO setting(key,value) VALUES ('collect.slow.at', ?)`)
+        .run(JSON.stringify('2026-11-09T15:59:00.000Z')),
+    )
+    expect(slowCollectionDoctorLine(now)).toBe('collect slow   pass — 60s old')
+    writeTransaction((conn) =>
+      conn
+        .query(`UPDATE setting SET value=? WHERE key='collect.slow.at'`)
+        .run(JSON.stringify('2026-11-09T15:44:59.999Z')),
+    )
+    expect(slowCollectionDoctorLine(now)).toBe('collect slow   FAIL — 900s old')
+  })
+
+  test('includes slow collection health in hub doctor output', async () => {
+    expect(await hubDoctorLines()).toContain('collect slow   FAIL — never completed')
   })
 
   test('reports intervals whose task display key has no UUID link', async () => {
