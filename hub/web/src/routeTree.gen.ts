@@ -49,6 +49,7 @@ import { Route as ProductWorkflowsRouteImport } from './routes/product.workflows
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
 import { Route as ReviewsIdRouteImport } from './routes/reviews.$id'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
+import { Route as SecretsCredentialKeyRouteImport } from './routes/secrets.$credentialKey'
 import { Route as BoardTasksKeyRouteImport } from './routes/board.tasks.$key'
 import { Route as DoneTasksKeyRouteImport } from './routes/done.tasks.$key'
 import { Route as FlightTasksKeyRouteImport } from './routes/flight.tasks.$key'
@@ -256,6 +257,11 @@ const RunsIdRoute = RunsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => RunsRoute,
 } as any)
+const SecretsCredentialKeyRoute = SecretsCredentialKeyRouteImport.update({
+  id: '/$credentialKey',
+  path: '/$credentialKey',
+  getParentRoute: () => SecretsRoute,
+} as any)
 const BoardTasksKeyRoute = BoardTasksKeyRouteImport.update({
   id: '/tasks/$key',
   path: '/tasks/$key',
@@ -309,7 +315,7 @@ export interface FileRoutesByFullPath {
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
-  '/secrets': typeof SecretsRoute
+  '/secrets': typeof SecretsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
@@ -328,6 +334,7 @@ export interface FileRoutesByFullPath {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
+  '/secrets/$credentialKey': typeof SecretsCredentialKeyRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
@@ -357,7 +364,7 @@ export interface FileRoutesByTo {
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
-  '/secrets': typeof SecretsRoute
+  '/secrets': typeof SecretsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
@@ -376,6 +383,7 @@ export interface FileRoutesByTo {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
+  '/secrets/$credentialKey': typeof SecretsCredentialKeyRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
@@ -406,7 +414,7 @@ export interface FileRoutesById {
   '/reviews': typeof ReviewsRouteWithChildren
   '/routing': typeof RoutingRoute
   '/runs': typeof RunsRouteWithChildren
-  '/secrets': typeof SecretsRoute
+  '/secrets': typeof SecretsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/spend': typeof SpendRoute
@@ -425,6 +433,7 @@ export interface FileRoutesById {
   '/projects/$name': typeof ProjectsNameRoute
   '/reviews/$id': typeof ReviewsIdRoute
   '/runs/$id': typeof RunsIdRoute
+  '/secrets/$credentialKey': typeof SecretsCredentialKeyRoute
   '/board/tasks/$key': typeof BoardTasksKeyRoute
   '/done/tasks/$key': typeof DoneTasksKeyRoute
   '/flight/tasks/$key': typeof FlightTasksKeyRoute
@@ -475,6 +484,7 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
+    | '/secrets/$credentialKey'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
@@ -523,6 +533,7 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
+    | '/secrets/$credentialKey'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
@@ -571,6 +582,7 @@ export interface FileRouteTypes {
     | '/projects/$name'
     | '/reviews/$id'
     | '/runs/$id'
+    | '/secrets/$credentialKey'
     | '/board/tasks/$key'
     | '/done/tasks/$key'
     | '/flight/tasks/$key'
@@ -601,7 +613,7 @@ export interface RootRouteChildren {
   ReviewsRoute: typeof ReviewsRouteWithChildren
   RoutingRoute: typeof RoutingRoute
   RunsRoute: typeof RunsRouteWithChildren
-  SecretsRoute: typeof SecretsRoute
+  SecretsRoute: typeof SecretsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   SignInRoute: typeof SignInRoute
   SpendRoute: typeof SpendRoute
@@ -902,6 +914,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsIdRouteImport
       parentRoute: typeof RunsRoute
     }
+    '/secrets/$credentialKey': {
+      id: '/secrets/$credentialKey'
+      path: '/$credentialKey'
+      fullPath: '/secrets/$credentialKey'
+      preLoaderRoute: typeof SecretsCredentialKeyRouteImport
+      parentRoute: typeof SecretsRoute
+    }
     '/board/tasks/$key': {
       id: '/board/tasks/$key'
       path: '/tasks/$key'
@@ -1033,6 +1052,17 @@ const RunsRouteChildren: RunsRouteChildren = {
 
 const RunsRouteWithChildren = RunsRoute._addFileChildren(RunsRouteChildren)
 
+interface SecretsRouteChildren {
+  SecretsCredentialKeyRoute: typeof SecretsCredentialKeyRoute
+}
+
+const SecretsRouteChildren: SecretsRouteChildren = {
+  SecretsCredentialKeyRoute: SecretsCredentialKeyRoute,
+}
+
+const SecretsRouteWithChildren =
+  SecretsRoute._addFileChildren(SecretsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
@@ -1055,7 +1085,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReviewsRoute: ReviewsRouteWithChildren,
   RoutingRoute: RoutingRoute,
   RunsRoute: RunsRouteWithChildren,
-  SecretsRoute: SecretsRoute,
+  SecretsRoute: SecretsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   SignInRoute: SignInRoute,
   SpendRoute: SpendRoute,

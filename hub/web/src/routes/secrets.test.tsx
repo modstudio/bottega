@@ -1,84 +1,115 @@
 import { expect, test } from 'bun:test'
 import type { HostedProjectRow, RecordConfigSecretsResponse } from '@bottega/hub-data/client'
-import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import type { CredentialPreference } from '../../../../shared/credential.ts'
-import { credentialDisplayRows, preferenceDisplayRows, splitSecretRows } from './secrets.tsx'
+import { credentialDisplayRows, splitSecretRows } from './secrets.tsx'
 
+const spaceId = '01990000-0000-7000-8000-000000000010'
 const updatedAt = '2026-11-05T12:00:00.000Z'
-const projects: HostedProjectRow[] = [
-  {
-    id: '01990000-0000-7000-8000-000000000011',
-    spaceId: '01990000-0000-7000-8000-000000000010',
-    spaceName: 'Workshop',
-    name: PLATFORM_SLUG,
-    keyPrefixes: ['DEV'],
-    stack: null,
-    managedContext: true,
-    landingBranch: 'main',
-    color: null,
-    colorDark: null,
-    retiredAt: null,
-  },
-]
+const projects: HostedProjectRow[] = ['A', 'B', 'C'].map((name, index) => ({
+  id: `01990000-0000-7000-8000-00000000001${index + 1}`,
+  spaceId,
+  spaceName: 'Workshop',
+  name,
+  keyPrefixes: [name],
+  stack: null,
+  managedContext: true,
+  landingBranch: 'main',
+  color: null,
+  colorDark: null,
+  retiredAt: null,
+}))
 
-const typedSecret: RecordConfigSecretsResponse[number] = {
-  key: 'openrouter/api-key#live@local',
-  environment: 'local',
-  scope: 'user',
-  projectId: '01990000-0000-7000-8000-000000000099',
+function secret(
+  scope: 'user' | 'space',
+  projectId: string | null,
+): RecordConfigSecretsResponse[number] {
+  return {
+    key: 'openrouter/api-key#live@local',
+    environment: 'local',
+    scope,
+    projectId,
+    provider: 'openrouter',
+    name: null,
+    type: 'api-key',
+    hint: 'sk-o...test',
+    mode: 'live',
+    updatedAt,
+  }
+}
+
+const copies = [
+  secret('user', projects[0]!.id),
+  secret('space', null),
+  secret('user', projects[1]!.id),
+]
+const preference: CredentialPreference = {
+  projectId: null,
   provider: 'openrouter',
   name: null,
   type: 'api-key',
-  hint: 'sk-o...test',
   mode: 'live',
+  environment: 'local',
+  payer: 'shared',
+  binding: 'space',
   updatedAt,
 }
 
-test('splits complete credentials from legacy keys and maps their display fields', () => {
-  const sharedSecret = { ...typedSecret, key: 'stripe/api-key#test@local', scope: 'space' as const }
-  const projectBound = { ...typedSecret, projectId: projects[0]!.id }
-  const legacySecret = {
-    ...typedSecret,
-    key: 'LEGACY_KEY',
-    provider: null,
-    name: null,
-    type: null,
-    hint: null,
-    mode: null,
-  }
-
-  const split = splitSecretRows([typedSecret, sharedSecret, projectBound, legacySecret])
-  const display = credentialDisplayRows(split.credentials, projects)
-
-  expect(split.legacy).toEqual([legacySecret])
-  expect(display.map(({ credential, boundTo, payer }) => ({ credential, boundTo, payer }))).toEqual(
-    [
-      { credential: 'openrouter/api-key', boundTo: 'Unknown project', payer: 'You' },
-      { credential: 'openrouter/api-key', boundTo: 'Unknown project', payer: 'Shared' },
-      { credential: 'openrouter/api-key', boundTo: PLATFORM_SLUG, payer: 'You' },
-    ],
+test('a space preference selects the shared copy for every project and the space default', () => {
+  const rows = credentialDisplayRows(
+    splitSecretRows(copies).credentials,
+    [preference],
+    projects,
+    spaceId,
   )
+  expect(
+    rows.map((row) => ({
+      owner: row.owner,
+      usedBy: row.usages.map((usage) => `${usage.name}:${usage.reason}`),
+    })),
+  ).toEqual([
+    { owner: 'You', usedBy: [] },
+    {
+      owner: 'This space',
+      usedBy: [
+        'A:space-preference',
+        'B:space-preference',
+        'C:space-preference',
+        'Space default:space-preference',
+      ],
+    },
+    { owner: 'You', usedBy: [] },
+  ])
 })
 
-test('maps a space-wide preference to all projects and its payer and binding', () => {
-  const preference: CredentialPreference = {
-    projectId: null,
-    provider: 'openrouter',
-    name: 'backup',
-    type: 'api-key',
-    mode: 'test',
-    environment: 'local',
-    payer: 'personal',
-    binding: 'space',
-    updatedAt,
-  }
-
-  expect(preferenceDisplayRows([preference], projects)).toEqual([
-    {
-      ...preference,
-      credential: 'openrouter/backup/api-key',
-      project: 'All projects',
-      paysWith: 'You, space credential',
-    },
+test('default order uses project copies before the shared space copy', () => {
+  const rows = credentialDisplayRows(splitSecretRows(copies).credentials, [], projects, spaceId)
+  expect(rows.map((row) => row.usages.map((usage) => `${usage.name}:${usage.reason}`))).toEqual([
+    ['A:default-order'],
+    ['C:default-order', 'Space default:default-order'],
+    ['B:default-order'],
   ])
+})
+
+test('a preference with no stored slot produces a missing row', () => {
+  const missing = {
+    ...preference,
+    projectId: projects[0]!.id,
+    payer: 'personal' as const,
+    binding: 'space' as const,
+  }
+  const rows = credentialDisplayRows([], [missing], projects, spaceId)
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({
+    credential: 'openrouter/api-key',
+    boundTo: 'A',
+    owner: '—',
+    hint: 'missing',
+    missing: true,
+  })
+  expect(rows[0]!.key.startsWith('missing:')).toBe(true)
+})
+
+test('owner labels are shared by personal and space credentials', () => {
+  const rows = credentialDisplayRows(splitSecretRows(copies).credentials, [], projects, spaceId)
+  expect(rows.map((row) => row.owner)).toEqual(['You', 'This space', 'You'])
 })
