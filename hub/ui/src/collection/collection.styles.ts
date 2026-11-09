@@ -8,7 +8,7 @@ export const collectionStyles = variant({
     actionsLabel: 'sr-only',
   },
   variants: {
-    grow: { true: { column: 'w-full max-w-0' } },
+    grow: { true: { column: 'w-full max-w-0 overflow-hidden [overflow-wrap:anywhere]' } },
     lowPriority: { true: { column: 'hidden @5xl/rows:table-cell' } },
   },
 })

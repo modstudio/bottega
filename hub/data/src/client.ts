@@ -77,6 +77,7 @@ export type HostedProjectRow = inferRouterOutputs<AppRouter>['record']['projects
 export type RecordSettingsResponse = inferRouterOutputs<AppRouter>['record']['settings']
 export type RecordConfigAccessResponse = inferRouterOutputs<AppRouter>['record']['configAccess']
 export type RecordConfigSecretsResponse = inferRouterOutputs<AppRouter>['record']['configSecrets']
+export type RecordResolvedKeysResponse = inferRouterOutputs<AppRouter>['record']['resolvedKeys']
 export type TaskRecordResponse = inferRouterOutputs<AppRouter>['work']['task']
 export type JobRow = inferRouterOutputs<AppRouter>['catalog']['jobs'][number]
 export type AgentRow = inferRouterOutputs<AppRouter>['catalog']['agents'][number]

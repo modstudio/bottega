@@ -65,6 +65,8 @@ test('hosted mode exposes its hosted routes with only the dashboard outside a gr
   expect(isHostedPath('/projects')).toBe(true)
   expect(isHostedPath('/docs')).toBe(true)
   expect(isHostedPath('/docs/project/alpha/plan')).toBe(true)
+  expect(isHostedPath('/secrets')).toBe(true)
+  expect(isHostedPath('/secrets/stored%3Auser%3Aspace%3Aopenrouter')).toBe(true)
   expect(isHostedPath('/jobs')).toBe(true)
   expect(isHostedPath('/agents')).toBe(true)
   expect(isHostedPath('/routing')).toBe(true)

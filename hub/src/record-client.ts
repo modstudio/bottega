@@ -469,6 +469,7 @@ const configSecretSchema = z.object({
   type: z.string().nullable(),
   hint: z.string().nullable(),
   mode: z.enum(CREDENTIAL_MODES).nullable(),
+  reachSpaceIds: z.array(z.string().uuid()).nullable().default(null),
   updatedAt: z.string().datetime({ offset: true }),
 })
 export const credentialPreferenceIdentitySchema = z.object({
@@ -815,16 +816,22 @@ function recordConfigClient(options: RecordClientOptions) {
           body: JSON.stringify({ ...input, environment: DEFAULT_CONFIG_ENVIRONMENT }),
         },
       ),
+    projects: (spaceId?: string) =>
+      request(options, '/v1/projects', RecordProjectsSchema, spaceDestination(spaceId)),
     // The listing spans every environment because typed credentials live under local.
-    configSecrets: () =>
-      request(options, '/v1/config/secrets', z.object({ items: z.array(configSecretSchema) })).then(
-        ({ items }) => items,
-      ),
-    credentialPreferences: () =>
+    configSecrets: (spaceId?: string) =>
+      request(
+        options,
+        '/v1/config/secrets',
+        z.object({ items: z.array(configSecretSchema) }),
+        spaceDestination(spaceId),
+      ).then(({ items }) => items),
+    credentialPreferences: (spaceId?: string) =>
       request(
         options,
         '/v1/config/credential-preferences',
         z.object({ items: z.array(credentialPreferenceSchema) }),
+        spaceDestination(spaceId),
       ).then(({ items }) => items),
     clearCredentialPreference: (input: z.input<typeof credentialPreferenceIdentitySchema>) =>
       request(
@@ -874,9 +881,12 @@ function recordPublicDocsClient(options: RecordClientOptions) {
   }
 }
 
+/** Addresses one request to a space the caller belongs to instead of the active space. */
+function spaceDestination(spaceId?: string): RequestInit | undefined {
+  return spaceId ? { headers: { 'x-record-space': spaceId } } : undefined
+}
+
 function recordDocReadClient(options: RecordClientOptions) {
-  const destination = (spaceId?: string) =>
-    spaceId ? { headers: { 'x-record-space': spaceId } } : undefined
   return {
     docs: (input: RecordDocListInput = {}, spaceId?: string) =>
       request(
@@ -892,7 +902,7 @@ function recordDocReadClient(options: RecordClientOptions) {
           acrossReadableSpaces: input.acrossReadableSpaces ? 'true' : undefined,
         }),
         docsSchema,
-        destination(spaceId),
+        spaceDestination(spaceId),
       ).then((page) => {
         for (const row of page.unreadable)
           console.warn(`unreadable hosted document ${row.id}: ${row.reason}`)
@@ -900,14 +910,14 @@ function recordDocReadClient(options: RecordClientOptions) {
       }),
     doc: (id: string, audience?: DocAudience, spaceId?: string) =>
       request(options, query(`/v1/docs/${encodeURIComponent(id)}`, { audience }), docSchema, {
-        headers: destination(spaceId)?.headers,
+        headers: spaceDestination(spaceId)?.headers,
       }),
     docRevisions: (id: string, audience?: DocAudience, spaceId?: string) =>
       request(
         options,
         query(`/v1/docs/${encodeURIComponent(id)}/revisions`, { audience }),
         docRevisionsSchema,
-        destination(spaceId),
+        spaceDestination(spaceId),
       ),
   }
 }
@@ -968,7 +978,6 @@ export function createRecordClient(options: RecordClientOptions) {
       ),
     latestReleases: (projectId: string) =>
       request(options, query('/v1/releases/latest', { projectId }), latestReleaseListSchema),
-    projects: () => request(options, '/v1/projects', RecordProjectsSchema),
     snapshots: () => request(options, '/v1/snapshots', snapshotsSchema),
     boardList: (input: { kind?: 'notice' | 'question'; open?: boolean; includeEnded?: boolean }) =>
       request(
