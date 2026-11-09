@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { askTypedQuestionClient, askTypedQuestionsClient } from './client.ts'
+import { ConfigClientError } from '../config-client.ts'
+import {
+  askTypedQuestionClient,
+  askTypedQuestionsClient,
+  resolveTypesafeCredential,
+} from './client.ts'
 import type { ChoiceQuestion, NoulQuestion, ScoreQuestion } from './registry.ts'
 
 const FIXTURE_QUESTION = {
@@ -12,6 +17,32 @@ const FIXTURE_QUESTION = {
 
 const resolve = async () => ({ TYPESAFE_KEY: 'fixture-secret' })
 const missingCredential = async () => ({ kind: 'missing' }) as const
+
+test('TypeSafe credential adapter maps an unconfigured record session to missing', async () => {
+  const result = await resolveTypesafeCredential(async () => {
+    throw new ConfigClientError('not-configured', '/v1/config')
+  })
+  expect(result).toEqual({ kind: 'missing' })
+})
+
+test('TypeSafe credential adapter leaves other config failures as key_resolution', async () => {
+  let legacyReads = 0
+  const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
+    resolveCredential: () =>
+      resolveTypesafeCredential(async () => {
+        throw new ConfigClientError('unreachable', '/v1/config/secrets')
+      }),
+    resolve: async () => {
+      legacyReads += 1
+      return { TYPESAFE_KEY: 'legacy-secret' }
+    },
+    fetch: async () => {
+      throw new Error('request must not be sent')
+    },
+  })
+  expect(result).toMatchObject({ kind: 'error', error: 'key_resolution' })
+  expect(legacyReads).toBe(0)
+})
 
 test('typed credential wins over a present legacy key', async () => {
   let authorization: string | null = null

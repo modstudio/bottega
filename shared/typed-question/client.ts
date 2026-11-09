@@ -2,6 +2,7 @@ import { hostedApiFetch } from '../bounded-fetch.ts'
 // concern: typed-question-client
 /** Calls the TypeSafe typed-question API without exposing its credential. */
 
+import { ConfigClientError } from '../config-client.ts'
 import { resolveActiveSpaceCredentialValue } from '../credential-value.ts'
 import { readEnvValuesWithHosted } from '../env-source.ts'
 import type { TypedQuestion } from './registry.ts'
@@ -74,16 +75,28 @@ export type TypedQuestionClientDependencies = {
 }
 
 const clientDependencies: TypedQuestionClientDependencies = {
-  resolveCredential: async () => {
-    const result = await resolveActiveSpaceCredentialValue(TYPESAFE_CREDENTIAL)
-    return result.kind === 'refused'
-      ? { kind: 'missing' as const }
-      : { kind: 'resolved' as const, value: result.value }
-  },
+  resolveCredential: () => resolveTypesafeCredential(resolveActiveSpaceCredentialValue),
   resolve: readEnvValuesWithHosted,
   fetch: (input, init) => hostedApiFetch(input, init),
   sleep: (ms) => Bun.sleep(ms),
   random: Math.random,
+}
+
+type ActiveSpaceCredentialResolver = typeof resolveActiveSpaceCredentialValue
+
+export async function resolveTypesafeCredential(
+  resolveActiveSpace: ActiveSpaceCredentialResolver,
+): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }> {
+  try {
+    const result = await resolveActiveSpace(TYPESAFE_CREDENTIAL)
+    return result.kind === 'refused'
+      ? { kind: 'missing' as const }
+      : { kind: 'resolved' as const, value: result.value }
+  } catch (error) {
+    if (error instanceof ConfigClientError && error.reason === 'not-configured')
+      return { kind: 'missing' }
+    throw error
+  }
 }
 
 function finiteProbability(value: unknown): value is number {

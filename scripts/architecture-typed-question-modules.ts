@@ -13,6 +13,7 @@ export const typedQuestionModules = [
   module('shared/typed-question/registry.ts', []),
   module('orchestrator/src/ask/worker-question.ts', ['zod', '../../../shared/orch-contract.ts']),
   module('shared/typed-question/client.ts', [
+    '../config-client.ts',
     '../credential-value.ts',
     '../env-source.ts',
     './registry.ts',
