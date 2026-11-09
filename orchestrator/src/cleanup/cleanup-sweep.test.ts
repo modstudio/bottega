@@ -149,7 +149,7 @@ test('session context sweep logs and drops each item for a gone owner', async ()
   const session = newRecordId()
   ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
     CONTEXT_FACTS_PORTS_KEY
-  ] = { tasks: async () => [], pointer: async () => null }
+  ] = { tasks: async () => [], task: async () => null, pointer: async () => null }
   const previousSession = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = session
   for (const slug of ['one', 'two'])

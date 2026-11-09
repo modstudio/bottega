@@ -469,17 +469,6 @@ export function liveClaimsOfSession(
     .map((row) => view(row, clock, database))
 }
 
-/** The task keys a session holds by a live claim, in every project. */
-export function liveTaskClaimsOfSession(
-  session: string,
-  clock = Date.now(),
-  database = db(),
-): string[] {
-  return liveClaimsOfSession(session, clock, database)
-    .filter((claim) => claim.subject.kind === 'task')
-    .map((claim) => claim.subject.value)
-}
-
 /** Release the live claims held by a swept session; lapsed rows stay for the existing lapse path. */
 export function releaseSessionClaims(
   session: string,

@@ -2,10 +2,20 @@
 /** Gathers store, task, claim, and pointer facts for the pure context write policy. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { liveTaskClaimsOfSession } from '../board/board-claim-service.ts'
+import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
-import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
+import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
+import {
+  type HubTaskPuller,
+  type HubTaskReader,
+  type HubTaskReference,
+  pullHubTask,
+  readHubTasks,
+  resolveOrPullHubTaskReference,
+  taskKeyMap,
+  taskReferenceForProjectKey,
+} from '../workflow/workflow-task-reference.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { decodeContextItem } from './context-item-codec.ts'
 import {
@@ -17,10 +27,12 @@ import {
 } from './doc-context-write.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 
 type ContextTask = HubTaskReference
 export type ContextFactsPorts = {
-  tasks(): Promise<ContextTask[]>
+  tasks: HubTaskReader
+  task: HubTaskPuller
   pointer(value: string, database: Database): Promise<string | null>
 }
 export const CONTEXT_FACTS_PORTS_KEY = Symbol.for('orch.context-facts-ports')
@@ -73,7 +85,8 @@ function storedPointerRefusal(pointer: string, database: Database): string | nul
 }
 
 const productionContextFactsPorts: ContextFactsPorts = {
-  tasks: () => readHubTasks(PLATFORM_SLUG) as Promise<ContextTask[]>,
+  tasks: readHubTasks,
+  task: pullHubTask,
   pointer: pointerRefusal,
 }
 const defaultContextFactsPorts = () =>
@@ -85,45 +98,115 @@ export function storedItems(holder: string, database: Database): ContextItem[] {
   )
 }
 
-export function contextTaskHolderKey(holder: string | null): string | null {
-  return holder?.startsWith('task:') ? holder.slice('task:'.length) : null
+/** Resolve a person-facing task key once into the stable identity context stores. */
+export async function resolveContextTask(
+  value: string,
+  database: Database = db(),
+  ports: ContextFactsPorts = defaultContextFactsPorts(),
+): Promise<ContextTask> {
+  const key = value.trim().toUpperCase()
+  const prefix = taskKeyPrefix(key) ?? key.split('-', 1)[0] ?? key
+  const project = projectForTaskKey(key, projects(undefined, database))
+  if (!project) {
+    throw new Error(
+      `task key prefix ${JSON.stringify(prefix)} is not declared by exactly one registered project; inspect prefixes with ${PLATFORM_SLUG} project list --json`,
+    )
+  }
+  return resolveOrPullHubTaskReference(project.name, key, ports.tasks, ports.task)
 }
 
 export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {
   return tasks.some((task) => task.parent_key === key) ? 'epic' : 'task'
 }
 
+function mirrorTask(
+  tasks: readonly ContextTask[],
+  project: string,
+  key: string,
+): ContextTask | null {
+  return taskReferenceForProjectKey(taskKeyMap(tasks), project, key)
+}
+
+function bestEffortProjectTaskReader(ports: ContextFactsPorts) {
+  const reads = new Map<string, Promise<readonly ContextTask[] | null>>()
+  return (project: string) => {
+    const existing = reads.get(project)
+    if (existing) return existing
+    const reading = ports.tasks(project).catch(() => null)
+    reads.set(project, reading)
+    return reading
+  }
+}
+
+async function relatedContextTasks(input: {
+  owner: string | null
+  claims: readonly { key: string; project: string }[]
+  task?: ContextTask
+  projectTasks: readonly ContextTask[]
+  ports: ContextFactsPorts
+}): Promise<ContextTask[]> {
+  const related: ContextTask[] = []
+  if (!input.owner) {
+    const parent = input.task?.parent_key
+      ? mirrorTask(input.projectTasks, input.task.project, input.task.parent_key)
+      : null
+    if (parent) related.push(parent)
+    return related
+  }
+  const readProject = bestEffortProjectTaskReader(input.ports)
+  for (const claim of input.claims) {
+    const tasks = await readProject(claim.project)
+    if (!tasks) continue
+    const claimed = mirrorTask(tasks, claim.project, claim.key)
+    if (!claimed) continue
+    related.push(claimed)
+    if (claimed.parent_key) {
+      const parent = mirrorTask(tasks, claimed.project, claimed.parent_key)
+      if (parent) related.push(parent)
+    }
+  }
+  return related
+}
+
 async function contextSetRefusal(
-  input: { subject: string; slug: string; body: string },
+  input: { subject: string; slug: string; body: string; contextTask?: ContextTask },
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
 ): Promise<string | null> {
   const item = decodeContextItem(input.subject, input.slug, input.body)
-  const tasks = await ports.tasks()
-  const taskKey = contextTaskHolderKey(input.subject)
   const owner = input.subject.startsWith('session:') ? input.subject.slice(8) : null
-  if (taskKey && !tasks.some((task) => task.key === taskKey && task.project === PLATFORM_SLUG)) {
-    return `context item ${input.slug} refused: task:${taskKey} is not in the ${PLATFORM_SLUG} task store`
+  const task = input.subject.startsWith('task:') ? input.contextTask : undefined
+  if (
+    input.subject.startsWith('task:') &&
+    (!task || input.subject !== taskContextHolder(task.record_id))
+  ) {
+    return `context item ${input.slug} refused: task holder requires its resolved task identity; write task context with ${PLATFORM_SLUG} agent context set --task <KEY>`
   }
   const ownership = holderOwnershipRefusal(input.subject, sessionId(database), input.slug)
   if (ownership) return ownership
-  const claims = owner ? liveTaskClaimsOfSession(owner, Date.now(), database) : []
-  const profile = taskKey ? taskProfile(taskKey, tasks) : 'session'
-  const parent = taskKey ? tasks.find((task) => task.key === taskKey)?.parent_key : null
-  const relatedHolders = owner
-    ? claims.flatMap((key) => {
-        const taskParent = tasks.find((task) => task.key === key)?.parent_key
-        return [`task:${key}`, ...(taskParent ? [`task:${taskParent}`] : [])]
-      })
-    : parent
-      ? [`task:${parent}`]
-      : []
+  const claims = owner
+    ? liveClaimsOfSession(owner, Date.now(), database)
+        .filter((claim) => claim.subject.kind === 'task')
+        .map((claim) => ({ key: claim.subject.value, project: claim.project }))
+    : []
+  const projectTasks = task ? await ports.tasks(task.project) : []
+  const profile = task ? taskProfile(task.key, projectTasks) : 'session'
+  const relatedTasks = await relatedContextTasks({
+    owner,
+    claims,
+    task,
+    projectTasks,
+    ports,
+  })
+  const relatedHolders = [
+    ...new Set(relatedTasks.map((related) => taskContextHolder(related.record_id))),
+  ]
   const refusal = contextWriteRefusal(item, {
     profile,
     siblings: storedItems(input.subject, database),
     related: [...new Set(relatedHolders)].flatMap((holder) => storedItems(holder, database)),
     pointerRefusal: item.kind === 'pointer' ? await ports.pointer(item.body, database) : null,
-    claimedTask: claims[0] ?? null,
+    claimedTask: claims[0]?.key ?? null,
   })
   return refusal
 }
@@ -133,22 +216,30 @@ export async function assertContextSetAllowed(input: {
   subject: string | null
   slug: string
   body: string
+  contextTask?: ContextTask
 }): Promise<void> {
   if (input.scope !== 'context') return
   const refusal = await contextSetRefusal({
     subject: input.subject ?? '',
     slug: input.slug,
     body: input.body,
+    contextTask: input.contextTask,
   })
   if (refusal) throw new Error(refusal)
 }
 
 /** A context item leaves only through its owner and never as the last required item. */
-export async function assertContextDropAllowed(
-  doc: { scope: string; subject: string | null; slug: string; body: string },
-  database: Database = db(),
-  ports: ContextFactsPorts = defaultContextFactsPorts(),
-): Promise<void> {
+export async function assertContextDropAllowed({
+  doc,
+  database = db(),
+  ports = defaultContextFactsPorts(),
+  task,
+}: {
+  doc: { scope: string; subject: string | null; slug: string; body: string }
+  database?: Database
+  ports?: ContextFactsPorts
+  task?: ContextTask
+}): Promise<void> {
   if (doc.scope !== 'context') return
   const holder = doc.subject ?? ''
   const refusal =
@@ -156,13 +247,17 @@ export async function assertContextDropAllowed(
     contextDropRefusal(
       decodeContextItem(holder, doc.slug, doc.body),
       storedItems(holder, database),
-      await contextProfileForHolder(holder, ports),
+      await contextProfileForHolder(holder, ports, task),
     )
   if (refusal) throw new Error(refusal)
 }
 
-export async function contextProfileForHolder(subject: string, ports = defaultContextFactsPorts()) {
+export async function contextProfileForHolder(
+  subject: string,
+  ports = defaultContextFactsPorts(),
+  task?: ContextTask,
+) {
   if (subject.startsWith('session:')) return 'session' as const
-  const key = contextTaskHolderKey(subject) ?? ''
-  return taskProfile(key, await ports.tasks())
+  if (!task) return 'task' as const
+  return taskProfile(task.key, await ports.tasks(task.project))
 }

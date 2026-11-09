@@ -25,11 +25,15 @@ export const privateDocImports = [
 ] as const
 
 export const docModules: DocModule[] = [
-  module('orchestrator/src/doc/doc-context-write.ts', []),
+  module('orchestrator/src/doc/doc-context-write.ts', [
+    '../../../shared/brand.ts',
+    '../workflow/workflow-task-reference.ts',
+  ]),
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
   module('orchestrator/src/doc/context-stale.ts', ['../workflow/task-flow-decision.ts']),
   module('orchestrator/src/doc/context-stale-adapter.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../database/db.ts',
     '../project/projects.ts',
     '../run/question-open.ts',
@@ -37,8 +41,8 @@ export const docModules: DocModule[] = [
     '../workflow/workflow-task-reference.ts',
     './context-item-codec.ts',
     './context-stale.ts',
-    './context-write-adapter.ts',
     './doc-read-store.ts',
+    './doc-subjects.ts',
   ]),
   module('orchestrator/src/doc/context-write-adapter.ts', [
     'bun:sqlite',
@@ -46,12 +50,14 @@ export const docModules: DocModule[] = [
     '../board/board-claim-service.ts',
     '../database/db.ts',
     '../git/commit-resolution.ts',
+    '../project/projects.ts',
     '../workflow/workflow-task-reference.ts',
     '../workflow/workflow-text-copy.ts',
     './context-item-codec.ts',
     './doc-context-write.ts',
     './doc-read-store.ts',
     './doc-resume-write.ts',
+    './doc-subjects.ts',
   ]),
   module('orchestrator/src/doc/context-service.ts', [
     'bun:sqlite',
@@ -62,6 +68,7 @@ export const docModules: DocModule[] = [
     './doc-read-store.ts',
     // Only context-service may import removeContextItemForLifecycle from doc-remove.
     './doc-remove.ts',
+    './doc-subjects.ts',
     './docs.ts',
   ]),
   module('orchestrator/src/doc/doc-remove.ts', [
@@ -95,6 +102,7 @@ export const docModules: DocModule[] = [
     '../workflow/workflow-task-reference.ts',
     './context-write-adapter.ts',
     './doc-context-write.ts',
+    './doc-subjects.ts',
     './docs.ts',
   ]),
   module('orchestrator/src/secret-scan/secret-scan-decision.ts', []),
@@ -180,6 +188,7 @@ export const docModules: DocModule[] = [
     '../canon/canon-files.ts',
     '../canon/canon-hydrate.ts',
     '../subject/subjects.ts',
+    './doc-context-write.ts',
     './doc-read-store.ts',
     './doc-write-allowed.ts',
     './doc-generator.ts',

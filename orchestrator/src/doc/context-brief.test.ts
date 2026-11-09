@@ -1,6 +1,14 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ContextBrief, holderSequence, renderContextBrief } from './context-brief.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { db } from '../database/db.ts'
+import {
+  type ContextBrief,
+  holderSequence,
+  renderContextBrief,
+  storedBriefHolders,
+} from './context-brief.ts'
+import { encodeContextItem } from './context-item-codec.ts'
 
 const item = (
   holder: string,
@@ -104,11 +112,61 @@ test('orders the session, each project-scoped working task, and its epic by task
     ),
   ).toEqual([
     { key: '65fbe830', title: '', kind: 'session' },
-    { key: 'DEV-1844/2', title: 'Build the brief', kind: 'task' },
-    { key: 'DEV-1844', title: 'Architect context', kind: 'epic' },
-    { key: 'APP-7', title: 'Other project task', kind: 'task' },
-    { key: 'DEV-2000', title: 'Parentless childless task', kind: 'task' },
-    { key: 'SHARED-1', title: 'Platform shared key', kind: 'task' },
-    { key: 'SHARED-1', title: 'Other shared key', kind: 'task' },
+    {
+      key: 'DEV-1844/2',
+      title: 'Build the brief',
+      kind: 'task',
+      recordId: `${PLATFORM_SLUG}:DEV-1844/2`,
+    },
+    {
+      key: 'DEV-1844',
+      title: 'Architect context',
+      kind: 'epic',
+      recordId: `${PLATFORM_SLUG}:DEV-1844`,
+    },
+    { key: 'APP-7', title: 'Other project task', kind: 'task', recordId: 'other:APP-7' },
+    {
+      key: 'DEV-2000',
+      title: 'Parentless childless task',
+      kind: 'task',
+      recordId: `${PLATFORM_SLUG}:DEV-2000`,
+    },
+    {
+      key: 'SHARED-1',
+      title: 'Platform shared key',
+      kind: 'task',
+      recordId: `${PLATFORM_SLUG}:SHARED-1`,
+    },
+    {
+      key: 'SHARED-1',
+      title: 'Other shared key',
+      kind: 'task',
+      recordId: 'other:SHARED-1',
+    },
+  ])
+})
+
+test('reads a working task brief from its record-id holder while retaining the task key', () => {
+  const recordId = newRecordId()
+  const body = encodeContextItem({ kind: 'next-action', source: 'test', body: 'Continue.' })
+  db()
+    .query(
+      `INSERT INTO doc
+       (record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at)
+       VALUES (?,'context',?,'next','next',?,'demand','["technical"]',?,?)`,
+    )
+    .run(newRecordId(), `task:${recordId}`, body, '2026-11-09T10:00:00Z', '2026-11-09T10:00:00Z')
+  const references = holderSequence(
+    'session-id',
+    [{ key: 'STAR-1', project: 'starship' }],
+    [{ key: 'STAR-1', project: 'starship', record_id: recordId, title: 'Stable holder' }],
+  )
+  expect(storedBriefHolders(references, db())).toEqual([
+    {
+      key: 'STAR-1',
+      title: 'Stable holder',
+      kind: 'task',
+      items: [item(`task:${recordId}`, 'next', 'next-action', 'Continue.', 'test')],
+    },
   ])
 })

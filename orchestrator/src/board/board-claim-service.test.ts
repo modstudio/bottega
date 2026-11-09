@@ -7,7 +7,6 @@ import { db } from '../database/db.ts'
 import {
   listClaims,
   liveClaimsOfSession,
-  liveTaskClaimsOfSession,
   releaseClaim,
   releaseSessionClaims,
   releaseTaskClaims,
@@ -122,7 +121,6 @@ test('session claim readers return its live claims across projects and preserve 
       subject: { kind: 'resource', value: 'gpu' },
     }),
   ])
-  expect(liveTaskClaimsOfSession('holder', clock)).toEqual(['DEV-1'])
 })
 
 test('a created claim carries a version-7 record id', () => {

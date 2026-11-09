@@ -574,7 +574,7 @@ export async function removeDoc(
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
-  await assertContextDropAllowed(doc)
+  await assertContextDropAllowed({ doc, database: db(), task: context.contextTask })
   return removeStoredDoc(doc, context, identity)
 }
 

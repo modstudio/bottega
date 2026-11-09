@@ -1,5 +1,7 @@
 // concern: doc-context-write
 /** Pure write policy for one structured context item. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 
 export const CONTEXT_ITEM_KINDS = [
   'ruling',
@@ -10,6 +12,10 @@ export const CONTEXT_ITEM_KINDS = [
   'next-action',
 ] as const
 export type ContextItemKind = (typeof CONTEXT_ITEM_KINDS)[number]
+export type ContextTaskIdentity = Pick<
+  HubTaskReference,
+  'key' | 'record_id' | 'project' | 'parent_key'
+>
 
 export const CONTEXT_ITEM_MAX_CHARS = {
   ruling: 1500,
@@ -66,7 +72,7 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
     facts.claimedTask &&
     ['ruling', 'open-question'].includes(item.kind)
   ) {
-    return `${address} refused: task-level ${item.kind} written to a session; write it to task:${facts.claimedTask}`
+    return `${address} refused: task-level ${item.kind} written to a session; write it with ${PLATFORM_SLUG} agent context set --task ${facts.claimedTask}`
   }
   if (item.kind === 'pointer' && facts.pointerRefusal) {
     return `${address} refused: ${facts.pointerRefusal}`

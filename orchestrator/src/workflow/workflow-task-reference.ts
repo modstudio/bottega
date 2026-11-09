@@ -5,6 +5,7 @@ import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { namesMissingTask } from '../../../shared/task-missing.ts'
 
 export type HubTaskReference = {
   key: string
@@ -16,6 +17,7 @@ export type HubTaskReference = {
   status_category?: string | null
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
+export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
 export const projectTaskKey = (project: string, key: string) => `${project}\0${key}`
@@ -39,9 +41,13 @@ export function taskReferenceForProjectKey(
   return matches.length === 1 ? matches[0]! : null
 }
 
-export function taskReadRefusal(project: string, detail: string): Error {
+export function taskReadRefusal(
+  project: string,
+  detail: string,
+  retry = `${PLATFORM_SLUG} task list --project ${project} --json`,
+): Error {
   return new Error(
-    `could not read task data for project ${project}: ${withholdSecretShapedDetail(detail)}; retry: ${PLATFORM_SLUG} task list --project ${project} --json`,
+    `could not read task data for project ${project}: ${withholdSecretShapedDetail(detail)}; retry: ${retry}`,
   )
 }
 
@@ -70,6 +76,13 @@ function taskReference(row: unknown): HubTaskReference {
   return row as HubTaskReference
 }
 
+function taskReferenceFromShow(response: unknown): HubTaskReference | null {
+  if (!response || typeof response !== 'object') throw new Error('response was not an object')
+  const row = (response as { task?: unknown }).task
+  if (row === undefined || row === null) return null
+  return taskReference(row)
+}
+
 export async function taskCommand(command: string[]): Promise<string> {
   const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...command], {
     budget: 'self-cli',
@@ -88,6 +101,23 @@ export async function readHubTasks(project: string): Promise<HubTaskReference[]>
   return response.map(taskReference)
 }
 
+export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {
+  let output: string
+  try {
+    output = await taskCommand(['task', 'show', key, '--project', project, '--fresh', '--json'])
+  } catch (error) {
+    if (taskPullFailureNamesMissingTask(error, key)) return null
+    throw error
+  }
+  const response = JSON.parse(output) as unknown
+  return taskReferenceFromShow(response)
+}
+
+/** Classify only the canonical missing-task line; every other command failure remains a read error. */
+export function taskPullFailureNamesMissingTask(error: unknown, key: string): boolean {
+  return namesMissingTask(error instanceof Error ? error.message : String(error), key)
+}
+
 /** A reader failure is a refusal; callers with best-effort policy catch it explicitly. */
 export async function resolveHubTaskReference(
   project: string | null,
@@ -101,6 +131,37 @@ export async function resolveHubTaskReference(
   } catch (error) {
     throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
   }
+}
+
+/** Resolve one task from its mirror, refreshing only that task after a mirror miss. */
+export async function resolveOrPullHubTaskReference(
+  project: string,
+  key: string,
+  reader: HubTaskReader = readHubTasks,
+  puller: HubTaskPuller = pullHubTask,
+): Promise<HubTaskReference> {
+  const mirrored = await resolveHubTaskReference(project, key, reader)
+  if (mirrored) return mirrored
+  const retry = `${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`
+  let pulled: HubTaskReference | null
+  try {
+    pulled = await puller(project, key)
+  } catch (error) {
+    throw taskReadRefusal(project, error instanceof Error ? error.message : String(error), retry)
+  }
+  if (!pulled) {
+    throw new Error(
+      `no task ${key} in project ${project}; inspect available tasks with ${PLATFORM_SLUG} task list --project ${project} --json`,
+    )
+  }
+  if (pulled.project !== project || pulled.key !== key) {
+    throw taskReadRefusal(
+      project,
+      `fresh task read returned ${pulled.project}:${pulled.key}`,
+      retry,
+    )
+  }
+  return pulled
 }
 
 /** Resolve a mirror identity when available without making hub availability a prerequisite. */

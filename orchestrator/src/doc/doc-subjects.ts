@@ -5,6 +5,10 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 
+export function taskContextHolder(recordId: string): string {
+  return `task:${recordId}`
+}
+
 export function docSubjects(): {
   project: string[]
   stack: string[]
@@ -34,7 +38,7 @@ export function validDocSubjects(scope: DocScope): string {
       : subjectKind === 'stack'
         ? docSubjects().stack
         : subjectKind === 'holder'
-          ? ['task:<KEY>', 'session:<uuid>']
+          ? ['task:<uuid>', 'session:<uuid>']
           : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
 }
@@ -64,11 +68,11 @@ export function validateDocSubject(scope: DocScope, subject: string): void {
   }
   if (
     subjectKind === 'holder' &&
-    !/^task:[A-Z][A-Z0-9]*-\d+$/.test(subject) &&
+    !/^task:[0-9a-f-]{36}$/i.test(subject) &&
     !/^session:[0-9a-f-]{36}$/i.test(subject)
   ) {
     throw new Error(
-      `invalid context holder subject ${JSON.stringify(subject)}; use task:<KEY> or session:<uuid>`,
+      `invalid context holder subject ${JSON.stringify(subject)}; use task:<uuid> or session:<uuid>`,
     )
   }
 }

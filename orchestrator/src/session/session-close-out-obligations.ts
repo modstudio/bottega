@@ -73,7 +73,7 @@ function pendingScoreItem(row: PendingScoreRoot): SessionProcessLine {
   }
 }
 
-type LandedTaskCloseOutObservation = LandedTaskObservation & {
+type LandedTaskCloseOutObservation = Omit<LandedTaskObservation, 'task'> & {
   openAfterLandingAcknowledged: boolean
 }
 

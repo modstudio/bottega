@@ -20,6 +20,7 @@ import {
 } from '../workflow/workflow-task-reference.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 import { listOpenResumes } from './docs.ts'
 
 type ContextBriefHolder = {
@@ -118,7 +119,12 @@ export type ContextBriefWorkingKey = {
   project: string
 }
 
-type ContextBriefHolderReference = Omit<ContextBriefHolder, 'items'>
+type ContextBriefHolderReference =
+  | (Omit<ContextBriefHolder, 'items' | 'kind'> & { kind: 'session' })
+  | (Omit<ContextBriefHolder, 'items' | 'kind'> & {
+      kind: 'task' | 'epic'
+      recordId: string
+    })
 
 /** Decide holder order from task facts only; store reads are applied after this decision. */
 export function holderSequence(
@@ -137,6 +143,7 @@ export function holderSequence(
       key: task.key,
       title: task.title ?? '',
       kind: taskProfile(task.key, projectTasks),
+      recordId: task.record_id,
     })
   }
   for (const { key, project } of working) {
@@ -153,6 +160,27 @@ export function holderSequence(
     }
   }
   return holders
+}
+
+export function storedBriefHolders(
+  references: readonly ContextBriefHolderReference[],
+  database: Database,
+): ContextBriefHolder[] {
+  return references
+    .map((reference) => {
+      if (reference.kind === 'session') {
+        return {
+          ...reference,
+          items: storedItems(`session:${reference.key}`, database),
+        }
+      }
+      const { recordId, ...holder } = reference
+      return {
+        ...holder,
+        items: storedItems(taskContextHolder(recordId), database),
+      }
+    })
+    .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
 }
 
 function autonomyLine(context: Awaited<ReturnType<typeof architectSessionContext>>): string {
@@ -216,15 +244,7 @@ export async function contextBrief(
     (notice) => notice.purpose === 'request',
   ).length
   const references = holderSequence(session, working, taskRows)
-  const holders = references
-    .map((holder) => ({
-      ...holder,
-      items: storedItems(
-        holder.kind === 'session' ? `session:${holder.key}` : `task:${holder.key}`,
-        database,
-      ),
-    }))
-    .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
+  const holders = storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind !== 'session')
   return {
     session,

@@ -136,8 +136,12 @@ export type Project = {
 }
 
 /** The sole registered project declaring the task key's prefix, when there is one. */
+export function taskKeyPrefix(key: string): string | null {
+  return /^([A-Z][A-Z0-9]*)-/.exec(key)?.[1] ?? null
+}
+
 export function projectForTaskKey(key: string, registered: readonly Project[]): Project | null {
-  const prefix = /^([A-Z][A-Z0-9]*)-/.exec(key)?.[1]
+  const prefix = taskKeyPrefix(key)
   if (!prefix) return null
   const matches = registered.filter((project) => project.settings.keyPrefixes?.includes(prefix))
   return matches.length === 1 ? matches[0]! : null
