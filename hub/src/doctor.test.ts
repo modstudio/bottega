@@ -45,6 +45,10 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
     expect(slowCollectionDoctorLine(now)).toBe('collect slow   FAIL — 900s old')
   })
 
+  test('includes slow collection health in hub doctor output', async () => {
+    expect(await hubDoctorLines()).toContain('collect slow   FAIL — never completed')
+  })
+
   test('reports intervals whose task display key has no UUID link', async () => {
     writeTransaction((conn) =>
       conn

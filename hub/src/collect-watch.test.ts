@@ -57,6 +57,7 @@ test('a slow tick during a busy fast cycle runs once as soon as fast finishes', 
     slowTick()
     finishFast()
     await slowFinished
+    while (leaseHolder() !== null) await Bun.sleep(0)
     await Bun.sleep(0)
     expect(order).toEqual(['initial', 'fast:start', 'fast:end', 'slow'])
   } finally {

@@ -7,6 +7,7 @@ import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './m
 import { hostedOutboxDoctorLines } from './outbox.ts'
 import { projects } from './projects.ts'
 import { formatServiceRevisionDoctor } from './service-revision.ts'
+import { readSettingStamp } from './setting-stamp.ts'
 import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
 
 export const INTERVAL_UNLINKED_KEY_LIMIT = 10
@@ -71,23 +72,12 @@ function questionCommitTaskLinkDoctor(): string[] {
   ]
 }
 
-function slowCollectionStamp(): string | null {
-  const row = db()
-    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key='collect.slow.at'`)
-    .get()
-  if (!row) return null
-  try {
-    const value: unknown = JSON.parse(row.value)
-    return typeof value === 'string' ? value : row.value
-  } catch {
-    return row.value
-  }
-}
-
 export function slowCollectionDoctorLine(now = Date.now()): string {
-  const health = slowCollectionHealth(now, slowCollectionStamp())
-  if (health.status === 'missing') return 'collect slow   FAIL — never completed'
-  if (health.status === 'invalid') return 'collect slow   FAIL — completion stamp is invalid'
+  const health = slowCollectionHealth(now, readSettingStamp('collect.slow.at'))
+  if (health.ageMs === null)
+    return health.status === 'missing'
+      ? 'collect slow   FAIL — never completed'
+      : 'collect slow   FAIL — completion stamp is invalid'
   const age = `${Math.floor(health.ageMs / 1_000)}s old`
   return `collect slow   ${health.status === 'current' ? 'pass' : 'FAIL'} — ${age}`
 }

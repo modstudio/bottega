@@ -9,7 +9,11 @@ import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
-import { type WatchTick, watchCycleDecision } from './collect-watch-schedule.ts'
+import {
+  type WatchRunningCycle,
+  type WatchTick,
+  watchCycleDecision,
+} from './collect-watch-schedule.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
@@ -47,6 +51,7 @@ import { HostedOutboxDrainSchedule, type PendingHostedOutbox } from './outbox-fa
 import { pruneOutboxTrace } from './outbox-trace.ts'
 import { applyProjectRegisterNames } from './project-record-id.ts'
 import { rollUpDays } from './query.ts'
+import { readSettingStamp, stampSetting } from './setting-stamp.ts'
 import {
   acquireStoredLeaseIntent,
   acquireStoredLeaseWhen,
@@ -60,13 +65,7 @@ import {
 import { hoursAgo } from './time.ts'
 import { WRITE_HOLD_LOG_MS } from './write-hold.ts'
 
-/**
- * Two cadences, because the legs cost very different amounts.
- *
- * Transcripts and runs are local reads over a short window and take under a
- * second; the trackers are four remote round trips and take seconds, so they
- * run rarely. Git is cheap but only changes on commit, so it rides with them.
- */
+/** The liveness window for a watcher heartbeat. */
 export const WATCH_LIVE_MS = 3 * FAST_MS
 
 const WATCH_ALIVE_KEY = 'collect.watch.alive'
@@ -613,16 +612,6 @@ export function collectLease(
   }
 }
 
-const stamp = (key: string) =>
-  writeTransaction((conn) =>
-    conn
-      .query(
-        `INSERT INTO setting (key, value) VALUES (?, ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      .run(key, JSON.stringify(nowIso())),
-  )
-
 function watcherAliveValue(): string | null {
   return (
     db()
@@ -677,17 +666,8 @@ function refreshWatcherAliveIfHeld(
  */
 export function runsSince(now = Date.now()): string {
   const windowStart = new Date(now - 2 * 3600_000).toISOString()
-  const row = db()
-    .query<{ value: string }, []>(`SELECT value FROM setting WHERE key = 'collect.runs.at'`)
-    .get()
-  if (!row) return windowStart
-  let last: string
-  try {
-    const parsed = JSON.parse(row.value)
-    last = typeof parsed === 'string' ? parsed : row.value
-  } catch {
-    last = row.value
-  }
+  const last = readSettingStamp('collect.runs.at')
+  if (last === null) return windowStart
   if (!Number.isFinite(Date.parse(last))) return windowStart
   return last < windowStart ? last : windowStart
 }
@@ -734,7 +714,7 @@ export async function collectFast(
   if (runsFastLeg) {
     rollUpDays()
     guard?.assertHeld('roll up days')
-    stamp('collect.at')
+    stampSetting('collect.at')
   }
   return results
 }
@@ -863,7 +843,7 @@ async function collectSlow(
   const results = slow.results
   let lastCompleted = slow.lastCompleted
   if (slow.ran) {
-    stamp('collect.slow.at')
+    stampSetting('collect.slow.at')
     pruneOutboxTrace()
   }
   if (!only && resolveHostedUrl()) {
@@ -882,7 +862,7 @@ async function collectSlow(
       rollUpDays()
       guard?.assertHeld('roll up days')
     }
-    stamp('collect.at')
+    stampSetting('collect.at')
   }
   return results
 }
@@ -989,7 +969,7 @@ export async function collectOnce(
   guard.assertHeld(previous)
   rollUpDays()
   guard.assertHeld('roll up days')
-  stamp('collect.at')
+  stampSetting('collect.at')
   return results
 }
 
@@ -1029,17 +1009,24 @@ function watchOutboxSchedule(
   )
 }
 
+async function runFastWatchPreamble(
+  deliveryOffReason: string | null,
+  leaseGuard: LeaseGuard,
+): Promise<CollectLegResult[]> {
+  leaseGuard.assertHeld()
+  await deliverOperatorNotifications()
+  leaseGuard.assertHeld('operator notifications')
+  await deliverOperatorWaitingEmailsWhenAllowed(deliveryOffReason)
+  leaseGuard.assertHeld('operator waiting emails')
+  return collectFast({}, leaseGuard)
+}
+
 function initialWatchWork(
   deliveryOffReason: string | null,
   outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
 ): NonNullable<WatchDependencies['initial']> {
   return async (leaseGuard) => {
-    leaseGuard.assertHeld()
-    await deliverOperatorNotifications()
-    leaseGuard.assertHeld('operator notifications')
-    await deliverOperatorWaitingEmailsWhenAllowed(deliveryOffReason)
-    leaseGuard.assertHeld('operator waiting emails')
-    const fastResults = await collectFast({}, leaseGuard)
+    const fastResults = await runFastWatchPreamble(deliveryOffReason, leaseGuard)
     const slowResults = await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)
     return [...fastResults, ...slowResults]
   }
@@ -1052,7 +1039,7 @@ export function watch(
 ) {
   const outboxSchedule = watchOutboxSchedule(dependencies)
   const deliveryOffReason = hostedDeliveryRefusal()
-  let busy = false
+  let running: WatchRunningCycle = null
   let slowOwed = false
   let stopping = false
   let reportedDeliveryOff = false
@@ -1062,10 +1049,11 @@ export function watch(
       guard: LeaseGuard,
       outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
     ) => Promise<CollectCycleResult>,
+    cycle: Exclude<WatchRunningCycle, null>,
     heartbeat = false,
   ) => {
-    if (stopping || busy || !acquireLease(holder)) return false
-    busy = true
+    if (stopping || running !== null || !acquireLease(holder)) return false
+    running = cycle
     if (heartbeat) attemptWatcherAliveWrite(() => writeWatcherAlive(holder), onError)
     void (async () => {
       // A failed collect must not stop the loop or take the server down: the
@@ -1083,7 +1071,7 @@ export function watch(
       } catch (e) {
         onError(e as Error)
       } finally {
-        busy = false
+        running = null
         dispatch(null)
       }
     })()
@@ -1093,12 +1081,7 @@ export function watch(
   const fast =
     dependencies.fast ??
     (async (leaseGuard) => {
-      leaseGuard.assertHeld()
-      await deliverOperatorNotifications()
-      leaseGuard.assertHeld('operator notifications')
-      await deliverOperatorWaitingEmailsWhenAllowed(deliveryOffReason)
-      leaseGuard.assertHeld('operator waiting emails')
-      const results = await collectFast({}, leaseGuard)
+      const results = await runFastWatchPreamble(deliveryOffReason, leaseGuard)
       if (outboxSchedule) {
         const result = await collectFastHostedOutbox(
           outboxSchedule,
@@ -1119,16 +1102,20 @@ export function watch(
   // same guard so scheduling starts with a real observation.
   const initial = dependencies.initial ?? initialWatchWork(deliveryOffReason, outboxSchedule)
   dispatch = (tick) => {
-    const decision = watchCycleDecision({ busy, slowOwed, tick, stopping })
+    const decision = watchCycleDecision({ running, slowOwed, tick, stopping })
     slowOwed = decision.slowOwed
     if (!decision.run) {
-      if (busy && tick === 'fast') refreshWatcherAliveIfHeld(true, holder, onError)
+      if (running !== null && tick === 'fast') refreshWatcherAliveIfHeld(true, holder, onError)
       return
     }
-    const started = startCycle(decision.run === 'fast' ? fast : slow, decision.run === 'fast')
+    const started = startCycle(
+      decision.run === 'fast' ? fast : slow,
+      decision.run,
+      decision.run === 'fast',
+    )
     if (!started && decision.run === 'slow') slowOwed = true
   }
-  startCycle(initial, true)
+  startCycle(initial, 'initial', true)
   const a = setInterval(() => dispatch('fast'), FAST_MS)
   const b = setInterval(() => dispatch('slow'), SLOW_MS)
 
@@ -1136,7 +1123,7 @@ export function watch(
     stopping = true
     clearInterval(a)
     clearInterval(b)
-    while (busy) await Bun.sleep(10)
+    while (running !== null) await Bun.sleep(10)
     releaseLease(holder)
     attemptWatcherAliveWrite(() => deleteWatcherAlive(holder), onError)
   }
