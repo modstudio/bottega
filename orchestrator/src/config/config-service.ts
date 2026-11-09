@@ -4,6 +4,7 @@ import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
+  ConfigClientError,
   type ConfigDestination,
   type ConfigScope,
   type ConfigSecret,
