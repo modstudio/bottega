@@ -1,29 +1,141 @@
-import { type RecordConfigSecretsResponse, trpc } from '@bottega/hub-data/client'
+import {
+  type HostedProjectRow,
+  queryClient,
+  type RecordConfigSecretsResponse,
+  trpc,
+} from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Button } from '@bottega/hub-ui/button'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { ErrorState } from '@bottega/hub-ui/error-state'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { relativeTime } from '@bottega/hub-util/format'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import {
+  type CredentialPreference,
+  completeCredentialFields,
+  credentialIdentityPath,
+} from '../../../../shared/credential.ts'
+import { credentialPayerFromScope } from '../../../../shared/credential-resolution.ts'
 
 export const Route = createFileRoute('/secrets')({ component: SecretsRoute })
 
 type SecretRow = RecordConfigSecretsResponse[number]
+type TypedCredentialRow = SecretRow & NonNullable<ReturnType<typeof completeCredentialFields>>
 
-const SECRET_COMMAND = `${PLATFORM_SLUG} machine config secret`
+export type CredentialDisplayRow = TypedCredentialRow & {
+  credential: string
+  boundTo: string
+  payer: string
+}
 
-const OWNER_LABEL: Record<SecretRow['scope'], string> = { user: 'You', space: 'This space' }
+export type PreferenceDisplayRow = CredentialPreference & {
+  credential: string
+  project: string
+  paysWith: string
+}
 
-const columns: CollectionColumn<SecretRow>[] = [
+const CREDENTIAL_COMMAND = `${PLATFORM_SLUG} credential`
+const LEGACY_OWNER_LABEL: Record<SecretRow['scope'], string> = {
+  user: 'You',
+  space: 'This space',
+}
+const PAYER_LABEL = { personal: 'You', shared: 'Shared' } as const
+
+export function splitSecretRows(rows: SecretRow[]): {
+  credentials: TypedCredentialRow[]
+  legacy: SecretRow[]
+} {
+  const credentials: TypedCredentialRow[] = []
+  const legacy: SecretRow[] = []
+  for (const row of rows) {
+    const fields = completeCredentialFields(row)
+    if (fields) credentials.push({ ...row, ...fields })
+    else legacy.push(row)
+  }
+  return { credentials, legacy }
+}
+
+function projectName(
+  projectId: string | null,
+  projects: HostedProjectRow[],
+  nullProjectLabel: string,
+): string {
+  if (projectId === null) return nullProjectLabel
+  return projects.find((project) => project.id === projectId)?.name ?? 'Unknown project'
+}
+
+export function credentialDisplayRows(
+  rows: TypedCredentialRow[],
+  projects: HostedProjectRow[],
+): CredentialDisplayRow[] {
+  return rows.map((row) => ({
+    ...row,
+    credential: credentialIdentityPath(row.provider, row.name, row.type),
+    boundTo: projectName(row.projectId, projects, 'This space'),
+    payer: PAYER_LABEL[credentialPayerFromScope(row.scope)],
+  }))
+}
+
+export function preferenceDisplayRows(
+  rows: CredentialPreference[],
+  projects: HostedProjectRow[],
+): PreferenceDisplayRow[] {
+  return rows.map((row) => ({
+    ...row,
+    credential: credentialIdentityPath(row.provider, row.name, row.type),
+    project: projectName(row.projectId, projects, 'All projects'),
+    paysWith: `${PAYER_LABEL[row.payer]}, ${row.binding} credential`,
+  }))
+}
+
+const credentialColumns: CollectionColumn<CredentialDisplayRow>[] = [
+  {
+    id: 'credential',
+    label: 'Credential',
+    phone: 'title',
+    render: (row) => row.credential,
+  },
+  { id: 'mode', label: 'Mode', phone: 'aside', render: (row) => row.mode },
+  { id: 'binding', label: 'Bound to', phone: 'line', render: (row) => row.boundTo },
+  { id: 'payer', label: 'Payer', phone: 'line', render: (row) => row.payer },
+  { id: 'hint', label: 'Hint', phone: 'more', render: (row) => row.hint },
+  {
+    id: 'changed',
+    label: 'Last changed',
+    phone: 'more',
+    render: (row) => relativeTime(row.updatedAt),
+  },
+]
+
+const preferenceColumns: CollectionColumn<PreferenceDisplayRow>[] = [
+  {
+    id: 'credential',
+    label: 'Credential',
+    phone: 'title',
+    render: (row) => row.credential,
+  },
+  { id: 'mode', label: 'Mode', phone: 'aside', render: (row) => row.mode },
+  { id: 'project', label: 'Project', phone: 'line', render: (row) => row.project },
+  { id: 'payer', label: 'Pays with', phone: 'line', render: (row) => row.paysWith },
+  {
+    id: 'changed',
+    label: 'Last changed',
+    phone: 'more',
+    render: (row) => relativeTime(row.updatedAt),
+  },
+]
+
+const legacyColumns: CollectionColumn<SecretRow>[] = [
   { id: 'name', label: 'Name', phone: 'title', render: (secret) => secret.key },
   {
     id: 'owner',
     label: 'Belongs to',
     phone: 'aside',
-    render: (secret) => OWNER_LABEL[secret.scope],
+    render: (secret) => LEGACY_OWNER_LABEL[secret.scope],
   },
   {
     id: 'changed',
@@ -38,32 +150,170 @@ function SecretsRoute() {
   return <SecretsPage />
 }
 
+type ProjectDependentProps = {
+  projects: HostedProjectRow[]
+}
+
+function CredentialsCollection({
+  secrets,
+  secretsPending,
+  secretsError,
+  projects,
+}: ProjectDependentProps & {
+  secrets: SecretRow[] | undefined
+  secretsPending: boolean
+  secretsError: { message: string } | null
+}) {
+  if (secretsPending) return <EmptyState title="Loading credentials..." />
+  if (secretsError)
+    return <ErrorState title="Could not load credentials" message={secretsError.message} />
+  const split = splitSecretRows(secrets ?? [])
+  const rows = credentialDisplayRows(split.credentials, projects)
+  return (
+    <Collection
+      title="Credentials"
+      count={rows.length}
+      columns={credentialColumns}
+      rows={rows}
+      getKey={(row) => `${row.scope}:${row.projectId ?? 'space'}:${row.environment}:${row.key}`}
+      onOpen={() => undefined}
+      empty={{
+        title: 'No credentials in this space.',
+        hint: `Set one with ${CREDENTIAL_COMMAND} set.`,
+      }}
+    />
+  )
+}
+
+function PreferencesCollection({
+  preferences,
+  preferencesPending,
+  preferencesError,
+  projects,
+  onClear,
+  clearPending,
+  clearError,
+}: ProjectDependentProps & {
+  preferences: CredentialPreference[] | undefined
+  preferencesPending: boolean
+  preferencesError: { message: string } | null
+  onClear: (row: CredentialPreference) => void
+  clearPending: boolean
+  clearError: { message: string } | null
+}) {
+  if (preferencesPending) return <EmptyState title="Loading payer preferences..." />
+  if (preferencesError)
+    return (
+      <ErrorState title="Could not load payer preferences" message={preferencesError.message} />
+    )
+  const rows = preferenceDisplayRows(preferences ?? [], projects)
+  return (
+    <>
+      <Collection
+        title="Payer preferences"
+        count={rows.length}
+        columns={preferenceColumns}
+        rows={rows}
+        getKey={(row) =>
+          `${row.projectId ?? 'space'}:${row.credential}:${row.mode}:${row.environment}`
+        }
+        onOpen={() => undefined}
+        rowActions={(row) => (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={clearPending}
+            onClick={() => onClear(row)}
+          >
+            Clear
+          </Button>
+        )}
+        empty={{
+          title: 'No payer preferences in this space.',
+          hint: `Choose one with ${CREDENTIAL_COMMAND} prefer.`,
+        }}
+      />
+      {clearError ? (
+        <p data-tone="error" className="mb-3 text-status-text">
+          {clearError.message}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+function LegacyKeysCollection({
+  secrets,
+  pending,
+  error,
+}: {
+  secrets: SecretRow[] | undefined
+  pending: boolean
+  error: { message: string } | null
+}) {
+  if (pending) return <EmptyState title="Loading legacy keys..." />
+  if (error) return <ErrorState title="Could not load legacy keys" message={error.message} />
+  const rows = splitSecretRows(secrets ?? []).legacy
+  return (
+    <Collection
+      title="Legacy keys"
+      count={rows.length}
+      columns={legacyColumns}
+      rows={rows}
+      getKey={(secret) => `${secret.scope}:${secret.environment}:${secret.key}`}
+      onOpen={() => undefined}
+      empty={{
+        title: 'No legacy keys in this space.',
+        hint: `Set one with ${PLATFORM_SLUG} machine config secret set.`,
+      }}
+    />
+  )
+}
+
 function SecretsPage() {
   const secrets = useQuery(trpc.record.configSecrets.queryOptions())
+  const preferences = useQuery(trpc.record.credentialPreferences.queryOptions())
+  const projects = useQuery(trpc.record.projects.queryOptions())
+  const clearPreference = useMutation(
+    trpc.record.clearCredentialPreference.mutationOptions({
+      onSuccess: () =>
+        queryClient.invalidateQueries({
+          queryKey: trpc.record.credentialPreferences.queryKey(),
+        }),
+    }),
+  )
+  const projectProps = { projects: projects.data ?? [] }
   return (
     <section>
       <PageHeader
         title="Secrets"
-        about={`Sealed secrets your machines resolve when they run a command. This page lists their names only; values are encrypted for the machines that hold config access and never reach this page. Set or remove one with ${SECRET_COMMAND}.`}
+        about={`Set and delete values with ${CREDENTIAL_COMMAND} set and ${CREDENTIAL_COMMAND} delete, and choose a payer with ${CREDENTIAL_COMMAND} prefer. Values never reach this page.`}
       />
-      {secrets.isPending ? (
-        <EmptyState title="Loading secrets..." />
-      ) : secrets.error ? (
-        <ErrorState title="Could not load secrets" message={secrets.error.message} />
-      ) : (
-        <Collection
-          title="Secrets"
-          count={secrets.data.length}
-          columns={columns}
-          rows={secrets.data}
-          getKey={(secret) => `${secret.scope}:${secret.key}`}
-          onOpen={() => undefined}
-          empty={{
-            title: 'No secrets in this space.',
-            hint: `Set one with ${SECRET_COMMAND} set.`,
-          }}
-        />
-      )}
+      {projects.error ? (
+        <p data-tone="error" className="mb-3 text-status-text">
+          <strong>Could not load project names:</strong> {projects.error.message}
+        </p>
+      ) : null}
+      <CredentialsCollection
+        secrets={secrets.data}
+        secretsPending={secrets.isPending}
+        secretsError={secrets.error}
+        {...projectProps}
+      />
+      <PreferencesCollection
+        preferences={preferences.data}
+        preferencesPending={preferences.isPending}
+        preferencesError={preferences.error}
+        onClear={(row) => clearPreference.mutate(row)}
+        clearPending={clearPreference.isPending}
+        clearError={clearPreference.error}
+        {...projectProps}
+      />
+      <LegacyKeysCollection
+        secrets={secrets.data}
+        pending={secrets.isPending}
+        error={secrets.error}
+      />
     </section>
   )
 }

@@ -1,5 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
+import { credentialPreferenceIdentitySchema } from '../../record-client.ts'
 import type { Context } from '../context.ts'
 import { email } from './record-inputs.ts'
 import { recordClient } from './record-router-client.ts'
@@ -9,6 +10,10 @@ const emailInput = z.object({ email })
 
 export const recordConfigAccessRouter = t.router({
   configSecrets: t.procedure.query(({ ctx }) => recordClient(ctx).configSecrets()),
+  credentialPreferences: t.procedure.query(({ ctx }) => recordClient(ctx).credentialPreferences()),
+  clearCredentialPreference: t.procedure
+    .input(credentialPreferenceIdentitySchema)
+    .mutation(({ ctx, input }) => recordClient(ctx).clearCredentialPreference(input)),
   configAccess: t.procedure.query(({ ctx }) => recordClient(ctx).configAccess()),
   grantConfigAccess: t.procedure
     .input(emailInput)

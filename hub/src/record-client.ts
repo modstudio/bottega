@@ -2,6 +2,13 @@ import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
 import {
+  CREDENTIAL_BINDINGS,
+  CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_MODES,
+  CREDENTIAL_PAYERS,
+  CREDENTIAL_SLUG_PATTERN,
+} from '../../shared/credential.ts'
+import {
   DOC_KINDS,
   DOC_STATUSES,
   type DocAudience,
@@ -449,13 +456,32 @@ const configEntrySchema = z.object({
   rowVersion: z.number().int().positive(),
   updatedAt: z.string().datetime({ offset: true }),
 })
-/** The config environment every hub screen reads and writes. */
+/** The environment the hub config entry screens read and write. */
 const DEFAULT_CONFIG_ENVIRONMENT = 'default'
 /** A sealed secret's metadata; the listing carries no value and no envelope. */
 const configSecretSchema = z.object({
   key: z.string(),
   environment: z.string(),
   scope: z.enum(['user', 'space']),
+  projectId: z.string().nullable(),
+  provider: z.string().nullable(),
+  name: z.string().nullable(),
+  type: z.string().nullable(),
+  hint: z.string().nullable(),
+  mode: z.enum(CREDENTIAL_MODES).nullable(),
+  updatedAt: z.string().datetime({ offset: true }),
+})
+export const credentialPreferenceIdentitySchema = z.object({
+  projectId: z.string().uuid().nullable(),
+  provider: z.string().regex(CREDENTIAL_SLUG_PATTERN),
+  name: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable(),
+  type: z.string().regex(CREDENTIAL_SLUG_PATTERN),
+  mode: z.enum(CREDENTIAL_MODES),
+  environment: z.enum(CREDENTIAL_ENVIRONMENTS),
+})
+const credentialPreferenceSchema = credentialPreferenceIdentitySchema.extend({
+  payer: z.enum(CREDENTIAL_PAYERS),
+  binding: z.enum(CREDENTIAL_BINDINGS),
   updatedAt: z.string().datetime({ offset: true }),
 })
 const settingsPermissionResultSchema = z.object({
@@ -789,12 +815,28 @@ function recordConfigClient(options: RecordClientOptions) {
           body: JSON.stringify({ ...input, environment: DEFAULT_CONFIG_ENVIRONMENT }),
         },
       ),
+    // The listing spans every environment because typed credentials live under local.
     configSecrets: () =>
+      request(options, '/v1/config/secrets', z.object({ items: z.array(configSecretSchema) })).then(
+        ({ items }) => items,
+      ),
+    credentialPreferences: () =>
       request(
         options,
-        query('/v1/config/secrets', { environment: DEFAULT_CONFIG_ENVIRONMENT }),
-        z.object({ items: z.array(configSecretSchema) }),
+        '/v1/config/credential-preferences',
+        z.object({ items: z.array(credentialPreferenceSchema) }),
       ).then(({ items }) => items),
+    clearCredentialPreference: (input: z.input<typeof credentialPreferenceIdentitySchema>) =>
+      request(
+        options,
+        '/v1/config/credential-preferences',
+        z.object({ deleted: z.literal(true) }),
+        {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(credentialPreferenceIdentitySchema.parse(input)),
+        },
+      ),
   }
 }
 
