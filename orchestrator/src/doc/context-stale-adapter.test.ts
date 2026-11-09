@@ -184,7 +184,7 @@ test('reports undeclared and unresolved working keys with record-pull remedies',
     {
       holder: 'STAR-UNKNOWN',
       workedAt: '2026-11-09T09:00:00Z',
-      reason: `no project declares task prefix STAR; run ${PLATFORM_SLUG} record pull`,
+      reason: `no single project declares the task prefix of STAR-UNKNOWN; declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
     },
   ])
 })

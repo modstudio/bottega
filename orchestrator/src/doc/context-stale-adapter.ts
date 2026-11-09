@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
-import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
+import { projectForTaskKey, projects } from '../project/projects.ts'
 import { questionTaskHolderSql } from '../run/question-open.ts'
 import { type CursorTrailEntry, isClosedStep } from '../workflow/workflow-cursor-trail.ts'
 import {
@@ -85,7 +85,7 @@ export async function staleContextForSession(
       return [
         {
           holder,
-          reason: `no project declares task prefix ${taskKeyPrefix(holder)}; run ${PLATFORM_SLUG} record pull`,
+          reason: `no single project declares the task prefix of ${holder}; declare it in one project's keyPrefixes with ${PLATFORM_SLUG} project set <project> --settings`,
         },
       ]
     }
