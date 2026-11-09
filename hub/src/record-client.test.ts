@@ -94,9 +94,15 @@ describe('record client', () => {
       return jsonResponse({
         items: [
           {
-            key: 'token',
-            environment: 'default',
+            key: 'openrouter/api-key#live@local',
+            environment: 'local',
             scope: 'space',
+            projectId: '01990000-0000-7000-8000-000000000013',
+            provider: 'openrouter',
+            name: null,
+            type: 'api-key',
+            hint: 'sk-o...test',
+            mode: 'live',
             updatedAt: '2026-11-05T12:00:00.000Z',
             value: 'plain-text-leak',
             envelope: 'opaque-envelope',
@@ -110,10 +116,46 @@ describe('record client', () => {
     expect(urls).toEqual(['https://api.example.test/v1/config/secrets?environment=default'])
     expect(secrets).toEqual([
       {
-        key: 'token',
-        environment: 'default',
+        key: 'openrouter/api-key#live@local',
+        environment: 'local',
         scope: 'space',
+        projectId: '01990000-0000-7000-8000-000000000013',
+        provider: 'openrouter',
+        name: null,
+        type: 'api-key',
+        hint: 'sk-o...test',
+        mode: 'live',
         updatedAt: '2026-11-05T12:00:00.000Z',
+      },
+    ])
+  })
+
+  test('clears a credential preference by identity', async () => {
+    const requests: Array<{ url: string; method: string | undefined; body: string | null }> = []
+    const client = clientWith(async (url, init) => {
+      requests.push({
+        url: String(url),
+        method: init?.method,
+        body: typeof init?.body === 'string' ? init.body : null,
+      })
+      return jsonResponse({ deleted: true })
+    })
+    const identity = {
+      projectId: '01990000-0000-7000-8000-000000000013',
+      provider: 'openrouter',
+      name: null,
+      type: 'api-key',
+      mode: 'live' as const,
+      environment: 'local' as const,
+    }
+
+    await client.clearCredentialPreference(identity)
+
+    expect(requests).toEqual([
+      {
+        url: 'https://api.example.test/v1/config/credential-preferences',
+        method: 'DELETE',
+        body: JSON.stringify(identity),
       },
     ])
   })

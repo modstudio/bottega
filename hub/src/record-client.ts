@@ -2,6 +2,12 @@ import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES } from '../../shared/board-purpose.ts'
 import {
+  CREDENTIAL_BINDINGS,
+  CREDENTIAL_ENVIRONMENTS,
+  CREDENTIAL_MODES,
+  CREDENTIAL_PAYERS,
+} from '../../shared/credential.ts'
+import {
   DOC_KINDS,
   DOC_STATUSES,
   type DocAudience,
@@ -456,7 +462,32 @@ const configSecretSchema = z.object({
   key: z.string(),
   environment: z.string(),
   scope: z.enum(['user', 'space']),
+  projectId: z.string().nullable(),
+  provider: z.string().nullable(),
+  name: z.string().nullable(),
+  type: z.string().nullable(),
+  hint: z.string().nullable(),
+  mode: z.enum(CREDENTIAL_MODES).nullable(),
   updatedAt: z.string().datetime({ offset: true }),
+})
+const credentialPreferenceSchema = z.object({
+  projectId: z.string().uuid().nullable(),
+  provider: z.string(),
+  name: z.string().nullable(),
+  type: z.string(),
+  mode: z.enum(CREDENTIAL_MODES),
+  environment: z.enum(CREDENTIAL_ENVIRONMENTS),
+  payer: z.enum(CREDENTIAL_PAYERS),
+  binding: z.enum(CREDENTIAL_BINDINGS),
+  updatedAt: z.string().datetime({ offset: true }),
+})
+const credentialPreferenceIdentitySchema = credentialPreferenceSchema.pick({
+  projectId: true,
+  provider: true,
+  name: true,
+  type: true,
+  mode: true,
+  environment: true,
 })
 const settingsPermissionResultSchema = z.object({
   revision: z.string().uuid(),
@@ -795,6 +826,23 @@ function recordConfigClient(options: RecordClientOptions) {
         query('/v1/config/secrets', { environment: DEFAULT_CONFIG_ENVIRONMENT }),
         z.object({ items: z.array(configSecretSchema) }),
       ).then(({ items }) => items),
+    credentialPreferences: () =>
+      request(
+        options,
+        '/v1/config/credential-preferences',
+        z.object({ items: z.array(credentialPreferenceSchema) }),
+      ).then(({ items }) => items),
+    clearCredentialPreference: (input: z.input<typeof credentialPreferenceIdentitySchema>) =>
+      request(
+        options,
+        '/v1/config/credential-preferences',
+        z.object({ deleted: z.literal(true) }),
+        {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(credentialPreferenceIdentitySchema.parse(input)),
+        },
+      ),
   }
 }
 
