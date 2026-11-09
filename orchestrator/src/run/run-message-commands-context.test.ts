@@ -31,7 +31,7 @@ test('answering a continuation turn question returns its root task moment line',
     session: 'orch-test-session',
   })
   const question = db()
-    .query<{ number: number }, [string]>(`${newQuestionSql()} RETURNING number`)
+    .query<{ number: number }, [string, string, string]>(`${newQuestionSql()} RETURNING number`)
     .get(turn, new Date().toISOString(), 'Which shape?')!
 
   const writes = await answerCommand(turn, ['Keep the approved shape.'], true, false, flags, {
