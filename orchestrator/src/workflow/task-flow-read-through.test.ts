@@ -183,6 +183,36 @@ test('hosted stage vacates a retired local cursor holding its keyed slot', () =>
   }
 })
 
+test('hosted stage updates the same retired cursor in place without vacating its slot', () => {
+  const ids = fixture()
+  try {
+    const taskId = newRecordId()
+    const flowId = newRecordId()
+    const stageId = newRecordId()
+    cacheHostedTaskFlow(ids.database, 'DEV-2098', hosted(ids, { taskId, flowId, stageId }))
+    ids.database
+      .query("UPDATE workflow_cursor SET state='abandoned' WHERE record_id=?")
+      .run(stageId)
+
+    cacheHostedTaskFlow(
+      ids.database,
+      'DEV-2098',
+      hosted(ids, { taskId, flowId, stageId, stageRevision: 5 }),
+    )
+
+    expect(
+      ids.database.query('SELECT record_id,instance_id,state,revision FROM workflow_cursor').all(),
+    ).toEqual([{ record_id: stageId, instance_id: '', state: 'running', revision: 5 }])
+    expect(
+      ids.database
+        .query("SELECT count(*) count FROM workflow_cursor WHERE instance_id LIKE '#%'")
+        .get(),
+    ).toEqual({ count: 0 })
+  } finally {
+    ids.database.close()
+  }
+})
+
 test('hosted stage refuses an open local cursor holding its keyed slot and rolls back', () => {
   const ids = fixture()
   try {

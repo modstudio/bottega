@@ -50,13 +50,15 @@ export function vacateRetiredWorkflowKeySlot(
   mode: string,
   key: string,
   d: Database,
+  exceptRecordId: string | null = null,
 ): void {
   d.query(
     `UPDATE workflow_cursor SET instance_id=instance_id || '#' || number
      WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
        AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
+       AND (? IS NULL OR record_id<>?)
        AND state IN ('done','abandoned')`,
-  ).run(project, workflow, mode, key)
+  ).run(project, workflow, mode, key, exceptRecordId, exceptRecordId)
 }
 
 /** Owns the complete persisted workflow-cursor row shape for local and hosted inserts. */
@@ -71,7 +73,14 @@ export function insertWorkflowCursorRow(
       .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
       .get(row.project)!.record_id
   if (row.workflowKey && row.instanceId === '') {
-    vacateRetiredWorkflowKeySlot(row.project, row.workflow, row.mode, row.workflowKey, database)
+    vacateRetiredWorkflowKeySlot(
+      row.project,
+      row.workflow,
+      row.mode,
+      row.workflowKey,
+      database,
+      row.recordId,
+    )
     if (conflict === 'hosted-record') {
       const local = database
         .query<{ number: number; record_id: string }, [string, string, string, string, string]>(
