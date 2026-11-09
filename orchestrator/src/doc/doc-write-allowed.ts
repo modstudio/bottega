@@ -65,10 +65,12 @@ export type DocRevisionOp =
   | 'set'
   | 'consume'
   | 'delete'
-  | 'context-drop'
   | 'restore'
   | 'import'
   | 'backfill'
+
+/** The holder a caller named to `agent context drop`, so its refusal can repeat that verb. */
+export type ContextDropTarget = { kind: 'task' | 'session'; value: string }
 
 export type CanonRow = { slug: string; body: string }
 export type CanonWriteTree = { project: { name: string }; root: string }
@@ -260,7 +262,7 @@ export type DocRevisionWriteInput = {
   current: string | null
   isCreate: boolean
   op?: DocRevisionOp
-  contextDropTarget?: { kind: 'task' | 'session'; value: string }
+  contextDropTarget?: ContextDropTarget
   scope: string
   subject: string | null
   slug: string
@@ -334,11 +336,11 @@ function revisionRemedy(
   operation: 'create' | 'update',
 ): string {
   if (input.scope === 'context') {
+    if (input.contextDropTarget) {
+      return `${PLATFORM_SLUG} agent context drop --${input.contextDropTarget.kind} ${input.contextDropTarget.value} --id ${input.slug} --expected-revision ${current}`
+    }
     if (input.op === 'delete') {
       return `${PLATFORM_SLUG} doc rm ${input.slug} --scope context --subject ${input.subject} --reason <text> --expect ${current}`
-    }
-    if (input.op === 'context-drop' && input.contextDropTarget) {
-      return `${PLATFORM_SLUG} agent context drop --${input.contextDropTarget.kind} ${input.contextDropTarget.value} --id ${input.slug} --expected-revision ${current}`
     }
     return `read the context item with ${PLATFORM_SLUG} agent context show, then re-apply it with ${PLATFORM_SLUG} agent context set --id ${input.slug} --expected-revision ${current} (expected_revision over MCP)`
   }

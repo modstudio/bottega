@@ -366,7 +366,7 @@ describe('decideDocRevisionWrite', () => {
         remedy: `${PLATFORM_SLUG} doc rm approval --scope context --subject ${holder} --reason <text> --expect revision-2`,
       },
       {
-        op: 'context-drop' as const,
+        op: 'delete' as const,
         contextDropTarget: { kind: 'task' as const, value: 'DEV-2236' },
         remedy: `${PLATFORM_SLUG} agent context drop --task DEV-2236 --id approval --expected-revision revision-2`,
       },

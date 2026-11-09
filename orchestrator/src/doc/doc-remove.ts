@@ -9,14 +9,14 @@ import { hostedDocClient } from './doc-hosted-client.ts'
 import { type Doc, getDocStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
-import { docWriteProjectName } from './doc-write-allowed.ts'
+import { type ContextDropTarget, docWriteProjectName } from './doc-write-allowed.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { hostedDocWriteIdentity, resolvedDocWriteIdentity } from './doc-write-identity.ts'
 import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
 import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
 
 export type DocRemovalContext = DocWriteContext & {
-  contextDropTarget?: { kind: 'task' | 'session'; value: string }
+  contextDropTarget?: ContextDropTarget
 }
 
 function assertCanonRemovalAllowed(doc: Doc, context: DocWriteContext): void {
@@ -43,7 +43,7 @@ export async function removeStoredDoc(
       subject,
       slug,
       expectedRevision: context.expectedRevision,
-      op: context.contextDropTarget ? 'context-drop' : 'delete',
+      op: 'delete',
       contextDropTarget: context.contextDropTarget,
     },
     doc.revision,
