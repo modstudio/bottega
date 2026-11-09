@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { staleContextHolders } from './context-stale.ts'
 
 test('lists a holder worked after next-action and omits one revised afterward', () => {
@@ -77,7 +78,7 @@ test('reports an unresolved task holder with its reason instead of a missing nex
       unresolvedHolders: [
         {
           holder: 'STAR-9',
-          reason: 'task could not be resolved in project starship; run bottega record pull',
+          reason: `task could not be resolved in project starship; run ${PLATFORM_SLUG} record pull`,
         },
       ],
       now: '2026-11-09T10:00:00Z',
@@ -86,7 +87,7 @@ test('reports an unresolved task holder with its reason instead of a missing nex
     {
       holder: 'STAR-9',
       workedAt: '2026-11-09T09:00:00Z',
-      reason: 'task could not be resolved in project starship; run bottega record pull',
+      reason: `task could not be resolved in project starship; run ${PLATFORM_SLUG} record pull`,
     },
   ])
 })

@@ -132,9 +132,7 @@ export function holderSequence(
   working: readonly ContextBriefWorkingKey[],
   tasks: readonly HubTaskReference[],
 ): ContextBriefHolderReference[] {
-  const holders: ContextBriefHolderReference[] = [
-    { key: session, title: '', kind: 'session' },
-  ]
+  const holders: ContextBriefHolderReference[] = [{ key: session, title: '', kind: 'session' }]
   const index = taskKeyMap(tasks)
   const emitted = new Set<string>()
   const add = (task: HubTaskReference, projectTasks: readonly HubTaskReference[]) => {

@@ -83,6 +83,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/bounded-process.ts',
+    '../../../shared/task-missing.ts',
   ]),
   module('orchestrator/src/workflow/workflow-text-copy.ts', [
     'node:fs',

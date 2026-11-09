@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
@@ -178,13 +179,12 @@ test('reports undeclared and unresolved working keys with record-pull remedies',
     {
       holder: 'DEV-MISSING',
       workedAt: '2026-11-09T09:00:00Z',
-      reason:
-        'task could not be resolved in project context-stale-fixture; run bottega record pull',
+      reason: `task could not be resolved in project context-stale-fixture; run ${PLATFORM_SLUG} record pull`,
     },
     {
       holder: 'STAR-UNKNOWN',
       workedAt: '2026-11-09T09:00:00Z',
-      reason: 'no project declares task prefix STAR; run bottega record pull',
+      reason: `no project declares task prefix STAR; run ${PLATFORM_SLUG} record pull`,
     },
   ])
 })
