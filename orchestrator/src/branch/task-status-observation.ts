@@ -4,7 +4,7 @@
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { type StatusCategory, TASK_STATUSES } from '../../../shared/trackers.ts'
+import { TASK_STATUSES } from '../../../shared/trackers.ts'
 import {
   type HubTaskReader,
   readHubTasks,
@@ -27,21 +27,34 @@ export type LandedTaskObservation = {
   observation: TaskStatusObservation
 }
 
-function verifiedObservation(
-  category: StatusCategory,
-  raw: string | null = category,
+function unverifiedObservation(
+  detail: string,
+  raw: string | null = null,
+  lastSeen: string | null = null,
 ): TaskStatusObservation {
-  return { raw, category, lastSeen: null, verified: true, detail: raw ?? category }
-}
-
-function unverifiedObservation(detail: string): TaskStatusObservation {
   return {
-    raw: null,
+    raw,
     category: null,
-    lastSeen: null,
+    lastSeen,
     verified: false,
     detail: `unverified (${detail})`,
   }
+}
+
+function taskStatusObservation(
+  raw: string | null,
+  lastSeen: string | null,
+  candidate: unknown,
+): TaskStatusObservation {
+  const category = TASK_STATUSES.find((status) => status === candidate) ?? null
+  if (category) return { raw, category, lastSeen, verified: true, detail: raw ?? category }
+  return unverifiedObservation(
+    candidate == null
+      ? 'missing status category'
+      : `unknown status category ${JSON.stringify(candidate)}`,
+    raw,
+    lastSeen,
+  )
 }
 
 export function observeTaskStatus(key: string | null, project: string): TaskStatusObservation {
@@ -66,16 +79,7 @@ export function observeTaskStatus(key: string | null, project: string): TaskStat
     }
     const raw = typeof parsed.task?.status === 'string' ? parsed.task.status : null
     const lastSeen = typeof parsed.task?.last_seen === 'string' ? parsed.task.last_seen : null
-    const candidate = parsed.task?.status_category
-    const category = TASK_STATUSES.find((status) => status === candidate) ?? null
-    if (!category) {
-      const detail =
-        candidate == null
-          ? 'unverified (missing status category)'
-          : `unverified (unknown status category ${JSON.stringify(candidate)})`
-      return { raw, category: null, lastSeen, verified: false, detail }
-    }
-    return { raw, category, lastSeen, verified: true, detail: raw ?? category }
+    return taskStatusObservation(raw, lastSeen, parsed.task?.status_category)
   } catch {
     return {
       raw: null,
@@ -107,17 +111,10 @@ export async function observeLandedTasks(
                 'task was not found uniquely in project task list',
               ),
             }
-          const category = TASK_STATUSES.find((candidate) => candidate === task.status_category)
           return {
             project,
             taskKey,
-            observation: category
-              ? verifiedObservation(category)
-              : unverifiedObservation(
-                  task.status_category == null
-                    ? 'missing status category'
-                    : `unknown status category ${JSON.stringify(task.status_category)}`,
-                ),
+            observation: taskStatusObservation(null, null, task.status_category),
           }
         })
       } catch (cause) {
