@@ -159,7 +159,7 @@ show stored context items
 
 **Synopsis:** `bottega agent context stale [--session <id>] [--json]`
 
-list task holders worked after their newest next-action revision
+list task holders with work in the last day after their newest next-action revision
 
 ### Options
 

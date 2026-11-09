@@ -40,7 +40,10 @@ class StaleContextReminder(unittest.TestCase):
         self.assertEqual(text.count("repeats cannot be suppressed"), 1)
 
     def test_stop_reminder_never_blocks(self):
-        rows = [{"holder": "DEV-2225", "workedAt": "2026-11-08T12:00:00Z", "revisedAt": None}]
+        rows = [
+            {"holder": "DEV-2079", "workedAt": "2026-11-08T12:00:00Z", "revisedAt": None},
+            {"holder": "DEV-2227", "workedAt": "2026-11-08T13:00:00Z", "revisedAt": None},
+        ]
         emitted = []
         with mock.patch.object(reminder, "query_cursors", return_value=([], None)), mock.patch.object(
             reminder, "query_stale", return_value=rows
@@ -50,7 +53,12 @@ class StaleContextReminder(unittest.TestCase):
             reminder.handle_stop({"session_id": "session", "cwd": "/tmp"})
         self.assertEqual(len(emitted), 1)
         self.assertNotIn("decision", emitted[0])
-        self.assertIn("DEV-2225", json.dumps(emitted[0]))
+        command = Path(reminder.bottega_bin()).name
+        self.assertEqual(
+            emitted[0]["systemMessage"],
+            "Stale next-action: DEV-2079, DEV-2227 "
+            f"({command} agent context show --task <key>)",
+        )
 
 
 if __name__ == "__main__":
