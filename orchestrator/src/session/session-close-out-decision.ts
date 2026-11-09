@@ -3,7 +3,7 @@
 
 import type { BranchLanding } from '../branch/branch-state.ts'
 import type { ContextItemKind } from '../doc/doc-context-write.ts'
-import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { RUN_LIVE_STATUSES, TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
 export type SessionOwnedRun = {
   recordId: string
@@ -129,15 +129,30 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
   const mechanical: SessionMechanicalAction[] = []
   const process: SessionProcessItem[] = []
   classifyRuns(owned.runs, owned.heldRunResources, mechanical, process)
-  classifyBranches(owned.branches, mechanical, process)
+  classifyBranches(owned.runs, owned.branches, mechanical, process)
   if (owned.claims.length) mechanical.push({ kind: 'reconcile-claims', claims: owned.claims })
   process.push(...owned.landingIds.map((landingId) => ({ kind: 'landing' as const, landingId })))
   process.push(...owned.reviewIds.map((reviewId) => ({ kind: 'review' as const, reviewId })))
   return { mechanical, process }
 }
 
-function isLiveSessionRun(status: string): boolean {
-  return status === 'running' || status === 'asking'
+const RUN_LIVE_STATUS_SET: ReadonlySet<string> = new Set(RUN_LIVE_STATUSES)
+
+export function isLiveSessionRun(status: string): boolean {
+  return RUN_LIVE_STATUS_SET.has(status)
+}
+
+/** Derive the roots whose run/tree close-out is planned by these actions. */
+export function plannedSessionRunRoots(
+  actions: readonly SessionMechanicalAction[],
+  runs: readonly Pick<SessionOwnedRun, 'recordId' | 'rootRecordId'>[],
+): string[] {
+  return actions.flatMap((action) => {
+    if (action.kind === 'close-run') return [action.runId]
+    if (action.kind !== 'remove-tree') return []
+    const run = runs.find((candidate) => candidate.recordId === action.runId)
+    return run ? [run.rootRecordId] : []
+  })
 }
 
 function isTerminalSessionRun(status: string): boolean {
@@ -227,11 +242,18 @@ function classifyRuns(
 }
 
 function classifyBranches(
+  runs: readonly SessionOwnedRun[],
   branches: readonly SessionOwnedBranch[],
   mechanical: SessionMechanicalAction[],
   process: SessionProcessItem[],
 ): void {
+  const liveBranches = new Set(
+    runs
+      .filter((run) => isLiveSessionRun(run.status) && run.project && run.mintedBranch)
+      .map((run) => `${run.project}\0${run.mintedBranch}`),
+  )
   for (const branch of branches) {
+    if (liveBranches.has(`${branch.project}\0${branch.branch}`)) continue
     if (branch.state === 'landed') {
       mechanical.push({
         kind: 'ship-cleanup',
