@@ -52,7 +52,9 @@ export type CredentialAddress = {
   spaceName: string
   destinationSpaceId: string
 }
-export type ProjectCredentialTarget = Pick<Project, 'name' | 'recordId' | 'settings'>
+export type ProjectCredentialTarget = Pick<Project, 'name' | 'settings'> & {
+  recordId: string | null
+}
 
 export function projectRecordIdentityRefusal(project: string): string {
   return renderRefusal(

@@ -73,12 +73,19 @@ describe('billing key holds', () => {
       { name: 'b', provider: 'openrouter', baseUrl: 'https://one.test', apiKeySecret: 'ONE_KEY' },
       agents[2]!,
     ]
-    expect(decideBillingKeyHolds(providerAgents, [
-      run({ credential_id: 'credential-a' }),
-      run({ record_id: 'b', agent: 'b', credential_id: 'credential-a', failure_kind: null, status: 'ok', finished_at: 0 }),
-    ])).toEqual([
-      expect.objectContaining({ id: 'credential:credential-a', agents: ['a', 'b'] }),
-    ])
+    expect(
+      decideBillingKeyHolds(providerAgents, [
+        run({ credential_id: 'credential-a' }),
+        run({
+          record_id: 'b',
+          agent: 'b',
+          credential_id: 'credential-a',
+          failure_kind: null,
+          status: 'ok',
+          finished_at: 0,
+        }),
+      ]),
+    ).toEqual([expect.objectContaining({ id: 'credential:credential-a', agents: ['a', 'b'] })])
     expect(decideBillingKeyHolds(providerAgents, [run({ credential_id: null })])).toEqual([])
   })
 })

@@ -1,6 +1,8 @@
 // concern: run credential claim columns
 /** Projects one launch credential resolution into the atomic run claim values. */
 
+import type { SQLQueryBindings } from 'bun:sqlite'
+
 export type CredentialPayment = {
   credentialId: string
   payer: 'personal' | 'shared'
@@ -8,10 +10,10 @@ export type CredentialPayment = {
 }
 
 export function endpointKeyIdentityBindings(
-  identityColumns: readonly unknown[],
+  identityColumns: readonly SQLQueryBindings[],
   source: 'agent' | 'project',
   credential: CredentialPayment | null | undefined,
-): unknown[] {
+): SQLQueryBindings[] {
   return [
     ...identityColumns,
     source,
