@@ -144,11 +144,14 @@ export async function assertContextDropAllowed(
   doc: { scope: string; subject: string | null; slug: string; body: string },
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
+  lifecycleHolder?: string,
 ): Promise<void> {
   if (doc.scope !== 'context') return
   const holder = doc.subject ?? ''
   const refusal =
-    holderOwnershipRefusal(holder, sessionId(database), doc.slug) ??
+    (lifecycleHolder === holder
+      ? null
+      : holderOwnershipRefusal(holder, sessionId(database), doc.slug)) ??
     contextDropRefusal(
       decodeContextItem(holder, doc.slug, doc.body),
       storedItems(holder, database),

@@ -13,6 +13,7 @@ import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
+import { dropSessionContextItemForLifecycle, sessionContextItems } from '../doc/context-service.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -24,6 +25,7 @@ import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import {
   classifySessionCloseOut,
+  classifySessionContextItem,
   plannedTreeOwnerMatches,
   type SessionHeldRunResources,
   type SessionMechanicalAction,
@@ -31,6 +33,7 @@ import {
   type SessionOwnedRun,
   type SessionOwnershipFacts,
   sessionCloseOutVerdict,
+  sessionCloseOutRecommendation,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
 
@@ -45,6 +48,7 @@ type OwnedClaim = {
 }
 type ActiveLanding = { record_id: string; project: string; branch: string; status: string }
 type IncompleteReview = { record_id: string; number: number }
+type OpenCursor = { record_id: string; number: number; workflow_slug: string; state: string }
 
 type UnprovedBranchEvidence = {
   project: string
@@ -62,18 +66,23 @@ type UnprovedBranchEvidence = {
 export type SessionCloseOutReport = {
   session: string
   dryRun: boolean
+  resume: boolean
   owned: {
     runs: SessionOwnedRun[]
     branches: SessionOwnedBranch[]
     claims: OwnedClaim[]
     landings: ActiveLanding[]
     reviews: IncompleteReview[]
+    cursors: OpenCursor[]
+    contextItems: ReturnType<typeof sessionContextItems>
   }
   mechanical: string[]
+  kept: string[]
   process: { item: string; reason: string; evidence: string; remedy: string }[]
   errors: { item: string; detail: string; retry: string }[]
   heldTrees: HeldTreeJson[]
   verdict: { clean: boolean; residue: number }
+  recommendation: 'clear' | 'brief'
 }
 
 type RunRow = {
@@ -176,6 +185,15 @@ function incompleteReviews(database: Database, session: string): IncompleteRevie
        ORDER BY review.number`,
     )
     .all(session) as IncompleteReview[]
+}
+
+function openCursors(database: Database, session: string): OpenCursor[] {
+  return database
+    .query(
+      `SELECT record_id,number,workflow_slug,state FROM workflow_cursor
+        WHERE session_id=? AND state NOT IN ('done','abandoned') ORDER BY number`,
+    )
+    .all(session) as OpenCursor[]
 }
 
 function observeOwnedBranch(
@@ -446,6 +464,7 @@ function gather(database: Database, session: string, dryRun: boolean) {
   const claims = ownedClaims(database, roots)
   const landings = activeLandings(database, session)
   const reviews = incompleteReviews(database, session)
+  const cursors = openCursors(database, session)
   const branchInventory = branchFacts(runs, dryRun)
   const held = heldRunResources(database, runs)
   const facts: SessionOwnershipFacts = {
@@ -462,6 +481,7 @@ function gather(database: Database, session: string, dryRun: boolean) {
     claims,
     landings,
     reviews,
+    cursors,
     observationErrors: held.errors,
     ...branchInventory,
     classification: classifySessionCloseOut(facts),
@@ -655,6 +675,16 @@ function appendClassifiedProcessItems(
     report.process.push(processReportItem(inventory, item))
 }
 
+function appendCursorProcessItems(report: SessionCloseOutReport, cursors: readonly OpenCursor[]) {
+  for (const cursor of cursors)
+    report.process.push({
+      item: `workflow cursor ${cursor.number}`,
+      reason: `cursor is ${cursor.state}`,
+      evidence: cursor.record_id,
+      remedy: `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug} --cursor ${cursor.number} --reason "<why>"`,
+    })
+}
+
 function appendArgumentProcesses(
   report: SessionCloseOutReport,
   inventory: ReturnType<typeof gather>,
@@ -691,29 +721,72 @@ function appendObservationErrors(
   }
 }
 
-export function closeOutSession(
-  options: { session?: string; dryRun?: boolean } = {},
-): SessionCloseOutReport {
+export async function closeOutSession(
+  options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
+): Promise<SessionCloseOutReport> {
   const session = options.session ?? callingSessionId()
   if (!session) throw new Error(`session identity is unavailable; pass --session <id>`)
   const dryRun = options.dryRun ?? false
+  const resume = options.resume ?? false
   const database = dryRun ? db() : writableDb()
   const initial = gather(database, session, dryRun)
+  const initialContextItems = sessionContextItems(session, database)
   const report: SessionCloseOutReport = {
     session,
     dryRun,
+    resume,
     owned: {
       runs: initial.runs,
       branches: initial.branches,
       claims: initial.claims,
       landings: initial.landings,
       reviews: initial.reviews,
+      cursors: initial.cursors,
+      contextItems: initialContextItems,
     },
     mechanical: [],
+    kept: [],
     process: [],
     errors: [...initial.observationErrors],
     heldTrees: [],
     verdict: { clean: false, residue: 0 },
+    recommendation: 'brief',
+  }
+  for (const item of initialContextItems) {
+    const action = classifySessionContextItem(item.kind, resume)
+    const label = `context ${item.holder}/${item.id}`
+    if (action === 'keep') {
+      report.kept.push(label)
+      continue
+    }
+    if (action === 'refuse') {
+      report.process.push({
+        item: label,
+        reason: `${dryRun ? 'would refuse close-out because' : 'session close-out refused because'} ${item.kind} must move to a task or epic`,
+        evidence: item.body.split(/\r?\n/, 1)[0] ?? '',
+        remedy: `${PLATFORM_SLUG} agent context set --task <KEY> --kind ${item.kind} --id ${item.id} --source ${JSON.stringify(item.source)} ${JSON.stringify(item.body)} && ${PLATFORM_SLUG} agent context drop --session ${session} --id ${item.id}`,
+      })
+      continue
+    }
+    if (dryRun) {
+      report.mechanical.push(`would drop ${label}`)
+      continue
+    }
+    try {
+      await dropSessionContextItemForLifecycle({
+        session,
+        id: item.id,
+        expectedRevision: item.revision ?? undefined,
+        reason: `session close-out ${session}`,
+      })
+      report.mechanical.push(`drop ${label}`)
+    } catch (cause) {
+      report.errors.push({
+        item: label,
+        detail: cause instanceof Error ? cause.message : String(cause),
+        retry: `${PLATFORM_SLUG} session close-out --session ${session}`,
+      })
+    }
   }
   for (const action of initial.classification.mechanical) {
     const label = mechanicalLabel(action)
@@ -734,6 +807,7 @@ export function closeOutSession(
       : gather(database, session, false)
   appendObservationErrors(report, final.observationErrors)
   appendClassifiedProcessItems(report, final)
+  appendCursorProcessItems(report, final.cursors)
   appendArgumentProcesses(report, final)
   const plannedRunRoots = new Set(
     dryRun
@@ -768,14 +842,17 @@ export function closeOutSession(
     remainingLandings: final.landings.length,
     remainingReviews: final.reviews.length,
     processItems: report.process.length,
+    keptContextItems: report.kept.length,
     errors: report.errors.length,
   })
+  report.recommendation = sessionCloseOutRecommendation(report.verdict.residue)
   return report
 }
 
 export function formatSessionCloseOut(report: SessionCloseOutReport): string {
   const lines = [`session close-out ${report.session}${report.dryRun ? ' (dry run)' : ''}`]
   for (const item of report.mechanical) lines.push(`mechanical: ${item}`)
+  for (const item of report.kept) lines.push(`kept: ${item}`)
   for (const item of report.process)
     lines.push(
       `remains: ${item.item}: ${item.reason}; evidence: ${item.evidence}; remedy: ${item.remedy}`,
@@ -795,5 +872,10 @@ export function formatSessionCloseOut(report: SessionCloseOutReport): string {
         : `not clean: ${report.verdict.residue} owned item(s) remain`,
     )
   }
+  lines.push(
+    report.recommendation === 'clear'
+      ? 'recommendation: clear the conversation'
+      : `recommendation: write a resume brief (${PLATFORM_SLUG} doc set --scope resume ...)`,
+  )
   return lines.join('\n')
 }

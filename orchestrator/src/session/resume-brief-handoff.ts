@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
+import { dropSessionContextItemForLifecycle, sessionContextItems } from '../doc/context-service.ts'
 import { parseResumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
 import type { ConsumedDoc, Doc } from '../doc/docs.ts'
 import {
@@ -110,14 +111,42 @@ async function handoffFromAuthor(
         `resume handoff skipped: latest non-consume hosted revision has no author session; when the author session is known, run ${PLATFORM_SLUG} session adopt <session> --reason <why>`,
       ],
     }
+  const contextLines: string[] = []
+  for (const item of sessionContextItems(author, database)) {
+    contextLines.push(
+      `context ${item.holder}/${item.id} ${item.kind} (${item.source}): ${item.body}`,
+    )
+    try {
+      await dropSessionContextItemForLifecycle({
+        session: author,
+        id: item.id,
+        expectedRevision: item.revision ?? undefined,
+        reason: `resume brief ${doc.subject}/${doc.slug} consumed`,
+      })
+    } catch (error) {
+      return {
+        authorSession: author,
+        status: 'refused',
+        report: null,
+        lines: [
+          ...contextLines,
+          `resume context drop failed for ${item.holder}/${item.id}: ${error instanceof Error ? error.message : String(error)}`,
+        ],
+      }
+    }
+  }
+  const withContext = (handoff: ResumeBriefHandoff): ResumeBriefHandoff => ({
+    ...handoff,
+    lines: [...contextLines, ...handoff.lines],
+  })
   const actor = sessionId(database)
   if (author === actor)
-    return {
+    return withContext({
       authorSession: author,
       status: 'skipped',
       report: null,
       lines: ['resume handoff skipped: brief author is the current session'],
-    }
+    })
   const command = `${PLATFORM_SLUG} session adopt ${author} --reason "resume brief ${doc.subject}/${doc.slug} consumed by ${actor ?? 'successor'}"`
   try {
     const report = adoptSessionRuns(
@@ -132,15 +161,15 @@ async function handoffFromAuthor(
         resumeHandoffRootIds: resumeHandoffOwedRootIds(database, author),
       },
     )
-    return adoptionHandoff(author, report, command, options.machine ?? 'unknown')
+    return withContext(adoptionHandoff(author, report, command, options.machine ?? 'unknown'))
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return {
+    return withContext({
       authorSession: author,
       status: 'refused',
       report: null,
       lines: [`resume handoff did not move runs: ${message}; run ${command}`],
-    }
+    })
   }
 }
 

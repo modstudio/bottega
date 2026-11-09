@@ -4,13 +4,54 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
+import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
+import { encodeContextItem } from '../doc/context-item-codec.ts'
+import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
+import { getDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { sweepRuns } from './cleanup-sweep.ts'
+import { sweepRuns, sweepSessionContext } from './cleanup-sweep.ts'
 
 afterEach(() => {
   mock.restore()
+})
+
+test('session context sweep logs and drops each item for a gone owner', async () => {
+  const session = newRecordId()
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = { tasks: async () => [], pointer: async () => null }
+  const previousSession = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  for (const slug of ['one', 'two'])
+    await setDoc({
+      scope: 'context',
+      subject: `session:${session}`,
+      slug,
+      title: slug,
+      body: encodeContextItem({ kind: 'fact', source: 'test', body: slug }),
+    })
+  if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = previousSession
+  db()
+    .query('UPDATE doc SET created_at=?,updated_at=? WHERE scope=? AND subject=?')
+    .run('2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', 'context', `session:${session}`)
+  const lines: string[] = []
+
+  expect(
+    await sweepSessionContext(
+      false,
+      presentation(lines, () => {}),
+    ),
+  ).toBe(false)
+
+  expect(lines).toEqual([
+    `dropped context session:${session}/one`,
+    `dropped context session:${session}/two`,
+  ])
+  expect(getDoc('context', `session:${session}`, 'one')).toBeNull()
+  expect(getDoc('context', `session:${session}`, 'two')).toBeNull()
 })
 
 test('an owned terminal sweep candidate reaches close-out by UUID', async () => {

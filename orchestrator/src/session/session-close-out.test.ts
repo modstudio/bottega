@@ -4,7 +4,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
+import { setDoc } from '../../test/fixtures/docs.ts'
 import { db } from '../database/db.ts'
+import { encodeContextItem } from '../doc/context-item-codec.ts'
+import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
 import { closeOutSession, formatSessionCloseOut } from './session-close-out.ts'
 
@@ -37,7 +40,48 @@ function attachRunToProject(runId: string, projectId: string, project: string): 
     .run(projectId, project, runId)
 }
 
-test("a turn's guard or retained ref makes its terminal root planned", () => {
+test('dry run reports context drops and refusals while resume keeps every item', async () => {
+  const session = newRecordId()
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = { tasks: async () => [], pointer: async () => null }
+  const previousSession = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  await setDoc({
+    scope: 'context',
+    subject: `session:${session}`,
+    slug: 'fact',
+    title: 'fact',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'carry this fact' }),
+  })
+  await setDoc({
+    scope: 'context',
+    subject: `session:${session}`,
+    slug: 'ruling',
+    title: 'ruling',
+    body: encodeContextItem({ kind: 'ruling', source: 'q5282', body: 'approved' }),
+  })
+  if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = previousSession
+
+  const dry = await closeOutSession({ session, dryRun: true })
+  expect(dry.mechanical).toContain(`would drop context session:${session}/fact`)
+  expect(dry.process).toContainEqual(
+    expect.objectContaining({
+      item: `context session:${session}/ruling`,
+      reason: expect.stringContaining('would refuse'),
+    }),
+  )
+
+  const resume = await closeOutSession({ session, dryRun: true, resume: true })
+  expect(resume.kept).toEqual([
+    `context session:${session}/fact`,
+    `context session:${session}/ruling`,
+  ])
+  expect(resume.recommendation).toBe('brief')
+})
+
+test("a turn's guard or retained ref makes its terminal root planned", async () => {
   const project = `session-close-out-${newRecordId()}`
   const repo = join(dir, project)
   cleanupPaths.push(repo)
@@ -87,7 +131,7 @@ test("a turn's guard or retained ref makes its terminal root planned", () => {
     return spawnResult()
   }) as typeof Bun.spawnSync)
 
-  const report = closeOutSession({ session: 'owner', dryRun: true })
+  const report = await closeOutSession({ session: 'owner', dryRun: true })
 
   expect(report.mechanical).toEqual([
     `would close run ${guardRoot}`,
@@ -101,7 +145,7 @@ test("a turn's guard or retained ref makes its terminal root planned", () => {
   )
 })
 
-test('an unreadable project reports an error and conservatively plans its root', () => {
+test('an unreadable project reports an error and conservatively plans its root', async () => {
   const project = `missing-session-close-out-${newRecordId()}`
   const repo = join(dir, project)
   const projectId = registerProject(project, repo)
@@ -119,7 +163,7 @@ test('an unreadable project reports an error and conservatively plans its root',
     return spawnResult()
   }) as typeof Bun.spawnSync)
 
-  const report = closeOutSession({ session: 'owner', dryRun: true })
+  const report = await closeOutSession({ session: 'owner', dryRun: true })
 
   expect(report.mechanical).toEqual([`would close run ${root}`])
   expect(report.errors).toEqual([
@@ -132,7 +176,7 @@ test('an unreadable project reports an error and conservatively plans its root',
   expect(report.verdict.clean).toBe(false)
 })
 
-test('an absent tree that owes recorded teardown makes its terminal root planned', () => {
+test('an absent tree that owes recorded teardown makes its terminal root planned', async () => {
   const project = `session-close-out-teardown-${newRecordId()}`
   const repo = join(dir, project)
   cleanupPaths.push(repo)
@@ -153,13 +197,13 @@ test('an absent tree that owes recorded teardown makes its terminal root planned
     return spawnResult()
   }) as typeof Bun.spawnSync)
 
-  const report = closeOutSession({ session: 'owner', dryRun: true })
+  const report = await closeOutSession({ session: 'owner', dryRun: true })
 
   expect(report.mechanical).toEqual([`would close run ${root}`])
   expect(report.errors).toEqual([])
 })
 
-test('a terminal root without a project is planned because its held state is unknown', () => {
+test('a terminal root without a project is planned because its held state is unknown', async () => {
   const root = addRun({
     agent: 'codex',
     job: 'implement',
@@ -169,7 +213,7 @@ test('a terminal root without a project is planned because its held state is unk
     projectRecordId: null,
   })
 
-  const report = closeOutSession({ session: 'owner', dryRun: true })
+  const report = await closeOutSession({ session: 'owner', dryRun: true })
 
   expect(report.mechanical).toEqual([`would close run ${root}`])
   expect(report.errors).toEqual([])

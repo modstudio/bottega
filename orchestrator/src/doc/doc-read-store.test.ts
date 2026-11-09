@@ -1,10 +1,38 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
+import { encodeContextItem } from './context-item-codec.ts'
+import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
-import { getDocForAudienceStore, getDocStore, listDocMetadataStore } from './doc-read-store.ts'
+import {
+  getDocForAudienceStore,
+  getDocStore,
+  listDocMetadataStore,
+  listDocsBySubjectPrefixStore,
+} from './doc-read-store.ts'
 
 describe('document read store', () => {
+  test('lists documents by an escaped subject prefix', async () => {
+    const session = newRecordId()
+    ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+      CONTEXT_FACTS_PORTS_KEY
+    ] = { tasks: async () => [], pointer: async () => null }
+    const previousSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = session
+    await setDoc({
+      scope: 'context',
+      subject: `session:${session}`,
+      slug: 'first',
+      title: 'First',
+      body: encodeContextItem({ kind: 'fact', source: 'test', body: 'body' }),
+    })
+    if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = previousSession
+    expect(
+      listDocsBySubjectPrefixStore('context', `session:${session}`).map((doc) => doc.slug),
+    ).toEqual(['first'])
+  })
+
   test('omitted subjects resolve only a unique slug in the scope', async () => {
     for (const name of ['first-project', 'second-project']) {
       upsertProject({

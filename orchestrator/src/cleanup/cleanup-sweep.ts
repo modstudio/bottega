@@ -14,6 +14,10 @@ import { pruneContentionRows, rollupContentionDays } from '../database/contentio
 import { releaseIncrementalVacuumPages } from '../database/database-commands.ts'
 import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
+import {
+  dropSessionContextItemForLifecycle,
+  sessionContextHolders,
+} from '../doc/context-service.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { pruneHostedCallOutcomes } from '../hosted-call-outcome.ts'
 import { filedIssueLoopRun } from '../issue/issue-queue.ts'
@@ -74,6 +78,7 @@ import {
   isSweepCandidate,
   type RecordedRunPostInventoryFacts,
   shouldExpireUnjudgedOwner,
+  shouldDropSweptSessionContext,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
 import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
@@ -564,6 +569,57 @@ function sweepUnjudgedRuns(
   return evidenceExcluded
 }
 
+export async function sweepSessionContext(
+  dry: boolean,
+  presentation: CleanupPresentation,
+): Promise<boolean> {
+  const database = dry ? db() : writableDb()
+  const now = Date.now()
+  let failed = false
+  for (const holder of sessionContextHolders(database)) {
+    const seen = database
+      .query('SELECT last_seen FROM session_seen WHERE session_id=?')
+      .get(holder.session) as { last_seen: string } | null
+    const activity = database
+      .query(
+        `SELECT MAX(COALESCE(last_event_at,started_at)) AS at
+           FROM run WHERE session_id=?`,
+      )
+      .get(holder.session) as { at: string | null }
+    if (
+      !shouldDropSweptSessionContext({
+        ownerSessionId: holder.session,
+        ownerLastSeenAt: seen ? Date.parse(seen.last_seen) : null,
+        runLastActivityAt: Date.parse(activity.at ?? holder.updatedAt),
+        now,
+        windowMs: UNJUDGED_OWNER_WINDOW_MS,
+      })
+    )
+      continue
+    for (const item of holder.items) {
+      if (dry) {
+        presentation.log(`would drop context ${holder.holder}/${item.id}`)
+        continue
+      }
+      try {
+        await dropSessionContextItemForLifecycle({
+          session: holder.session,
+          id: item.id,
+          expectedRevision: item.revision ?? undefined,
+          reason: `machine sweep owner gone past ${UNJUDGED_OWNER_WINDOW_MS}ms`,
+        })
+        presentation.log(`dropped context ${holder.holder}/${item.id}`)
+      } catch (error) {
+        failed = true
+        presentation.error(
+          `context drop failed ${holder.holder}/${item.id}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+  }
+  return failed
+}
+
 function sweepExpiredRunStore(
   options: Pick<SweepOptions, 'dryRun' | 'verbose'>,
   selectedProject: Project | null,
@@ -807,6 +863,8 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     trust: trustObservation,
   })
   const runLeftovers = sweepExpiredRunStore(options, selectedProject, options.presentation)
+  const sessionContextFailed =
+    selectedProject === null ? await sweepSessionContext(dry, options.presentation) : false
   const rows = (
     db()
       .query(
@@ -840,7 +898,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     absent: 0,
     forgotten: 0,
   }
-  let cleanupFailed = archiveRetention.failed || runLeftovers.failed
+  let cleanupFailed = archiveRetention.failed || runLeftovers.failed || sessionContextFailed
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,

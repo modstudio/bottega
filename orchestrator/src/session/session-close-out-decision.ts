@@ -2,6 +2,7 @@
 /** Pure ownership, release classification, and final verdict for one architect session. */
 
 import type { BranchLanding } from '../branch/branch-state.ts'
+import type { ContextItemKind } from '../doc/doc-context-write.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
 export type SessionOwnedRun = {
@@ -76,6 +77,21 @@ export type SessionProcessItem =
   | { kind: 'unproved-branch'; project: string; branch: string }
   | { kind: 'landing'; landingId: string }
   | { kind: 'review'; reviewId: string }
+
+export type SessionContextAction = 'drop' | 'refuse' | 'keep'
+
+/** Classify one session-scoped context item without consulting lifecycle state. */
+export function classifySessionContextItem(
+  kind: ContextItemKind,
+  resume: boolean,
+): SessionContextAction {
+  if (resume) return 'keep'
+  return kind === 'ruling' || kind === 'open-question' ? 'refuse' : 'drop'
+}
+
+export function sessionCloseOutRecommendation(residue: number): 'clear' | 'brief' {
+  return residue === 0 ? 'clear' : 'brief'
+}
 
 export function sessionOwnership(facts: SessionOwnershipFacts): SessionOwnershipFacts {
   const roots = new Set(
@@ -240,8 +256,9 @@ export function sessionCloseOutVerdict(input: {
   remainingLandings: number
   remainingReviews: number
   processItems: number
+  keptContextItems?: number
   errors: number
 }): { clean: boolean; residue: number } {
-  const residue = Object.values(input).reduce((total, count) => total + count, 0)
+  const residue = Object.values(input).reduce((total, count) => total + (count ?? 0), 0)
   return { clean: residue === 0, residue }
 }

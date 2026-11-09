@@ -397,6 +397,28 @@ export function listDocsStore(
     )
 }
 
+/** Read one scope by subject prefix without exposing a wildcard-shaped public filter. */
+export function listDocsBySubjectPrefixStore(
+  scope: string,
+  subjectPrefix: string,
+  database: Database = db(),
+): Doc[] {
+  validScope(scope)
+  const tree = docTreeSelect(database)
+  return (
+    database
+      .query(
+        `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join}
+          WHERE d.scope=? AND d.owner IS NULL AND d.subject LIKE ? ESCAPE '\\'
+          ORDER BY d.subject, ${tree.position}, d.title`,
+      )
+      .all(
+        scope,
+        `${subjectPrefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`,
+      ) as Array<Doc & { featured: boolean | number }>
+  ).map((row) => docRow(database, row))
+}
+
 function articleSubjectQuery(
   articleSubject: string | undefined,
   where: string[],

@@ -1,10 +1,12 @@
 // concern: context-service
 /** Owns context item reads and mutations over the document store. */
+import type { Database } from 'bun:sqlite'
 import { sessionId } from '../database/db.ts'
 import { decodeContextItem, encodeContextItem } from './context-item-codec.ts'
 import { contextProfileForHolder } from './context-write-adapter.ts'
 import { type ContextItemKind, missingContextKinds } from './doc-context-write.ts'
-import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
+import { listDocsBySubjectPrefixStore } from './doc-read-store.ts'
+import { getDoc, listDocs, removeContextDocForLifecycle, removeDoc, setDoc } from './docs.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
 
@@ -24,6 +26,51 @@ export async function getContext(selection: ContextHolderSelection) {
     revision: doc.revision,
   }))
   return { holder, profile, items, missingRequired: missingContextKinds(items, profile) }
+}
+
+export function sessionContextItems(session: string, database?: Database) {
+  const holder = `session:${session}`
+  const docs = database
+    ? listDocsBySubjectPrefixStore('context', holder, database).filter(
+        (doc) => doc.subject === holder,
+      )
+    : listDocs({ scope: 'context', subject: holder })
+  return docs.map((doc) => ({
+    ...decodeContextItem(holder, doc.slug, doc.body),
+    revision: doc.revision,
+    updatedAt: doc.updated_at,
+  }))
+}
+
+export function sessionContextHolders(database: Database) {
+  const docs = listDocsBySubjectPrefixStore('context', 'session:', database)
+  return [...Map.groupBy(docs, (doc) => doc.subject!)].map(([holder, rows]) => ({
+    holder,
+    session: holder.slice('session:'.length),
+    updatedAt: rows.reduce(
+      (latest, row) => (row.updated_at > latest ? row.updated_at : latest),
+      rows[0]!.updated_at,
+    ),
+    items: rows.map((doc) => ({
+      ...decodeContextItem(holder, doc.slug, doc.body),
+      revision: doc.revision,
+      updatedAt: doc.updated_at,
+    })),
+  }))
+}
+
+export async function dropSessionContextItemForLifecycle(input: {
+  session: string
+  id: string
+  expectedRevision?: string
+  reason: string
+}) {
+  const holder = `session:${input.session}`
+  const removed = await removeContextDocForLifecycle(holder, input.id, {
+    reason: input.reason,
+    expectedRevision: input.expectedRevision,
+  })
+  return { holder, id: input.id, removed }
 }
 
 export async function setContextItem(

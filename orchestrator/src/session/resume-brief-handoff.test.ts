@@ -4,6 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { encodeContextItem } from '../doc/context-item-codec.ts'
+import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { getDoc, listDocRevisions, restoreDoc } from '../doc/docs.ts'
 import { resumeBriefAuthorSession } from '../doc/resume-brief-author.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -70,6 +72,31 @@ test("a successor consuming a resume brief receives the author's runs", async ()
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
     session_id: 'brief-consumer',
   })
+})
+
+test("consuming a resume brief prints and drops the author's session context", async () => {
+  const author = newRecordId()
+  process.env.CLAUDE_CODE_SESSION_ID = author
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = { tasks: async () => [], pointer: async () => null }
+  const stored = await brief()
+  await setDoc({
+    scope: 'context',
+    subject: `session:${author}`,
+    slug: 'handoff-fact',
+    title: 'handoff-fact',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'successor needs this' }),
+  })
+  process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
+  const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+
+  const handoff = await handoffConsumedResumeBrief(consumed, { database: db(), machine })
+
+  expect(handoff.lines[0]).toBe(
+    `context session:${author}/handoff-fact fact (test): successor needs this`,
+  )
+  expect(getDoc('context', `session:${author}`, 'handoff-fact')).toBeNull()
 })
 
 test('a resume handoff moves only owed roots while explicit adoption still moves all', async () => {

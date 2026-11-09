@@ -100,6 +100,11 @@ export function ownerIsGone(facts: UnjudgedOwnerFacts): boolean {
   return facts.now - ownerLastActivity > facts.windowMs
 }
 
+/** Session context expires under the same owner-gone ruling as owed judgments. */
+export function shouldDropSweptSessionContext(facts: UnjudgedOwnerFacts): boolean {
+  return ownerIsGone(facts)
+}
+
 /** Decide whether an owed judgment still has a live-enough owner to provide it. */
 export function shouldExpireUnjudgedOwner(facts: UnjudgedOwnerFacts): boolean {
   return ownerIsGone(facts)
