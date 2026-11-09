@@ -8,6 +8,7 @@ import {
   type CredentialEnvironment,
   type CredentialMode,
   type CredentialPayer,
+  credentialIdentityPath,
 } from '../../../shared/credential.ts'
 
 const CREDENTIAL_HINT_MIN_LENGTH = 20
@@ -25,7 +26,7 @@ export function credentialDisplayName(
   mode: CredentialMode,
   environment: CredentialEnvironment,
 ): string {
-  return `${[provider, name, type].filter((part) => part !== null).join('/')} (mode ${mode}, env ${environment})`
+  return `${credentialIdentityPath(provider, name, type)} (mode ${mode}, env ${environment})`
 }
 
 export function credentialSlot(payer: CredentialPayer, projectId: string | null): string {

@@ -2,12 +2,10 @@
 /** Classifies the observed record tunnel, whether configured or unconfigured. */
 
 import { createConnection } from 'node:net'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { RECORD_MIGRATE_OPERATOR_CREDENTIAL } from '../../../shared/operator-credentials.ts'
-import { projectHasCredential } from '../config/credential-service.ts'
-import { projectByName } from '../project/projects.ts'
+import { operatorCredentialPresent } from '../config/operator-credential.ts'
 import {
   RECORD_TUNNEL_DOWN_REMEDY,
   type RecordTunnelConfigurationFacts,
@@ -17,17 +15,6 @@ import {
 import type { MonitorCondition } from './monitor-types.ts'
 
 const RECORD_TUNNEL_PROBE_TIMEOUT_MS = 500
-
-/** Decide from observed credential metadata whether this machine requires the record tunnel. */
-function credentialConfigurationRequiresRecordTunnel(credentialPresent: boolean): boolean {
-  return credentialPresent
-}
-
-async function recordMigrateCredentialPresent(): Promise<boolean> {
-  const project = projectByName(PLATFORM_SLUG)
-  if (!project) throw new Error(`no project ${PLATFORM_SLUG}`)
-  return projectHasCredential(project, RECORD_MIGRATE_OPERATOR_CREDENTIAL.identity)
-}
 
 /** Classify the record tunnel from already-observed configuration and endpoint facts. */
 export function recordTunnelCondition(
@@ -75,7 +62,8 @@ function tcpEndpointReachable(port: number): Promise<boolean> {
 }
 
 export async function observeRecordTunnel(
-  credentialPresent: () => Promise<boolean> = recordMigrateCredentialPresent,
+  credentialPresent: () => Promise<boolean> = () =>
+    operatorCredentialPresent(RECORD_MIGRATE_OPERATOR_CREDENTIAL),
 ): Promise<{
   conditions: MonitorCondition[]
   errors: string[]
@@ -85,7 +73,7 @@ export async function observeRecordTunnel(
     if (!app) {
       const condition = recordTunnelCondition({
         tunnelApp: app,
-        requiresTunnel: credentialConfigurationRequiresRecordTunnel(await credentialPresent()),
+        requiresTunnel: await credentialPresent(),
         port: 0,
         reachable: false,
       })

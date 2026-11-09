@@ -37,6 +37,15 @@ export type CompleteCredentialFields = CredentialMetadataFields & {
   environment: CredentialEnvironment
 }
 
+/** Render the stable slash-delimited path for one credential identity. */
+export function credentialIdentityPath(
+  provider: string,
+  name: string | null,
+  type: string,
+): string {
+  return [provider, name, type].filter((part): part is string => part !== null).join('/')
+}
+
 /** Canonical hosted identity key. This is storage identity, never a delivery variable name. */
 export function credentialIdentityKey(fields: {
   provider: string
@@ -45,9 +54,7 @@ export function credentialIdentityKey(fields: {
   mode: CredentialMode
   environment: CredentialEnvironment
 }): string {
-  const name = [fields.provider, fields.name, fields.type]
-    .filter((part): part is string => part !== null)
-    .join('/')
+  const name = credentialIdentityPath(fields.provider, fields.name, fields.type)
   return `${name}#${fields.mode}@${fields.environment}`
 }
 

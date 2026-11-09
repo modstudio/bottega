@@ -3,8 +3,8 @@ import { resolveOperatorCredential } from '../orchestrator/src/config/operator-c
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import { hostedApiFetch } from '../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { credentialIdentityPath } from '../shared/credential.ts'
 import {
-  operatorCredentialPath,
   operatorCredentialSetCommand,
   RECORD_REHEARSAL_OPERATOR_CREDENTIAL,
 } from '../shared/operator-credentials.ts'
@@ -443,7 +443,7 @@ if (import.meta.main) {
   }
   if (!token) {
     console.error(
-      `${operatorCredentialPath(rehearsalCredential.identity)} is required unless ${tokenName} is set. Pipe the app-scoped token on stdin to: ${sealingCommand}`,
+      `${credentialIdentityPath(rehearsalCredential.identity.provider, rehearsalCredential.identity.name, rehearsalCredential.identity.type)} is required unless ${tokenName} is set. Pipe the app-scoped token on stdin to: ${sealingCommand}`,
     )
     process.exit(1)
   }

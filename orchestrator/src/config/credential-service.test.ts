@@ -19,7 +19,9 @@ import {
   deleteCredential,
   operatorProjectCredentialAddress,
   projectCredentialAddress,
+  projectHasCredential,
   resolveCredentialValue,
+  resolveProjectOperatorCredential,
   setCredential,
 } from './credential-service.ts'
 
@@ -91,6 +93,50 @@ const address: CredentialAddress = {
   projectName: 'alpha',
   spaceName: 'studio',
   destinationSpaceId: '01990000-0000-7000-8000-000000000002',
+}
+
+const project = {
+  name: 'alpha',
+  recordId: '01990000-0000-7000-8000-000000000001',
+  settings: {},
+}
+const identity = { provider: address.provider, name: address.name, type: address.type }
+
+function metadataRow(projectId: string | null, name: string | null = address.name) {
+  return {
+    key: `row-${projectId ?? 'space'}-${name ?? 'unnamed'}`,
+    scope: 'user' as const,
+    projectId,
+    environment: address.environment,
+    provider: address.provider,
+    name,
+    type: address.type,
+    hint: '4 characters',
+    mode: address.mode,
+    dekId: '01990000-0000-7000-8000-000000000004',
+    rowVersion: 1,
+    updatedAt: '2026-11-08T00:00:00.000Z',
+  }
+}
+
+function metadataClient(rows: ReturnType<typeof metadataRow>[]): ConfigClient {
+  return {
+    whoami: async () => ({
+      user: { id: '01990000-0000-7000-8000-000000000003' },
+      activeSpaceId: address.destinationSpaceId,
+      memberships: [
+        { space_id: address.destinationSpaceId, slug: address.spaceName, permission: 'write' },
+      ],
+    }),
+    listSecrets: async () => rows,
+    listCredentialPreferences: async () => [],
+    getSecret: async () => {
+      throw new Error('metadata observation must not open a credential value')
+    },
+    getDataKey: async () => {
+      throw new Error('metadata observation must not open a credential value')
+    },
+  } as unknown as ConfigClient
 }
 
 test('operator identity replaces identity fields and retains project binding fields', () => {
@@ -210,7 +256,7 @@ test('delete credential explains how to recreate an absent project credential', 
   )
 })
 
-test('service resolution opens the selected payer row once and honors a shared preference', async () => {
+test('service and operator resolution return the selected payer row value', async () => {
   const userId = '01990000-0000-7000-8000-000000000003'
   const dekId = '01990000-0000-7000-8000-000000000004'
   const keyId = await machineKeyId(pair.publicKey)
@@ -299,6 +345,7 @@ test('service resolution opens the selected payer row once and honors a shared p
   } as unknown as ConfigClient
 
   expect((await resolveCredentialValue(address, client)).value).toBe('personal-value')
+  expect(await resolveProjectOperatorCredential(project, identity, client)).toBe('personal-value')
 
   preferences = [
     {
@@ -313,4 +360,38 @@ test('service resolution opens the selected payer row once and honors a shared p
     },
   ]
   expect((await resolveCredentialValue(address, client)).value).toBe('shared-value')
+})
+
+test('operator resolution returns undefined when no credential matches', async () => {
+  expect(
+    await resolveProjectOperatorCredential(project, identity, metadataClient([])),
+  ).toBeUndefined()
+})
+
+test('operator resolution propagates a client failure', async () => {
+  const client = metadataClient([])
+  client.listSecrets = async () => {
+    throw new Error('host unavailable')
+  }
+  await expect(resolveProjectOperatorCredential(project, identity, client)).rejects.toThrow(
+    'host unavailable',
+  )
+})
+
+test('credential presence resolves a project-bound row from metadata only', async () => {
+  expect(
+    await projectHasCredential(project, identity, metadataClient([metadataRow(address.projectId)])),
+  ).toBe(true)
+})
+
+test('credential presence resolves a space-bound row from metadata only', async () => {
+  expect(await projectHasCredential(project, identity, metadataClient([metadataRow(null)]))).toBe(
+    true,
+  )
+})
+
+test('credential presence rejects a row with a different name', async () => {
+  expect(
+    await projectHasCredential(project, identity, metadataClient([metadataRow(null, 'other')])),
+  ).toBe(false)
 })

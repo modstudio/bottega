@@ -1,6 +1,6 @@
 import { resolveOperatorCredential } from '../orchestrator/src/config/operator-credential.ts'
+import { credentialIdentityPath } from '../shared/credential.ts'
 import {
-  operatorCredentialPath,
   operatorCredentialResolveCommand,
   RECORD_MIGRATE_OPERATOR_CREDENTIAL,
 } from '../shared/operator-credentials.ts'
@@ -20,7 +20,7 @@ try {
   const cause = error instanceof Error ? error.message : String(error)
   console.error(
     secretResolutionFailure(error) ??
-      `credential ${operatorCredentialPath(credential.identity)} could not be resolved: ${cause}\ncleared by: ${operatorCredentialResolveCommand(credential)}`,
+      `credential ${credentialIdentityPath(credential.identity.provider, credential.identity.name, credential.identity.type)} could not be resolved: ${cause}\ncleared by: ${operatorCredentialResolveCommand(credential)}`,
   )
   process.exit(2)
 }

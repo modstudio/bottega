@@ -251,19 +251,11 @@ export async function projectHasCredential(
   identity: OperatorCredentialIdentity,
   client = configClient(),
 ): Promise<boolean> {
-  const binding = await projectCredentialBinding(project, client)
-  const rows = await listCredentials(
-    binding.destinationSpaceId,
-    { mode: 'default', environment: 'local' },
-    client,
+  const address = operatorProjectCredentialAddress(
+    await projectCredentialAddress(project, identity.provider, client),
+    identity,
   )
-  return rows.some(
-    (row) =>
-      row.provider === identity.provider &&
-      row.name === identity.name &&
-      row.type === identity.type &&
-      (row.projectId === binding.projectId || row.projectId === null),
-  )
+  return (await resolveHostedCredential(address, client)).kind === 'resolved'
 }
 
 /** Gather one metadata-only routing fact for each distinct provider. */
