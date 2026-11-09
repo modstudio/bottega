@@ -1,16 +1,12 @@
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Callout } from '@bottega/hub-ui/callout'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { ErrorState } from '@bottega/hub-ui/error-state'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { relativeTime } from '@bottega/hub-util/format'
 import { createFileRoute, Navigate, useNavigate, useParams } from '@tanstack/react-router'
-import {
-  type CredentialDisplayRow,
-  OWNER_LABEL,
-  type SecretRow,
-  useCredentialRows,
-} from '@/routes/-credential-rows'
+import { type CredentialDisplayRow, useCredentialRows } from '@/routes/-credential-rows'
 import { useDetailPanel } from '@/routes/-detail-panel'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
@@ -55,47 +51,9 @@ const credentialColumns: CollectionColumn<CredentialDisplayRow>[] = [
   },
 ]
 
-const legacyColumns: CollectionColumn<SecretRow>[] = [
-  { id: 'name', label: 'Name', phone: 'title', render: (row) => row.key },
-  { id: 'owner', label: 'Belongs to', phone: 'aside', render: (row) => OWNER_LABEL[row.scope] },
-  {
-    id: 'changed',
-    label: 'Last changed',
-    phone: 'line',
-    render: (row) => relativeTime(row.updatedAt),
-  },
-]
-
 function SecretsRoute() {
   if (!isHostedMode()) return <Navigate to="/" />
   return <SecretsPage />
-}
-
-function LegacyKeysCollection({
-  rows,
-  pending,
-  error,
-}: {
-  rows: SecretRow[]
-  pending: boolean
-  error: { message: string } | null
-}) {
-  if (pending) return <EmptyState title="Loading legacy keys..." />
-  if (error) return <ErrorState title="Could not load legacy keys" message={error.message} />
-  return (
-    <Collection
-      title="Legacy keys"
-      count={rows.length}
-      columns={legacyColumns}
-      rows={rows}
-      getKey={(row) => `${row.scope}:${row.environment}:${row.key}`}
-      onOpen={() => undefined}
-      empty={{
-        title: 'No legacy keys in this space.',
-        hint: `Set one with ${PLATFORM_SLUG} machine config secret set.`,
-      }}
-    />
-  )
 }
 
 function SecretsPage() {
@@ -117,32 +75,35 @@ function SecretsPage() {
         />
       ) : null}
       {!credentials.pending && !credentials.error ? (
-        <Collection
-          title="Credentials"
-          count={credentials.rows.length}
-          panel={panel}
-          selectedKey={selectedKey}
-          columns={credentialColumns}
-          rows={credentials.rows}
-          getKey={(row) => row.key}
-          onOpen={(row) =>
-            void navigate({
-              to: '/secrets/$credentialKey',
-              params: { credentialKey: row.key },
-              resetScroll: false,
-            })
-          }
-          empty={{
-            title: 'No credentials in this space.',
-            hint: `Set one with ${CREDENTIAL_COMMAND} set.`,
-          }}
-        />
+        <>
+          <Collection
+            title="Credentials"
+            count={credentials.rows.length}
+            panel={panel}
+            selectedKey={selectedKey}
+            columns={credentialColumns}
+            rows={credentials.rows}
+            getKey={(row) => row.key}
+            onOpen={(row) =>
+              void navigate({
+                to: '/secrets/$credentialKey',
+                params: { credentialKey: row.key },
+                resetScroll: false,
+              })
+            }
+            empty={{
+              title: 'No credentials in this space.',
+              hint: `Set one with ${CREDENTIAL_COMMAND} set.`,
+            }}
+          />
+          {credentials.untypedCount > 0 ? (
+            <Callout
+              tone="neutral"
+              title={`${credentials.untypedCount} sealed configuration ${credentials.untypedCount === 1 ? 'key is not a typed credential. List it' : 'keys are not typed credentials. List them'} with ${PLATFORM_SLUG} machine config secret list.`}
+            />
+          ) : null}
+        </>
       ) : null}
-      <LegacyKeysCollection
-        rows={credentials.legacy}
-        pending={credentials.secretsPending}
-        error={credentials.secretsError}
-      />
     </section>
   )
 }

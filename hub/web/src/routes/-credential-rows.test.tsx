@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { HostedProjectRow, RecordConfigSecretsResponse } from '@bottega/hub-data/client'
 import type { CredentialPreference } from '../../../../shared/credential.ts'
-import { credentialDisplayRows, splitSecretRows } from './-credential-rows.tsx'
+import { credentialDisplayRows, typedCredentialRows } from './-credential-rows.tsx'
 
 const spaceId = '01990000-0000-7000-8000-000000000010'
 const updatedAt = '2026-11-05T12:00:00.000Z'
@@ -54,13 +54,21 @@ const preference: CredentialPreference = {
   updatedAt,
 }
 
+test('typed credential rows omit incomplete sealed configuration keys', () => {
+  const complete = typedCredentialRows([secret('space', null)])[0]!
+  const incomplete: RecordConfigSecretsResponse[number] = {
+    ...complete,
+    key: 'untyped-key',
+    provider: null,
+    type: null,
+    hint: null,
+    mode: null,
+  }
+  expect(typedCredentialRows([complete, incomplete])).toEqual([complete])
+})
+
 test('a space preference selects the shared copy for every project and the space default', () => {
-  const rows = credentialDisplayRows(
-    splitSecretRows(copies).credentials,
-    [preference],
-    projects,
-    spaceId,
-  )
+  const rows = credentialDisplayRows(typedCredentialRows(copies), [preference], projects, spaceId)
   expect(
     rows.map((row) => ({
       owner: row.owner,
@@ -82,7 +90,7 @@ test('a space preference selects the shared copy for every project and the space
 })
 
 test('default order uses project copies before the shared space copy', () => {
-  const rows = credentialDisplayRows(splitSecretRows(copies).credentials, [], projects, spaceId)
+  const rows = credentialDisplayRows(typedCredentialRows(copies), [], projects, spaceId)
   expect(rows.map((row) => row.usages.map((usage) => `${usage.name}:${usage.reason}`))).toEqual([
     ['A:default-order'],
     ['C:default-order', 'Space default:default-order'],
@@ -97,7 +105,7 @@ test('a space-wide personal project preference selects each project copy', () =>
     binding: 'project',
   }
   const rows = credentialDisplayRows(
-    splitSecretRows([secret('user', projects[0]!.id), secret('user', projects[1]!.id)]).credentials,
+    typedCredentialRows([secret('user', projects[0]!.id), secret('user', projects[1]!.id)]),
     [projectPreference],
     projects,
     spaceId,
@@ -117,7 +125,7 @@ test('a project preference selects its copy or becomes missing while default ord
     payer: 'personal',
     binding: 'project',
   }
-  const credentials = splitSecretRows([secret('user', projects[0]!.id)]).credentials
+  const credentials = typedCredentialRows([secret('user', projects[0]!.id)])
   const selected = credentialDisplayRows(credentials, [personalPreference], projects, spaceId)
   expect(selected).toHaveLength(1)
   expect(selected[0]!.usages.map((usage) => `${usage.name}:${usage.reason}`)).toEqual([
