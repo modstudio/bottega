@@ -15,6 +15,23 @@ function fitUtf8(value: string, bytes: number): string {
     .replace(/\uFFFD$/u, '')
 }
 
+export function taskTextReadRemedy(input: {
+  key: string
+  project: string
+  getTool: string
+  hub: boolean
+}): string {
+  return input.hub
+    ? `${PLATFORM_SLUG} task show ${input.key} --project ${input.project}`
+    : input.getTool
+}
+
+export function boundTaskText(value: string, remedy: string): string {
+  if (Buffer.byteLength(value) <= TASK_TEXT_MAX_BYTES) return value
+  const suffix = `\n\nTask text was truncated; read the full task with ${remedy}.`
+  return `${fitUtf8(value, TASK_TEXT_MAX_BYTES - Buffer.byteLength(suffix))}${suffix}`
+}
+
 export function taskTextSection(input: {
   task: TaskTextRead
   key: string
@@ -32,12 +49,7 @@ export function taskTextSection(input: {
   ]
     .filter(Boolean)
     .join('\n\n')
-  if (Buffer.byteLength(full) <= TASK_TEXT_MAX_BYTES) return full
-  const remedy = input.hub
-    ? `${PLATFORM_SLUG} task show ${input.key} --project ${input.project}`
-    : input.getTool
-  const suffix = `\n\nTask text was truncated; read the full task with ${remedy}.`
-  return `${fitUtf8(full, TASK_TEXT_MAX_BYTES - Buffer.byteLength(suffix))}${suffix}`
+  return boundTaskText(full, taskTextReadRemedy(input))
 }
 
 export function operatorKnowledgeSection(pack: { markdown: string } | null): string {

@@ -9,6 +9,7 @@ import {
   readDelegationSettings,
   readMachineValue,
 } from '../../../shared/machine-config.ts'
+import { isTrackerProtocol, resolveTrackerAgentActions } from '../../../shared/tracker-actions.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
@@ -65,6 +66,7 @@ import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { boundTaskText, taskTextReadRemedy } from '../run/run-pack-prompt.ts'
 import { routedPromptBytes, routedPromptText } from '../run/run-routing-input.ts'
 import { renderTaskRulings } from '../run/task-rulings.ts'
 import { taskRulingsForDispatch } from '../run/task-rulings-store.ts'
@@ -87,7 +89,7 @@ import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-preflight.ts'
 import type { ReviewLensPackInputs } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
-import { lookupProjectTaskKey, readTaskText } from './task-key-lookup.ts'
+import { lookupProjectTaskKey, readTaskText, type TaskTextRead } from './task-key-lookup.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
@@ -119,6 +121,37 @@ async function lookupTaskKey(project: string, key: string) {
   return lookupProjectTaskKey(registered, key)
 }
 
+function decisionConformanceRulings(
+  project: string,
+  task: Extract<TaskTextRead, { available: true }>,
+): Pick<ReviewLensPackInputs, 'rulingsInput' | 'rulings'> {
+  const comments = task.comments.map((comment) => `Task comment: ${comment}`)
+  if (task.mirrorUnread) {
+    return {
+      rulingsInput: unavailableStatus(task.mirrorUnread),
+      rulings: [...comments, `Answered questions could not be read: ${task.mirrorUnread}`].join(
+        '\n\n',
+      ),
+    }
+  }
+  const rulings = [
+    renderTaskRulings(
+      taskRulingsForDispatch({
+        resume: false,
+        project,
+        taskRecordId: task.recordId,
+      }),
+    ),
+    ...comments,
+  ].filter(Boolean)
+  return {
+    rulingsInput: 'carried',
+    rulings: rulings.length
+      ? rulings.join('\n\n')
+      : 'No answered questions or task comments were recorded.',
+  }
+}
+
 async function reviewLensInputs(
   project: NonNullable<ReturnType<typeof projectByName>>,
   key: string | undefined,
@@ -144,27 +177,28 @@ async function reviewLensInputs(
       rulings: '',
     }
   }
-  const rulings = decisionConformance
-    ? [
-        renderTaskRulings(
-          taskRulingsForDispatch({
-            resume: false,
-            project: project.name,
-            taskRecordId: task.recordId,
-          }),
-        ),
-        ...task.comments.map((comment) => `Task comment: ${comment}`),
-      ].filter(Boolean)
-    : []
+  const protocol = project.settings.tracker?.protocol
+  const getTool = isTrackerProtocol(protocol)
+    ? (resolveTrackerAgentActions(protocol, project.settings.tracker?.actions).get ??
+      'tracker get tool')
+    : 'tracker get tool'
+  const rulingPack = decisionConformance
+    ? decisionConformanceRulings(project.name, task)
+    : { rulingsInput: null, rulings: '' }
+  const taskText = `${task.key} — ${task.title}${task.body.trim() ? `\n\n${task.body.trim()}` : ''}`
   return {
     taskTextInput: 'carried',
-    rulingsInput: decisionConformance ? 'carried' : null,
-    taskText: `${task.key} — ${task.title}${task.body.trim() ? `\n\n${task.body.trim()}` : ''}`,
-    rulings: decisionConformance
-      ? rulings.length
-        ? rulings.join('\n\n')
-        : 'No answered questions or task comments were recorded.'
-      : '',
+    rulingsInput: rulingPack.rulingsInput,
+    taskText: boundTaskText(
+      taskText,
+      taskTextReadRemedy({
+        key: task.key,
+        project: project.name,
+        getTool,
+        hub: protocol === 'hub',
+      }),
+    ),
+    rulings: rulingPack.rulings,
   }
 }
 

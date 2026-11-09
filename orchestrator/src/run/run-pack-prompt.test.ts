@@ -21,19 +21,23 @@ describe('operator knowledge prompt section', () => {
     expect(operatorKnowledgeSection({ markdown: '' })).toBe('')
   })
 
-  test('places task rulings after operator knowledge and before the spec', () => {
-    const prompt = initialDispatchPrompt({
-      writesJob: true,
-      preamble: 'PREAMBLE',
-      infrastructure: '',
-      operatorKnowledge: 'WHAT THE OPERATOR WANTS YOU TO KNOW\n\nCANON',
-      taskRulings: 'RULINGS ALREADY MADE ON THIS TASK\n\nRULING',
-      taskText: '',
-      spec: 'WORK',
-    })
-    expect(prompt.indexOf('CANON')).toBeLessThan(prompt.indexOf('RULINGS ALREADY'))
-    expect(prompt.indexOf('RULINGS ALREADY')).toBeLessThan(prompt.indexOf('THE SPEC'))
-  })
+  test.each([true, false])(
+    'places task rulings and task text before the spec when writesJob is %s',
+    (writesJob) => {
+      const prompt = initialDispatchPrompt({
+        writesJob,
+        preamble: 'PREAMBLE',
+        infrastructure: '',
+        operatorKnowledge: 'WHAT THE OPERATOR WANTS YOU TO KNOW\n\nCANON',
+        taskRulings: 'RULINGS ALREADY MADE ON THIS TASK\n\nRULING',
+        taskText: 'TASK TEXT: DEV-1 — Carry text\n\nTask body',
+        spec: 'WORK',
+      })
+      expect(prompt.indexOf('CANON')).toBeLessThan(prompt.indexOf('RULINGS ALREADY'))
+      expect(prompt.indexOf('RULINGS ALREADY')).toBeLessThan(prompt.indexOf('TASK TEXT: DEV-1'))
+      expect(prompt.indexOf('TASK TEXT: DEV-1')).toBeLessThan(prompt.indexOf('THE SPEC'))
+    },
+  )
 })
 
 describe('task text prompt section', () => {

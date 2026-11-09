@@ -199,7 +199,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-liveness-policy.ts', []),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/run-dispatch-rulings.ts', [
-    '../review/review-target.ts',
     './run-claim-inheritance.ts',
     './run-task-reference.ts',
     './run-task-text.ts',

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { missingTaskLine, missingTaskMessage } from '../../../shared/task-missing.ts'
 import type { Project } from '../project/projects.ts'
 import {
@@ -105,6 +106,7 @@ test('carries external task text when the requested mirror read fails', async ()
     title: 'Remote title',
     body: 'Body',
     comments: [],
+    mirrorUnread: `could not read task data for project remote-project: hub unavailable; retry: ${PLATFORM_SLUG} task list --project remote-project --json`,
   })
 })
 

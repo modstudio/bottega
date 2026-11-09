@@ -14,7 +14,7 @@ import {
 } from '../mcp/mcp-probe.ts'
 import { callMcpTool } from '../mcp/mcp-tool-list.ts'
 import type { Project } from '../project/projects.ts'
-import { bestEffortTaskReference, type HubTaskReader } from '../workflow/workflow-task-reference.ts'
+import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { readTaskThroughCli } from './task-cli-read.ts'
 import type { TaskKeyLookupResult } from './task-key-admission.ts'
 
@@ -36,6 +36,7 @@ export type TaskTextRead =
       title: string
       body: string
       comments: string[]
+      mirrorUnread?: string
     }
   | { available: false; reason: string }
 
@@ -143,9 +144,15 @@ export async function readTaskText(
     }
     const task = await source.readText(dependencies.toolCaller ?? remote!.caller, key)
     if (!task) return { available: false, reason: `tracker has no task ${key}` }
-    const mirror = dependencies.withRecordId
-      ? await bestEffortTaskReference(project.name, key, dependencies.hubTaskReader)
-      : null
+    let mirror = null
+    let mirrorUnread: string | undefined
+    if (dependencies.withRecordId) {
+      try {
+        mirror = await resolveHubTaskReference(project.name, key, dependencies.hubTaskReader)
+      } catch (cause) {
+        mirrorUnread = errorText(cause)
+      }
+    }
     return {
       available: true,
       recordId: mirror?.record_id ?? null,
@@ -153,6 +160,7 @@ export async function readTaskText(
       title: task.title,
       body: task.body,
       comments: task.comments,
+      ...(mirrorUnread ? { mirrorUnread } : {}),
     }
   } catch (cause) {
     return {
