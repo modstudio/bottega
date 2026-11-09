@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { RECORD_MIGRATE_SECRET_NAME } from '../../../shared/record-migrate-secret.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { RECORD_TUNNEL_DOWN_REMEDY } from '../record/record-tunnel-error.ts'
@@ -38,12 +37,12 @@ import {
 } from './orphan-inventory-conditions.ts'
 
 describe('record tunnel monitor condition', () => {
-  async function observeUnconfigured(secretKeys: () => Promise<string[]>) {
+  async function observeUnconfigured(credentialPresent: () => Promise<boolean>) {
     const root = mkdtempSync(join(tmpdir(), 'record-tunnel-monitor-'))
     const previous = process.env[CONFIG_HOME_ENV]
     process.env[CONFIG_HOME_ENV] = root
     try {
-      return await observeRecordTunnel(secretKeys)
+      return await observeRecordTunnel(credentialPresent)
     } finally {
       if (previous === undefined) delete process.env[CONFIG_HOME_ENV]
       else process.env[CONFIG_HOME_ENV] = previous
@@ -51,8 +50,8 @@ describe('record tunnel monitor condition', () => {
     }
   }
 
-  test('reports the empty setting and install remedy when the secret source names the migrate secret', async () => {
-    const observation = await observeUnconfigured(async () => [RECORD_MIGRATE_SECRET_NAME])
+  test('reports the empty setting and install remedy when the migrate credential is present', async () => {
+    const observation = await observeUnconfigured(async () => true)
 
     expect(observation.errors).toEqual([])
     expect(observation.conditions[0]).toMatchObject({
@@ -62,8 +61,8 @@ describe('record tunnel monitor condition', () => {
     })
   })
 
-  test('is absent when the secret source does not name the migrate secret', async () => {
-    expect(await observeUnconfigured(async () => ['ANOTHER_SECRET'])).toEqual({
+  test('is absent when the migrate credential is absent', async () => {
+    expect(await observeUnconfigured(async () => false)).toEqual({
       conditions: [],
       errors: [],
     })

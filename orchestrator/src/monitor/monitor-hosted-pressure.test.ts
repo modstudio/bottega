@@ -113,6 +113,7 @@ test('a failed query is stored and returned as an observation error', async () =
 test('the observation budget includes token resolution', async () => {
   const database = db()
   let fetchCalled = false
+  let tokenSignal: AbortSignal | undefined
   const result = await checkHostedPressureCached({
     database,
     clock: base,
@@ -120,7 +121,10 @@ test('the observation budget includes token resolution', async () => {
       fetchCalled = true
       throw new Error('metrics fetch must not run without a token')
     }) as unknown as typeof fetch,
-    resolveToken: async () => await new Promise<never>(() => {}),
+    resolveToken: async (signal) => {
+      tokenSignal = signal
+      return await new Promise<never>(() => {})
+    },
     observeBudgetMs: 50,
   })
 
@@ -138,6 +142,7 @@ test('the observation budget includes token resolution', async () => {
     last_error: 'could not observe: hosted unreachable (token resolve exceeded 50 ms)',
   })
   expect(fetchCalled).toBeFalse()
+  expect(tokenSignal?.aborted).toBeTrue()
 })
 
 test('a query-stage observation budget failure is recorded as a budget failure', async () => {

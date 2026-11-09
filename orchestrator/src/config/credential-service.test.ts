@@ -17,6 +17,7 @@ import { pinTrustedMachine } from '../../../shared/trust-list.ts'
 import {
   type CredentialAddress,
   deleteCredential,
+  operatorProjectCredentialAddress,
   projectCredentialAddress,
   resolveCredentialValue,
   setCredential,
@@ -91,6 +92,21 @@ const address: CredentialAddress = {
   spaceName: 'studio',
   destinationSpaceId: '01990000-0000-7000-8000-000000000002',
 }
+
+test('operator identity replaces identity fields and retains project binding fields', () => {
+  expect(
+    operatorProjectCredentialAddress(address, {
+      provider: 'fly',
+      name: 'metrics',
+      type: 'token',
+    }),
+  ).toEqual({
+    ...address,
+    provider: 'fly',
+    name: 'metrics',
+    type: 'token',
+  })
+})
 
 test('set credential gives the project access remedy for every missing wrap outcome', async () => {
   for (const currentDataKey of [

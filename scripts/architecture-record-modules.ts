@@ -591,6 +591,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-doctor.ts', [
     '../../../shared/brand.ts',
     '../../../shared/env-source.ts',
+    '../../../shared/operator-credentials.ts',
     '../../../shared/record-api-url.ts',
     '../../../shared/record-remedies.ts',
     '../../../shared/record/schema.ts',

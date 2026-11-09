@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  FLY_METRICS_OPERATOR_CREDENTIAL,
+  operatorCredentialSetCommand,
+} from '../../../shared/operator-credentials.ts'
 import {
   CLEAR_HOSTED_PRESSURE_STATE,
   decideHostedPressure,
@@ -193,7 +196,7 @@ describe('hosted pressure decision', () => {
       expect.objectContaining({
         kind: 'hosted-metrics-unconfigured',
         severity: 'informational',
-        action: `pipe the value on stdin to ${PLATFORM_SLUG} credential set fly/metrics/token --project ${PLATFORM_SLUG}`,
+        action: `pipe the value on stdin to ${operatorCredentialSetCommand(FLY_METRICS_OPERATOR_CREDENTIAL)}`,
       }),
     ])
   })

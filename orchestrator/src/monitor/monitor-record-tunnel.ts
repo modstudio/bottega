@@ -2,10 +2,12 @@
 /** Classifies the observed record tunnel, whether configured or unconfigured. */
 
 import { createConnection } from 'node:net'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
-import { RECORD_MIGRATE_SECRET_NAME } from '../../../shared/record-migrate-secret.ts'
-import { listSecrets } from '../config/config-service.ts'
+import { RECORD_MIGRATE_OPERATOR_CREDENTIAL } from '../../../shared/operator-credentials.ts'
+import { projectHasCredential } from '../config/credential-service.ts'
+import { projectByName } from '../project/projects.ts'
 import {
   RECORD_TUNNEL_DOWN_REMEDY,
   type RecordTunnelConfigurationFacts,
@@ -16,9 +18,15 @@ import type { MonitorCondition } from './monitor-types.ts'
 
 const RECORD_TUNNEL_PROBE_TIMEOUT_MS = 500
 
-/** Decide whether the sealed configuration says this machine requires the record tunnel. */
-function sealedConfigurationRequiresRecordTunnel(secretKeys: readonly string[]): boolean {
-  return secretKeys.includes(RECORD_MIGRATE_SECRET_NAME)
+/** Decide from observed credential metadata whether this machine requires the record tunnel. */
+function credentialConfigurationRequiresRecordTunnel(credentialPresent: boolean): boolean {
+  return credentialPresent
+}
+
+async function recordMigrateCredentialPresent(): Promise<boolean> {
+  const project = projectByName(PLATFORM_SLUG)
+  if (!project) throw new Error(`no project ${PLATFORM_SLUG}`)
+  return projectHasCredential(project, RECORD_MIGRATE_OPERATOR_CREDENTIAL.identity)
 }
 
 /** Classify the record tunnel from already-observed configuration and endpoint facts. */
@@ -67,7 +75,7 @@ function tcpEndpointReachable(port: number): Promise<boolean> {
 }
 
 export async function observeRecordTunnel(
-  secretKeys: () => Promise<string[]> = async () => (await listSecrets()).map(({ key }) => key),
+  credentialPresent: () => Promise<boolean> = recordMigrateCredentialPresent,
 ): Promise<{
   conditions: MonitorCondition[]
   errors: string[]
@@ -77,7 +85,7 @@ export async function observeRecordTunnel(
     if (!app) {
       const condition = recordTunnelCondition({
         tunnelApp: app,
-        requiresTunnel: sealedConfigurationRequiresRecordTunnel(await secretKeys()),
+        requiresTunnel: credentialConfigurationRequiresRecordTunnel(await credentialPresent()),
         port: 0,
         reachable: false,
       })

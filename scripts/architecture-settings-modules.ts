@@ -75,6 +75,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/credential.ts',
     '../../../shared/credential-resolution.ts',
     '../../../shared/credential-value.ts',
+    '../../../shared/operator-credentials.ts',
     '../../../shared/refusal.ts',
     '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
@@ -87,8 +88,8 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/config/operator-credential.ts', [
     '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
-    '../../../shared/credential.ts',
-    '../../../shared/credential-value.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/operator-credentials.ts',
     '../project/projects.ts',
     './credential-service.ts',
   ]),
