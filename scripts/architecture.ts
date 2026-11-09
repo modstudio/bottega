@@ -584,6 +584,7 @@ export const modules: ArchitectureModule[] = [
     '../agent/model-host.ts',
     '../sandbox/sandbox-runtime.ts',
     './setup-mcp.ts',
+    './setup-schedule-policy.ts',
     './setup-schedules.ts',
     '../../../shared/bounded-process.ts',
   ]),
