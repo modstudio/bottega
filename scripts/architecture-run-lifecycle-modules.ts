@@ -51,7 +51,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/jev-worker-question.ts', [
     'bun:sqlite',
     'node:fs',
-    '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
     '../../../shared/typed-question/client.ts',
     '../../../shared/typed-question/registry.ts',

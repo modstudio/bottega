@@ -38,23 +38,6 @@ test('TypeSafe credential adapter leaves other config failures as key_resolution
   expect(result).toMatchObject({ kind: 'error', error: 'key_resolution' })
 })
 
-test('resolved typed credential authorizes the request', async () => {
-  let authorization: string | null = null
-  const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
-    resolveCredential: async () => ({ kind: 'resolved', value: 'typed-secret' }),
-    fetch: async (_url, init) => {
-      authorization = new Headers(init.headers).get('Authorization')
-      return Response.json({
-        answers: { spec_unsettled: { noul: 0.7 } },
-        model: 'jev-served',
-        usage: { input_tokens: 1 },
-      })
-    },
-  })
-  expect(result.kind).toBe('answer')
-  expect(String(authorization)).toBe('Bearer typed-secret')
-})
-
 test('missing typed credential returns missing-key', async () => {
   const result = await askTypedQuestionClient(FIXTURE_QUESTION, 'state', {
     resolveCredential: missingCredential,

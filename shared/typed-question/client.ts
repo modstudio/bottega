@@ -2,7 +2,9 @@ import { hostedApiFetch } from '../bounded-fetch.ts'
 // concern: typed-question-client
 /** Calls the TypeSafe typed-question API without exposing its credential. */
 
+import { PLATFORM_SLUG } from '../brand.ts'
 import { ConfigClientError } from '../config-client.ts'
+import { credentialIdentityPath } from '../credential.ts'
 import { resolveActiveSpaceCredentialValue } from '../credential-value.ts'
 import type { TypedQuestion } from './registry.ts'
 
@@ -15,6 +17,12 @@ const TYPESAFE_CREDENTIAL = {
   mode: 'default',
   environment: 'local',
 } as const
+/** The command that configures the credential this client reads; every remedy names it. */
+export const TYPESAFE_CREDENTIAL_SET_COMMAND = `${PLATFORM_SLUG} credential set ${credentialIdentityPath(
+  TYPESAFE_CREDENTIAL.provider,
+  TYPESAFE_CREDENTIAL.name,
+  TYPESAFE_CREDENTIAL.type,
+)}`
 const JEV_MODEL = 'jev-1.14.0'
 
 type NoulAnswer = { noul: number }

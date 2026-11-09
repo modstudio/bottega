@@ -2,6 +2,7 @@
 /** Presents hub-owned typed-question measurements. */
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { TYPESAFE_CREDENTIAL_SET_COMMAND } from '../../shared/typed-question/client.ts'
 import { typedQuestionDays } from '../../shared/typed-question/typed-question-blocks.ts'
 import { renderTypedQuestionBlock } from '../../shared/typed-question/typed-question-render.ts'
 import { noteDuplicateBacktest } from './note-duplicate-backtest.ts'
@@ -19,7 +20,7 @@ export function hubTypedQuestionCommand(
     presentation.log(
       days !== undefined
         ? `no typed-question answers recorded for the last ${days} day(s); run without the filter to see every recorded question`
-        : `no typed-question answers recorded — they are recorded when ${PLATFORM_SLUG} note new is run after ${PLATFORM_SLUG} credential set typesafe/api-key`,
+        : `no typed-question answers recorded — they are recorded when ${PLATFORM_SLUG} note new is run after ${TYPESAFE_CREDENTIAL_SET_COMMAND}`,
     )
     return
   }

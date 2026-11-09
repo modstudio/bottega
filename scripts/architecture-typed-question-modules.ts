@@ -13,9 +13,10 @@ export const typedQuestionModules = [
   module('shared/typed-question/registry.ts', []),
   module('orchestrator/src/ask/worker-question.ts', ['zod', '../../../shared/orch-contract.ts']),
   module('shared/typed-question/client.ts', [
+    '../brand.ts',
     '../config-client.ts',
+    '../credential.ts',
     '../credential-value.ts',
-    '../env-source.ts',
     './registry.ts',
     '../bounded-fetch.ts',
   ]),
@@ -126,6 +127,7 @@ export const typedQuestionModules = [
   ]),
   module('hub/src/typed-question-cli.ts', [
     '../../shared/brand.ts',
+    '../../shared/typed-question/client.ts',
     '../../shared/typed-question/typed-question-blocks.ts',
     '../../shared/typed-question/typed-question-render.ts',
     './note-duplicate-backtest.ts',
