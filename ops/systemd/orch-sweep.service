@@ -1,0 +1,12 @@
+[Unit]
+Description=Bottega machine sweep
+
+[Service]
+Type=oneshot
+ExecStart="__BOTTEGA_BIN__" machine sweep
+Nice=10
+IOSchedulingClass=idle
+Environment="PATH=/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin"
+Environment="HOME=__HOME__"
+Environment="__STATE_HOME_ENV__=__STATE_HOME__"
+WorkingDirectory=%h

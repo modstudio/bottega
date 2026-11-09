@@ -69,7 +69,7 @@ async function migrationAssetPaths(): Promise<string[]> {
   return paths.sort()
 }
 
-async function launchdAssetPaths(): Promise<string[]> {
+async function scheduleTemplateAssetPaths(): Promise<string[]> {
   const paths: string[] = []
   for (const owner of LAUNCHD_TEMPLATE_OWNERS) {
     const root = `${owner.concern}/${owner.directory}`
@@ -77,6 +77,11 @@ async function launchdAssetPaths(): Promise<string[]> {
       ...(await embeddedAssetPaths(root)).filter((path) => path.endsWith('.plist.template')),
     )
   }
+  paths.push(
+    ...(await embeddedAssetPaths('ops/systemd')).filter((path) =>
+      ['.service', '.timer', '.path'].some((suffix) => path.endsWith(suffix)),
+    ),
+  )
   return paths.sort()
 }
 
@@ -140,7 +145,7 @@ export async function buildBinary(
       generatedAssetModule(
         [
           ...(await migrationAssetPaths()),
-          ...(await launchdAssetPaths()),
+          ...(await scheduleTemplateAssetPaths()),
           REF_GUARD_RUNTIME_ASSET.packagePath,
         ],
         [

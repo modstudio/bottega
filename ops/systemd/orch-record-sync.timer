@@ -1,0 +1,10 @@
+[Unit]
+Description=Push and publish Bottega record changes periodically
+
+[Timer]
+OnStartupSec=60
+OnUnitActiveSec=300
+Unit=orch-record-sync.service
+
+[Install]
+WantedBy=timers.target

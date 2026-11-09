@@ -14,12 +14,11 @@ import {
   LAUNCHD_TEMPLATE_OWNERS,
 } from '../setup/launchd-owners.ts'
 import {
-  applyMaintenanceSchedules,
-  gatherScheduleSetupFacts,
   isMaintenanceScheduleLabel,
   type ScheduleApplyResult,
   type ScheduleSetupFact,
-} from '../setup/setup-schedules.ts'
+} from '../setup/setup-schedule-policy.ts'
+import { applyMaintenanceSchedules, gatherScheduleSetupFacts } from '../setup/setup-schedules.ts'
 import {
   installedDefinitionObservations,
   installerRemedy,
@@ -120,7 +119,7 @@ function distributionObservations(
     observations[fact.label] = {
       programPath: null,
       programExists: true,
-      comparison: { kind: 'compared', plistMatches: fact.loaded && fact.plistMatches },
+      comparison: { kind: 'compared', plistMatches: fact.loaded && fact.definitionMatches },
     }
   }
   return observations

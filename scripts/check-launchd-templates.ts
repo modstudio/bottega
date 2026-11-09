@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { MAINTENANCE_SCHEDULE_PLACEHOLDERS } from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { minutesOfDay } from '../orchestrator/src/spare/spare-decisions.ts'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
@@ -28,6 +29,8 @@ const templateDirectories = [
     installer: 'hub/bin/install-launchd.sh',
   },
 ] as const
+
+const systemdTemplateDirectory = 'ops/systemd'
 
 const stateHomeExemptions = new Map<string, string>([
   [
@@ -207,13 +210,21 @@ type TemplateFact = { concern: string; installer: string; name: string }
 
 /** Every checked-in launchd template, with the installer that renders it. */
 function discoverTemplates(): TemplateFact[] {
-  return templateDirectories
-    .flatMap(({ directory, concern, installer }) =>
-      readdirSync(join(repositoryRoot, directory))
-        .filter((name) => name.endsWith('.plist.template'))
-        .map((name) => ({ concern, installer, name: join(directory, name) })),
-    )
-    .sort((left, right) => left.name.localeCompare(right.name))
+  const launchdTemplates = templateDirectories.flatMap(({ directory, concern, installer }) =>
+    readdirSync(join(repositoryRoot, directory))
+      .filter((name) => name.endsWith('.plist.template'))
+      .map((name) => ({ concern, installer, name: join(directory, name) })),
+  )
+  const systemdTemplates = readdirSync(join(repositoryRoot, systemdTemplateDirectory))
+    .filter((name) => ['.service', '.timer', '.path'].some((suffix) => name.endsWith(suffix)))
+    .map((name) => ({
+      concern: join(repositoryRoot, 'ops'),
+      installer: 'orchestrator/src/setup/setup-systemd-schedules.ts',
+      name: join(systemdTemplateDirectory, name),
+    }))
+  return [...launchdTemplates, ...systemdTemplates].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  )
 }
 
 /** Lint one rendered plist and check that its first program argument exists. */
@@ -266,7 +277,12 @@ function checkTemplate(input: {
   const { concern, installer, name } = input.fact
   const errors: string[] = []
   const template = readFileSync(join(repositoryRoot, name), 'utf8')
-  if (!stateHomeExemptions.has(name) && !template.includes('<key>__STATE_HOME_ENV__</key>')) {
+  const systemd = name.startsWith(`${systemdTemplateDirectory}/`)
+  const hasStateHome = systemd
+    ? template.includes('Environment="__STATE_HOME_ENV__=__STATE_HOME__"')
+    : template.includes('<key>__STATE_HOME_ENV__</key>')
+  const requiresStateHome = !systemd || name.endsWith('.service')
+  if (requiresStateHome && !stateHomeExemptions.has(name) && !hasStateHome) {
     errors.push(`${name}: launchd template is missing the state-home environment entry`)
   }
   errors.push(
@@ -274,7 +290,9 @@ function checkTemplate(input: {
       templateName: name,
       templateText: template,
       installerName: installer,
-      installRules: installerRenderRules(readFileSync(join(repositoryRoot, installer), 'utf8')),
+      installRules: systemd
+        ? new Set(MAINTENANCE_SCHEDULE_PLACEHOLDERS)
+        : installerRenderRules(readFileSync(join(repositoryRoot, installer), 'utf8')),
     }),
   )
   let rendered = template
@@ -291,7 +309,7 @@ function checkTemplate(input: {
   }
   const path = join(input.renderedDirectory, name.replaceAll('/', '-').replace(/\.template$/, ''))
   writeFileSync(path, rendered)
-  errors.push(...checkRenderedPlist({ name, path, plutil: input.plutil }))
+  if (!systemd) errors.push(...checkRenderedPlist({ name, path, plutil: input.plutil }))
   return errors
 }
 

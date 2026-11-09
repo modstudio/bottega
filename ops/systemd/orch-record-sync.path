@@ -1,0 +1,9 @@
+[Unit]
+Description=Push Bottega record changes when the queue is nonempty
+
+[Path]
+DirectoryNotEmpty=__RECORD_SYNC_QUEUE__
+Unit=orch-record-sync.service
+
+[Install]
+WantedBy=default.target

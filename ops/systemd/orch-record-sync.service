@@ -1,0 +1,10 @@
+[Unit]
+Description=Push and publish Bottega record changes
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'rm -f "__RECORD_SYNC_QUEUE__/__RECORD_SYNC_MARKER__"; "__BOTTEGA_BIN__" record push; push_status=$$?; "__BOTTEGA_BIN__" record publish; publish_status=$$?; if [ "$$push_status" -ne 0 ] || [ "$$publish_status" -ne 0 ]; then exit 1; fi'
+Environment="PATH=/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin"
+Environment="HOME=__HOME__"
+Environment="__STATE_HOME_ENV__=__STATE_HOME__"
+WorkingDirectory=%h

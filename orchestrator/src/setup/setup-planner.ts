@@ -195,10 +195,12 @@ function selectedMachineLevel(plan: SetupPlan, answers: SetupAnswers): MachineLe
 
 function plannedScheduleActions(plan: SetupPlan, selectedLevel: MachineLevel): SetupAction[] {
   const machine = plan.facts?.machine
-  return machine?.os?.platform === 'darwin' &&
+  return (machine?.os?.platform === 'darwin' || machine?.os?.platform === 'linux') &&
     machine.installationKind === 'distribution' &&
     selectedLevel === 'full' &&
-    (machine.schedules ?? []).some((schedule) => !schedule.loaded || !schedule.plistMatches)
+    (machine.schedules ?? []).some(
+      (schedule) => !schedule.installed || !schedule.loaded || !schedule.definitionMatches,
+    )
     ? [{ kind: 'install-schedules' }]
     : []
 }

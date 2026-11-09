@@ -12,7 +12,7 @@ import {
   maintenanceSchedulePlan,
   renderMaintenanceSchedule,
   requiredMaintenanceLabels,
-} from './setup-schedules.ts'
+} from './setup-schedule-policy.ts'
 
 const skipFacts = {
   modelHostAlias: '',
@@ -79,4 +79,28 @@ test('record sync schedule drains the queue before record push', () => {
   expect(
     rendered.match(/<key>QueueDirectories<\/key>\s*<array>\s*<string>([^<]+)<\/string>/)?.[1],
   ).toBe(queue)
+})
+
+test('systemd schedule units render every placeholder and preserve intervals and queue', () => {
+  const directory = join(import.meta.dir, '..', '..', '..', 'ops', 'systemd')
+  const values = {
+    bottegaBin: `/opt/${PLATFORM_SLUG}/bin/${PLATFORM_SLUG}`,
+    home: '/home/operator',
+    stateHomeEnvironment: STATE_HOME_ENV,
+    stateHome: `/home/operator/.local/state/${PLATFORM_SLUG}`,
+  }
+  const queue = recordSyncQueueDirectory({ [STATE_HOME_ENV]: values.stateHome })
+  const expectations = new Map([
+    ['orch-sweep.service', ['machine sweep', 'Nice=10', 'IOSchedulingClass=idle']],
+    ['orch-sweep.timer', ['OnStartupSec=120', 'OnUnitActiveSec=7200']],
+    ['orch-record-sync.service', ['record push', 'record publish']],
+    ['orch-record-sync.timer', ['OnStartupSec=60', 'OnUnitActiveSec=300']],
+    ['orch-record-sync.path', [`DirectoryNotEmpty=${queue}`]],
+  ])
+
+  for (const [name, fragments] of expectations) {
+    const rendered = renderMaintenanceSchedule(readFileSync(join(directory, name), 'utf8'), values)
+    expect(rendered.match(/__[A-Z0-9_]+__/g)).toBeNull()
+    for (const fragment of fragments) expect(rendered).toContain(fragment)
+  }
 })
