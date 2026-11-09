@@ -15,6 +15,7 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
+import { questionTaskHolderSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
 import {
@@ -217,7 +218,7 @@ function loadQuestion(questionId: string): QuestionRow {
               q.overturned_at, q.overturned_by, q.overturned_by_name,
               q.replacement, q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
               COALESCE(r.repo,c.project) repo, COALESCE(r.cwd,p.path) cwd,c.args,
-              COALESCE(r.launch_key,q.workflow_key) launch_key,p.path project_path
+              ${questionTaskHolderSql('q', 'r')} launch_key,p.path project_path
          FROM question q LEFT JOIN run r ON r.record_id = q.run_record_id
          LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
          LEFT JOIN project p ON p.record_id=c.project_record_id AND p.retired_at IS NULL

@@ -2,13 +2,15 @@
 /** Gathers session work and next-action revision facts for stale context policy. */
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
+import { questionTaskHolderSql } from '../run/question-open.ts'
 import { type CursorTrailEntry, isClosedStep } from '../workflow/workflow-cursor-trail.ts'
 import { decodeContextItem } from './context-item-codec.ts'
 import { type ContextWorkEvent, staleContextHolders } from './context-stale.ts'
+import { contextTaskHolderKey } from './context-write-adapter.ts'
+import { listDocsStore } from './doc-read-store.ts'
 
 type KeyAt = { key: string | null; at: string }
 type CursorWork = { key: string; closed: string }
-type StoredContext = { subject: string; slug: string; body: string; updated_at: string }
 
 export function staleContextForSession(session: string, database: Database = db()) {
   const work: ContextWorkEvent[] = []
@@ -31,19 +33,18 @@ export function staleContextForSession(session: string, database: Database = db(
   }
   for (const row of database
     .query<KeyAt, [string, string]>(
-      `SELECT COALESCE(q.workflow_key,r.launch_key) key,q.answered_at at
+      `SELECT ${questionTaskHolderSql('q', 'r')} key,q.answered_at at
        FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id
        WHERE q.answered_by IN (?,?) AND q.answered_at IS NOT NULL`,
     )
     .all(session, `operator via ${session}`))
     add(row)
 
-  const revisions = database
-    .query<StoredContext, []>(
-      "SELECT subject,slug,body,updated_at FROM doc WHERE scope='context' AND subject LIKE 'task:%'",
-    )
-    .all()
-    .filter((row) => decodeContextItem(row.subject, row.slug, row.body).kind === 'next-action')
-    .map((row) => ({ holder: row.subject.slice(5), at: row.updated_at }))
+  const revisions = listDocsStore({ scope: 'context' }, database).flatMap((doc) => {
+    const holder = contextTaskHolderKey(doc.subject)
+    if (!holder || decodeContextItem(doc.subject!, doc.slug, doc.body).kind !== 'next-action')
+      return []
+    return [{ holder, at: doc.updated_at }]
+  })
   return staleContextHolders(work, revisions)
 }

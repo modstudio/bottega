@@ -2,6 +2,7 @@
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
@@ -29,7 +30,7 @@ import {
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
-import { openChainQuestions } from './question-open.ts'
+import { openChainQuestions, questionTaskHolderSql } from './question-open.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
@@ -194,19 +195,25 @@ export async function retryCommand(
 function answeredQuestions(
   runId: string,
   input: AnswerRunInput,
-): { number: number; fromOperator: boolean }[] {
+): { number: number; fromOperator: boolean; taskHolder: string | null }[] {
   const { rulings } = input
   if (typeof rulings !== 'string') {
-    const number = db().query<{ number: number }, [string]>(
-      'SELECT number FROM question WHERE record_id=?',
+    const question = db().query<{ number: number; taskHolder: string | null }, [string]>(
+      `SELECT q.number,${questionTaskHolderSql('q', 'r')} taskHolder
+       FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
     )
     return rulings.map((ruling) => ({
-      number: number.get(ruling.questionId)!.number,
+      ...question.get(ruling.questionId)!,
       fromOperator: ruling.fromOperator,
     }))
   }
-  return openChainQuestions<{ number: number }>(db(), runId, 'q.number').map((row) => ({
+  return openChainQuestions<{ number: number; taskHolder: string | null }>(
+    db(),
+    runId,
+    `q.number,${questionTaskHolderSql('q', 'r')} taskHolder`,
+  ).map((row) => ({
     number: row.number,
+    taskHolder: row.taskHolder,
     fromOperator: input.fromOperator,
   }))
 }
@@ -219,7 +226,7 @@ export async function answerCommand(
   flags: Flags,
   presentation: Presentation,
   refusedOptions?: Readonly<Record<string, string>>,
-): Promise<void> {
+): Promise<ContextMomentWrite[]> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
   const questions = answeredQuestions(id, input)
@@ -236,6 +243,14 @@ export async function answerCommand(
       console.log(line)
     }
   }
+  return questions.flatMap((question) => {
+    const write = contextMomentWrite({
+      moment: 'question-answer',
+      taskKey: question.taskHolder,
+      questionId: question.number,
+    })
+    return write ? [write] : []
+  })
 }
 
 export async function continueCommand(

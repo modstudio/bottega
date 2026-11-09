@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { contextMomentWrite } from '../../../shared/context-moment.ts'
+import { contextMomentWrite, emitContextMoment } from '../../../shared/context-moment.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { taskKeyToken } from '../branch/other-branch-state.ts'
 import { writableDb } from '../database/db.ts'
@@ -172,7 +172,7 @@ async function mergePullRequestCommand(
   log(outcome.output)
   if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
   const prompt = contextMomentWrite({ moment: 'pr-merge', taskKey })
-  if (prompt) log(prompt.line)
+  emitContextMoment(prompt, false, { log, error: console.error })
 }
 
 export function register(program: Command): void {

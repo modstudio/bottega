@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { CONTEXT_MOMENTS, contextMomentWrite } from './context-moment.ts'
+import { CONTEXT_MOMENTS, contextMomentWrite, emitContextMoment } from './context-moment.ts'
 
 describe('context moment write', () => {
   const expected = {
@@ -30,4 +30,23 @@ describe('context moment write', () => {
         ?.command,
     ).toContain("--source 'q5288'")
   })
+})
+
+test('emits moment prompts to trailing stdout for text and stderr for JSON', () => {
+  const stdout: string[] = []
+  const stderr: string[] = []
+  const output = {
+    log: (line: string) => stdout.push(line),
+    error: (line: string) => stderr.push(line),
+  }
+  const write = contextMomentWrite({ moment: 'run-start', taskKey: 'DEV-2225' })
+
+  emitContextMoment(write, false, output)
+  expect(stdout).toEqual([write!.line])
+  expect(stderr).toEqual([])
+
+  stdout.length = 0
+  emitContextMoment(write, true, output)
+  expect(stdout).toEqual([])
+  expect(stderr).toEqual([write!.line])
 })

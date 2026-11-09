@@ -70,6 +70,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../dashboard-capability.ts',
     '../database/db.ts',
     './question-mutation.ts',
+    './question-open.ts',
     './question-outbox.ts',
     './question-ruling-remedy.ts',
     './ruling-file-authority.ts',

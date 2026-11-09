@@ -17,9 +17,12 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/context-stale-adapter.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../run/question-open.ts',
     '../workflow/workflow-cursor-trail.ts',
     './context-item-codec.ts',
     './context-stale.ts',
+    './context-write-adapter.ts',
+    './doc-read-store.ts',
   ]),
   module('orchestrator/src/doc/context-write-adapter.ts', [
     'bun:sqlite',

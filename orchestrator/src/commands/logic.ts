@@ -4,7 +4,7 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import { contextMomentWrite } from '../../../shared/context-moment.ts'
+import { contextMomentWrite, emitContextMoment } from '../../../shared/context-moment.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
@@ -116,15 +116,7 @@ const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
   )
 const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
   const target = resolveAnswerIdentifier(db(), id, sessionId())
-  const pending = db()
-    .query<{ record_id: string; number: number; launch_key: string | null }, [string]>(
-      `SELECT q.record_id,q.number,root.launch_key
-       FROM question q JOIN run requested ON requested.record_id=q.run_record_id
-       JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
-       WHERE root.record_id=? AND q.answered_at IS NULL AND q.closed_at IS NULL`,
-    )
-    .all(target)
-  await answerCommand(
+  const writes = await answerCommand(
     target,
     rawArgv(command).slice(2),
     Boolean(options.recordOnly),
@@ -133,19 +125,8 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
     presentation,
     refusedOwnerOptions(command, 'question answer', 'question'),
   )
-  const answered = pending.filter((row) =>
-    db()
-      .query('SELECT 1 FROM question WHERE record_id=? AND answered_at IS NOT NULL')
-      .get(row.record_id),
-  )
-  for (const row of answered) {
-    const prompt = contextMomentWrite({
-      moment: 'question-answer',
-      taskKey: row.launch_key,
-      questionId: row.number,
-    })
-    if (prompt) (options.json ? console.error : log)(prompt.line)
-  }
+  for (const write of writes)
+    emitContextMoment(write, Boolean(options.json), { log, error: console.error })
 }
 const relayByIdentifier = (id: string, command: Command, note: string) =>
   relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
@@ -562,7 +543,7 @@ function registerDoCommand(program: Command): void {
       cwd: process.cwd,
     })
     const prompt = contextMomentWrite({ moment: 'run-start', taskKey: flagValue(argv, 'key') })
-    if (prompt) (options.json ? console.error : log)(prompt.line)
+    emitContextMoment(prompt, Boolean(options.json), { log, error: console.error })
   })
 }
 

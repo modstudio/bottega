@@ -166,9 +166,13 @@ def stale_message(rows):
     )
 
 
+def marker_warning():
+    return "Context stale reminder marker could not be written; repeats cannot be suppressed."
+
+
 def unseen_stale_rows(session, rows):
     if not rows:
-        return []
+        return [], False
     event_set = [
         [row["holder"], row.get("workedAt"), row.get("revisedAt")]
         for row in rows
@@ -176,9 +180,8 @@ def unseen_stale_rows(session, rows):
     path = marker_path("context-stale", session)
     prior = read_marker(path)
     if prior == event_set:
-        return []
-    write_marker(path, event_set)
-    return rows
+        return [], False
+    return rows, not write_marker(path, event_set)
 
 
 def handle_session_start(payload):
@@ -220,9 +223,11 @@ def handle_stop(payload):
         messages.append(stop_message(rows))
     stale = query_stale(cwd, session)
     if stale:
-        fresh = unseen_stale_rows(session, stale)
+        fresh, marker_failed = unseen_stale_rows(session, stale)
         if fresh:
             messages.append(stale_message(fresh))
+            if marker_failed:
+                messages.append(marker_warning())
     if messages:
         emit_stop("\n".join(messages))
 

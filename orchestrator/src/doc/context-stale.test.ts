@@ -6,6 +6,7 @@ test('lists a holder worked after next-action and omits one revised afterward', 
     staleContextHolders(
       [
         { holder: 'DEV-1', at: '2026-11-08T12:00:00Z' },
+        { holder: 'DEV-1', at: '2026-11-08T14:00:00Z' },
         { holder: 'DEV-2', at: '2026-11-08T12:00:00Z' },
       ],
       [
@@ -14,6 +15,6 @@ test('lists a holder worked after next-action and omits one revised afterward', 
       ],
     ),
   ).toEqual([
-    { holder: 'DEV-1', workedAt: '2026-11-08T12:00:00Z', revisedAt: '2026-11-08T11:00:00Z' },
+    { holder: 'DEV-1', workedAt: '2026-11-08T14:00:00Z', revisedAt: '2026-11-08T11:00:00Z' },
   ])
 })

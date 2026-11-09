@@ -23,15 +23,28 @@ class StaleContextReminder(unittest.TestCase):
         with tempfile.TemporaryDirectory() as state, mock.patch.dict(
             os.environ, {"BOTTEGA_BOARD_HOOK_STATE": state}
         ):
-            self.assertEqual(reminder.unseen_stale_rows("session", rows), rows)
-            self.assertEqual(reminder.unseen_stale_rows("session", rows), [])
+            self.assertEqual(reminder.unseen_stale_rows("session", rows), (rows, False))
+            self.assertEqual(reminder.unseen_stale_rows("session", rows), ([], False))
+
+    def test_marker_failure_emits_rows_and_names_repeat_risk_once(self):
+        rows = [{"holder": "DEV-2225", "workedAt": "2026-11-08T12:00:00Z", "revisedAt": None}]
+        emitted = []
+        with mock.patch.object(reminder, "query_cursors", return_value=([], None)), mock.patch.object(
+            reminder, "query_stale", return_value=rows
+        ), mock.patch.object(reminder, "write_marker", return_value=False), mock.patch.object(
+            reminder, "emit", side_effect=emitted.append
+        ):
+            reminder.handle_stop({"session_id": "session", "cwd": "/tmp"})
+        text = json.dumps(emitted)
+        self.assertIn("DEV-2225", text)
+        self.assertEqual(text.count("repeats cannot be suppressed"), 1)
 
     def test_stop_reminder_never_blocks(self):
         rows = [{"holder": "DEV-2225", "workedAt": "2026-11-08T12:00:00Z", "revisedAt": None}]
         emitted = []
         with mock.patch.object(reminder, "query_cursors", return_value=([], None)), mock.patch.object(
             reminder, "query_stale", return_value=rows
-        ), mock.patch.object(reminder, "unseen_stale_rows", return_value=rows), mock.patch.object(
+        ), mock.patch.object(reminder, "unseen_stale_rows", return_value=(rows, False)), mock.patch.object(
             reminder, "emit", side_effect=emitted.append
         ):
             reminder.handle_stop({"session_id": "session", "cwd": "/tmp"})

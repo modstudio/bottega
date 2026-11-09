@@ -22,6 +22,11 @@ export type ContextMomentWrite = {
   line: string
 }
 
+export type ContextMomentOutput = {
+  log(line: string): void
+  error(line: string): void
+}
+
 const MOMENT_KIND: Record<ContextMoment, ContextMomentKind> = {
   'workflow-next': 'next-action',
   'workflow-rule': 'ruling',
@@ -53,4 +58,15 @@ export function contextMomentWrite(input: {
     `--source ${shellQuote(source)} --id ${id} ${shellQuote('<text>')}`
   const write = kind === 'next-action' ? 'revise next-action' : `write ${kind}`
   return { holder, kind, command, write, line: `context: ${write} on ${holder} (${command})` }
+}
+
+/** Keeps JSON stdout machine-readable while making the prompt the trailing human output. */
+export function emitContextMoment(
+  write: ContextMomentWrite | null,
+  json: boolean,
+  output: ContextMomentOutput = { log: console.log, error: console.error },
+): void {
+  if (!write) return
+  if (json) output.error(write.line)
+  else output.log(write.line)
 }

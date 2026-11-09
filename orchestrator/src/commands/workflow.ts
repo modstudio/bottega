@@ -4,7 +4,7 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
-import type { ContextMomentWrite } from '../../../shared/context-moment.ts'
+import { emitContextMoment } from '../../../shared/context-moment.ts'
 import { db } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { forkCatalogueCommand } from '../workflow/workflow-catalogue-commands.ts'
@@ -65,11 +65,6 @@ const authorOption = (command: Command) =>
   command.option('--author <value>', 'record who is making this change')
 const workflowArgv = (verb: string, args: string[], options: OptionValues) =>
   productArgv('workflow', [verb, ...args], options)
-const emitMoment = (write: ContextMomentWrite | null, json: boolean) => {
-  if (!write) return
-  if (json) presentation.error(write.line)
-  else presentation.log(write.line)
-}
 type WorkflowRegistration = {
   workflow: Command
   workflowPresentation: WorkflowPresentation
@@ -294,7 +289,7 @@ function registerWorkflowAdvancement({
         workflowArgv('next', slug === undefined ? [] : [slug], resolvedOptions),
         output(options),
         handlerOptions,
-      ).then((write) => emitMoment(write, Boolean(options.json)))
+      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation))
     })
 }
 
@@ -315,7 +310,7 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
         workflowArgv('await', slug === undefined ? [] : [slug], options),
         output(options),
         handlerOptions,
-      ).then((write) => emitMoment(write, Boolean(options.json))),
+      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation)),
     )
 
   jsonOption(
@@ -335,7 +330,7 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
         workflowArgv('rule', slug === undefined ? [] : [slug], options),
         output(options),
         handlerOptions,
-      ).then((write) => emitMoment(write, Boolean(options.json))),
+      ).then((write) => emitContextMoment(write, Boolean(options.json), presentation)),
     )
 }
 
