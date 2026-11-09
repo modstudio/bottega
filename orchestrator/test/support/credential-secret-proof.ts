@@ -1,4 +1,5 @@
 import { expect } from 'bun:test'
+import { credentialIdentityKey } from '../../../shared/credential.ts'
 import type { ConfigTenant } from '../../src/record/record-config.ts'
 import {
   deleteConfigSecret,
@@ -6,6 +7,9 @@ import {
   putConfigSecret,
 } from '../../src/record/record-config.ts'
 import { succeeds } from '../fixtures/postgres-rls.ts'
+
+const routedKey = (name: string | null, mode: 'default' | 'test' = 'default') =>
+  credentialIdentityKey({ provider: 'routed', name, type: 'api-key', mode, environment: 'local' })
 
 export async function proveCredentialSecretProjectAddressing(input: {
   tenant: ConfigTenant
@@ -15,7 +19,7 @@ export async function proveCredentialSecretProjectAddressing(input: {
 }): Promise<void> {
   const identity = {
     ...input.tenant,
-    key: 'ROUTED_API_KEY',
+    key: routedKey(null),
     mode: 'default' as const,
     environment: 'local',
     scope: 'user' as const,
@@ -42,7 +46,7 @@ export async function proveCredentialSecretProjectAddressing(input: {
       'postgres',
       'postgres',
       `SELECT count(*) FROM config_secret
-       WHERE space_id='${input.tenant.spaceId}' AND key='ROUTED_API_KEY'
+       WHERE space_id='${input.tenant.spaceId}' AND key='${identity.key}'
          AND environment='local' AND user_id='${input.tenant.userId}';`,
     ),
   ).toBe('2')
@@ -88,7 +92,7 @@ export async function proveCredentialSecretProjectAddressing(input: {
   await expect(
     putConfigSecret({
       ...identity,
-      key: 'PRODUCTION_API_KEY',
+      key: 'routed/api-key#default@production',
       environment: 'production',
       projectId: null,
       envelope: Uint8Array.of(36),
@@ -98,14 +102,14 @@ export async function proveCredentialSecretProjectAddressing(input: {
 
   const defaultMode = await putConfigSecret({
     ...identity,
-    key: 'MODE_API_KEY',
+    key: routedKey(null),
     projectId: null,
     envelope: Uint8Array.of(37),
     expectedRowVersion: null,
   })
   const testMode = await putConfigSecret({
     ...identity,
-    key: 'MODE_API_KEY_TEST',
+    key: routedKey(null, 'test'),
     mode: 'test',
     projectId: null,
     envelope: Uint8Array.of(38),
@@ -117,7 +121,7 @@ export async function proveCredentialSecretProjectAddressing(input: {
       'postgres',
       `SELECT string_agg(mode, ',' ORDER BY mode) FROM config_secret
        WHERE space_id='${input.tenant.spaceId}' AND provider='routed' AND type='api-key'
-         AND key LIKE 'MODE_API_KEY%';`,
+         AND name IS NULL;`,
     ),
   ).toBe('default,test')
   await deleteConfigSecret({
@@ -135,7 +139,7 @@ export async function proveCredentialSecretProjectAddressing(input: {
 
   const backup = await putConfigSecret({
     ...identity,
-    key: 'ROUTED_BACKUP_API_KEY',
+    key: routedKey('backup'),
     name: 'backup',
     projectId: null,
     envelope: Uint8Array.of(39),
@@ -143,7 +147,7 @@ export async function proveCredentialSecretProjectAddressing(input: {
   })
   const ses = await putConfigSecret({
     ...identity,
-    key: 'ROUTED_SES_API_KEY',
+    key: routedKey('ses'),
     name: 'ses',
     projectId: null,
     envelope: Uint8Array.of(40),
