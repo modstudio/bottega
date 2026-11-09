@@ -73,5 +73,5 @@ export async function staleContextForSession(
     const task = taskReferenceForProjectKey(tasks, project, holder)
     return task ? [{ holder, statusCategory: task.status_category ?? null }] : []
   })
-  return staleContextHolders(work, revisions, now, taskStatuses)
+  return staleContextHolders({ work, revisions, now, taskStatuses })
 }
