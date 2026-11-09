@@ -7,11 +7,7 @@ import { observeLandedTasks } from '../branch/task-status-observation.ts'
 import { taskContextItems } from '../doc/context-service.ts'
 import { pendingForSession } from '../evidence/evidence-query.ts'
 import { projects } from '../project/projects.ts'
-import {
-  type HubTaskReader,
-  readHubTasks,
-  resolveHubTaskReference,
-} from '../workflow/workflow-task-reference.ts'
+import { type HubTaskReader, readHubTasks } from '../workflow/workflow-task-reference.ts'
 import type { SessionOwnedRun } from './session-close-out-decision.ts'
 import {
   landedTaskIdentities,
@@ -26,14 +22,6 @@ export async function sessionCloseOutObligationItems(
   ownedRuns: readonly SessionOwnedRun[],
   taskReader: HubTaskReader = readHubTasks,
 ): Promise<SessionProcessLine[]> {
-  const taskReads = new Map<string, ReturnType<HubTaskReader>>()
-  const cachedTaskReader: HubTaskReader = (project) => {
-    const existing = taskReads.get(project)
-    if (existing) return existing
-    const reading = taskReader(project)
-    taskReads.set(project, reading)
-    return reading
-  }
   const ownedRunRecordIds = ownedRuns.map((run) => run.recordId)
   const identities = landedTaskIdentities({
     session,
@@ -46,25 +34,15 @@ export async function sessionCloseOutObligationItems(
       ]),
     ),
   })
-  const landedTasks = await observeLandedTasks(identities, cachedTaskReader)
-  const landedWithContext = await Promise.all(
-    landedTasks.map(async (task) => {
-      const contextTask = await resolveHubTaskReference(
-        task.project,
-        task.taskKey,
-        cachedTaskReader,
-      )
-      return { ...task, contextTask }
-    }),
-  )
+  const landedTasks = await observeLandedTasks(identities, taskReader)
   return sessionCloseOutObligations({
     pendingScores: pendingForSession(session, database),
     acknowledgementDate: new Date().toISOString().slice(0, 'YYYY-MM-DD'.length),
-    landedTasks: landedWithContext.map((task) => ({
-      ...task,
+    landedTasks: landedTasks.map((observation) => ({
+      ...observation,
       openAfterLandingAcknowledged:
-        task.contextTask?.record_id !== undefined &&
-        taskContextItems(task.contextTask, database).some(
+        observation.task !== null &&
+        taskContextItems(observation.task, database).some(
           (item) => item.id === OPEN_AFTER_LANDING_CONTEXT_ID && item.kind === 'ruling',
         ),
     })),

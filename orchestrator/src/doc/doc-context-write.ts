@@ -1,5 +1,6 @@
 // concern: doc-context-write
 /** Pure write policy for one structured context item. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const CONTEXT_ITEM_KINDS = [
   'ruling',
@@ -72,7 +73,7 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
     facts.claimedTask &&
     ['ruling', 'open-question'].includes(item.kind)
   ) {
-    return `${address} refused: task-level ${item.kind} written to a session; write it to task:${facts.claimedTask}`
+    return `${address} refused: task-level ${item.kind} written to a session; write it with ${PLATFORM_SLUG} agent context set --task ${facts.claimedTask}`
   }
   if (item.kind === 'pointer' && facts.pointerRefusal) {
     return `${address} refused: ${facts.pointerRefusal}`

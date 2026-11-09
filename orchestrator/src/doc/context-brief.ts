@@ -20,6 +20,7 @@ import {
 } from '../workflow/workflow-task-reference.ts'
 import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 import { listOpenResumes } from './docs.ts'
 
 type ContextBriefHolder = {
@@ -166,7 +167,7 @@ export function storedBriefHolders(
     .map(({ recordId, ...holder }) => ({
       ...holder,
       items: storedItems(
-        holder.kind === 'session' ? `session:${holder.key}` : `task:${recordId}`,
+        holder.kind === 'session' ? `session:${holder.key}` : taskContextHolder(recordId!),
         database,
       ),
     }))

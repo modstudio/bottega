@@ -25,7 +25,7 @@ export const privateDocImports = [
 ] as const
 
 export const docModules: DocModule[] = [
-  module('orchestrator/src/doc/doc-context-write.ts', []),
+  module('orchestrator/src/doc/doc-context-write.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
   module('orchestrator/src/doc/context-stale.ts', ['../workflow/task-flow-decision.ts']),
   module('orchestrator/src/doc/context-stale-adapter.ts', [
@@ -37,13 +37,12 @@ export const docModules: DocModule[] = [
     '../workflow/workflow-task-reference.ts',
     './context-item-codec.ts',
     './context-stale.ts',
-    './context-write-adapter.ts',
     './doc-read-store.ts',
+    './doc-subjects.ts',
   ]),
   module('orchestrator/src/doc/context-write-adapter.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
-    '../../../shared/secret-shaped.ts',
     '../board/board-claim-service.ts',
     '../database/db.ts',
     '../git/commit-resolution.ts',
@@ -54,6 +53,7 @@ export const docModules: DocModule[] = [
     './doc-context-write.ts',
     './doc-read-store.ts',
     './doc-resume-write.ts',
+    './doc-subjects.ts',
   ]),
   module('orchestrator/src/doc/context-service.ts', [
     'bun:sqlite',
@@ -64,6 +64,7 @@ export const docModules: DocModule[] = [
     './doc-read-store.ts',
     // Only context-service may import removeContextItemForLifecycle from doc-remove.
     './doc-remove.ts',
+    './doc-subjects.ts',
     './docs.ts',
   ]),
   module('orchestrator/src/doc/doc-remove.ts', [
@@ -97,6 +98,7 @@ export const docModules: DocModule[] = [
     '../workflow/workflow-task-reference.ts',
     './context-write-adapter.ts',
     './doc-context-write.ts',
+    './doc-subjects.ts',
     './docs.ts',
   ]),
   module('orchestrator/src/secret-scan/secret-scan-decision.ts', []),

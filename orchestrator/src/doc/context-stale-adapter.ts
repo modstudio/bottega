@@ -14,6 +14,7 @@ import {
 import { decodeContextItem } from './context-item-codec.ts'
 import { type ContextWorkEvent, staleContextHolders } from './context-stale.ts'
 import { listDocsStore } from './doc-read-store.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 
 type KeyAt = { key: string | null; at: string }
 type CursorWork = { key: string; closed: string }
@@ -67,7 +68,7 @@ export async function staleContextForSession(
     return task ? [{ holder, task }] : []
   })
   const revisions = resolvedTasks.flatMap(({ holder, task }) =>
-    listDocsStore({ scope: 'context', subject: `task:${task.record_id}` }, database)
+    listDocsStore({ scope: 'context', subject: taskContextHolder(task.record_id) }, database)
       .filter((doc) => decodeContextItem(doc.subject!, doc.slug, doc.body).kind === 'next-action')
       .map((doc) => ({ holder, at: doc.updated_at })),
   )

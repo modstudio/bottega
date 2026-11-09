@@ -40,9 +40,13 @@ export function taskReferenceForProjectKey(
   return matches.length === 1 ? matches[0]! : null
 }
 
-export function taskReadRefusal(project: string, detail: string): Error {
+export function taskReadRefusal(
+  project: string,
+  detail: string,
+  retry = `${PLATFORM_SLUG} task list --project ${project} --json`,
+): Error {
   return new Error(
-    `could not read task data for project ${project}: ${withholdSecretShapedDetail(detail)}; retry: ${PLATFORM_SLUG} task list --project ${project} --json`,
+    `could not read task data for project ${project}: ${withholdSecretShapedDetail(detail)}; retry: ${retry}`,
   )
 }
 
@@ -116,6 +120,41 @@ export async function resolveHubTaskReference(
   } catch (error) {
     throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
   }
+}
+
+/** Resolve one task from its mirror, refreshing only that task after a mirror miss. */
+export async function resolveOrPullHubTaskReference(
+  project: string,
+  key: string,
+  reader: HubTaskReader = readHubTasks,
+  puller: HubTaskPuller = pullHubTask,
+): Promise<HubTaskReference> {
+  const mirrored = await resolveHubTaskReference(project, key, reader)
+  if (mirrored) return mirrored
+  const retry = `${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`
+  let pulled: HubTaskReference | null
+  try {
+    pulled = await puller(project, key)
+  } catch (error) {
+    throw taskReadRefusal(
+      project,
+      error instanceof Error ? error.message : String(error),
+      retry,
+    )
+  }
+  if (!pulled) {
+    throw new Error(
+      `no task ${key} in project ${project}; inspect available tasks with ${PLATFORM_SLUG} task list --project ${project} --json`,
+    )
+  }
+  if (pulled.project !== project || pulled.key !== key) {
+    throw taskReadRefusal(
+      project,
+      `fresh task read returned ${pulled.project}:${pulled.key}`,
+      retry,
+    )
+  }
+  return pulled
 }
 
 /** Resolve a mirror identity when available without making hub availability a prerequisite. */

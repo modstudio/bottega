@@ -7,6 +7,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { TASK_STATUSES } from '../../../shared/trackers.ts'
 import {
   type HubTaskReader,
+  type HubTaskReference,
   readHubTasks,
   taskKeyMap,
   taskReadRefusal,
@@ -24,6 +25,7 @@ export type TaskStatusObservation = {
 export type LandedTaskObservation = {
   project: string
   taskKey: string
+  task: HubTaskReference | null
   observation: TaskStatusObservation
 }
 
@@ -107,6 +109,7 @@ export async function observeLandedTasks(
             return {
               project,
               taskKey,
+              task: null,
               observation: unverifiedObservation(
                 'task was not found uniquely in project task list',
               ),
@@ -114,6 +117,7 @@ export async function observeLandedTasks(
           return {
             project,
             taskKey,
+            task,
             observation: taskStatusObservation(null, null, task.status_category),
           }
         })
@@ -126,6 +130,7 @@ export async function observeLandedTasks(
           ({ taskKey }): LandedTaskObservation => ({
             project,
             taskKey,
+            task: null,
             observation: unverifiedObservation(detail),
           }),
         )

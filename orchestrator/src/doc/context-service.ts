@@ -11,6 +11,7 @@ import {
 } from './doc-context-write.ts'
 import { type Doc, listDocsBySubjectPrefixStore, listDocsStore } from './doc-read-store.ts'
 import { removeContextItemForLifecycle } from './doc-remove.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 import { getDoc, removeDoc, setDoc } from './docs.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
@@ -23,7 +24,7 @@ async function resolveContextHolder(
   if (selection.task && selection.session) throw new Error('use --task or --session, not both')
   if (selection.task) {
     const task = await resolveContextTask(selection.task)
-    return { holder: `task:${task.record_id}`, task }
+    return { holder: taskContextHolder(task.record_id), task }
   }
   const owner = selection.session ?? sessionId()
   if (!owner) throw new Error('no caller session; pass --task KEY or --session ID')
@@ -58,7 +59,7 @@ export function sessionContextItems(session: string, database: Database) {
 
 /** Read one task's context items through the document-store owner. */
 export function taskContextItems(task: ContextTaskIdentity, database: Database) {
-  const holder = `task:${task.record_id}`
+  const holder = taskContextHolder(task.record_id)
   return holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }, database))
 }
 

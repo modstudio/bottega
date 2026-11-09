@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   CONTEXT_ITEM_MAX_CHARS,
   type ContextItem,
@@ -91,7 +92,7 @@ describe('context write refusal', () => {
           item({ ...ruling, holder: 'session:s', kind }),
           facts({ profile: 'session', claimedTask: 'DEV-1844' }),
         ),
-      ).toContain('write it to task:DEV-1844')
+      ).toContain(`${PLATFORM_SLUG} agent context set --task DEV-1844`)
     }
   })
   test('allows session rulings when there is no live task claim', () => {

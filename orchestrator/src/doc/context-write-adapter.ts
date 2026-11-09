@@ -2,19 +2,18 @@
 /** Gathers store, task, claim, and pointer facts for the pure context write policy. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
-import { liveTaskClaimsOfSession } from '../board/board-claim-service.ts'
+import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
-import { projectForTaskKey, projects } from '../project/projects.ts'
+import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
 import {
   type HubTaskPuller,
   type HubTaskReader,
   type HubTaskReference,
   pullHubTask,
   readHubTasks,
+  resolveOrPullHubTaskReference,
   taskKeyMap,
-  taskReadRefusal,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
@@ -28,6 +27,7 @@ import {
 } from './doc-context-write.ts'
 import { listDocsStore } from './doc-read-store.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 
 type ContextTask = HubTaskReference
 export type ContextFactsPorts = {
@@ -98,52 +98,6 @@ export function storedItems(holder: string, database: Database): ContextItem[] {
   )
 }
 
-function freshTaskRetry(project: string, key: string): string {
-  return `${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`
-}
-
-async function pullContextTask(
-  project: string,
-  key: string,
-  ports: ContextFactsPorts,
-): Promise<ContextTask> {
-  try {
-    const task = await ports.task(project, key)
-    if (task?.project === project && task.key === key) return task
-    const detail = task
-      ? `fresh task read returned ${task.project}:${task.key}`
-      : 'fresh task read found no task'
-    throw new Error(detail)
-  } catch (error) {
-    const detail = withholdSecretShapedDetail(
-      error instanceof Error ? error.message : String(error),
-    )
-    throw new Error(
-      `could not read task ${key} for project ${project}: ${detail}; retry: ${freshTaskRetry(project, key)}`,
-    )
-  }
-}
-
-async function resolveContextTaskInProject(
-  project: string,
-  key: string,
-  ports: ContextFactsPorts,
-  knownTasks?: readonly ContextTask[],
-): Promise<ContextTask> {
-  let tasks = knownTasks
-  if (!tasks) {
-    try {
-      tasks = await ports.tasks(project)
-    } catch (error) {
-      throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
-    }
-  }
-  return (
-    taskReferenceForProjectKey(taskKeyMap(tasks), project, key) ??
-    (await pullContextTask(project, key, ports))
-  )
-}
-
 /** Resolve a person-facing task key once into the stable identity context stores. */
 export async function resolveContextTask(
   value: string,
@@ -151,14 +105,14 @@ export async function resolveContextTask(
   ports: ContextFactsPorts = defaultContextFactsPorts(),
 ): Promise<ContextTask> {
   const key = value.trim().toUpperCase()
-  const prefix = /^([A-Z][A-Z0-9]*)-/.exec(key)?.[1] ?? key.split('-', 1)[0] ?? key
+  const prefix = taskKeyPrefix(key) ?? key.split('-', 1)[0] ?? key
   const project = projectForTaskKey(key, projects(undefined, database))
   if (!project) {
     throw new Error(
       `task key prefix ${JSON.stringify(prefix)} is not declared by exactly one registered project; inspect prefixes with ${PLATFORM_SLUG} project list --json`,
     )
   }
-  return resolveContextTaskInProject(project.name, key, ports)
+  return resolveOrPullHubTaskReference(project.name, key, ports.tasks, ports.task)
 }
 
 export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {
@@ -167,33 +121,41 @@ export function taskProfile(key: string, tasks: readonly ContextTask[]): Context
 
 async function relatedContextTasks(input: {
   owner: string | null
-  claims: readonly string[]
+  claims: readonly { key: string; project: string }[]
   task?: ContextTask
   projectTasks: readonly ContextTask[]
-  database: Database
   ports: ContextFactsPorts
 }): Promise<ContextTask[]> {
   const related: ContextTask[] = []
   if (!input.owner) {
     if (input.task?.parent_key) {
-      related.push(
-        await resolveContextTaskInProject(
-          input.task.project,
-          input.task.parent_key,
-          input.ports,
-          input.projectTasks,
-        ),
+      const parent = taskReferenceForProjectKey(
+        taskKeyMap(input.projectTasks),
+        input.task.project,
+        input.task.parent_key,
       )
+      if (parent) related.push(parent)
     }
     return related
   }
-  for (const key of input.claims) {
-    const claimed = await resolveContextTask(key, input.database, input.ports)
+  const projectTasks = new Map<string, Promise<readonly ContextTask[] | null>>()
+  const readProject = (project: string) => {
+    const existing = projectTasks.get(project)
+    if (existing) return existing
+    const reading = input.ports.tasks(project).catch(() => null)
+    projectTasks.set(project, reading)
+    return reading
+  }
+  for (const claim of input.claims) {
+    const tasks = await readProject(claim.project)
+    if (!tasks) continue
+    const index = taskKeyMap(tasks)
+    const claimed = taskReferenceForProjectKey(index, claim.project, claim.key)
+    if (!claimed) continue
     related.push(claimed)
     if (claimed.parent_key) {
-      related.push(
-        await resolveContextTaskInProject(claimed.project, claimed.parent_key, input.ports),
-      )
+      const parent = taskReferenceForProjectKey(index, claimed.project, claimed.parent_key)
+      if (parent) related.push(parent)
     }
   }
   return related
@@ -207,12 +169,19 @@ async function contextSetRefusal(
   const item = decodeContextItem(input.subject, input.slug, input.body)
   const owner = input.subject.startsWith('session:') ? input.subject.slice(8) : null
   const task = input.subject.startsWith('task:') ? input.contextTask : undefined
-  if (input.subject.startsWith('task:') && (!task || input.subject !== `task:${task.record_id}`)) {
-    return `context item ${input.slug} refused: task holder requires its resolved task identity`
+  if (
+    input.subject.startsWith('task:') &&
+    (!task || input.subject !== taskContextHolder(task.record_id))
+  ) {
+    return `context item ${input.slug} refused: task holder requires its resolved task identity; write task context with ${PLATFORM_SLUG} agent context set --task <KEY>`
   }
   const ownership = holderOwnershipRefusal(input.subject, sessionId(database), input.slug)
   if (ownership) return ownership
-  const claims = owner ? liveTaskClaimsOfSession(owner, Date.now(), database) : []
+  const claims = owner
+    ? liveClaimsOfSession(owner, Date.now(), database)
+        .filter((claim) => claim.subject.kind === 'task')
+        .map((claim) => ({ key: claim.subject.value, project: claim.project }))
+    : []
   const projectTasks = task ? await ports.tasks(task.project) : []
   const profile = task ? taskProfile(task.key, projectTasks) : 'session'
   const relatedTasks = await relatedContextTasks({
@@ -220,16 +189,17 @@ async function contextSetRefusal(
     claims,
     task,
     projectTasks,
-    database,
     ports,
   })
-  const relatedHolders = [...new Set(relatedTasks.map((related) => `task:${related.record_id}`))]
+  const relatedHolders = [
+    ...new Set(relatedTasks.map((related) => taskContextHolder(related.record_id))),
+  ]
   const refusal = contextWriteRefusal(item, {
     profile,
     siblings: storedItems(input.subject, database),
     related: [...new Set(relatedHolders)].flatMap((holder) => storedItems(holder, database)),
     pointerRefusal: item.kind === 'pointer' ? await ports.pointer(item.body, database) : null,
-    claimedTask: claims[0] ?? null,
+    claimedTask: claims[0]?.key ?? null,
   })
   return refusal
 }

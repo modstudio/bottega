@@ -85,7 +85,7 @@ describe('context document integration', () => {
         body: 'Continue.',
       }),
     ).rejects.toThrow(
-      `could not read task FAIL-1 for project pull-failure: tracker unavailable; retry: ${PLATFORM_SLUG} task show FAIL-1 --project pull-failure --fresh --json`,
+      `could not read task data for project pull-failure: tracker unavailable; retry: ${PLATFORM_SLUG} task show FAIL-1 --project pull-failure --fresh --json`,
     )
     expect(listDocs({ scope: 'context' })).toEqual([])
   })
@@ -169,6 +169,80 @@ describe('context document integration', () => {
         contextTask: task,
       }),
     ).rejects.toThrow('requires YAML frontmatter')
+  })
+
+  test('document writes cannot bypass resolved task-holder identity', async () => {
+    globals[CONTEXT_FACTS_PORTS_KEY] = tasks
+    const holder = `task:${task.record_id}`
+    const body = encodeContextItem({ kind: 'fact', source: 'test', body: 'Cannot bypass.' })
+    const write = (contextTask?: typeof task) =>
+      setDoc({
+        scope: 'context',
+        subject: holder,
+        slug: 'bypass',
+        title: 'bypass',
+        body,
+        delivery: 'demand',
+        contextTask,
+      })
+
+    await expect(write()).rejects.toThrow(
+      `${PLATFORM_SLUG} agent context set --task <KEY>`,
+    )
+    await expect(write({ ...task, record_id: newRecordId() })).rejects.toThrow(
+      `${PLATFORM_SLUG} agent context set --task <KEY>`,
+    )
+    expect(listDocs({ scope: 'context' })).toEqual([])
+  })
+
+  test("a session write skips an unreadable claimed task's project", async () => {
+    const owner = newRecordId()
+    const previousSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = owner
+    const project = `unreadable-claim-${newRecordId()}`
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: `/tmp/${project}`,
+      settings: { keyPrefixes: ['UNREADABLE'] },
+    })
+    const now = Date.now()
+    db()
+      .query(
+        `INSERT INTO board_claim
+         (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,renewed_at,lapses_at,closed_at,close_reason)
+         VALUES (?,?,'task','UNREADABLE-1','architect',?,3600000,?,?,?,NULL,NULL)`,
+      )
+      .run(
+        newRecordId(),
+        project,
+        owner,
+        new Date(now - 1_000).toISOString(),
+        new Date(now - 1_000).toISOString(),
+        new Date(now + 3_600_000).toISOString(),
+      )
+    globals[CONTEXT_FACTS_PORTS_KEY] = {
+      ...tasks,
+      tasks: async (readProject) => {
+        if (readProject === project) throw new Error('tracker unavailable')
+        return []
+      },
+    }
+
+    try {
+      const written = await setContextItem({
+        session: owner,
+        id: 'session-fact',
+        kind: 'fact',
+        source: 'test',
+        body: 'Keep this session fact.',
+      })
+
+      expect(written).toMatchObject({ holder: `session:${owner}`, id: 'session-fact' })
+    } finally {
+      if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = previousSession
+    }
   })
 
   test('fails closed for context while ordinary docs warn and write', async () => {

@@ -5,6 +5,10 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 
+export function taskContextHolder(recordId: string): string {
+  return `task:${recordId}`
+}
+
 export function docSubjects(): {
   project: string[]
   stack: string[]
