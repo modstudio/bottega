@@ -55,14 +55,14 @@ export function decideWorkflowTakeover(input: {
 
 export type TaskFlowReadDecision = 'local' | 'hosted' | 'refresh'
 export function decideTaskFlowReadThrough(input: {
-  localFlowExists: boolean
   localFlowRevision: number | null
   hostedFlowRevision: number
+  hostedListsStages: boolean
   localStageRevision: number | null
   hostedStageRevision: number | null
 }): TaskFlowReadDecision {
-  if (!input.localFlowExists) return 'hosted'
-  if (input.localFlowRevision !== null && input.hostedFlowRevision > input.localFlowRevision)
+  if (input.localFlowRevision === null) return 'hosted'
+  if (input.hostedListsStages && input.hostedFlowRevision > input.localFlowRevision)
     return 'refresh'
   if (input.hostedStageRevision == null) return 'local'
   if (input.localStageRevision == null) return 'hosted'

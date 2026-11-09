@@ -56,7 +56,7 @@ function hosted(
     stageRevision?: number
     flowRevision?: number
     stage?: boolean
-    stages?: NonNullable<HostedTaskFlow['stages']>
+    otherStages?: NonNullable<HostedTaskFlow['otherStages']>
     workflow?: string
     workflowVersionId?: string
     activeOrdinal?: number
@@ -108,7 +108,7 @@ function hosted(
       updatedAt: '2026-11-03T11:00:00.000Z',
     },
     stage,
-    ...(input.stages ? { stages: input.stages } : {}),
+    ...(input.otherStages ? { otherStages: input.otherStages } : {}),
   }
 }
 
@@ -145,7 +145,7 @@ test('hosted newer than local refreshes the cached stage', async () => {
   }
 })
 
-test('a newer hosted close is cached and the closed cursor is not re-attached', async () => {
+test('a hosted close at the tied flow revision is applied and not re-attached', async () => {
   const ids = fixture()
   try {
     const workflow = 'hosted-close-read-through'
@@ -201,8 +201,8 @@ test('a newer hosted close is cached and the closed cursor is not re-attached', 
         taskId,
         flowId,
         stage: false,
-        flowRevision: 34,
-        stages: [listedStage],
+        flowRevision: 31,
+        otherStages: [listedStage],
       }),
     )
 
@@ -217,7 +217,7 @@ test('a newer hosted close is cached and the closed cursor is not re-attached', 
       ids.database
         .query('SELECT open_stage_cursor_record_id,revision FROM task_flow WHERE record_id=?')
         .get(flowId),
-    ).toEqual({ open_stage_cursor_record_id: null, revision: 34 })
+    ).toEqual({ open_stage_cursor_record_id: null, revision: 31 })
 
     const composed = composeWorkflowWithCursor(
       workflow,
@@ -235,6 +235,39 @@ test('a newer hosted close is cached and the closed cursor is not re-attached', 
       )
       .get(composed.cursor!.id)!
     expect(reopened.record_id).not.toBe(stageId)
+  } finally {
+    ids.database.close()
+  }
+})
+
+test('a newer hosted flow without a stage list leaves the local flow and cursor unchanged', async () => {
+  const ids = fixture()
+  try {
+    const taskId = newRecordId()
+    const flowId = newRecordId()
+    const stageId = newRecordId()
+    const local = hosted(ids, {
+      taskId,
+      flowId,
+      stageId,
+      stageRevision: 12,
+      flowRevision: 31,
+    })
+    cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
+    installHosted(hosted(ids, { taskId, flowId, stage: false, flowRevision: 34 }))
+
+    await readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: taskId })
+
+    expect(
+      ids.database
+        .query('SELECT state,revision FROM workflow_cursor WHERE record_id=?')
+        .get(stageId),
+    ).toEqual({ state: 'running', revision: 12 })
+    expect(
+      ids.database
+        .query('SELECT open_stage_cursor_record_id,revision FROM task_flow WHERE record_id=?')
+        .get(flowId),
+    ).toEqual({ open_stage_cursor_record_id: stageId, revision: 31 })
   } finally {
     ids.database.close()
   }
@@ -260,7 +293,7 @@ test.each([11, 12])(
         flowId,
         stage: false,
         flowRevision: 4,
-        stages: [listedStage],
+        otherStages: [listedStage],
       })
 
       cacheHostedTaskFlow(ids.database, 'DEV-2098', incoming)
@@ -276,10 +309,42 @@ test.each([11, 12])(
   },
 )
 
-test('hosted task-flow parsing accepts an older response without listed stages', () => {
+test('a listed hosted stage with no local row is not inserted', () => {
   const ids = fixture()
   try {
-    expect(hostedTaskFlowSchema.parse(hosted(ids, {})).stages).toBeUndefined()
+    const open = hosted(ids, {})
+    const { holder: _holder, ...otherStage } = open.stage!
+
+    cacheHostedTaskFlow(
+      ids.database,
+      'DEV-2098',
+      hosted(ids, {
+        taskId: open.flow.taskId,
+        flowId: open.flow.id,
+        stage: false,
+        otherStages: [otherStage],
+      }),
+    )
+
+    expect(
+      ids.database
+        .query('SELECT record_id FROM workflow_cursor WHERE record_id=?')
+        .get(otherStage.id),
+    ).toBeNull()
+  } finally {
+    ids.database.close()
+  }
+})
+
+test('hosted task-flow parsing round-trips other stages', () => {
+  const ids = fixture()
+  try {
+    const open = hosted(ids, {})
+    const { holder: _holder, ...otherStage } = open.stage!
+    const parsed = hostedTaskFlowSchema.parse(
+      hosted(ids, { stage: false, otherStages: [otherStage] }),
+    )
+    expect(parsed.otherStages).toEqual([otherStage])
   } finally {
     ids.database.close()
   }

@@ -42,7 +42,8 @@ export const hostedTaskFlowSchema = z.object({
     updatedAt: z.string(),
   }),
   stage: hostedTaskFlowStageSchema.extend({ holder: machine }).nullable(),
-  stages: z.array(hostedTaskFlowStageSchema).optional(),
+  /** Every stage of the flow except the open stage. */
+  otherStages: z.array(hostedTaskFlowStageSchema).optional(),
 })
 
 export type HostedTaskFlow = z.infer<typeof hostedTaskFlowSchema>
