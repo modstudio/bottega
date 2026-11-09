@@ -9,7 +9,7 @@ import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { cacheHostedTaskFlow } from './task-flow-read-through.ts'
+import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
   workflowCommandPresentation as presentation,
@@ -105,7 +105,12 @@ test('next by cursor alone reads through the row key and links the hosted task',
       holder: { id: remoteMachine, displayName: 'Remote CLI machine' },
     },
   })
-  cacheHostedTaskFlow(db(), key, hosted(1, 0))
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    readTaskFlow: async () => hosted(1, 0),
+  })
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  await readThroughTaskFlow(db(), { taskKey: key, taskRecordId: taskId })
   db().query('UPDATE workflow_cursor SET task_record_id=NULL WHERE record_id=?').run(stageId)
   const cursor = db()
     .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')

@@ -100,11 +100,7 @@ export function insertWorkflowCursorRow(
       ? `ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
            session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
            updated_at=excluded.updated_at`
-      : `ON CONFLICT(record_id) DO UPDATE SET task_flow_record_id=excluded.task_flow_record_id,
-           ordinal=excluded.ordinal,step_slug=excluded.step_slug,state=excluded.state,closed=excluded.closed,
-           total_steps=excluded.total_steps,updated_at=excluded.updated_at,
-           taken_over_from_machine_id=excluded.taken_over_from_machine_id,
-           last_advanced_machine_id=excluded.last_advanced_machine_id,revision=excluded.revision`
+      : ''
   return database
     .query<{ record_id: string }, (string | number | null)[]>(
       `INSERT INTO workflow_cursor
