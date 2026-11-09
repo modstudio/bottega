@@ -120,20 +120,35 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep session context release behind its document-store owner.',
   },
   {
+    name: 'session-close-out-obligation-adapter-boundary',
+    file: 'orchestrator/src/session/session-close-out-obligation-adapter.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/trackers.ts',
+      '../evidence/evidence-query.ts',
+      '../workflow/workflow-task-reference.ts',
+      './session-close-out-decision.ts',
+      './session-close-out-obligations.ts',
+      './session-close-out-report.ts',
+    ],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      './session-close-out-decision.ts',
+      './session-close-out-report.ts',
+    ],
+    reason:
+      'Keep close-out landing and batch task reads separate from their pure obligation decisions.',
+  },
+  {
     name: 'session-close-out-obligations-boundary',
     file: 'orchestrator/src/session/session-close-out-obligations.ts',
     allowed: [
       '../../../shared/brand.ts',
       '../../../shared/trackers.ts',
       '../evidence/unjudged-run-remedy.ts',
-      './session-close-out-decision.ts',
       './session-close-out-report.ts',
     ],
-    typeOnlyAllowed: [
-      '../../../shared/trackers.ts',
-      './session-close-out-decision.ts',
-      './session-close-out-report.ts',
-    ],
+    typeOnlyAllowed: ['../../../shared/trackers.ts', './session-close-out-report.ts'],
     reason: 'Keep outstanding close-out obligations as decisions over plain observed values.',
   },
   {
@@ -171,7 +186,6 @@ export const cleanupBoundarySpecs = [
       '../close/close-out-in-flight.ts',
       '../close/close-out-report.ts',
       '../database/db.ts',
-      '../evidence/evidence-query.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
       '../resources/process-inventory.ts',
@@ -182,7 +196,7 @@ export const cleanupBoundarySpecs = [
       '../ship-cleanup/ship-cleanup.ts',
       '../worktree/worktree-remove.ts',
       './session-close-out-decision.ts',
-      './session-close-out-obligations.ts',
+      './session-close-out-obligation-adapter.ts',
       './session-context-lifecycle.ts',
     ],
     typeOnlyAllowed: ['./session-close-out-report.ts'],

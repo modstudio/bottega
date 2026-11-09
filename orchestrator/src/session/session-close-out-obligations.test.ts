@@ -31,17 +31,59 @@ describe('session close-out obligations', () => {
     ])
   })
 
-  test('landed task identities deduplicate by project and key and skip unkeyed branches', () => {
+  test('landed tasks union owned-run and recording-session records, skip, and deduplicate', () => {
     expect(
-      landedTaskIdentities([
-        { project: 'alpha', taskKey: 'DEV-1', state: 'landed' },
-        { project: 'alpha', taskKey: 'DEV-1', state: 'landed' },
-        { project: 'beta', taskKey: 'DEV-1', state: 'landed' },
-        { project: 'alpha', taskKey: null, state: 'landed' },
-        { project: 'alpha', taskKey: 'DEV-2', state: 'unlanded' },
-      ]),
+      landedTaskIdentities({
+        session: 'closing-session',
+        ownedRunRecordIds: new Set(['owned-run', 'owned-duplicate']),
+        rows: [
+          {
+            project: 'alpha',
+            branch: 'owned',
+            recordingSession: 'other-session',
+            runRecordId: 'owned-run',
+            taskKey: 'DEV-1',
+          },
+          {
+            project: 'alpha',
+            branch: 'recorded',
+            recordingSession: 'closing-session',
+            runRecordId: 'other-run',
+            taskKey: 'DEV-2',
+          },
+          {
+            project: 'alpha',
+            branch: 'duplicate',
+            recordingSession: 'closing-session',
+            runRecordId: 'owned-duplicate',
+            taskKey: 'DEV-1',
+          },
+          {
+            project: 'beta',
+            branch: 'same-key-other-project',
+            recordingSession: 'closing-session',
+            runRecordId: 'other-run',
+            taskKey: 'DEV-1',
+          },
+          {
+            project: 'alpha',
+            branch: 'recorded-unkeyed',
+            recordingSession: 'closing-session',
+            runRecordId: null,
+            taskKey: null,
+          },
+          {
+            project: 'alpha',
+            branch: 'unrelated',
+            recordingSession: 'other-session',
+            runRecordId: 'other-run',
+            taskKey: 'DEV-3',
+          },
+        ],
+      }),
     ).toEqual([
       { project: 'alpha', taskKey: 'DEV-1' },
+      { project: 'alpha', taskKey: 'DEV-2' },
       { project: 'beta', taskKey: 'DEV-1' },
     ])
   })

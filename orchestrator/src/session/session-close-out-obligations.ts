@@ -7,7 +7,6 @@ import {
   decideUnjudgedRunRemedy,
   renderUnjudgedRunRemedy,
 } from '../evidence/unjudged-run-remedy.ts'
-import type { SessionOwnedBranch } from './session-close-out-decision.ts'
 import type { SessionProcessLine } from './session-close-out-report.ts'
 
 export type PendingScoreRoot = {
@@ -21,6 +20,14 @@ export type PendingScoreRoot = {
 
 export type LandedTaskIdentity = { project: string; taskKey: string }
 
+export type LandedTaskRow = {
+  project: string
+  branch: string
+  recordingSession: string | null
+  runRecordId: string | null
+  taskKey: string | null
+}
+
 export type LandedTaskObservation = LandedTaskIdentity & {
   observation: {
     category: StatusCategory | null
@@ -29,16 +36,19 @@ export type LandedTaskObservation = LandedTaskIdentity & {
   }
 }
 
-/** Select each keyed landed task once, preserving project identity. */
-export function landedTaskIdentities(
-  branches: readonly Pick<SessionOwnedBranch, 'project' | 'taskKey' | 'state'>[],
-): LandedTaskIdentity[] {
+/** Select the union of landings owned through a run or recorded by the session. */
+export function landedTaskIdentities(input: {
+  session: string
+  ownedRunRecordIds: ReadonlySet<string>
+  rows: readonly LandedTaskRow[]
+}): LandedTaskIdentity[] {
   const tasks = new Map<string, LandedTaskIdentity>()
-  for (const branch of branches) {
-    if (branch.state !== 'landed' || !branch.taskKey) continue
-    tasks.set(`${branch.project}\0${branch.taskKey}`, {
-      project: branch.project,
-      taskKey: branch.taskKey,
+  for (const row of input.rows) {
+    const ownedThroughRun = row.runRecordId !== null && input.ownedRunRecordIds.has(row.runRecordId)
+    if ((!ownedThroughRun && row.recordingSession !== input.session) || !row.taskKey) continue
+    tasks.set(`${row.project}\0${row.taskKey}`, {
+      project: row.project,
+      taskKey: row.taskKey,
     })
   }
   return [...tasks.values()]
