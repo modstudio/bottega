@@ -1650,6 +1650,14 @@
       "tag": "0215_agent_provider_run_credential",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 216,
+      "version": "6",
+      "when": 1794240000000,
+      "tag": "0216_outbox_actor_session",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

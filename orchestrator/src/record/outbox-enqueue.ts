@@ -9,6 +9,7 @@ import {
   recordSyncQueueDirectory,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
+import { sessionId } from '../database/db.ts'
 import { afterWriteCommit } from '../database/write-commit-effects.ts'
 import { stringifyOutboxPayload } from './outbox-sanitize.ts'
 
@@ -54,11 +55,11 @@ export function insertOutboxRow(
   env: StateEnvironment = process.env,
 ): number {
   const inserted = database
-    .query<{ id: number }, [string, string, string, string, string]>(
-      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
-       VALUES (?,?,?,?,?) RETURNING id`,
+    .query<{ id: number }, [string, string, string, string, string, string | null]>(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,actor_session)
+       VALUES (?,?,?,?,?,?) RETURNING id`,
     )
-    .get(row.recordId, row.kind, row.rowId, row.payload, row.createdAt)!
+    .get(row.recordId, row.kind, row.rowId, row.payload, row.createdAt, sessionId(database))!
   signalRecordSyncAfterWriteCommit(database, env)
   return inserted.id
 }

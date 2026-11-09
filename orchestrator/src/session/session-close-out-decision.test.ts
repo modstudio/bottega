@@ -8,6 +8,7 @@ import {
   plannedTreeOwnerMatches,
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
+  sessionOutboxResidue,
   type SessionOwnershipFacts,
   sessionCloseOutRecommendation,
   sessionCloseOutVerdict,
@@ -43,6 +44,25 @@ const handoffFacts = (overrides: Partial<ResumeHandoffRootFacts> = {}): ResumeHa
 })
 
 describe('session close-out decisions', () => {
+  test('only this session pending and quarantined outbox rows block clean', () => {
+    const row = {
+      actorSession: 'owner',
+      syncedAt: null,
+      quarantinedAt: null,
+      retiredAt: null,
+    }
+    expect(
+      sessionOutboxResidue('owner', [
+        { ...row, id: 1 },
+        { ...row, id: 2, quarantinedAt: '2026-11-09T10:00:00.000Z' },
+        { ...row, id: 3, actorSession: 'other' },
+        { ...row, id: 4, actorSession: null },
+        { ...row, id: 5, syncedAt: '2026-11-09T10:01:00.000Z' },
+        { ...row, id: 6, retiredAt: '2026-11-09T10:02:00.000Z' },
+      ]),
+    ).toEqual({ pendingIds: [1], quarantinedIds: [2] })
+  })
+
   test('an unreadable project blocks only while the session owns close-out work there', () => {
     expect(classifyUnreadableProject(true)).toBe('error')
     expect(classifyUnreadableProject(false)).toBe('warning')

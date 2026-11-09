@@ -41,6 +41,7 @@ import {
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
+import { closeOutSessionOutbox } from './session-close-out-outbox.ts'
 import type {
   SessionErrorLine,
   SessionProcessLine,
@@ -877,6 +878,10 @@ export async function closeOutSession(
     recommendation: 'brief',
   }
   applySessionMechanicalActions(report, initial, database, session, dryRun)
+  const outbox = await closeOutSessionOutbox({ database, session, dryRun })
+  report.mechanical.push(...outbox.mechanical)
+  report.process.push(...outbox.process)
+  report.errors.push(...outbox.errors)
   const final =
     dryRun || initial.classification.mechanical.length === 0
       ? initial

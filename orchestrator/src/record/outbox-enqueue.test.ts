@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,8 +13,16 @@ import { writeTransaction } from '../database/db.ts'
 import { insertOutboxRow, refreshPendingOutboxRow } from './outbox-enqueue.ts'
 
 const roots: string[] = []
+let previousSession: string | undefined
+
+beforeEach(() => {
+  previousSession = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = 'outbox-enqueue-session'
+})
 
 afterEach(() => {
+  if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = previousSession
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -28,7 +36,8 @@ function fixture(): Database {
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0,
-    last_error TEXT
+    last_error TEXT,
+    actor_session TEXT
   )`)
   return database
 }
@@ -54,11 +63,14 @@ test('inserts the row and creates the pending marker under the state root', () =
     env,
   )
 
-  expect(database.query('SELECT kind,row_id,payload,created_at FROM outbox').get()).toEqual({
+  expect(
+    database.query('SELECT kind,row_id,payload,created_at,actor_session FROM outbox').get(),
+  ).toEqual({
     kind: 'run',
     row_id: 'run-record',
     payload: '{}',
     created_at: '2026-11-06T12:00:00.000Z',
+    actor_session: 'outbox-enqueue-session',
   })
   expect(existsSync(join(recordSyncQueueDirectory(env), RECORD_SYNC_PENDING_MARKER))).toBe(true)
   database.close()
