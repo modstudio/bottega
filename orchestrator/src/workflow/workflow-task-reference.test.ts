@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   resolveHubTaskReference,
   resolveOrPullHubTaskReference,
@@ -54,11 +55,11 @@ test('fresh task failures and absent tasks have distinct actionable refusals', a
       throw new Error('tracker token=super-secret')
     }),
   ).rejects.toThrow(
-    `could not read task data for project alpha: tracker [withheld: assignment]; retry: bottega task show DEV-2 --project alpha --fresh --json`,
+    `could not read task data for project alpha: tracker [withheld: assignment]; retry: ${PLATFORM_SLUG} task show DEV-2 --project alpha --fresh --json`,
   )
   await expect(
     resolveOrPullHubTaskReference('alpha', 'DEV-3', reader, async () => null),
   ).rejects.toThrow(
-    'no task DEV-3 in project alpha; inspect available tasks with bottega task list --project alpha --json',
+    `no task DEV-3 in project alpha; inspect available tasks with ${PLATFORM_SLUG} task list --project alpha --json`,
   )
 })

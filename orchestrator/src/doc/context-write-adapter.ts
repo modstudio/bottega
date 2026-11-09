@@ -119,6 +119,25 @@ export function taskProfile(key: string, tasks: readonly ContextTask[]): Context
   return tasks.some((task) => task.parent_key === key) ? 'epic' : 'task'
 }
 
+function mirrorTask(
+  tasks: readonly ContextTask[],
+  project: string,
+  key: string,
+): ContextTask | null {
+  return taskReferenceForProjectKey(taskKeyMap(tasks), project, key)
+}
+
+function bestEffortProjectTaskReader(ports: ContextFactsPorts) {
+  const reads = new Map<string, Promise<readonly ContextTask[] | null>>()
+  return (project: string) => {
+    const existing = reads.get(project)
+    if (existing) return existing
+    const reading = ports.tasks(project).catch(() => null)
+    reads.set(project, reading)
+    return reading
+  }
+}
+
 async function relatedContextTasks(input: {
   owner: string | null
   claims: readonly { key: string; project: string }[]
@@ -128,33 +147,21 @@ async function relatedContextTasks(input: {
 }): Promise<ContextTask[]> {
   const related: ContextTask[] = []
   if (!input.owner) {
-    if (input.task?.parent_key) {
-      const parent = taskReferenceForProjectKey(
-        taskKeyMap(input.projectTasks),
-        input.task.project,
-        input.task.parent_key,
-      )
-      if (parent) related.push(parent)
-    }
+    const parent = input.task?.parent_key
+      ? mirrorTask(input.projectTasks, input.task.project, input.task.parent_key)
+      : null
+    if (parent) related.push(parent)
     return related
   }
-  const projectTasks = new Map<string, Promise<readonly ContextTask[] | null>>()
-  const readProject = (project: string) => {
-    const existing = projectTasks.get(project)
-    if (existing) return existing
-    const reading = input.ports.tasks(project).catch(() => null)
-    projectTasks.set(project, reading)
-    return reading
-  }
+  const readProject = bestEffortProjectTaskReader(input.ports)
   for (const claim of input.claims) {
     const tasks = await readProject(claim.project)
     if (!tasks) continue
-    const index = taskKeyMap(tasks)
-    const claimed = taskReferenceForProjectKey(index, claim.project, claim.key)
+    const claimed = mirrorTask(tasks, claim.project, claim.key)
     if (!claimed) continue
     related.push(claimed)
     if (claimed.parent_key) {
-      const parent = taskReferenceForProjectKey(index, claimed.project, claimed.parent_key)
+      const parent = mirrorTask(tasks, claimed.project, claimed.parent_key)
       if (parent) related.push(parent)
     }
   }

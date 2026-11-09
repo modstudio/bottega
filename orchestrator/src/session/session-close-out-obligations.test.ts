@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { contextItemShapeRefusal } from '../doc/doc-context-write.ts'
+import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import {
   classifyLandedTask,
   landedTaskIdentities,
@@ -8,6 +11,39 @@ import {
 } from './session-close-out-obligations.ts'
 
 describe('session close-out obligations', () => {
+  test('an unreadable landed-task mirror reports an unverified obligation without a second read', async () => {
+    const database = migratedTestDatabase()
+    const projectId = newRecordId()
+    database
+      .query(
+        `INSERT INTO project (record_id,name,path,canon,settings)
+         VALUES (?,'alpha','/alpha',0,'{"trunk":"main","keyPrefixes":["DEV"]}')`,
+      )
+      .run(projectId)
+    database
+      .query(
+        `INSERT INTO branch_landing_record
+         (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at,recording_session)
+         VALUES (?,'alpha',?,'DEV-1-work','tip',1,'merge','2026-11-09','2026-11-09','closing')`,
+      )
+      .run(newRecordId(), projectId)
+    let reads = 0
+
+    const process = await sessionCloseOutObligationItems(database, 'closing', [], async () => {
+      reads += 1
+      throw new Error('tracker unavailable')
+    })
+
+    expect(reads).toBe(1)
+    expect(process).toContainEqual(
+      expect.objectContaining({
+        item: 'landed task alpha:DEV-1',
+        reason: 'task status could not be verified',
+        evidence: expect.stringContaining('tracker unavailable'),
+      }),
+    )
+  })
+
   test('landed task status and acknowledgement decide its close-out obligation', () => {
     expect(
       classifyLandedTask({

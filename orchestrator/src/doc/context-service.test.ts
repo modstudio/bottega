@@ -186,9 +186,7 @@ describe('context document integration', () => {
         contextTask,
       })
 
-    await expect(write()).rejects.toThrow(
-      `${PLATFORM_SLUG} agent context set --task <KEY>`,
-    )
+    await expect(write()).rejects.toThrow(`${PLATFORM_SLUG} agent context set --task <KEY>`)
     await expect(write({ ...task, record_id: newRecordId() })).rejects.toThrow(
       `${PLATFORM_SLUG} agent context set --task <KEY>`,
     )

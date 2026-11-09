@@ -136,11 +136,7 @@ export async function resolveOrPullHubTaskReference(
   try {
     pulled = await puller(project, key)
   } catch (error) {
-    throw taskReadRefusal(
-      project,
-      error instanceof Error ? error.message : String(error),
-      retry,
-    )
+    throw taskReadRefusal(project, error instanceof Error ? error.message : String(error), retry)
   }
   if (!pulled) {
     throw new Error(
