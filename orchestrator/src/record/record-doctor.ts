@@ -536,7 +536,7 @@ async function operatorRecordChecks(input: {
       checks.push({
         name,
         status: 'skipped',
-        detail: 'BOTTEGA_RECORD_MIGRATE_URL not set',
+        detail: `BOTTEGA_RECORD_MIGRATE_URL not set; credential source is postgres/owner/url, set with value on stdin by ${PLATFORM_SLUG} credential set postgres/owner/url --project ${PLATFORM_SLUG}`,
       })
     return checks
   }

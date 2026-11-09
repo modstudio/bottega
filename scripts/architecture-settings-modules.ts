@@ -84,6 +84,14 @@ export const settingsModules: SettingsModule[] = [
     './config-service.ts',
     './credential-presentation.ts',
   ]),
+  module('orchestrator/src/config/operator-credential.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/config-client.ts',
+    '../../../shared/credential.ts',
+    '../../../shared/credential-value.ts',
+    '../project/projects.ts',
+    './credential-service.ts',
+  ]),
   module('orchestrator/src/config/credential-presentation.ts', ['../../../shared/credential.ts']),
   module('orchestrator/src/commands/credential.ts', [
     'commander',

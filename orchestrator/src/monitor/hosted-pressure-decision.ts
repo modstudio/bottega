@@ -172,7 +172,7 @@ export function decideHostedPressure(
           ageMs: 0,
           severity: 'informational',
           detail: 'hosted Fly metrics are not configured',
-          action: `${PLATFORM_SLUG} machine config secret set BOTTEGA_FLY_METRICS_TOKEN`,
+          action: `pipe the value on stdin to ${PLATFORM_SLUG} credential set fly/metrics/token --project ${PLATFORM_SLUG}`,
         },
       ],
     }

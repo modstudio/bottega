@@ -109,12 +109,12 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-hosted-pressure.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
-    '../../../shared/env-source.ts',
     '../../../shared/record-id.ts',
     '../../../shared/record-api-url.ts',
     '../board/board-hosted-refresh-budget.ts',
     '../board/board-operations.ts',
     '../board/board-store.ts',
+    '../config/operator-credential.ts',
     '../database/db.ts',
     '../record/record-api-client.ts',
     '../record/record-board-contract.ts',

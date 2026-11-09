@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { resolveOperatorCredential } from '../orchestrator/src/config/operator-credential.ts'
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import { hostedApiFetch } from '../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
@@ -14,7 +15,7 @@ const REHEARSAL_WAIT_TIMEOUT_MS = 20 * 60 * 1000
 const FLY_WAIT_TIMEOUT_SECONDS = 60
 const GITHUB_STATUS_DESCRIPTION_LIMIT = 140
 const tokenName = `${PLATFORM_SLUG.toUpperCase()}_RECORD_REHEARSAL_FLY_TOKEN`
-const sealingCommand = `${PLATFORM_SLUG} machine config secret run --name ${tokenName} -- bun scripts/record-rehearse.ts`
+const sealingCommand = `${PLATFORM_SLUG} credential set fly/rehearsal/token --project ${PLATFORM_SLUG}`
 
 type CommandResult = { exitCode: number; stdout: string; stderr: string }
 export type RehearsalCommandRunner = (
@@ -425,10 +426,21 @@ export async function runRecordRehearsal(input: {
 }
 
 if (import.meta.main) {
-  const token = process.env[tokenName]
+  let token: string | undefined
+  try {
+    token = await resolveOperatorCredential(
+      { provider: 'fly', name: 'rehearsal', type: 'token' },
+      tokenName,
+    )
+  } catch (error) {
+    console.error(
+      `record rehearsal failed to resolve its Fly token: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    process.exit(1)
+  }
   if (!token) {
     console.error(
-      `${tokenName} is required. Ask the operator to seal the app-scoped token, then run: ${sealingCommand}`,
+      `fly/rehearsal/token is required unless ${tokenName} is set. Pipe the app-scoped token on stdin to: ${sealingCommand}`,
     )
     process.exit(1)
   }

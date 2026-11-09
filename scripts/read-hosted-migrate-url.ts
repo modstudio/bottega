@@ -1,5 +1,5 @@
+import { resolveOperatorCredential } from '../orchestrator/src/config/operator-credential.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { readEnvValuesWithHosted } from '../shared/env-source.ts'
 import { RECORD_MIGRATE_SECRET_NAME } from '../shared/record-migrate-secret.ts'
 import { secretResolutionFailure } from '../shared/secret-resolution-failure.ts'
 
@@ -12,11 +12,14 @@ if (process.stdout.isTTY) {
 
 let value: string | undefined
 try {
-  value = (await readEnvValuesWithHosted([name]))[name]
+  value = await resolveOperatorCredential(
+    { provider: 'postgres', name: 'owner', type: 'url' },
+    name,
+  )
 } catch (error) {
   console.error(
     secretResolutionFailure(error) ??
-      `sealed ${name} could not be read\ncleared by: ${PLATFORM_SLUG} record doctor`,
+      `credential postgres/owner/url could not be resolved\ncleared by: ${PLATFORM_SLUG} record doctor`,
   )
   process.exit(2)
 }
