@@ -27,7 +27,7 @@ export type CredentialUsage = {
 export type CredentialDisplayRow = {
   key: string
   credential: string
-  credentialParts: string[]
+  credentialParts: CredentialPart[]
   mode: TypedCredentialRow['mode']
   environment: TypedCredentialRow['environment']
   boundTo: string
@@ -54,10 +54,17 @@ export function typedCredentialRows(rows: SecretRow[]): TypedCredentialRow[] {
   return credentials
 }
 
-function credentialParts(identity: { provider: string; name: string | null; type: string }) {
-  return [identity.provider, identity.name, identity.type].filter(
-    (part): part is string => part !== null,
-  )
+export type CredentialPart = { role: 'provider' | 'name' | 'type'; value: string }
+
+function credentialParts(identity: {
+  provider: string
+  name: string | null
+  type: string
+}): CredentialPart[] {
+  const parts: CredentialPart[] = [{ role: 'provider', value: identity.provider }]
+  if (identity.name !== null) parts.push({ role: 'name', value: identity.name })
+  parts.push({ role: 'type', value: identity.type })
+  return parts
 }
 
 /** The space default leads, so a reader sees first whether a copy is the space-wide fallback. */

@@ -10,6 +10,7 @@ import { createFileRoute, Navigate, useNavigate, useParams } from '@tanstack/rea
 import { Fragment, useMemo, useState } from 'react'
 import {
   type CredentialDisplayRow,
+  type CredentialPart,
   type CredentialUsage,
   credentialRowMatches,
   orderedUsages,
@@ -38,15 +39,15 @@ function UsedBy({ row }: { row: CredentialDisplayRow }) {
   )
 }
 
-function CredentialName({ parts }: { parts: string[] }) {
-  return parts.map((part, index) => (
-    <Fragment key={`${index}:${part}`}>
-      {index > 0 ? (
+function CredentialName({ parts }: { parts: CredentialPart[] }) {
+  return parts.map((part) => (
+    <Fragment key={part.role}>
+      {part.role !== 'provider' ? (
         <span aria-hidden className="px-1 text-text-muted">
           ·
         </span>
       ) : null}
-      {part}
+      {part.value}
     </Fragment>
   ))
 }
@@ -61,7 +62,13 @@ const credentialColumns: CollectionColumn<CredentialDisplayRow>[] = [
   { id: 'mode', label: 'Mode', phone: 'aside', render: (row) => row.mode },
   { id: 'binding', label: 'Bound to', phone: 'line', render: (row) => row.boundTo },
   { id: 'owner', label: 'Owner', phone: 'line', render: (row) => row.owner },
-  { id: 'used-by', label: 'Used by', phone: 'line', grow: true, render: (row) => <UsedBy row={row} /> },
+  {
+    id: 'used-by',
+    label: 'Used by',
+    phone: 'line',
+    grow: true,
+    render: (row) => <UsedBy row={row} />,
+  },
   {
     id: 'hint',
     label: 'Hint',
