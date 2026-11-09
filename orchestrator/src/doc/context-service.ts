@@ -41,7 +41,7 @@ export function sessionContextItems(session: string, database: Database) {
 
 /** Read one task's context items through the document-store owner. */
 export function taskContextItems(task: string, database: Database) {
-  const holder = `task:${task.toUpperCase()}`
+  const holder = contextHolder({ task })
   return holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }, database))
 }
 

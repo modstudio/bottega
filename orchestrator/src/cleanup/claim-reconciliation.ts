@@ -85,6 +85,7 @@ function claimedRows(
   projectName: string | undefined,
   claimIds?: ReadonlySet<string>,
 ): ClaimedRow[] {
+  const kindPlaceholders = RECONCILED_KINDS.map(() => '?').join(',')
   const rows = database
     .query(
       `SELECT claim.record_id,claim.number,claim.root_run_record_id,claim.run_record_id,claim.project_record_id,claim.kind,claim.allocation_key,
@@ -101,11 +102,11 @@ function claimedRows(
        JOIN run root ON root.record_id=claim.root_run_record_id
        LEFT JOIN project ON project.record_id=claim.project_record_id
        WHERE claim.state='claimed'
-         AND claim.kind IN ('branch','ref_guard','retained_ref','worktree','sandbox_dir','trust_entry')
+         AND claim.kind IN (${kindPlaceholders})
          AND (? IS NULL OR project.name=?)
        ORDER BY claim.claimed_at,claim.record_id`,
     )
-    .all(projectName ?? null, projectName ?? null) as ClaimedRow[]
+    .all(...RECONCILED_KINDS, projectName ?? null, projectName ?? null) as ClaimedRow[]
   return claimIds ? rows.filter((row) => claimIds.has(row.record_id)) : rows
 }
 

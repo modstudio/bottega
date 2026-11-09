@@ -35,6 +35,7 @@ export async function sessionCloseOutObligationItems(
   const landedTasks = await observeLandedTasks(identities)
   return sessionCloseOutObligations({
     pendingScores: pendingForSession(session, database),
+    acknowledgementDate: new Date().toISOString().slice(0, 'YYYY-MM-DD'.length),
     landedTasks: landedTasks.map((task) => ({
       ...task,
       openAfterLandingAcknowledged: taskContextItems(task.taskKey, database).some(

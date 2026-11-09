@@ -307,6 +307,76 @@ test('an unreadable project warns when the session owns no work that remains the
   expect(formatSessionCloseOut(report)).toContain(`warning: project ${project}`)
 })
 
+test('an unreadable project remains an error while the session has an unsettled claim', async () => {
+  const project = `held-missing-session-close-out-${newRecordId()}`
+  const repo = join(dir, project)
+  const projectId = registerProject(project, repo)
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'owner',
+    taskRecordId: 'fixture-task',
+    projectRecordId: null,
+  })
+  score(root, 'full', 'right', 'faithful')
+  attachRunToProject(root, projectId, project)
+  db()
+    .query(
+      `INSERT INTO resource_claim
+       (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,state,claimed_at)
+       VALUES (?, ?, ?, ?, 'sandbox_dir', ?, 'claimed', '2026-11-09T00:00:00.000Z')`,
+    )
+    .run(newRecordId(), root, root, projectId, join(repo, 'missing-sandbox'))
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    if (command[0] === 'ps' || command[0] === 'lsof') return spawnResult()
+    return spawnResult('', 1)
+  }) as typeof Bun.spawnSync)
+
+  const report = await closeOutSession({ session: 'owner', dryRun: true })
+
+  expect(report.errors).toEqual([
+    expect.objectContaining({
+      item: `project ${project}`,
+      detail: `run resource state could not be read: git common directory could not be read at ${repo}`,
+    }),
+  ])
+  expect(report.warnings).toEqual([])
+  expect(report.verdict.clean).toBe(false)
+})
+
+test('an unregistered project warning gives the project add form', async () => {
+  const project = `retired-session-close-out-${newRecordId()}`
+  const repo = join(dir, project)
+  const projectId = registerProject(project, repo)
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'owner',
+    taskRecordId: 'fixture-task',
+    projectRecordId: null,
+  })
+  score(root, 'full', 'right', 'faithful')
+  attachRunToProject(root, projectId, project)
+  db().query('UPDATE project SET retired_at=? WHERE record_id=?').run('2026-11-09', projectId)
+  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    if (command[0] === 'ps' || command[0] === 'lsof') return spawnResult()
+    return spawnResult('', 1)
+  }) as typeof Bun.spawnSync)
+
+  const report = await closeOutSession({ session: 'owner', dryRun: true })
+
+  expect(report.errors).toEqual([])
+  expect(report.warnings).toEqual([
+    expect.objectContaining({
+      item: `project ${project}`,
+      detail: 'run resource state could not be read: project is not registered',
+      cleanup: `register the checkout with ${PLATFORM_SLUG} project add <path> --name ${project}`,
+    }),
+  ])
+})
+
 test('close-out settles an absent ref guard once for an absent terminal tree', async () => {
   const project = `absent-ref-guard-close-out-${newRecordId()}`
   const repo = join(dir, project)

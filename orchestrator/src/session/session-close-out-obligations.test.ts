@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { contextItemShapeRefusal } from '../doc/doc-context-write.ts'
 import {
   classifyLandedTask,
   landedTaskIdentities,
@@ -21,19 +22,20 @@ describe('session close-out obligations', () => {
         open: true,
         openAfterLandingAcknowledged: true,
       }),
-    ).toBe('accepted')
+    ).toBe('settled')
     expect(
       classifyLandedTask({
         verified: true,
         open: false,
         openAfterLandingAcknowledged: false,
       }),
-    ).toBe('none')
+    ).toBe('settled')
   })
 
   test('pending score roots name the run, agent, job, label, and score remedy', () => {
     expect(
       sessionCloseOutObligations({
+        acknowledgementDate: '2026-11-09',
         pendingScores: [
           {
             record_id: 'run-record-id',
@@ -126,6 +128,7 @@ describe('session close-out obligations', () => {
   test('closed landed tasks pass while open and unverified observations remain', () => {
     expect(
       sessionCloseOutObligations({
+        acknowledgementDate: '2026-11-09',
         pendingScores: [],
         landedTasks: [
           {
@@ -198,7 +201,7 @@ describe('session close-out obligations', () => {
         remedy:
           `${PLATFORM_SLUG} task set DEV-3 --project alpha --status done, or ` +
           `${PLATFORM_SLUG} agent context set --task DEV-3 --kind ruling ` +
-          '--id open-after-landing --source session-close-out "keep open after landing"',
+          '--id open-after-landing --source "chat 2026-11-09" "keep open after landing"',
       },
       {
         item: 'landed task alpha:DEV-4',
@@ -207,5 +210,38 @@ describe('session close-out obligations', () => {
         remedy: `${PLATFORM_SLUG} task set DEV-4 --project alpha --status done`,
       },
     ])
+  })
+
+  test('the printed acknowledgement source passes the CLI context refusal policy', () => {
+    const source = 'chat 2026-11-09'
+    const [item] = sessionCloseOutObligations({
+      acknowledgementDate: '2026-11-09',
+      pendingScores: [],
+      landedTasks: [
+        {
+          project: 'alpha',
+          taskKey: 'DEV-3',
+          openAfterLandingAcknowledged: false,
+          observation: {
+            raw: 'active',
+            category: 'active',
+            lastSeen: null,
+            verified: true,
+            detail: 'in progress',
+          },
+        },
+      ],
+    })
+
+    expect(item?.remedy).toContain(`--source "${source}"`)
+    expect(
+      contextItemShapeRefusal({
+        holder: 'task:DEV-3',
+        id: 'open-after-landing',
+        kind: 'ruling',
+        source,
+        body: 'keep open after landing',
+      }),
+    ).toBeNull()
   })
 })

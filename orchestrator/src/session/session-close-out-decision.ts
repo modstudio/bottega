@@ -89,6 +89,38 @@ export function classifyUnreadableProject(ownsCloseOutWork: boolean): Unreadable
   return ownsCloseOutWork ? 'error' : 'warning'
 }
 
+export type UnreadableProjectOwnershipFacts = {
+  project: string
+  runs: readonly Pick<SessionOwnedRun, 'rootRecordId' | 'project' | 'status' | 'mintedBranch'>[]
+  branches: readonly SessionOwnedBranch[]
+  heldRunResources: readonly SessionHeldRunResources[]
+  cursors: readonly { project: string }[]
+}
+
+/** Whether one unreadable project still contains work this session must settle. */
+export function ownsUnreadableProjectWork(facts: UnreadableProjectOwnershipFacts): boolean {
+  const projectRuns = facts.runs.filter((run) => run.project === facts.project)
+  const roots = new Set(projectRuns.map((run) => run.rootRecordId))
+  if (projectRuns.some((run) => isLiveSessionRun(run.status))) return true
+  if (
+    facts.heldRunResources.some(
+      (held) => roots.has(held.rootRecordId) && (held.worktree || held.claim),
+    )
+  )
+    return true
+  if (
+    projectRuns.some((run) => {
+      if (!run.mintedBranch) return false
+      const branch = facts.branches.find(
+        (candidate) => candidate.project === facts.project && candidate.branch === run.mintedBranch,
+      )
+      return !branch || !isBranchProved(branch)
+    })
+  )
+    return true
+  return facts.cursors.some((cursor) => cursor.project === facts.project)
+}
+
 /** Classify whether a workflow cursor leaves work for close-out or a successor. */
 export function classifySessionCursor(input: {
   state: string

@@ -28,6 +28,7 @@ import {
   classifySessionCursor,
   classifyUnreadableProject,
   isLiveSessionRun,
+  ownsUnreadableProjectWork,
   plannedSessionRunRoots,
   plannedTreeOwnerMatches,
   type SessionHeldRunResources,
@@ -292,7 +293,10 @@ export function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
   return { branches, evidence }
 }
 
-type ResourceObservationError = SessionCloseOutReport['errors'][number]
+type ResourceObservationError = SessionCloseOutReport['errors'][number] & {
+  project: string
+  failureKind: 'unregistered' | 'unreadable'
+}
 type ProjectRootResources = {
   rootRecordId: string
   memberRecordIds: string[]
@@ -312,6 +316,8 @@ function resolveRootResources(
     return {
       resources: null,
       error: {
+        project,
+        failureKind: 'unregistered',
         item: `project ${project}`,
         detail: 'run resource state could not be read: project is not registered',
         retry: `${PLATFORM_SLUG} machine doctor`,
@@ -334,6 +340,8 @@ function resolveRootResources(
     return {
       resources: null,
       error: {
+        project,
+        failureKind: 'unreadable',
         item: `project ${project}`,
         detail: `run resource state could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
         retry: `${PLATFORM_SLUG} machine doctor`,
@@ -416,6 +424,8 @@ function observeRepositoryGroup(
       teardownRoots: [],
       unknownRoots: projectRoots.map((item) => item.rootRecordId),
       errors: [...new Set(projectRoots.map((item) => item.project))].map((project) => ({
+        project,
+        failureKind: 'unreadable' as const,
         item: `project ${project}`,
         detail,
         retry: `${PLATFORM_SLUG} machine doctor`,
@@ -514,6 +524,7 @@ function gather(database: Database, session: string, dryRun: boolean) {
     landings,
     reviews,
     cursors,
+    heldRunResources: held.resources,
     observationErrors: held.errors,
     ...branchInventory,
     classification: classifySessionCloseOut(facts),
@@ -753,42 +764,30 @@ function appendArgumentProcesses(
     })
 }
 
-function ownsUnreadableProjectWork(inventory: ReturnType<typeof gather>, project: string): boolean {
-  const projectRuns = inventory.runs.filter((run) => run.project === project)
-  const roots = new Set(projectRuns.map((run) => run.rootRecordId))
-  if (projectRuns.some((run) => isLiveSessionRun(run.status))) return true
-  if (projectRuns.some((run) => Boolean(run.worktree && existsSync(run.worktree)))) return true
-  if (inventory.claims.some((claim) => roots.has(claim.root_run_record_id))) return true
-  if (
-    projectRuns.some(
-      (run) =>
-        run.mintedBranch &&
-        !inventory.branches.some(
-          (branch) =>
-            branch.project === project &&
-            branch.branch === run.mintedBranch &&
-            ['landed', 'superseded', 'empty'].includes(branch.state),
-        ),
-    )
-  )
-    return true
-  return inventory.cursors.some((cursor) => cursor.project === project)
-}
-
 function appendObservationFailures(
   report: SessionCloseOutReport,
   inventory: ReturnType<typeof gather>,
   errors: readonly ResourceObservationError[],
 ): void {
   for (const error of errors) {
-    const project = error.item.replace(/^project /, '')
-    if (classifyUnreadableProject(ownsUnreadableProjectWork(inventory, project)) === 'error') {
+    const project = error.project
+    if (
+      classifyUnreadableProject(
+        ownsUnreadableProjectWork({
+          project,
+          runs: inventory.runs,
+          branches: inventory.branches,
+          heldRunResources: inventory.heldRunResources,
+          cursors: inventory.cursors,
+        }),
+      ) === 'error'
+    ) {
       if (
         !report.errors.some(
           (candidate) => candidate.item === error.item && candidate.detail === error.detail,
         )
       )
-        report.errors.push(error)
+        report.errors.push({ item: error.item, detail: error.detail, retry: error.retry })
       continue
     }
     if (
@@ -800,8 +799,10 @@ function appendObservationFailures(
         item: error.item,
         detail: error.detail,
         cleanup:
-          `repair the registered checkout, or remove its stale register entry with ` +
-          `${PLATFORM_SLUG} project remove ${project}`,
+          error.failureKind === 'unregistered'
+            ? `register the checkout with ${PLATFORM_SLUG} project add <path> --name ${project}`
+            : `repair the registered checkout, or remove its stale register entry with ` +
+              `${PLATFORM_SLUG} project remove ${project}`,
       })
   }
 }

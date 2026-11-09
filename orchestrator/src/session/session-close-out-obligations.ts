@@ -26,7 +26,7 @@ export type PendingScoreRoot = {
 export type LandedTaskIdentity = { project: string; taskKey: string }
 export const OPEN_AFTER_LANDING_CONTEXT_ID = 'open-after-landing'
 
-export type LandedTaskDisposition = 'accepted' | 'residue' | 'none'
+export type LandedTaskDisposition = 'residue' | 'settled'
 
 /** Decide whether one landed task still creates tracker work for session close-out. */
 export function classifyLandedTask(input: {
@@ -34,8 +34,8 @@ export function classifyLandedTask(input: {
   open: boolean
   openAfterLandingAcknowledged: boolean
 }): LandedTaskDisposition {
-  if (input.verified && !input.open) return 'none'
-  if (input.verified && input.openAfterLandingAcknowledged) return 'accepted'
+  if (input.verified && !input.open) return 'settled'
+  if (input.verified && input.openAfterLandingAcknowledged) return 'settled'
   return 'residue'
 }
 
@@ -77,7 +77,10 @@ type LandedTaskCloseOutObservation = LandedTaskObservation & {
   openAfterLandingAcknowledged: boolean
 }
 
-function landedTaskItem(task: LandedTaskCloseOutObservation): SessionProcessLine | null {
+function landedTaskItem(
+  task: LandedTaskCloseOutObservation,
+  acknowledgementDate: string,
+): SessionProcessLine | null {
   const open = taskFlowState(task.observation.category) === 'open'
   const disposition = classifyLandedTask({
     verified: task.observation.verified,
@@ -87,7 +90,7 @@ function landedTaskItem(task: LandedTaskCloseOutObservation): SessionProcessLine
   if (disposition !== 'residue') return null
   const acknowledge =
     `${PLATFORM_SLUG} agent context set --task ${task.taskKey} --kind ruling ` +
-    `--id ${OPEN_AFTER_LANDING_CONTEXT_ID} --source session-close-out ` +
+    `--id ${OPEN_AFTER_LANDING_CONTEXT_ID} --source "chat ${acknowledgementDate}" ` +
     '"keep open after landing"'
   return {
     item: `landed task ${task.project}:${task.taskKey}`,
@@ -105,10 +108,11 @@ function landedTaskItem(task: LandedTaskCloseOutObservation): SessionProcessLine
 export function sessionCloseOutObligations(input: {
   pendingScores: readonly PendingScoreRoot[]
   landedTasks: readonly LandedTaskCloseOutObservation[]
+  acknowledgementDate: string
 }): SessionProcessLine[] {
   const process = input.pendingScores.map(pendingScoreItem)
   for (const task of input.landedTasks) {
-    const item = landedTaskItem(task)
+    const item = landedTaskItem(task, input.acknowledgementDate)
     if (item) process.push(item)
   }
   return process
