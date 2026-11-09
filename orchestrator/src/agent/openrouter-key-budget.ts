@@ -98,34 +98,24 @@ type BudgetDependencies = {
   resolve(
     row: OpenRouterKeyRow,
     project: ProjectCredentialTarget | null,
-  ): Promise<{ resolve(): Promise<Record<string, string>> } | Record<string, string>>
+  ): Promise<Record<string, string>>
   fetch(input: string, init: RequestInit): Promise<Response>
 }
 
 const budgetDependencies: BudgetDependencies = {
-  resolve: (row, project) => endpointApiKeyForProject(row, project),
+  resolve: async (row, project) => (await endpointApiKeyForProject(row, project)).resolve(),
   fetch: boundedFetch('hosted-api'),
 }
 
 /** Resolve the named key at use time and ask OpenRouter without exposing response metadata. */
 export async function checkOpenRouterKeyBudget(
   row: OpenRouterKeyRow,
-  projectOrDependencies: ProjectCredentialTarget | BudgetDependencies | null = null,
-  suppliedDependencies: BudgetDependencies = budgetDependencies,
+  project: ProjectCredentialTarget | null = null,
+  dependencies: BudgetDependencies = budgetDependencies,
 ): Promise<OpenRouterKeyBudgetDecision> {
-  const dependencies =
-    projectOrDependencies && 'fetch' in projectOrDependencies
-      ? projectOrDependencies
-      : suppliedDependencies
-  const project =
-    projectOrDependencies && !('fetch' in projectOrDependencies) ? projectOrDependencies : null
   if (!isOpenRouterKeyBudgetAgent(row)) return { kind: 'not-applicable' }
   try {
-    const endpoint = await dependencies.resolve(row, project)
-    const key =
-      typeof endpoint.resolve === 'function'
-        ? (await endpoint.resolve()).OPENAI_API_KEY
-        : (endpoint as Record<string, string>).OPENAI_API_KEY
+    const key = (await dependencies.resolve(row, project)).OPENAI_API_KEY
     if (!key) return { kind: 'unknown' }
     const response = await dependencies.fetch(`${row.baseUrl!.replace(/\/+$/, '')}/key`, {
       headers: { Authorization: `Bearer ${key}` },

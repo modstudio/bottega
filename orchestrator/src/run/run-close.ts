@@ -30,7 +30,7 @@ import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
-import { agentsOnBillingKey } from '../route/billing-key-hold.ts'
+import { agentsOnBillingCredential, agentsOnBillingKey } from '../route/billing-key-hold.ts'
 import {
   decideFailover,
   failoverAttemptLimit,
@@ -39,6 +39,7 @@ import {
   failoverSuccessorAgent,
 } from '../route/failover.ts'
 import { agentsIneligibleForTransport, pick } from '../route/route.ts'
+import { recentTerminalRuns } from '../route/routing-cooldown.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import type { TransportName } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
@@ -96,6 +97,7 @@ export type CloseInput = {
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
   endpointKey: EffectiveBillingKey
+  credentialId?: string | null
   name: string
   opts: CloseOptions
   /** The prompt size this run's pick ranked on, for a failover successor to reuse. */
@@ -181,11 +183,25 @@ function storedFailoverSelectionConstraints(
   first: { transport: TransportName | null; transport_explicit: number },
   opts: Pick<CloseOptions, 'job' | 'avoid' | 'distinctModels'>,
   tried: string[],
-  billingFailure: { agent: string; keySource: 'agent' | 'project' } | null,
+  billingFailure: {
+    agent: string
+    keySource: 'agent' | 'project'
+    credentialId: string | null
+  } | null,
 ) {
   const agents = Object.values(AGENTS)
-  const failedKeyAgents =
-    billingFailure?.keySource === 'agent' ? agentsOnBillingKey(agents, billingFailure.agent) : []
+  const failedKeyAgents = billingFailure?.credentialId
+    ? agentsOnBillingCredential(
+        agents,
+        recentTerminalRuns(
+          db(),
+          agents.map((agent) => agent.name),
+        ),
+        billingFailure.credentialId,
+      )
+    : billingFailure?.keySource === 'agent'
+      ? agentsOnBillingKey(agents, billingFailure.agent)
+      : []
   return failoverSelectionConstraints({
     transport: first.transport,
     transportExplicit: first.transport_explicit,
@@ -205,8 +221,9 @@ function billingFailureForFailover(
   failureKind: string | null,
   agent: string,
   keySource: 'agent' | 'project',
-): { agent: string; keySource: 'agent' | 'project' } | null {
-  return failureKind === 'billing' ? { agent, keySource } : null
+  credentialId: string | null,
+): { agent: string; keySource: 'agent' | 'project'; credentialId: string | null } | null {
+  return failureKind === 'billing' ? { agent, keySource, credentialId } : null
 }
 
 export async function selectFailoverSuccessor(input: {
@@ -416,7 +433,12 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           first,
           opts,
           tried,
-          billingFailureForFailover(failureKind, name, input.endpointKey.source),
+          billingFailureForFailover(
+            failureKind,
+            name,
+            input.endpointKey.source,
+            input.credentialId ?? null,
+          ),
         )
         const selected = await selectFailoverSuccessor({
           runId: claim.id,

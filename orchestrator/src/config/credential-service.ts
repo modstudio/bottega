@@ -55,6 +55,10 @@ export type CredentialAddress = {
 export type ProjectCredentialTarget = Pick<Project, 'name' | 'settings'> & {
   recordId: string | null
 }
+export type ProjectCredentialBinding = Pick<
+  CredentialAddress,
+  'projectId' | 'projectName' | 'spaceName' | 'destinationSpaceId'
+>
 
 export function projectRecordIdentityRefusal(project: string): string {
   return renderRefusal(
@@ -74,12 +78,11 @@ export function providerProjectRequiredRefusal(): string {
   )
 }
 
-/** Build the one canonical credential address used by project-bound consumers. */
-export async function projectCredentialAddress(
+/** Resolve the project and record-space identity shared by every project-bound command. */
+export async function projectCredentialBinding(
   project: ProjectCredentialTarget,
-  provider: string,
   client?: ReturnType<typeof configClient>,
-): Promise<CredentialAddress> {
+): Promise<ProjectCredentialBinding> {
   if (!project.recordId) throw new Error(projectRecordIdentityRefusal(project.name))
   const selectedClient = client ?? configClient()
   const who = await selectedClient.whoami()
@@ -92,16 +95,27 @@ export async function projectCredentialAddress(
   )
   if (!membership) throw new Error(recordSpaceMembershipRefusal(destinationSpaceId))
   return {
+    projectId: project.recordId,
+    projectName: project.name,
+    spaceName: membership.slug,
+    destinationSpaceId,
+  }
+}
+
+/** Build the one canonical credential address used by project-bound consumers. */
+export async function projectCredentialAddress(
+  project: ProjectCredentialTarget,
+  provider: string,
+  client?: ReturnType<typeof configClient>,
+): Promise<CredentialAddress> {
+  return {
     provider,
     name: null,
     type: 'api-key',
     mode: 'default',
     environment: 'local',
     payer: 'personal',
-    projectId: project.recordId,
-    projectName: project.name,
-    spaceName: membership.slug,
-    destinationSpaceId,
+    ...(await projectCredentialBinding(project, client)),
   }
 }
 

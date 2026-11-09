@@ -11,6 +11,10 @@ import { billingHoldForFailure } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachment.ts'
 import { projectAt } from '../project/projects.ts'
+import {
+  projectRecordIdentityRefusal,
+  providerProjectRequiredRefusal,
+} from '../config/credential-service.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -433,11 +437,21 @@ function probeRowAndProject(name: string, inputs: AgentProbeInputs) {
   return { row, project: projectAt(inputs.cwd ?? process.cwd()) }
 }
 
+function assertProviderProbeProject(
+  row: Pick<AgentRow, 'provider'>,
+  project: import('../project/projects.ts').Project | null,
+): void {
+  if (!row.provider?.trim()) return
+  if (!project) throw new Error(providerProjectRequiredRefusal())
+  if (!project.recordId) throw new Error(projectRecordIdentityRefusal(project.name))
+}
+
 export async function probeAgent(
   name: string,
   inputs: AgentProbeInputs,
 ): Promise<RegistrationProbeResult> {
   const { row, project } = probeRowAndProject(name, inputs)
+  assertProviderProbeProject(row, project)
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const needs = registrationProbeRequirements(declared)

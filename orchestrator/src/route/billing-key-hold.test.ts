@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { type BillingKeyRun, decideBillingKeyHolds } from './billing-key-hold.ts'
+import {
+  agentsOnBillingCredential,
+  agentsOnBillingKey,
+  type BillingKeyRun,
+  decideBillingKeyHolds,
+} from './billing-key-hold.ts'
 
 const agents = [
   { name: 'a', baseUrl: 'https://one.test', apiKeySecret: 'ONE_KEY' },
@@ -87,5 +92,39 @@ describe('billing key holds', () => {
       ]),
     ).toEqual([expect.objectContaining({ id: 'credential:credential-a', agents: ['a', 'b'] })])
     expect(decideBillingKeyHolds(providerAgents, [run({ credential_id: null })])).toEqual([])
+
+    expect(agentsOnBillingKey(providerAgents, 'a')).toEqual([])
+    expect(
+      agentsOnBillingCredential(
+        providerAgents,
+        [
+          run({ credential_id: 'credential-a' }),
+          run({ record_id: 'b', agent: 'b', credential_id: 'credential-a' }),
+          run({ record_id: 'c', agent: 'c', credential_id: null }),
+        ],
+        'credential-a',
+      ),
+    ).toEqual(['a', 'b'])
+  })
+
+  test('a later successful probe paid by the credential clears its hold', () => {
+    const providerAgents = [
+      { name: 'a', provider: 'openrouter' },
+      { name: 'b', provider: 'openrouter' },
+    ]
+    expect(
+      decideBillingKeyHolds(providerAgents, [
+        run({ credential_id: 'credential-a' }),
+        run({
+          record_id: 'b',
+          number: 2,
+          agent: 'b',
+          credential_id: 'credential-a',
+          failure_kind: null,
+          status: 'ok',
+          finished_at: 2,
+        }),
+      ]),
+    ).toEqual([])
   })
 })

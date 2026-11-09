@@ -28,7 +28,7 @@ import {
   deleteCredential,
   listCredentials,
   projectCredentialAddress,
-  projectRecordIdentityRefusal,
+  projectCredentialBinding,
   resolveCredentialValue,
   resolveProjectCredential,
   setCredential,
@@ -36,7 +36,6 @@ import {
 import { runWithEnvironment } from '../config/secret-run.ts'
 import { projectByName } from '../project/projects.ts'
 import { noActiveRecordSpaceRefusal } from '../record/record-project-destination.ts'
-import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { log } from './support.ts'
 
 type BindingOptions = {
@@ -95,19 +94,13 @@ async function bindingAddress(options: BindingOptions): Promise<CredentialBindin
   if (options.project && options.space)
     throw new Error('--project and --space are mutually exclusive')
   const client = configClient()
-  const who = await client.whoami()
   const project = options.project ? projectByName(options.project) : null
   if (options.project && !project) throw new Error(`no project ${options.project}`)
-  if (project && !project.recordId) throw new Error(projectRecordIdentityRefusal(project.name))
+  if (project) return projectCredentialBinding(project, client)
+  const who = await client.whoami()
   const memberships = parseRecordSpaceMemberships(who.memberships)
   let destinationSpaceId: string
-  if (project) {
-    destinationSpaceId = await requireProjectRecordDestination(
-      project.name,
-      project.settings,
-      client,
-    )
-  } else if (options.space) {
+  if (options.space) {
     const membership = recordSpaceMembership(options.space, memberships)
     if (!membership) throw new Error(recordSpaceMembershipRefusal(options.space))
     destinationSpaceId = membership.spaceId
@@ -118,8 +111,8 @@ async function bindingAddress(options: BindingOptions): Promise<CredentialBindin
   const membership = recordSpaceMembership(destinationSpaceId, memberships)
   if (!membership) throw new Error(recordSpaceMembershipRefusal(destinationSpaceId))
   return {
-    projectId: project?.recordId ?? null,
-    projectName: project?.name,
+    projectId: null,
+    projectName: undefined,
     spaceName: membership.slug,
     destinationSpaceId,
   }

@@ -82,6 +82,7 @@ test('the adapter asks the keyed OpenRouter endpoint without network', async () 
       apiKeySecret: 'OPENROUTER_FIXTURE_KEY',
       billing: 'metered',
     },
+    null,
     {
       resolve: async () => ({ OPENAI_API_KEY: 'fixture-secret' }),
       fetch: async (input, init) => {
@@ -112,22 +113,24 @@ test('only a metered keyed OpenRouter row is applicable', async () => {
   }
 
   expect(
-    await checkOpenRouterKeyBudget({ ...endpoint, billing: 'metered' }, { fetch, resolve }),
+    await checkOpenRouterKeyBudget({ ...endpoint, billing: 'metered' }, null, { fetch, resolve }),
   ).toEqual({ kind: 'spendable' })
   expect(
-    await checkOpenRouterKeyBudget({ ...endpoint, billing: 'free' }, { fetch, resolve }),
+    await checkOpenRouterKeyBudget({ ...endpoint, billing: 'free' }, null, { fetch, resolve }),
   ).toEqual({
     kind: 'not-applicable',
   })
   expect(
     await checkOpenRouterKeyBudget(
       { ...endpoint, billing: 'metered', baseUrl: 'https://api.example.test/v1' },
+      null,
       { fetch, resolve },
     ),
   ).toEqual({ kind: 'not-applicable' })
   expect(
     await checkOpenRouterKeyBudget(
       { ...endpoint, billing: 'metered', apiKeySecret: '  ' },
+      null,
       { fetch, resolve },
     ),
   ).toEqual({ kind: 'not-applicable' })

@@ -160,13 +160,24 @@ export function agentsOnBillingKey(
   agentName: string,
 ): string[] {
   const target = agents.find((agent) => agent.name === agentName)
+  if (target?.provider) return []
   const key = target && billingKeyForAgent(target)
   if (!key) return []
   const id = keyId(key)
   return agents
     .filter((agent) => {
+      if (agent.provider) return false
       const candidate = billingKeyForAgent(agent)
       return candidate !== null && keyId(candidate) === id
     })
     .map((agent) => agent.name)
+}
+
+/** Provider agents whose latest credential-paid run spent through one credential identity. */
+export function agentsOnBillingCredential(
+  agents: readonly BillingKeyAgent[],
+  runs: readonly BillingKeyRun[],
+  credentialId: string,
+): string[] {
+  return credentialAgentsById(agents, latestCredentialRunByAgent(runs)).get(credentialId) ?? []
 }

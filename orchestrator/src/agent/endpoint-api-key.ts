@@ -18,6 +18,7 @@ import {
 } from '../config/credential-service.ts'
 import type { EffectiveBillingKey } from '../failure/failure.ts'
 import type { ProjectAgentKeys } from '../project/project-agent-keys.ts'
+import type { CredentialPayment } from '../run/run-credential-claim.ts'
 
 type EndpointKeyRow = {
   baseUrl?: string | null
@@ -25,11 +26,6 @@ type EndpointKeyRow = {
   provider?: string | null
 }
 
-type CredentialPayment = {
-  credentialId: string
-  payer: 'personal' | 'shared'
-  binding: 'space' | 'project'
-}
 export type EndpointApiKeyLaunch<T extends EndpointKeyRow> = {
   row: T
   key: EffectiveBillingKey

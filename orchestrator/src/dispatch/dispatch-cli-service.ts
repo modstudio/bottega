@@ -12,6 +12,7 @@ import {
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
+import { providerCredentialRouting } from '../agent/provider-credential-routing.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import {
   resolveTaskBranch,
@@ -25,7 +26,6 @@ import {
 import { compatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
-import { projectCredentialRouteFacts } from '../config/credential-service.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { resolveReplyDialect } from '../contract/contract.ts'
 import { db, sessionId } from '../database/db.ts'
@@ -492,10 +492,7 @@ export async function selectBeforeDetach(
   const routeProject = spec.repo
     ? (projectByName(spec.repo) ?? null)
     : projectAt(spec.cwd ?? presentation.cwd())
-  const credentialFacts = await projectCredentialRouteFacts(
-    routeProject,
-    Object.values(AGENTS).flatMap((agent) => (agent.provider ? [agent.provider] : [])),
-  )
+  const { facts: credentialFacts } = await providerCredentialRouting(routeProject)
   const select = () =>
     pick(
       jobName,

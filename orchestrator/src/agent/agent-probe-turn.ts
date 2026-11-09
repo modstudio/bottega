@@ -85,6 +85,15 @@ export async function probeEnvironment(
   scratch: string,
   project: ProjectCredentialTarget | null = null,
 ): Promise<Record<string, string>> {
+  return (await resolvedProbeEnvironment(name, agent, scratch, project)).environment
+}
+
+async function resolvedProbeEnvironment(
+  name: string,
+  agent: Agent,
+  scratch: string,
+  project: ProjectCredentialTarget | null,
+) {
   const endpoint = await endpointApiKeyForProject(agent, project, undefined, {
     exhaustedRetryCommand: `${PLATFORM_SLUG} agent probe ${name}`,
   })
@@ -102,7 +111,7 @@ export async function probeEnvironment(
   // a run gets rather than the operator home, whose rollout history is unbounded.
   if (harnessCollectsQuotaReadings(agent.harness) && !environment.CODEX_HOME)
     Object.assign(environment, prepareCodexHome(scratch, process.env))
-  return environment
+  return { environment, credential: endpoint.credential }
 }
 
 async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
@@ -151,7 +160,23 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
   try {
     // A refused probe environment must record a failed probe turn, not escape
     // with the row left 'running'.
-    const environment = await probeEnvironment(input.name, input.agent, scratchDir, input.project)
+    const { environment, credential } = await resolvedProbeEnvironment(
+      input.name,
+      input.agent,
+      scratchDir,
+      input.project ?? null,
+    )
+    if (credential)
+      writableDb()
+        .query(
+          `UPDATE run SET credential_id=?,credential_payer=?,credential_binding=? WHERE record_id=?`,
+        )
+        .run(
+          credential.credentialId,
+          credential.payer,
+          credential.binding,
+          recordId,
+        )
     Object.assign(environment, input.environment)
     if (input.writing) environment.HOME = input.writing.workerHomeDir
     const handle = await input.transport.start({

@@ -147,6 +147,7 @@ const waitByIdentifiers = (ids: string[], options: OptionValues) =>
 type LogicDependencies = {
   continuationFindingsForRun?: typeof continuationFindingsForRun
   continueCommandDependencies?: NonNullable<Parameters<typeof continueCommand>[6]>
+  agentCommand?: typeof agentCommand
 }
 
 const TREE_DESCRIPTIONS = {
@@ -408,7 +409,10 @@ function registerTreeCommands(program: Command): void {
     })
 }
 
-function registerAgentCommands(program: Command): void {
+function registerAgentCommands(
+  program: Command,
+  runAgentCommand: typeof agentCommand = agentCommand,
+): void {
   describedCommand(program, 'agent [args...]', 'inspect and change agent registrations')
     .option('--harness <value>', 'set the agent harness')
     .option('--backend <value>', 'set the model backend')
@@ -416,6 +420,8 @@ function registerAgentCommands(program: Command): void {
     .option('--base-url <value>', 'set the model endpoint URL')
     .option('--api-key-secret <value>', 'set the sealed key holding the endpoint API key')
     .option('--clear-api-key-secret', 'clear the endpoint API key reference')
+    .option('--provider <slug>', 'set the credential provider')
+    .option('--clear-provider', 'clear the credential provider')
     .option('--context-tokens <value>', 'set the served context window')
     .option('--billing <value>', 'set the billing class')
     .option(
@@ -436,7 +442,9 @@ function registerAgentCommands(program: Command): void {
       'apply an identity change that leaves a job with no eligible agent',
     )
     .option('--fresh', 'probe again even when a passed probe result is cached')
-    .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
+    .action((args, options) =>
+      runAgentCommand(productArgv('agent', args, options), presentation),
+    )
 }
 
 function registerMetricCommands(program: Command): void {
@@ -759,7 +767,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--json', 'write the job catalogue as JSON')
     .allowExcessArguments(false)
     .action((options) => jobsCommand(Boolean(options.json), presentation))
-  registerAgentCommands(program)
+  registerAgentCommands(program, dependencies.agentCommand)
   describedCommand(program, 'agents', 'list agents and their readiness')
     .option('--json', 'write agent capabilities as JSON')
     .allowExcessArguments(false)
