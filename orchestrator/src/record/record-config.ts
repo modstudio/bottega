@@ -481,7 +481,7 @@ export async function putConfigSecret(
           name=${input.name ?? null}, type=${input.type ?? null}, hint=${input.hint ?? null}, mode=${input.mode ?? null},
           reach_space_ids=CASE
             WHEN ${input.reachSpaceIds === undefined} THEN reach_space_ids
-            ELSE ${input.reachSpaceIds === null ? null : tx.array(input.reachSpaceIds, 'uuid')}
+            ELSE ${input.reachSpaceIds == null ? null : tx.array(input.reachSpaceIds, 'uuid')}
           END,
           row_version=row_version + 1, updated_at=now()
       WHERE id=${String(occupancy.existing.id)}::uuid
