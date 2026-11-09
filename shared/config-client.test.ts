@@ -182,6 +182,7 @@ test('every space-scoped config client call sends its destination header', async
     mode: 'default' as const,
     environment: 'local' as const,
     payer: 'personal' as const,
+    binding: 'space' as const,
   }
   await Promise.all([
     client.createMachineKeyClaimChallenge('key', destination),
