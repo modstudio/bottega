@@ -54,6 +54,19 @@ const preference: CredentialPreference = {
   updatedAt,
 }
 
+test('typed credential rows omit incomplete sealed configuration keys', () => {
+  const complete = typedCredentialRows([secret('space', null)])[0]!
+  const incomplete: RecordConfigSecretsResponse[number] = {
+    ...complete,
+    key: 'untyped-key',
+    provider: null,
+    type: null,
+    hint: null,
+    mode: null,
+  }
+  expect(typedCredentialRows([complete, incomplete])).toEqual([complete])
+})
+
 test('a space preference selects the shared copy for every project and the space default', () => {
   const rows = credentialDisplayRows(typedCredentialRows(copies), [preference], projects, spaceId)
   expect(

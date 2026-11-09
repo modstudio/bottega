@@ -1,4 +1,5 @@
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
+import { Callout } from '@bottega/hub-ui/callout'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { ErrorState } from '@bottega/hub-ui/error-state'
@@ -74,26 +75,34 @@ function SecretsPage() {
         />
       ) : null}
       {!credentials.pending && !credentials.error ? (
-        <Collection
-          title="Credentials"
-          count={credentials.rows.length}
-          panel={panel}
-          selectedKey={selectedKey}
-          columns={credentialColumns}
-          rows={credentials.rows}
-          getKey={(row) => row.key}
-          onOpen={(row) =>
-            void navigate({
-              to: '/secrets/$credentialKey',
-              params: { credentialKey: row.key },
-              resetScroll: false,
-            })
-          }
-          empty={{
-            title: 'No credentials in this space.',
-            hint: `Set one with ${CREDENTIAL_COMMAND} set.`,
-          }}
-        />
+        <>
+          <Collection
+            title="Credentials"
+            count={credentials.rows.length}
+            panel={panel}
+            selectedKey={selectedKey}
+            columns={credentialColumns}
+            rows={credentials.rows}
+            getKey={(row) => row.key}
+            onOpen={(row) =>
+              void navigate({
+                to: '/secrets/$credentialKey',
+                params: { credentialKey: row.key },
+                resetScroll: false,
+              })
+            }
+            empty={{
+              title: 'No credentials in this space.',
+              hint: `Set one with ${CREDENTIAL_COMMAND} set.`,
+            }}
+          />
+          {credentials.untypedCount > 0 ? (
+            <Callout
+              tone="neutral"
+              title={`${credentials.untypedCount} sealed configuration ${credentials.untypedCount === 1 ? 'key is' : 'keys are'} not typed credentials. List ${credentials.untypedCount === 1 ? 'it' : 'them'} with ${PLATFORM_SLUG} machine config secret list.`}
+            />
+          ) : null}
+        </>
       ) : null}
     </section>
   )

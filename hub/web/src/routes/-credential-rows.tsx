@@ -227,6 +227,7 @@ export function useCredentialRows() {
           : null
   const projectsData = projects.data ?? []
   const credentials = typedCredentialRows(secrets.data ?? [])
+  const untypedCount = (secrets.data?.length ?? 0) - credentials.length
   const spaceId = whoami.data?.activeSpaceId ?? projectsData[0]?.spaceId ?? ''
   return {
     rows:
@@ -235,6 +236,7 @@ export function useCredentialRows() {
         : credentialDisplayRows(credentials, preferences.data ?? [], projectsData, spaceId),
     projects: projectsData,
     spaceId,
+    untypedCount,
     pending,
     error,
   }
