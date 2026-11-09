@@ -93,6 +93,37 @@ export type SessionOutboxResidue =
   | { configured: true; pendingIds: number[]; quarantinedIds: number[] }
   | { configured: false; undeliveredIds: number[] }
 
+export type SessionCloseOutRecord = {
+  sessionId: string
+  clean: boolean
+  recommendation: 'clear' | 'brief'
+  mechanicalCount: number
+  processCount: number
+  errorCount: number
+  warningCount: number
+}
+
+/** Select the durable machine record from the completed close-out report. */
+export function sessionCloseOutRecord(input: {
+  session: string
+  mechanical: readonly unknown[]
+  process: readonly unknown[]
+  errors: readonly unknown[]
+  warnings: readonly unknown[]
+  verdict: { clean: boolean }
+  recommendation: 'clear' | 'brief'
+}): SessionCloseOutRecord {
+  return {
+    sessionId: input.session,
+    clean: input.verdict.clean,
+    recommendation: input.recommendation,
+    mechanicalCount: input.mechanical.length,
+    processCount: input.process.length,
+    errorCount: input.errors.length,
+    warningCount: input.warnings.length,
+  }
+}
+
 /** Split configured outbox residue, or classify undelivered rows as unpushable. */
 export function sessionOutboxResidue(
   configured: boolean,

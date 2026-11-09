@@ -480,6 +480,28 @@ export function liveTaskClaimsOfSession(
     .map((claim) => claim.subject.value)
 }
 
+/** Release the live claims held by a swept session; lapsed rows stay for the existing lapse path. */
+export function releaseSessionClaims(
+  session: string,
+  clock = Date.now(),
+  database = writableDb(),
+): number {
+  return writeTransaction(() => {
+    const rows = database
+      .query(
+        `SELECT ${CLAIM_COLUMNS} FROM board_claim
+          WHERE holder_session=? AND closed_at IS NULL ORDER BY taken_at,record_id`,
+      )
+      .all(session) as ClaimRow[]
+    const ids = rows.filter((row) => rowLive(row, clock, database)).map((row) => row.record_id)
+    const close = database.query(
+      "UPDATE board_claim SET closed_at=?,close_reason='released' WHERE record_id=?",
+    )
+    for (const id of ids) close.run(new Date(clock).toISOString(), id)
+    return ids.length
+  }, database)
+}
+
 export function releaseTaskClaims(
   key: string,
   project: string,

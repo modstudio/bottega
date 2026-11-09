@@ -1067,6 +1067,11 @@ export function recordSessionSeen(
   }
 }
 
+/** Expire the machine heartbeat after a clean session close-out has been swept. */
+export function expireSessionSeen(sid: string, database: Database = writableDb()): number {
+  return database.query('DELETE FROM session_seen WHERE session_id=?').run(sid).changes
+}
+
 /**
  * What "unscored" means, in one place.
  *
