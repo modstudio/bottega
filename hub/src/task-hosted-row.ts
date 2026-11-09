@@ -34,6 +34,7 @@ export function hostedTaskFromTaskRow(row: PushableTaskRow, id: string): PushedT
     updated_at: hostedInstant(row.updated_at ?? row.last_seen)!,
     deleted_at: null,
     next_document_number: row.next_document_number,
+    retired_reason: row.retired_reason,
   }
 }
 

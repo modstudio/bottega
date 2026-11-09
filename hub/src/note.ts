@@ -480,6 +480,7 @@ function noteCandidates(text: string, project?: string): NoteCandidate[] {
         first_seen: note.created_at,
         last_seen: note.last_seen_at,
         next_document_number: 1,
+        retired_reason: null,
       }),
     ),
     text,

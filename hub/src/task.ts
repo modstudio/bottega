@@ -33,6 +33,7 @@ import {
   taskRecordId,
   taskRecordIdFor,
 } from './task-identity.ts'
+import type { TaskRow } from './task-row.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
@@ -43,27 +44,7 @@ import {
 import { trackerCapabilities } from './tracker-capabilities.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
-export type TaskRow = {
-  record_id: string
-  external_id: string | null
-  key: string
-  project: string
-  project_record_id?: string | null
-  title: string | null
-  status: string | null
-  status_category: StatusCategory | null
-  parent_key: string | null
-  parent_record_id: string | null
-  body: string | null
-  assignee: string | null
-  opened_at: string | null
-  closed_at: string | null
-  updated_at: string | null
-  source: import('../../shared/task-source.ts').TaskSource
-  first_seen: string
-  last_seen: string
-  next_document_number: number
-}
+export type { TaskRow } from './task-row.ts'
 
 export type TaskComment = {
   id: string
@@ -347,8 +328,8 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
   conn
     .query(`INSERT INTO task
     (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
-     updated_at,source,first_seen,last_seen,next_document_number)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     updated_at,source,first_seen,last_seen,next_document_number,retired_reason)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(project,key) DO UPDATE SET record_id=excluded.record_id,
       project_record_id=COALESCE(excluded.project_record_id,task.project_record_id),
       title=excluded.title,status=excluded.status,status_category=excluded.status_category,
@@ -356,7 +337,8 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       body=excluded.body,assignee=excluded.assignee,
       opened_at=excluded.opened_at,closed_at=excluded.closed_at,updated_at=excluded.updated_at,
       source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,
-      next_document_number=MAX(task.next_document_number,excluded.next_document_number)`)
+      next_document_number=MAX(task.next_document_number,excluded.next_document_number),
+      retired_reason=excluded.retired_reason`)
     .run(
       task.record_id,
       task.key,
@@ -376,6 +358,7 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       task.first_seen,
       task.last_seen,
       task.next_document_number,
+      task.retired_reason ?? null,
     )
   persistInstallBinding(conn)
 }
@@ -401,6 +384,7 @@ function hostedTaskRow(conn: import('bun:sqlite').Database, row: HostedTask) {
     first_seen: row.first_seen,
     last_seen: row.last_seen,
     next_document_number: row.next_document_number,
+    retired_reason: row.retired_reason ?? null,
   }
 }
 

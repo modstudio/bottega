@@ -140,6 +140,7 @@ export type PushedTask = {
   updated_at: string
   deleted_at: string | null
   next_document_number: number
+  retired_reason?: string | null
 }
 
 export type PushedComment = {
@@ -432,6 +433,8 @@ function taskFieldError(row: Record<string, unknown>): string | null {
   for (const field of ['title', 'status', 'parent_key', 'body', 'assignee'] as const)
     if (!nullableString(row[field]))
       return `${HOSTED_TASK_TABLE} row.${field} must be a string or null`
+  if (row.retired_reason !== undefined && !nullableString(row.retired_reason))
+    return `${HOSTED_TASK_TABLE} row.retired_reason must be a string, null, or absent`
   if (
     row.status_category !== null &&
     !TASK_STATUS_CATEGORIES.includes(row.status_category as TaskStatusCategory)

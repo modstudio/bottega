@@ -117,7 +117,11 @@ async function writeExternalStatus(
     updatedAt: null,
     assignee: task.assignee,
   }
-  ;(dependencies.observe ?? observeTrackerTask)(observed)
+  ;(dependencies.observe ?? observeTrackerTask)(
+    observed,
+    undefined,
+    project.settings.keyPrefixes ?? [],
+  )
   if (result.refusal) throw new Error(result.refusal)
   return showTask(task.key, { recordId: task.record_id }).task
 }

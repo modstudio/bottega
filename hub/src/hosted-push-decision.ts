@@ -116,6 +116,7 @@ export function decideTaskUpsert(
       'title',
       'status',
       'status_category',
+      'retired_reason',
       'parent_key',
       'body',
       'assignee',
