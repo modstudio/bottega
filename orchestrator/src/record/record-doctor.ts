@@ -540,7 +540,7 @@ async function operatorRecordChecks(input: {
       checks.push({
         name,
         status: 'skipped',
-        detail: `BOTTEGA_RECORD_MIGRATE_URL not set; run with the stored credential using ${operatorCredentialResolveCommand(RECORD_MIGRATE_OPERATOR_CREDENTIAL)} --reveal-to-env ${RECORD_MIGRATE_OPERATOR_CREDENTIAL.overrideVariable} -- ${PLATFORM_SLUG} record doctor`,
+        detail: `${RECORD_MIGRATE_OPERATOR_CREDENTIAL.overrideVariable} not set; run with the stored credential using ${operatorCredentialResolveCommand(RECORD_MIGRATE_OPERATOR_CREDENTIAL)} --reveal-to-env ${RECORD_MIGRATE_OPERATOR_CREDENTIAL.overrideVariable} -- ${PLATFORM_SLUG} record doctor`,
       })
     return checks
   }
@@ -610,7 +610,8 @@ export async function diagnoseRecord(
         : null
     operatorChecks = await operatorRecordChecks({
       recordUrl,
-      migrateUrl: input.migrateUrl ?? process.env.BOTTEGA_RECORD_MIGRATE_URL,
+      migrateUrl:
+        input.migrateUrl ?? process.env[RECORD_MIGRATE_OPERATOR_CREDENTIAL.overrideVariable],
       identity,
       projects,
       database,

@@ -162,17 +162,6 @@ export const monitorModules: MonitorModule[] = [
     '../doc/doc-list.ts',
     './monitor-types.ts',
   ]),
-  module('orchestrator/src/monitor/monitor-record-tunnel.ts', [
-    'node:net',
-    '../../../shared/brand.ts',
-    '../../../shared/config-client.ts',
-    '../../../shared/machine-config.ts',
-    '../../../shared/operator-credentials.ts',
-    '../config/credential-service.ts',
-    '../project/projects.ts',
-    '../record/record-tunnel-error.ts',
-    './monitor-types.ts',
-  ]),
   module('orchestrator/src/monitor/monitor-canon-summary.ts', ['../canon/canon.ts']),
   module('orchestrator/src/monitor/monitor-collect-lease.ts', [
     '../../../shared/brand.ts',
