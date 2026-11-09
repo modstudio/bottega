@@ -4,7 +4,6 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { storedMachineId } from '../../../shared/machine-config.ts'
-import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import {
   type CallerIdentityResolution,
   classifyCaller,
@@ -15,7 +14,7 @@ import { DB_PATH } from './database-location.ts'
 /** Identity result of the architect or local operator making this call. */
 export const callerIdentity = (
   database?: Database,
-  env: StateEnvironment = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): CallerIdentityResolution => {
   const caller = classifyCaller(env)
   if (caller.kind !== 'operator') return resolveCallerIdentity(caller, null)
@@ -26,7 +25,10 @@ export const callerIdentity = (
 }
 
 /** Identity of the architect or local operator making this call. */
-export const sessionId = (database?: Database, env: StateEnvironment = process.env): string | null => {
+export const sessionId = (
+  database?: Database,
+  env: Record<string, string | undefined> = process.env,
+): string | null => {
   const identity = callerIdentity(database, env)
   return identity.kind === 'identity' ? identity.session : null
 }

@@ -34,7 +34,10 @@ function fixture(): Database {
   return database
 }
 
-function stateEnvironment(root: string, session = 'outbox-enqueue-session'): Record<string, string> {
+function stateEnvironment(
+  root: string,
+  session = 'outbox-enqueue-session',
+): Record<string, string> {
   return { [STATE_HOME_ENV]: root, CLAUDE_CODE_SESSION_ID: session }
 }
 

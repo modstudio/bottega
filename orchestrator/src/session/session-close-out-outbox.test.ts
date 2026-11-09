@@ -52,7 +52,8 @@ test('dry-run reports this session residue without pushing', async () => {
     process: [
       {
         item: '1 pending outbox write(s)',
-        reason: 'a real close-out pushes first, so these local writes may then reach the hosted record',
+        reason:
+          'a real close-out pushes first, so these local writes may then reach the hosted record',
         evidence: 'orch:1',
         remedy: `${PLATFORM_SLUG} record push`,
       },

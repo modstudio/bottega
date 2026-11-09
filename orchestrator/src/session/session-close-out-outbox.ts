@@ -3,8 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { recordApiConfigured } from '../../../shared/record-api-url.ts'
-import { syncRecord } from '../record/record-sync.ts'
+import { recordSyncConfigured, syncRecord } from '../record/record-sync.ts'
 import {
   type SessionOutboxResidue,
   type SessionOutboxRow,
@@ -22,10 +21,7 @@ export function readSessionOutboxResidue(
   configured: boolean,
 ): SessionOutboxResidue {
   const rows = database
-    .query<
-      SessionOutboxRow,
-      [string]
-    >(`SELECT id, quarantined_at AS quarantinedAt
+    .query<SessionOutboxRow, [string]>(`SELECT id, quarantined_at AS quarantinedAt
          FROM outbox
         WHERE actor_session = ?
           AND synced_at IS NULL
@@ -81,7 +77,7 @@ export async function closeOutSessionOutbox(input: {
 }> {
   const mechanical: string[] = []
   const errors: SessionErrorLine[] = []
-  let configured = recordApiConfigured(process.env)
+  let configured = recordSyncConfigured(process.env)
   if (!input.dryRun) {
     try {
       const result = await syncRecord({ local: input.database })
