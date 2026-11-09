@@ -432,6 +432,10 @@ export async function runRecordRehearsal(input: {
 }
 
 if (import.meta.main) {
+  const { registerStandardRuntime } = await import(
+    '../orchestrator/src/runtime/runtime-registration.ts'
+  )
+  registerStandardRuntime()
   let token: string | undefined
   try {
     token = await resolveOperatorCredential(rehearsalCredential.identity, tokenName)
