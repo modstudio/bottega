@@ -1,21 +1,13 @@
 // concern: context-service
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
-import { sessionId, writableDb } from '../database/db.ts'
-import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
+import { sessionId } from '../database/db.ts'
 import { decodeContextItem, encodeContextItem } from './context-item-codec.ts'
 import { contextProfileForHolder } from './context-write-adapter.ts'
 import { type ContextItemKind, missingContextKinds } from './doc-context-write.ts'
-import { hostedDocClient } from './doc-hosted-client.ts'
 import { type Doc, listDocsBySubjectPrefixStore, listDocsStore } from './doc-read-store.ts'
-import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
-import { assertLocalRevisionWrite } from './doc-revision-store.ts'
-import { docWriteProjectName } from './doc-write-allowed.ts'
-import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
-import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
+import { removeContextItemForLifecycle } from './doc-remove.ts'
 import { getDoc, removeDoc, setDoc } from './docs.ts'
-import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
-import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
 
@@ -67,74 +59,9 @@ async function dropSessionContextItemForLifecycle(input: {
   reason: string
 }) {
   const holder = `session:${input.session}`
-  assertWorkerDocStoreWriteAllowed('dropSessionContextItemForLifecycle')
-  writableDb()
-  const context = { reason: input.reason, expectedRevision: input.expectedRevision }
-  const identity = resolvedDocWriteIdentity(context)
-  const doc = getDoc('context', holder, input.id)
-  if (!doc) return { holder, id: input.id, removed: false }
-  assertLocalStoredReferenceWrite(doc)
-  assertLocalRevisionWrite(
-    { scope: 'context', subject: holder, slug: input.id, expectedRevision: input.expectedRevision },
-    doc.revision,
-    false,
-  )
-  assertLocalDocRemovalAllowed(doc)
-  const hostedIdentity = {
-    author: identity.author,
-    reason: identity.reason,
-    sessionId: identity.session,
-  }
-  const removed = await applyRecordWriteAuthority({
-    local: () =>
-      executeLocalDocRemove({
-        scope: 'context',
-        subject: holder,
-        owner: null,
-        slug: input.id,
-        doc,
-        identity,
-        ...context,
-      }),
-    hosted: async () => {
-      const client = await hostedDocClient(doc.scope, doc.subject)
-      let recordId = doc.record_id
-      let hostedExpected = input.expectedRevision
-      if (!recordId) {
-        const created = await client.upsertDoc({
-          scope: doc.scope,
-          subject: doc.subject,
-          owner: doc.owner,
-          slug: doc.slug,
-          title: doc.title,
-          body: doc.body,
-          delivery: doc.delivery,
-          audiences: doc.audiences,
-          parentRecordId: localParentRecordId(doc),
-          position: doc.position,
-          featured: doc.featured,
-          projectName: docWriteProjectName(doc.scope, doc.subject),
-          ...hostedIdentity,
-          id: undefined,
-          expectedRevision: input.expectedRevision,
-        })
-        recordId = created.id
-        hostedExpected = created.revisionId
-      }
-      const hosted = await client.deleteDoc(recordId, {
-        ...hostedIdentity,
-        expectedRevision: hostedExpected,
-      })
-      return commitDocRemove({
-        scope: 'context',
-        subject: holder,
-        owner: null,
-        slug: input.id,
-        identity,
-        ...context,
-        revisionId: hosted.revisionId,
-      })
-    },
+  const removed = await removeContextItemForLifecycle(holder, input.id, {
+    reason: input.reason,
+    expectedRevision: input.expectedRevision,
   })
   return { holder, id: input.id, removed }
 }

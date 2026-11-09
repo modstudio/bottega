@@ -10,6 +10,12 @@ const module = (file: string, allowed: string[]): DocModule => ({
   ),
 })
 
+/** Named removal entries stay private even though their module serves two document owners. */
+export const docRemoveImportOwners = {
+  removeStoredDoc: 'orchestrator/src/doc/docs.ts',
+  removeContextItemForLifecycle: 'orchestrator/src/doc/context-service.ts',
+} as const
+
 export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-context-write.ts', []),
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
@@ -29,10 +35,20 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/context-service.ts', [
     'bun:sqlite',
     '../database/db.ts',
-    '../record/record-write-authority.ts',
     './context-write-adapter.ts',
     './context-item-codec.ts',
     './doc-context-write.ts',
+    './doc-read-store.ts',
+    // Only context-service may import removeContextItemForLifecycle from doc-remove.
+    './doc-remove.ts',
+    './docs.ts',
+  ]),
+  module('orchestrator/src/doc/doc-remove.ts', [
+    '../canon/canon-files.ts',
+    '../database/db.ts',
+    '../record/record-write-authority.ts',
+    './canon-removal.ts',
+    './doc-article-fields.ts',
     './doc-hosted-client.ts',
     './doc-read-store.ts',
     './doc-reference-write.ts',
@@ -40,7 +56,6 @@ export const docModules: DocModule[] = [
     './doc-write-allowed.ts',
     './doc-write-guard.ts',
     './doc-write-identity.ts',
-    './docs.ts',
     './local-doc-tree-service.ts',
     './local-doc-write.ts',
   ]),
