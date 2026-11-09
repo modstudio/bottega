@@ -128,11 +128,10 @@ test('only a metered keyed OpenRouter row is applicable', async () => {
     ),
   ).toEqual({ kind: 'not-applicable' })
   expect(
-    await checkOpenRouterKeyBudget(
-      { ...endpoint, billing: 'metered', apiKeySecret: '  ' },
-      null,
-      { fetch, resolve },
-    ),
+    await checkOpenRouterKeyBudget({ ...endpoint, billing: 'metered', apiKeySecret: '  ' }, null, {
+      fetch,
+      resolve,
+    }),
   ).toEqual({ kind: 'not-applicable' })
 })
 

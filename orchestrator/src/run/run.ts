@@ -1055,7 +1055,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         failureKind,
         billingHoldDetail,
         endpointKey: endpoint.key,
-        credentialId: endpoint.credential?.credentialId ?? null,
         name,
         opts,
         pickBytes,

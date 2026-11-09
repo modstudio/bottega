@@ -6,15 +6,15 @@ import { join } from 'node:path'
 import { which } from 'bun'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  projectRecordIdentityRefusal,
+  providerProjectRequiredRefusal,
+} from '../config/credential-service.ts'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { billingHoldForFailure } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachment.ts'
 import { projectAt } from '../project/projects.ts'
-import {
-  projectRecordIdentityRefusal,
-  providerProjectRequiredRefusal,
-} from '../config/credential-service.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -434,7 +434,9 @@ function registrationProbeScratch(): { scratch: string; schemaPath: string } {
 function probeRowAndProject(name: string, inputs: AgentProbeInputs) {
   const row = agentRows().find((candidate) => candidate.name === name)
   if (!row) throw new Error(`unknown agent "${name}"`)
-  return { row, project: projectAt(inputs.cwd ?? process.cwd()) }
+  const project = projectAt(inputs.cwd ?? process.cwd())
+  assertProviderProbeProject(row, project)
+  return { row, project }
 }
 
 function assertProviderProbeProject(
@@ -451,7 +453,6 @@ export async function probeAgent(
   inputs: AgentProbeInputs,
 ): Promise<RegistrationProbeResult> {
   const { row, project } = probeRowAndProject(name, inputs)
-  assertProviderProbeProject(row, project)
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const needs = registrationProbeRequirements(declared)

@@ -33,6 +33,7 @@ export const agentProbeModules = [
     '../failure/failure.ts',
     '../config/credential-service.ts',
     '../project/project-agent-keys.ts',
+    '../run/run-credential-claim.ts',
   ]),
   module('orchestrator/src/agent/openrouter-key-budget.ts', [
     '../../../shared/bounded-fetch.ts',
@@ -51,6 +52,7 @@ export const agentProbeModules = [
     './agents.ts',
     './capabilities.ts',
     '../database/db.ts',
+    '../config/credential-service.ts',
     '../failure/failure.ts',
     '../jobs/jobs.ts',
     './model-host.ts',

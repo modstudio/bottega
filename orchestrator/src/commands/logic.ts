@@ -442,9 +442,7 @@ function registerAgentCommands(
       'apply an identity change that leaves a job with no eligible agent',
     )
     .option('--fresh', 'probe again even when a passed probe result is cached')
-    .action((args, options) =>
-      runAgentCommand(productArgv('agent', args, options), presentation),
-    )
+    .action((args, options) => runAgentCommand(productArgv('agent', args, options), presentation))
 }
 
 function registerMetricCommands(program: Command): void {

@@ -39,7 +39,6 @@ import {
   failoverSuccessorAgent,
 } from '../route/failover.ts'
 import { agentsIneligibleForTransport, pick } from '../route/route.ts'
-import { recentTerminalRuns } from '../route/routing-cooldown.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import type { TransportName } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
@@ -97,7 +96,6 @@ export type CloseInput = {
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
   endpointKey: EffectiveBillingKey
-  credentialId?: string | null
   name: string
   opts: CloseOptions
   /** The prompt size this run's pick ranked on, for a failover successor to reuse. */
@@ -191,14 +189,7 @@ function storedFailoverSelectionConstraints(
 ) {
   const agents = Object.values(AGENTS)
   const failedKeyAgents = billingFailure?.credentialId
-    ? agentsOnBillingCredential(
-        agents,
-        recentTerminalRuns(
-          db(),
-          agents.map((agent) => agent.name),
-        ),
-        billingFailure.credentialId,
-      )
+    ? agentsOnBillingCredential(agents, latestCredentialPaidRuns(), billingFailure.credentialId)
     : billingFailure?.keySource === 'agent'
       ? agentsOnBillingKey(agents, billingFailure.agent)
       : []
@@ -215,6 +206,24 @@ function storedFailoverSelectionConstraints(
       ? agentsIneligibleForTransport(opts.job, first.transport)
       : [],
   })
+}
+
+function latestCredentialPaidRuns() {
+  return db()
+    .query(
+      `SELECT recent.record_id,recent.number,recent.agent,recent.status,recent.failure_kind,
+              recent.endpoint_key_source,recent.credential_id,
+              julianday(recent.started_at) * 86400000 + recent.latency_ms AS finished_at
+         FROM agent
+         JOIN run recent ON recent.record_id=(
+           SELECT paid.record_id FROM run paid
+            WHERE paid.agent=agent.name AND paid.credential_id IS NOT NULL
+              AND paid.status IN ('ok','failed') AND paid.latency_ms IS NOT NULL
+            ORDER BY julianday(paid.started_at) + paid.latency_ms / 86400000.0 DESC,
+                     paid.record_id DESC LIMIT 1
+         )`,
+    )
+    .all() as import('../route/billing-key-hold.ts').BillingKeyRun[]
 }
 
 function billingFailureForFailover(
@@ -437,7 +446,11 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
             failureKind,
             name,
             input.endpointKey.source,
-            input.credentialId ?? null,
+            (
+              db().query('SELECT credential_id FROM run WHERE record_id=?').get(claim.id) as {
+                credential_id: string | null
+              }
+            ).credential_id,
           ),
         )
         const selected = await selectFailoverSuccessor({

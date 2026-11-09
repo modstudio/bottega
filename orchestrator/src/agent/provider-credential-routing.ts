@@ -2,7 +2,7 @@
 /** Gathers project and credential metadata once before a routing pass. */
 
 import { projectCredentialRouteFacts } from '../config/credential-service.ts'
-import { projectAt, type Project } from '../project/projects.ts'
+import { type Project, projectAt } from '../project/projects.ts'
 import { AGENTS } from './agent-registry.ts'
 
 export async function providerCredentialRouting(project: Project | null) {
