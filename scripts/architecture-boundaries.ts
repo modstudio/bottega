@@ -918,6 +918,7 @@ export const importBoundaries: ImportBoundary[] = [
     'store-hooks-boundary',
     'orchestrator/src/runtime/store-hooks.ts',
     [
+      '../../../shared/hosted-tables.ts',
       '../database/db.ts',
       '../database/hosted-table-guard.ts',
       '../evidence/evidence-query.ts',

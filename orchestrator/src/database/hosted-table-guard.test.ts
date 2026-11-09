@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { guardHostedTables, hostedTableGuardBypass } from './hosted-table-guard.ts'
 import { shouldGuardHostedTables } from '../runtime/store-hooks.ts'
+import { guardHostedTables, hostedTableGuardBypass } from './hosted-table-guard.ts'
 
 test('hosted install guard refuses listed SQL and allows other tables', () => {
   const database = new Database(':memory:')

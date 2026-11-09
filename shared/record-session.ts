@@ -5,11 +5,11 @@ import { PLATFORM_NAME } from './brand.ts'
 import { readOwnerOnlySecretFile } from './file-backed-secret-paths.ts'
 import { decideKeyStore, KEYSTORE_ENV } from './key-store.ts'
 import {
+  type AsyncSecurityRunner,
   deleteKeychainItem,
   keychainPlatform,
   readKeychainItem,
   readKeychainItemAsync,
-  type AsyncSecurityRunner,
   type SecurityRunner,
   writeKeychainItem,
 } from './keychain.ts'

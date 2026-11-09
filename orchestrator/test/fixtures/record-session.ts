@@ -1,4 +1,4 @@
-import type { SecurityRunner } from '../../../shared/record-session.ts'
+import { forgetRecordSessionToken, type SecurityRunner } from '../../../shared/record-session.ts'
 
 const RUNNER_KEY = Symbol.for('orch.security-runner')
 const bytes = (value = '') => new TextEncoder().encode(value)
@@ -9,6 +9,7 @@ const result = (exitCode: number, stdout = '', stderr = '') => ({
 })
 
 export function installRecordSessionRunner(runner: SecurityRunner | null): void {
+  forgetRecordSessionToken()
   const holder = globalThis as typeof globalThis & { [RUNNER_KEY]?: SecurityRunner }
   if (runner) holder[RUNNER_KEY] = runner
   else delete holder[RUNNER_KEY]

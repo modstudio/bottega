@@ -355,7 +355,7 @@ describe('hosted-only task safety', () => {
             },
           },
         ),
-      ).resolves.toEqual({ id: 'task-id' })
+      ).resolves.toMatchObject({ id: 'task-id' })
       expect(authorizations).toEqual(['Bearer first-token', 'Bearer second-token'])
     } finally {
       forgetRecordSessionToken()

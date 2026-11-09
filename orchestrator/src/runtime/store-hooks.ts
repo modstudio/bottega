@@ -20,7 +20,7 @@ export function shouldGuardHostedTables(
   verdict: 'hosted' | 'local-authoritative' | 'refused',
   tables: readonly string[],
 ): boolean {
-  return false
+  return verdict === 'hosted' && tables.length > 0
 }
 
 const accessedHandles = new WeakMap<
