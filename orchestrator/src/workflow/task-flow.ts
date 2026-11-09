@@ -44,6 +44,23 @@ export type WorkflowCursorInsert = {
   revision: number
 }
 
+export function vacateRetiredWorkflowKeySlot(
+  project: string,
+  workflow: string,
+  mode: string,
+  key: string,
+  d: Database,
+  exceptRecordId: string | null = null,
+): void {
+  d.query(
+    `UPDATE workflow_cursor SET instance_id=instance_id || '#' || number
+     WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+       AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
+       AND (? IS NULL OR record_id<>?)
+       AND state IN ('done','abandoned')`,
+  ).run(project, workflow, mode, key, exceptRecordId, exceptRecordId)
+}
+
 /** Owns the complete persisted workflow-cursor row shape for local and hosted inserts. */
 export function insertWorkflowCursorRow(
   database: Database,
@@ -55,6 +72,29 @@ export function insertWorkflowCursorRow(
     database
       .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
       .get(row.project)!.record_id
+  if (row.workflowKey && row.instanceId === '') {
+    vacateRetiredWorkflowKeySlot(
+      row.project,
+      row.workflow,
+      row.mode,
+      row.workflowKey,
+      database,
+      row.recordId,
+    )
+    if (conflict === 'hosted-record') {
+      const local = database
+        .query<{ number: number; record_id: string }, [string, string, string, string, string]>(
+          `SELECT number,record_id FROM workflow_cursor
+           WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+             AND instance_id='' AND state NOT IN ('done','abandoned') AND record_id<>?`,
+        )
+        .get(projectRecordId, row.workflow, row.mode, row.workflowKey, row.recordId)
+      if (local)
+        throw new Error(
+          `local cursor ${local.number} (${local.record_id}) conflicts with hosted stage ${row.recordId}; abandon it with ${PLATFORM_SLUG} workflow abandon --cursor ${local.number} --reason "<text>"`,
+        )
+    }
+  }
   const conflictSql =
     conflict === 'local-identity'
       ? `ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET

@@ -3,7 +3,11 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
-import { attachTaskFlowStage, selectTaskFlowStage } from './task-flow.ts'
+import {
+  attachTaskFlowStage,
+  selectTaskFlowStage,
+  vacateRetiredWorkflowKeySlot,
+} from './task-flow.ts'
 
 type AdoptionCursor = {
   id: number
@@ -14,21 +18,6 @@ type AdoptionCursor = {
   workflow_key: string
   task_record_id: string | null
   args: string
-}
-
-export function vacateRetiredWorkflowKeySlot(
-  project: string,
-  workflow: string,
-  mode: string,
-  key: string,
-  d: Database,
-): void {
-  d.query(
-    `UPDATE workflow_cursor SET instance_id=instance_id || '#' || number
-     WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-       AND workflow_slug=? AND mode_slug=? AND workflow_key=? AND instance_id=''
-       AND state IN ('done','abandoned')`,
-  ).run(project, workflow, mode, key)
 }
 
 function assignWorkflowTaskKey(
