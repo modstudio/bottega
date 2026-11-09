@@ -237,7 +237,11 @@ test('an absent tree that owes recorded teardown makes its terminal root planned
 
   const report = await closeOutSession({ session: 'owner', dryRun: true })
 
-  expect(report.mechanical).toEqual([`would close run ${root}`])
+  expect(report.mechanical).toEqual([
+    `would close run ${root}`,
+    `would reclaim processes for removed tree ${join(repo, 'missing-tree')}`,
+    `would reclaim Compose resources for removed tree ${join(repo, 'missing-tree')}`,
+  ])
   expect(report.errors).toEqual([])
 })
 

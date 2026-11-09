@@ -37,6 +37,12 @@ import {
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 import {
+  type SessionReleasedTree,
+  sessionResourceReleaseDryRunLines,
+  sessionResourceReleaseTargets,
+} from './session-close-out-resource-release.ts'
+import { reclaimSessionReleasedTree } from './session-close-out-resource-release-adapter.ts'
+import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
 } from './session-context-lifecycle.ts'
@@ -551,10 +557,14 @@ function recordMechanicalFailure(
   })
 }
 
-function applyMechanicalAction(action: SessionMechanicalAction, database: Database): void {
+function applyMechanicalAction(
+  action: SessionMechanicalAction,
+  database: Database,
+): SessionReleasedTree | null {
   if (action.kind === 'close-run') {
-    throwUnlessReleased(closeOutRun(action.runId, { intent: 'explicit' }))
-    return
+    const result = closeOutRun(action.runId, { intent: 'explicit' })
+    throwUnlessReleased(result)
+    return { rootRecordId: result.runId, outcome: result.outcome as 'released' | 'absent' }
   }
   if (action.kind === 'remove-tree') {
     const path = canonicalPath(action.path)
@@ -562,8 +572,9 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
       throw new Error(
         `planned tree ${action.path} is no longer owned only by run ${action.runId}; gather again before removing it`,
       )
-    throwUnlessReleased(closeOutRun(action.runId, { intent: 'tree-remove' }))
-    return
+    const result = closeOutRun(action.runId, { intent: 'tree-remove' })
+    throwUnlessReleased(result)
+    return { rootRecordId: result.runId, outcome: result.outcome as 'released' | 'absent' }
   }
   if (action.kind === 'ship-cleanup') {
     const result = shipCleanup(action.branch, { project: action.project })
@@ -572,7 +583,7 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
         result.errors.map((error) => error.detail).join('; ') ||
           result.kept.map((item) => item.reason).join('; '),
       )
-    return
+    return null
   }
   if (action.kind === 'prune-branch') {
     const result = pruneBranch({ project: action.project, branch: action.branch })
@@ -582,7 +593,7 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
           '; ',
         ),
       )
-    return
+    return null
   }
   reconcileAbsentClaims({
     dryRun: false,
@@ -591,6 +602,7 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
     trust: observeGrokTrustHeadings(),
     database,
   })
+  return null
 }
 
 function liveRunProcessItem(
@@ -723,6 +735,48 @@ function appendObservationErrors(
   }
 }
 
+function applySessionMechanicalActions(
+  report: SessionCloseOutReport,
+  inventory: ReturnType<typeof gather>,
+  database: Database,
+  session: string,
+  dryRun: boolean,
+): void {
+  const releasedTrees: SessionReleasedTree[] = []
+  for (const action of inventory.classification.mechanical) {
+    const label = mechanicalLabel(action)
+    if (dryRun) {
+      report.mechanical.push(`would ${label}`)
+      continue
+    }
+    try {
+      const released = applyMechanicalAction(action, database)
+      if (released) releasedTrees.push(released)
+      report.mechanical.push(label)
+    } catch (cause) {
+      recordMechanicalFailure(report, label, session, cause)
+    }
+  }
+  const plannedTrees = inventory.classification.mechanical.flatMap((action) => {
+    if (action.kind === 'close-run')
+      return [{ rootRecordId: action.runId, outcome: 'released' as const }]
+    if (action.kind !== 'remove-tree') return []
+    const run = inventory.runs.find((candidate) => candidate.recordId === action.runId)
+    return run ? [{ rootRecordId: run.rootRecordId, outcome: 'released' as const }] : []
+  })
+  const resourceTargets = sessionResourceReleaseTargets(
+    inventory.runs,
+    dryRun ? plannedTrees : releasedTrees,
+  )
+  if (dryRun) report.mechanical.push(...sessionResourceReleaseDryRunLines(resourceTargets))
+  else
+    for (const target of resourceTargets) {
+      const release = reclaimSessionReleasedTree(target)
+      report.mechanical.push(...release.mechanical)
+      report.process.push(...release.process)
+    }
+}
+
 export async function closeOutSession(
   options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
 ): Promise<SessionCloseOutReport> {
@@ -754,19 +808,7 @@ export async function closeOutSession(
     verdict: { clean: false, residue: 0 },
     recommendation: 'brief',
   }
-  for (const action of initial.classification.mechanical) {
-    const label = mechanicalLabel(action)
-    if (dryRun) {
-      report.mechanical.push(`would ${label}`)
-      continue
-    }
-    try {
-      applyMechanicalAction(action, database)
-      report.mechanical.push(label)
-    } catch (cause) {
-      recordMechanicalFailure(report, label, session, cause)
-    }
-  }
+  applySessionMechanicalActions(report, initial, database, session, dryRun)
   const final =
     dryRun || initial.classification.mechanical.length === 0
       ? initial

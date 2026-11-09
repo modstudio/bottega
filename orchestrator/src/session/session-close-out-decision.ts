@@ -129,7 +129,7 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
   const mechanical: SessionMechanicalAction[] = []
   const process: SessionProcessItem[] = []
   classifyRuns(owned.runs, owned.heldRunResources, mechanical, process)
-  classifyBranches(owned.branches, mechanical, process)
+  classifyBranches(owned.runs, owned.branches, mechanical, process)
   if (owned.claims.length) mechanical.push({ kind: 'reconcile-claims', claims: owned.claims })
   process.push(...owned.landingIds.map((landingId) => ({ kind: 'landing' as const, landingId })))
   process.push(...owned.reviewIds.map((reviewId) => ({ kind: 'review' as const, reviewId })))
@@ -227,11 +227,18 @@ function classifyRuns(
 }
 
 function classifyBranches(
+  runs: readonly SessionOwnedRun[],
   branches: readonly SessionOwnedBranch[],
   mechanical: SessionMechanicalAction[],
   process: SessionProcessItem[],
 ): void {
+  const liveBranches = new Set(
+    runs
+      .filter((run) => isLiveSessionRun(run.status) && run.project && run.mintedBranch)
+      .map((run) => `${run.project}\0${run.mintedBranch}`),
+  )
   for (const branch of branches) {
+    if (liveBranches.has(`${branch.project}\0${branch.branch}`)) continue
     if (branch.state === 'landed') {
       mechanical.push({
         kind: 'ship-cleanup',

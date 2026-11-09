@@ -253,12 +253,7 @@ describe('session close-out decisions', () => {
       'prune-branch',
       'reconcile-claims',
     ])
-    expect(result.process.map((item) => item.kind)).toEqual([
-      'live-run',
-      'unproved-branch',
-      'landing',
-      'review',
-    ])
+    expect(result.process.map((item) => item.kind)).toEqual(['live-run', 'landing', 'review'])
   })
 
   test('dirty trees require a process ruling', () => {
@@ -295,6 +290,34 @@ describe('session close-out decisions', () => {
     expect(result.mechanical).toEqual([])
     expect(result.process).toEqual([
       { kind: 'dirty-tree', runId: 'dirty', number: 9, path: '/dirty' },
+    ])
+  })
+
+  test('an empty branch minted by a live run is not pruned', () => {
+    const result = classifySessionCloseOut(
+      facts({
+        runs: [
+          {
+            recordId: 'live',
+            rootRecordId: 'live',
+            sessionId: 'owner',
+            number: 11,
+            status: 'running',
+            architectTree: false,
+            worktree: '/live',
+            project: 'p',
+            taskKey: 'DEV-11',
+            mintedBranch: 'fresh',
+            dirty: false,
+          },
+        ],
+        branches: [{ project: 'p', branch: 'fresh', taskKey: 'DEV-11', state: 'empty' }],
+      }),
+    )
+
+    expect(result.mechanical).toEqual([])
+    expect(result.process).toEqual([
+      { kind: 'live-run', runId: 'live', number: 11, status: 'running' },
     ])
   })
 
