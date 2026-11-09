@@ -99,7 +99,7 @@ function SecretsPage() {
           {credentials.untypedCount > 0 ? (
             <Callout
               tone="neutral"
-              title={`${credentials.untypedCount} sealed configuration ${credentials.untypedCount === 1 ? 'key is' : 'keys are'} not typed credentials. List ${credentials.untypedCount === 1 ? 'it' : 'them'} with ${PLATFORM_SLUG} machine config secret list.`}
+              title={`${credentials.untypedCount} sealed configuration ${credentials.untypedCount === 1 ? 'key is not a typed credential. List it' : 'keys are not typed credentials. List them'} with ${PLATFORM_SLUG} machine config secret list.`}
             />
           ) : null}
         </>
