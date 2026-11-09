@@ -13,7 +13,7 @@ import { recordApiClient } from '../src/record/record-api-client.ts'
 import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
-import { cacheHostedTaskFlow } from '../src/workflow/task-flow-read-through.ts'
+import { readThroughTaskFlow } from '../src/workflow/task-flow-read-through.ts'
 import { composeWorkflowWithCursor } from '../src/workflow/workflow-cursor.ts'
 import {
   abandonCursor,
@@ -142,7 +142,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         expect(hosted.otherStages?.map((stage) => stage.id)).not.toContain(localIds.stage_id)
       }
 
-      cacheHostedTaskFlow(databaseB, TASK_KEY, byTask)
+      await readThroughTaskFlow(databaseB, { taskKey: TASK_KEY, taskRecordId: taskId })
       setMachineValue('machine.id', machineB)
       // The built-in diagnose step has a recorded-artifact floor; this proof exercises takeover.
       databaseB

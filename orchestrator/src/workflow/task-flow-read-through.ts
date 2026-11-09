@@ -48,7 +48,7 @@ function updateKnownHostedStage(database: Database, stage: HostedStage): void {
       .run(stage.id)
 }
 
-export function applyHostedStages(database: Database, hosted: HostedTaskFlow): void {
+function applyHostedStages(database: Database, hosted: HostedTaskFlow): void {
   for (const knownStage of hosted.otherStages ?? []) updateKnownHostedStage(database, knownStage)
   if (hosted.stage) updateKnownHostedStage(database, hosted.stage)
 }
@@ -133,17 +133,6 @@ function cacheHostedTaskFlowRows(
       .query('UPDATE task_flow SET open_stage_cursor_record_id=? WHERE record_id=?')
       .run(stage.id, flow.id)
   }
-}
-
-export function cacheHostedTaskFlow(
-  database: Database,
-  taskKey: string,
-  hosted: HostedTaskFlow,
-): void {
-  writeTransaction(() => {
-    cacheHostedTaskFlowRows(database, taskKey, hosted)
-    applyHostedStages(database, hosted)
-  }, database)
 }
 
 export async function readThroughTaskFlow(

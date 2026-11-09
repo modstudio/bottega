@@ -12,7 +12,7 @@ import {
   hostedTaskFlowSchema,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
 } from '../record/record-task-flow-contract.ts'
-import { cacheHostedTaskFlow, readThroughTaskFlow } from './task-flow-read-through.ts'
+import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowCursorContext, selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import { selectAndNextWorkflowStep, testPorts } from './workflow-cursor-test.fixture.ts'
@@ -120,13 +120,22 @@ function installHosted(flow: HostedTaskFlow): void {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 }
 
+async function cacheHostedTaskFlow(
+  database: ReturnType<typeof fixture>['database'],
+  taskKey: string,
+  flow: HostedTaskFlow,
+): Promise<void> {
+  installHosted(flow)
+  await readThroughTaskFlow(database, { taskKey, taskRecordId: flow.flow.taskId })
+}
+
 test('hosted newer than local refreshes the cached stage', async () => {
   const ids = fixture()
   try {
     const taskId = newRecordId(),
       flowId = newRecordId(),
       stageId = newRecordId()
-    cacheHostedTaskFlow(
+    await cacheHostedTaskFlow(
       ids.database,
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId, stageRevision: 3 }),
@@ -188,7 +197,7 @@ test('a hosted close at the tied flow revision is applied and not re-attached', 
       stageRevision: 12,
       flowRevision: 31,
     })
-    cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
+    await cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
     const closedStage = {
       ...local.stage!,
       state: 'abandoned' as const,
@@ -253,7 +262,7 @@ test('a newer hosted flow without a stage list leaves the local flow and cursor 
       stageRevision: 12,
       flowRevision: 31,
     })
-    cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
+    await cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
     installHosted(hosted(ids, { taskId, flowId, stage: false, flowRevision: 34 }))
 
     await readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: taskId })
@@ -275,14 +284,14 @@ test('a newer hosted flow without a stage list leaves the local flow and cursor 
 
 test.each([11, 12])(
   'a listed hosted stage at revision %s does not clobber the local row',
-  (stageRevision) => {
+  async (stageRevision) => {
     const ids = fixture()
     try {
       const taskId = newRecordId()
       const flowId = newRecordId()
       const stageId = newRecordId()
       const local = hosted(ids, { taskId, flowId, stageId, stageRevision: 12 })
-      cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
+      await cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
       const { holder: _holder, ...listedStage } = {
         ...local.stage!,
         state: 'abandoned' as const,
@@ -296,7 +305,7 @@ test.each([11, 12])(
         otherStages: [listedStage],
       })
 
-      cacheHostedTaskFlow(ids.database, 'DEV-2098', incoming)
+      await cacheHostedTaskFlow(ids.database, 'DEV-2098', incoming)
 
       expect(
         ids.database
@@ -309,13 +318,13 @@ test.each([11, 12])(
   },
 )
 
-test('a listed hosted stage with no local row is not inserted', () => {
+test('a listed hosted stage with no local row is not inserted', async () => {
   const ids = fixture()
   try {
     const open = hosted(ids, {})
     const { holder: _holder, ...otherStage } = open.stage!
 
-    cacheHostedTaskFlow(
+    await cacheHostedTaskFlow(
       ids.database,
       'DEV-2098',
       hosted(ids, {
@@ -350,14 +359,14 @@ test('hosted task-flow parsing round-trips other stages', () => {
   }
 })
 
-test('hosted stage vacates a retired local cursor holding its keyed slot', () => {
+test('hosted stage vacates a retired local cursor holding its keyed slot', async () => {
   const ids = fixture()
   try {
     const taskId = newRecordId()
     const flowId = newRecordId()
     const retiredStageId = newRecordId()
     const hostedStageId = newRecordId()
-    cacheHostedTaskFlow(
+    await cacheHostedTaskFlow(
       ids.database,
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId: retiredStageId }),
@@ -369,7 +378,7 @@ test('hosted stage vacates a retired local cursor holding its keyed slot', () =>
       .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
       .get(retiredStageId)!
 
-    cacheHostedTaskFlow(
+    await cacheHostedTaskFlow(
       ids.database,
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId: hostedStageId, stageRevision: 5 }),
@@ -393,18 +402,18 @@ test('hosted stage vacates a retired local cursor holding its keyed slot', () =>
   }
 })
 
-test('hosted stage updates the same retired cursor in place without vacating its slot', () => {
+test('hosted stage updates the same retired cursor in place without vacating its slot', async () => {
   const ids = fixture()
   try {
     const taskId = newRecordId()
     const flowId = newRecordId()
     const stageId = newRecordId()
-    cacheHostedTaskFlow(ids.database, 'DEV-2098', hosted(ids, { taskId, flowId, stageId }))
+    await cacheHostedTaskFlow(ids.database, 'DEV-2098', hosted(ids, { taskId, flowId, stageId }))
     ids.database
       .query("UPDATE workflow_cursor SET state='abandoned' WHERE record_id=?")
       .run(stageId)
 
-    cacheHostedTaskFlow(
+    await cacheHostedTaskFlow(
       ids.database,
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId, stageRevision: 5 }),
@@ -423,14 +432,14 @@ test('hosted stage updates the same retired cursor in place without vacating its
   }
 })
 
-test('hosted stage refuses an open local cursor holding its keyed slot and rolls back', () => {
+test('hosted stage refuses an open local cursor holding its keyed slot and rolls back', async () => {
   const ids = fixture()
   try {
     const taskId = newRecordId()
     const flowId = newRecordId()
     const localStageId = newRecordId()
     const hostedStageId = newRecordId()
-    cacheHostedTaskFlow(
+    await cacheHostedTaskFlow(
       ids.database,
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId: localStageId }),
@@ -450,7 +459,7 @@ test('hosted stage refuses an open local cursor holding its keyed slot and rolls
     incoming.flow.revision = 8
     incoming.flow.updatedAt = '2026-11-03T12:00:00.000Z'
 
-    expect(() => cacheHostedTaskFlow(ids.database, 'DEV-2098', incoming)).toThrow(
+    await expect(cacheHostedTaskFlow(ids.database, 'DEV-2098', incoming)).rejects.toThrow(
       new RegExp(
         `local cursor ${local.number} \\(${localStageId}\\) conflicts with hosted stage ${hostedStageId}.*${PLATFORM_SLUG} workflow abandon --cursor ${local.number}`,
       ),
@@ -537,7 +546,7 @@ test.each([
         { n: 1, slug: 'diagnose', note: 'diagnosed remotely', at: '2026-11-03T10:30:00.000Z' },
       ],
     })
-    cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
+    await cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
     ids.database
       .query('UPDATE workflow_cursor SET task_record_id=NULL WHERE record_id=?')
       .run(stageId)
@@ -624,7 +633,7 @@ test('local stage ahead of hosted is not clobbered', async () => {
     const taskId = newRecordId(),
       flowId = newRecordId(),
       stageId = newRecordId()
-    cacheHostedTaskFlow(
+    await cacheHostedTaskFlow(
       ids.database,
       'DEV-2098',
       hosted(ids, { taskId, flowId, stageId, stageRevision: 6 }),
