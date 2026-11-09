@@ -193,6 +193,18 @@ test('plans release schedules for full Darwin and Linux distributions when defin
       schedules: [{ ...schedule, loaded: false }],
     }),
   ).toContain('install-schedules')
+  expect(
+    actionsFor({
+      os: { platform: 'linux', arch: 'x64', wsl: false },
+      schedules: [{ ...schedule, installed: false }],
+    }),
+  ).toContain('install-schedules')
+  expect(
+    actionsFor({
+      os: { platform: 'linux', arch: 'x64', wsl: false },
+      schedules: [{ ...schedule, definitionMatches: false }],
+    }),
+  ).toContain('install-schedules')
   expect(actionsFor({ os: { platform: 'linux', arch: 'x64', wsl: false } })).not.toContain(
     'install-schedules',
   )

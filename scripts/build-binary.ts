@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../orchestrator/src/setup/launchd-owners.ts'
-import { SYSTEMD_UNIT_SUFFIXES } from '../orchestrator/src/setup/setup-schedule-policy.ts'
+import {
+  SYSTEMD_TEMPLATE_DIRECTORY,
+  SYSTEMD_UNIT_SUFFIXES,
+} from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
 import { BINARY_TARGETS, type BinaryTarget } from '../shared/release-artifacts.ts'
@@ -79,7 +82,7 @@ async function scheduleTemplateAssetPaths(): Promise<string[]> {
     )
   }
   paths.push(
-    ...(await embeddedAssetPaths('ops/systemd')).filter((path) =>
+    ...(await embeddedAssetPaths(SYSTEMD_TEMPLATE_DIRECTORY)).filter((path) =>
       SYSTEMD_UNIT_SUFFIXES.some((suffix) => path.endsWith(suffix)),
     ),
   )

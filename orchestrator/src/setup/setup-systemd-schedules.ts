@@ -18,6 +18,7 @@ import {
   type ScheduleApplyResult,
   type ScheduleRenderValues,
   type ScheduleSetupFact,
+  SYSTEMD_TEMPLATE_DIRECTORY,
   SYSTEMD_UNITS,
   systemdActivationUnits,
 } from './setup-schedule-policy.ts'
@@ -33,7 +34,7 @@ function renderedUnits(
 ): Array<{ name: string; content: string }> {
   const identity = installationIdentity(import.meta.dir, {})
   return SYSTEMD_UNITS[label].map((name) => {
-    const relative = `ops/systemd/${name}`
+    const relative = `${SYSTEMD_TEMPLATE_DIRECTORY}/${name}`
     return {
       name,
       content: renderMaintenanceSchedule(

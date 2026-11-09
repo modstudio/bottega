@@ -3,10 +3,6 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  MAINTENANCE_SCHEDULE_PLACEHOLDERS,
-  SYSTEMD_UNIT_SUFFIXES,
-} from '../orchestrator/src/setup/setup-schedule-policy.ts'
-import {
   clockParts,
   installerPlaceholders,
   installerRenderRules,
@@ -72,16 +68,13 @@ describe('the checked-in templates', () => {
     const concerns = [
       { directory: 'ops/launchd', installer: 'ops/install.sh' },
       { directory: 'hub/launchd', installer: 'hub/bin/install-launchd.sh' },
-      { directory: 'ops/systemd', installer: null },
     ]
     for (const { directory, installer } of concerns) {
-      const installRules = installer
-        ? installerRenderRules(readFileSync(join(repositoryRoot, installer), 'utf8'))
-        : new Set(MAINTENANCE_SCHEDULE_PLACEHOLDERS)
+      const installRules = installerRenderRules(
+        readFileSync(join(repositoryRoot, installer), 'utf8'),
+      )
       const names = readdirSync(join(repositoryRoot, directory)).filter((name) =>
-        installer
-          ? name.endsWith('.plist.template')
-          : SYSTEMD_UNIT_SUFFIXES.some((suffix) => name.endsWith(suffix)),
+        name.endsWith('.plist.template'),
       )
       expect(names.length).toBeGreaterThan(0)
       for (const name of names) {
@@ -90,7 +83,7 @@ describe('the checked-in templates', () => {
           missingInstallRules({
             templateName: `${directory}/${name}`,
             templateText,
-            installerName: installer ?? 'setup schedule renderer',
+            installerName: installer,
             installRules,
           }),
         ).toEqual([])

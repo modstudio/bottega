@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   MAINTENANCE_SCHEDULE_PLACEHOLDERS,
+  SYSTEMD_TEMPLATE_DIRECTORY,
   SYSTEMD_UNIT_SUFFIXES,
   SYSTEMD_UNITS,
 } from '../orchestrator/src/setup/setup-schedule-policy.ts'
@@ -34,7 +35,6 @@ const templateDirectories = [
   },
 ] as const
 
-const systemdTemplateDirectory = 'ops/systemd'
 const mappedSystemdUnits = new Set(Object.values(SYSTEMD_UNITS).flat())
 
 export function systemdTemplateMappingErrors(names: readonly string[]): string[] {
@@ -44,10 +44,10 @@ export function systemdTemplateMappingErrors(names: readonly string[]): string[]
   return [
     ...diskUnits
       .filter((name) => !mappedSystemdUnits.has(name))
-      .map((name) => `${systemdTemplateDirectory}/${name}: systemd unit is not in SYSTEMD_UNITS`),
+      .map((name) => `${SYSTEMD_TEMPLATE_DIRECTORY}/${name}: systemd unit is not in SYSTEMD_UNITS`),
     ...[...mappedSystemdUnits]
       .filter((name) => !diskUnits.includes(name))
-      .map((name) => `${systemdTemplateDirectory}/${name}: mapped systemd unit file is missing`),
+      .map((name) => `${SYSTEMD_TEMPLATE_DIRECTORY}/${name}: mapped systemd unit file is missing`),
   ]
 }
 
@@ -234,12 +234,12 @@ function discoverTemplates(): TemplateFact[] {
       .filter((name) => name.endsWith('.plist.template'))
       .map((name) => ({ concern, installer, name: join(directory, name) })),
   )
-  const systemdTemplates = readdirSync(join(repositoryRoot, systemdTemplateDirectory))
+  const systemdTemplates = readdirSync(join(repositoryRoot, SYSTEMD_TEMPLATE_DIRECTORY))
     .filter((name) => SYSTEMD_UNIT_SUFFIXES.some((suffix) => name.endsWith(suffix)))
     .map((name) => ({
       concern: join(repositoryRoot, 'ops'),
       installer: 'orchestrator/src/setup/setup-systemd-schedules.ts',
-      name: join(systemdTemplateDirectory, name),
+      name: join(SYSTEMD_TEMPLATE_DIRECTORY, name),
     }))
   return [...launchdTemplates, ...systemdTemplates].sort((left, right) =>
     left.name.localeCompare(right.name),
@@ -296,7 +296,7 @@ function checkTemplate(input: {
   const { concern, installer, name } = input.fact
   const errors: string[] = []
   const template = readFileSync(join(repositoryRoot, name), 'utf8')
-  const systemd = name.startsWith(`${systemdTemplateDirectory}/`)
+  const systemd = name.startsWith(`${SYSTEMD_TEMPLATE_DIRECTORY}/`)
   const hasStateHome = systemd
     ? template.includes('Environment="__STATE_HOME_ENV__=__STATE_HOME__"')
     : template.includes('<key>__STATE_HOME_ENV__</key>')
@@ -359,7 +359,7 @@ function main(): void {
       errors = errors.concat(checkTemplate({ fact, plutil, renderedDirectory }))
     }
     errors = errors.concat(
-      systemdTemplateMappingErrors(readdirSync(join(repositoryRoot, systemdTemplateDirectory))),
+      systemdTemplateMappingErrors(readdirSync(join(repositoryRoot, SYSTEMD_TEMPLATE_DIRECTORY))),
     )
     errors = errors.concat(checkStateHomeExemptions(templates.map((template) => template.name)))
   } finally {

@@ -20,7 +20,9 @@ export const MAINTENANCE_SCHEDULE_LABELS = [
 
 export type MaintenanceScheduleLabel = (typeof MAINTENANCE_SCHEDULE_LABELS)[number]
 
+export const SYSTEMD_TEMPLATE_DIRECTORY = 'ops/systemd'
 export const SYSTEMD_UNIT_SUFFIXES = ['.service', '.timer', '.path'] as const
+const SYSTEMD_ACTIVATION_UNIT_SUFFIXES = ['.timer', '.path'] as const
 
 export const SYSTEMD_UNITS: Record<MaintenanceScheduleLabel, readonly string[]> = {
   'com.user.orch-sweep': ['orch-sweep.service', 'orch-sweep.timer'],
@@ -32,9 +34,8 @@ export const SYSTEMD_UNITS: Record<MaintenanceScheduleLabel, readonly string[]> 
 }
 
 export function systemdActivationUnits(label: MaintenanceScheduleLabel): string[] {
-  const activationSuffixes = SYSTEMD_UNIT_SUFFIXES.slice(1)
   return SYSTEMD_UNITS[label].filter((name) =>
-    activationSuffixes.some((suffix) => name.endsWith(suffix)),
+    SYSTEMD_ACTIVATION_UNIT_SUFFIXES.some((suffix) => name.endsWith(suffix)),
   )
 }
 
