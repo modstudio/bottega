@@ -58,7 +58,11 @@ export function register(program: Command): void {
       const result = await staleContextForSession(options.session)
       if (options.json) return log(JSON.stringify(result))
       for (const row of result)
-        log(`${row.holder}  worked ${row.workedAt}  next-action ${row.revisedAt ?? 'missing'}`)
+        log(
+          'reason' in row
+            ? `${row.holder}  worked ${row.workedAt}  ${row.reason}`
+            : `${row.holder}  worked ${row.workedAt}  next-action ${row.revisedAt ?? 'missing'}`,
+        )
     })
   holderOptions(context.command('set').description('create or revise one context item'))
     .requiredOption('--kind <kind>', `one of ${CONTEXT_ITEM_KINDS.join(', ')}`)

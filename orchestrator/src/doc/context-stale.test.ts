@@ -68,3 +68,25 @@ test('ignores old work and judges mixed and unrevised holders from recent work',
     },
   ])
 })
+
+test('reports an unresolved task holder with its reason instead of a missing next-action', () => {
+  expect(
+    staleContextHolders({
+      work: [{ holder: 'STAR-9', at: '2026-11-09T09:00:00Z' }],
+      revisions: [],
+      unresolvedHolders: [
+        {
+          holder: 'STAR-9',
+          reason: 'task could not be resolved in project starship; run bottega record pull',
+        },
+      ],
+      now: '2026-11-09T10:00:00Z',
+    }),
+  ).toEqual([
+    {
+      holder: 'STAR-9',
+      workedAt: '2026-11-09T09:00:00Z',
+      reason: 'task could not be resolved in project starship; run bottega record pull',
+    },
+  ])
+})

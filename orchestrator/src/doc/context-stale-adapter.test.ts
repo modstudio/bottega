@@ -158,3 +158,33 @@ test('question work prefers the owning run launch key over its workflow key', as
     },
   ])
 })
+
+test('reports undeclared and unresolved working keys with record-pull remedies', async () => {
+  registerDevPrefix()
+  const session = sessionId()!
+  for (const key of ['DEV-MISSING', 'STAR-UNKNOWN']) {
+    const run = addRun({
+      agent: 'codex',
+      job: 'implement',
+      session,
+      startedAt: '2026-11-09T09:00:00Z',
+    })
+    setLaunchKey(run, key)
+  }
+
+  expect(
+    await staleContextForSession(session, db(), async () => [], '2026-11-09T10:00:00Z'),
+  ).toEqual([
+    {
+      holder: 'DEV-MISSING',
+      workedAt: '2026-11-09T09:00:00Z',
+      reason:
+        'task could not be resolved in project context-stale-fixture; run bottega record pull',
+    },
+    {
+      holder: 'STAR-UNKNOWN',
+      workedAt: '2026-11-09T09:00:00Z',
+      reason: 'no project declares task prefix STAR; run bottega record pull',
+    },
+  ])
+})

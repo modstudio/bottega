@@ -111,7 +111,7 @@ test('orders the session, each project-scoped working task, and its epic by task
       tasks,
     ),
   ).toEqual([
-    { key: '65fbe830', title: '', kind: 'session', recordId: null },
+    { key: '65fbe830', title: '', kind: 'session' },
     {
       key: 'DEV-1844/2',
       title: 'Build the brief',

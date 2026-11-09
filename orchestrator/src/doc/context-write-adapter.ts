@@ -230,10 +230,17 @@ export async function assertContextSetAllowed(input: {
 
 /** A context item leaves only through its owner and never as the last required item. */
 export async function assertContextDropAllowed(
-  doc: { scope: string; subject: string | null; slug: string; body: string },
-  database: Database = db(),
-  ports: ContextFactsPorts = defaultContextFactsPorts(),
-  task?: ContextTask,
+  {
+    doc,
+    database = db(),
+    ports = defaultContextFactsPorts(),
+    task,
+  }: {
+    doc: { scope: string; subject: string | null; slug: string; body: string }
+    database?: Database
+    ports?: ContextFactsPorts
+    task?: ContextTask
+  },
 ): Promise<void> {
   if (doc.scope !== 'context') return
   const holder = doc.subject ?? ''

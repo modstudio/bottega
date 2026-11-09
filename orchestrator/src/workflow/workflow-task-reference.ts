@@ -5,6 +5,7 @@ import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { namesMissingTask } from '../../../shared/task-missing.ts'
 
 export type HubTaskReference = {
   key: string
@@ -101,10 +102,20 @@ export async function readHubTasks(project: string): Promise<HubTaskReference[]>
 }
 
 export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {
-  const response = JSON.parse(
-    await taskCommand(['task', 'show', key, '--project', project, '--fresh', '--json']),
-  ) as unknown
+  let output: string
+  try {
+    output = await taskCommand(['task', 'show', key, '--project', project, '--fresh', '--json'])
+  } catch (error) {
+    if (taskPullFailureNamesMissingTask(error, key)) return null
+    throw error
+  }
+  const response = JSON.parse(output) as unknown
   return taskReferenceFromShow(response)
+}
+
+/** Classify only the canonical missing-task line; every other command failure remains a read error. */
+export function taskPullFailureNamesMissingTask(error: unknown, key: string): boolean {
+  return namesMissingTask(error instanceof Error ? error.message : String(error), key)
 }
 
 /** A reader failure is a refusal; callers with best-effort policy catch it explicitly. */

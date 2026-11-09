@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   resolveHubTaskReference,
   resolveOrPullHubTaskReference,
+  taskPullFailureNamesMissingTask,
   taskReadRefusal,
 } from './workflow-task-reference.ts'
 
@@ -62,4 +63,28 @@ test('fresh task failures and absent tasks have distinct actionable refusals', a
   ).rejects.toThrow(
     `no task DEV-3 in project alpha; inspect available tasks with ${PLATFORM_SLUG} task list --project alpha --json`,
   )
+})
+
+test('classifies only a pull failure whose canonical missing-task line names the requested key', () => {
+  expect(taskPullFailureNamesMissingTask(new Error('no task DEV-2'), 'DEV-2')).toBe(true)
+  expect(taskPullFailureNamesMissingTask(new Error('no task DEV-3'), 'DEV-2')).toBe(false)
+  expect(taskPullFailureNamesMissingTask(new Error('tracker unavailable'), 'DEV-2')).toBe(false)
+})
+
+test('refuses a fresh task identity that differs from the requested key or project', async () => {
+  const reader = async () => []
+  await expect(
+    resolveOrPullHubTaskReference('alpha', 'DEV-2', reader, async () => ({
+      key: 'DEV-3',
+      record_id: 'wrong-key',
+      project: 'alpha',
+    })),
+  ).rejects.toThrow('fresh task read returned')
+  await expect(
+    resolveOrPullHubTaskReference('alpha', 'DEV-2', reader, async () => ({
+      key: 'DEV-2',
+      record_id: 'wrong-project',
+      project: 'beta',
+    })),
+  ).rejects.toThrow('fresh task read returned')
 })

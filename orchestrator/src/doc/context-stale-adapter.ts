@@ -1,8 +1,9 @@
 // concern: context-stale-adapter
 /** Gathers session work and next-action revision facts for stale context policy. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
-import { projectForTaskKey, projects } from '../project/projects.ts'
+import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
 import { questionTaskHolderSql } from '../run/question-open.ts'
 import { type CursorTrailEntry, isClosedStep } from '../workflow/workflow-cursor-trail.ts'
 import {
@@ -53,8 +54,9 @@ export async function staleContextForSession(
     add(row)
 
   const registered = projects(undefined, database)
+  const workHolders = [...new Set(work.map(({ holder }) => holder))]
   const holderProjects = new Map(
-    [...new Set(work.map(({ holder }) => holder))].flatMap((holder) => {
+    workHolders.flatMap((holder) => {
       const project = projectForTaskKey(holder, registered)
       return project ? [[holder, project.name] as const] : []
     }),
@@ -76,5 +78,25 @@ export async function staleContextForSession(
     holder,
     statusCategory: task.status_category ?? null,
   }))
-  return staleContextHolders({ work, revisions, now, taskStatuses })
+  const resolvedHolders = new Set(resolvedTasks.map(({ holder }) => holder))
+  const unresolvedHolders = workHolders.flatMap((holder) => {
+    const project = holderProjects.get(holder)
+    if (!project) {
+      return [
+        {
+          holder,
+          reason: `no project declares task prefix ${taskKeyPrefix(holder)}; run ${PLATFORM_SLUG} record pull`,
+        },
+      ]
+    }
+    return resolvedHolders.has(holder)
+      ? []
+      : [
+          {
+            holder,
+            reason: `task could not be resolved in project ${project}; run ${PLATFORM_SLUG} record pull`,
+          },
+        ]
+  })
+  return staleContextHolders({ work, revisions, now, taskStatuses, unresolvedHolders })
 }

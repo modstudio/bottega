@@ -119,7 +119,12 @@ export type ContextBriefWorkingKey = {
   project: string
 }
 
-type ContextBriefHolderReference = Omit<ContextBriefHolder, 'items'> & { recordId: string | null }
+type ContextBriefHolderReference =
+  | (Omit<ContextBriefHolder, 'items' | 'kind'> & { kind: 'session' })
+  | (Omit<ContextBriefHolder, 'items' | 'kind'> & {
+      kind: 'task' | 'epic'
+      recordId: string
+    })
 
 /** Decide holder order from task facts only; store reads are applied after this decision. */
 export function holderSequence(
@@ -128,7 +133,7 @@ export function holderSequence(
   tasks: readonly HubTaskReference[],
 ): ContextBriefHolderReference[] {
   const holders: ContextBriefHolderReference[] = [
-    { key: session, title: '', kind: 'session', recordId: null },
+    { key: session, title: '', kind: 'session' },
   ]
   const index = taskKeyMap(tasks)
   const emitted = new Set<string>()
@@ -164,13 +169,19 @@ export function storedBriefHolders(
   database: Database,
 ): ContextBriefHolder[] {
   return references
-    .map(({ recordId, ...holder }) => ({
-      ...holder,
-      items: storedItems(
-        holder.kind === 'session' ? `session:${holder.key}` : taskContextHolder(recordId!),
-        database,
-      ),
-    }))
+    .map((reference) => {
+      if (reference.kind === 'session') {
+        return {
+          ...reference,
+          items: storedItems(`session:${reference.key}`, database),
+        }
+      }
+      const { recordId, ...holder } = reference
+      return {
+        ...holder,
+        items: storedItems(taskContextHolder(recordId), database),
+      }
+    })
     .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
 }
 
