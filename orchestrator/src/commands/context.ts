@@ -49,7 +49,9 @@ export function register(program: Command): void {
     })
   context
     .command('stale')
-    .description('list task holders worked after their newest next-action revision')
+    .description(
+      'list task holders with work in the last day after their newest next-action revision',
+    )
     .requiredOption('--session <id>', 'select architect session')
     .option('--json', 'write JSON')
     .action(async (options) => {
