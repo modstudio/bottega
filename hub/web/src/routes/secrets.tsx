@@ -31,7 +31,7 @@ export type TypedCredentialRow = SecretRow &
 type CredentialUsage = {
   projectId: string | null
   name: string
-  reason: Extract<CredentialResolution['reason'], string>
+  reason: Extract<CredentialResolution, { kind: 'resolved' }>['reason']
 }
 export type CredentialDisplayRow = {
   key: string
