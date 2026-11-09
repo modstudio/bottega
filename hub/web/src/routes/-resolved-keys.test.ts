@@ -103,9 +103,12 @@ test('effective reach names only the spaces where a project resolves the account
   expect(overridden.account).toMatchObject([{ reach: [], configuredReach: ['Team'] }])
 })
 
+function unread(id: string, name: string): Space {
+  return { id, name, secrets: [], preferences: [], projects: [], error: 'refused' }
+}
+
 test('a space that could not be read shows no rows and does not narrow the account reach', () => {
-  const failed = (entry: Space): Space =>
-    entry.id === otherId ? { ...space(otherId, 'Other', [], []), error: 'refused' } : entry
+  const failed = (entry: Space): Space => (entry.id === otherId ? unread(otherId, 'Other') : entry)
   const view = resolvedKeys({ ...data(null), spaces: data(null).spaces.map(failed) })
   expect(view.groups.find((group) => group.spaceId === otherId)).toMatchObject({
     error: 'refused',
@@ -115,7 +118,7 @@ test('a space that could not be read shows no rows and does not narrow the accou
   const personalFailed = resolvedKeys({
     ...data(null),
     spaces: data(null).spaces.map((entry) =>
-      entry.id === personalId ? { ...entry, secrets: [], error: 'refused' } : entry,
+      entry.id === personalId ? unread(personalId, 'Personal') : entry,
     ),
   })
   expect(personalFailed).toMatchObject({ accountError: 'refused', account: [] })
