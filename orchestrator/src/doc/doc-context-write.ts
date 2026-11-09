@@ -4,6 +4,7 @@
 export const CONTEXT_ITEM_KINDS = [
   'ruling',
   'position',
+  'fact',
   'open-question',
   'pointer',
   'next-action',
@@ -13,6 +14,7 @@ export type ContextItemKind = (typeof CONTEXT_ITEM_KINDS)[number]
 export const CONTEXT_ITEM_MAX_CHARS = {
   ruling: 1500,
   position: 800,
+  fact: 800,
   'open-question': 800,
   pointer: 400,
   'next-action': 400,
@@ -36,11 +38,14 @@ export type ContextWriteFacts = {
 }
 
 const PROFILE = {
-  epic: { allowed: ['ruling', 'next-action'], required: ['next-action'] },
+  epic: {
+    allowed: ['ruling', 'position', 'fact', 'open-question', 'pointer', 'next-action'],
+    required: ['next-action'],
+  },
   task: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },
   session: {
-    allowed: ['pointer', 'position', 'next-action', 'ruling', 'open-question'],
-    required: ['next-action'],
+    allowed: CONTEXT_ITEM_KINDS,
+    required: [],
   },
 } as const satisfies Record<
   ContextProfile,
@@ -73,7 +78,10 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
     item.kind === 'next-action' &&
     facts.siblings.some((sibling) => sibling.kind === 'next-action' && sibling.id !== item.id)
   ) {
-    return `${address} refused: holder ${item.holder} allows at most one next-action item`
+    const existing = facts.siblings.find(
+      (sibling) => sibling.kind === 'next-action' && sibling.id !== item.id,
+    )!
+    return `${address} refused: holder ${item.holder} allows at most one next-action item; revise existing item ${existing.holder}/${existing.id}`
   }
   const normalized = normalizeContextBody(item.body)
   for (const other of facts.related) {
@@ -89,17 +97,11 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
 export function contextItemShapeRefusal(item: ContextItem): string | null {
   const address = `context item ${item.id}`
   if (!item.source.trim()) return `${address} refused: every item requires a non-empty source`
+  if (item.kind === 'ruling' && !item.body.trim()) {
+    return `${address} refused: a ruling requires a non-empty body`
+  }
   if (item.body.length > CONTEXT_ITEM_MAX_CHARS[item.kind]) {
     return `${address} refused: ${item.kind} limit is ${CONTEXT_ITEM_MAX_CHARS[item.kind]} characters`
-  }
-  return rulingRefusal(item, address)
-}
-
-function rulingRefusal(item: ContextItem, address: string): string | null {
-  if (item.kind !== 'ruling') return null
-  if (!item.objection?.trim()) return `${address} refused: a ruling requires a non-empty objection`
-  if (item.source !== 'operator' && item.source !== 'agent') {
-    return `${address} refused: a ruling source must be operator or agent`
   }
   return null
 }

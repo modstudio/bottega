@@ -211,6 +211,10 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   }
   const profile = docLintProfile(doc.kind)
   const findings = lintProse(doc.body)
+    .filter(
+      (finding) =>
+        doc.scope !== 'context' || finding.rule !== 'issue' || finding.issueKind !== 'task-key',
+    )
     .filter((finding) => profile.rules[finding.rule] !== undefined)
     .map((finding) => ({
       rule: `doc/${finding.rule}`,

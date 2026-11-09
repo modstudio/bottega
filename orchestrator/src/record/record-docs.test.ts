@@ -78,8 +78,29 @@ test('the hosted record refuses a context item that does not decode or breaks it
   expect(() => assertContextItemShape('context', 'raw', 'No frontmatter.')).toThrow(
     'requires YAML frontmatter',
   )
-  const ruling = encodeContextItem({ kind: 'ruling', source: 'agent', body: 'Ship it.' })
-  expect(() => assertContextItemShape('context', 'ship', ruling)).toThrow('non-empty objection')
+  const ruling = encodeContextItem({ kind: 'ruling', source: 'question 5282', body: 'Ship it.' })
+  expect(() => assertContextItemShape('context', 'ship', ruling)).not.toThrow()
+  expect(() =>
+    assertContextItemShape(
+      'context',
+      'unsourced',
+      encodeContextItem({ kind: 'ruling', source: ' ', body: 'Ship it.' }),
+    ),
+  ).toThrow('non-empty source')
+  expect(() =>
+    assertContextItemShape(
+      'context',
+      'empty-ruling',
+      encodeContextItem({ kind: 'ruling', source: 'question 5282', body: '' }),
+    ),
+  ).toThrow('non-empty body')
+  expect(() =>
+    assertContextItemShape(
+      'context',
+      'finding',
+      encodeContextItem({ kind: 'fact', source: 'run:1', body: 'Measured result.' }),
+    ),
+  ).not.toThrow()
   expect(() =>
     assertContextItemShape(
       'context',
@@ -88,4 +109,15 @@ test('the hosted record refuses a context item that does not decode or breaks it
     ),
   ).not.toThrow()
   expect(() => assertContextItemShape('machine', 'raw', 'No frontmatter.')).not.toThrow()
+})
+
+test('the hosted record allows task keys in context item bodies', () => {
+  expect(
+    recordDocLintRefusal({
+      ...doc('Dispatch DEV-2224 next.'),
+      scope: 'context',
+      subject: 'task:DEV-1844',
+      slug: 'next',
+    }),
+  ).toBeNull()
 })

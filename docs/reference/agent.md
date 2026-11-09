@@ -110,7 +110,7 @@ create or revise one context item
 
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
-- `--kind <kind>`: one of ruling, position, open-question, pointer, next-action
+- `--kind <kind>`: one of ruling, position, fact, open-question, pointer, next-action
 - `--source <source>`: item source
 - `--objection <text>`: objection overcome by a ruling
 - `--id <id>`: stable item id
