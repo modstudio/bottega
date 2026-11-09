@@ -1,5 +1,5 @@
 // concern: credential-decision
-/** Pure credential presentation, hint, and payer-resolution rules. */
+/** Pure payer-resolution rules and the refusal shape for a credential that must be set. */
 
 import { PLATFORM_SLUG } from './brand.ts'
 import type {
