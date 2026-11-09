@@ -226,6 +226,7 @@ export const ROOT_TEST_FILES = [
   'scripts/identity-inventory.test.ts',
   'scripts/storage-lifecycle-check.test.ts',
   'scripts/identity-state-class-check.test.ts',
+  'scripts/identity-state-class-report.test.ts',
   'scripts/check-outbox-payload-contracts.test.ts',
   'scripts/record-migration-bounds.test.ts',
   'scripts/record-migration-failure.test.ts',
