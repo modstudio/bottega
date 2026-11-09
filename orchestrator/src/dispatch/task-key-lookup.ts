@@ -123,22 +123,23 @@ export async function readTaskText(
   } = {},
 ): Promise<TaskTextRead> {
   if (project.settings.tracker?.protocol === 'hub') return readHubTaskText(project, key)
-  const source = trackerSourceFor(project)
-  if (!source?.readText) {
-    return {
-      available: false,
-      reason: `tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no task text adapter`,
-    }
-  }
-  const remote = dependencies.toolCaller ? null : remoteTrackerCaller(project)
-  if (!dependencies.toolCaller && !remote) {
-    const server = project.settings.mcpServer ?? project.name
-    return {
-      available: false,
-      reason: `MCP server ${server} is not configured in ${project.path}/.mcp.json`,
-    }
-  }
+  let remote: RemoteCaller | null = null
   try {
+    const source = trackerSourceFor(project)
+    if (!source?.readText) {
+      return {
+        available: false,
+        reason: `tracker protocol ${project.settings.tracker?.protocol ?? '(missing)'} has no task text adapter`,
+      }
+    }
+    remote = dependencies.toolCaller ? null : remoteTrackerCaller(project)
+    if (!dependencies.toolCaller && !remote) {
+      const server = project.settings.mcpServer ?? project.name
+      return {
+        available: false,
+        reason: `MCP server ${server} is not configured in ${project.path}/.mcp.json`,
+      }
+    }
     const task = await source.readText(dependencies.toolCaller ?? remote!.caller, key)
     if (!task) return { available: false, reason: `tracker has no task ${key}` }
     const mirror = await resolveHubTaskReference(project.name, key, dependencies.hubTaskReader)

@@ -43,7 +43,6 @@ export async function readWorkspaceTaskText(
     task.short_id.toUpperCase() !== key.toUpperCase() ||
     typeof task.summary !== 'string' ||
     (task.id !== undefined && typeof task.id !== 'string') ||
-    (task.description_markdown !== undefined && typeof task.description_markdown !== 'string') ||
     (task.comments !== undefined && !Array.isArray(task.comments))
   ) {
     throw new TrackerLookupUnverifiable('workspace-mcp', key)
