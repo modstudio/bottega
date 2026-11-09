@@ -234,8 +234,6 @@ export function registerCredentialCommands(program: Command): void {
     .option('--mode <mode>', CREDENTIAL_MODES.join(' or '))
     .option('--env <environment>', CREDENTIAL_ENVIRONMENTS.join(' or '))
     .option('--reveal-to-env <variable>', 'run argv with the plaintext in this variable')
-    .allowUnknownOption()
-    .passThroughOptions()
     .description('show which credential would pay for a project')
     .action(resolveAction)
 }
