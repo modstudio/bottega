@@ -16,10 +16,16 @@ export function readSessionOutboxResidue(
   session: string,
 ): SessionOutboxResidue {
   const rows = database
-    .query<SessionOutboxRow, []>(`SELECT id, actor_session AS actorSession, synced_at AS syncedAt,
+    .query<
+      SessionOutboxRow,
+      [string]
+    >(`SELECT id, actor_session AS actorSession, synced_at AS syncedAt,
               quarantined_at AS quarantinedAt, retired_at AS retiredAt
-         FROM outbox`)
-    .all()
+         FROM outbox
+        WHERE actor_session = ?
+          AND synced_at IS NULL
+          AND retired_at IS NULL`)
+    .all(session)
   return sessionOutboxResidue(session, rows)
 }
 
