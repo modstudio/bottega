@@ -80,6 +80,8 @@ test('read-through picks local, hosted, or refresh from stage revisions', () => 
   expect(
     decideTaskFlowReadThrough({
       localFlowExists: false,
+      localFlowRevision: null,
+      hostedFlowRevision: 1,
       localStageRevision: null,
       hostedStageRevision: null,
     }),
@@ -87,6 +89,8 @@ test('read-through picks local, hosted, or refresh from stage revisions', () => 
   expect(
     decideTaskFlowReadThrough({
       localFlowExists: true,
+      localFlowRevision: 3,
+      hostedFlowRevision: 3,
       localStageRevision: 4,
       hostedStageRevision: null,
     }),
@@ -94,6 +98,8 @@ test('read-through picks local, hosted, or refresh from stage revisions', () => 
   expect(
     decideTaskFlowReadThrough({
       localFlowExists: true,
+      localFlowRevision: 3,
+      hostedFlowRevision: 3,
       localStageRevision: null,
       hostedStageRevision: 1,
     }),
@@ -101,6 +107,8 @@ test('read-through picks local, hosted, or refresh from stage revisions', () => 
   expect(
     decideTaskFlowReadThrough({
       localFlowExists: true,
+      localFlowRevision: 3,
+      hostedFlowRevision: 3,
       localStageRevision: 4,
       hostedStageRevision: 5,
     }),
@@ -108,11 +116,43 @@ test('read-through picks local, hosted, or refresh from stage revisions', () => 
   expect(
     decideTaskFlowReadThrough({
       localFlowExists: true,
+      localFlowRevision: 3,
+      hostedFlowRevision: 3,
       localStageRevision: 5,
       hostedStageRevision: 5,
     }),
   ).toBe('local')
 })
+
+test.each([
+  ['without an open stage', null],
+  ['with an open stage', 4],
+] as const)('a newer hosted flow is refreshed %s', (_label, hostedStageRevision) => {
+  expect(
+    decideTaskFlowReadThrough({
+      localFlowExists: true,
+      localFlowRevision: 7,
+      hostedFlowRevision: 8,
+      localStageRevision: 5,
+      hostedStageRevision,
+    }),
+  ).toBe('refresh')
+})
+
+test.each([7, 6])(
+  'a hosted flow at revision %s keeps stage-revision behaviour',
+  (hostedFlowRevision) => {
+    expect(
+      decideTaskFlowReadThrough({
+        localFlowExists: true,
+        localFlowRevision: 7,
+        hostedFlowRevision,
+        localStageRevision: 5,
+        hostedStageRevision: null,
+      }),
+    ).toBe('local')
+  },
+)
 
 test('task-flow route compatibility recognizes only its named not-found', () => {
   expect(

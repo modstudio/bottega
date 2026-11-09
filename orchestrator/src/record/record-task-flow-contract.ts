@@ -7,6 +7,27 @@ export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not foun
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
 
+const hostedTaskFlowStageSchema = z.object({
+  id: z.string().uuid(),
+  flowRecordId: z.string().uuid(),
+  workflow: z.string(),
+  mode: z.string(),
+  workflowVersionId: z.string().uuid(),
+  catalogueVersionId: z.string().uuid(),
+  arguments: z.record(z.string(), z.string()),
+  activeOrdinal: z.number().int().nonnegative(),
+  activeSlug: z.string(),
+  state: z.enum(['running', 'awaiting-ruling', 'done', 'abandoned']),
+  closedStepNotes: z.array(z.unknown()),
+  totalSteps: z.number().int().positive(),
+  openedMachineId: z.string().uuid(),
+  takenOverFromMachineId: nullableId,
+  lastAdvancedMachineId: z.string().uuid(),
+  revision: z.number().int().positive(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
 export const hostedTaskFlowSchema = z.object({
   flow: z.object({
     id: z.string().uuid(),
@@ -20,29 +41,8 @@ export const hostedTaskFlowSchema = z.object({
     createdAt: z.string(),
     updatedAt: z.string(),
   }),
-  stage: z
-    .object({
-      id: z.string().uuid(),
-      flowRecordId: z.string().uuid(),
-      workflow: z.string(),
-      mode: z.string(),
-      workflowVersionId: z.string().uuid(),
-      catalogueVersionId: z.string().uuid(),
-      arguments: z.record(z.string(), z.string()),
-      activeOrdinal: z.number().int().nonnegative(),
-      activeSlug: z.string(),
-      state: z.enum(['running', 'awaiting-ruling', 'done', 'abandoned']),
-      closedStepNotes: z.array(z.unknown()),
-      totalSteps: z.number().int().positive(),
-      openedMachineId: z.string().uuid(),
-      takenOverFromMachineId: nullableId,
-      lastAdvancedMachineId: z.string().uuid(),
-      revision: z.number().int().positive(),
-      createdAt: z.string(),
-      updatedAt: z.string(),
-      holder: machine,
-    })
-    .nullable(),
+  stage: hostedTaskFlowStageSchema.extend({ holder: machine }).nullable(),
+  stages: z.array(hostedTaskFlowStageSchema).optional(),
 })
 
 export type HostedTaskFlow = z.infer<typeof hostedTaskFlowSchema>

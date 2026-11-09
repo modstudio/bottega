@@ -10,8 +10,10 @@ import { RecordApiRequestError } from '../record/record-api-client.ts'
 import {
   type HostedTaskFlow,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+  hostedTaskFlowSchema,
 } from '../record/record-task-flow-contract.ts'
 import { cacheHostedTaskFlow, readThroughTaskFlow } from './task-flow-read-through.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowCursorContext, selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import { selectAndNextWorkflowStep, testPorts } from './workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
@@ -52,7 +54,9 @@ function hosted(
     flowId?: string
     stageId?: string
     stageRevision?: number
+    flowRevision?: number
     stage?: boolean
+    stages?: NonNullable<HostedTaskFlow['stages']>
     workflow?: string
     workflowVersionId?: string
     activeOrdinal?: number
@@ -99,11 +103,12 @@ function hosted(
       openStageRecordId: stage?.id ?? null,
       openingMachineId: machineA,
       updatedMachineId: machineB,
-      revision: 3,
+      revision: input.flowRevision ?? 3,
       createdAt: '2026-11-03T10:00:00.000Z',
       updatedAt: '2026-11-03T11:00:00.000Z',
     },
     stage,
+    ...(input.stages ? { stages: input.stages } : {}),
   }
 }
 
@@ -135,6 +140,146 @@ test('hosted newer than local refreshes the cached stage', async () => {
     expect(
       ids.database.query('SELECT revision FROM workflow_cursor WHERE record_id=?').get(stageId),
     ).toEqual({ revision: 4 })
+  } finally {
+    ids.database.close()
+  }
+})
+
+test('a newer hosted close is cached and the closed cursor is not re-attached', async () => {
+  const ids = fixture()
+  try {
+    const workflow = 'hosted-close-read-through'
+    const draft = setWorkflowLocal(
+      workflow,
+      {
+        title: 'Hosted close read-through fixture',
+        description: 'Exercises a remotely closed keyed workflow stage.',
+        arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+        modes: [
+          {
+            slug: 'default',
+            title: 'Default',
+            default: true,
+            steps: ['diagnose', 'fix-defect-fix'],
+          },
+        ],
+      },
+      'hosted close fixture',
+      'test',
+      ids.database,
+    )
+    promoteWorkflowLocal(workflow, draft.n, 'hosted close fixture', 'test', ids.database)
+    const workflowVersionId = ids.database
+      .query<{ record_id: string }, [string]>(
+        `SELECT version.record_id FROM workflow_version version
+         JOIN workflow ON workflow.record_id=version.workflow_record_id
+         WHERE workflow.slug=? AND version.status='production'`,
+      )
+      .get(workflow)!.record_id
+    const taskId = newRecordId()
+    const flowId = newRecordId()
+    const stageId = newRecordId()
+    const local = hosted(ids, {
+      taskId,
+      flowId,
+      stageId,
+      workflow,
+      workflowVersionId,
+      stageRevision: 12,
+      flowRevision: 31,
+    })
+    cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
+    const closedStage = {
+      ...local.stage!,
+      state: 'abandoned' as const,
+      revision: 13,
+      updatedAt: '2026-11-03T12:00:00.000Z',
+    }
+    const { holder: _holder, ...listedStage } = closedStage
+    installHosted(
+      hosted(ids, {
+        taskId,
+        flowId,
+        stage: false,
+        flowRevision: 34,
+        stages: [listedStage],
+      }),
+    )
+
+    await readThroughTaskFlow(ids.database, { taskKey: 'DEV-2098', taskRecordId: taskId })
+
+    expect(
+      ids.database
+        .query('SELECT state,revision FROM workflow_cursor WHERE record_id=?')
+        .get(stageId),
+    ).toEqual({ state: 'abandoned', revision: 13 })
+    expect(
+      ids.database
+        .query('SELECT open_stage_cursor_record_id,revision FROM task_flow WHERE record_id=?')
+        .get(flowId),
+    ).toEqual({ open_stage_cursor_record_id: null, revision: 34 })
+
+    const composed = composeWorkflowWithCursor(
+      workflow,
+      'read-through-fixture',
+      'default',
+      { key: 'DEV-2098' },
+      { taskRecordId: taskId },
+      ids.database,
+      {},
+      {},
+    )
+    const reopened = ids.database
+      .query<{ record_id: string }, [number]>(
+        'SELECT record_id FROM workflow_cursor WHERE number=?',
+      )
+      .get(composed.cursor!.id)!
+    expect(reopened.record_id).not.toBe(stageId)
+  } finally {
+    ids.database.close()
+  }
+})
+
+test.each([11, 12])(
+  'a listed hosted stage at revision %s does not clobber the local row',
+  (stageRevision) => {
+    const ids = fixture()
+    try {
+      const taskId = newRecordId()
+      const flowId = newRecordId()
+      const stageId = newRecordId()
+      const local = hosted(ids, { taskId, flowId, stageId, stageRevision: 12 })
+      cacheHostedTaskFlow(ids.database, 'DEV-2098', local)
+      const { holder: _holder, ...listedStage } = {
+        ...local.stage!,
+        state: 'abandoned' as const,
+        revision: stageRevision,
+      }
+      const incoming = hosted(ids, {
+        taskId,
+        flowId,
+        stage: false,
+        flowRevision: 4,
+        stages: [listedStage],
+      })
+
+      cacheHostedTaskFlow(ids.database, 'DEV-2098', incoming)
+
+      expect(
+        ids.database
+          .query('SELECT state,ordinal,revision FROM workflow_cursor WHERE record_id=?')
+          .get(stageId),
+      ).toEqual({ state: 'running', ordinal: 1, revision: 12 })
+    } finally {
+      ids.database.close()
+    }
+  },
+)
+
+test('hosted task-flow parsing accepts an older response without listed stages', () => {
+  const ids = fixture()
+  try {
+    expect(hostedTaskFlowSchema.parse(hosted(ids, {})).stages).toBeUndefined()
   } finally {
     ids.database.close()
   }

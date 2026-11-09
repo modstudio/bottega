@@ -41,6 +41,38 @@ export async function readRecordTaskFlow(
       LIMIT 1`
     const row = rows[0]
     if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
+    const stageRows = await tx`
+      SELECT s.id,s.flow_record_id,s.workflow,s.mode,s.workflow_version_id,
+             s.catalogue_version_id,s.arguments,s.active_ordinal,s.active_slug,s.state,
+             s.closed_step_notes,s.total_steps,s.opened_machine_id,s.taken_over_from_machine_id,
+             s.last_advanced_machine_id,s.revision,s.created_at,s.updated_at
+      FROM task_flow_stage s
+      WHERE s.space_id=${input.spaceId}::uuid AND s.flow_record_id=${row.id}::uuid
+        AND (${row.open_stage_record_id ?? null}::uuid IS NULL OR s.id<>${row.open_stage_record_id ?? null}::uuid)
+      ORDER BY s.updated_at`
+    const stages = stageRows.map((stageRow) => ({
+      id: String(stageRow.id),
+      flowRecordId: String(stageRow.flow_record_id),
+      workflow: String(stageRow.workflow),
+      mode: String(stageRow.mode),
+      workflowVersionId: String(stageRow.workflow_version_id),
+      catalogueVersionId: String(stageRow.catalogue_version_id),
+      arguments: stageRow.arguments as Record<string, string>,
+      activeOrdinal: Number(stageRow.active_ordinal),
+      activeSlug: String(stageRow.active_slug),
+      state: String(stageRow.state) as NonNullable<HostedTaskFlow['stages']>[number]['state'],
+      closedStepNotes: stageRow.closed_step_notes as unknown[],
+      totalSteps: Number(stageRow.total_steps),
+      openedMachineId: String(stageRow.opened_machine_id),
+      takenOverFromMachineId:
+        stageRow.taken_over_from_machine_id == null
+          ? null
+          : String(stageRow.taken_over_from_machine_id),
+      lastAdvancedMachineId: String(stageRow.last_advanced_machine_id),
+      revision: Number(stageRow.revision),
+      createdAt: recordIso(stageRow.created_at),
+      updatedAt: recordIso(stageRow.updated_at),
+    }))
     return {
       flow: {
         id: String(row.id),
@@ -85,6 +117,7 @@ export async function readRecordTaskFlow(
                 displayName: String(row.holder_display_name),
               },
             },
+      stages,
     }
   })
 }
