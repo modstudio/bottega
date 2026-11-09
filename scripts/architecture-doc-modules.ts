@@ -27,6 +27,19 @@ export const privateDocImports = [
 export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-context-write.ts', []),
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
+  module('orchestrator/src/doc/context-stale.ts', ['../workflow/task-flow-decision.ts']),
+  module('orchestrator/src/doc/context-stale-adapter.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../run/question-open.ts',
+    '../workflow/workflow-cursor-trail.ts',
+    '../workflow/workflow-task-reference.ts',
+    './context-item-codec.ts',
+    './context-stale.ts',
+    './context-write-adapter.ts',
+    './doc-read-store.ts',
+  ]),
   module('orchestrator/src/doc/context-write-adapter.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',

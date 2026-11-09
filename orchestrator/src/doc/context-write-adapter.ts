@@ -85,6 +85,10 @@ export function storedItems(holder: string, database: Database): ContextItem[] {
   )
 }
 
+export function contextTaskHolderKey(holder: string | null): string | null {
+  return holder?.startsWith('task:') ? holder.slice('task:'.length) : null
+}
+
 export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {
   return tasks.some((task) => task.parent_key === key) ? 'epic' : 'task'
 }
@@ -96,7 +100,7 @@ async function contextSetRefusal(
 ): Promise<string | null> {
   const item = decodeContextItem(input.subject, input.slug, input.body)
   const tasks = await ports.tasks()
-  const taskKey = input.subject.startsWith('task:') ? input.subject.slice(5) : null
+  const taskKey = contextTaskHolderKey(input.subject)
   const owner = input.subject.startsWith('session:') ? input.subject.slice(8) : null
   if (taskKey && !tasks.some((task) => task.key === taskKey && task.project === PLATFORM_SLUG)) {
     return `context item ${input.slug} refused: task:${taskKey} is not in the ${PLATFORM_SLUG} task store`
@@ -159,6 +163,6 @@ export async function assertContextDropAllowed(
 
 export async function contextProfileForHolder(subject: string, ports = defaultContextFactsPorts()) {
   if (subject.startsWith('session:')) return 'session' as const
-  const key = subject.slice(5)
+  const key = contextTaskHolderKey(subject) ?? ''
   return taskProfile(key, await ports.tasks())
 }

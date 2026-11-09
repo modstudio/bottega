@@ -2,6 +2,7 @@
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
@@ -29,7 +30,6 @@ import {
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
-import { openChainQuestions } from './question-open.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
@@ -191,26 +191,6 @@ export async function retryCommand(
   await retryRun(id, options, answerRunHelpers(presentation))
 }
 
-function answeredQuestions(
-  runId: string,
-  input: AnswerRunInput,
-): { number: number; fromOperator: boolean }[] {
-  const { rulings } = input
-  if (typeof rulings !== 'string') {
-    const number = db().query<{ number: number }, [string]>(
-      'SELECT number FROM question WHERE record_id=?',
-    )
-    return rulings.map((ruling) => ({
-      number: number.get(ruling.questionId)!.number,
-      fromOperator: ruling.fromOperator,
-    }))
-  }
-  return openChainQuestions<{ number: number }>(db(), runId, 'q.number').map((row) => ({
-    number: row.number,
-    fromOperator: input.fromOperator,
-  }))
-}
-
 export async function answerCommand(
   id: string,
   argv: string[],
@@ -219,11 +199,10 @@ export async function answerCommand(
   flags: Flags,
   presentation: Presentation,
   refusedOptions?: Readonly<Record<string, string>>,
-): Promise<void> {
+): Promise<ContextMomentWrite[]> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
-  const questions = answeredQuestions(id, input)
-  const result = await answerRun(id, input, helpers)
+  const { result, answeredQuestions: questions } = await answerRun(id, input, helpers)
   if (json) console.log(JSON.stringify(result))
   else {
     for (const line of rulingFileOfferLines({
@@ -236,6 +215,14 @@ export async function answerCommand(
       console.log(line)
     }
   }
+  return questions.flatMap((question) => {
+    const write = contextMomentWrite({
+      moment: 'question-answer',
+      taskKey: question.taskHolder,
+      questionId: question.number,
+    })
+    return write ? [write] : []
+  })
 }
 
 export async function continueCommand(

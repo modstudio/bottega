@@ -4,13 +4,14 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
+import { contextMomentWrite, emitContextMoment } from '../../../shared/context-moment.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { checkCommand } from '../check/check-commands.ts'
-import { parseContinueArgs, refusedOwnerOptions } from '../cli/args.ts'
+import { flagValue, parseContinueArgs, refusedOwnerOptions } from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
@@ -113,9 +114,10 @@ const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
     presentation,
     refusedOwnerOptions(command, 'run tell', 'run'),
   )
-const answerByIdentifier = (id: string, command: Command, options: OptionValues) =>
-  answerCommand(
-    resolveAnswerIdentifier(db(), id, sessionId()),
+const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
+  const target = resolveAnswerIdentifier(db(), id, sessionId())
+  const writes = await answerCommand(
+    target,
     rawArgv(command).slice(2),
     Boolean(options.recordOnly),
     Boolean(options.json),
@@ -123,6 +125,9 @@ const answerByIdentifier = (id: string, command: Command, options: OptionValues)
     presentation,
     refusedOwnerOptions(command, 'question answer', 'question'),
   )
+  for (const write of writes)
+    emitContextMoment(write, Boolean(options.json), { log, error: console.error })
+}
 const relayByIdentifier = (id: string, command: Command, note: string) =>
   relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
     resolveQuestionIdentifier(db(), question),
@@ -519,6 +524,29 @@ function registerRunResults(program: Command): void {
     })
 }
 
+function registerDoCommand(program: Command): void {
+  const doVerb = describedCommand(
+    program,
+    'do <job> [prompt...]',
+    'dispatch a job to a routed agent',
+  )
+  for (const option of ORCH_DO_OPTIONS) {
+    if ('name' in option && option.name === 'deliverable')
+      doVerb.addOption(collectedOption(option.flags, option.description))
+    else doVerb.option(option.flags, option.description)
+  }
+  doVerb.action(async (_job, _prompt, options, command) => {
+    const argv = rawArgv(command)
+    await doCommand(argv, {
+      error: console.error,
+      printRunId: (id) => write(`${id}\n`),
+      cwd: process.cwd,
+    })
+    const prompt = contextMomentWrite({ moment: 'run-start', taskKey: flagValue(argv, 'key') })
+    emitContextMoment(prompt, Boolean(options.json), { log, error: console.error })
+  })
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   registerDatabaseCommands(program, presentation)
   program
@@ -694,23 +722,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         dependencies.continueCommandDependencies,
       )
     })
-  const doVerb = describedCommand(
-    program,
-    'do <job> [prompt...]',
-    'dispatch a job to a routed agent',
-  )
-  for (const option of ORCH_DO_OPTIONS) {
-    if ('name' in option && option.name === 'deliverable')
-      doVerb.addOption(collectedOption(option.flags, option.description))
-    else doVerb.option(option.flags, option.description)
-  }
-  doVerb.action((_job, _prompt, _options, command) =>
-    doCommand(rawArgv(command), {
-      error: console.error,
-      printRunId: (id) => write(`${id}\n`),
-      cwd: process.cwd,
-    }),
-  )
+  registerDoCommand(program)
   const gate = program.command('gate').description('run or inspect recorded project gates')
   gate
     .command('run')

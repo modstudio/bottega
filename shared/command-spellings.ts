@@ -7,6 +7,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'agent context drop',
   'agent context set',
   'agent context show',
+  'agent context stale',
   'agent contract',
   'agent cost-backtest',
   'agent guide',
