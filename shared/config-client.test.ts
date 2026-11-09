@@ -109,21 +109,6 @@ test('response diagnostics remove URL credentials, queries, and fragments', asyn
     expect(errors.join('\n')).not.toContain(secret)
 })
 
-test('config secret and data-key reads route to a requested project space', async () => {
-  const headers: string[] = []
-  const client = configClient(
-    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
-    async (_input, init) => {
-      headers.push(new Headers(init?.headers).get('x-record-space') ?? '')
-      return Response.json({ items: [] })
-    },
-    'test',
-  )
-  await client.listSecrets('default', { destinationSpaceId: 'space-project' })
-  await client.listDataKeys({ destinationSpaceId: 'space-project' })
-  expect(headers).toEqual(['space-project', 'space-project'])
-})
-
 test('every space-scoped config client call sends its destination header', async () => {
   const authorization = [
     'createMachineKeyClaimChallenge',

@@ -4,7 +4,6 @@ import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
-  ConfigClientError,
   type ConfigDestination,
   type ConfigScope,
   type ConfigSecret,
@@ -49,9 +48,7 @@ import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed
 import {
   generateDataKey,
   generateMachineKeyPair,
-  openClaimChallenge,
   sealValue,
-  unwrapDataKey,
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import {
@@ -69,17 +66,19 @@ import {
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
+import {
+  bytes,
+  claimMachineKey,
+  DataKeyWrapAccessError,
+  encoded,
+  isNotFound,
+  openDataKey,
+  wrapsForRecipients,
+} from './data-key-access.ts'
 import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
-import { machineTrustInSpace } from './named-space-config.ts'
 
 const hostedConfigClient = (env: ConfigEnvironment = process.env): ConfigClient =>
   configClient(env, fetch, undefined, undefined, recordConfigCallOutcome)
-
-const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
-const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-const isNotFound = (error: unknown) => error instanceof ConfigClientError && error.status === 404
-
-class DataKeyWrapAccessError extends Error {}
 
 export type RotationPlan = { reseal: ConfigSecret[]; retireDekIds: string[] }
 
@@ -127,21 +126,8 @@ async function unwrap(
 ) {
   const local = machine ?? (await localMachine())
   const trusted = trust ?? (await readTrustList())
-  const wrap = key.wraps.find((item) => trusted[item.senderKeyId]) ?? key.wraps[0]
-  if (!wrap)
-    throw new DataKeyWrapAccessError(`data key ${key.id} has no wrap addressed to this machine`)
-  const sender = trusted[wrap.senderKeyId]
-  if (!sender)
-    throw new DataKeyWrapAccessError(`data key ${key.id} sender ${wrap.senderKeyId} is not trusted`)
   const spaceId = destinationSpaceId ?? (await identity(client)).spaceId
-  return unwrapDataKey({
-    enc: bytes(wrap.enc),
-    ciphertext: bytes(wrap.ciphertext),
-    wrapContext: { spaceId, dekId: key.id, dekVersion: key.version },
-    recipientPrivateKey: local.privateKey,
-    senderPublicKey: bytes(sender.public_key),
-    trustedSenderKeyIds: new Set(Object.keys(trusted)),
-  })
+  return openDataKey(key, spaceId, local, trusted)
 }
 
 async function wrapsFor(
@@ -153,24 +139,12 @@ async function wrapsFor(
 ) {
   const machine = await localMachine()
   const who = await identity(client)
-  const sender = trust[machine.keyId]
-  if (!sender) throw new Error('this machine is absent from the trust list')
-  return Promise.all(
-    Object.entries(trust).map(async ([recipientKeyId, recipient]) => {
-      const wrapped = await wrapDataKey({
-        dek,
-        wrapContext: { spaceId: who.spaceId, dekId, dekVersion: version },
-        senderPrivateKey: machine.privateKey,
-        senderPublicKey: bytes(sender.public_key),
-        recipientPublicKey: bytes(recipient.public_key),
-      })
-      return {
-        recipientKeyId,
-        senderKeyId: machine.keyId,
-        enc: encoded(wrapped.enc),
-        ciphertext: encoded(wrapped.ciphertext),
-      }
-    }),
+  return wrapsForRecipients(
+    dek,
+    { spaceId: who.spaceId, dekId, dekVersion: version },
+    machine,
+    trust,
+    Object.keys(trust),
   )
 }
 
@@ -251,24 +225,6 @@ export async function machineInit(
   return keyId
 }
 
-async function claimMachineKey(
-  pair: { publicKey: Uint8Array; privateKey: Uint8Array },
-  keyId: string,
-  spaceId: string,
-  client: ConfigClient,
-): Promise<void> {
-  const challenge = await client.createMachineKeyClaimChallenge(keyId)
-  const nonce = await openClaimChallenge({
-    enc: bytes(challenge.enc),
-    ciphertext: bytes(challenge.ciphertext),
-    spaceId,
-    keyId,
-    recipientPrivateKey: pair.privateKey,
-    senderPublicKey: bytes(challenge.senderPublicKey),
-  })
-  await client.claimMachineKey(keyId, challenge.challengeId, encoded(nonce))
-}
-
 export async function claimCurrentMachineKey(
   client = hostedConfigClient(),
   env: ConfigEnvironment = process.env,
@@ -293,9 +249,7 @@ export async function machineTrust(
   publicKey: string,
   label: string,
   client = hostedConfigClient(),
-  requestedSpace?: string,
 ) {
-  if (requestedSpace) return machineTrustInSpace(keyId, publicKey, label, requestedSpace, client)
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')

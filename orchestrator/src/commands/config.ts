@@ -27,7 +27,7 @@ import {
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
-import { machineRegister } from '../config/named-space-config.ts'
+import { machineRegister, machineTrustInSpace } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
@@ -206,7 +206,9 @@ function registerMachineCommands(config: Command): void {
         if (answer.trim() !== keyId)
           throw new Error('machine trust confirmation did not match the key id')
       }
-      await machineTrust(keyId, publicKey, label, undefined, options.space)
+      if (options.space)
+        await machineTrustInSpace(keyId, publicKey, label, options.space, undefined)
+      else await machineTrust(keyId, publicKey, label)
       log(keyId)
     })
   machine

@@ -4,10 +4,8 @@ import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
-  ConfigClientError,
   type ConfigDestination,
   configClient,
-  type DataKey,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
@@ -22,18 +20,18 @@ import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import {
-  generateDataKey,
-  openClaimChallenge,
-  unwrapDataKey,
-  wrapDataKey,
-} from '../../../shared/secret-envelope.ts'
+import { generateDataKey } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine, readTrustList } from '../../../shared/trust-list.ts'
+import {
+  bytes,
+  claimMachineKey,
+  DataKeyWrapAccessError,
+  encoded,
+  isNotFound,
+  openDataKey,
+  wrapsForRecipients,
+} from './data-key-access.ts'
 import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
-
-const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
-const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-const isNotFound = (error: unknown) => error instanceof ConfigClientError && error.status === 404
 
 type NamedSpace = {
   destination: ConfigDestination
@@ -64,24 +62,6 @@ async function namedSpace(
   }
 }
 
-async function claimRegistration(
-  pair: { publicKey: Uint8Array; privateKey: Uint8Array },
-  keyId: string,
-  space: NamedSpace,
-  client: ConfigClient,
-): Promise<void> {
-  const challenge = await client.createMachineKeyClaimChallenge(keyId, space.destination)
-  const nonce = await openClaimChallenge({
-    enc: bytes(challenge.enc),
-    ciphertext: bytes(challenge.ciphertext),
-    spaceId: space.spaceId,
-    keyId,
-    recipientPrivateKey: pair.privateKey,
-    senderPublicKey: bytes(challenge.senderPublicKey),
-  })
-  await client.claimMachineKey(keyId, challenge.challengeId, encoded(nonce), space.destination)
-}
-
 async function wrapsForNamedSpace(
   dek: Uint8Array,
   dekId: string,
@@ -95,27 +75,15 @@ async function wrapsForNamedSpace(
     readTrustList(env),
     client.listMachineKeys(space.destination),
   ])
-  const sender = trusted[keyId]
-  if (!sender) throw new Error('this machine is absent from the trust list')
-  const recipients = registered.filter(
-    (item) => item.userId !== null && item.revokedAt === null && trusted[item.keyId],
-  )
-  return Promise.all(
-    recipients.map(async (recipient) => {
-      const wrapped = await wrapDataKey({
-        dek,
-        wrapContext: { spaceId: space.spaceId, dekId, dekVersion: 1 },
-        senderPrivateKey: pair.privateKey,
-        senderPublicKey: bytes(sender.public_key),
-        recipientPublicKey: bytes(trusted[recipient.keyId]!.public_key),
-      })
-      return {
-        recipientKeyId: recipient.keyId,
-        senderKeyId: keyId,
-        enc: encoded(wrapped.enc),
-        ciphertext: encoded(wrapped.ciphertext),
-      }
-    }),
+  const recipientKeyIds = registered
+    .filter((item) => item.userId !== null && item.revokedAt === null && trusted[item.keyId])
+    .map((item) => item.keyId)
+  return wrapsForRecipients(
+    dek,
+    { spaceId: space.spaceId, dekId, dekVersion: 1 },
+    { ...pair, keyId },
+    trusted,
+    recipientKeyIds,
   )
 }
 
@@ -145,12 +113,22 @@ export async function machineRegister(
   const registered = await client.registerMachineKey(keyId, publicKey, label, space.destination)
   const lines = [existing ? 'already registered' : 'registered']
   if (registered.userId === null) {
-    await claimRegistration(pair, keyId, space, client)
+    await claimMachineKey(pair, keyId, space.spaceId, client, space.destination)
     lines.push('claimed')
   }
   try {
     const current = await client.currentDataKey(keyId, space.destination)
     if (current.wraps.length === 0) throw trustRemedy(space, keyId, publicKey)
+    try {
+      await openDataKey(current, space.spaceId, pair, await readTrustList(env))
+    } catch (error) {
+      if (!(error instanceof DataKeyWrapAccessError)) throw error
+      const wrap = current.wraps[0]
+      if (!wrap) throw trustRemedy(space, keyId, publicKey)
+      throw new Error(
+        `data key ${current.id} in record space ${space.slug} was wrapped by ${wrap.senderKeyId}, which this machine does not trust; pin it with \`${PLATFORM_SLUG} machine config machine trust ${wrap.senderKeyId} <publicKey> --space ${space.slug}\` using that machine's public key from \`${PLATFORM_SLUG} machine config machine show\``,
+      )
+    }
     lines.push('data key opened')
     return lines
   } catch (error) {
@@ -170,43 +148,24 @@ export async function machineRegister(
   return lines
 }
 
-async function openNamedDataKey(
-  current: DataKey,
-  space: NamedSpace,
-  pair: { publicKey: Uint8Array; privateKey: Uint8Array },
-) {
-  const trusted = await readTrustList()
-  const wrap = current.wraps.find((item) => trusted[item.senderKeyId]) ?? current.wraps[0]
-  if (!wrap) throw new Error(`data key ${current.id} has no wrap addressed to this machine`)
-  const sender = trusted[wrap.senderKeyId]
-  if (!sender) throw new Error(`data key ${current.id} sender ${wrap.senderKeyId} is not trusted`)
-  return unwrapDataKey({
-    enc: bytes(wrap.enc),
-    ciphertext: bytes(wrap.ciphertext),
-    wrapContext: { spaceId: space.spaceId, dekId: current.id, dekVersion: current.version },
-    recipientPrivateKey: pair.privateKey,
-    senderPublicKey: bytes(sender.public_key),
-    trustedSenderKeyIds: new Set(Object.keys(trusted)),
-  })
-}
-
 export async function machineTrustInSpace(
   keyId: string,
   publicKey: string,
   label: string,
   requestedSpace: string,
-  client: ConfigClient,
+  client = configClient(process.env, fetch, undefined, undefined, recordConfigCallOutcome),
+  env: ConfigEnvironment = process.env,
 ): Promise<void> {
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')
-  const space = await namedSpace(requestedSpace, client, process.env)
+  const space = await namedSpace(requestedSpace, client, env)
   const remote = await client.listMachineKeys(space.destination)
   const registered = remote.find((item) => item.keyId === keyId)
   if (!registered || registered.revokedAt)
     throw new Error(`machine key ${keyId} is not registered and active in this space`)
-  await pinTrustedMachine(keyId, publicBytes, label)
-  const pair = readMachineKey()
+  await pinTrustedMachine(keyId, publicBytes, label, env)
+  const pair = readMachineKey(env)
   if (!pair)
     throw new Error(
       `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
@@ -214,32 +173,31 @@ export async function machineTrustInSpace(
   const localKeyId = await machineKeyId(pair.publicKey)
   try {
     const current = await client.currentDataKey(localKeyId, space.destination)
-    const dek = await openNamedDataKey(current, space, pair)
-    const trusted = await readTrustList()
-    const sender = trusted[localKeyId]
-    const recipient = trusted[keyId]
-    if (!sender || !recipient)
-      throw new Error('machine is absent from the trust list after pinning')
-    const wrapped = await wrapDataKey({
+    const trusted = await readTrustList(env)
+    const dek = await openDataKey(current, space.spaceId, pair, trusted)
+    const [wrapped] = await wrapsForRecipients(
       dek,
-      wrapContext: { spaceId: space.spaceId, dekId: current.id, dekVersion: current.version },
-      senderPrivateKey: pair.privateKey,
-      senderPublicKey: bytes(sender.public_key),
-      recipientPublicKey: bytes(recipient.public_key),
-    })
+      { spaceId: space.spaceId, dekId: current.id, dekVersion: current.version },
+      { ...pair, keyId: localKeyId },
+      trusted,
+      [keyId],
+    )
     await client.addWraps(
       current.id,
       [
         {
           recipientKeyId: keyId,
           senderKeyId: localKeyId,
-          enc: encoded(wrapped.enc),
-          ciphertext: encoded(wrapped.ciphertext),
+          enc: wrapped!.enc,
+          ciphertext: wrapped!.ciphertext,
         },
       ],
       space.destination,
     )
   } catch (error) {
     if (!isNotFound(error)) throw error
+    throw new Error(
+      `record space ${space.slug} has no data key yet, so there is nothing to wrap; run \`${PLATFORM_SLUG} machine config machine register --space ${space.slug}\` on this machine to create it, then run this trust again`,
+    )
   }
 }

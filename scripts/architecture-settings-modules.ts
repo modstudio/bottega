@@ -65,10 +65,15 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/ship-to.ts',
     '../../../shared/trust-list.ts',
     './hosted-config-call-outcome.ts',
-    './named-space-config.ts',
+    './data-key-access.ts',
     '../../../shared/hosted-secret-row.ts',
     '../record/machine-name-command.ts',
     '../record/machine-name.ts',
+  ]),
+  module('orchestrator/src/config/data-key-access.ts', [
+    '../../../shared/config-client.ts',
+    '../../../shared/secret-envelope.ts',
+    '../../../shared/trust-list.ts',
   ]),
   module('orchestrator/src/config/named-space-config.ts', [
     'node:os',
@@ -82,6 +87,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-space-membership.ts',
     '../../../shared/secret-envelope.ts',
     '../../../shared/trust-list.ts',
+    './data-key-access.ts',
     './hosted-config-call-outcome.ts',
   ]),
   module('orchestrator/src/config/credential-service.ts', [
