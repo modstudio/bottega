@@ -25,8 +25,9 @@ const CREDENTIAL_COMMAND = `${PLATFORM_SLUG} credential`
 
 function UsedBy({ row }: { row: CredentialDisplayRow }) {
   if (!row.usages.length) return '—'
-  const [first, ...rest] = orderedUsages(row.usages)
-  if (first?.projectId !== null) return [first, ...rest].map(usageLabel).join(', ')
+  const ordered = orderedUsages(row.usages)
+  const [first, ...rest] = ordered
+  if (first?.projectId !== null) return ordered.map(usageLabel).join(', ')
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <Badge>{usageLabel(first)}</Badge>
