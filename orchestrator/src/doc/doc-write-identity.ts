@@ -8,3 +8,9 @@ import { docWriteIdentity } from './doc-revision-store.ts'
 export function resolvedDocWriteIdentity(context: DocWriteContext) {
   return docWriteIdentity(context, cachedSignedInRecordUser()?.id)
 }
+
+export const hostedDocWriteIdentity = (identity: ReturnType<typeof resolvedDocWriteIdentity>) => ({
+  author: identity.author,
+  reason: identity.reason,
+  sessionId: identity.session,
+})

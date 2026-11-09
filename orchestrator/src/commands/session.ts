@@ -55,10 +55,15 @@ export function register(program: Command): void {
     .description('release and verify everything one session owns')
     .option('--session <id>', 'select a session other than the calling harness session')
     .option('--dry-run', 'report releases without changing anything')
+    .option('--resume', 'keep session context items for a successor resume brief')
     .option('--json', 'write the close-out report as JSON')
     .allowExcessArguments(false)
-    .action((options) => {
-      const report = closeOutSession({ session: options.session, dryRun: options.dryRun })
+    .action(async (options) => {
+      const report = await closeOutSession({
+        session: options.session,
+        dryRun: options.dryRun,
+        resume: options.resume,
+      })
       log(options.json ? JSON.stringify(report) : formatSessionCloseOut(report))
       if (!report.verdict.clean) process.exitCode = SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE
     })

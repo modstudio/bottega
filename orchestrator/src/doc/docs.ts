@@ -14,10 +14,7 @@ import {
   type DocScope,
   type DocStatus,
 } from '../../../shared/docs.ts'
-import {
-  type CanonLintInputCollector,
-  collectCanonLintInput as productionCanonLintInput,
-} from '../canon/canon-files.ts'
+import { collectCanonLintInput as productionCanonLintInput } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { decideNextCanonSet, decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
@@ -26,7 +23,6 @@ import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
-import { storedCanonRemovalRefusal } from './canon-removal.ts'
 import { assertContextDropAllowed, assertContextSetAllowed } from './context-write-adapter.ts'
 import {
   assertLocalArticleDelivery,
@@ -63,6 +59,7 @@ import {
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
+import { removeStoredDoc } from './doc-remove.ts'
 import { referenceRestoreState } from './doc-restore-state.ts'
 import * as rw from './doc-resume-write.ts'
 import { addSecretScanWarning, defaultDocSecretScanner, scanDocBody } from './doc-secret-scan.ts'
@@ -76,18 +73,15 @@ import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { executeLocalDocOrder } from './local-doc-order.ts'
 import { localDocumentLifecycle } from './local-doc-status.ts'
 import {
-  assertLocalDocRemovalAllowed,
   localDocTreeFields,
   localParentRecordId,
   localRestoredParentSlug,
 } from './local-doc-tree-service.ts'
 import {
   commitDocConsume,
-  commitDocRemove,
   commitDocRestore,
   commitDocSet,
   executeLocalDocConsume,
-  executeLocalDocRemove,
   executeLocalDocRestore,
   executeLocalDocSet,
 } from './local-doc-write.ts'
@@ -104,7 +98,6 @@ import {
 } from './doc-revision-store.ts'
 import {
   addCanonWriteWarnings,
-  type CanonWriteTree,
   canonFindingsRefusal,
   canonFindingWarnings,
   consumeDocBody,
@@ -118,15 +111,9 @@ import {
   refuseSettingsBody,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
-import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
+import { hostedDocWriteIdentity, resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
-
-const hostedDocWriteIdentity = (identity: ReturnType<typeof resolvedDocWriteIdentity>) => ({
-  author: identity.author,
-  reason: identity.reason,
-  sessionId: identity.session,
-})
 
 async function assertSetDocAllowed(input: DocWriteInput): Promise<void> {
   assertWorkerDocStoreWriteAllowed('setDoc')
@@ -346,16 +333,6 @@ function assertCanonWriteAllowed(input: DocWriteInput): string[] {
   const refusal = decisions.find(({ refusal: value }) => value)?.refusal
   if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
   return [...new Set(decisions.flatMap(({ warnings }) => warnings))]
-}
-
-function assertCanonRemovalAllowed(
-  doc: Doc,
-  tree: CanonWriteTree | undefined,
-  collectCanonLintInput: CanonLintInputCollector,
-): void {
-  if (doc.scope !== 'canon') return
-  const refusal = storedCanonRemovalRefusal(doc, tree, collectCanonLintInput)
-  if (refusal) throw new Error(refusal)
 }
 
 /** Every write verb reaches this check, so it carries the context item policy. */
@@ -598,64 +575,7 @@ export async function removeDoc(
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
   await assertContextDropAllowed(doc)
-  assertLocalStoredReferenceWrite(doc, context.generator)
-  assertLocalRevisionWrite(
-    { scope, subject, slug, expectedRevision: context.expectedRevision },
-    doc.revision,
-    false,
-  )
-  if (context.canonRemovalDecision !== 'already-decided-next-set') {
-    assertCanonRemovalAllowed(
-      doc,
-      context.canonTree,
-      context.collectCanonLintInput ?? productionCanonLintInput,
-    )
-  }
-  assertLocalDocRemovalAllowed(doc)
-  return applyRecordWriteAuthority({
-    local: () => executeLocalDocRemove({ scope, subject, owner, slug, doc, identity, ...context }),
-    hosted: async () => {
-      const client = await hostedDocClient(doc.scope, doc.subject)
-      let recordId = doc.record_id
-      let hostedExpected = context.expectedRevision
-      if (!recordId) {
-        const created = await client.upsertDoc({
-          scope: doc.scope,
-          subject: doc.subject,
-          owner: doc.owner,
-          slug: doc.slug,
-          title: doc.title,
-          body: doc.body,
-          delivery: doc.delivery,
-          audiences: doc.audiences,
-          parentRecordId: localParentRecordId(doc),
-          position: doc.position,
-          featured: doc.featured,
-          projectName: docWriteProjectName(doc.scope, doc.subject),
-          ...hostedDocWriteIdentity(identity),
-          id: undefined,
-          expectedRevision: context.expectedRevision,
-          generator: context.generator,
-        })
-        recordId = created.id
-        hostedExpected = created.revisionId
-      }
-      const hosted = await client.deleteDoc(recordId, {
-        ...hostedDocWriteIdentity(identity),
-        expectedRevision: hostedExpected,
-        generator: context.generator,
-      })
-      return commitDocRemove({
-        scope,
-        subject,
-        owner,
-        slug,
-        identity,
-        ...context,
-        revisionId: hosted.revisionId,
-      })
-    },
-  })
+  return removeStoredDoc(doc, context, identity)
 }
 
 /**
