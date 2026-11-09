@@ -77,7 +77,16 @@ export function markSessionCloseOutSwept(
   database: Database = writableDb(),
 ): number {
   return database
-    .query('UPDATE session_close_out SET swept_at=? WHERE record_id=? AND swept_at IS NULL')
+    .query(
+      `UPDATE session_close_out SET swept_at=?
+        WHERE record_id=? AND swept_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM session_close_out newer
+             WHERE newer.session_id=session_close_out.session_id
+               AND (newer.closed_at>session_close_out.closed_at OR
+                 (newer.closed_at=session_close_out.closed_at AND newer.record_id>session_close_out.record_id))
+          )`,
+    )
     .run(sweptAt, recordId).changes
 }
 

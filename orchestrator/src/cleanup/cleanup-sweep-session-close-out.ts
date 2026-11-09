@@ -30,10 +30,10 @@ const defaultAdapters: SweepAdapters = {
 }
 
 class SessionResumedDuringSweep extends Error {}
+class SessionCloseOutAlreadySwept extends Error {}
 
 function rowDecision(row: SessionCloseOutRow, lastSeen: string | null = row.last_seen) {
   return decideSessionCloseOutSweep({
-    newest: true,
     clean: row.clean === 1,
     closedAt: Date.parse(row.closed_at),
     lastSeenAt: lastSeen === null ? null : Date.parse(lastSeen),
@@ -79,16 +79,21 @@ async function sweepCloseOutRow(input: {
       if (rowDecision(input.row, lastSeen).action === 'skip') throw new SessionResumedDuringSweep()
       input.adapters.releaseClaims(input.row.session_id, input.now, input.database)
       expireSessionSeen(input.row.session_id, input.database)
-      markSessionCloseOutSwept(
+      const marked = markSessionCloseOutSwept(
         input.row.record_id,
         new Date(input.now).toISOString(),
         input.database,
       )
+      if (marked === 0) throw new SessionCloseOutAlreadySwept()
     }, input.database)
     input.presentation.log(`swept closed session ${input.row.session_id}`)
     return false
   } catch (cause) {
     if (cause instanceof SessionResumedDuringSweep) return false
+    if (cause instanceof SessionCloseOutAlreadySwept) {
+      input.presentation.log(`closed session ${input.row.session_id} was already swept`)
+      return false
+    }
     input.presentation.error(
       `could not sweep closed session ${input.row.session_id}: ${cause instanceof Error ? cause.message : String(cause)}`,
     )

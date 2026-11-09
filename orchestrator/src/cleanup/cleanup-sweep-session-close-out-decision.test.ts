@@ -3,7 +3,6 @@ import { decideSessionCloseOutSweep } from './cleanup-sweep-session-close-out-de
 
 describe('closed session sweep decision', () => {
   const clean = {
-    newest: true,
     clean: true,
     closedAt: 100,
     lastSeenAt: null,
@@ -13,11 +12,6 @@ describe('closed session sweep decision', () => {
   test.each([
     ['newest clean row', clean, { action: 'sweep' }],
     ['unclean row', { ...clean, clean: false }, { action: 'skip', reason: 'unclean' }],
-    [
-      'superseded by a later close-out',
-      { ...clean, newest: false },
-      { action: 'skip', reason: 'superseded' },
-    ],
     ['seen after close-out', { ...clean, lastSeenAt: 101 }, { action: 'skip', reason: 'resumed' }],
     ['already swept', { ...clean, sweptAt: 102 }, { action: 'skip', reason: 'already-swept' }],
   ] as const)('%s', (_name, facts, expected) => {
