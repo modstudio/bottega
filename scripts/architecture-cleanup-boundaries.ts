@@ -129,6 +129,7 @@ export const cleanupBoundarySpecs = [
       '../doc/context-service.ts',
       '../evidence/evidence-query.ts',
       '../project/projects.ts',
+      '../workflow/workflow-task-reference.ts',
       './session-close-out-decision.ts',
       './session-close-out-obligations.ts',
       './session-close-out-report.ts',

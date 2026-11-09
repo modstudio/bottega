@@ -68,9 +68,7 @@ export async function staleContextForSession(
   })
   const revisions = resolvedTasks.flatMap(({ holder, task }) =>
     listDocsStore({ scope: 'context', subject: `task:${task.record_id}` }, database)
-      .filter(
-        (doc) => decodeContextItem(doc.subject!, doc.slug, doc.body).kind === 'next-action',
-      )
+      .filter((doc) => decodeContextItem(doc.subject!, doc.slug, doc.body).kind === 'next-action')
       .map((doc) => ({ holder, at: doc.updated_at })),
   )
   const taskStatuses = resolvedTasks.map(({ holder, task }) => ({

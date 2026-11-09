@@ -71,7 +71,7 @@ function taskReference(row: unknown): HubTaskReference {
   return row as HubTaskReference
 }
 
-export function taskReferenceFromShow(response: unknown): HubTaskReference | null {
+function taskReferenceFromShow(response: unknown): HubTaskReference | null {
   if (!response || typeof response !== 'object') throw new Error('response was not an object')
   const row = (response as { task?: unknown }).task
   if (row === undefined || row === null) return null

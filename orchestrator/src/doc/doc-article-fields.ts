@@ -11,8 +11,8 @@ import {
 } from '../../../shared/docs.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import type { CanonRow } from '../canon/canon-hydrate.ts'
-import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { resolveSubject } from '../subject/subjects.ts'
+import type { ContextTaskIdentity } from './doc-context-write.ts'
 import type { DocGenerator } from './doc-generator.ts'
 import type { Doc, DocRevision } from './doc-read-store.ts'
 import {
@@ -32,7 +32,7 @@ export type DocWriteContext = {
   canonTree?: CanonWriteTree
   collectCanonLintInput?: CanonLintInputCollector
   generator?: DocGenerator
-  contextTask?: HubTaskReference
+  contextTask?: ContextTaskIdentity
 }
 
 export type DocWriteInput = {

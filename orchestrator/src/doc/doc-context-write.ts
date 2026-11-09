@@ -10,6 +10,12 @@ export const CONTEXT_ITEM_KINDS = [
   'next-action',
 ] as const
 export type ContextItemKind = (typeof CONTEXT_ITEM_KINDS)[number]
+export type ContextTaskIdentity = {
+  key: string
+  record_id: string
+  project: string
+  parent_key?: string | null
+}
 
 export const CONTEXT_ITEM_MAX_CHARS = {
   ruling: 1500,

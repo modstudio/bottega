@@ -165,6 +165,40 @@ export function taskProfile(key: string, tasks: readonly ContextTask[]): Context
   return tasks.some((task) => task.parent_key === key) ? 'epic' : 'task'
 }
 
+async function relatedContextTasks(input: {
+  owner: string | null
+  claims: readonly string[]
+  task?: ContextTask
+  projectTasks: readonly ContextTask[]
+  database: Database
+  ports: ContextFactsPorts
+}): Promise<ContextTask[]> {
+  const related: ContextTask[] = []
+  if (!input.owner) {
+    if (input.task?.parent_key) {
+      related.push(
+        await resolveContextTaskInProject(
+          input.task.project,
+          input.task.parent_key,
+          input.ports,
+          input.projectTasks,
+        ),
+      )
+    }
+    return related
+  }
+  for (const key of input.claims) {
+    const claimed = await resolveContextTask(key, input.database, input.ports)
+    related.push(claimed)
+    if (claimed.parent_key) {
+      related.push(
+        await resolveContextTaskInProject(claimed.project, claimed.parent_key, input.ports),
+      )
+    }
+  }
+  return related
+}
+
 async function contextSetRefusal(
   input: { subject: string; slug: string; body: string; contextTask?: ContextTask },
   database: Database = db(),
@@ -181,22 +215,14 @@ async function contextSetRefusal(
   const claims = owner ? liveTaskClaimsOfSession(owner, Date.now(), database) : []
   const projectTasks = task ? await ports.tasks(task.project) : []
   const profile = task ? taskProfile(task.key, projectTasks) : 'session'
-  const relatedTasks: ContextTask[] = []
-  if (owner) {
-    for (const key of claims) {
-      const claimed = await resolveContextTask(key, database, ports)
-      relatedTasks.push(claimed)
-      if (claimed.parent_key) {
-        relatedTasks.push(
-          await resolveContextTaskInProject(claimed.project, claimed.parent_key, ports),
-        )
-      }
-    }
-  } else if (task?.parent_key) {
-    relatedTasks.push(
-      await resolveContextTaskInProject(task.project, task.parent_key, ports, projectTasks),
-    )
-  }
+  const relatedTasks = await relatedContextTasks({
+    owner,
+    claims,
+    task,
+    projectTasks,
+    database,
+    ports,
+  })
   const relatedHolders = [...new Set(relatedTasks.map((related) => `task:${related.record_id}`))]
   const refusal = contextWriteRefusal(item, {
     profile,

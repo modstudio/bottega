@@ -5,9 +5,13 @@ import type { Database } from 'bun:sqlite'
 import { readBranchLandingTaskRows } from '../branch/branch-landing-records.ts'
 import { observeLandedTasks } from '../branch/task-status-observation.ts'
 import { taskContextItems } from '../doc/context-service.ts'
-import { resolveContextTask } from '../doc/context-write-adapter.ts'
 import { pendingForSession } from '../evidence/evidence-query.ts'
 import { projects } from '../project/projects.ts'
+import {
+  type HubTaskReader,
+  readHubTasks,
+  resolveHubTaskReference,
+} from '../workflow/workflow-task-reference.ts'
 import type { SessionOwnedRun } from './session-close-out-decision.ts'
 import {
   landedTaskIdentities,
@@ -20,6 +24,7 @@ export async function sessionCloseOutObligationItems(
   database: Database,
   session: string,
   ownedRuns: readonly SessionOwnedRun[],
+  taskReader: HubTaskReader = readHubTasks,
 ): Promise<SessionProcessLine[]> {
   const ownedRunRecordIds = ownedRuns.map((run) => run.recordId)
   const identities = landedTaskIdentities({
@@ -33,21 +38,23 @@ export async function sessionCloseOutObligationItems(
       ]),
     ),
   })
-  const landedTasks = await observeLandedTasks(identities)
+  const landedTasks = await observeLandedTasks(identities, taskReader)
   const landedWithContext = await Promise.all(
-    landedTasks.map(async (task) => ({
-      ...task,
-      contextTask: await resolveContextTask(task.taskKey, database),
-    })),
+    landedTasks.map(async (task) => {
+      const contextTask = await resolveHubTaskReference(task.project, task.taskKey, taskReader)
+      return { ...task, contextTask }
+    }),
   )
   return sessionCloseOutObligations({
     pendingScores: pendingForSession(session, database),
     acknowledgementDate: new Date().toISOString().slice(0, 'YYYY-MM-DD'.length),
     landedTasks: landedWithContext.map((task) => ({
       ...task,
-      openAfterLandingAcknowledged: taskContextItems(task.contextTask, database).some(
-        (item) => item.id === OPEN_AFTER_LANDING_CONTEXT_ID && item.kind === 'ruling',
-      ),
+      openAfterLandingAcknowledged:
+        task.contextTask?.record_id !== undefined &&
+        taskContextItems(task.contextTask, database).some(
+          (item) => item.id === OPEN_AFTER_LANDING_CONTEXT_ID && item.kind === 'ruling',
+        ),
     })),
   })
 }

@@ -2,19 +2,24 @@
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
 import { sessionId } from '../database/db.ts'
-import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { decodeContextItem, encodeContextItem } from './context-item-codec.ts'
 import { contextProfileForHolder, resolveContextTask } from './context-write-adapter.ts'
-import { type ContextItemKind, missingContextKinds } from './doc-context-write.ts'
+import {
+  type ContextItemKind,
+  type ContextTaskIdentity,
+  missingContextKinds,
+} from './doc-context-write.ts'
 import { type Doc, listDocsBySubjectPrefixStore, listDocsStore } from './doc-read-store.ts'
 import { removeContextItemForLifecycle } from './doc-remove.ts'
 import { getDoc, removeDoc, setDoc } from './docs.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
 
-type ResolvedContextHolder = { holder: string; task: HubTaskReference | null }
+type ResolvedContextHolder = { holder: string; task: ContextTaskIdentity | null }
 
-async function resolveContextHolder(selection: ContextHolderSelection): Promise<ResolvedContextHolder> {
+async function resolveContextHolder(
+  selection: ContextHolderSelection,
+): Promise<ResolvedContextHolder> {
   if (selection.task && selection.session) throw new Error('use --task or --session, not both')
   if (selection.task) {
     const task = await resolveContextTask(selection.task)
@@ -52,7 +57,7 @@ export function sessionContextItems(session: string, database: Database) {
 }
 
 /** Read one task's context items through the document-store owner. */
-export function taskContextItems(task: HubTaskReference, database: Database) {
+export function taskContextItems(task: ContextTaskIdentity, database: Database) {
   const holder = `task:${task.record_id}`
   return holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }, database))
 }

@@ -157,9 +157,7 @@ describe('context document integration', () => {
         reason: 'test delete',
         contextTask: task,
       }),
-    ).rejects.toThrow(
-      'cannot remove the last required next-action item',
-    )
+    ).rejects.toThrow('cannot remove the last required next-action item')
     await expect(
       importDoc({
         scope: 'context',

@@ -2,13 +2,13 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
-import { encodeContextItem } from './context-item-codec.ts'
 import {
   type ContextBrief,
   holderSequence,
   renderContextBrief,
   storedBriefHolders,
 } from './context-brief.ts'
+import { encodeContextItem } from './context-item-codec.ts'
 
 const item = (
   holder: string,
