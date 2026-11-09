@@ -85,3 +85,32 @@ test('gathers run, closed-step, and both answer forms through store-backed conte
     },
   ])
 })
+
+test('question work prefers the owning run launch key over its workflow key', () => {
+  const session = sessionId()!
+  const run = addRun({
+    agent: 'codex',
+    job: 'implement',
+    session,
+    startedAt: '2026-11-08T11:00:00Z',
+  })
+  setLaunchKey(run, 'DEV-RUN')
+  db()
+    .query(
+      `INSERT INTO question
+       (record_id,number,run_record_id,workflow_key,asked_at,question,answer,answered_at,answered_by)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'DEV-WORKFLOW',
+        '2026-11-08T11:30:00Z','Which holder?','The run holder.',
+        '2026-11-08T12:00:00Z',?)`,
+    )
+    .run(newRecordId(), run, session)
+  insertNextAction('DEV-RUN', '2026-11-08T10:00:00Z')
+
+  expect(staleContextForSession(session, db())).toEqual([
+    {
+      holder: 'DEV-RUN',
+      workedAt: '2026-11-08T12:00:00Z',
+      revisedAt: '2026-11-08T10:00:00Z',
+    },
+  ])
+})

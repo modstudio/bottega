@@ -29,7 +29,7 @@ import {
 } from './continuation-checkout-service.ts'
 import { applyArchitectQuestionAnswers } from './question-answer.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
-import { openChainQuestions, questionOpenSql } from './question-open.ts'
+import { openChainQuestions, questionOpenSql, questionTaskHolderSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
@@ -163,11 +163,21 @@ export type AnswerRunInput = {
   flags: RunFlags
   typedValue?: unknown
 }
+export type AnswerRunReport = {
+  result: AnswerWaitingResult
+  answeredQuestions: {
+    recordId: string
+    number: number
+    fromOperator: boolean
+    taskHolder: string | null
+  }[]
+}
 type OpenQuestion = TypedAnswerQuestion & {
   awaiting_operator_at: string | null
   owner_id: string
   owner_status: string
   owner_pid: number | null
+  taskHolder: string | null
 }
 
 type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
@@ -329,7 +339,9 @@ function readOpenQuestions(id: string, status: string): OpenQuestion[] {
   const open = openChainQuestions<OpenQuestion>(
     db(),
     id,
-    'q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.options,q.typed_options,q.criteria,q.levels, r.record_id owner_id,r.status owner_status,r.pid owner_pid',
+    `q.record_id,q.number,q.question,q.awaiting_operator_at,q.why,q.kind,q.options,q.typed_options,q.criteria,q.levels,
+     r.record_id owner_id,r.status owner_status,r.pid owner_pid,
+     ${questionTaskHolderSql('q', 'r')} taskHolder`,
   )
   if (open.length) return open
   const asked = db()
@@ -343,6 +355,28 @@ function readOpenQuestions(id: string, status: string): OpenQuestion[] {
       ? `run ${id} has already been ruled on; its current status is ${status}`
       : `run ${id} has no questions to answer; its current status is ${status}`,
   )
+}
+
+function answerReport(
+  result: AnswerWaitingResult,
+  answers: AnsweredQuestion[],
+  open: OpenQuestion[],
+): AnswerRunReport {
+  const openById = new Map(open.map((question) => [question.record_id, question]))
+  return {
+    result,
+    answeredQuestions: answers.map((answer) => {
+      const question = openById.get(answer.record_id)
+      if (!question)
+        throw new Error(`answered question ${answer.record_id} was not open on this run`)
+      return {
+        recordId: answer.record_id,
+        number: answer.number,
+        fromOperator: answer.fromOperator,
+        taskHolder: question.taskHolder,
+      }
+    }),
+  }
 }
 
 function requireAnswerableLiveness(
@@ -750,7 +784,7 @@ export async function answerRun(
   requestedId: string,
   input: AnswerRunInput,
   helpers: RunAnswerHelpers,
-): Promise<AnswerWaitingResult> {
+): Promise<AnswerRunReport> {
   const row = requireAnswerRun(answerRoot(requestedId), requestedId)
   const hasOperatorRuling = await requireRulingAttributions(row, input)
   const id = row.record_id
@@ -823,8 +857,7 @@ export async function answerRun(
     )
   }
   const ownersLive = live.length > 0
-  const recordOnly = input.recordOnly
-  const skipResume = recordOnly && !ownersLive
+  const skipResume = input.recordOnly && !ownersLive
   if (
     !ownersLive &&
     !stopped.every((q) => q.owner_status === 'asking' || q.owner_status === 'running')
@@ -874,7 +907,6 @@ export async function answerRun(
   const argvLimit = ownersLive ? undefined : helpers.argvResumeLimit(resumeAgent)
   const answers = collectAnswers({ runId: id, open, answer: input, argvLimit })
   await assertAnswersReady(open.length, answers, input, ownersLive)
-
   if (
     answerResumeUnavailable({
       ownersLive,
@@ -954,7 +986,7 @@ export async function answerRun(
           `The run remains asking; use ${PLATFORM_SLUG} run retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
           `or ${PLATFORM_SLUG} run abandon ${id}.`,
       )
-    return answerResult('recorded', id, row.number, null)
+    return answerReport(answerResult('recorded', id, row.number, null), answers, open)
   }
 
   if (ownersLive) {
@@ -966,7 +998,7 @@ export async function answerRun(
         `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
           `pick this up from its ask_orchestrator call.`,
       )
-    return answerResult('delivered-live', id, row.number, null)
+    return answerReport(answerResult('delivered-live', id, row.number, null), answers, open)
   }
 
   const worktreePath = latest.worktree ?? row.worktree
@@ -1055,7 +1087,7 @@ export async function answerRun(
     },
   )
   auditRunMutation(answerAuthority, 'answer', null, db(), childId)
-  return reportAnswerResume({
+  const result = await reportAnswerResume({
     rootId: id,
     rootNumber: row.number,
     childId,
@@ -1065,4 +1097,5 @@ export async function answerRun(
     flags: input.flags,
     presentation: helpers.presentation,
   })
+  return answerReport(result, answers, open)
 }

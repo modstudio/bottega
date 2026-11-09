@@ -30,7 +30,6 @@ import {
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
-import { openChainQuestions, questionTaskHolderSql } from './question-open.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
@@ -192,32 +191,6 @@ export async function retryCommand(
   await retryRun(id, options, answerRunHelpers(presentation))
 }
 
-function answeredQuestions(
-  runId: string,
-  input: AnswerRunInput,
-): { number: number; fromOperator: boolean; taskHolder: string | null }[] {
-  const { rulings } = input
-  if (typeof rulings !== 'string') {
-    const question = db().query<{ number: number; taskHolder: string | null }, [string]>(
-      `SELECT q.number,${questionTaskHolderSql('q', 'r')} taskHolder
-       FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id WHERE q.record_id=?`,
-    )
-    return rulings.map((ruling) => ({
-      ...question.get(ruling.questionId)!,
-      fromOperator: ruling.fromOperator,
-    }))
-  }
-  return openChainQuestions<{ number: number; taskHolder: string | null }>(
-    db(),
-    runId,
-    `q.number,${questionTaskHolderSql('q', 'r')} taskHolder`,
-  ).map((row) => ({
-    number: row.number,
-    taskHolder: row.taskHolder,
-    fromOperator: input.fromOperator,
-  }))
-}
-
 export async function answerCommand(
   id: string,
   argv: string[],
@@ -229,8 +202,7 @@ export async function answerCommand(
 ): Promise<ContextMomentWrite[]> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
-  const questions = answeredQuestions(id, input)
-  const result = await answerRun(id, input, helpers)
+  const { result, answeredQuestions: questions } = await answerRun(id, input, helpers)
   if (json) console.log(JSON.stringify(result))
   else {
     for (const line of rulingFileOfferLines({

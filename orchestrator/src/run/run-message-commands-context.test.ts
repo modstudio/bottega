@@ -43,3 +43,40 @@ test('answering a continuation turn question returns its root task moment line',
     `context: write ruling on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind ruling --source 'q${question.number}' --id ruling-q${question.number} '<text>')`,
   )
 })
+
+test('partial record-only answer returns one moment line for the selected question', async () => {
+  const root = insert('asking')
+  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  const addQuestion = (question: string) =>
+    db()
+      .query<{ record_id: string; number: number }, [string, string, string]>(
+        `${newQuestionSql()} RETURNING record_id,number`,
+      )
+      .get(root, new Date().toISOString(), question)!
+  const first = addQuestion('First question?')
+  const selected = addQuestion('Selected question?')
+
+  const writes = await answerCommand(
+    root,
+    [`--q${selected.record_id}`, 'Use the selected answer.'],
+    true,
+    false,
+    flags,
+    { printRunId: () => {} },
+  )
+
+  expect(writes).toHaveLength(1)
+  expect(writes[0]?.line).toBe(
+    `context: write ruling on DEV-2225 (${PLATFORM_SLUG} agent context set --task 'DEV-2225' --kind ruling --source 'q${selected.number}' --id ruling-q${selected.number} '<text>')`,
+  )
+  expect(
+    db()
+      .query<{ record_id: string; answered_at: string | null }, [string]>(
+        'SELECT record_id,answered_at FROM question WHERE run_record_id=? ORDER BY number',
+      )
+      .all(root),
+  ).toEqual([
+    { record_id: first.record_id, answered_at: null },
+    { record_id: selected.record_id, answered_at: expect.any(String) },
+  ])
+})
