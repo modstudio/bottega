@@ -27,6 +27,7 @@ import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-c
 import { type DocHistoryPresentation, docDiffPair } from './doc-history-source.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
+import { summarizeDocLint } from './doc-lint.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import {
@@ -104,8 +105,23 @@ export function userAddressScope(user: boolean, explicitScope: string | undefine
 }
 
 function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
-  const findings = listedDocFindings(flags, lintStoredDoc)
-  if (flags.has('json')) presentation.log(JSON.stringify(findings))
+  const linted = listedLintedDocs(flags, lintStoredDoc)
+  const findings = linted.flatMap(({ doc, findings: docFindings }) =>
+    docFindings.map((finding) => ({
+      scope: doc.scope,
+      subject: doc.subject,
+      slug: doc.slug,
+      ...finding,
+    })),
+  )
+  const summary = summarizeDocLint(
+    linted.map(({ doc, findings: docFindings }) => ({
+      kind: doc.kind,
+      status: doc.status,
+      findings: docFindings,
+    })),
+  )
+  if (flags.has('json')) presentation.log(JSON.stringify({ findings, summary }))
   else {
     for (const finding of findings) {
       presentation.log(
@@ -113,18 +129,34 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
       )
       presentation.log(`  remedy: ${finding.remedy}`)
     }
+    presentation.log('summary:')
+    for (const row of summary) {
+      presentation.log(
+        `${row.kind}/${row.status} documents=${row.documents} errors=${row.errors} stale-reference-errors=${row.staleReferenceErrors}`,
+      )
+    }
   }
   if (findings.some(({ level }) => level === 'error')) presentation.exitCode?.(1)
+}
+
+function listedLintedDocs(
+  flags: DocFlags,
+  lint: (doc: ReturnType<typeof listDocs>[number]) => ReturnType<typeof lintStoredDoc>,
+) {
+  const scope = flags.flag('scope')
+  const subject = flags.flag('subject') ?? null
+  return listDocs({ scope, ...(flags.has('subject') ? { subject } : {}) }).map((doc) => ({
+    doc,
+    findings: lint(doc),
+  }))
 }
 
 function listedDocFindings(
   flags: DocFlags,
   lint: (doc: ReturnType<typeof listDocs>[number]) => ReturnType<typeof lintStoredDoc>,
 ) {
-  const scope = flags.flag('scope')
-  const subject = flags.flag('subject') ?? null
-  return listDocs({ scope, ...(flags.has('subject') ? { subject } : {}) }).flatMap((doc) =>
-    lint(doc).map((finding) => ({
+  return listedLintedDocs(flags, lint).flatMap(({ doc, findings }) =>
+    findings.map((finding) => ({
       scope: doc.scope,
       subject: doc.subject,
       slug: doc.slug,

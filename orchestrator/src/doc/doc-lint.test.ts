@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
+import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import {
   type DocReferenceProject,
   docLintProfile,
   introducedDocFindings,
   lintDoc,
+  summarizeDocLint,
 } from './doc-lint.ts'
 
 const checkout = (paths: string[]): CanonLintInput => ({
@@ -30,6 +32,7 @@ const doc = (body: string, extra: Partial<Parameters<typeof lintDoc>[0]> = {}) =
   slug: 'guide',
   body,
   kind: 'working' as const,
+  status: 'current' as const,
   summary: 'Written summary.',
   ...extra,
 })
@@ -207,6 +210,96 @@ describe('stored document lint', () => {
     expect(lintDoc(doc('See `src/other.ts`.', { referenceProjects }))).toEqual([
       expect.objectContaining({ rule: 'doc/reference-path' }),
     ])
+  })
+
+  test('finished documents are exempt from stale path findings', () => {
+    const stale = doc('See `src/other.ts`.', { referenceProjects })
+    expect(lintDoc(stale)).toEqual([expect.objectContaining({ rule: 'doc/reference-path' })])
+    expect(lintDoc({ ...stale, status: 'archived' })).toEqual([])
+    expect(lintDoc({ ...stale, status: 'superseded' })).toEqual([])
+  })
+
+  test('archiving or revising a finished document is never refused for its content', () => {
+    const current = doc('This was called legacy.')
+    expect(storedDocLintRefusal({ ...current, status: 'archived' }, current)).toBeNull()
+    expect(
+      storedDocLintRefusal(
+        { ...current, body: 'This was formerly legacy.', status: 'archived' },
+        { ...current, status: 'archived' },
+      ),
+    ).toBeNull()
+    expect(storedDocLintRefusal({ ...current, status: 'superseded' }, current)).toBeNull()
+  })
+
+  test('summarizes documents, errors, and stale reference errors by kind and status', () => {
+    const summary = summarizeDocLint([
+      {
+        kind: 'working',
+        status: 'current',
+        findings: [
+          {
+            rule: 'doc/reference-path',
+            level: 'error',
+            line: 1,
+            message: 'stale path',
+            remedy: 'fix it',
+          },
+          {
+            rule: 'doc/history',
+            level: 'warning',
+            line: 1,
+            message: 'history',
+            remedy: 'fix it',
+          },
+        ],
+      },
+      {
+        kind: 'article',
+        status: 'current',
+        findings: [
+          {
+            rule: 'doc/date',
+            level: 'error',
+            line: 1,
+            message: 'date',
+            remedy: 'fix it',
+          },
+        ],
+      },
+      { kind: 'working', status: 'archived', findings: [] },
+      { kind: 'working', status: 'archived', findings: [] },
+      { kind: 'article', status: 'superseded', findings: [] },
+    ])
+
+    expect(summary).toContainEqual({
+      kind: 'working',
+      status: 'current',
+      documents: 1,
+      errors: 1,
+      staleReferenceErrors: 1,
+    })
+    expect(summary).toContainEqual({
+      kind: 'article',
+      status: 'current',
+      documents: 1,
+      errors: 1,
+      staleReferenceErrors: 0,
+    })
+    expect(summary).toContainEqual({
+      kind: 'working',
+      status: 'archived',
+      documents: 2,
+      errors: 0,
+      staleReferenceErrors: 0,
+    })
+    expect(summary).toContainEqual({
+      kind: 'article',
+      status: 'superseded',
+      documents: 1,
+      errors: 0,
+      staleReferenceErrors: 0,
+    })
+    expect(summary).toHaveLength(8)
   })
 
   test('a context item id beginning design does not invoke the design document shape', () => {

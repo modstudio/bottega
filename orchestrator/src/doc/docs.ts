@@ -841,6 +841,7 @@ export async function restoreDoc(
       body: revision.body,
       delivery: revision.delivery,
       kind: revision.kind,
+      status: revision.status,
       ...localRevisionArticleReferences(revision),
       ...context,
     },

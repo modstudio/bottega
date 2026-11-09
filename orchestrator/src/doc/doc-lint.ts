@@ -2,7 +2,13 @@
 /** Pure lint rules for stored documents. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { DocKind, DocScope } from '../../../shared/docs.ts'
+import {
+  DOC_KINDS,
+  DOC_STATUSES,
+  type DocKind,
+  type DocScope,
+  type DocStatus,
+} from '../../../shared/docs.ts'
 import { lintProse, type ProseFinding } from '../../../shared/prose/prose-lint.ts'
 import { type CanonLintInput, lintCanonReferences } from '../canon/canon-lint.ts'
 export type DocLintFinding = {
@@ -19,8 +25,21 @@ export type LintableDoc = {
   slug: string
   body: string
   kind: DocKind
+  status: DocStatus
   summary?: string | null
   referenceProjects?: DocReferenceProject[]
+}
+
+export type DocLintSummary = {
+  kind: DocKind
+  status: DocStatus
+  documents: number
+  errors: number
+  staleReferenceErrors: number
+}
+
+export type SummarizedLintDoc = Pick<LintableDoc, 'kind' | 'status'> & {
+  findings: DocLintFinding[]
 }
 
 type DocLintRule = 'history' | 'issue' | 'numeral' | 'date'
@@ -194,6 +213,7 @@ function proseFindingLevel(finding: ProseFinding, profile: DocLintProfile): DocL
 }
 
 export function lintDoc(doc: LintableDoc): DocLintFinding[] {
+  if (doc.status === 'archived' || doc.status === 'superseded') return []
   const articleSummaryFindings: DocLintFinding[] =
     doc.kind === 'article' && !doc.summary
       ? [
@@ -232,6 +252,25 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
   )
 }
 
+/** Counts the live drift class while retaining finished-document populations. */
+export function summarizeDocLint(docs: SummarizedLintDoc[]): DocLintSummary[] {
+  return DOC_KINDS.flatMap((kind) =>
+    DOC_STATUSES.map((status) => {
+      const matching = docs.filter((doc) => doc.kind === kind && doc.status === status)
+      const errors = matching.flatMap(({ findings }) =>
+        findings.filter(({ level }) => level === 'error'),
+      )
+      return {
+        kind,
+        status,
+        documents: matching.length,
+        errors: errors.length,
+        staleReferenceErrors: errors.filter(({ rule }) => rule.startsWith('doc/reference-')).length,
+      }
+    }),
+  )
+}
+
 /** A doc update may keep legacy findings, but may not add another rule/level/message tuple. */
 export function introducedDocFindings(
   baseline: DocLintFinding[],
@@ -254,7 +293,7 @@ export function introducedDocFindings(
 }
 
 export function docLintRefusal(
-  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'kind'>,
+  doc: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'kind' | 'status'>,
   findings: DocLintFinding[],
 ): string | null {
   const errors = findings.filter(({ level }) => level === 'error')

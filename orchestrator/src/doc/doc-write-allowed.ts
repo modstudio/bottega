@@ -345,8 +345,8 @@ function revisionRemedy(
 
 /** Hosted services have no checkout inventory, so they enforce every pure rule except references. */
 export function recordDocLintRefusal(
-  next: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body' | 'kind'>,
-  current?: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body' | 'kind'>,
+  next: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body' | 'kind' | 'status'>,
+  current?: Pick<LintableDoc, 'scope' | 'subject' | 'slug' | 'body' | 'kind' | 'status'>,
 ): string | null {
   const findings = lintDoc(next)
   const introduced = current ? introducedDocFindings(lintDoc(current), findings) : findings
