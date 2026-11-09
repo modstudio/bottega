@@ -17,7 +17,7 @@ import {
   adoptSessionRuns,
   type SessionAdoptionReport,
 } from './session-adopt.ts'
-import { consumeSessionContext } from './session-context-lifecycle.ts'
+import { consumeSessionContext, keptSessionContext } from './session-context-lifecycle.ts'
 
 export type ResumeBriefHandoff = {
   authorSession: string | null
@@ -135,6 +135,10 @@ async function handoffFromAuthor(
     )
     const handoff = adoptionHandoff(author, report, command, options.machine ?? 'unknown')
     if (handoff.status !== 'moved') return handoff
+    if (report.notMoved.some(({ currentOwner }) => currentOwner === author)) {
+      const context = keptSessionContext({ session: author, remedy: command, database })
+      return { ...handoff, lines: [...context.lines, ...handoff.lines] }
+    }
     const context = await consumeSessionContext({
       session: author,
       reason: `resume brief ${doc.subject}/${doc.slug} consumed`,

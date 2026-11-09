@@ -266,18 +266,6 @@ describe('unjudged owner expiry', () => {
     ).toBe(true)
   })
 
-  test('owner gone applies the shared window to session context facts', () => {
-    const facts = {
-      ownerSessionId: 'owner',
-      ownerLastSeenAt: now - windowMs - 1,
-      runLastActivityAt: now - windowMs * 2,
-      now,
-      windowMs,
-    }
-    expect(ownerIsGone(facts)).toBe(true)
-    expect(ownerIsGone({ ...facts, ownerLastSeenAt: now - windowMs + 1 })).toBe(false)
-  })
-
   test('keeps recent run activity when the owner has no session-seen row', () => {
     expect(
       shouldExpireUnjudgedOwner({

@@ -5,14 +5,14 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { dropSessionContextItemsForLifecycle, sessionContextItems } from '../doc/context-service.ts'
 import { classifySessionContextItem } from './session-close-out-decision.ts'
-import type { SessionErrorItem, SessionProcessItem } from './session-close-out-report.ts'
+import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 
 export type SessionContextLifecycleReport = {
   items: ReturnType<typeof sessionContextItems>
   mechanical: string[]
   kept: string[]
-  process: SessionProcessItem[]
-  errors: SessionErrorItem[]
+  process: SessionProcessLine[]
+  errors: SessionErrorLine[]
 }
 
 function refusedContextProcess(
@@ -93,4 +93,17 @@ export async function consumeSessionContext(input: {
       )
   }
   return { lines }
+}
+
+export function keptSessionContext(input: {
+  session: string
+  remedy: string
+  database: Database
+}): { lines: string[] } {
+  return {
+    lines: sessionContextItems(input.session, input.database).map(
+      (item) =>
+        `kept context ${item.holder}/${item.id} (${item.kind}): run ${input.remedy} to finish the handoff`,
+    ),
+  }
 }

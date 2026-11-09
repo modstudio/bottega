@@ -252,6 +252,48 @@ test('failed adoption preserves the author session context', async () => {
   expect(getDoc('context', `session:${author}`, 'survives-failed-adoption')).not.toBeNull()
 })
 
+test('partial adoption keeps the author session context until the remaining run moves', async () => {
+  const author = newRecordId()
+  process.env.CLAUDE_CODE_SESSION_ID = author
+  const stored = await brief()
+  const moved = addRun({ agent: 'codex', job: 'implement', status: 'running', session: author })
+  const remaining = addRun({ agent: 'codex', job: 'implement', status: 'running', session: author })
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = { tasks: async () => [], pointer: async () => null }
+  await setDoc({
+    scope: 'context',
+    subject: `session:${author}`,
+    slug: 'survives-partial-adoption',
+    title: 'survives-partial-adoption',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'move after every run' }),
+  })
+  process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
+  const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+
+  const handoff = await handoffConsumedResumeBrief(consumed, {
+    database: db(),
+    machine,
+    transfer: (rootId, _expectedOwner, newOwner) => {
+      if (rootId === remaining) return false
+      db()
+        .query('UPDATE run SET session_id=? WHERE record_id=? OR parent_run_record_id=?')
+        .run(newOwner, rootId, rootId)
+      return true
+    },
+  })
+
+  expect(handoff).toMatchObject({ status: 'moved' })
+  expect(handoff.report?.runs.map(({ recordId }) => recordId)).toEqual([moved])
+  expect(handoff.report?.notMoved).toEqual([
+    expect.objectContaining({ recordId: remaining, currentOwner: author }),
+  ])
+  expect(handoff.lines.join('\n')).toContain(
+    `kept context session:${author}/survives-partial-adoption (fact): run ${PLATFORM_SLUG} session adopt ${author} --reason`,
+  )
+  expect(getDoc('context', `session:${author}`, 'survives-partial-adoption')).not.toBeNull()
+})
+
 test('hosted author preparation resolves the latest non-consume revision author', async () => {
   const stored = await brief()
   const localRevision = listDocRevisions('resume', 'handoff-project', stored.slug)[0]!.record_id

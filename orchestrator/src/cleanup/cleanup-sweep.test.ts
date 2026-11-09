@@ -128,6 +128,58 @@ test('session context sweep keeps items while the author has an unconsumed resum
   expect(getDoc('context', `session:${session}`, 'kept-for-resume')).not.toBeNull()
 })
 
+test('session context sweep resolves an open brief author past a later consume revision', async () => {
+  const author = newRecordId()
+  const consumer = newRecordId()
+  const project = `sweep-revised-resume-${newRecordId()}`
+  upsertProject({ recordId: newRecordId(), name: project, path: `/w/${project}`, settings: {} })
+  const prior = process.env.CLAUDE_CODE_SESSION_ID
+  process.env.CLAUDE_CODE_SESSION_ID = author
+  await setDoc({
+    scope: 'context',
+    subject: `session:${author}`,
+    slug: 'kept-for-revised-resume',
+    title: 'kept-for-revised-resume',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'successor needs this' }),
+  })
+  const brief = await setDoc({
+    scope: 'resume',
+    subject: project,
+    slug: 'handoff',
+    title: 'Handoff',
+    body: `---\nstatus: open\nepic: DEV-2226\nproject: ${project}\nwritten: 2020-01-01T00:00:00.000Z\n---\n\nNEXT ACTION: consume\n`,
+  })
+  process.env.CLAUDE_CODE_SESSION_ID = consumer
+  await setDoc({
+    scope: 'resume',
+    subject: project,
+    slug: 'handoff',
+    title: 'Handoff',
+    body: brief.body,
+    expectedRevision: brief.revision ?? undefined,
+  })
+  db()
+    .query(
+      `UPDATE doc_revision SET op='consume'
+       WHERE doc_record_id=? AND number=(SELECT MAX(number) FROM doc_revision WHERE doc_record_id=?)`,
+    )
+    .run(brief.record_id, brief.record_id)
+  if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = prior
+  db()
+    .query('UPDATE doc SET updated_at=? WHERE scope=? AND subject=?')
+    .run('2020-01-01T00:00:00.000Z', 'context', `session:${author}`)
+
+  await sweepSessionContext({
+    enabled: true,
+    dryRun: false,
+    database: db(),
+    presentation: presentation([], () => {}),
+  })
+
+  expect(getDoc('context', `session:${author}`, 'kept-for-revised-resume')).not.toBeNull()
+})
+
 test('an owned terminal sweep candidate reaches close-out by UUID', async () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'orch-sweep-owned-terminal-'))
   Bun.spawnSync(['git', 'init', '--quiet'], { cwd: projectPath })

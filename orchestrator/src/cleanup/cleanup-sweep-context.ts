@@ -9,6 +9,7 @@ import {
 } from '../doc/context-service.ts'
 import { listDocsStore } from '../doc/doc-read-store.ts'
 import { parseResumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
+import { latestStoredDocAuthorSession } from '../doc/doc-revision-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { ownerIsGone, UNJUDGED_OWNER_WINDOW_MS } from './cleanup-sweep-decisions.ts'
 import { gatherOwnerActivity } from './owner-activity.ts'
@@ -16,12 +17,7 @@ import { gatherOwnerActivity } from './owner-activity.ts'
 function hasUnconsumedResumeBrief(database: Database, session: string): boolean {
   return listDocsStore({ scope: 'resume' }, database).some((doc) => {
     if (parseResumeFrontmatter(doc.body)?.status !== 'open') return false
-    const latest = database
-      .query(
-        'SELECT session_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
-      )
-      .get(doc.record_id) as { session_id: string | null } | null
-    return latest?.session_id === session
+    return latestStoredDocAuthorSession(doc.record_id, database) === session
   })
 }
 
@@ -38,11 +34,10 @@ export async function sweepSessionContext(input: {
     if (hasUnconsumedResumeBrief(database, holder.session)) continue
     const activity = gatherOwnerActivity(database, {
       ownerSessionId: holder.session,
-      fallbackActivityAt: holder.updatedAt,
+      holderActivityAt: holder.updatedAt,
     })
     const gone = ownerIsGone({
       ...activity,
-      runLastActivityAt: Math.max(activity.runLastActivityAt, Date.parse(holder.updatedAt)),
       now: Date.now(),
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
     })

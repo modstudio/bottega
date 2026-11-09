@@ -322,6 +322,7 @@ export const cleanupBoundarySpecs = [
       '../database/db.ts',
       '../doc/context-service.ts',
       '../doc/doc-read-store.ts',
+      '../doc/doc-revision-store.ts',
       '../doc/doc-resume-frontmatter.ts',
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',

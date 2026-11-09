@@ -6,7 +6,12 @@ import { filedIssueLoopRun } from '../issue/issue-queue.ts'
 
 export function gatherOwnerActivity(
   database: Database,
-  input: { ownerSessionId: string | null; runRecordId?: string; fallbackActivityAt: string },
+  input: {
+    ownerSessionId: string | null
+    runRecordId?: string
+    fallbackActivityAt?: string
+    holderActivityAt?: string
+  },
 ) {
   const seen = input.ownerSessionId
     ? (database
@@ -41,10 +46,12 @@ export function gatherOwnerActivity(
       .get(input.ownerSessionId) as { at: string | null }
     runActivityAt = run.at ?? runActivityAt
   }
+  const runLastActivityAt = runActivityAt ? Date.parse(runActivityAt) : 0
+  const holderActivityAt = input.holderActivityAt ? Date.parse(input.holderActivityAt) : 0
   return {
     ownerSessionId: input.ownerSessionId,
     ownerLastSeenAt: seen ? Date.parse(seen.last_seen) : null,
-    runLastActivityAt: Date.parse(runActivityAt),
+    runLastActivityAt: Math.max(runLastActivityAt, holderActivityAt),
     coordinatorRun,
   }
 }

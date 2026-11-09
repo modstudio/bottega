@@ -130,11 +130,27 @@ for (const root of [...CONCERNS, 'shared']) {
         ? normalize(join(dirname(file), imported.specifier))
         : imported.specifier
       const declaration = privateDocImports.find(
-        (entry) => entry.source === source && entry.name === imported.name,
+        (entry) =>
+          (entry.source === source || entry.source === `${source}.ts`) &&
+          entry.name === imported.name,
       )
       if (declaration && declaration.importer !== file) {
         violations.push(
           `${file}: ${imported.name} from ${source} is private to ${declaration.importer}`,
+        )
+      }
+    }
+    for (const specifier of imports.moduleImports) {
+      const source = specifier.startsWith('.')
+        ? normalize(join(dirname(file), specifier))
+        : specifier
+      const declarations = privateDocImports.filter(
+        (entry) => entry.source === source || entry.source === `${source}.ts`,
+      )
+      for (const declaration of declarations) {
+        if (declaration.importer === file) continue
+        violations.push(
+          `${file}: whole-module import of ${source} exposes private ${declaration.name} to ${declaration.importer}`,
         )
       }
     }

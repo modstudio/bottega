@@ -34,7 +34,7 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
-import type { SessionErrorItem, SessionProcessItem } from './session-close-out-report.ts'
+import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
@@ -81,8 +81,8 @@ export type SessionCloseOutReport = {
   }
   mechanical: string[]
   kept: string[]
-  process: SessionProcessItem[]
-  errors: SessionErrorItem[]
+  process: SessionProcessLine[]
+  errors: SessionErrorLine[]
   heldTrees: HeldTreeJson[]
   verdict: { clean: boolean; residue: number }
   recommendation: 'clear' | 'brief'
@@ -592,14 +592,12 @@ function applyMechanicalAction(action: SessionMechanicalAction, database: Databa
   })
 }
 
-type ProcessReportItem = SessionCloseOutReport['process'][number]
-
 function liveRunProcessItem(
   item: Extract<
     ReturnType<typeof gather>['classification']['process'][number],
     { kind: 'live-run' }
   >,
-): ProcessReportItem {
+): SessionProcessLine {
   return {
     item: `run ${item.number}`,
     reason: `run is ${item.status}`,
@@ -617,7 +615,7 @@ function unprovedBranchProcessItem(
     ReturnType<typeof gather>['classification']['process'][number],
     { kind: 'unproved-branch' }
   >,
-): ProcessReportItem {
+): SessionProcessLine {
   const evidence = inventory.evidence.find(
     (row) => row.project === item.project && row.branch === item.branch,
   )
@@ -636,7 +634,7 @@ function unprovedBranchProcessItem(
 function processReportItem(
   inventory: ReturnType<typeof gather>,
   item: ReturnType<typeof gather>['classification']['process'][number],
-): ProcessReportItem {
+): SessionProcessLine {
   switch (item.kind) {
     case 'live-run':
       return liveRunProcessItem(item)
