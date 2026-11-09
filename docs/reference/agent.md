@@ -7,6 +7,7 @@ agents, jobs, and routing
 - [bottega agent](#bottega-agent)
 - [bottega agent add](#bottega-agent-add)
 - [bottega agent context](#bottega-agent-context)
+- [bottega agent context brief](#bottega-agent-context-brief)
 - [bottega agent context drop](#bottega-agent-context-drop)
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
@@ -79,9 +80,25 @@ manage stored architect context or resolve checkout context
 ### Related
 
 - [bottega agent](./agent.md#bottega-agent)
+- [bottega agent context brief](./agent.md#bottega-agent-context-brief)
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
+
+## bottega agent context brief
+
+**Synopsis:** `bottega agent context brief [--session <id>] [--json]`
+
+show the compact working context for an architect session
+
+### Options
+
+- `--session <id>`: select architect session
+- `--json`: write JSON
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
 
 ## bottega agent context drop
 

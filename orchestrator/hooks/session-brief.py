@@ -170,6 +170,25 @@ def _resume_sentence(source, open_briefs):
     )
 
 
+def _context_brief_fallback(session):
+    return (
+        "Context brief unavailable; run "
+        f"bottega agent context brief --session {session or '<id>'}."
+    )
+
+
+def _context_brief_slice(completed, session):
+    fallback = _context_brief_fallback(session)
+    if completed is None or completed.returncode != 0:
+        return fallback
+    text = (completed.stdout or "").strip()
+    if not text.startswith(f"Context (session {session}) · full: "):
+        return fallback
+    if "\nIn flight: " not in text or "\nWaiting: " not in text or "\nAutonomy: " not in text:
+        return fallback
+    return text
+
+
 HOOK_CONTEXT_MAX_CHARS = 9000
 HOOK_CONTEXT_TRUNCATION_MARKER = "…"
 
@@ -508,7 +527,7 @@ def main() -> int:
     session_started_at = datetime.now(timezone.utc).isoformat(
         timespec="milliseconds"
     ).replace("+00:00", "Z")
-    resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = board_p = None
+    resumes_p = inbox_p = waiting_p = monitor_p = context_p = settings_p = board_p = brief_p = None
     settings_log_path = settings_log_offset = None
     settings_start_failure = None
     settings_read_failure = None
@@ -533,6 +552,7 @@ def main() -> int:
         if not cwd:
             return 0
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        brief_source = payload.get("source") in ("compact", "resume")
         bottega = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega"))
         if not os.access(bottega, os.X_OK):
             message = f"Inbox command is missing or not executable: {bottega}; question state is unknown."
@@ -559,6 +579,10 @@ def main() -> int:
         )
         waiting_p = _start(bottega, "workflow", "fix-defect", "--waiting", "--cwd", cwd, "--json")
         context_p = _start(bottega, "agent", "context", "--cwd", cwd, "--json")
+        if brief_source and sid:
+            brief_p = _start(
+                bottega, "agent", "context", "brief", "--session", sid, cwd=cwd
+            )
         try:
             settings_p, settings_log_path, settings_log_offset = _start_settings_apply(bottega)
         except Exception as error:
@@ -586,6 +610,7 @@ def main() -> int:
         waiting = _wait(waiting_p, deadline)
         autonomy = _wait(context_p, deadline)
         board = _wait(board_p, deadline) if board_p is not None else None
+        brief = _wait(brief_p, deadline) if brief_p is not None else None
         board_text, board_ids, board_titles, board_count, withheld_board_count = (
             _board_start_slice(board)
         )
@@ -650,7 +675,8 @@ def main() -> int:
             except Exception:
                 resume_failure = "Resume response was invalid; brief state is unknown."
             if lines:
-                resume_table = "\n".join(lines)
+                noun = "resume brief" if len(lines) == 1 else "resume briefs"
+                resume_table = f"{len(lines)} open {noun} (bottega doc resumes)"
                 resume_offer = _resume_sentence(payload.get("source"), open_briefs)
             if unreadable:
                 unread = "\n".join(
@@ -882,6 +908,10 @@ def main() -> int:
         health_notices = list(base_health_notices)
         if board_count_notice:
             health_notices.append(board_count_notice)
+        if brief_source:
+            health_context = _context_brief_slice(brief, sid)
+            health_notices = []
+            board_mode = "count"
         if health_context or health_notices:
             output = {
                 "hookSpecificOutput": {
@@ -933,12 +963,13 @@ def main() -> int:
                 ),
                 *([monitor_warning] if monitor_warning else []),
             ])
-            context, board_mode, board_count_notice = assemble_session_start_context(
-                {**health_sections, "extra": _join_sections(extra_section, monitor_text)},
-                board_text,
-                board_titles,
-                board_count,
-            )
+            if not brief_source:
+                context, board_mode, board_count_notice = assemble_session_start_context(
+                    {**health_sections, "extra": _join_sections(extra_section, monitor_text)},
+                    board_text,
+                    board_titles,
+                    board_count,
+                )
             notices = list(base_health_notices)
             if monitor_failure:
                 notices.append(monitor_failure)
@@ -1019,6 +1050,7 @@ def main() -> int:
         _kill(context_p)
         _kill(monitor_p)
         _kill(board_p)
+        _kill(brief_p)
         if capability_dir:
             shutil.rmtree(capability_dir, ignore_errors=True)
     return 0
