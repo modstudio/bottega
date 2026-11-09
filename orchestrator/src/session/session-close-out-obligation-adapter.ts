@@ -19,24 +19,23 @@ import {
 } from './session-close-out-obligations.ts'
 import type { SessionProcessLine } from './session-close-out-report.ts'
 
-function landedTaskRows(
-  database: Database,
-  session: string,
-  ownedRunRecordIds: readonly string[],
-): LandedTaskRow[] {
-  const ownedPlaceholders = ownedRunRecordIds.map(() => '?').join(',')
-  const ownedPredicate = ownedRunRecordIds.length ? `OR r.record_id IN (${ownedPlaceholders})` : ''
+function landedTaskRows(database: Database): LandedTaskRow[] {
   return database
-    .query<LandedTaskRow, string[]>(
-      `SELECT blr.project,blr.branch,blr.recording_session recordingSession,
-              r.record_id runRecordId,r.launch_key taskKey
+    .query<LandedTaskRow, []>(
+      // Materialize because run has no index on (project_record_id, minted_branch).
+      `WITH minted AS MATERIALIZED (
+         SELECT record_id,project_record_id,minted_branch,launch_key
+           FROM run
+          WHERE minted_branch IS NOT NULL
+       )
+       SELECT blr.project,blr.branch,blr.recording_session recordingSession,
+              m.record_id runRecordId,m.launch_key taskKey
          FROM branch_landing_record blr
-         LEFT JOIN run r
-           ON r.project_record_id=blr.project_record_id AND r.minted_branch=blr.branch
-        WHERE blr.recording_session=? ${ownedPredicate}
-        ORDER BY blr.project,blr.branch,r.number`,
+         LEFT JOIN minted m
+           ON m.project_record_id=blr.project_record_id AND m.minted_branch=blr.branch
+        ORDER BY blr.project,blr.branch,m.record_id`,
     )
-    .all(session, ...ownedRunRecordIds)
+    .all()
 }
 
 function verifiedObservation(category: StatusCategory): LandedTaskObservation['observation'] {
@@ -108,7 +107,7 @@ export async function sessionCloseOutObligationItems(
   const identities = landedTaskIdentities({
     session,
     ownedRunRecordIds: new Set(ownedRunRecordIds),
-    rows: landedTaskRows(database, session, ownedRunRecordIds),
+    rows: landedTaskRows(database),
   })
   return sessionCloseOutObligations({
     pendingScores: pendingForSession(session, database),
