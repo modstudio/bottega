@@ -534,8 +534,7 @@ export function reclaimRemovedTreeDockerResources(
     }
   }
   for (const group of matchingGroups) {
-    const composeProject = group.resources[0]!.composeProject
-    if (!composeProject) continue
+    const composeProject = group.resources[0]!.composeProject!
     const inventoryErrors = new Set<string>()
     const handled = new Set<UnattributableDockerResource>()
     const handledCompose = new Set<UnattributedComposeDockerResource>()
