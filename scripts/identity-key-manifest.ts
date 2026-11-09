@@ -808,6 +808,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'entity_number_counter.record_id',
     'review_read.project_record_id',
     'run.record_id',
+    'run.credential_id',
     'run.parent_run_record_id',
     'run.retry_of_record_id',
     'run.project_record_id',

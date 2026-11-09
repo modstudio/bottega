@@ -2,12 +2,14 @@
 /** Decides and checks whether a configured OpenRouter key can spend. */
 
 import { boundedFetch } from '../../../shared/bounded-fetch.ts'
-import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
+import type { ProjectCredentialTarget } from '../config/credential-service.ts'
+import { endpointApiKeyForProject } from './endpoint-api-key.ts'
 import { isOpenRouterBaseUrl } from './openrouter.ts'
 
 type OpenRouterKeyRow = {
   baseUrl?: string | null
   apiKeySecret?: string | null
+  provider?: string | null
   billing?: string | null
 }
 
@@ -87,29 +89,33 @@ export function openRouterKeyBudgetRefusal(
 function isOpenRouterKeyBudgetAgent(row: OpenRouterKeyRow): boolean {
   return (
     row.billing === 'metered' &&
-    Boolean(row.apiKeySecret?.trim()) &&
+    Boolean(row.provider?.trim() || row.apiKeySecret?.trim()) &&
     isOpenRouterBaseUrl(row.baseUrl)
   )
 }
 
 type BudgetDependencies = {
-  resolve: typeof resolveEndpointApiKeyEnv
+  resolve(
+    row: OpenRouterKeyRow,
+    project: ProjectCredentialTarget | null,
+  ): Promise<Record<string, string>>
   fetch(input: string, init: RequestInit): Promise<Response>
 }
 
 const budgetDependencies: BudgetDependencies = {
-  resolve: resolveEndpointApiKeyEnv,
+  resolve: async (row, project) => (await endpointApiKeyForProject(row, project)).resolve(),
   fetch: boundedFetch('hosted-api'),
 }
 
 /** Resolve the named key at use time and ask OpenRouter without exposing response metadata. */
 export async function checkOpenRouterKeyBudget(
   row: OpenRouterKeyRow,
+  project: ProjectCredentialTarget | null = null,
   dependencies: BudgetDependencies = budgetDependencies,
 ): Promise<OpenRouterKeyBudgetDecision> {
   if (!isOpenRouterKeyBudgetAgent(row)) return { kind: 'not-applicable' }
   try {
-    const key = (await dependencies.resolve(row)).OPENAI_API_KEY
+    const key = (await dependencies.resolve(row, project)).OPENAI_API_KEY
     if (!key) return { kind: 'unknown' }
     const response = await dependencies.fetch(`${row.baseUrl!.replace(/\/+$/, '')}/key`, {
       headers: { Authorization: `Bearer ${key}` },

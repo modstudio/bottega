@@ -186,7 +186,12 @@ test('a successful registration probe clears a quota cooldown', async () => {
   )
 
   expect(calls).toEqual(['codex'])
-  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env, fresh: false })
+  expect(probeInputs).toEqual({
+    path: process.env.PATH,
+    environment: process.env,
+    fresh: false,
+    cwd: process.cwd(),
+  })
   expect(
     candidates('implement').find((candidate) => candidate.agent === 'codex')?.cooling,
   ).toBeNull()
@@ -212,7 +217,12 @@ test('agent probe forwards the fresh option', async () => {
     },
   )
 
-  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env, fresh: true })
+  expect(probeInputs).toEqual({
+    path: process.env.PATH,
+    environment: process.env,
+    fresh: true,
+    cwd: process.cwd(),
+  })
 })
 
 test('a successful registration probe does not clear a billing hold', async () => {
@@ -385,6 +395,42 @@ test('agent commands store and clear only an endpoint secret name', async () => 
     expect(JSON.parse(output.pop()!)).toMatchObject({ api_key_secret: null })
   } finally {
     removeAgent('endpoint-key-test')
+  }
+})
+
+test('agent commands store and clear a credential provider slug', async () => {
+  const output: string[] = []
+  try {
+    await agentCommand(
+      [
+        'agent',
+        'add',
+        'provider-test',
+        '--harness',
+        'goose',
+        '--backend',
+        'vendor',
+        '--model',
+        'test-model',
+        '--provider',
+        'openrouter',
+      ],
+      { log: (value) => output.push(value), setExitCode: () => {} },
+    )
+    expect(JSON.parse(output.pop()!)).toMatchObject({ provider: 'openrouter' })
+    await agentCommand(['agent', 'set', 'provider-test', '--clear-provider'], {
+      log: (value) => output.push(value),
+      setExitCode: () => {},
+    })
+    expect(JSON.parse(output.pop()!)).toMatchObject({ provider: null })
+    await expect(
+      agentCommand(['agent', 'set', 'provider-test', '--provider', 'Not_A_Slug'], {
+        log: () => {},
+        setExitCode: () => {},
+      }),
+    ).rejects.toThrow('--provider must be a lowercase slug')
+  } finally {
+    removeAgent('provider-test')
   }
 })
 

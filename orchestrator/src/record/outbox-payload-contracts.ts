@@ -9,7 +9,7 @@ const contract = (
 ) => ({ columns: typeof names === 'string' ? columns(names) : names, laterAdded })
 
 const RUN_RECORD_PAYLOAD_COLUMNS = columns(
-  'id number spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey taskId label lens latencyMs exitCode outputBytes vendorTokens modelCalls peakCallTokens contextSystemChars contextToolCount contextToolSchemaChars contextCompactions contextCacheReadTokens quotaUsedPercentStart quotaUsedPercentEnd quotaWindowMinutes quotaResetsAt vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model executor evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad hostAdmissionFirst hostAdmission provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
+  'id number spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey taskId label lens latencyMs exitCode outputBytes vendorTokens modelCalls peakCallTokens contextSystemChars contextToolCount contextToolSchemaChars contextCompactions contextCacheReadTokens quotaUsedPercentStart quotaUsedPercentEnd quotaWindowMinutes quotaResetsAt vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model executor evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason credentialId credentialPayer credentialBinding noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad hostAdmissionFirst hostAdmission provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
 )
 const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   number: null,
@@ -19,6 +19,9 @@ const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   taskId: undefined,
   reviewRole: null,
   executor: null,
+  credentialId: null,
+  credentialPayer: null,
+  credentialBinding: null,
   evidenceUnvoid: null,
   modelCalls: null,
   peakCallTokens: null,

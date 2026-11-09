@@ -6,10 +6,15 @@ import { join } from 'node:path'
 import { which } from 'bun'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  projectRecordIdentityRefusal,
+  providerProjectRequiredRefusal,
+} from '../config/credential-service.ts'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { billingHoldForFailure } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachment.ts'
+import { projectAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -195,19 +200,29 @@ export function recordSuccessfulRegistrationProbe(name: string): void {
 }
 
 /** Prove capabilities before routing spends a worktree discovering them. */
-export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment; fresh?: boolean }
+export type AgentProbeInputs = {
+  path?: string
+  environment: ConfigEnvironment
+  fresh?: boolean
+  cwd?: string
+}
 
 async function recordBudgetProbe(
   name: string,
   row: AgentRow,
   result: RegistrationProbeResult,
+  project: import('../project/projects.ts').Project | null,
 ): Promise<RegistrationProbeResult> {
   const projection = openRouterProbeBudget(
-    await checkOpenRouterKeyBudget({
-      baseUrl: row.base_url,
-      apiKeySecret: row.api_key_secret,
-      billing: row.billing,
-    }),
+    await checkOpenRouterKeyBudget(
+      {
+        baseUrl: row.base_url,
+        apiKeySecret: row.api_key_secret,
+        billing: row.billing,
+        provider: row.provider,
+      },
+      project,
+    ),
   )
   const checked = {
     ...result,
@@ -354,6 +369,7 @@ function registrationProbeRunner(input: {
   scratch: string
   agent: import('./agents.ts').Agent
   transport: import('../transport/transport.ts').AgentTransport
+  project: import('../project/projects.ts').Project | null
 }): RegistrationProbeRunner {
   return (id, prompt, schema, mcp = false, writing, session, environment) =>
     runProbeTurn({ ...input, id, prompt, schema, mcp, writing, session, environment })
@@ -415,12 +431,28 @@ function registrationProbeScratch(): { scratch: string; schemaPath: string } {
   return { scratch, schemaPath }
 }
 
+function probeRowAndProject(name: string, inputs: AgentProbeInputs) {
+  const row = agentRows().find((candidate) => candidate.name === name)
+  if (!row) throw new Error(`unknown agent "${name}"`)
+  const project = projectAt(inputs.cwd ?? process.cwd())
+  assertProviderProbeProject(row, project)
+  return { row, project }
+}
+
+function assertProviderProbeProject(
+  row: Pick<AgentRow, 'provider'>,
+  project: import('../project/projects.ts').Project | null,
+): void {
+  if (!row.provider?.trim()) return
+  if (!project) throw new Error(providerProjectRequiredRefusal())
+  if (!project.recordId) throw new Error(projectRecordIdentityRefusal(project.name))
+}
+
 export async function probeAgent(
   name: string,
   inputs: AgentProbeInputs,
 ): Promise<RegistrationProbeResult> {
-  const row = agentRows().find((candidate) => candidate.name === name)
-  if (!row) throw new Error(`unknown agent "${name}"`)
+  const { row, project } = probeRowAndProject(name, inputs)
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const needs = registrationProbeRequirements(declared)
@@ -436,7 +468,7 @@ export async function probeAgent(
       compactionApplies,
     )
   )
-    return recordBudgetProbe(name, row, previous as RegistrationProbeResult)
+    return recordBudgetProbe(name, row, previous as RegistrationProbeResult, project)
   if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
   const agent = rowAgent(row)
@@ -447,7 +479,7 @@ export async function probeAgent(
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
   mintStdioPingServer(join(scratch, 'repo'))
   const transport = transportFor(agent.defaultTransport)
-  const runOne = registrationProbeRunner({ name, scratch, agent, transport })
+  const runOne = registrationProbeRunner({ name, scratch, agent, transport, project })
   const reply = await runOne('reply', 'Reply with exactly: ok')
   const tool = needs.tool
     ? await runOne(
@@ -562,5 +594,5 @@ export async function probeAgent(
     writingPolicy.jobSuccess &&
     (!needs.resumable || resumingPolicy.jobSuccess) &&
     (contextTokens !== null || !row.base_url)
-  return recordBudgetProbe(name, row, result)
+  return recordBudgetProbe(name, row, result, project)
 }

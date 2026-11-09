@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
@@ -16,9 +17,44 @@ import { pinTrustedMachine } from '../../../shared/trust-list.ts'
 import {
   type CredentialAddress,
   deleteCredential,
+  projectCredentialAddress,
   resolveCredentialValue,
   setCredential,
 } from './credential-service.ts'
+
+test('project credential address matches credential resolve project defaults', async () => {
+  const projectId = crypto.randomUUID()
+  const spaceId = crypto.randomUUID()
+  const target = await projectCredentialAddress(
+    { name: 'starship', recordId: projectId, settings: {} },
+    'openrouter',
+    {
+      whoami: async () => ({
+        user: { id: crypto.randomUUID() },
+        activeSpaceId: spaceId,
+        memberships: [{ space_id: spaceId, slug: 'team', permission: 'write' }],
+      }),
+    } as ConfigClient,
+  )
+  expect(target).toEqual({
+    provider: 'openrouter',
+    name: null,
+    type: 'api-key',
+    mode: 'default',
+    environment: 'local',
+    payer: 'personal',
+    projectId,
+    projectName: 'starship',
+    spaceName: 'team',
+    destinationSpaceId: spaceId,
+  })
+})
+
+test('project credential address refuses missing record identity with project push remedy', async () => {
+  await expect(
+    projectCredentialAddress({ name: 'starship', recordId: null, settings: {} }, 'openrouter'),
+  ).rejects.toThrow(`${PLATFORM_SLUG} project push`)
+})
 
 let root: string
 let previousConfigHome: string | undefined

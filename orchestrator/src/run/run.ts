@@ -1,13 +1,13 @@
-import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
-import { effectiveEndpointApiKeyForRun } from '../agent/endpoint-api-key.ts'
+import { endpointApiKeyForProject } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-failure.ts'
 import { checkOpenRouterKeyBudget } from '../agent/openrouter-key-budget.ts'
+import { providerCredentialRoutingAt } from '../agent/provider-credential-routing.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, recordPack } from '../canon/canon.ts'
@@ -75,7 +75,7 @@ import { sha } from './prompt-sha.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import { capacityStartupFailure, selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
-import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
+import { pruneRuns, RUNS_DIR, readDispatchState, unclaimedPaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
@@ -376,6 +376,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       envTransport: transportPin.transportPinSource === 'environment',
     },
     requiredMcp = requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined)
+  const { project: runProject, facts: credentialFacts } =
+    await providerCredentialRoutingAt(callerCwd)
   const pickSource = () =>
     pick(
       opts.job,
@@ -392,6 +394,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         ...transportPin,
         project: runProjectName,
         routed: opts.routedAgent,
+        credentialFacts,
       },
       opts.probe,
       opts.lens,
@@ -494,12 +497,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
    * reserved id for a detached run; a foreground run has none yet, and a random
    * suffix covers it without reintroducing a clock race.
    */
-  const unique = opts.reserveId ?? `x${randomUUID().slice(0, 8)}`
-  const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
-  const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
-  let outPath = paths.output
-  const runProject = projectAt(callerCwd)
-  const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
+  let { stamp, outPath } = unclaimedPaths(RUNS_DIR, opts.reserveId, name, opts.job)
+  const endpoint = await endpointApiKeyForProject(a, runProject)
   const claimedRun = await claimRun({
     opts,
     runsDir: RUNS_DIR,
@@ -536,6 +535,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     replySchemaName,
     carriedQuestionIds: dispatchRulings.questionIds,
     endpointKeySource: endpoint.key.source,
+    credential: endpoint.credential,
     precomputedLinks: dispatchRulings.links,
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
@@ -960,7 +960,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           ;({ failureKind, error, billingHoldDetail } = applyOpenRouterBudgetToAuthFailure(
             failureKind,
             error,
-            await checkOpenRouterKeyBudget(endpoint.row),
+            await checkOpenRouterKeyBudget(endpoint.row, runProject),
           ))
         }
       } finally {

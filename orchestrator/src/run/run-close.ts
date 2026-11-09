@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
+import { providerCredentialRoutingAt } from '../agent/provider-credential-routing.ts'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
@@ -29,7 +30,7 @@ import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
-import { agentsOnBillingKey } from '../route/billing-key-hold.ts'
+import { agentsOnBillingCredential, agentsOnBillingKey } from '../route/billing-key-hold.ts'
 import {
   decideFailover,
   failoverAttemptLimit,
@@ -180,11 +181,18 @@ function storedFailoverSelectionConstraints(
   first: { transport: TransportName | null; transport_explicit: number },
   opts: Pick<CloseOptions, 'job' | 'avoid' | 'distinctModels'>,
   tried: string[],
-  billingFailure: { agent: string; keySource: 'agent' | 'project' } | null,
+  billingFailure: {
+    agent: string
+    keySource: 'agent' | 'project'
+    credentialId: string | null
+  } | null,
 ) {
   const agents = Object.values(AGENTS)
-  const failedKeyAgents =
-    billingFailure?.keySource === 'agent' ? agentsOnBillingKey(agents, billingFailure.agent) : []
+  const failedKeyAgents = billingFailure?.credentialId
+    ? agentsOnBillingCredential(agents, latestCredentialPaidRuns(), billingFailure.credentialId)
+    : billingFailure?.keySource === 'agent'
+      ? agentsOnBillingKey(agents, billingFailure.agent)
+      : []
   return failoverSelectionConstraints({
     transport: first.transport,
     transportExplicit: first.transport_explicit,
@@ -200,12 +208,31 @@ function storedFailoverSelectionConstraints(
   })
 }
 
+function latestCredentialPaidRuns() {
+  return db()
+    .query(
+      `SELECT recent.record_id,recent.number,recent.agent,recent.status,recent.failure_kind,
+              recent.endpoint_key_source,recent.credential_id,
+              julianday(recent.started_at) * 86400000 + recent.latency_ms AS finished_at
+         FROM agent
+         JOIN run recent ON recent.record_id=(
+           SELECT paid.record_id FROM run paid
+            WHERE paid.agent=agent.name AND paid.credential_id IS NOT NULL
+              AND paid.status IN ('ok','failed') AND paid.latency_ms IS NOT NULL
+            ORDER BY julianday(paid.started_at) + paid.latency_ms / 86400000.0 DESC,
+                     paid.record_id DESC LIMIT 1
+         )`,
+    )
+    .all() as import('../route/billing-key-hold.ts').BillingKeyRun[]
+}
+
 function billingFailureForFailover(
   failureKind: string | null,
   agent: string,
   keySource: 'agent' | 'project',
-): { agent: string; keySource: 'agent' | 'project' } | null {
-  return failureKind === 'billing' ? { agent, keySource } : null
+  credentialId: string | null,
+): { agent: string; keySource: 'agent' | 'project'; credentialId: string | null } | null {
+  return failureKind === 'billing' ? { agent, keySource, credentialId } : null
 }
 
 export async function selectFailoverSuccessor(input: {
@@ -227,6 +254,9 @@ export async function selectFailoverSuccessor(input: {
   avoidedAgents: string[]
   distinctModels: string[] | undefined
 }) {
+  const { facts: credentialFacts } = await providerCredentialRoutingAt(
+    input.launchCwd ?? input.callerCwd,
+  )
   const select = () => {
     try {
       return pick(
@@ -245,6 +275,7 @@ export async function selectFailoverSuccessor(input: {
           ),
           pinnedTransport: input.pinnedTransport ?? undefined,
           project: input.repo,
+          credentialFacts,
         },
         false,
         input.lens ?? undefined,
@@ -411,7 +442,16 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           first,
           opts,
           tried,
-          billingFailureForFailover(failureKind, name, input.endpointKey.source),
+          billingFailureForFailover(
+            failureKind,
+            name,
+            input.endpointKey.source,
+            (
+              db().query('SELECT credential_id FROM run WHERE record_id=?').get(claim.id) as {
+                credential_id: string | null
+              }
+            ).credential_id,
+          ),
         )
         const selected = await selectFailoverSuccessor({
           runId: claim.id,

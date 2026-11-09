@@ -349,6 +349,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/agent/agent-registry.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/credential.ts',
     '../../../shared/record-id.ts',
     './agents.ts',
     ...['./capabilities.ts', './openrouter-key-budget.ts'],

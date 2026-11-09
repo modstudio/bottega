@@ -20,6 +20,7 @@ export type RecentTerminalRun = {
   status: string
   failure_kind: string | null
   endpoint_key_source: 'agent' | 'project' | null
+  credential_id: string | null
   finished_at: number
   mins_ago: number
 }
@@ -74,7 +75,7 @@ export function recentTerminalRuns(
               LIMIT ?
            )
        )
-       SELECT r.record_id,r.number,r.agent,r.job,r.status,r.failure_kind,r.endpoint_key_source,
+       SELECT r.record_id,r.number,r.agent,r.job,r.status,r.failure_kind,r.endpoint_key_source,r.credential_id,
               r.started_at,r.latency_ms
          FROM selected JOIN run r USING(record_id)`,
     )

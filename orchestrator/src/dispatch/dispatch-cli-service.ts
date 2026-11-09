@@ -13,6 +13,7 @@ import { isTrackerProtocol, resolveTrackerAgentActions } from '../../../shared/t
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
+import { providerCredentialRouting } from '../agent/provider-credential-routing.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import {
   resolveTaskBranch,
@@ -522,6 +523,10 @@ export async function selectBeforeDetach(
     requestedJob,
     evidence.requiresCanonSource,
   )
+  const routeProject = spec.repo
+    ? (projectByName(spec.repo) ?? null)
+    : projectAt(spec.cwd ?? presentation.cwd())
+  const { facts: credentialFacts } = await providerCredentialRouting(routeProject)
   const select = () =>
     pick(
       jobName,
@@ -536,6 +541,7 @@ export async function selectBeforeDetach(
         noWaitCapacity: spec.noWaitCapacity,
         ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
         project: spec.repo ?? null,
+        credentialFacts,
       },
       spec.probe,
       spec.lens,

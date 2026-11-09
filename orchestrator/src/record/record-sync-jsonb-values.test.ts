@@ -92,6 +92,9 @@ const payload: RecordPayload = {
   patchId: 'patch',
   tier: 1,
   sessionId: 'session',
+  credentialId: '01990000-0000-7000-8000-000000001887',
+  credentialPayer: 'shared',
+  credentialBinding: 'project',
   trunkBefore: 'trunk',
   error: null,
   requestedAt: STAMP,
@@ -232,6 +235,14 @@ test.each(cases)('$name sync values keep jsonb fields structured', ({ values, fi
     expect(result[field]).not.toBeNull()
     expect(typeof result[field]).not.toBe('string')
   }
+})
+
+test('run sync values preserve credential payment identity', () => {
+  expect(runRecordValues(payload, ID, ID, ID)).toMatchObject({
+    credentialId: '01990000-0000-7000-8000-000000001887',
+    credentialPayer: 'shared',
+    credentialBinding: 'project',
+  })
 })
 
 test('contention sync refuses non-positive occurrences', () => {

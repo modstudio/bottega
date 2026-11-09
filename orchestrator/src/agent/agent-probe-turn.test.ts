@@ -6,8 +6,8 @@ import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import type { AgentTransport, TransportHandle, TransportResult } from '../transport/transport.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
-import { probeEnvironment, runProbeTurn } from './agent-probe-turn.ts'
-import { BUILTIN_AGENTS } from './agents.ts'
+import { runProbeTurn } from './agent-probe-turn.ts'
+import { type Agent, BUILTIN_AGENTS } from './agents.ts'
 
 const quotaReadings = {
   quotaUsedPercentStart: 12,
@@ -31,6 +31,30 @@ function releaseProbeHomeFixtures(): void {
     rmSync(join(dir, name), { recursive: true, force: true })
 }
 
+async function capturedProbeEnvironment(
+  name: string,
+  agent: Agent,
+  scratch: string,
+): Promise<Record<string, string>> {
+  const base = probeTransport()
+  let environment: Record<string, string> = {}
+  await runProbeTurn({
+    name,
+    agent,
+    scratch,
+    transport: {
+      ...base,
+      start: async (options) => {
+        environment = options.env
+        return base.start(options)
+      },
+    },
+    id: `environment-${name}`,
+    prompt: 'probe',
+  })
+  return environment
+}
+
 describe('probe environment quota rollout home', () => {
   afterEach(() => {
     restoreProbeHomeEnvironment()
@@ -49,7 +73,7 @@ describe('probe environment quota rollout home', () => {
 
     test('confines CODEX_HOME under the probe scratch directory for a codex harness', async () => {
       const scratch = join(dir, 'probe-scratch')
-      const environment = await probeEnvironment(
+      const environment = await capturedProbeEnvironment(
         'codex',
         { ...BUILTIN_AGENTS.codex!, harness: 'codex' },
         scratch,
@@ -59,7 +83,7 @@ describe('probe environment quota rollout home', () => {
     })
 
     test('does not add CODEX_HOME for a non-codex harness', async () => {
-      const environment = await probeEnvironment(
+      const environment = await capturedProbeEnvironment(
         'grok',
         { ...BUILTIN_AGENTS.grok!, harness: 'grok' },
         dir,
@@ -76,7 +100,7 @@ describe('probe environment quota rollout home', () => {
     })
 
     test('keeps the explicit home for a codex harness', async () => {
-      const environment = await probeEnvironment(
+      const environment = await capturedProbeEnvironment(
         'codex',
         { ...BUILTIN_AGENTS.codex!, harness: 'codex' },
         dir,
@@ -155,6 +179,37 @@ test("a probe turn's environment reaches transport start and overrides the agent
   })
 
   expect(startedEnvironment.PROBE_OVERRIDE).toBe('turn')
+})
+
+test('a provider probe turn records the credential that paid for it', async () => {
+  await runProbeTurn({
+    name: 'provider-probe',
+    scratch: dir,
+    agent: { ...BUILTIN_AGENTS.grok!, provider: 'openrouter' },
+    transport: probeTransport(),
+    id: 'credential-payment',
+    prompt: 'probe',
+    resolveEndpoint: async (row) => ({
+      row,
+      key: { secretName: null, source: 'agent', projectName: null },
+      resolve: async () => ({ OPENAI_API_KEY: 'fixture' }),
+      credential: {
+        credentialId: 'credential-probe-fixture',
+        payer: 'shared',
+        binding: 'project',
+      },
+    }),
+  })
+
+  expect(
+    db()
+      .query(`SELECT credential_id,credential_payer,credential_binding FROM run WHERE job=?`)
+      .get('agent-probe-credential-payment'),
+  ).toEqual({
+    credential_id: 'credential-probe-fixture',
+    credential_payer: 'shared',
+    credential_binding: 'project',
+  })
 })
 
 test.each(['ok', 'failed'] as const)(

@@ -9,6 +9,11 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const agentProbeModules = [
+  module('orchestrator/src/agent/provider-credential-routing.ts', [
+    '../config/credential-service.ts',
+    '../project/projects.ts',
+    './agent-registry.ts',
+  ]),
   module('orchestrator/src/agent/openrouter.ts', []),
   module('orchestrator/src/agent/agent-capacity-loss.ts', []),
   module('orchestrator/src/agent/agent-set-capacity.ts', [
@@ -26,10 +31,13 @@ export const agentProbeModules = [
     '../../../shared/record-remedies.ts',
     '../../../shared/secret-resolution-failure.ts',
     '../failure/failure.ts',
+    '../config/credential-service.ts',
     '../project/project-agent-keys.ts',
+    '../run/run-credential-claim.ts',
   ]),
   module('orchestrator/src/agent/openrouter-key-budget.ts', [
     '../../../shared/bounded-fetch.ts',
+    '../config/credential-service.ts',
     './endpoint-api-key.ts',
     './openrouter.ts',
   ]),
@@ -44,11 +52,13 @@ export const agentProbeModules = [
     './agents.ts',
     './capabilities.ts',
     '../database/db.ts',
+    '../config/credential-service.ts',
     '../failure/failure.ts',
     '../jobs/jobs.ts',
     './model-host.ts',
     '../mcp/mcp-native-attachment.ts',
     '../mcp/mcp-probe.ts',
+    '../project/projects.ts',
     '../record/machine-identity.ts',
     '../run/run-number.ts',
     '../run/run-outbox.ts',
@@ -85,7 +95,7 @@ export const agentProbeModules = [
     '../database/db.ts',
     '../events.ts',
     '../mcp/mcp-probe.ts',
-    '../project/projects.ts',
+    '../config/credential-service.ts',
     '../run/run-mcp-launch-scope.ts',
     '../run/run-number.ts',
     '../run/run-usage-columns.ts',

@@ -13,6 +13,27 @@ import { setRawArgv } from './support.ts'
 
 const trackResidue = trackedTestResidue()
 
+test('agent registration forwards provider mutations to the agent command', async () => {
+  const received: string[][] = []
+  const parse = async (argv: string[]) => {
+    const program = new Command().exitOverride()
+    register(program, {
+      agentCommand: async (receivedArgv) => {
+        received.push(receivedArgv)
+      },
+    })
+    await program.parseAsync(['node', 'orch', ...argv])
+  }
+
+  await parse(['agent', 'set', 'metered', '--provider', 'openrouter'])
+  await parse(['agent', 'set', 'metered', '--clear-provider'])
+
+  expect(received).toEqual([
+    ['agent', 'set', 'metered', '--provider', 'openrouter'],
+    ['agent', 'set', 'metered', '--clear-provider'],
+  ])
+})
+
 test('answer refuses a question-sibling option instead of recording it as ruling text', async () => {
   const recordId = addRun({
     agent: 'codex',

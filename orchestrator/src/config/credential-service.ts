@@ -1,6 +1,7 @@
 // concern: credential-service
 /** Seals and addresses typed credentials without exposing plaintext to the hosted record. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ConfigClientError,
   type ConfigDestination,
@@ -13,8 +14,19 @@ import {
   completeCredentialFields,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
-import { configAccessRemedy, machineNotTrustedRemedy } from '../../../shared/record-remedies.ts'
+import {
+  configAccessRemedy,
+  machineNotTrustedRemedy,
+  recordSpaceMembershipRefusal,
+} from '../../../shared/record-remedies.ts'
+import {
+  parseRecordSpaceMemberships,
+  recordSpaceMembership,
+} from '../../../shared/record-space-membership.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
+import type { Project } from '../project/projects.ts'
+import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
 import {
   type CredentialEnvironment,
@@ -39,6 +51,72 @@ export type CredentialAddress = {
   projectName?: string
   spaceName: string
   destinationSpaceId: string
+}
+export type ProjectCredentialTarget = Pick<Project, 'name' | 'settings'> & {
+  recordId: string | null
+}
+export type ProjectCredentialBinding = Pick<
+  CredentialAddress,
+  'projectId' | 'projectName' | 'spaceName' | 'destinationSpaceId'
+>
+
+export function projectRecordIdentityRefusal(project: string): string {
+  return renderRefusal(
+    refusal(`project ${project} has no hosted record identity`, {
+      kind: 'command',
+      argv: [PLATFORM_SLUG, 'project', 'push'],
+    }),
+  )
+}
+
+export function providerProjectRequiredRefusal(): string {
+  return renderRefusal(
+    refusal('provider-backed agent requires a registered project', {
+      kind: 'edit',
+      text: 'run the command from a registered project',
+    }),
+  )
+}
+
+/** Resolve the project and record-space identity shared by every project-bound command. */
+export async function projectCredentialBinding(
+  project: ProjectCredentialTarget,
+  client?: ReturnType<typeof configClient>,
+): Promise<ProjectCredentialBinding> {
+  if (!project.recordId) throw new Error(projectRecordIdentityRefusal(project.name))
+  const selectedClient = client ?? configClient()
+  const who = await selectedClient.whoami()
+  const destinationSpaceId = await requireProjectRecordDestination(project.name, project.settings, {
+    whoami: async () => who,
+  })
+  const membership = recordSpaceMembership(
+    destinationSpaceId,
+    parseRecordSpaceMemberships(who.memberships),
+  )
+  if (!membership) throw new Error(recordSpaceMembershipRefusal(destinationSpaceId))
+  return {
+    projectId: project.recordId,
+    projectName: project.name,
+    spaceName: membership.slug,
+    destinationSpaceId,
+  }
+}
+
+/** Build the one canonical credential address used by project-bound consumers. */
+export async function projectCredentialAddress(
+  project: ProjectCredentialTarget,
+  provider: string,
+  client?: ReturnType<typeof configClient>,
+): Promise<CredentialAddress> {
+  return {
+    provider,
+    name: null,
+    type: 'api-key',
+    mode: 'default',
+    environment: 'local',
+    payer: 'personal',
+    ...(await projectCredentialBinding(project, client)),
+  }
 }
 
 const destination = (address: CredentialAddress): ConfigDestination => ({
@@ -185,4 +263,33 @@ export async function resolveCredentialValue(address: CredentialAddress, client 
   const target = { destinationSpaceId: address.destinationSpaceId, projectId: row.projectId }
   const plaintext = await openHostedSecretRow(client, row, target)
   return { ...result, value: new TextDecoder('utf-8', { fatal: true }).decode(plaintext) }
+}
+
+/** Gather one metadata-only routing fact for each distinct provider. */
+export async function projectCredentialRouteFacts(
+  project: ProjectCredentialTarget | null,
+  providers: Iterable<string>,
+  client?: ReturnType<typeof configClient>,
+) {
+  const distinctProviders = [...new Set(providers)]
+  if (!distinctProviders.length) return new Map()
+  const selectedClient = client ?? configClient()
+  const entries = await Promise.all(
+    distinctProviders.map(async (provider) => {
+      try {
+        if (!project) throw new Error(providerProjectRequiredRefusal())
+        const address = await projectCredentialAddress(project, provider, selectedClient)
+        await resolveProjectCredential(address, selectedClient)
+        return [provider, { status: 'resolved' as const }] as const
+      } catch (error) {
+        return [
+          provider,
+          error instanceof ConfigClientError
+            ? { status: 'unknown' as const }
+            : { status: 'refused' as const, refusal: String((error as Error)?.message ?? error) },
+        ] as const
+      }
+    }),
+  )
+  return new Map<string, (typeof entries)[number][1]>(entries)
 }

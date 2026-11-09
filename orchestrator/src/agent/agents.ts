@@ -37,6 +37,7 @@ export type Agent = {
   backend?: string | null
   baseUrl?: string | null
   apiKeySecret?: string | null
+  provider?: string | null
   enabled?: boolean
   disabledReason?: string | null
   probedAt?: string | null

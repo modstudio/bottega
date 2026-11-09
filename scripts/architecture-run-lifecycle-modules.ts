@@ -253,6 +253,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-artifacts.ts',
     './run-executor.ts',
     './run-git-guard.ts',
+    './run-credential-claim.ts',
     './run-number.ts',
     './run-claim-types.ts',
     './run-claim-transaction.ts',
@@ -286,6 +287,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-task-reference.ts',
     './run-task-branch-resolution.ts',
   ]),
+  module('orchestrator/src/run/run-credential-claim.ts', []),
   module('orchestrator/src/run/run-claim-mcp.ts', [
     '../agent/agents.ts',
     '../agent/worker-launch-env.ts',
@@ -345,6 +347,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
       'node:fs',
       '../../../shared/brand.ts',
       '../agent/agent-registry.ts',
+      '../agent/provider-credential-routing.ts',
       '../close/close-out.ts',
       '../contract/contract.ts',
       '../database/db.ts',

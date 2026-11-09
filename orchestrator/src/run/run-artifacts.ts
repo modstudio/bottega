@@ -4,6 +4,7 @@
  * snapshot-versus-database reconciliation protocol. Must not know routing,
  * contracts, transports, reviews, or worktree isolation.
  */
+import { randomUUID } from 'node:crypto'
 import {
   appendFileSync,
   copyFileSync,
@@ -235,6 +236,20 @@ export function runFilePaths(
   return {
     output: join(dir, `${stamp}.txt`),
     prompt: join(dir, `${stamp}.prompt.txt`),
+  }
+}
+
+export function unclaimedPaths(
+  runsDir: string,
+  reservedId: string | undefined,
+  agent: string,
+  job: string,
+) {
+  const unique = reservedId ?? `x${randomUUID().slice(0, 8)}`
+  const paths = runFilePaths(runsDir, Date.now(), unique, agent, job)
+  return {
+    stamp: paths.output.slice(runsDir.length + 1, -4),
+    outPath: paths.output,
   }
 }
 

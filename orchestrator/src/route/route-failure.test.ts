@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
-import { refreshAgents } from '../agent/agent-registry.ts'
+import { addAgent, refreshAgents } from '../agent/agent-registry.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
@@ -16,10 +16,62 @@ import {
   NOT_EVIDENCE,
 } from '../failure/failure.ts'
 import { WEIGHT, weigh } from '../score/score.ts'
-import { candidates, scoreboard } from './route.ts'
+import { candidates, pick, providerCredentialEligibility, scoreboard } from './route.ts'
 import { isRoutingEvidence } from './routing-evidence-query.ts'
 
 afterEach(refreshAgents)
+
+test('provider credential eligibility distinguishes refusal from hosted uncertainty', () => {
+  expect(
+    providerCredentialEligibility('openrouter', new Map([['openrouter', { status: 'resolved' }]])),
+  ).toEqual({ eligible: true, why: '' })
+  expect(
+    providerCredentialEligibility('openrouter', new Map([['openrouter', { status: 'unknown' }]])),
+  ).toEqual({ eligible: true, why: '' })
+  expect(
+    providerCredentialEligibility(
+      'openrouter',
+      new Map([['openrouter', { status: 'refused', refusal: 'set it' }]]),
+    ),
+  ).toEqual({ eligible: false, why: 'set it' })
+  expect(providerCredentialEligibility(null, new Map())).toEqual({ eligible: true, why: '' })
+})
+
+test('provider credential refusal flows through candidates and an explicitly named pick', () => {
+  addAgent('credential-refusal-fixture', {
+    harness: 'codex',
+    backend: 'vendor',
+    model: 'fixture',
+    billing: 'metered',
+    routeMetered: true,
+    provider: 'openrouter',
+    contextTokens: 128_000,
+  })
+  const refusalText = 'credential openrouter/api-key is not set'
+  const credentialFacts = new Map([
+    ['openrouter', { status: 'refused' as const, refusal: refusalText }],
+  ])
+
+  expect(
+    candidates('verify-claim', 0, { credentialFacts }).find(
+      (candidate) => candidate.agent === 'credential-refusal-fixture',
+    ),
+  ).toMatchObject({ eligible: false, why: refusalText })
+  expect(() =>
+    pick(
+      'verify-claim',
+      'credential-refusal-fixture',
+      0,
+      false,
+      null,
+      { credentialFacts },
+      false,
+      undefined,
+      Math.random,
+      { allowHarness: false },
+    ),
+  ).toThrow(refusalText)
+})
 
 function shareBillingKey(...agents: string[]): void {
   const placeholders = agents.map(() => '?').join(',')

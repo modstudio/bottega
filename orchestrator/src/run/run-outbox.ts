@@ -158,6 +158,14 @@ function taskValues(row: LocalRun) {
   return { taskKey: row.launch_key, taskId: row.task_record_id }
 }
 
+function credentialValues(row: LocalRun) {
+  return {
+    credentialId: row.credential_id,
+    credentialPayer: row.credential_payer,
+    credentialBinding: row.credential_binding,
+  }
+}
+
 const nullableBoolean = (value: unknown): boolean | null => (value == null ? null : Boolean(value))
 
 /** Terminal payloads use last_event_at as finished_at when present, otherwise started_at. */
@@ -225,6 +233,7 @@ export function buildRunRecordPayload(
     transport: row.transport,
     sessionId: row.session_id,
     routeReason: row.route_reason,
+    ...credentialValues(row),
     noFailover: Boolean(row.no_failover),
     automaticFailover: Boolean(row.automatic_failover),
     outsideWorktreeWrites: json(row.outside_worktree_writes),

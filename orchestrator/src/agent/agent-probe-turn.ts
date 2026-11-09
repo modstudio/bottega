@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import type { ProjectCredentialTarget } from '../config/credential-service.ts'
 import { writableDb } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
@@ -22,7 +23,7 @@ import { withTransportDeadline } from '../transport/transport.ts'
 import { gooseSessionContextProfile } from '../transport/transport-goose-context-profile.ts'
 import type { WritingProbeConfinement } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
-import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
+import { endpointApiKeyForProject } from './endpoint-api-key.ts'
 
 type ProbeTurnInput = {
   name: string
@@ -36,6 +37,8 @@ type ProbeTurnInput = {
   writing?: WritingProbeConfinement
   session?: string
   environment?: Record<string, string>
+  project?: ProjectCredentialTarget | null
+  resolveEndpoint?: typeof endpointApiKeyForProject
 }
 
 type ProbeTurnResult = {
@@ -77,11 +80,16 @@ function insertProbeTurn(input: ProbeTurnInput, started: number): string {
   return row.record_id
 }
 
-export async function probeEnvironment(
+async function resolvedProbeEnvironment(
   name: string,
   agent: Agent,
   scratch: string,
-): Promise<Record<string, string>> {
+  project: ProjectCredentialTarget | null,
+  resolveEndpoint: typeof endpointApiKeyForProject = endpointApiKeyForProject,
+) {
+  const endpoint = await resolveEndpoint(agent, project, undefined, {
+    exhaustedRetryCommand: `${PLATFORM_SLUG} agent probe ${name}`,
+  })
   const environment: Record<string, string> = {
     ...Object.fromEntries(
       Object.entries(process.env).filter(
@@ -89,16 +97,26 @@ export async function probeEnvironment(
       ),
     ),
     ...(agent.env?.() ?? {}),
-    ...(await resolveEndpointApiKeyEnv(agent, undefined, {
-      exhaustedRetryCommand: `${PLATFORM_SLUG} agent probe ${name}`,
-    })),
+    ...(await endpoint.resolve()),
     BOTTEGA_SCRATCH: scratch,
   }
   // The probe reads this turn's own rollout, so it needs the confined Codex home
   // a run gets rather than the operator home, whose rollout history is unbounded.
   if (harnessCollectsQuotaReadings(agent.harness) && !environment.CODEX_HOME)
     Object.assign(environment, prepareCodexHome(scratch, process.env))
-  return environment
+  return { environment, credential: endpoint.credential }
+}
+
+function recordProbeCredential(
+  recordId: string,
+  credential: Awaited<ReturnType<typeof endpointApiKeyForProject>>['credential'],
+): void {
+  if (!credential) return
+  writableDb()
+    .query(
+      `UPDATE run SET credential_id=?,credential_payer=?,credential_binding=? WHERE record_id=?`,
+    )
+    .run(credential.credentialId, credential.payer, credential.binding, recordId)
 }
 
 async function drainTransportEvents(events: AsyncIterable<unknown>): Promise<void> {
@@ -138,6 +156,93 @@ function observedProbeCompactions(
   return gooseSessionContextProfile(join(scratchDir, 'goose'), sessionId)?.compactions ?? null
 }
 
+function startProbeTransport(
+  input: ProbeTurnInput,
+  recordId: string,
+  started: number,
+  environment: Record<string, string>,
+  cwd: string,
+  scratchDir: string,
+) {
+  return input.transport.start({
+    agent: input.agent,
+    cwd,
+    prompt: input.prompt,
+    outPath: join(input.scratch, `${input.id}.out`),
+    schemaPath: input.schema,
+    model: input.agent.model,
+    modelExplicit: true,
+    startedAt: started,
+    write: true,
+    sandbox: 'workspace-write',
+    ...(input.writing ? {} : { writableRoots: [scratchDir] }),
+    writingAcp: Boolean(input.writing),
+    home: input.writing?.workerHomeDir,
+    session: input.session,
+    ...(input.writing
+      ? { srt: { profile: input.writing.profile, runtimeDir: input.writing.runtimeDir } }
+      : {}),
+    mcp: input.mcp ?? false,
+    projectMcpSelection: input.mcp
+      ? workerMcpLaunchSelection({
+          usingMcp: true,
+          writesJob: true,
+          hasProjectTree: true,
+          callerCwd: cwd,
+          cwd,
+          writerProxy: writerProxyRoute(input.agent.harness ?? input.agent.name, 'acp'),
+        })
+      : null,
+    env: environment,
+    onWarning: (message: string) => recordRunWarning(recordId, message),
+  })
+}
+
+function recordProbeOutcome(recordId: string, started: number, outcome: TransportResult): void {
+  writableDb()
+    .query(
+      `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=?,
+                      quota_used_percent_start=?,quota_used_percent_end=?,
+                      quota_window_minutes=?,quota_resets_at=? WHERE record_id=?`,
+    )
+    .run(
+      outcome.status === 'ok' ? 'ok' : 'failed',
+      Date.now() - started,
+      outcome.status === 'ok' ? 0 : 1,
+      Buffer.byteLength(outcome.output),
+      outcome.status === 'ok' ? null : outcome.output,
+      ...quotaReadingsColumnValues(outcome.quotaReadings ?? EMPTY_QUOTA_READINGS),
+      recordId,
+    )
+}
+
+async function runStartedProbeTurn(
+  input: ProbeTurnInput,
+  handle: TransportHandle,
+  recordId: string,
+  started: number,
+  scratchDir: string,
+): Promise<ProbeTurnResult> {
+  const draining = drainTransportEvents(handle.events())
+  try {
+    const outcome = await collectTurn(input, handle, draining)
+    recordProbeOutcome(recordId, started, outcome)
+    return {
+      ...outcome,
+      sessionId: outcome.sessionId,
+      loadSessionAdvertised: handle.loadSessionAdvertised === true,
+      compactions: observedProbeCompactions(input, scratchDir, outcome.sessionId),
+    }
+  } finally {
+    try {
+      handle.kill(9)
+    } catch {
+      /* exited */
+    }
+    void draining
+  }
+}
+
 /** Start through the selected transport, collect, and persist the turn outcome. */
 export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResult> {
   const started = Date.now()
@@ -147,82 +252,18 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
   try {
     // A refused probe environment must record a failed probe turn, not escape
     // with the row left 'running'.
-    const environment = await probeEnvironment(input.name, input.agent, scratchDir)
+    const { environment, credential } = await resolvedProbeEnvironment(
+      input.name,
+      input.agent,
+      scratchDir,
+      input.project ?? null,
+      input.resolveEndpoint,
+    )
+    recordProbeCredential(recordId, credential)
     Object.assign(environment, input.environment)
     if (input.writing) environment.HOME = input.writing.workerHomeDir
-    const handle = await input.transport.start({
-      agent: input.agent,
-      cwd,
-      prompt: input.prompt,
-      outPath: join(input.scratch, `${input.id}.out`),
-      schemaPath: input.schema,
-      model: input.agent.model,
-      modelExplicit: true,
-      startedAt: started,
-      write: true,
-      sandbox: 'workspace-write',
-      ...(input.writing ? {} : { writableRoots: [scratchDir] }),
-      writingAcp: Boolean(input.writing),
-      home: input.writing?.workerHomeDir,
-      session: input.session,
-      ...(input.writing
-        ? {
-            srt: {
-              profile: input.writing.profile,
-              runtimeDir: input.writing.runtimeDir,
-            },
-          }
-        : {}),
-      mcp: input.mcp ?? false,
-      projectMcpSelection: input.mcp
-        ? // The MCP probe turn attaches its minted stdio server directly, so it
-          // asks through the one launch-selection decision, in the writing shape.
-          workerMcpLaunchSelection({
-            usingMcp: true,
-            writesJob: true,
-            hasProjectTree: true,
-            callerCwd: cwd,
-            cwd,
-            writerProxy: writerProxyRoute(input.agent.harness ?? input.agent.name, 'acp'),
-          })
-        : null,
-      env: environment,
-      // A best-effort rollout observation warning must reach the probe's own
-      // run row, the way a real run's warning does through run-live's warnForRun.
-      onWarning: (message: string) => recordRunWarning(recordId, message),
-    })
-    const draining = drainTransportEvents(handle.events())
-    try {
-      const outcome = await collectTurn(input, handle, draining)
-      writableDb()
-        .query(
-          `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=?,
-                          quota_used_percent_start=?,quota_used_percent_end=?,
-                          quota_window_minutes=?,quota_resets_at=? WHERE record_id=?`,
-        )
-        .run(
-          outcome.status === 'ok' ? 'ok' : 'failed',
-          Date.now() - started,
-          outcome.status === 'ok' ? 0 : 1,
-          Buffer.byteLength(outcome.output),
-          outcome.status === 'ok' ? null : outcome.output,
-          ...quotaReadingsColumnValues(outcome.quotaReadings ?? EMPTY_QUOTA_READINGS),
-          recordId,
-        )
-      return {
-        ...outcome,
-        sessionId: outcome.sessionId,
-        loadSessionAdvertised: handle.loadSessionAdvertised === true,
-        compactions: observedProbeCompactions(input, scratchDir, outcome.sessionId),
-      }
-    } finally {
-      try {
-        handle.kill(9)
-      } catch {
-        /* exited */
-      }
-      void draining
-    }
+    const handle = await startProbeTransport(input, recordId, started, environment, cwd, scratchDir)
+    return runStartedProbeTurn(input, handle, recordId, started, scratchDir)
   } catch (error) {
     const detail = String((error as Error).message ?? error)
     writableDb()

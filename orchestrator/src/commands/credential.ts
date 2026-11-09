@@ -27,6 +27,8 @@ import {
   type CredentialAddress,
   deleteCredential,
   listCredentials,
+  projectCredentialAddress,
+  projectCredentialBinding,
   resolveCredentialValue,
   resolveProjectCredential,
   setCredential,
@@ -34,7 +36,6 @@ import {
 import { runWithEnvironment } from '../config/secret-run.ts'
 import { projectByName } from '../project/projects.ts'
 import { noActiveRecordSpaceRefusal } from '../record/record-project-destination.ts'
-import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { log } from './support.ts'
 
 type BindingOptions = {
@@ -93,20 +94,13 @@ async function bindingAddress(options: BindingOptions): Promise<CredentialBindin
   if (options.project && options.space)
     throw new Error('--project and --space are mutually exclusive')
   const client = configClient()
-  const who = await client.whoami()
   const project = options.project ? projectByName(options.project) : null
   if (options.project && !project) throw new Error(`no project ${options.project}`)
-  if (project && !project.recordId)
-    throw new Error(`project ${project.name} has no hosted record identity`)
+  if (project) return projectCredentialBinding(project, client)
+  const who = await client.whoami()
   const memberships = parseRecordSpaceMemberships(who.memberships)
   let destinationSpaceId: string
-  if (project) {
-    destinationSpaceId = await requireProjectRecordDestination(
-      project.name,
-      project.settings,
-      client,
-    )
-  } else if (options.space) {
+  if (options.space) {
     const membership = recordSpaceMembership(options.space, memberships)
     if (!membership) throw new Error(recordSpaceMembershipRefusal(options.space))
     destinationSpaceId = membership.spaceId
@@ -117,16 +111,29 @@ async function bindingAddress(options: BindingOptions): Promise<CredentialBindin
   const membership = recordSpaceMembership(destinationSpaceId, memberships)
   if (!membership) throw new Error(recordSpaceMembershipRefusal(destinationSpaceId))
   return {
-    projectId: project?.recordId ?? null,
-    projectName: project?.name,
+    projectId: null,
+    projectName: undefined,
     spaceName: membership.slug,
     destinationSpaceId,
   }
 }
 
 async function address(name: string, options: BindingOptions): Promise<CredentialAddress> {
+  const identity = identityName(name)
+  if (options.project) {
+    const project = projectByName(options.project)
+    if (!project) throw new Error(`no project ${options.project}`)
+    const target = await projectCredentialAddress(project, identity.provider)
+    return {
+      ...target,
+      ...identity,
+      mode: mode(options.mode),
+      environment: environment(options.env),
+      payer: options.shared ? 'shared' : 'personal',
+    }
+  }
   return {
-    ...identityName(name),
+    ...identity,
     ...(await bindingAddress(options)),
     mode: mode(options.mode),
     environment: environment(options.env),

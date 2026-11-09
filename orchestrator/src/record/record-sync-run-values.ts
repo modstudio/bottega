@@ -7,6 +7,11 @@ import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
 
 const bigint = (value: unknown) => BigInt(String(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
+const credentialRecordValues = (row: Payload) => ({
+  credentialId: nullableString(row.credentialId),
+  credentialPayer: nullableString(row.credentialPayer),
+  credentialBinding: nullableString(row.credentialBinding),
+})
 
 export function runRecordValues(
   row: Payload,
@@ -70,6 +75,7 @@ export function runRecordValues(
     transport: nullableString(row.transport),
     sessionId: nullableString(row.sessionId),
     routeReason: nullableString(row.routeReason),
+    ...credentialRecordValues(row),
     noFailover: Boolean(row.noFailover),
     automaticFailover: Boolean(row.automaticFailover),
     outsideWorktreeWrites: row.outsideWorktreeWrites,

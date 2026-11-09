@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { db, writableDb } from '../database/db.ts'
 import {
   carryRegistrationProbeAudit,
+  probeAgent,
   recordAgentProbe,
   recordSuccessfulRegistrationProbe,
   registrationProbeCacheReusable,
@@ -175,6 +176,23 @@ test('a cached probe that skipped the MCP turn is not reused once that turn is r
   expect(registrationProbeCacheReusable('acp', failedMcp, true, false, true)).toBe(false)
   // A stored passing MCP verdict is an answer, so it is reusable.
   expect(registrationProbeCacheReusable('acp', result(true), true, false, true)).toBe(true)
+})
+
+test('a provider agent refuses an unregistered probe cwd before returning a cached pass', async () => {
+  addAgent('cached-provider-probe-fixture', {
+    harness: 'goose',
+    backend: 'vendor',
+    model: 'fixture',
+    provider: 'openrouter',
+  })
+  recordAgentProbe('cached-provider-probe-fixture', result(true))
+
+  await expect(
+    probeAgent('cached-provider-probe-fixture', {
+      environment: {},
+      cwd: '/tmp/not-a-registered-project',
+    }),
+  ).rejects.toThrow('provider-backed agent requires a registered project')
 })
 
 test('changing an agent identity resets a probed writing capability', () => {
