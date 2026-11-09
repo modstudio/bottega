@@ -12,6 +12,21 @@ export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run 
 export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 
+export const machineNotTrustedRemedy = (spaceId: string) =>
+  `this machine is not trusted in record space ${spaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``
+
+export const configAccessRemedy = (space?: string) =>
+  `signed-in user lacks config access${space ? ` in record space ${space}` : ''}; a space owner or admin grants it with \`${PLATFORM_SLUG} record space access grant <email>\``
+
+export function recordSpaceMembershipRefusal(space: string): string {
+  return (
+    `the signed-in user is not a member of record space ${space}; ` +
+    `an invitation from a member of that space is needed; list invitations with ` +
+    `\`${PLATFORM_SLUG} record space invitations\`, then accept one with ` +
+    `\`${PLATFORM_SLUG} record space accept <invitation-id>\``
+  )
+}
+
 export const pinnedSpaceMismatchRemedy = (pinned: string) =>
   `record active space differs from this machine's initialized hosted-config space; switch back to ${pinned}, or remove this machine's hosted-config bootstrap and initialize it for the other space`
 

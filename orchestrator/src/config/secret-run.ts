@@ -98,6 +98,20 @@ export function namedSecretUnresolvedRefusal(
   )
 }
 
+/** Run argv with an already-resolved child environment and inherited terminal streams. */
+export async function runWithEnvironment(
+  argv: readonly string[],
+  env: Record<string, string | undefined>,
+): Promise<number> {
+  const spawned = Bun.spawn([...argv], {
+    env,
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  return (await spawned.exited) ?? 1
+}
+
 export async function runNamedSecrets(input: SecretRunInvocation): Promise<number> {
   assertRecordConnectionResolutionAllowed(input.names, process.env)
   let resolution: Awaited<ReturnType<typeof resolveEnvValuesWithHosted>>
@@ -111,11 +125,5 @@ export async function runNamedSecrets(input: SecretRunInvocation): Promise<numbe
   const child = childEnvironmentForNamedSecrets(input.names, resolution.values, process.env)
   if (!child.ok)
     throw new Error(namedSecretUnresolvedRefusal(child.unresolved, resolution.sealedEmpty))
-  const spawned = Bun.spawn(input.argv, {
-    env: child.env,
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
-  return (await spawned.exited) ?? 1
+  return runWithEnvironment(input.argv, child.env)
 }

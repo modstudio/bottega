@@ -37,6 +37,20 @@ export type CompleteCredentialFields = CredentialMetadataFields & {
   environment: CredentialEnvironment
 }
 
+/** Canonical hosted identity key. This is storage identity, never a delivery variable name. */
+export function credentialIdentityKey(fields: {
+  provider: string
+  name: string | null
+  type: string
+  mode: CredentialMode
+  environment: CredentialEnvironment
+}): string {
+  const name = [fields.provider, fields.name, fields.type]
+    .filter((part): part is string => part !== null)
+    .join('/')
+  return `${name}#${fields.mode}@${fields.environment}`
+}
+
 export function completeCredentialFields(row: {
   provider?: string | null
   name?: string | null

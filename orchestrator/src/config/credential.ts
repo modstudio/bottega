@@ -25,10 +25,10 @@ export type CredentialCandidate = CredentialIdentity & {
   payer: CredentialPayer
 }
 
-export type CredentialResolution =
+export type CredentialResolution<Candidate extends CredentialCandidate = CredentialCandidate> =
   | {
       kind: 'resolved'
-      credential: CredentialCandidate
+      credential: Candidate
       reason: 'project-preference' | 'space-preference' | 'default-order'
     }
   | { kind: 'refused'; refusal: string }
@@ -37,21 +37,6 @@ export function credentialHint(value: string): string {
   return value.length >= CREDENTIAL_HINT_MIN_LENGTH
     ? `${value.slice(0, 4)}…${value.slice(-4)}`
     : `${value.length} characters`
-}
-
-const upperSnake = (value: string) => value.toUpperCase().replaceAll('-', '_')
-
-export function credentialVariableName(
-  provider: string,
-  name: string | null,
-  type: string,
-  mode: CredentialMode,
-): string {
-  const base = [provider, name, type]
-    .filter((part): part is string => part !== null)
-    .map(upperSnake)
-    .join('_')
-  return mode === 'test' ? `${base}_TEST` : base
 }
 
 export function credentialDisplayName(
@@ -127,7 +112,7 @@ export function credentialSetRefusalText(
   return `credential ${name} (mode ${target.mode}, env ${target.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${modeOption}${environmentOption}\``
 }
 
-export function resolveCredential(input: {
+export function resolveCredential<Candidate extends CredentialCandidate>(input: {
   spaceId: string
   projectId: string
   projectName: string
@@ -136,9 +121,9 @@ export function resolveCredential(input: {
   type: string
   mode: CredentialMode
   environment: CredentialEnvironment
-  candidates: readonly CredentialCandidate[]
+  candidates: readonly Candidate[]
   preferences: readonly CredentialPreferencePayload[]
-}): CredentialResolution {
+}): CredentialResolution<Candidate> {
   const candidates = input.candidates.filter(
     (row) =>
       row.spaceId === input.spaceId &&

@@ -1,13 +1,13 @@
 // concern: record-sync-decision
 /** Pure authorization decisions for hosted evidence sync. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { recordSpaceMembershipRefusal } from './record-project-destination.ts'
 import type { RecordPrincipal } from './record-sync-contract.ts'
 
 export type RecordSyncAuthorizationDecision =

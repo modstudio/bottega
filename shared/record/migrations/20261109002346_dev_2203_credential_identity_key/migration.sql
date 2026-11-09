@@ -1,0 +1,1 @@
+ALTER TABLE "config_secret" ADD CONSTRAINT "config_secret_credential_identity_key_check" CHECK ("provider" IS NULL OR ("mode" IS NOT NULL AND "key" = "provider" || '/' || CASE WHEN "name" IS NULL THEN '' ELSE "name" || '/' END || "type" || '#' || "mode" || '@' || "environment"));

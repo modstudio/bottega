@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { GROUPS, ROUTES } from '../cli/routes.ts'
+import { GROUPS, HIDDEN_OWNER_COMMANDS, ROUTES } from '../cli/routes.ts'
 import { program as hubProgram } from '../hub/src/cli-program.ts'
 import { program as orchProgram } from '../orchestrator/src/cli/program.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
@@ -15,7 +15,17 @@ const BASELINE_PATH = fileURLToPath(new URL('./quality/command-descriptions.json
 const REGENERATE_COMMAND = 'bun scripts/check-command-descriptions.ts --write-baseline'
 
 function currentInventory() {
-  return documentationInventory(GROUPS, ROUTES, { orch: orchProgram, hub: hubProgram })
+  const programs = { orch: orchProgram, hub: hubProgram } as const
+  for (const [owner, names] of Object.entries(HIDDEN_OWNER_COMMANDS) as [
+    keyof typeof programs,
+    readonly string[],
+  ][]) {
+    const registered = new Set(programs[owner].commands.map((command) => command.name()))
+    for (const name of names)
+      if (!registered.has(name))
+        throw new Error(`${owner} hidden command is not registered: ${name}`)
+  }
+  return documentationInventory(GROUPS, ROUTES, programs)
 }
 
 function currentFindings() {

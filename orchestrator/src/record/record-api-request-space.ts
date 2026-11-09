@@ -2,6 +2,7 @@
 /** Authorizes an optional request destination against server-owned memberships. */
 
 import type { Context, Hono, Next } from 'hono'
+import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
@@ -9,7 +10,6 @@ import {
   recordSpaceRequestDecision,
 } from '../../../shared/record-space-request.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { recordSpaceMembershipRefusal } from './record-project-destination.ts'
 
 type ApiEnvironment = {
   Variables: { identity: RecordIdentity; destinationSpaceId?: string }

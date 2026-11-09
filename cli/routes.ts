@@ -35,6 +35,7 @@ export const GROUPS = [
   ['workflow', 'workflows and their cursors'],
   ['task', 'tasks and task documents'],
   ['note', 'observations and their lifecycle'],
+  ['credential', 'manage typed provider credentials'],
   ['report', 'reports'],
   ['board', "the architects' board"],
   ['doc', 'documents, canon, code search, and ports'],
@@ -49,6 +50,12 @@ export const GROUPS = [
   ['machine', 'set up and maintain this machine'],
   ['mcp', 'model-context-protocol services'],
 ] as const
+
+/** Owner commands intentionally kept behind composed front-door behavior. */
+export const HIDDEN_OWNER_COMMANDS = {
+  orch: ['storage'],
+  hub: [],
+} as const
 
 const route = (
   command: string,
@@ -113,6 +120,7 @@ export const ROUTES = (
     route('task', 'hub', 'task'),
     route('note new', 'hub', 'note new'),
     route('note', 'hub', 'note'),
+    route('credential', 'orch', 'credential'),
     route('report', 'hub', 'report'),
     route('board', 'orch', 'board'),
     route('doc subject', 'orch', 'subject'),

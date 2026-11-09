@@ -442,6 +442,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-request-space.ts', [
     'hono',
+    '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-space-request.ts',
     './record-auth.ts',
@@ -453,6 +454,7 @@ export const recordModules: RecordModule[] = [
     '../project/project-settings.ts',
   ]),
   module('orchestrator/src/record/record-project-destination-client.ts', [
+    '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
     '../project/project-settings.ts',
     './record-api-client.ts',

@@ -7,6 +7,7 @@ import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { resolvePersonalItemSpace } from '../../../shared/personal-item-space.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { configAccessRemedy } from '../../../shared/record-remedies.ts'
 import { recordDate, recordIso } from '../../../shared/record-timestamp.ts'
 import {
   generateMachineKeyPair,
@@ -117,7 +118,6 @@ function wrapRow(row: Record<string, unknown>): DataKeyWrap {
   }
 }
 
-const configAccessRemedy = `a space owner or admin grants config access with \`${PLATFORM_SLUG} record space access grant <email>\``
 const withdrawnConfigAccessRemedy = `ask a space owner or admin to grant config access, run \`${PLATFORM_SLUG} machine config machine init\` to replace the revoked key, then trust the new key from a machine that holds config access with \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``
 const machineClaimRemedy = `run \`${PLATFORM_SLUG} machine config machine init\` on that machine`
 
@@ -141,7 +141,7 @@ export async function requireConfigAccess(tx: SQL, input: ConfigTenant): Promise
     throw revokedMachineRefusal(
       'signed-in user lacks config access and a machine key of this user in the space is revoked',
     )
-  throw new ConfigServiceError(`signed-in user lacks config access; ${configAccessRemedy}`, 422)
+  throw new ConfigServiceError(configAccessRemedy(), 422)
 }
 
 async function refuseRevokedRecipient(
@@ -648,7 +648,7 @@ export function assertWrapRecipientAccess(
     )
   if (configAccess !== true)
     throw new ConfigServiceError(
-      `wrap recipient ${keyId} belongs to a user without config access; ${configAccessRemedy}`,
+      `wrap recipient ${keyId} belongs to a user without config access; ${configAccessRemedy()}`,
       422,
     )
 }

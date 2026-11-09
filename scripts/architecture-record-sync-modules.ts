@@ -65,6 +65,7 @@ export const recordSyncModules: RecordSyncModule[] = [
   ]),
   module('orchestrator/src/record/record-sync-decision.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-space-request.ts',
     './record-auth.ts',

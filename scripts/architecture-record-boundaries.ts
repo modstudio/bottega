@@ -333,6 +333,7 @@ export const recordReadBoundariesBeforePublish: ImportBoundary[] = [
       'bun',
       '../../../shared/brand.ts',
       '../../../shared/machine-key-id.ts',
+      '../../../shared/record-remedies.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
       '../../../shared/secret-envelope.ts',

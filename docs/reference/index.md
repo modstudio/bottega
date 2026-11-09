@@ -12,6 +12,7 @@ Every command accepts `--help`.
 - [workflow](./workflow.md) — workflows and their cursors
 - [task](./task.md) — tasks and task documents
 - [note](./note.md) — observations and their lifecycle
+- [credential](./credential.md) — manage typed provider credentials
 - [report](./report.md) — reports
 - [board](./board.md) — the architects' board
 - [doc](./doc.md) — documents, canon, code search, and ports

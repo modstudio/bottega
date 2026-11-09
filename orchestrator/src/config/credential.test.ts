@@ -3,7 +3,6 @@ import {
   type CredentialCandidate,
   credentialDisplayName,
   credentialHint,
-  credentialVariableName,
   parseCredentialSlot,
   resolveCredential,
 } from './credential.ts'
@@ -147,18 +146,9 @@ test('resolver never crosses credential names', () => {
   ).toMatchObject({ kind: 'resolved', credential: named })
 })
 
-test('hints mask only long values and names are derived', () => {
+test('hints mask only long values and display names show mode and environment', () => {
   expect(credentialHint('12345678901234567890')).toBe('1234…7890')
   expect(credentialHint('short')).toBe('5 characters')
-  expect(credentialVariableName('better-auth', null, 'secret-key', 'default')).toBe(
-    'BETTER_AUTH_SECRET_KEY',
-  )
-  expect(credentialVariableName('openrouter', null, 'api-key', 'test')).toBe(
-    'OPENROUTER_API_KEY_TEST',
-  )
-  expect(credentialVariableName('aws', 'backup', 'access-key', 'default')).toBe(
-    'AWS_BACKUP_ACCESS_KEY',
-  )
   expect(credentialDisplayName('openrouter', null, 'api-key', 'test', 'local')).toBe(
     'openrouter/api-key (mode test, env local)',
   )

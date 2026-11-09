@@ -8,6 +8,7 @@ import type { HostedConfigIdentity } from './hosted-config-space.ts'
 import {
   HOSTED_CONFIG_ENVIRONMENT,
   HostedOpenError,
+  hostedIdentity,
   openHostedSecret,
 } from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
@@ -82,13 +83,12 @@ async function openedValue(
 ): Promise<string> {
   try {
     const plaintext = await openHostedSecret({
-      client: deps.client,
       row,
       key,
       machine: deps.machine,
       trust: deps.trust,
       expected: { key: name, scope, environment: HOSTED_CONFIG_ENVIRONMENT },
-      pinnedIdentity: deps.pinnedIdentity,
+      identity: await hostedIdentity(deps.client, deps.pinnedIdentity),
     })
     return new TextDecoder('utf-8', { fatal: true }).decode(plaintext)
   } catch (error) {

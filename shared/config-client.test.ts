@@ -46,6 +46,26 @@ test('config client names an unreachable route and response status without expos
   expect((error as Error).message).not.toContain('secret body')
 })
 
+test('config client preserves a JSON refusal error and remedy', async () => {
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () =>
+      Response.json(
+        { error: 'signed-in user lacks config access', remedy: 'ask a space owner to grant it' },
+        { status: 422 },
+      ),
+    'test',
+  )
+  const refusal = client.listSecrets()
+  await expect(refusal).rejects.toThrow(
+    'signed-in user lacks config access; ask a space owner to grant it',
+  )
+  await expect(refusal).rejects.toMatchObject({
+    error: 'signed-in user lacks config access',
+    remedy: 'ask a space owner to grant it',
+  })
+})
+
 test('config client refuses a non-JSON response with its source and response facts', async () => {
   const client = configClient(
     { BOTTEGA_RECORD_API_URL: 'https://record.test' },

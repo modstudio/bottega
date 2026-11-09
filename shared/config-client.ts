@@ -16,25 +16,30 @@ export class ConfigClientError extends Error {
   readonly reason: ConfigClientErrorReason
   readonly route: string
   readonly status?: number
+  readonly error?: string
+  readonly remedy?: string
   constructor(
     reason: ConfigClientErrorReason,
     route: string,
     status?: number,
-    details?: { url: string; contentType: string },
+    details?: { url?: string; contentType?: string; error?: string; remedy?: string },
   ) {
+    const refusal = [details?.error, details?.remedy].filter(Boolean).join('; ')
     super(
       reason === 'not-configured'
         ? `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
         : reason === 'unreachable'
           ? `hosted config route ${route} is unreachable`
-          : details
+          : details?.url && details.contentType
             ? `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON. ${RECORD_SIGN_IN_REMEDY}`
-            : `hosted config route ${route} returned HTTP ${status}`,
+            : `hosted config route ${route} returned HTTP ${status}${refusal ? `: ${refusal}` : ''}`,
     )
     this.name = 'ConfigClientError'
     this.reason = reason
     this.route = route
     this.status = status
+    this.error = details?.error
+    this.remedy = details?.remedy
   }
 }
 
@@ -284,8 +289,8 @@ function configKeyClient(request: Request, query: Query) {
       request<{ retired: true }>(`/v1/config/data-keys/${encodeURIComponent(dekId)}/retire`, {
         method: 'POST',
       }),
-    listMachineKeys: () =>
-      request<{ items: MachineKey[] }>('/v1/config/machine-keys').then((x) => x.items),
+    listMachineKeys: (destination: ConfigDestination = {}) =>
+      request<{ items: MachineKey[] }>('/v1/config/machine-keys', destination).then((x) => x.items),
     registerMachineKey: (keyId: string, publicKey: string, label: string) =>
       request<MachineKey>(`/v1/config/machine-keys/${keyId}`, {
         method: 'PUT',
@@ -338,7 +343,16 @@ function createConfigClient(
         url: body.url,
         contentType: body.contentType,
       })
-    if (!response.ok) throw new ConfigClientError('response', route, response.status)
+    if (!response.ok) {
+      const refusal =
+        body.value && typeof body.value === 'object' && !Array.isArray(body.value)
+          ? (body.value as Record<string, unknown>)
+          : {}
+      throw new ConfigClientError('response', route, response.status, {
+        error: typeof refusal.error === 'string' ? refusal.error : undefined,
+        remedy: typeof refusal.remedy === 'string' ? refusal.remedy : undefined,
+      })
+    }
     return body.value as T
   }
   const query = (values: Record<string, string>) => `?${new URLSearchParams(values)}`

@@ -17,11 +17,7 @@ import {
   readHostedConfigIdentity,
   writeHostedConfigIdentity,
 } from '../../../shared/hosted-config-space.ts'
-import {
-  HOSTED_CONFIG_ENVIRONMENT,
-  hostedIdentity,
-  openHostedSecret,
-} from '../../../shared/hosted-secret-opening.ts'
+import { HOSTED_CONFIG_ENVIRONMENT, hostedIdentity } from '../../../shared/hosted-secret-opening.ts'
 import {
   type ConfigHome,
   configHomes,
@@ -39,7 +35,6 @@ import {
 } from '../../../shared/machine-config.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import {
-  machineKeyInfo,
   readMachineKey,
   replaceRevokedMachineKey,
   writeMachineKey,
@@ -74,6 +69,7 @@ import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
 import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
+import { localMachine, openHostedSecretRow } from './hosted-secret-row.ts'
 
 const hostedConfigClient = (env: ConfigEnvironment = process.env): ConfigClient =>
   configClient(env, fetch, undefined, undefined, recordConfigCallOutcome)
@@ -109,15 +105,6 @@ export function planRotation(
       .map((key) => key.id)
       .sort(),
   }
-}
-
-async function localMachine() {
-  const pair = readMachineKey()
-  if (!pair)
-    throw new Error(
-      `machine key is not initialized; run \`${PLATFORM_SLUG} machine config machine init\``,
-    )
-  return machineKeyInfo(pair)
 }
 
 async function identity(client: ConfigClient) {
@@ -348,26 +335,6 @@ export async function machineTrust(
   }
 }
 
-async function rowPlaintext(
-  client: ConfigClient,
-  row: ConfigSecret,
-  machine?: Awaited<ReturnType<typeof localMachine>>,
-): Promise<Uint8Array> {
-  const local = machine ?? (await localMachine())
-  const key = await client.getDataKey(row.dekId, local.keyId)
-  const full = await client.getSecret(row.key, row.scope, row.environment, {
-    projectId: row.projectId ?? null,
-  })
-  return openHostedSecret({
-    client,
-    row: full,
-    key,
-    machine: local,
-    trust: await readTrustList(),
-    expected: { key: row.key, scope: row.scope, environment: row.environment },
-  })
-}
-
 async function rotateDataKey(
   client: ConfigClient,
   machine: Awaited<ReturnType<typeof localMachine>>,
@@ -396,7 +363,12 @@ async function rotateDataKey(
   try {
     const who = await identity(client)
     for (const row of plan.reseal) {
-      const plaintext = await rowPlaintext(client, row, machine)
+      const plaintext = await openHostedSecretRow(
+        client,
+        row,
+        { projectId: row.projectId ?? null },
+        machine,
+      )
       const envelope = sealValue({
         dek,
         plaintext,
@@ -725,7 +697,7 @@ export async function migrateLegacyEnvironmentSecrets(
       if (isNotFound(error)) return null
       throw error
     }
-    const plaintext = adapters.plaintext ?? rowPlaintext
+    const plaintext = adapters.plaintext ?? openHostedSecretRow
     return new TextDecoder('utf-8', { fatal: true }).decode(await plaintext(client, row))
   }
   return applyLegacyEnvironmentSecretMigration(
@@ -764,7 +736,7 @@ export async function restoreLegacyEnvironmentSecrets(
     delete?: (name: string, scope: ConfigScope, client: ConfigClient) => Promise<unknown>
   } = {},
 ): Promise<void> {
-  const plaintext = adapters.plaintext ?? rowPlaintext
+  const plaintext = adapters.plaintext ?? openHostedSecretRow
   const read = async (name: string, scope: ConfigScope): Promise<string | null> => {
     try {
       const row = await client.getSecret(name, scope, HOSTED_CONFIG_ENVIRONMENT)

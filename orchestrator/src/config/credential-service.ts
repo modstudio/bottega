@@ -1,7 +1,6 @@
 // concern: credential-service
 /** Seals and addresses typed credentials without exposing plaintext to the hosted record. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ConfigClientError,
   type ConfigDestination,
@@ -12,7 +11,9 @@ import {
   type CompleteCredentialFields,
   CREDENTIAL_ENVIRONMENTS,
   completeCredentialFields,
+  credentialIdentityKey,
 } from '../../../shared/credential.ts'
+import { configAccessRemedy, machineNotTrustedRemedy } from '../../../shared/record-remedies.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
 import {
@@ -20,10 +21,12 @@ import {
   type CredentialMode,
   type CredentialPayer,
   credentialHint,
+  credentialPayerFromScope,
   credentialScopeFromPayer,
   credentialSetRefusalText,
-  credentialVariableName,
+  resolveCredential,
 } from './credential.ts'
+import { openHostedSecretRow } from './hosted-secret-row.ts'
 
 export type CredentialAddress = {
   provider: string
@@ -47,7 +50,7 @@ function missingProjectWrapRefusal(address: CredentialAddress): Error {
     ? `project ${address.projectName} in space ${address.spaceName}`
     : `space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: this machine has no data-key wrap in that space; run \`${PLATFORM_SLUG} record space switch ${address.spaceName}\`, then \`${PLATFORM_SLUG} record space access grant\``,
+    `cannot access credentials for ${binding}: ${machineNotTrustedRemedy(address.spaceName)}; ${configAccessRemedy(address.spaceName)}`,
   )
 }
 
@@ -68,7 +71,7 @@ export async function setCredential(
   const plaintext = stripTrailingNewline(value)
   try {
     return await setSecret(
-      credentialVariableName(address.provider, address.name, address.type, address.mode),
+      credentialIdentityKey(address),
       plaintext,
       credentialScopeFromPayer(address.payer),
       client,
@@ -122,7 +125,7 @@ export async function listCredentials(
 }
 
 export async function deleteCredential(address: CredentialAddress, client = configClient()) {
-  const key = credentialVariableName(address.provider, address.name, address.type, address.mode)
+  const key = credentialIdentityKey(address)
   try {
     return await deleteSecret(key, credentialScopeFromPayer(address.payer), client, {
       destination: destination(address),
@@ -133,4 +136,53 @@ export async function deleteCredential(address: CredentialAddress, client = conf
       throw missingCredentialRefusal(address)
     throw error
   }
+}
+
+/** Resolve one project credential and retain the selected hosted row without matching it again. */
+export async function resolveProjectCredential(
+  address: CredentialAddress,
+  client = configClient(),
+) {
+  if (!address.projectId || !address.projectName)
+    throw new Error('credential value resolution requires a project binding')
+  const projectId = address.projectId
+  const projectName = address.projectName
+  const rows = await listCredentials(address.destinationSpaceId, {}, client)
+  const preferences = await client.listCredentialPreferences({
+    destinationSpaceId: address.destinationSpaceId,
+  })
+  const result = resolveCredential({
+    spaceId: address.destinationSpaceId,
+    projectId,
+    projectName,
+    provider: address.provider,
+    name: address.name,
+    type: address.type,
+    mode: address.mode,
+    environment: address.environment,
+    candidates: rows.map((row) => ({
+      row,
+      spaceId: address.destinationSpaceId,
+      projectId: row.projectId ?? null,
+      payer: credentialPayerFromScope(row.scope),
+      provider: row.provider,
+      name: row.name,
+      type: row.type,
+      mode: row.mode,
+      environment: row.environment,
+    })),
+    preferences,
+  })
+  if (result.kind === 'refused') throw new Error(result.refusal)
+  const { row } = result.credential
+  return { ...result, row }
+}
+
+/** Resolve and open one project credential; plaintext exists only in the returned memory value. */
+export async function resolveCredentialValue(address: CredentialAddress, client = configClient()) {
+  const result = await resolveProjectCredential(address, client)
+  const { row } = result
+  const target = { destinationSpaceId: address.destinationSpaceId, projectId: row.projectId }
+  const plaintext = await openHostedSecretRow(client, row, target)
+  return { ...result, value: new TextDecoder('utf-8', { fatal: true }).decode(plaintext) }
 }

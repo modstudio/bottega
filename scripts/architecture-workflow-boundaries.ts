@@ -8,6 +8,7 @@ export const workflowBoundarySpecs = [
     allowed: [
       'bun:sqlite',
       '../../../shared/brand.ts',
+      '../../../shared/record-remedies.ts',
       '../project-space.ts',
       '../project/projects.ts',
       '../record/install-binding.ts',
