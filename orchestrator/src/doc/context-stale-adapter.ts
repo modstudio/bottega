@@ -30,12 +30,12 @@ export function staleContextForSession(session: string, database: Database = db(
       if (isClosedStep(entry)) add({ key: row.key, at: entry.at })
   }
   for (const row of database
-    .query<KeyAt, [string]>(
+    .query<KeyAt, [string, string]>(
       `SELECT COALESCE(q.workflow_key,r.launch_key) key,q.answered_at at
        FROM question q LEFT JOIN run r ON r.record_id=q.run_record_id
-       WHERE q.answered_by=? AND q.answered_at IS NOT NULL`,
+       WHERE q.answered_by IN (?,?) AND q.answered_at IS NOT NULL`,
     )
-    .all(session))
+    .all(session, `operator via ${session}`))
     add(row)
 
   const revisions = database

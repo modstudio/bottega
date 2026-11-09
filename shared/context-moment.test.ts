@@ -16,7 +16,7 @@ describe('context moment write', () => {
     test(`${moment} maps to its task holder and kind`, () => {
       const write = contextMomentWrite({ moment, taskKey: 'DEV-2225', questionId: 5288 })
       expect(write).toMatchObject({ holder: 'DEV-2225', kind: expected[moment] })
-      expect(write?.line).toEndWith(`(${write.command})`)
+      expect(write?.line).toEndWith(`(${write?.command})`)
     })
   }
 
