@@ -202,7 +202,7 @@ function registerNoteReferenceCommands(note: Command): void {
       if (recorded) console.log('notes recorded as distinct')
       else {
         console.error(
-          'no note-duplicate answer is available, so the distinct ruling was not recorded; check TYPESAFE_KEY and retry',
+          `no note-duplicate answer is available, so the distinct ruling was not recorded; run ${PLATFORM_SLUG} credential set typesafe/api-key and retry`,
         )
         process.exitCode = 1
       }

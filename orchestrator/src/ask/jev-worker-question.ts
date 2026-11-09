@@ -2,6 +2,7 @@
 /** Adapts stored worker questions to one shared TypeSafe request. */
 import type { Database } from 'bun:sqlite'
 import { readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import {
   askTypedQuestionsClient,
@@ -344,7 +345,7 @@ export async function preAnswerWorkerQuestions(input: BatchInput): Promise<PreAn
     if (response.kind !== 'answer') {
       storeBatchError(
         response.kind === 'missing-key'
-          ? 'skipped: TYPESAFE_KEY is not configured'
+          ? `skipped: typesafe/api-key credential is not configured; run ${PLATFORM_SLUG} credential set typesafe/api-key`
           : response.error,
       )
       return results

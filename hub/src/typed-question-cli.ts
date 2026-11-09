@@ -19,7 +19,7 @@ export function hubTypedQuestionCommand(
     presentation.log(
       days !== undefined
         ? `no typed-question answers recorded for the last ${days} day(s); run without the filter to see every recorded question`
-        : `no typed-question answers recorded — they are recorded when ${PLATFORM_SLUG} note new is run with TYPESAFE_KEY set`,
+        : `no typed-question answers recorded — they are recorded when ${PLATFORM_SLUG} note new is run after ${PLATFORM_SLUG} credential set typesafe/api-key`,
     )
     return
   }
