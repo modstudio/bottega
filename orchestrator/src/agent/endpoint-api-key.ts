@@ -25,7 +25,7 @@ type EndpointKeyRow = {
   provider?: string | null
 }
 
-export type CredentialPayment = {
+type CredentialPayment = {
   credentialId: string
   payer: 'personal' | 'shared'
   binding: 'space' | 'project'

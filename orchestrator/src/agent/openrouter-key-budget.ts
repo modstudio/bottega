@@ -89,7 +89,7 @@ export function openRouterKeyBudgetRefusal(
 function isOpenRouterKeyBudgetAgent(row: OpenRouterKeyRow): boolean {
   return (
     row.billing === 'metered' &&
-    Boolean(row.apiKeySecret?.trim()) &&
+    Boolean(row.provider?.trim() || row.apiKeySecret?.trim()) &&
     isOpenRouterBaseUrl(row.baseUrl)
   )
 }

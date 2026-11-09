@@ -186,7 +186,12 @@ test('a successful registration probe clears a quota cooldown', async () => {
   )
 
   expect(calls).toEqual(['codex'])
-  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env, fresh: false })
+  expect(probeInputs).toEqual({
+    path: process.env.PATH,
+    environment: process.env,
+    fresh: false,
+    cwd: process.cwd(),
+  })
   expect(
     candidates('implement').find((candidate) => candidate.agent === 'codex')?.cooling,
   ).toBeNull()
@@ -212,7 +217,12 @@ test('agent probe forwards the fresh option', async () => {
     },
   )
 
-  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env, fresh: true })
+  expect(probeInputs).toEqual({
+    path: process.env.PATH,
+    environment: process.env,
+    fresh: true,
+    cwd: process.cwd(),
+  })
 })
 
 test('a successful registration probe does not clear a billing hold', async () => {

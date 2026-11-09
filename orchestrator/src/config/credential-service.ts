@@ -76,10 +76,11 @@ export function providerProjectRequiredRefusal(): string {
 export async function projectCredentialAddress(
   project: ProjectCredentialTarget,
   provider: string,
-  client = configClient(),
+  client?: ReturnType<typeof configClient>,
 ): Promise<CredentialAddress> {
   if (!project.recordId) throw new Error(projectRecordIdentityRefusal(project.name))
-  const who = await client.whoami()
+  const selectedClient = client ?? configClient()
+  const who = await selectedClient.whoami()
   const destinationSpaceId = await requireProjectRecordDestination(project.name, project.settings, {
     whoami: async () => who,
   })
@@ -252,14 +253,17 @@ export async function resolveCredentialValue(address: CredentialAddress, client 
 export async function projectCredentialRouteFacts(
   project: ProjectCredentialTarget | null,
   providers: Iterable<string>,
-  client = configClient(),
+  client?: ReturnType<typeof configClient>,
 ) {
+  const distinctProviders = [...new Set(providers)]
+  if (!distinctProviders.length) return new Map()
+  const selectedClient = client ?? configClient()
   const entries = await Promise.all(
-    [...new Set(providers)].map(async (provider) => {
+    distinctProviders.map(async (provider) => {
       try {
         if (!project) throw new Error(providerProjectRequiredRefusal())
-        const address = await projectCredentialAddress(project, provider, client)
-        await resolveProjectCredential(address, client)
+        const address = await projectCredentialAddress(project, provider, selectedClient)
+        await resolveProjectCredential(address, selectedClient)
         return [provider, { status: 'resolved' as const }] as const
       } catch (error) {
         return [

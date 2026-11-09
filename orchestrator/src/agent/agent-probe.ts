@@ -427,13 +427,17 @@ function registrationProbeScratch(): { scratch: string; schemaPath: string } {
   return { scratch, schemaPath }
 }
 
+function probeRowAndProject(name: string, inputs: AgentProbeInputs) {
+  const row = agentRows().find((candidate) => candidate.name === name)
+  if (!row) throw new Error(`unknown agent "${name}"`)
+  return { row, project: projectAt(inputs.cwd ?? process.cwd()) }
+}
+
 export async function probeAgent(
   name: string,
   inputs: AgentProbeInputs,
 ): Promise<RegistrationProbeResult> {
-  const row = agentRows().find((candidate) => candidate.name === name)
-  if (!row) throw new Error(`unknown agent "${name}"`)
-  const project = projectAt(inputs.cwd ?? process.cwd())
+  const { row, project } = probeRowAndProject(name, inputs)
   const previous = row.probe_result ? JSON.parse(row.probe_result) : null
   const declared = row.jobs ? (JSON.parse(row.jobs) as string[]) : null
   const needs = registrationProbeRequirements(declared)

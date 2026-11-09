@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -80,7 +79,7 @@ import { sha } from './prompt-sha.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import { capacityStartupFailure, selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
-import { pruneRuns, RUNS_DIR, readDispatchState, unclaimedRunFilePaths } from './run-artifacts.ts'
+import { pruneRuns, RUNS_DIR, readDispatchState, unclaimedPaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
@@ -501,9 +500,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
    * reserved id for a detached run; a foreground run has none yet, and a random
    * suffix covers it without reintroducing a clock race.
    */
-  const unique = opts.reserveId ?? `x${randomUUID().slice(0, 8)}`
-  const { paths, stamp, initialOutPath } = unclaimedRunFilePaths(RUNS_DIR, unique, name, opts.job)
-  let outPath = initialOutPath
+  let { stamp, outPath } = unclaimedPaths(RUNS_DIR, opts.reserveId, name, opts.job)
   const endpoint = await endpointApiKeyForProject(a, runProject)
   const claimedRun = await claimRun({
     opts,

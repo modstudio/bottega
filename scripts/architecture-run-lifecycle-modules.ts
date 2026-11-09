@@ -340,6 +340,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
       'node:fs',
       '../../../shared/brand.ts',
       '../agent/agent-registry.ts',
+      '../agent/provider-credential-routing.ts',
       '../close/close-out.ts',
       '../contract/contract.ts',
       '../database/db.ts',

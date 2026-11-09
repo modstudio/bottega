@@ -74,6 +74,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'run-artifacts-boundary',
     'orchestrator/src/run/run-artifacts.ts',
     [
+      'node:crypto',
       'node:fs',
       'node:path',
       '../filesystem-identity-plan.ts',

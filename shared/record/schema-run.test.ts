@@ -112,6 +112,19 @@ test('run link guard sees every space and the constraint permits only unlinked p
       database.exec(runInsert('01990000-0000-7000-8000-000000002046', firstSpaceId, false)),
     ).rejects.toThrow('run_task_or_project_unless_probe')
     await database.exec(runInsert('01990000-0000-7000-8000-000000002047', firstSpaceId, true))
+    await expect(
+      database.exec(
+        `UPDATE run SET credential_payer='vendor' WHERE id='01990000-0000-7000-8000-000000002047'`,
+      ),
+    ).rejects.toThrow('run_credential_payer_check')
+    await expect(
+      database.exec(
+        `UPDATE run SET credential_binding='machine' WHERE id='01990000-0000-7000-8000-000000002047'`,
+      ),
+    ).rejects.toThrow('run_credential_binding_check')
+    await database.exec(
+      `UPDATE run SET credential_payer='shared', credential_binding='project' WHERE id='01990000-0000-7000-8000-000000002047'`,
+    )
     expect(
       (
         await database.query<{ count: number }>(

@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
+import { providerCredentialRoutingAt } from '../agent/provider-credential-routing.ts'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
@@ -227,6 +228,9 @@ export async function selectFailoverSuccessor(input: {
   avoidedAgents: string[]
   distinctModels: string[] | undefined
 }) {
+  const { facts: credentialFacts } = await providerCredentialRoutingAt(
+    input.launchCwd ?? input.callerCwd,
+  )
   const select = () => {
     try {
       return pick(
@@ -245,6 +249,7 @@ export async function selectFailoverSuccessor(input: {
           ),
           pinnedTransport: input.pinnedTransport ?? undefined,
           project: input.repo,
+          credentialFacts,
         },
         false,
         input.lens ?? undefined,
