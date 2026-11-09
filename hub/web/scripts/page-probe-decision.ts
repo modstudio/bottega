@@ -29,6 +29,7 @@ export const PARAMETERIZED_ROUTES: readonly ParameterizedRoute[] = [
   { template: '/projects/$name', parent: '/projects' },
   { template: '/docs/$scope/$subject/$slug', parent: '/docs' },
   { template: '/inbox/$kind/$id', parent: '/inbox' },
+  { template: '/secrets/$credentialKey', parent: '/secrets' },
 ]
 
 function routePattern(template: string): RegExp {
