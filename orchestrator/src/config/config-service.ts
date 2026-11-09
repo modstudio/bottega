@@ -70,6 +70,7 @@ import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
 import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
+import { machineTrustInSpace } from './named-space-config.ts'
 
 const hostedConfigClient = (env: ConfigEnvironment = process.env): ConfigClient =>
   configClient(env, fetch, undefined, undefined, recordConfigCallOutcome)
@@ -292,7 +293,9 @@ export async function machineTrust(
   publicKey: string,
   label: string,
   client = hostedConfigClient(),
+  requestedSpace?: string,
 ) {
+  if (requestedSpace) return machineTrustInSpace(keyId, publicKey, label, requestedSpace, client)
   const publicBytes = bytes(publicKey)
   if ((await machineKeyId(publicBytes)) !== keyId)
     throw new Error('machine key id does not match public key')

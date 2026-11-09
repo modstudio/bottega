@@ -115,18 +115,25 @@ export type ConfigCallOutcomeRecorder = (observation: ConfigCallObservation) => 
 
 function configAuthorizationClient(request: Request) {
   return {
-    createMachineKeyClaimChallenge: (keyId: string) =>
+    createMachineKeyClaimChallenge: (keyId: string, destination: ConfigDestination = {}) =>
       request<{ challengeId: string; enc: string; ciphertext: string; senderPublicKey: string }>(
         `/v1/config/machine-keys/${keyId}/claim-challenge`,
-        { method: 'POST' },
+        { ...destination, method: 'POST' },
       ),
-    claimMachineKey: (keyId: string, challengeId: string, nonce: string) =>
+    claimMachineKey: (
+      keyId: string,
+      challengeId: string,
+      nonce: string,
+      destination: ConfigDestination = {},
+    ) =>
       request<{ claimed: true }>(`/v1/config/machine-keys/${keyId}/claim`, {
+        ...destination,
         method: 'POST',
         body: JSON.stringify({ challengeId, nonce }),
       }),
-    revokeMachineKey: (keyId: string) =>
+    revokeMachineKey: (keyId: string, destination: ConfigDestination = {}) =>
       request<{ revoked: true }>(`/v1/config/machine-keys/${keyId}/revoke`, {
+        ...destination,
         method: 'POST',
       }),
   }
@@ -159,16 +166,20 @@ function configValueClient(request: Request, query: Query) {
         value: string
         expectedRowVersion: number | null
       },
+      destination: ConfigDestination = {},
     ) =>
       request<ConfigEntry>(`/v1/config/entries/${encodeURIComponent(key)}`, {
+        ...destination,
         method: 'PUT',
         body: JSON.stringify(input),
       }),
     deleteEntry: (
       key: string,
       input: { scope: ConfigScope; environment: string; expectedRowVersion: number },
+      destination: ConfigDestination = {},
     ) =>
       request<{ deleted: true }>(`/v1/config/entries/${encodeURIComponent(key)}`, {
+        ...destination,
         method: 'DELETE',
         body: JSON.stringify(input),
       }),
@@ -275,24 +286,36 @@ function configKeyClient(request: Request, query: Query) {
         `/v1/config/data-keys/${encodeURIComponent(dekId)}${query({ recipientKeyId })}`,
         destination,
       ),
-    createDataKey: (input: { dekId: string; version: number; wraps: DataKeyWrap[] }) =>
+    createDataKey: (
+      input: { dekId: string; version: number; wraps: DataKeyWrap[] },
+      destination: ConfigDestination = {},
+    ) =>
       request<{ id: string; version: number }>('/v1/config/data-keys', {
+        ...destination,
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    addWraps: (dekId: string, wraps: DataKeyWrap[]) =>
+    addWraps: (dekId: string, wraps: DataKeyWrap[], destination: ConfigDestination = {}) =>
       request<{ added: number }>(`/v1/config/data-keys/${encodeURIComponent(dekId)}/wraps`, {
+        ...destination,
         method: 'POST',
         body: JSON.stringify({ wraps }),
       }),
-    retireDataKey: (dekId: string) =>
+    retireDataKey: (dekId: string, destination: ConfigDestination = {}) =>
       request<{ retired: true }>(`/v1/config/data-keys/${encodeURIComponent(dekId)}/retire`, {
+        ...destination,
         method: 'POST',
       }),
     listMachineKeys: (destination: ConfigDestination = {}) =>
       request<{ items: MachineKey[] }>('/v1/config/machine-keys', destination).then((x) => x.items),
-    registerMachineKey: (keyId: string, publicKey: string, label: string) =>
+    registerMachineKey: (
+      keyId: string,
+      publicKey: string,
+      label: string,
+      destination: ConfigDestination = {},
+    ) =>
       request<MachineKey>(`/v1/config/machine-keys/${keyId}`, {
+        ...destination,
         method: 'PUT',
         body: JSON.stringify({ publicKey, label }),
       }),
