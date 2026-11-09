@@ -76,16 +76,13 @@ test('account commands expose reach while prefer names account only as a slot', 
   expect(useDescription).not.toContain('shared@account')
 })
 
-test('credential writes refuse conflicting binding options before resolving an address', () => {
-  for (const verb of ['set', 'delete', 'reach']) {
-    for (const options of [
-      { project: 'project-one', account: true },
-      { project: 'project-one', space: 'space-one' },
-    ]) {
-      expect(
-        () => validateBindingExclusivity(options),
-        `${verb} ${JSON.stringify(options)}`,
-      ).toThrow('--account, --project, and --space are mutually exclusive')
-    }
+test('binding exclusivity refuses --project combined with --account or --space', () => {
+  for (const options of [
+    { project: 'project-one', account: true },
+    { project: 'project-one', space: 'space-one' },
+  ]) {
+    expect(() => validateBindingExclusivity(options), JSON.stringify(options)).toThrow(
+      '--account, --project, and --space are mutually exclusive',
+    )
   }
 })
