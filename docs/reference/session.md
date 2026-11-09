@@ -43,7 +43,7 @@ take over another session's run chains
 
 ## bottega session close-out
 
-**Synopsis:** `bottega session close-out [--session <id>] [--dry-run] [--json]`
+**Synopsis:** `bottega session close-out [--session <id>] [--dry-run] [--resume] [--json]`
 
 release and verify everything one session owns
 
@@ -51,6 +51,7 @@ release and verify everything one session owns
 
 - `--session <id>`: select a session other than the calling harness session
 - `--dry-run`: report releases without changing anything
+- `--resume`: keep session context items for a successor resume brief
 - `--json`: write the close-out report as JSON
 
 ### Related

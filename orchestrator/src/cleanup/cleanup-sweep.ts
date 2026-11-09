@@ -16,7 +16,6 @@ import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { pruneHostedCallOutcomes } from '../hosted-call-outcome.ts'
-import { filedIssueLoopRun } from '../issue/issue-queue.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import { pruneMonitorRows } from '../monitor/monitor-retention.ts'
 import {
@@ -63,6 +62,7 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from './cleanup.ts'
+import { sweepSessionContext } from './cleanup-sweep-context.ts'
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanAfterRemoval,
@@ -388,6 +388,34 @@ function sweepCandidateInProject(row: SweepCandidate, selectedProject: Project |
   )
 }
 
+function recordedSweepCandidates(selectedProject: Project | null) {
+  return (
+    db()
+      .query(
+        `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) root_record_id,
+              r.repo, r.project_record_id, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
+              r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
+              r.launch_key, r.close_out_outcome
+         FROM run r
+         LEFT JOIN session_seen seen ON seen.session_id=r.session_id
+        WHERE r.status IN ${TERMINAL_RUN_STATUS_SQL}
+        ORDER BY r.number`,
+      )
+      .all() as Array<SweepCandidate & { close_out_outcome: string | null }>
+  )
+    .filter((row) =>
+      isSweepCandidate({
+        status: row.status,
+        worktree: row.worktree,
+        closeOutOutcome: row.close_out_outcome,
+      }),
+    )
+    .filter(
+      (row) => !row.worktree || shouldSweepHookTree(row as SweepCandidate & { worktree: string }),
+    )
+    .filter((row) => sweepCandidateInProject(row, selectedProject))
+}
+
 function printSweepKept(
   released: number,
   absent: number,
@@ -543,8 +571,7 @@ function sweepUnjudgedRuns(
       ownerSessionId: row.session_id,
       ownerLastSeenAt: row.session_last_seen === null ? null : Date.parse(row.session_last_seen),
       runLastActivityAt: Date.parse(row.run_last_activity),
-      coordinatorRun:
-        filedIssueLoopRun({ id: row.record_id, job: row.job, label: row.label }) !== null,
+      coordinatorRun: row.coordinator_run,
       now,
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
     })
@@ -807,31 +834,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     trust: trustObservation,
   })
   const runLeftovers = sweepExpiredRunStore(options, selectedProject, options.presentation)
-  const rows = (
-    db()
-      .query(
-        `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) root_record_id,
-              r.repo, r.project_record_id, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
-              r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
-              r.launch_key, r.close_out_outcome
-         FROM run r
-         LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-        WHERE r.status IN ${TERMINAL_RUN_STATUS_SQL}
-        ORDER BY r.number`,
-      )
-      .all() as Array<SweepCandidate & { close_out_outcome: string | null }>
-  )
-    .filter((row) =>
-      isSweepCandidate({
-        status: row.status,
-        worktree: row.worktree,
-        closeOutOutcome: row.close_out_outcome,
-      }),
-    )
-    .filter(
-      (row) => !row.worktree || shouldSweepHookTree(row as SweepCandidate & { worktree: string }),
-    )
-    .filter((row) => sweepCandidateInProject(row, selectedProject))
+  const rows = recordedSweepCandidates(selectedProject)
 
   const { removeFor } = await import('../worktree/worktree-remove.ts')
 
@@ -841,6 +844,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     forgotten: 0,
   }
   let cleanupFailed = archiveRetention.failed || runLeftovers.failed
+  cleanupFailed = [
+    cleanupFailed,
+    await sweepSessionContext({
+      enabled: selectedProject === null,
+      dryRun: dry,
+      presentation: options.presentation,
+    }),
+  ].includes(true)
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,

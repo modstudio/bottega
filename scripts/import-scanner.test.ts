@@ -28,6 +28,8 @@ describe('import scanner', () => {
       expect(importSpecifiers(source)).toEqual({
         specifiers: [expected],
         typeOnlySpecifiers: [],
+        namedImports: name === 're-export' ? [{ specifier: expected, name: 'value' }] : [],
+        moduleImports: source.includes('import(') ? [expected] : [],
         unresolvedRelative: [],
       })
     })
@@ -37,5 +39,30 @@ describe('import scanner', () => {
     const scan = importSpecifiers('import(`./${moduleName}.ts`)')
     expect(scan.specifiers).toEqual([])
     expect(scan.unresolvedRelative).toHaveLength(1)
+  })
+
+  test('reports the exported names used by a named import', () => {
+    expect(importSpecifiers("import { original as alias } from './named.ts'").namedImports).toEqual(
+      [{ specifier: './named.ts', name: 'original' }],
+    )
+  })
+
+  test('reports the exported names used by an export-from declaration', () => {
+    expect(importSpecifiers("export { original as alias } from './named.ts'").namedImports).toEqual(
+      [{ specifier: './named.ts', name: 'original' }],
+    )
+  })
+
+  test('reports a namespace import as a whole-module import', () => {
+    expect(importSpecifiers("import * as values from './named.ts'").moduleImports).toEqual([
+      './named.ts',
+    ])
+  })
+
+  test('skips type-only imports when reporting private import routes', () => {
+    const scan = importSpecifiers("import type * as values from './named.ts'")
+    expect(scan.typeOnlySpecifiers).toEqual(['./named.ts'])
+    expect(scan.namedImports).toEqual([])
+    expect(scan.moduleImports).toEqual([])
   })
 })

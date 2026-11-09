@@ -4,6 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { encodeContextItem } from '../doc/context-item-codec.ts'
+import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { getDoc, listDocRevisions, restoreDoc } from '../doc/docs.ts'
 import { resumeBriefAuthorSession } from '../doc/resume-brief-author.ts'
 import { upsertProject } from '../project/projects.ts'
@@ -70,6 +72,31 @@ test("a successor consuming a resume brief receives the author's runs", async ()
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
     session_id: 'brief-consumer',
   })
+})
+
+test("consuming a resume brief prints and drops the author's session context", async () => {
+  const author = newRecordId()
+  process.env.CLAUDE_CODE_SESSION_ID = author
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = { tasks: async () => [], pointer: async () => null }
+  const stored = await brief()
+  await setDoc({
+    scope: 'context',
+    subject: `session:${author}`,
+    slug: 'handoff-fact',
+    title: 'handoff-fact',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'successor needs this' }),
+  })
+  process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
+  const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+
+  const handoff = await handoffConsumedResumeBrief(consumed, { database: db(), machine })
+
+  expect(handoff.lines[0]).toBe(
+    `context session:${author}/handoff-fact fact (test): successor needs this`,
+  )
+  expect(getDoc('context', `session:${author}`, 'handoff-fact')).toBeNull()
 })
 
 test('a resume handoff moves only owed roots while explicit adoption still moves all', async () => {
@@ -183,10 +210,28 @@ test('handoff skips non-resume and already-consumed documents inside the service
   ).toMatchObject({ status: 'skipped', authorSession: null })
 })
 
-test('a live author does not fail consume and names the explicit adopt command', async () => {
+test('failed adoption preserves the author session context', async () => {
+  const author = newRecordId()
+  process.env.CLAUDE_CODE_SESSION_ID = author
   const stored = await brief()
-  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'brief-author' })
-  authorSeen()
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: author })
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = { tasks: async () => [], pointer: async () => null }
+  await setDoc({
+    scope: 'context',
+    subject: `session:${author}`,
+    slug: 'survives-failed-adoption',
+    title: 'survives-failed-adoption',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'do not drop early' }),
+  })
+  db()
+    .query('INSERT INTO session_seen(session_id,last_seen,ancestor_chain) VALUES (?,?,?)')
+    .run(
+      author,
+      '2026-10-24T00:00:00.000Z',
+      JSON.stringify([{ pid: 987_655, startTime: 'author-start' }]),
+    )
   process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
   const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
   const handoff = await handoffConsumedResumeBrief(consumed, {
@@ -200,10 +245,53 @@ test('a live author does not fail consume and names the explicit adopt command',
 
   expect(consumed.body).toContain('status: consumed')
   expect(handoff.status).toBe('refused')
-  expect(handoff.lines.join('\n')).toContain(`${PLATFORM_SLUG} session adopt brief-author --reason`)
+  expect(handoff.lines.join('\n')).toContain(`${PLATFORM_SLUG} session adopt ${author} --reason`)
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
-    session_id: 'brief-author',
+    session_id: author,
   })
+  expect(getDoc('context', `session:${author}`, 'survives-failed-adoption')).not.toBeNull()
+})
+
+test('partial adoption keeps the author session context until the remaining run moves', async () => {
+  const author = newRecordId()
+  process.env.CLAUDE_CODE_SESSION_ID = author
+  const stored = await brief()
+  const moved = addRun({ agent: 'codex', job: 'implement', status: 'running', session: author })
+  const remaining = addRun({ agent: 'codex', job: 'implement', status: 'running', session: author })
+  ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
+    CONTEXT_FACTS_PORTS_KEY
+  ] = { tasks: async () => [], pointer: async () => null }
+  await setDoc({
+    scope: 'context',
+    subject: `session:${author}`,
+    slug: 'survives-partial-adoption',
+    title: 'survives-partial-adoption',
+    body: encodeContextItem({ kind: 'fact', source: 'test', body: 'move after every run' }),
+  })
+  process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
+  const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+
+  const handoff = await handoffConsumedResumeBrief(consumed, {
+    database: db(),
+    machine,
+    transfer: (rootId, _expectedOwner, newOwner) => {
+      if (rootId === remaining) return false
+      db()
+        .query('UPDATE run SET session_id=? WHERE record_id=? OR parent_run_record_id=?')
+        .run(newOwner, rootId, rootId)
+      return true
+    },
+  })
+
+  expect(handoff).toMatchObject({ status: 'moved' })
+  expect(handoff.report?.runs.map(({ recordId }) => recordId)).toEqual([moved])
+  expect(handoff.report?.notMoved).toEqual([
+    expect.objectContaining({ recordId: remaining, currentOwner: author }),
+  ])
+  expect(handoff.lines.join('\n')).toContain(
+    `kept context session:${author}/survives-partial-adoption (fact): run ${PLATFORM_SLUG} session adopt ${author} --reason`,
+  )
+  expect(getDoc('context', `session:${author}`, 'survives-partial-adoption')).not.toBeNull()
 })
 
 test('hosted author preparation resolves the latest non-consume revision author', async () => {

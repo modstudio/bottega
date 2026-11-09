@@ -3,6 +3,8 @@ import ts from 'typescript'
 export type ImportScan = {
   specifiers: string[]
   typeOnlySpecifiers: string[]
+  namedImports: { specifier: string; name: string }[]
+  moduleImports: string[]
   unresolvedRelative: string[]
 }
 
@@ -69,6 +71,32 @@ function location(sourceFile: ts.SourceFile, node: ts.Node): string {
   return `${line + 1}:${character + 1} ${node.getText(sourceFile)}`
 }
 
+function recordImportBindings(
+  node: ts.ImportDeclaration,
+  specifier: string,
+  namedImports: ImportScan['namedImports'],
+  moduleImports: string[],
+): void {
+  const bindings = node.importClause?.namedBindings
+  for (const element of bindings && ts.isNamedImports(bindings) ? bindings.elements : []) {
+    if (!element.isTypeOnly)
+      namedImports.push({ name: (element.propertyName ?? element.name).text, specifier })
+  }
+  if (bindings && ts.isNamespaceImport(bindings)) moduleImports.push(specifier)
+}
+
+function recordExportBindings(
+  node: ts.ExportDeclaration,
+  specifier: string,
+  namedImports: ImportScan['namedImports'],
+): void {
+  if (!node.exportClause || !ts.isNamedExports(node.exportClause)) return
+  for (const element of node.exportClause.elements) {
+    if (!element.isTypeOnly)
+      namedImports.push({ name: (element.propertyName ?? element.name).text, specifier })
+  }
+}
+
 /** Resolve statically knowable module specifiers and expose unresolved relative calls. */
 export function importSpecifiers(source: string): ImportScan {
   const sourceFile = ts.createSourceFile(
@@ -80,6 +108,8 @@ export function importSpecifiers(source: string): ImportScan {
   )
   const specifiers: string[] = []
   const typeOnlySpecifiers: string[] = []
+  const namedImports: { specifier: string; name: string }[] = []
+  const moduleImports: string[] = []
   const unresolvedRelative: string[] = []
   const createRequireNames = new Set(['createRequire'])
   const requireNames = new Set(['require'])
@@ -137,6 +167,10 @@ export function importSpecifiers(source: string): ImportScan {
       ? node.importClause?.isTypeOnly === true
       : node.isTypeOnly
     ;(typeOnly ? typeOnlySpecifiers : specifiers).push(node.moduleSpecifier.text)
+    if (typeOnly) return
+    if (ts.isImportDeclaration(node))
+      recordImportBindings(node, node.moduleSpecifier.text, namedImports, moduleImports)
+    else recordExportBindings(node, node.moduleSpecifier.text, namedImports)
   }
 
   function visit(node: ts.Node): void {
@@ -145,6 +179,8 @@ export function importSpecifiers(source: string): ImportScan {
     } else if (ts.isCallExpression(node) && node.arguments.length === 1) {
       if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
         record(node.arguments[0]!, node)
+        const specifier = staticString(node.arguments[0]!, constants)
+        if (specifier !== null) moduleImports.push(specifier)
       } else if (ts.isIdentifier(node.expression) && requireNames.has(node.expression.text)) {
         record(node.arguments[0]!, node)
       } else if (
@@ -158,5 +194,5 @@ export function importSpecifiers(source: string): ImportScan {
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
-  return { specifiers, typeOnlySpecifiers, unresolvedRelative }
+  return { specifiers, typeOnlySpecifiers, namedImports, moduleImports, unresolvedRelative }
 }

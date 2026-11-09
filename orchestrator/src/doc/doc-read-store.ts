@@ -275,6 +275,7 @@ function addressFilters(filters: {
   scope?: string
   scopes?: string[]
   subject?: string | null
+  subjectPrefix?: string
   owner?: string | null
 }): { where: string[]; values: string[] } {
   const where: string[] = []
@@ -283,6 +284,10 @@ function addressFilters(filters: {
   if (filters.subject !== undefined) {
     where.push(filters.subject === null ? 'd.subject IS NULL' : 'd.subject = ?')
     if (filters.subject !== null) values.push(filters.subject)
+  }
+  if (filters.subjectPrefix !== undefined) {
+    where.push('substr(d.subject, 1, length(?)) = ?')
+    values.push(filters.subjectPrefix, filters.subjectPrefix)
   }
   if (filters.owner !== undefined) {
     where.push(filters.owner === null ? 'd.owner IS NULL' : 'd.owner = ?')
@@ -357,6 +362,23 @@ export function listDocsStore(
   } = {},
   database: Database = db(),
 ): Doc[] {
+  return listDocsStoreWithPrefix(filters, database)
+}
+
+function listDocsStoreWithPrefix(
+  filters: {
+    scope?: string
+    scopes?: string[]
+    subject?: string | null
+    subjectPrefix?: string
+    owner?: string | null
+    audience?: string
+    status?: string
+    kind?: string
+    articleSubject?: string
+  } = {},
+  database: Database = db(),
+): Doc[] {
   const { where, values } = addressFilters(filters)
   const tree = docTreeSelect(database)
   if (filters.audience !== undefined) {
@@ -395,6 +417,15 @@ export function listDocsStore(
         ? { ...doc, body: docBodyForAudience(doc.body, filters.audience as DocAudience) }
         : doc,
     )
+}
+
+/** Read one scope by an exact-case subject prefix; this cannot be combined with subject. */
+export function listDocsBySubjectPrefixStore(
+  scope: string,
+  subjectPrefix: string,
+  database: Database = db(),
+): Doc[] {
+  return listDocsStoreWithPrefix({ scope, subjectPrefix }, database)
 }
 
 function articleSubjectQuery(

@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
   classifySessionCloseOut,
+  classifySessionContextItem,
   plannedTreeOwnerMatches,
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
   type SessionOwnershipFacts,
+  sessionCloseOutRecommendation,
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
   sessionOwnership,
@@ -38,6 +40,30 @@ const handoffFacts = (overrides: Partial<ResumeHandoffRootFacts> = {}): ResumeHa
 })
 
 describe('session close-out decisions', () => {
+  test('context items drop or refuse by kind and resume keeps every kind', () => {
+    expect(
+      ['pointer', 'position', 'fact', 'next-action'].map((kind) =>
+        classifySessionContextItem(kind as never, false),
+      ),
+    ).toEqual(['drop', 'drop', 'drop', 'drop'])
+    expect(classifySessionContextItem('ruling', false)).toBe('refuse')
+    expect(classifySessionContextItem('open-question', false)).toBe('refuse')
+    for (const kind of [
+      'ruling',
+      'position',
+      'fact',
+      'open-question',
+      'pointer',
+      'next-action',
+    ] as const)
+      expect(classifySessionContextItem(kind, true)).toBe('keep')
+  })
+
+  test('recommendation clears with no residue and writes a brief with residue', () => {
+    expect(sessionCloseOutRecommendation(0)).toBe('clear')
+    expect(sessionCloseOutRecommendation(1)).toBe('brief')
+  })
+
   test('resume handoff moves exactly roots the author still owes', () => {
     const held = handoffFacts().heldRunResources!
     const cases: [string, ResumeHandoffRootFacts, boolean][] = [
