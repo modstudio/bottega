@@ -145,12 +145,16 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
     ['monitor_issue'],
     'One row per detector-unavailable or dead-lock condition identity that filed a tracker issue; it grows only when an issue is filed.',
   ),
-  ...entries(
-    ['canon_pack', 'main_stack_activity', 'presence', 'session_seen'],
-    'machine',
-    null,
-    'working-set',
-  ),
+  ...entries(['canon_pack', 'main_stack_activity', 'presence'], 'machine', null, 'working-set'),
+  {
+    store: 'orchestrator',
+    table: 'session_seen',
+    class: 'machine',
+    keep: "A row is deleted through expireSessionSeen when the session's newest clean close-out is swept; a session that never closes out keeps its row.",
+    remover:
+      'orchestrator/src/cleanup/cleanup-sweep-session-close-out.ts#sweepSessionCloseOutRecords',
+    slice: 'working-set',
+  },
   {
     store: 'orchestrator',
     table: 'session_close_out',
