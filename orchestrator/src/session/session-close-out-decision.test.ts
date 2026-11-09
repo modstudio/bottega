@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   classifySessionCloseOut,
   classifySessionContextItem,
+  classifySessionCursor,
   plannedTreeOwnerMatches,
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
@@ -59,9 +60,18 @@ describe('session close-out decisions', () => {
       expect(classifySessionContextItem(kind, true)).toBe('keep')
   })
 
-  test('recommendation clears with no residue and writes a brief with residue', () => {
-    expect(sessionCloseOutRecommendation(0)).toBe('clear')
-    expect(sessionCloseOutRecommendation(1)).toBe('brief')
+  test('open cursor ends distinguish parked from process work', () => {
+    expect(classifySessionCursor({ state: 'awaiting-ruling', hasOpenQuestion: true })).toBe(
+      'parked',
+    )
+    expect(classifySessionCursor({ state: 'awaiting-ruling', hasOpenQuestion: false })).toBe('open')
+    expect(classifySessionCursor({ state: 'running', hasOpenQuestion: false })).toBe('open')
+  })
+
+  test('recommendation writes a brief for each kind of successor work', () => {
+    expect(sessionCloseOutRecommendation({ residue: 0, parkedCursors: 0 })).toBe('clear')
+    expect(sessionCloseOutRecommendation({ residue: 1, parkedCursors: 0 })).toBe('brief')
+    expect(sessionCloseOutRecommendation({ residue: 0, parkedCursors: 1 })).toBe('brief')
   })
 
   test('resume handoff moves exactly roots the author still owes', () => {
