@@ -10,6 +10,7 @@ import {
   resumeHandoffRootIsOwed,
   type SessionOwnershipFacts,
   sessionCloseOutRecommendation,
+  sessionCloseOutRecord,
   sessionCloseOutVerdict,
   sessionOutboxResidue,
   sessionOwnedRunIds,
@@ -44,6 +45,28 @@ const handoffFacts = (overrides: Partial<ResumeHandoffRootFacts> = {}): ResumeHa
 })
 
 describe('session close-out decisions', () => {
+  test('the close-out row records the final report decision and residue counts', () => {
+    expect(
+      sessionCloseOutRecord({
+        session: 'owner',
+        mechanical: ['released'],
+        process: ['one', 'two'],
+        errors: ['failed'],
+        warnings: ['warning'],
+        verdict: { clean: false },
+        recommendation: 'brief',
+      }),
+    ).toEqual({
+      sessionId: 'owner',
+      clean: false,
+      recommendation: 'brief',
+      mechanicalCount: 1,
+      processCount: 2,
+      errorCount: 1,
+      warningCount: 1,
+    })
+  })
+
   test('configured outbox rows split into pending and quarantined residue', () => {
     expect(
       sessionOutboxResidue(true, [

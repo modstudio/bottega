@@ -179,6 +179,31 @@ test('dry run reports an owned unscored run as process residue', async () => {
   expect(report.verdict.clean).toBe(false)
 })
 
+test('a completed close-out records its final report while a dry run records nothing', async () => {
+  const session = newRecordId()
+  await closeOutSession({ session, dryRun: true })
+  expect(
+    db().query('SELECT COUNT(*) count FROM session_close_out WHERE session_id=?').get(session),
+  ).toEqual({ count: 0 })
+
+  const report = await closeOutSession({ session })
+  expect(
+    db()
+      .query(
+        `SELECT clean,recommendation,mechanical_count,process_count,error_count,warning_count
+           FROM session_close_out WHERE session_id=?`,
+      )
+      .get(session),
+  ).toEqual({
+    clean: report.verdict.clean ? 1 : 0,
+    recommendation: report.recommendation,
+    mechanical_count: report.mechanical.length,
+    process_count: report.process.length,
+    error_count: report.errors.length,
+    warning_count: report.warnings.length,
+  })
+})
+
 describe('configured record close-out', () => {
   let previousUrl: string | undefined
 

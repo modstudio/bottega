@@ -480,6 +480,23 @@ export function liveTaskClaimsOfSession(
     .map((claim) => claim.subject.value)
 }
 
+/** Release every still-open claim held by a session whose close-out is being swept. */
+export function releaseSessionClaims(
+  session: string,
+  clock = Date.now(),
+  database = writableDb(),
+): number {
+  return writeTransaction(
+    () =>
+      database
+        .query(
+          "UPDATE board_claim SET closed_at=?,close_reason='released' WHERE holder_session=? AND closed_at IS NULL",
+        )
+        .run(new Date(clock).toISOString(), session).changes,
+    database,
+  )
+}
+
 export function releaseTaskClaims(
   key: string,
   project: string,

@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { branchesReport, pruneBranch } from '../branch/branches.ts'
 import { observeTaskStatus } from '../branch/task-status-observation.ts'
 import { reconcileAbsentClaims } from '../cleanup/claim-reconciliation.ts'
@@ -12,7 +13,7 @@ import type { CleanupPresentation } from '../cleanup/cleanup.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
-import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
+import { sessionId as callingSessionId, db, writableDb, writeTransaction } from '../database/db.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -37,6 +38,7 @@ import {
   type SessionOwnedRun,
   type SessionOwnershipFacts,
   sessionCloseOutRecommendation,
+  sessionCloseOutRecord,
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
@@ -844,7 +846,7 @@ function applySessionMechanicalActions(
     }
 }
 
-export async function closeOutSession(
+export async function releaseSessionResources(
   options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
 ): Promise<SessionCloseOutReport> {
   const session = options.session ?? callingSessionId()
@@ -924,6 +926,35 @@ export async function closeOutSession(
     residue: report.verdict.residue,
     parkedCursors: report.parked.length,
   })
+  return report
+}
+
+export async function closeOutSession(
+  options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
+): Promise<SessionCloseOutReport> {
+  const report = await releaseSessionResources(options)
+  if (report.dryRun) return report
+  const row = sessionCloseOutRecord(report)
+  const database = writableDb()
+  writeTransaction(() => {
+    database
+      .query(
+        `INSERT INTO session_close_out
+         (record_id,session_id,closed_at,clean,recommendation,mechanical_count,process_count,error_count,warning_count)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        row.sessionId,
+        new Date().toISOString(),
+        row.clean ? 1 : 0,
+        row.recommendation,
+        row.mechanicalCount,
+        row.processCount,
+        row.errorCount,
+        row.warningCount,
+      )
+  }, database)
   return report
 }
 

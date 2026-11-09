@@ -151,6 +151,14 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
     null,
     'working-set',
   ),
+  {
+    store: 'orchestrator',
+    table: 'session_close_out',
+    class: 'machine',
+    keep: 'Rows stay until machine sweep acts, then for KEEP_RUN_FILES_DAYS.',
+    remover:
+      'orchestrator/src/cleanup/cleanup-sweep-session-close-out.ts#sweepSessionCloseOutRecords',
+  },
   ...entries(
     ['board_message'],
     'cache',

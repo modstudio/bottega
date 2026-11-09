@@ -263,6 +263,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
   evidence('score', 'Outbox source for scores'),
   planned('orchestrator', 'session_board_hold', 'DEV-1926', 'Workflow hold awaits a hosted home'),
   local('orchestrator', 'session_seen', "This machine's host telemetry", PORTABLE_RULING),
+  local(
+    'orchestrator',
+    'session_close_out',
+    "This machine's completed session cleanup handoff",
+    "Shmuel Barkin's approved DEV-2227/1 design, decision 6: close-out records are machine-only",
+  ),
   planned('orchestrator', 'spawn', 'DEV-1214', 'Spawn work awaits a hosted home'),
   hosted('orchestrator', 'step_catalogue', 'step_catalogue', 'Local step catalogue write source'),
   hosted(

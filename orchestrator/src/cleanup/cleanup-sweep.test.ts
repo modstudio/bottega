@@ -13,9 +13,46 @@ import { upsertProject } from '../project/projects.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { sweepRuns } from './cleanup-sweep.ts'
 import { sweepSessionContext } from './cleanup-sweep-context.ts'
+import { sweepSessionCloseOutRecords } from './cleanup-sweep-session-close-out.ts'
 
 afterEach(() => {
   mock.restore()
+})
+
+test('closed session sweep expires heartbeat and marks only a session that did not resume', async () => {
+  const closed = newRecordId()
+  const resumed = newRecordId()
+  const closedAt = '2026-11-09T12:00:00.000Z'
+  const database = db()
+  const insert = database.query(
+    `INSERT INTO session_close_out
+     (record_id,session_id,closed_at,clean,recommendation,mechanical_count,process_count,error_count,warning_count)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+  )
+  insert.run(newRecordId(), closed, closedAt, 1, 'clear', 1, 0, 0, 0)
+  insert.run(newRecordId(), resumed, closedAt, 1, 'clear', 1, 0, 0, 0)
+  database
+    .query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?),(?,?)')
+    .run(closed, closedAt, resumed, '2026-11-09T12:01:00.000Z')
+
+  await sweepSessionCloseOutRecords({
+    enabled: true,
+    dryRun: false,
+    database,
+    now: Date.parse('2026-11-09T12:02:00.000Z'),
+    presentation: presentation([], () => {}),
+    adapters: { release: async () => {}, releaseClaims: () => 0 },
+  })
+
+  expect(database.query('SELECT session_id FROM session_seen ORDER BY session_id').all()).toEqual([
+    { session_id: resumed },
+  ])
+  expect(
+    database.query('SELECT session_id,swept_at FROM session_close_out ORDER BY session_id').all(),
+  ).toEqual([
+    { session_id: closed, swept_at: '2026-11-09T12:02:00.000Z' },
+    { session_id: resumed, swept_at: null },
+  ])
 })
 
 test('session context sweep logs and drops each item for a gone owner', async () => {
