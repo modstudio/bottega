@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
+import { upsertProject } from '../project/projects.ts'
 import { encodeContextItem } from './context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
-import { upsertProject } from '../project/projects.ts'
 import {
   getDocForAudienceStore,
   getDocStore,

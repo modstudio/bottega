@@ -6,7 +6,7 @@ import { decodeContextItem, encodeContextItem } from './context-item-codec.ts'
 import { contextProfileForHolder } from './context-write-adapter.ts'
 import { type ContextItemKind, missingContextKinds } from './doc-context-write.ts'
 import { listDocsBySubjectPrefixStore } from './doc-read-store.ts'
-import { getDoc, listDocs, removeContextDocForLifecycle, removeDoc, setDoc } from './docs.ts'
+import { getDoc, listDocs, removeDoc, setDoc } from './docs.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
 
@@ -66,9 +66,10 @@ export async function dropSessionContextItemForLifecycle(input: {
   reason: string
 }) {
   const holder = `session:${input.session}`
-  const removed = await removeContextDocForLifecycle(holder, input.id, {
+  const removed = await removeDoc('context', holder, input.id, {
     reason: input.reason,
     expectedRevision: input.expectedRevision,
+    contextLifecycleHolder: holder,
   })
   return { holder, id: input.id, removed }
 }

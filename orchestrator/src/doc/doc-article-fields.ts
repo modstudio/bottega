@@ -31,6 +31,7 @@ export type DocWriteContext = {
   canonTree?: CanonWriteTree
   collectCanonLintInput?: CanonLintInputCollector
   generator?: DocGenerator
+  contextLifecycleHolder?: string
 }
 
 export type DocWriteInput = {

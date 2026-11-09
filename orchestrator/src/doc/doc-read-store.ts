@@ -75,6 +75,7 @@ export type DocMetadata = Pick<
 export type DocListFilters = {
   scope?: string
   subject?: string | null
+  subjectPrefix?: string
   scopes?: string[]
   match?: string
   bodyMatch?: string
@@ -275,6 +276,7 @@ function addressFilters(filters: {
   scope?: string
   scopes?: string[]
   subject?: string | null
+  subjectPrefix?: string
   owner?: string | null
 }): { where: string[]; values: string[] } {
   const where: string[] = []
@@ -283,6 +285,12 @@ function addressFilters(filters: {
   if (filters.subject !== undefined) {
     where.push(filters.subject === null ? 'd.subject IS NULL' : 'd.subject = ?')
     if (filters.subject !== null) values.push(filters.subject)
+  }
+  if (filters.subjectPrefix !== undefined) {
+    where.push("d.subject LIKE ? ESCAPE '\\'")
+    values.push(
+      `${filters.subjectPrefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`,
+    )
   }
   if (filters.owner !== undefined) {
     where.push(filters.owner === null ? 'd.owner IS NULL' : 'd.owner = ?')
@@ -349,6 +357,7 @@ export function listDocsStore(
     scope?: string
     scopes?: string[]
     subject?: string | null
+    subjectPrefix?: string
     owner?: string | null
     audience?: string
     status?: string
@@ -403,20 +412,7 @@ export function listDocsBySubjectPrefixStore(
   subjectPrefix: string,
   database: Database = db(),
 ): Doc[] {
-  validScope(scope)
-  const tree = docTreeSelect(database)
-  return (
-    database
-      .query(
-        `SELECT ${tree.columns}, ${LATEST_REVISION_SQL} AS revision FROM doc d${tree.join}
-          WHERE d.scope=? AND d.owner IS NULL AND d.subject LIKE ? ESCAPE '\\'
-          ORDER BY d.subject, ${tree.position}, d.title`,
-      )
-      .all(
-        scope,
-        `${subjectPrefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`,
-      ) as Array<Doc & { featured: boolean | number }>
-  ).map((row) => docRow(database, row))
+  return listDocsStore({ scope, subjectPrefix }, database)
 }
 
 function articleSubjectQuery(

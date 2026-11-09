@@ -23,8 +23,8 @@ import {
   type RecordedRunPointerFacts,
   type RecordedRunPostInventoryFacts,
   type RecordedRunPreInventoryFacts,
-  shouldExpireUnjudgedOwner,
   shouldDropSweptSessionContext,
+  shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
 

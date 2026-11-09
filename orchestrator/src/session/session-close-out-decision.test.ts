@@ -6,8 +6,8 @@ import {
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
   type SessionOwnershipFacts,
-  sessionCloseOutVerdict,
   sessionCloseOutRecommendation,
+  sessionCloseOutVerdict,
   sessionOwnedRunIds,
   sessionOwnership,
 } from './session-close-out-decision.ts'

@@ -13,7 +13,6 @@ import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
-import { dropSessionContextItemForLifecycle, sessionContextItems } from '../doc/context-service.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -25,17 +24,20 @@ import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import {
   classifySessionCloseOut,
-  classifySessionContextItem,
   plannedTreeOwnerMatches,
   type SessionHeldRunResources,
   type SessionMechanicalAction,
   type SessionOwnedBranch,
   type SessionOwnedRun,
   type SessionOwnershipFacts,
-  sessionCloseOutVerdict,
   sessionCloseOutRecommendation,
+  sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
+import {
+  closeOutSessionContext,
+  type SessionContextLifecycleReport,
+} from './session-context-lifecycle.ts'
 
 export const SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE = 1
 
@@ -74,7 +76,7 @@ export type SessionCloseOutReport = {
     landings: ActiveLanding[]
     reviews: IncompleteReview[]
     cursors: OpenCursor[]
-    contextItems: ReturnType<typeof sessionContextItems>
+    contextItems: SessionContextLifecycleReport['items']
   }
   mechanical: string[]
   kept: string[]
@@ -730,7 +732,7 @@ export async function closeOutSession(
   const resume = options.resume ?? false
   const database = dryRun ? db() : writableDb()
   const initial = gather(database, session, dryRun)
-  const initialContextItems = sessionContextItems(session, database)
+  const context = await closeOutSessionContext({ session, dryRun, resume, database })
   const report: SessionCloseOutReport = {
     session,
     dryRun,
@@ -742,51 +744,15 @@ export async function closeOutSession(
       landings: initial.landings,
       reviews: initial.reviews,
       cursors: initial.cursors,
-      contextItems: initialContextItems,
+      contextItems: context.items,
     },
-    mechanical: [],
-    kept: [],
-    process: [],
-    errors: [...initial.observationErrors],
+    mechanical: [...context.mechanical],
+    kept: context.kept,
+    process: context.process,
+    errors: [...initial.observationErrors, ...context.errors],
     heldTrees: [],
     verdict: { clean: false, residue: 0 },
     recommendation: 'brief',
-  }
-  for (const item of initialContextItems) {
-    const action = classifySessionContextItem(item.kind, resume)
-    const label = `context ${item.holder}/${item.id}`
-    if (action === 'keep') {
-      report.kept.push(label)
-      continue
-    }
-    if (action === 'refuse') {
-      report.process.push({
-        item: label,
-        reason: `${dryRun ? 'would refuse close-out because' : 'session close-out refused because'} ${item.kind} must move to a task or epic`,
-        evidence: item.body.split(/\r?\n/, 1)[0] ?? '',
-        remedy: `${PLATFORM_SLUG} agent context set --task <KEY> --kind ${item.kind} --id ${item.id} --source ${JSON.stringify(item.source)} ${JSON.stringify(item.body)} && ${PLATFORM_SLUG} agent context drop --session ${session} --id ${item.id}`,
-      })
-      continue
-    }
-    if (dryRun) {
-      report.mechanical.push(`would drop ${label}`)
-      continue
-    }
-    try {
-      await dropSessionContextItemForLifecycle({
-        session,
-        id: item.id,
-        expectedRevision: item.revision ?? undefined,
-        reason: `session close-out ${session}`,
-      })
-      report.mechanical.push(`drop ${label}`)
-    } catch (cause) {
-      report.errors.push({
-        item: label,
-        detail: cause instanceof Error ? cause.message : String(cause),
-        retry: `${PLATFORM_SLUG} session close-out --session ${session}`,
-      })
-    }
   }
   for (const action of initial.classification.mechanical) {
     const label = mechanicalLabel(action)

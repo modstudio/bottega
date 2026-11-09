@@ -3,15 +3,16 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { addRun } from '../../test/fixtures/store.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { encodeContextItem } from '../doc/context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { getDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { CleanupPresentation } from './cleanup.ts'
-import { sweepRuns, sweepSessionContext } from './cleanup-sweep.ts'
+import { sweepRuns } from './cleanup-sweep.ts'
+import { sweepSessionContext } from './cleanup-sweep-context.ts'
 
 afterEach(() => {
   mock.restore()
@@ -40,10 +41,12 @@ test('session context sweep logs and drops each item for a gone owner', async ()
   const lines: string[] = []
 
   expect(
-    await sweepSessionContext(
-      false,
-      presentation(lines, () => {}),
-    ),
+    await sweepSessionContext({
+      enabled: true,
+      dryRun: false,
+      database: db(),
+      presentation: presentation(lines, () => {}),
+    }),
   ).toBe(false)
 
   expect(lines).toEqual([

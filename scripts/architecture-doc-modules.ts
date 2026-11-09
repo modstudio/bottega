@@ -27,10 +27,12 @@ export const docModules: DocModule[] = [
     './doc-resume-write.ts',
   ]),
   module('orchestrator/src/doc/context-service.ts', [
+    'bun:sqlite',
     '../database/db.ts',
     './context-write-adapter.ts',
     './context-item-codec.ts',
     './doc-context-write.ts',
+    './doc-read-store.ts',
     './docs.ts',
   ]),
   module('orchestrator/src/doc/context-brief.ts', [

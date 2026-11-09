@@ -100,10 +100,23 @@ export const cleanupBoundarySpecs = [
       '../doc/resume-brief-author.ts',
       '../run/session-liveness-adapter.ts',
       './resume-handoff-selection.ts',
+      './session-context-lifecycle.ts',
       './session-adopt.ts',
     ],
     typeOnlyAllowed: [],
     reason: 'Keep resume-to-run handoff in an adapter outside the document concern.',
+  },
+  {
+    name: 'session-context-lifecycle-boundary',
+    file: 'orchestrator/src/session/session-context-lifecycle.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/brand.ts',
+      '../doc/context-service.ts',
+      './session-close-out-decision.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep session context release behind its document-store owner.',
   },
   {
     name: 'resume-handoff-selection-boundary',
@@ -143,6 +156,7 @@ export const cleanupBoundarySpecs = [
       '../ship-cleanup/ship-cleanup.ts',
       '../worktree/worktree-remove.ts',
       './session-close-out-decision.ts',
+      './session-context-lifecycle.ts',
     ],
     typeOnlyAllowed: [],
     reason:
@@ -233,6 +247,7 @@ export const cleanupBoundarySpecs = [
       'node:path',
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',
+      './cleanup-sweep-context.ts',
       './cleanup-sweep-reclaim.ts',
       './cleanup-sweep-residue.ts',
       './run-leftover-sweep.ts',
@@ -290,6 +305,18 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, and the CLI; maintenance stays behind the database command and run-outbox owners.',
+  },
+  {
+    name: 'cleanup-sweep-context-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-context.ts',
+    allowed: [
+      'bun:sqlite',
+      '../doc/context-service.ts',
+      './cleanup.ts',
+      './cleanup-sweep-decisions.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep expired session-context cleanup behind the context service.',
   },
   {
     name: 'cleanup-sweep-outbox-boundary',

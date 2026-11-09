@@ -591,35 +591,13 @@ export async function removeDoc(
   context: DocWriteContext,
   owner: string | null = null,
 ): Promise<boolean> {
-  return removeDocWithContextAuthority(scope, subject, slug, context, owner)
-}
-
-/** Lifecycle owners may clear the exact session holder they have already classified. */
-export async function removeContextDocForLifecycle(
-  holder: string,
-  slug: string,
-  context: DocWriteContext,
-): Promise<boolean> {
-  if (!holder.startsWith('session:'))
-    throw new Error('lifecycle context removal requires a session holder')
-  return removeDocWithContextAuthority('context', holder, slug, context, null, holder)
-}
-
-async function removeDocWithContextAuthority(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  context: DocWriteContext,
-  owner: string | null = null,
-  lifecycleHolder?: string,
-): Promise<boolean> {
   assertWorkerDocStoreWriteAllowed('removeDoc')
   writableDb()
   validScope(scope)
   const identity = resolvedDocWriteIdentity(context)
   const doc = getDoc(scope, subject, slug, owner)
   if (!doc) return false
-  await assertContextDropAllowed(doc, db(), undefined, lifecycleHolder)
+  await assertContextDropAllowed(doc, db(), undefined, context.contextLifecycleHolder)
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
     { scope, subject, slug, expectedRevision: context.expectedRevision },

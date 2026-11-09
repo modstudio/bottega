@@ -4,7 +4,6 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
-import { dropSessionContextItemForLifecycle, sessionContextItems } from '../doc/context-service.ts'
 import { parseResumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
 import type { ConsumedDoc, Doc } from '../doc/docs.ts'
 import {
@@ -18,6 +17,7 @@ import {
   adoptSessionRuns,
   type SessionAdoptionReport,
 } from './session-adopt.ts'
+import { consumeSessionContext } from './session-context-lifecycle.ts'
 
 export type ResumeBriefHandoff = {
   authorSession: string | null
@@ -111,33 +111,21 @@ async function handoffFromAuthor(
         `resume handoff skipped: latest non-consume hosted revision has no author session; when the author session is known, run ${PLATFORM_SLUG} session adopt <session> --reason <why>`,
       ],
     }
-  const contextLines: string[] = []
-  for (const item of sessionContextItems(author, database)) {
-    contextLines.push(
-      `context ${item.holder}/${item.id} ${item.kind} (${item.source}): ${item.body}`,
-    )
-    try {
-      await dropSessionContextItemForLifecycle({
-        session: author,
-        id: item.id,
-        expectedRevision: item.revision ?? undefined,
-        reason: `resume brief ${doc.subject}/${doc.slug} consumed`,
-      })
-    } catch (error) {
-      return {
-        authorSession: author,
-        status: 'refused',
-        report: null,
-        lines: [
-          ...contextLines,
-          `resume context drop failed for ${item.holder}/${item.id}: ${error instanceof Error ? error.message : String(error)}`,
-        ],
-      }
+  const context = await consumeSessionContext({
+    session: author,
+    reason: `resume brief ${doc.subject}/${doc.slug} consumed`,
+    database,
+  })
+  if (context.error)
+    return {
+      authorSession: author,
+      status: 'refused',
+      report: null,
+      lines: [...context.lines, context.error],
     }
-  }
   const withContext = (handoff: ResumeBriefHandoff): ResumeBriefHandoff => ({
     ...handoff,
-    lines: [...contextLines, ...handoff.lines],
+    lines: [...context.lines, ...handoff.lines],
   })
   const actor = sessionId(database)
   if (author === actor)
