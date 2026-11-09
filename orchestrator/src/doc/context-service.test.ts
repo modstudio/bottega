@@ -13,7 +13,7 @@ import {
   resolveContextTask,
 } from './context-write-adapter.ts'
 import { DOC_SECRET_SCANNER_KEY } from './doc-secret-scan.ts'
-import { importDoc, listDocMetadata, listDocs } from './docs.ts'
+import { getDoc, importDoc, listDocMetadata, listDocs } from './docs.ts'
 
 const globals = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
@@ -303,8 +303,12 @@ describe('context document integration', () => {
     })
   })
 
-  test('legacy key-shaped context remains removable through the document verb', async () => {
-    const body = encodeContextItem({ kind: 'fact', source: 'legacy', body: 'Move this by hand.' })
+  test('the last required item on a legacy key-shaped holder remains removable', async () => {
+    const body = encodeContextItem({
+      kind: 'next-action',
+      source: 'legacy',
+      body: 'Move this by hand.',
+    })
     const documentId = newRecordId()
     const revisionId = newRecordId()
     const at = new Date().toISOString()
@@ -328,6 +332,7 @@ describe('context document integration', () => {
         expectedRevision: revisionId,
       }),
     ).toBe(true)
+    expect(getDoc('context', 'task:DEV-OLD', 'legacy')).toBeNull()
   })
 
   test('refuses a write to a session holder by any other session', async () => {

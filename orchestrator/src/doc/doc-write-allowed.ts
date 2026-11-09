@@ -65,6 +65,7 @@ export type DocRevisionOp =
   | 'set'
   | 'consume'
   | 'delete'
+  | 'context-drop'
   | 'restore'
   | 'import'
   | 'backfill'
@@ -259,6 +260,7 @@ export type DocRevisionWriteInput = {
   current: string | null
   isCreate: boolean
   op?: DocRevisionOp
+  contextDropTarget?: { kind: 'task' | 'session'; value: string }
   scope: string
   subject: string | null
   slug: string
@@ -327,11 +329,17 @@ export function decideDocRevisionWrite(input: DocRevisionWriteInput): DocRevisio
 
 /** Every revision refusal names the write verb that owns the addressed scope. */
 function revisionRemedy(
-  input: RevisionAddress,
+  input: RevisionAddress & Pick<DocRevisionWriteInput, 'op' | 'contextDropTarget'>,
   current: string,
   operation: 'create' | 'update',
 ): string {
   if (input.scope === 'context') {
+    if (input.op === 'delete') {
+      return `${PLATFORM_SLUG} doc rm ${input.slug} --scope context --subject ${input.subject} --reason <text> --expect ${current}`
+    }
+    if (input.op === 'context-drop' && input.contextDropTarget) {
+      return `${PLATFORM_SLUG} agent context drop --${input.contextDropTarget.kind} ${input.contextDropTarget.value} --id ${input.slug} --expected-revision ${current}`
+    }
     return `read the context item with ${PLATFORM_SLUG} agent context show, then re-apply it with ${PLATFORM_SLUG} agent context set --id ${input.slug} --expected-revision ${current} (expected_revision over MCP)`
   }
   if (input.scope === 'settings') {

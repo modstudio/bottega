@@ -72,7 +72,14 @@ export function docWriteIdentity(
 }
 
 export function assertLocalRevisionWrite(
-  input: { scope: string; subject: string | null; slug: string; expectedRevision?: string },
+  input: {
+    scope: string
+    subject: string | null
+    slug: string
+    expectedRevision?: string
+    op?: DocRevisionOp
+    contextDropTarget?: { kind: 'task' | 'session'; value: string }
+  },
   current: string | null,
   isCreate: boolean,
 ): void {
@@ -80,6 +87,8 @@ export function assertLocalRevisionWrite(
     expected: input.expectedRevision,
     current,
     isCreate,
+    op: input.op,
+    contextDropTarget: input.contextDropTarget,
     scope: input.scope,
     subject: input.subject,
     slug: input.slug,

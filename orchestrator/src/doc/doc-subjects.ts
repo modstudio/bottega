@@ -9,6 +9,10 @@ export function taskContextHolder(recordId: string): string {
   return `task:${recordId}`
 }
 
+export function isValidContextHolderSubject(subject: string): boolean {
+  return /^task:[0-9a-f-]{36}$/i.test(subject) || /^session:[0-9a-f-]{36}$/i.test(subject)
+}
+
 export function docSubjects(): {
   project: string[]
   stack: string[]
@@ -66,11 +70,7 @@ export function validateDocSubject(scope: DocScope, subject: string): void {
   if (subjectKind === 'job' && !JOBS[subject]) {
     throw new Error(`unknown job subject "${subject}"; valid values: ${validDocSubjects(scope)}`)
   }
-  if (
-    subjectKind === 'holder' &&
-    !/^task:[0-9a-f-]{36}$/i.test(subject) &&
-    !/^session:[0-9a-f-]{36}$/i.test(subject)
-  ) {
+  if (subjectKind === 'holder' && !isValidContextHolderSubject(subject)) {
     throw new Error(
       `invalid context holder subject ${JSON.stringify(subject)}; use task:<uuid> or session:<uuid>`,
     )
