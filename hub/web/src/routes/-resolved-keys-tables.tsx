@@ -43,7 +43,7 @@ const CELL_MEANING = {
 /** The owner as an icon and the scope as a tag, solid where a copy overrides your personal key. */
 function Cell({ cell }: { cell: ResolvedKeyCell | undefined }) {
   if (!cell || cell.kind === 'none')
-    return <span className="text-text-muted">{cell?.label ?? '—'}</span>
+    return <span className="text-text-muted">{cell ? 'Not set' : '—'}</span>
   const yours = CELL_OWNER[cell.kind] === 'yours'
   return (
     <span className="inline-flex flex-col items-start gap-1 leading-tight">

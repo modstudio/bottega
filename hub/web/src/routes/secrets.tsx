@@ -18,7 +18,7 @@ import {
   useCredentialRows,
 } from '@/routes/-credential-rows'
 import { useDetailPanel } from '@/routes/-detail-panel'
-import type { ResolvedKeyGroup, ResolvedKeys } from '@/routes/-resolved-keys'
+import type { Reach, ResolvedKeyGroup, ResolvedKeys } from '@/routes/-resolved-keys'
 import { projectRowCount, ResolvedByProject, useResolvedKeys } from '@/routes/-resolved-keys-tables'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
@@ -27,9 +27,14 @@ export const Route = createFileRoute('/secrets')({ component: SecretsRoute })
 const CREDENTIAL_COMMAND = `${PLATFORM_SLUG} credential`
 
 /** A row of the Credentials list: a copy in this space, or one of your account copies. */
-type SecretsRow = CredentialDisplayRow & { account?: { reach: string; configuredReach: string } }
+type SecretsRow = CredentialDisplayRow & { account?: { usedBy: string; configuredReach: Reach } }
 
 const ACCOUNT_ROW_PREFIX = 'account:'
+
+function reachText(reach: Reach, none: string) {
+  if (reach === 'all') return 'All your spaces'
+  return reach.length ? reach.join(', ') : none
+}
 
 /** This space's projects that resolve the account copy, so a team space never lists another space. */
 function projectsResolving(group: ResolvedKeyGroup | undefined, columnId: string) {
@@ -48,7 +53,8 @@ function withAccountRows(
   if (!view) return rows
   const personal = spaceId === view.personalSpaceId
   const group = view.groups.find((candidate) => candidate.spaceId === spaceId)
-  const own = rows.filter((row) => !personal || !row.key.startsWith('stored:user:space:'))
+  const gridded = new Set(view.columns.map((column) => column.id))
+  const own = rows.filter((row) => !personal || !row.accountCopy)
   const account: SecretsRow[] = view.account.map((row) => ({
     key: `${ACCOUNT_ROW_PREFIX}${row.key}`,
     credential: row.credential,
@@ -60,25 +66,23 @@ function withAccountRows(
     hint: row.hint,
     updatedAt: row.updatedAt,
     missing: false,
+    accountCopy: true,
     usages: [],
     preferences: [],
-    account: personal
-      ? { reach: row.reach, configuredReach: row.configuredReach }
-      : { reach: projectsResolving(group, row.key), configuredReach: row.configuredReach },
+    account: {
+      usedBy:
+        personal || !gridded.has(row.key)
+          ? reachText(row.reach, 'No project uses it')
+          : projectsResolving(group, row.key),
+      configuredReach: row.configuredReach,
+    },
   }))
   return [...own, ...account]
 }
 
 function secretsRowMatches(row: SecretsRow, query: string) {
-  if (!row.account) return credentialRowMatches(row, query)
-  const needle = query.trim().toLowerCase()
-  return (
-    !needle ||
-    [row.credential, row.mode, row.boundTo, row.hint, row.account.reach]
-      .join(' ')
-      .toLowerCase()
-      .includes(needle)
-  )
+  if (credentialRowMatches(row, query)) return true
+  return !!row.account?.usedBy.toLowerCase().includes(query.trim().toLowerCase())
 }
 
 /** Your account copy names its reach beneath, since it resolves in every space that reach admits. */
@@ -89,9 +93,9 @@ function BoundTo({ row }: { row: SecretsRow }) {
       <span>{row.boundTo}</span>
       <span className="text-text-muted text-xs">
         Reaches{' '}
-        {row.account.configuredReach === 'All your spaces'
+        {row.account.configuredReach === 'all'
           ? 'all your spaces'
-          : row.account.configuredReach}
+          : reachText(row.account.configuredReach, 'no spaces')}
       </span>
     </span>
   )
@@ -101,7 +105,7 @@ function UsedBy({ row }: { row: SecretsRow }) {
   if (row.account)
     return (
       <span className="inline-flex flex-col leading-tight">
-        <span>{row.account.reach}</span>
+        <span>{row.account.usedBy}</span>
       </span>
     )
   if (!row.usages.length) return '—'
@@ -221,6 +225,7 @@ function SecretsPage() {
           <ResolvedByProject keys={keys} spaceId={credentials.spaceId} />
         ) : (
           <CredentialsTab
+            accountError={keys.view?.accountError ?? null}
             credentials={credentials}
             rows={rows}
             search={search}
@@ -233,11 +238,13 @@ function SecretsPage() {
 }
 
 function CredentialsTab({
+  accountError,
   credentials,
   rows,
   search,
   onSearch,
 }: {
+  accountError: string | null
   credentials: ReturnType<typeof useCredentialRows>
   rows: SecretsRow[]
   search: string
@@ -256,6 +263,9 @@ function CredentialsTab({
     )
   return (
     <>
+      {accountError ? (
+        <ErrorState title="Could not read your personal keys" message={accountError} />
+      ) : null}
       <Collection
         title="Credentials"
         count={rows.length}

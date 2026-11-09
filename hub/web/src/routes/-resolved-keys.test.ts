@@ -86,15 +86,13 @@ test('a project copy wins over the account copy, which resolves everywhere else'
   expect(cell(view, teamId, 'shared')).toMatchObject({ kind: 'account', hint: 'acct' })
   expect(cell(view, otherId, 'other')).toMatchObject({ kind: 'account', hint: 'acct' })
   expect(view.groups.map((group) => group.spaceId)).not.toContain(personalId)
-  expect(view.account).toMatchObject([
-    { reach: 'All your spaces', configuredReach: 'All your spaces' },
-  ])
+  expect(view.account).toMatchObject([{ reach: 'all', configuredReach: 'all' }])
 })
 
 test('effective reach names only the spaces where a project resolves the account copy', () => {
   const view = resolvedKeys(data([teamId]))
   expect(cell(view, otherId, 'other')).toMatchObject({ kind: 'none' })
-  expect(view.account).toMatchObject([{ reach: 'Team', configuredReach: 'Team' }])
+  expect(view.account).toMatchObject([{ reach: ['Team'], configuredReach: ['Team'] }])
   const overridden = resolvedKeys({
     ...data([teamId]),
     spaces: data([teamId]).spaces.map(
@@ -102,7 +100,23 @@ test('effective reach names only the spaces where a project resolves the account
         entry.id === teamId ? space(teamId, 'Team', entry.secrets, [teamOwn]) : entry,
     ),
   })
-  expect(overridden.account).toMatchObject([
-    { reach: 'No project uses it', configuredReach: 'Team' },
-  ])
+  expect(overridden.account).toMatchObject([{ reach: [], configuredReach: ['Team'] }])
+})
+
+test('a space that could not be read shows no rows and does not narrow the account reach', () => {
+  const failed = (entry: Space): Space =>
+    entry.id === otherId ? { ...space(otherId, 'Other', [], []), error: 'refused' } : entry
+  const view = resolvedKeys({ ...data(null), spaces: data(null).spaces.map(failed) })
+  expect(view.groups.find((group) => group.spaceId === otherId)).toMatchObject({
+    error: 'refused',
+    rows: [],
+  })
+  expect(view.account).toMatchObject([{ reach: 'all' }])
+  const personalFailed = resolvedKeys({
+    ...data(null),
+    spaces: data(null).spaces.map((entry) =>
+      entry.id === personalId ? { ...entry, secrets: [], error: 'refused' } : entry,
+    ),
+  })
+  expect(personalFailed).toMatchObject({ accountError: 'refused', account: [] })
 })

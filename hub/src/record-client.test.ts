@@ -131,6 +131,23 @@ describe('record client', () => {
     ])
   })
 
+  test('credential and project listings address the space they are asked for', async () => {
+    const spaces: Array<string | null> = []
+    const client = clientWith(async (_url, init) => {
+      spaces.push(new Headers(init?.headers).get('x-record-space'))
+      return jsonResponse({ items: [] })
+    })
+    const spaceId = '01990000-0000-7000-8000-000000000020'
+
+    await Promise.allSettled([
+      client.configSecrets(spaceId),
+      client.credentialPreferences(spaceId),
+      client.projects(spaceId),
+    ])
+
+    expect(spaces).toEqual([spaceId, spaceId, spaceId])
+  })
+
   test('clears a credential preference by identity', async () => {
     const requests: Array<{ url: string; method: string | undefined; body: string | null }> = []
     const client = clientWith(async (url, init) => {

@@ -5,7 +5,7 @@ import {
   type TypedCredentialRow,
   typedCredentialRows,
 } from '@/routes/-credential-rows'
-import { credentialIdentityPath } from '../../../../shared/credential.ts'
+import { credentialIdentityKey, credentialIdentityPath } from '../../../../shared/credential.ts'
 import {
   type CredentialCandidate,
   credentialPayerFromScope,
@@ -13,6 +13,9 @@ import {
 } from '../../../../shared/credential-resolution.ts'
 
 type ResolvedKeySpace = RecordResolvedKeysResponse['spaces'][number]
+
+/** Every space you belong to, or the named spaces, of which an empty list means none. */
+export type Reach = 'all' | string[]
 
 type AccountCredential = {
   key: string
@@ -22,22 +25,23 @@ type AccountCredential = {
   environment: TypedCredentialRow['environment']
   hint: string
   /** Spaces where at least one project resolves this account copy. */
-  reach: string
+  reach: Reach
   /** The spaces its reach admits, whether or not a project there resolves it. */
-  configuredReach: string
+  configuredReach: Reach
   updatedAt: string
 }
 
 export type ResolvedKeyColumn = { id: string; credential: string; mode: TypedCredentialRow['mode'] }
 
+type ResolvedCellKind = 'account' | 'own-project' | 'own-space' | 'shared-project' | 'shared-space'
+
 export type ResolvedKeyCell =
   | {
-      kind: 'account' | 'own-project' | 'own-space' | 'shared-project' | 'shared-space'
-      label: string
+      kind: ResolvedCellKind
       hint: string
       preferred: boolean
     }
-  | { kind: 'none'; label: string }
+  | { kind: 'none' }
 
 type ResolvedKeyRow = { key: string; name: string; cells: Record<string, ResolvedKeyCell> }
 
@@ -50,6 +54,8 @@ export type ResolvedKeyGroup = {
 
 export type ResolvedKeys = {
   personalSpaceId: string | null
+  /** Why your personal space could not be read, which hides every account copy. */
+  accountError: string | null
   account: AccountCredential[]
   columns: ResolvedKeyColumn[]
   groups: ResolvedKeyGroup[]
@@ -60,33 +66,18 @@ type Candidate = CredentialCandidate & { row: TypedCredentialRow }
 /** The grid shows API keys; other credential types are infrastructure and stay on the Secrets page. */
 const GRID_CREDENTIAL_TYPE = 'api-key'
 
-function identityId(
-  row: Pick<TypedCredentialRow, 'provider' | 'name' | 'type' | 'mode' | 'environment'>,
-) {
-  return `${credentialIdentityPath(row.provider, row.name, row.type)}#${row.mode}@${row.environment}`
-}
+const identityId = credentialIdentityKey
 
 function isAccountRow(row: TypedCredentialRow) {
   return row.scope === 'user' && row.projectId === null
 }
 
-function reachLabel(reach: readonly string[] | null, spaces: ResolvedKeySpace[]) {
-  if (reach === null) return 'All your spaces'
-  if (!reach.length) return 'No spaces'
-  return reach
-    .map((id) => spaces.find((space) => space.id === id)?.name ?? 'a space you left')
-    .join(', ')
+function reachNames(reach: readonly string[] | null, spaces: ResolvedKeySpace[]): Reach {
+  if (reach === null) return 'all'
+  return reach.map((id) => spaces.find((space) => space.id === id)?.name ?? 'a space you left')
 }
 
-const CELL_LABEL = {
-  account: 'Yours · all spaces',
-  'own-project': 'Yours · project',
-  'own-space': 'Yours · space',
-  'shared-project': 'Space · project',
-  'shared-space': 'Space · space',
-} as const
-
-function cellKind(candidate: Candidate): keyof typeof CELL_LABEL {
+function cellKind(candidate: Candidate): ResolvedCellKind {
   if (candidate.account) return 'account'
   const owner = candidate.payer === 'personal' ? 'own' : 'shared'
   return candidate.projectId === null ? `${owner}-space` : `${owner}-project`
@@ -107,11 +98,9 @@ function resolvedCell(
     mode: column.mode,
     environment: column.environment,
   })
-  if (result.kind === 'refused') return { kind: 'none', label: 'Not set' }
-  const kind = cellKind(result.credential)
+  if (result.kind === 'refused') return { kind: 'none' }
   return {
-    kind,
-    label: CELL_LABEL[kind],
+    kind: cellKind(result.credential),
     hint: result.credential.row.hint,
     preferred: result.reason === 'project-preference' || result.reason === 'space-preference',
   }
@@ -129,9 +118,10 @@ function accountSummary(row: TypedCredentialRow) {
   }
 }
 
-/** Names of the spaces where some project's cell for this column resolved the account copy. */
+/** Names of the read spaces where some project's cell for this column resolved the account copy. */
 function effectiveSpaces(groups: ResolvedKeyGroup[], columnId: string) {
   return groups
+    .filter((group) => !group.error)
     .filter((group) => group.rows.some((row) => row.cells[columnId]?.kind === 'account'))
     .map((group) => group.spaceName)
 }
@@ -155,6 +145,8 @@ export function resolvedKeys(data: RecordResolvedKeysResponse): ResolvedKeys {
   const groups = [...data.spaces]
     .sort((left, right) => left.name.localeCompare(right.name))
     .flatMap((space): ResolvedKeyGroup[] => {
+      if (space.error)
+        return [{ spaceId: space.id, spaceName: space.name, error: space.error, rows: [] }]
       const projects = space.projects.filter((project) => project.retiredAt === null)
       if (space.id === data.personalSpaceId && !projects.length) return []
       const ownRows = typedCredentialRows(space.secrets).filter(
@@ -178,7 +170,7 @@ export function resolvedKeys(data: RecordResolvedKeysResponse): ResolvedKeys {
         {
           spaceId: space.id,
           spaceName: space.name,
-          error: space.error,
+          error: null,
           rows: targets.map((target) => ({
             key: `${space.id}:${target.id ?? 'space'}`,
             name: target.name,
@@ -204,17 +196,18 @@ export function resolvedKeys(data: RecordResolvedKeysResponse): ResolvedKeys {
         },
       ]
     })
+  const readable = groups.filter((group) => !group.error).length
   return {
     personalSpaceId: data.personalSpaceId,
+    accountError: personal?.error ?? null,
     account: accountRows.map((row) => {
-      const configured = reachLabel(row.reachSpaceIds ?? null, data.spaces)
+      const configured = reachNames(row.reachSpaceIds ?? null, data.spaces)
       if (!columnsById.has(identityId(row)))
         return { ...accountSummary(row), reach: configured, configuredReach: configured }
       const served = effectiveSpaces(groups, identityId(row))
-      if (served.length === groups.length)
+      if (served.length === readable)
         return { ...accountSummary(row), reach: configured, configuredReach: configured }
-      const reach = served.length ? served.join(', ') : 'No project uses it'
-      return { ...accountSummary(row), reach, configuredReach: configured }
+      return { ...accountSummary(row), reach: served, configuredReach: configured }
     }),
     columns: columnRows.map(([id, row]) => ({
       id,
