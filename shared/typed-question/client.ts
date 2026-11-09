@@ -193,7 +193,8 @@ async function resolveKey(
   try {
     const credential = await dependencies.resolveCredential()
     if (credential.kind === 'resolved') return { kind: 'key', value: credential.value }
-    // Temporary DEV-2203 fallback until slice 2 migrates TYPESAFE_KEY.
+    // Temporary: the legacy TYPESAFE_KEY answers only while no typed credential exists,
+    // and goes when the legacy key is migrated onto the credential.
     const key = (await dependencies.resolve([TYPESAFE_KEY]))[TYPESAFE_KEY]
     return key ? { kind: 'key', value: key } : { kind: 'missing-key' }
   } catch {
