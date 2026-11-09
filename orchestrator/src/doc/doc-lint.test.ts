@@ -3,10 +3,10 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
 import {
   type DocReferenceProject,
-  STALE_REFERENCE_RULES,
   docLintProfile,
   introducedDocFindings,
   lintDoc,
+  STALE_REFERENCE_RULES,
   summarizeDocLint,
 } from './doc-lint.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'

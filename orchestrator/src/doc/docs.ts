@@ -346,11 +346,11 @@ async function assertDocWriteAllowed(input: DocWriteAllowedInput): Promise<strin
   return assertCanonWriteAllowed(input)
 }
 
+export { summarizeDocLint } from './doc-lint.ts'
 export {
   lintStoredDoc,
   storedDocWarnings,
 } from './doc-lint-adapter.ts'
-export { summarizeDocLint } from './doc-lint.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   assertLocalReferenceWrite(prior, input)

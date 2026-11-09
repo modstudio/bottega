@@ -151,10 +151,7 @@ function listedDocFindings(
   return listedLintedDocs(flags, lint).flatMap(projectListedDocFindings)
 }
 
-function projectListedDocFindings({
-  doc,
-  findings,
-}: ReturnType<typeof listedLintedDocs>[number]) {
+function projectListedDocFindings({ doc, findings }: ReturnType<typeof listedLintedDocs>[number]) {
   return findings.map((finding) => ({
     scope: doc.scope,
     subject: doc.subject,
