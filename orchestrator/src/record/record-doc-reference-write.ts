@@ -1,7 +1,7 @@
 // concern: record-doc-reference-write
 /** Applies generated-reference write authority at hosted document service boundaries. */
 
-import type { DocKind } from '../../../shared/docs.ts'
+import type { DocKind, DocStatus } from '../../../shared/docs.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
 import {
   isReferenceGeneratorWrite,
@@ -18,6 +18,7 @@ type StoredLintRow =
       slug?: unknown
       body?: unknown
       kind?: unknown
+      status?: unknown
     } & NonNullable<StoredFormRow>)
   | null
   | undefined
@@ -40,8 +41,9 @@ export function assertHostedReferenceUpsertAllowed(
 
 export function assertHostedReferenceLintAllowed(
   existing: StoredLintRow,
-  input: Omit<Parameters<typeof recordDocLintRefusal>[0], 'kind'> & {
+  input: Omit<Parameters<typeof recordDocLintRefusal>[0], 'kind' | 'status'> & {
     kind?: DocKind
+    status?: DocStatus
     form?: string | null
     generator?: DocGenerator
   },
@@ -58,7 +60,13 @@ export function assertHostedReferenceLintAllowed(
     return
   assertWrite(
     recordDocLintRefusal(
-      { ...input, kind },
+      {
+        ...input,
+        kind,
+        status:
+          input.status ??
+          (existing?.status == null ? 'current' : (String(existing.status) as DocStatus)),
+      },
       existing
         ? {
             scope: String(existing.scope),
@@ -66,6 +74,7 @@ export function assertHostedReferenceLintAllowed(
             slug: String(existing.slug),
             body: String(existing.body),
             kind: (existing.kind == null ? 'working' : String(existing.kind)) as DocKind,
+            status: (existing.status == null ? 'current' : String(existing.status)) as DocStatus,
           }
         : undefined,
     ),

@@ -117,7 +117,7 @@ test('converted command families preserve trunk output and exit status without o
       1,
       `${PLATFORM_SLUG} doc search "<query>" [--scope S] [--subject X] [--k N] [--json]`,
     ],
-    [['doc', 'lint'], 0, ''],
+    [['doc', 'lint'], 0, 'summary:'],
     [['doc', 'warnings'], 1, `${PLATFORM_SLUG} doc warnings --scope S [--subject X] [--json]`],
     [
       ['doc', 'set'],

@@ -12,6 +12,7 @@ const doc = (body: string) => ({
   slug: 'record-service',
   body,
   kind: 'working' as const,
+  status: 'current' as const,
 })
 
 describe('record service doc lint', () => {
@@ -31,6 +32,15 @@ describe('record service doc lint', () => {
         doc('This was formerly different.\n\nCurrent behavior is direct.'),
         doc('This was formerly different.'),
       ),
+    ).toBeNull()
+  })
+
+  test('allows archived and superseded document content unchanged', () => {
+    expect(
+      recordDocLintRefusal({ ...doc('This was called legacy.'), status: 'archived' }),
+    ).toBeNull()
+    expect(
+      recordDocLintRefusal({ ...doc('This was called legacy.'), status: 'superseded' }),
     ).toBeNull()
   })
 })

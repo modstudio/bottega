@@ -1,7 +1,7 @@
 // concern: doc-lint
 /** Gathers registered checkout trees for the pure stored-document lint decision. */
 import { existsSync } from 'node:fs'
-import type { DocKind } from '../../../shared/docs.ts'
+import type { DocKind, DocStatus } from '../../../shared/docs.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { canonGitRoot, collectCanonLintInput } from '../canon/canon-files.ts'
 import { type Project, projects } from '../project/projects.ts'
@@ -21,6 +21,7 @@ type StoredDoc = {
   slug: string
   body: string
   kind: DocKind
+  status: DocStatus
   summary?: string | null
 }
 
@@ -103,11 +104,18 @@ export function storedDocWarnings(
 }
 
 export function storedDocLintRefusal(
-  next: Omit<StoredDoc, 'kind'> & { kind?: StoredDoc['kind'] },
+  next: Omit<StoredDoc, 'kind' | 'status'> & {
+    kind?: StoredDoc['kind']
+    status?: StoredDoc['status']
+  },
   current: StoredDoc | null,
   selectedTree?: CanonWriteTree,
 ): string | null {
-  const doc = { ...next, kind: next.kind ?? current?.kind ?? 'working' }
+  const doc = {
+    ...next,
+    kind: next.kind ?? current?.kind ?? 'working',
+    status: next.status ?? current?.status ?? 'current',
+  }
   const projects = docHasRepositoryReferences(doc.body)
     ? collectDocReferenceProjects(doc, selectedTree)
     : undefined

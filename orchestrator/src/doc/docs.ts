@@ -346,7 +346,11 @@ async function assertDocWriteAllowed(input: DocWriteAllowedInput): Promise<strin
   return assertCanonWriteAllowed(input)
 }
 
-export { lintStoredDoc, storedDocWarnings } from './doc-lint-adapter.ts'
+export { summarizeDocLint } from './doc-lint.ts'
+export {
+  lintStoredDoc,
+  storedDocWarnings,
+} from './doc-lint-adapter.ts'
 
 function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   assertLocalReferenceWrite(prior, input)
@@ -841,6 +845,7 @@ export async function restoreDoc(
       body: revision.body,
       delivery: revision.delivery,
       kind: revision.kind,
+      status: revision.status,
       ...localRevisionArticleReferences(revision),
       ...context,
     },
@@ -848,7 +853,6 @@ export async function restoreDoc(
   )
   const projectName = docWriteProjectName(scope, subject)
   const projectId = projectName ? (projectByName(subject!)?.recordId ?? null) : null
-  const liveRecordId = current?.record_id
   const restoredParentSlug = localRestoredParentSlug({
     scope,
     subject,
@@ -882,7 +886,7 @@ export async function restoreDoc(
         subject,
         owner,
         slug,
-        liveRecordId,
+        liveRecordId: current?.record_id,
         projectId,
         title: revision.title,
         body: revision.body,
@@ -897,7 +901,7 @@ export async function restoreDoc(
       }),
     hosted: async () => {
       const client = await hostedDocClient(scope, subject)
-      let recordId = liveRecordId
+      let recordId = current?.record_id
       let hostedExpected = context.expectedRevision
       if (!recordId) {
         const listed = await client.listDocs({
