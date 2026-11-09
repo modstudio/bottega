@@ -1,6 +1,6 @@
 import type { TaskSource } from '../../shared/task-source.ts'
 import type { PushedTask } from './push-contract.ts'
-import type { TaskRow } from './task.ts'
+import type { TaskRow } from './task-row.ts'
 
 export type PushableTaskRow = Omit<TaskRow, 'record_id'> & { record_id: string | null }
 

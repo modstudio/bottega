@@ -528,6 +528,7 @@ describe('local task tracker', () => {
         },
       ],
       '2026-09-02T00:00:00.000Z',
+      [],
     )
     const after = showTask(local.key).task
     expect(after.source).toBe('local')

@@ -52,9 +52,9 @@ import {
   attachLocalTaskEvidenceInTransaction,
   createLocalTaskInTransaction,
   duplicateCandidates,
-  type TaskRow,
 } from './task.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
+import type { TaskRow } from './task-row.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = NoteAnchorWire

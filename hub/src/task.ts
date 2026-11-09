@@ -44,8 +44,6 @@ import {
 import { trackerCapabilities } from './tracker-capabilities.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
-export type { TaskRow } from './task-row.ts'
-
 export type TaskComment = {
   id: string
   task_key: string

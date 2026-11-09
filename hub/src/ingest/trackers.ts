@@ -527,7 +527,7 @@ function observeTrackerTaskOn(
 export function observeTrackerTask(
   task: TrackerTask,
   at = nowIso(),
-  prefixes: readonly string[] = [],
+  prefixes: readonly string[],
 ): TrackerTaskObservation {
   if (!trackerKeyInScope(task.key, prefixes)) {
     return { at, taskRecordId: null, taskKey: task.key, event: null }
@@ -547,7 +547,7 @@ export async function fetchTrackerTasks(
   client: ToolCaller,
   mode: TrackerReadMode,
   since: string | null,
-  prefixes: readonly string[] = [],
+  prefixes: readonly string[],
 ): Promise<TrackerFetchResult> {
   const fetched = await source.fetch(
     client,
@@ -564,8 +564,8 @@ export async function fetchTrackerTasks(
     )
     .all(source.project)
     .filter((row) => !seen.has(row.key))
+    .filter((row) => trackerKeyInScope(row.key, prefixes))
   for (const { key } of vanished.slice(0, 200)) {
-    if (!trackerKeyInScope(key, prefixes)) continue
     try {
       const task = source.lookup ? await lookupTrackerTask(source, client, key) : null
       if (task) tasks.push(task)
@@ -597,7 +597,7 @@ type TrackerCacheObservation = {
 export function writeTrackerCache(
   tasks: Iterable<TrackerTask>,
   at: string,
-  prefixes: readonly string[] = [],
+  prefixes: readonly string[],
 ): TrackerCacheObservation[] {
   const observations: TrackerCacheObservation[] = []
   writeTransaction((conn) => {
@@ -609,12 +609,15 @@ export function writeTrackerCache(
   return observations
 }
 
+/** The prefix used by the register to scope a tracker key. */
+export function trackerKeyPrefix(key: string): string {
+  return key.split('-', 1)[0]!
+}
+
 /** Whether the register admits a tracker key for this project. */
 export function trackerKeyInScope(key: string, prefixes: readonly string[]): boolean {
   if (!prefixes.length) return true
-  const separator = key.indexOf('-')
-  if (separator < 0) return false
-  const prefix = key.slice(0, separator).toLowerCase()
+  const prefix = trackerKeyPrefix(key).toLowerCase()
   return prefixes.some((declared) => declared.toLowerCase() === prefix)
 }
 
@@ -645,8 +648,7 @@ export function retireOutOfScopeTrackerTasks(
     let retired = 0
     for (const row of rows) {
       if (trackerKeyInScope(row.key, prefixes)) continue
-      const separator = row.key.indexOf('-')
-      const prefix = separator < 0 ? row.key : row.key.slice(0, separator)
+      const prefix = trackerKeyPrefix(row.key)
       const reason =
         `out of scope: key prefix ${prefix} is not among ${project}'s declared key prefixes ` +
         prefixes.join(', ')
@@ -663,6 +665,7 @@ export function dropDeletedTrackerTasks(
   project: Project,
   keys: Iterable<string>,
   at: string,
+  prefixes: readonly string[],
 ): { dropped: number; activity: boolean; changed: number } {
   let dropped = 0
   let changed = 0
@@ -675,6 +678,7 @@ export function dropDeletedTrackerTasks(
       'UPDATE task SET opened_at=?, closed_at=? WHERE record_id=?',
     )
     for (const key of new Set(keys)) {
+      if (!trackerKeyInScope(key, prefixes)) continue
       const row = read.get(project, key)
       // A tombstone repeats while it stays inside the since overlap; one drop is the event.
       if (!row || row.status_category === 'dropped') continue
@@ -856,7 +860,7 @@ export async function ingestTrackers(
             const unique = scopedTrackerTasks(fetched.tasks, prefixes)
             const observations = writeTrackerCache(unique.values(), at, prefixes)
             const retired = retireOutOfScopeTrackerTasks(s.project, prefixes, at)
-            const deletions = dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at)
+            const deletions = dropDeletedTrackerTasks(s.project, fetched.deletedKeys, at, prefixes)
             let activity =
               deletions.activity || observations.some(({ observation }) => observation.changed)
             const changed =

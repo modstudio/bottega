@@ -26,6 +26,7 @@ test('a delivery-off drain reports the edit as queued with the refusal reason', 
       assignee: null,
     },
     queuedAt,
+    [],
   )
   const previousStateHome = process.env[STATE_HOME_ENV]
   const otherStateHome = mkdtempSync(join(tmpdir(), 'hub-offline-edit-non-installation-'))
@@ -65,6 +66,7 @@ test('a queued write reports its routing wait instead of another drainer', async
       assignee: null,
     },
     queuedAt,
+    [],
   )
   const messages: string[] = []
   const error = spyOn(console, 'error').mockImplementation((message) =>
@@ -108,6 +110,7 @@ test('a queued write reports its routing wait while the collector holds the leas
       assignee: null,
     },
     queuedAt,
+    [],
   )
   writeTransaction((conn) =>
     conn

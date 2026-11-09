@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
-import type { TaskRow } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
 import { closeThenPrune } from './task-close.ts'
 import { decideTaskClose } from './task-close-decision.ts'
+import type { TaskRow } from './task-row.ts'
 
 const closedTask = { project: PLATFORM_NAME, key: 'DEV-1' } as TaskRow
 

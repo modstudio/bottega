@@ -127,7 +127,8 @@ export function decideTaskUpsert(
     ]
     if (
       compared.every((field) => same(stored[field], incoming[field])) &&
-      same(stored.retired_reason ?? null, incoming.retired_reason ?? null) &&
+      (!Object.hasOwn(incoming, 'retired_reason') ||
+        same(stored.retired_reason ?? null, incoming.retired_reason ?? null)) &&
       stored.next_document_number >= incoming.next_document_number
     )
       return { kind: 'duplicate' }
