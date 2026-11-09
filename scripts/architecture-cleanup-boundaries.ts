@@ -236,11 +236,24 @@ export const cleanupBoundarySpecs = [
       './session-close-out-outbox.ts',
       './session-close-out-resource-release-adapter.ts',
       './session-close-out-resource-release.ts',
+      './session-close-out-store.ts',
       './session-context-lifecycle.ts',
     ],
     typeOnlyAllowed: ['./session-close-out-report.ts'],
     reason:
       'Keep session close-out as the lifecycle composer over pure classification and existing resource owners.',
+  },
+  {
+    name: 'session-close-out-store-boundary',
+    file: 'orchestrator/src/session/session-close-out-store.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/record-id.ts',
+      '../database/db.ts',
+      './session-close-out-decision.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', './session-close-out-decision.ts'],
+    reason: 'Keep session close-out row persistence and retention behind its session owner.',
   },
   {
     name: 'branch-disposal-boundary',
@@ -411,6 +424,7 @@ export const cleanupBoundarySpecs = [
       '../database/db.ts',
       '../run/run-artifact-limits.ts',
       '../session/session-close-out.ts',
+      '../session/session-close-out-store.ts',
       './cleanup.ts',
       './cleanup-sweep-session-close-out-decision.ts',
     ],

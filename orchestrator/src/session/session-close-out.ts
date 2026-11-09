@@ -5,7 +5,6 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { branchesReport, pruneBranch } from '../branch/branches.ts'
 import { observeTaskStatus } from '../branch/task-status-observation.ts'
 import { reconcileAbsentClaims } from '../cleanup/claim-reconciliation.ts'
@@ -54,6 +53,7 @@ import {
   sessionResourceReleaseTargets,
 } from './session-close-out-resource-release.ts'
 import { reclaimSessionReleasedTree } from './session-close-out-resource-release-adapter.ts'
+import { insertSessionCloseOutRecord } from './session-close-out-store.ts'
 import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
@@ -846,6 +846,10 @@ function applySessionMechanicalActions(
     }
 }
 
+/**
+ * Close-out without writing a session_close_out record. Machine sweep uses this replay path so an
+ * idempotent release does not create a second close-out invocation record.
+ */
 export async function releaseSessionResources(
   options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
 ): Promise<SessionCloseOutReport> {
@@ -936,25 +940,7 @@ export async function closeOutSession(
   if (report.dryRun) return report
   const row = sessionCloseOutRecord(report)
   const database = writableDb()
-  writeTransaction(() => {
-    database
-      .query(
-        `INSERT INTO session_close_out
-         (record_id,session_id,closed_at,clean,recommendation,mechanical_count,process_count,error_count,warning_count)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        newRecordId(),
-        row.sessionId,
-        new Date().toISOString(),
-        row.clean ? 1 : 0,
-        row.recommendation,
-        row.mechanicalCount,
-        row.processCount,
-        row.errorCount,
-        row.warningCount,
-      )
-  }, database)
+  writeTransaction(() => insertSessionCloseOutRecord(row, database), database)
   return report
 }
 

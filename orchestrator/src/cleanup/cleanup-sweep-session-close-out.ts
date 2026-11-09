@@ -3,52 +3,92 @@
 
 import type { Database } from 'bun:sqlite'
 import { releaseSessionClaims } from '../board/board-claim-service.ts'
-import { expireSessionSeen, writableDb, writeTransaction } from '../database/db.ts'
+import { db, expireSessionSeen, writableDb, writeTransaction } from '../database/db.ts'
 import { KEEP_RUN_FILES_DAYS } from '../run/run-artifact-limits.ts'
-import { releaseSessionResources } from '../session/session-close-out.ts'
+import {
+  releaseSessionResources,
+  type SessionCloseOutReport,
+} from '../session/session-close-out.ts'
+import {
+  markSessionCloseOutSwept,
+  newestSessionCloseOutRecords,
+  pruneSessionCloseOutRecords,
+  type SessionCloseOutRow,
+  sessionCloseOutLastSeen,
+} from '../session/session-close-out-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { decideSessionCloseOutSweep } from './cleanup-sweep-session-close-out-decision.ts'
 
-type CloseOutRow = {
-  record_id: string
-  session_id: string
-  closed_at: string
-  clean: number
-  swept_at: string | null
-  last_seen: string | null
-}
-
 type SweepAdapters = {
-  release: (session: string) => Promise<void>
+  release: (session: string) => Promise<SessionCloseOutReport>
   releaseClaims: (session: string, now: number, database: Database) => number
 }
 
 const defaultAdapters: SweepAdapters = {
-  release: async (session) => {
-    await releaseSessionResources({ session })
-  },
+  release: async (session) => releaseSessionResources({ session }),
   releaseClaims: releaseSessionClaims,
 }
 
+class SessionResumedDuringSweep extends Error {}
+
+function rowDecision(row: SessionCloseOutRow, lastSeen: string | null = row.last_seen) {
+  return decideSessionCloseOutSweep({
+    newest: true,
+    clean: row.clean === 1,
+    closedAt: Date.parse(row.closed_at),
+    lastSeenAt: lastSeen === null ? null : Date.parse(lastSeen),
+    sweptAt: row.swept_at === null ? null : Date.parse(row.swept_at),
+  })
+}
+
+function reportUncleanReplay(
+  session: string,
+  report: SessionCloseOutReport,
+  presentation: CleanupPresentation,
+): void {
+  for (const item of report.process)
+    presentation.error(
+      `closed session ${session} remains: ${item.item}: ${item.reason}; evidence: ${item.evidence}; remedy: ${item.remedy}`,
+    )
+  for (const item of report.errors)
+    presentation.error(
+      `closed session ${session} error: ${item.item}: ${item.detail}; retry: ${item.retry}`,
+    )
+}
+
 async function sweepCloseOutRow(input: {
-  row: CloseOutRow
+  row: SessionCloseOutRow
   database: Database
   now: number
   adapters: SweepAdapters
   presentation: CleanupPresentation
 }): Promise<boolean> {
   try {
-    await input.adapters.release(input.row.session_id)
-    input.adapters.releaseClaims(input.row.session_id, input.now, input.database)
+    const beforeRelease = rowDecision(
+      input.row,
+      sessionCloseOutLastSeen(input.row.session_id, input.database),
+    )
+    if (beforeRelease.action === 'skip') return false
+    const report = await input.adapters.release(input.row.session_id)
+    if (!report.verdict.clean) {
+      reportUncleanReplay(input.row.session_id, report, input.presentation)
+      return true
+    }
     writeTransaction(() => {
+      const lastSeen = sessionCloseOutLastSeen(input.row.session_id, input.database)
+      if (rowDecision(input.row, lastSeen).action === 'skip') throw new SessionResumedDuringSweep()
+      input.adapters.releaseClaims(input.row.session_id, input.now, input.database)
       expireSessionSeen(input.row.session_id, input.database)
-      input.database
-        .query('UPDATE session_close_out SET swept_at=? WHERE record_id=? AND swept_at IS NULL')
-        .run(new Date(input.now).toISOString(), input.row.record_id)
+      markSessionCloseOutSwept(
+        input.row.record_id,
+        new Date(input.now).toISOString(),
+        input.database,
+      )
     }, input.database)
     input.presentation.log(`swept closed session ${input.row.session_id}`)
     return false
   } catch (cause) {
+    if (cause instanceof SessionResumedDuringSweep) return false
     input.presentation.error(
       `could not sweep closed session ${input.row.session_id}: ${cause instanceof Error ? cause.message : String(cause)}`,
     )
@@ -65,30 +105,13 @@ export async function sweepSessionCloseOutRecords(input: {
   adapters?: SweepAdapters
 }): Promise<boolean> {
   if (!input.enabled) return false
-  const database = input.database ?? writableDb()
+  const database = input.database ?? (input.dryRun ? db() : writableDb())
   const now = input.now ?? Date.now()
   const adapters = input.adapters ?? defaultAdapters
-  const rows = database
-    .query(
-      `SELECT close_out.record_id,close_out.session_id,close_out.closed_at,close_out.clean,
-              close_out.swept_at,seen.last_seen
-         FROM session_close_out close_out
-         LEFT JOIN session_seen seen ON seen.session_id=close_out.session_id
-        ORDER BY close_out.session_id,close_out.closed_at DESC,close_out.record_id DESC`,
-    )
-    .all() as CloseOutRow[]
-  const newest = new Set<string>()
+  const rows = newestSessionCloseOutRecords(database)
   let failed = false
   for (const row of rows) {
-    const isNewest = !newest.has(row.session_id)
-    newest.add(row.session_id)
-    const decision = decideSessionCloseOutSweep({
-      newest: isNewest,
-      clean: row.clean === 1,
-      closedAt: Date.parse(row.closed_at),
-      lastSeenAt: row.last_seen === null ? null : Date.parse(row.last_seen),
-      sweptAt: row.swept_at === null ? null : Date.parse(row.swept_at),
-    })
+    const decision = rowDecision(row)
     if (decision.action === 'skip') continue
     if (input.dryRun) {
       input.presentation.log(`would sweep closed session ${row.session_id}`)
@@ -99,9 +122,7 @@ export async function sweepSessionCloseOutRecords(input: {
   }
   if (!input.dryRun) {
     const cutoff = new Date(now - KEEP_RUN_FILES_DAYS * 86_400_000).toISOString()
-    database
-      .query('DELETE FROM session_close_out WHERE swept_at IS NOT NULL AND swept_at<?')
-      .run(cutoff)
+    pruneSessionCloseOutRecords(cutoff, database)
   }
   return failed
 }

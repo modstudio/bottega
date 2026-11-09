@@ -10,6 +10,7 @@ import { encodeContextItem } from '../doc/context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { getDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
+import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { sweepRuns } from './cleanup-sweep.ts'
 import { sweepSessionContext } from './cleanup-sweep-context.ts'
@@ -19,9 +20,40 @@ afterEach(() => {
   mock.restore()
 })
 
-test('closed session sweep expires heartbeat and marks only a session that did not resume', async () => {
+function closeOutReport(session: string, clean = true): SessionCloseOutReport {
+  return {
+    session,
+    dryRun: false,
+    resume: false,
+    owned: {
+      runs: [],
+      branches: [],
+      claims: [],
+      landings: [],
+      reviews: [],
+      cursors: [],
+      contextItems: [],
+    },
+    mechanical: [],
+    kept: [],
+    parked: [],
+    process: clean
+      ? []
+      : [{ item: 'held work', reason: 'still live', evidence: 'fixture', remedy: 'finish it' }],
+    warnings: [],
+    errors: clean ? [] : [{ item: 'release', detail: 'fixture failure', retry: 'retry close-out' }],
+    heldTrees: [],
+    verdict: { clean, residue: clean ? 0 : 2 },
+    recommendation: clean ? 'clear' : 'brief',
+  }
+}
+
+test('closed session sweep acts only on current clean rows and retains resumed or unclean replays', async () => {
   const closed = newRecordId()
   const resumed = newRecordId()
+  const unclean = newRecordId()
+  const raced = newRecordId()
+  const superseded = newRecordId()
   const closedAt = '2026-11-09T12:00:00.000Z'
   const database = db()
   const insert = database.query(
@@ -31,28 +63,65 @@ test('closed session sweep expires heartbeat and marks only a session that did n
   )
   insert.run(newRecordId(), closed, closedAt, 1, 'clear', 1, 0, 0, 0)
   insert.run(newRecordId(), resumed, closedAt, 1, 'clear', 1, 0, 0, 0)
+  insert.run(newRecordId(), unclean, closedAt, 1, 'clear', 1, 0, 0, 0)
+  insert.run(newRecordId(), raced, closedAt, 1, 'clear', 1, 0, 0, 0)
+  const oldSupersededRecord = newRecordId()
+  insert.run(oldSupersededRecord, superseded, '2026-09-01T00:00:00.000Z', 1, 'clear', 1, 0, 0, 0)
+  insert.run(newRecordId(), superseded, '2026-11-08T00:00:00.000Z', 0, 'brief', 0, 1, 0, 0)
   database
-    .query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?),(?,?)')
-    .run(closed, closedAt, resumed, '2026-11-09T12:01:00.000Z')
+    .query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?),(?,?),(?,?),(?,?)')
+    .run(closed, closedAt, resumed, '2026-11-09T12:01:00.000Z', unclean, closedAt, raced, closedAt)
+  const lines: string[] = []
 
-  await sweepSessionCloseOutRecords({
-    enabled: true,
-    dryRun: false,
-    database,
-    now: Date.parse('2026-11-09T12:02:00.000Z'),
-    presentation: presentation([], () => {}),
-    adapters: { release: async () => {}, releaseClaims: () => 0 },
-  })
-
-  expect(database.query('SELECT session_id FROM session_seen ORDER BY session_id').all()).toEqual([
-    { session_id: resumed },
-  ])
   expect(
-    database.query('SELECT session_id,swept_at FROM session_close_out ORDER BY session_id').all(),
-  ).toEqual([
-    { session_id: closed, swept_at: '2026-11-09T12:02:00.000Z' },
-    { session_id: resumed, swept_at: null },
-  ])
+    await sweepSessionCloseOutRecords({
+      enabled: true,
+      dryRun: false,
+      database,
+      now: Date.parse('2026-11-09T12:02:00.000Z'),
+      presentation: presentation(lines, () => {}),
+      adapters: {
+        release: async (session) => {
+          if (session === raced)
+            database
+              .query('UPDATE session_seen SET last_seen=? WHERE session_id=?')
+              .run('2026-11-09T12:01:30.000Z', raced)
+          return closeOutReport(session, session !== unclean)
+        },
+        releaseClaims: () => 0,
+      },
+    }),
+  ).toBe(true)
+
+  expect(database.query('SELECT session_id FROM session_seen').all()).toEqual(
+    expect.arrayContaining([
+      { session_id: resumed },
+      { session_id: unclean },
+      { session_id: raced },
+    ]),
+  )
+  expect(database.query('SELECT COUNT(*) count FROM session_seen').get()).toEqual({ count: 3 })
+  expect(database.query('SELECT session_id,swept_at FROM session_close_out').all()).toEqual(
+    expect.arrayContaining([
+      { session_id: closed, swept_at: '2026-11-09T12:02:00.000Z' },
+      { session_id: raced, swept_at: null },
+      { session_id: resumed, swept_at: null },
+      { session_id: superseded, swept_at: null },
+      { session_id: unclean, swept_at: null },
+    ]),
+  )
+  expect(database.query('SELECT COUNT(*) count FROM session_close_out').get()).toEqual({ count: 5 })
+  expect(
+    database
+      .query('SELECT record_id FROM session_close_out WHERE record_id=?')
+      .get(oldSupersededRecord),
+  ).toBeNull()
+  expect(lines).toContain(
+    `closed session ${unclean} remains: held work: still live; evidence: fixture; remedy: finish it`,
+  )
+  expect(lines).toContain(
+    `closed session ${unclean} error: release: fixture failure; retry: retry close-out`,
+  )
 })
 
 test('session context sweep logs and drops each item for a gone owner', async () => {

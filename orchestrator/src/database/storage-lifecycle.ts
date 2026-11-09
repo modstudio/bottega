@@ -155,9 +155,8 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
     store: 'orchestrator',
     table: 'session_close_out',
     class: 'machine',
-    keep: 'Rows stay until machine sweep acts, then for KEEP_RUN_FILES_DAYS.',
-    remover:
-      'orchestrator/src/cleanup/cleanup-sweep-session-close-out.ts#sweepSessionCloseOutRecords',
+    keep: 'Every row stays until COALESCE(swept_at, closed_at) is older than KEEP_RUN_FILES_DAYS; only the newest clean unswept row per session is eligible for release.',
+    remover: 'orchestrator/src/session/session-close-out-store.ts#pruneSessionCloseOutRecords',
   },
   ...entries(
     ['board_message'],

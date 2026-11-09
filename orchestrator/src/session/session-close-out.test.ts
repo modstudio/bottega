@@ -186,7 +186,7 @@ test('a completed close-out records its final report while a dry run records not
     db().query('SELECT COUNT(*) count FROM session_close_out WHERE session_id=?').get(session),
   ).toEqual({ count: 0 })
 
-  const report = await closeOutSession({ session })
+  await closeOutSession({ session })
   expect(
     db()
       .query(
@@ -195,12 +195,12 @@ test('a completed close-out records its final report while a dry run records not
       )
       .get(session),
   ).toEqual({
-    clean: report.verdict.clean ? 1 : 0,
-    recommendation: report.recommendation,
-    mechanical_count: report.mechanical.length,
-    process_count: report.process.length,
-    error_count: report.errors.length,
-    warning_count: report.warnings.length,
+    clean: 1,
+    recommendation: 'clear',
+    mechanical_count: 1,
+    process_count: 0,
+    error_count: 0,
+    warning_count: 0,
   })
 })
 
