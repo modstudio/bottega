@@ -117,7 +117,11 @@ export function registerOpenHooks(hooks: OpenHooks): () => void {
   }
 }
 function registeredOpenHooks(): OpenHooks {
-  if (openHooks && Object.values(openHooks).some((hooks) => hooks?.length)) return openHooks
+  if (
+    openHooks &&
+    (openHooks.afterWritableOpen?.length || openHooks.afterInitialize?.length || openHooks.access)
+  )
+    return openHooks
   throw new Error(
     'refusing writable database open: standard store hooks are not registered\n' +
       'invariant: Writable stores run evidence hygiene, liveness reaping, and workflow seeding.\n' +
@@ -127,7 +131,7 @@ function registeredOpenHooks(): OpenHooks {
 function requireOpenHooksForWritableMode(): void {
   if (!storeWritesRefused()) registeredOpenHooks()
 }
-function runOpenHooks(moment: keyof OpenHooks, database: Database): void {
+function runOpenHooks(moment: 'afterWritableOpen' | 'afterInitialize', database: Database): void {
   for (const hook of registeredOpenHooks()[moment] ?? []) hook(database)
 }
 /**
