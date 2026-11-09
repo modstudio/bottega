@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
+import { FLY_METRICS_OPERATOR_CREDENTIAL } from '../../../shared/operator-credentials.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
@@ -12,6 +12,7 @@ import {
 } from '../board/board-hosted-refresh-budget.ts'
 import { hostedBoardPostInput } from '../board/board-operations.ts'
 import { boardActor } from '../board/board-store.ts'
+import { resolveOperatorCredential } from '../config/operator-credential.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import type { HostedBoardOverview } from '../record/record-board-contract.ts'
@@ -37,7 +38,6 @@ export const HOSTED_METRICS_ORG = PLATFORM_SLUG
 const HOSTED_RECORD_APP = `${PLATFORM_SLUG}-record`
 const HOSTED_API_APP = `${PLATFORM_SLUG}-api`
 const HOSTED_METRICS_WINDOW = '5m'
-const HOSTED_FLY_METRICS_TOKEN = 'BOTTEGA_FLY_METRICS_TOKEN'
 
 export const HOSTED_METRICS_QUERIES = {
   steal: `sum(rate(fly_instance_cpu{app="${HOSTED_RECORD_APP}",mode="steal"}[${HOSTED_METRICS_WINDOW}])) / sum(rate(fly_instance_cpu{app="${HOSTED_RECORD_APP}"}[${HOSTED_METRICS_WINDOW}]))`,
@@ -51,7 +51,7 @@ type Dependencies = {
   database?: Database
   clock?: number
   fetch?: typeof globalThis.fetch
-  resolveToken?: typeof readEnvValuesWithHosted
+  resolveToken?: (signal?: AbortSignal) => Promise<string | undefined>
   observeBudgetMs?: number
   failFastStoreClaim?: boolean
   boardClient?: Pick<
@@ -112,9 +112,7 @@ async function observeHostedMetrics(
     return await withinHostedBoardRefreshBudget(async (signal) => {
       let token: string | undefined
       try {
-        token = (await deps.resolveToken([HOSTED_FLY_METRICS_TOKEN], undefined, undefined, signal))[
-          HOSTED_FLY_METRICS_TOKEN
-        ]
+        token = await deps.resolveToken(signal)
       } catch (error) {
         return { kind: 'failed', query: HOSTED_METRICS_TOKEN_STAGE, error: String(error), at }
       }
@@ -277,7 +275,14 @@ export async function checkHostedPressureCached(
   if (!claimed) return cachedDecision(cached!)
   const observation = await observeHostedMetrics(at, {
     fetch: dependencies.fetch ?? globalThis.fetch,
-    resolveToken: dependencies.resolveToken ?? readEnvValuesWithHosted,
+    resolveToken:
+      dependencies.resolveToken ??
+      ((signal) =>
+        resolveOperatorCredential(
+          FLY_METRICS_OPERATOR_CREDENTIAL.identity,
+          FLY_METRICS_OPERATOR_CREDENTIAL.overrideVariable,
+          signal,
+        )),
     observeBudgetMs: dependencies.observeBudgetMs ?? HOSTED_METRICS_QUERY_BUDGET_MS,
   })
   const decision = decideHostedPressure(previous, observation)

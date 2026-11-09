@@ -67,9 +67,9 @@ if [[ -z "$record_migrate_url" ]]; then
     reader_stderr="$(<"$reader_stderr_file")"
     rm -f "$reader_stderr_file"
     if (( reader_status == 1 )); then
-      echo "REFUSE: BOTTEGA_RECORD_MIGRATE_URL is unset; set it with \"bottega machine config secret set BOTTEGA_RECORD_MIGRATE_URL\"" >&2
+      echo "REFUSE: BOTTEGA_RECORD_MIGRATE_URL is unset and postgres/owner/url is missing; pipe its value on stdin to \"bottega credential set postgres/owner/url --project bottega\"" >&2
     else
-      echo "REFUSE: could not read the sealed BOTTEGA_RECORD_MIGRATE_URL" >&2
+      echo "REFUSE: could not resolve postgres/owner/url for project bottega" >&2
       printf '%s\n' "$reader_stderr" >&2
     fi
     exit 1

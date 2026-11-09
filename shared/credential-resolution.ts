@@ -2,12 +2,13 @@
 /** Pure payer-resolution rules and the refusal shape for a credential that must be set. */
 
 import { PLATFORM_SLUG } from './brand.ts'
-import type {
-  CredentialEnvironment,
-  CredentialIdentity,
-  CredentialMode,
-  CredentialPayer,
-  CredentialPreferencePayload,
+import {
+  type CredentialEnvironment,
+  type CredentialIdentity,
+  type CredentialMode,
+  type CredentialPayer,
+  type CredentialPreferencePayload,
+  credentialIdentityPath,
 } from './credential.ts'
 
 export type CredentialCandidate = CredentialIdentity & {
@@ -62,7 +63,7 @@ export function credentialSetRefusalText(
   condition: string,
   action: string,
 ): string {
-  const name = [target.provider, target.name, target.type].filter((part) => part !== null).join('/')
+  const name = credentialIdentityPath(target.provider, target.name, target.type)
   const binding = target.projectName ? `project ${target.projectName}` : `space ${target.spaceName}`
   const bindOption = target.projectName
     ? ` --project ${target.projectName}`

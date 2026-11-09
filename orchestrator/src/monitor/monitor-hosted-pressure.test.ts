@@ -21,7 +21,7 @@ test('the machine cache runs one four-query observation per interval', async () 
   const dependencies = {
     database: db(),
     fetch: fetcher,
-    resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: 'token' }),
+    resolveToken: async () => 'token',
   }
   await checkHostedPressureCached({ ...dependencies, clock: base })
   await checkHostedPressureCached({ ...dependencies, clock: base + 1_000 })
@@ -48,7 +48,7 @@ test('authorization accepts both bare and already-prefixed Fly tokens', async ()
       database: db(),
       clock: base + offset,
       fetch: fetcher,
-      resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: token }),
+      resolveToken: async () => token,
     })
   }
   expect(new Set(authorizations)).toEqual(new Set(['FlyV1 bare-token', 'FlyV1 prefixed-token']))
@@ -65,7 +65,7 @@ test('a fail-fast store claim restores the connection busy timeout', async () =>
         status: 'success',
         data: { result: [{ value: [base, '0'] }] },
       })) as unknown as typeof fetch,
-    resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: 'token' }),
+    resolveToken: async () => 'token',
     failFastStoreClaim: true,
   })
   expect(database.query('PRAGMA busy_timeout').get()).toEqual({ timeout: 4321 })
@@ -97,7 +97,7 @@ test('a failed query is stored and returned as an observation error', async () =
         ? new Response('', { status: 503 })
         : Response.json({ status: 'success', data: { result: [{ value: [base, '0'] }] } })
     }) as unknown as typeof fetch,
-    resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: 'token' }),
+    resolveToken: async () => 'token',
   })
   expect(result.conditions[0]).toEqual(
     expect.objectContaining({
@@ -121,7 +121,7 @@ test('the observation budget includes token resolution', async () => {
       fetchCalled = true
       throw new Error('metrics fetch must not run without a token')
     }) as unknown as typeof fetch,
-    resolveToken: async (_names, _env, _hosted, signal) => {
+    resolveToken: async (signal) => {
       tokenSignal = signal
       return await new Promise<never>(() => {})
     },
@@ -150,7 +150,7 @@ test('a query-stage observation budget failure is recorded as a budget failure',
     database: db(),
     clock: base,
     fetch: (async () => await new Promise<never>(() => {})) as unknown as typeof fetch,
-    resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: 'token' }),
+    resolveToken: async () => 'token',
     observeBudgetMs: 50,
   })
 
@@ -180,7 +180,7 @@ test('a failed onset post preserves the state and records the announcement error
       const value = query?.includes('mode="steal"') ? '0.25' : '0'
       return Response.json({ status: 'success', data: { result: [{ value: [base, value] }] } })
     }) as unknown as typeof fetch,
-    resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: 'token' }),
+    resolveToken: async () => 'token',
     boardClient: {
       listBoardMessages: async () => ({ messages: [], truncated: false }),
       postBoardMessage: async (input) => {

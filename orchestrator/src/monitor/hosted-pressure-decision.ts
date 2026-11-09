@@ -1,7 +1,10 @@
 // concern: hosted-pressure-decision
 /** Decides hosted pressure and hysteresis from plain observations. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  FLY_METRICS_OPERATOR_CREDENTIAL,
+  operatorCredentialSetCommand,
+} from '../../../shared/operator-credentials.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 export const HOSTED_STEAL_THRESHOLD = 0.2
@@ -172,7 +175,7 @@ export function decideHostedPressure(
           ageMs: 0,
           severity: 'informational',
           detail: 'hosted Fly metrics are not configured',
-          action: `${PLATFORM_SLUG} machine config secret set BOTTEGA_FLY_METRICS_TOKEN`,
+          action: `pipe the value on stdin to ${operatorCredentialSetCommand(FLY_METRICS_OPERATOR_CREDENTIAL)}`,
         },
       ],
     }

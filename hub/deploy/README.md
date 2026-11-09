@@ -26,8 +26,9 @@ fly certs add next.bottega.run -a bottega-hub
 
 The app is deployed with `bottega release run bottega --rung hosted-hub`; the deploy script refuses a
 direct call. The deploy script preserves the hosted web build arguments. It takes
-`BOTTEGA_RECORD_MIGRATE_URL` from the environment, or reads that one variable from the operator's
-env file when the environment lacks it, and gives the value to the migration only, never to
+`BOTTEGA_RECORD_MIGRATE_URL` from the environment, or resolves `postgres/owner/url` for project
+`bottega` when the environment lacks it. Store that credential with value on standard input to
+`bottega credential set postgres/owner/url --project bottega`. The script gives the value to the migration only, never to
 Fly. It then migrates the record and confirms that applied migrations equal those shipped in
 the image before invoking Fly. The image's release command
 uses its low-privilege `BOTTEGA_RECORD_DATABASE_URL` and refuses a release with pending migrations,

@@ -21,8 +21,9 @@ fly certs add api.bottega.run -a bottega-api
 ```
 
 The app is deployed with `bottega release run bottega --rung hosted-api`; the deploy script refuses a
-direct call. The deploy script takes `BOTTEGA_RECORD_MIGRATE_URL` from the environment, or reads that one
-variable from the operator's env file when the environment lacks it. It gives the value to the
+direct call. The deploy script takes `BOTTEGA_RECORD_MIGRATE_URL` from the environment, or resolves
+`postgres/owner/url` for project `bottega` when the environment lacks it. Store that credential with
+value on standard input to `bottega credential set postgres/owner/url --project bottega`. The script gives the value to the
 migration only, never to Fly, then migrates the record and confirms that applied migrations
 equal those shipped in the image before invoking Fly. The
 image's release command uses its low-privilege `BOTTEGA_RECORD_URL` and refuses a release with

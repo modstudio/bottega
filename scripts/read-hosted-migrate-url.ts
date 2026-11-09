@@ -1,9 +1,12 @@
-import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { readEnvValuesWithHosted } from '../shared/env-source.ts'
-import { RECORD_MIGRATE_SECRET_NAME } from '../shared/record-migrate-secret.ts'
+import { resolveOperatorCredential } from '../orchestrator/src/config/operator-credential.ts'
+import { credentialIdentityPath } from '../shared/credential.ts'
+import {
+  operatorCredentialResolveCommand,
+  RECORD_MIGRATE_OPERATOR_CREDENTIAL,
+} from '../shared/operator-credentials.ts'
 import { secretResolutionFailure } from '../shared/secret-resolution-failure.ts'
 
-const name = RECORD_MIGRATE_SECRET_NAME
+const credential = RECORD_MIGRATE_OPERATOR_CREDENTIAL
 
 if (process.stdout.isTTY) {
   console.error('REFUSE: this command writes a credential for command substitution only')
@@ -12,11 +15,12 @@ if (process.stdout.isTTY) {
 
 let value: string | undefined
 try {
-  value = (await readEnvValuesWithHosted([name]))[name]
+  value = await resolveOperatorCredential(credential.identity, credential.overrideVariable)
 } catch (error) {
+  const cause = error instanceof Error ? error.message : String(error)
   console.error(
     secretResolutionFailure(error) ??
-      `sealed ${name} could not be read\ncleared by: ${PLATFORM_SLUG} record doctor`,
+      `credential ${credentialIdentityPath(credential.identity.provider, credential.identity.name, credential.identity.type)} could not be resolved: ${cause}\ncleared by: ${operatorCredentialResolveCommand(credential)}`,
   )
   process.exit(2)
 }

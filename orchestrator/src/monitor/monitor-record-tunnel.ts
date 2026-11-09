@@ -4,8 +4,8 @@
 import { createConnection } from 'node:net'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
-import { RECORD_MIGRATE_SECRET_NAME } from '../../../shared/record-migrate-secret.ts'
-import { listSecrets } from '../config/config-service.ts'
+import { RECORD_MIGRATE_OPERATOR_CREDENTIAL } from '../../../shared/operator-credentials.ts'
+import { operatorCredentialPresent } from '../config/operator-credential.ts'
 import {
   RECORD_TUNNEL_DOWN_REMEDY,
   type RecordTunnelConfigurationFacts,
@@ -15,11 +15,6 @@ import {
 import type { MonitorCondition } from './monitor-types.ts'
 
 const RECORD_TUNNEL_PROBE_TIMEOUT_MS = 500
-
-/** Decide whether the sealed configuration says this machine requires the record tunnel. */
-function sealedConfigurationRequiresRecordTunnel(secretKeys: readonly string[]): boolean {
-  return secretKeys.includes(RECORD_MIGRATE_SECRET_NAME)
-}
 
 /** Classify the record tunnel from already-observed configuration and endpoint facts. */
 export function recordTunnelCondition(
@@ -67,7 +62,8 @@ function tcpEndpointReachable(port: number): Promise<boolean> {
 }
 
 export async function observeRecordTunnel(
-  secretKeys: () => Promise<string[]> = async () => (await listSecrets()).map(({ key }) => key),
+  credentialPresent: () => Promise<boolean> = () =>
+    operatorCredentialPresent(RECORD_MIGRATE_OPERATOR_CREDENTIAL),
 ): Promise<{
   conditions: MonitorCondition[]
   errors: string[]
@@ -77,7 +73,7 @@ export async function observeRecordTunnel(
     if (!app) {
       const condition = recordTunnelCondition({
         tunnelApp: app,
-        requiresTunnel: sealedConfigurationRequiresRecordTunnel(await secretKeys()),
+        requiresTunnel: await credentialPresent(),
         port: 0,
         reachable: false,
       })

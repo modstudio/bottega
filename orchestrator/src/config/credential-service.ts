@@ -24,6 +24,7 @@ import {
   resolveHostedCredential,
   resolveHostedCredentialValue,
 } from '../../../shared/credential-value.ts'
+import type { OperatorCredentialIdentity } from '../../../shared/operator-credentials.ts'
 import {
   configAccessRemedy,
   machineNotTrustedRemedy,
@@ -106,6 +107,14 @@ export async function projectCredentialAddress(
     payer: 'personal',
     ...(await projectCredentialBinding(project, client)),
   }
+}
+
+/** Apply an operator identity while retaining every project credential binding and default. */
+export function operatorProjectCredentialAddress(
+  address: CredentialAddress,
+  identity: OperatorCredentialIdentity,
+): CredentialAddress {
+  return { ...address, ...identity }
 }
 
 const destination = (address: CredentialAddress): ConfigDestination => ({
@@ -219,6 +228,34 @@ export async function resolveCredentialValue(address: CredentialAddress, client 
   const result = await resolveHostedCredentialValue(address, client)
   if (result.kind === 'refused') throw new Error(result.refusal)
   return result
+}
+
+/** Resolve and open one project-bound operator credential; `refused` is the missing case. */
+export async function resolveProjectOperatorCredential(
+  project: ProjectCredentialTarget,
+  identity: OperatorCredentialIdentity,
+  client = configClient(),
+): Promise<string | undefined> {
+  const address = operatorProjectCredentialAddress(
+    await projectCredentialAddress(project, identity.provider, client),
+    identity,
+  )
+  requireProjectCredentialAddress(address)
+  const result = await resolveHostedCredentialValue(address, client)
+  return result.kind === 'refused' ? undefined : result.value
+}
+
+/** Observe whether metadata contains a default local credential usable by one project. */
+export async function projectHasCredential(
+  project: ProjectCredentialTarget,
+  identity: OperatorCredentialIdentity,
+  client = configClient(),
+): Promise<boolean> {
+  const address = operatorProjectCredentialAddress(
+    await projectCredentialAddress(project, identity.provider, client),
+    identity,
+  )
+  return (await resolveHostedCredential(address, client)).kind === 'resolved'
 }
 
 /** Gather one metadata-only routing fact for each distinct provider. */

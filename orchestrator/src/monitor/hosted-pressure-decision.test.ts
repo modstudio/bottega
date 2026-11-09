@@ -193,7 +193,7 @@ describe('hosted pressure decision', () => {
       expect.objectContaining({
         kind: 'hosted-metrics-unconfigured',
         severity: 'informational',
-        action: `${PLATFORM_SLUG} machine config secret set BOTTEGA_FLY_METRICS_TOKEN`,
+        action: `pipe the value on stdin to ${PLATFORM_SLUG} credential set fly/metrics/token --project ${PLATFORM_SLUG}`,
       }),
     ])
   })
