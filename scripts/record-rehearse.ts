@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { resolveOperatorCredential } from '../orchestrator/src/config/operator-credential.ts'
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
-import { registerStandardRuntime } from '../orchestrator/src/runtime/runtime-registration.ts'
 import { hostedApiFetch } from '../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { credentialIdentityPath } from '../shared/credential.ts'
@@ -433,6 +432,9 @@ export async function runRecordRehearsal(input: {
 }
 
 if (import.meta.main) {
+  const { registerStandardRuntime } = await import(
+    '../orchestrator/src/runtime/runtime-registration.ts'
+  )
   registerStandardRuntime()
   let token: string | undefined
   try {
