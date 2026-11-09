@@ -11,10 +11,10 @@ import { Fragment, useMemo, useState } from 'react'
 import {
   type CredentialDisplayRow,
   type CredentialPart,
-  type CredentialUsage,
   credentialRowMatches,
   orderedUsages,
   useCredentialRows,
+  usageLabel,
 } from '@/routes/-credential-rows'
 import { useDetailPanel } from '@/routes/-detail-panel'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
@@ -23,14 +23,10 @@ export const Route = createFileRoute('/secrets')({ component: SecretsRoute })
 
 const CREDENTIAL_COMMAND = `${PLATFORM_SLUG} credential`
 
-function usageLabel(usage: CredentialUsage) {
-  return usage.reason === 'default-order' ? usage.name : `${usage.name} (preferred)`
-}
-
 function UsedBy({ row }: { row: CredentialDisplayRow }) {
   if (!row.usages.length) return '—'
   const [first, ...rest] = orderedUsages(row.usages)
-  if (first?.projectId !== null) return row.usages.map(usageLabel).join(', ')
+  if (first?.projectId !== null) return [first, ...rest].map(usageLabel).join(', ')
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <Badge>{usageLabel(first)}</Badge>
@@ -141,8 +137,12 @@ function SecretsPage() {
               })
             }
             empty={{
-              title: 'No credentials in this space.',
-              hint: `Set one with ${CREDENTIAL_COMMAND} set.`,
+              title: search.trim()
+                ? 'No credentials match this search.'
+                : 'No credentials in this space.',
+              hint: search.trim()
+                ? 'Clear the search to see every credential.'
+                : `Set one with ${CREDENTIAL_COMMAND} set.`,
             }}
           />
           {credentials.untypedCount > 0 ? (

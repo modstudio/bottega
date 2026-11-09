@@ -76,17 +76,22 @@ export function orderedUsages(usages: CredentialUsage[]): CredentialUsage[] {
 }
 
 /** Matches a free-text query against every column a reader can see. */
+/** The text a "Used by" cell shows for one usage. */
+export function usageLabel(usage: CredentialUsage) {
+  return usage.reason === 'default-order' ? usage.name : `${usage.name} (preferred)`
+}
+
 export function credentialRowMatches(row: CredentialDisplayRow, query: string) {
   const needle = query.trim().toLowerCase()
   if (!needle) return true
   return [
     row.credential,
+    row.credentialParts.map((part) => part.value).join(' · '),
     row.mode,
-    row.environment,
     row.boundTo,
     row.owner,
     row.hint,
-    ...row.usages.map((usage) => usage.name),
+    ...row.usages.map(usageLabel),
   ]
     .join(' ')
     .toLowerCase()

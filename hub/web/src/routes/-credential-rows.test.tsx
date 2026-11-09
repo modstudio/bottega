@@ -167,6 +167,12 @@ test('search matches a project the copy is used by', () => {
   expect(matched.map((row) => row.usages.map((usage) => usage.name))).toEqual([
     ['Comet', 'Space default'],
   ])
+  const preferred = credentialDisplayRows(typedCredentialRows(copies), [preference], named, spaceId)
+  const count = (query: string) =>
+    preferred.filter((row) => credentialRowMatches(row, query)).length
+  expect(count('openrouter · api-key')).toBe(3)
+  expect(count('(preferred)')).toBe(1)
+  expect(count('local')).toBe(0)
 })
 
 test('a preference with no stored slot produces a missing row with no usage', () => {

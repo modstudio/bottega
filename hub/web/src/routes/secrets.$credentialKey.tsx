@@ -9,6 +9,7 @@ import { useMutation } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   credentialUsageReason,
+  orderedUsages,
   preferenceDisplayLine,
   useCredentialRows,
 } from '@/routes/-credential-rows'
@@ -76,7 +77,7 @@ function CredentialDetailRoute() {
       <FieldSection title="Used by">
         {row.usages.length ? (
           <ul className="grid gap-2">
-            {row.usages.map((usage) => (
+            {orderedUsages(row.usages).map((usage) => (
               <li key={`${usage.projectId ?? 'space'}:${usage.name}`}>
                 <strong>{usage.name}</strong>: {credentialUsageReason(usage.reason)}
               </li>
