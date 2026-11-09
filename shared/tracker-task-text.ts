@@ -9,15 +9,34 @@ export type TrackerTaskText = {
 }
 
 export class TrackerLookupUnverifiable extends Error {
-  constructor(protocolOrMessage: string, key?: string) {
-    super(
-      key
-        ? `${protocolOrMessage} task text read for ${key} returned an unexpected response`
-        : protocolOrMessage,
-    )
+  constructor(
+    protocol: string,
+    key: string,
+    detail = 'task text read returned an unexpected response',
+  ) {
+    super(`${protocol} ${detail.replace('{key}', key)}`)
     this.name = 'TrackerLookupUnverifiable'
   }
 }
+
+export const cursorTaskNotFound = (cause: unknown): boolean => {
+  const structuredContent =
+    cause instanceof Error && cause.name === 'McpToolCallError' && 'structuredContent' in cause
+      ? cause.structuredContent
+      : undefined
+  return Boolean(
+    structuredContent &&
+      typeof structuredContent === 'object' &&
+      (structuredContent as { success?: unknown }).success === false &&
+      (structuredContent as { code?: unknown }).code === 'NOT_FOUND',
+  )
+}
+
+export const arrayTaskForKey = <T extends { key?: unknown }>(
+  rows: readonly T[],
+  key: string,
+): T | undefined =>
+  rows.find((row) => typeof row.key === 'string' && row.key.toUpperCase() === key.toUpperCase())
 
 const comments = (rows: unknown[], field: string, protocol: string, key: string): string[] =>
   rows.flatMap((row) => {
@@ -66,19 +85,6 @@ export async function readWorkspaceTaskText(
   }
 }
 
-const cursorNotFound = (cause: unknown): boolean => {
-  const structuredContent =
-    cause instanceof Error && cause.name === 'McpToolCallError' && 'structuredContent' in cause
-      ? cause.structuredContent
-      : undefined
-  return Boolean(
-    structuredContent &&
-      typeof structuredContent === 'object' &&
-      (structuredContent as { success?: unknown }).success === false &&
-      (structuredContent as { code?: unknown }).code === 'NOT_FOUND',
-  )
-}
-
 export async function readCursorTaskText(
   m: ToolCaller,
   key: string,
@@ -89,7 +95,7 @@ export async function readCursorTaskText(
   try {
     reply = await m.callTool(getAction, { taskKey: key })
   } catch (cause) {
-    if (cursorNotFound(cause)) return null
+    if (cursorTaskNotFound(cause)) return null
     throw cause
   }
   if (!reply || typeof reply !== 'object') {
@@ -105,7 +111,9 @@ export async function readCursorTaskText(
     envelope.success !== true ||
     typeof task.id !== 'string' ||
     typeof task.title !== 'string' ||
-    typeof task.description !== 'string'
+    (task.description !== undefined &&
+      task.description !== null &&
+      typeof task.description !== 'string')
   ) {
     throw new TrackerLookupUnverifiable('cursor-mcp', key)
   }
@@ -124,7 +132,7 @@ export async function readCursorTaskText(
     externalId: task.id,
     key,
     title: task.title,
-    body: task.description,
+    body: typeof task.description === 'string' ? task.description : '',
     comments: comments(commentEnvelope.data, 'body', 'cursor-mcp', key),
   }
 }
@@ -136,19 +144,18 @@ export async function readArrayTaskText(
 ): Promise<TrackerTaskText | null> {
   const reply = await m.callTool(getAction, { search: key })
   if (!Array.isArray(reply)) throw new TrackerLookupUnverifiable('array-mcp', key)
-  const hit = reply.find(
-    (row) =>
-      row &&
-      typeof row === 'object' &&
-      typeof (row as { key?: unknown }).key === 'string' &&
-      (row as { key: string }).key.toUpperCase() === key.toUpperCase(),
+  const hit = arrayTaskForKey(
+    reply.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object')),
+    key,
   )
   if (!hit) return null
   const task = hit as Record<string, unknown>
   if (
     typeof task.key !== 'string' ||
     typeof task.title !== 'string' ||
-    typeof task.description !== 'string' ||
+    (task.description !== undefined &&
+      task.description !== null &&
+      typeof task.description !== 'string') ||
     (task.id !== undefined && typeof task.id !== 'string')
   ) {
     throw new TrackerLookupUnverifiable('array-mcp', key)
@@ -157,7 +164,7 @@ export async function readArrayTaskText(
     externalId: task.id ?? null,
     key: task.key,
     title: task.title,
-    body: task.description,
+    body: typeof task.description === 'string' ? task.description : '',
     comments: [],
   }
 }

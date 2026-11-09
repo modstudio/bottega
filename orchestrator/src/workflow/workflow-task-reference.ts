@@ -94,3 +94,16 @@ export async function resolveHubTaskReference(
     throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
   }
 }
+
+/** Resolve a mirror identity when available without making hub availability a prerequisite. */
+export async function bestEffortTaskReference(
+  project: string | null,
+  key: string,
+  reader?: HubTaskReader,
+): Promise<HubTaskReference | null> {
+  try {
+    return await resolveHubTaskReference(project, key, reader)
+  } catch {
+    return null
+  }
+}

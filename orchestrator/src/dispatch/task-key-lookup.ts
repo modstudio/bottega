@@ -14,7 +14,7 @@ import {
 } from '../mcp/mcp-probe.ts'
 import { callMcpTool } from '../mcp/mcp-tool-list.ts'
 import type { Project } from '../project/projects.ts'
-import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
+import { bestEffortTaskReference, type HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { readTaskThroughCli } from './task-cli-read.ts'
 import type { TaskKeyLookupResult } from './task-key-admission.ts'
 
@@ -120,6 +120,7 @@ export async function readTaskText(
   dependencies: {
     toolCaller?: { callTool(name: string, args: Record<string, unknown>): Promise<unknown> }
     hubTaskReader?: HubTaskReader
+    withRecordId?: boolean
   } = {},
 ): Promise<TaskTextRead> {
   if (project.settings.tracker?.protocol === 'hub') return readHubTaskText(project, key)
@@ -142,7 +143,9 @@ export async function readTaskText(
     }
     const task = await source.readText(dependencies.toolCaller ?? remote!.caller, key)
     if (!task) return { available: false, reason: `tracker has no task ${key}` }
-    const mirror = await resolveHubTaskReference(project.name, key, dependencies.hubTaskReader)
+    const mirror = dependencies.withRecordId
+      ? await bestEffortTaskReference(project.name, key, dependencies.hubTaskReader)
+      : null
     return {
       available: true,
       recordId: mirror?.record_id ?? null,

@@ -90,6 +90,58 @@ describe('tracker task text readers', () => {
     })
   })
 
+  for (const description of [null, undefined] as const) {
+    test(`cursor reads ${String(description)} description as an empty body`, async () => {
+      const task = { id: 'cursor-id', title: 'Cursor title' } as Record<string, unknown>
+      if (description !== undefined) task.description = description
+      const read = await readCursorTaskText(
+        caller((name) =>
+          name === 'get' ? { success: true, data: task } : { success: true, data: [] },
+        ),
+        'STOP-4',
+        'get',
+        'comments',
+      )
+      expect(read?.body).toBe('')
+    })
+
+    test(`array reads ${String(description)} description as an empty body`, async () => {
+      const task = { id: 'array-id', key: 'ADA-10', title: 'Array title' } as Record<
+        string,
+        unknown
+      >
+      if (description !== undefined) task.description = description
+      const read = await readArrayTaskText(
+        caller(() => [task]),
+        'ADA-10',
+        'get',
+      )
+      expect(read?.body).toBe('')
+    })
+  }
+
+  test('numeric descriptions remain unverifiable', async () => {
+    await expect(
+      readCursorTaskText(
+        caller((name) =>
+          name === 'get'
+            ? { success: true, data: { id: 'cursor-id', title: 'Cursor title', description: 7 } }
+            : { success: true, data: [] },
+        ),
+        'STOP-5',
+        'get',
+        'comments',
+      ),
+    ).rejects.toBeInstanceOf(TrackerLookupUnverifiable)
+    await expect(
+      readArrayTaskText(
+        caller(() => [{ id: 'array-id', key: 'ADA-11', title: 'Array title', description: 7 }]),
+        'ADA-11',
+        'get',
+      ),
+    ).rejects.toBeInstanceOf(TrackerLookupUnverifiable)
+  })
+
   test('missing tasks return null and malformed replies throw', async () => {
     await expect(
       readWorkspaceTaskText(

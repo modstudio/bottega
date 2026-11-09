@@ -134,7 +134,7 @@ async function reviewLensInputs(
       rulings: '',
     }
   }
-  const task = await readTaskText(project, key)
+  const task = await readTaskText(project, key, { withRecordId: true })
   if (!task.available) {
     const status = unavailableStatus(task.reason)
     return {

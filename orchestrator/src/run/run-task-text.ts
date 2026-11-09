@@ -1,18 +1,21 @@
-import {
-  resolveTrackerAgentActions,
-  type TrackerProtocol,
-} from '../../../shared/tracker-actions.ts'
+import { isTrackerProtocol, resolveTrackerAgentActions } from '../../../shared/tracker-actions.ts'
 import { readTaskText } from '../dispatch/task-key-lookup.ts'
 import { projectByName, projectForTaskKey, projects } from '../project/projects.ts'
 import { taskTextSection } from './run-pack-prompt.ts'
 
 /** Carries task text only on the first turn of a keyed writing run. */
-export async function initialRunTaskText([firstTurn, writesJob, key, projectName]: readonly [
-  boolean,
-  boolean,
-  string | undefined,
-  string | null,
-]): Promise<string> {
+export async function initialRunTaskText(
+  input: {
+    firstTurn: boolean
+    writesJob: boolean
+    key: string | undefined
+    projectName: string | null
+  },
+  dependencies: {
+    readTaskText?: typeof readTaskText
+  } = {},
+): Promise<string> {
+  const { firstTurn, writesJob, key, projectName } = input
   if (!firstTurn || !writesJob || !key) return ''
   const project = projectName ? projectByName(projectName) : projectForTaskKey(key, projects())
   if (!project) {
@@ -25,10 +28,10 @@ export async function initialRunTaskText([firstTurn, writesJob, key, projectName
     })
   }
   const protocol = project.settings.tracker?.protocol
-  const task = await readTaskText(project, key)
-  const getTool = protocol
-    ? (resolveTrackerAgentActions(protocol as TrackerProtocol, project.settings.tracker?.actions)
-        .get ?? 'tracker get tool')
+  const task = await (dependencies.readTaskText ?? readTaskText)(project, key)
+  const getTool = isTrackerProtocol(protocol)
+    ? (resolveTrackerAgentActions(protocol, project.settings.tracker?.actions).get ??
+      'tracker get tool')
     : 'tracker get tool'
   return taskTextSection({
     task,

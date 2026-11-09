@@ -1,8 +1,8 @@
 // concern: run dispatch rulings
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
-import { attributedLaunchKey } from '../review/review-target.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
+import type { readTaskText } from '../dispatch/task-key-lookup.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import { initialRunTaskText } from './run-task-text.ts'
 import { renderTaskRulings } from './task-rulings.ts'
@@ -26,29 +26,30 @@ function runDispatchRulingsSection(input: {
   }
 }
 
-export async function prepareRunDispatchRulings(input: {
-  firstTurn: boolean
-  workspaceSource: 'new' | 'retained'
-  parentRunRecordId: string | null
-  projectName: string | null
-  projectRecordId: string | null
-  key: string | null | undefined
-  repoJob: boolean
-  callerCwd: string
-  launchCwd?: string
-  probe: boolean
-  writesJob?: boolean
-}): Promise<{
+export async function prepareRunDispatchRulings(
+  input: {
+    firstTurn: boolean
+    workspaceSource: 'new' | 'retained'
+    parentRunRecordId: string | null
+    projectName: string | null
+    projectRecordId: string | null
+    key: string | null
+    repoJob: boolean
+    callerCwd: string
+    launchCwd?: string
+    probe: boolean
+    writesJob?: boolean
+  },
+  dependencies: {
+    taskTextReader?: typeof readTaskText
+  } = {},
+): Promise<{
   section: string
   questionIds: string[]
   links: DispatchLinks | null
   taskText: string
 }> {
-  const key = attributedLaunchKey({
-    writesJob: Boolean(input.writesJob),
-    key: input.key ?? undefined,
-    cwd: input.callerCwd,
-  })
+  const key = input.key
   const inherited =
     input.workspaceSource === 'retained' ? inheritedRunLinks(input.parentRunRecordId!) : null
   const links = inherited
@@ -70,11 +71,14 @@ export async function prepareRunDispatchRulings(input: {
       taskRecordId: links?.taskRecordId ?? null,
     }),
     links,
-    taskText: await initialRunTaskText([
-      input.firstTurn,
-      Boolean(input.writesJob),
-      key ?? undefined,
-      input.projectName,
-    ]),
+    taskText: await initialRunTaskText(
+      {
+        firstTurn: input.firstTurn,
+        writesJob: Boolean(input.writesJob),
+        key: key ?? undefined,
+        projectName: input.projectName,
+      },
+      { readTaskText: dependencies.taskTextReader },
+    ),
   }
 }

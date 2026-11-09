@@ -15,6 +15,9 @@ export const TRACKER_PROTOCOLS = ['workspace-mcp', 'cursor-mcp', 'array-mcp', 'h
 export type TrackerProtocol = (typeof TRACKER_PROTOCOLS)[number]
 type TrackerActionName = { agent: string; wire?: string | null }
 
+export const isTrackerProtocol = (protocol: unknown): protocol is TrackerProtocol =>
+  TRACKER_PROTOCOLS.some((candidate) => candidate === protocol)
+
 /** The names agents and hub use for each protocol capability. */
 const trackerProtocolActions: Record<
   TrackerProtocol,

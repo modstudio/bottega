@@ -51,6 +51,7 @@ test('reads external task text and resolves its project-scoped mirror record', a
     settings: { tracker: { protocol: 'array-mcp', envPrefix: 'REMOTE', openStatuses: [] } },
   } as Project
   const result = await readTaskText(project, 'SHARED-7', {
+    withRecordId: true,
     toolCaller: {
       callTool: async () => [
         {
@@ -73,4 +74,63 @@ test('reads external task text and resolves its project-scoped mirror record', a
     body: 'Remote body',
     comments: [],
   })
+})
+
+test('carries external task text when the requested mirror read fails', async () => {
+  const project = {
+    recordId: 'project-id',
+    name: 'remote-project',
+    path: '/remote-project',
+    stack: null,
+    canon: false,
+    retiredAt: null,
+    settings: { tracker: { protocol: 'array-mcp', envPrefix: 'REMOTE', openStatuses: [] } },
+  } as Project
+  const result = await readTaskText(project, 'SHARED-8', {
+    withRecordId: true,
+    toolCaller: {
+      callTool: async () => [
+        { id: 'external-id', key: 'SHARED-8', title: 'Remote title', description: 'Body' },
+      ],
+    },
+    hubTaskReader: async () => {
+      throw new Error('hub unavailable')
+    },
+  })
+
+  expect(result).toEqual({
+    available: true,
+    recordId: null,
+    key: 'SHARED-8',
+    title: 'Remote title',
+    body: 'Body',
+    comments: [],
+  })
+})
+
+test('does not read the mirror when no record id is requested', async () => {
+  const project = {
+    recordId: 'project-id',
+    name: 'remote-project',
+    path: '/remote-project',
+    stack: null,
+    canon: false,
+    retiredAt: null,
+    settings: { tracker: { protocol: 'array-mcp', envPrefix: 'REMOTE', openStatuses: [] } },
+  } as Project
+  let mirrorReads = 0
+  const result = await readTaskText(project, 'SHARED-9', {
+    toolCaller: {
+      callTool: async () => [
+        { id: 'external-id', key: 'SHARED-9', title: 'Remote title', description: 'Body' },
+      ],
+    },
+    hubTaskReader: async () => {
+      mirrorReads += 1
+      return []
+    },
+  })
+
+  expect(result.available && result.recordId).toBeNull()
+  expect(mirrorReads).toBe(0)
 })

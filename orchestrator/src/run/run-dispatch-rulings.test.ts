@@ -68,3 +68,48 @@ test('a retained non-first turn keeps parent links without carrying rulings', as
   expect(prepared.section).toBe('')
   expect(prepared.questionIds).toEqual([])
 })
+
+test('task text is carried only on the first turn of a keyed writing job', async () => {
+  const projectName = 'task-text-dispatch'
+  const projectRecordId = addProject(projectName, `/work/${projectName}`)
+  const parent = addRun({ agent: 'codex', job: 'implement', projectRecordId })
+  const reads: string[] = []
+  const taskTextReader = async (_project: unknown, key: string) => {
+    reads.push(key)
+    return {
+      available: true as const,
+      recordId: null,
+      key,
+      title: 'Carried title',
+      body: 'Carried body',
+      comments: [],
+    }
+  }
+  const base = {
+    workspaceSource: 'retained' as const,
+    parentRunRecordId: parent,
+    projectName,
+    projectRecordId,
+    repoJob: true,
+    callerCwd: `/work/${projectName}`,
+    probe: false,
+  }
+
+  const first = await prepareRunDispatchRulings(
+    { ...base, firstTurn: true, writesJob: true, key: 'DEV-2222' },
+    { taskTextReader },
+  )
+  expect(first.taskText).toContain('DEV-2222 — Carried title')
+  expect(first.taskText).toContain('Carried body')
+  expect(reads).toEqual(['DEV-2222'])
+
+  for (const input of [
+    { firstTurn: false, writesJob: true, key: 'DEV-2222' },
+    { firstTurn: true, writesJob: false, key: 'DEV-2222' },
+    { firstTurn: true, writesJob: true, key: null },
+  ]) {
+    const prepared = await prepareRunDispatchRulings({ ...base, ...input }, { taskTextReader })
+    expect(prepared.taskText).toBe('')
+  }
+  expect(reads).toEqual(['DEV-2222'])
+})

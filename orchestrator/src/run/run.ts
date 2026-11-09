@@ -49,7 +49,11 @@ import {
   reviewCalibration as calibrateReview,
   calibrationLine,
 } from '../review/review-calibration.ts'
-import { implicitReviewClaim, resolveReviewTarget } from '../review/review-target.ts'
+import {
+  attributedLaunchKey,
+  implicitReviewClaim,
+  resolveReviewTarget,
+} from '../review/review-target.ts'
 import { pick } from '../route/route.ts'
 import { runningRunCountForHarness } from '../route/running-runs.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
@@ -162,6 +166,11 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd(),
     runProjectName = opts.repo ?? repoOf(callerCwd)
+  const attributedKey = attributedLaunchKey({
+    writesJob,
+    key: opts.key,
+    cwd: callerCwd,
+  })
   const reviewTarget =
     opts.resolvedReviewTarget ??
     resolveReviewTarget(opts.job, callerCwd, opts.review, opts.carry, opts.key)
@@ -324,7 +333,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     parentRunRecordId: opts.resume?.parent ?? null,
     projectName: runProjectName,
     projectRecordId: runProjectId,
-    key: opts.key,
+    key: attributedKey,
     repoJob,
     callerCwd,
     launchCwd: opts.launchCwd,
