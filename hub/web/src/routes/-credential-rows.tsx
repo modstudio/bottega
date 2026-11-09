@@ -82,9 +82,18 @@ function preferenceTargets(
   spaceId: string,
 ): (string | null)[] {
   if (preference.projectId !== null) return [preference.projectId]
+  return resolutionTargets(projects, spaceId).map((target) => target.id)
+}
+
+function resolutionTargets(
+  projects: HostedProjectRow[],
+  spaceId: string,
+): { id: string | null; name: string }[] {
   return [
-    ...projects.filter((project) => project.spaceId === spaceId).map((project) => project.id),
-    null,
+    ...projects
+      .filter((project) => project.spaceId === spaceId)
+      .map((project) => ({ id: project.id, name: project.name })),
+    { id: null, name: 'Space default' },
   ]
 }
 
@@ -148,14 +157,8 @@ export function credentialDisplayRows(
       row,
     ]),
   )
-  const targets = [
-    ...projects
-      .filter((project) => project.spaceId === spaceId)
-      .map((project) => ({ id: project.id, name: project.name })),
-    { id: null, name: 'Space default' },
-  ]
   for (const identity of identities.values()) {
-    for (const target of targets) {
+    for (const target of resolutionTargets(projects, spaceId)) {
       const result = resolveCredential({
         spaceId,
         projectId: target.id,
@@ -236,7 +239,6 @@ export function useCredentialRows() {
         ? []
         : credentialDisplayRows(split.credentials, preferences.data ?? [], projectsData, spaceId),
     legacy: split.legacy,
-    secrets: secrets.data,
     projects: projectsData,
     spaceId,
     pending,

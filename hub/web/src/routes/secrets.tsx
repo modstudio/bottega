@@ -1,4 +1,3 @@
-import type { RecordConfigSecretsResponse } from '@bottega/hub-data/client'
 import { isHostedMode } from '@bottega/hub-data/hub-mode'
 import { Collection, type CollectionColumn } from '@bottega/hub-ui/collection'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
@@ -9,14 +8,13 @@ import { createFileRoute, Navigate, useNavigate, useParams } from '@tanstack/rea
 import {
   type CredentialDisplayRow,
   OWNER_LABEL,
-  splitSecretRows,
+  type SecretRow,
   useCredentialRows,
 } from '@/routes/-credential-rows'
 import { useDetailPanel } from '@/routes/-detail-panel'
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 
 export const Route = createFileRoute('/secrets')({ component: SecretsRoute })
-type SecretRow = RecordConfigSecretsResponse[number]
 
 const CREDENTIAL_COMMAND = `${PLATFORM_SLUG} credential`
 
@@ -74,17 +72,16 @@ function SecretsRoute() {
 }
 
 function LegacyKeysCollection({
-  secrets,
+  rows,
   pending,
   error,
 }: {
-  secrets: SecretRow[] | undefined
+  rows: SecretRow[]
   pending: boolean
   error: { message: string } | null
 }) {
   if (pending) return <EmptyState title="Loading legacy keys..." />
   if (error) return <ErrorState title="Could not load legacy keys" message={error.message} />
-  const rows = splitSecretRows(secrets ?? []).legacy
   return (
     <Collection
       title="Legacy keys"
@@ -142,7 +139,7 @@ function SecretsPage() {
         />
       ) : null}
       <LegacyKeysCollection
-        secrets={credentials.secrets}
+        rows={credentials.legacy}
         pending={credentials.secretsPending}
         error={credentials.secretsError}
       />
