@@ -69,7 +69,9 @@ test('account commands expose reach while prefer names account only as a slot', 
   expect(command('set').options.map((option) => option.long)).toContain('--reach')
   expect(command('reach').options.map((option) => option.long)).toContain('--spaces')
   expect(command('prefer').options.map((option) => option.long)).not.toContain('--account')
-  expect(command('prefer').options.find((option) => option.long === '--use')?.description).toContain(
-    'personal@account',
-  )
+  const useDescription = command('prefer').options.find(
+    (option) => option.long === '--use',
+  )?.description
+  expect(useDescription).toContain('personal@account')
+  expect(useDescription).not.toContain('shared@account')
 })

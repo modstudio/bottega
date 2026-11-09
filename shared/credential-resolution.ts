@@ -89,8 +89,8 @@ export function credentialSetRefusalText(
 }
 
 type CredentialRequest = {
-  userId: string
-  personalSpaceId: string | null
+  userId?: string
+  personalSpaceId?: string | null
   spaceId: string
   projectId: string | null
   provider: string

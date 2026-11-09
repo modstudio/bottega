@@ -1,9 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import type { ConfigClient } from './config-client.ts'
-import {
-  resolveActiveSpaceCredentialValue,
-  resolveHostedCredential,
-} from './credential-value.ts'
+import { resolveActiveSpaceCredentialValue, resolveHostedCredential } from './credential-value.ts'
 
 test('active-space resolution refuses when the active space has no parsed membership', async () => {
   const listSecrets = mock(async () => [])

@@ -15,8 +15,8 @@ import {
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine } from '../../../shared/trust-list.ts'
 import {
-  type CredentialAddress,
   accountCredentialBinding,
+  type CredentialAddress,
   deleteCredential,
   operatorProjectCredentialAddress,
   projectCredentialAddress,
@@ -67,9 +67,7 @@ test('account credential binding selects the caller personal space', async () =>
         user: { id: 'user-a' },
         activeSpaceId: 'space-a',
         personalSpaceId: 'personal-space-a',
-        memberships: [
-          { space_id: 'personal-space-a', slug: 'personal', permission: 'write' },
-        ],
+        memberships: [{ space_id: 'personal-space-a', slug: 'personal', permission: 'write' }],
       }),
     } as ConfigClient),
   ).toEqual({

@@ -88,7 +88,7 @@ set or clear a payer preference
 - `--space <slug>`: bind to a record space
 - `--mode <mode>`: live or test or default
 - `--env <environment>`: local
-- `--use <slot>`: personal@project or personal@space or personal@account or shared@project or shared@space or shared@account
+- `--use <slot>`: personal@project or shared@project or personal@space or shared@space or personal@account
 - `--clear`: clear the preference
 
 ### Related

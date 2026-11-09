@@ -9,7 +9,11 @@ import {
   type CredentialMode,
   completeCredentialFields,
 } from './credential.ts'
-import { credentialPayerFromScope, resolveCredential } from './credential-resolution.ts'
+import {
+  type CredentialCandidate,
+  credentialPayerFromScope,
+  resolveCredential,
+} from './credential-resolution.ts'
 import { openHostedSecretRow } from './hosted-secret-row.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY, recordSpaceMembershipRefusal } from './record-remedies.ts'
 import { parseRecordSpaceMemberships, recordSpaceMembership } from './record-space-membership.ts'
@@ -63,6 +67,36 @@ export async function resolveHostedCredential(
   const preferences = await client.listCredentialPreferences({
     destinationSpaceId: address.destinationSpaceId,
   })
+  const candidates: Array<CredentialCandidate & { row: CredentialRow }> = [
+    ...destinationCandidates.map((row) => ({
+      row,
+      spaceId: address.destinationSpaceId,
+      projectId: row.projectId ?? null,
+      payer: credentialPayerFromScope(row.scope),
+      provider: row.provider,
+      name: row.name,
+      type: row.type,
+      mode: row.mode,
+      environment: row.environment,
+    })),
+    ...accountRows
+      .filter((row) => row.scope === 'user' && row.projectId == null)
+      .map((row) => ({
+        row,
+        spaceId: personalSpaceId!,
+        projectId: row.projectId ?? null,
+        payer: credentialPayerFromScope(row.scope),
+        provider: row.provider,
+        name: row.name,
+        type: row.type,
+        mode: row.mode,
+        environment: row.environment,
+        account: {
+          ownerUserId: who.user.id,
+          reachSpaceIds: row.reachSpaceIds ?? null,
+        },
+      })),
+  ]
   const result = resolveCredential({
     userId: who.user.id,
     personalSpaceId,
@@ -75,36 +109,7 @@ export async function resolveHostedCredential(
     type: address.type,
     mode: address.mode,
     environment: address.environment,
-    candidates: [
-      ...destinationCandidates.map((row) => ({
-        row,
-        spaceId: address.destinationSpaceId,
-        projectId: row.projectId ?? null,
-        payer: credentialPayerFromScope(row.scope),
-        provider: row.provider,
-        name: row.name,
-        type: row.type,
-        mode: row.mode,
-        environment: row.environment,
-      })),
-      ...accountRows
-        .filter((row) => row.scope === 'user' && row.projectId == null)
-        .map((row) => ({
-          row,
-          spaceId: personalSpaceId!,
-          projectId: row.projectId ?? null,
-          payer: credentialPayerFromScope(row.scope),
-          provider: row.provider,
-          name: row.name,
-          type: row.type,
-          mode: row.mode,
-          environment: row.environment,
-          account: {
-            ownerUserId: who.user.id,
-            reachSpaceIds: row.reachSpaceIds ?? null,
-          },
-        })),
-    ],
+    candidates,
     preferences,
   })
   if (result.kind === 'refused') return result

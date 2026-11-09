@@ -50,8 +50,10 @@ type BindingOptions = {
   reach?: string
   spaces?: string
 }
-const credentialSlots = CREDENTIAL_PAYERS.flatMap((payer) =>
-  CREDENTIAL_BINDINGS.map((binding) => `${payer}@${binding}`),
+const credentialSlots = CREDENTIAL_BINDINGS.flatMap((binding) =>
+  binding === 'account'
+    ? ['personal@account']
+    : CREDENTIAL_PAYERS.map((payer) => `${payer}@${binding}`),
 )
 
 function identityName(value: string): { provider: string; name: string | null; type: string } {

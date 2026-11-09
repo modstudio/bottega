@@ -174,6 +174,7 @@ export async function setCredential(
   address: CredentialAddress,
   value: string,
   client = configClient(),
+  expectedRowVersion?: number,
 ) {
   if (sealedValueIsEmpty(value)) throw blankCredentialRefusal(address)
   const plaintext = stripTrailingNewline(value)
@@ -196,6 +197,7 @@ export async function setCredential(
           ...(address.account ? { reachSpaceIds: address.reachSpaceIds ?? null } : {}),
         },
         createDataKey: false,
+        expectedRowVersion,
         missingDestinationAccessRefusal: () => missingWrapRefusal(address),
       },
     )
@@ -221,7 +223,7 @@ export async function reachCredential(
   )
   if (!row) throw missingCredentialRefusal(address)
   const value = await openHostedCredentialRowValue(row, address.destinationSpaceId, client)
-  return setCredential({ ...address, reachSpaceIds }, value, client)
+  return setCredential({ ...address, reachSpaceIds }, value, client, row.rowVersion)
 }
 
 export async function listCredentials(
