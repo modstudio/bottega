@@ -31,18 +31,20 @@ export const answerRunFromArgv = async (
   },
   runHelpers: Parameters<typeof answerRunService>[2] & typeof answerRunHelpers,
 ) =>
-  answerRunService(
-    id,
-    await answerInputFromArgv(
-      options.argv,
-      options.recordOnly,
-      options.json ?? false,
-      options.flags,
+  (
+    await answerRunService(
+      id,
+      await answerInputFromArgv(
+        options.argv,
+        options.recordOnly,
+        options.json ?? false,
+        options.flags,
+        runHelpers,
+        undefined,
+      ),
       runHelpers,
-      undefined,
-    ),
-    runHelpers,
-  )
+    )
+  ).result
 export const retryRunFromFixture = (id: string, options: { agent?: string; model?: string } = {}) =>
   retryRun(id, { ...options, flags: answerRunFlags }, answerRunHelpers)
 

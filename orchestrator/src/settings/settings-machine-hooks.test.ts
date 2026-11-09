@@ -171,7 +171,7 @@ test('board hook commands preserve their environment and timeout', () => {
     .flat()
     .flatMap((group) => group.hooks)
     .filter((hook) => hook.command.includes('BOARD_PUSH_REFRESH_SECONDS='))
-  expect(boardHooks).toHaveLength(3)
+  expect(boardHooks).toHaveLength(5)
   for (const hook of boardHooks) {
     expect(hook.command).toContain(`BOARD_PUSH_REFRESH_SECONDS=${BOARD_PUSH_REFRESH_SECONDS}`)
     expect(hook.command).toContain(`BOARD_PUSH_REMIND_SECONDS=${BOARD_PUSH_REMIND_SECONDS}`)
@@ -183,9 +183,14 @@ test('board hook commands preserve their environment and timeout', () => {
     expect(hook.command).toContain(
       `BOARD_PUSH_SLOW_TIMEOUT_SECONDS=${BOARD_PUSH_SLOW_TIMEOUT_SECONDS}`,
     )
-    if (!hook.command.includes('score-reminder.py'))
+    if (hook.command.includes('board-interrupt.py') || hook.command.includes('board-ack-guard.py'))
       expect(hook.timeout).toBe(Math.ceil(BOARD_PUSH_SLOW_TIMEOUT_SECONDS + 1))
   }
   const scoreReminder = boardHooks.find((hook) => hook.command.includes('score-reminder.py'))
   expect(scoreReminder?.command).toContain('BOTTEGA_BOARD_HOOK_STATE=')
+  const cursorReminders = boardHooks.filter((hook) =>
+    hook.command.includes('workflow-cursor-reminder.py'),
+  )
+  expect(cursorReminders).toHaveLength(2)
+  for (const hook of cursorReminders) expect(hook.command).toContain('BOTTEGA_BOARD_HOOK_STATE=')
 })

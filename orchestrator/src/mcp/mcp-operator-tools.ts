@@ -129,18 +129,20 @@ function registerAnswerQuestionsTool(server: McpServer): void {
     async ({ run_record_id, rulings, from_operator, record_only }) => {
       const resolved = resolveAnswerRulings(rulings, from_operator ?? false)
       return structured(
-        await answerRun(
-          localRunId(run_record_id),
-          {
-            rulings: resolved,
-            fromOperator: false,
-            channel: 'mcp',
-            recordOnly: record_only ?? false,
-            json: true,
-            flags: { detach: true, follow: false, quiet: true },
-          },
-          answerRunHelpers(presentation),
-        ),
+        (
+          await answerRun(
+            localRunId(run_record_id),
+            {
+              rulings: resolved,
+              fromOperator: false,
+              channel: 'mcp',
+              recordOnly: record_only ?? false,
+              json: true,
+              flags: { detach: true, follow: false, quiet: true },
+            },
+            answerRunHelpers(presentation),
+          )
+        ).result,
       )
     },
   )

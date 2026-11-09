@@ -224,7 +224,8 @@ export function lintDoc(doc: LintableDoc): DocLintFinding[] {
       remedy: finding.remedy,
     }))
   if (doc.referenceProjects) findings.push(...referenceFindings(doc))
-  if (doc.slug.startsWith('design-')) findings.push(...designHeadingFindings(doc.body))
+  if (doc.scope !== 'context' && doc.slug.startsWith('design-'))
+    findings.push(...designHeadingFindings(doc.body))
   findings.push(...articleSummaryFindings)
   return findings.sort(
     (a, b) => a.rule.localeCompare(b.rule) || a.line - b.line || a.message.localeCompare(b.message),

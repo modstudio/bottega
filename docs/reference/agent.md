@@ -11,6 +11,7 @@ agents, jobs, and routing
 - [bottega agent context drop](#bottega-agent-context-drop)
 - [bottega agent context set](#bottega-agent-context-set)
 - [bottega agent context show](#bottega-agent-context-show)
+- [bottega agent context stale](#bottega-agent-context-stale)
 - [bottega agent contract](#bottega-agent-contract)
 - [bottega agent cost-backtest](#bottega-agent-cost-backtest)
 - [bottega agent guide](#bottega-agent-guide)
@@ -84,6 +85,7 @@ manage stored architect context or resolve checkout context
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
 - [bottega agent context set](./agent.md#bottega-agent-context-set)
 - [bottega agent context show](./agent.md#bottega-agent-context-show)
+- [bottega agent context stale](./agent.md#bottega-agent-context-stale)
 
 ## bottega agent context brief
 
@@ -147,6 +149,21 @@ show stored context items
 
 - `--task <key>`: select task holder
 - `--session <id>`: select session holder
+- `--json`: write JSON
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context stale
+
+**Synopsis:** `bottega agent context stale [--session <id>] [--json]`
+
+list task holders worked after their newest next-action revision
+
+### Options
+
+- `--session <id>`: select architect session
 - `--json`: write JSON
 
 ### Related

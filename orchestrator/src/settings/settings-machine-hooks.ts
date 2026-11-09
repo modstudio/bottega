@@ -138,7 +138,7 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   },
   { event: 'Stop', script: 'score-reminder.py', boardEnvironment: true },
   { event: 'Stop', script: 'heartbeat-guard.py' },
-  { event: 'Stop', script: 'workflow-cursor-reminder.py' },
+  { event: 'Stop', script: 'workflow-cursor-reminder.py', boardEnvironment: true },
   {
     event: 'Stop',
     matcher: '*',
@@ -147,7 +147,7 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     boardEnvironment: true,
   },
   { event: 'SessionStart', script: 'session-brief.py' },
-  { event: 'SessionStart', script: 'workflow-cursor-reminder.py' },
+  { event: 'SessionStart', script: 'workflow-cursor-reminder.py', boardEnvironment: true },
 ]
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`

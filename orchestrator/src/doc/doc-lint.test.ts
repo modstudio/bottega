@@ -209,6 +209,18 @@ describe('stored document lint', () => {
     ])
   })
 
+  test('a context item id beginning design does not invoke the design document shape', () => {
+    expect(
+      lintDoc(
+        doc('One current point.', {
+          scope: 'context',
+          subject: 'task:DEV-2225',
+          slug: 'design-approved',
+        }),
+      ),
+    ).toEqual([])
+  })
+
   test('a global document resolves paths against any registered project', () => {
     expect(
       lintDoc(doc('See `src/other.ts`.', { scope: 'global', subject: null, referenceProjects })),

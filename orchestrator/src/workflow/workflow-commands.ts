@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type ContextMomentWrite, contextMomentWrite } from '../../../shared/context-moment.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
@@ -440,7 +441,7 @@ export async function ruleCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<void> {
+): Promise<ContextMomentWrite | null> {
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -480,6 +481,11 @@ export async function ruleCommand(
     cursor,
   )
   print(result, `${result.summary} Question ${result.questionId}.`)
+  return contextMomentWrite({
+    moment: 'workflow-rule',
+    taskKey: context.workflowKey,
+    questionId: result.questionId,
+  })
 }
 
 export async function abandonCommand(
@@ -619,7 +625,7 @@ export async function nextCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<void> {
+): Promise<ContextMomentWrite | null> {
   const selfRuling = flagValue(argv, 'self-ruling')
   const basis = flagValue(argv, 'basis')
   if (basis !== undefined && selfRuling === undefined)
@@ -686,6 +692,7 @@ export async function nextCommand(
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result, result)
+  return contextMomentWrite({ moment: 'workflow-next', taskKey: context.workflowKey })
 }
 
 export function showWorkflowTextCommand(argv: string[], print: WorkflowPrint): void {
@@ -720,7 +727,7 @@ export async function awaitCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
-): Promise<void> {
+): Promise<ContextMomentWrite | null> {
   const args = workflowArgs(argv)
   let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -762,6 +769,11 @@ export async function awaitCommand(
     result,
     `workflow ${slug} is awaiting ruling question ${result.questionId} at step ${result.n} ${result.slug}`,
   )
+  return contextMomentWrite({
+    moment: 'workflow-await',
+    taskKey: context.workflowKey,
+    questionId: result.questionId,
+  })
 }
 
 export function cursorsCommand(argv: string[], print: WorkflowPrint): void {
