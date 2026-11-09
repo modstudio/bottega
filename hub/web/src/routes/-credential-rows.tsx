@@ -27,6 +27,7 @@ export type CredentialUsage = {
 export type CredentialDisplayRow = {
   key: string
   credential: string
+  credentialParts: string[]
   mode: TypedCredentialRow['mode']
   environment: TypedCredentialRow['environment']
   boundTo: string
@@ -51,6 +52,38 @@ export function typedCredentialRows(rows: SecretRow[]): TypedCredentialRow[] {
     if (fields) credentials.push({ ...row, ...fields })
   }
   return credentials
+}
+
+function credentialParts(identity: { provider: string; name: string | null; type: string }) {
+  return [identity.provider, identity.name, identity.type].filter(
+    (part): part is string => part !== null,
+  )
+}
+
+/** The space default leads, so a reader sees first whether a copy is the space-wide fallback. */
+export function orderedUsages(usages: CredentialUsage[]): CredentialUsage[] {
+  return [
+    ...usages.filter((usage) => usage.projectId === null),
+    ...usages.filter((usage) => usage.projectId !== null),
+  ]
+}
+
+/** Matches a free-text query against every column a reader can see. */
+export function credentialRowMatches(row: CredentialDisplayRow, query: string) {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return true
+  return [
+    row.credential,
+    row.mode,
+    row.environment,
+    row.boundTo,
+    row.owner,
+    row.hint,
+    ...row.usages.map((usage) => usage.name),
+  ]
+    .join(' ')
+    .toLowerCase()
+    .includes(needle)
 }
 
 function projectName(projectId: string | null, projects: HostedProjectRow[], nullLabel: string) {
@@ -86,7 +119,7 @@ function resolutionTargets(
 ): { id: string | null; name: string }[] {
   return [
     ...projects
-      .filter((project) => project.spaceId === spaceId)
+      .filter((project) => project.spaceId === spaceId && project.retiredAt === null)
       .map((project) => ({ id: project.id, name: project.name })),
     { id: null, name: 'Space default' },
   ]
@@ -133,6 +166,7 @@ export function credentialDisplayRows(
   const display: CredentialDisplayRow[] = rows.map((row) => ({
     key: storedCredentialRowKey(row),
     credential: credentialIdentityPath(row.provider, row.name, row.type),
+    credentialParts: credentialParts(row),
     mode: row.mode,
     environment: row.environment,
     boundTo: projectName(row.projectId, projects, 'This space'),
@@ -177,6 +211,7 @@ export function credentialDisplayRows(
     display.push({
       key: missingCredentialRowKey(preference),
       credential: credentialIdentityPath(preference.provider, preference.name, preference.type),
+      credentialParts: credentialParts(preference),
       mode: preference.mode,
       environment: preference.environment,
       boundTo: projectName(preference.projectId, projects, 'All projects'),
