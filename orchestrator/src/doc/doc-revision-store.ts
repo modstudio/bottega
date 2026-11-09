@@ -9,7 +9,11 @@ import { nextEntityNumber } from '../database/entity-number.ts'
 import { decodeStoredDocAudiences, encodeStoredDocAudiences } from './doc-audiences-codec.ts'
 import type { DocRevision, DocRevisionMetadata } from './doc-read-store.ts'
 import { validateHistoricDocAddress } from './doc-subjects.ts'
-import { type DocRevisionOp, decideDocRevisionWrite } from './doc-write-allowed.ts'
+import {
+  type ContextDropTarget,
+  type DocRevisionOp,
+  decideDocRevisionWrite,
+} from './doc-write-allowed.ts'
 
 type RevisionDoc = {
   record_id: string
@@ -72,7 +76,14 @@ export function docWriteIdentity(
 }
 
 export function assertLocalRevisionWrite(
-  input: { scope: string; subject: string | null; slug: string; expectedRevision?: string },
+  input: {
+    scope: string
+    subject: string | null
+    slug: string
+    expectedRevision?: string
+    op?: DocRevisionOp
+    contextDropTarget?: ContextDropTarget
+  },
   current: string | null,
   isCreate: boolean,
 ): void {
@@ -80,6 +91,8 @@ export function assertLocalRevisionWrite(
     expected: input.expectedRevision,
     current,
     isCreate,
+    op: input.op,
+    contextDropTarget: input.contextDropTarget,
     scope: input.scope,
     subject: input.subject,
     slug: input.slug,

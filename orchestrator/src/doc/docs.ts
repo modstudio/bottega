@@ -59,7 +59,7 @@ import {
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
-import { removeStoredDoc } from './doc-remove.ts'
+import { type DocRemovalContext, removeStoredDoc } from './doc-remove.ts'
 import { referenceRestoreState } from './doc-restore-state.ts'
 import * as rw from './doc-resume-write.ts'
 import { addSecretScanWarning, defaultDocSecretScanner, scanDocBody } from './doc-secret-scan.ts'
@@ -565,7 +565,7 @@ export async function removeDoc(
   scope: string,
   subject: string | null,
   slug: string,
-  context: DocWriteContext,
+  context: DocRemovalContext,
   owner: string | null = null,
 ): Promise<boolean> {
   assertWorkerDocStoreWriteAllowed('removeDoc')

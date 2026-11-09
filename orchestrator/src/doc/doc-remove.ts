@@ -9,11 +9,15 @@ import { hostedDocClient } from './doc-hosted-client.ts'
 import { type Doc, getDocStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
-import { docWriteProjectName } from './doc-write-allowed.ts'
+import { type ContextDropTarget, docWriteProjectName } from './doc-write-allowed.ts'
 import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { hostedDocWriteIdentity, resolvedDocWriteIdentity } from './doc-write-identity.ts'
 import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
 import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
+
+export type DocRemovalContext = DocWriteContext & {
+  contextDropTarget?: ContextDropTarget
+}
 
 function assertCanonRemovalAllowed(doc: Doc, context: DocWriteContext): void {
   if (doc.scope !== 'canon') return
@@ -28,13 +32,20 @@ function assertCanonRemovalAllowed(doc: Doc, context: DocWriteContext): void {
 /** The shared removal body after the caller's context-drop ownership guard. */
 export async function removeStoredDoc(
   doc: Doc,
-  context: DocWriteContext,
+  context: DocRemovalContext,
   identity: ReturnType<typeof resolvedDocWriteIdentity>,
 ): Promise<boolean> {
   const { scope, subject, owner, slug } = doc
   assertLocalStoredReferenceWrite(doc, context.generator)
   assertLocalRevisionWrite(
-    { scope, subject, slug, expectedRevision: context.expectedRevision },
+    {
+      scope,
+      subject,
+      slug,
+      expectedRevision: context.expectedRevision,
+      op: 'delete',
+      contextDropTarget: context.contextDropTarget,
+    },
     doc.revision,
     false,
   )
