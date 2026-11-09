@@ -24,7 +24,7 @@ export type CredentialResolution<Candidate extends CredentialCandidate = Credent
     }
   | { kind: 'refused'; refusal: string }
 
-function matchesSlot(
+export function credentialMatchesPreferenceSlot(
   credential: CredentialCandidate,
   preference: CredentialPreferencePayload,
   projectId: string | null,
@@ -113,7 +113,9 @@ export function resolveCredential<Candidate extends CredentialCandidate>(input: 
       : preferences.find((row) => row.projectId === input.projectId)) ??
     preferences.find((row) => row.projectId === null)
   if (preference) {
-    const preferred = candidates.find((row) => matchesSlot(row, preference, input.projectId))
+    const preferred = candidates.find((row) =>
+      credentialMatchesPreferenceSlot(row, preference, input.projectId),
+    )
     if (preferred)
       return {
         kind: 'resolved',

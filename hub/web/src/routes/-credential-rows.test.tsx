@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { HostedProjectRow, RecordConfigSecretsResponse } from '@bottega/hub-data/client'
 import type { CredentialPreference } from '../../../../shared/credential.ts'
-import { credentialDisplayRows, splitSecretRows } from './secrets.tsx'
+import { credentialDisplayRows, splitSecretRows } from './-credential-rows.tsx'
 
 const spaceId = '01990000-0000-7000-8000-000000000010'
 const updatedAt = '2026-11-05T12:00:00.000Z'
@@ -90,7 +90,51 @@ test('default order uses project copies before the shared space copy', () => {
   ])
 })
 
-test('a preference with no stored slot produces a missing row', () => {
+test('a space-wide personal project preference selects each project copy', () => {
+  const projectPreference: CredentialPreference = {
+    ...preference,
+    payer: 'personal',
+    binding: 'project',
+  }
+  const rows = credentialDisplayRows(
+    splitSecretRows([secret('user', projects[0]!.id), secret('user', projects[1]!.id)]).credentials,
+    [projectPreference],
+    projects,
+    spaceId,
+  )
+  expect(rows.map((row) => row.usages.map((usage) => `${usage.name}:${usage.reason}`))).toEqual([
+    ['A:space-preference'],
+    ['B:space-preference'],
+  ])
+  expect(rows.map((row) => row.preferences)).toEqual([[projectPreference], [projectPreference]])
+  expect(rows.every((row) => !row.missing)).toBe(true)
+})
+
+test('a project preference selects its copy or becomes missing while default order remains', () => {
+  const personalPreference: CredentialPreference = {
+    ...preference,
+    projectId: projects[0]!.id,
+    payer: 'personal',
+    binding: 'project',
+  }
+  const credentials = splitSecretRows([secret('user', projects[0]!.id)]).credentials
+  const selected = credentialDisplayRows(credentials, [personalPreference], projects, spaceId)
+  expect(selected).toHaveLength(1)
+  expect(selected[0]!.usages.map((usage) => `${usage.name}:${usage.reason}`)).toEqual([
+    'A:project-preference',
+  ])
+  expect(selected[0]!.preferences).toEqual([personalPreference])
+
+  const sharedPreference = { ...personalPreference, payer: 'shared' as const }
+  const missing = credentialDisplayRows(credentials, [sharedPreference], projects, spaceId)
+  expect(missing).toHaveLength(2)
+  expect(missing[0]!.usages.map((usage) => `${usage.name}:${usage.reason}`)).toEqual([
+    'A:default-order',
+  ])
+  expect(missing[1]).toMatchObject({ missing: true, usages: [], preferences: [sharedPreference] })
+})
+
+test('a preference with no stored slot produces a missing row with no usage', () => {
   const missing = {
     ...preference,
     projectId: projects[0]!.id,
@@ -105,11 +149,6 @@ test('a preference with no stored slot produces a missing row', () => {
     owner: '—',
     hint: 'missing',
     missing: true,
+    usages: [],
   })
-  expect(rows[0]!.key.startsWith('missing:')).toBe(true)
-})
-
-test('owner labels are shared by personal and space credentials', () => {
-  const rows = credentialDisplayRows(splitSecretRows(copies).credentials, [], projects, spaceId)
-  expect(rows.map((row) => row.owner)).toEqual(['You', 'This space', 'You'])
 })
