@@ -146,8 +146,9 @@ record is the truth. A hosted table is written straight to the record and kept
 nowhere locally; a write that cannot reach it stops with a remedy, never queued.
 A synced table records what happened here, written locally and pushed on a
 schedule. A machine table is state no other machine would care about. A
-local-only install keeps every table locally. A hosted table without a built
-home names the task that builds it.
+local-only install keeps every table locally. All work, from space down to run,
+is portable. A hosted table without a built home names the task that builds it.
+The seam is doc-store record `design-machine-hosted-seam`.
 
 Every table declares a lifecycle: what it is, where its authoritative copy
 lives, how long each copy is kept, and what removes it. Each local table also
