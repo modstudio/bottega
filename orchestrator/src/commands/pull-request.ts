@@ -5,6 +5,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { contextMomentWrite } from '../../../shared/context-moment.ts'
+import { gitAt } from '../../../shared/git.ts'
+import { taskKeyToken } from '../branch/other-branch-state.ts'
 import { writableDb } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
@@ -153,9 +156,14 @@ async function mergePullRequestCommand(
     }
     return
   }
+  const cwd = resolveReviewCommandCwd(options.cwd)
+  const database = writableDb()
+  const project = projectAt(cwd, database)
+  const branch = gitAt(cwd, ['branch', '--show-current']).stdout.trim()
+  const taskKey = project ? taskKeyToken(branch, project.settings.keyPrefixes ?? []) : null
   const outcome = mergePullRequest(
     target,
-    resolveReviewCommandCwd(options.cwd),
+    cwd,
     undefined,
     undefined,
     Boolean(options.releaseRequired),
@@ -163,6 +171,8 @@ async function mergePullRequestCommand(
   )
   log(outcome.output)
   if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
+  const prompt = contextMomentWrite({ moment: 'pr-merge', taskKey })
+  if (prompt) log(prompt.line)
 }
 
 export function register(program: Command): void {

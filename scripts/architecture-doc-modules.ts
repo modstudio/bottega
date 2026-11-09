@@ -13,6 +13,14 @@ const module = (file: string, allowed: string[]): DocModule => ({
 export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-context-write.ts', []),
   module('orchestrator/src/doc/context-item-codec.ts', ['./doc-context-write.ts']),
+  module('orchestrator/src/doc/context-stale.ts', []),
+  module('orchestrator/src/doc/context-stale-adapter.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../workflow/workflow-cursor-trail.ts',
+    './context-item-codec.ts',
+    './context-stale.ts',
+  ]),
   module('orchestrator/src/doc/context-write-adapter.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',

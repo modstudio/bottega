@@ -3,6 +3,7 @@
 import type { Command } from 'commander'
 import { contextBrief, renderContextBrief } from '../doc/context-brief.ts'
 import { dropContextItem, getContext, setContextItem } from '../doc/context-service.ts'
+import { staleContextForSession } from '../doc/context-stale-adapter.ts'
 import { CONTEXT_ITEM_KINDS } from '../doc/doc-context-write.ts'
 import { sessionContextCommand } from '../workflow/session-context.ts'
 import { log } from './support.ts'
@@ -11,6 +12,14 @@ export function register(program: Command): void {
   const context = program
     .command('context')
     .description('manage stored architect context or resolve checkout context')
+    .addHelpText(
+      'after',
+      '\nWrite context at these moments:\n' +
+        '  workflow next, run start, pr merge, task close  revise next-action\n' +
+        '  workflow await                               write open-question\n' +
+        '  workflow rule, question answer               write ruling\n\n' +
+        'Place each item once on the narrowest holder it binds in full: task for task-only points, epic for points binding every child, and session only when no single task or epic owns it.\n',
+    )
     .option('--cwd <path>', 'resolve context for this checkout path')
     .option('--json', 'write the resolved context as JSON')
     .action((options) => {
@@ -37,6 +46,17 @@ export function register(program: Command): void {
     .action(async (options) => {
       const result = await contextBrief(options.session)
       log(options.json ? JSON.stringify(result) : renderContextBrief(result))
+    })
+  context
+    .command('stale')
+    .description('list task holders worked after their newest next-action revision')
+    .requiredOption('--session <id>', 'select architect session')
+    .option('--json', 'write JSON')
+    .action((options) => {
+      const result = staleContextForSession(options.session)
+      if (options.json) return log(JSON.stringify(result))
+      for (const row of result)
+        log(`${row.holder}  worked ${row.workedAt}  next-action ${row.revisedAt ?? 'missing'}`)
     })
   holderOptions(context.command('set').description('create or revise one context item'))
     .requiredOption('--kind <kind>', `one of ${CONTEXT_ITEM_KINDS.join(', ')}`)

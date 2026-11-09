@@ -332,7 +332,7 @@ function revisionRemedy(
   operation: 'create' | 'update',
 ): string {
   if (input.scope === 'context') {
-    return `read the context item with ${PLATFORM_SLUG} context show, then re-apply it with ${PLATFORM_SLUG} context set --id ${input.slug} --expected-revision ${current} (expected_revision over MCP)`
+    return `read the context item with ${PLATFORM_SLUG} agent context show, then re-apply it with ${PLATFORM_SLUG} agent context set --id ${input.slug} --expected-revision ${current} (expected_revision over MCP)`
   }
   if (input.scope === 'settings') {
     return `read the settings, then write them with ${PLATFORM_SLUG} machine settings import ${input.subject === null ? '--user' : `--project ${input.subject}`}`

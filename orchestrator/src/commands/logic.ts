@@ -4,6 +4,7 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
+import { contextMomentWrite } from '../../../shared/context-moment.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
@@ -113,9 +114,18 @@ const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
     presentation,
     refusedOwnerOptions(command, 'run tell', 'run'),
   )
-const answerByIdentifier = (id: string, command: Command, options: OptionValues) =>
-  answerCommand(
-    resolveAnswerIdentifier(db(), id, sessionId()),
+const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
+  const target = resolveAnswerIdentifier(db(), id, sessionId())
+  const pending = db()
+    .query<{ record_id: string; number: number; launch_key: string | null }, [string]>(
+      `SELECT q.record_id,q.number,root.launch_key
+       FROM question q JOIN run requested ON requested.record_id=q.run_record_id
+       JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
+       WHERE root.record_id=? AND q.answered_at IS NULL AND q.closed_at IS NULL`,
+    )
+    .all(target)
+  await answerCommand(
+    target,
     rawArgv(command).slice(2),
     Boolean(options.recordOnly),
     Boolean(options.json),
@@ -123,6 +133,20 @@ const answerByIdentifier = (id: string, command: Command, options: OptionValues)
     presentation,
     refusedOwnerOptions(command, 'question answer', 'question'),
   )
+  const answered = pending.filter((row) =>
+    db()
+      .query('SELECT 1 FROM question WHERE record_id=? AND answered_at IS NOT NULL')
+      .get(row.record_id),
+  )
+  for (const row of answered) {
+    const prompt = contextMomentWrite({
+      moment: 'question-answer',
+      taskKey: row.launch_key,
+      questionId: row.number,
+    })
+    if (prompt) (options.json ? console.error : log)(prompt.line)
+  }
+}
 const relayByIdentifier = (id: string, command: Command, note: string) =>
   relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
     resolveQuestionIdentifier(db(), question),
@@ -519,6 +543,29 @@ function registerRunResults(program: Command): void {
     })
 }
 
+function registerDoCommand(program: Command): void {
+  const doVerb = describedCommand(
+    program,
+    'do <job> [prompt...]',
+    'dispatch a job to a routed agent',
+  )
+  for (const option of ORCH_DO_OPTIONS) {
+    if ('name' in option && option.name === 'deliverable')
+      doVerb.addOption(collectedOption(option.flags, option.description))
+    else doVerb.option(option.flags, option.description)
+  }
+  doVerb.action(async (_job, _prompt, options, command) => {
+    const argv = rawArgv(command)
+    await doCommand(argv, {
+      error: console.error,
+      printRunId: (id) => write(`${id}\n`),
+      cwd: process.cwd,
+    })
+    const prompt = contextMomentWrite({ moment: 'run-start', taskKey: flagValue(argv, 'key') })
+    if (prompt) (options.json ? console.error : log)(prompt.line)
+  })
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   registerDatabaseCommands(program, presentation)
   program
@@ -694,23 +741,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         dependencies.continueCommandDependencies,
       )
     })
-  const doVerb = describedCommand(
-    program,
-    'do <job> [prompt...]',
-    'dispatch a job to a routed agent',
-  )
-  for (const option of ORCH_DO_OPTIONS) {
-    if ('name' in option && option.name === 'deliverable')
-      doVerb.addOption(collectedOption(option.flags, option.description))
-    else doVerb.option(option.flags, option.description)
-  }
-  doVerb.action((_job, _prompt, _options, command) =>
-    doCommand(rawArgv(command), {
-      error: console.error,
-      printRunId: (id) => write(`${id}\n`),
-      cwd: process.cwd,
-    }),
-  )
+  registerDoCommand(program)
   const gate = program.command('gate').description('run or inspect recorded project gates')
   gate
     .command('run')

@@ -408,7 +408,7 @@ describe('decideDocRevisionWrite', () => {
       {
         scope: 'context',
         subject: null,
-        remedy: `${PLATFORM_SLUG} context set --id revision-test --expected-revision revision-2`,
+        remedy: `${PLATFORM_SLUG} agent context set --id revision-test --expected-revision revision-2`,
       },
       {
         scope: 'settings',

@@ -15,6 +15,7 @@ export const sessionContextModules: SessionContextModule[] = [
   module('orchestrator/src/commands/context.ts', [
     '../doc/context-brief.ts',
     '../doc/context-service.ts',
+    '../doc/context-stale-adapter.ts',
     '../doc/doc-context-write.ts',
     '../workflow/session-context.ts',
     './support.ts',

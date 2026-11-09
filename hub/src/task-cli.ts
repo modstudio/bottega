@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { contextMomentWrite } from '../../shared/context-moment.ts'
 import { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../shared/trackers.ts'
 import { PresenceOption } from './cli-command.ts'
 import { requireDatabase } from './db.ts'
@@ -376,6 +377,8 @@ function registerTaskLifecycleCommands(task: Command): void {
     .action(async (key, _options, command) => {
       open()
       await closeTask(key, taskOptions(command))
+      const write = contextMomentWrite({ moment: 'task-close', taskKey: key })
+      if (write) console.log(write.line)
     })
   task
     .command('comment <key> <text>')

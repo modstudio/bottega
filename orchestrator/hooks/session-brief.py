@@ -185,6 +185,15 @@ def _context_brief_slice(completed, session):
     return text or fallback
 
 
+def _context_protocol():
+    return (
+        "Context writes: ruling after question answer/workflow rule; open-question at workflow await; "
+        "revise next-action after workflow next, run start, pr merge, and task close.\n"
+        "Place each item once on the narrowest task or epic it binds; session context is only for "
+        "work that binds no single task or epic. Full protocol: bottega agent context --help."
+    )
+
+
 HOOK_CONTEXT_MAX_CHARS = 9000
 HOOK_CONTEXT_TRUNCATION_MARKER = "…"
 
@@ -908,6 +917,8 @@ def main() -> int:
             health_context = _context_brief_slice(brief, sid)
             health_notices = []
             board_mode = "count"
+        else:
+            health_context = _join_sections(_context_protocol(), health_context)
         if health_context or health_notices:
             output = {
                 "hookSpecificOutput": {
@@ -966,6 +977,7 @@ def main() -> int:
                     board_titles,
                     board_count,
                 )
+                context = _join_sections(_context_protocol(), context)
             notices = list(base_health_notices)
             if monitor_failure:
                 notices.append(monitor_failure)
