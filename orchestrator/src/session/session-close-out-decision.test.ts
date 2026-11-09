@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   classifySessionCloseOut,
   classifySessionContextItem,
+  classifySessionCursor,
   plannedTreeOwnerMatches,
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
@@ -59,9 +60,22 @@ describe('session close-out decisions', () => {
       expect(classifySessionContextItem(kind, true)).toBe('keep')
   })
 
-  test('recommendation clears with no residue and writes a brief with residue', () => {
-    expect(sessionCloseOutRecommendation(0)).toBe('clear')
-    expect(sessionCloseOutRecommendation(1)).toBe('brief')
+  test('cursor ends distinguish closed, parked, and open work', () => {
+    expect(classifySessionCursor({ state: 'done', hasOpenQuestion: false })).toBe('closed')
+    expect(classifySessionCursor({ state: 'abandoned', hasOpenQuestion: false })).toBe('closed')
+    expect(classifySessionCursor({ state: 'awaiting-ruling', hasOpenQuestion: true })).toBe(
+      'parked',
+    )
+    expect(classifySessionCursor({ state: 'awaiting-ruling', hasOpenQuestion: false })).toBe('open')
+    expect(classifySessionCursor({ state: 'running', hasOpenQuestion: false })).toBe('open')
+  })
+
+  test('recommendation writes a brief for each kind of successor work', () => {
+    const none = { residue: 0, parkedCursors: 0, keptContextItems: 0 }
+    expect(sessionCloseOutRecommendation(none)).toBe('clear')
+    expect(sessionCloseOutRecommendation({ ...none, residue: 1 })).toBe('brief')
+    expect(sessionCloseOutRecommendation({ ...none, parkedCursors: 1 })).toBe('brief')
+    expect(sessionCloseOutRecommendation({ ...none, keptContextItems: 1 })).toBe('brief')
   })
 
   test('resume handoff moves exactly roots the author still owes', () => {

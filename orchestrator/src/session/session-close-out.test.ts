@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { addRun, dir, score } from '../../test/fixtures/store.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { encodeContextItem } from '../doc/context-item-codec.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
@@ -38,6 +39,34 @@ function attachRunToProject(runId: string, projectId: string, project: string): 
   db()
     .query('UPDATE run SET project_record_id=?,repo=? WHERE record_id=?')
     .run(projectId, project, runId)
+}
+
+function addCursor(
+  session: string,
+  state: 'running' | 'awaiting-ruling',
+): {
+  recordId: string
+  number: number
+} {
+  return db()
+    .query<{ recordId: string; number: number }, (string | number)[]>(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+         workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
+         question,total_steps,created_at,updated_at)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','flow','default','',?, ?,
+               ?,?,'{}',0,'implement',?,'[]',?,1,'2026-11-09','2026-11-09')
+       RETURNING record_id recordId,number`,
+    )
+    .get(
+      newRecordId(),
+      newRecordId(),
+      session,
+      workflowVersionRecordId(db()),
+      catalogueVersionRecordId(db()),
+      state,
+      state === 'awaiting-ruling' ? 'Which path?' : '',
+    )!
 }
 
 test('dry run reports context drops and refusals while resume keeps every item', async () => {
@@ -79,6 +108,42 @@ test('dry run reports context drops and refusals while resume keeps every item',
     `context session:${session}/ruling (ruling)`,
   ])
   expect(resume.recommendation).toBe('brief')
+})
+
+test('close-out parks only an awaiting cursor with a recorded open question', async () => {
+  const session = newRecordId()
+  const parked = addCursor(session, 'awaiting-ruling')
+  const missingQuestion = addCursor(session, 'awaiting-ruling')
+  const running = addCursor(session, 'running')
+  const questionId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO question
+        (record_id,number,workflow_cursor_record_id,asked_at,question,asked_via)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'2026-11-09','Which path?','workflow')`,
+    )
+    .run(questionId, parked.recordId)
+
+  const report = await closeOutSession({ session, dryRun: true })
+
+  expect(report.parked).toEqual([
+    `workflow cursor ${parked.number}: awaiting recorded question ${questionId}`,
+  ])
+  expect(report.process).toContainEqual(
+    expect.objectContaining({
+      item: `workflow cursor ${missingQuestion.number}`,
+      remedy: `${PLATFORM_SLUG} workflow abandon flow --cursor ${missingQuestion.number} --reason "<why>"`,
+    }),
+  )
+  expect(report.process).toContainEqual(
+    expect.objectContaining({
+      item: `workflow cursor ${running.number}`,
+      remedy:
+        `${PLATFORM_SLUG} workflow next flow --cursor ${running.number}, or ` +
+        `${PLATFORM_SLUG} workflow abandon flow --cursor ${running.number} --reason "<why>"`,
+    }),
+  )
+  expect(report.recommendation).toBe('brief')
 })
 
 test('dry run reports an owned unscored run as process residue', async () => {
