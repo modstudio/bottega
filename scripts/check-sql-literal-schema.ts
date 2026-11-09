@@ -444,11 +444,6 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'question identity input is prepared against the legacy and migration-staging schemas',
   ),
   ...exempt(
-    'hub/src/ingest/git-task-cache.ts',
-    ['052a50d1f936d99a'],
-    'transition helper runs only while migration task_new exists',
-  ),
-  ...exempt(
     'hub/src/ingest/trackers.ts',
     ['2987d7cb212ef65b'],
     'transition helper runs only while migration task_new exists',

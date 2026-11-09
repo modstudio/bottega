@@ -60,7 +60,6 @@ function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: T
 
 function sourceLine(task: TaskScreenDetail['task']): string {
   if (task.source === 'local') return 'hub'
-  if (task.source === 'git') return 'git'
   return `${task.project ?? 'external'} · ${task.sourceProtocol ?? 'tracker protocol unknown'}`
 }
 

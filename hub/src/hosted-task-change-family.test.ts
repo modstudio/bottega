@@ -199,49 +199,6 @@ test('the record feed applies task upserts without losing pending machine fields
   )
 })
 
-test('the record feed counts task no-ops and preserves equal git plain dates byte-for-byte', async () => {
-  seedFeed()
-  const plainDate = '2026-10-09'
-  writeTransaction((conn) =>
-    applyHostedTask(
-      conn,
-      hostedTask({ source: 'git', opened_at: plainDate, updated_at: plainDate }),
-    ),
-  )
-  const before = db().query('SELECT * FROM task WHERE record_id=?').get(taskId)
-  const freshId = '01990000-0000-7000-8000-000000001249'
-  const report = await pullHostedChanges({
-    ...options,
-    fetch: route({
-      feed: () =>
-        page('after', [
-          {
-            table: 'hub_task',
-            id: taskId,
-            space: 'space-one',
-            op: 'upsert',
-            row: hostedTask({
-              source: 'git',
-              opened_at: `${plainDate}T00:00:00.000Z`,
-              updated_at: `${plainDate}T00:00:00.000Z`,
-            }),
-          },
-          {
-            table: 'hub_task',
-            id: freshId,
-            space: 'space-one',
-            op: 'upsert',
-            row: hostedTask({ id: freshId, key: 'DEV-1249', title: 'fresh' }),
-          },
-        ]),
-    }),
-    registeredProjects: registered,
-  })
-  expect(db().query('SELECT * FROM task WHERE record_id=?').get(taskId)).toEqual(before)
-  expect(db().query('SELECT 1 FROM hosted_outbox').all()).toEqual([])
-  expect(familyReport(report, 'task')).toMatchObject({ upsertsNoop: 1, upsertsChanged: 1 })
-})
-
 test('the record feed applies and skips task deletes by row space, including children', async () => {
   seedFeed()
   writeTransaction((conn) => {

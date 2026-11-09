@@ -1,11 +1,8 @@
 import { DEFAULT_IDLE_CAP_MS, engagedMs, human, type Span } from '../../shared/interval.ts'
+import type { TaskSource } from '../../shared/task-source.ts'
 import type { TrackerProject } from '../../shared/trackers.ts'
 import { runRef } from './run-ref.ts'
-import {
-  type Capabilities,
-  type TrackerRowSource,
-  trackerCapabilities,
-} from './tracker-capabilities.ts'
+import { type Capabilities, trackerCapabilities } from './tracker-capabilities.ts'
 
 export type ProjectionProject = TrackerProject & { spaceId?: string; spaceName?: string }
 
@@ -286,16 +283,15 @@ function foldVendors(rows: IntervalRow[]): AgentSpend[] {
   return [...by.values()].sort((a, b) => b.tokens - a.tokens)
 }
 
-/** The one identity formula shared by hosted, local, and unattributed task evidence. */
+/** Tracker rows use their record ID. Unresolved rows are identified by project and by space when present. */
 export function taskIdentity(row: {
   spaceId?: string
   recordId?: string | null
-  key: string | null
   project?: string | null
 }) {
   if (row.recordId) return row.recordId
-  if (row.spaceId) return `${row.spaceId}\0${row.key ?? ''}`
-  return `unattributed:${row.project ?? 'unknown'}:${row.key ?? ''}`
+  if (row.spaceId) return `${row.spaceId}\0unattributed:${row.project ?? 'unknown'}`
+  return `unattributed:${row.project ?? 'unknown'}`
 }
 
 export function projectTasksInWindow(
@@ -308,7 +304,6 @@ export function projectTasksInWindow(
     const id = taskIdentity({
       spaceId: row.space_id,
       recordId: row.task_record_id,
-      key: row.task_key,
       project: row.project,
     })
     groups.set(id, [...(groups.get(id) ?? []), row])
@@ -318,13 +313,13 @@ export function projectTasksInWindow(
   const output: ProjectedTask[] = []
   for (const list of groups.values()) {
     const first = list[0]!
-    const key = first.task_key
+    const key = first.task_record_id ? first.task_key : null
     const spans: Span[] = list.map((row) => ({
       start: new Date(row.start_at).getTime(),
       end: intervalEndMs(row, now),
     }))
     const projectName = first.task_project ?? first.project
-    const source = first.task_source ?? (key ? 'git' : null)
+    const source = first.task_source
     output.push({
       spaceId: first.space_id,
       spaceName: first.space_name,
@@ -339,12 +334,13 @@ export function projectTasksInWindow(
         source === 'mcp'
           ? (project(first.space_id, projectName)?.settings.tracker?.protocol ?? null)
           : null,
-      capabilities: key
-        ? trackerCapabilities({
-            source: source as TrackerRowSource,
-            project: project(first.space_id, projectName),
-          })
-        : null,
+      capabilities:
+        key && source
+          ? trackerCapabilities({
+              source: source as TaskSource,
+              project: project(first.space_id, projectName),
+            })
+          : null,
       engagedMs: engagedMs(spans),
       claudeTokens: list.reduce((sum, row) => sum + row.claude_tokens, 0),
       vendors: foldVendors(list),
@@ -430,7 +426,6 @@ export function projectFlightDone(input: {
       taskIdentity({
         spaceId: row.space_id,
         recordId: row.task_record_id,
-        key: row.key,
         project: row.project,
       }),
     ),
@@ -478,7 +473,6 @@ export function projectFlightDone(input: {
               taskIdentity({
                 spaceId: item.space_id,
                 recordId: item.task_record_id,
-                key: item.task_key,
                 project: item.project,
               }) === taskIdentity(row),
           ),
@@ -546,7 +540,6 @@ export function projectBoardCards(
     const identity = taskIdentity({
       spaceId: row.space_id,
       recordId: row.record_id,
-      key: row.key,
       project: row.project,
     })
     return {
@@ -561,7 +554,7 @@ export function projectBoardCards(
       statusCategory: row.status_category,
       source: row.source,
       sourceProtocol: row.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
-      capabilities: trackerCapabilities({ source: row.source as TrackerRowSource, project }),
+      capabilities: trackerCapabilities({ source: row.source as TaskSource, project }),
       updatedAt: row.updated_at ?? row.last_seen,
       workingNow: live.has(identity),
     }
@@ -592,7 +585,6 @@ export function projectBoard(input: {
         taskIdentity({
           spaceId: row.space_id,
           recordId: row.record_id,
-          key: row.key,
           project: row.project,
         }),
       ) ||

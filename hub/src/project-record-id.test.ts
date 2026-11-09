@@ -4,7 +4,6 @@ import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { collectOnce } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
-import { upsertGitTasks } from './ingest/git-task-cache.ts'
 import { applyMigrations } from './migrations.ts'
 import { loadOutboxChange } from './outbox-row.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
@@ -23,32 +22,6 @@ test('a register record_id is the stored project_record_id', () => {
   expect(projectRecordIdFor(null, register)).toBeNull()
 })
 
-test('a hub row written after the register has record_id carries project_record_id', () => {
-  refreshProjects()
-  const conn = new Database(':memory:')
-  conn.exec('PRAGMA foreign_keys = ON')
-  applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-  upsertGitTasks(
-    conn,
-    [
-      {
-        key: 'LOC-9',
-        project: 'workshop',
-        first: '2026-10-15T00:00:00.000Z',
-        last: '2026-10-15T00:00:00.000Z',
-      },
-    ],
-    '2026-10-15T00:00:00.000Z',
-  )
-  expect(
-    conn
-      .query<{ project_record_id: string | null }, []>(
-        `SELECT project_record_id FROM task WHERE key='LOC-9'`,
-      )
-      .get()?.project_record_id,
-  ).toBe('01990000-0000-7000-8000-000000000075')
-})
-
 test('the outbox payload carries projectId beside project_name', () => {
   const conn = new Database(':memory:')
   conn.exec('PRAGMA foreign_keys = ON')
@@ -56,7 +29,7 @@ test('the outbox payload carries projectId beside project_name', () => {
   conn
     .query(
       `INSERT INTO task(record_id,key,project,project_record_id,source,first_seen,last_seen)
-       VALUES ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','DEV-3','workshop',?,'git','2026-10-15T00:00:00.000Z','2026-10-15T00:00:00.000Z')`,
+       VALUES ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1','DEV-3','workshop',?,'mcp','2026-10-15T00:00:00.000Z','2026-10-15T00:00:00.000Z')`,
     )
     .run(MATCH)
   const loaded = loadOutboxChange(conn, {
@@ -78,7 +51,7 @@ test('collect rewrites a name snapshot keyed by project_record_id', async () => 
     conn
       .query(
         `INSERT INTO task(record_id,key,project,project_record_id,source,first_seen,last_seen)
-         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3','DEV-3','stale','01990000-0000-7000-8000-000000000075','git','t','t')`,
+         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3','DEV-3','stale','01990000-0000-7000-8000-000000000075','mcp','t','t')`,
       )
       .run()
   })
@@ -98,13 +71,13 @@ test('collect leaves null project identities parked regardless of a matching nam
     conn
       .query(
         `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1','DEV-1','workshop','git','t','t')`,
+         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1','DEV-1','workshop','mcp','t','t')`,
       )
       .run()
     conn
       .query(
         `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
-         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2','DEV-2','unknown','git','t','t')`,
+         VALUES ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2','DEV-2','unknown','mcp','t','t')`,
       )
       .run()
   })

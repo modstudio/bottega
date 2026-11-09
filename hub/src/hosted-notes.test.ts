@@ -32,7 +32,7 @@ describe('hosted note promotion task ownership', () => {
     await expect(
       selectPromotionTask(
         'DEV-42',
-        async () => ({ id: 'task-id', key: 'DEV-42', source: 'git' }) as HostedTask,
+        async () => ({ id: 'task-id', key: 'DEV-42', source: 'mcp' }) as HostedTask,
         async () => ({}) as HostedTask,
         true,
         'hub',

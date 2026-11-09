@@ -68,7 +68,7 @@ export const hubTask = pgTable.withRLS(
       'hub_task_status_category_check',
       sql`${table.statusCategory} IS NULL OR ${table.statusCategory} IN ('open','active','review','done','dropped')`,
     ),
-    check('hub_task_source_check', sql`${table.source} IN ('mcp','git','local')`),
+    check('hub_task_source_check', sql`${table.source} IN ('mcp','local')`),
     ...tenantPolicies('hub_task', table.spaceId),
   ],
 )

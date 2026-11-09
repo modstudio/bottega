@@ -245,21 +245,11 @@ export type MirrorAdoption = {
 }
 
 function taskRowMayAdopt(row: HostedTask): boolean {
-  return row.source === 'mcp' || row.source === 'git' || row.newly_assigned === true
+  return row.source === 'mcp' || row.newly_assigned === true
 }
 
 function taskMirrorAdoption(row: HostedTask, id: string): MirrorAdoption {
   return { table: 'task', project: row.project, key: row.key, id }
-}
-
-function assertTaskSourcePrecedence(
-  existing: { key: string; source: HostedTask['source'] } | undefined,
-  incoming: HostedTask,
-): void {
-  if (!existing || incoming.source !== 'git' || existing.source === 'git') return
-  throw new Error(
-    `refusing to mirror task ${incoming.key} from git over hosted ${existing.source} task ${existing.key}`,
-  )
 }
 
 function selectedMirrorIdentity<T extends { id: string; space_id: string }>(
@@ -343,7 +333,6 @@ export async function mirrorTaskRow(
     },
   )
   applyMirrorDecision(decision)
-  assertTaskSourcePrecedence(existing, row)
   const parentId = await taskIdFor(tx, identity.spaceId, row.parent_key, row.parent_id)
   const projectId = await storedHubProjectId(tx, identity.spaceId, {
     projectId: row.projectId,
@@ -362,7 +351,7 @@ export async function mirrorTaskRow(
       updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz,
       next_document_number=GREATEST(next_document_number,${row.next_document_number})
       WHERE id=${targetId}::uuid AND space_id=${identity.spaceId}::uuid AND
-        (${row.source}='local' OR (source <> 'local' AND (${row.source} <> 'git' OR source='git'))) AND
+        (${row.source}='local' OR source <> 'local') AND
         (ROW(project_name,project_id,key,project,title,status,status_category,parent_key,parent_id,body,assignee,
           opened_at,closed_at,source,updated_at,deleted_at) IS DISTINCT FROM
          ROW(${row.project_name},${projectId}::uuid,${row.key},${row.project},${row.title},${row.status},${row.status_category},
@@ -389,7 +378,7 @@ export async function mirrorTaskRow(
     VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.key},${row.project},${row.title},${row.status},${row.status_category},${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz,${row.next_document_number})
     ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project_id=excluded.project_id,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=LEAST(hub_task.first_seen,excluded.first_seen),last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,excluded.next_document_number)
     WHERE (hub_task.id=excluded.id OR ${mayAdopt}) AND
-      (excluded.source='local' OR (hub_task.source <> 'local' AND (excluded.source <> 'git' OR hub_task.source='git'))) AND
+      (excluded.source='local' OR hub_task.source <> 'local') AND
       (ROW(hub_task.project_name,hub_task.project_id,hub_task.project,hub_task.title,hub_task.status,
         hub_task.status_category,hub_task.parent_key,hub_task.parent_id,hub_task.body,hub_task.assignee,
         hub_task.opened_at,hub_task.closed_at,hub_task.source,hub_task.updated_at,hub_task.deleted_at)
