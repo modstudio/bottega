@@ -140,7 +140,7 @@ test.each([
 })
 
 test.each([7, 6])(
-  'a hosted flow at revision %s keeps stage-revision behaviour',
+  'a hosted flow at revision %s keeps stage-revision behavior',
   (hostedFlowRevision) => {
     expect(
       decideTaskFlowReadThrough({
