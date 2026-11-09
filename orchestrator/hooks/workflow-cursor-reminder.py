@@ -158,11 +158,10 @@ def stop_message(rows):
 
 
 def stale_message(rows):
-    return "\n".join(
-        [
-            "Context next-action is stale for holders worked by this session:",
-            *[f'{row["holder"]} (bottega agent context show --task {row["holder"]})' for row in rows],
-        ]
+    holders = ", ".join(row["holder"] for row in rows)
+    return (
+        f"Stale next-action: {holders} "
+        "(bottega agent context show --task <key>)"
     )
 
 

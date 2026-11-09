@@ -237,8 +237,62 @@ test('an absent tree that owes recorded teardown makes its terminal root planned
 
   const report = await closeOutSession({ session: 'owner', dryRun: true })
 
-  expect(report.mechanical).toEqual([`would close run ${root}`])
+  expect(report.mechanical).toEqual([
+    `would close run ${root}`,
+    `would reclaim processes for removed tree ${join(repo, 'missing-tree')}`,
+    `would reclaim Compose resources for removed tree ${join(repo, 'missing-tree')}`,
+  ])
   expect(report.errors).toEqual([])
+})
+
+test('close-out reports a reclaimed Compose stack after releasing an absent terminal tree', async () => {
+  const project = `session-close-out-reclaim-${newRecordId()}`
+  const repo = join(dir, project)
+  cleanupPaths.push(repo)
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  const projectId = registerProject(project, repo)
+  upsertProject({
+    recordId: projectId,
+    name: project,
+    path: repo,
+    settings: { trunk: 'main', worktree: { recipePath: '.orch/worktree.jsonc' } },
+  })
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner' })
+  score(root, 'full', 'right', 'faithful')
+  attachRunToProject(root, projectId, project)
+  const missingTree = join(repo, '.claude', 'worktrees', 'missing-tree')
+  db()
+    .query(
+      `UPDATE run
+          SET worktree=?,worktree_source='recipe',recipe_snapshot='{}',resource_teardown='pending'
+        WHERE record_id=?`,
+    )
+    .run(missingTree, root)
+  db()
+    .query('UPDATE run SET recipe_snapshot=? WHERE record_id=?')
+    .run(
+      JSON.stringify({
+        source: { path: '.orch/worktree.jsonc', commit: 'abc' },
+        recipe: { create: [], destroy: [] },
+      }),
+      root,
+    )
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    const command = args.join(' ')
+    if (command.includes('--git-common-dir')) return spawnResult('.git\n')
+    if (command.startsWith('docker ps -a --format'))
+      return spawnResult(`kept-db\t\tkept-stack\t${missingTree}\n`)
+    if (command.startsWith('docker volume ls --format')) return spawnResult()
+    if (command === 'docker network ls --format {{.Name}}') return spawnResult()
+    if (args[0] === 'ps' || args[0] === 'lsof') return spawnResult()
+    return spawnResult()
+  }) as typeof Bun.spawnSync)
+
+  const report = await closeOutSession({ session: 'owner' })
+
+  expect(report.mechanical).toContain(`close run ${root}`)
+  expect(report.mechanical).toContain('reclaimed Compose resource: kept-db')
+  expect(report.verdict.clean).toBe(true)
 })
 
 test('a terminal root without a project is planned because its held state is unknown', async () => {

@@ -458,7 +458,7 @@ function reclaimOrphanWorktreeDockerResources(input: {
 
 export type RemovedTreeDockerCleanup = {
   removed: string[]
-  kept: { item: string; reason: string }[]
+  kept: { item: string; reason: string; composeProject: string }[]
   errors: string[]
 }
 
@@ -529,11 +529,12 @@ export function reclaimRemovedTreeDockerResources(
       result.kept.push({
         item: `Compose project ${composeProject}`,
         reason: 'the existing orphan inventory could not attribute its complete stack',
+        composeProject,
       })
     }
   }
   for (const group of matchingGroups) {
-    const composeProject = group.resources[0]!.composeProject
+    const composeProject = group.resources[0]!.composeProject!
     const inventoryErrors = new Set<string>()
     const handled = new Set<UnattributableDockerResource>()
     const handledCompose = new Set<UnattributedComposeDockerResource>()
@@ -554,7 +555,7 @@ export function reclaimRemovedTreeDockerResources(
     result.removed.push(...[...handled, ...handledCompose].map((resource) => resource.name))
     if (failed || inventoryErrors.size > 0) {
       const reason = [...inventoryErrors].join('; ') || 'the attributable stack was retained'
-      result.kept.push({ item: `Compose project ${composeProject}`, reason })
+      result.kept.push({ item: `Compose project ${composeProject}`, reason, composeProject })
       result.errors.push(...inventoryErrors)
     }
   }

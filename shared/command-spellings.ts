@@ -147,6 +147,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine config machine',
   'machine config machine help',
   'machine config machine init',
+  'machine config machine register',
   'machine config machine revoke',
   'machine config machine show',
   'machine config machine trust',

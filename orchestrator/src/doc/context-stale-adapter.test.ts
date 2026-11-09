@@ -78,20 +78,25 @@ test('gathers run, closed-step, and both answer forms through store-backed conte
   insertNextAction('DEV-FRESH', '2026-11-08T15:00:00Z')
 
   expect(
-    await staleContextForSession(session, db(), async (project) => [
-      {
-        key: 'DEV-STALE',
-        record_id: 'task-stale',
-        project,
-        status_category: 'active',
-      },
-      {
-        key: 'DEV-FRESH',
-        record_id: 'task-fresh',
-        project,
-        status_category: 'active',
-      },
-    ]),
+    await staleContextForSession(
+      session,
+      db(),
+      async (project) => [
+        {
+          key: 'DEV-STALE',
+          record_id: 'task-stale',
+          project,
+          status_category: 'active',
+        },
+        {
+          key: 'DEV-FRESH',
+          record_id: 'task-fresh',
+          project,
+          status_category: 'active',
+        },
+      ],
+      '2026-11-09T10:00:00Z',
+    ),
   ).toEqual([
     {
       holder: 'DEV-STALE',
@@ -122,9 +127,14 @@ test('question work prefers the owning run launch key over its workflow key', as
   insertNextAction('DEV-RUN', '2026-11-08T10:00:00Z')
 
   expect(
-    await staleContextForSession(session, db(), async (project) => [
-      { key: 'DEV-RUN', record_id: 'task-run', project, status_category: 'active' },
-    ]),
+    await staleContextForSession(
+      session,
+      db(),
+      async (project) => [
+        { key: 'DEV-RUN', record_id: 'task-run', project, status_category: 'active' },
+      ],
+      '2026-11-09T10:00:00Z',
+    ),
   ).toEqual([
     {
       holder: 'DEV-RUN',

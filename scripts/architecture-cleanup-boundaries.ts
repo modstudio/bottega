@@ -162,6 +162,24 @@ export const cleanupBoundarySpecs = [
     reason: 'Keep close-out report shapes independent of lifecycle adapters.',
   },
   {
+    name: 'session-close-out-resource-release-boundary',
+    file: 'orchestrator/src/session/session-close-out-resource-release.ts',
+    allowed: ['../../../shared/brand.ts', '../run/run-status.ts', './session-close-out-report.ts'],
+    typeOnlyAllowed: ['../reclaim/orphan-process-reclaim.ts', './session-close-out-report.ts'],
+    reason: 'Keep session resource release qualification and reporting pure.',
+  },
+  {
+    name: 'session-close-out-resource-release-adapter-boundary',
+    file: 'orchestrator/src/session/session-close-out-resource-release-adapter.ts',
+    allowed: [
+      '../cleanup/cleanup-sweep-docker.ts',
+      '../reclaim/orphan-process-reclaim.ts',
+      './session-close-out-resource-release.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Reuse cleanup resource reclaimers behind the session close-out adapter.',
+  },
+  {
     name: 'resume-handoff-selection-boundary',
     file: 'orchestrator/src/session/resume-handoff-selection.ts',
     allowed: [
@@ -200,6 +218,8 @@ export const cleanupBoundarySpecs = [
       '../worktree/worktree-remove.ts',
       './session-close-out-decision.ts',
       './session-close-out-obligation-adapter.ts',
+      './session-close-out-resource-release-adapter.ts',
+      './session-close-out-resource-release.ts',
       './session-context-lifecycle.ts',
     ],
     typeOnlyAllowed: ['./session-close-out-report.ts'],

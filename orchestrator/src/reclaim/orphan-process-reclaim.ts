@@ -321,7 +321,7 @@ export function reclaimOrphanProcess(
 
 export type RemovedTreeProcessCleanup = {
   reclaimed: string[]
-  kept: { item: string; reason: string }[]
+  kept: { item: string; reason: string; pid: number }[]
   errors: string[]
 }
 
@@ -400,6 +400,7 @@ export function reclaimRemovedTreeProcesses(
       result.kept.push({
         item: `process ${decision.orphan.pid}`,
         reason: `${decision.reason}; command: ${decision.orphan.command}`,
+        pid: decision.orphan.pid,
       })
       continue
     }

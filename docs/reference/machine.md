@@ -14,6 +14,7 @@ set up and maintain this machine
 - [bottega machine config machine](#bottega-machine-config-machine)
 - [bottega machine config machine help](#bottega-machine-config-machine-help)
 - [bottega machine config machine init](#bottega-machine-config-machine-init)
+- [bottega machine config machine register](#bottega-machine-config-machine-register)
 - [bottega machine config machine revoke](#bottega-machine-config-machine-revoke)
 - [bottega machine config machine show](#bottega-machine-config-machine-show)
 - [bottega machine config machine trust](#bottega-machine-config-machine-trust)
@@ -209,6 +210,7 @@ manage machine encryption identity
 - [bottega machine config](./machine.md#bottega-machine-config)
 - [bottega machine config machine help](./machine.md#bottega-machine-config-machine-help)
 - [bottega machine config machine init](./machine.md#bottega-machine-config-machine-init)
+- [bottega machine config machine register](./machine.md#bottega-machine-config-machine-register)
 - [bottega machine config machine revoke](./machine.md#bottega-machine-config-machine-revoke)
 - [bottega machine config machine show](./machine.md#bottega-machine-config-machine-show)
 - [bottega machine config machine trust](./machine.md#bottega-machine-config-machine-trust)
@@ -239,6 +241,21 @@ create this machine encryption identity
 
 - [bottega machine config machine](./machine.md#bottega-machine-config-machine)
 
+## bottega machine config machine register
+
+**Synopsis:** `bottega machine config machine register [--space <slug>] [--label <label>]`
+
+register this machine encryption identity in a record space
+
+### Options
+
+- `--space <slug>`: register in this record space instead of the active space
+- `--label <label>`: label stored for this machine identity
+
+### Related
+
+- [bottega machine config machine](./machine.md#bottega-machine-config-machine)
+
 ## bottega machine config machine revoke
 
 **Synopsis:** `bottega machine config machine revoke <keyId>`
@@ -261,12 +278,13 @@ show this machine public encryption identity
 
 ## bottega machine config machine trust
 
-**Synopsis:** `bottega machine config machine trust <keyId> <publicKey> [--label <label>] [--yes]`
+**Synopsis:** `bottega machine config machine trust <keyId> <publicKey> [--space <slug>] [--label <label>] [--yes]`
 
 trust a machine public key for sealed configuration
 
 ### Options
 
+- `--space <slug>`: trust in this record space instead of the active space
 - `--label <label>`: label stored for the trusted machine
 - `--yes`: trust the machine without interactive confirmation
 
