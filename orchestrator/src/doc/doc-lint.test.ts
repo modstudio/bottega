@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { CanonLintInput } from '../canon/canon-lint.ts'
-import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import {
   type DocReferenceProject,
   docLintProfile,
@@ -9,6 +8,7 @@ import {
   lintDoc,
   summarizeDocLint,
 } from './doc-lint.ts'
+import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 
 const checkout = (paths: string[]): CanonLintInput => ({
   files: [],

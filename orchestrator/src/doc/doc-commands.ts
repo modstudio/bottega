@@ -27,7 +27,6 @@ import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-c
 import { type DocHistoryPresentation, docDiffPair } from './doc-history-source.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
-import { summarizeDocLint } from './doc-lint.ts'
 import { setDocFromCommand } from './doc-set-source-files.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from './doc-write-tree.ts'
 import {
@@ -49,6 +48,7 @@ import {
   setDocStatus,
   signedInDocOwner,
   storedDocWarnings,
+  summarizeStoredDocLint,
   validateDocAddressFilter,
 } from './docs.ts'
 
@@ -114,7 +114,7 @@ function lintDocs(flags: DocFlags, presentation: DocPresentation): void {
       ...finding,
     })),
   )
-  const summary = summarizeDocLint(
+  const summary = summarizeStoredDocLint(
     linted.map(({ doc, findings: docFindings }) => ({
       kind: doc.kind,
       status: doc.status,
