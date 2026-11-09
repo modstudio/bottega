@@ -24,7 +24,7 @@ export const removeDoc = (
   scope: string,
   subject: string | null,
   slug: string,
-  context: { reason: string; author?: string } = { reason: 'test delete' },
+  context: Parameters<typeof deleteDoc>[3] = { reason: 'test delete' },
 ) => deleteDoc(scope, subject, slug, context)
 export const importDocs = (dir: string, context = { reason: 'test import' }) =>
   readDocs(dir, context)

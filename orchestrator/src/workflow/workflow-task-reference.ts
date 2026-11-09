@@ -16,6 +16,7 @@ export type HubTaskReference = {
   status_category?: string | null
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
+export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
 export const projectTaskKey = (project: string, key: string) => `${project}\0${key}`
@@ -70,6 +71,13 @@ function taskReference(row: unknown): HubTaskReference {
   return row as HubTaskReference
 }
 
+export function taskReferenceFromShow(response: unknown): HubTaskReference | null {
+  if (!response || typeof response !== 'object') throw new Error('response was not an object')
+  const row = (response as { task?: unknown }).task
+  if (row === undefined || row === null) return null
+  return taskReference(row)
+}
+
 export async function taskCommand(command: string[]): Promise<string> {
   const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...command], {
     budget: 'self-cli',
@@ -86,6 +94,13 @@ export async function readHubTasks(project: string): Promise<HubTaskReference[]>
   ) as unknown
   if (!Array.isArray(response)) throw new Error('response was not an array')
   return response.map(taskReference)
+}
+
+export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {
+  const response = JSON.parse(
+    await taskCommand(['task', 'show', key, '--project', project, '--fresh', '--json']),
+  ) as unknown
+  return taskReferenceFromShow(response)
 }
 
 /** A reader failure is a refusal; callers with best-effort policy catch it explicitly. */

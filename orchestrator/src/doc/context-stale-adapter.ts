@@ -13,7 +13,6 @@ import {
 } from '../workflow/workflow-task-reference.ts'
 import { decodeContextItem } from './context-item-codec.ts'
 import { type ContextWorkEvent, staleContextHolders } from './context-stale.ts'
-import { contextTaskHolderKey } from './context-write-adapter.ts'
 import { listDocsStore } from './doc-read-store.ts'
 
 type KeyAt = { key: string | null; at: string }
@@ -52,12 +51,6 @@ export async function staleContextForSession(
     .all(session, `operator via ${session}`))
     add(row)
 
-  const revisions = listDocsStore({ scope: 'context' }, database).flatMap((doc) => {
-    const holder = contextTaskHolderKey(doc.subject)
-    if (!holder || decodeContextItem(doc.subject!, doc.slug, doc.body).kind !== 'next-action')
-      return []
-    return [{ holder, at: doc.updated_at }]
-  })
   const registered = projects(undefined, database)
   const holderProjects = new Map(
     [...new Set(work.map(({ holder }) => holder))].flatMap((holder) => {
@@ -69,9 +62,20 @@ export async function staleContextForSession(
   const tasks = taskKeyMap(
     (await Promise.all(projectNames.map((project) => taskReader(project)))).flat(),
   )
-  const taskStatuses = [...holderProjects].flatMap(([holder, project]) => {
+  const resolvedTasks = [...holderProjects].flatMap(([holder, project]) => {
     const task = taskReferenceForProjectKey(tasks, project, holder)
-    return task ? [{ holder, statusCategory: task.status_category ?? null }] : []
+    return task ? [{ holder, task }] : []
   })
+  const revisions = resolvedTasks.flatMap(({ holder, task }) =>
+    listDocsStore({ scope: 'context', subject: `task:${task.record_id}` }, database)
+      .filter(
+        (doc) => decodeContextItem(doc.subject!, doc.slug, doc.body).kind === 'next-action',
+      )
+      .map((doc) => ({ holder, at: doc.updated_at })),
+  )
+  const taskStatuses = resolvedTasks.map(({ holder, task }) => ({
+    holder,
+    statusCategory: task.status_category ?? null,
+  }))
   return staleContextHolders({ work, revisions, now, taskStatuses })
 }

@@ -2,10 +2,21 @@
 /** Gathers store, task, claim, and pointer facts for the pure context write policy. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { liveTaskClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
-import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
+import { projectForTaskKey, projects } from '../project/projects.ts'
+import {
+  type HubTaskPuller,
+  type HubTaskReader,
+  type HubTaskReference,
+  pullHubTask,
+  readHubTasks,
+  taskKeyMap,
+  taskReadRefusal,
+  taskReferenceForProjectKey,
+} from '../workflow/workflow-task-reference.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { decodeContextItem } from './context-item-codec.ts'
 import {
@@ -20,7 +31,8 @@ import { isScratchLocation } from './doc-resume-write.ts'
 
 type ContextTask = HubTaskReference
 export type ContextFactsPorts = {
-  tasks(): Promise<ContextTask[]>
+  tasks: HubTaskReader
+  task: HubTaskPuller
   pointer(value: string, database: Database): Promise<string | null>
 }
 export const CONTEXT_FACTS_PORTS_KEY = Symbol.for('orch.context-facts-ports')
@@ -73,7 +85,8 @@ function storedPointerRefusal(pointer: string, database: Database): string | nul
 }
 
 const productionContextFactsPorts: ContextFactsPorts = {
-  tasks: () => readHubTasks(PLATFORM_SLUG) as Promise<ContextTask[]>,
+  tasks: readHubTasks,
+  task: pullHubTask,
   pointer: pointerRefusal,
 }
 const defaultContextFactsPorts = () =>
@@ -85,8 +98,67 @@ export function storedItems(holder: string, database: Database): ContextItem[] {
   )
 }
 
-export function contextTaskHolderKey(holder: string | null): string | null {
-  return holder?.startsWith('task:') ? holder.slice('task:'.length) : null
+function freshTaskRetry(project: string, key: string): string {
+  return `${PLATFORM_SLUG} task show ${key} --project ${project} --fresh --json`
+}
+
+async function pullContextTask(
+  project: string,
+  key: string,
+  ports: ContextFactsPorts,
+): Promise<ContextTask> {
+  try {
+    const task = await ports.task(project, key)
+    if (task?.project === project && task.key === key) return task
+    const detail = task
+      ? `fresh task read returned ${task.project}:${task.key}`
+      : 'fresh task read found no task'
+    throw new Error(detail)
+  } catch (error) {
+    const detail = withholdSecretShapedDetail(
+      error instanceof Error ? error.message : String(error),
+    )
+    throw new Error(
+      `could not read task ${key} for project ${project}: ${detail}; retry: ${freshTaskRetry(project, key)}`,
+    )
+  }
+}
+
+async function resolveContextTaskInProject(
+  project: string,
+  key: string,
+  ports: ContextFactsPorts,
+  knownTasks?: readonly ContextTask[],
+): Promise<ContextTask> {
+  let tasks = knownTasks
+  if (!tasks) {
+    try {
+      tasks = await ports.tasks(project)
+    } catch (error) {
+      throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
+    }
+  }
+  return (
+    taskReferenceForProjectKey(taskKeyMap(tasks), project, key) ??
+    (await pullContextTask(project, key, ports))
+  )
+}
+
+/** Resolve a person-facing task key once into the stable identity context stores. */
+export async function resolveContextTask(
+  value: string,
+  database: Database = db(),
+  ports: ContextFactsPorts = defaultContextFactsPorts(),
+): Promise<ContextTask> {
+  const key = value.trim().toUpperCase()
+  const prefix = /^([A-Z][A-Z0-9]*)-/.exec(key)?.[1] ?? key.split('-', 1)[0] ?? key
+  const project = projectForTaskKey(key, projects(undefined, database))
+  if (!project) {
+    throw new Error(
+      `task key prefix ${JSON.stringify(prefix)} is not declared by exactly one registered project; inspect prefixes with ${PLATFORM_SLUG} project list --json`,
+    )
+  }
+  return resolveContextTaskInProject(project.name, key, ports)
 }
 
 export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {
@@ -94,30 +166,38 @@ export function taskProfile(key: string, tasks: readonly ContextTask[]): Context
 }
 
 async function contextSetRefusal(
-  input: { subject: string; slug: string; body: string },
+  input: { subject: string; slug: string; body: string; contextTask?: ContextTask },
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
 ): Promise<string | null> {
   const item = decodeContextItem(input.subject, input.slug, input.body)
-  const tasks = await ports.tasks()
-  const taskKey = contextTaskHolderKey(input.subject)
   const owner = input.subject.startsWith('session:') ? input.subject.slice(8) : null
-  if (taskKey && !tasks.some((task) => task.key === taskKey && task.project === PLATFORM_SLUG)) {
-    return `context item ${input.slug} refused: task:${taskKey} is not in the ${PLATFORM_SLUG} task store`
+  const task = input.subject.startsWith('task:') ? input.contextTask : undefined
+  if (input.subject.startsWith('task:') && (!task || input.subject !== `task:${task.record_id}`)) {
+    return `context item ${input.slug} refused: task holder requires its resolved task identity`
   }
   const ownership = holderOwnershipRefusal(input.subject, sessionId(database), input.slug)
   if (ownership) return ownership
   const claims = owner ? liveTaskClaimsOfSession(owner, Date.now(), database) : []
-  const profile = taskKey ? taskProfile(taskKey, tasks) : 'session'
-  const parent = taskKey ? tasks.find((task) => task.key === taskKey)?.parent_key : null
-  const relatedHolders = owner
-    ? claims.flatMap((key) => {
-        const taskParent = tasks.find((task) => task.key === key)?.parent_key
-        return [`task:${key}`, ...(taskParent ? [`task:${taskParent}`] : [])]
-      })
-    : parent
-      ? [`task:${parent}`]
-      : []
+  const projectTasks = task ? await ports.tasks(task.project) : []
+  const profile = task ? taskProfile(task.key, projectTasks) : 'session'
+  const relatedTasks: ContextTask[] = []
+  if (owner) {
+    for (const key of claims) {
+      const claimed = await resolveContextTask(key, database, ports)
+      relatedTasks.push(claimed)
+      if (claimed.parent_key) {
+        relatedTasks.push(
+          await resolveContextTaskInProject(claimed.project, claimed.parent_key, ports),
+        )
+      }
+    }
+  } else if (task?.parent_key) {
+    relatedTasks.push(
+      await resolveContextTaskInProject(task.project, task.parent_key, ports, projectTasks),
+    )
+  }
+  const relatedHolders = [...new Set(relatedTasks.map((related) => `task:${related.record_id}`))]
   const refusal = contextWriteRefusal(item, {
     profile,
     siblings: storedItems(input.subject, database),
@@ -133,12 +213,14 @@ export async function assertContextSetAllowed(input: {
   subject: string | null
   slug: string
   body: string
+  contextTask?: ContextTask
 }): Promise<void> {
   if (input.scope !== 'context') return
   const refusal = await contextSetRefusal({
     subject: input.subject ?? '',
     slug: input.slug,
     body: input.body,
+    contextTask: input.contextTask,
   })
   if (refusal) throw new Error(refusal)
 }
@@ -148,6 +230,7 @@ export async function assertContextDropAllowed(
   doc: { scope: string; subject: string | null; slug: string; body: string },
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
+  task?: ContextTask,
 ): Promise<void> {
   if (doc.scope !== 'context') return
   const holder = doc.subject ?? ''
@@ -156,13 +239,17 @@ export async function assertContextDropAllowed(
     contextDropRefusal(
       decodeContextItem(holder, doc.slug, doc.body),
       storedItems(holder, database),
-      await contextProfileForHolder(holder, ports),
+      await contextProfileForHolder(holder, ports, task),
     )
   if (refusal) throw new Error(refusal)
 }
 
-export async function contextProfileForHolder(subject: string, ports = defaultContextFactsPorts()) {
+export async function contextProfileForHolder(
+  subject: string,
+  ports = defaultContextFactsPorts(),
+  task?: ContextTask,
+) {
   if (subject.startsWith('session:')) return 'session' as const
-  const key = contextTaskHolderKey(subject) ?? ''
-  return taskProfile(key, await ports.tasks())
+  if (!task) return 'task' as const
+  return taskProfile(task.key, await ports.tasks(task.project))
 }

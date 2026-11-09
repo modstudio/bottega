@@ -3,13 +3,23 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db, sessionId } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { encodeContextItem } from './context-item-codec.ts'
 import { staleContextForSession } from './context-stale-adapter.ts'
 
 const setLaunchKey = (runId: string, key: string | null) =>
   db().query('UPDATE run SET launch_key=? WHERE record_id=?').run(key, runId)
 
-const insertNextAction = (key: string, at: string) => {
+const registerDevPrefix = () => {
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'context-stale-fixture',
+    path: '/tmp/context-stale-fixture',
+    settings: { keyPrefixes: ['DEV'] },
+  })
+}
+
+const insertNextAction = (recordId: string, at: string) => {
   const body = encodeContextItem({ kind: 'next-action', source: 'test', body: 'Continue.' })
   db()
     .query(
@@ -17,10 +27,13 @@ const insertNextAction = (key: string, at: string) => {
      (record_id,scope,subject,slug,title,body,delivery,audiences,created_at,updated_at)
      VALUES (?,'context',?,'next','next',?,'demand','["technical"]',?,?)`,
     )
-    .run(newRecordId(), `task:${key}`, body, at, at)
+    .run(newRecordId(), `task:${recordId}`, body, at, at)
 }
 
 test('gathers run, closed-step, and both answer forms through store-backed context revisions', async () => {
+  registerDevPrefix()
+  const staleRecordId = newRecordId()
+  const freshRecordId = newRecordId()
   const session = sessionId()!
   const root = addRun({
     agent: 'codex',
@@ -74,8 +87,8 @@ test('gathers run, closed-step, and both answer forms through store-backed conte
       )
       .run(newRecordId(), runId, answeredAt, answeredBy)
   }
-  insertNextAction('DEV-STALE', '2026-11-08T10:30:00Z')
-  insertNextAction('DEV-FRESH', '2026-11-08T15:00:00Z')
+  insertNextAction(staleRecordId, '2026-11-08T10:30:00Z')
+  insertNextAction(freshRecordId, '2026-11-08T15:00:00Z')
 
   expect(
     await staleContextForSession(
@@ -84,13 +97,13 @@ test('gathers run, closed-step, and both answer forms through store-backed conte
       async (project) => [
         {
           key: 'DEV-STALE',
-          record_id: 'task-stale',
+          record_id: staleRecordId,
           project,
           status_category: 'active',
         },
         {
           key: 'DEV-FRESH',
-          record_id: 'task-fresh',
+          record_id: freshRecordId,
           project,
           status_category: 'active',
         },
@@ -107,6 +120,8 @@ test('gathers run, closed-step, and both answer forms through store-backed conte
 })
 
 test('question work prefers the owning run launch key over its workflow key', async () => {
+  registerDevPrefix()
+  const runTaskRecordId = newRecordId()
   const session = sessionId()!
   const run = addRun({
     agent: 'codex',
@@ -124,14 +139,14 @@ test('question work prefers the owning run launch key over its workflow key', as
         '2026-11-08T12:00:00Z',?)`,
     )
     .run(newRecordId(), run, session)
-  insertNextAction('DEV-RUN', '2026-11-08T10:00:00Z')
+  insertNextAction(runTaskRecordId, '2026-11-08T10:00:00Z')
 
   expect(
     await staleContextForSession(
       session,
       db(),
       async (project) => [
-        { key: 'DEV-RUN', record_id: 'task-run', project, status_category: 'active' },
+        { key: 'DEV-RUN', record_id: runTaskRecordId, project, status_category: 'active' },
       ],
       '2026-11-09T10:00:00Z',
     ),

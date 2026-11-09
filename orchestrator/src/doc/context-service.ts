@@ -2,8 +2,9 @@
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
 import { sessionId } from '../database/db.ts'
+import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { decodeContextItem, encodeContextItem } from './context-item-codec.ts'
-import { contextProfileForHolder } from './context-write-adapter.ts'
+import { contextProfileForHolder, resolveContextTask } from './context-write-adapter.ts'
 import { type ContextItemKind, missingContextKinds } from './doc-context-write.ts'
 import { type Doc, listDocsBySubjectPrefixStore, listDocsStore } from './doc-read-store.ts'
 import { removeContextItemForLifecycle } from './doc-remove.ts'
@@ -11,19 +12,30 @@ import { getDoc, removeDoc, setDoc } from './docs.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
 
-function contextHolder(selection: ContextHolderSelection): string {
+type ResolvedContextHolder = { holder: string; task: HubTaskReference | null }
+
+async function resolveContextHolder(selection: ContextHolderSelection): Promise<ResolvedContextHolder> {
   if (selection.task && selection.session) throw new Error('use --task or --session, not both')
-  if (selection.task) return `task:${selection.task.toUpperCase()}`
+  if (selection.task) {
+    const task = await resolveContextTask(selection.task)
+    return { holder: `task:${task.record_id}`, task }
+  }
   const owner = selection.session ?? sessionId()
   if (!owner) throw new Error('no caller session; pass --task KEY or --session ID')
-  return `session:${owner}`
+  return { holder: `session:${owner}`, task: null }
 }
 
 export async function getContext(selection: ContextHolderSelection) {
-  const holder = contextHolder(selection)
-  const profile = await contextProfileForHolder(holder)
+  const { holder, task } = await resolveContextHolder(selection)
+  const profile = await contextProfileForHolder(holder, undefined, task ?? undefined)
   const items = holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }))
-  return { holder, profile, items, missingRequired: missingContextKinds(items, profile) }
+  return {
+    holder,
+    task: task?.key ?? null,
+    profile,
+    items,
+    missingRequired: missingContextKinds(items, profile),
+  }
 }
 
 function holderContextItems(holder: string, docs: readonly Doc[]) {
@@ -40,8 +52,8 @@ export function sessionContextItems(session: string, database: Database) {
 }
 
 /** Read one task's context items through the document-store owner. */
-export function taskContextItems(task: string, database: Database) {
-  const holder = contextHolder({ task })
+export function taskContextItems(task: HubTaskReference, database: Database) {
+  const holder = `task:${task.record_id}`
   return holderContextItems(holder, listDocsStore({ scope: 'context', subject: holder }, database))
 }
 
@@ -124,7 +136,7 @@ export async function setContextItem(
     expectedRevision?: string
   },
 ) {
-  const holder = contextHolder(input)
+  const { holder, task } = await resolveContextHolder(input)
   const doc = await setDoc({
     scope: 'context',
     subject: holder,
@@ -134,8 +146,13 @@ export async function setContextItem(
     delivery: 'demand',
     reason: `set context item ${input.id}`,
     expectedRevision: input.expectedRevision,
+    contextTask: task ?? undefined,
   })
-  return { ...decodeContextItem(holder, doc.slug, doc.body), revision: doc.revision }
+  return {
+    task: task?.key ?? null,
+    ...decodeContextItem(holder, doc.slug, doc.body),
+    revision: doc.revision,
+  }
 }
 
 export async function dropContextItem(
@@ -144,12 +161,13 @@ export async function dropContextItem(
     expectedRevision?: string
   },
 ) {
-  const holder = contextHolder(input)
+  const { holder, task } = await resolveContextHolder(input)
   const doc = getDoc('context', holder, input.id)
   if (!doc) throw new Error(`no context item ${holder}/${input.id}`)
   await removeDoc('context', holder, input.id, {
     reason: `drop context item ${input.id}`,
     expectedRevision: input.expectedRevision,
+    contextTask: task ?? undefined,
   })
-  return { holder, id: input.id, removed: true }
+  return { holder, task: task?.key ?? null, id: input.id, removed: true }
 }

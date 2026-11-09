@@ -118,7 +118,7 @@ export type ContextBriefWorkingKey = {
   project: string
 }
 
-type ContextBriefHolderReference = Omit<ContextBriefHolder, 'items'>
+type ContextBriefHolderReference = Omit<ContextBriefHolder, 'items'> & { recordId: string | null }
 
 /** Decide holder order from task facts only; store reads are applied after this decision. */
 export function holderSequence(
@@ -126,7 +126,9 @@ export function holderSequence(
   working: readonly ContextBriefWorkingKey[],
   tasks: readonly HubTaskReference[],
 ): ContextBriefHolderReference[] {
-  const holders: ContextBriefHolderReference[] = [{ key: session, title: '', kind: 'session' }]
+  const holders: ContextBriefHolderReference[] = [
+    { key: session, title: '', kind: 'session', recordId: null },
+  ]
   const index = taskKeyMap(tasks)
   const emitted = new Set<string>()
   const add = (task: HubTaskReference, projectTasks: readonly HubTaskReference[]) => {
@@ -137,6 +139,7 @@ export function holderSequence(
       key: task.key,
       title: task.title ?? '',
       kind: taskProfile(task.key, projectTasks),
+      recordId: task.record_id,
     })
   }
   for (const { key, project } of working) {
@@ -153,6 +156,21 @@ export function holderSequence(
     }
   }
   return holders
+}
+
+export function storedBriefHolders(
+  references: readonly ContextBriefHolderReference[],
+  database: Database,
+): ContextBriefHolder[] {
+  return references
+    .map(({ recordId, ...holder }) => ({
+      ...holder,
+      items: storedItems(
+        holder.kind === 'session' ? `session:${holder.key}` : `task:${recordId}`,
+        database,
+      ),
+    }))
+    .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
 }
 
 function autonomyLine(context: Awaited<ReturnType<typeof architectSessionContext>>): string {
@@ -216,15 +234,7 @@ export async function contextBrief(
     (notice) => notice.purpose === 'request',
   ).length
   const references = holderSequence(session, working, taskRows)
-  const holders = references
-    .map((holder) => ({
-      ...holder,
-      items: storedItems(
-        holder.kind === 'session' ? `session:${holder.key}` : `task:${holder.key}`,
-        database,
-      ),
-    }))
-    .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
+  const holders = storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind !== 'session')
   return {
     session,
