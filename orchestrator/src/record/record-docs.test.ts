@@ -78,7 +78,7 @@ test('the hosted record refuses a context item that does not decode or breaks it
   expect(() => assertContextItemShape('context', 'raw', 'No frontmatter.')).toThrow(
     'requires YAML frontmatter',
   )
-  const ruling = encodeContextItem({ kind: 'ruling', source: 'question 5282', body: 'Ship it.' })
+  const ruling = encodeContextItem({ kind: 'ruling', source: 'q5282', body: 'Ship it.' })
   expect(() => assertContextItemShape('context', 'ship', ruling)).not.toThrow()
   expect(() =>
     assertContextItemShape(
@@ -91,7 +91,7 @@ test('the hosted record refuses a context item that does not decode or breaks it
     assertContextItemShape(
       'context',
       'empty-ruling',
-      encodeContextItem({ kind: 'ruling', source: 'question 5282', body: '' }),
+      encodeContextItem({ kind: 'ruling', source: 'q5282', body: '' }),
     ),
   ).toThrow('non-empty body')
   expect(() =>

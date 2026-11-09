@@ -20,6 +20,9 @@ export const CONTEXT_ITEM_MAX_CHARS = {
   'next-action': 400,
 } as const satisfies Record<ContextItemKind, number>
 
+/** A ruling names where Shmuel Barkin gave it: a question, a board message, or the chat on a date. */
+const RULING_SOURCE = /^(q\d+|board:[0-9a-f-]{36}|chat \d{4}-\d{2}-\d{2})$/
+
 export type ContextProfile = 'epic' | 'task' | 'session'
 export type ContextItem = {
   holder: string
@@ -38,15 +41,9 @@ export type ContextWriteFacts = {
 }
 
 const PROFILE = {
-  epic: {
-    allowed: ['ruling', 'position', 'fact', 'open-question', 'pointer', 'next-action'],
-    required: ['next-action'],
-  },
+  epic: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },
   task: { allowed: CONTEXT_ITEM_KINDS, required: ['next-action'] },
-  session: {
-    allowed: CONTEXT_ITEM_KINDS,
-    required: [],
-  },
+  session: { allowed: CONTEXT_ITEM_KINDS, required: [] },
 } as const satisfies Record<
   ContextProfile,
   { allowed: readonly ContextItemKind[]; required: readonly ContextItemKind[] }
@@ -74,14 +71,12 @@ export function contextWriteRefusal(item: ContextItem, facts: ContextWriteFacts)
   if (item.kind === 'pointer' && facts.pointerRefusal) {
     return `${address} refused: ${facts.pointerRefusal}`
   }
-  if (
-    item.kind === 'next-action' &&
-    facts.siblings.some((sibling) => sibling.kind === 'next-action' && sibling.id !== item.id)
-  ) {
-    const existing = facts.siblings.find(
-      (sibling) => sibling.kind === 'next-action' && sibling.id !== item.id,
-    )!
-    return `${address} refused: holder ${item.holder} allows at most one next-action item; revise existing item ${existing.holder}/${existing.id}`
+  const existingNext =
+    item.kind === 'next-action'
+      ? facts.siblings.find((sibling) => sibling.kind === 'next-action' && sibling.id !== item.id)
+      : undefined
+  if (existingNext) {
+    return `${address} refused: holder ${item.holder} allows at most one next-action item; revise existing item ${item.holder}/${existingNext.id}`
   }
   const normalized = normalizeContextBody(item.body)
   for (const other of facts.related) {
@@ -99,6 +94,9 @@ export function contextItemShapeRefusal(item: ContextItem): string | null {
   if (!item.source.trim()) return `${address} refused: every item requires a non-empty source`
   if (item.kind === 'ruling' && !item.body.trim()) {
     return `${address} refused: a ruling requires a non-empty body`
+  }
+  if (item.kind === 'ruling' && !RULING_SOURCE.test(item.source.trim())) {
+    return `${address} refused: a ruling source names where it was given; write --source as q<number>, board:<id> or chat <YYYY-MM-DD>`
   }
   if (item.body.length > CONTEXT_ITEM_MAX_CHARS[item.kind]) {
     return `${address} refused: ${item.kind} limit is ${CONTEXT_ITEM_MAX_CHARS[item.kind]} characters`

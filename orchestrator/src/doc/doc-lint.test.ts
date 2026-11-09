@@ -45,6 +45,16 @@ describe('stored document lint', () => {
         }),
       ),
     ).toEqual([])
+    const banned = lintDoc(
+      doc('TODO after DEV-2224 lands.', {
+        scope: 'context',
+        subject: 'task:DEV-1844',
+        slug: 'next',
+      }),
+    )
+    expect(banned.map((finding) => finding.message)).toEqual([
+      expect.stringContaining('matches banned issue pattern'),
+    ])
   })
 
   test('an article without a written summary gets a non-refusing warning', () => {

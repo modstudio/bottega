@@ -31,7 +31,7 @@ describe('context write refusal', () => {
       for (const kind of Object.keys(CONTEXT_ITEM_MAX_CHARS) as ContextItem['kind'][]) {
         expect(
           contextWriteRefusal(
-            item({ kind, source: kind === 'ruling' ? 'question 5282' : 'run:1' }),
+            item({ kind, source: kind === 'ruling' ? 'q5282' : 'run:1' }),
             facts({ profile }),
           ),
         ).toBeNull()
@@ -45,7 +45,7 @@ describe('context write refusal', () => {
   })
   test('refuses each kind over its provisional character limit', () => {
     for (const [kind, limit] of Object.entries(CONTEXT_ITEM_MAX_CHARS)) {
-      const ruling = kind === 'ruling' ? { source: 'question 5282' } : {}
+      const ruling = kind === 'ruling' ? { source: 'q5282' } : {}
       expect(
         contextWriteRefusal(
           item({ ...ruling, kind: kind as ContextItem['kind'], body: 'x'.repeat(limit + 1) }),
@@ -54,20 +54,26 @@ describe('context write refusal', () => {
       ).toContain(`${kind} limit is ${limit} characters`)
     }
   })
-  test('allows a sourced ruling without an objection', () => {
-    expect(
-      contextWriteRefusal(item({ kind: 'ruling', source: 'question 5282' }), facts()),
-    ).toBeNull()
+  test('allows a ruling sourced to a question, a board message or the chat, without an objection', () => {
+    for (const source of [
+      'q5282',
+      'board:01a1be0a-4ad8-73d2-9632-307df24b83b6',
+      'chat 2026-11-08',
+    ]) {
+      expect(contextWriteRefusal(item({ kind: 'ruling', source }), facts())).toBeNull()
+    }
+  })
+  test('refuses a ruling whose source names no question, board message or chat date', () => {
+    for (const source of ['run:1', 'operator', 'question 5282', 'chat']) {
+      expect(contextWriteRefusal(item({ kind: 'ruling', source }), facts())).toContain(
+        'write --source as q<number>, board:<id> or chat <YYYY-MM-DD>',
+      )
+    }
   })
   test('refuses a ruling without a body', () => {
     expect(
-      contextWriteRefusal(item({ kind: 'ruling', source: 'question 5282', body: ' ' }), facts()),
+      contextWriteRefusal(item({ kind: 'ruling', source: 'q5282', body: ' ' }), facts()),
     ).toContain('requires a non-empty body')
-  })
-  test('refuses a ruling without a source', () => {
-    expect(contextWriteRefusal(item({ kind: 'ruling', source: ' ' }), facts())).toContain(
-      'requires a non-empty source',
-    )
   })
   test('refuses an unresolved or unsafe pointer with the adapter reason', () => {
     expect(
@@ -79,7 +85,7 @@ describe('context write refusal', () => {
   })
   test('refuses task-level rulings and questions on a claimed session', () => {
     for (const kind of ['ruling', 'open-question'] as const) {
-      const ruling = kind === 'ruling' ? { source: 'question 5282' } : {}
+      const ruling = kind === 'ruling' ? { source: 'q5282' } : {}
       expect(
         contextWriteRefusal(
           item({ ...ruling, holder: 'session:s', kind }),
@@ -91,7 +97,7 @@ describe('context write refusal', () => {
   test('allows session rulings when there is no live task claim', () => {
     expect(
       contextWriteRefusal(
-        item({ holder: 'session:s', kind: 'ruling', source: 'question 5282' }),
+        item({ holder: 'session:s', kind: 'ruling', source: 'q5282' }),
         facts({ profile: 'session' }),
       ),
     ).toBeNull()
