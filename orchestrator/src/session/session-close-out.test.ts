@@ -81,6 +81,16 @@ test('dry run reports context drops and refusals while resume keeps every item',
   expect(resume.recommendation).toBe('brief')
 })
 
+test('dry run reports an owned unscored run as process residue', async () => {
+  const session = newRecordId()
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', session })
+
+  const report = await closeOutSession({ session, dryRun: true })
+
+  expect(report.process).toContainEqual(expect.objectContaining({ item: `unscored run ${run}` }))
+  expect(report.verdict.clean).toBe(false)
+})
+
 test('close-out refuses to drop a context item whose revision is unavailable', async () => {
   const session = newRecordId()
   const prior = process.env.CLAUDE_CODE_SESSION_ID

@@ -2,11 +2,16 @@
 /** Pure process items for judgments and tracker work a closing session still owes. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { StatusCategory } from '../../../shared/trackers.ts'
+import {
+  type BranchLandingTaskRow,
+  resolveBranchLandingTaskKey,
+} from '../branch/branch-landing-records.ts'
+import type { LandedTaskObservation } from '../branch/task-status-observation.ts'
 import {
   decideUnjudgedRunRemedy,
   renderUnjudgedRunRemedy,
 } from '../evidence/unjudged-run-remedy.ts'
+import { taskFlowState } from '../workflow/task-flow-decision.ts'
 import type { SessionProcessLine } from './session-close-out-report.ts'
 
 export type PendingScoreRoot = {
@@ -20,35 +25,25 @@ export type PendingScoreRoot = {
 
 export type LandedTaskIdentity = { project: string; taskKey: string }
 
-export type LandedTaskRow = {
-  project: string
-  branch: string
-  recordingSession: string | null
-  runRecordId: string | null
-  taskKey: string | null
-}
-
-export type LandedTaskObservation = LandedTaskIdentity & {
-  observation: {
-    category: StatusCategory | null
-    verified: boolean
-    detail: string
-  }
-}
-
 /** Select the union of landings owned through a run or recorded by the session. */
 export function landedTaskIdentities(input: {
   session: string
   ownedRunRecordIds: ReadonlySet<string>
-  rows: readonly LandedTaskRow[]
+  rows: readonly BranchLandingTaskRow[]
+  keyPrefixesByProject: ReadonlyMap<string, readonly string[]>
 }): LandedTaskIdentity[] {
   const tasks = new Map<string, LandedTaskIdentity>()
   for (const row of input.rows) {
     const ownedThroughRun = row.runRecordId !== null && input.ownedRunRecordIds.has(row.runRecordId)
-    if ((!ownedThroughRun && row.recordingSession !== input.session) || !row.taskKey) continue
-    tasks.set(`${row.project}\0${row.taskKey}`, {
+    if (!ownedThroughRun && row.recordingSession !== input.session) continue
+    const taskKey = resolveBranchLandingTaskKey(
+      row,
+      input.keyPrefixesByProject.get(row.project) ?? [],
+    )
+    if (!taskKey) continue
+    tasks.set(`${row.project}\0${taskKey}`, {
       project: row.project,
-      taskKey: row.taskKey,
+      taskKey,
     })
   }
   return [...tasks.values()]
@@ -65,11 +60,7 @@ function pendingScoreItem(row: PendingScoreRoot): SessionProcessLine {
 }
 
 function landedTaskItem(task: LandedTaskObservation): SessionProcessLine | null {
-  if (
-    task.observation.verified &&
-    (task.observation.category === 'done' || task.observation.category === 'dropped')
-  )
-    return null
+  if (task.observation.verified && taskFlowState(task.observation.category) !== 'open') return null
   return {
     item: `landed task ${task.project}:${task.taskKey}`,
     reason: task.observation.verified
@@ -86,11 +77,7 @@ export function sessionCloseOutObligations(input: {
   landedTasks: readonly LandedTaskObservation[]
 }): SessionProcessLine[] {
   const process = input.pendingScores.map(pendingScoreItem)
-  const seen = new Set<string>()
   for (const task of input.landedTasks) {
-    const identity = `${task.project}\0${task.taskKey}`
-    if (seen.has(identity)) continue
-    seen.add(identity)
     const item = landedTaskItem(task)
     if (item) process.push(item)
   }

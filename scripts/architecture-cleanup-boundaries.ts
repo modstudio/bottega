@@ -124,9 +124,10 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/session/session-close-out-obligation-adapter.ts',
     allowed: [
       'bun:sqlite',
-      '../../../shared/trackers.ts',
+      '../branch/branch-landing-records.ts',
+      '../branch/task-status-observation.ts',
       '../evidence/evidence-query.ts',
-      '../workflow/workflow-task-reference.ts',
+      '../project/projects.ts',
       './session-close-out-decision.ts',
       './session-close-out-obligations.ts',
       './session-close-out-report.ts',
@@ -144,11 +145,13 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/session/session-close-out-obligations.ts',
     allowed: [
       '../../../shared/brand.ts',
-      '../../../shared/trackers.ts',
+      '../branch/branch-landing-records.ts',
+      '../branch/task-status-observation.ts',
       '../evidence/unjudged-run-remedy.ts',
+      '../workflow/task-flow-decision.ts',
       './session-close-out-report.ts',
     ],
-    typeOnlyAllowed: ['../../../shared/trackers.ts', './session-close-out-report.ts'],
+    typeOnlyAllowed: ['../branch/task-status-observation.ts', './session-close-out-report.ts'],
     reason: 'Keep outstanding close-out obligations as decisions over plain observed values.',
   },
   {

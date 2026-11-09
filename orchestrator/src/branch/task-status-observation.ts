@@ -5,13 +5,43 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { type StatusCategory, TASK_STATUSES } from '../../../shared/trackers.ts'
+import {
+  type HubTaskReader,
+  readHubTasks,
+  taskKeyMap,
+  taskReadRefusal,
+  taskReferenceForProjectKey,
+} from '../workflow/workflow-task-reference.ts'
 
 export type TaskStatusObservation = {
   raw: string | null
-  category: StatusCategory | null
+  category: string | null
   lastSeen: string | null
   verified: boolean
   detail: string
+}
+
+export type LandedTaskObservation = {
+  project: string
+  taskKey: string
+  observation: TaskStatusObservation
+}
+
+function verifiedObservation(
+  category: StatusCategory,
+  raw: string | null = category,
+): TaskStatusObservation {
+  return { raw, category, lastSeen: null, verified: true, detail: raw ?? category }
+}
+
+function unverifiedObservation(detail: string): TaskStatusObservation {
+  return {
+    raw: null,
+    category: null,
+    lastSeen: null,
+    verified: false,
+    detail: `unverified (${detail})`,
+  }
 }
 
 export function observeTaskStatus(key: string | null, project: string): TaskStatusObservation {
@@ -55,4 +85,55 @@ export function observeTaskStatus(key: string | null, project: string): TaskStat
       detail: 'unverified (invalid task response)',
     }
   }
+}
+
+/** Observe landed task statuses with one task-list read per project. */
+export async function observeLandedTasks(
+  identities: readonly { project: string; taskKey: string }[],
+  taskReader: HubTaskReader = readHubTasks,
+): Promise<LandedTaskObservation[]> {
+  const byProject = Map.groupBy(identities, (identity) => identity.project)
+  const observations = await Promise.all(
+    [...byProject].map(async ([project, projectIdentities]) => {
+      try {
+        const tasks = taskKeyMap(await taskReader(project))
+        return projectIdentities.map(({ taskKey }): LandedTaskObservation => {
+          const task = taskReferenceForProjectKey(tasks, project, taskKey)
+          if (!task)
+            return {
+              project,
+              taskKey,
+              observation: unverifiedObservation(
+                'task was not found uniquely in project task list',
+              ),
+            }
+          const category = TASK_STATUSES.find((candidate) => candidate === task.status_category)
+          return {
+            project,
+            taskKey,
+            observation: category
+              ? verifiedObservation(category)
+              : unverifiedObservation(
+                  task.status_category == null
+                    ? 'missing status category'
+                    : `unknown status category ${JSON.stringify(task.status_category)}`,
+                ),
+          }
+        })
+      } catch (cause) {
+        const detail = taskReadRefusal(
+          project,
+          cause instanceof Error ? cause.message : String(cause),
+        ).message
+        return projectIdentities.map(
+          ({ taskKey }): LandedTaskObservation => ({
+            project,
+            taskKey,
+            observation: unverifiedObservation(detail),
+          }),
+        )
+      }
+    }),
+  )
+  return observations.flat()
 }
