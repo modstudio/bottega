@@ -97,7 +97,7 @@ type RouteConstraints = {
   credentialFacts?: ProviderCredentialFacts
 }
 
-export type ProviderCredentialFact =
+type ProviderCredentialFact =
   | { status: 'resolved' }
   | { status: 'refused'; refusal: string }
   | { status: 'unknown' }
@@ -581,7 +581,7 @@ export function evidenceFor(
             pinnedTransport,
             transportPinSource,
             projectName,
-          credentialFacts,
+            credentialFacts,
           })
         : candidates(jobName, promptBytes, {
             stack: requested.value,
@@ -590,7 +590,7 @@ export function evidenceFor(
             pinnedTransport,
             transportPinSource,
             projectName,
-          credentialFacts,
+            credentialFacts,
           })
     // A cooling candidate cannot establish that a scoped comparison is available.
     const eligible = scoped.filter((c) => c.eligible && !c.cooling)

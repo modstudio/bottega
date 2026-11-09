@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
+import type { CredentialAddress } from '../config/credential-service.ts'
 import {
   decideEffectiveEndpointApiKey,
   decideEndpointApiKey,
@@ -20,14 +21,31 @@ test('provider endpoint resolution wins over the legacy secret and records its p
     project,
     {
       address: async () => ({
-        provider: 'openrouter', name: null, type: 'api-key', mode: 'default',
-        environment: 'local', payer: 'personal', projectId: project.recordId,
-        projectName: project.name, spaceName: 'team', destinationSpaceId: crypto.randomUUID(),
+        provider: 'openrouter',
+        name: null,
+        type: 'api-key',
+        mode: 'default',
+        environment: 'local',
+        payer: 'personal',
+        projectId: project.recordId,
+        projectName: project.name,
+        spaceName: 'team',
+        destinationSpaceId: crypto.randomUUID(),
       }),
-      resolve: async (address) => ({
+      resolve: async (address: CredentialAddress) => ({
         kind: 'resolved' as const,
         reason: 'default order',
-        credential: { row: {}, spaceId: address.destinationSpaceId, projectId: null, payer: 'shared' as const, provider: 'openrouter', name: null, type: 'api-key', mode: 'default' as const, environment: 'local' as const },
+        credential: {
+          row: {},
+          spaceId: address.destinationSpaceId,
+          projectId: null,
+          payer: 'shared' as const,
+          provider: 'openrouter',
+          name: null,
+          type: 'api-key',
+          mode: 'default' as const,
+          environment: 'local' as const,
+        },
         row: { id: crypto.randomUUID(), projectId: null },
         value: 'provider-value',
       }),

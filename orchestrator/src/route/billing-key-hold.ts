@@ -49,8 +49,64 @@ function successfulProviderAnswer(run: BillingKeyRun): boolean {
   )
 }
 
-/** Decide held accounts from current agent identities and terminal run history. */
-export function decideBillingKeyHolds(
+function latestCredentialRunByAgent(runs: readonly BillingKeyRun[]): Map<string, BillingKeyRun> {
+  const latestCredentialRunByAgent = new Map<string, BillingKeyRun>()
+  for (const run of runs) {
+    if (!run.credential_id) continue
+    const current = latestCredentialRunByAgent.get(run.agent)
+    if (laterRun(run, current)) latestCredentialRunByAgent.set(run.agent, run)
+  }
+  return latestCredentialRunByAgent
+}
+
+function credentialAgentsById(
+  agents: readonly BillingKeyAgent[],
+  latestByAgent: ReadonlyMap<string, BillingKeyRun>,
+): Map<string, string[]> {
+  const credentialAgents = new Map<string, string[]>()
+  for (const agent of agents) {
+    if (!agent.provider) continue
+    const credentialId = latestByAgent.get(agent.name)?.credential_id
+    if (!credentialId) continue
+    credentialAgents.set(credentialId, [...(credentialAgents.get(credentialId) ?? []), agent.name])
+  }
+  return credentialAgents
+}
+
+function latestBillableRunByCredential(runs: readonly BillingKeyRun[]): Map<string, BillingKeyRun> {
+  const latest = new Map<string, BillingKeyRun>()
+  for (const run of runs) {
+    if (!run.credential_id) continue
+    if (run.failure_kind !== 'billing' && !successfulProviderAnswer(run)) continue
+    const current = latest.get(run.credential_id)
+    if (laterRun(run, current)) latest.set(run.credential_id, run)
+  }
+  return latest
+}
+
+function credentialBillingHolds(
+  agents: readonly BillingKeyAgent[],
+  runs: readonly BillingKeyRun[],
+): BillingKeyHold[] {
+  const credentialAgents = credentialAgentsById(agents, latestCredentialRunByAgent(runs))
+  const latest = latestBillableRunByCredential(runs)
+  return [...latest.entries()].flatMap(([credentialId, run]) => {
+    const heldAgents = credentialAgents.get(credentialId) ?? []
+    return run.failure_kind === 'billing' && heldAgents.length
+      ? [
+          {
+            secretName: `credential ${credentialId}`,
+            baseUrl: null,
+            id: `credential:${credentialId}`,
+            agents: heldAgents.sort(),
+            failingRunNumber: run.number,
+          },
+        ]
+      : []
+  })
+}
+
+function legacyBillingHolds(
   agents: readonly BillingKeyAgent[],
   runs: readonly BillingKeyRun[],
 ): BillingKeyHold[] {
@@ -66,29 +122,9 @@ export function decideBillingKeyHolds(
     groups.set(id, group)
     keyByAgent.set(agent.name, id)
   }
-
   const latest = new Map<string, BillingKeyRun>()
-  const latestCredentialRunByAgent = new Map<string, BillingKeyRun>()
   for (const run of runs) {
-    if (!run.credential_id) continue
-    const current = latestCredentialRunByAgent.get(run.agent)
-    if (laterRun(run, current)) latestCredentialRunByAgent.set(run.agent, run)
-  }
-  const credentialAgents = new Map<string, string[]>()
-  for (const agent of agents) {
-    if (!agent.provider) continue
-    const credentialId = latestCredentialRunByAgent.get(agent.name)?.credential_id
-    if (!credentialId) continue
-    credentialAgents.set(credentialId, [...(credentialAgents.get(credentialId) ?? []), agent.name])
-  }
-  const latestCredential = new Map<string, BillingKeyRun>()
-  for (const run of runs) {
-    if (run.credential_id) {
-      if (run.failure_kind !== 'billing' && !successfulProviderAnswer(run)) continue
-      const current = latestCredential.get(run.credential_id)
-      if (laterRun(run, current)) latestCredential.set(run.credential_id, run)
-      continue
-    }
+    if (run.credential_id) continue
     if ((run.endpoint_key_source ?? 'agent') === 'project') continue
     const id = keyByAgent.get(run.agent)
     if (!id || (run.failure_kind !== 'billing' && !successfulProviderAnswer(run))) continue
@@ -96,25 +132,20 @@ export function decideBillingKeyHolds(
     if (laterRun(run, current)) latest.set(id, run)
   }
 
-  const legacyHolds = [...groups.entries()].flatMap(([id, group]) => {
+  return [...groups.entries()].flatMap(([id, group]) => {
     const run = latest.get(id)
     return run?.failure_kind === 'billing'
       ? [{ ...group.key, id, agents: group.agents.sort(), failingRunNumber: run.number }]
       : []
   })
-  const credentialHolds = [...latestCredential.entries()].flatMap(([credentialId, run]) => {
-    const heldAgents = credentialAgents.get(credentialId) ?? []
-    return run.failure_kind === 'billing' && heldAgents.length
-      ? [{
-          secretName: `credential ${credentialId}`,
-          baseUrl: null,
-          id: `credential:${credentialId}`,
-          agents: heldAgents.sort(),
-          failingRunNumber: run.number,
-        }]
-      : []
-  })
-  return [...legacyHolds, ...credentialHolds]
+}
+
+/** Decide held accounts from current agent identities and terminal run history. */
+export function decideBillingKeyHolds(
+  agents: readonly BillingKeyAgent[],
+  runs: readonly BillingKeyRun[],
+): BillingKeyHold[] {
+  return [...legacyBillingHolds(agents, runs), ...credentialBillingHolds(agents, runs)]
 }
 
 export function billingKeyHoldRefusal(hold: BillingKeyHold): string {

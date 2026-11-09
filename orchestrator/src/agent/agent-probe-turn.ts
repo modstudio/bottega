@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import type { ProjectCredentialTarget } from '../config/credential-service.ts'
 import { writableDb } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
@@ -23,7 +24,6 @@ import { gooseSessionContextProfile } from '../transport/transport-goose-context
 import type { WritingProbeConfinement } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
 import { endpointApiKeyForProject } from './endpoint-api-key.ts'
-import type { Project } from '../project/projects.ts'
 
 type ProbeTurnInput = {
   name: string
@@ -37,7 +37,7 @@ type ProbeTurnInput = {
   writing?: WritingProbeConfinement
   session?: string
   environment?: Record<string, string>
-  project: Project | null
+  project?: ProjectCredentialTarget | null
 }
 
 type ProbeTurnResult = {
@@ -83,9 +83,11 @@ export async function probeEnvironment(
   name: string,
   agent: Agent,
   scratch: string,
-  project: Project | null = null,
+  project: ProjectCredentialTarget | null = null,
 ): Promise<Record<string, string>> {
-  const endpoint = await endpointApiKeyForProject(agent, project)
+  const endpoint = await endpointApiKeyForProject(agent, project, undefined, {
+    exhaustedRetryCommand: `${PLATFORM_SLUG} agent probe ${name}`,
+  })
   const environment: Record<string, string> = {
     ...Object.fromEntries(
       Object.entries(process.env).filter(

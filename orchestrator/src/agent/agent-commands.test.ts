@@ -388,6 +388,42 @@ test('agent commands store and clear only an endpoint secret name', async () => 
   }
 })
 
+test('agent commands store and clear a credential provider slug', async () => {
+  const output: string[] = []
+  try {
+    await agentCommand(
+      [
+        'agent',
+        'add',
+        'provider-test',
+        '--harness',
+        'goose',
+        '--backend',
+        'vendor',
+        '--model',
+        'test-model',
+        '--provider',
+        'openrouter',
+      ],
+      { log: (value) => output.push(value), setExitCode: () => {} },
+    )
+    expect(JSON.parse(output.pop()!)).toMatchObject({ provider: 'openrouter' })
+    await agentCommand(['agent', 'set', 'provider-test', '--clear-provider'], {
+      log: (value) => output.push(value),
+      setExitCode: () => {},
+    })
+    expect(JSON.parse(output.pop()!)).toMatchObject({ provider: null })
+    await expect(
+      agentCommand(['agent', 'set', 'provider-test', '--provider', 'Not_A_Slug'], {
+        log: () => {},
+        setExitCode: () => {},
+      }),
+    ).rejects.toThrow('--provider must be a lowercase slug')
+  } finally {
+    removeAgent('provider-test')
+  }
+})
+
 test('a keyed add defaults to metered, stays out of automatic routing, and may be named', async () => {
   const name = 'keyed-routing-test'
   const output: string[] = []

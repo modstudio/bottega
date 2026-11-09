@@ -1,6 +1,7 @@
 // concern: credential-service
 /** Seals and addresses typed credentials without exposing plaintext to the hosted record. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ConfigClientError,
   type ConfigDestination,
@@ -18,8 +19,12 @@ import {
   machineNotTrustedRemedy,
   recordSpaceMembershipRefusal,
 } from '../../../shared/record-remedies.ts'
+import {
+  parseRecordSpaceMemberships,
+  recordSpaceMembership,
+} from '../../../shared/record-space-membership.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
-import { parseRecordSpaceMemberships, recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import type { Project } from '../project/projects.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
@@ -47,23 +52,37 @@ export type CredentialAddress = {
   spaceName: string
   destinationSpaceId: string
 }
+export type ProjectCredentialTarget = Pick<Project, 'name' | 'recordId' | 'settings'>
+
+export function projectRecordIdentityRefusal(project: string): string {
+  return renderRefusal(
+    refusal(`project ${project} has no hosted record identity`, {
+      kind: 'command',
+      argv: [PLATFORM_SLUG, 'project', 'push'],
+    }),
+  )
+}
+
+export function providerProjectRequiredRefusal(): string {
+  return renderRefusal(
+    refusal('provider-backed agent requires a registered project', {
+      kind: 'edit',
+      text: 'run the command from a registered project',
+    }),
+  )
+}
 
 /** Build the one canonical credential address used by project-bound consumers. */
 export async function projectCredentialAddress(
-  project: Pick<Project, 'name' | 'recordId' | 'settings'>,
+  project: ProjectCredentialTarget,
   provider: string,
   client = configClient(),
 ): Promise<CredentialAddress> {
-  if (!project.recordId)
-    throw new Error(
-      `project ${project.name} has no hosted record identity\ncleared by: bottega project push`,
-    )
+  if (!project.recordId) throw new Error(projectRecordIdentityRefusal(project.name))
   const who = await client.whoami()
-  const destinationSpaceId = await requireProjectRecordDestination(
-    project.name,
-    project.settings,
-    { whoami: async () => who },
-  )
+  const destinationSpaceId = await requireProjectRecordDestination(project.name, project.settings, {
+    whoami: async () => who,
+  })
   const membership = recordSpaceMembership(
     destinationSpaceId,
     parseRecordSpaceMemberships(who.memberships),
@@ -231,17 +250,14 @@ export async function resolveCredentialValue(address: CredentialAddress, client 
 
 /** Gather one metadata-only routing fact for each distinct provider. */
 export async function projectCredentialRouteFacts(
-  project: Pick<Project, 'name' | 'recordId' | 'settings'> | null,
+  project: ProjectCredentialTarget | null,
   providers: Iterable<string>,
   client = configClient(),
 ) {
   const entries = await Promise.all(
     [...new Set(providers)].map(async (provider) => {
       try {
-        if (!project)
-          throw new Error(
-            'provider-backed agent requires a registered project\ncleared by: run the command from a registered project',
-          )
+        if (!project) throw new Error(providerProjectRequiredRefusal())
         const address = await projectCredentialAddress(project, provider, client)
         await resolveProjectCredential(address, client)
         return [provider, { status: 'resolved' as const }] as const
@@ -255,5 +271,5 @@ export async function projectCredentialRouteFacts(
       }
     }),
   )
-  return new Map(entries)
+  return new Map<string, (typeof entries)[number][1]>(entries)
 }

@@ -11,7 +11,6 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
-import type { CredentialPayment } from '../agent/endpoint-api-key.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
 import { type TaskBranchCandidate, taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
@@ -84,6 +83,7 @@ import {
   taskBranchKey,
 } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
+import { type CredentialPayment, endpointKeyIdentityBindings } from './run-credential-claim.ts'
 import { EXTERNAL_EXECUTOR, HARNESS_AGENT, HARNESS_EXECUTOR } from './run-executor.ts'
 import { installHarnessPushGuard } from './run-git-guard.ts'
 import { nextRunNumber } from './run-number.ts'
@@ -149,18 +149,6 @@ const explicitRunFlags = (opts: ClaimOptions) =>
 const reviewClaimBindings = (opts: ClaimOptions) =>
   [opts.review ?? null, opts.reviewRole ?? null] as const
 
-const endpointKeyIdentityBindings = (
-  identityColumns: ReturnType<typeof executorClaimFacts>['identityColumns'],
-  source: 'agent' | 'project',
-  credential: CredentialPayment | null,
-) => [
-  ...identityColumns,
-  source,
-  credential?.credentialId ?? null,
-  credential?.payer ?? null,
-  credential?.binding ?? null,
-]
-
 export type ClaimInput = {
   opts: ClaimOptions
   runsDir: string
@@ -197,7 +185,7 @@ export type ClaimInput = {
   replySchemaName: string
   carriedQuestionIds: string[]
   endpointKeySource: 'agent' | 'project'
-  credential: CredentialPayment | null
+  credential?: CredentialPayment | null
   admitDeps?: HostCapacityWaitDeps
   precomputedLinks?: { taskRecordId: string | null; projectRecordId: string | null } | null
   assertDispatchAllowed(): void
@@ -444,7 +432,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         ...explicitRunFlags(opts),
         ...reviewClaimBindings(opts),
         ...execution.launchColumns,
-        ...endpointKeyIdentityBindings(execution.identityColumns, input.endpointKeySource, input.credential),
+        ...endpointKeyIdentityBindings(
+          execution.identityColumns,
+          input.endpointKeySource,
+          input.credential,
+        ),
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -493,7 +485,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         ...reviewClaimBindings(opts),
         ...execution.launchColumns,
         startedByUserId,
-        ...endpointKeyIdentityBindings(execution.identityColumns, input.endpointKeySource, input.credential),
+        ...endpointKeyIdentityBindings(
+          execution.identityColumns,
+          input.endpointKeySource,
+          input.credential,
+        ),
       ) as { record_id: string; number: number }
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)

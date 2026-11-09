@@ -2,16 +2,16 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { AGENTS, requireAgent } from '../agent/agent-registry.ts'
+import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { endpointApiKeyForProject } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-failure.ts'
 import { checkOpenRouterKeyBudget } from '../agent/openrouter-key-budget.ts'
+import { providerCredentialRoutingAt } from '../agent/provider-credential-routing.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, recordPack } from '../canon/canon.ts'
-import { projectCredentialRouteFacts } from '../config/credential-service.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import { bindCodexMcpToolInstruction } from '../contract/codex-mcp-tool.ts'
 import {
@@ -80,7 +80,7 @@ import { sha } from './prompt-sha.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import { capacityStartupFailure, selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
-import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
+import { pruneRuns, RUNS_DIR, readDispatchState, unclaimedRunFilePaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
@@ -380,11 +380,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       envTransport: transportPin.transportPinSource === 'environment',
     },
     requiredMcp = requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined)
-  const runProject = projectAt(callerCwd)
-  const credentialFacts = await projectCredentialRouteFacts(
-    runProject,
-    Object.values(AGENTS).flatMap((agent) => (agent.provider ? [agent.provider] : [])),
-  )
+  const { project: runProject, facts: credentialFacts } =
+    await providerCredentialRoutingAt(callerCwd)
   const pickSource = () =>
     pick(
       opts.job,
@@ -505,9 +502,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
    * suffix covers it without reintroducing a clock race.
    */
   const unique = opts.reserveId ?? `x${randomUUID().slice(0, 8)}`
-  const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
-  const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
-  let outPath = paths.output
+  const { paths, stamp, initialOutPath } = unclaimedRunFilePaths(RUNS_DIR, unique, name, opts.job)
+  let outPath = initialOutPath
   const endpoint = await endpointApiKeyForProject(a, runProject)
   const claimedRun = await claimRun({
     opts,

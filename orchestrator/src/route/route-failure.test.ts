@@ -16,10 +16,26 @@ import {
   NOT_EVIDENCE,
 } from '../failure/failure.ts'
 import { WEIGHT, weigh } from '../score/score.ts'
-import { candidates, scoreboard } from './route.ts'
+import { candidates, providerCredentialEligibility, scoreboard } from './route.ts'
 import { isRoutingEvidence } from './routing-evidence-query.ts'
 
 afterEach(refreshAgents)
+
+test('provider credential eligibility distinguishes refusal from hosted uncertainty', () => {
+  expect(
+    providerCredentialEligibility('openrouter', new Map([['openrouter', { status: 'resolved' }]])),
+  ).toEqual({ eligible: true, why: '' })
+  expect(
+    providerCredentialEligibility('openrouter', new Map([['openrouter', { status: 'unknown' }]])),
+  ).toEqual({ eligible: true, why: '' })
+  expect(
+    providerCredentialEligibility(
+      'openrouter',
+      new Map([['openrouter', { status: 'refused', refusal: 'set it' }]]),
+    ),
+  ).toEqual({ eligible: false, why: 'set it' })
+  expect(providerCredentialEligibility(null, new Map())).toEqual({ eligible: true, why: '' })
+})
 
 function shareBillingKey(...agents: string[]): void {
   const placeholders = agents.map(() => '?').join(',')

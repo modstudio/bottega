@@ -3,8 +3,8 @@
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { CREDENTIAL_SLUG_PATTERN } from '../../../shared/credential.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { jobContextBudget, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
@@ -334,6 +334,11 @@ function assertApiKeySecret(value: string | null | undefined): void {
     throw new Error('--api-key-secret must name a non-empty configuration key')
 }
 
+function assertProvider(value: string | null | undefined): void {
+  if (value !== undefined && value !== null && !CREDENTIAL_SLUG_PATTERN.test(value))
+    throw new Error('--provider must be a lowercase slug')
+}
+
 function assertAgentMutation(input: AgentMutation, adding: boolean): void {
   if (input.harness && !HARNESSES.includes(input.harness))
     throw new Error(`unknown harness "${input.harness}"`)
@@ -351,8 +356,7 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
     throw new Error('disabling an agent requires --reason')
   }
   assertApiKeySecret(input.apiKeySecret)
-  if (input.provider !== undefined && input.provider !== null && !CREDENTIAL_SLUG_PATTERN.test(input.provider))
-    throw new Error('--provider must be a lowercase slug')
+  assertProvider(input.provider)
   if (input.enabled !== false && input.reason !== undefined) {
     throw new Error('--reason is only valid with --enabled false')
   }
@@ -433,14 +437,24 @@ function storedApiKeySecret(current: AgentRow, input: AgentMutation): string | n
   return input.apiKeySecret === undefined ? current.api_key_secret : input.apiKeySecret
 }
 
+function storedProvider(current: AgentRow, input: AgentMutation): string | null {
+  return input.provider === undefined ? current.provider : input.provider
+}
+
+function credentialIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
+  return (
+    (input.apiKeySecret !== undefined && input.apiKeySecret !== current.api_key_secret) ||
+    (input.provider !== undefined && input.provider !== current.provider)
+  )
+}
+
 export function agentIdentityChanged(current: AgentRow, input: AgentMutation): boolean {
   return (
     (input.harness !== undefined && input.harness !== current.harness) ||
     (input.backend !== undefined && input.backend !== current.backend) ||
     (input.model !== undefined && input.model !== current.model) ||
     (input.baseUrl !== undefined && input.baseUrl !== current.base_url) ||
-    (input.apiKeySecret !== undefined && input.apiKeySecret !== current.api_key_secret) ||
-    (input.provider !== undefined && input.provider !== current.provider)
+    credentialIdentityChanged(current, input)
   )
 }
 
@@ -550,7 +564,7 @@ export function setAgent(
       input.model ?? current.model,
       input.baseUrl === undefined ? current.base_url : input.baseUrl,
       storedApiKeySecret(current, input),
-      input.provider === undefined ? current.provider : input.provider,
+      storedProvider(current, input),
       input.transport ?? current.transport,
       JSON.stringify(caps),
       input.billing ?? current.billing,

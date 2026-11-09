@@ -238,6 +238,15 @@ export function runFilePaths(
   }
 }
 
+export function unclaimedRunFilePaths(runsDir: string, unique: string, agent: string, job: string) {
+  const paths = runFilePaths(runsDir, Date.now(), unique, agent, job)
+  return {
+    paths,
+    stamp: paths.output.slice(runsDir.length + 1, -4),
+    initialOutPath: paths.output,
+  }
+}
+
 export function writeGeneratedSchema(
   runsDir: string,
   stamp: string,

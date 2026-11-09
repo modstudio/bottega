@@ -10,13 +10,14 @@ import {
   type SecretResolutionFailureClassification,
   secretResolutionFailure,
 } from '../../../shared/secret-resolution-failure.ts'
-import type { EffectiveBillingKey } from '../failure/failure.ts'
-import type { ProjectAgentKeys } from '../project/project-agent-keys.ts'
-import type { Project } from '../project/projects.ts'
 import {
+  type ProjectCredentialTarget,
   projectCredentialAddress,
+  providerProjectRequiredRefusal,
   resolveCredentialValue,
 } from '../config/credential-service.ts'
+import type { EffectiveBillingKey } from '../failure/failure.ts'
+import type { ProjectAgentKeys } from '../project/project-agent-keys.ts'
 
 type EndpointKeyRow = {
   baseUrl?: string | null
@@ -53,6 +54,7 @@ export function decideEffectiveEndpointApiKey(
 export function effectiveEndpointApiKeyForRun<T extends EndpointKeyRow>(
   row: T,
   project?: { name: string; settings: { agentKeys?: ProjectAgentKeys } } | null,
+  resolutionOptions: Parameters<typeof resolveEndpointApiKeyEnv>[2] = {},
 ): {
   row: T
   key: EffectiveBillingKey
@@ -67,7 +69,8 @@ export function effectiveEndpointApiKeyForRun<T extends EndpointKeyRow>(
   return {
     row: effectiveRow,
     key,
-    resolve: () => resolveEndpointApiKeyEnv(effectiveRow, undefined, options),
+    resolve: () =>
+      resolveEndpointApiKeyEnv(effectiveRow, undefined, { ...options, ...resolutionOptions }),
   }
 }
 
@@ -84,17 +87,20 @@ const providerEndpointDependencies: ProviderEndpointDependencies = {
 /** Choose the provider credential path before the legacy named-secret path. */
 export async function endpointApiKeyForProject<T extends EndpointKeyRow>(
   row: T,
-  project: Pick<Project, 'name' | 'recordId' | 'settings'> | null | undefined,
+  project: ProjectCredentialTarget | null | undefined,
   dependencies: ProviderEndpointDependencies = providerEndpointDependencies,
+  legacyResolutionOptions: Parameters<typeof resolveEndpointApiKeyEnv>[2] = {},
 ): Promise<EndpointApiKeyLaunch<T>> {
   const provider = row.provider?.trim()
-  if (!provider) return { ...effectiveEndpointApiKeyForRun(row, project), credential: null }
-  if (!project)
-    throw new Error(
-      'provider-backed agent requires a registered project\ncleared by: run the command from a registered project',
-    )
+  if (!provider)
+    return {
+      ...effectiveEndpointApiKeyForRun(row, project, legacyResolutionOptions),
+      credential: null,
+    }
+  if (!project) throw new Error(providerProjectRequiredRefusal())
   const address = await dependencies.address(project, provider)
   const resolved = await dependencies.resolve(address)
+  if (!resolved.row.id) throw new Error('resolved credential has no hosted row identity')
   const env = { OPENAI_API_KEY: resolved.value }
   return {
     row,
