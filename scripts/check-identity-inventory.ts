@@ -40,6 +40,7 @@ import {
   PUSHABLE_HUB_TABLES,
   STATE_CLASS_OUTBOX_TABLES,
 } from './identity-state-class-facts.ts'
+import { HOSTED_WRITE_PATHS, hostedWritePathReport } from './identity-state-class-report.ts'
 import { STATE_CLASSES } from './identity-state-classes.ts'
 import { repositoryLifecycleSymbol, storageLifecycleRefusals } from './storage-lifecycle-check.ts'
 
@@ -149,7 +150,23 @@ const methodInventory = () => [
   ...SNAPSHOT_KINDS.map((kind) => `orchestrator.snapshot.${kind}`),
 ]
 
+function printStateClassReport(json: boolean): void {
+  const report = hostedWritePathReport(STATE_CLASSES, STATE_CLASS_OUTBOX_TABLES)
+  if (json) {
+    console.log(JSON.stringify(report, null, 2))
+    return
+  }
+  for (const path of HOSTED_WRITE_PATHS) {
+    console.log(`${path}: ${report.counts[path]}`)
+    for (const table of report.paths[path]) console.log(`  ${table}`)
+  }
+}
+
 async function main(): Promise<void> {
+  if (Bun.argv.includes('--report-state-classes')) {
+    printStateClassReport(Bun.argv.includes('--json'))
+    return
+  }
   const base = Bun.argv.find((argument) => argument.startsWith('--base='))?.slice(7)
   if (!base) throw new Error('usage: check-identity-inventory.ts --base=<commit>')
   const previousBaseline = baseFile<Baseline>(base, 'scripts/identity-key-baseline.json')

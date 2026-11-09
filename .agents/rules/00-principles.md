@@ -1,5 +1,5 @@
 ---
-description: Product purpose, delegation, evidence routing, and canon authority
+description: Product purpose, delegation contract, evidence routing, and the authority of canon
 always: true
 ---
 
@@ -23,16 +23,14 @@ data because architect attention is the scarce resource.
 
 ## Design from the multi-space hosted platform
 
-Design starts from the hosted, multi-space platform. On a hosted install the
-hosted record is the truth. A hosted table is written directly to the record in
-the same command and kept nowhere locally; a write that cannot reach the record
-stops with a remedy and is never queued. A synced table records what happened on
-this machine; it is written locally and pushed on a schedule. A machine table is
-state another machine would never care about. A local-only install keeps every
-table locally as its record and offers the features that fit. All work, from
-space down to run, is portable between machines. A hosted table whose hosted
-home is unbuilt names the task that builds it. The seam is doc-store record
-`design-machine-hosted-seam`.
+Design starts from the hosted, multi-space platform; on a hosted install the
+record is the truth. A hosted table is written straight to the record and kept
+nowhere locally; a write that cannot reach it stops with a remedy, never queued.
+A synced table records what happened here, written locally and pushed on a
+schedule. A machine table is state no other machine would care about. A
+local-only install keeps every table locally. All work, from space down to run,
+is portable. A hosted table without a built home names the task that builds it.
+The seam is doc-store record `design-machine-hosted-seam`.
 
 Every table declares a lifecycle: what it is, where its authoritative copy
 lives, how long each copy is kept, and what removes it. Nothing is kept because

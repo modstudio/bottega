@@ -1,7 +1,7 @@
 import type { StateClassDeclaration } from './identity-state-classes.ts'
 
 export const HOSTED_WRITE_PATHS = ['direct', 'outbox', 'cache', 'local'] as const
-export type HostedWritePath = (typeof HOSTED_WRITE_PATHS)[number]
+type HostedWritePath = (typeof HOSTED_WRITE_PATHS)[number]
 
 export type HostedWritePathReport = {
   counts: Record<HostedWritePath, number>
