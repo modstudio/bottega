@@ -20,7 +20,7 @@ const insertNextAction = (key: string, at: string) => {
     .run(newRecordId(), `task:${key}`, body, at, at)
 }
 
-test('gathers run, closed-step, and both answer forms through store-backed context revisions', () => {
+test('gathers run, closed-step, and both answer forms through store-backed context revisions', async () => {
   const session = sessionId()!
   const root = addRun({
     agent: 'codex',
@@ -77,7 +77,22 @@ test('gathers run, closed-step, and both answer forms through store-backed conte
   insertNextAction('DEV-STALE', '2026-11-08T10:30:00Z')
   insertNextAction('DEV-FRESH', '2026-11-08T15:00:00Z')
 
-  expect(staleContextForSession(session, db())).toEqual([
+  expect(
+    await staleContextForSession(session, db(), async (project) => [
+      {
+        key: 'DEV-STALE',
+        record_id: 'task-stale',
+        project,
+        status_category: 'active',
+      },
+      {
+        key: 'DEV-FRESH',
+        record_id: 'task-fresh',
+        project,
+        status_category: 'active',
+      },
+    ]),
+  ).toEqual([
     {
       holder: 'DEV-STALE',
       workedAt: '2026-11-08T14:00:00Z',
@@ -86,7 +101,7 @@ test('gathers run, closed-step, and both answer forms through store-backed conte
   ])
 })
 
-test('question work prefers the owning run launch key over its workflow key', () => {
+test('question work prefers the owning run launch key over its workflow key', async () => {
   const session = sessionId()!
   const run = addRun({
     agent: 'codex',
@@ -106,7 +121,11 @@ test('question work prefers the owning run launch key over its workflow key', ()
     .run(newRecordId(), run, session)
   insertNextAction('DEV-RUN', '2026-11-08T10:00:00Z')
 
-  expect(staleContextForSession(session, db())).toEqual([
+  expect(
+    await staleContextForSession(session, db(), async (project) => [
+      { key: 'DEV-RUN', record_id: 'task-run', project, status_category: 'active' },
+    ]),
+  ).toEqual([
     {
       holder: 'DEV-RUN',
       workedAt: '2026-11-08T12:00:00Z',

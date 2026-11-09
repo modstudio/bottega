@@ -52,8 +52,8 @@ export function register(program: Command): void {
     .description('list task holders worked after their newest next-action revision')
     .requiredOption('--session <id>', 'select architect session')
     .option('--json', 'write JSON')
-    .action((options) => {
-      const result = staleContextForSession(options.session)
+    .action(async (options) => {
+      const result = await staleContextForSession(options.session)
       if (options.json) return log(JSON.stringify(result))
       for (const row of result)
         log(`${row.holder}  worked ${row.workedAt}  next-action ${row.revisedAt ?? 'missing'}`)
