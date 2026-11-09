@@ -3,12 +3,7 @@
 
 import { PLATFORM_SLUG } from './brand.ts'
 import type { ConfigClient, ConfigDestination, ConfigSecret } from './config-client.ts'
-import { readHostedConfigIdentity } from './hosted-config-space.ts'
-import {
-  destinationHostedIdentity,
-  hostedIdentity,
-  openHostedSecret,
-} from './hosted-secret-opening.ts'
+import { hostedSecretIdentity, openHostedSecret } from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
 import { readTrustList } from './trust-list.ts'
 
@@ -21,14 +16,6 @@ export function localMachine() {
   return machineKeyInfo(pair)
 }
 
-/** Choose whether a secret opens with the pinned active-space identity or a destination identity. */
-export function hostedSecretIdentityKind(
-  destinationSpaceId: string | undefined,
-  pinnedSpaceId: string | undefined,
-): 'active' | 'destination' {
-  return !destinationSpaceId || destinationSpaceId === pinnedSpaceId ? 'active' : 'destination'
-}
-
 /** Open an already-selected secret; plaintext remains in memory. */
 export async function openHostedSecretRow(
   client: ConfigClient,
@@ -37,18 +24,7 @@ export async function openHostedSecretRow(
   machine?: Awaited<ReturnType<typeof localMachine>>,
 ): Promise<Uint8Array> {
   const local = machine ?? (await localMachine())
-  const pinned = readHostedConfigIdentity()
-  const identity =
-    hostedSecretIdentityKind(destination.destinationSpaceId, pinned?.spaceId) === 'destination'
-      ? await destinationHostedIdentity(
-          client,
-          {
-            spaceId: destination.destinationSpaceId!,
-            machineKeyId: local.keyId,
-          },
-          pinned,
-        )
-      : await hostedIdentity(client, pinned)
+  const identity = await hostedSecretIdentity(client, destination, local.keyId)
   const [full, key, trust] = await Promise.all([
     client.getSecret(row.key, row.scope, row.environment, destination),
     client.getDataKey(row.dekId, local.keyId, destination),

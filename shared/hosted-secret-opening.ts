@@ -1,5 +1,5 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import type { ConfigClient, ConfigSecret, DataKey } from './config-client.ts'
+import type { ConfigClient, ConfigDestination, ConfigSecret, DataKey } from './config-client.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
 import {
   machineNotTrustedRemedy,
@@ -90,6 +90,30 @@ export async function destinationHostedIdentity(
   })
   if (decision.allowed) return decision.identity
   throw new Error(machineNotTrustedRemedy(destination.spaceId))
+}
+
+/** Choose whether a secret opens with the pinned active-space identity or a destination identity. */
+export function hostedSecretIdentityKind(
+  destinationSpaceId: string | undefined,
+  pinnedSpaceId: string | undefined,
+): 'active' | 'destination' {
+  return !destinationSpaceId || destinationSpaceId === pinnedSpaceId ? 'active' : 'destination'
+}
+
+/** Resolve the hosted identity used to open one secret destination. */
+export async function hostedSecretIdentity(
+  client: ConfigClient,
+  destination: ConfigDestination,
+  machineKeyId: string,
+  pinned = readHostedConfigIdentity(),
+): Promise<HostedConfigIdentity> {
+  if (hostedSecretIdentityKind(destination.destinationSpaceId, pinned?.spaceId) === 'active')
+    return hostedIdentity(client, pinned)
+  return destinationHostedIdentity(
+    client,
+    { spaceId: destination.destinationSpaceId!, machineKeyId },
+    pinned,
+  )
 }
 
 function trustedWrap(input: {
