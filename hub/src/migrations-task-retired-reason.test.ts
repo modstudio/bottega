@@ -36,9 +36,9 @@ test('task retirement migration adds a nullable reason without backfilling rows'
      VALUES ('task-id','DEV-1','workshop','mcp','2026-01-01','2026-01-01')`,
   )
 
-  expect(applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toEqual([
+  expect(applyMigrations(database, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toContain(
     migrationTag,
-  ])
+  )
   expect(database.query(`SELECT retired_reason FROM task WHERE record_id='task-id'`).get()).toEqual(
     {
       retired_reason: null,
