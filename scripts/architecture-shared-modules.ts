@@ -10,6 +10,14 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 
 export const sharedModules: ArchitectureModule[] = [
   module('shared/credential.ts', []),
+  module('shared/credential-resolution.ts', ['./brand.ts', './credential.ts']),
+  module('shared/credential-value.ts', [
+    './config-client.ts',
+    './credential.ts',
+    './credential-resolution.ts',
+    './hosted-secret-row.ts',
+    './record-remedies.ts',
+  ]),
   module('shared/record-timestamp.ts', []),
   module('shared/session-liveness.ts', []),
   module('shared/run-process-marker.ts', []),
@@ -80,6 +88,13 @@ export const sharedModules: ArchitectureModule[] = [
     './record-space-request.ts',
     './record-remedies.ts',
     './secret-envelope.ts',
+    './trust-list.ts',
+  ]),
+  module('shared/hosted-secret-row.ts', [
+    './brand.ts',
+    './config-client.ts',
+    './hosted-secret-opening.ts',
+    './machine-key-store.ts',
     './trust-list.ts',
   ]),
   module('shared/trust-list.ts', [

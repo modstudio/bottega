@@ -11,9 +11,21 @@ import {
 import {
   type CompleteCredentialFields,
   CREDENTIAL_ENVIRONMENTS,
+  type CredentialEnvironment,
+  type CredentialMode,
+  type CredentialPayer,
   completeCredentialFields,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
+import {
+  credentialHint,
+  credentialScopeFromPayer,
+  credentialSetRefusalText,
+} from '../../../shared/credential-resolution.ts'
+import {
+  resolveHostedCredential,
+  resolveHostedCredentialValue,
+} from '../../../shared/credential-value.ts'
 import {
   configAccessRemedy,
   machineNotTrustedRemedy,
@@ -28,18 +40,6 @@ import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed
 import type { Project } from '../project/projects.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { deleteSecret, setSecret } from './config-service.ts'
-import {
-  type CredentialEnvironment,
-  type CredentialMode,
-  type CredentialPayer,
-  credentialHint,
-  credentialPayerFromScope,
-  credentialScopeFromPayer,
-  credentialSetRefusalText,
-  resolveCredential,
-} from './credential.ts'
-import { openHostedSecretRow } from './hosted-secret-row.ts'
-
 export type CredentialAddress = {
   provider: string
   name: string | null
@@ -223,46 +223,18 @@ export async function resolveProjectCredential(
 ) {
   if (!address.projectId || !address.projectName)
     throw new Error('credential value resolution requires a project binding')
-  const projectId = address.projectId
-  const projectName = address.projectName
-  const rows = await listCredentials(address.destinationSpaceId, {}, client)
-  const preferences = await client.listCredentialPreferences({
-    destinationSpaceId: address.destinationSpaceId,
-  })
-  const result = resolveCredential({
-    spaceId: address.destinationSpaceId,
-    projectId,
-    projectName,
-    provider: address.provider,
-    name: address.name,
-    type: address.type,
-    mode: address.mode,
-    environment: address.environment,
-    candidates: rows.map((row) => ({
-      row,
-      spaceId: address.destinationSpaceId,
-      projectId: row.projectId ?? null,
-      payer: credentialPayerFromScope(row.scope),
-      provider: row.provider,
-      name: row.name,
-      type: row.type,
-      mode: row.mode,
-      environment: row.environment,
-    })),
-    preferences,
-  })
+  const result = await resolveHostedCredential(address, client)
   if (result.kind === 'refused') throw new Error(result.refusal)
-  const { row } = result.credential
-  return { ...result, row }
+  return result
 }
 
 /** Resolve and open one project credential; plaintext exists only in the returned memory value. */
 export async function resolveCredentialValue(address: CredentialAddress, client = configClient()) {
-  const result = await resolveProjectCredential(address, client)
-  const { row } = result
-  const target = { destinationSpaceId: address.destinationSpaceId, projectId: row.projectId }
-  const plaintext = await openHostedSecretRow(client, row, target)
-  return { ...result, value: new TextDecoder('utf-8', { fatal: true }).decode(plaintext) }
+  if (!address.projectId || !address.projectName)
+    throw new Error('credential value resolution requires a project binding')
+  const result = await resolveHostedCredentialValue(address, client)
+  if (result.kind === 'refused') throw new Error(result.refusal)
+  return result
 }
 
 /** Gather one metadata-only routing fact for each distinct provider. */

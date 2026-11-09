@@ -5,7 +5,7 @@ import {
   credentialHint,
   parseCredentialSlot,
   resolveCredential,
-} from './credential.ts'
+} from './credential-resolution.ts'
 
 const base = {
   spaceId: 'space-a',
@@ -95,6 +95,44 @@ test('a space preference wins over the default order', () => {
       preferences: [{ ...base, projectId: null, payer: 'shared', binding: 'space' }],
     }),
   ).toMatchObject({ kind: 'resolved', credential: rows[1], reason: 'space-preference' })
+})
+
+test('space resolution uses personal before shared', () => {
+  const rows = [candidate('shared', null), candidate('personal', null)]
+  expect(
+    resolveCredential({
+      ...base,
+      projectId: null,
+      spaceName: 'alpha-space',
+      candidates: rows,
+      preferences: [],
+    }),
+  ).toMatchObject({ kind: 'resolved', credential: rows[1], reason: 'default-order' })
+})
+
+test('a space preference wins during space resolution', () => {
+  const rows = [candidate('personal', null), candidate('shared', null)]
+  expect(
+    resolveCredential({
+      ...base,
+      projectId: null,
+      spaceName: 'alpha-space',
+      candidates: rows,
+      preferences: [{ ...base, projectId: null, payer: 'shared', binding: 'space' }],
+    }),
+  ).toMatchObject({ kind: 'resolved', credential: rows[1], reason: 'space-preference' })
+})
+
+test('space resolution excludes project-bound credentials', () => {
+  expect(
+    resolveCredential({
+      ...base,
+      projectId: null,
+      spaceName: 'alpha-space',
+      candidates: [candidate('personal', base.projectId)],
+      preferences: [],
+    }),
+  ).toMatchObject({ kind: 'refused' })
 })
 
 test('a project slot preference beats the default payer order', () => {

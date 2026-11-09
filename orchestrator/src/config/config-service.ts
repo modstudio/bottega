@@ -18,6 +18,7 @@ import {
   writeHostedConfigIdentity,
 } from '../../../shared/hosted-config-space.ts'
 import { HOSTED_CONFIG_ENVIRONMENT, hostedIdentity } from '../../../shared/hosted-secret-opening.ts'
+import { localMachine, openHostedSecretRow } from '../../../shared/hosted-secret-row.ts'
 import {
   type ConfigHome,
   configHomes,
@@ -69,7 +70,6 @@ import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
 import { recordConfigCallOutcome } from './hosted-config-call-outcome.ts'
-import { localMachine, openHostedSecretRow } from './hosted-secret-row.ts'
 
 const hostedConfigClient = (env: ConfigEnvironment = process.env): ConfigClient =>
   configClient(env, fetch, undefined, undefined, recordConfigCallOutcome)

@@ -2,12 +2,20 @@ import { hostedApiFetch } from '../bounded-fetch.ts'
 // concern: typed-question-client
 /** Calls the TypeSafe typed-question API without exposing its credential. */
 
+import { resolveActiveSpaceCredentialValue } from '../credential-value.ts'
 import { readEnvValuesWithHosted } from '../env-source.ts'
 import type { TypedQuestion } from './registry.ts'
 
 const TYPED_QUESTION_TIMEOUT_MS = 5_000
 const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
 const TYPESAFE_KEY = 'TYPESAFE_KEY'
+const TYPESAFE_CREDENTIAL = {
+  provider: 'typesafe',
+  name: null,
+  type: 'api-key',
+  mode: 'default',
+  environment: 'local',
+} as const
 const JEV_MODEL = 'jev-1.14.0'
 
 type NoulAnswer = { noul: number }
@@ -58,6 +66,9 @@ export type TypedQuestionsClientResult =
   | { kind: 'error'; error: string; latencyMs: number }
 
 export type TypedQuestionClientDependencies = {
+  resolveCredential(): Promise<
+    { kind: 'resolved'; value: string } | { kind: 'refused'; refusal: string }
+  >
   resolve: typeof readEnvValuesWithHosted
   fetch(input: string, init: RequestInit): Promise<Response>
   sleep?(ms: number): Promise<void>
@@ -65,6 +76,7 @@ export type TypedQuestionClientDependencies = {
 }
 
 const clientDependencies: TypedQuestionClientDependencies = {
+  resolveCredential: () => resolveActiveSpaceCredentialValue(TYPESAFE_CREDENTIAL),
   resolve: readEnvValuesWithHosted,
   fetch: (input, init) => hostedApiFetch(input, init),
   sleep: (ms) => Bun.sleep(ms),
@@ -176,6 +188,9 @@ async function resolveKey(
   dependencies: TypedQuestionClientDependencies,
 ): Promise<{ kind: 'key'; value: string } | { kind: 'missing-key' } | { kind: 'error' }> {
   try {
+    const credential = await dependencies.resolveCredential()
+    if (credential.kind === 'resolved') return { kind: 'key', value: credential.value }
+    // Temporary DEV-2203 fallback until slice 2 migrates TYPESAFE_KEY.
     const key = (await dependencies.resolve([TYPESAFE_KEY]))[TYPESAFE_KEY]
     return key ? { kind: 'key', value: key } : { kind: 'missing-key' }
   } catch {
