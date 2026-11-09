@@ -528,7 +528,7 @@ export function registerHostedConfigProofs(
     const reach = [spaceA]
     const created = await putConfigSecret({
       ...accountTenant,
-      key: 'reach-preservation#default@local',
+      key: 'reach-preservation/api-key#default@local',
       environment: 'local',
       scope: 'user',
       dekId: DEK_B,
