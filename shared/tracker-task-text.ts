@@ -12,9 +12,9 @@ export class TrackerLookupUnverifiable extends Error {
   constructor(
     protocol: string,
     key: string,
-    detail = 'task text read returned an unexpected response',
+    detail = `task text read for ${key} returned an unexpected response`,
   ) {
-    super(`${protocol} ${detail.replace('{key}', key)}`)
+    super(`${protocol} ${detail}`)
     this.name = 'TrackerLookupUnverifiable'
   }
 }

@@ -172,5 +172,12 @@ describe('tracker task text readers', () => {
         'get',
       ),
     ).rejects.toBeInstanceOf(TrackerLookupUnverifiable)
+    await expect(
+      readArrayTaskText(
+        caller(() => ({})),
+        'R-1',
+        'get',
+      ),
+    ).rejects.toThrow('array-mcp task text read for R-1 returned an unexpected response')
   })
 })

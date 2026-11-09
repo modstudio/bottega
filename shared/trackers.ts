@@ -541,7 +541,7 @@ async function lookupWorkspaceTask(
       throw new TrackerLookupUnverifiable(
         'workspace-mcp',
         key,
-        'lookup for {key} returned an unexpected response',
+        `lookup for ${key} returned an unexpected response`,
       )
     }
     const pageResult = r as { tasks: WorkspaceTask[]; last_page?: number }
@@ -552,7 +552,7 @@ async function lookupWorkspaceTask(
       throw new TrackerLookupUnverifiable(
         'workspace-mcp',
         key,
-        `lookup for {key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
+        `lookup for ${key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
       )
     }
   }
@@ -560,7 +560,7 @@ async function lookupWorkspaceTask(
   throw new TrackerLookupUnverifiable(
     'workspace-mcp',
     key,
-    `lookup for {key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
+    `lookup for ${key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
   )
 }
 
@@ -794,7 +794,7 @@ async function lookupCursorTask(
     throw new TrackerLookupUnverifiable(
       'cursor-mcp',
       key,
-      'lookup for {key} returned an unexpected response',
+      `lookup for ${key} returned an unexpected response`,
     )
   }
   return {
@@ -982,7 +982,7 @@ function arrayMcpSource(
         throw new TrackerLookupUnverifiable(
           'array-mcp',
           key,
-          'lookup for {key} returned an unexpected response',
+          `lookup for ${key} returned an unexpected response`,
         )
       }
       const rows = r as {
