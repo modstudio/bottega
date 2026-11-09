@@ -27,12 +27,13 @@ describe('document read store', () => {
       title: 'First',
       body: encodeContextItem({ kind: 'fact', source: 'test', body: 'body' }),
     })
-    for (const [index, [owner, subject]] of [
+    const edgeSubjects: [string, string][] = [
       [newRecordId(), 'session:unrelated'],
       [newRecordId(), `session:${session}%_\\suffix`],
       [newRecordId(), `session:${session}-neighbor`],
       [newRecordId(), `Session:${session}`],
-    ].entries()) {
+    ]
+    for (const [index, [owner, subject]] of edgeSubjects.entries()) {
       process.env.CLAUDE_CODE_SESSION_ID = owner
       const stored = await setDoc({
         scope: 'context',

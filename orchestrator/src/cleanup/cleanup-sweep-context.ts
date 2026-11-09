@@ -7,8 +7,8 @@ import {
   dropSessionContextItemsForLifecycle,
   sessionContextHolders,
 } from '../doc/context-service.ts'
-import { parseResumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
 import { listDocsStore } from '../doc/doc-read-store.ts'
+import { parseResumeFrontmatter } from '../doc/doc-resume-frontmatter.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { ownerIsGone, UNJUDGED_OWNER_WINDOW_MS } from './cleanup-sweep-decisions.ts'
 import { gatherOwnerActivity } from './owner-activity.ts'

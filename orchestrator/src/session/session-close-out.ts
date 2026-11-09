@@ -34,6 +34,7 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
+import type { SessionErrorItem, SessionProcessItem } from './session-close-out-report.ts'
 import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
@@ -64,9 +65,6 @@ type UnprovedBranchEvidence = {
   liveTree: string | null
   remedy: string
 }
-
-export type SessionProcessItem = { item: string; reason: string; evidence: string; remedy: string }
-export type SessionErrorItem = { item: string; detail: string; retry: string }
 
 export type SessionCloseOutReport = {
   session: string

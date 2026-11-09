@@ -110,7 +110,12 @@ export function expireUnjudgedRun(
     db()
       .query('UPDATE run SET evidence_excluded=?, record_id=? WHERE record_id=?')
       .run(UNJUDGED_EXCLUSION_REASON, recordId, row.record_id)
-    enqueueRunRecord(db(), row.record_id, machineId(), new Date(activity.runLastActivityAt).toISOString())
+    enqueueRunRecord(
+      db(),
+      row.record_id,
+      machineId(),
+      new Date(activity.runLastActivityAt).toISOString(),
+    )
     expired = true
   })
   return expired

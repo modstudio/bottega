@@ -6,16 +6,16 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { decodeContextItem, encodeContextItem } from './context-item-codec.ts'
 import { contextProfileForHolder } from './context-write-adapter.ts'
 import { type ContextItemKind, missingContextKinds } from './doc-context-write.ts'
-import { listDocsBySubjectPrefixStore, listDocsStore, type Doc } from './doc-read-store.ts'
+import { hostedDocClient } from './doc-hosted-client.ts'
+import { type Doc, listDocsBySubjectPrefixStore, listDocsStore } from './doc-read-store.ts'
 import { assertLocalStoredReferenceWrite } from './doc-reference-write.ts'
 import { assertLocalRevisionWrite } from './doc-revision-store.ts'
-import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { docWriteProjectName } from './doc-write-allowed.ts'
+import { assertWorkerDocStoreWriteAllowed } from './doc-write-guard.ts'
 import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
-import { hostedDocClient } from './doc-hosted-client.ts'
+import { getDoc, removeDoc, setDoc } from './docs.ts'
 import { assertLocalDocRemovalAllowed, localParentRecordId } from './local-doc-tree-service.ts'
 import { commitDocRemove, executeLocalDocRemove } from './local-doc-write.ts'
-import { getDoc, removeDoc, setDoc } from './docs.ts'
 
 export type ContextHolderSelection = { task?: string; session?: string }
 
@@ -34,7 +34,7 @@ export async function getContext(selection: ContextHolderSelection) {
   return { holder, profile, items, missingRequired: missingContextKinds(items, profile) }
 }
 
-export function holderContextItems(holder: string, docs: readonly Doc[]) {
+function holderContextItems(holder: string, docs: readonly Doc[]) {
   return docs.map((doc) => ({
     ...decodeContextItem(holder, doc.slug, doc.body),
     revision: doc.revision,
@@ -60,7 +60,7 @@ export function sessionContextHolders(database: Database) {
   }))
 }
 
-export async function dropSessionContextItemForLifecycle(input: {
+async function dropSessionContextItemForLifecycle(input: {
   session: string
   id: string
   expectedRevision: string
