@@ -34,7 +34,11 @@ import {
 import baseline from './identity-key-baseline.json'
 import { KEY_MANIFESTS } from './identity-key-manifest.ts'
 import stateClassBaseline from './identity-state-class-baseline.json'
-import { stateClassRefusals } from './identity-state-class-check.ts'
+import {
+  type StateClassBaseline,
+  stateClassBaselineRefusals,
+  stateClassRefusals,
+} from './identity-state-class-check.ts'
 import {
   OUTBOX_KIND_SOURCES,
   PUSHABLE_HUB_TABLES,
@@ -45,8 +49,6 @@ import { STATE_CLASSES } from './identity-state-classes.ts'
 import { repositoryLifecycleSymbol, storageLifecycleRefusals } from './storage-lifecycle-check.ts'
 
 type Baseline = Record<'orchestrator' | 'hub' | 'hosted', string[]>
-type StateClassBaseline = { hostedOutbox: string[]; hostedCaches: string[] }
-
 function baseFile<T>(base: string, path: string): T | null {
   const root = fileURLToPath(new URL('..', import.meta.url))
   const result = startBoundedSync(
@@ -60,22 +62,6 @@ function baseFile<T>(base: string, path: string): T | null {
   )
   if (missing.exitCode === 0) return null
   throw new Error(`identity inventory could not resolve base commit ${base}`)
-}
-
-function stateClassBaselineRefusals(
-  current: StateClassBaseline,
-  previous: StateClassBaseline | null,
-): string[] {
-  if (!previous) return []
-  return (['hostedOutbox', 'hostedCaches'] as const).flatMap((field) => {
-    const before = new Set(previous[field])
-    return current[field]
-      .filter((key) => !before.has(key))
-      .map(
-        (key) =>
-          `state class baseline ${field} gained ${key}; remedy: remove the hosted outbox or cache instead of widening the baseline`,
-      )
-  })
 }
 
 function runtimeSyncedSourceRefusals(): string[] {
@@ -93,7 +79,7 @@ function runtimeSyncedSourceRefusals(): string[] {
       return syncSources.has(mapping.source)
         ? []
         : [
-            `orchestrator.recordApiClient.sync: outbox kind ${kind} source ${mapping.source} is not declared; remedy: add the source table (${mapping.reason})`,
+            `orchestrator.recordApiClient.sync: outbox kind ${kind} source ${mapping.source} is not declared; remedy: add the source table${mapping.reason ? ` (${mapping.reason})` : ''}`,
           ]
     }),
     ...PUSHABLE_HUB_TABLES.flatMap(({ hosted, local }) => {
@@ -104,6 +90,15 @@ function runtimeSyncedSourceRefusals(): string[] {
           ]
     }),
   ].sort()
+}
+
+function baselineStateClassRefusals(previous: StateClassBaseline | null): string[] {
+  return stateClassBaselineRefusals(
+    stateClassBaseline,
+    previous,
+    STATE_CLASSES,
+    STATE_CLASS_OUTBOX_TABLES,
+  )
 }
 
 // These client methods are only enumerated and never called, so the stub value is never read.
@@ -199,6 +194,7 @@ async function main(): Promise<void> {
         hub: hubTables.map((table) => table.name),
       },
       declarations: STATE_CLASSES,
+      outboxKindSources: OUTBOX_KIND_SOURCES,
       outboxTables: STATE_CLASS_OUTBOX_TABLES,
       pushableHubTables: PUSHABLE_HUB_TABLES,
       hostedTables: hostedTableInventory.map((table) => table.name),
@@ -226,7 +222,7 @@ async function main(): Promise<void> {
     const refusals = [
       ...syncedRefusals,
       ...runtimeSyncedSourceRefusals(),
-      ...stateClassBaselineRefusals(stateClassBaseline, previousStateClassBaseline),
+      ...baselineStateClassRefusals(previousStateClassBaseline),
       ...classRefusals,
       ...lifecycleRefusals,
     ]

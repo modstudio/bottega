@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { readSqliteKeyTables } from './identity-inventory.ts'
-import { stateClassRefusals } from './identity-state-class-check.ts'
+import { stateClassBaselineRefusals, stateClassRefusals } from './identity-state-class-check.ts'
 import type { StateClassDeclaration, TableStateClassDeclaration } from './identity-state-classes.ts'
 
 const hosted = (
@@ -21,6 +21,7 @@ const refusals = (
   options: {
     orchestrator?: readonly string[]
     hub?: readonly string[]
+    outboxKindSources?: Readonly<Record<string, { source: string; carries?: readonly string[] }>>
     outboxTables?: readonly string[]
     pushableHubTables?: readonly { hosted: string; local: string }[]
     hostedTables?: readonly string[]
@@ -34,6 +35,7 @@ const refusals = (
       hub: options.hub ?? [],
     },
     declarations,
+    outboxKindSources: options.outboxKindSources ?? {},
     outboxTables: options.outboxTables ?? [],
     pushableHubTables: options.pushableHubTables ?? [],
     hostedTables: options.hostedTables ?? ['hosted_row'],
@@ -85,9 +87,72 @@ describe('stateClassRefusals', () => {
     )
   })
 
+  test('allows only the baseline hosted outbox tables', () => {
+    const result = refusals([hosted('allowed'), hosted('gained')], {
+      orchestrator: ['allowed', 'gained'],
+      outboxTables: ['orchestrator.allowed', 'orchestrator.gained'],
+      allowedHostedOutbox: ['orchestrator.allowed'],
+    })
+
+    expect(result).not.toContain(
+      'orchestrator.allowed: hosted table has a new outbox write path; remedy: write it directly or remove the outbox kind',
+    )
+    expect(result).toContain(
+      'orchestrator.gained: hosted table has a new outbox write path; remedy: write it directly or remove the outbox kind',
+    )
+  })
+
   test('refuses a new cache of a hosted table', () => {
     expect(refusals([hosted('local_row', { cache: true })])).toContain(
       'orchestrator.local_row: hosted table has a new local cache; remedy: read it from the hosted record instead',
+    )
+  })
+
+  test('allows only the baseline hosted caches', () => {
+    const result = refusals(
+      [hosted('allowed', { cache: true }), hosted('gained', { cache: true })],
+      {
+        orchestrator: ['allowed', 'gained'],
+        allowedHostedCaches: ['orchestrator.allowed'],
+      },
+    )
+
+    expect(result).not.toContain(
+      'orchestrator.allowed: hosted table has a new local cache; remedy: read it from the hosted record instead',
+    )
+    expect(result).toContain(
+      'orchestrator.gained: hosted table has a new local cache; remedy: read it from the hosted record instead',
+    )
+  })
+
+  test('refuses an outbox source declared machine', () => {
+    expect(
+      refusals(
+        [
+          hosted('local_row', {
+            class: 'machine',
+            counterpart: undefined,
+            reason: 'Machine state',
+            ruling: 'Test ruling',
+          }),
+        ],
+        { outboxTables: ['orchestrator.local_row'] },
+      ),
+    ).toContain(
+      'orchestrator.local_row: outbox source is declared machine instead of synced; remedy: edit scripts/identity-state-classes.ts with class synced',
+    )
+  })
+
+  test('refuses an outbox kind whose carried table does not exist', () => {
+    expect(
+      refusals([hosted('local_row', { class: 'synced', counterpart: undefined })], {
+        outboxKindSources: {
+          question: { source: 'local_row', carries: ['missing_audit'] },
+        },
+        outboxTables: ['orchestrator.local_row'],
+      }),
+    ).toContain(
+      'outbox kind question names missing local orchestrator table missing_audit; remedy: edit scripts/identity-state-class-facts.ts',
     )
   })
 
@@ -104,7 +169,18 @@ describe('stateClassRefusals', () => {
         hostedTables: ['hub_task', 'other_hosted_row'],
       }),
     ).toContain(
-      'hub.task: pushable hub table hub_task must be hosted with that counterpart; remedy: edit scripts/identity-state-classes.ts',
+      'hub.task: pushable hub table hub_task must be declared hosted with counterpart hub_task, or synced; remedy: edit scripts/identity-state-classes.ts',
+    )
+  })
+
+  test('refuses a pushable hub table with no local declaration', () => {
+    expect(
+      refusals([hosted('local_row')], {
+        hub: ['task'],
+        pushableHubTables: [{ hosted: 'hub_task', local: 'task' }],
+      }),
+    ).toContain(
+      'hub.task: pushable hub table hub_task must be declared hosted with counterpart hub_task, or synced; remedy: edit scripts/identity-state-classes.ts',
     )
   })
 
@@ -156,5 +232,58 @@ describe('stateClassRefusals', () => {
     ).toContain(
       'state-directory.orchestrator/local-state.json: machine declaration needs a non-empty reason and ruling; remedy: edit scripts/identity-state-classes.ts',
     )
+  })
+})
+
+describe('stateClassBaselineRefusals', () => {
+  const declarations = [hosted('outbox'), hosted('cache', { cache: true }), hosted('direct')]
+  const outboxTables = ['orchestrator.outbox']
+
+  test('refuses a gained baseline key', () => {
+    expect(
+      stateClassBaselineRefusals(
+        { hostedOutbox: ['orchestrator.outbox'], hostedCaches: [] },
+        { hostedOutbox: [], hostedCaches: [] },
+        declarations,
+        outboxTables,
+      ),
+    ).toContain(
+      'state class baseline hostedOutbox gained orchestrator.outbox; remedy: remove the hosted outbox or cache instead of widening the baseline',
+    )
+  })
+
+  test('refuses stale hosted outbox and cache keys', () => {
+    const result = stateClassBaselineRefusals(
+      {
+        hostedOutbox: ['orchestrator.direct'],
+        hostedCaches: ['orchestrator.direct'],
+      },
+      null,
+      declarations,
+      outboxTables,
+    )
+
+    expect(result).toContain(
+      'state class baseline hostedOutbox entry orchestrator.direct is stale; remedy: remove it from scripts/identity-state-class-baseline.json',
+    )
+    expect(result).toContain(
+      'state class baseline hostedCaches entry orchestrator.direct is stale; remedy: remove it from scripts/identity-state-class-baseline.json',
+    )
+  })
+
+  test('accepts an unchanged or shrunk baseline', () => {
+    const previous = {
+      hostedOutbox: ['orchestrator.outbox'],
+      hostedCaches: ['orchestrator.cache'],
+    }
+    expect(stateClassBaselineRefusals(previous, previous, declarations, outboxTables)).toEqual([])
+    expect(
+      stateClassBaselineRefusals(
+        { hostedOutbox: [], hostedCaches: [] },
+        previous,
+        declarations,
+        outboxTables,
+      ),
+    ).toEqual([])
   })
 })
