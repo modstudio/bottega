@@ -165,7 +165,7 @@ export const cleanupBoundarySpecs = [
     name: 'session-close-out-resource-release-boundary',
     file: 'orchestrator/src/session/session-close-out-resource-release.ts',
     allowed: ['../../../shared/brand.ts', '../run/run-status.ts', './session-close-out-report.ts'],
-    typeOnlyAllowed: ['./session-close-out-report.ts'],
+    typeOnlyAllowed: ['../reclaim/orphan-process-reclaim.ts', './session-close-out-report.ts'],
     reason: 'Keep session resource release qualification and reporting pure.',
   },
   {

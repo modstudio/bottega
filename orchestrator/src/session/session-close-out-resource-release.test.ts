@@ -15,12 +15,7 @@ describe('session close-out resource release', () => {
       { recordId: 'held', rootRecordId: 'held', status: 'ok', worktree: '/held' },
     ]
 
-    expect(
-      sessionResourceReleaseTargets(runs, [
-        { rootRecordId: 'root', outcome: 'released' },
-        { rootRecordId: 'live', outcome: 'absent' },
-      ]),
-    ).toEqual([
+    expect(sessionResourceReleaseTargets(runs, ['root', 'live'])).toEqual([
       {
         rootRecordId: 'root',
         path: '/removed',
@@ -36,12 +31,18 @@ describe('session close-out resource release', () => {
         target,
         {
           reclaimed: ['terminated pid 42'],
-          kept: [{ item: 'process 43', reason: 'identity changed' }],
+          kept: [{ item: 'process 43', reason: 'identity changed', pid: 43 }],
           errors: ['inventory unavailable'],
         },
         {
           reclaimed: ['removed container app'],
-          kept: [{ item: 'volume data', reason: 'shared by a live tree' }],
+          kept: [
+            {
+              item: 'Compose project data',
+              reason: 'shared by a live tree',
+              composeProject: 'data',
+            },
+          ],
           errors: ['Docker unavailable'],
         },
       ),
@@ -55,7 +56,7 @@ describe('session close-out resource release', () => {
           item: 'process 43',
           reason: 'identity changed',
           evidence: 'removed tree /removed for run chain root',
-          remedy: `${PLATFORM_SLUG} session close-out`,
+          remedy: `${PLATFORM_SLUG} machine reclaim orphan-process 43`,
         },
         {
           item: 'removed-tree processes',
@@ -64,10 +65,10 @@ describe('session close-out resource release', () => {
           remedy: `${PLATFORM_SLUG} session close-out`,
         },
         {
-          item: 'volume data',
+          item: 'Compose project data',
           reason: 'shared by a live tree',
           evidence: 'removed tree /removed for run chain root',
-          remedy: `${PLATFORM_SLUG} session close-out`,
+          remedy: 'inspect with docker compose -p data ps; remove it by hand only if it is residue',
         },
         {
           item: 'removed-tree Compose resources',

@@ -321,6 +321,34 @@ describe('session close-out decisions', () => {
     ])
   })
 
+  test('an empty branch minted by an attached run is not pruned', () => {
+    const result = classifySessionCloseOut(
+      facts({
+        runs: [
+          {
+            recordId: 'attached',
+            rootRecordId: 'attached',
+            sessionId: 'owner',
+            number: 12,
+            status: 'attached',
+            architectTree: false,
+            worktree: '/attached',
+            project: 'p',
+            taskKey: 'DEV-12',
+            mintedBranch: 'fresh-attached',
+            dirty: false,
+          },
+        ],
+        branches: [{ project: 'p', branch: 'fresh-attached', taskKey: 'DEV-12', state: 'empty' }],
+      }),
+    )
+
+    expect(result.mechanical).toEqual([])
+    expect(result.process).toEqual([
+      { kind: 'live-run', runId: 'attached', number: 12, status: 'attached' },
+    ])
+  })
+
   test('terminal roots plan close-out only when they still hold a releasable resource', () => {
     const run = {
       recordId: 'done',

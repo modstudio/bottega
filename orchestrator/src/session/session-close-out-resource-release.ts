@@ -2,13 +2,9 @@
 /** Pure qualification and reporting for removed-tree process and Compose reclamation. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { RemovedTreeProcessCleanup } from '../reclaim/orphan-process-reclaim.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import type { SessionProcessLine } from './session-close-out-report.ts'
-
-export type SessionReleasedTree = {
-  rootRecordId: string
-  outcome: 'released' | 'absent'
-}
 
 export type SessionResourceReleaseTarget = {
   rootRecordId: string
@@ -16,15 +12,13 @@ export type SessionResourceReleaseTarget = {
   runRecordIds: string[]
 }
 
-export type SessionResourceReclaimerResult = {
-  reclaimed: string[]
-  kept: { item: string; reason: string }[]
-  errors: string[]
-}
-
 export type SessionResourceReleaseReport = {
   mechanical: string[]
   process: SessionProcessLine[]
+}
+
+type SessionComposeReclaimerResult = Omit<RemovedTreeProcessCleanup, 'kept'> & {
+  kept: { item: string; reason: string; composeProject: string }[]
 }
 
 /** Select terminal chains whose tree release was proved by this close-out invocation. */
@@ -35,12 +29,12 @@ export function sessionResourceReleaseTargets(
     status: string
     worktree: string | null
   }[],
-  releasedTrees: readonly SessionReleasedTree[],
+  releasedRoots: readonly string[],
 ): SessionResourceReleaseTarget[] {
-  const releasedRoots = new Set(releasedTrees.map((tree) => tree.rootRecordId))
+  const releasedRootSet = new Set(releasedRoots)
   const targets: SessionResourceReleaseTarget[] = []
   for (const [rootRecordId, members] of Map.groupBy(runs, (run) => run.rootRecordId)) {
-    if (!releasedRoots.has(rootRecordId)) continue
+    if (!releasedRootSet.has(rootRecordId)) continue
     if (!members.every((run) => TERMINAL_RUN_STATUS_SET.has(run.status))) continue
     const paths = [...new Set(members.flatMap((run) => (run.worktree ? [run.worktree] : [])))]
     for (const path of paths)
@@ -69,8 +63,8 @@ function processItem(
 /** Map both reclaimers onto close-out's mechanical and process report shapes. */
 export function sessionResourceReleaseReport(
   target: SessionResourceReleaseTarget,
-  processes: SessionResourceReclaimerResult,
-  compose: SessionResourceReclaimerResult,
+  processes: RemovedTreeProcessCleanup,
+  compose: SessionComposeReclaimerResult,
 ): SessionResourceReleaseReport {
   return {
     mechanical: [
@@ -78,9 +72,15 @@ export function sessionResourceReleaseReport(
       ...compose.reclaimed.map((line) => `reclaimed Compose resource: ${line}`),
     ],
     process: [
-      ...processes.kept.map((kept) => processItem(target, kept.item, kept.reason)),
+      ...processes.kept.map((kept) => ({
+        ...processItem(target, kept.item, kept.reason),
+        remedy: `${PLATFORM_SLUG} machine reclaim orphan-process ${kept.pid}`,
+      })),
       ...processes.errors.map((reason) => processItem(target, 'removed-tree processes', reason)),
-      ...compose.kept.map((kept) => processItem(target, kept.item, kept.reason)),
+      ...compose.kept.map((kept) => ({
+        ...processItem(target, kept.item, kept.reason),
+        remedy: `inspect with docker compose -p ${kept.composeProject} ps; remove it by hand only if it is residue`,
+      })),
       ...compose.errors.map((reason) =>
         processItem(target, 'removed-tree Compose resources', reason),
       ),

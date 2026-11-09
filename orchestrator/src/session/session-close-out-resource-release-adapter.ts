@@ -37,7 +37,11 @@ export function reclaimSessionReleasedTree(
   }
   return sessionResourceReleaseReport(target, processes, {
     reclaimed: compose.removed,
-    kept: compose.kept,
+    kept: compose.kept.map(({ item, reason, composeProject }) => ({
+      item,
+      reason,
+      composeProject,
+    })),
     errors: compose.errors,
   })
 }

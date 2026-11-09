@@ -3,7 +3,7 @@
 
 import type { BranchLanding } from '../branch/branch-state.ts'
 import type { ContextItemKind } from '../doc/doc-context-write.ts'
-import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { RUN_LIVE_STATUSES, TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
 export type SessionOwnedRun = {
   recordId: string
@@ -136,8 +136,23 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
   return { mechanical, process }
 }
 
-function isLiveSessionRun(status: string): boolean {
-  return status === 'running' || status === 'asking'
+const RUN_LIVE_STATUS_SET: ReadonlySet<string> = new Set(RUN_LIVE_STATUSES)
+
+export function isLiveSessionRun(status: string): boolean {
+  return RUN_LIVE_STATUS_SET.has(status)
+}
+
+/** Derive the roots whose run/tree close-out is planned by these actions. */
+export function plannedSessionRunRoots(
+  actions: readonly SessionMechanicalAction[],
+  runs: readonly Pick<SessionOwnedRun, 'recordId' | 'rootRecordId'>[],
+): string[] {
+  return actions.flatMap((action) => {
+    if (action.kind === 'close-run') return [action.runId]
+    if (action.kind !== 'remove-tree') return []
+    const run = runs.find((candidate) => candidate.recordId === action.runId)
+    return run ? [run.rootRecordId] : []
+  })
 }
 
 function isTerminalSessionRun(status: string): boolean {

@@ -24,6 +24,8 @@ import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import {
   classifySessionCloseOut,
+  isLiveSessionRun,
+  plannedSessionRunRoots,
   plannedTreeOwnerMatches,
   type SessionHeldRunResources,
   type SessionMechanicalAction,
@@ -37,7 +39,6 @@ import {
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 import {
-  type SessionReleasedTree,
   sessionResourceReleaseDryRunLines,
   sessionResourceReleaseTargets,
 } from './session-close-out-resource-release.ts'
@@ -557,14 +558,11 @@ function recordMechanicalFailure(
   })
 }
 
-function applyMechanicalAction(
-  action: SessionMechanicalAction,
-  database: Database,
-): SessionReleasedTree | null {
+function applyMechanicalAction(action: SessionMechanicalAction, database: Database): string | null {
   if (action.kind === 'close-run') {
     const result = closeOutRun(action.runId, { intent: 'explicit' })
     throwUnlessReleased(result)
-    return { rootRecordId: result.runId, outcome: result.outcome as 'released' | 'absent' }
+    return result.runId
   }
   if (action.kind === 'remove-tree') {
     const path = canonicalPath(action.path)
@@ -574,7 +572,7 @@ function applyMechanicalAction(
       )
     const result = closeOutRun(action.runId, { intent: 'tree-remove' })
     throwUnlessReleased(result)
-    return { rootRecordId: result.runId, outcome: result.outcome as 'released' | 'absent' }
+    return result.runId
   }
   if (action.kind === 'ship-cleanup') {
     const result = shipCleanup(action.branch, { project: action.project })
@@ -717,7 +715,7 @@ function appendArgumentProcesses(
       item: `process ${process.pid}`,
       reason: 'argument-only process match requires a ruling',
       evidence: process.command,
-      remedy: `${PLATFORM_SLUG} machine reclaim process ${process.pid}`,
+      remedy: `${PLATFORM_SLUG} machine reclaim orphan-process ${process.pid}`,
     })
 }
 
@@ -742,7 +740,7 @@ function applySessionMechanicalActions(
   session: string,
   dryRun: boolean,
 ): void {
-  const releasedTrees: SessionReleasedTree[] = []
+  const releasedRoots: string[] = []
   for (const action of inventory.classification.mechanical) {
     const label = mechanicalLabel(action)
     if (dryRun) {
@@ -751,22 +749,16 @@ function applySessionMechanicalActions(
     }
     try {
       const released = applyMechanicalAction(action, database)
-      if (released) releasedTrees.push(released)
+      if (released) releasedRoots.push(released)
       report.mechanical.push(label)
     } catch (cause) {
       recordMechanicalFailure(report, label, session, cause)
     }
   }
-  const plannedTrees = inventory.classification.mechanical.flatMap((action) => {
-    if (action.kind === 'close-run')
-      return [{ rootRecordId: action.runId, outcome: 'released' as const }]
-    if (action.kind !== 'remove-tree') return []
-    const run = inventory.runs.find((candidate) => candidate.recordId === action.runId)
-    return run ? [{ rootRecordId: run.rootRecordId, outcome: 'released' as const }] : []
-  })
+  const plannedRoots = plannedSessionRunRoots(inventory.classification.mechanical, inventory.runs)
   const resourceTargets = sessionResourceReleaseTargets(
     inventory.runs,
-    dryRun ? plannedTrees : releasedTrees,
+    dryRun ? plannedRoots : releasedRoots,
   )
   if (dryRun) report.mechanical.push(...sessionResourceReleaseDryRunLines(resourceTargets))
   else
@@ -819,14 +811,7 @@ export async function closeOutSession(
   report.process.push(...(await sessionCloseOutObligationItems(database, session, final.runs)))
   appendArgumentProcesses(report, final)
   const plannedRunRoots = new Set(
-    dryRun
-      ? initial.classification.mechanical.flatMap((action) => {
-          if (action.kind === 'close-run') return [action.runId]
-          if (action.kind !== 'remove-tree') return []
-          const run = initial.runs.find((candidate) => candidate.recordId === action.runId)
-          return run ? [run.rootRecordId] : []
-        })
-      : [],
+    dryRun ? plannedSessionRunRoots(initial.classification.mechanical, initial.runs) : [],
   )
   const plannedClaimIds = new Set(
     dryRun
@@ -836,8 +821,7 @@ export async function closeOutSession(
       : [],
   )
   report.verdict = sessionCloseOutVerdict({
-    remainingRuns: final.runs.filter((run) => run.status === 'running' || run.status === 'asking')
-      .length,
+    remainingRuns: final.runs.filter((run) => isLiveSessionRun(run.status)).length,
     remainingTrees: final.runs.filter(
       (run) =>
         run.worktree &&
