@@ -2,13 +2,13 @@
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
-import type { readTaskText } from '../dispatch/task-key-lookup.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import { initialRunTaskText } from './run-task-text.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 type DispatchLinks = { taskRecordId: string | null; projectRecordId: string | null }
+type TaskTextReader = NonNullable<Parameters<typeof initialRunTaskText>[1]>['readTaskText']
 
 function runDispatchRulingsSection(input: {
   resume: boolean
@@ -41,7 +41,7 @@ export async function prepareRunDispatchRulings(
     writesJob?: boolean
   },
   dependencies: {
-    taskTextReader?: typeof readTaskText
+    taskTextReader?: TaskTextReader
   } = {},
 ): Promise<{
   section: string
