@@ -242,6 +242,7 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/brand.ts',
       '../../shared/cli-repeat-guard.ts',
+      '../../shared/typed-question/client.ts',
       'commander',
       './attribute.ts',
       './db.ts',

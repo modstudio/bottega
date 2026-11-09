@@ -1,6 +1,7 @@
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { repeatable } from '../../shared/cli-repeat-guard.ts'
+import { TYPESAFE_CREDENTIAL_SET_COMMAND } from '../../shared/typed-question/client.ts'
 import { projectOf } from './attribute.ts'
 import { requireDatabase } from './db.ts'
 import {
@@ -202,7 +203,7 @@ function registerNoteReferenceCommands(note: Command): void {
       if (recorded) console.log('notes recorded as distinct')
       else {
         console.error(
-          'no note-duplicate answer is available, so the distinct ruling was not recorded; check TYPESAFE_KEY and retry',
+          `no note-duplicate answer is available, so the distinct ruling was not recorded; run ${TYPESAFE_CREDENTIAL_SET_COMMAND} and retry`,
         )
         process.exitCode = 1
       }
