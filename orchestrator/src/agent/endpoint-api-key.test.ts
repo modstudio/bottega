@@ -8,9 +8,35 @@ import {
   decideEndpointApiKeyRetry,
   ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS,
   effectiveEndpointApiKeyForRun,
+  endpointApiKeyForProject,
   endpointApiKeyResolves,
   resolveEndpointApiKeyEnv,
 } from './endpoint-api-key.ts'
+
+test('provider endpoint resolution wins over the legacy secret and records its payer', async () => {
+  const project = { name: 'starship', recordId: crypto.randomUUID(), settings: {} }
+  const endpoint = await endpointApiKeyForProject(
+    { provider: 'openrouter', apiKeySecret: 'LEGACY_KEY' },
+    project,
+    {
+      address: async () => ({
+        provider: 'openrouter', name: null, type: 'api-key', mode: 'default',
+        environment: 'local', payer: 'personal', projectId: project.recordId,
+        projectName: project.name, spaceName: 'team', destinationSpaceId: crypto.randomUUID(),
+      }),
+      resolve: async (address) => ({
+        kind: 'resolved' as const,
+        reason: 'default order',
+        credential: { row: {}, spaceId: address.destinationSpaceId, projectId: null, payer: 'shared' as const, provider: 'openrouter', name: null, type: 'api-key', mode: 'default' as const, environment: 'local' as const },
+        row: { id: crypto.randomUUID(), projectId: null },
+        value: 'provider-value',
+      }),
+    } as never,
+  )
+  expect(await endpoint.resolve()).toEqual({ OPENAI_API_KEY: 'provider-value' })
+  expect(endpoint.credential).toMatchObject({ payer: 'shared', binding: 'space' })
+  expect(endpoint.key.secretName).toBeNull()
+})
 
 test('a project substitutes only a matching named agent secret', () => {
   expect(

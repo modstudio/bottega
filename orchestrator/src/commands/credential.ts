@@ -30,6 +30,7 @@ import {
   resolveCredentialValue,
   resolveProjectCredential,
   setCredential,
+  projectCredentialAddress,
 } from '../config/credential-service.ts'
 import { runWithEnvironment } from '../config/secret-run.ts'
 import { projectByName } from '../project/projects.ts'
@@ -97,7 +98,7 @@ async function bindingAddress(options: BindingOptions): Promise<CredentialBindin
   const project = options.project ? projectByName(options.project) : null
   if (options.project && !project) throw new Error(`no project ${options.project}`)
   if (project && !project.recordId)
-    throw new Error(`project ${project.name} has no hosted record identity`)
+    throw new Error(`project ${project.name} has no hosted record identity\ncleared by: bottega project push`)
   const memberships = parseRecordSpaceMemberships(who.memberships)
   let destinationSpaceId: string
   if (project) {
@@ -125,8 +126,21 @@ async function bindingAddress(options: BindingOptions): Promise<CredentialBindin
 }
 
 async function address(name: string, options: BindingOptions): Promise<CredentialAddress> {
+  const identity = identityName(name)
+  if (options.project) {
+    const project = projectByName(options.project)
+    if (!project) throw new Error(`no project ${options.project}`)
+    const target = await projectCredentialAddress(project, identity.provider)
+    return {
+      ...target,
+      ...identity,
+      mode: mode(options.mode),
+      environment: environment(options.env),
+      payer: options.shared ? 'shared' : 'personal',
+    }
+  }
   return {
-    ...identityName(name),
+    ...identity,
     ...(await bindingAddress(options)),
     mode: mode(options.mode),
     environment: environment(options.env),

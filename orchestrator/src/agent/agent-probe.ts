@@ -195,19 +195,26 @@ export function recordSuccessfulRegistrationProbe(name: string): void {
 }
 
 /** Prove capabilities before routing spends a worktree discovering them. */
-export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment; fresh?: boolean }
+export type AgentProbeInputs = {
+  path?: string
+  environment: ConfigEnvironment
+  fresh?: boolean
+  project: import('../project/projects.ts').Project | null
+}
 
 async function recordBudgetProbe(
   name: string,
   row: AgentRow,
   result: RegistrationProbeResult,
+  project: import('../project/projects.ts').Project | null,
 ): Promise<RegistrationProbeResult> {
   const projection = openRouterProbeBudget(
     await checkOpenRouterKeyBudget({
       baseUrl: row.base_url,
       apiKeySecret: row.api_key_secret,
       billing: row.billing,
-    }),
+      provider: row.provider,
+    }, project),
   )
   const checked = {
     ...result,
@@ -436,7 +443,7 @@ export async function probeAgent(
       compactionApplies,
     )
   )
-    return recordBudgetProbe(name, row, previous as RegistrationProbeResult)
+    return recordBudgetProbe(name, row, previous as RegistrationProbeResult, inputs.project)
   if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
   const agent = rowAgent(row)
@@ -447,7 +454,7 @@ export async function probeAgent(
   const { mintStdioPingServer, mcpToolCallsObservable } = await import('../mcp/mcp-probe.ts')
   mintStdioPingServer(join(scratch, 'repo'))
   const transport = transportFor(agent.defaultTransport)
-  const runOne = registrationProbeRunner({ name, scratch, agent, transport })
+  const runOne = registrationProbeRunner({ name, scratch, agent, transport, project: inputs.project })
   const reply = await runOne('reply', 'Reply with exactly: ok')
   const tool = needs.tool
     ? await runOne(
@@ -562,5 +569,5 @@ export async function probeAgent(
     writingPolicy.jobSuccess &&
     (!needs.resumable || resumingPolicy.jobSuccess) &&
     (contextTokens !== null || !row.base_url)
-  return recordBudgetProbe(name, row, result)
+  return recordBudgetProbe(name, row, result, inputs.project)
 }

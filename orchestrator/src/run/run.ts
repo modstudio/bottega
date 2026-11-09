@@ -2,15 +2,16 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { requireAgent } from '../agent/agent-registry.ts'
+import { AGENTS, requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
-import { effectiveEndpointApiKeyForRun } from '../agent/endpoint-api-key.ts'
+import { endpointApiKeyForProject } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-failure.ts'
 import { checkOpenRouterKeyBudget } from '../agent/openrouter-key-budget.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, recordPack } from '../canon/canon.ts'
+import { projectCredentialRouteFacts } from '../config/credential-service.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import { bindCodexMcpToolInstruction } from '../contract/codex-mcp-tool.ts'
 import {
@@ -379,6 +380,11 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       envTransport: transportPin.transportPinSource === 'environment',
     },
     requiredMcp = requiredMcpServer(mcpRequest, callerCwd, runProjectName ?? undefined)
+  const runProject = projectAt(callerCwd)
+  const credentialFacts = await projectCredentialRouteFacts(
+    runProject,
+    Object.values(AGENTS).flatMap((agent) => (agent.provider ? [agent.provider] : [])),
+  )
   const pickSource = () =>
     pick(
       opts.job,
@@ -395,6 +401,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         ...transportPin,
         project: runProjectName,
         routed: opts.routedAgent,
+        credentialFacts,
       },
       opts.probe,
       opts.lens,
@@ -501,8 +508,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
   const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
   let outPath = paths.output
-  const runProject = projectAt(callerCwd)
-  const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
+  const endpoint = await endpointApiKeyForProject(a, runProject)
   const claimedRun = await claimRun({
     opts,
     runsDir: RUNS_DIR,
@@ -539,6 +545,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     replySchemaName,
     carriedQuestionIds: dispatchRulings.questionIds,
     endpointKeySource: endpoint.key.source,
+    credential: endpoint.credential,
     precomputedLinks: dispatchRulings.links,
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
@@ -963,7 +970,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           ;({ failureKind, error, billingHoldDetail } = applyOpenRouterBudgetToAuthFailure(
             failureKind,
             error,
-            await checkOpenRouterKeyBudget(endpoint.row),
+            await checkOpenRouterKeyBudget(endpoint.row, runProject),
           ))
         }
       } finally {

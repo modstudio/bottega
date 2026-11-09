@@ -1642,6 +1642,14 @@
       "tag": "0214_jev_worker_question_v2",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 215,
+      "version": "6",
+      "when": 1794153600000,
+      "tag": "0215_agent_provider_run_credential",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

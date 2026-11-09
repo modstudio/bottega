@@ -7,6 +7,7 @@ export type BillingKeyAgent = {
   name: string
   baseUrl?: string | null
   apiKeySecret?: string | null
+  provider?: string | null
 }
 
 type BillingKey = { secretName: string; baseUrl: string | null }
@@ -17,6 +18,7 @@ export type BillingKeyRun = {
   status: string
   failure_kind: string | null
   endpoint_key_source: 'agent' | 'project' | null
+  credential_id: string | null
   finished_at: number
 }
 export type BillingKeyHold = BillingKey & {
@@ -24,6 +26,11 @@ export type BillingKeyHold = BillingKey & {
   agents: string[]
   failingRunNumber: number
 }
+
+const laterRun = (candidate: BillingKeyRun, current: BillingKeyRun | undefined) =>
+  !current ||
+  candidate.finished_at > current.finished_at ||
+  (candidate.finished_at === current.finished_at && candidate.record_id > current.record_id)
 
 /** The account identity that makes separate agent rows spend the same balance. */
 function billingKeyForAgent(agent: BillingKeyAgent): BillingKey | null {
@@ -50,6 +57,7 @@ export function decideBillingKeyHolds(
   const groups = new Map<string, { key: BillingKey; agents: string[] }>()
   const keyByAgent = new Map<string, string>()
   for (const agent of agents) {
+    if (agent.provider) continue
     const key = billingKeyForAgent(agent)
     if (!key) continue
     const id = keyId(key)
@@ -60,26 +68,53 @@ export function decideBillingKeyHolds(
   }
 
   const latest = new Map<string, BillingKeyRun>()
+  const latestCredentialRunByAgent = new Map<string, BillingKeyRun>()
   for (const run of runs) {
+    if (!run.credential_id) continue
+    const current = latestCredentialRunByAgent.get(run.agent)
+    if (laterRun(run, current)) latestCredentialRunByAgent.set(run.agent, run)
+  }
+  const credentialAgents = new Map<string, string[]>()
+  for (const agent of agents) {
+    if (!agent.provider) continue
+    const credentialId = latestCredentialRunByAgent.get(agent.name)?.credential_id
+    if (!credentialId) continue
+    credentialAgents.set(credentialId, [...(credentialAgents.get(credentialId) ?? []), agent.name])
+  }
+  const latestCredential = new Map<string, BillingKeyRun>()
+  for (const run of runs) {
+    if (run.credential_id) {
+      if (run.failure_kind !== 'billing' && !successfulProviderAnswer(run)) continue
+      const current = latestCredential.get(run.credential_id)
+      if (laterRun(run, current)) latestCredential.set(run.credential_id, run)
+      continue
+    }
     if ((run.endpoint_key_source ?? 'agent') === 'project') continue
     const id = keyByAgent.get(run.agent)
     if (!id || (run.failure_kind !== 'billing' && !successfulProviderAnswer(run))) continue
     const current = latest.get(id)
-    if (
-      !current ||
-      run.finished_at > current.finished_at ||
-      (run.finished_at === current.finished_at && run.record_id > current.record_id)
-    ) {
-      latest.set(id, run)
-    }
+    if (laterRun(run, current)) latest.set(id, run)
   }
 
-  return [...groups.entries()].flatMap(([id, group]) => {
+  const legacyHolds = [...groups.entries()].flatMap(([id, group]) => {
     const run = latest.get(id)
     return run?.failure_kind === 'billing'
       ? [{ ...group.key, id, agents: group.agents.sort(), failingRunNumber: run.number }]
       : []
   })
+  const credentialHolds = [...latestCredential.entries()].flatMap(([credentialId, run]) => {
+    const heldAgents = credentialAgents.get(credentialId) ?? []
+    return run.failure_kind === 'billing' && heldAgents.length
+      ? [{
+          secretName: `credential ${credentialId}`,
+          baseUrl: null,
+          id: `credential:${credentialId}`,
+          agents: heldAgents.sort(),
+          failingRunNumber: run.number,
+        }]
+      : []
+  })
+  return [...legacyHolds, ...credentialHolds]
 }
 
 export function billingKeyHoldRefusal(hold: BillingKeyHold): string {

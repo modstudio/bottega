@@ -16,9 +16,30 @@ import { pinTrustedMachine } from '../../../shared/trust-list.ts'
 import {
   type CredentialAddress,
   deleteCredential,
+  projectCredentialAddress,
   resolveCredentialValue,
   setCredential,
 } from './credential-service.ts'
+
+test('project credential address matches credential resolve project defaults', async () => {
+  const projectId = crypto.randomUUID()
+  const spaceId = crypto.randomUUID()
+  const target = await projectCredentialAddress(
+    { name: 'starship', recordId: projectId, settings: {} },
+    'openrouter',
+    {
+      whoami: async () => ({
+        user: { id: crypto.randomUUID() },
+        activeSpaceId: spaceId,
+        memberships: [{ space_id: spaceId, slug: 'team', permission: 'write' }],
+      }),
+    } as ConfigClient,
+  )
+  expect(target).toEqual({
+    provider: 'openrouter', name: null, type: 'api-key', mode: 'default', environment: 'local',
+    payer: 'personal', projectId, projectName: 'starship', spaceName: 'team', destinationSpaceId: spaceId,
+  })
+})
 
 let root: string
 let previousConfigHome: string | undefined

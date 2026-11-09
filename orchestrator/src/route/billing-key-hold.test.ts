@@ -13,6 +13,7 @@ const run = (overrides: Partial<BillingKeyRun>): BillingKeyRun => ({
   status: 'failed',
   failure_kind: 'billing',
   endpoint_key_source: 'agent',
+  credential_id: null,
   finished_at: 1,
   ...overrides,
 })
@@ -64,5 +65,20 @@ describe('billing key holds', () => {
         }),
       ]),
     ).toEqual([])
+  })
+
+  test('credential billing holds follow the most recent credential id and never legacy groups', () => {
+    const providerAgents = [
+      { name: 'a', provider: 'openrouter', baseUrl: 'https://one.test', apiKeySecret: 'ONE_KEY' },
+      { name: 'b', provider: 'openrouter', baseUrl: 'https://one.test', apiKeySecret: 'ONE_KEY' },
+      agents[2]!,
+    ]
+    expect(decideBillingKeyHolds(providerAgents, [
+      run({ credential_id: 'credential-a' }),
+      run({ record_id: 'b', agent: 'b', credential_id: 'credential-a', failure_kind: null, status: 'ok', finished_at: 0 }),
+    ])).toEqual([
+      expect.objectContaining({ id: 'credential:credential-a', agents: ['a', 'b'] }),
+    ])
+    expect(decideBillingKeyHolds(providerAgents, [run({ credential_id: null })])).toEqual([])
   })
 })

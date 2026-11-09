@@ -94,7 +94,14 @@ type RouteConstraints = {
   transportPinSource?: McpTransportPinFacts['transportPinSource']
   project?: string | null
   routed?: RoutedSelection
+  credentialFacts?: ProviderCredentialFacts
 }
+
+export type ProviderCredentialFact =
+  | { status: 'resolved' }
+  | { status: 'refused'; refusal: string }
+  | { status: 'unknown' }
+export type ProviderCredentialFacts = ReadonlyMap<string, ProviderCredentialFact>
 
 type CandidateOptions = {
   stack?: string | null
@@ -108,6 +115,7 @@ type CandidateOptions = {
   priceCost?: boolean
   projectName?: string | null
   repositoryReader?: (project: Pick<Project, 'path'>) => string | null
+  credentialFacts?: ProviderCredentialFacts
 }
 
 /**
@@ -241,6 +249,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     priceCost = false,
     projectName,
     repositoryReader = currentProjectRepository,
+    credentialFacts,
   } = options
   const j = job(jobName)
   const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
@@ -321,6 +330,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       projectName,
       routeProject,
       readCurrentRepository,
+      credentialFacts,
     )
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
@@ -528,6 +538,7 @@ export function evidenceFor(
     pinnedTransport?: 'cli' | 'acp'
     transportPinSource?: McpTransportPinFacts['transportPinSource']
     project: string | null | undefined
+    credentialFacts?: ProviderCredentialFacts
   },
 ): {
   cands: Candidate[]
@@ -544,6 +555,7 @@ export function evidenceFor(
     project: projectName,
     requiredMcp,
     transportPinSource,
+    credentialFacts,
   } = options
   const requested =
     lens?.trim() && job(jobName).findings
@@ -557,6 +569,7 @@ export function evidenceFor(
     pinnedTransport,
     transportPinSource,
     projectName,
+    credentialFacts,
   })
   if (requested) {
     const scoped =
@@ -568,6 +581,7 @@ export function evidenceFor(
             pinnedTransport,
             transportPinSource,
             projectName,
+          credentialFacts,
           })
         : candidates(jobName, promptBytes, {
             stack: requested.value,
@@ -576,6 +590,7 @@ export function evidenceFor(
             pinnedTransport,
             transportPinSource,
             projectName,
+          credentialFacts,
           })
     // A cooling candidate cannot establish that a scoped comparison is available.
     const eligible = scoped.filter((c) => c.eligible && !c.cooling)
@@ -623,6 +638,7 @@ function evidenceForPick(
     pinnedTransport: constraints.pinnedTransport,
     transportPinSource: constraints.transportPinSource,
     project: constraints.project,
+    credentialFacts: constraints.credentialFacts,
   })
 }
 
@@ -677,6 +693,7 @@ function namedCandidate(
     transportPinSource: constraints.transportPinSource,
     explicitlyNamedAgent: name,
     projectName: constraints.project,
+    credentialFacts: constraints.credentialFacts,
   })
   const candidate = rows.find((row) => row.agent === name)
   if (!candidate) throw new RoutingRefusalError(refusal(`unknown agent "${name}"`))
@@ -849,6 +866,7 @@ function pickExternal(
         pinnedTransport: avoid.pinnedTransport,
         transportPinSource: avoid.transportPinSource,
         projectName: avoid.project,
+        credentialFacts: avoid.credentialFacts,
         priceCost: true,
       }),
   })
@@ -961,12 +979,16 @@ function pickExternal(
 
 function routePolicyEligibility(
   jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'defaultTransport' | 'trainsOnInputs'>,
+  agent: Pick<
+    Agent,
+    'billing' | 'routeMetered' | 'name' | 'defaultTransport' | 'trainsOnInputs' | 'provider'
+  >,
   explicitlyNamedAgent: string | undefined,
   pinnedTransport?: 'cli' | 'acp',
   projectName?: string | null,
   project: Project | null = projectName ? projectByName(projectName) : null,
   repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
+  credentialFacts?: ProviderCredentialFacts,
 ) {
   if (agent.trainsOnInputs && projectName === undefined) {
     return {
@@ -989,6 +1011,8 @@ function routePolicyEligibility(
   if (!training.eligible) return { ...training, mayAutoRouteNamedJob: false }
   const metered = agentMeteredRouteEligibility(jobName, agent, explicitlyNamedAgent)
   if (!metered.eligible) return metered
+  const credential = providerCredentialEligibility(agent.provider, credentialFacts)
+  if (!credential.eligible) return { ...metered, ...credential }
   const transport = pinnedTransport ?? agent.defaultTransport
   const transportWhy =
     transport === 'acp'
@@ -1011,6 +1035,18 @@ function routePolicyEligibility(
           )
         : null
   return transportWhy ? { ...metered, eligible: false, why: transportWhy } : metered
+}
+
+/** Credential refusal excludes an agent; hosted uncertainty is deferred to launch. */
+export function providerCredentialEligibility(
+  provider: string | null | undefined,
+  facts: ProviderCredentialFacts | undefined,
+): { eligible: boolean; why: string } {
+  if (!provider || !facts) return { eligible: true, why: '' }
+  const fact = facts.get(provider)
+  return fact?.status === 'refused'
+    ? { eligible: false, why: fact.refusal }
+    : { eligible: true, why: '' }
 }
 
 export function agentsIneligibleForTransport(jobName: string, transport: 'cli' | 'acp'): string[] {

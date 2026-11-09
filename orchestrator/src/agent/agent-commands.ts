@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import { projectAt } from '../project/projects.ts'
 import { probeAgent, recordSuccessfulRegistrationProbe } from './agent-probe.ts'
 import {
   AGENTS,
@@ -76,6 +77,11 @@ function assertApiKeyFlags(argv: string[], value: string | undefined): void {
     throw new Error('--api-key-secret and --clear-api-key-secret are mutually exclusive')
 }
 
+function assertProviderFlags(argv: string[], value: string | undefined): void {
+  if (value !== undefined && argv.includes('--clear-provider'))
+    throw new Error('--provider and --clear-provider are mutually exclusive')
+}
+
 function booleanFlag(name: string, value: string | undefined): boolean | undefined {
   if (value === undefined) return undefined
   if (value !== 'true' && value !== 'false') throw new Error(`--${name} must be true or false`)
@@ -86,6 +92,8 @@ function mutation(argv: string[]): AgentMutation {
   const flag = (name: string) => flagValue(argv, name)
   const apiKeySecret = flag('api-key-secret')
   assertApiKeyFlags(argv, apiKeySecret)
+  const provider = flag('provider')
+  assertProviderFlags(argv, provider)
   const enabled = booleanFlag('enabled', flag('enabled'))
   const billing = flag('billing')
   const routeMetered = booleanFlag('route-metered', flag('route-metered'))
@@ -101,6 +109,8 @@ function mutation(argv: string[]): AgentMutation {
     ...(flag('base-url') ? { baseUrl: flag('base-url')! } : {}),
     ...(apiKeySecret ? { apiKeySecret } : {}),
     ...(argv.includes('--clear-api-key-secret') ? { apiKeySecret: null } : {}),
+    ...(provider ? { provider } : {}),
+    ...(argv.includes('--clear-provider') ? { provider: null } : {}),
     ...(billing ? { billing: billing as AgentMutation['billing'] } : {}),
     ...(routeMetered !== undefined ? { routeMetered } : {}),
     ...(trainsOnInputs !== undefined ? { trainsOnInputs } : {}),
@@ -155,6 +165,7 @@ async function probeCommand(
     path: process.env.PATH,
     environment: process.env,
     fresh: argv.includes('--fresh'),
+    project: projectAt(process.cwd()),
   })
   if (result.ok && !result.billingHold) recordSuccessfulRegistrationProbe(name)
   presentation.log(JSON.stringify(result, null, 2))

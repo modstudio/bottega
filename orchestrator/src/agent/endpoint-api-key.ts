@@ -12,10 +12,28 @@ import {
 } from '../../../shared/secret-resolution-failure.ts'
 import type { EffectiveBillingKey } from '../failure/failure.ts'
 import type { ProjectAgentKeys } from '../project/project-agent-keys.ts'
+import type { Project } from '../project/projects.ts'
+import {
+  projectCredentialAddress,
+  resolveCredentialValue,
+} from '../config/credential-service.ts'
 
 type EndpointKeyRow = {
   baseUrl?: string | null
   apiKeySecret?: string | null
+  provider?: string | null
+}
+
+export type CredentialPayment = {
+  credentialId: string
+  payer: 'personal' | 'shared'
+  binding: 'space' | 'project'
+}
+export type EndpointApiKeyLaunch<T extends EndpointKeyRow> = {
+  row: T
+  key: EffectiveBillingKey
+  resolve(): Promise<Record<string, string>>
+  credential: CredentialPayment | null
 }
 
 /** Pure policy: a project mapping replaces only the matching agent secret reference. */
@@ -50,6 +68,43 @@ export function effectiveEndpointApiKeyForRun<T extends EndpointKeyRow>(
     row: effectiveRow,
     key,
     resolve: () => resolveEndpointApiKeyEnv(effectiveRow, undefined, options),
+  }
+}
+
+type ProviderEndpointDependencies = {
+  address: typeof projectCredentialAddress
+  resolve: typeof resolveCredentialValue
+}
+
+const providerEndpointDependencies: ProviderEndpointDependencies = {
+  address: projectCredentialAddress,
+  resolve: resolveCredentialValue,
+}
+
+/** Choose the provider credential path before the legacy named-secret path. */
+export async function endpointApiKeyForProject<T extends EndpointKeyRow>(
+  row: T,
+  project: Pick<Project, 'name' | 'recordId' | 'settings'> | null | undefined,
+  dependencies: ProviderEndpointDependencies = providerEndpointDependencies,
+): Promise<EndpointApiKeyLaunch<T>> {
+  const provider = row.provider?.trim()
+  if (!provider) return { ...effectiveEndpointApiKeyForRun(row, project), credential: null }
+  if (!project)
+    throw new Error(
+      'provider-backed agent requires a registered project\ncleared by: run the command from a registered project',
+    )
+  const address = await dependencies.address(project, provider)
+  const resolved = await dependencies.resolve(address)
+  const env = { OPENAI_API_KEY: resolved.value }
+  return {
+    row,
+    key: { secretName: null, source: 'agent', projectName: null },
+    resolve: async () => env,
+    credential: {
+      credentialId: resolved.row.id,
+      payer: resolved.credential.payer,
+      binding: resolved.row.projectId ? 'project' : 'space',
+    },
   }
 }
 

@@ -11,6 +11,7 @@ const row = (overrides: Partial<RecentTerminalRun> = {}): RecentTerminalRun => {
     status: 'failed',
     failure_kind: 'provider_error',
     endpoint_key_source: null,
+    credential_id: null,
     finished_at: Date.now() - minsAgo * 60_000,
     mins_ago: minsAgo,
     ...overrides,

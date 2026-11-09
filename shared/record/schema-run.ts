@@ -110,6 +110,9 @@ export const run = pgTable.withRLS(
     transport: text(),
     sessionId: text('session_id'),
     routeReason: text('route_reason'),
+    credentialId: uuid('credential_id'),
+    credentialPayer: text('credential_payer'),
+    credentialBinding: text('credential_binding'),
     noFailover: boolean('no_failover').notNull(),
     automaticFailover: boolean('automatic_failover').notNull(),
     outsideWorktreeWrites: jsonb('outside_worktree_writes'),
@@ -146,6 +149,14 @@ export const run = pgTable.withRLS(
     check(
       'run_executor_check',
       sql`${table.executor} IS NULL OR ${table.executor} IN ('external', 'harness')`,
+    ),
+    check(
+      'run_credential_payer_check',
+      sql`${table.credentialPayer} IS NULL OR ${table.credentialPayer} IN ('personal', 'shared')`,
+    ),
+    check(
+      'run_credential_binding_check',
+      sql`${table.credentialBinding} IS NULL OR ${table.credentialBinding} IN ('space', 'project')`,
     ),
     check(
       'run_task_or_project_unless_probe',

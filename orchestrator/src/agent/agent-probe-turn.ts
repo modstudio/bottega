@@ -22,7 +22,8 @@ import { withTransportDeadline } from '../transport/transport.ts'
 import { gooseSessionContextProfile } from '../transport/transport-goose-context-profile.ts'
 import type { WritingProbeConfinement } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
-import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
+import { endpointApiKeyForProject } from './endpoint-api-key.ts'
+import type { Project } from '../project/projects.ts'
 
 type ProbeTurnInput = {
   name: string
@@ -36,6 +37,7 @@ type ProbeTurnInput = {
   writing?: WritingProbeConfinement
   session?: string
   environment?: Record<string, string>
+  project: Project | null
 }
 
 type ProbeTurnResult = {
@@ -81,7 +83,9 @@ export async function probeEnvironment(
   name: string,
   agent: Agent,
   scratch: string,
+  project: Project | null = null,
 ): Promise<Record<string, string>> {
+  const endpoint = await endpointApiKeyForProject(agent, project)
   const environment: Record<string, string> = {
     ...Object.fromEntries(
       Object.entries(process.env).filter(
@@ -89,9 +93,7 @@ export async function probeEnvironment(
       ),
     ),
     ...(agent.env?.() ?? {}),
-    ...(await resolveEndpointApiKeyEnv(agent, undefined, {
-      exhaustedRetryCommand: `${PLATFORM_SLUG} agent probe ${name}`,
-    })),
+    ...(await endpoint.resolve()),
     BOTTEGA_SCRATCH: scratch,
   }
   // The probe reads this turn's own rollout, so it needs the confined Codex home
@@ -147,7 +149,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
   try {
     // A refused probe environment must record a failed probe turn, not escape
     // with the row left 'running'.
-    const environment = await probeEnvironment(input.name, input.agent, scratchDir)
+    const environment = await probeEnvironment(input.name, input.agent, scratchDir, input.project)
     Object.assign(environment, input.environment)
     if (input.writing) environment.HOME = input.writing.workerHomeDir
     const handle = await input.transport.start({

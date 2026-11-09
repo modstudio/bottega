@@ -27,6 +27,7 @@ import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { resolveReplyDialect } from '../contract/contract.ts'
+import { projectCredentialRouteFacts } from '../config/credential-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { unavailableStatus } from '../database/review-lens-input-artifact.ts'
 import { recordRunWarning } from '../events.ts'
@@ -488,6 +489,13 @@ export async function selectBeforeDetach(
     requestedJob,
     evidence.requiresCanonSource,
   )
+  const routeProject = spec.repo
+    ? (projectByName(spec.repo) ?? null)
+    : projectAt(spec.cwd ?? presentation.cwd())
+  const credentialFacts = await projectCredentialRouteFacts(
+    routeProject,
+    Object.values(AGENTS).flatMap((agent) => (agent.provider ? [agent.provider] : [])),
+  )
   const select = () =>
     pick(
       jobName,
@@ -502,6 +510,7 @@ export async function selectBeforeDetach(
         noWaitCapacity: spec.noWaitCapacity,
         ...detachedMcpConstraints(mcpRequest, spec, presentation.cwd()),
         project: spec.repo ?? null,
+        credentialFacts,
       },
       spec.probe,
       spec.lens,
