@@ -1,4 +1,6 @@
-export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'
+import type { HostedRequestSafety } from '../../shared/record-remedies.ts'
+
+export type { HostedRequestSafety } from '../../shared/record-remedies.ts'
 
 type HostedRefusal = {
   status?: number

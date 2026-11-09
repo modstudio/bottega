@@ -58,7 +58,7 @@ import { RecordApiRequestError, responseRecord } from './record-api-client-respo
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
-import { forgetRecordSessionToken } from '../../../shared/record-session.ts'
+import { sendWithStoredRecordSessionToken } from '../../../shared/record-session.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -481,7 +481,7 @@ async function recordEmailAuthRequest(
       body: JSON.stringify(body),
     })
   } catch (error) {
-    throw recordApiUnreachable(error, origin)
+    throw classifyRecordApiUnreachable(error, origin, 'non-idempotent')
   }
   const payload = await response.json().catch(() => null)
   if (!response.ok) throw recordAuthRefusal(response.status, payload, response.headers)
@@ -535,8 +535,6 @@ export async function recordApiRequest<T>(
       : authentication
         ? authentication.token()
         : storedRecordToken()
-  let token = await readToken()
-  if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
   const origin = recordApiBaseUrl()
   const send = async (bearer: string) => {
     const headers = new Headers(init.headers)
@@ -546,20 +544,25 @@ export async function recordApiRequest<T>(
     try {
       return await recordTransport(origin, path, { ...init, headers }, transport)
     } catch (error) {
-      throw recordApiUnreachable(error, origin)
+      const method = init.method?.toUpperCase() ?? 'GET'
+      throw classifyRecordApiUnreachable(
+        error,
+        origin,
+        method === 'GET' || method === 'HEAD' ? 'probe' : 'non-idempotent',
+      )
     }
   }
-  let response = await send(token)
-  let body = await response.json().catch(() => null)
-  if (response.status === 401 && !authentication) {
-    forgetRecordSessionToken()
-    const refreshed = await readToken()
-    if (refreshed && refreshed !== token) {
-      token = refreshed
-      response = await send(token)
-      body = await response.json().catch(() => null)
-    }
+  const sendStored = async (token: string | null) => {
+    if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
+    return send(token)
   }
+  const response = authentication
+    ? await sendStored(await readToken())
+    : await sendWithStoredRecordSessionToken(sendStored, {
+        signal: init.signal ?? undefined,
+        readToken,
+      })
+  const body = await response.json().catch(() => null)
   if (!response.ok) {
     if (init.acceptedError?.status === response.status) return init.acceptedError.schema(body)
     throw recordApiError(body, response.status, response.headers)
@@ -1002,7 +1005,7 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
     const detail = error instanceof Error ? error.message : String(error)
     return {
       kind: 'error',
-      reason: origin ? recordUnreachableRefusal(origin, detail) : detail,
+      reason: origin ? recordUnreachableRefusal(origin, detail, 'probe') : detail,
     }
   }
 }

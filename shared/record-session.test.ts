@@ -116,6 +116,53 @@ describe('record session keychain', () => {
     )
   })
 
+  test('an injected runner bypasses the process memo', () => {
+    expect(readRecordSessionToken(() => result(0, 'first-token\n'))).toBe('first-token')
+    expect(readRecordSessionToken(() => result(0, 'second-token\n'))).toBe('second-token')
+  })
+
+  test('forgetting a pending read prevents it from repopulating the memo', async () => {
+    let finish!: (value: ReturnType<typeof result>) => void
+    const pending = readRecordSessionTokenAsync(
+      undefined,
+      async () => await new Promise((resolve) => (finish = resolve)),
+    )
+    forgetRecordSessionToken()
+    finish(result(0, 'stale-token\n'))
+    expect(await pending).toBe('stale-token')
+
+    let freshReads = 0
+    expect(
+      await readRecordSessionTokenAsync(undefined, async () => {
+        freshReads += 1
+        return result(0, 'fresh-token\n')
+      }),
+    ).toBe('fresh-token')
+    expect(freshReads).toBe(1)
+  })
+
+  test("one caller's abort does not cancel another caller's pending read", async () => {
+    let finish!: (value: ReturnType<typeof result>) => void
+    let reads = 0
+    const runner = async (_argv: string[], _stdin?: Uint8Array, signal?: AbortSignal) => {
+      reads += 1
+      return await new Promise<ReturnType<typeof result>>((resolve, reject) => {
+        finish = resolve
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
+    const controller = new AbortController()
+    const cancelled = readRecordSessionTokenAsync(controller.signal, runner)
+    const shared = readRecordSessionTokenAsync(undefined, runner)
+    const reason = new Error('caller cancelled')
+    controller.abort(reason)
+    finish(result(0, 'shared-token\n'))
+
+    await expect(cancelled).rejects.toBe(reason)
+    await expect(shared).resolves.toBe('shared-token')
+    expect(reads).toBe(1)
+  })
+
   test('does not create a session file without the opt-in', () => {
     const root = mkdtempSync(join(tmpdir(), 'record-session-keychain-'))
     roots.push(root)
@@ -152,7 +199,7 @@ describe('record session keychain', () => {
     expect(calls.some((argv) => argv.includes('record-probe'))).toBe(true)
     expect(
       calls.filter((argv) => argv.includes('record') && !argv.includes('record-probe')),
-    ).toHaveLength(1)
+    ).toHaveLength(2)
   })
 
   test('a failed probe keeps the store error and adds the file-store remedy', () => {
@@ -204,9 +251,9 @@ describe('file-backed record session', () => {
 
   test('reads a token only once per process', () => {
     writeRecordSessionToken('first-token', unusedRunner)
-    expect(readRecordSessionToken(unusedRunner)).toBe('first-token')
+    expect(readRecordSessionToken()).toBe('first-token')
     rmSync(recordSessionPath(process.env))
-    expect(readRecordSessionToken(unusedRunner)).toBe('first-token')
+    expect(readRecordSessionToken()).toBe('first-token')
   })
 
   test('probes a distinct file without changing the real session', () => {

@@ -314,6 +314,7 @@ function commandReadOnlyDatabase(): Database {
     throw new Error(migrationWindow.refusal)
   }
   if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited, true)
+  readOnlyHandle = openHooks?.access?.(readOnlyHandle) ?? readOnlyHandle
   return readOnlyHandle
 }
 
@@ -557,13 +558,9 @@ export function openProcessStoreHandle(
 export function db(writable = false): Database {
   if (databaseAccess.active()) {
     if (writable) throw new Error('refusing a write from a read-only command')
-    return guardedStoreAccess(commandReadOnlyDatabase())
+    return commandReadOnlyDatabase()
   }
-  return guardedStoreAccess(defaultDatabase(writable))
-}
-
-function guardedStoreAccess(database: Database): Database {
-  return openHooks?.access?.(database) ?? database
+  return defaultDatabase(writable)
 }
 
 function defaultDatabase(writable: boolean): Database {
@@ -605,9 +602,9 @@ function defaultDatabase(writable: boolean): Database {
   if (openMode === 'read-write') keepJournalSidecars(d)
   const migrationWindow = migrationWindowRefusal(d)
   if (migrationWindow.refusal) refuseOpenMigration(d, migrationWindow.refusal)
-  finishDefaultDatabaseOpen(d, openMode, writable)
+  const accessed = finishDefaultDatabaseOpen(d, openMode, writable)
   if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited)
-  return d
+  return accessed
 }
 
 function refuseOpenMigration(d: Database, refused: string): never {
@@ -708,7 +705,11 @@ function awaitMigrationWindowForMigrationWinner(database: Database): void {
   if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited, true)
 }
 
-function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writable: boolean): void {
+function finishDefaultDatabaseOpen(
+  d: Database,
+  openMode: StoreOpenMode,
+  writable: boolean,
+): Database {
   const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as {
     path: string
   } | null
@@ -733,6 +734,8 @@ function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writabl
   openedUserVersion = readUserVersion(d)
   if (connectionWritable) runOpenHooks('afterWritableOpen', d)
   if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
+  handle = openHooks?.access?.(d) ?? d
+  return handle
 }
 
 export type LiveRun = {

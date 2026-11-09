@@ -9,6 +9,7 @@ import {
   keychainPlatform,
   readKeychainItem,
   readKeychainItemAsync,
+  type AsyncSecurityRunner,
   type SecurityRunner,
   writeKeychainItem,
 } from './keychain.ts'
@@ -20,7 +21,7 @@ import {
   recordSessionProbePath,
 } from './state-directory.ts'
 
-export type { SecurityRunner } from './keychain.ts'
+export type { AsyncSecurityRunner, SecurityRunner } from './keychain.ts'
 
 const SERVICE = `${PLATFORM_NAME}-record-session`
 const ACCOUNT = 'record'
@@ -28,6 +29,7 @@ const PROBE_ACCOUNT = 'record-probe'
 const FILE_REMEDY = `set ${KEYSTORE_ENV}=file to keep the record session and the machine key in owner-only files`
 let memoizedToken: string | null | undefined
 let pendingToken: Promise<string | null> | null = null
+let tokenGeneration = 0
 
 function useFile(): boolean {
   return decideKeyStore(process.env[KEYSTORE_ENV]) === 'file'
@@ -52,6 +54,10 @@ function withKeychainRemedy<T>(operation: () => T): T {
 }
 
 export function readRecordSessionToken(runner?: SecurityRunner): string | null {
+  if (runner)
+    return useFile()
+      ? readFileToken()
+      : withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
   if (memoizedToken !== undefined) return memoizedToken
   memoizedToken = useFile()
     ? readFileToken()
@@ -59,28 +65,69 @@ export function readRecordSessionToken(runner?: SecurityRunner): string | null {
   return memoizedToken
 }
 
-export async function readRecordSessionTokenAsync(signal?: AbortSignal): Promise<string | null> {
+export async function readRecordSessionTokenAsync(
+  signal?: AbortSignal,
+  runner?: AsyncSecurityRunner,
+): Promise<string | null> {
   if (signal?.aborted) throw signal.reason
   if (memoizedToken !== undefined) return memoizedToken
-  if (pendingToken) return pendingToken
+  if (pendingToken) return raceCallerSignal(pendingToken, signal)
   if (useFile()) {
     memoizedToken = readFileToken()
     return memoizedToken
   }
-  pendingToken = readKeychainItemAsync(SERVICE, ACCOUNT, signal)
+  const generation = tokenGeneration
+  const read = readKeychainItemAsync(SERVICE, ACCOUNT, undefined, runner)
     .catch((error) => {
-      if (signal?.aborted || keychainPlatform() !== 'linux') throw error
+      if (keychainPlatform() !== 'linux') throw error
       throw keychainFailureWithFileRemedy(error)
     })
-    .then((token) => (memoizedToken = token))
-    .finally(() => {
-      pendingToken = null
+    .then((token) => {
+      if (generation === tokenGeneration) memoizedToken = token
+      return token
     })
-  return pendingToken
+    .finally(() => {
+      if (pendingToken === read) pendingToken = null
+    })
+  pendingToken = read
+  return raceCallerSignal(read, signal)
+}
+
+function raceCallerSignal<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return operation
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => reject(signal.reason)
+    signal.addEventListener('abort', aborted, { once: true })
+    operation.then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted))
+  })
+}
+
+type StoredRecordSessionSendOptions = {
+  signal?: AbortSignal
+  readToken?: () => string | null | Promise<string | null>
+}
+
+/** Send once with the stored token, refreshing and retrying once when another process changed it. */
+export async function sendWithStoredRecordSessionToken<T extends { status: number }>(
+  send: (token: string | null) => Promise<T>,
+  options: StoredRecordSessionSendOptions = {},
+): Promise<T> {
+  const readToken =
+    options.readToken ??
+    (() =>
+      options.signal ? readRecordSessionTokenAsync(options.signal) : readRecordSessionToken())
+  const token = await readToken()
+  const response = await send(token)
+  if (response.status !== 401) return response
+  forgetRecordSessionToken()
+  const refreshedToken = await readToken()
+  return refreshedToken !== token ? send(refreshedToken) : response
 }
 
 /** Forget the process copy so a later read observes a session changed by another process. */
 export function forgetRecordSessionToken(): void {
+  tokenGeneration += 1
   memoizedToken = undefined
   pendingToken = null
 }

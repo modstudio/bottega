@@ -1,6 +1,7 @@
 // concern: record-api-client-error
 /** Classifies shared record HTTP and transport failures for the client. */
 import {
+  type HostedRequestSafety,
   RECORD_ACTIVE_SPACE_REMEDY,
   recordUnreachableRefusal,
 } from '../../../shared/record-remedies.ts'
@@ -17,9 +18,13 @@ import { revisionConflictBodySchema } from './record-revision-conflict.ts'
 
 const recordApiStatus = (status: number) => `record API ${status}`
 
-export function recordApiUnreachable(error: unknown, origin: string): RecordApiRequestError {
+export function recordApiUnreachable(
+  error: unknown,
+  origin: string,
+  outcome: HostedRequestSafety = 'probe',
+): RecordApiRequestError {
   const detail = error instanceof Error ? error.message : String(error)
-  return new RecordApiRequestError(recordUnreachableRefusal(origin, detail), 'unreachable')
+  return new RecordApiRequestError(recordUnreachableRefusal(origin, detail, outcome), 'unreachable')
 }
 
 function recordApiServerError(message: string, status: number): RecordApiRequestError {

@@ -12,12 +12,24 @@ export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run 
 export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 
-export function recordUnreachableRefusal(origin: string, detail: string): string {
+export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'
+
+export function recordUnreachableRefusal(
+  origin: string,
+  detail: string,
+  outcome: HostedRequestSafety,
+): string {
+  const writeOutcome =
+    outcome === 'probe'
+      ? 'nothing was written'
+      : outcome === 'idempotent'
+        ? 'safe to retry'
+        : 'the write may have been applied; check before retrying'
   return renderRefusal(
-    refusal(
-      `the hosted record at ${origin} could not be reached (${detail}); nothing was written`,
-      { kind: 'command', argv: [PLATFORM_SLUG, 'record', 'doctor'] },
-    ),
+    refusal(`the hosted record at ${origin} could not be reached (${detail}); ${writeOutcome}`, {
+      kind: 'command',
+      argv: [PLATFORM_SLUG, 'record', 'doctor'],
+    }),
   )
 }
 

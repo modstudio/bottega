@@ -1,5 +1,10 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { forgetRecordSessionToken, writeRecordSessionToken } from '../../shared/record-session.ts'
+import { recordSessionPath, STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
@@ -318,11 +323,48 @@ describe('hosted-only task safety', () => {
         },
       ),
     ).rejects.toThrow(
-      'the hosted record at https://hub.example.test could not be reached (offline); nothing was written',
+      'the hosted record at https://hub.example.test could not be reached (offline); the write may have been applied; check before retrying',
     )
     expect(db().query<{ count: number }, []>(`SELECT count(*) count FROM task`).get()!.count).toBe(
       before,
     )
+  })
+
+  test('a stored token changed after a 401 is retried once', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hub-record-session-'))
+    const previousStore = process.env.BOTTEGA_KEYSTORE
+    const previousStateHome = process.env[STATE_HOME_ENV]
+    process.env.BOTTEGA_KEYSTORE = 'file'
+    process.env[STATE_HOME_ENV] = root
+    writeRecordSessionToken('first-token')
+    const authorizations: string[] = []
+    try {
+      await expect(
+        hostedCreateTask(
+          {},
+          {
+            baseUrl: 'https://hub.example.test',
+            fetch: async (_input, init) => {
+              const authorization = new Headers(init?.headers).get('authorization') ?? ''
+              authorizations.push(authorization)
+              if (authorizations.length === 1) {
+                writeFileSync(recordSessionPath(process.env), 'second-token', { mode: 0o600 })
+                return Response.json({ error: 'expired' }, { status: 401 })
+              }
+              return Response.json({ id: 'task-id' })
+            },
+          },
+        ),
+      ).resolves.toEqual({ id: 'task-id' })
+      expect(authorizations).toEqual(['Bearer first-token', 'Bearer second-token'])
+    } finally {
+      forgetRecordSessionToken()
+      if (previousStore === undefined) delete process.env.BOTTEGA_KEYSTORE
+      else process.env.BOTTEGA_KEYSTORE = previousStore
+      if (previousStateHome === undefined) delete process.env[STATE_HOME_ENV]
+      else process.env[STATE_HOME_ENV] = previousStateHome
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test('close never prunes after a hosted close failure', async () => {
@@ -590,7 +632,7 @@ describe('hosted-only task safety', () => {
         },
       ),
     ).rejects.toThrow(
-      'the hosted record at https://hub.example.test could not be reached (request timed out after 5ms); nothing was written',
+      'the hosted record at https://hub.example.test could not be reached (request timed out after 5ms); the write may have been applied; check before retrying',
     )
   })
 

@@ -8,7 +8,7 @@ import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
-import { readRecordSessionToken } from './record-session.ts'
+import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
 
 export type ConfigClientErrorReason = 'not-configured' | 'unreachable' | 'response'
 
@@ -330,38 +330,45 @@ function createConfigClient(
   transport: Transport,
   signal?: AbortSignal,
   recorder?: ConfigCallOutcomeRecorder,
+  storedToken = false,
 ) {
   const request = async <T>(route: string, init: ConfigRequestInit = {}): Promise<T> => {
-    const headers = new Headers(init.headers)
-    headers.set('authorization', `Bearer ${token}`)
-    if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
-    if (init.body) headers.set('content-type', 'application/json')
-    let response: Response
-    const startedAt = performance.now()
-    try {
-      response = await transport(`${baseUrl}${route}`, {
-        ...init,
-        headers,
-        signal: init.signal ?? signal,
-      })
-    } catch (error) {
-      scheduleHostedCallObservation(recorder, {
-        route,
-        observedAt: new Date().toISOString(),
-        latencyMs: performance.now() - startedAt,
-        status: null,
-        error,
-      })
-      if (signal?.aborted) throw signal.reason
-      throw new ConfigClientError('unreachable', route)
+    const send = async (bearer: string | null) => {
+      if (!bearer) throw new ConfigClientError('not-configured', route)
+      const headers = new Headers(init.headers)
+      headers.set('authorization', `Bearer ${bearer}`)
+      if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
+      if (init.body) headers.set('content-type', 'application/json')
+      const startedAt = performance.now()
+      try {
+        const response = await transport(`${baseUrl}${route}`, {
+          ...init,
+          headers,
+          signal: init.signal ?? signal,
+        })
+        scheduleHostedCallObservation(recorder, {
+          route,
+          observedAt: new Date().toISOString(),
+          latencyMs: performance.now() - startedAt,
+          status: response.status,
+          error: null,
+        })
+        return response
+      } catch (error) {
+        scheduleHostedCallObservation(recorder, {
+          route,
+          observedAt: new Date().toISOString(),
+          latencyMs: performance.now() - startedAt,
+          status: null,
+          error,
+        })
+        if (signal?.aborted) throw signal.reason
+        throw new ConfigClientError('unreachable', route)
+      }
     }
-    scheduleHostedCallObservation(recorder, {
-      route,
-      observedAt: new Date().toISOString(),
-      latencyMs: performance.now() - startedAt,
-      status: response.status,
-      error: null,
-    })
+    const response = storedToken
+      ? await sendWithStoredRecordSessionToken(send, { signal: init.signal ?? signal })
+      : await send(token)
     const body = await jsonBody(response, `${baseUrl}${route}`)
     if (!body.ok)
       throw new ConfigClientError('response', route, response.status, {
@@ -399,7 +406,15 @@ export function configClient(
   recorder?: ConfigCallOutcomeRecorder,
 ): ConfigClient {
   const url = resolveRecordApiUrl(env)
-  const resolvedToken = token === undefined ? readRecordSessionToken() : token
+  const storedToken = token === undefined
+  const resolvedToken = storedToken ? readRecordSessionToken() : token
   if (!resolvedToken) throw new ConfigClientError('not-configured', '/v1/config')
-  return createConfigClient(url.replace(/\/$/, ''), resolvedToken, transport, signal, recorder)
+  return createConfigClient(
+    url.replace(/\/$/, ''),
+    resolvedToken,
+    transport,
+    signal,
+    recorder,
+    storedToken,
+  )
 }

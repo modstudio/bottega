@@ -2,7 +2,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { recordUnreachableRefusal } from '../../shared/record-remedies.ts'
-import { readRecordSessionToken } from '../../shared/record-session.ts'
+import { sendWithStoredRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
@@ -42,26 +42,30 @@ async function request<T>(
   const baseUrl = options.baseUrl ?? resolveHostedUrl()
   if (!baseUrl) throw new Error(`hosted hub is not configured. ${REMEDY}`)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
-  const token = options.token ?? readRecordSessionToken()
-  if (!token)
-    throw new Error(
-      `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
-    )
-  let response: Response
-  try {
-    response = await (options.fetch ?? fetch)(`${baseUrl.replace(/\/$/, '')}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-        ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    throw new Error(recordUnreachableRefusal(baseUrl, detail))
+  const send = async (token: string | null) => {
+    if (!token)
+      throw new Error(
+        `record session is absent. Run \`${PLATFORM_SLUG} record sign-in\`, then \`${PLATFORM_SLUG} record doctor\`.`,
+      )
+    try {
+      return await (options.fetch ?? fetch)(`${baseUrl.replace(/\/$/, '')}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          ...(options.recordSpace ? { 'x-record-space': options.recordSpace } : {}),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(recordUnreachableRefusal(baseUrl, detail, safety))
+    }
   }
+  const response =
+    options.token === undefined
+      ? await sendWithStoredRecordSessionToken(send)
+      : await send(options.token)
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)
   if (!bodyResult.ok)
