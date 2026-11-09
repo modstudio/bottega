@@ -6,6 +6,8 @@ import {
   checksReviewedCommit,
   initialDispatchPrompt,
   operatorKnowledgeSection,
+  TASK_TEXT_MAX_BYTES,
+  taskTextSection,
 } from './run-pack-prompt.ts'
 
 describe('operator knowledge prompt section', () => {
@@ -26,10 +28,65 @@ describe('operator knowledge prompt section', () => {
       infrastructure: '',
       operatorKnowledge: 'WHAT THE OPERATOR WANTS YOU TO KNOW\n\nCANON',
       taskRulings: 'RULINGS ALREADY MADE ON THIS TASK\n\nRULING',
+      taskText: '',
       spec: 'WORK',
     })
     expect(prompt.indexOf('CANON')).toBeLessThan(prompt.indexOf('RULINGS ALREADY'))
     expect(prompt.indexOf('RULINGS ALREADY')).toBeLessThan(prompt.indexOf('THE SPEC'))
+  })
+})
+
+describe('task text prompt section', () => {
+  test('renders carried task text and comments', () => {
+    expect(
+      taskTextSection({
+        task: {
+          available: true,
+          recordId: 'record',
+          key: 'DEV-1',
+          title: 'Carry text',
+          body: 'Task body',
+          comments: ['First ruling', 'Second ruling'],
+        },
+        key: 'DEV-1',
+        project: 'bottega',
+        getTool: 'get-task-tool',
+        hub: true,
+      }),
+    ).toBe(
+      'TASK TEXT: DEV-1 — Carry text\n\nTask body\n\nTask comment: First ruling\n\nTask comment: Second ruling',
+    )
+  })
+
+  test('renders an unavailable read as one line', () => {
+    const section = taskTextSection({
+      task: { available: false, reason: 'server unavailable' },
+      key: 'DEV-2',
+      project: 'bottega',
+      getTool: 'get-task-tool',
+      hub: true,
+    })
+    expect(section).toBe('TASK TEXT: DEV-2 could not be read: server unavailable')
+    expect(section).not.toContain('\n')
+  })
+
+  test('bounds a carried read and names the tracker get tool after truncation', () => {
+    const section = taskTextSection({
+      task: {
+        available: true,
+        recordId: null,
+        key: 'STAR-3',
+        title: 'Large task',
+        body: 'é'.repeat(TASK_TEXT_MAX_BYTES),
+        comments: [],
+      },
+      key: 'STAR-3',
+      project: 'starship',
+      getTool: 'get-task-tool',
+      hub: false,
+    })
+    expect(Buffer.byteLength(section)).toBeLessThanOrEqual(TASK_TEXT_MAX_BYTES)
+    expect(section).toEndWith('Task text was truncated; read the full task with get-task-tool.')
   })
 })
 

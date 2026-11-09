@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { resolveTrackerAgentActions } from '../../../shared/tracker-actions.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { effectiveEndpointApiKeyForRun } from '../agent/endpoint-api-key.ts'
@@ -28,6 +29,7 @@ import {
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
+import { readTaskText } from '../dispatch/task-key-lookup.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
@@ -40,7 +42,13 @@ import {
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
-import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import {
+  projectAt,
+  projectByName,
+  projectForTaskKey,
+  projects,
+  stackAt,
+} from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -108,6 +116,7 @@ import {
   checksReviewedCommit,
   initialDispatchPrompt,
   operatorKnowledgeSection,
+  taskTextSection,
 } from './run-pack-prompt.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import {
@@ -335,6 +344,35 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     launchCwd: opts.launchCwd,
     probe: Boolean(opts.probe),
   })
+  let taskText = ''
+  if (resume.isFirstTurn && writesJob && opts.key) {
+    const taskProject = runProjectName
+      ? projectByName(runProjectName)
+      : projectForTaskKey(opts.key, projects())
+    if (taskProject) {
+      const protocol = taskProject.settings.tracker?.protocol
+      const read = await readTaskText(taskProject, opts.key)
+      const getTool = protocol
+        ? (resolveTrackerAgentActions(protocol, taskProject.settings.tracker?.actions).get ??
+          'tracker get tool')
+        : 'tracker get tool'
+      taskText = taskTextSection({
+        task: read,
+        key: opts.key,
+        project: taskProject.name,
+        getTool,
+        hub: protocol === 'hub',
+      })
+    } else {
+      taskText = taskTextSection({
+        task: { available: false, reason: 'the task project could not be resolved' },
+        key: opts.key,
+        project: runProjectName ?? '(unknown)',
+        getTool: 'tracker get tool',
+        hub: false,
+      })
+    }
+  }
   let prompt =
     opts.resume?.kind === 'continue'
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
@@ -348,6 +386,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           infrastructure: infra,
           operatorKnowledge: operatorKnowledgeSection(pack ?? null),
           taskRulings: dispatchRulings.section,
+          taskText,
           spec: originalPrompt,
         })
   prompt = bindReviewInstructions({

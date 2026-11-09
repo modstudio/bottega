@@ -13,6 +13,15 @@ import {
   cursorStatusPayload,
   workspaceStatusPayload,
 } from './tracker-status-payload.ts'
+import {
+  readArrayTaskText,
+  readCursorTaskText,
+  readWorkspaceTaskText,
+  TrackerLookupUnverifiable,
+  type TrackerTaskText,
+} from './tracker-task-text.ts'
+
+export { TrackerLookupUnverifiable } from './tracker-task-text.ts'
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 const UPDATED_SINCE_PROTOCOLS: ReadonlySet<TrackerProtocol> = new Set([
@@ -291,6 +300,7 @@ export type TrackerSource = {
    * that cannot report any.
    */
   readCommentIds?: (m: ToolCaller, key: string) => Promise<string[] | null>
+  readText: (m: ToolCaller, key: string) => Promise<TrackerTaskText | null>
 }
 
 type TrackerStatusWriteResult = {
@@ -304,13 +314,6 @@ export type TrackerFetchResult = {
   tasks: TrackerTask[]
   complete: boolean
   deletedKeys: string[]
-}
-
-export class TrackerLookupUnverifiable extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'TrackerLookupUnverifiable'
-  }
 }
 
 /**
@@ -706,6 +709,7 @@ function workspaceSource(
     async lookup(m, key) {
       return lookupWorkspaceTask(m, key, project, states, assignees, getAction, searchAction)
     },
+    readText: (m, key) => readWorkspaceTaskText(m, key, getAction),
     // The search page a lookup reads carries no comments; the descriptor's get
     // tool answers one task with its `comments[].id`.
     async readCommentIds(m, key) {
@@ -824,6 +828,8 @@ function cursorMcpSource(
   const searchAction = actions?.search ?? trackerWireAction('cursor-mcp', 'search')
   const getAction = actions?.get ?? trackerWireAction('cursor-mcp', 'get')
   const statusAction = actions?.status ?? trackerWireAction('cursor-mcp', 'status')
+  const listCommentsAction =
+    actions?.['list-comments'] ?? trackerWireAction('cursor-mcp', 'list-comments')
   return {
     project,
     env,
@@ -904,6 +910,7 @@ function cursorMcpSource(
     async lookup(m, key) {
       return lookupCursorTask(m, key, project, states, getAction)
     },
+    readText: (m, key) => readCursorTaskText(m, key, getAction, listCommentsAction),
   }
 }
 
@@ -1000,6 +1007,7 @@ function arrayMcpSource(
         assignee: hit.assigneeName?.trim() || null,
       }
     },
+    readText: (m, key) => readArrayTaskText(m, key, getAction),
   }
 }
 

@@ -7,6 +7,7 @@ const TRACKER_ACTIONS = [
   'update',
   'status',
   'comment',
+  'list-comments',
   'document',
 ] as const
 export type TrackerAction = (typeof TRACKER_ACTIONS)[number]
@@ -35,6 +36,7 @@ const trackerProtocolActions: Record<
     update: { agent: 'task_update', wire: 'task.update' },
     status: { agent: 'task_update', wire: 'task.update' },
     comment: { agent: 'comment_add', wire: 'comment.add' },
+    'list-comments': { agent: 'comment_list', wire: 'comment.list' },
   },
   'array-mcp': {
     search: { agent: 'task_list' },

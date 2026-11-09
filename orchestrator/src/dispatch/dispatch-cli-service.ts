@@ -87,7 +87,7 @@ import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-preflight.ts'
 import type { ReviewLensPackInputs } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
-import { lookupProjectTaskKey, readLensTask } from './task-key-lookup.ts'
+import { lookupProjectTaskKey, readTaskText } from './task-key-lookup.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
@@ -134,7 +134,7 @@ async function reviewLensInputs(
       rulings: '',
     }
   }
-  const task = await readLensTask(project, key)
+  const task = await readTaskText(project, key)
   if (!task.available) {
     const status = unavailableStatus(task.reason)
     return {

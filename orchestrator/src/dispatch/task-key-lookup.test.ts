@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { missingTaskLine, missingTaskMessage } from '../../../shared/task-missing.ts'
-import { classifyHubTaskLookup, trackerLookupFailureCondition } from './task-key-lookup.ts'
+import type { Project } from '../project/projects.ts'
+import {
+  classifyHubTaskLookup,
+  readTaskText,
+  trackerLookupFailureCondition,
+} from './task-key-lookup.ts'
 
 describe('built-in task-key lookup output', () => {
   test('classifies hub exact not-found output as established absence', () => {
@@ -32,5 +37,40 @@ describe('built-in task-key lookup output', () => {
 
     expect(condition).toBe('tracker lookup failed: remote rejected [redacted]')
     expect(condition).not.toContain(credential)
+  })
+})
+
+test('reads non-hub task text and resolves its project-scoped mirror record', async () => {
+  const project = {
+    recordId: 'project-id',
+    name: 'remote-project',
+    path: '/remote-project',
+    stack: null,
+    canon: false,
+    retiredAt: null,
+    settings: { tracker: { protocol: 'array-mcp', envPrefix: 'REMOTE', openStatuses: [] } },
+  } as Project
+  const result = await readTaskText(project, 'SHARED-7', {
+    toolCaller: {
+      callTool: async () => [
+        {
+          id: 'external-id',
+          key: 'SHARED-7',
+          title: 'Remote title',
+          description: 'Remote body',
+        },
+      ],
+    },
+    hubTaskReader: async (projectName) => [
+      { key: 'SHARED-7', record_id: 'mirror-id', project: projectName },
+    ],
+  })
+  expect(result).toEqual({
+    available: true,
+    recordId: 'mirror-id',
+    key: 'SHARED-7',
+    title: 'Remote title',
+    body: 'Remote body',
+    comments: [],
   })
 })
