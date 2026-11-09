@@ -366,7 +366,7 @@ export async function listConfigSecrets(
   return tenant(input, async (tx) => {
     // Deliberately enumerate metadata columns: an envelope must never reach this surface.
     const rows = await tx`
-      SELECT id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+      SELECT id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,
         dek_id, row_version, updated_at
       FROM config_secret
       WHERE space_id=${input.spaceId}::uuid
@@ -418,8 +418,18 @@ export async function putConfigSecret(
     type?: string | null
     hint?: string | null
     mode?: string | null
+    reachSpaceIds?: string[] | null
   },
 ): Promise<ConfigSecretMetadata> {
+  if (
+    input.reachSpaceIds !== undefined &&
+    input.reachSpaceIds !== null &&
+    (input.scope !== 'user' || input.projectId != null || input.spaceId !== input.personalSpaceId)
+  )
+    throw new ConfigServiceError(
+      `credential reach is only valid for a user credential in the personal space; use \`${PLATFORM_SLUG} credential set ${input.key.split('#')[0]} --account --reach all\``,
+      422,
+    )
   try {
     return await tenant(input, async (tx) => {
       const deks = await tx`
@@ -457,14 +467,14 @@ export async function putConfigSecret(
         try {
           const rows = await tx`
           INSERT INTO config_secret
-            (id, space_id, user_id, project_id, key, provider, name, type, mode, environment, hint,
+            (id, space_id, user_id, project_id, key, provider, name, type, mode, environment, hint, reach_space_ids,
              dek_id, row_version, envelope, updated_at)
           VALUES
             (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${scopedUser(input, input.scope)}::uuid,
              ${input.projectId ?? null}::uuid, ${input.key}, ${input.provider ?? null},
-             ${input.name ?? null}, ${input.type ?? null}, ${input.mode ?? null}, ${input.environment}, ${input.hint ?? null},
+             ${input.name ?? null}, ${input.type ?? null}, ${input.mode ?? null}, ${input.environment}, ${input.hint ?? null}, ${input.reachSpaceIds ?? null}::uuid[],
              ${input.dekId}::uuid, 1, ${input.envelope}, now())
-          RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+          RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,
             dek_id, row_version, updated_at
         `
           return secretMetadata(rows[0] as Record<string, unknown>)
@@ -481,9 +491,10 @@ export async function putConfigSecret(
       SET dek_id=${input.dekId}::uuid, envelope=${input.envelope},
           project_id=${input.projectId ?? null}::uuid, provider=${input.provider ?? null},
           name=${input.name ?? null}, type=${input.type ?? null}, hint=${input.hint ?? null}, mode=${input.mode ?? null},
+          reach_space_ids=${input.reachSpaceIds ?? null}::uuid[],
           row_version=row_version + 1, updated_at=now()
       WHERE id=${String(occupancy.existing.id)}::uuid
-      RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+      RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode, reach_space_ids,
         dek_id, row_version, updated_at
     `
       return secretMetadata(rows[0] as Record<string, unknown>)
@@ -493,6 +504,44 @@ export async function putConfigSecret(
     const current = await getConfigSecret(input)
     conflict('secret', current?.rowVersion ?? 1)
   }
+}
+
+export async function updateConfigSecretReach(
+  input: ConfigTenant & {
+    key: string
+    environment: string
+    scope: 'user'
+    expectedRowVersion: number
+    reachSpaceIds: string[] | null
+  },
+): Promise<ConfigSecretMetadata> {
+  if (input.spaceId !== input.personalSpaceId)
+    throw new ConfigServiceError(
+      `credential reach is only valid in the personal space; use \`${PLATFORM_SLUG} credential reach ${input.key.split('#')[0]} --account --spaces all\``,
+      422,
+    )
+  return tenant(input, async (tx) => {
+    const existing = await scopedRow(
+      tx,
+      'config_secret',
+      input,
+      input.key,
+      input.environment,
+      input.scope,
+      true,
+      null,
+    )
+    const occupancy = configOccupancy({ existing, expectedRowVersion: input.expectedRowVersion })
+    applyOccupancy('secret', occupancy)
+    if (occupancy.action !== 'update') throw new Error('unreachable config secret reach action')
+    const rows = await tx`
+      UPDATE config_secret SET reach_space_ids=${input.reachSpaceIds}::uuid[], updated_at=now()
+      WHERE id=${String(occupancy.existing.id)}::uuid
+      RETURNING id, key, environment, user_id, project_id, provider, name, type, hint, mode,
+        reach_space_ids, dek_id, row_version, updated_at
+    `
+    return secretMetadata(rows[0] as Record<string, unknown>)
+  })
 }
 
 export async function deleteConfigSecret(

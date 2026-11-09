@@ -23,6 +23,7 @@ export const configSecretPutBody = z
     type: z.string().regex(CREDENTIAL_SLUG_PATTERN).nullable().optional(),
     hint: z.string().min(1).nullable().optional(),
     mode: z.enum(CREDENTIAL_MODES).nullable().optional(),
+    reachSpaceIds: z.array(idSchema).nullable().optional(),
   })
   .refine(
     ({ projectId, provider, name, type, hint, mode, environment }) => {
@@ -38,3 +39,10 @@ export const configSecretPutBody = z
     },
     { message: 'credential metadata must be complete and projectId requires credential metadata' },
   )
+
+export const configSecretReachBody = z.object({
+  environment: z.string().min(1),
+  scope: z.literal('user'),
+  expectedRowVersion: z.number().int().positive(),
+  reachSpaceIds: z.array(idSchema).nullable(),
+})

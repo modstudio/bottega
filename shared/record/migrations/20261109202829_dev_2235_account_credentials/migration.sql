@@ -1,0 +1,2 @@
+ALTER TABLE "config_secret" ADD COLUMN "reach_space_ids" uuid[];--> statement-breakpoint
+ALTER TABLE "credential_payer_preference" DROP CONSTRAINT "credential_payer_preference_values_check", ADD CONSTRAINT "credential_payer_preference_values_check" CHECK ("mode" IN ('live','test','default') AND "environment" IN ('local') AND "preferred_payer" IN ('personal','shared') AND "preferred_binding" IN ('project','space','account'));

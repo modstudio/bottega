@@ -47,11 +47,21 @@ export async function resolveHostedCredential(
   address: CredentialResolutionAddress,
   client: ConfigClient = configClient(),
 ) {
-  const rows = await listCredentials(address.destinationSpaceId, client)
+  const who = await client.whoami()
+  const destinationRows = await listCredentials(address.destinationSpaceId, client)
+  const personalSpaceId = who.personalSpaceId ?? null
+  const accountRows =
+    personalSpaceId === null
+      ? []
+      : personalSpaceId === address.destinationSpaceId
+        ? destinationRows
+        : await listCredentials(personalSpaceId, client)
   const preferences = await client.listCredentialPreferences({
     destinationSpaceId: address.destinationSpaceId,
   })
   const result = resolveCredential({
+    userId: who.user.id,
+    personalSpaceId,
     spaceId: address.destinationSpaceId,
     projectId: address.projectId,
     projectName: address.projectName,
@@ -61,21 +71,38 @@ export async function resolveHostedCredential(
     type: address.type,
     mode: address.mode,
     environment: address.environment,
-    candidates: rows.map((row) => ({
-      row,
-      spaceId: address.destinationSpaceId,
-      projectId: row.projectId ?? null,
-      payer: credentialPayerFromScope(row.scope),
-      provider: row.provider,
-      name: row.name,
-      type: row.type,
-      mode: row.mode,
-      environment: row.environment,
-    })),
+    candidates: [
+      ...(personalSpaceId === address.destinationSpaceId ? [] : destinationRows).map((row) => ({
+        row,
+        spaceId: address.destinationSpaceId,
+        projectId: row.projectId ?? null,
+        payer: credentialPayerFromScope(row.scope),
+        provider: row.provider,
+        name: row.name,
+        type: row.type,
+        mode: row.mode,
+        environment: row.environment,
+      })),
+      ...accountRows.map((row) => ({
+        row,
+        spaceId: personalSpaceId!,
+        projectId: row.projectId ?? null,
+        payer: credentialPayerFromScope(row.scope),
+        provider: row.provider,
+        name: row.name,
+        type: row.type,
+        mode: row.mode,
+        environment: row.environment,
+        account: {
+          ownerUserId: who.user.id,
+          reachSpaceIds: row.reachSpaceIds ?? null,
+        },
+      })),
+    ],
     preferences,
   })
   if (result.kind === 'refused') return result
-  return { ...result, row: result.credential.row }
+  return { ...result, row: result.credential.row, ownerSpaceId: result.credential.spaceId }
 }
 
 export async function resolveHostedCredentialValue(
@@ -85,7 +112,7 @@ export async function resolveHostedCredentialValue(
   const result = await resolveHostedCredential(address, client)
   if (result.kind === 'refused') return result
   const target = {
-    destinationSpaceId: address.destinationSpaceId,
+    destinationSpaceId: result.ownerSpaceId,
     projectId: result.row.projectId,
   }
   const plaintext = await openHostedSecretRow(client, result.row, target)

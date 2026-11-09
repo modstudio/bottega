@@ -495,7 +495,11 @@ export async function setSecret(
   options: {
     destination?: ConfigDestination
     environment?: string
-    metadata?: CredentialMetadataFields & { projectId: string | null; mode: CredentialMode }
+    metadata?: CredentialMetadataFields & {
+      projectId: string | null
+      mode: CredentialMode
+      reachSpaceIds?: string[] | null
+    }
     createDataKey?: boolean
     missingDestinationAccessRefusal?: () => Error
   } = {},

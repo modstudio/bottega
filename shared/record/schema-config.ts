@@ -145,6 +145,7 @@ export const configSecret = pgTable.withRLS(
     mode: text(),
     environment: text().notNull().default('default'),
     hint: text(),
+    reachSpaceIds: uuid('reach_space_ids').array(),
     dekId: uuid('dek_id').notNull(),
     rowVersion: integer('row_version').notNull(),
     envelope: bytea().notNull(),

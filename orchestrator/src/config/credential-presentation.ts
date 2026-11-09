@@ -29,8 +29,12 @@ export function credentialDisplayName(
   return `${credentialIdentityPath(provider, name, type)} (mode ${mode}, env ${environment})`
 }
 
-export function credentialSlot(payer: CredentialPayer, projectId: string | null): string {
-  return `${payer}@${projectId ? 'project' : 'space'}`
+export function credentialSlot(
+  payer: CredentialPayer,
+  projectId: string | null,
+  account = false,
+): string {
+  return `${payer}@${account ? 'account' : projectId ? 'project' : 'space'}`
 }
 
 export function parseCredentialSlot(

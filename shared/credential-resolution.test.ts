@@ -2,6 +2,8 @@ import { expect, test } from 'bun:test'
 import { type CredentialCandidate, resolveCredential } from './credential-resolution.ts'
 
 const base = {
+  userId: 'user-a',
+  personalSpaceId: 'personal-space-a',
   spaceId: 'space-a',
   projectId: 'project-a',
   projectName: 'alpha',
@@ -16,6 +18,14 @@ const candidate = (
   projectId: string | null,
   spaceId = base.spaceId,
 ): CredentialCandidate => ({ ...base, payer, projectId, spaceId })
+const account = (
+  reachSpaceIds: readonly string[] | null = null,
+  ownerUserId = base.userId,
+  spaceId = base.personalSpaceId,
+): CredentialCandidate => ({
+  ...candidate('personal', null, spaceId),
+  account: { ownerUserId, reachSpaceIds },
+})
 
 test('resolver uses personal project, personal space, project shared, then space shared', () => {
   const rows = [
@@ -151,6 +161,57 @@ test("another space's credential is never selected", () => {
     preferences: [],
   })
   expect(result.kind).toBe('refused')
+})
+
+test('account credential pays after personal bindings and before shared bindings', () => {
+  const rows = [
+    candidate('shared', null),
+    candidate('shared', base.projectId),
+    account(),
+    candidate('personal', null),
+    candidate('personal', base.projectId),
+  ]
+  for (let index = rows.length - 1; index >= 0; index--) {
+    expect(
+      resolveCredential({ ...base, candidates: rows.slice(0, index + 1), preferences: [] }),
+    ).toMatchObject({ kind: 'resolved', credential: rows[index] })
+  }
+})
+
+test('account reach excludes an unlisted space while all reaches any space', () => {
+  expect(
+    resolveCredential({ ...base, candidates: [account(['space-b'])], preferences: [] }),
+  ).toMatchObject({ kind: 'refused' })
+  expect(
+    resolveCredential({ ...base, spaceId: 'new-space', candidates: [account()], preferences: [] }),
+  ).toMatchObject({ kind: 'resolved', reason: 'account' })
+})
+
+test('account preference wins and a stale account preference falls back', () => {
+  const personal = candidate('personal', base.projectId)
+  const preference = {
+    ...base,
+    projectId: base.projectId,
+    payer: 'personal' as const,
+    binding: 'account' as const,
+  }
+  expect(
+    resolveCredential({ ...base, candidates: [personal, account()], preferences: [preference] }),
+  ).toMatchObject({ kind: 'resolved', credential: { account: {} }, reason: 'account' })
+  expect(
+    resolveCredential({
+      ...base,
+      candidates: [personal, account(['space-b'])],
+      preferences: [preference],
+    }),
+  ).toMatchObject({ kind: 'resolved', credential: personal, reason: 'default-order' })
+})
+
+test("another user's or another personal space's account credential is never selected", () => {
+  for (const row of [account(null, 'user-b'), account(null, base.userId, 'personal-space-b')])
+    expect(resolveCredential({ ...base, candidates: [row], preferences: [] })).toMatchObject({
+      kind: 'refused',
+    })
 })
 
 test('resolver matches credential mode', () => {

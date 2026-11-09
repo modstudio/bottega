@@ -41,7 +41,11 @@ import { requireProjectRecordDestination } from '../record/record-project-destin
 import { deleteSecret, setSecret } from './config-service.ts'
 import { credentialHint } from './credential-presentation.ts'
 
-export type CredentialAddress = CredentialResolutionAddress & { payer: CredentialPayer }
+export type CredentialAddress = CredentialResolutionAddress & {
+  payer: CredentialPayer
+  account?: boolean
+  reachSpaceIds?: string[] | null
+}
 export type ProjectCredentialTarget = Pick<Project, 'name' | 'settings'> & {
   recordId: string | null
 }
@@ -92,6 +96,24 @@ export async function projectCredentialBinding(
   }
 }
 
+export async function accountCredentialBinding(
+  client = configClient(),
+): Promise<ProjectCredentialBinding> {
+  const who = await client.whoami()
+  if (!who.personalSpaceId) throw new Error('personal space is not provisioned')
+  const membership = recordSpaceMembership(
+    who.personalSpaceId,
+    parseRecordSpaceMemberships(who.memberships),
+  )
+  if (!membership) throw new Error(recordSpaceMembershipRefusal(who.personalSpaceId))
+  return {
+    projectId: null,
+    projectName: undefined,
+    spaceName: membership.slug,
+    destinationSpaceId: who.personalSpaceId,
+  }
+}
+
 /** Build the one canonical credential address used by project-bound consumers. */
 export async function projectCredentialAddress(
   project: ProjectCredentialTarget,
@@ -130,6 +152,15 @@ function missingProjectWrapRefusal(address: CredentialAddress): Error {
   )
 }
 
+function missingAccountWrapRefusal(address: CredentialAddress): Error {
+  return new Error(
+    `cannot access account credentials: run \`${PLATFORM_SLUG} machine config machine register --space ${address.spaceName}\``,
+  )
+}
+
+const missingWrapRefusal = (address: CredentialAddress) =>
+  address.account ? missingAccountWrapRefusal(address) : missingProjectWrapRefusal(address)
+
 function missingCredentialRefusal(address: CredentialAddress): Error {
   return new Error(credentialSetRefusalText(address, 'missing', 'pipe its value to'))
 }
@@ -161,14 +192,43 @@ export async function setCredential(
           type: address.type,
           hint: credentialHint(plaintext),
           mode: address.mode,
+          ...(address.account ? { reachSpaceIds: address.reachSpaceIds ?? null } : {}),
         },
         createDataKey: false,
-        missingDestinationAccessRefusal: () => missingProjectWrapRefusal(address),
+        missingDestinationAccessRefusal: () => missingWrapRefusal(address),
       },
     )
   } catch (error) {
     if (error instanceof ConfigClientError && error.status === 404)
-      throw missingProjectWrapRefusal(address)
+      throw missingWrapRefusal(address)
+    throw error
+  }
+}
+
+export async function reachCredential(
+  address: CredentialAddress,
+  reachSpaceIds: string[] | null,
+  client = configClient(),
+) {
+  if (!address.account) throw new Error('credential reach requires --account')
+  const key = credentialIdentityKey(address)
+  try {
+    const existing = await client.getSecret(
+      key,
+      'user',
+      address.environment,
+      destination(address),
+    )
+    return await client.updateSecretReach(key, {
+      ...destination(address),
+      scope: 'user',
+      environment: address.environment,
+      expectedRowVersion: existing.rowVersion,
+      reachSpaceIds,
+    })
+  } catch (error) {
+    if (error instanceof ConfigClientError && error.status === 404)
+      throw missingCredentialRefusal(address)
     throw error
   }
 }
@@ -179,6 +239,7 @@ export async function listCredentials(
     mode?: CredentialMode
     environment?: CredentialEnvironment
     projectId?: string
+    account?: boolean
   } = {},
   client = configClient(),
 ) {
@@ -186,7 +247,8 @@ export async function listCredentials(
   return (await listHostedCredentials(spaceId, client, environments)).filter(
     (row) =>
       (filters.mode === undefined || row.mode === filters.mode) &&
-      (filters.projectId === undefined || row.projectId === filters.projectId),
+      (filters.projectId === undefined || row.projectId === filters.projectId) &&
+      (!filters.account || (row.scope === 'user' && row.projectId == null)),
   )
 }
 

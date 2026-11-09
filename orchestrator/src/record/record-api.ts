@@ -17,7 +17,7 @@ import { registerRecordAccessRoutes, registerRecordCors } from './record-api-acc
 import type { RecordBoardDeps } from './record-api-board.ts'
 import { type RecordChangeRouteDeps, registerRecordChangeRoute } from './record-api-changes.ts'
 import type { RecordConfigRouteDeps } from './record-api-config-contract.ts'
-import { configSecretPutBody } from './record-api-config-schema.ts'
+import { configSecretPutBody, configSecretReachBody } from './record-api-config-schema.ts'
 import {
   type RecordCredentialRouteDeps,
   registerRecordCredentialRoutes,
@@ -506,6 +506,23 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
           ...body.data,
           key: context.req.param('key'),
           envelope: decoded(body.data.envelope),
+        }),
+      )
+    } catch (error) {
+      return writeError(context, error)
+    }
+  })
+  app.patch('/v1/config/secrets/:key/reach', async (context) => {
+    const active = scope(context)
+    if (!active) return noSpace(context)
+    const body = configSecretReachBody.safeParse(await context.req.json().catch(() => null))
+    if (!body.success) return context.json({ error: 'invalid config secret reach body' }, 422)
+    try {
+      return context.json(
+        await deps.updateConfigSecretReach({
+          ...active,
+          ...body.data,
+          key: context.req.param('key'),
         }),
       )
     } catch (error) {

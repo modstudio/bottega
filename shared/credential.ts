@@ -5,7 +5,7 @@ export const CREDENTIAL_SLUG_PATTERN = new RegExp(CREDENTIAL_SLUG_SOURCE)
 export const CREDENTIAL_MODES = ['live', 'test', 'default'] as const
 export const CREDENTIAL_ENVIRONMENTS = ['local'] as const
 export const CREDENTIAL_PAYERS = ['personal', 'shared'] as const
-export const CREDENTIAL_BINDINGS = ['project', 'space'] as const
+export const CREDENTIAL_BINDINGS = ['project', 'space', 'account'] as const
 
 export type CredentialMode = (typeof CREDENTIAL_MODES)[number]
 export type CredentialEnvironment = (typeof CREDENTIAL_ENVIRONMENTS)[number]

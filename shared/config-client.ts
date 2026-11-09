@@ -64,6 +64,7 @@ export type ConfigSecret = {
   type?: CredentialMetadataFields['type'] | null
   hint?: CredentialMetadataFields['hint'] | null
   mode?: CredentialMode | null
+  reachSpaceIds?: string[] | null
   dekId: string
   rowVersion: number
   updatedAt: string
@@ -212,10 +213,25 @@ function configValueClient(request: Request, query: Query) {
         name?: CredentialMetadataFields['name']
         type?: CredentialMetadataFields['type'] | null
         hint?: CredentialMetadataFields['hint'] | null
+        reachSpaceIds?: string[] | null
       } & ConfigDestination,
     ) =>
       request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}`, {
         method: 'PUT',
+        destinationSpaceId: input.destinationSpaceId,
+        body: JSON.stringify(input),
+      }),
+    updateSecretReach: (
+      key: string,
+      input: {
+        scope: ConfigScope
+        environment: string
+        expectedRowVersion: number
+        reachSpaceIds: string[] | null
+      } & ConfigDestination,
+    ) =>
+      request<ConfigSecret>(`/v1/config/secrets/${encodeURIComponent(key)}/reach`, {
+        method: 'PATCH',
         destinationSpaceId: input.destinationSpaceId,
         body: JSON.stringify(input),
       }),
