@@ -12,7 +12,7 @@ import type { CleanupPresentation } from '../cleanup/cleanup.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
-import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
+import { sessionId as callingSessionId, db, writableDb, writeTransaction } from '../database/db.ts'
 import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
@@ -37,6 +37,7 @@ import {
   type SessionOwnedRun,
   type SessionOwnershipFacts,
   sessionCloseOutRecommendation,
+  sessionCloseOutRecord,
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
@@ -52,6 +53,7 @@ import {
   sessionResourceReleaseTargets,
 } from './session-close-out-resource-release.ts'
 import { reclaimSessionReleasedTree } from './session-close-out-resource-release-adapter.ts'
+import { insertSessionCloseOutRecord } from './session-close-out-store.ts'
 import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
@@ -844,7 +846,11 @@ function applySessionMechanicalActions(
     }
 }
 
-export async function closeOutSession(
+/**
+ * Close-out without writing a session_close_out record. Machine sweep uses this replay path so an
+ * idempotent release does not create a second close-out invocation record.
+ */
+export async function releaseSessionResources(
   options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
 ): Promise<SessionCloseOutReport> {
   const session = options.session ?? callingSessionId()
@@ -924,6 +930,17 @@ export async function closeOutSession(
     residue: report.verdict.residue,
     parkedCursors: report.parked.length,
   })
+  return report
+}
+
+export async function closeOutSession(
+  options: { session?: string; dryRun?: boolean; resume?: boolean } = {},
+): Promise<SessionCloseOutReport> {
+  const report = await releaseSessionResources(options)
+  if (report.dryRun) return report
+  const row = sessionCloseOutRecord(report)
+  const database = writableDb()
+  writeTransaction(() => insertSessionCloseOutRecord(row, database), database)
   return report
 }
 

@@ -9,6 +9,7 @@ import {
   liveClaimsOfSession,
   liveTaskClaimsOfSession,
   releaseClaim,
+  releaseSessionClaims,
   releaseTaskClaims,
   renewClaim,
   takeClaim,
@@ -38,6 +39,43 @@ function presence(session: string, task: string | null, clock: number) {
 const env = (session: string) => ({ CLAUDE_CODE_SESSION_ID: session })
 const claimNoticesFor = (session: string, clock: number) => claimNotices(false, env(session), clock)
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+test('session release closes only live claims and leaves lapsed claims for lapse cleanup', () => {
+  fixtureProject()
+  const clock = Date.now()
+  const session = newRecordId()
+  const live = newRecordId()
+  const lapsed = newRecordId()
+  const insert = db().query(
+    `INSERT INTO board_claim
+     (record_id,project,subject_kind,subject_value,holder_kind,holder_session,duration_ms,taken_at,renewed_at,lapses_at)
+     VALUES (?,'claims','task',?,'architect',?,3600000,?,?,?)`,
+  )
+  insert.run(
+    live,
+    'DEV-LIVE',
+    session,
+    new Date(clock - 1_000).toISOString(),
+    new Date(clock - 1_000).toISOString(),
+    new Date(clock + 1_000).toISOString(),
+  )
+  insert.run(
+    lapsed,
+    'DEV-LAPSED',
+    session,
+    new Date(clock - 2_000).toISOString(),
+    new Date(clock - 2_000).toISOString(),
+    new Date(clock - 1_000).toISOString(),
+  )
+
+  expect(releaseSessionClaims(session, clock, db())).toBe(1)
+  expect(
+    db().query('SELECT record_id,closed_at FROM board_claim ORDER BY subject_value').all(),
+  ).toEqual([
+    { record_id: lapsed, closed_at: null },
+    { record_id: live, closed_at: new Date(clock).toISOString() },
+  ])
+})
 
 test('session claim readers return its live claims across projects and preserve subjects', () => {
   fixtureProject()

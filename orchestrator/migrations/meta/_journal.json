@@ -1658,6 +1658,14 @@
       "tag": "0216_outbox_actor_session",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 217,
+      "version": "6",
+      "when": 1794240000001,
+      "tag": "0217_session_close_out",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

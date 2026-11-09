@@ -62,7 +62,6 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from './cleanup.ts'
-import { sweepSessionContext } from './cleanup-sweep-context.ts'
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanAfterRemoval,
@@ -91,6 +90,7 @@ import {
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { reportMaintenanceStep } from './cleanup-sweep-report.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
+import { sweepSessionState } from './cleanup-sweep-session.ts'
 import { sweepGooseLedgers } from './goose-ledger-sweep.ts'
 import { heldProjectTrees, sweepProject } from './project-sweep.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
@@ -844,14 +844,12 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     forgotten: 0,
   }
   let cleanupFailed = archiveRetention.failed || runLeftovers.failed
-  cleanupFailed = [
-    cleanupFailed,
-    await sweepSessionContext({
-      enabled: selectedProject === null,
-      dryRun: dry,
-      presentation: options.presentation,
-    }),
-  ].includes(true)
+  const sessionCleanupFailed = await sweepSessionState({
+    enabled: selectedProject === null,
+    dryRun: dry,
+    presentation: options.presentation,
+  })
+  cleanupFailed ||= sessionCleanupFailed
   cleanupFailed ||= sweepIdleMainStacks({
     database: db(),
     projects: sweepProjects,

@@ -212,6 +212,7 @@ export const cleanupBoundarySpecs = [
       'node:fs',
       'node:path',
       '../../../shared/brand.ts',
+      '../../../shared/record-id.ts',
       '../branch/branches.ts',
       '../branch/task-status-observation.ts',
       '../cleanup/claim-reconciliation.ts',
@@ -235,11 +236,24 @@ export const cleanupBoundarySpecs = [
       './session-close-out-outbox.ts',
       './session-close-out-resource-release-adapter.ts',
       './session-close-out-resource-release.ts',
+      './session-close-out-store.ts',
       './session-context-lifecycle.ts',
     ],
     typeOnlyAllowed: ['./session-close-out-report.ts'],
     reason:
       'Keep session close-out as the lifecycle composer over pure classification and existing resource owners.',
+  },
+  {
+    name: 'session-close-out-store-boundary',
+    file: 'orchestrator/src/session/session-close-out-store.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/record-id.ts',
+      '../database/db.ts',
+      './session-close-out-decision.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', './session-close-out-decision.ts'],
+    reason: 'Keep session close-out row persistence and retention behind its session owner.',
   },
   {
     name: 'branch-disposal-boundary',
@@ -327,6 +341,7 @@ export const cleanupBoundarySpecs = [
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',
       './cleanup-sweep-context.ts',
+      './cleanup-sweep-session.ts',
       './cleanup-sweep-reclaim.ts',
       './cleanup-sweep-residue.ts',
       './run-leftover-sweep.ts',
@@ -384,6 +399,38 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, and the CLI; maintenance stays behind the database command and run-outbox owners.',
+  },
+  {
+    name: 'cleanup-sweep-session-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-session.ts',
+    allowed: ['./cleanup.ts', './cleanup-sweep-context.ts', './cleanup-sweep-session-close-out.ts'],
+    typeOnlyAllowed: ['./cleanup.ts'],
+    reason: 'Compose the machine-wide session cleanup passes without growing the main sweep.',
+  },
+  {
+    name: 'cleanup-sweep-session-close-out-decision-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-session-close-out-decision.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep closed-session sweep eligibility independent of persistence and release adapters.',
+  },
+  {
+    name: 'cleanup-sweep-session-close-out-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-session-close-out.ts',
+    allowed: [
+      'bun:sqlite',
+      '../board/board-claim-service.ts',
+      '../database/db.ts',
+      '../run/run-artifact-limits.ts',
+      '../session/session-close-out.ts',
+      '../session/session-close-out-store.ts',
+      './cleanup.ts',
+      './cleanup-sweep-session-close-out-decision.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', './cleanup.ts'],
+    reason:
+      'Finish a recorded clean session through the existing release and state-owner services.',
   },
   {
     name: 'cleanup-sweep-context-boundary',
