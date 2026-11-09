@@ -2,23 +2,26 @@
 /** Owns generic record API response shape and message parsing. */
 
 export class RecordApiRequestError extends Error {
-  readonly kind: 'unreachable' | 'server' | 'refused'
+  readonly kind: 'unreachable' | 'server' | 'refused' | 'conflict'
   readonly status: number | null
   readonly code: string | null
   readonly existingAccount: boolean
+  readonly currentRevision: string | null
 
   constructor(
     message: string,
-    kind: 'unreachable' | 'server' | 'refused',
+    kind: 'unreachable' | 'server' | 'refused' | 'conflict',
     status: number | null = null,
     code: string | null = null,
     existingAccount = false,
+    currentRevision: string | null = null,
   ) {
     super(message)
     this.kind = kind
     this.status = status
     this.code = code
     this.existingAccount = existingAccount
+    this.currentRevision = currentRevision
   }
 }
 

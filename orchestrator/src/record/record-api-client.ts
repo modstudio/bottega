@@ -10,7 +10,10 @@ import type {
   DocStatus,
 } from '../../../shared/docs.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
+import {
+  RECORD_ACTIVE_SPACE_REMEDY,
+  recordUnreachableRefusal,
+} from '../../../shared/record-remedies.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -58,6 +61,7 @@ import { parseProjectSpaceConflictResponse } from './record-project-space-contra
 
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
+import { forgetRecordSessionToken } from '../../../shared/record-session.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -102,6 +106,7 @@ import type {
   PublicRecordDocTreeItem,
   RecordDocSearchMatch,
 } from './record-public-docs.ts'
+import { revisionConflictBodySchema } from './record-revision-conflict.ts'
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
@@ -463,12 +468,9 @@ export const recordApiClientInjected = (): boolean => injectedClient() !== null
 
 const recordApiStatus = (status: number) => `record API ${status}`
 
-function recordApiUnreachable(error: unknown): Error {
+function recordApiUnreachable(error: unknown, origin = recordApiBaseUrl()): Error {
   const detail = error instanceof Error ? error.message : String(error)
-  return new RecordApiRequestError(
-    `record API is unreachable: ${detail}\n${RECORD_WRITE_REMEDY}`,
-    'unreachable',
-  )
+  return new RecordApiRequestError(recordUnreachableRefusal(origin, detail), 'unreachable')
 }
 
 export const recordIdentityResponse = (body: unknown) =>
@@ -484,6 +486,16 @@ function recordApiError(body: unknown, status: number, headers: Headers = new He
   if (status === 401) return recordAuthRefusal(status, body, headers)
   const projectSpaceConflict = parseProjectSpaceConflictResponse(body, status)
   if (projectSpaceConflict) return projectSpaceConflict
+  const revisionConflict = revisionConflictBodySchema.safeParse(body)
+  if (status === 409 && revisionConflict.success)
+    return new RecordApiRequestError(
+      revisionConflict.data.error,
+      'conflict',
+      status,
+      revisionConflict.data.code,
+      false,
+      revisionConflict.data.currentRevision,
+    )
   const message = responseMessage(body, recordApiStatus(status))
   if (status === 429) return new RecordApiRequestError(message, 'refused', status)
   if (message === RECORD_ACTIVE_SPACE_REMEDY)
@@ -529,16 +541,16 @@ async function recordEmailAuthRequest(
   path: '/api/auth/sign-in/email' | '/api/auth/sign-up/email',
   body: Record<string, string>,
 ) {
+  const origin = recordApiBaseUrl()
   let response: Response
   try {
-    response = await recordTransport(recordApiBaseUrl(), path, {
+    response = await recordTransport(origin, path, {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify(body),
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new RecordApiRequestError(`record API is unreachable: ${message}`, 'unreachable')
+    throw recordApiUnreachable(error, origin)
   }
   const payload = await response.json().catch(() => null)
   if (!response.ok) throw recordAuthRefusal(response.status, payload, response.headers)
@@ -584,25 +596,39 @@ export async function recordApiRequest<T>(
   transport: typeof fetch = hostedApiFetch,
 ): Promise<T> {
   throwIfRecordApiRequestRefused()
-  const token = init.signal
-    ? await (authentication
-        ? authentication.tokenAsync(init.signal)
-        : storedRecordTokenAsync(undefined, init.signal))
-    : authentication
-      ? authentication.token()
-      : storedRecordToken()
+  const readToken = async () =>
+    init.signal
+      ? await (authentication
+          ? authentication.tokenAsync(init.signal)
+          : storedRecordTokenAsync(undefined, init.signal))
+      : authentication
+        ? authentication.token()
+        : storedRecordToken()
+  let token = await readToken()
   if (!token) throw new RecordApiRequestError(RECORD_SIGN_IN_REMEDY, 'refused')
-  const headers = new Headers(init.headers)
-  for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
-  if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-  if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
-  let response: Response
-  try {
-    response = await recordTransport(recordApiBaseUrl(), path, { ...init, headers }, transport)
-  } catch (error) {
-    throw recordApiUnreachable(error)
+  const origin = recordApiBaseUrl()
+  const send = async (bearer: string) => {
+    const headers = new Headers(init.headers)
+    for (const [name, value] of bearerHeaders(bearer)) headers.set(name, value)
+    if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
+    if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
+    try {
+      return await recordTransport(origin, path, { ...init, headers }, transport)
+    } catch (error) {
+      throw recordApiUnreachable(error, origin)
+    }
   }
-  const body = await response.json().catch(() => null)
+  let response = await send(token)
+  let body = await response.json().catch(() => null)
+  if (response.status === 401 && !authentication) {
+    forgetRecordSessionToken()
+    const refreshed = await readToken()
+    if (refreshed && refreshed !== token) {
+      token = refreshed
+      response = await send(token)
+      body = await response.json().catch(() => null)
+    }
+  }
   if (!response.ok) {
     if (init.acceptedError?.status === response.status) return init.acceptedError.schema(body)
     throw recordApiError(body, response.status, response.headers)
@@ -1017,11 +1043,13 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
     drop()
     connection.abort()
   }
+  let origin: string | null = null
   try {
     throwIfRecordApiRequestRefused()
+    origin = recordApiBaseUrl()
     // The stream is unbounded until a streaming budget exists.
     const response = await recordTransport(
-      recordApiBaseUrl(),
+      origin,
       '/v1/board/stream',
       {
         method: 'GET',
@@ -1040,6 +1068,10 @@ async function fetchBoardStream(signal?: AbortSignal): Promise<RecordBoardStream
     connection.abort()
     drop()
     if (signal?.aborted) return { kind: 'error', reason: 'aborted' }
-    return { kind: 'error', reason: error instanceof Error ? error.message : String(error) }
+    const detail = error instanceof Error ? error.message : String(error)
+    return {
+      kind: 'error',
+      reason: origin ? recordUnreachableRefusal(origin, detail) : detail,
+    }
   }
 }

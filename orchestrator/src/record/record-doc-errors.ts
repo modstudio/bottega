@@ -6,6 +6,7 @@ import {
   type DocRevisionWriteInput,
   decideDocRevisionWrite,
 } from '../doc/doc-write-allowed.ts'
+import { RecordRevisionConflictError } from './record-revision-conflict.ts'
 
 export class RecordDocError extends Error {
   status: 400 | 404 | 409 | 422
@@ -36,6 +37,11 @@ export function assertRevisionWrite(
     slug: input.slug,
   })
   if (!decision.allow) {
-    throw new RecordDocError(renderRefusal(decision.refusal), 409)
+    const missingHostedRevision =
+      !input.isCreate &&
+      input.current === null &&
+      (input.scope === 'canon' || input.op === 'create')
+    if (missingHostedRevision) throw new RecordDocError(renderRefusal(decision.refusal), 409)
+    throw new RecordRevisionConflictError(String(input.current ?? '(no current revision)'))
   }
 }

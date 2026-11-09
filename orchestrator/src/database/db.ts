@@ -105,6 +105,7 @@ type OpenHook = (database: Database) => void
 export type OpenHooks = {
   afterWritableOpen?: OpenHook[]
   afterInitialize?: OpenHook[]
+  access?: (database: Database) => Database
 }
 let openHooks: OpenHooks | null = null
 export function registerOpenHooks(hooks: OpenHooks): () => void {
@@ -551,9 +552,13 @@ export function openProcessStoreHandle(
 export function db(writable = false): Database {
   if (databaseAccess.active()) {
     if (writable) throw new Error('refusing a write from a read-only command')
-    return commandReadOnlyDatabase()
+    return guardedStoreAccess(commandReadOnlyDatabase())
   }
-  return defaultDatabase(writable)
+  return guardedStoreAccess(defaultDatabase(writable))
+}
+
+function guardedStoreAccess(database: Database): Database {
+  return openHooks?.access?.(database) ?? database
 }
 
 function defaultDatabase(writable: boolean): Database {

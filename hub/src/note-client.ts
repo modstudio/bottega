@@ -1,6 +1,7 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
+import { recordUnreachableRefusal } from '../../shared/record-remedies.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
@@ -58,7 +59,8 @@ async function request<T>(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch (error) {
-    throw hostedRefusalError({ cause: error, safety })
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(recordUnreachableRefusal(baseUrl, detail))
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)

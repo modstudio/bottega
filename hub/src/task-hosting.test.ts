@@ -317,7 +317,9 @@ describe('hosted-only task safety', () => {
           },
         },
       ),
-    ).rejects.toThrow('the write may have been applied; check before retrying')
+    ).rejects.toThrow(
+      'the hosted record at https://hub.example.test could not be reached (offline); nothing was written',
+    )
     expect(db().query<{ count: number }, []>(`SELECT count(*) count FROM task`).get()!.count).toBe(
       before,
     )
@@ -587,7 +589,9 @@ describe('hosted-only task safety', () => {
           requestDeadlineMs: 5,
         },
       ),
-    ).rejects.toThrow('network error): request timed out after 5ms')
+    ).rejects.toThrow(
+      'the hosted record at https://hub.example.test could not be reached (request timed out after 5ms); nothing was written',
+    )
   })
 
   test('a missing hosted task identity route requires redeployment', async () => {

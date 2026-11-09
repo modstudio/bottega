@@ -12,6 +12,13 @@ export const RECORD_SIGN_IN_REMEDY = `record session is missing or expired; run 
 export const RECORD_ACTIVE_SPACE_REMEDY = `record session has no active space; run \`${PLATFORM_SLUG} record space switch <slug>\``
 export const RUN_RETRY_REMEDY = `${PLATFORM_SLUG} run retry <run>`
 
+export function recordUnreachableRefusal(origin: string, detail: string): string {
+  return (
+    `the hosted record at ${origin} could not be reached (${detail}); nothing was written\n` +
+    `cleared by: ${PLATFORM_SLUG} record doctor`
+  )
+}
+
 export const machineNotTrustedRemedy = (spaceId: string) =>
   `this machine is not trusted in record space ${spaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>\``
 

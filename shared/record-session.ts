@@ -26,6 +26,8 @@ const SERVICE = `${PLATFORM_NAME}-record-session`
 const ACCOUNT = 'record'
 const PROBE_ACCOUNT = 'record-probe'
 const FILE_REMEDY = `set ${KEYSTORE_ENV}=file to keep the record session and the machine key in owner-only files`
+let memoizedToken: string | null | undefined
+let pendingToken: Promise<string | null> | null = null
 
 function useFile(): boolean {
   return decideKeyStore(process.env[KEYSTORE_ENV]) === 'file'
@@ -50,29 +52,47 @@ function withKeychainRemedy<T>(operation: () => T): T {
 }
 
 export function readRecordSessionToken(runner?: SecurityRunner): string | null {
-  if (useFile()) return readFileToken()
-  return withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
+  if (memoizedToken !== undefined) return memoizedToken
+  memoizedToken = useFile()
+    ? readFileToken()
+    : withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
+  return memoizedToken
 }
 
 export async function readRecordSessionTokenAsync(signal?: AbortSignal): Promise<string | null> {
+  if (signal?.aborted) throw signal.reason
+  if (memoizedToken !== undefined) return memoizedToken
+  if (pendingToken) return pendingToken
   if (useFile()) {
-    if (signal?.aborted) throw signal.reason
-    return readFileToken()
+    memoizedToken = readFileToken()
+    return memoizedToken
   }
-  try {
-    return await readKeychainItemAsync(SERVICE, ACCOUNT, signal)
-  } catch (error) {
-    if (signal?.aborted || keychainPlatform() !== 'linux') throw error
-    throw keychainFailureWithFileRemedy(error)
-  }
+  pendingToken = readKeychainItemAsync(SERVICE, ACCOUNT, signal)
+    .catch((error) => {
+      if (signal?.aborted || keychainPlatform() !== 'linux') throw error
+      throw keychainFailureWithFileRemedy(error)
+    })
+    .then((token) => (memoizedToken = token))
+    .finally(() => {
+      pendingToken = null
+    })
+  return pendingToken
+}
+
+/** Forget the process copy so a later read observes a session changed by another process. */
+export function forgetRecordSessionToken(): void {
+  memoizedToken = undefined
+  pendingToken = null
 }
 
 export function writeRecordSessionToken(token: string, runner?: SecurityRunner): void {
   if (!useFile()) {
     withKeychainRemedy(() => writeKeychainItem(SERVICE, ACCOUNT, token, runner))
+    forgetRecordSessionToken()
     return
   }
   writeFileToken(recordSessionPath(process.env), token)
+  forgetRecordSessionToken()
 }
 
 function writeFileToken(path: string, token: string): void {
@@ -121,7 +141,9 @@ export function probeRecordSessionStore(runner?: SecurityRunner): void {
 export function clearRecordSessionToken(runner?: SecurityRunner): void {
   if (useFile()) {
     rmSync(recordSessionPath(process.env), { force: true })
+    forgetRecordSessionToken()
     return
   }
   withKeychainRemedy(() => deleteKeychainItem(SERVICE, ACCOUNT, runner))
+  forgetRecordSessionToken()
 }

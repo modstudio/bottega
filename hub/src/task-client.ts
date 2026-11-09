@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
+import { recordUnreachableRefusal } from '../../shared/record-remedies.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type {
@@ -149,7 +150,8 @@ async function responseObject(
       options,
     )
   } catch (error) {
-    throw hostedRefusalError({ cause: error, safety })
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(recordUnreachableRefusal(baseUrl, detail))
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)
@@ -457,7 +459,8 @@ export async function hostedPushChanges(
       options,
     )
   } catch (error) {
-    throw hostedRefusalError({ cause: error, safety: 'idempotent' })
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(recordUnreachableRefusal(baseUrl, detail))
   }
   const result = await jsonBody(response, url)
   if (!result.ok || !Array.isArray(result.value))
@@ -540,7 +543,8 @@ async function taskIdentityResponse(
       options,
     )
   } catch (error) {
-    throw hostedRefusalError({ cause: error, safety: 'probe' })
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(recordUnreachableRefusal(baseUrl, detail))
   }
   return { response, url }
 }

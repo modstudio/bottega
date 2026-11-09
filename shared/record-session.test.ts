@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_NAME } from './brand.ts'
 import {
   clearRecordSessionToken,
+  forgetRecordSessionToken,
   probeRecordSessionStore,
   readRecordSessionToken,
   readRecordSessionTokenAsync,
@@ -33,6 +34,7 @@ const originalPlatform = platformHolder[PLATFORM_KEY]
 const roots: string[] = []
 
 function restoreEnvironment(): void {
+  forgetRecordSessionToken()
   if (originalKeyStore === undefined) delete process.env.BOTTEGA_KEYSTORE
   else process.env.BOTTEGA_KEYSTORE = originalKeyStore
   if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
@@ -104,6 +106,7 @@ describe('record session keychain', () => {
 
   test('returns null only for a missing item and redacts write failures', () => {
     expect(readRecordSessionToken(() => result(44, '', 'not found'))).toBeNull()
+    forgetRecordSessionToken()
     expect(() => readRecordSessionToken(() => result(2, '', 'keychain unavailable'))).toThrow(
       'security find-generic-password failed with exit code 2: keychain unavailable',
     )
@@ -149,7 +152,7 @@ describe('record session keychain', () => {
     expect(calls.some((argv) => argv.includes('record-probe'))).toBe(true)
     expect(
       calls.filter((argv) => argv.includes('record') && !argv.includes('record-probe')),
-    ).toHaveLength(2)
+    ).toHaveLength(1)
   })
 
   test('a failed probe keeps the store error and adds the file-store remedy', () => {
@@ -197,6 +200,13 @@ describe('file-backed record session', () => {
 
     expect(readRecordSessionToken(unusedRunner)).toBe('second-token')
     expect(runnerCalls).toBe(0)
+  })
+
+  test('reads a token only once per process', () => {
+    writeRecordSessionToken('first-token', unusedRunner)
+    expect(readRecordSessionToken(unusedRunner)).toBe('first-token')
+    rmSync(recordSessionPath(process.env))
+    expect(readRecordSessionToken(unusedRunner)).toBe('first-token')
   })
 
   test('probes a distinct file without changing the real session', () => {

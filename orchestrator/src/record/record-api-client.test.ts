@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { forgetRecordSessionToken } from '../../../shared/record-session.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -134,7 +135,9 @@ describe('record HTTP authentication responses', () => {
         personalSpaceId: null,
         memberships: [],
       }),
-    ).toThrow(`record API is unreachable: record API returned an invalid identity\ncleared by:`)
+    ).toThrow(
+      `the hosted record at https://api.bottega.run could not be reached (record API returned an invalid identity); nothing was written\ncleared by:`,
+    )
   })
 
   test('validates the invitation fields printed by the command', () => {
@@ -248,6 +251,84 @@ describe('project-space conflict response', () => {
       `${PLATFORM_SLUG} project set alpha --settings '{"space":"<owning-space-slug>"}'`,
     )
     expect((rejection as Error).message).toContain(`${PLATFORM_SLUG} record space switch <slug>`)
+  })
+})
+
+describe('revision conflict response', () => {
+  const authentication = {
+    token: () => 'stored-bearer',
+    tokenAsync: async () => 'stored-bearer',
+  }
+
+  test('classifies the typed 409 with its current revision', async () => {
+    await expect(
+      recordApiRequest('/v1/docs/example', {}, authentication, (async () =>
+        Response.json(
+          {
+            error: 'current revision is revision-b; re-read, then retry',
+            code: 'revision-conflict',
+            currentRevision: 'revision-b',
+          },
+          { status: 409 },
+        )) as unknown as typeof fetch),
+    ).rejects.toMatchObject({ kind: 'conflict', currentRevision: 'revision-b', status: 409 })
+  })
+
+  test('keeps a missing-revision refusal classified as refused', async () => {
+    await expect(
+      recordApiRequest('/v1/docs/example', {}, authentication, (async () =>
+        Response.json(
+          { error: 'cleared by: repair the document revision state, then retry the write' },
+          { status: 409 },
+        )) as unknown as typeof fetch),
+    ).rejects.toMatchObject({ kind: 'refused', currentRevision: null, status: 409 })
+  })
+})
+
+describe('record API session refresh', () => {
+  beforeEach(() => forgetRecordSessionToken())
+  afterEach(() => forgetRecordSessionToken())
+
+  test('a changed token after 401 retries once', async () => {
+    const session = memoryRecordSession()
+    session.setToken('first-token')
+    installRecordSessionRunner(session.runner)
+    let requests = 0
+    try {
+      await expect(
+        recordApiRequest('/v1/whoami', {}, undefined, (async (_input, init) => {
+          requests += 1
+          if (requests === 1) {
+            expect(new Headers(init?.headers).get('authorization')).toBe('Bearer first-token')
+            session.setToken('second-token')
+            return Response.json({ error: 'expired' }, { status: 401 })
+          }
+          expect(new Headers(init?.headers).get('authorization')).toBe('Bearer second-token')
+          return Response.json({ ok: true })
+        }) as typeof fetch),
+      ).resolves.toEqual({ ok: true })
+      expect(requests).toBe(2)
+    } finally {
+      installRecordSessionRunner(null)
+    }
+  })
+
+  test('the same token after 401 does not retry', async () => {
+    const session = memoryRecordSession()
+    session.setToken('same-token')
+    installRecordSessionRunner(session.runner)
+    let requests = 0
+    try {
+      await expect(
+        recordApiRequest('/v1/whoami', {}, undefined, (async () => {
+          requests += 1
+          return Response.json({ error: 'expired' }, { status: 401 })
+        }) as unknown as typeof fetch),
+      ).rejects.toMatchObject({ kind: 'refused' })
+      expect(requests).toBe(1)
+    } finally {
+      installRecordSessionRunner(null)
+    }
   })
 })
 
@@ -798,7 +879,12 @@ describe('record API client test safety', () => {
       expect(await run(401)).toEqual({ kind: 'unauthorized' })
       expect(await run(403)).toEqual({ kind: 'unauthorized' })
       expect(await run(500)).toEqual({ kind: 'error', reason: 'record API 500' })
-      expect(await run('throw')).toEqual({ kind: 'error', reason: 'connect reset' })
+      expect(await run('throw')).toEqual({
+        kind: 'error',
+        reason:
+          `the hosted record at https://api.example.test could not be reached (connect reset); nothing was written\n` +
+          `cleared by: ${PLATFORM_SLUG} record doctor`,
+      })
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv

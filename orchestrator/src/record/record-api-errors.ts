@@ -10,10 +10,13 @@ import {
   RecordProjectSpaceConflictError,
 } from './record-project-space-contract.ts'
 import { RecordProjectError } from './record-projects.ts'
+import { RecordRevisionConflictError, revisionConflictBody } from './record-revision-conflict.ts'
 import { TrialSpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 
 export function renderRecordApiRefusal(context: Context, error: unknown): Response | null {
+  if (error instanceof RecordRevisionConflictError)
+    return context.json(revisionConflictBody(error.currentRevision), 409)
   if (error instanceof RecordProjectSpaceConflictError)
     return context.json(projectSpaceConflictResponse(error), error.status)
   if (

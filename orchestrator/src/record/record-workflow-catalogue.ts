@@ -5,6 +5,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
 import { recordPool } from './record-pool.ts'
+import { RecordRevisionConflictError } from './record-revision-conflict.ts'
 import {
   type RecordWorkflowDraftInput,
   RecordWorkflowError,
@@ -276,9 +277,7 @@ async function transition(
       const current = rows.find((row) => row.status === 'production')
       const currentN = current ? number(current.n) : null
       if (currentN !== input.expectedProductionVersion)
-        throw new RecordWorkflowError(
-          `refusing stale hosted ${action}: expected production version ${input.expectedProductionVersion ?? 'none'}, current version ${currentN ?? 'none'}`,
-        )
+        throw new RecordRevisionConflictError(String(currentN ?? 'none'))
       const target = rows.find((row) => number(row.n) === input.n)
       if (!target)
         throw new RecordWorkflowError(`hosted ${input.kind} has no version ${input.n}`, 404)
