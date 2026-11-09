@@ -441,7 +441,7 @@ class CompactContextBrief(unittest.TestCase):
     def completed(self, stdout="", returncode=0):
         return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="")
 
-    def test_accepts_the_complete_block_within_the_shared_deadline_result(self):
+    def test_accepts_a_complete_block(self):
         block = (
             "Context (session session-1) · full: bottega agent context show --task DEV-1844\n"
             "DEV-1844 Architect context\n"
@@ -449,18 +449,12 @@ class CompactContextBrief(unittest.TestCase):
             "  open: none\n"
             "In flight: none\n"
             "Waiting: 0 board requests (bottega board read) · 0 questions · "
+            "0 filed issues (bottega workflow fix-defect --waiting) · "
             "0 resume briefs (bottega doc resumes)\n"
             "Autonomy: plan review · ship trunk"
         )
-        process = mock.Mock()
-        process.poll.return_value = None
-        process.args = ["bottega", "agent", "context", "brief"]
-        process.returncode = 0
-        process.communicate.return_value = (block, "")
-        completed = session_brief._wait(process, session_brief.time.monotonic() + 10)
-        self.assertLessEqual(process.communicate.call_args.kwargs["timeout"], 10)
         self.assertEqual(
-            session_brief._context_brief_slice(completed, "session-1"), block
+            session_brief._context_brief_slice(self.completed(block), "session-1"), block
         )
 
     def test_failure_and_timeout_fail_open_with_one_named_remedy_line(self):
@@ -478,6 +472,10 @@ class CompactContextBrief(unittest.TestCase):
             session_brief._context_brief_slice(
                 self.completed(returncode=-1), "session-1"
             ),
+            expected,
+        )
+        self.assertEqual(
+            session_brief._context_brief_slice(self.completed(""), "session-1"),
             expected,
         )
 

@@ -182,11 +182,7 @@ def _context_brief_slice(completed, session):
     if completed is None or completed.returncode != 0:
         return fallback
     text = (completed.stdout or "").strip()
-    if not text.startswith(f"Context (session {session}) · full: "):
-        return fallback
-    if "\nIn flight: " not in text or "\nWaiting: " not in text or "\nAutonomy: " not in text:
-        return fallback
-    return text
+    return text or fallback
 
 
 HOOK_CONTEXT_MAX_CHARS = 9000

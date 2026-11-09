@@ -18,7 +18,7 @@ import {
 import { listDocsStore } from './doc-read-store.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 
-type ContextTask = HubTaskReference & { parent_key?: string | null }
+type ContextTask = HubTaskReference
 export type ContextFactsPorts = {
   tasks(): Promise<ContextTask[]>
   pointer(value: string, database: Database): Promise<string | null>
@@ -79,13 +79,13 @@ const productionContextFactsPorts: ContextFactsPorts = {
 const defaultContextFactsPorts = () =>
   portsHolder[CONTEXT_FACTS_PORTS_KEY] ?? productionContextFactsPorts
 
-function storedItems(holder: string, database: Database): ContextItem[] {
+export function storedItems(holder: string, database: Database): ContextItem[] {
   return listDocsStore({ scope: 'context', subject: holder }, database).map((doc) =>
     decodeContextItem(holder, doc.slug, doc.body),
   )
 }
 
-function taskProfile(key: string, tasks: ContextTask[]): ContextProfile {
+export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {
   return tasks.some((task) => task.parent_key === key) ? 'epic' : 'task'
 }
 

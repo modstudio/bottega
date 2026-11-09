@@ -2,16 +2,18 @@
 /** Gathers and renders the compact architect context brief. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { listClaims } from '../board/board-claim-service.ts'
+import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { claimNotices } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
+import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
+import { projectAt } from '../project/projects.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
-import { readHubTasks } from '../workflow/workflow-task-reference.ts'
-import { decodeContextItem } from './context-item-codec.ts'
+import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
+import { storedItems, taskProfile } from './context-write-adapter.ts'
 import type { ContextItem, ContextItemKind } from './doc-context-write.ts'
-import { listDocsStore } from './doc-read-store.ts'
 import { listOpenResumes } from './docs.ts'
 
 type ContextBriefHolder = {
@@ -29,11 +31,16 @@ export type ContextBrief = {
   cursors: Array<{
     number: number
     workflow: string
-    state: string
+    mode: string
     questionNumber: number | null
   }>
   claims: Array<{ kind: string; value: string }>
-  waiting: { boardRequests: number; questions: number; resumeBriefs: number }
+  waiting: {
+    boardRequests: number
+    questions: number
+    filedIssues: number
+    resumeBriefs: number
+  }
   autonomy: string
 }
 
@@ -46,7 +53,7 @@ const ITEM_ORDER: readonly ContextItemKind[] = [
   'pointer',
 ]
 
-const firstLine = (body: string) => body.split(/\r?\n/, 1)[0]!.trim()
+const firstLine = (body: string) => body.split(/\r\n|\r|\n/, 1)[0]!.trim()
 const count = (value: number, singular: string, plural = `${singular}s`) =>
   `${value} ${value === 1 ? singular : plural}`
 
@@ -84,8 +91,8 @@ export function renderContextBrief(brief: ContextBrief): string {
     ...brief.runs.map((run) => `run ${run.number} ${run.job} ${run.status}`),
     ...brief.cursors.map((cursor) =>
       cursor.questionNumber === null
-        ? `cursor ${cursor.number} ${cursor.workflow} ${cursor.state}`
-        : `cursor ${cursor.number} ${cursor.workflow}, awaiting q${cursor.questionNumber}`,
+        ? `cursor ${cursor.number} ${cursor.workflow} ${cursor.mode}`
+        : `cursor ${cursor.number} ${cursor.workflow} ${cursor.mode}, awaiting q${cursor.questionNumber}`,
     ),
     ...brief.claims.map((claim) => `claim ${claim.kind}:${claim.value}`),
   ]
@@ -93,52 +100,51 @@ export function renderContextBrief(brief: ContextBrief): string {
   lines.push(
     `Waiting: ${count(brief.waiting.boardRequests, 'board request')} (${PLATFORM_SLUG} board read) · ` +
       `${count(brief.waiting.questions, 'question')} · ` +
+      `${count(brief.waiting.filedIssues, 'filed issue')} (${PLATFORM_SLUG} workflow fix-defect --waiting) · ` +
       `${count(brief.waiting.resumeBriefs, 'resume brief')} (${PLATFORM_SLUG} doc resumes)`,
   )
   lines.push(`Autonomy: ${brief.autonomy}`)
   return lines.join('\n')
 }
 
-type Task = {
+export type ContextBriefWorkingKey = {
   key: string
   project: string
-  title?: string | null
-  parent_key?: string | null
 }
 
-function storedItems(holder: string, database: Database): ContextItem[] {
-  return listDocsStore({ scope: 'context', subject: holder }, database).map((doc) =>
-    decodeContextItem(holder, doc.slug, doc.body),
-  )
-}
+type ContextBriefHolderReference = Omit<ContextBriefHolder, 'items'>
 
-function holderSequence(session: string, working: string[], tasks: Task[], database: Database) {
-  const holders: ContextBriefHolder[] = []
-  const sessionItems = storedItems(`session:${session}`, database)
-  if (sessionItems.length)
-    holders.push({ key: session, title: '', kind: 'session' as const, items: sessionItems })
-  const byKey = new Map(tasks.map((task) => [task.key, task]))
+/** Decide holder order from task facts only; store reads are applied after this decision. */
+export function holderSequence(
+  session: string,
+  working: readonly ContextBriefWorkingKey[],
+  tasks: readonly HubTaskReference[],
+): ContextBriefHolderReference[] {
+  const holders: ContextBriefHolderReference[] = [{ key: session, title: '', kind: 'session' }]
+  const scopedKey = (project: string, key: string) => `${project}\0${key}`
+  const byKey = new Map(tasks.map((task) => [scopedKey(task.project, task.key), task]))
   const emitted = new Set<string>()
-  const add = (key: string, kind: 'task' | 'epic') => {
+  const add = (task: HubTaskReference, projectTasks: readonly HubTaskReference[]) => {
+    const key = task.key
     if (emitted.has(key)) return
-    const task = byKey.get(key)
-    if (!task) return
     emitted.add(key)
     holders.push({
       key,
       title: task.title ?? '',
-      kind,
-      items: storedItems(`task:${key}`, database),
+      kind: taskProfile(key, projectTasks),
     })
   }
-  for (const key of working.toSorted()) {
-    const task = byKey.get(key)
+  for (const { key, project } of working) {
+    const task = byKey.get(scopedKey(project, key))
     if (!task) continue
-    add(key, task.parent_key ? 'task' : 'epic')
+    const projectTasks = tasks.filter((row) => row.project === project)
+    add(task, projectTasks)
     let parent = task.parent_key ?? null
     while (parent) {
-      add(parent, 'epic')
-      parent = byKey.get(parent)?.parent_key ?? null
+      const parentTask = byKey.get(scopedKey(project, parent))
+      if (!parentTask) break
+      add(parentTask, projectTasks)
+      parent = parentTask.parent_key ?? null
     }
   }
   return holders
@@ -164,20 +170,28 @@ export async function contextBrief(
   cwd = process.cwd(),
   database: Database = db(),
 ): Promise<ContextBrief> {
-  const tasks = (await readHubTasks(PLATFORM_SLUG)) as Task[]
   const cursors = listWorkflowCursors({ session }, database)
-  const project = tasks.find((task) => task.project === PLATFORM_SLUG)?.project ?? PLATFORM_SLUG
-  const claims = listClaims(project, false)
-    .claims.filter((claim) => claim.holder === session)
-    .map((claim) => claim.subject)
-  const working = [
-    ...claims.filter((claim) => claim.kind === 'task').map((claim) => claim.value),
-    ...cursors.map((cursor) => cursor.workflow_key).filter(Boolean),
+  const liveClaims = liveClaimsOfSession(session, Date.now(), database)
+  const working: ContextBriefWorkingKey[] = [
+    ...liveClaims
+      .filter((claim) => claim.subject.kind === 'task')
+      .map((claim) => ({ key: claim.subject.value, project: claim.project })),
+    ...cursors
+      .filter((cursor) => Boolean(cursor.workflow_key))
+      .map((cursor) => ({ key: cursor.workflow_key, project: cursor.project })),
   ]
+  const workingProjects = [...new Set(working.map(({ project }) => project))]
+  const [taskRows, autonomy, filedIssues] = await Promise.all([
+    Promise.all(workingProjects.map((project) => readHubTasks(project))).then((rows) =>
+      rows.flat(),
+    ),
+    architectSessionContext(cwd, { database }),
+    filedIssueQueueState(projectAt(cwd, database)?.name ?? null),
+  ])
   const runs = database
     .query(
       `SELECT number,job,status FROM run
-       WHERE session_id=? AND status IN ('reserved','attached','running','asking') ORDER BY number`,
+       WHERE session_id=? AND status IN ${LIVE_RUN_STATUS_SQL} ORDER BY number`,
     )
     .all(session) as ContextBrief['runs']
   const runQuestions = database
@@ -196,9 +210,17 @@ export async function contextBrief(
   const boardRequests = claimNotices(true, boardEnv, Date.now(), database).filter(
     (notice) => notice.purpose === 'request',
   ).length
-  const holders = holderSequence(session, [...new Set(working)], tasks, database)
+  const references = holderSequence(session, working, taskRows)
+  const holders = references
+    .map((holder) => ({
+      ...holder,
+      items: storedItems(
+        holder.kind === 'session' ? `session:${holder.key}` : `task:${holder.key}`,
+        database,
+      ),
+    }))
+    .filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
   const fullHolder = holders.find((holder) => holder.kind !== 'session')
-  const autonomy = await architectSessionContext(cwd, { database })
   return {
     session,
     fullCommand: fullHolder
@@ -209,13 +231,14 @@ export async function contextBrief(
     cursors: cursors.map((cursor) => ({
       number: cursor.id,
       workflow: cursor.workflow_slug,
-      state: cursor.state,
+      mode: cursor.mode_slug,
       questionNumber: cursor.question_number,
     })),
-    claims,
+    claims: liveClaims.map((claim) => claim.subject),
     waiting: {
       boardRequests,
       questions: runQuestions.count + cursorQuestions.count,
+      filedIssues: filedIssues.waiting.length,
       resumeBriefs: listOpenResumes(cwd).open.length,
     },
     autonomy: autonomyLine(autonomy),

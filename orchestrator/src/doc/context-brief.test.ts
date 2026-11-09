@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ContextBrief, renderContextBrief } from './context-brief.ts'
+import { type ContextBrief, holderSequence, renderContextBrief } from './context-brief.ts'
 
 const item = (
   holder: string,
@@ -19,7 +19,7 @@ test('renders the compact context layout line by line and keeps only item first 
         key: '65fbe830',
         title: '',
         kind: 'session',
-        items: [item('session:65fbe830', 'weekend', 'fact', 'work autonomously\nthrough Sunday')],
+        items: [item('session:65fbe830', 'weekend', 'fact', 'work autonomously\rthrough Sunday')],
       },
       {
         key: 'DEV-1844/2',
@@ -40,11 +40,9 @@ test('renders the compact context layout line by line and keeps only item first 
       { number: 31110, job: 'implement', status: 'running' },
       { number: 31111, job: 'review', status: 'asking' },
     ],
-    cursors: [
-      { number: 1369, workflow: 'plan-task', state: 'awaiting-ruling', questionNumber: 5277 },
-    ],
+    cursors: [{ number: 1369, workflow: 'plan-task', mode: 'design', questionNumber: 5277 }],
     claims: [{ kind: 'task', value: 'DEV-1844/2' }],
-    waiting: { boardRequests: 2, questions: 0, resumeBriefs: 1 },
+    waiting: { boardRequests: 2, questions: 0, filedIssues: 3, resumeBriefs: 1 },
     autonomy: 'plan review · implement, review, docs, canon auto · ship trunk',
   }
 
@@ -59,8 +57,42 @@ test('renders the compact context layout line by line and keeps only item first 
     'DEV-1844 Architect context',
     '  ruling q5282: "Approved as proposed"',
     '  open: none',
-    'In flight: run 31110 implement running · run 31111 review asking · cursor 1369 plan-task, awaiting q5277 · claim task:DEV-1844/2',
-    `Waiting: 2 board requests (${PLATFORM_SLUG} board read) · 0 questions · 1 resume brief (${PLATFORM_SLUG} doc resumes)`,
+    'In flight: run 31110 implement running · run 31111 review asking · cursor 1369 plan-task design, awaiting q5277 · claim task:DEV-1844/2',
+    `Waiting: 2 board requests (${PLATFORM_SLUG} board read) · 0 questions · 3 filed issues (${PLATFORM_SLUG} workflow fix-defect --waiting) · 1 resume brief (${PLATFORM_SLUG} doc resumes)`,
     'Autonomy: plan review · implement, review, docs, canon auto · ship trunk',
+  ])
+})
+
+test('orders the session, each project-scoped working task, and its epic by task profile', () => {
+  const task = (key: string, project: string, title: string, parentKey: string | null = null) => ({
+    key,
+    project,
+    title,
+    parent_key: parentKey,
+    record_id: `${project}:${key}`,
+  })
+  const tasks = [
+    task('DEV-1844/2', PLATFORM_SLUG, 'Build the brief', 'DEV-1844'),
+    task('DEV-1844', PLATFORM_SLUG, 'Architect context'),
+    task('APP-7', 'other', 'Other project task'),
+    task('DEV-2000', PLATFORM_SLUG, 'Parentless childless task'),
+  ]
+
+  expect(
+    holderSequence(
+      '65fbe830',
+      [
+        { key: 'DEV-1844/2', project: PLATFORM_SLUG },
+        { key: 'APP-7', project: 'other' },
+        { key: 'DEV-2000', project: PLATFORM_SLUG },
+      ],
+      tasks,
+    ),
+  ).toEqual([
+    { key: '65fbe830', title: '', kind: 'session' },
+    { key: 'DEV-1844/2', title: 'Build the brief', kind: 'task' },
+    { key: 'DEV-1844', title: 'Architect context', kind: 'epic' },
+    { key: 'APP-7', title: 'Other project task', kind: 'task' },
+    { key: 'DEV-2000', title: 'Parentless childless task', kind: 'task' },
   ])
 })
