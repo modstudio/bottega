@@ -1,10 +1,13 @@
 import { resolveOperatorCredential } from '../orchestrator/src/config/operator-credential.ts'
+import { registerStandardRuntime } from '../orchestrator/src/runtime/runtime-registration.ts'
 import { credentialIdentityPath } from '../shared/credential.ts'
 import {
   operatorCredentialResolveCommand,
   RECORD_MIGRATE_OPERATOR_CREDENTIAL,
 } from '../shared/operator-credentials.ts'
 import { secretResolutionFailure } from '../shared/secret-resolution-failure.ts'
+
+registerStandardRuntime()
 
 const credential = RECORD_MIGRATE_OPERATOR_CREDENTIAL
 
