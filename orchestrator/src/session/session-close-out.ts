@@ -881,6 +881,7 @@ export async function closeOutSession(
   const outbox = await closeOutSessionOutbox({ database, session, dryRun })
   report.mechanical.push(...outbox.mechanical)
   report.process.push(...outbox.process)
+  report.warnings.push(...outbox.warnings)
   report.errors.push(...outbox.errors)
   const final =
     dryRun || initial.classification.mechanical.length === 0

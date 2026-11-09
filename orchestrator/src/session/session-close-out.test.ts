@@ -179,6 +179,33 @@ test('dry run reports an owned unscored run as process residue', async () => {
   expect(report.verdict.clean).toBe(false)
 })
 
+test('dry-run close-out includes configured pending outbox residue', async () => {
+  const session = newRecordId()
+  db()
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,actor_session)
+       VALUES (?,'run',?,'{}','2026-11-09T10:00:00.000Z',?)`,
+    )
+    .run(newRecordId(), newRecordId(), session)
+  const previousUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
+  let report: Awaited<ReturnType<typeof closeOutSession>>
+  try {
+    report = await closeOutSession({ session, dryRun: true })
+  } finally {
+    if (previousUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousUrl
+  }
+
+  expect(report.process).toContainEqual(
+    expect.objectContaining({
+      item: '1 pending outbox write(s)',
+      remedy: `${PLATFORM_SLUG} record push`,
+    }),
+  )
+  expect(report.verdict.clean).toBe(false)
+})
+
 test('close-out refuses to drop a context item whose revision is unavailable', async () => {
   const session = newRecordId()
   const prior = process.env.CLAUDE_CODE_SESSION_ID

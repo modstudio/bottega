@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { storedMachineId } from '../../../shared/machine-config.ts'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import {
   type CallerIdentityResolution,
   classifyCaller,
@@ -12,8 +13,11 @@ import {
 import { DB_PATH } from './database-location.ts'
 
 /** Identity result of the architect or local operator making this call. */
-export const callerIdentity = (database?: Database): CallerIdentityResolution => {
-  const caller = classifyCaller(process.env)
+export const callerIdentity = (
+  database?: Database,
+  env: StateEnvironment = process.env,
+): CallerIdentityResolution => {
+  const caller = classifyCaller(env)
   if (caller.kind !== 'operator') return resolveCallerIdentity(caller, null)
   // An absent store has no identity to read. A store that exists and refuses to open must say
   // so: swallowing that refusal would let a command report emptiness for data it never saw.
@@ -22,7 +26,7 @@ export const callerIdentity = (database?: Database): CallerIdentityResolution =>
 }
 
 /** Identity of the architect or local operator making this call. */
-export const sessionId = (database?: Database): string | null => {
-  const identity = callerIdentity(database)
+export const sessionId = (database?: Database, env: StateEnvironment = process.env): string | null => {
+  const identity = callerIdentity(database, env)
   return identity.kind === 'identity' ? identity.session : null
 }

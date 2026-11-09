@@ -59,7 +59,7 @@ export function insertOutboxRow(
       `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,actor_session)
        VALUES (?,?,?,?,?,?) RETURNING id`,
     )
-    .get(row.recordId, row.kind, row.rowId, row.payload, row.createdAt, sessionId(database))!
+    .get(row.recordId, row.kind, row.rowId, row.payload, row.createdAt, sessionId(database, env))!
   signalRecordSyncAfterWriteCommit(database, env)
   return inserted.id
 }
@@ -71,8 +71,13 @@ export function refreshPendingOutboxRow(
   env: StateEnvironment = process.env,
 ): void {
   database
-    .query('UPDATE outbox SET payload=?,created_at=?,attempts=0,last_error=NULL WHERE id=?')
-    .run(row.payload, row.createdAt, row.id)
+    .query(
+      `UPDATE outbox
+          SET payload=?,created_at=?,attempts=0,last_error=NULL,
+              actor_session=COALESCE(?,actor_session)
+        WHERE id=?`,
+    )
+    .run(row.payload, row.createdAt, sessionId(database, env), row.id)
   signalRecordSyncAfterWriteCommit(database, env)
 }
 

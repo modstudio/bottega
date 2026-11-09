@@ -86,28 +86,23 @@ export type UnreadableProjectDisposition = 'error' | 'warning'
 
 export type SessionOutboxRow = {
   id: number
-  actorSession: string | null
-  syncedAt: string | null
   quarantinedAt: string | null
-  retiredAt: string | null
 }
 
-export type SessionOutboxResidue = {
-  pendingIds: number[]
-  quarantinedIds: number[]
-}
+export type SessionOutboxResidue =
+  | { configured: true; pendingIds: number[]; quarantinedIds: number[] }
+  | { configured: false; undeliveredIds: number[] }
 
-/** Count only undelivered writes attributed to the session being closed. */
+/** Split configured outbox residue, or classify undelivered rows as unpushable. */
 export function sessionOutboxResidue(
-  session: string,
+  configured: boolean,
   rows: readonly SessionOutboxRow[],
 ): SessionOutboxResidue {
-  const owned = rows.filter(
-    (row) => row.actorSession === session && row.syncedAt === null && row.retiredAt === null,
-  )
+  if (!configured) return { configured: false, undeliveredIds: rows.map((row) => row.id) }
   return {
-    pendingIds: owned.filter((row) => row.quarantinedAt === null).map((row) => row.id),
-    quarantinedIds: owned.filter((row) => row.quarantinedAt !== null).map((row) => row.id),
+    configured: true,
+    pendingIds: rows.filter((row) => row.quarantinedAt === null).map((row) => row.id),
+    quarantinedIds: rows.filter((row) => row.quarantinedAt !== null).map((row) => row.id),
   }
 }
 

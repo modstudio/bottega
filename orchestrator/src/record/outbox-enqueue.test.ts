@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,16 +13,8 @@ import { writeTransaction } from '../database/db.ts'
 import { insertOutboxRow, refreshPendingOutboxRow } from './outbox-enqueue.ts'
 
 const roots: string[] = []
-let previousSession: string | undefined
-
-beforeEach(() => {
-  previousSession = process.env.CLAUDE_CODE_SESSION_ID
-  process.env.CLAUDE_CODE_SESSION_ID = 'outbox-enqueue-session'
-})
 
 afterEach(() => {
-  if (previousSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-  else process.env.CLAUDE_CODE_SESSION_ID = previousSession
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -42,8 +34,8 @@ function fixture(): Database {
   return database
 }
 
-function stateEnvironment(root: string): Record<string, string> {
-  return { [STATE_HOME_ENV]: root }
+function stateEnvironment(root: string, session = 'outbox-enqueue-session'): Record<string, string> {
+  return { [STATE_HOME_ENV]: root, CLAUDE_CODE_SESSION_ID: session }
 }
 
 test('inserts the row and creates the pending marker under the state root', () => {
@@ -166,6 +158,34 @@ test('a transaction creates the marker only after its pending-row refresh commit
     created_at: '2026-11-06T12:04:00.000Z',
     attempts: 0,
     last_error: null,
+  })
+  database.close()
+})
+
+test('a refreshed row is attributed to the session that last wrote it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'outbox-refresh-owner-'))
+  roots.push(root)
+  const database = fixture()
+  const id = insertOutboxRow(
+    database,
+    {
+      recordId: newRecordId(),
+      kind: 'run',
+      rowId: 'refreshed-owner',
+      payload: '{}',
+      createdAt: '2026-11-06T12:05:00.000Z',
+    },
+    stateEnvironment(root, 'first-session'),
+  )
+
+  refreshPendingOutboxRow(
+    database,
+    { id, payload: '{"updated":true}', createdAt: '2026-11-06T12:06:00.000Z' },
+    stateEnvironment(root, 'second-session'),
+  )
+
+  expect(database.query('SELECT actor_session FROM outbox WHERE id=?').get(id)).toEqual({
+    actor_session: 'second-session',
   })
   database.close()
 })
